@@ -28,6 +28,7 @@ public class ClientWebManager {
     private static final Map<String, List<UIElement>> RENDER_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, UIParser.Document> DOM_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, HtmlNode> VIRTUAL_DOM_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, HtmlNode> TEMPLATE_DOM_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> DIRTY_SESSIONS = ConcurrentHashMap.newKeySet();
     private static final Set<String> REQUESTED_SESSIONS = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> SYNC_REQUESTS = new ConcurrentHashMap<>();
@@ -79,10 +80,15 @@ public class ClientWebManager {
             UIParser.Document doc = new UIParser.Document(rootNode, sheet, cssString, clientScript);
             DOM_CACHE.put(sessionId, doc);
 
+            HtmlNode templateRoot = rootNode.cloneNode();
+            TEMPLATE_DOM_CACHE.put(sessionId, templateRoot);
+
             HtmlNode virtualRoot = rootNode.cloneNode();
             VIRTUAL_DOM_CACHE.put(sessionId, virtualRoot);
 
             DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
+            ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
+            DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
 
             Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
             List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, currentEnv);
@@ -102,20 +108,24 @@ public class ClientWebManager {
         HtmlNode vRoot = getVirtualRoot(sessionId);
         if (vRoot == null || data == null) return;
 
+        HtmlNode tmplRoot = TEMPLATE_DOM_CACHE.get(sessionId);
         ListTag patches = data.getList("Patches", Tag.TAG_COMPOUND);
         boolean anyChanged = false;
 
         for (int i = 0; i < patches.size(); i++) {
             CompoundTag patch = patches.getCompound(i);
-            String targetId = patch.getString("TargetId");
+            String targetId = getBaseNodeId(patch.getString("TargetId"));
             String op = patch.getString("Op");
 
-            HtmlNode target = DomUtils.findNodeById(vRoot, getBaseNodeId(targetId));
+            HtmlNode target = DomUtils.findNodeById(vRoot, targetId);
             if (target == null) continue;
+            HtmlNode tmplTarget = tmplRoot != null ? DomUtils.findNodeById(tmplRoot, targetId) : null;
 
             switch (op) {
                 case "text" -> {
-                    target.setTextContent(patch.getString("Value"));
+                    String val = patch.getString("Value");
+                    target.setTextContent(val);
+                    if (tmplTarget != null) tmplTarget.setTextContent(val);
                     anyChanged = true;
                 }
                 case "attr" -> {
@@ -123,39 +133,53 @@ public class ClientWebManager {
                     boolean remove = patch.getBoolean("Remove");
                     String val = patch.getString("Value");
                     DomUtils.updateAttribute(target, key, val, remove);
+                    if (tmplTarget != null) DomUtils.updateAttribute(tmplTarget, key, val, remove);
                     anyChanged = true;
                 }
                 case "style" -> {
                     String prop = patch.getString("Key");
                     String val = patch.getString("Value");
                     target.setStyleProperty(prop, val);
+                    if (tmplTarget != null) tmplTarget.setStyleProperty(prop, val);
                     anyChanged = true;
                 }
                 case "add_class" -> {
-                    target.addClass(patch.getString("Value"));
+                    String val = patch.getString("Value");
+                    target.addClass(val);
+                    if (tmplTarget != null) tmplTarget.addClass(val);
                     anyChanged = true;
                 }
                 case "remove_class" -> {
-                    target.removeClass(patch.getString("Value"));
+                    String val = patch.getString("Value");
+                    target.removeClass(val);
+                    if (tmplTarget != null) tmplTarget.removeClass(val);
                     anyChanged = true;
                 }
                 case "toggle_class" -> {
-                    target.toggleClass(patch.getString("Value"));
+                    String val = patch.getString("Value");
+                    target.toggleClass(val);
+                    if (tmplTarget != null) tmplTarget.toggleClass(val);
                     anyChanged = true;
                 }
                 case "inner_html" -> {
-                    target.setInnerHTML(patch.getString("Value"));
+                    String val = patch.getString("Value");
+                    target.setInnerHTML(val);
+                    if (tmplTarget != null) tmplTarget.setInnerHTML(val);
                     DeclarativeBindingManager.initializeBindings(sessionId, target);
                     anyChanged = true;
                 }
                 case "remove_node" -> {
                     target.remove();
+                    if (tmplTarget != null) tmplTarget.remove();
                     anyChanged = true;
                 }
             }
         }
 
         if (anyChanged) {
+            if (tmplRoot != null) {
+                ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, tmplRoot, vRoot);
+            }
             requestRender(sessionId);
             if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
         }
@@ -216,6 +240,11 @@ public class ClientWebManager {
     }
 
     public static List<UIElement> getElements(String sessionId) {
+        HtmlNode tmpl = TEMPLATE_DOM_CACHE.get(sessionId);
+        HtmlNode vRoot = VIRTUAL_DOM_CACHE.get(sessionId);
+        if (tmpl != null && vRoot != null) {
+            ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, tmpl, vRoot);
+        }
         return RENDER_CACHE.getOrDefault(sessionId, new ArrayList<>());
     }
 
@@ -261,34 +290,54 @@ public class ClientWebManager {
     }
 
     public static void updateNodeAttributeLocally(String sessionId, String elementId, String attrName, String attrValue, boolean remove) {
-        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
+        String baseId = getBaseNodeId(elementId);
+        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
             DomUtils.updateAttribute(target, attrName, attrValue, remove);
+            HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
+            if (tmplTarget != null && !"hover".equals(attrName)) {
+                DomUtils.updateAttribute(tmplTarget, attrName, attrValue, remove);
+            }
             requestRender(sessionId);
         }
     }
 
     public static void toggleNodeAttributeLocally(String sessionId, String elementId, String attrName) {
-        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
+        String baseId = getBaseNodeId(elementId);
+        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
             DomUtils.toggleAttribute(target, attrName);
+            HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
+            if (tmplTarget != null) {
+                DomUtils.toggleAttribute(tmplTarget, attrName);
+            }
             requestRender(sessionId);
         }
     }
 
     public static void updateNodeInnerHtmlLocally(String sessionId, String elementId, String html) {
-        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
+        String baseId = getBaseNodeId(elementId);
+        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
             target.setInnerHTML(html);
+            HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
+            if (tmplTarget != null) {
+                tmplTarget.setInnerHTML(html);
+            }
             DeclarativeBindingManager.initializeBindings(sessionId, target);
             requestRender(sessionId);
         }
     }
 
     public static void updateNodeStyleLocally(String sessionId, String elementId, String prop, String val) {
-        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
+        String baseId = getBaseNodeId(elementId);
+        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
             target.setStyleProperty(prop, val);
+            HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
+            if (tmplTarget != null) {
+                tmplTarget.setStyleProperty(prop, val);
+            }
             requestRender(sessionId);
         }
     }
@@ -396,8 +445,11 @@ public class ClientWebManager {
             boolean hasInteraction = false;
             if (el.events() != null) {
                 for (String key : el.events().keySet()) {
-                    if (key.startsWith("on")) { hasInteraction = true; break; }
+                    if (key.startsWith("on") || key.equals("mc-title")) { hasInteraction = true; break; }
                 }
+            }
+            if (el.type().startsWith("img") && el.text() != null && el.text().startsWith("item:")) {
+                hasInteraction = true;
             }
             UIElement parentAnchor = elementMap.get(el.events() != null ? el.events().get("mc-parent") : null);
             boolean hasHoverAnim = parentAnchor != null && parentAnchor.animDef() != null &&
@@ -447,6 +499,7 @@ public class ClientWebManager {
         RENDER_CACHE.put(sessionId, new ArrayList<>());
         DOM_CACHE.remove(sessionId);
         VIRTUAL_DOM_CACHE.remove(sessionId);
+        TEMPLATE_DOM_CACHE.remove(sessionId);
         DIRTY_SESSIONS.remove(sessionId);
         SESSION_ENV.remove(sessionId);
         DOM_HASH_CACHE.remove(sessionId);
@@ -459,11 +512,18 @@ public class ClientWebManager {
         UIParser.Document doc = parser.parseDocument(html, "", width, height);
         DOM_CACHE.put(sessionId, doc);
 
+        HtmlNode templateRoot = doc.root.cloneNode();
+        TEMPLATE_DOM_CACHE.put(sessionId, templateRoot);
+
         HtmlNode virtualRoot = doc.root.cloneNode();
         VIRTUAL_DOM_CACHE.put(sessionId, virtualRoot);
 
         LAST_ROOT_W.put(sessionId, width);
         LAST_ROOT_H.put(sessionId, height);
+
+        DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
+        ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
+        DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
 
         recomputeLayout(sessionId, width, height);
     }
