@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
 
@@ -79,6 +80,26 @@ public class UIRenderer {
         return 0.5f;
     }
 
+    private static String parseGradientDef(String bgProp) {
+        if (bgProp == null || !bgProp.toLowerCase().contains("linear-gradient")) return null;
+        String lower = bgProp.toLowerCase();
+        String dir = "bottom";
+        if (lower.contains("to right") || lower.contains("90deg")) dir = "right";
+        else if (lower.contains("to left") || lower.contains("270deg") || lower.contains("-90deg")) dir = "left";
+        else if (lower.contains("to top") || lower.contains("0deg")) dir = "top";
+        else if (lower.contains("135deg") || lower.contains("to bottom right")) dir = "diag";
+
+        List<Integer> colors = new ArrayList<>();
+        Matcher m = Pattern.compile("(#(?:[0-9a-fA-F]{3,8})|rgba?\\s*\\([^)]+\\)|\\b(?:red|green|lime|blue|yellow|aqua|cyan|magenta|purple|orange|gold|black|white|gray|grey)\\b)").matcher(bgProp);
+        while (m.find()) {
+            colors.add(CssParser.parseColor(m.group(1)));
+        }
+        if (colors.size() >= 2) {
+            return dir + ":" + colors.getFirst() + ":" + colors.getLast();
+        }
+        return null;
+    }
+
     private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
         if (box.w <= 0 || box.h <= 0) return;
         if (box.style.getOrDefault("display", "block").equals("none")) return;
@@ -121,10 +142,107 @@ public class UIRenderer {
         for (LayoutBox child : box.children) {
             buildRenderQueue(child, queue, currentZ, finalChildClip, currentId);
         }
+
+        if (overflow.equals("scroll") || overflow.equals("auto")) {
+            queue.add(new RenderTask(currentZ + 1, (elements) -> drawScrollbarsIfNeeded(elements, box, clipRect)));
+        }
+    }
+
+    private void drawScrollbarsIfNeeded(List<UIElement> elements, LayoutBox box, float[] clipRect) {
+        if ("none".equals(box.style.get("scrollbar-width"))) return;
+        float scrollW = box.w, scrollH = box.h, curX = 0, curY = 0;
+        try {
+            scrollW = Float.parseFloat(box.node.attrs.getOrDefault("data-scroll-w", String.valueOf(box.w)));
+            scrollH = Float.parseFloat(box.node.attrs.getOrDefault("data-scroll-h", String.valueOf(box.h)));
+            curX = Float.parseFloat(box.node.attrs.getOrDefault("data-scroll-x", "0"));
+            curY = Float.parseFloat(box.node.attrs.getOrDefault("data-scroll-y", "0"));
+        } catch (Exception ignored) {}
+
+        Map<String, String> sbEvents = new HashMap<>();
+        sbEvents.put("mc-parent", box.node.id);
+        if (clipRect != null && clipRect.length >= 8) {
+            sbEvents.put("mc-clip", clipRect[0] + "," + clipRect[1] + "," + clipRect[2] + "," + clipRect[3] + "," + clipRect[4] + "," + clipRect[5] + "," + clipRect[6] + "," + clipRect[7]);
+        }
+
+        int barThickness = 4;
+        if (scrollH > box.h + 2 && box.h > 12) {
+            int trackX = box.x + box.w - box.bR - barThickness - 2;
+            int trackY = box.y + box.bT + 2;
+            int trackH = box.h - box.bT - box.bB - 4;
+            int thumbH = Math.max(12, (int) (trackH * (box.h / scrollH)));
+            float maxScrollY = Math.max(1f, scrollH - box.h);
+            int thumbY = trackY + (int) ((trackH - thumbH) * Math.min(1f, Math.max(0f, curY / maxScrollY)));
+
+            addElement(elements, box.node.id + "_sb_vt", "rect", trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
+            addElement(elements, box.node.id + "_sb_v", "rect", trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
+        }
+        if (scrollW > box.w + 2 && box.w > 12) {
+            int trackX = box.x + box.bL + 2;
+            int trackY = box.y + box.h - box.bB - barThickness - 2;
+            int trackW = box.w - box.bL - box.bR - 4;
+            int thumbW = Math.max(12, (int) (trackW * (box.w / scrollW)));
+            float maxScrollX = Math.max(1f, scrollW - box.w);
+            int thumbX = trackX + (int) ((trackW - thumbW) * Math.min(1f, Math.max(0f, curX / maxScrollX)));
+
+            addElement(elements, box.node.id + "_sb_ht", "rect", trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
+            addElement(elements, box.node.id + "_sb_h", "rect", thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
+        }
     }
 
     private void addElement(List<UIElement> elements, String id, String type, int x, int y, int w, int h, String text, int color, int bgColor, Map<String, String> events, int radius, float opacity, float tx, float ty, float sx, float sy, float rot, int trans, String animDef) {
         elements.add(new UIElement(id, type, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef));
+    }
+
+    private static float[] parseTransformProps(String t, int boxW, int boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
+        float tx = defTx, ty = defTy, sx = defSx, sy = defSy, rot = defRot;
+        Matcher txM = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(t);
+        if (txM.find())
+            tx = txM.group(2).equals("%") ? (Float.parseFloat(txM.group(1)) / 100.0f) * boxW : Float.parseFloat(txM.group(1));
+        Matcher tyM = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(t);
+        if (tyM.find())
+            ty = tyM.group(2).equals("%") ? (Float.parseFloat(tyM.group(1)) / 100.0f) * boxH : Float.parseFloat(tyM.group(1));
+        Matcher tm = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)(?:\\s*,\\s*(-?[0-9.]+)(px|%))?\\s*\\)").matcher(t);
+        if (tm.find()) {
+            tx = tm.group(2).equals("%") ? (Float.parseFloat(tm.group(1)) / 100.0f) * boxW : Float.parseFloat(tm.group(1));
+            if (tm.group(3) != null)
+                ty = tm.group(4).equals("%") ? (Float.parseFloat(tm.group(3)) / 100.0f) * boxH : Float.parseFloat(tm.group(3));
+        }
+        Matcher sm = Pattern.compile("scale\\(\\s*(-?[0-9.]+)(?:\\s*,\\s*(-?[0-9.]+))?\\s*\\)").matcher(t);
+        if (sm.find()) {
+            sx = Float.parseFloat(sm.group(1));
+            sy = sm.group(2) != null ? Float.parseFloat(sm.group(2)) : sx;
+        }
+        Matcher rm = Pattern.compile("rotate\\(\\s*(-?[0-9.]+)(deg|rad)?\\s*\\)").matcher(t);
+        if (rm.find()) {
+            float val = Float.parseFloat(rm.group(1));
+            if ("rad".equals(rm.group(2))) val = (float) Math.toDegrees(val);
+            rot = val;
+        }
+        return new float[]{tx, ty, sx, sy, rot};
+    }
+
+    private String buildPseudoStateDef(String prefix, String marker, LayoutBox box, float baseOp, float baseTx, float baseTy, float baseSx, float baseSy, float baseRot, int baseColor, int baseBgColor) {
+        float op = baseOp, tx = baseTx, ty = baseTy, sx = baseSx, sy = baseSy, rot = baseRot;
+        int col = baseColor, bgCol = baseBgColor;
+        boolean has = false;
+
+        if (box.style.containsKey(prefix + "-opacity")) {
+            try { op = Float.parseFloat(box.style.get(prefix + "-opacity")); has = true; } catch (Exception ignored) {}
+        }
+        if (box.style.containsKey(prefix + "-transform")) {
+            has = true;
+            float[] tr = parseTransformProps(box.style.get(prefix + "-transform"), box.w, box.h, tx, ty, sx, sy, rot);
+            tx = tr[0]; ty = tr[1]; sx = tr[2]; sy = tr[3]; rot = tr[4];
+        }
+        if (box.style.containsKey(prefix + "-color")) {
+            col = CssParser.parseColor(box.style.get(prefix + "-color"));
+            has = true;
+        }
+        if (box.style.containsKey(prefix + "-background") || box.style.containsKey(prefix + "-background-color")) {
+            bgCol = CssParser.parseColor(box.style.getOrDefault(prefix + "-background", box.style.get(prefix + "-background-color")));
+            has = true;
+        }
+        return has ? (marker + op + ":" + tx + ":" + ty + ":" + sx + ":" + sy + ":" + rot + ":" + col + ":" + bgCol) : "";
     }
 
     private String parseAnimationDef(String animProp, float baseW, float baseH) {
@@ -165,44 +283,13 @@ public class UIRenderer {
             String pct = kv[0];
             String props = kv[1];
 
-            float tx = 0, ty = 0, sx = 1, sy = 1, rot = 0, op = 1;
-
-            Matcher txM = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(props);
-            if (txM.find()) {
-                tx = Float.parseFloat(txM.group(1));
-                if (txM.group(2).equals("%")) tx = (tx / 100.0f) * baseW;
-            }
-            Matcher tyM = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(props);
-            if (tyM.find()) {
-                ty = Float.parseFloat(tyM.group(1));
-                if (tyM.group(2).equals("%")) ty = (ty / 100.0f) * baseH;
-            }
-            Matcher tm = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)(?:\\s*,\\s*(-?[0-9.]+)(px|%))?\\s*\\)").matcher(props);
-            if (tm.find()) {
-                tx = Float.parseFloat(tm.group(1));
-                if (tm.group(2).equals("%")) tx = (tx / 100.0f) * baseW;
-                if (tm.group(3) != null) {
-                    ty = Float.parseFloat(tm.group(3));
-                    if (tm.group(4).equals("%")) ty = (ty / 100.0f) * baseH;
-                }
-            }
-
-            Matcher sm = Pattern.compile("scale\\(\\s*(-?[0-9.]+)(?:\\s*,\\s*(-?[0-9.]+))?\\s*\\)").matcher(props);
-            if (sm.find()) {
-                sx = Float.parseFloat(sm.group(1));
-                sy = sm.group(2) != null ? Float.parseFloat(sm.group(2)) : sx;
-            }
-            Matcher rm = Pattern.compile("rotate\\(\\s*(-?[0-9.]+)(deg|rad)?\\s*\\)").matcher(props);
-            if (rm.find()) {
-                float val = Float.parseFloat(rm.group(1));
-                if ("rad".equals(rm.group(2))) val = (float) Math.toDegrees(val);
-                rot = val;
-            }
+            float[] tr = parseTransformProps(props, (int) baseW, (int) baseH, 0, 0, 1, 1, 0);
+            float op = 1;
             Matcher om = Pattern.compile("opacity\\s*:\\s*([0-9.]+)").matcher(props);
             if (om.find()) op = Float.parseFloat(om.group(1));
 
-            sb.append(pct).append(":").append(tx).append(",").append(ty).append(",")
-                    .append(sx).append(",").append(sy).append(",").append(rot).append(",").append(op).append("|");
+            sb.append(pct).append(":").append(tr[0]).append(",").append(tr[1]).append(",")
+                    .append(tr[2]).append(",").append(tr[3]).append(",").append(tr[4]).append(",").append(op).append("|");
         }
         return sb.toString();
     }
@@ -217,6 +304,7 @@ public class UIRenderer {
 
         String bgProp = box.style.getOrDefault("background", box.style.getOrDefault("background-color", "transparent"));
         int bgColor = CssParser.parseColor(bgProp);
+        String gradientDef = parseGradientDef(bgProp);
 
         String id = box.node.id;
 
@@ -232,30 +320,8 @@ public class UIRenderer {
         }
 
         if (box.style.containsKey("transform")) {
-            String t = box.style.get("transform");
-            Matcher txM = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(t);
-            if (txM.find())
-                tx = txM.group(2).equals("%") ? (Float.parseFloat(txM.group(1)) / 100.0f) * box.w : Float.parseFloat(txM.group(1));
-            Matcher tyM = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(t);
-            if (tyM.find())
-                ty = tyM.group(2).equals("%") ? (Float.parseFloat(tyM.group(1)) / 100.0f) * box.h : Float.parseFloat(tyM.group(1));
-            Matcher tm = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)(?:\\s*,\\s*(-?[0-9.]+)(px|%))?\\s*\\)").matcher(t);
-            if (tm.find()) {
-                tx = tm.group(2).equals("%") ? (Float.parseFloat(tm.group(1)) / 100.0f) * box.w : Float.parseFloat(tm.group(1));
-                if (tm.group(3) != null)
-                    ty = tm.group(4).equals("%") ? (Float.parseFloat(tm.group(3)) / 100.0f) * box.h : Float.parseFloat(tm.group(3));
-            }
-            Matcher sm = Pattern.compile("scale\\(\\s*(-?[0-9.]+)(?:\\s*,\\s*(-?[0-9.]+))?\\s*\\)").matcher(t);
-            if (sm.find()) {
-                sx = Float.parseFloat(sm.group(1));
-                sy = sm.group(2) != null ? Float.parseFloat(sm.group(2)) : sx;
-            }
-            Matcher rm = Pattern.compile("rotate\\(\\s*(-?[0-9.]+)(deg|rad)?\\s*\\)").matcher(t);
-            if (rm.find()) {
-                float val = Float.parseFloat(rm.group(1));
-                if ("rad".equals(rm.group(2))) val = (float) Math.toDegrees(val);
-                rot = val;
-            }
+            float[] tr = parseTransformProps(box.style.get("transform"), box.w, box.h, tx, ty, sx, sy, rot);
+            tx = tr[0]; ty = tr[1]; sx = tr[2]; sy = tr[3]; rot = tr[4];
         }
 
         if (box.style.containsKey("transition")) {
@@ -289,55 +355,10 @@ public class UIRenderer {
             easing = box.style.get("transition-timing-function").trim();
         }
 
-        float htx = tx, hty = ty, hsx = sx, hsy = sy, hrot = rot, hop = opacity;
-        int hc = color, hbgc = bgColor;
-        boolean hasHover = false;
-
-        if (box.style.containsKey("hover-opacity")) {
-            hop = Float.parseFloat(box.style.get("hover-opacity"));
-            hasHover = true;
-        }
-        if (box.style.containsKey("hover-transform")) {
-            hasHover = true;
-            String ht = box.style.get("hover-transform");
-
-            Matcher txM = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(ht);
-            if (txM.find())
-                htx = txM.group(2).equals("%") ? (Float.parseFloat(txM.group(1)) / 100.0f) * box.w : Float.parseFloat(txM.group(1));
-            Matcher tyM = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)").matcher(ht);
-            if (tyM.find())
-                hty = tyM.group(2).equals("%") ? (Float.parseFloat(tyM.group(1)) / 100.0f) * box.h : Float.parseFloat(tyM.group(1));
-            Matcher tm = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)(?:\\s*,\\s*(-?[0-9.]+)(px|%))?\\s*\\)").matcher(ht);
-            if (tm.find()) {
-                htx = tm.group(2).equals("%") ? (Float.parseFloat(tm.group(1)) / 100.0f) * box.w : Float.parseFloat(tm.group(1));
-                if (tm.group(3) != null)
-                    hty = tm.group(4).equals("%") ? (Float.parseFloat(tm.group(3)) / 100.0f) * box.h : Float.parseFloat(tm.group(3));
-            }
-            Matcher sm = Pattern.compile("scale\\(\\s*(-?[0-9.]+)(?:\\s*,\\s*(-?[0-9.]+))?\\s*\\)").matcher(ht);
-            if (sm.find()) {
-                hsx = Float.parseFloat(sm.group(1));
-                hsy = sm.group(2) != null ? Float.parseFloat(sm.group(2)) : hsx;
-            }
-            Matcher rm = Pattern.compile("rotate\\(\\s*(-?[0-9.]+)(deg|rad)?\\s*\\)").matcher(ht);
-            if (rm.find()) {
-                float val = Float.parseFloat(rm.group(1));
-                if ("rad".equals(rm.group(2))) val = (float) Math.toDegrees(val);
-                hrot = val;
-            }
-        }
-        if (box.style.containsKey("hover-color")) {
-            hc = CssParser.parseColor(box.style.get("hover-color"));
-            hasHover = true;
-        }
-        if (box.style.containsKey("hover-background") || box.style.containsKey("hover-background-color")) {
-            hbgc = CssParser.parseColor(box.style.getOrDefault("hover-background", box.style.get("hover-background-color")));
-            hasHover = true;
-        }
-
-        String hoverStr = "";
-        if (hasHover)
-            hoverStr = "@@HOVER@@" + hop + ":" + htx + ":" + hty + ":" + hsx + ":" + hsy + ":" + hrot + ":" + hc + ":" + hbgc;
-        String animDef = parseAnimationDef(box.style.get("animation"), box.w, box.h) + hoverStr;
+        String hoverStr = buildPseudoStateDef("hover", "@@HOVER@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
+        String activeStr = buildPseudoStateDef("active", "@@ACTIVE@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
+        String focusStr = buildPseudoStateDef("focus", "@@FOCUS@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
+        String animDef = parseAnimationDef(box.style.get("animation"), box.w, box.h) + hoverStr + activeStr + focusStr;
 
         Map<String, String> anchorEvents = new HashMap<>();
         if (parentId != null) anchorEvents.put("mc-parent", parentId);
@@ -356,6 +377,13 @@ public class UIRenderer {
 
         Map<String, String> partsEvents = new HashMap<>();
         partsEvents.put("mc-parent", id);
+
+        if (gradientDef != null) partsEvents.put("mc-gradient", gradientDef);
+        if (box.node.attrs.containsKey("title")) partsEvents.put("mc-title", box.node.attrs.get("title"));
+        else if (box.node.attrs.containsKey("data-tooltip")) partsEvents.put("mc-title", box.node.attrs.get("data-tooltip"));
+
+        if (box.node.attrs.containsKey("data-sound")) partsEvents.put("data-sound", box.node.attrs.get("data-sound"));
+        if (box.node.attrs.containsKey("data-sound-pitch")) partsEvents.put("data-sound-pitch", box.node.attrs.get("data-sound-pitch"));
 
         String overflowX = box.style.getOrDefault("overflow-x", box.style.getOrDefault("overflow", "visible"));
         String overflowY = box.style.getOrDefault("overflow-y", box.style.getOrDefault("overflow", "visible"));
@@ -384,11 +412,12 @@ public class UIRenderer {
             if (entry.getKey().toLowerCase().startsWith("on"))
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
         }
-        if (box.node.tag.equals("button") && !partsEvents.containsKey("onclick")) partsEvents.put("onclick", id);
+        if ((box.node.tag.equals("button") || box.node.tag.equals("select")) && !partsEvents.containsKey("onclick"))
+            partsEvents.put("onclick", id);
 
         String baseType = "rect";
 
-        if (!box.inlineFragments.isEmpty() && !box.node.tag.equals("#text") && !box.node.tag.equals("img") && !box.node.tag.equals("input")) {
+        if (!box.inlineFragments.isEmpty() && !box.node.tag.equals("#text") && !box.node.tag.equals("img") && !box.node.tag.equals("input") && !box.node.tag.equals("select") && !box.node.tag.equals("progress")) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
                     addElement(elements, id + "_frag_" + (fragIdCounter++), baseType, frag.x, frag.y, frag.w, frag.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
@@ -457,22 +486,22 @@ public class UIRenderer {
                 addElement(elements, id + "_img", type, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
             }
             case "#text" -> {
+                Map<String, String> baseTextEvents = new HashMap<>(partsEvents);
+                if (box.style.containsKey("font-weight")) baseTextEvents.put("font-weight", box.style.get("font-weight"));
+                if (box.style.containsKey("text-decoration")) baseTextEvents.put("text-decoration", box.style.get("text-decoration"));
+                if (box.style.containsKey("text-shadow") && !"none".equals(box.style.get("text-shadow"))) baseTextEvents.put("text-shadow", "true");
+
                 if (!box.inlineFragments.isEmpty()) {
                     for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                         if (frag.text != null && !frag.text.trim().isEmpty()) {
                             int fontH = (int) (16 * box.fontSize);
-                            Map<String, String> fEvents = new HashMap<>(partsEvents);
-                            if (box.style.containsKey("font-weight"))
-                                fEvents.put("font-weight", box.style.get("font-weight"));
-                            addElement(elements, id + "_txt_" + (fragIdCounter++), "text", frag.x, frag.y, frag.w, fontH, frag.text, color, bgColor, fEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                            addElement(elements, id + "_txt_" + (fragIdCounter++), "text", frag.x, frag.y, frag.w, fontH, frag.text, color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "");
                         }
                     }
                 } else if (box.textLines != null && !box.textLines.isEmpty()) {
                     String align = box.style.getOrDefault("text-align", "left");
-                    Map<String, String> textEvents = new HashMap<>(partsEvents);
+                    Map<String, String> textEvents = new HashMap<>(baseTextEvents);
                     textEvents.put("text-align", align);
-                    if (box.style.containsKey("font-weight"))
-                        textEvents.put("font-weight", box.style.get("font-weight"));
 
                     int lineY = box.y + box.pT + box.bT;
                     int fontH = (int) (16 * box.fontSize);
@@ -499,6 +528,36 @@ public class UIRenderer {
                         addElement(elements, id + "_txt_" + (fragIdCounter++), "text", lineX, lineY, availableW, fontH, line, color, bgColor, textEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "");
                         lineY += lineStep;
                     }
+                }
+            }
+            case "progress" -> {
+                String val = box.node.attrs.getOrDefault("value", "0");
+                String min = box.node.attrs.getOrDefault("min", "0");
+                String max = box.node.attrs.getOrDefault("max", "100");
+                String progressData = val + ":" + min + ":" + max;
+                addElement(elements, id + "_progress", "progress", box.x, box.y, box.w, box.h, progressData, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+            }
+            case "select" -> {
+                String currentVal = box.node.attrs.getOrDefault("value", "");
+                String displayLabel = currentVal;
+                for (HtmlNode child : box.node.children) {
+                    if ("option".equalsIgnoreCase(child.tag)) {
+                        String optVal = child.attrs.getOrDefault("value", child.getTextContent().trim());
+                        if (currentVal.isEmpty() || currentVal.equals(optVal)) {
+                            displayLabel = child.getTextContent().trim();
+                            if (currentVal.isEmpty()) currentVal = optVal;
+                            break;
+                        }
+                    }
+                }
+                int innerX = box.x + bwLeft, innerY = box.y + bwTop;
+                int innerW = Math.max(0, box.w - bwLeft - bwRight), innerH = Math.max(0, box.h - bwTop - bwBottom);
+                if (useRoundedBorder) {
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                    addElement(elements, id + "_select", "select", innerX, innerY, innerW, innerH, displayLabel + " ▾", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                } else {
+                    addElement(elements, id + "_select", "select", box.x, box.y, box.w, box.h, displayLabel + " ▾", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                    if (hasBorder) drawStraightBorders(elements, id, box, rootW, rootH, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft);
                 }
             }
             case "input" -> {

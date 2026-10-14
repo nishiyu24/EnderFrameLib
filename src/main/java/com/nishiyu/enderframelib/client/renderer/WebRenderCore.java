@@ -11,8 +11,8 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -113,14 +113,35 @@ public class WebRenderCore {
         Map<String, UIElement> elementMap = new HashMap<>();
         for (UIElement el : uiElements) elementMap.put(el.id(), el);
 
+        UIElement hoveredTooltipEl = null;
+        String resolvedTooltipText = null;
+
         for (UIElement el : uiElements) {
             if ("node".equals(el.type())) continue;
 
             zOffset += zStep;
             String baseId = ClientWebManager.getBaseNodeId(el.id());
-            boolean isHovered = baseId.equals(hoveredId);
+            boolean isHovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
             boolean isActive = !activePressedId.isEmpty() && baseId.equals(ClientWebManager.getBaseNodeId(activePressedId));
             boolean isFocused = !activeInputId.isEmpty() && baseId.equals(ClientWebManager.getBaseNodeId(activeInputId));
+
+            if (isHovered && resolvedTooltipText == null) {
+                if (el.events() != null && el.events().containsKey("mc-title")) {
+                    String t = el.events().get("mc-title");
+                    if (!"false".equalsIgnoreCase(t) && !t.isEmpty()) {
+                        hoveredTooltipEl = el;
+                        resolvedTooltipText = t;
+                    }
+                } else if (el.type().startsWith("img") && el.text() != null && el.text().startsWith("item:")) {
+                    try {
+                        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(el.text().substring(5)));
+                        if (item != Items.AIR) {
+                            hoveredTooltipEl = el;
+                            resolvedTooltipText = new ItemStack(item).getHoverName().getString();
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
 
             String animSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
             WebAnimator.AnimatedValues anim = WebAnimator.getValues(animSessionId, el, isHovered, isActive, isFocused);
@@ -181,12 +202,30 @@ public class WebRenderCore {
                 }
 
                 if (!"range".equals(el.type())) {
-                    float bgA = ((anim.bgColor() >> 24) & 0xFF) / 255.0f * finalOpacity;
-                    if (bgA > 0) {
-                        VertexConsumer builder = buffer.getBuffer(RenderType.gui());
-                        float r = ((anim.bgColor() >> 16) & 0xFF) / 255.0f, g = ((anim.bgColor() >> 8) & 0xFF) / 255.0f, b = (anim.bgColor() & 0xFF) / 255.0f;
-                        if (rTL > 0 || rTR > 0 || rBR > 0 || rBL > 0) drawRoundedRect(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), rTL, rTR, rBR, rBL, r, g, b, bgA, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                        else drawClippedQuad(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), r, g, b, bgA, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    String gradDef = (el.events() != null) ? el.events().get("mc-gradient") : null;
+                    if (gradDef != null && !isHovered && !isActive) {
+                        String[] gParts = gradDef.split(":");
+                        if (gParts.length >= 3) {
+                            try {
+                                String gDir = gParts[0];
+                                int c1 = Integer.parseInt(gParts[1]);
+                                int c2 = Integer.parseInt(gParts[2]);
+                                VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+                                float x0 = Math.max(el.x(), clipMinX), y0 = Math.max(el.y(), clipMinY);
+                                float x1 = Math.min(el.x() + el.width(), clipMaxX), y1 = Math.min(el.y() + el.height(), clipMaxY);
+                                if (x0 < x1 && y0 < y1) {
+                                    addGradientQuadRaw(builder, poseStack.last().pose(), x0, y0, x1, y1, gDir, c1, c2, finalOpacity, zOffset);
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    } else {
+                        float bgA = ((anim.bgColor() >> 24) & 0xFF) / 255.0f * finalOpacity;
+                        if (bgA > 0) {
+                            VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+                            float r = ((anim.bgColor() >> 16) & 0xFF) / 255.0f, g = ((anim.bgColor() >> 8) & 0xFF) / 255.0f, b = (anim.bgColor() & 0xFF) / 255.0f;
+                            if (rTL > 0 || rTR > 0 || rBR > 0 || rBL > 0) drawRoundedRect(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), rTL, rTR, rBR, rBL, r, g, b, bgA, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                            else drawClippedQuad(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), r, g, b, bgA, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                        }
                     }
                 }
 
@@ -232,14 +271,12 @@ public class WebRenderCore {
                             String playerTarget = src.substring(7).trim();
                             ResourceLocation skinLoc = resolvePlayerSkin(playerTarget);
                             VertexConsumer builder = buffer.getBuffer(RenderType.entityTranslucent(skinLoc));
-                            // 1. 顔ベースレイヤー (UV: 8/64..16/64, 8/64..16/64)
                             drawRoundedTexturedRect(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 8f / 64f, 8f / 64f, 16f / 64f, 16f / 64f, rTL, rTR, rBR, rBL, 1f, 1f, 1f, finalOpacity, zOffset + subZOffset, packedLight, packedOverlay, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                            // 2. 帽子・髪オーバーレイレイヤー (UV: 40/64..48/64, 8/64..16/64)
                             drawRoundedTexturedRect(builder, poseStack.last().pose(), el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 40f / 64f, 8f / 64f, 48f / 64f, 16f / 64f, rTL, rTR, rBR, rBL, 1f, 1f, 1f, finalOpacity, zOffset + subZOffset + 0.001f, packedLight, packedOverlay, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                         } else if (src.startsWith("item:")) {
                             String itemId = src.substring(5);
                             try {
-                                Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
+                                Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
                                 if (item != Items.AIR) {
                                     poseStack.pushPose();
                                     try {
@@ -253,7 +290,7 @@ public class WebRenderCore {
                         } else if (src.startsWith("effect:")) {
                             String effectId = src.substring(7);
                             try {
-                                java.util.Optional<net.minecraft.core.Holder.Reference<net.minecraft.world.effect.MobEffect>> effectOpt = net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT.getHolder(ResourceLocation.parse(effectId));
+                                java.util.Optional<net.minecraft.core.Holder.Reference<net.minecraft.world.effect.MobEffect>> effectOpt = BuiltInRegistries.MOB_EFFECT.getHolder(ResourceLocation.parse(effectId));
                                 if (effectOpt.isPresent()) {
                                     net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = Minecraft.getInstance().getMobEffectTextures().get(effectOpt.get());
                                     VertexConsumer builder = buffer.getBuffer(RenderType.entityTranslucent(sprite.atlasLocation()));
@@ -309,6 +346,9 @@ public class WebRenderCore {
                     if (renderText && textX < maxAllowedX && textY < maxAllowedY) {
                         int newA = (int) (((anim.color() >> 24) & 0xFF) * finalOpacity);
                         if (newA > 0) {
+                            boolean useShadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
+                            String textDeco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
+
                             poseStack.pushPose();
                             try {
                                 if ("input".equals(el.type()) || "select".equals(el.type())) {
@@ -340,7 +380,7 @@ public class WebRenderCore {
                                     }
 
                                     String visibleText = font.plainSubstrByWidth(textToDraw.substring(scrollOffset), (int) availableWidth);
-                                    if (!visibleText.isEmpty()) font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+                                    if (!visibleText.isEmpty()) font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), useShadow, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
 
                                     if (safeCursorPos >= 0 && safeCursorPos >= scrollOffset && (safeCursorPos - scrollOffset) <= visibleText.length()) {
                                         if ((System.currentTimeMillis() / 500) % 2 == 0) {
@@ -355,7 +395,7 @@ public class WebRenderCore {
                                         poseStack.scale(textScale, textScale, 1.0f);
                                         float availableWidth = Math.max(0, Math.min((el.width() - 8.0f) / textScale, (clipMaxX - textX) / textScale));
                                         String visibleText = font.plainSubstrByWidth(textToDraw, (int) availableWidth);
-                                        if (!visibleText.isEmpty()) font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+                                        if (!visibleText.isEmpty()) font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), useShadow, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
                                     } else if (!textToDraw.isEmpty()) {
                                         float availableWidth = Math.max(0, Math.min(el.width() / textScale, (clipMaxX - textX) / textScale));
                                         String visibleText = textToDraw;
@@ -363,13 +403,25 @@ public class WebRenderCore {
                                             int ellipsisW = font.width("...");
                                             visibleText = availableWidth > ellipsisW ? font.plainSubstrByWidth(textToDraw, (int) availableWidth - ellipsisW) + "..." : font.plainSubstrByWidth(textToDraw, (int) availableWidth);
                                         }
-                                        float alignOffsetX = 0, actualTextWidth = font.width(visibleText) * textScale;
+                                        float rawTextW = font.width(visibleText);
+                                        float alignOffsetX = 0, actualTextWidth = rawTextW * textScale;
                                         if ("center".equals(anim.textAlign)) alignOffsetX = Math.max(0, (el.width() - actualTextWidth) / 2.0f);
                                         else if ("right".equals(anim.textAlign)) alignOffsetX = Math.max(0, el.width() - actualTextWidth);
 
                                         poseStack.translate(textX + alignOffsetX, textY + ((16.0f - 9.0f) * textScale / 2.0f), zOffset + subZOffset);
                                         poseStack.scale(textScale, textScale, 1.0f);
-                                        font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+                                        font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), useShadow, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+
+                                        if (textDeco.contains("underline") || textDeco.contains("line-through")) {
+                                            float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
+                                            VertexConsumer lineBuilder = buffer.getBuffer(RenderType.gui());
+                                            if (textDeco.contains("underline")) {
+                                                addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 8.5f, rawTextW, 9.5f, r, g, b, newA / 255.0f, 0.01f);
+                                            }
+                                            if (textDeco.contains("line-through")) {
+                                                addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 4.0f, rawTextW, 5.0f, r, g, b, newA / 255.0f, 0.01f);
+                                            }
+                                        }
                                     }
                                 }
                             } finally { poseStack.popPose(); }
@@ -377,6 +429,86 @@ public class WebRenderCore {
                     }
                 }
             } finally { poseStack.popPose(); }
+        }
+
+        // 最前面にツールチップを描画
+        if (renderText && hoveredTooltipEl != null && resolvedTooltipText != null && !resolvedTooltipText.isEmpty()) {
+            renderTooltipOverlay(poseStack, buffer, font, hoveredTooltipEl, resolvedTooltipText, maxAllowedX, maxAllowedY, zOffset + zStep * 4 + 0.05f, packedLight);
+        }
+    }
+
+    private static void renderTooltipOverlay(PoseStack poseStack, MultiBufferSource buffer, Font font, UIElement target, String tooltipText, float maxW, float maxH, float zPos, int packedLight) {
+        String[] lines = tooltipText.split("\\\\n|\\n");
+        float scale = 1.0f;
+        int maxLineW = 0;
+        for (String line : lines) {
+            maxLineW = Math.max(maxLineW, font.width(line));
+        }
+
+        float boxW = maxLineW * scale + 10;
+        float boxH = lines.length * 11 * scale + 8;
+
+        float tipX = target.x() + (target.width() - boxW) / 2.0f;
+        float tipY = target.y() - boxH - 4.0f;
+        if (tipY < 2.0f) tipY = target.y() + target.height() + 4.0f;
+        tipX = Math.max(2.0f, Math.min(tipX, maxW - boxW - 2.0f));
+        tipY = Math.max(2.0f, Math.min(tipY, maxH - boxH - 2.0f));
+
+        poseStack.pushPose();
+        try {
+            Matrix4f mat = poseStack.last().pose();
+            VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+            // Minecraft標準風ツールチップ背景 (#F0100010) と紫枠線 (#505000FF)
+            addQuadRaw(builder, mat, tipX - 1, tipY - 1, tipX + boxW + 1, tipY + boxH + 1, 0.31f, 0.0f, 1.0f, 0.7f, zPos);
+            addQuadRaw(builder, mat, tipX, tipY, tipX + boxW, tipY + boxH, 0.06f, 0.0f, 0.06f, 0.94f, zPos + 0.002f);
+
+            poseStack.translate(tipX + 5.0f, tipY + 4.0f, zPos + 0.005f);
+            poseStack.scale(scale, scale, 1.0f);
+            for (int i = 0; i < lines.length; i++) {
+                font.drawInBatch(lines[i], 0, i * 11, 0xFFFFFFFF, true, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+            }
+        } finally {
+            poseStack.popPose();
+        }
+    }
+
+    public static void addGradientQuadRaw(VertexConsumer builder, Matrix4f matrix, float minX, float minY, float maxX, float maxY, String dir, int c1, int c2, float opacity, float zOffset) {
+        float a1 = ((c1 >> 24) & 0xFF) / 255.0f * opacity, r1 = ((c1 >> 16) & 0xFF) / 255.0f, g1 = ((c1 >> 8) & 0xFF) / 255.0f, b1 = (c1 & 0xFF) / 255.0f;
+        float a2 = ((c2 >> 24) & 0xFF) / 255.0f * opacity, r2 = ((c2 >> 16) & 0xFF) / 255.0f, g2 = ((c2 >> 8) & 0xFF) / 255.0f, b2 = (c2 & 0xFF) / 255.0f;
+
+        // 頂点順序: 左下(minX, maxY), 右下(maxX, maxY), 右上(maxX, minY), 左上(minX, minY)
+        switch (dir) {
+            case "right" -> {
+                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
+            }
+            case "left" -> {
+                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, minX, minY, zOffset).setColor(r2, g2, b2, a2);
+            }
+            case "top" -> {
+                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, minX, minY, zOffset).setColor(r2, g2, b2, a2);
+            }
+            case "diag" -> {
+                float rm = (r1 + r2) * 0.5f, gm = (g1 + g2) * 0.5f, bm = (b1 + b2) * 0.5f, am = (a1 + a2) * 0.5f;
+                builder.addVertex(matrix, minX, maxY, zOffset).setColor(rm, gm, bm, am);
+                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(rm, gm, bm, am);
+                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
+            }
+            default -> { // "bottom"
+                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r1, g1, b1, a1);
+                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
+            }
         }
     }
 
