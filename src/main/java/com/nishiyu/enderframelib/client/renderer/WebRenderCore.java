@@ -21,10 +21,7 @@ import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WebRenderCore {
@@ -48,11 +45,47 @@ public class WebRenderCore {
         }
         UUID uuid;
         try {
-            uuid = UUID.fromString(target);
+            uuid = UUID.fromString(Objects.requireNonNull(target));
         } catch (IllegalArgumentException e) {
             uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + target).getBytes(StandardCharsets.UTF_8));
         }
-        return mc.getSkinManager().getInsecureSkin(new GameProfile(uuid, target)).texture();
+        return mc.getSkinManager().getInsecureSkin(new GameProfile(uuid, Objects.requireNonNull(target))).texture();
+    }
+
+    /**
+     * 2D GUI描画時にビットマップフォントが半端な倍率で潰れるのを防ぐため、
+     * 物理ウィンドウピクセルに対する倍率が整数または0.5単位に近い場合はスナップさせ、最小サイズも保証する
+     */
+    private static float snapTextScaleFor2D(Matrix4f pose, float rawTextScale, boolean is2D) {
+        if (!is2D) return rawTextScale;
+        float matScale = Math.abs(pose.m00());
+        if (matScale <= 0.0001f) return rawTextScale;
+
+        double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
+        // 物理画面上でのフォント拡大率 (1.0 = マイクラ最小ドット1px = 物理1px)
+        float physicalFontScale = (float) (rawTextScale * matScale * guiScale);
+
+        // 物理1px未満になると確実に文字の線が消えて潰れるため、最低1.0(物理等倍)を下限にする
+        if (physicalFontScale < 1.0f) {
+            return (float) (1.0 / (matScale * guiScale));
+        }
+
+        // 0.5刻み（1.0, 1.5, 2.0, 2.5, 3.0...）に近ければ吸着させてドット欠けを防止
+        float snappedPhys = Math.round(physicalFontScale * 2.0f) / 2.0f;
+        if (Math.abs(physicalFontScale - snappedPhys) < 0.18f) {
+            return (float) (snappedPhys / (matScale * guiScale));
+        }
+        return rawTextScale;
+    }
+
+    /**
+     * 2D GUI描画時にフォントの描画開始座標を物理ピクセルの整数位置へスナップさせる
+     */
+    private static float snapCoordFor2D(float coord, float matScale, boolean is2D) {
+        if (!is2D || matScale <= 0.0001f) return coord;
+        double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
+        double step = matScale * guiScale;
+        return (float) (Math.round(coord * step) / step);
     }
 
     private static void applyTransforms(PoseStack poseStack, UIElement el, String hoveredId, String sessionId, Map<String, UIElement> elementMap, float[] cumulativeOpacity) {
@@ -245,7 +278,7 @@ public class WebRenderCore {
                 if (el.type().startsWith("img")) {
                     if (renderItems && el.text() != null && !el.text().isEmpty()) {
                         String src = el.text();
-                        if (src.startsWith("https://")) {
+                        if (src.startsWith("https://") || src.startsWith("http://")) {
                             WebMediaManager.ImageInfo info = WebMediaManager.getImage(src);
                             if (info != null) {
                                 ResourceLocation texLoc = info.textureId();
@@ -306,39 +339,62 @@ public class WebRenderCore {
                     }
                 } else if ((el.text() != null && !el.text().isEmpty()) || "input".equals(el.type()) || "select".equals(el.type()) || "range".equals(el.type())) {
                     String textToDraw = el.text() == null ? "" : el.text();
-                    float textX = el.x(), textY = el.y(), textScale = el.height() / 12.0f;
+                    float textX = el.x(), textY = el.y();
+
+                    // ★改善: CSSで指定されたfont-size(mc-font-h)を尊重し、input/selectで文字が半分に潰れる問題を解消
+                    float fontH = el.height();
+                    if (el.events() != null && el.events().containsKey("mc-font-h")) {
+                        try { fontH = Float.parseFloat(el.events().get("mc-font-h")); } catch (Exception ignored) {}
+                    }
+                    float textScale = fontH / 12.0f;
+
                     if (textY > clipMaxY - (el.height() * 0.3f) || textY + el.height() < clipMinY + (el.height() * 0.3f)) continue;
 
-                    if ("input".equals(el.type()) || "select".equals(el.type())) {
-                        textScale = (el.height() * 0.5f) / 12.0f;
-                        textX += 4.0f;
-                        textY += (el.height() - (12.0f * textScale)) / 2.0f;
-                    } else if ("range".equals(el.type())) {
-                        float ratio = 0;
-                        if (anim.rangeMax > anim.rangeMin) ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
-                        VertexConsumer builder = buffer.getBuffer(RenderType.gui());
-                        Matrix4f mat = poseStack.last().pose();
-                        float trackH = Math.max(4.0f, el.height() * 0.3f), trackY = el.y() + (el.height() - trackH) / 2.0f, trackRad = trackH / 2.0f;
-                        float thumbRad = Math.max(10.0f, el.height() * 0.8f) / 2.0f, thumbCY = el.y() + el.height() / 2.0f;
-                        float tMinX = el.x() + thumbRad, tMaxX = el.x() + el.width() - thumbRad, tCX = tMinX + ratio * (tMaxX - tMinX);
-                        int pC = anim.color() != 0 ? anim.color() : 0xFF007BFF;
-                        float prA = ((pC >> 24) & 0xFF) / 255.0f * finalOpacity, prR = ((pC >> 16) & 0xFF) / 255.0f, prG = ((pC >> 8) & 0xFF) / 255.0f, prB = (pC & 0xFF) / 255.0f;
-                        if (tCX > el.x()) drawRoundedRect(builder, mat, el.x(), trackY, tCX, trackY + trackH, trackRad, 0, 0, trackRad, prR, prG, prB, prA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                        int rC = anim.bgColor() != 0 ? anim.bgColor() : 0xFFFFFFFF;
-                        float reA = ((rC >> 24) & 0xFF) / 255.0f * finalOpacity, reR = ((rC >> 16) & 0xFF) / 255.0f, reG = ((rC >> 8) & 0xFF) / 255.0f, reB = (rC & 0xFF) / 255.0f;
-                        if (tCX < el.x() + el.width()) drawRoundedRect(builder, mat, tCX, trackY, el.x() + el.width(), trackY + trackH, 0, trackRad, trackRad, 0, reR, reG, reB, reA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                        drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad, thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zOffset + subZOffset + 0.002f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                        continue;
-                    } else if ("toggle".equals(el.type())) {
-                        if ("true".equals(textToDraw)) {
-                            float a = ((anim.color() >> 24) & 0xFF) / 255.0f * finalOpacity;
-                            if (a > 0.0f) {
-                                float pad = el.width() * 0.25f;
-                                float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
-                                drawClippedQuad(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), textX + pad, textY + pad, textX + el.width() - pad, textY + el.height() - pad, r, g, b, a, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                            }
+                    Matrix4f currentPose = poseStack.last().pose();
+                    float matScale = Math.abs(currentPose.m00());
+
+                    switch (el.type()) {
+                        case "input", "select" -> {
+                            // ボックス高さからはみ出さない範囲で、CSSフォントサイズを維持する
+                            float maxAllowedScale = Math.max(0.75f, (el.height() - 4.0f) / 10.0f);
+                            textScale = Math.min(textScale, maxAllowedScale);
+                            textScale = snapTextScaleFor2D(currentPose, textScale, is2DAudio);
+                            textX += 4.0f;
+                            textY += (el.height() - (8.0f * textScale)) / 2.0f;
                         }
-                        continue;
+                        case "range" -> {
+                            float ratio = 0;
+                            if (anim.rangeMax > anim.rangeMin)
+                                ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
+                            VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+                            Matrix4f mat = poseStack.last().pose();
+                            float trackH = Math.max(4.0f, el.height() * 0.3f), trackY = el.y() + (el.height() - trackH) / 2.0f, trackRad = trackH / 2.0f;
+                            float thumbRad = Math.max(10.0f, el.height() * 0.8f) / 2.0f, thumbCY = el.y() + el.height() / 2.0f;
+                            float tMinX = el.x() + thumbRad, tMaxX = el.x() + el.width() - thumbRad, tCX = tMinX + ratio * (tMaxX - tMinX);
+                            int pC = anim.color() != 0 ? anim.color() : 0xFF007BFF;
+                            float prA = ((pC >> 24) & 0xFF) / 255.0f * finalOpacity, prR = ((pC >> 16) & 0xFF) / 255.0f, prG = ((pC >> 8) & 0xFF) / 255.0f, prB = (pC & 0xFF) / 255.0f;
+                            if (tCX > el.x())
+                                drawRoundedRect(builder, mat, el.x(), trackY, tCX, trackY + trackH, trackRad, 0, 0, trackRad, prR, prG, prB, prA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                            int rC = anim.bgColor() != 0 ? anim.bgColor() : 0xFFFFFFFF;
+                            float reA = ((rC >> 24) & 0xFF) / 255.0f * finalOpacity, reR = ((rC >> 16) & 0xFF) / 255.0f, reG = ((rC >> 8) & 0xFF) / 255.0f, reB = (rC & 0xFF) / 255.0f;
+                            if (tCX < el.x() + el.width())
+                                drawRoundedRect(builder, mat, tCX, trackY, el.x() + el.width(), trackY + trackH, 0, trackRad, trackRad, 0, reR, reG, reB, reA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                            drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad, thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zOffset + subZOffset + 0.002f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                            continue;
+                        }
+                        case "toggle" -> {
+                            if ("true".equals(textToDraw)) {
+                                float a = ((anim.color() >> 24) & 0xFF) / 255.0f * finalOpacity;
+                                if (a > 0.0f) {
+                                    float pad = el.width() * 0.25f;
+                                    float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
+                                    drawClippedQuad(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), textX + pad, textY + pad, textX + el.width() - pad, textY + el.height() - pad, r, g, b, a, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                                }
+                            }
+                            continue;
+                        }
+                        case null, default ->
+                                textScale = snapTextScaleFor2D(currentPose, el.height() / 12.0f, is2DAudio);
                     }
 
                     if (!"input".equals(el.type()) && textToDraw.isEmpty()) continue;
@@ -352,7 +408,9 @@ public class WebRenderCore {
                             poseStack.pushPose();
                             try {
                                 if ("input".equals(el.type()) || "select".equals(el.type())) {
-                                    poseStack.translate(textX, textY, zOffset + subZOffset);
+                                    float snappedX = snapCoordFor2D(textX, matScale, is2DAudio);
+                                    float snappedY = snapCoordFor2D(textY, matScale, is2DAudio);
+                                    poseStack.translate(snappedX, snappedY, zOffset + subZOffset);
                                     poseStack.scale(textScale, textScale, 1.0f);
                                     int safeCursorPos = -1;
                                     if ("input".equals(el.type()) && el.id().equals(activeInputId)) {
@@ -386,12 +444,13 @@ public class WebRenderCore {
                                         if ((System.currentTimeMillis() / 500) % 2 == 0) {
                                             float cursorX = font.width(visibleText.substring(0, safeCursorPos - scrollOffset));
                                             float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
-                                            addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), cursorX, -1.0f, cursorX + 1.5f, 10.0f, r, g, b, newA / 255.0f, 0.01f);
+                                            addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), cursorX, -1.0f, cursorX + 1.5f, 9.0f, r, g, b, newA / 255.0f, 0.01f);
                                         }
                                     }
                                 } else {
                                     if (el.id().endsWith("_ph")) {
-                                        poseStack.translate(textX, textY, zOffset + subZOffset);
+                                        float phY = textY + (el.height() - (8.0f * textScale)) / 2.0f;
+                                        poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(phY, matScale, is2DAudio), zOffset + subZOffset);
                                         poseStack.scale(textScale, textScale, 1.0f);
                                         float availableWidth = Math.max(0, Math.min((el.width() - 8.0f) / textScale, (clipMaxX - textX) / textScale));
                                         String visibleText = font.plainSubstrByWidth(textToDraw, (int) availableWidth);
@@ -408,7 +467,10 @@ public class WebRenderCore {
                                         if ("center".equals(anim.textAlign)) alignOffsetX = Math.max(0, (el.width() - actualTextWidth) / 2.0f);
                                         else if ("right".equals(anim.textAlign)) alignOffsetX = Math.max(0, el.width() - actualTextWidth);
 
-                                        poseStack.translate(textX + alignOffsetX, textY + ((16.0f - 9.0f) * textScale / 2.0f), zOffset + subZOffset);
+                                        float drawX = snapCoordFor2D(textX + alignOffsetX, matScale, is2DAudio);
+                                        float drawY = snapCoordFor2D(textY + ((el.height() - (8.0f * textScale)) / 2.0f), matScale, is2DAudio);
+
+                                        poseStack.translate(drawX, drawY, zOffset + subZOffset);
                                         poseStack.scale(textScale, textScale, 1.0f);
                                         font.drawInBatch(visibleText, 0, 0, (newA << 24) | (anim.color() & 0x00FFFFFF), useShadow, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
 
@@ -431,7 +493,6 @@ public class WebRenderCore {
             } finally { poseStack.popPose(); }
         }
 
-        // 最前面にツールチップを描画
         if (renderText && hoveredTooltipEl != null && resolvedTooltipText != null && !resolvedTooltipText.isEmpty()) {
             renderTooltipOverlay(poseStack, buffer, font, hoveredTooltipEl, resolvedTooltipText, maxAllowedX, maxAllowedY, zOffset + zStep * 4 + 0.05f, packedLight);
         }
@@ -458,7 +519,6 @@ public class WebRenderCore {
         try {
             Matrix4f mat = poseStack.last().pose();
             VertexConsumer builder = buffer.getBuffer(RenderType.gui());
-            // Minecraft標準風ツールチップ背景 (#F0100010) と紫枠線 (#505000FF)
             addQuadRaw(builder, mat, tipX - 1, tipY - 1, tipX + boxW + 1, tipY + boxH + 1, 0.31f, 0.0f, 1.0f, 0.7f, zPos);
             addQuadRaw(builder, mat, tipX, tipY, tipX + boxW, tipY + boxH, 0.06f, 0.0f, 0.06f, 0.94f, zPos + 0.002f);
 
@@ -476,7 +536,6 @@ public class WebRenderCore {
         float a1 = ((c1 >> 24) & 0xFF) / 255.0f * opacity, r1 = ((c1 >> 16) & 0xFF) / 255.0f, g1 = ((c1 >> 8) & 0xFF) / 255.0f, b1 = (c1 & 0xFF) / 255.0f;
         float a2 = ((c2 >> 24) & 0xFF) / 255.0f * opacity, r2 = ((c2 >> 16) & 0xFF) / 255.0f, g2 = ((c2 >> 8) & 0xFF) / 255.0f, b2 = (c2 & 0xFF) / 255.0f;
 
-        // 頂点順序: 左下(minX, maxY), 右下(maxX, maxY), 右上(maxX, minY), 左上(minX, minY)
         switch (dir) {
             case "right" -> {
                 builder.addVertex(matrix, minX, maxY, zOffset).setColor(r1, g1, b1, a1);
@@ -500,10 +559,10 @@ public class WebRenderCore {
                 float rm = (r1 + r2) * 0.5f, gm = (g1 + g2) * 0.5f, bm = (b1 + b2) * 0.5f, am = (a1 + a2) * 0.5f;
                 builder.addVertex(matrix, minX, maxY, zOffset).setColor(rm, gm, bm, am);
                 builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(rm, gm, bm, am);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
                 builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
             }
-            default -> { // "bottom"
+            default -> {
                 builder.addVertex(matrix, minX, maxY, zOffset).setColor(r2, g2, b2, a2);
                 builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
                 builder.addVertex(matrix, maxX, minY, zOffset).setColor(r1, g1, b1, a1);

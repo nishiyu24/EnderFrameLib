@@ -385,6 +385,8 @@ public class UIRenderer {
 
         Map<String, String> partsEvents = new HashMap<>();
         partsEvents.put("mc-parent", id);
+        // ★追加: 計算済みフォント高さ(px)を保持し、input/selectの文字潰れを防止する
+        partsEvents.put("mc-font-h", String.valueOf(Math.max(10.0f, 16.0f * box.fontSize)));
 
         if (gradientDef != null) partsEvents.put("mc-gradient", gradientDef);
         if (box.node.attrs.containsKey("title")) partsEvents.put("mc-title", box.node.attrs.get("title"));
@@ -615,8 +617,10 @@ public class UIRenderer {
                         if (hasBorder) drawStraightBorders(elements, id, box, rootW, rootH, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft);
                     }
                     if (hasPlaceholder) {
-                        int phColor = 0xFFAAAAAA, fontH = (int) (16 * box.fontSize), phX = box.x + bwLeft + 4, phY = box.y + (box.h - fontH) / 2;
-                        addElement(elements, id + "_ph", "text", phX, phY, box.w - bwLeft - bwRight, fontH, placeholderText, phColor, 0x00000000, Map.of("mc-parent", id), 0, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                        int phColor = 0xFFAAAAAA, fontH = (int) Math.max(10.0f, 16 * box.fontSize);
+                        int phX = box.x + bwLeft + 4, phY = box.y + (box.h - fontH) / 2;
+                        Map<String, String> phEvents = new HashMap<>(partsEvents);
+                        addElement(elements, id + "_ph", "text", phX, phY, box.w - bwLeft - bwRight, fontH, placeholderText, phColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "");
                     }
                 }
             }
