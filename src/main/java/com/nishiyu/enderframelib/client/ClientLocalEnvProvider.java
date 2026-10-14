@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  */
 public class ClientLocalEnvProvider {
 
-    private static final Pattern LOCAL_PLACEHOLDER = Pattern.compile("\\{\\{@([a-zA-Z0-9_.-]+)\\}\\}");
+    private static final Pattern LOCAL_PLACEHOLDER = Pattern.compile("\\{\\{@([a-zA-Z0-9_.-]+)}}");
     private static final Map<String, Supplier<String>> CUSTOM_PROVIDERS = new ConcurrentHashMap<>();
     private static final Map<String, String> LAST_SNAPSHOT = new ConcurrentHashMap<>();
     private static long lastUpdateTick = 0;

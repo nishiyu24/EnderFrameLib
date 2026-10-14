@@ -115,7 +115,7 @@ public class HtmlTokenizer {
     }
 
     private static void flushText(List<Token> tokens, StringBuilder textBuffer) {
-        if (textBuffer.length() > 0) {
+        if (!textBuffer.isEmpty()) {
             Token t = new Token();
             t.type = Token.Type.TEXT;
             t.text = textBuffer.toString();

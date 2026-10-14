@@ -18,6 +18,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import org.jetbrains.annotations.NotNull;
 import org.lwjgl.openal.AL10;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL21;
@@ -28,6 +29,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -306,7 +308,7 @@ public class WebMediaManager {
                     "--extractor-args", "youtube:player_client=android",
                     "--no-warnings", "-g", youtubeUrl
             ).start();
-            Scanner scanner = new Scanner(process.getInputStream(), "UTF-8");
+            Scanner scanner = new Scanner(process.getInputStream(), StandardCharsets.UTF_8);
             String rawUrl = null;
 
             while (scanner.hasNextLine()) {
@@ -530,12 +532,12 @@ public class WebMediaManager {
             }
         }
 
-        public void load(ResourceManager manager) {}
+        public void load(@NotNull ResourceManager manager) {}
 
         public void setVolume(float volume) {
             RenderSystem.recordRenderCall(() -> {
                 for (int src : this.alSources) {
-                    if (AL10.alIsSource(src)) AL10.alSourcef(src, 4106, Math.max(0.0F, Math.min(volume, 1.0F)));
+                    if (AL10.alIsSource(src)) AL10.alSourcef(src, 4106, Math.clamp(volume, 0.0F, 1.0F));
                 }
             });
         }
@@ -549,7 +551,7 @@ public class WebMediaManager {
                 for (int src : this.alSources) {
                     if (AL10.alIsSource(src)) {
                         if (speed > 0.0F) {
-                            AL10.alSourcef(src, 4099, Math.max(0.1F, Math.min(speed, 2.0F)));
+                            AL10.alSourcef(src, 4099, Math.clamp(speed, 0.1F, 2.0F));
                             if (this.isPaused) AL10.alSourcePause(src);
                             else if (AL10.alGetSourcei(src, 4112) != 4114) AL10.alSourcePlay(src);
                         } else {
@@ -617,8 +619,7 @@ public class WebMediaManager {
                 }
             }
 
-            boolean needsRebuild = false;
-            if (this.is2DEnabled != needs2D) needsRebuild = true;
+            boolean needsRebuild = this.is2DEnabled != needs2D;
             if (!needsRebuild) {
                 if (this.customSpeakers.size() != newSpeakers.size()) {
                     needsRebuild = true;
@@ -650,7 +651,7 @@ public class WebMediaManager {
                     if (this.is2DEnabled) {
                         int src = AL10.alGenSources();
                         AL10.alSourcef(src, 4106, 1.0F);
-                        AL10.alSourcef(src, 4099, Math.max(0.1F, Math.min(this.playbackSpeed, 2.0F)));
+                        AL10.alSourcef(src, 4099, Math.clamp(this.playbackSpeed, 0.1F, 2.0F));
                         this.alSources.add(src);
                     }
 
@@ -658,7 +659,7 @@ public class WebMediaManager {
                         for (int i = 0; i < newSpeakers.size(); i++) {
                             int src = AL10.alGenSources();
                             AL10.alSourcef(src, 4106, 1.0F);
-                            AL10.alSourcef(src, 4099, Math.max(0.1F, Math.min(this.playbackSpeed, 2.0F)));
+                            AL10.alSourcef(src, 4099, Math.clamp(this.playbackSpeed, 0.1F, 2.0F));
                             this.alSources.add(src);
                         }
                     }
@@ -679,7 +680,7 @@ public class WebMediaManager {
 
                 if (timeSinceLast > 500L && this.hasAudio && !this.alSources.isEmpty()) {
                     this.audioReadBuffer.clear();
-                    while (NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) > 0) {
+                    while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) : 0) > 0) {
                         this.audioReadBuffer.clear();
                     }
                     for (int src : this.alSources) {
@@ -694,7 +695,7 @@ public class WebMediaManager {
                 }
 
                 try {
-                    if (NativeVideoAPI.INSTANCE.checkNewFrame(this.nativeHandle) == 1) {
+                    if ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.checkNewFrame(this.nativeHandle) : 0) == 1) {
                         this.pixelBuffer.clear();
                         if (NativeVideoAPI.INSTANCE.copyVideoFrame(this.nativeHandle, this.pixelBuffer) == 1) {
                             RenderSystem.bindTexture(this.getId());
@@ -711,7 +712,7 @@ public class WebMediaManager {
 
                 if (this.hasAudio && !this.isPaused && this.playbackSpeed > 0.0F && this.audioReadBuffer != null) {
                     if (this.alSources.isEmpty()) {
-                        while (NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) > 0) {
+                        while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) : 0) > 0) {
                             this.audioReadBuffer.clear();
                         }
                     } else {

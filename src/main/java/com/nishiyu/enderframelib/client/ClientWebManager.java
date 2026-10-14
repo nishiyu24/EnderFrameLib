@@ -40,11 +40,8 @@ public class ClientWebManager {
     static {
         TextMetrics.clientWidthFunction = (text, scale) -> {
             net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
-            if (font != null) {
-                float adjustedScale = scale * (16.0f / 12.0f);
-                return (int) Math.ceil(font.width(text) * adjustedScale);
-            }
-            return 0;
+            float adjustedScale = scale * (16.0f / 12.0f);
+            return (int) Math.ceil(font.width(text) * adjustedScale);
         };
     }
 

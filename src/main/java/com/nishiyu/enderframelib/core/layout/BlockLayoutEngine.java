@@ -86,7 +86,7 @@ public class BlockLayoutEngine implements LayoutEngine {
             } else {
                 parents.add(b);
                 flattenInlines(b.children, runs, parents);
-                parents.remove(parents.size() - 1);
+                parents.removeLast();
             }
         }
     }
@@ -184,7 +184,7 @@ public class BlockLayoutEngine implements LayoutEngine {
                 lineMaxH = Math.max(lineMaxH, f.h + f.box.mT + f.box.mB + decoH);
             }
 
-            int actualLineW = line.isEmpty() ? 0 : (line.get(line.size() - 1).x + line.get(line.size() - 1).w - line.get(0).x);
+            int actualLineW = line.isEmpty() ? 0 : (line.getLast().x + line.getLast().w - line.getFirst().x);
             int offsetX = startX;
             if (textAlign.equals("center")) offsetX += Math.max(0, (maxW - actualLineW) / 2);
             else if (textAlign.equals("right")) offsetX += Math.max(0, maxW - actualLineW);

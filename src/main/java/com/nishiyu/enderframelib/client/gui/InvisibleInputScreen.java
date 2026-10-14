@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
 public class InvisibleInputScreen extends Screen {
@@ -38,7 +39,7 @@ public class InvisibleInputScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+    public void render(@NotNull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // 背景を暗くせず、3Dスクリーン上のカーソル描画(WebRenderCore)に任せる
     }
 

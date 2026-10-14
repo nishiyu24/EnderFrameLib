@@ -163,7 +163,7 @@ public class DomUtils {
     }
 
     private static String replacePlaceholders(String text, Map<String, String> data) {
-        Matcher m = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)\\}\\}").matcher(text);
+        Matcher m = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)}}").matcher(text);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
             String key = m.group(1);

@@ -35,7 +35,7 @@ public class WebBlockRenderer<T extends BlockEntity & IWebScreenBlockEntity> imp
     }
 
     @Override
-    public void render(T be, float partialTick, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
+    public void render(T be, float partialTick, @NotNull PoseStack poseStack, @NotNull MultiBufferSource buffer, int packedLight, int packedOverlay) {
         if (!be.isMaster()) return;
 
         WebMediaManager.linkScreenToSpeakers(be.getBlockPos(), be.getLinkedSpeakers());

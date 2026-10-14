@@ -451,8 +451,8 @@ public class WebRenderCore {
         float tipX = target.x() + (target.width() - boxW) / 2.0f;
         float tipY = target.y() - boxH - 4.0f;
         if (tipY < 2.0f) tipY = target.y() + target.height() + 4.0f;
-        tipX = Math.max(2.0f, Math.min(tipX, maxW - boxW - 2.0f));
-        tipY = Math.max(2.0f, Math.min(tipY, maxH - boxH - 2.0f));
+        tipX = Math.clamp(tipX, 2.0f, maxW - boxW - 2.0f);
+        tipY = Math.clamp(tipY, 2.0f, maxH - boxH - 2.0f);
 
         poseStack.pushPose();
         try {

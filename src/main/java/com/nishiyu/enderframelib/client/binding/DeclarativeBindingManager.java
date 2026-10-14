@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.client.binding;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import java.util.List;
+import java.util.Objects;
 
 public class DeclarativeBindingManager {
 
@@ -85,7 +86,7 @@ public class DeclarativeBindingManager {
             }
             current = current.parent;
         }
-        return node.attrs.getOrDefault("data-channel", bindKey);
+        return Objects.requireNonNull(node).attrs.getOrDefault("data-channel", bindKey);
     }
 
     private static HtmlNode findTemplateChild(HtmlNode parent) {

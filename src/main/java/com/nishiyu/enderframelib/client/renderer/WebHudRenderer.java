@@ -48,11 +48,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Vector3f;
 
 import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -142,8 +138,7 @@ public class WebHudRenderer {
     }
 
     public static void clearSession(String sessionId) {
-        boolean changed = false;
-        if (hudConfigs.remove(sessionId) != null) changed = true;
+        boolean changed = hudConfigs.remove(sessionId) != null;
         if (sessionId.equals(currentTrackerSessionId)) {
             trackerTemplateNode = null;
             currentTrackerSessionId = null;
@@ -289,10 +284,10 @@ public class WebHudRenderer {
         var bufferSource = mc.renderBuffers().bufferSource();
         boolean renderedAny = false;
 
-        AABB box = mc.player.getBoundingBox().inflate(currentTrackerConfig.radius);
+        AABB box = Objects.requireNonNull(mc.player).getBoundingBox().inflate(currentTrackerConfig.radius);
         Class<? extends LivingEntity> targetClass = getTargetClass(currentTrackerConfig.targetType);
 
-        for (LivingEntity le : mc.level.getEntitiesOfClass(targetClass, box)) {
+        for (LivingEntity le : Objects.requireNonNull(mc.level).getEntitiesOfClass(targetClass, box)) {
             if (le == mc.player) continue;
             if (processAndRenderSingleTracker(poseStack, bufferSource, camera, mc, le, screenKey)) {
                 renderedAny = true;
@@ -325,7 +320,7 @@ public class WebHudRenderer {
                 effectsArray.add(obj);
             }
         }
-        if (effectsArray.size() > 0) {
+        if (!effectsArray.isEmpty()) {
             dataMap.put("active_effects", effectsArray.toString());
             dataMap.put("nbt.active_effects", effectsArray.toString());
         }
@@ -335,11 +330,10 @@ public class WebHudRenderer {
             Map<String, String> flatData = new HashMap<>();
             flattenJsonToMap(syncedData, "", flatData);
 
-            for (String path : currentTrackerConfig.requireNbt) {
-                String searchKey1 = "nbt." + path;
-                String searchKey2 = path;
+            for (String searchKey2 : currentTrackerConfig.requireNbt) {
+                String searchKey1 = "nbt." + searchKey2;
                 String rawValue = flatData.containsKey(searchKey1) ? flatData.get(searchKey1) :
-                        flatData.containsKey(searchKey2) ? flatData.get(searchKey2) : null;
+                        flatData.getOrDefault(searchKey2, null);
 
                 if (rawValue != null) {
                     if ((rawValue.startsWith("[") || rawValue.startsWith("{")) && !rawValue.startsWith("{\"")) {
@@ -350,7 +344,7 @@ public class WebHudRenderer {
                             if (jsonElem != null) rawValue = jsonElem.toString();
                         } catch (Exception ignored) {}
                     }
-                    dataMap.put("nbt." + path, rawValue);
+                    dataMap.put("nbt." + searchKey2, rawValue);
                 }
             }
         }
@@ -627,50 +621,71 @@ public class WebHudRenderer {
     }
 
     private static JsonElement toJsonElement(Object v) {
-        if (v == null) return null;
-        if (v instanceof String s) return new JsonPrimitive(s);
-        if (v instanceof Number n) return new JsonPrimitive(n);
-        if (v instanceof Boolean b) return new JsonPrimitive(b);
-        if (v instanceof ResourceLocation rl) return new JsonPrimitive(rl.toString());
-
-        if (v instanceof CompoundTag tag) {
-            JsonObject obj = new JsonObject();
-            for (String key : tag.getAllKeys()) {
-                JsonElement child = toJsonElement(tag.get(key));
-                if (child != null) obj.add(key, child);
+        switch (v) {
+            case null -> {
+                return null;
             }
-            return obj;
-        }
-        if (v instanceof ListTag listTag) {
-            JsonArray arr = new JsonArray();
-            for (Tag child : listTag) {
-                JsonElement element = toJsonElement(child);
-                if (element != null) arr.add(element);
+            case String s -> {
+                return new JsonPrimitive(s);
             }
-            return arr;
-        }
-        if (v instanceof StringTag strTag) return new JsonPrimitive(strTag.getAsString());
-        if (v instanceof NumericTag numTag) return new JsonPrimitive(numTag.getAsNumber());
-        if (v instanceof ByteTag boolTag) return new JsonPrimitive(boolTag.getAsByte() != 0);
-
-        if (v instanceof Map<?, ?> m) {
-            JsonObject obj = new JsonObject();
-            for (Map.Entry<?, ?> entry : m.entrySet()) {
-                if (entry.getKey() instanceof String strKey) {
-                    JsonElement child = toJsonElement(entry.getValue());
-                    if (child != null) obj.add(strKey, child);
+            case Number n -> {
+                return new JsonPrimitive(n);
+            }
+            case Boolean b -> {
+                return new JsonPrimitive(b);
+            }
+            case ResourceLocation rl -> {
+                return new JsonPrimitive(rl.toString());
+            }
+            case CompoundTag tag -> {
+                JsonObject obj = new JsonObject();
+                for (String key : tag.getAllKeys()) {
+                    JsonElement child = toJsonElement(tag.get(key));
+                    if (child != null) obj.add(key, child);
                 }
+                return obj;
             }
-            return obj;
-        }
-        if (v instanceof Iterable<?> list) {
-            JsonArray arr = new JsonArray();
-            for (Object item : list) {
-                JsonElement child = toJsonElement(item);
-                if (child != null) arr.add(child);
+            case ListTag listTag -> {
+                JsonArray arr = new JsonArray();
+                for (Tag child : listTag) {
+                    JsonElement element = toJsonElement(child);
+                    if (element != null) arr.add(element);
+                }
+                return arr;
             }
-            return arr;
+            case StringTag strTag -> {
+                return new JsonPrimitive(strTag.getAsString());
+            }
+            case NumericTag numTag -> {
+                return new JsonPrimitive(numTag.getAsNumber());
+            }
+            default -> {
+            }
         }
+
+        switch (v) {
+            case Map<?, ?> m -> {
+                JsonObject obj = new JsonObject();
+                for (Map.Entry<?, ?> entry : m.entrySet()) {
+                    if (entry.getKey() instanceof String strKey) {
+                        JsonElement child = toJsonElement(entry.getValue());
+                        if (child != null) obj.add(strKey, child);
+                    }
+                }
+                return obj;
+            }
+            case Iterable<?> list -> {
+                JsonArray arr = new JsonArray();
+                for (Object item : list) {
+                    JsonElement child = toJsonElement(item);
+                    if (child != null) arr.add(child);
+                }
+                return arr;
+            }
+            default -> {
+            }
+        }
+
         if (v.getClass().isArray()) {
             JsonArray arr = new JsonArray();
             int length = Array.getLength(v);

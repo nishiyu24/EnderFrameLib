@@ -34,13 +34,11 @@ public class WebItemRendererHelper {
             ItemStack mainHand = mc.player.getMainHandItem();
             ItemStack offHand = mc.player.getOffhandItem();
 
-            boolean holdingBoth = mainHand != null && offHand != null &&
-                    mainHand.getItem() == stack.getItem() &&
-                    offHand.getItem() == stack.getItem();
+            boolean holdingBoth = mainHand.getItem() == stack.getItem() && offHand.getItem() == stack.getItem();
 
             if (holdingBoth) {
                 if (displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND) zShift = 0.08f;
-                else if (displayContext == ItemDisplayContext.FIRST_PERSON_LEFT_HAND) zShift = -0.08f;
+                else zShift = -0.08f;
             }
             poseStack.translate(0, yShift, zShift);
         }

@@ -305,13 +305,15 @@ public class FlexLayoutEngine implements LayoutEngine {
                 int crossStart = isRow ? innerY : innerX;
                 int childCrossSize = isRow ? (child.h + child.mT + child.mB) : (child.w + child.mL + child.mR);
 
-                if (align.equals("center")) crossStart += Math.max(0, crossSpace - childCrossSize) / 2;
-                else if (align.equals("flex-end")) crossStart += Math.max(0, crossSpace - childCrossSize);
-                else if (align.equals("stretch")) {
-                    if (isRow && !child.style.containsKey("height"))
-                        child.h = Math.max(child.h, crossSpace - child.mT - child.mB);
-                    else if (!isRow && !child.style.containsKey("width"))
-                        child.w = Math.max(child.w, crossSpace - child.mL - child.mR);
+                switch (align) {
+                    case "center" -> crossStart += Math.max(0, crossSpace - childCrossSize) / 2;
+                    case "flex-end" -> crossStart += Math.max(0, crossSpace - childCrossSize);
+                    case "stretch" -> {
+                        if (isRow && !child.style.containsKey("height"))
+                            child.h = Math.max(child.h, crossSpace - child.mT - child.mB);
+                        else if (!isRow && !child.style.containsKey("width"))
+                            child.w = Math.max(child.w, crossSpace - child.mL - child.mR);
+                    }
                 }
                 int childX = isRow ? currentMain : crossStart, childY = isRow ? crossStart : currentMain;
                 child.layout(childX, childY, child.w, child.h, rootW, rootH);

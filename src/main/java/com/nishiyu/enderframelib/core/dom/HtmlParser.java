@@ -2,6 +2,7 @@
 package com.nishiyu.enderframelib.core.dom;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Stack;
 
 public class HtmlParser {
@@ -34,7 +35,7 @@ public class HtmlParser {
 
                     node.attrs.put(key, val);
                     if (key.equals("id")) node.id = val;
-                    else if (key.equals("class")) node.classes.addAll(Arrays.asList(val.split("\\s+")));
+                    else if (key.equals("class")) node.classes.addAll(Arrays.asList(Objects.requireNonNull(val).split("\\s+")));
                 }
 
                 // IDがない要素に一意のIDを割り当て (バインディングの確実なターゲットにするため)

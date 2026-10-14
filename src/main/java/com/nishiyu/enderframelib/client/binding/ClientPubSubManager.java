@@ -13,7 +13,7 @@ public class ClientPubSubManager {
     // パケット送信コールバック
     public static java.util.function.Consumer<String> subscriptionSender = null;
 
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)\\}\\}");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)}}");
     private static final Map<String, Map<String, Object>> clientCache = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> activeSessions = new ConcurrentHashMap<>();
     private static final Map<String, Long> lastRequestTime = new ConcurrentHashMap<>();
