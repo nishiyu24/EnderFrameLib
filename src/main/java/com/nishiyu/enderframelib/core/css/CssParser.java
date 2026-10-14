@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CssParser {
-    private static final Pattern CSS_PATTERN = Pattern.compile("([^{]+)\\{([^}]+)\\}");
+    private static final Pattern CSS_PATTERN = Pattern.compile("([^{]+)\\{([^}]+)}");
 
     public static int parseColor(String c) {
         if (c == null || c.isEmpty()) return 0x00000000;
@@ -157,11 +157,13 @@ public class CssParser {
                     }
                     try {
                         float val = Float.parseFloat(numStr);
-                        if (unit.equals("%")) x = maxPixels * val / 100f;
-                        else if (unit.equals("vw")) x = rootW * val / 100f;
-                        else if (unit.equals("vh")) x = rootH * val / 100f;
-                        else if (unit.equals("rem") || unit.equals("em")) x = 16 * val;
-                        else x = val;
+                        x = switch (unit) {
+                            case "%" -> maxPixels * val / 100f;
+                            case "vw" -> rootW * val / 100f;
+                            case "vh" -> rootH * val / 100f;
+                            case "rem", "em" -> 16 * val;
+                            default -> val;
+                        };
                     } catch (Exception e) {
                         x = 0;
                     }
@@ -322,7 +324,7 @@ public class CssParser {
                 if (i >= len) break;
 
                 if (css.charAt(i) == ';') {
-                    sb.append(css.substring(blockStart, i + 1));
+                    sb.append(css, blockStart, i + 1);
                     i++;
                     continue;
                 }
@@ -347,10 +349,10 @@ public class CssParser {
                         int maxWidth = Integer.parseInt(m.group(1));
                         if (rootW <= maxWidth) conditionMet = true;
                     }
-                    if (conditionMet) sb.append(css.substring(contentStart, i));
+                    if (conditionMet) sb.append(css, contentStart, i);
                 } else {
-                    sb.append(css.substring(blockStart, contentStart - 1));
-                    sb.append("{").append(css.substring(contentStart, i)).append("}");
+                    sb.append(css, blockStart, contentStart - 1);
+                    sb.append("{").append(css, contentStart, i).append("}");
                 }
                 i++;
             } else {
@@ -483,7 +485,7 @@ public class CssParser {
                 }
             }
 
-            Matcher attrMatcher = Pattern.compile("\\[([^\\]=]+)(?:=[\"']?([^\\]\"']+)[\"']?)?\\]").matcher(sel);
+            Matcher attrMatcher = Pattern.compile("\\[([^]=]+)(?:=[\"']?([^]\"']+)[\"']?)?]").matcher(sel);
             while (attrMatcher.find()) {
                 if (attrMatcher.group(2) != null) {
                     requiredAttrs.put(attrMatcher.group(1), attrMatcher.group(2));
@@ -491,7 +493,7 @@ public class CssParser {
                     requiredExistsAttrs.add(attrMatcher.group(1));
                 }
             }
-            sel = sel.replaceAll("\\[.*?\\]", "");
+            sel = sel.replaceAll("\\[.*?]", "");
 
             if (sel.contains("#")) {
                 int hashIdx = sel.indexOf("#");
@@ -550,7 +552,7 @@ public class CssParser {
                         if (child == node) break;
                     }
                 }
-                if (idx != nthChild) return false;
+                return idx == nthChild;
             }
             return true;
         }
@@ -566,8 +568,8 @@ public class CssParser {
         public boolean isAfter = false;
         public Map<String, String> properties = new HashMap<>();
 
-        private List<SelectorToken> tokens = new ArrayList<>();
-        private List<Character> combinators = new ArrayList<>();
+        private final List<SelectorToken> tokens = new ArrayList<>();
+        private final List<Character> combinators = new ArrayList<>();
 
         public StyleRule(String selector) {
             this.specificity = calculateSpecificity(selector);
@@ -586,9 +588,9 @@ public class CssParser {
 
         private void parseSelectorTokens(String sel) {
             sel = sel.replaceAll("\\s+", " ")
-                    .replaceAll(" \\> ", ">").replaceAll(" \\>", ">").replaceAll("\\> ", ">")
+                    .replace(" > ", ">").replace(" >", ">").replace("> ", ">")
                     .replaceAll(" \\+ ", "+").replaceAll(" \\+", "+").replaceAll("\\+ ", "+")
-                    .replaceAll(" \\~ ", "~").replaceAll(" \\~", "~").replaceAll("\\~ ", "~").trim();
+                    .replace(" ~ ", "~").replace(" ~", "~").replace("~ ", "~").trim();
 
             int lastIdx = 0;
             for (int i = 0; i < sel.length(); i++) {

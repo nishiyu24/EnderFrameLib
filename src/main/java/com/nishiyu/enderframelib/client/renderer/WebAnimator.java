@@ -19,7 +19,7 @@ public class WebAnimator {
         if (state.durationMs > 0 && now < state.startTime + state.delayMs + state.durationMs) return true;
         if (state.currentAnimDef != null) {
             if (state.currentAnimDef.infinite) return true;
-            if (now < state.animStartTime + state.currentAnimDef.durationMs) return true;
+            return now < state.animStartTime + state.currentAnimDef.durationMs;
         }
         return false;
     }

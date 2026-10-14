@@ -67,7 +67,7 @@ public class GridLayoutEngine implements LayoutEngine {
                 totalFr += Float.parseFloat(colDefs[i].replace("fr", ""));
             } else {
                 gs.colWidths[i] = CssParser.parseDim(colDefs[i], tentativeInnerW, rootW, rootH);
-                fixedW += gs.colWidths[i];
+                fixedW = (int) (fixedW + gs.colWidths[i]);
             }
         }
         int availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.gap - fixedW);
@@ -169,7 +169,7 @@ public class GridLayoutEngine implements LayoutEngine {
 
         if (box.w == -1) {
             int totalW = 0;
-            for (int c = 0; c < gs.colsCount; c++) totalW += gs.colWidths[c];
+            for (int c = 0; c < gs.colsCount; c++) totalW = (int) (totalW + gs.colWidths[c]);
             totalW += Math.max(0, gs.colsCount - 1) * box.gap;
             box.w = totalW + box.horizontalDecoration();
         }

@@ -7,6 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +31,7 @@ public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, 
     }
 
     @Override
-    public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
 
     public void handle(IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -60,19 +61,34 @@ public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, 
     }
 
     private static void writeValue(FriendlyByteBuf buf, Object value) {
-        if (value == null) { buf.writeByte(0); }
-        else if (value instanceof String s) { buf.writeByte(1); buf.writeUtf(s); }
-        else if (value instanceof Integer i) { buf.writeByte(2); buf.writeVarInt(i); }
-        else if (value instanceof Double d) { buf.writeByte(3); buf.writeDouble(d); }
-        else if (value instanceof Boolean b) { buf.writeByte(4); buf.writeBoolean(b); }
-        else if (value instanceof Map<?, ?> m) {
-            buf.writeByte(5);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) m;
-            writeMap(buf, map);
-        } else {
-            buf.writeByte(1);
-            buf.writeUtf(value.toString());
+        switch (value) {
+            case null -> buf.writeByte(0);
+            case String s -> {
+                buf.writeByte(1);
+                buf.writeUtf(s);
+            }
+            case Integer i -> {
+                buf.writeByte(2);
+                buf.writeVarInt(i);
+            }
+            case Double d -> {
+                buf.writeByte(3);
+                buf.writeDouble(d);
+            }
+            case Boolean b -> {
+                buf.writeByte(4);
+                buf.writeBoolean(b);
+            }
+            case Map<?, ?> m -> {
+                buf.writeByte(5);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = (Map<String, Object>) m;
+                writeMap(buf, map);
+            }
+            default -> {
+                buf.writeByte(1);
+                buf.writeUtf(value.toString());
+            }
         }
     }
 

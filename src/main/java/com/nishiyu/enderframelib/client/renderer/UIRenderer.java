@@ -68,9 +68,17 @@ public class UIRenderer {
     }
 
     private float parseOriginProp(String p) {
-        if (p.equals("left") || p.equals("top")) return 0.0f;
-        if (p.equals("right") || p.equals("bottom")) return 1.0f;
-        if (p.equals("center")) return 0.5f;
+        switch (p) {
+            case "left", "top" -> {
+                return 0.0f;
+            }
+            case "right", "bottom" -> {
+                return 1.0f;
+            }
+            case "center" -> {
+                return 0.5f;
+            }
+        }
         if (p.endsWith("%")) {
             try {
                 return Float.parseFloat(p.replace("%", "")) / 100f;
@@ -90,7 +98,7 @@ public class UIRenderer {
         else if (lower.contains("135deg") || lower.contains("to bottom right")) dir = "diag";
 
         List<Integer> colors = new ArrayList<>();
-        Matcher m = Pattern.compile("(#(?:[0-9a-fA-F]{3,8})|rgba?\\s*\\([^)]+\\)|\\b(?:red|green|lime|blue|yellow|aqua|cyan|magenta|purple|orange|gold|black|white|gray|grey)\\b)").matcher(bgProp);
+        Matcher m = Pattern.compile("(#[0-9a-fA-F]{3,8}|rgba?\\s*\\([^)]+\\)|\\b(?:red|green|lime|blue|yellow|aqua|cyan|magenta|purple|orange|gold|black|white|gray|grey)\\b)").matcher(bgProp);
         while (m.find()) {
             colors.add(CssParser.parseColor(m.group(1)));
         }
@@ -124,10 +132,10 @@ public class UIRenderer {
             float maxBorder = Math.max(Math.max(box.bT, box.bB), Math.max(box.bL, box.bR));
 
             float limit = Math.min(nMaxX - nMinX, nMaxY - nMinY) / 2.0f;
-            float cRTL = Math.min(Math.max(0, radii[0] - maxBorder), limit);
-            float cRTR = Math.min(Math.max(0, radii[1] - maxBorder), limit);
-            float cRBR = Math.min(Math.max(0, radii[2] - maxBorder), limit);
-            float cRBL = Math.min(Math.max(0, radii[3] - maxBorder), limit);
+            float cRTL = Math.clamp(radii[0] - maxBorder, 0, limit);
+            float cRTR = Math.clamp(radii[1] - maxBorder, 0, limit);
+            float cRBR = Math.clamp(radii[2] - maxBorder, 0, limit);
+            float cRBL = Math.clamp(radii[3] - maxBorder, 0, limit);
 
             if (childClip != null) {
                 nMinX = Math.max(childClip[0], nMinX);
@@ -171,7 +179,7 @@ public class UIRenderer {
             int trackH = box.h - box.bT - box.bB - 4;
             int thumbH = Math.max(12, (int) (trackH * (box.h / scrollH)));
             float maxScrollY = Math.max(1f, scrollH - box.h);
-            int thumbY = trackY + (int) ((trackH - thumbH) * Math.min(1f, Math.max(0f, curY / maxScrollY)));
+            int thumbY = trackY + (int) ((trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f));
 
             addElement(elements, box.node.id + "_sb_vt", "rect", trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
             addElement(elements, box.node.id + "_sb_v", "rect", trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
@@ -182,7 +190,7 @@ public class UIRenderer {
             int trackW = box.w - box.bL - box.bR - 4;
             int thumbW = Math.max(12, (int) (trackW * (box.w / scrollW)));
             float maxScrollX = Math.max(1f, scrollW - box.w);
-            int thumbX = trackX + (int) ((trackW - thumbW) * Math.min(1f, Math.max(0f, curX / maxScrollX)));
+            int thumbX = trackX + (int) ((trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f));
 
             addElement(elements, box.node.id + "_sb_ht", "rect", trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");
             addElement(elements, box.node.id + "_sb_h", "rect", thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "");

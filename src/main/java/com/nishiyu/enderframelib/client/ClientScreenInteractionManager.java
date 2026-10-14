@@ -210,8 +210,7 @@ public class ClientScreenInteractionManager {
         boolean isSameDim = mc.level.dimension().location().toString().equals(routerDim);
 
         if (!isSameDim && maxDist != Double.MAX_VALUE) return false;
-        if (isSameDim && maxDist != Double.MAX_VALUE && mc.player.blockPosition().distSqr(routerPos) > (maxDist * maxDist)) return false;
-        return true;
+        return !isSameDim || maxDist == Double.MAX_VALUE || !(mc.player.blockPosition().distSqr(routerPos) > (maxDist * maxDist));
     }
 
     public static void clearDistanceCache(String screenKey) {
