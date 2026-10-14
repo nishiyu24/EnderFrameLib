@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
 import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
 import com.nishiyu.enderframelib.client.renderer.WebAnimator;
+import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomDiffEngine;
@@ -20,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientWebManager {
 
-    // 外部MOD(Lunex等)からフックするためのコールバック群
     public static java.util.function.BiConsumer<String, String> scriptLoaderCallback = null;
     public static java.util.function.Consumer<String> sessionClearedCallback = null;
     public static java.util.function.Consumer<String> applyOverridesCallback = null;
@@ -98,9 +98,6 @@ public class ClientWebManager {
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
     }
 
-    /**
-     * サーバーから送信された軽量な差分パッチ(dom_patch)を適用する
-     */
     public static void handlePatchPacket(String sessionId, CompoundTag data) {
         HtmlNode vRoot = getVirtualRoot(sessionId);
         if (vRoot == null || data == null) return;
@@ -184,6 +181,10 @@ public class ClientWebManager {
 
     public static HtmlNode getVirtualRoot(String sessionId) {
         return VIRTUAL_DOM_CACHE.get(sessionId);
+    }
+
+    public static HtmlNode getTemplateRoot(String sessionId) {
+        return TEMPLATE_DOM_CACHE.get(sessionId);
     }
 
     public static void requestRender(String sessionId) {
@@ -272,6 +273,8 @@ public class ClientWebManager {
         if (renderId.contains("_bg")) return renderId.substring(0, renderId.indexOf("_bg"));
         if (renderId.contains("_ph")) return renderId.substring(0, renderId.indexOf("_ph"));
         if (renderId.contains("_img")) return renderId.substring(0, renderId.indexOf("_img"));
+        if (renderId.contains("_textarea")) return renderId.substring(0, renderId.indexOf("_textarea"));
+        if (renderId.contains("_canvas")) return renderId.substring(0, renderId.indexOf("_canvas"));
         if (renderId.contains("_input")) return renderId.substring(0, renderId.indexOf("_input"));
         if (renderId.contains("_select")) return renderId.substring(0, renderId.indexOf("_select"));
         if (renderId.contains("_progress")) return renderId.substring(0, renderId.indexOf("_progress"));
@@ -438,11 +441,11 @@ public class ClientWebManager {
             UIElement el = elements.get(i);
             if ("node".equals(el.type()) || "text".equals(el.type()) || el.id().endsWith("_shadow") || el.id().contains("_sb_")) continue;
 
-            boolean isInput = el.type().equals("input") || el.type().equals("select") || el.type().equals("range") || el.type().equals("toggle") || el.type().equals("checkbox") || el.type().equals("button") || el.type().equals("a");
+            boolean isInput = el.type().equals("input") || el.type().equals("textarea") || el.type().equals("select") || el.type().equals("range") || el.type().equals("toggle") || el.type().equals("checkbox") || el.type().equals("button") || el.type().equals("a");
             boolean hasInteraction = false;
             if (el.events() != null) {
                 for (String key : el.events().keySet()) {
-                    if (key.startsWith("on") || key.equals("mc-title")) { hasInteraction = true; break; }
+                    if (key.startsWith("on") || key.equals("mc-title") || key.equals("draggable")) { hasInteraction = true; break; }
                 }
             }
             if (el.type().startsWith("img") && el.text() != null && el.text().startsWith("item:")) {
@@ -479,9 +482,10 @@ public class ClientWebManager {
     public static void updateElementTextLocally(String sessionId, String elementId, String newText) {
         HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
         if (target != null) {
-            if (Objects.equals(target.attrs.get("value"), newText)) return;
-            target.attrs.put("value", newText);
-            requestRender(sessionId);
+            if (!Objects.equals(target.attrs.get("value"), newText)) {
+                target.attrs.put("value", newText);
+                requestRender(sessionId);
+            }
         }
         List<UIElement> elements = getElements(sessionId);
         for (int i = 0; i < elements.size(); i++) {
@@ -501,6 +505,7 @@ public class ClientWebManager {
         SESSION_ENV.remove(sessionId);
         DOM_HASH_CACHE.remove(sessionId);
         ClientPubSubManager.clearSession(sessionId);
+        WebCanvasContext.clearSession(sessionId);
         if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
     }
 

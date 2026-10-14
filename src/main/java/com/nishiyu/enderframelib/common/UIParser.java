@@ -1,19 +1,34 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.client.gui.AbstractWebScreen;
 import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UIParser {
+
+    /**
+     * ResourceLocation 形式のパス ("modid:path") からテキストリソースを読み込むリゾルバ
+     */
+    public static Function<String, String> resourceTextResolver = path -> {
+        try {
+            ResourceLocation loc = ResourceLocation.parse(path.trim());
+            return AbstractWebScreen.loadHtmlResource(loc);
+        } catch (Exception e) {
+            return "";
+        }
+    };
 
     public UIParser() {}
 
@@ -29,14 +44,15 @@ public class UIParser {
                     li { display: block; }
                     a { color: #0000ee; text-decoration: none; }
                     b, strong { font-weight: bold; }
-                    img { display: inline-block; object-fit: fill; }
+                    img, canvas { display: inline-block; object-fit: fill; }
                     div, section, main, header, footer, article, nav { display: block; }
                     hr { display: block; border: none; border-top: 1px solid #777777; margin: 10px 0; width: 100%; height: 0; }
                     button { display: inline-block; cursor: pointer; background-color: #f0f0f0; color: #000000; border: 1px solid #767676; padding: 2px 6px; border-radius: 2px; transition: 0.1s; }
                     button:hover { background-color: #e5e5e5; }
                     button:active { background-color: #d5d5d5; border-color: #4f4f4f; transform: scale(0.95); }
-                    input, select { display: inline-block; background-color: #ffffff; color: #000000; border: 1px solid #777777; padding: 4px; box-sizing: border-box; border-radius: 2px; transition: 0.15s; }
-                    input:focus, select:hover { background-color: #f8fbff; }
+                    input, select, textarea { display: inline-block; background-color: #ffffff; color: #000000; border: 1px solid #777777; padding: 4px; box-sizing: border-box; border-radius: 2px; transition: 0.15s; }
+                    textarea { display: block; width: 100%; height: 120px; overflow-y: auto; }
+                    input:focus, select:hover, textarea:focus { background-color: #f8fbff; }
                     input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; padding: 0; border: 2px solid #555555; transition: 0.1s; }
                     input[type="checkbox"]:hover { border-color: #aaaaaa; }
                     input[type="range"] { background-color: #ffffff; color: #007bff; border: none; padding: 0; height: 16px; border-radius: 8px; }
@@ -59,9 +75,27 @@ public class UIParser {
         return sheet;
     }
 
+    private String resolveIncludes(String html, int depth) {
+        if (html == null || depth > 5 || !html.contains("<include")) return html;
+        Matcher incM = Pattern.compile("(?is)<include\\b[^>]*\\bsrc=[\"']([^\"']+)[\"'][^>]*(?:/>|>\\s*</include>)").matcher(html);
+        StringBuilder sb = new StringBuilder();
+        boolean found = false;
+        while (incM.find()) {
+            found = true;
+            String src = incM.group(1);
+            String loaded = resourceTextResolver != null ? resourceTextResolver.apply(src) : "";
+            incM.appendReplacement(sb, Matcher.quoteReplacement(loaded != null ? loaded : ""));
+        }
+        incM.appendTail(sb);
+        return found ? resolveIncludes(sb.toString(), depth + 1) : html;
+    }
+
     public Document parseDocument(String html, String externalCss, int rootW, int rootH) {
-        if (html != null && html.length() > 65536) html = html.substring(0, 65536);
-        if (externalCss != null && externalCss.length() > 32768) externalCss = externalCss.substring(0, 32768);
+        if (html != null) {
+            html = resolveIncludes(html, 0);
+            if (html.length() > 131072) html = html.substring(0, 131072);
+        }
+        if (externalCss != null && externalCss.length() > 65536) externalCss = externalCss.substring(0, 65536);
 
         StringBuilder combinedCss = new StringBuilder();
         if (externalCss != null) combinedCss.append(externalCss).append("\n");
@@ -69,6 +103,19 @@ public class UIParser {
         StringBuilder extractedScript = new StringBuilder();
 
         if (html != null) {
+            // <link rel="stylesheet" href="modid:path/to.css"> の解決
+            Matcher linkM = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>").matcher(html);
+            while (linkM.find()) {
+                String tagFull = linkM.group(0).toLowerCase();
+                if (tagFull.contains("stylesheet") || linkM.group(1).endsWith(".css")) {
+                    String href = linkM.group(1);
+                    String loadedCss = resourceTextResolver != null ? resourceTextResolver.apply(href) : "";
+                    if (loadedCss != null && !loadedCss.isEmpty()) {
+                        combinedCss.append(loadedCss).append("\n");
+                    }
+                }
+            }
+
             Matcher scriptM = Pattern.compile("(?is)<script\\b[^>]*>\\s*(.*?)\\s*</script>").matcher(html);
             while (scriptM.find()) {
                 extractedScript.append(scriptM.group(1)).append("\n");
@@ -117,9 +164,12 @@ public class UIParser {
             box.children.add(buildLayoutTree(beforeNode, style, sheet, env, wasDirty));
         }
 
-        for (HtmlNode child : node.children) {
-            if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
-            box.children.add(buildLayoutTree(child, style, sheet, env, wasDirty));
+        // textarea の場合は内部の #text を個別レイアウトボックス化せず、自身の value として扱う
+        if (!"textarea".equalsIgnoreCase(node.tag)) {
+            for (HtmlNode child : node.children) {
+                if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
+                box.children.add(buildLayoutTree(child, style, sheet, env, wasDirty));
+            }
         }
 
         HtmlNode afterNode = createPseudoElement(node, sheet, false);
