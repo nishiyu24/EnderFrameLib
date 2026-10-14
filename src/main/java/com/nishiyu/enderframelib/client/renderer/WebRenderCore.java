@@ -21,13 +21,18 @@ import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WebRenderCore {
 
-    public static final float RESOLUTION = 32.0f; // ブロック座標に対するピクセル解像度
+    public static final float RESOLUTION = 32.0f;
     public static final Map<String, Integer> inputScrollOffsets = new ConcurrentHashMap<>();
+    public static final Map<String, Integer> textareaCursorIndex = new ConcurrentHashMap<>();
+    public static final Map<String, Integer> textareaScrollRow = new ConcurrentHashMap<>();
     public static String activeInputId = "";
     public static String activePressedId = "";
 
@@ -45,32 +50,25 @@ public class WebRenderCore {
         }
         UUID uuid;
         try {
-            uuid = UUID.fromString(Objects.requireNonNull(target));
+            uuid = UUID.fromString(target);
         } catch (IllegalArgumentException e) {
             uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + target).getBytes(StandardCharsets.UTF_8));
         }
-        return mc.getSkinManager().getInsecureSkin(new GameProfile(uuid, Objects.requireNonNull(target))).texture();
+        return mc.getSkinManager().getInsecureSkin(new GameProfile(uuid, target)).texture();
     }
 
-    /**
-     * 2D GUI描画時にビットマップフォントが半端な倍率で潰れるのを防ぐため、
-     * 物理ウィンドウピクセルに対する倍率が整数または0.5単位に近い場合はスナップさせ、最小サイズも保証する
-     */
     private static float snapTextScaleFor2D(Matrix4f pose, float rawTextScale, boolean is2D) {
         if (!is2D) return rawTextScale;
         float matScale = Math.abs(pose.m00());
         if (matScale <= 0.0001f) return rawTextScale;
 
         double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
-        // 物理画面上でのフォント拡大率 (1.0 = マイクラ最小ドット1px = 物理1px)
         float physicalFontScale = (float) (rawTextScale * matScale * guiScale);
 
-        // 物理1px未満になると確実に文字の線が消えて潰れるため、最低1.0(物理等倍)を下限にする
         if (physicalFontScale < 1.0f) {
             return (float) (1.0 / (matScale * guiScale));
         }
 
-        // 0.5刻み（1.0, 1.5, 2.0, 2.5, 3.0...）に近ければ吸着させてドット欠けを防止
         float snappedPhys = Math.round(physicalFontScale * 2.0f) / 2.0f;
         if (Math.abs(physicalFontScale - snappedPhys) < 0.18f) {
             return (float) (snappedPhys / (matScale * guiScale));
@@ -78,14 +76,27 @@ public class WebRenderCore {
         return rawTextScale;
     }
 
-    /**
-     * 2D GUI描画時にフォントの描画開始座標を物理ピクセルの整数位置へスナップさせる
-     */
     private static float snapCoordFor2D(float coord, float matScale, boolean is2D) {
         if (!is2D || matScale <= 0.0001f) return coord;
         double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
         double step = matScale * guiScale;
         return (float) (Math.round(coord * step) / step);
+    }
+
+    public static String highlightCodeLine(String raw, String syntax) {
+        if (raw == null || raw.isEmpty()) return "";
+        if (!"lua".equalsIgnoreCase(syntax)) return raw;
+        String trimmed = raw.trim();
+        if (trimmed.startsWith("--")) return "§8" + raw + "§r";
+
+        int commentIdx = raw.indexOf("--");
+        String codePart = commentIdx >= 0 ? raw.substring(0, commentIdx) : raw;
+        String commentPart = commentIdx >= 0 ? "§8" + raw.substring(commentIdx) + "§r" : "";
+
+        codePart = codePart.replaceAll("\\b(local|function|return|if|then|else|elseif|end|for|in|do|while|repeat|until|break|and|or|not)\\b", "§d$1§r");
+        codePart = codePart.replaceAll("\\b(true|false|nil)\\b", "§6$1§r");
+        codePart = codePart.replaceAll("\\b(turtle|system|net|ui|math|string|table|os|print|sleep)\\b", "§b$1§r");
+        return codePart + commentPart;
     }
 
     private static void applyTransforms(PoseStack poseStack, UIElement el, String hoveredId, String sessionId, Map<String, UIElement> elementMap, float[] cumulativeOpacity) {
@@ -262,6 +273,23 @@ public class WebRenderCore {
                     }
                 }
 
+                // ★追加: <canvas> の動的2Dベクター描画
+                if ("canvas".equals(el.type())) {
+                    WebCanvasContext ctx = WebCanvasContext.get(animSessionId, baseId);
+                    if (ctx != null) {
+                        ctx.renderCommands(el, poseStack, buffer, finalOpacity, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, packedLight);
+                    }
+                    continue;
+                }
+
+                // ★追加: <textarea> のマルチライン・コードエディタ描画
+                if ("textarea".equals(el.type())) {
+                    if (renderText) {
+                        renderTextareaElement(el, poseStack, buffer, font, anim, finalOpacity, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, is2DAudio, packedLight);
+                    }
+                    continue;
+                }
+
                 if ("progress".equals(el.type())) {
                     float ratio = 0;
                     if (anim.rangeMax > anim.rangeMin) ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
@@ -341,7 +369,6 @@ public class WebRenderCore {
                     String textToDraw = el.text() == null ? "" : el.text();
                     float textX = el.x(), textY = el.y();
 
-                    // ★改善: CSSで指定されたfont-size(mc-font-h)を尊重し、input/selectで文字が半分に潰れる問題を解消
                     float fontH = el.height();
                     if (el.events() != null && el.events().containsKey("mc-font-h")) {
                         try { fontH = Float.parseFloat(el.events().get("mc-font-h")); } catch (Exception ignored) {}
@@ -353,48 +380,40 @@ public class WebRenderCore {
                     Matrix4f currentPose = poseStack.last().pose();
                     float matScale = Math.abs(currentPose.m00());
 
-                    switch (el.type()) {
-                        case "input", "select" -> {
-                            // ボックス高さからはみ出さない範囲で、CSSフォントサイズを維持する
-                            float maxAllowedScale = Math.max(0.75f, (el.height() - 4.0f) / 10.0f);
-                            textScale = Math.min(textScale, maxAllowedScale);
-                            textScale = snapTextScaleFor2D(currentPose, textScale, is2DAudio);
-                            textX += 4.0f;
-                            textY += (el.height() - (8.0f * textScale)) / 2.0f;
-                        }
-                        case "range" -> {
-                            float ratio = 0;
-                            if (anim.rangeMax > anim.rangeMin)
-                                ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
-                            VertexConsumer builder = buffer.getBuffer(RenderType.gui());
-                            Matrix4f mat = poseStack.last().pose();
-                            float trackH = Math.max(4.0f, el.height() * 0.3f), trackY = el.y() + (el.height() - trackH) / 2.0f, trackRad = trackH / 2.0f;
-                            float thumbRad = Math.max(10.0f, el.height() * 0.8f) / 2.0f, thumbCY = el.y() + el.height() / 2.0f;
-                            float tMinX = el.x() + thumbRad, tMaxX = el.x() + el.width() - thumbRad, tCX = tMinX + ratio * (tMaxX - tMinX);
-                            int pC = anim.color() != 0 ? anim.color() : 0xFF007BFF;
-                            float prA = ((pC >> 24) & 0xFF) / 255.0f * finalOpacity, prR = ((pC >> 16) & 0xFF) / 255.0f, prG = ((pC >> 8) & 0xFF) / 255.0f, prB = (pC & 0xFF) / 255.0f;
-                            if (tCX > el.x())
-                                drawRoundedRect(builder, mat, el.x(), trackY, tCX, trackY + trackH, trackRad, 0, 0, trackRad, prR, prG, prB, prA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                            int rC = anim.bgColor() != 0 ? anim.bgColor() : 0xFFFFFFFF;
-                            float reA = ((rC >> 24) & 0xFF) / 255.0f * finalOpacity, reR = ((rC >> 16) & 0xFF) / 255.0f, reG = ((rC >> 8) & 0xFF) / 255.0f, reB = (rC & 0xFF) / 255.0f;
-                            if (tCX < el.x() + el.width())
-                                drawRoundedRect(builder, mat, tCX, trackY, el.x() + el.width(), trackY + trackH, 0, trackRad, trackRad, 0, reR, reG, reB, reA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                            drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad, thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zOffset + subZOffset + 0.002f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                            continue;
-                        }
-                        case "toggle" -> {
-                            if ("true".equals(textToDraw)) {
-                                float a = ((anim.color() >> 24) & 0xFF) / 255.0f * finalOpacity;
-                                if (a > 0.0f) {
-                                    float pad = el.width() * 0.25f;
-                                    float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
-                                    drawClippedQuad(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), textX + pad, textY + pad, textX + el.width() - pad, textY + el.height() - pad, r, g, b, a, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                                }
+                    if ("input".equals(el.type()) || "select".equals(el.type())) {
+                        float maxAllowedScale = Math.max(0.75f, (el.height() - 4.0f) / 10.0f);
+                        textScale = Math.min(textScale, maxAllowedScale);
+                        textScale = snapTextScaleFor2D(currentPose, textScale, is2DAudio);
+                        textX += 4.0f;
+                        textY += (el.height() - (8.0f * textScale)) / 2.0f;
+                    } else if ("range".equals(el.type())) {
+                        float ratio = 0;
+                        if (anim.rangeMax > anim.rangeMin) ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
+                        VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+                        Matrix4f mat = poseStack.last().pose();
+                        float trackH = Math.max(4.0f, el.height() * 0.3f), trackY = el.y() + (el.height() - trackH) / 2.0f, trackRad = trackH / 2.0f;
+                        float thumbRad = Math.max(10.0f, el.height() * 0.8f) / 2.0f, thumbCY = el.y() + el.height() / 2.0f;
+                        float tMinX = el.x() + thumbRad, tMaxX = el.x() + el.width() - thumbRad, tCX = tMinX + ratio * (tMaxX - tMinX);
+                        int pC = anim.color() != 0 ? anim.color() : 0xFF007BFF;
+                        float prA = ((pC >> 24) & 0xFF) / 255.0f * finalOpacity, prR = ((pC >> 16) & 0xFF) / 255.0f, prG = ((pC >> 8) & 0xFF) / 255.0f, prB = (pC & 0xFF) / 255.0f;
+                        if (tCX > el.x()) drawRoundedRect(builder, mat, el.x(), trackY, tCX, trackY + trackH, trackRad, 0, 0, trackRad, prR, prG, prB, prA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                        int rC = anim.bgColor() != 0 ? anim.bgColor() : 0xFFFFFFFF;
+                        float reA = ((rC >> 24) & 0xFF) / 255.0f * finalOpacity, reR = ((rC >> 16) & 0xFF) / 255.0f, reG = ((rC >> 8) & 0xFF) / 255.0f, reB = (rC & 0xFF) / 255.0f;
+                        if (tCX < el.x() + el.width()) drawRoundedRect(builder, mat, tCX, trackY, el.x() + el.width(), trackY + trackH, 0, trackRad, trackRad, 0, reR, reG, reB, reA, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                        drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad, thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zOffset + subZOffset + 0.002f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                        continue;
+                    } else if ("toggle".equals(el.type())) {
+                        if ("true".equals(textToDraw)) {
+                            float a = ((anim.color() >> 24) & 0xFF) / 255.0f * finalOpacity;
+                            if (a > 0.0f) {
+                                float pad = el.width() * 0.25f;
+                                float r = ((anim.color() >> 16) & 0xFF) / 255.0f, g = ((anim.color() >> 8) & 0xFF) / 255.0f, b = (anim.color() & 0xFF) / 255.0f;
+                                drawClippedQuad(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), textX + pad, textY + pad, textX + el.width() - pad, textY + el.height() - pad, r, g, b, a, zOffset + subZOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                             }
-                            continue;
                         }
-                        case null, default ->
-                                textScale = snapTextScaleFor2D(currentPose, el.height() / 12.0f, is2DAudio);
+                        continue;
+                    } else {
+                        textScale = snapTextScaleFor2D(currentPose, el.height() / 12.0f, is2DAudio);
                     }
 
                     if (!"input".equals(el.type()) && textToDraw.isEmpty()) continue;
@@ -498,6 +517,106 @@ public class WebRenderCore {
         }
     }
 
+    private static void renderTextareaElement(
+            UIElement el, PoseStack poseStack, MultiBufferSource buffer, Font font,
+            WebAnimator.AnimatedValues anim, float finalOpacity, float zPos,
+            float clipMinX, float clipMinY, float clipMaxX, float clipMaxY, boolean is2D, int packedLight
+    ) {
+        String fullText = el.text() != null ? el.text() : "";
+        String[] lines = fullText.replace("\r\n", "\n").split("\n", -1);
+
+        float fontH = 12.0f;
+        if (el.events() != null && el.events().containsKey("mc-font-h")) {
+            try { fontH = Float.parseFloat(el.events().get("mc-font-h")); } catch (Exception ignored) {}
+        }
+        Matrix4f mat = poseStack.last().pose();
+        float matScale = Math.abs(mat.m00());
+        float textScale = snapTextScaleFor2D(mat, fontH / 12.0f, is2D);
+        float lineHeight = Math.max(12.0f * textScale, 11.0f);
+
+        String syntax = el.events() != null ? el.events().getOrDefault("data-syntax", "") : "";
+        boolean showLineNums = "lua".equalsIgnoreCase(syntax) || (el.events() != null && "true".equalsIgnoreCase(el.events().get("data-line-numbers")));
+        float gutterW = showLineNums ? 28.0f * textScale : 4.0f;
+
+        boolean isFocused = el.id().equals(activeInputId);
+        int cursorIdx = Math.clamp(textareaCursorIndex.getOrDefault(el.id(), fullText.length()), 0, fullText.length());
+
+        // カーソルがある行(cursorRow)と列(cursorCol)を算出
+        int cursorRow = 0, cursorCol = 0, charAccum = 0;
+        for (int i = 0; i < lines.length; i++) {
+            int len = lines[i].length();
+            if (cursorIdx <= charAccum + len) {
+                cursorRow = i;
+                cursorCol = cursorIdx - charAccum;
+                break;
+            }
+            charAccum += len + 1;
+        }
+
+        int maxVisibleRows = Math.max(1, (int) ((el.height() - 8.0f) / lineHeight));
+        int scrollRow = textareaScrollRow.getOrDefault(el.id(), 0);
+        if (isFocused) {
+            if (cursorRow < scrollRow) scrollRow = cursorRow;
+            else if (cursorRow >= scrollRow + maxVisibleRows) scrollRow = cursorRow - maxVisibleRows + 1;
+        }
+        scrollRow = Math.clamp(scrollRow, 0, Math.max(0, lines.length - maxVisibleRows));
+        textareaScrollRow.put(el.id(), scrollRow);
+
+        // ガター背景とアクティブ行ハイライト
+        VertexConsumer quadBuilder = buffer.getBuffer(RenderType.gui());
+        if (showLineNums) {
+            addQuadRaw(quadBuilder, mat, el.x(), el.y(), el.x() + gutterW - 3.0f, el.y() + el.height(), 0.05f, 0.05f, 0.09f, 0.45f * finalOpacity, zPos);
+        }
+
+        int newA = (int) (((anim.color() >> 24) & 0xFF) * finalOpacity);
+        if (newA <= 0) return;
+        int textColor = (newA << 24) | (anim.color() & 0x00FFFFFF);
+        int gutterColor = (newA << 24) | 0x585B70;
+        float availW = Math.max(10.0f, (el.width() - gutterW - 6.0f) / textScale);
+
+        for (int i = 0; i < maxVisibleRows; i++) {
+            int rowIdx = scrollRow + i;
+            if (rowIdx >= lines.length) break;
+
+            float rowY = el.y() + 4.0f + i * lineHeight;
+            if (rowY + lineHeight < clipMinY || rowY > clipMaxY) continue;
+
+            if (isFocused && rowIdx == cursorRow) {
+                addQuadRaw(quadBuilder, mat, el.x() + gutterW - 2.0f, rowY - 1.0f, el.x() + el.width() - 2.0f, rowY + lineHeight - 1.0f, 0.35f, 0.45f, 0.75f, 0.18f * finalOpacity, zPos + 0.001f);
+            }
+
+            poseStack.pushPose();
+            try {
+                float snappedY = snapCoordFor2D(rowY, matScale, is2D);
+                if (showLineNums) {
+                    poseStack.pushPose();
+                    poseStack.translate(snapCoordFor2D(el.x() + 4.0f, matScale, is2D), snappedY, zPos + 0.002f);
+                    poseStack.scale(textScale, textScale, 1.0f);
+                    font.drawInBatch(String.valueOf(rowIdx + 1), 0, 0, gutterColor, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+                    poseStack.popPose();
+                }
+
+                String rawLine = lines[rowIdx];
+                String visibleRaw = font.plainSubstrByWidth(rawLine, (int) availW);
+                String colored = highlightCodeLine(visibleRaw, syntax);
+
+                poseStack.translate(snapCoordFor2D(el.x() + gutterW + 2.0f, matScale, is2D), snappedY, zPos + 0.002f);
+                poseStack.scale(textScale, textScale, 1.0f);
+                if (!colored.isEmpty()) {
+                    font.drawInBatch(colored, 0, 0, textColor, false, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
+                }
+
+                if (isFocused && rowIdx == cursorRow && (System.currentTimeMillis() / 500) % 2 == 0) {
+                    int safeCol = Math.clamp(cursorCol, 0, visibleRaw.length());
+                    float curX = font.width(visibleRaw.substring(0, safeCol));
+                    addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), curX, -1.0f, curX + 1.5f, 9.0f, 0.54f, 0.71f, 0.98f, finalOpacity, 0.01f);
+                }
+            } finally {
+                poseStack.popPose();
+            }
+        }
+    }
+
     private static void renderTooltipOverlay(PoseStack poseStack, MultiBufferSource buffer, Font font, UIElement target, String tooltipText, float maxW, float maxH, float zPos, int packedLight) {
         String[] lines = tooltipText.split("\\\\n|\\n");
         float scale = 1.0f;
@@ -559,7 +678,7 @@ public class WebRenderCore {
                 float rm = (r1 + r2) * 0.5f, gm = (g1 + g2) * 0.5f, bm = (b1 + b2) * 0.5f, am = (a1 + a2) * 0.5f;
                 builder.addVertex(matrix, minX, maxY, zOffset).setColor(rm, gm, bm, am);
                 builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
+                builder.addVertex(matrix, maxX, minY, zOffset).setColor(rm, gm, bm, am);
                 builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
             }
             default -> {

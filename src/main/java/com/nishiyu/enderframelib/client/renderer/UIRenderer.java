@@ -385,7 +385,7 @@ public class UIRenderer {
 
         Map<String, String> partsEvents = new HashMap<>();
         partsEvents.put("mc-parent", id);
-        // ★追加: 計算済みフォント高さ(px)を保持し、input/selectの文字潰れを防止する
+        // 計算済みフォント高さ(px)を保持し、input/select/textareaの文字潰れを防止する
         partsEvents.put("mc-font-h", String.valueOf(Math.max(10.0f, 16.0f * box.fontSize)));
 
         if (gradientDef != null) partsEvents.put("mc-gradient", gradientDef);
@@ -394,6 +394,7 @@ public class UIRenderer {
 
         if (box.node.attrs.containsKey("data-sound")) partsEvents.put("data-sound", box.node.attrs.get("data-sound"));
         if (box.node.attrs.containsKey("data-sound-pitch")) partsEvents.put("data-sound-pitch", box.node.attrs.get("data-sound-pitch"));
+        if (box.node.attrs.containsKey("draggable")) partsEvents.put("draggable", box.node.attrs.get("draggable"));
 
         String overflowX = box.style.getOrDefault("overflow-x", box.style.getOrDefault("overflow", "visible"));
         String overflowY = box.style.getOrDefault("overflow-y", box.style.getOrDefault("overflow", "visible"));
@@ -427,7 +428,14 @@ public class UIRenderer {
 
         String baseType = "rect";
 
-        if (!box.inlineFragments.isEmpty() && !box.node.tag.equals("#text") && !box.node.tag.equals("img") && !box.node.tag.equals("input") && !box.node.tag.equals("select") && !box.node.tag.equals("progress")) {
+        if (!box.inlineFragments.isEmpty()
+                && !box.node.tag.equals("#text")
+                && !box.node.tag.equals("img")
+                && !box.node.tag.equals("input")
+                && !box.node.tag.equals("select")
+                && !box.node.tag.equals("progress")
+                && !box.node.tag.equals("textarea")
+                && !box.node.tag.equals("canvas")) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
                     addElement(elements, id + "_frag_" + (fragIdCounter++), baseType, frag.x, frag.y, frag.w, frag.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
@@ -546,6 +554,47 @@ public class UIRenderer {
                 String max = box.node.attrs.getOrDefault("max", "100");
                 String progressData = val + ":" + min + ":" + max;
                 addElement(elements, id + "_progress", "progress", box.x, box.y, box.w, box.h, progressData, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+            }
+            case "canvas" -> {
+                if (useRoundedBorder) {
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                } else if (hasBorder) {
+                    drawStraightBorders(elements, id, box, rootW, rootH, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft);
+                }
+                int innerX = box.x + bwLeft;
+                int innerY = box.y + bwTop;
+                int innerW = Math.max(0, box.w - bwLeft - bwRight);
+                int innerH = Math.max(0, box.h - bwTop - bwBottom);
+                addElement(elements, id + "_canvas", "canvas", innerX, innerY, innerW, innerH, id, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+            }
+            case "textarea" -> {
+                String val = box.node.attrs.getOrDefault("value", box.node.getTextContent());
+                int innerX = box.x + bwLeft;
+                int innerY = box.y + bwTop;
+                int innerW = Math.max(0, box.w - bwLeft - bwRight);
+                int innerH = Math.max(0, box.h - bwTop - bwBottom);
+
+                Map<String, String> taEvents = new HashMap<>(partsEvents);
+                int irTL = Math.max(0, radii[0] - Math.max(bwTop, bwLeft));
+                int irTR = Math.max(0, radii[1] - Math.max(bwTop, bwRight));
+                int irBR = Math.max(0, radii[2] - Math.max(bwBottom, bwRight));
+                int irBL = Math.max(0, radii[3] - Math.max(bwBottom, bwLeft));
+                taEvents.put("mc-radius", irTL + "," + irTR + "," + irBR + "," + irBL);
+
+                if (box.node.attrs.containsKey("data-syntax")) {
+                    taEvents.put("data-syntax", box.node.attrs.get("data-syntax"));
+                }
+                if (box.node.attrs.containsKey("data-line-numbers")) {
+                    taEvents.put("data-line-numbers", box.node.attrs.get("data-line-numbers"));
+                }
+
+                if (useRoundedBorder) {
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                    addElement(elements, id + "_textarea", "textarea", innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                } else {
+                    addElement(elements, id + "_textarea", "textarea", box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "");
+                    if (hasBorder) drawStraightBorders(elements, id, box, rootW, rootH, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft);
+                }
             }
             case "select" -> {
                 String currentVal = box.node.attrs.getOrDefault("value", "");
