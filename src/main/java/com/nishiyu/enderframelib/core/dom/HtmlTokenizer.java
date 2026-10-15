@@ -4,8 +4,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class HtmlTokenizer {
+
+    private static final Set<String> RAW_TEXT_TAGS = Set.of("textarea", "script", "style");
 
     public static List<Token> tokenize(String html) {
         List<Token> tokens = new ArrayList<>();
@@ -18,7 +21,7 @@ public class HtmlTokenizer {
         while (i < len) {
             // コメントのスキップ <!-- ... -->
             if (html.startsWith("<!--", i)) {
-                flushText(tokens, textBuffer);
+                flushText(tokens, textBuffer, false);
                 int end = html.indexOf("-->", i + 4);
                 if (end == -1) break;
                 i = end + 3;
@@ -27,7 +30,7 @@ public class HtmlTokenizer {
 
             // DOCTYPE等のスキップ <! ... >
             if (html.startsWith("<!", i)) {
-                flushText(tokens, textBuffer);
+                flushText(tokens, textBuffer, false);
                 int end = html.indexOf(">", i + 2);
                 if (end == -1) break;
                 i = end + 1;
@@ -35,7 +38,7 @@ public class HtmlTokenizer {
             }
 
             if (html.charAt(i) == '<') {
-                flushText(tokens, textBuffer);
+                flushText(tokens, textBuffer, false);
                 i++;
                 boolean isEndTag = false;
                 if (i < len && html.charAt(i) == '/') {
@@ -102,26 +105,73 @@ public class HtmlTokenizer {
                             }
                         }
                     }
-                    t.attrs.put(attrName, attrValue);
+                    t.attrs.put(attrName, decodeHtmlEntities(attrValue));
                 }
                 tokens.add(t);
+
+                // ★プランA: <textarea>, <script>, <style> の内部は閉じタグまで生テキストとして読み取る
+                // （Luaコード等の `if x < 10 then` がタグとして誤認されるのを防ぐ）
+                if (!isEndTag && !t.isSelfClosing && RAW_TEXT_TAGS.contains(tagName)) {
+                    int closePos = findClosingTagIgnoreCase(html, i, tagName);
+                    if (closePos != -1) {
+                        String rawContent = html.substring(i, closePos);
+                        if (!rawContent.isEmpty()) {
+                            Token rawToken = new Token();
+                            rawToken.type = Token.Type.TEXT;
+                            rawToken.text = decodeHtmlEntities(rawContent);
+                            rawToken.isRawText = true;
+                            tokens.add(rawToken);
+                        }
+                        i = closePos;
+                    }
+                }
             } else {
                 textBuffer.append(html.charAt(i));
                 i++;
             }
         }
-        flushText(tokens, textBuffer);
+        flushText(tokens, textBuffer, false);
         return tokens;
     }
 
-    private static void flushText(List<Token> tokens, StringBuilder textBuffer) {
+    private static int findClosingTagIgnoreCase(String html, int fromIndex, String tagName) {
+        String target = "</" + tagName;
+        int targetLen = target.length();
+        int max = html.length() - targetLen;
+        for (int idx = fromIndex; idx <= max; idx++) {
+            if (html.regionMatches(true, idx, target, 0, targetLen)) {
+                int after = idx + targetLen;
+                if (after < html.length()) {
+                    char nextChar = html.charAt(after);
+                    if (nextChar == '>' || Character.isWhitespace(nextChar)) {
+                        return idx;
+                    }
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static void flushText(List<Token> tokens, StringBuilder textBuffer, boolean isRaw) {
         if (!textBuffer.isEmpty()) {
             Token t = new Token();
             t.type = Token.Type.TEXT;
-            t.text = textBuffer.toString();
+            t.text = decodeHtmlEntities(textBuffer.toString());
+            t.isRawText = isRaw;
             tokens.add(t);
             textBuffer.setLength(0);
         }
+    }
+
+    public static String decodeHtmlEntities(String s) {
+        if (s == null || !s.contains("&")) return s;
+        return s.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&apos;", "'")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&");
     }
 
     private static boolean isValidTagNameChar(char c) {
@@ -138,6 +188,7 @@ public class HtmlTokenizer {
         public String text = "";
         public Map<String, String> attrs = new LinkedHashMap<>();
         public boolean isSelfClosing = false;
+        public boolean isRawText = false;
 
         public enum Type {START_TAG, END_TAG, TEXT}
     }

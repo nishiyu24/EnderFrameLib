@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
 import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
 import com.nishiyu.enderframelib.client.renderer.WebAnimator;
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
+import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomDiffEngine;
@@ -45,6 +46,12 @@ public class ClientWebManager {
         };
     }
 
+    public static void recomputeAllLayouts() {
+        for (String sessionId : DOM_CACHE.keySet()) {
+            recomputeLayout(sessionId, LAST_ROOT_W.getOrDefault(sessionId, 1920), LAST_ROOT_H.getOrDefault(sessionId, 1080));
+        }
+    }
+
     public static void handleSyncPacket(String sessionId, CompoundTag tag) {
         if (tag.getBoolean("IsEmpty")) {
             clearSession(sessionId);
@@ -63,8 +70,8 @@ public class ClientWebManager {
             ClientPubSubManager.clearSession(sessionId);
             if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
 
-            int rootW = tag.contains("RootW") ? tag.getInt("RootW") : 1920;
-            int rootH = tag.contains("RootH") ? tag.getInt("RootH") : 1080;
+            int rootW = LAST_ROOT_W.getOrDefault(sessionId, tag.contains("RootW") ? tag.getInt("RootW") : 854);
+            int rootH = LAST_ROOT_H.getOrDefault(sessionId, tag.contains("RootH") ? tag.getInt("RootH") : 480);
 
             LAST_ROOT_W.put(sessionId, rootW);
             LAST_ROOT_H.put(sessionId, rootH);
@@ -85,6 +92,7 @@ public class ClientWebManager {
 
             DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
             ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
+            if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
             DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
 
             Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
@@ -193,7 +201,7 @@ public class ClientWebManager {
 
     public static void processRenderQueue() {
         if (DIRTY_SESSIONS.isEmpty()) return;
-        for (String sessionId : DIRTY_SESSIONS) {
+        for (String sessionId : new ArrayList<>(DIRTY_SESSIONS)) {
             UIParser.Document doc = DOM_CACHE.get(sessionId);
             HtmlNode virtualRoot = VIRTUAL_DOM_CACHE.get(sessionId);
 
@@ -234,6 +242,7 @@ public class ClientWebManager {
 
             List<UIElement> elements = parser.renderDocument(doc, newRootW, newRootH, currentEnv);
             RENDER_CACHE.put(sessionId, elements);
+            if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
         }
     }
 
@@ -275,18 +284,34 @@ public class ClientWebManager {
         if (renderId.contains("_img")) return renderId.substring(0, renderId.indexOf("_img"));
         if (renderId.contains("_textarea")) return renderId.substring(0, renderId.indexOf("_textarea"));
         if (renderId.contains("_canvas")) return renderId.substring(0, renderId.indexOf("_canvas"));
+        if (renderId.contains("_scene")) return renderId.substring(0, renderId.indexOf("_scene"));
         if (renderId.contains("_input")) return renderId.substring(0, renderId.indexOf("_input"));
         if (renderId.contains("_select")) return renderId.substring(0, renderId.indexOf("_select"));
         if (renderId.contains("_progress")) return renderId.substring(0, renderId.indexOf("_progress"));
         return renderId;
     }
 
+    /**
+     * ★修正: "node" アンカーや "_bbg"(枠線背景)、"_ph"(プレースホルダー) ではなく、
+     * 実際のインタラクティブ要素(range / input / select / textarea 等)を優先して返す
+     */
     public static UIElement getElementById(String sessionId, String id) {
         if (id == null) return null;
+        String targetBase = getBaseNodeId(id);
+        UIElement fallback = null;
         for (UIElement el : getElements(sessionId)) {
-            if (id.equals(getBaseNodeId(el.id()))) return el;
+            if (el.id().equals(id) && !"node".equals(el.type())) {
+                return el;
+            }
+            if (targetBase.equals(getBaseNodeId(el.id()))) {
+                if ("node".equals(el.type()) || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow")) {
+                    if (fallback == null) fallback = el;
+                    continue;
+                }
+                return el;
+            }
         }
-        return null;
+        return fallback;
     }
 
     public static void updateNodeAttributeLocally(String sessionId, String elementId, String attrName, String attrValue, boolean remove) {
@@ -441,14 +466,14 @@ public class ClientWebManager {
             UIElement el = elements.get(i);
             if ("node".equals(el.type()) || "text".equals(el.type()) || el.id().endsWith("_shadow") || el.id().contains("_sb_")) continue;
 
-            boolean isInput = el.type().equals("input") || el.type().equals("textarea") || el.type().equals("select") || el.type().equals("range") || el.type().equals("toggle") || el.type().equals("checkbox") || el.type().equals("button") || el.type().equals("a");
+            boolean isInput = el.type().equals("input") || el.type().equals("textarea") || el.type().equals("select") || el.type().equals("range") || el.type().equals("toggle") || el.type().equals("checkbox") || el.type().equals("button") || el.type().equals("a") || el.type().equals("scene");
             boolean hasInteraction = false;
             if (el.events() != null) {
                 for (String key : el.events().keySet()) {
                     if (key.startsWith("on") || key.equals("mc-title") || key.equals("draggable")) { hasInteraction = true; break; }
                 }
             }
-            if (el.type().startsWith("img") && el.text() != null && el.text().startsWith("item:")) {
+            if (el.type().startsWith("img") && el.text() != null && (el.text().startsWith("item:") || el.text().startsWith("fluid:"))) {
                 hasInteraction = true;
             }
             UIElement parentAnchor = elementMap.get(el.events() != null ? el.events().get("mc-parent") : null);
@@ -480,18 +505,39 @@ public class ClientWebManager {
     }
 
     public static void updateElementTextLocally(String sessionId, String elementId, String newText) {
-        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), getBaseNodeId(elementId));
+        String safeText = newText != null ? newText : "";
+        String baseId = getBaseNodeId(elementId);
+
+        HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
-            if (!Objects.equals(target.attrs.get("value"), newText)) {
-                target.attrs.put("value", newText);
+            if (!Objects.equals(target.attrs.get("value"), safeText)) {
+                DomUtils.updateAttribute(target, "value", safeText, false);
                 requestRender(sessionId);
             }
         }
-        List<UIElement> elements = getElements(sessionId);
-        for (int i = 0; i < elements.size(); i++) {
-            UIElement el = elements.get(i);
-            if (el.id().equals(elementId)) {
-                elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), newText, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef()));
+        HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
+        if (tmplTarget != null) {
+            DomUtils.updateAttribute(tmplTarget, "value", safeText, false);
+        }
+        UIParser.Document doc = DOM_CACHE.get(sessionId);
+        if (doc != null && doc.root != null) {
+            HtmlNode docTarget = DomUtils.findNodeById(doc.root, baseId);
+            if (docTarget != null) {
+                DomUtils.updateAttribute(docTarget, "value", safeText, false);
+            }
+        }
+
+        List<UIElement> elements = RENDER_CACHE.get(sessionId);
+        if (elements != null) {
+            String phId = baseId + "_ph";
+            String inputRenderId = baseId + "_input";
+            for (int i = 0; i < elements.size(); i++) {
+                UIElement el = elements.get(i);
+                if (el.id().equals(elementId) || el.id().equals(inputRenderId)) {
+                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), safeText, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                } else if (!safeText.isEmpty() && el.id().equals(phId)) {
+                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), "", el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                }
             }
         }
     }
@@ -506,6 +552,7 @@ public class ClientWebManager {
         DOM_HASH_CACHE.remove(sessionId);
         ClientPubSubManager.clearSession(sessionId);
         WebCanvasContext.clearSession(sessionId);
+        WebSceneContext.clearSession(sessionId);
         if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
     }
 

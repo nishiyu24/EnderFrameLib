@@ -1,4 +1,3 @@
-// 上書き: DomDiffEngine.java
 package com.nishiyu.enderframelib.core.dom;
 
 import java.util.Arrays;
@@ -49,7 +48,9 @@ public class DomDiffEngine {
                 if (key.equals("id")) realNode.id = vVal;
                 if (key.equals("class")) {
                     realNode.classes.clear();
-                    realNode.classes.addAll(Arrays.asList(vVal.split("\\s+")));
+                    if (vVal != null && !vVal.trim().isEmpty()) {
+                        realNode.classes.addAll(Arrays.asList(vVal.trim().split("\\s+")));
+                    }
                 }
                 if (key.equals("hover")) realNode.isHovered = true;
                 if (key.equals("checked")) realNode.isChecked = true;
@@ -63,8 +64,6 @@ public class DomDiffEngine {
 
         // 3. 子要素(Children)のDiff
         int minSize = Math.min(realNode.children.size(), virtualNode.children.size());
-
-        // ★最適化: 構造変更があった場合、+ や ~ セレクタ、nth-childのために後続の兄弟も全てDirtyにする
         boolean siblingDirty = false;
 
         for (int i = 0; i < minSize; i++) {

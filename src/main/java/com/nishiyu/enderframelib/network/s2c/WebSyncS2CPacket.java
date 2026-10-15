@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.network.s2c;
 
-import com.nishiyu.enderframelib.client.ClientWebManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -11,6 +10,16 @@ import org.jetbrains.annotations.NotNull;
 
 public record WebSyncS2CPacket(String sessionId, String action, CompoundTag data) implements CustomPacketPayload {
     public static final Type<WebSyncS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("enderframelib", "web_sync"));
+
+    @FunctionalInterface
+    public interface IClientSyncHandler {
+        void onSync(String sessionId, String action, CompoundTag data);
+    }
+
+    /**
+     * EnderFrameClientInit によってクライアント起動時に注入されるハンドラ
+     */
+    public static IClientSyncHandler clientHandler = null;
 
     public static final StreamCodec<FriendlyByteBuf, WebSyncS2CPacket> STREAM_CODEC = StreamCodec.of(
             (buf, packet) -> packet.write(buf),
@@ -34,10 +43,8 @@ public record WebSyncS2CPacket(String sessionId, String action, CompoundTag data
 
     public void handle(IPayloadContext context) {
         context.enqueueWork(() -> {
-            if (data == null) return;
-            switch (action) {
-                case "dom_sync" -> ClientWebManager.handleSyncPacket(sessionId, data);
-                case "dom_patch" -> ClientWebManager.handlePatchPacket(sessionId, data);
+            if (data != null && clientHandler != null) {
+                clientHandler.onSync(sessionId, action, data);
             }
         });
     }

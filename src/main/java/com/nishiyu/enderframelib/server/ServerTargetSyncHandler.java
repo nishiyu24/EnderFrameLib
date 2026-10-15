@@ -52,9 +52,13 @@ public class ServerTargetSyncHandler {
         }
     }
 
+    public static void removePlayer(UUID uuid) {
+        if (uuid != null) SUBSCRIPTIONS.remove(uuid);
+    }
+
     private static void onPlayerTick(PlayerTickEvent.Post event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        if (player.tickCount % 5 != 0) return; // 5tickごとに同期
+        if (player.tickCount % 5 != 0) return;
 
         ArSubscription sub = SUBSCRIPTIONS.get(player.getUUID());
         if (sub == null) return;

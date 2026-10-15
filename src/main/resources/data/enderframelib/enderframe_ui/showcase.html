@@ -1,0 +1,163 @@
+<link rel="stylesheet" href="enderframelib:theme/dark.css">
+<style>
+    .dashboard {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+        width: 100%;
+        height: 100%;
+    }
+    .header-bar {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(to right, #1e1e2e, #313244);
+        border: 1px solid #89b4fa;
+        border-radius: 8px;
+        padding: 8px 14px;
+    }
+    .grid-main {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        flex: 1;
+    }
+    .badge {
+        background-color: #45475a;
+        color: #a6e3a1;
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 0.85rem;
+    }
+    .sdf-clip-box {
+        height: 76px;
+        border-radius: 10px;
+        border: 1px solid #585b70;
+        background-color: #181825;
+        overflow: auto;
+        padding: 6px;
+    }
+    .row-between {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+</style>
+
+<div class="dashboard" data-channel="test_channel">
+    <!-- 1. ヘッダー (ローカル環境変数 & パッチテスト対象) -->
+    <div class="header-bar" id="header_panel">
+        <div style="display:flex; flex-direction:row; align-items:center; gap:8px;">
+            <img src="item:minecraft:ender_eye" style="width:20px; height:20px;" />
+            <span id="page_title" style="font-size:1.2rem; font-weight:bold; color:#89b4fa;">EnderFrameLib Test Suite</span>
+        </div>
+        <div style="display:flex; flex-direction:row; gap:8px; align-items:center;">
+            <span class="badge">FPS: {{@fps}}</span>
+            <span class="badge">Pos: {{@x}}, {{@y}}, {{@z}}</span>
+            <span class="badge">Time: {{@time}}</span>
+        </div>
+    </div>
+
+    <!-- 2. メイン3カラム Grid -->
+    <div class="grid-main">
+
+        <!-- 左カラム: プレイヤーステータス & PubSubリアルタイム受信 & SDF角丸クリップ -->
+        <div class="mc-panel" style="display:flex; flex-direction:column; gap:8px;">
+            <div class="mc-title">1. Player & PubSub Sync</div>
+
+            <div style="display:flex; flex-direction:row; gap:10px; align-items:center;">
+                <mc-entity entity="@self" style="width:48px; height:64px; background-color:#11111b; border-radius:6px; border:1px solid #45475a;" />
+                <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
+                    <span>Player: <b>{{@player_name}}</b></span>
+                    <mc-bar value="{{@hp}}" max="{{@max_hp}}" color="#f38ba8" label="HP: {{@hp}} / {{@max_hp}}" style="width:100%;" />
+                    <span>Biome: <b style="color:#f9e2af;">{{@biome}}</b></span>
+                </div>
+            </div>
+
+            <!-- PubSub & パッチ確認カード -->
+            <div class="mc-card" style="display:flex; flex-direction:column; gap:4px;">
+                <div class="row-between">
+                    <span>PubSub Msg:</span>
+                    <b id="pubsub_msg" data-bind="text:msg" style="color:#a6e3a1;">Waiting /enderframe publish...</b>
+                </div>
+                <div class="row-between">
+                    <span>Server Power:</span>
+                    <b data-bind="text:power" style="color:#89b4fa;">0</b>
+                </div>
+                <div class="row-between">
+                    <span>Patch Target:</span>
+                    <b id="patch_target" style="color:#f9e2af;">Default Text</b>
+                </div>
+            </div>
+
+            <!-- SDF角丸クリッピング & スクロール検証 -->
+            <div class="mc-title" style="margin-top:2px; font-size:0.95rem;">SDF Rounded Clip (Scroll Here)</div>
+            <div class="sdf-clip-box">
+                <div style="background:linear-gradient(to right, #f38ba8, #89b4fa); padding:6px; border-radius:6px; margin-bottom:4px; color:#11111b; font-weight:bold;">
+                    Gradient Bar 1 (Clipped by SDF)
+                </div>
+                <div style="background-color:#313244; padding:6px; border-radius:6px; margin-bottom:4px;">
+                    Scroll item 2 - Smooth rounded corners!
+                </div>
+                <div style="background-color:#313244; padding:6px; border-radius:6px; margin-bottom:4px;">
+                    Scroll item 3 - 1-Quad GPU SDF rendering
+                </div>
+                <div style="background-color:#45475a; padding:6px; border-radius:6px;">
+                    Scroll item 4 - End of list
+                </div>
+            </div>
+        </div>
+
+        <!-- 中央カラム: <mc-scene> 3Dマルチブロック & 流体・アイテム描画 -->
+        <div class="mc-panel" style="display:flex; flex-direction:column; gap:8px;">
+            <div class="mc-title">2. 3D Scene (Drag / Wheel Zoom)</div>
+
+            <mc-scene id="demo_scene"
+                      auto-rotate="true"
+                      data-blocks="0,0,0:minecraft:iron_block; 1,0,0:minecraft:iron_block; 0,0,1:minecraft:iron_block; 1,0,1:minecraft:iron_block; 0,1,0:minecraft:glass; 1,1,0:minecraft:redstone_lamp; 0,1,1:minecraft:Copper_bulb; 1,1,1:minecraft:blast_furnace; 0,2,0:minecraft:hopper"
+                      style="width:100%; height:145px; background-color:#11111b; border:1px solid #585b70; border-radius:8px;" />
+
+            <div class="mc-title" style="font-size:0.95rem;">Fluids & Items (Hover for Tooltip)</div>
+            <div style="display:flex; flex-direction:row; justify-content:space-evenly; align-items:center; background-color:#181825; padding:8px; border-radius:6px; border:1px solid #45475a;">
+                <mc-fluid fluid="minecraft:water" style="width:32px; height:32px; border-radius:6px; border:1px solid #89b4fa;" />
+                <mc-fluid fluid="minecraft:lava" style="width:32px; height:32px; border-radius:6px; border:1px solid #fab387;" />
+                <img src="item:minecraft:diamond_pickaxe" title="Custom Tooltip:\nDiamond Pickaxe" style="width:28px; height:28px;" />
+                <img src="item:minecraft:golden_apple*16" style="width:28px; height:28px;" />
+                <img src="effect:minecraft:speed" title="Speed Effect Icon" style="width:24px; height:24px;" />
+            </div>
+        </div>
+
+        <!-- 右カラム: フォーム要素 & Luaシンタックスハイライト付き <textarea> -->
+        <div class="mc-panel" style="display:flex; flex-direction:column; gap:8px;">
+            <div class="mc-title">3. Interactive Inputs & Code</div>
+
+            <div style="display:flex; flex-direction:row; gap:6px; align-items:center;">
+                <input id="test_input" type="text" placeholder="Type text here..." style="flex:1;" />
+                <button class="mc-btn mc-btn-primary" onclick="server:test_click:hello">Send RPC</button>
+            </div>
+
+            <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
+                <select id="mode_select" style="width:110px;">
+                    <option value="normal">Mode: Normal</option>
+                    <option value="turbo">Mode: Turbo</option>
+                    <option value="eco">Mode: Eco</option>
+                </select>
+                <input id="test_check" type="checkbox" checked="true" />
+                <input id="test_range" type="range" min="0" max="100" value="75" style="width:80px;" />
+            </div>
+
+            <div class="mc-title" style="font-size:0.95rem;">Lua Code Editor (&lt;textarea&gt;)</div>
+            <textarea id="code_editor" data-syntax="lua" data-line-numbers="true" style="width:100%; height:115px; background-color:#11111b; color:#cdd6f4; border-radius:6px;">-- Click to edit Lua code!
+local power = 100
+if power < 200 then
+  print("System Online")
+  turtle.forward()
+end</textarea>
+        </div>
+
+    </div>
+</div>

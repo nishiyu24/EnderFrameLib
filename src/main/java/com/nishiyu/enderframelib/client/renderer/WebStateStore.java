@@ -6,11 +6,15 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * ローカルGUI画面やWebセッション向けに、リアクティブな状態管理とDOM自動バインディングを提供するストア
+ * ローカルGUI画面やWebセッション向けに、リアクティブな状態管理・双方向バインディング(data-model)・
+ * Supplier自動監視・DOM自動バインディングを提供するストア
  */
 public class WebStateStore {
 
@@ -20,7 +24,14 @@ public class WebStateStore {
     private final Map<String, String> values = new ConcurrentHashMap<>();
     private final Map<String, List<Map<String, String>>> lists = new ConcurrentHashMap<>();
     private final Map<String, List<HtmlNode>> listTemplates = new ConcurrentHashMap<>();
+    private final Map<String, List<Map<String, String>>> lastRenderedLists = new ConcurrentHashMap<>();
     private final Map<String, String> originalShowDisplay = new ConcurrentHashMap<>();
+
+    // リアクティブ Supplier & ウォッチャー
+    private final Map<String, Supplier<?>> boundSuppliers = new ConcurrentHashMap<>();
+    private final Map<String, Supplier<List<Map<String, String>>>> boundListSuppliers = new ConcurrentHashMap<>();
+    private final Map<String, List<Consumer<String>>> watchers = new ConcurrentHashMap<>();
+
     private boolean dirty = false;
 
     public WebStateStore(String sessionId) {
@@ -28,17 +39,105 @@ public class WebStateStore {
     }
 
     public WebStateStore set(String key, Object value) {
+        return setInternal(key, value, true);
+    }
+
+    private WebStateStore setInternal(String key, Object value, boolean notifyWatchers) {
         String strVal = value != null ? String.valueOf(value) : "";
         String prev = values.put(key, strVal);
         if (!Objects.equals(prev, strVal)) {
             dirty = true;
+            if (notifyWatchers) {
+                List<Consumer<String>> list = watchers.get(key);
+                if (list != null) {
+                    for (Consumer<String> listener : list) {
+                        try { listener.accept(strVal); } catch (Exception ignored) {}
+                    }
+                }
+            }
             syncToDom();
         }
         return this;
     }
 
+    /**
+     * 毎フレーム自動的に Supplier を評価し、値が変化したときのみ DOM に差分反映する（CreateのPonder風宣言的バインド）
+     */
+    public WebStateStore bind(String key, Supplier<?> supplier) {
+        if (key != null && supplier != null) {
+            boundSuppliers.put(key, supplier);
+            try {
+                Object initial = supplier.get();
+                setInternal(key, initial, false);
+            } catch (Exception ignored) {}
+        }
+        return this;
+    }
+
+    /**
+     * 毎フレーム自動的にリスト Supplier を評価し、変化したときのみ data-list を再展開する
+     */
+    public WebStateStore bindList(String key, Supplier<List<Map<String, String>>> listSupplier) {
+        if (key != null && listSupplier != null) {
+            boundListSuppliers.put(key, listSupplier);
+            try {
+                setList(key, listSupplier.get());
+            } catch (Exception ignored) {}
+        }
+        return this;
+    }
+
+    /**
+     * 指定キーの値変更（または data-model 入力による変更）を監視するリスナーを登録する
+     */
+    public WebStateStore watch(String key, Consumer<String> listener) {
+        if (key != null && listener != null) {
+            watchers.computeIfAbsent(key, k -> new CopyOnWriteArrayList<>()).add(listener);
+        }
+        return this;
+    }
+
+    public void clearBindings() {
+        boundSuppliers.clear();
+        boundListSuppliers.clear();
+        watchers.clear();
+    }
+
+    /**
+     * UI要素（input / textarea / select / checkbox / range）に data-model="key" が設定されている場合、
+     * ユーザーの入力値をストアへ逆反映し、watchリスナーを発火させる
+     */
+    public void notifyElementModelChanged(String elementId, String newValue) {
+        HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
+        if (vRoot == null || elementId == null) return;
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        HtmlNode node = DomUtils.findNodeById(vRoot, baseId);
+        if (node != null && node.attrs.containsKey("data-model")) {
+            String modelKey = node.attrs.get("data-model").trim();
+            if (!modelKey.isEmpty()) {
+                setInternal(modelKey, newValue, true);
+            }
+        }
+    }
+
     public String get(String key) {
         return values.getOrDefault(key, "");
+    }
+
+    public int getInt(String key, int defaultVal) {
+        try {
+            return Integer.parseInt(values.getOrDefault(key, String.valueOf(defaultVal)).trim());
+        } catch (Exception e) {
+            return defaultVal;
+        }
+    }
+
+    public float getFloat(String key, float defaultVal) {
+        try {
+            return Float.parseFloat(values.getOrDefault(key, String.valueOf(defaultVal)).trim());
+        } catch (Exception e) {
+            return defaultVal;
+        }
     }
 
     public boolean getBoolean(String key) {
@@ -62,17 +161,45 @@ public class WebStateStore {
     public void forceSync() {
         dirty = true;
         listTemplates.clear();
+        lastRenderedLists.clear();
         syncToDom();
     }
 
+    private void pollBoundSuppliers() {
+        for (Map.Entry<String, Supplier<?>> entry : boundSuppliers.entrySet()) {
+            try {
+                Object val = entry.getValue().get();
+                String strVal = val != null ? String.valueOf(val) : "";
+                String prev = values.put(entry.getKey(), strVal);
+                if (!Objects.equals(prev, strVal)) {
+                    dirty = true;
+                }
+            } catch (Exception ignored) {}
+        }
+        for (Map.Entry<String, Supplier<List<Map<String, String>>>> entry : boundListSuppliers.entrySet()) {
+            try {
+                List<Map<String, String>> items = entry.getValue().get();
+                List<Map<String, String>> copy = new ArrayList<>();
+                if (items != null) {
+                    for (Map<String, String> item : items) copy.add(new HashMap<>(item));
+                }
+                List<Map<String, String>> prev = lists.put(entry.getKey(), copy);
+                if (!Objects.equals(prev, copy)) {
+                    dirty = true;
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
     public void syncToDom() {
+        pollBoundSuppliers();
         if (!dirty) return;
         HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
         HtmlNode tmplRoot = ClientWebManager.getTemplateRoot(sessionId);
         if (vRoot == null) return;
 
         dirty = false;
-        if ( applyRecursive(tmplRoot != null ? tmplRoot : vRoot, vRoot, values) ) {
+        if (applyRecursive(tmplRoot != null ? tmplRoot : vRoot, vRoot, values)) {
             ClientWebManager.requestRender(sessionId);
         }
     }
@@ -106,7 +233,37 @@ public class WebStateStore {
             }
         }
 
-        // 3. data-bind="key" または data-bind="attr:key, style.color:colorKey"
+        // 3. data-model="key" によるフォーム要素の双方向バインディング同期
+        if (vNode.attrs.containsKey("data-model")) {
+            String modelKey = vNode.attrs.get("data-model").trim();
+            if (scopeData.containsKey(modelKey)) {
+                String modelVal = scopeData.getOrDefault(modelKey, "");
+                String type = vNode.attrs.getOrDefault("type", "text");
+                if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                    boolean shouldCheck = "true".equalsIgnoreCase(modelVal) || "1".equals(modelVal);
+                    boolean isCurrentlyChecked = vNode.attrs.containsKey("checked");
+                    if (shouldCheck != isCurrentlyChecked) {
+                        DomUtils.updateAttribute(vNode, "checked", shouldCheck ? "true" : null, !shouldCheck);
+                        changed = true;
+                    }
+                } else {
+                    if (!Objects.equals(vNode.attrs.get("value"), modelVal)) {
+                        DomUtils.updateAttribute(vNode, "value", modelVal, false);
+                        changed = true;
+                    }
+                }
+            } else {
+                // 初期値がまだストアにない場合、HTML要素側の初期 value / checked をストアに取り込む
+                String type = vNode.attrs.getOrDefault("type", "text");
+                if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                    values.put(modelKey, Boolean.toString(vNode.attrs.containsKey("checked")));
+                } else {
+                    values.put(modelKey, vNode.attrs.getOrDefault("value", vNode.getTextContent().trim()));
+                }
+            }
+        }
+
+        // 4. data-bind="key" または data-bind="attr:key, style.color:colorKey"
         if (vNode.attrs.containsKey("data-bind")) {
             String bindDef = vNode.attrs.get("data-bind");
             for (String part : bindDef.split(",")) {
@@ -128,8 +285,11 @@ public class WebStateStore {
                         }
                     } else if (target.startsWith("style.")) {
                         String prop = target.substring(6).trim();
+                        String prevStyle = vNode.attrs.getOrDefault("style", "");
                         vNode.setStyleProperty(prop, val);
-                        changed = true;
+                        if (!Objects.equals(prevStyle, vNode.attrs.getOrDefault("style", ""))) {
+                            changed = true;
+                        }
                     } else {
                         if (!Objects.equals(vNode.attrs.get(target), val)) {
                             DomUtils.updateAttribute(vNode, target, val, false);
@@ -140,7 +300,7 @@ public class WebStateStore {
             }
         }
 
-        // 4. data-show="condition" / data-show="!condition"
+        // 5. data-show="condition" / data-show="!condition"
         if (vNode.attrs.containsKey("data-show")) {
             String cond = vNode.attrs.get("data-show").trim();
             boolean invert = cond.startsWith("!");
@@ -161,7 +321,7 @@ public class WebStateStore {
             }
         }
 
-        // 5. data-class="className:conditionKey, otherClass:!conditionKey"
+        // 6. data-class="className:conditionKey, otherClass:!conditionKey"
         if (vNode.attrs.containsKey("data-class")) {
             String clsDef = vNode.attrs.get("data-class");
             for (String item : clsDef.split(",")) {
@@ -187,10 +347,16 @@ public class WebStateStore {
             }
         }
 
-        // 6. data-list="listKey" によるテンプレート反復展開
+        // 7. data-list="listKey" によるテンプレート反復展開
         if (vNode.attrs.containsKey("data-list")) {
             String listKey = vNode.attrs.get("data-list").trim();
             if (lists.containsKey(listKey)) {
+                List<Map<String, String>> itemDataList = lists.get(listKey);
+                List<Map<String, String>> lastList = lastRenderedLists.get(vNode.id);
+                if (Objects.equals(itemDataList, lastList)) {
+                    return changed;
+                }
+
                 List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.id, id -> {
                     List<HtmlNode> extracted = new ArrayList<>();
                     HtmlNode src = origNode != null ? origNode : vNode;
@@ -204,7 +370,6 @@ public class WebStateStore {
 
                 if (!tmplNodes.isEmpty()) {
                     vNode.children.clear();
-                    List<Map<String, String>> itemDataList = lists.get(listKey);
                     int idx = 0;
                     for (Map<String, String> itemMap : itemDataList) {
                         Map<String, String> merged = new HashMap<>(scopeData);
@@ -220,10 +385,12 @@ public class WebStateStore {
                         }
                         idx++;
                     }
+                    lastRenderedLists.put(vNode.id, new ArrayList<>(itemDataList));
                     vNode.markDirty();
                     return true;
                 }
             }
+            return changed;
         }
 
         int vSize = vNode.children.size();

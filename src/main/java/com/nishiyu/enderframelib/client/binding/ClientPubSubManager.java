@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.binding;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 
@@ -92,7 +93,7 @@ public class ClientPubSubManager {
 
                 if (dataList != null) {
                     int scrollY = 0;
-                    try { scrollY = (int)Float.parseFloat(targetNode.attrs.getOrDefault("data-scroll-y", "0")); } catch(Exception ignored){}
+                    try { scrollY = (int) Float.parseFloat(targetNode.attrs.getOrDefault("data-scroll-y", "0")); } catch (Exception ignored) {}
 
                     int estimatedContainerW = 400;
                     int itemsPerRow = Math.max(1, estimatedContainerW / vBind.itemW);
@@ -129,6 +130,7 @@ public class ClientPubSubManager {
                     targetNode.children.add(botSpacer);
 
                     targetNode.attrs.put("data-scroll-h", String.valueOf(totalRows * vBind.itemH));
+                    targetNode.markDirty();
                 }
             }
         }
@@ -144,12 +146,12 @@ public class ClientPubSubManager {
                 String val = getValue(dBind.channel, dBind.path);
 
                 if ("text".equals(dBind.targetAttr)) {
-                    setTextNodeValue(targetNode, val);
+                    targetNode.setTextContent(val);
                 } else if (dBind.targetAttr.startsWith("style.")) {
                     String styleKey = dBind.targetAttr.substring(6);
-                    targetNode.attrs.put("style", targetNode.attrs.getOrDefault("style", "") + ";" + styleKey + ":" + val);
+                    targetNode.setStyleProperty(styleKey, val);
                 } else {
-                    targetNode.attrs.put(dBind.targetAttr, val);
+                    DomUtils.updateAttribute(targetNode, dBind.targetAttr, val, false);
                 }
                 changedAny = true;
             }
@@ -160,27 +162,14 @@ public class ClientPubSubManager {
         }
     }
 
-    private static void setTextNodeValue(HtmlNode node, String text) {
-        for (HtmlNode child : node.children) {
-            if ("#text".equals(child.tag)) {
-                child.text = text;
-                return;
-            }
-        }
-        HtmlNode txtNode = new HtmlNode("#text");
-        txtNode.text = text;
-        txtNode.parent = node;
-        node.children.add(txtNode);
-    }
-
     private static void applyTemplateData(HtmlNode node, Map<String, String> data) {
         if (node.text != null && node.text.contains("{{")) {
             node.text = replacePlaceholders(node.text, data);
         }
-        for (String key : new java.util.ArrayList<>(node.attrs.keySet())) {
+        for (String key : new ArrayList<>(node.attrs.keySet())) {
             String val = node.attrs.get(key);
             if (val != null && val.contains("{{")) {
-                node.attrs.put(key, replacePlaceholders(val, data));
+                DomUtils.updateAttribute(node, key, replacePlaceholders(val, data), false);
             }
         }
         if (node.attrs.containsKey("id")) {
@@ -197,7 +186,7 @@ public class ClientPubSubManager {
         while (m.find()) {
             String key = m.group(1);
             String replacement = data.getOrDefault(key, "");
-            m.appendReplacement(sb, replacement);
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);
         return sb.toString();

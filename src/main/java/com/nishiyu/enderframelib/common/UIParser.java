@@ -1,14 +1,15 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.client.gui.AbstractWebScreen;
-import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import net.minecraft.resources.ResourceLocation;
+import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,19 +19,99 @@ import java.util.regex.Pattern;
 
 public class UIParser {
 
+    @FunctionalInterface
+    public interface ILayoutBoxRenderer {
+        List<UIElement> render(LayoutBox rootBox, int rootW, int rootH, Map<String, String> keyframes);
+    }
+
     /**
-     * ResourceLocation 形式のパス ("modid:path") からテキストリソースを読み込むリゾルバ
+     * クライアント起動時に EnderFrameClientInit から UIRenderer がバインドされる
      */
+    public static ILayoutBoxRenderer clientBoxRenderer = null;
+
+    /**
+     * クライアント起動時に ResourceManager ベースのリゾルバが注入される（サーバー側でもデータパック＆クラスパスから安全に解決）
+     */
+    public static Function<String, String> clientResourceFallback = null;
+
     public static Function<String, String> resourceTextResolver = path -> {
-        try {
-            ResourceLocation loc = ResourceLocation.parse(path.trim());
-            return AbstractWebScreen.loadHtmlResource(loc);
-        } catch (Exception e) {
-            return "";
+        if (path == null) return "";
+        String clean = path.trim();
+        String builtIn = resolveBuiltInTheme(clean);
+        if (builtIn != null) return builtIn;
+
+        // 1. データパックから検索
+        String fromDatapack = EnderFrameDataPackManager.getHtml(clean);
+        if (fromDatapack != null && !fromDatapack.isEmpty()) return fromDatapack;
+
+        // 2. クライアントのリソースパックから検索
+        if (clientResourceFallback != null) {
+            String fromClient = clientResourceFallback.apply(clean);
+            if (fromClient != null && !fromClient.isEmpty()) return fromClient;
         }
+
+        // 3. サーバー/共通のクラスパス(/assets/ または /data/)から検索
+        if (clean.contains(":")) {
+            String[] sp = clean.split(":", 2);
+            try (InputStream is = UIParser.class.getResourceAsStream("/assets/" + sp[0] + "/" + sp[1])) {
+                if (is != null) return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (Exception ignored) {}
+            try (InputStream is = UIParser.class.getResourceAsStream("/data/" + sp[0] + "/enderframe_ui/" + sp[1])) {
+                if (is != null) return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (Exception ignored) {}
+        }
+        return "";
     };
 
     public UIParser() {}
+
+    public static String resolveBuiltInTheme(String href) {
+        if (href == null) return null;
+        String lower = href.toLowerCase().trim();
+        if (lower.endsWith("theme/dark.css") || lower.endsWith("themes/dark.css") || lower.equals("enderframelib:dark.css")) {
+            return """
+                    :root { --bg-base: #1e1e2e; --bg-surface: #313244; --bg-elevated: #45475a; --text-main: #cdd6f4; --text-sub: #a6adc8; --accent: #89b4fa; --success: #a6e3a1; --danger: #f38ba8; --warning: #f9e2af; }
+                    body, html { background-color: #181825; color: #cdd6f4; }
+                    .mc-panel { background-color: #1e1e2e; border: 1px solid #45475a; border-radius: 6px; padding: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
+                    .mc-card { background-color: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 8px; }
+                    .mc-title { color: #89b4fa; font-weight: bold; font-size: 1.1rem; margin-bottom: 6px; }
+                    .mc-btn { background-color: #313244; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; padding: 4px 10px; transition: 0.12s; }
+                    .mc-btn:hover { background-color: #45475a; color: #ffffff; }
+                    .mc-btn:active { transform: scale(0.95); }
+                    .mc-btn-primary { background-color: #89b4fa; color: #11111b; border: 1px solid #b4befe; font-weight: bold; }
+                    .mc-btn-primary:hover { background-color: #b4befe; }
+                    .mc-slot { width: 18px; height: 18px; background-color: #11111b; border: 1px solid #45475a; border-radius: 2px; box-sizing: border-box; transition: 0.1s; }
+                    .mc-slot:hover { background-color: #313244; border-color: #89b4fa; }
+                    """;
+        }
+        if (lower.endsWith("theme/vanilla.css") || lower.endsWith("themes/vanilla.css") || lower.equals("enderframelib:vanilla.css")) {
+            return """
+                    :root { --bg-base: #c6c6c6; --bg-surface: #8b8b8b; --text-main: #3f3f3f; --accent: #5555ff; }
+                    body, html { background-color: transparent; color: #3f3f3f; }
+                    .mc-panel { background-color: #c6c6c6; border-top: 2px solid #ffffff; border-left: 2px solid #ffffff; border-right: 2px solid #555555; border-bottom: 2px solid #555555; border-radius: 2px; padding: 10px; }
+                    .mc-card { background-color: #b0b0b0; border-top: 1px solid #555555; border-left: 1px solid #555555; border-right: 1px solid #ffffff; border-bottom: 1px solid #ffffff; padding: 6px; }
+                    .mc-title { color: #3f3f3f; font-weight: bold; margin-bottom: 4px; }
+                    .mc-btn { background-color: #8b8b8b; color: #ffffff; border-top: 1px solid #ffffff; border-left: 1px solid #ffffff; border-right: 1px solid #373737; border-bottom: 1px solid #373737; padding: 3px 8px; }
+                    .mc-btn:hover { background-color: #a0a0c8; color: #ffffa0; }
+                    .mc-slot { width: 18px; height: 18px; background-color: #8b8b8b; border-top: 1px solid #373737; border-left: 1px solid #373737; border-right: 1px solid #ffffff; border-bottom: 1px solid #ffffff; box-sizing: border-box; }
+                    .mc-slot:hover { background-color: #a8a8a8; }
+                    """;
+        }
+        if (lower.endsWith("theme/brass.css") || lower.endsWith("themes/brass.css") || lower.equals("enderframelib:brass.css")) {
+            return """
+                    :root { --bg-base: #3b2d22; --bg-surface: #261c15; --text-main: #f5e0dc; --accent: #e5c890; }
+                    body, html { background-color: #1c140f; color: #f5e0dc; }
+                    .mc-panel { background-color: #3b2d22; border: 2px solid #c49a45; border-radius: 4px; padding: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+                    .mc-card { background-color: #261c15; border: 1px solid #8c6a2b; border-radius: 3px; padding: 8px; }
+                    .mc-title { color: #f9e2af; font-weight: bold; margin-bottom: 6px; }
+                    .mc-btn { background-color: #5c4328; color: #f9e2af; border: 1px solid #d4af37; border-radius: 3px; padding: 3px 9px; transition: 0.1s; }
+                    .mc-btn:hover { background-color: #7a5935; color: #ffffff; }
+                    .mc-slot { width: 18px; height: 18px; background-color: #1e150f; border: 1px solid #9c7a38; border-radius: 2px; box-sizing: border-box; }
+                    .mc-slot:hover { background-color: #38281c; border-color: #f9e2af; }
+                    """;
+        }
+        return null;
+    }
 
     public CssParser.StyleSheet buildStyleSheet(String authorCss, int rootW) {
         String defaultCss = """
@@ -44,7 +125,7 @@ public class UIParser {
                     li { display: block; }
                     a { color: #0000ee; text-decoration: none; }
                     b, strong { font-weight: bold; }
-                    img, canvas { display: inline-block; object-fit: fill; }
+                    img, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; object-fit: fill; }
                     div, section, main, header, footer, article, nav { display: block; }
                     hr { display: block; border: none; border-top: 1px solid #777777; margin: 10px 0; width: 100%; height: 0; }
                     button { display: inline-block; cursor: pointer; background-color: #f0f0f0; color: #000000; border: 1px solid #767676; padding: 2px 6px; border-radius: 2px; transition: 0.1s; }
@@ -57,6 +138,11 @@ public class UIParser {
                     input[type="checkbox"]:hover { border-color: #aaaaaa; }
                     input[type="range"] { background-color: #ffffff; color: #007bff; border: none; padding: 0; height: 16px; border-radius: 8px; }
                     progress { display: inline-block; background-color: #333333; color: #28a745; border: none; padding: 0; width: 120px; height: 12px; border-radius: 6px; }
+                    .mc-slot { width: 18px; height: 18px; background-color: #2b2b36; border: 1px solid #585b70; border-radius: 2px; box-sizing: border-box; display: inline-block; }
+                    .mc-slot:hover { background-color: #3e4055; border-color: #89b4fa; }
+                    .mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
+                    .mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
+                    .mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; background-color: #181825; border: 1px solid #45475a; border-radius: 4px; overflow: hidden; }
                 """;
 
         CssParser.StyleSheet sheet = CssParser.parse(defaultCss, rootW);
@@ -90,9 +176,130 @@ public class UIParser {
         return found ? resolveIncludes(sb.toString(), depth + 1) : html;
     }
 
+    private static String extractAttr(String attrsStr, String attrName, String defaultVal) {
+        if (attrsStr == null || attrsStr.isEmpty()) return defaultVal;
+        Matcher m = Pattern.compile("(?i)\\b" + Pattern.quote(attrName) + "\\s*=\\s*[\"']([^\"']*)[\"']").matcher(attrsStr);
+        if (m.find()) return m.group(1).trim();
+        return defaultVal;
+    }
+
+    public static String expandCustomTags(String html) {
+        if (html == null || !html.contains("<mc-")) return html;
+
+        Matcher slotM = Pattern.compile("(?is)<mc-slot\\b([^>]*)(?:/>|>\\s*</mc-slot>)").matcher(html);
+        StringBuilder sb = new StringBuilder();
+        while (slotM.find()) {
+            String attrs = slotM.group(1);
+            String idx = extractAttr(attrs, "index", extractAttr(attrs, "slot", "0"));
+            String cls = extractAttr(attrs, "class", "");
+            String style = extractAttr(attrs, "style", "");
+            String id = extractAttr(attrs, "id", "");
+            String idAttr = id.isEmpty() ? "" : " id=\"" + id + "\"";
+            String styleAttr = style.isEmpty() ? "" : " style=\"" + style + "\"";
+            String replacement = "<div" + idAttr + " class=\"mc-slot" + (cls.isEmpty() ? "" : " " + cls) + "\" data-slot=\"" + idx + "\"" + styleAttr + "></div>";
+            slotM.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        slotM.appendTail(sb);
+        html = sb.toString();
+
+        Matcher gridM = Pattern.compile("(?is)<mc-slot-grid\\b([^>]*)(?:/>|>\\s*</mc-slot-grid>)").matcher(html);
+        sb.setLength(0);
+        while (gridM.find()) {
+            String attrs = gridM.group(1);
+            int start = 0, cols = 3, rows = 3, gap = 0;
+            try { start = Integer.parseInt(extractAttr(attrs, "start", "0")); } catch (Exception ignored) {}
+            try { cols = Math.max(1, Integer.parseInt(extractAttr(attrs, "cols", "3"))); } catch (Exception ignored) {}
+            try { rows = Math.max(1, Integer.parseInt(extractAttr(attrs, "rows", "3"))); } catch (Exception ignored) {}
+            try { gap = Math.max(0, Integer.parseInt(extractAttr(attrs, "gap", "0"))); } catch (Exception ignored) {}
+            String extraStyle = extractAttr(attrs, "style", "");
+
+            StringBuilder gridHtml = new StringBuilder();
+            gridHtml.append("<div style=\"display:flex;flex-direction:column;gap:").append(gap).append("px;").append(extraStyle).append("\">");
+            int idx = start;
+            for (int r = 0; r < rows; r++) {
+                gridHtml.append("<div style=\"display:flex;flex-direction:row;gap:").append(gap).append("px;\">");
+                for (int c = 0; c < cols; c++) {
+                    gridHtml.append("<div class=\"mc-slot\" data-slot=\"").append(idx++).append("\"></div>");
+                }
+                gridHtml.append("</div>");
+            }
+            gridHtml.append("</div>");
+            gridM.appendReplacement(sb, Matcher.quoteReplacement(gridHtml.toString()));
+        }
+        gridM.appendTail(sb);
+        html = sb.toString();
+
+        Matcher invM = Pattern.compile("(?is)<mc-inventory\\b([^>]*)(?:/>|>\\s*</mc-inventory>)").matcher(html);
+        sb.setLength(0);
+        while (invM.find()) {
+            String attrs = invM.group(1);
+            int start = 0;
+            try { start = Integer.parseInt(extractAttr(attrs, "start", "0")); } catch (Exception ignored) {}
+            boolean hotbarFirst = "true".equalsIgnoreCase(extractAttr(attrs, "hotbar-first", "false"));
+            String hotbarStartStr = extractAttr(attrs, "hotbar", "");
+
+            int mainStart = hotbarFirst ? (start + 9) : start;
+            int hotbarStart = hotbarFirst ? start : (start + 27);
+            if (!hotbarStartStr.isEmpty()) {
+                try { hotbarStart = Integer.parseInt(hotbarStartStr); } catch (Exception ignored) {}
+            }
+
+            String extraStyle = extractAttr(attrs, "style", "");
+            StringBuilder invHtml = new StringBuilder();
+            invHtml.append("<div class=\"mc-inventory\" style=\"display:flex;flex-direction:column;gap:4px;").append(extraStyle).append("\">");
+            invHtml.append("<div style=\"display:flex;flex-direction:column;gap:0px;\">");
+            int mIdx = mainStart;
+            for (int r = 0; r < 3; r++) {
+                invHtml.append("<div class=\"mc-inventory-row\" style=\"display:flex;flex-direction:row;gap:0px;\">");
+                for (int c = 0; c < 9; c++) {
+                    invHtml.append("<div class=\"mc-slot\" data-slot=\"").append(mIdx++).append("\"></div>");
+                }
+                invHtml.append("</div>");
+            }
+            invHtml.append("</div>");
+
+            invHtml.append("<div class=\"mc-inventory-row\" style=\"display:flex;flex-direction:row;gap:0px;\">");
+            int hIdx = hotbarStart;
+            for (int c = 0; c < 9; c++) {
+                invHtml.append("<div class=\"mc-slot\" data-slot=\"").append(hIdx++).append("\"></div>");
+            }
+            invHtml.append("</div></div>");
+            invM.appendReplacement(sb, Matcher.quoteReplacement(invHtml.toString()));
+        }
+        invM.appendTail(sb);
+        html = sb.toString();
+
+        Matcher barM = Pattern.compile("(?is)<mc-bar\\b([^>]*)(?:/>|>\\s*</mc-bar>)").matcher(html);
+        sb.setLength(0);
+        while (barM.find()) {
+            String attrs = barM.group(1);
+            String val = extractAttr(attrs, "value", "0");
+            String min = extractAttr(attrs, "min", "0");
+            String max = extractAttr(attrs, "max", "100");
+            String color = extractAttr(attrs, "color", "#89b4fa");
+            String bg = extractAttr(attrs, "bg", "#181825");
+            String label = extractAttr(attrs, "label", "");
+            String extraStyle = extractAttr(attrs, "style", "");
+
+            StringBuilder barHtml = new StringBuilder();
+            barHtml.append("<div class=\"mc-bar\" style=\"position:relative;overflow:hidden;background-color:").append(bg).append(";").append(extraStyle).append("\">");
+            barHtml.append("<progress value=\"").append(val).append("\" min=\"").append(min).append("\" max=\"").append(max)
+                    .append("\" style=\"width:100%;height:100%;background-color:transparent;color:").append(color).append(";border-radius:0;\"></progress>");
+            if (!label.isEmpty()) {
+                barHtml.append("<span style=\"position:absolute;left:0;top:0;width:100%;height:100%;text-align:center;color:#ffffff;text-shadow:true;font-size:0.75rem;\">")
+                        .append(label).append("</span>");
+            }
+            barHtml.append("</div>");
+            barM.appendReplacement(sb, Matcher.quoteReplacement(barHtml.toString()));
+        }
+        barM.appendTail(sb);
+        return sb.toString();
+    }
+
     public Document parseDocument(String html, String externalCss, int rootW, int rootH) {
         if (html != null) {
             html = resolveIncludes(html, 0);
+            html = expandCustomTags(html);
             if (html.length() > 131072) html = html.substring(0, 131072);
         }
         if (externalCss != null && externalCss.length() > 65536) externalCss = externalCss.substring(0, 65536);
@@ -103,7 +310,6 @@ public class UIParser {
         StringBuilder extractedScript = new StringBuilder();
 
         if (html != null) {
-            // <link rel="stylesheet" href="modid:path/to.css"> の解決
             Matcher linkM = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>").matcher(html);
             while (linkM.find()) {
                 String tagFull = linkM.group(0).toLowerCase();
@@ -136,6 +342,8 @@ public class UIParser {
     }
 
     public List<UIElement> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env) {
+        if (clientBoxRenderer == null) return new ArrayList<>();
+
         Map<String, String> rootStyle = new HashMap<>();
         rootStyle.put("width", String.valueOf(rootW));
         rootStyle.put("min-height", String.valueOf(rootH));
@@ -148,8 +356,7 @@ public class UIParser {
         rootBox.computeSize(rootW, rootH, false, false, "stretch", false, rootW, rootH);
         rootBox.layout(0, 0, rootW, rootH, rootW, rootH);
 
-        UIRenderer renderer = new UIRenderer(rootW, rootH, doc.sheet.keyframes);
-        return renderer.render(rootBox);
+        return clientBoxRenderer.render(rootBox, rootW, rootH, doc.sheet.keyframes);
     }
 
     private LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, CssParser.StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
@@ -164,7 +371,6 @@ public class UIParser {
             box.children.add(buildLayoutTree(beforeNode, style, sheet, env, wasDirty));
         }
 
-        // textarea の場合は内部の #text を個別レイアウトボックス化せず、自身の value として扱う
         if (!"textarea".equalsIgnoreCase(node.tag)) {
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
