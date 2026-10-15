@@ -1,10 +1,13 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.api.IWebActionReceiver;
 import com.nishiyu.enderframelib.api.IWebSessionProvider;
 import com.nishiyu.enderframelib.core.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.Map;
@@ -87,6 +90,44 @@ public class WebSessionManager {
     }
 
     public static void handleClientEvent(ServerPlayer player, String sessionId, String elementId, String eventName, String actionName, String value) {
+        if (player == null) return;
+
+        // 1. プレイヤーが現在開いている ContainerMenu が IWebActionReceiver を実装していれば直接ディスパッチ
+        String cleanAction = actionName != null && actionName.startsWith("server:") ? actionName.substring(7) : actionName;
+        String actionParam = value != null ? value : "";
+        if (cleanAction != null && cleanAction.contains(":")) {
+            String[] sp = cleanAction.split(":", 2);
+            cleanAction = sp[0];
+            if (actionParam.isEmpty()) actionParam = sp[1];
+        }
+
+        CompoundTag rpcPayload = new CompoundTag();
+        rpcPayload.putString("SessionId", sessionId != null ? sessionId : "");
+        rpcPayload.putString("ElementId", elementId != null ? elementId : "");
+        rpcPayload.putString("EventName", eventName != null ? eventName : "");
+        rpcPayload.putString("Value", actionParam);
+
+        if (player.containerMenu instanceof IWebActionReceiver menuReceiver && player.containerMenu.stillValid(player)) {
+            menuReceiver.onWebServerAction(player, cleanAction != null ? cleanAction : "", actionParam, rpcPayload);
+        }
+
+        // 2. セッションIDが "block:x,y,z" 形式の場合、距離チェック(64ブロック以内)の上で対象 BlockEntity にディスパッチ
+        if (sessionId != null && sessionId.startsWith("block:") && player.level() != null) {
+            try {
+                String[] coords = sessionId.substring(6).split(",");
+                if (coords.length >= 3) {
+                    BlockPos pos = new BlockPos(Integer.parseInt(coords[0].trim()), Integer.parseInt(coords[1].trim()), Integer.parseInt(coords[2].trim()));
+                    if (player.level().isLoaded(pos) && player.blockPosition().distSqr(pos) <= 4096.0) {
+                        BlockEntity be = player.level().getBlockEntity(pos);
+                        if (be instanceof IWebActionReceiver beReceiver) {
+                            beReceiver.onWebServerAction(player, cleanAction != null ? cleanAction : "", actionParam, rpcPayload);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 3. 既存の IWebSessionProvider へのルーティング
         for (IWebSessionProvider provider : PROVIDERS) {
             if (provider.matchesSession(sessionId)) {
                 provider.onClientEvent(player, sessionId, elementId, eventName, actionName, value);

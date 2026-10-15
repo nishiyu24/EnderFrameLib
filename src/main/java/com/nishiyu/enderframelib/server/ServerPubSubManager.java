@@ -28,6 +28,13 @@ public class ServerPubSubManager {
         if (subs != null) subs.remove(player);
     }
 
+    public static void removePlayerAll(ServerPlayer player) {
+        if (player == null) return;
+        for (Set<ServerPlayer> subs : subscribers.values()) {
+            subs.removeIf(p -> p == player || p.getUUID().equals(player.getUUID()));
+        }
+    }
+
     public static void publish(String channel, Map<String, Object> newData) {
         Map<String, Object> current = channelData.computeIfAbsent(channel, k -> new ConcurrentHashMap<>());
         Map<String, Object> diff = new HashMap<>();
@@ -54,7 +61,9 @@ public class ServerPubSubManager {
             if (subs != null && !subs.isEmpty()) {
                 PubSubUpdateS2CPacket packet = new PubSubUpdateS2CPacket(channel, false, diff);
                 for (ServerPlayer player : subs) {
-                    PacketDistributor.sendToPlayer(player, packet);
+                    if (!player.hasDisconnected()) {
+                        PacketDistributor.sendToPlayer(player, packet);
+                    }
                 }
             }
         }

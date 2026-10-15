@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.common.ServerImageRegistry;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -23,9 +24,13 @@ import org.lwjgl.openal.AL10;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL21;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URI;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -39,10 +44,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class WebMediaManager {
 
-    /**
-     * 他MOD特有のブロック判定（スピーカーやスクリーン）や
-     * 設定、ホットバーアイテムの検索などをライブラリ外から提供するためのインターフェース
-     */
     public interface IExternalVideoContext {
         boolean isYouTubeSupportEnabled();
         List<String> getActiveSessionIdsFromHotbar();
@@ -53,6 +54,53 @@ public class WebMediaManager {
     public static IExternalVideoContext externalContext = null;
 
     // ==========================================
+    // セキュリティ・ガードレール設定 (大手MODパック基準)
+    // ==========================================
+    public static boolean allowExternalMedia = true;
+    public static boolean blockPrivateNetworkAccess = true;
+    public static long maxImageDownloadBytes = 10L * 1024L * 1024L; // 最大10MB
+    public static final Set<String> ALLOWED_DOMAINS = ConcurrentHashMap.newKeySet();
+
+    public static boolean isUrlSafe(String urlString) {
+        if (!allowExternalMedia || urlString == null || urlString.isEmpty()) return false;
+        try {
+            URI uri = URI.create(urlString.trim());
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
+                return false;
+            }
+            String host = uri.getHost();
+            if (host == null || host.isEmpty()) return false;
+            String lowerHost = host.toLowerCase(Locale.ROOT);
+
+            if (!ALLOWED_DOMAINS.isEmpty()) {
+                boolean matched = false;
+                for (String domain : ALLOWED_DOMAINS) {
+                    String d = domain.toLowerCase(Locale.ROOT);
+                    if (lowerHost.equals(d) || lowerHost.endsWith("." + d)) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) return false;
+            }
+
+            if (blockPrivateNetworkAccess) {
+                if (lowerHost.equals("localhost") || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
+                    return false;
+                }
+                InetAddress addr = InetAddress.getByName(host);
+                if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // ==========================================
     // 1. Web Image Cache System
     // ==========================================
     private static final ConcurrentHashMap<String, ImageInfo> IMG_CACHE = new ConcurrentHashMap<>();
@@ -61,7 +109,7 @@ public class WebMediaManager {
     public record ImageInfo(ResourceLocation textureId, int width, int height) {}
 
     public static ImageInfo getImage(String urlString) {
-        if (urlString == null || urlString.isEmpty()) return null;
+        if (urlString == null || urlString.isEmpty() || !allowExternalMedia) return null;
         if (IMG_CACHE.containsKey(urlString)) return IMG_CACHE.get(urlString);
         if (!IMG_DOWNLOADING.containsKey(urlString)) {
             IMG_DOWNLOADING.put(urlString, true);
@@ -87,21 +135,52 @@ public class WebMediaManager {
         Thread thread = new Thread(() -> {
             try {
                 String directUrlString = convertToDirectLink(originalUrl);
+                if (!isUrlSafe(directUrlString)) {
+                    IMG_DOWNLOADING.remove(originalUrl);
+                    return;
+                }
+
                 HttpURLConnection conn = (HttpURLConnection) new URL(directUrlString).openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(5000);
+                conn.setInstanceFollowRedirects(false);
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0");
 
                 int status = conn.getResponseCode();
                 if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == HttpURLConnection.HTTP_SEE_OTHER) {
                     String newUrl = conn.getHeaderField("Location");
+                    if (!isUrlSafe(newUrl)) {
+                        IMG_DOWNLOADING.remove(originalUrl);
+                        return;
+                    }
                     conn = (HttpURLConnection) new URL(newUrl).openConnection();
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(5000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0");
                 }
 
+                long contentLength = conn.getContentLengthLong();
+                if (contentLength > maxImageDownloadBytes) {
+                    IMG_DOWNLOADING.remove(originalUrl);
+                    return;
+                }
+
                 try (InputStream is = conn.getInputStream()) {
-                    NativeImage nativeImage = NativeImage.read(is);
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    long totalRead = 0;
+                    int n;
+                    while ((n = is.read(buf)) != -1) {
+                        totalRead += n;
+                        if (totalRead > maxImageDownloadBytes) {
+                            IMG_DOWNLOADING.remove(originalUrl);
+                            return;
+                        }
+                        baos.write(buf, 0, n);
+                    }
+
+                    NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(baos.toByteArray()));
                     int imgW = nativeImage.getWidth();
                     int imgH = nativeImage.getHeight();
 
@@ -112,10 +191,11 @@ public class WebMediaManager {
 
                         IMG_CACHE.put(originalUrl, new ImageInfo(id, imgW, imgH));
                         IMG_DOWNLOADING.remove(originalUrl);
+                        // 画像サイズ判明時に ServerImageRegistry へ登録し、待機中の全セッションを自動リフロー
+                        ServerImageRegistry.setSize(originalUrl, imgW, imgH);
                     });
                 }
             } catch (Exception e) {
-                System.out.println("[EnderFrameLib] 画像のダウンロードに失敗しました: " + originalUrl);
                 IMG_DOWNLOADING.remove(originalUrl);
             }
         });
@@ -136,9 +216,7 @@ public class WebMediaManager {
         try {
             NeoForge.EVENT_BUS.addListener(WebMediaManager::onClientTick);
             NeoForge.EVENT_BUS.addListener(WebMediaManager::onLevelUnload);
-        } catch (Throwable t) {
-            System.err.println("[WebMediaManager-Debug] Failed to register event listeners: " + t.getMessage());
-        }
+        } catch (Throwable ignored) {}
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {
@@ -156,7 +234,7 @@ public class WebMediaManager {
     }
 
     public static VideoTexture getVideoTexture(String url) {
-        if (url == null || url.isEmpty()) return null;
+        if (url == null || url.isEmpty() || !allowExternalMedia) return null;
         VideoTexture existing = ACTIVE_VIDEOS.get(url);
         if (existing != null && (existing.isClosed || existing.isFailed)) {
             ACTIVE_VIDEOS.remove(url);
@@ -260,6 +338,7 @@ public class WebMediaManager {
     }
 
     private static String resolveYouTubeUrlViaYtDlp(String youtubeUrl) {
+        if (!allowExternalMedia) return null;
         if (externalContext != null && !externalContext.isYouTubeSupportEnabled()) return null;
 
         long now = System.currentTimeMillis();
@@ -336,6 +415,7 @@ public class WebMediaManager {
         try {
             if (!targetUrl.contains("youtube.com/watch") && !targetUrl.contains("youtu.be/")) {
                 if (!targetUrl.startsWith("file://") && !targetUrl.contains(":\\") && !targetUrl.startsWith("/") && targetUrl.contains("://")) {
+                    if (!isUrlSafe(targetUrl)) return null;
                     URL url = new URL(targetUrl);
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0");
@@ -343,27 +423,20 @@ public class WebMediaManager {
                     int status = conn.getResponseCode();
                     if (status == 302 || status == 301 || status == 303) {
                         String redirectUrl = conn.getHeaderField("Location");
-                        if (redirectUrl != null && !redirectUrl.isEmpty()) {
+                        if (redirectUrl != null && !redirectUrl.isEmpty() && isUrlSafe(redirectUrl)) {
                             return resolveDirectStreamUrl(redirectUrl);
                         }
+                        return null;
                     }
                     return targetUrl;
                 } else {
-                    File localFile;
-                    if (targetUrl.startsWith("file:///")) localFile = new File((new URL(targetUrl)).toURI());
-                    else if (targetUrl.startsWith("file://")) localFile = new File(targetUrl.substring(7));
-                    else {
-                        localFile = new File(targetUrl);
-                        if (!localFile.isAbsolute()) localFile = new File(Minecraft.getInstance().gameDirectory, targetUrl);
-                    }
-                    if (localFile.exists()) return localFile.getAbsolutePath();
-                    else return null;
+                    return null;
                 }
             } else {
                 return resolveYouTubeUrlViaYtDlp(targetUrl);
             }
         } catch (Exception var5) {
-            return targetUrl;
+            return null;
         }
     }
 
@@ -375,7 +448,7 @@ public class WebMediaManager {
                 if (!customLibDir.exists()) customLibDir.mkdirs();
 
                 String osName = System.getProperty("os.name").toLowerCase();
-                String libName = "lunex_video"; // ネイティブライブラリのバイナリ名は元のままとして扱う
+                String libName = "lunex_video";
                 String libFileName;
                 if (osName.contains("win")) libFileName = libName + ".dll";
                 else if (osName.contains("mac")) libFileName = "lib" + libName + ".dylib";

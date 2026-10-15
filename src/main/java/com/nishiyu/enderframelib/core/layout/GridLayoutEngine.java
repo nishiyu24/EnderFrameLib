@@ -51,6 +51,20 @@ public class GridLayoutEngine implements LayoutEngine {
         try { return Integer.parseInt(val.replaceAll("[^0-9-]", "")); } catch (Exception e) { return 1; }
     }
 
+    private static boolean isCellOccupied(List<boolean[]> occupied, int row, int col) {
+        if (row < 0 || col < 0 || row >= occupied.size()) return false;
+        boolean[] rowArr = occupied.get(row);
+        return col < rowArr.length && rowArr[col];
+    }
+
+    private static void markCellOccupied(List<boolean[]> occupied, int colsCount, int row, int col) {
+        if (row < 0 || col < 0 || col >= colsCount) return;
+        while (occupied.size() <= row) {
+            occupied.add(new boolean[colsCount]);
+        }
+        occupied.get(row)[col] = true;
+    }
+
     @Override
     public void computeSize(LayoutBox box, int tentativeInnerW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
         GridState gs = new GridState();
@@ -58,7 +72,7 @@ public class GridLayoutEngine implements LayoutEngine {
 
         String gridCols = expandRepeat(box.style.getOrDefault("grid-template-columns", "1fr"));
         String[] colDefs = gridCols.split("\\s+");
-        gs.colsCount = colDefs.length;
+        gs.colsCount = Math.max(1, colDefs.length);
         gs.colWidths = new float[gs.colsCount];
         float totalFr = 0;
         int fixedW = 0;
@@ -77,7 +91,7 @@ public class GridLayoutEngine implements LayoutEngine {
             }
         }
 
-        boolean[][] occupied = new boolean[100][gs.colsCount];
+        List<boolean[]> occupied = new ArrayList<>();
         int currentR = 0, currentC = 0;
 
         for (LayoutBox child : box.getFlowChildren()) {
@@ -89,14 +103,14 @@ public class GridLayoutEngine implements LayoutEngine {
             if (gc != null) {
                 if (gc.contains("/")) {
                     String[] parts = gc.split("/");
-                    item.colStart = parseGridLine(parts[0].trim()) - 1;
+                    item.colStart = Math.max(0, parseGridLine(parts[0].trim()) - 1);
                     String end = parts[1].trim();
-                    if (end.startsWith("span ")) item.colSpan = parseGridLine(end.substring(5));
+                    if (end.startsWith("span ")) item.colSpan = Math.max(1, parseGridLine(end.substring(5)));
                     else item.colSpan = Math.max(1, parseGridLine(end) - 1 - item.colStart);
                 } else if (gc.startsWith("span ")) {
-                    item.colSpan = parseGridLine(gc.substring(5));
+                    item.colSpan = Math.max(1, parseGridLine(gc.substring(5)));
                 } else {
-                    item.colStart = parseGridLine(gc) - 1;
+                    item.colStart = Math.max(0, parseGridLine(gc) - 1);
                 }
             }
             item.colSpan = Math.min(item.colSpan, gs.colsCount);
@@ -106,20 +120,20 @@ public class GridLayoutEngine implements LayoutEngine {
             if (gr != null) {
                 if (gr.contains("/")) {
                     String[] parts = gr.split("/");
-                    item.rowStart = parseGridLine(parts[0].trim()) - 1;
+                    item.rowStart = Math.max(0, parseGridLine(parts[0].trim()) - 1);
                     String end = parts[1].trim();
-                    if (end.startsWith("span ")) item.rowSpan = parseGridLine(end.substring(5));
+                    if (end.startsWith("span ")) item.rowSpan = Math.max(1, parseGridLine(end.substring(5)));
                     else item.rowSpan = Math.max(1, parseGridLine(end) - 1 - item.rowStart);
                 } else if (gr.startsWith("span ")) {
-                    item.rowSpan = parseGridLine(gr.substring(5));
+                    item.rowSpan = Math.max(1, parseGridLine(gr.substring(5)));
                 } else {
-                    item.rowStart = parseGridLine(gr) - 1;
+                    item.rowStart = Math.max(0, parseGridLine(gr) - 1);
                 }
             }
 
             if (item.rowStart == -1 || item.colStart == -1) {
                 while (true) {
-                    if (item.colStart != -1) currentC = item.colStart;
+                    if (item.colStart != -1) currentC = Math.min(item.colStart, gs.colsCount - item.colSpan);
                     if (currentC + item.colSpan > gs.colsCount) { currentC = 0; currentR++; }
 
                     boolean fit = true;
@@ -127,7 +141,7 @@ public class GridLayoutEngine implements LayoutEngine {
                         for (int c = 0; c < item.colSpan; c++) {
                             int checkR = (item.rowStart != -1 ? item.rowStart : currentR) + r;
                             int checkC = currentC + c;
-                            if (checkR < 100 && checkC < gs.colsCount && occupied[checkR][checkC]) {
+                            if (isCellOccupied(occupied, checkR, checkC)) {
                                 fit = false; break;
                             }
                         }
@@ -137,14 +151,17 @@ public class GridLayoutEngine implements LayoutEngine {
                         if (item.rowStart == -1) item.rowStart = currentR;
                         if (item.colStart == -1) item.colStart = currentC;
                         break;
-                    } else currentC++;
+                    } else {
+                        if (item.colStart != -1) currentR++;
+                        else currentC++;
+                    }
                 }
             }
 
             gs.rowsCount = Math.max(gs.rowsCount, item.rowStart + item.rowSpan);
             for (int r = 0; r < item.rowSpan; r++) {
                 for (int c = 0; c < item.colSpan; c++) {
-                    if (item.rowStart + r < 100 && item.colStart + c < gs.colsCount) occupied[item.rowStart + r][item.colStart + c] = true;
+                    markCellOccupied(occupied, gs.colsCount, item.rowStart + r, item.colStart + c);
                 }
             }
             gs.items.add(item);

@@ -45,6 +45,12 @@ public class ClientScreenInteractionManager {
     public static boolean forwardEventsToServer = false;
     public static boolean enableDefaultUiSounds = true;
 
+    /**
+     * true の場合のみホバー時に DOM の hover 属性を書き換えて再レイアウトする（親:hover 子 セレクタ用）。
+     * デフォルト(false)では WebAnimator が hoveredId を直接参照して高速補間するため、チラつきや入力消失が起きない。
+     */
+    public static boolean mutateDomOnHover = false;
+
     public static Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
     public static BiPredicate<Minecraft, ItemStack> itemRangeValidator = ClientScreenInteractionManager::defaultIsItemInRange;
 
@@ -142,7 +148,8 @@ public class ClientScreenInteractionManager {
         }
     }
 
-    private static void playElementSound(UIElement el) {
+    public static void playElementSound(UIElement el) {
+        if (el == null) return;
         Map<String, String> events = el.events();
         String soundId = events != null ? events.get("data-sound") : null;
         if ("none".equalsIgnoreCase(soundId)) return;
@@ -293,7 +300,7 @@ public class ClientScreenInteractionManager {
                 ClientWebManager.updateElementTextLocally(sessionId, state.lastSubmittedId, state.lastSubmittedText);
             }
         }
-        if (!state.hoveredId.isEmpty()) {
+        if (mutateDomOnHover && !state.hoveredId.isEmpty()) {
             ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", "true", false);
         }
         String activeId = WebRenderCore.activeInputId;
@@ -344,10 +351,14 @@ public class ClientScreenInteractionManager {
             if (!currentHitId.equals(state.hoveredId)) {
                 if (!state.hoveredId.isEmpty()) {
                     triggerLocalEvent(sessionId, state.hoveredId, "onmouseleave", "auto", "");
-                    ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", null, true);
+                    if (mutateDomOnHover) {
+                        ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", null, true);
+                    }
                 }
                 triggerLocalEvent(sessionId, currentHitId, "onmouseenter", getEventAction(events, "onmouseenter"), coordStr);
-                ClientWebManager.updateNodeAttributeLocally(sessionId, currentHitId, "hover", "true", false);
+                if (mutateDomOnHover) {
+                    ClientWebManager.updateNodeAttributeLocally(sessionId, currentHitId, "hover", "true", false);
+                }
                 state.hoveredId = currentHitId;
             }
             if (hasEvent(events, "onmousemove") && (now - state.lastEventTime > 50)) {
@@ -358,7 +369,9 @@ public class ClientScreenInteractionManager {
         } else {
             if (!state.hoveredId.isEmpty()) {
                 triggerLocalEvent(sessionId, state.hoveredId, "onmouseleave", "auto", "");
-                ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", null, true);
+                if (mutateDomOnHover) {
+                    ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", null, true);
+                }
                 state.hoveredId = "";
             }
             return "";

@@ -1,15 +1,20 @@
-// 上書き: HtmlParser.java
 package com.nishiyu.enderframelib.core.dom;
 
-import java.util.Arrays;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Stack;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class HtmlParser {
 
     private static final int MAX_NODES = 5000;
     private static final int MAX_DEPTH = 100;
-    private static int globalAutoId = 0;
+    private static final Set<String> VOID_TAGS = Set.of(
+            "br", "hr", "img", "input", "meta", "link",
+            "mc-fluid", "mc-entity", "mc-scene", "mc-slot", "mc-slot-grid", "mc-inventory", "mc-bar"
+    );
+    private static final Set<String> PRESERVE_WHITESPACE_TAGS = Set.of("textarea", "pre", "code", "script", "style");
+    private static final AtomicInteger globalAutoId = new AtomicInteger(0);
 
     public static HtmlNode parse(String html) {
         HtmlNode root = new HtmlNode("root");
@@ -31,25 +36,25 @@ public class HtmlParser {
                 for (var entry : token.attrs.entrySet()) {
                     String key = entry.getKey();
                     String val = entry.getValue();
-                    if (val != null && val.length() > 1024) val = val.substring(0, 1024);
+                    if (val != null && val.length() > 4096) val = val.substring(0, 4096);
 
                     node.attrs.put(key, val);
                     if (key.equals("id")) node.id = val;
-                    else if (key.equals("class")) node.classes.addAll(Arrays.asList(Objects.requireNonNull(val).split("\\s+")));
+                    else if (key.equals("class")) {
+                        for (String c : Objects.requireNonNull(val).trim().split("\\s+")) {
+                            if (!c.isEmpty()) node.classes.add(c);
+                        }
+                    }
                 }
 
-                // IDがない要素に一意のIDを割り当て (バインディングの確実なターゲットにするため)
                 if (node.id.isEmpty()) {
-                    node.id = "html_gen_" + (++globalAutoId);
+                    node.id = "html_gen_" + globalAutoId.incrementAndGet();
                     node.attrs.put("id", node.id);
                 }
 
                 stack.peek().children.add(node);
 
-                boolean isSelfClosing = token.isSelfClosing ||
-                        Arrays.asList("br", "hr", "img", "input", "meta", "link").contains(token.name);
-
-                // template タグも通常のノードとしてツリーに保持する (レンダリング時に無視される)
+                boolean isSelfClosing = token.isSelfClosing || VOID_TAGS.contains(token.name);
                 if (!isSelfClosing) {
                     stack.push(node);
                 }
@@ -67,15 +72,30 @@ public class HtmlParser {
                 }
 
             } else if (token.type == HtmlTokenizer.Token.Type.TEXT) {
-                String text = token.text.trim();
-                if (text.length() > 5000) text = text.substring(0, 5000);
+                HtmlNode parent = stack.peek();
+                boolean preserveWs = token.isRawText || PRESERVE_WHITESPACE_TAGS.contains(parent.tag);
+
+                String text;
+                if (preserveWs) {
+                    text = token.text.replace("\r\n", "\n");
+                    if (text.startsWith("\n")) text = text.substring(1);
+                    if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+                } else {
+                    text = token.text.trim();
+                }
+
+                if (text.length() > 16384) text = text.substring(0, 16384);
 
                 if (!text.isEmpty()) {
                     HtmlNode textNode = new HtmlNode("#text");
                     textNode.text = text;
-                    textNode.id = "html_txt_" + (++globalAutoId);
-                    textNode.parent = stack.peek();
-                    stack.peek().children.add(textNode);
+                    textNode.id = "html_txt_" + globalAutoId.incrementAndGet();
+                    textNode.parent = parent;
+                    parent.children.add(textNode);
+
+                    if ("textarea".equals(parent.tag) && !parent.attrs.containsKey("value")) {
+                        parent.attrs.put("value", text);
+                    }
                 }
             }
         }

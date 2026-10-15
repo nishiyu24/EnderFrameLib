@@ -20,7 +20,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NumericTag;
@@ -60,8 +59,12 @@ public class WebHudRenderer {
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)}}");
 
     /**
+     * コマンド(/enderframe hud set)やスクリプトから設定された常時表示HUDセッションID
+     */
+    public static String customActiveHudSessionId = "";
+
+    /**
      * 現在HUDとして表示すべきセッションIDを返すリゾルバ。
-     * デフォルトでは頭装備に有効なセッションIDがあり、かつ通信範囲内であればそのセッションIDを返す。
      */
     public static Function<Minecraft, String> activeHudSessionResolver = WebHudRenderer::defaultResolveActiveHudSession;
 
@@ -101,6 +104,9 @@ public class WebHudRenderer {
 
     public static String defaultResolveActiveHudSession(Minecraft mc) {
         if (mc.player == null || mc.options.hideGui) return null;
+        if (customActiveHudSessionId != null && !customActiveHudSessionId.isEmpty()) {
+            return customActiveHudSessionId;
+        }
         ItemStack headItem = mc.player.getItemBySlot(EquipmentSlot.HEAD);
         if (headItem.isEmpty()) return null;
         String sessionId = ClientScreenInteractionManager.getSessionIdFromItem(headItem);

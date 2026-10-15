@@ -4,12 +4,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DomUtils {
 
     private static final List<String> VOID_TAGS = List.of("br", "hr", "img", "input", "meta", "link");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.:-]+)}}");
+
+    /**
+     * クライアント環境では ClientLocalEnvProvider により I18n.get が自動バインドされる。
+     * 専用サーバー環境でもクラッシュせずキー文字列にフォールバックする。
+     */
+    public static Function<String, String> i18nResolver = key -> key;
 
     // --- DOM検索・更新系 ---
 
@@ -63,7 +71,6 @@ public class DomUtils {
             node.markDirty();
             return;
         }
-        // 既存の子要素をクリアして単一のテキストノードにする（または既存の#textを更新）
         node.children.removeIf(c -> !"#text".equals(c.tag));
         for (HtmlNode child : node.children) {
             if ("#text".equals(child.tag)) {
@@ -115,7 +122,6 @@ public class DomUtils {
         StringBuilder sb = new StringBuilder();
         sb.append("<").append(node.tag);
         for (Map.Entry<String, String> entry : node.attrs.entrySet()) {
-            // 自動生成されたIDは出力時にノイズになる場合でも、バインディング維持のため保持
             sb.append(" ").append(entry.getKey()).append("=\"").append(entry.getValue()).append("\"");
         }
         if (VOID_TAGS.contains(node.tag)) {
@@ -133,7 +139,7 @@ public class DomUtils {
     // --- テンプレート（プレースホルダー置換）系 ---
 
     public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
-        if (node == null || data == null || data.isEmpty()) return;
+        if (node == null || data == null) return;
 
         if (node.text != null && node.text.contains("{{")) {
             node.text = replacePlaceholders(node.text, data);
@@ -162,13 +168,18 @@ public class DomUtils {
         }
     }
 
-    private static String replacePlaceholders(String text, Map<String, String> data) {
-        Matcher m = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)}}").matcher(text);
+    public static String replacePlaceholders(String text, Map<String, String> data) {
+        Matcher m = PLACEHOLDER_PATTERN.matcher(text);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
             String key = m.group(1);
-            String replacement = data.getOrDefault(key, "");
-            if (!data.containsKey(key)) replacement = "{{" + key + "}}";
+            if (key.startsWith("i18n:") || key.startsWith("@i18n:")) {
+                String i18nKey = key.substring(key.indexOf(':') + 1);
+                String translated = i18nResolver != null ? i18nResolver.apply(i18nKey) : i18nKey;
+                m.appendReplacement(sb, Matcher.quoteReplacement(translated));
+                continue;
+            }
+            String replacement = data != null ? data.getOrDefault(key, "{{" + key + "}}") : "{{" + key + "}}";
             m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);

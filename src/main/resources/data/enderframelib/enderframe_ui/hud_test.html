@@ -1,0 +1,65 @@
+<link rel="stylesheet" href="enderframelib:theme/dark.css">
+<style>
+    body, html {
+        background-color: transparent;
+    }
+    .hud-top-left {
+        position: fixed;
+        left: 14px;
+        top: 14px;
+        width: 220px;
+        background-color: rgba(24, 24, 37, 0.85);
+        border: 1px solid #89b4fa;
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .ar-scanner {
+        position: fixed;
+        left: 50%;
+        top: 20px;
+        transform: translateX(-50%);
+        width: 240px;
+        background-color: rgba(30, 30, 46, 0.90);
+        border: 1px solid #a6e3a1;
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+</style>
+
+<div data-channel="test_channel">
+    <!-- 左上: 常時表示ステータスHUD -->
+    <div class="hud-top-left">
+        <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
+            <b style="color:#89b4fa;">EnderFrame HUD</b>
+            <span style="color:#a6e3a1; font-size:0.8rem;">{{@fps}} FPS</span>
+        </div>
+        <mc-bar value="{{@hp}}" max="{{@max_hp}}" color="#f38ba8" label="HP {{@hp}} / {{@max_hp}}" style="width:100%;" />
+        <div style="display:flex; flex-direction:row; justify-content:space-between; font-size:0.85rem;">
+            <span>Held: {{@held_item_name}}</span>
+            <span style="color:#f9e2af;">{{@time}}</span>
+        </div>
+        <div style="font-size:0.8rem; color:#a6adc8;">
+            Broadcast: <b data-bind="text:msg" style="color:#cdd6f4;">None</b>
+        </div>
+    </div>
+
+    <!-- 上部中央: 視線先のブロック/エンティティに反応する AR HUD (data-hud) -->
+    <div id="look_target_hud" class="ar-scanner" data-hud="true" data-hud-display="flex" data-hud-require-nbt="id,CustomName">
+        <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
+            <b style="color:#a6e3a1;">Target: {{name}}</b>
+            <span style="font-size:0.75rem; color:#89b4fa;">[{{type}}]</span>
+        </div>
+        <div data-show="{{is_entity}}" style="font-size:0.85rem; color:#f38ba8;">
+            Entity HP: {{hp}} / {{max_hp}} (Armor: {{armor}})
+        </div>
+        <div data-show="{{is_block}}" style="font-size:0.85rem; color:#f9e2af;">
+            Hardness: {{hardness}}
+        </div>
+    </div>
+</div>

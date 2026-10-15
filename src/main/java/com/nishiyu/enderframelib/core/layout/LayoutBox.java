@@ -63,11 +63,11 @@ public class LayoutBox {
         if (node.tag.equals("#text")) {
             int maxWordW = 0;
             String text = this.displayText;
-            if (style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900")) text = "§l" + text;
+            boolean bold = style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900");
             String[] words = text.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
             for (String word : words)
                 if (!word.trim().isEmpty())
-                    maxWordW = Math.max(maxWordW, TextMetrics.getDisplayWidth(word, this.fontSize));
+                    maxWordW = Math.max(maxWordW, TextMetrics.getDisplayWidth(bold ? ("§l" + word) : word, this.fontSize));
             return maxWordW;
         } else if (children.isEmpty()) {
             return this.w > 0 ? this.w : 16;
@@ -113,7 +113,8 @@ public class LayoutBox {
                 style.putIfAbsent("flex-basis", "auto");
             } else if (flexStr.matches("^[\\d.]+$")) {
                 style.putIfAbsent("flex-grow", flexStr);
-                style.putIfAbsent("flex-basis", "0%");
+                style.putIfAbsent("flex-shrink", "1");
+                style.putIfAbsent("flex-basis", "auto");
             } else {
                 String[] parts = flexStr.split("\\s+");
                 if (parts.length > 0) style.putIfAbsent("flex-grow", parts[0]);
@@ -151,7 +152,7 @@ public class LayoutBox {
 
         String widthStr = style.getOrDefault("width", "").trim();
         boolean hasWidth = style.containsKey("width") && !widthStr.equals("auto");
-        boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && (isParentFlexRow || isParentShrink);
+        boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && isParentShrink;
         boolean isFlexBasisZero = style.getOrDefault("flex-basis", "auto").equals("0") || style.getOrDefault("flex-basis", "auto").equals("0%") || style.getOrDefault("flex-basis", "auto").equals("0px");
         String display = style.getOrDefault("display", "block");
 
@@ -165,13 +166,19 @@ public class LayoutBox {
                 if (mw > 0) limitW = Math.min(limitW, mw);
             }
             if (limitW <= 0) limitW = 9999;
-            String text = this.displayText;
-            if (style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900")) text = "§l" + text;
-            this.textLines = TextMetrics.wrapText(text, limitW, this.fontSize);
+            boolean isBold = style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900");
+            List<String> rawLines = TextMetrics.wrapText(this.displayText, limitW, this.fontSize);
+            this.textLines = new ArrayList<>(rawLines.size());
             int maxLineW = 0;
-            for (String s : textLines) maxLineW = Math.max(maxLineW, TextMetrics.getDisplayWidth(s, this.fontSize));
+            for (String s : rawLines) {
+                String formatted = isBold ? ("§l" + s) : s;
+                this.textLines.add(formatted);
+                maxLineW = Math.max(maxLineW, TextMetrics.getDisplayWidth(formatted, this.fontSize));
+            }
             this.w = maxLineW + horizontalDecoration();
-        } else if (node.tag.equals("img")) {
+        } else if (node.tag.equals("mc-scene")) {
+            this.w = Math.max(64, parentW - mL - mR);
+        } else if (node.tag.equals("img") || node.tag.equals("mc-fluid") || node.tag.equals("mc-entity")) {
             String src = node.attrs.getOrDefault("src", "");
             if (src.startsWith("http://") || src.startsWith("https://")) {
                 int[] imgSize = ServerImageRegistry.getSize(src);
@@ -180,7 +187,7 @@ public class LayoutBox {
                 this.w = 16 + horizontalDecoration();
             }
         } else if (node.tag.equals("input") || node.tag.equals("select") || node.tag.equals("progress")) {
-            int inputW = 120;
+            int inputW = 90;
             String type = node.attrs.getOrDefault("type", "text");
             if (node.tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) inputW = 16;
             else if (node.attrs.containsKey("size")) {
@@ -223,6 +230,12 @@ public class LayoutBox {
                 this.w = Math.min(this.w, maxW);
             }
         }
+        if (style.containsKey("min-width")) {
+            int minW = CssParser.parseDim(style.get("min-width"), parentW, rootW, rootH);
+            if (!isBorderBox) minW += horizontalDecoration();
+            this.w = Math.max(this.w, minW);
+        }
+
         if (!isAbsolute) {
             if (autoLeft && autoRight) {
                 this.mL = Math.max(0, (parentW - this.w) / 2);
@@ -258,7 +271,9 @@ public class LayoutBox {
         } else if (node.tag.equals("#text")) {
             int lineCount = this.textLines != null && !this.textLines.isEmpty() ? this.textLines.size() : 1;
             this.h = (Math.max(0, lineCount - 1) * (int) (16 * this.fontSize * lh)) + (int) (16 * this.fontSize) + verticalDecoration();
-        } else if (node.tag.equals("img")) {
+        } else if (node.tag.equals("mc-scene")) {
+            this.h = 120 + verticalDecoration();
+        } else if (node.tag.equals("img") || node.tag.equals("mc-fluid") || node.tag.equals("mc-entity")) {
             String src = node.attrs.getOrDefault("src", "");
             if (src.startsWith("http://") || src.startsWith("https://")) {
                 int[] imgSize = ServerImageRegistry.getSize(src);
@@ -281,9 +296,19 @@ public class LayoutBox {
 
         engine.computeHeightAndFinalizeChildren(this, parentH, isParentFlexRow, isParentFlexColumn, rootW, rootH);
 
+        if (style.containsKey("max-height")) {
+            String maxHStr = style.get("max-height").trim();
+            if (!maxHStr.equals("none") && !maxHStr.isEmpty()) {
+                int maxH = CssParser.parseDim(maxHStr, parentH, rootW, rootH);
+                if (maxH > 0) {
+                    if (!isBorderBox) maxH += verticalDecoration();
+                    this.h = Math.min(this.h, maxH);
+                }
+            }
+        }
         if (style.containsKey("min-height")) {
             int minH = CssParser.parseDim(style.get("min-height"), parentH, rootW, rootH);
-            if (!isBorderBox) minH += verticalDecoration();
+            if (!isBorderBox) minH += horizontalDecoration();
             this.h = Math.max(this.h, minH);
         }
     }

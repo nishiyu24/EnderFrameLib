@@ -1,0 +1,130 @@
+package com.nishiyu.enderframelib.client;
+
+import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
+import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
+import com.nishiyu.enderframelib.client.gui.AbstractWebScreen;
+import com.nishiyu.enderframelib.client.renderer.UIRenderer;
+import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
+import com.nishiyu.enderframelib.common.ServerImageRegistry;
+import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.network.c2s.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.network.s2c.PubSubUpdateS2CPacket;
+import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
+import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.network.PacketDistributor;
+
+import java.util.List;
+
+/**
+ * クライアント環境でのみロード・実行される初期化クラス
+ */
+public class EnderFrameClientInit {
+
+    public static void init(IEventBus modEventBus) {
+        // 1. UIParser と DomUtils のクライアント専用コールバック注入
+        UIParser.clientBoxRenderer = (rootBox, rootW, rootH, keyframes) -> {
+            UIRenderer renderer = new UIRenderer(rootW, rootH, keyframes);
+            return renderer.render(rootBox);
+        };
+
+        UIParser.clientResourceFallback = path -> {
+            try {
+                ResourceLocation loc = ResourceLocation.parse(path);
+                String loaded = AbstractWebScreen.loadHtmlResource(loc);
+                if (loaded != null && !loaded.contains("Failed to load HTML resource:")) {
+                    return loaded;
+                }
+            } catch (Exception ignored) {}
+            return "";
+        };
+
+        DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
+
+        // 2. 画像サイズ確定時のクライアント自動再レイアウト登録
+        ServerImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
+
+        // 3. PubSub・ローカルオーバーライド・HUDテンプレート結線
+        ClientPubSubManager.subscriptionSender = (channel) ->
+                PacketDistributor.sendToServer(new SubscribeC2SPacket(channel));
+
+        ClientWebManager.applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
+        ClientWebManager.sessionClearedCallback = WebHudRenderer::clearSession;
+
+        DeclarativeBindingManager.hudCallback = new DeclarativeBindingManager.IHudRegistrationCallback() {
+            @Override
+            public void registerHudTemplate(String sessionId, String containerId, String origDisplay, HtmlNode templateRoot, List<String> requireNbt) {
+                WebHudRenderer.enableHudTemplate(sessionId, containerId, origDisplay, templateRoot, requireNbt);
+            }
+
+            @Override
+            public void registerTrackerTemplate(String sessionId, HtmlNode templateNode, double radius, double yOffset, String targetType, List<String> requireNbt) {
+                WebHudRenderer.setTrackerTemplate(sessionId, templateNode, radius, yOffset, targetType, requireNbt);
+            }
+        };
+
+        // 4. S2C パケットハンドラのクライアント側結線
+        PubSubUpdateS2CPacket.clientHandler = (channel, isFull, diffData) -> {
+            if ("ar_sync".equals(channel)) {
+                WebHudRenderer.handleBinaryTargetDataSync(diffData);
+            } else {
+                ClientPubSubManager.onReceiveUpdate(channel, isFull, diffData);
+            }
+        };
+
+        WebSyncS2CPacket.clientHandler = EnderFrameClientInit::handleWebSyncPacket;
+    }
+
+    private static void handleWebSyncPacket(String sessionId, String action, CompoundTag data) {
+        switch (action) {
+            case "dom_sync" -> ClientWebManager.handleSyncPacket(sessionId, data);
+            case "dom_patch" -> ClientWebManager.handlePatchPacket(sessionId, data);
+            case "open_screen" -> {
+                String title = data.getString("Title");
+                int w = data.getInt("Width");
+                int h = data.getInt("Height");
+                String inlineHtml = data.getString("Html");
+                String resLocStr = data.getString("ResourceLocation");
+
+                Minecraft.getInstance().execute(() -> {
+                    AbstractWebScreen screen = new AbstractWebScreen(Component.literal(title.isEmpty() ? "EnderFrame UI" : title), sessionId, w, h) {
+                        @Override
+                        protected String buildInitialHtml() {
+                            if (!inlineHtml.isEmpty()) return inlineHtml;
+                            if (!resLocStr.isEmpty()) {
+                                return AbstractWebScreen.loadHtmlResource(ResourceLocation.parse(resLocStr));
+                            }
+                            return null;
+                        }
+                    };
+                    Minecraft.getInstance().setScreen(screen);
+                });
+            }
+            case "set_hud" -> {
+                String inlineHtml = data.getString("Html");
+                String resLocStr = data.getString("ResourceLocation");
+                Minecraft.getInstance().execute(() -> {
+                    String html = inlineHtml;
+                    if (html.isEmpty() && !resLocStr.isEmpty()) {
+                        html = AbstractWebScreen.loadHtmlResource(ResourceLocation.parse(resLocStr));
+                    }
+                    if (!html.isEmpty()) {
+                        ClientWebManager.loadLocalHtml(sessionId, html, 1280, 720);
+                    }
+                    WebHudRenderer.customActiveHudSessionId = sessionId;
+                });
+            }
+            case "clear_hud" -> Minecraft.getInstance().execute(() -> {
+                if (!WebHudRenderer.customActiveHudSessionId.isEmpty()) {
+                    ClientWebManager.clearSession(WebHudRenderer.customActiveHudSessionId);
+                    WebHudRenderer.customActiveHudSessionId = "";
+                }
+            });
+        }
+    }
+}

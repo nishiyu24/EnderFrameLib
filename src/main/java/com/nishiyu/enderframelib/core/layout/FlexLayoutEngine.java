@@ -6,14 +6,16 @@ import java.util.List;
 public class FlexLayoutEngine implements LayoutEngine {
     @Override
     public void computeSize(LayoutBox box, int tentativeInnerW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
-        boolean isFlexRow = box.style.getOrDefault("flex-direction", "row").equals("row");
-        boolean isFlexColumn = box.style.getOrDefault("flex-direction", "row").equals("column");
+        String dir = box.style.getOrDefault("flex-direction", "row");
+        boolean isFlexRow = dir.startsWith("row");
+        boolean isFlexColumn = dir.startsWith("column");
         String alignItems = box.style.getOrDefault("align-items", "stretch");
 
         int maxChildW = 0, sumChildW = 0, activeChildren = 0;
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.style.getOrDefault("display", "block").equals("none")) continue;
-            child.computeSize(tentativeInnerW, parentH, isFlexRow, isFlexColumn, alignItems, box.w == -1, rootW, rootH);
+            String childAlign = child.style.getOrDefault("align-self", alignItems);
+            child.computeSize(tentativeInnerW, parentH, isFlexRow, isFlexColumn, childAlign, box.w == -1, rootW, rootH);
             maxChildW = Math.max(maxChildW, child.w + child.mL + child.mR);
             sumChildW += child.w + child.mL + child.mR;
             activeChildren++;
@@ -27,8 +29,9 @@ public class FlexLayoutEngine implements LayoutEngine {
 
     @Override
     public void computeHeightAndFinalizeChildren(LayoutBox box, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, int rootW, int rootH) {
-        boolean isFlexRow = box.style.getOrDefault("flex-direction", "row").equals("row");
-        boolean isFlexColumn = box.style.getOrDefault("flex-direction", "row").equals("column");
+        String dir = box.style.getOrDefault("flex-direction", "row");
+        boolean isFlexRow = dir.startsWith("row");
+        boolean isFlexColumn = dir.startsWith("column");
         String flexWrap = box.style.getOrDefault("flex-wrap", "nowrap");
 
         int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
@@ -64,8 +67,11 @@ public class FlexLayoutEngine implements LayoutEngine {
         int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
         String align = box.style.getOrDefault("align-items", "stretch");
 
-        if (align.equals("stretch") && flexWrap.equals("nowrap")) {
+        if (flexWrap.equals("nowrap")) {
             for (LayoutBox child : box.getFlowChildren()) {
+                String effAlign = child.style.getOrDefault("align-self", align);
+                if (!effAlign.equals("stretch")) continue;
+
                 boolean stretched = false;
                 String oldProp = null;
                 if (isFlexRow && !child.style.containsKey("height")) {
@@ -237,7 +243,7 @@ public class FlexLayoutEngine implements LayoutEngine {
         String align = box.style.getOrDefault("align-items", "stretch");
         List<LayoutBox> flowChildren = box.getFlowChildren();
 
-        if (flexDir.equals("row") && flexWrap.equals("wrap")) {
+        if (flexDir.startsWith("row") && flexWrap.equals("wrap")) {
             List<List<LayoutBox>> lines = new ArrayList<>();
             List<LayoutBox> currentLine = new ArrayList<>();
             int currentLineW = 0;
@@ -264,26 +270,51 @@ public class FlexLayoutEngine implements LayoutEngine {
                 int totalLineContentW = lineW + box.gap * Math.max(0, activeCount - 1);
                 float containerInnerW = Math.max(totalLineContentW, (box.w - box.horizontalDecoration()));
 
-                if (justify.equals("space-between") && activeCount > 1)
+                if (justify.equals("space-between") && activeCount > 1) {
                     dynamicGap = (int) (Math.max(0, containerInnerW - lineW) / (activeCount - 1));
-                else if (justify.equals("center"))
+                } else if (justify.equals("space-around") && activeCount > 0) {
+                    int space = (int) Math.max(0, containerInnerW - lineW);
+                    dynamicGap = space / activeCount;
+                    startX += dynamicGap / 2;
+                } else if (justify.equals("space-evenly") && activeCount > 0) {
+                    int space = (int) Math.max(0, containerInnerW - lineW);
+                    dynamicGap = space / (activeCount + 1);
+                    startX += dynamicGap;
+                } else if (justify.equals("center")) {
                     startX = (int) (startX + Math.max(0, containerInnerW - totalLineContentW) / 2);
-                else if (justify.equals("flex-end"))
+                } else if (justify.equals("flex-end") || justify.equals("end")) {
                     startX = (int) (startX + Math.max(0, containerInnerW - totalLineContentW));
+                }
 
                 for (LayoutBox child : line) {
+                    String effAlign = child.style.getOrDefault("align-self", align);
                     int itemY = lineY;
-                    if (align.equals("center")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB)) / 2;
-                    else if (align.equals("flex-end")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB));
-                    else if (align.equals("stretch") && !child.style.containsKey("height"))
+                    if (effAlign.equals("center")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB)) / 2;
+                    else if (effAlign.equals("flex-end") || effAlign.equals("end")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB));
+                    else if (effAlign.equals("stretch") && !child.style.containsKey("height"))
                         child.h = Math.max(child.h, lineH - child.mT - child.mB);
                     child.layout(startX, itemY, child.w, child.h, rootW, rootH);
                     startX += child.w + child.mL + child.mR + dynamicGap;
                 }
                 lineY += lineH + box.gap;
             }
+        } else if (flexDir.startsWith("column") && flexWrap.equals("wrap")) {
+            int maxColH = Math.max(1, box.h - box.verticalDecoration());
+            int colX = innerX, curY = innerY, colMaxW = 0;
+            for (LayoutBox child : flowChildren) {
+                int childOuterW = child.w + child.mL + child.mR;
+                int childOuterH = child.h + child.mT + child.mB;
+                if (curY > innerY && (curY - innerY) + childOuterH > maxColH) {
+                    colX += colMaxW + box.gap;
+                    curY = innerY;
+                    colMaxW = 0;
+                }
+                child.layout(colX, curY, child.w, child.h, rootW, rootH);
+                curY += childOuterH + box.gap;
+                colMaxW = Math.max(colMaxW, childOuterW);
+            }
         } else {
-            boolean isRow = flexDir.equals("row");
+            boolean isRow = flexDir.startsWith("row");
             int mainSpace = isRow ? (box.w - box.horizontalDecoration()) : (box.h - box.verticalDecoration());
             int mainTotalSize = 0, activeCount = flowChildren.size();
             for (LayoutBox child : flowChildren)
@@ -293,21 +324,31 @@ public class FlexLayoutEngine implements LayoutEngine {
             int totalMainSpaceWithGap = mainTotalSize + box.gap * Math.max(0, activeCount - 1);
             int containerMainSpace = Math.max(totalMainSpaceWithGap, mainSpace);
 
-            if (justify.equals("space-between") && activeCount > 1)
+            if (justify.equals("space-between") && activeCount > 1) {
                 dynamicGap = Math.max(0, containerMainSpace - mainTotalSize) / (activeCount - 1);
-            else if (justify.equals("center"))
+            } else if (justify.equals("space-around") && activeCount > 0) {
+                int space = Math.max(0, containerMainSpace - mainTotalSize);
+                dynamicGap = space / activeCount;
+                currentMain += dynamicGap / 2;
+            } else if (justify.equals("space-evenly") && activeCount > 0) {
+                int space = Math.max(0, containerMainSpace - mainTotalSize);
+                dynamicGap = space / (activeCount + 1);
+                currentMain += dynamicGap;
+            } else if (justify.equals("center")) {
                 currentMain += Math.max(0, containerMainSpace - totalMainSpaceWithGap) / 2;
-            else if (justify.equals("flex-end"))
+            } else if (justify.equals("flex-end") || justify.equals("end")) {
                 currentMain += Math.max(0, containerMainSpace - totalMainSpaceWithGap);
+            }
 
             for (LayoutBox child : flowChildren) {
+                String effAlign = child.style.getOrDefault("align-self", align);
                 int crossSpace = isRow ? (box.h - box.verticalDecoration()) : (box.w - box.horizontalDecoration());
                 int crossStart = isRow ? innerY : innerX;
                 int childCrossSize = isRow ? (child.h + child.mT + child.mB) : (child.w + child.mL + child.mR);
 
-                switch (align) {
+                switch (effAlign) {
                     case "center" -> crossStart += Math.max(0, crossSpace - childCrossSize) / 2;
-                    case "flex-end" -> crossStart += Math.max(0, crossSpace - childCrossSize);
+                    case "flex-end", "end" -> crossStart += Math.max(0, crossSpace - childCrossSize);
                     case "stretch" -> {
                         if (isRow && !child.style.containsKey("height"))
                             child.h = Math.max(child.h, crossSpace - child.mT - child.mB);

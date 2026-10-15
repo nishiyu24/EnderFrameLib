@@ -64,8 +64,8 @@ public record SubscribeC2SPacket(
             if (context.player() instanceof ServerPlayer serverPlayer) {
                 if (channel() != null && !channel().isEmpty()) {
                     ServerPubSubManager.subscribe(serverPlayer, channel());
-                }
-                if (needsHud() || needsTracker()) {
+                } else {
+                    // channel が空の場合は AR 購読状態の更新（false/false による購読解除も含む）
                     ServerPubSubManager.updateArSubscription(serverPlayer, needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths());
                 }
             }

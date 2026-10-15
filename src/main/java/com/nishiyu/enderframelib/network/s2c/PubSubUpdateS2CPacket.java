@@ -1,7 +1,5 @@
 package com.nishiyu.enderframelib.network.s2c;
 
-import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
-import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -14,6 +12,13 @@ import java.util.Map;
 
 public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, Object> diffData) implements CustomPacketPayload {
     public static final Type<PubSubUpdateS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("enderframelib", "pubsub_update"));
+
+    @FunctionalInterface
+    public interface IClientPubSubHandler {
+        void onUpdate(String channel, boolean isFull, Map<String, Object> diffData);
+    }
+
+    public static IClientPubSubHandler clientHandler = null;
 
     public static final StreamCodec<FriendlyByteBuf, PubSubUpdateS2CPacket> STREAM_CODEC = StreamCodec.of(
             (buf, packet) -> packet.write(buf),
@@ -35,10 +40,8 @@ public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, 
 
     public void handle(IPayloadContext context) {
         context.enqueueWork(() -> {
-            if ("ar_sync".equals(channel())) {
-                WebHudRenderer.handleBinaryTargetDataSync(diffData());
-            } else {
-                ClientPubSubManager.onReceiveUpdate(channel(), isFull(), diffData());
+            if (clientHandler != null) {
+                clientHandler.onUpdate(channel(), isFull(), diffData());
             }
         });
     }

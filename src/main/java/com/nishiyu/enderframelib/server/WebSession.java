@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.server;
 
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -10,11 +9,13 @@ import net.minecraft.nbt.ListTag;
 import java.util.function.Consumer;
 
 public class WebSession {
+    public static final int DEFAULT_BLOCK_RESOLUTION = 32;
+
     private final String sessionId;
     private final Consumer<WebSession> broadcastCallback;
     private final UIParser uiParser = new UIParser();
-    private int width = 3 * (int) WebRenderCore.RESOLUTION;
-    private int height = 4 * (int) WebRenderCore.RESOLUTION;
+    private int width = 3 * DEFAULT_BLOCK_RESOLUTION;
+    private int height = 4 * DEFAULT_BLOCK_RESOLUTION;
     private UIParser.Document currentDocument;
     private String currentCss = "";
     private RenderSource lastSource;
