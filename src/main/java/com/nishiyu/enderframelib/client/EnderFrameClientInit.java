@@ -90,32 +90,27 @@ public class EnderFrameClientInit {
                 int h = data.getInt("Height");
                 String inlineHtml = data.getString("Html");
                 String resLocStr = data.getString("ResourceLocation");
+                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.parse(resLocStr) : null;
 
                 Minecraft.getInstance().execute(() -> {
                     AbstractWebScreen screen = new AbstractWebScreen(Component.literal(title.isEmpty() ? "EnderFrame UI" : title), sessionId, w, h) {
                         @Override
                         protected String buildInitialHtml() {
-                            if (!inlineHtml.isEmpty()) return inlineHtml;
-                            if (!resLocStr.isEmpty()) {
-                                return AbstractWebScreen.loadHtmlResource(ResourceLocation.parse(resLocStr));
-                            }
-                            return null;
+                            return !inlineHtml.isEmpty() ? inlineHtml : null;
                         }
                     };
+                    if (resLoc != null) {
+                        screen.setHtmlResource(resLoc);
+                    }
                     Minecraft.getInstance().setScreen(screen);
                 });
             }
             case "set_hud" -> {
                 String inlineHtml = data.getString("Html");
                 String resLocStr = data.getString("ResourceLocation");
+                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.parse(resLocStr) : null;
                 Minecraft.getInstance().execute(() -> {
-                    String html = inlineHtml;
-                    if (html.isEmpty() && !resLocStr.isEmpty()) {
-                        html = AbstractWebScreen.loadHtmlResource(ResourceLocation.parse(resLocStr));
-                    }
-                    if (!html.isEmpty()) {
-                        ClientWebManager.loadLocalHtml(sessionId, html, 1280, 720);
-                    }
+                    ClientWebManager.initOrBindSession(sessionId, inlineHtml, resLoc, 1280, 720, false);
                     WebHudRenderer.customActiveHudSessionId = sessionId;
                 });
             }

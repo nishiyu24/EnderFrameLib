@@ -7,6 +7,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -117,10 +119,6 @@ public class WebRenderCore {
         return (float) (Math.round(coord * step) / step);
     }
 
-    /**
-     * 2D GUI描画時に、親のクリップ領域(overflow: hidden/auto/scroll)が存在する場合、
-     * OpenGL Scissor を有効化してテキスト等が1ピクセルも枠外へはみ出さないようにする
-     */
     private static boolean enableClipScissorFor2D(Matrix4f poseMat, MultiBufferSource buffer, float clipMinX, float clipMinY, float clipMaxX, float clipMaxY, float maxAllowedX, float maxAllowedY, boolean is2D) {
         if (!is2D) return false;
         if (clipMinX <= 0.5f && clipMinY <= 0.5f && clipMaxX >= maxAllowedX - 0.5f && clipMaxY >= maxAllowedY - 0.5f) {
@@ -197,16 +195,21 @@ public class WebRenderCore {
         cumulativeOpacity[0] *= anim.opacity();
     }
 
-    private static net.minecraft.client.gui.components.EditBox findActiveEditBox() {
+    public static net.minecraft.client.gui.components.EditBox findActiveEditBox() {
         net.minecraft.client.gui.screens.Screen screen = Minecraft.getInstance().screen;
         if (screen == null) return null;
         if (screen.getFocused() instanceof net.minecraft.client.gui.components.EditBox eb) {
             return eb;
         }
+        net.minecraft.client.gui.components.EditBox fallback = null;
         for (var child : screen.children()) {
-            if (child instanceof net.minecraft.client.gui.components.EditBox eb && eb.isFocused()) {
-                return eb;
+            if (child instanceof net.minecraft.client.gui.components.EditBox eb) {
+                if (eb.isFocused()) return eb;
+                if (fallback == null) fallback = eb;
             }
+        }
+        if (!activeInputId.isEmpty() && !activeInputId.endsWith("_textarea")) {
+            return fallback;
         }
         return null;
     }
@@ -375,7 +378,6 @@ public class WebRenderCore {
                     }
                 }
 
-                // <canvas> 描画
                 if ("canvas".equals(el.type())) {
                     WebCanvasContext ctx = WebCanvasContext.get(animSessionId, baseId);
                     if (ctx != null) {
@@ -384,7 +386,6 @@ public class WebRenderCore {
                     continue;
                 }
 
-                // <mc-scene> (Create Ponder風 3Dマルチブロックシーン) 描画
                 if ("scene".equals(el.type())) {
                     WebSceneContext sceneCtx = WebSceneContext.getOrCreate(animSessionId, baseId);
                     sceneCtx.renderScene(el, poseStack, buffer, finalOpacity, zOffset + effectiveSubZ);
@@ -519,6 +520,7 @@ public class WebRenderCore {
                         }
                     }
 
+                    // プレースホルダ(_ph)の表示判定: 対応するinputに1文字でも入っている場合は非表示にする
                     if (el.id().endsWith("_ph")) {
                         String inputNodeId = el.id().substring(0, el.id().length() - 3);
                         UIElement inputEl = elementMap.get(inputNodeId + "_input");
@@ -529,12 +531,18 @@ public class WebRenderCore {
                             net.minecraft.client.gui.components.EditBox eb = findActiveEditBox();
                             if (eb != null && !eb.getValue().isEmpty()) continue;
                         }
+                        HtmlNode vRoot = ClientWebManager.getVirtualRoot(animSessionId);
+                        if (vRoot != null) {
+                            HtmlNode domNode = DomUtils.findNodeById(vRoot, inputNodeId);
+                            if (domNode != null && !domNode.attrs.getOrDefault("value", "").isEmpty()) {
+                                continue;
+                            }
+                        }
                     }
 
                     float fontH = meta != null ? meta.fontHeight() : el.height();
                     float textScale = fontH / 12.0f;
 
-                    // クリップ枠から完全に外れている場合はスキップ
                     if (textY >= clipMaxY || textY + el.height() <= clipMinY) continue;
 
                     Matrix4f currentPose = poseStack.last().pose();
@@ -547,8 +555,19 @@ public class WebRenderCore {
                         textX += 4.0f;
                         textY += (el.height() - (8.0f * textScale)) / 2.0f;
                     } else if ("range".equals(el.type())) {
+                        float rVal = anim.rangeVal, rMin = anim.rangeMin, rMax = anim.rangeMax;
+                        if (el.text() != null && el.text().contains(":")) {
+                            String[] sp = el.text().split(":");
+                            if (sp.length >= 3) {
+                                try {
+                                    rVal = Float.parseFloat(sp[0]);
+                                    rMin = Float.parseFloat(sp[1]);
+                                    rMax = Float.parseFloat(sp[2]);
+                                } catch (Exception ignored) {}
+                            }
+                        }
                         float ratio = 0;
-                        if (anim.rangeMax > anim.rangeMin) ratio = Math.max(0, Math.min(1, (anim.rangeVal - anim.rangeMin) / (anim.rangeMax - anim.rangeMin)));
+                        if (rMax > rMin) ratio = Math.max(0, Math.min(1, (rVal - rMin) / (rMax - rMin)));
                         VertexConsumer builder = buffer.getBuffer(RenderType.gui());
                         Matrix4f mat = poseStack.last().pose();
                         float trackH = Math.max(4.0f, el.height() * 0.3f), trackY = el.y() + (el.height() - trackH) / 2.0f, trackRad = trackH / 2.0f;
@@ -1000,9 +1019,6 @@ public class WebRenderCore {
         }
     }
 
-    /**
-     * GPU SDF シェーダーが利用可能な場合は 1-Quad (4頂点) で角丸とクリップを一括描画する
-     */
     public static void drawRoundedRect(VertexConsumer builder, Matrix4f matrix, float minX, float minY, float maxX, float maxY, float rTL, float rTR, float rBR, float rBL, float r, float g, float b, float a, float zOffset, float cx0, float cy0, float cx1, float cy1, float cRTL, float cRTR, float cRBR, float cRBL) {
         float maxR = Math.max(Math.max(rTL, rTR), Math.max(rBR, rBL));
         if (maxR <= 0) {

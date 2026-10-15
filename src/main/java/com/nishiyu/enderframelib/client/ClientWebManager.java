@@ -16,6 +16,7 @@ import com.nishiyu.enderframelib.core.text.TextMetrics;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,12 +25,13 @@ public class ClientWebManager {
 
     public static java.util.function.BiConsumer<String, String> scriptLoaderCallback = null;
     public static java.util.function.Consumer<String> sessionClearedCallback = null;
-    public static java.util.function.Consumer<String> applyOverridesCallback = null;
+    public static java.util.function.Consumer<String> applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
 
     private static final Map<String, List<UIElement>> RENDER_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, UIParser.Document> DOM_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, HtmlNode> VIRTUAL_DOM_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, HtmlNode> TEMPLATE_DOM_CACHE = new ConcurrentHashMap<>();
+    private static final Set<String> SERVER_MANAGED_SESSIONS = ConcurrentHashMap.newKeySet();
     private static final Set<String> DIRTY_SESSIONS = ConcurrentHashMap.newKeySet();
     private static final Set<String> REQUESTED_SESSIONS = ConcurrentHashMap.newKeySet();
     private static final Map<String, Long> SYNC_REQUESTS = new ConcurrentHashMap<>();
@@ -38,12 +40,83 @@ public class ClientWebManager {
     private static final Map<String, Integer> LAST_ROOT_H = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, String>> SESSION_ENV = new ConcurrentHashMap<>();
 
+    // UIRenderer が付与する固定末尾サフィックス一覧（長いもの順）
+    private static final String[] RENDER_SUFFIXES = {
+            "_ghost_img",
+            "_b_bottom",
+            "_b_right",
+            "_textarea",
+            "_progress",
+            "_b_left",
+            "_select",
+            "_canvas",
+            "_b_top",
+            "_sb_vt",
+            "_sb_ht",
+            "_scene",
+            "_input",
+            "_sb_v",
+            "_sb_h",
+            "_bbg",
+            "_dot",
+            "_img",
+            "_cb",
+            "_bg",
+            "_ph"
+    };
+
     static {
         TextMetrics.clientWidthFunction = (text, scale) -> {
             net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
             float adjustedScale = scale * (16.0f / 12.0f);
             return (int) Math.ceil(font.width(text) * adjustedScale);
         };
+    }
+
+    /**
+     * すべてのUI表示経路（MOD画面・コンテナ画面・コマンド・データパック・HUD）を統合する単一エントリポイント。
+     * 1. すでにサーバーから dom_sync 済みのセッションであれば、再パースによる状態破壊を行わずサイズのみ合わせる。
+     * 2. ローカルHTMLまたはResourceLocationが指定されていれば、共通パイプラインでDOMを構築する。
+     * 3. どちらも無ければサーバーへ request_sync を要求する。
+     */
+    public static boolean initOrBindSession(String sessionId, String rawHtml, ResourceLocation htmlResource, int width, int height, boolean forceReload) {
+        int targetW = width > 0 ? width : 854;
+        int targetH = height > 0 ? height : 480;
+
+        // サーバー同期済みセッションであり、強制リロードでない場合は既存のDOMツリーを維持する
+        if (!forceReload && SERVER_MANAGED_SESSIONS.contains(sessionId) && DOM_CACHE.containsKey(sessionId)) {
+            if (getLastRootW(sessionId) != targetW || getLastRootH(sessionId) != targetH) {
+                recomputeLayout(sessionId, targetW, targetH);
+            } else {
+                requestRender(sessionId);
+                processRenderQueue();
+            }
+            return false;
+        }
+
+        String resolvedHtml = rawHtml;
+        if ((resolvedHtml == null || resolvedHtml.isEmpty()) && htmlResource != null) {
+            resolvedHtml = UIParser.resourceTextResolver != null
+                    ? UIParser.resourceTextResolver.apply(htmlResource.toString())
+                    : "";
+        }
+
+        if (resolvedHtml != null && !resolvedHtml.isEmpty()) {
+            loadLocalHtml(sessionId, resolvedHtml, targetW, targetH);
+            return true;
+        }
+
+        // サーバー管理セッションの同期を要求
+        SERVER_MANAGED_SESSIONS.add(sessionId);
+        ClientScreenInteractionManager.ensureSynced(sessionId);
+        if (DOM_CACHE.containsKey(sessionId) && (getLastRootW(sessionId) != targetW || getLastRootH(sessionId) != targetH)) {
+            recomputeLayout(sessionId, targetW, targetH);
+        }
+        return false;
+    }
+
+    public static boolean isServerManagedSession(String sessionId) {
+        return sessionId != null && SERVER_MANAGED_SESSIONS.contains(sessionId);
     }
 
     public static void recomputeAllLayouts() {
@@ -56,54 +129,68 @@ public class ClientWebManager {
         if (tag.getBoolean("IsEmpty")) {
             clearSession(sessionId);
         } else if (tag.contains("DomTree")) {
+            SERVER_MANAGED_SESSIONS.add(sessionId);
             CompoundTag domTag = tag.getCompound("DomTree");
             String cssString = tag.getString("CssString");
             String clientScript = tag.getString("ClientScript");
 
             int currentHash = Objects.hash(domTag.hashCode(), cssString.hashCode(), clientScript.hashCode());
-            if (DOM_HASH_CACHE.getOrDefault(sessionId, 0) == currentHash) {
+            if (DOM_HASH_CACHE.getOrDefault(sessionId, 0) == currentHash && DOM_CACHE.containsKey(sessionId)) {
                 REQUESTED_SESSIONS.remove(sessionId);
                 return;
             }
             DOM_HASH_CACHE.put(sessionId, currentHash);
 
-            ClientPubSubManager.clearSession(sessionId);
-            if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
-
             int rootW = LAST_ROOT_W.getOrDefault(sessionId, tag.contains("RootW") ? tag.getInt("RootW") : 854);
             int rootH = LAST_ROOT_H.getOrDefault(sessionId, tag.contains("RootH") ? tag.getInt("RootH") : 480);
 
-            LAST_ROOT_W.put(sessionId, rootW);
-            LAST_ROOT_H.put(sessionId, rootH);
-
             HtmlNode rootNode = HtmlNodeSerializer.deserialize(domTag, null);
-
-            UIParser parser = new UIParser();
-            CssParser.StyleSheet sheet = parser.buildStyleSheet(cssString, rootW);
-
-            UIParser.Document doc = new UIParser.Document(rootNode, sheet, cssString, clientScript);
-            DOM_CACHE.put(sessionId, doc);
-
-            HtmlNode templateRoot = rootNode.cloneNode();
-            TEMPLATE_DOM_CACHE.put(sessionId, templateRoot);
-
-            HtmlNode virtualRoot = rootNode.cloneNode();
-            VIRTUAL_DOM_CACHE.put(sessionId, virtualRoot);
-
-            DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
-            ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
-            if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
-            DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
-
-            Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
-            List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, currentEnv);
-            RENDER_CACHE.put(sessionId, elements);
-
-            if (scriptLoaderCallback != null) scriptLoaderCallback.accept(sessionId, clientScript);
+            installDocumentInternal(sessionId, rootNode, cssString, clientScript, rootW, rootH, true);
         }
 
         REQUESTED_SESSIONS.remove(sessionId);
+    }
+
+    public static void loadLocalHtml(String sessionId, String html, int width, int height) {
+        UIParser parser = new UIParser();
+        UIParser.Document parsedDoc = parser.parseDocument(html, "", width, height);
+        installDocumentInternal(sessionId, parsedDoc.root, parsedDoc.authorCss, parsedDoc.clientScript, width, height, false);
+    }
+
+    /**
+     * サーバー同期(handleSyncPacket)とローカルロード(loadLocalHtml)の双方で完全に同一の初期化手順を実行する内部メソッド
+     */
+    private static void installDocumentInternal(String sessionId, HtmlNode rootNode, String authorCss, String clientScript, int rootW, int rootH, boolean fromServer) {
+        ClientPubSubManager.clearSession(sessionId);
+        if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
+
+        LAST_ROOT_W.put(sessionId, rootW);
+        LAST_ROOT_H.put(sessionId, rootH);
+
+        UIParser parser = new UIParser();
+        CssParser.StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
+        UIParser.Document doc = new UIParser.Document(rootNode, sheet, authorCss, clientScript);
+        DOM_CACHE.put(sessionId, doc);
+
+        HtmlNode templateRoot = rootNode.cloneNode();
+        TEMPLATE_DOM_CACHE.put(sessionId, templateRoot);
+
+        HtmlNode virtualRoot = rootNode.cloneNode();
+        VIRTUAL_DOM_CACHE.put(sessionId, virtualRoot);
+
+        DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
+        ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
+        DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
+
+        Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
+        List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, currentEnv);
+        RENDER_CACHE.put(sessionId, elements);
+
+        if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
+        if (fromServer && scriptLoaderCallback != null && clientScript != null && !clientScript.isEmpty()) {
+            scriptLoaderCallback.accept(sessionId, clientScript);
+        }
     }
 
     public static void handlePatchPacket(String sessionId, CompoundTag data) {
@@ -136,6 +223,9 @@ public class ClientWebManager {
                     String val = patch.getString("Value");
                     DomUtils.updateAttribute(target, key, val, remove);
                     if (tmplTarget != null) DomUtils.updateAttribute(tmplTarget, key, val, remove);
+                    if ("value".equalsIgnoreCase(key)) {
+                        ClientScreenInteractionManager.syncServerValueOverride(sessionId, targetId, remove ? "" : val);
+                    }
                     anyChanged = true;
                 }
                 case "style" -> {
@@ -183,7 +273,7 @@ public class ClientWebManager {
                 ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, tmplRoot, vRoot);
             }
             requestRender(sessionId);
-            if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
+            processRenderQueue();
         }
     }
 
@@ -196,12 +286,16 @@ public class ClientWebManager {
     }
 
     public static void requestRender(String sessionId) {
-        DIRTY_SESSIONS.add(sessionId);
+        if (sessionId != null && !sessionId.isEmpty()) {
+            DIRTY_SESSIONS.add(sessionId);
+        }
     }
 
     public static void processRenderQueue() {
         if (DIRTY_SESSIONS.isEmpty()) return;
         for (String sessionId : new ArrayList<>(DIRTY_SESSIONS)) {
+            DIRTY_SESSIONS.remove(sessionId);
+            if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
             UIParser.Document doc = DOM_CACHE.get(sessionId);
             HtmlNode virtualRoot = VIRTUAL_DOM_CACHE.get(sessionId);
 
@@ -212,7 +306,6 @@ public class ClientWebManager {
                 }
             }
         }
-        DIRTY_SESSIONS.clear();
     }
 
     public static void updateEnvAndRecomputeIfChanged(String sessionId, Map<String, String> newEnv) {
@@ -234,8 +327,12 @@ public class ClientWebManager {
         LAST_ROOT_W.put(sessionId, newRootW);
         LAST_ROOT_H.put(sessionId, newRootH);
 
+        if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
+
         UIParser.Document doc = DOM_CACHE.get(sessionId);
-        if (doc != null) {
+        HtmlNode vRoot = VIRTUAL_DOM_CACHE.get(sessionId);
+        if (doc != null && vRoot != null) {
+            DomDiffEngine.diffAndPatch(doc.root, vRoot);
             UIParser parser = new UIParser();
             doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW);
             Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
@@ -251,6 +348,9 @@ public class ClientWebManager {
         HtmlNode vRoot = VIRTUAL_DOM_CACHE.get(sessionId);
         if (tmpl != null && vRoot != null) {
             ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, tmpl, vRoot);
+        }
+        if (!DIRTY_SESSIONS.isEmpty()) {
+            processRenderQueue();
         }
         return RENDER_CACHE.getOrDefault(sessionId, new ArrayList<>());
     }
@@ -269,42 +369,63 @@ public class ClientWebManager {
         REQUESTED_SESSIONS.add(sessionId);
     }
 
+    /**
+     * UIRenderer が生成した描画用ID (例: "test_input_input", "mode_select_select", "demo_scene_scene") から
+     * 元のDOMノードの id ("test_input", "mode_select", "demo_scene") を正確に復元する。
+     */
     public static String getBaseNodeId(String renderId) {
-        if (renderId == null) return "";
-        if (renderId.contains("_txt_")) return renderId.substring(0, renderId.indexOf("_txt_"));
-        if (renderId.contains("_b_")) return renderId.substring(0, renderId.indexOf("_b_"));
-        if (renderId.contains("_frag_")) return renderId.substring(0, renderId.indexOf("_frag_"));
-        if (renderId.contains("_sb_")) return renderId.substring(0, renderId.indexOf("_sb_"));
-        if (renderId.contains("_shadow")) return renderId.substring(0, renderId.indexOf("_shadow"));
-        if (renderId.contains("_cb")) return renderId.substring(0, renderId.indexOf("_cb"));
-        if (renderId.contains("_bbg")) return renderId.substring(0, renderId.indexOf("_bbg"));
-        if (renderId.contains("_dot")) return renderId.substring(0, renderId.indexOf("_dot"));
-        if (renderId.contains("_bg")) return renderId.substring(0, renderId.indexOf("_bg"));
-        if (renderId.contains("_ph")) return renderId.substring(0, renderId.indexOf("_ph"));
-        if (renderId.contains("_img")) return renderId.substring(0, renderId.indexOf("_img"));
-        if (renderId.contains("_textarea")) return renderId.substring(0, renderId.indexOf("_textarea"));
-        if (renderId.contains("_canvas")) return renderId.substring(0, renderId.indexOf("_canvas"));
-        if (renderId.contains("_scene")) return renderId.substring(0, renderId.indexOf("_scene"));
-        if (renderId.contains("_input")) return renderId.substring(0, renderId.indexOf("_input"));
-        if (renderId.contains("_select")) return renderId.substring(0, renderId.indexOf("_select"));
-        if (renderId.contains("_progress")) return renderId.substring(0, renderId.indexOf("_progress"));
+        if (renderId == null || renderId.isEmpty()) return "";
+
+        // 1. 末尾が "_txt_<数字>", "_frag_<数字>", "_shadow_<数字>" の連番サフィックスを除去
+        int lastUnderscore = renderId.lastIndexOf('_');
+        if (lastUnderscore > 0 && isAllDigits(renderId, lastUnderscore + 1)) {
+            String beforeNum = renderId.substring(0, lastUnderscore);
+            if (beforeNum.endsWith("_txt")) return beforeNum.substring(0, beforeNum.length() - 4);
+            if (beforeNum.endsWith("_frag")) return beforeNum.substring(0, beforeNum.length() - 5);
+            if (beforeNum.endsWith("_shadow")) return beforeNum.substring(0, beforeNum.length() - 7);
+        }
+
+        // 2. すでにそのID自体がDOM上に存在する場合は、サフィックス除去を行わずそのまま返す
+        if (existsNodeIdInAnySession(renderId)) {
+            return renderId;
+        }
+
+        // 3. 固定サフィックスが末尾に付いている場合のみ、末尾から1回だけ除去
+        for (String suffix : RENDER_SUFFIXES) {
+            if (renderId.length() > suffix.length() && renderId.endsWith(suffix)) {
+                return renderId.substring(0, renderId.length() - suffix.length());
+            }
+        }
         return renderId;
     }
 
-    /**
-     * ★修正: "node" アンカーや "_bbg"(枠線背景)、"_ph"(プレースホルダー) ではなく、
-     * 実際のインタラクティブ要素(range / input / select / textarea 等)を優先して返す
-     */
+    private static boolean isAllDigits(String s, int startIdx) {
+        if (startIdx >= s.length()) return false;
+        for (int i = startIdx; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') return false;
+        }
+        return true;
+    }
+
+    private static boolean existsNodeIdInAnySession(String exactId) {
+        for (HtmlNode root : VIRTUAL_DOM_CACHE.values()) {
+            if (DomUtils.findNodeById(root, exactId) != null) return true;
+        }
+        return false;
+    }
+
     public static UIElement getElementById(String sessionId, String id) {
         if (id == null) return null;
         String targetBase = getBaseNodeId(id);
         UIElement fallback = null;
-        for (UIElement el : getElements(sessionId)) {
+        List<UIElement> elements = RENDER_CACHE.getOrDefault(sessionId, Collections.emptyList());
+        for (UIElement el : elements) {
             if (el.id().equals(id) && !"node".equals(el.type())) {
                 return el;
             }
             if (targetBase.equals(getBaseNodeId(el.id()))) {
-                if ("node".equals(el.type()) || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow")) {
+                if ("node".equals(el.type()) || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_")) {
                     if (fallback == null) fallback = el;
                     continue;
                 }
@@ -323,6 +444,9 @@ public class ClientWebManager {
             if (tmplTarget != null && !"hover".equals(attrName)) {
                 DomUtils.updateAttribute(tmplTarget, attrName, attrValue, remove);
             }
+            if ("value".equalsIgnoreCase(attrName)) {
+                updateElementTextLocally(sessionId, baseId, remove || attrValue == null ? "" : attrValue);
+            }
             requestRender(sessionId);
         }
     }
@@ -332,9 +456,12 @@ public class ClientWebManager {
         HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
         if (target != null) {
             DomUtils.toggleAttribute(target, attrName);
+            boolean hasNow = target.attrs.containsKey(attrName);
+            String valNow = target.attrs.get(attrName);
+
             HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
             if (tmplTarget != null) {
-                DomUtils.toggleAttribute(tmplTarget, attrName);
+                DomUtils.updateAttribute(tmplTarget, attrName, valNow, !hasNow);
             }
             requestRender(sessionId);
         }
@@ -464,7 +591,10 @@ public class ClientWebManager {
 
         for (int i = elements.size() - 1; i >= 0; i--) {
             UIElement el = elements.get(i);
-            if ("node".equals(el.type()) || "text".equals(el.type()) || el.id().endsWith("_shadow") || el.id().contains("_sb_")) continue;
+            if ("node".equals(el.type()) || "text".equals(el.type()) || el.id().endsWith("_shadow") || el.id().contains("_sb_")
+                    || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_b_")) {
+                continue;
+            }
 
             boolean isInput = el.type().equals("input") || el.type().equals("textarea") || el.type().equals("select") || el.type().equals("range") || el.type().equals("toggle") || el.type().equals("checkbox") || el.type().equals("button") || el.type().equals("a") || el.type().equals("scene");
             boolean hasInteraction = false;
@@ -496,7 +626,7 @@ public class ClientWebManager {
     public static UIHitResult getLocalCoords(String sessionId, String elementId, double pixelX, double pixelY) {
         UIElement el = getElementById(sessionId, elementId);
         if (el == null) return null;
-        List<UIElement> elements = getElements(sessionId);
+        List<UIElement> elements = RENDER_CACHE.getOrDefault(sessionId, Collections.emptyList());
         Map<String, UIElement> elementMap = new HashMap<>();
         for (UIElement e : elements) elementMap.put(e.id(), e);
 
@@ -504,26 +634,45 @@ public class ClientWebManager {
         return new UIHitResult(el, localPt[0] - el.x(), localPt[1] - el.y());
     }
 
+    public static String resolveSelectDisplayLabel(HtmlNode selectNode, String currentVal) {
+        if (selectNode == null) return currentVal != null ? currentVal : "";
+        String val = currentVal != null ? currentVal : selectNode.attrs.getOrDefault("value", "");
+        String firstLabel = null;
+        for (HtmlNode child : selectNode.children) {
+            if ("option".equalsIgnoreCase(child.tag)) {
+                String optVal = child.attrs.getOrDefault("value", child.getTextContent().trim());
+                String optLabel = child.getTextContent().trim();
+                if (firstLabel == null) firstLabel = optLabel.isEmpty() ? optVal : optLabel;
+                if (val.isEmpty() || val.equals(optVal)) {
+                    return optLabel.isEmpty() ? optVal : optLabel;
+                }
+            }
+        }
+        return firstLabel != null ? firstLabel : val;
+    }
+
     public static void updateElementTextLocally(String sessionId, String elementId, String newText) {
         String safeText = newText != null ? newText : "";
         String baseId = getBaseNodeId(elementId);
 
         HtmlNode target = DomUtils.findNodeById(getVirtualRoot(sessionId), baseId);
+        boolean isRange = target != null && "range".equalsIgnoreCase(target.attrs.getOrDefault("type", ""));
+        boolean isSelect = target != null && "select".equalsIgnoreCase(target.tag);
+
+        String domValue = safeText;
+        if (isRange && safeText.contains(":")) {
+            domValue = safeText.split(":")[0];
+        }
+
         if (target != null) {
-            if (!Objects.equals(target.attrs.get("value"), safeText)) {
-                DomUtils.updateAttribute(target, "value", safeText, false);
-                requestRender(sessionId);
+            if (!Objects.equals(target.attrs.get("value"), domValue)) {
+                DomUtils.updateAttribute(target, "value", domValue, false);
             }
         }
         HtmlNode tmplTarget = DomUtils.findNodeById(TEMPLATE_DOM_CACHE.get(sessionId), baseId);
         if (tmplTarget != null) {
-            DomUtils.updateAttribute(tmplTarget, "value", safeText, false);
-        }
-        UIParser.Document doc = DOM_CACHE.get(sessionId);
-        if (doc != null && doc.root != null) {
-            HtmlNode docTarget = DomUtils.findNodeById(doc.root, baseId);
-            if (docTarget != null) {
-                DomUtils.updateAttribute(docTarget, "value", safeText, false);
+            if (!Objects.equals(tmplTarget.attrs.get("value"), domValue)) {
+                DomUtils.updateAttribute(tmplTarget, "value", domValue, false);
             }
         }
 
@@ -531,12 +680,25 @@ public class ClientWebManager {
         if (elements != null) {
             String phId = baseId + "_ph";
             String inputRenderId = baseId + "_input";
+            String textareaRenderId = baseId + "_textarea";
+            String selectRenderId = baseId + "_select";
+            String placeholderOrig = target != null ? target.attrs.getOrDefault("placeholder", "") : "";
+
             for (int i = 0; i < elements.size(); i++) {
                 UIElement el = elements.get(i);
-                if (el.id().equals(elementId) || el.id().equals(inputRenderId)) {
-                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), safeText, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
-                } else if (!safeText.isEmpty() && el.id().equals(phId)) {
-                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), "", el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                if (el.id().equals(elementId) || el.id().equals(inputRenderId) || el.id().equals(textareaRenderId) || el.id().equals(selectRenderId)) {
+                    String renderText = safeText;
+                    if ("range".equals(el.type()) && !safeText.contains(":")) {
+                        String min = target != null ? target.attrs.getOrDefault("min", "0") : "0";
+                        String max = target != null ? target.attrs.getOrDefault("max", "100") : "100";
+                        renderText = safeText + ":" + min + ":" + max;
+                    } else if ("select".equals(el.type()) || isSelect) {
+                        renderText = resolveSelectDisplayLabel(target, domValue) + " ▾";
+                    }
+                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), renderText, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                } else if (el.id().equals(phId)) {
+                    String nextPh = domValue.isEmpty() ? placeholderOrig : "";
+                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), nextPh, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
                 }
             }
         }
@@ -547,6 +709,7 @@ public class ClientWebManager {
         DOM_CACHE.remove(sessionId);
         VIRTUAL_DOM_CACHE.remove(sessionId);
         TEMPLATE_DOM_CACHE.remove(sessionId);
+        SERVER_MANAGED_SESSIONS.remove(sessionId);
         DIRTY_SESSIONS.remove(sessionId);
         SESSION_ENV.remove(sessionId);
         DOM_HASH_CACHE.remove(sessionId);
@@ -554,27 +717,6 @@ public class ClientWebManager {
         WebCanvasContext.clearSession(sessionId);
         WebSceneContext.clearSession(sessionId);
         if (sessionClearedCallback != null) sessionClearedCallback.accept(sessionId);
-    }
-
-    public static void loadLocalHtml(String sessionId, String html, int width, int height) {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument(html, "", width, height);
-        DOM_CACHE.put(sessionId, doc);
-
-        HtmlNode templateRoot = doc.root.cloneNode();
-        TEMPLATE_DOM_CACHE.put(sessionId, templateRoot);
-
-        HtmlNode virtualRoot = doc.root.cloneNode();
-        VIRTUAL_DOM_CACHE.put(sessionId, virtualRoot);
-
-        LAST_ROOT_W.put(sessionId, width);
-        LAST_ROOT_H.put(sessionId, height);
-
-        DeclarativeBindingManager.initializeBindings(sessionId, virtualRoot);
-        ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, templateRoot, virtualRoot);
-        DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
-
-        recomputeLayout(sessionId, width, height);
     }
 
     public static UIParser.Document getDocument(String sessionId) { return DOM_CACHE.get(sessionId); }
