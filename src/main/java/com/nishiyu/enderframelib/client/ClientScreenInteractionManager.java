@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -25,6 +26,7 @@ import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,10 +47,6 @@ public class ClientScreenInteractionManager {
     public static boolean forwardEventsToServer = false;
     public static boolean enableDefaultUiSounds = true;
 
-    /**
-     * true の場合のみホバー時に DOM の hover 属性を書き換えて再レイアウトする（親:hover 子 セレクタ用）。
-     * デフォルト(false)では WebAnimator が hoveredId を直接参照して高速補間するため、チラつきや入力消失が起きない。
-     */
     public static boolean mutateDomOnHover = false;
 
     public static Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
@@ -71,7 +69,16 @@ public class ClientScreenInteractionManager {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
-        boolean isMouseDown = mc.options.keyUse.isDown() || mc.options.keyAttack.isDown();
+        // 2D GUI画面を開いている間は Screen 側の mouseClicked / mouseDragged に任せる
+        if (mc.screen != null) {
+            wasMouseDown = false;
+            return;
+        }
+
+        long window = mc.getWindow().getWindow();
+        boolean glfwLeft = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        boolean glfwRight = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
+        boolean isMouseDown = glfwLeft || glfwRight || mc.options.keyUse.isDown() || mc.options.keyAttack.isDown();
         boolean isMouseJustPressed = isMouseDown && !wasMouseDown;
         boolean isMouseJustReleased = !isMouseDown && wasMouseDown;
         wasMouseDown = isMouseDown;
@@ -120,7 +127,7 @@ public class ClientScreenInteractionManager {
 
                     if (isMouseJustPressed) {
                         UIElement clickedEl = handleClick(sessionId, pixelX, pixelY);
-                        if (clickedEl != null && "input".equals(clickedEl.type())) {
+                        if (clickedEl != null && ("input".equals(clickedEl.type()) || "textarea".equals(clickedEl.type()))) {
                             WebRenderCore.activeInputId = clickedEl.id();
                             openInputScreen(sessionId, clickedEl, masterPos);
                         } else {
@@ -143,7 +150,7 @@ public class ClientScreenInteractionManager {
     }
 
     public static void openInputScreen(String sessionId, UIElement clickedElement, BlockPos pos) {
-        if (clickedElement != null && "input".equals(clickedElement.type())) {
+        if (clickedElement != null && ("input".equals(clickedElement.type()) || "textarea".equals(clickedElement.type()))) {
             Minecraft.getInstance().setScreen(new InvisibleInputScreen(sessionId, clickedElement, pos));
         }
     }
@@ -230,18 +237,21 @@ public class ClientScreenInteractionManager {
 
     private static void triggerLocalEvent(String sessionId, String elementId, String eventName, String actionName, String value) {
         if (sessionId == null || sessionId.isEmpty()) return;
-        if (actionName != null && !actionName.isEmpty() && !"auto".equals(actionName)) {
-            if (clientEventCallback != null) {
-                clientEventCallback.onEvent(sessionId, elementId, eventName, actionName, value);
-            }
-            if (forwardEventsToServer) {
-                CompoundTag tag = new CompoundTag();
-                tag.putString("ElementId", elementId != null ? elementId : "");
-                tag.putString("EventName", eventName != null ? eventName : "");
-                tag.putString("ActionName", actionName);
-                tag.putString("Value", value != null ? value : "");
-                PacketDistributor.sendToServer(new WebActionC2SPacket(sessionId, "ui_event", tag));
-            }
+        boolean hasCustomAction = actionName != null && !actionName.isEmpty() && !"auto".equals(actionName);
+        boolean isFormSyncEvent = ("oninput".equalsIgnoreCase(eventName) || "onchange".equalsIgnoreCase(eventName))
+                && elementId != null && !elementId.isEmpty();
+
+        if (hasCustomAction && clientEventCallback != null) {
+            clientEventCallback.onEvent(sessionId, elementId, eventName, actionName, value);
+        }
+
+        if ((hasCustomAction || isFormSyncEvent) && (forwardEventsToServer || ClientWebManager.isServerManagedSession(sessionId))) {
+            CompoundTag tag = new CompoundTag();
+            tag.putString("ElementId", elementId != null ? elementId : "");
+            tag.putString("EventName", eventName != null ? eventName : "");
+            tag.putString("ActionName", actionName != null ? actionName : "");
+            tag.putString("Value", value != null ? value : "");
+            PacketDistributor.sendToServer(new WebActionC2SPacket(sessionId, "ui_event", tag));
         }
     }
 
@@ -287,6 +297,19 @@ public class ClientScreenInteractionManager {
         return state != null ? state.hoveredId : "";
     }
 
+    /**
+     * サーバー側から /enderframe patch attr ... value 等で明示的に値が書き換えられた場合、
+     * ローカルキャッシュも同じ値に揃える。
+     */
+    public static void syncServerValueOverride(String sessionId, String elementId, String newValue) {
+        if (sessionId == null || elementId == null) return;
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        SessionState state = getState(sessionId);
+        if (state.localInputCache.containsKey(baseId)) {
+            state.localInputCache.put(baseId, newValue != null ? newValue : "");
+        }
+    }
+
     public static void applyLocalOverrides(String sessionId) {
         SessionState state = getState(sessionId);
         for (Map.Entry<String, String> entry : state.localInputCache.entrySet()) {
@@ -296,7 +319,7 @@ public class ClientScreenInteractionManager {
             ClientWebManager.updateElementTextLocally(sessionId, state.draggingId, state.lastRangeText);
         }
         if (System.currentTimeMillis() - state.lastSubmitTime < 1500) {
-            if (!state.lastSubmittedId.isEmpty() && !state.lastSubmittedText.isEmpty()) {
+            if (!state.lastSubmittedId.isEmpty()) {
                 ClientWebManager.updateElementTextLocally(sessionId, state.lastSubmittedId, state.lastSubmittedText);
             }
         }
@@ -304,19 +327,10 @@ public class ClientScreenInteractionManager {
             ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", "true", false);
         }
         String activeId = WebRenderCore.activeInputId;
-        if (activeId != null && !activeId.isEmpty()) {
-            net.minecraft.client.gui.screens.Screen screen = Minecraft.getInstance().screen;
-            if (screen != null) {
-                String currentText = null;
-                for (net.minecraft.client.gui.components.events.GuiEventListener child : screen.children()) {
-                    if (child instanceof net.minecraft.client.gui.components.EditBox eb && eb.isFocused()) {
-                        currentText = eb.getValue();
-                        break;
-                    }
-                }
-                if (currentText != null) {
-                    updateInputLocally(sessionId, activeId, currentText);
-                }
+        if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
+            EditBox eb = WebRenderCore.findActiveEditBox();
+            if (eb != null) {
+                updateInputLocally(sessionId, activeId, eb.getValue());
             }
         }
     }
@@ -391,11 +405,13 @@ public class ClientScreenInteractionManager {
         if (values.isEmpty()) return;
 
         String current = selectNode.attrs.getOrDefault("value", values.getFirst());
-        int nextIdx = (values.indexOf(current) + 1) % values.size();
+        int currentIdx = values.indexOf(current);
+        int nextIdx = (currentIdx + 1) % values.size();
         String nextVal = values.get(nextIdx);
 
+        submitInput(sessionId, baseId, nextVal);
         ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", nextVal, false);
-        triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), nextVal);
+        ClientWebManager.processRenderQueue();
     }
 
     public static UIElement handleClick(String sessionId, double pixelX, double pixelY) {
@@ -416,8 +432,15 @@ public class ClientScreenInteractionManager {
 
             if ("toggle".equals(clickedEl.type()) || "checkbox".equals(clickedEl.type()) || "radio".equals(clickedEl.type())) {
                 ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
+                HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
+                String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
+                triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
+                ClientWebManager.processRenderQueue();
             } else if ("select".equals(clickedEl.type())) {
-                cycleSelectOption(sessionId, baseId, events);
+                // 3Dスクリーン操作時のみクリックで次の選択肢へ進める（2D画面はドロップダウンを開く）
+                if (Minecraft.getInstance().screen == null) {
+                    cycleSelectOption(sessionId, baseId, events);
+                }
             }
 
             if (hasEvent(events, "ondrag") || "range".equals(clickedEl.type())) {
@@ -426,12 +449,12 @@ public class ClientScreenInteractionManager {
                 state.lastSentY = hit.localY();
 
                 if ("range".equals(clickedEl.type())) {
-                    state.lastRatio = Mth.clamp((float) (hit.localX() / clickedEl.width()), 0.0f, 1.0f);
+                    state.lastRatio = Mth.clamp((float) (hit.localX() / Math.max(1.0, clickedEl.width())), 0.0f, 1.0f);
                     state.lastRangeText = generateRangeText(clickedEl.text(), state.lastRatio);
                     state.lastRangeAction = getEventAction(events, "oninput");
                     state.lastRangeChangeAction = getEventAction(events, "onchange");
                     updateInputLocally(sessionId, state.draggingId, state.lastRangeText);
-                    triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, state.lastRangeText);
+                    triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, state.lastRangeText.split(":")[0]);
                 } else {
                     triggerLocalEvent(sessionId, state.draggingId, "ondragstart", getEventAction(events, "ondragstart"), cordStr);
                 }
@@ -457,18 +480,18 @@ public class ClientScreenInteractionManager {
             Map<String, String> events = draggedEl.events() != null ? draggedEl.events() : Map.of();
 
             if ("range".equals(draggedEl.type())) {
-                float ratio = Mth.clamp((float) (dragHit.localX() / draggedEl.width()), 0.0f, 1.0f);
-                if (Math.abs(state.lastRatio - ratio) > 0.005f) {
+                float ratio = Mth.clamp((float) (dragHit.localX() / Math.max(1.0, draggedEl.width())), 0.0f, 1.0f);
+                if (Math.abs(state.lastRatio - ratio) > 0.002f) {
                     state.lastRatio = ratio;
                     state.lastRangeText = generateRangeText(draggedEl.text(), ratio);
                     updateInputLocally(sessionId, state.draggingId, state.lastRangeText);
-                    if (now - state.lastEventTime > 50) {
-                        triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, state.lastRangeText);
+                    if (now - state.lastEventTime > 40) {
+                        triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, state.lastRangeText.split(":")[0]);
                         state.lastEventTime = now;
                     }
                 }
             } else {
-                if (now - state.lastEventTime > 50) {
+                if (now - state.lastEventTime > 40) {
                     triggerLocalEvent(sessionId, state.draggingId, "ondrag", getEventAction(events, "ondrag"), String.format(Locale.US, "%.1f,%.1f", dragHit.localX(), dragHit.localY()));
                     state.lastEventTime = now;
                 }
@@ -482,8 +505,9 @@ public class ClientScreenInteractionManager {
         SessionState state = getState(sessionId);
         if (!state.draggingId.isEmpty()) {
             if (state.lastRatio >= 0 && !state.lastRangeText.isEmpty()) {
-                triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, state.lastRangeText);
-                triggerLocalEvent(sessionId, state.draggingId, "onchange", state.lastRangeChangeAction, state.lastRangeText);
+                String valOnly = state.lastRangeText.split(":")[0];
+                triggerLocalEvent(sessionId, state.draggingId, "oninput", state.lastRangeAction, valOnly);
+                triggerLocalEvent(sessionId, state.draggingId, "onchange", state.lastRangeChangeAction, valOnly);
                 state.lastSubmittedId = state.draggingId;
                 state.lastSubmittedText = state.lastRangeText;
                 state.lastSubmitTime = System.currentTimeMillis();
@@ -502,22 +526,26 @@ public class ClientScreenInteractionManager {
     }
 
     public static void updateInputLocally(String sessionId, String elementId, String text) {
+        if (elementId == null || elementId.isEmpty()) return;
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String safeText = text != null ? text : "";
         SessionState state = getState(sessionId);
-        String current = state.localInputCache.get(elementId);
-        if (java.util.Objects.equals(current, text)) return;
-        state.localInputCache.put(elementId, text);
-        ClientWebManager.updateElementTextLocally(sessionId, elementId, text);
+        state.localInputCache.put(baseId, safeText);
+        ClientWebManager.updateElementTextLocally(sessionId, baseId, safeText);
     }
 
     public static void submitInput(String sessionId, String elementId, String text) {
-        updateInputLocally(sessionId, elementId, text);
-        UIElement el = ClientWebManager.getElementById(sessionId, elementId);
+        if (elementId == null || elementId.isEmpty()) return;
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String safeText = text != null ? text : "";
+        updateInputLocally(sessionId, baseId, safeText);
+        UIElement el = ClientWebManager.getElementById(sessionId, baseId);
         Map<String, String> events = el != null && el.events() != null ? el.events() : Map.of();
-        triggerLocalEvent(sessionId, elementId, "oninput", getEventAction(events, "oninput"), text);
-        triggerLocalEvent(sessionId, elementId, "onchange", getEventAction(events, "onchange"), text);
+        triggerLocalEvent(sessionId, baseId, "oninput", getEventAction(events, "oninput"), safeText);
+        triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), safeText);
         SessionState state = getState(sessionId);
-        state.lastSubmittedId = elementId;
-        state.lastSubmittedText = text;
+        state.lastSubmittedId = baseId;
+        state.lastSubmittedText = safeText;
         state.lastSubmitTime = System.currentTimeMillis();
     }
 
@@ -530,7 +558,7 @@ public class ClientScreenInteractionManager {
                 max = Float.parseFloat(parts[2]);
             } catch (Exception ignored) {}
         }
-        int newVal = (int) (min + (max - min) * ratio);
+        int newVal = Math.round(min + (max - min) * ratio);
         return newVal + ":" + min + ":" + max;
     }
 

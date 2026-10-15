@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -23,19 +24,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * データパック(.mcfunction)やコマンドブロックからWeb UI・HUD・PubSub・DOMパッチを制御するコマンド群
- *
- * 使用例:
- * - /enderframe open @p mypack:quest_menu
- * - /enderframe open_inline @p "<div class='mc-panel'><div class='mc-title'>Hello {{@player_name}}!</div></div>"
- * - /enderframe hud set @a mypack:rpg_overlay
- * - /enderframe hud clear @a
- * - /enderframe session load global_board mypack:leaderboard 320 240
- * - /enderframe patch text global_board title_id "New Title"
- * - /enderframe patch style global_board box_id background-color "#89b4fa"
- * - /enderframe publish server_stats "{online:12, boss_hp:450, status:'Active'}"
- */
 public class EnderFrameCommands {
 
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_DATAPACK_UIS = (ctx, builder) ->
@@ -244,8 +232,16 @@ public class EnderFrameCommands {
         );
     }
 
-    private static int openDatapackUi(CommandSourceStack source, Collection<ServerPlayer> targets, ResourceLocation uiId, String customSessionId, int w, int h) {
+    private static String resolveServerHtml(ResourceLocation uiId) {
         String html = EnderFrameDataPackManager.getHtml(uiId);
+        if ((html == null || html.isEmpty()) && UIParser.resourceTextResolver != null) {
+            html = UIParser.resourceTextResolver.apply(uiId.toString());
+        }
+        return (html != null && !html.isEmpty()) ? html : null;
+    }
+
+    private static int openDatapackUi(CommandSourceStack source, Collection<ServerPlayer> targets, ResourceLocation uiId, String customSessionId, int w, int h) {
+        String html = resolveServerHtml(uiId);
         String sessionId = (customSessionId == null || customSessionId.isEmpty())
                 ? ("dp_ui_" + uiId.getNamespace() + "_" + uiId.getPath().replace('/', '_'))
                 : customSessionId;
@@ -259,11 +255,7 @@ public class EnderFrameCommands {
         payload.putString("Title", uiId.toString());
         payload.putInt("Width", w);
         payload.putInt("Height", h);
-        if (html != null) {
-            payload.putString("Html", html);
-        } else {
-            payload.putString("ResourceLocation", uiId.toString());
-        }
+        payload.putString("ResourceLocation", uiId.toString());
 
         for (ServerPlayer player : targets) {
             if (html != null) {
@@ -282,7 +274,6 @@ public class EnderFrameCommands {
 
         CompoundTag payload = new CompoundTag();
         payload.putString("Title", "EnderFrame UI");
-        payload.putString("Html", html);
         payload.putInt("Width", 0);
         payload.putInt("Height", 0);
 
@@ -294,7 +285,7 @@ public class EnderFrameCommands {
     }
 
     private static int setPlayerHud(CommandSourceStack source, Collection<ServerPlayer> targets, ResourceLocation uiId) {
-        String html = EnderFrameDataPackManager.getHtml(uiId);
+        String html = resolveServerHtml(uiId);
         String sessionId = "hud_" + uiId.getNamespace() + "_" + uiId.getPath().replace('/', '_');
 
         if (html != null) {
@@ -303,11 +294,7 @@ public class EnderFrameCommands {
         }
 
         CompoundTag payload = new CompoundTag();
-        if (html != null) {
-            payload.putString("Html", html);
-        } else {
-            payload.putString("ResourceLocation", uiId.toString());
-        }
+        payload.putString("ResourceLocation", uiId.toString());
 
         for (ServerPlayer player : targets) {
             if (html != null) {
@@ -329,7 +316,7 @@ public class EnderFrameCommands {
     }
 
     private static int loadSessionFromDatapack(CommandSourceStack source, String sessionId, ResourceLocation uiId, int w, int h) {
-        String html = EnderFrameDataPackManager.getHtml(uiId);
+        String html = resolveServerHtml(uiId);
         if (html == null) {
             source.sendFailure(Component.literal("Datapack UI not found: " + uiId + " (Place at data/" + uiId.getNamespace() + "/enderframe_ui/" + uiId.getPath() + ".html)"));
             return 0;

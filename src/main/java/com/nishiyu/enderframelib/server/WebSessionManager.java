@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.IWebActionReceiver;
 import com.nishiyu.enderframelib.api.IWebSessionProvider;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
 import net.minecraft.core.BlockPos;
@@ -91,6 +93,23 @@ public class WebSessionManager {
 
     public static void handleClientEvent(ServerPlayer player, String sessionId, String elementId, String eventName, String actionName, String value) {
         if (player == null) return;
+
+        // 0. スタンドアロンセッション上のフォーム要素の変更(oninput / onchange)をサーバー側DOMにも反映しておく
+        if (sessionId != null && elementId != null && !elementId.isEmpty() && ("oninput".equalsIgnoreCase(eventName) || "onchange".equalsIgnoreCase(eventName))) {
+            WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
+            if (standalone != null && standalone.getDocument() != null && standalone.getDocument().root != null) {
+                HtmlNode target = standalone.getDocument().root.getElementById(elementId);
+                if (target != null) {
+                    String type = target.attrs.getOrDefault("type", "");
+                    if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                        boolean checked = "true".equalsIgnoreCase(value) || "1".equals(value);
+                        DomUtils.updateAttribute(target, "checked", checked ? "true" : null, !checked);
+                    } else {
+                        DomUtils.updateAttribute(target, "value", value != null ? value : "", false);
+                    }
+                }
+            }
+        }
 
         // 1. プレイヤーが現在開いている ContainerMenu が IWebActionReceiver を実装していれば直接ディスパッチ
         String cleanAction = actionName != null && actionName.startsWith("server:") ? actionName.substring(7) : actionName;

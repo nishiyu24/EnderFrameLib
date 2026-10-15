@@ -5,9 +5,7 @@ import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -109,12 +107,19 @@ public class UIRenderer {
     private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
         if (box.w <= 0 || box.h <= 0) return;
         if (box.style.getOrDefault("display", "block").equals("none")) return;
+        // <option> タグ自体は <select> 側で集約して描画するため個別ボックスとしては描画しない
+        if ("option".equalsIgnoreCase(box.node.tag)) return;
 
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
         String currentId = box.node.id;
         int order = domOrderCounter++;
 
         queue.add(new RenderTask(currentZ, order, (elements) -> drawBoxSelf(elements, box, clipRect, parentId)));
+
+        // <select>, <textarea>, <input> は内部テキストを自己描画するため、子ノード(#text や <option>)を重複描画しない
+        if ("select".equalsIgnoreCase(box.node.tag) || "textarea".equalsIgnoreCase(box.node.tag) || "input".equalsIgnoreCase(box.node.tag)) {
+            return;
+        }
 
         float[] childClip = clipRect;
         String overflow = box.style.getOrDefault("overflow", "visible");
@@ -202,19 +207,12 @@ public class UIRenderer {
     }
 
     private static String resolveLiveInputValue(String nodeId, String attrValue) {
-        if (!WebRenderCore.activeInputId.isEmpty()) {
+        if (!WebRenderCore.activeInputId.isEmpty() && !WebRenderCore.activeInputId.endsWith("_textarea")) {
             String activeBaseId = ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId);
             if (nodeId.equals(activeBaseId) || (nodeId + "_input").equals(WebRenderCore.activeInputId)) {
-                Screen screen = Minecraft.getInstance().screen;
-                if (screen != null) {
-                    if (screen.getFocused() instanceof EditBox eb) {
-                        return eb.getValue();
-                    }
-                    for (var child : screen.children()) {
-                        if (child instanceof EditBox eb && eb.isFocused()) {
-                            return eb.getValue();
-                        }
-                    }
+                EditBox eb = WebRenderCore.findActiveEditBox();
+                if (eb != null) {
+                    return eb.getValue();
                 }
             }
         }
@@ -348,7 +346,6 @@ public class UIRenderer {
             tx = tr[0]; ty = tr[1]; sx = tr[2]; sy = tr[3]; rot = tr[4];
         }
 
-        // data-pan-zoom によるパン＆ズームオフセットの反映
         if (box.node.attrs.containsKey("data-pan-x")) {
             try { tx += Float.parseFloat(box.node.attrs.get("data-pan-x")); } catch (Exception ignored) {}
         }
@@ -459,6 +456,14 @@ public class UIRenderer {
             partsEvents.put("mc-clip", clipRect[0] + "," + clipRect[1] + "," + clipRect[2] + "," + clipRect[3] + "," + clipRect[4] + "," + clipRect[4] + "," + clipRect[4] + "," + clipRect[4]);
         }
 
+        // 枠線背景(_bbg)用のイベントマップ（onclick等を混ぜない）
+        Map<String, String> passiveBorderEvents = new HashMap<>();
+        passiveBorderEvents.put("mc-parent", id);
+        passiveBorderEvents.put("mc-radius", radii[0] + "," + radii[1] + "," + radii[2] + "," + radii[3]);
+        if (partsEvents.containsKey("mc-clip")) {
+            passiveBorderEvents.put("mc-clip", partsEvents.get("mc-clip"));
+        }
+
         for (Map.Entry<String, String> entry : box.node.attrs.entrySet()) {
             if (entry.getKey().toLowerCase().startsWith("on"))
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
@@ -541,9 +546,9 @@ public class UIRenderer {
         switch (box.node.tag) {
             case "mc-scene" -> {
                 if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                 } else if (hasBorder) {
-                    drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                    drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                 }
                 int innerX = box.x + bwLeft;
                 int innerY = box.y + bwTop;
@@ -573,11 +578,11 @@ public class UIRenderer {
                     int thickness = Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft));
                     String bData = thickness + ":" + bcTop + "," + bcRight + "," + bcBottom + "," + bcLeft;
                     UIElement.CircleBorderSpec cbSpec = new UIElement.CircleBorderSpec(thickness, bcTop, bcRight, bcBottom, bcLeft);
-                    addElement(elements, id + "_cb", "circle_border", box.x, box.y, box.w, box.h, bData, 0, 0, partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1));
+                    addElement(elements, id + "_cb", "circle_border", box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1));
                 } else if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                 } else if (hasBorder) {
-                    drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                    drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                 }
 
                 int innerX = box.x + bwLeft;
@@ -641,9 +646,9 @@ public class UIRenderer {
             }
             case "canvas" -> {
                 if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                 } else if (hasBorder) {
-                    drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                    drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                 }
                 int innerX = box.x + bwLeft;
                 int innerY = box.y + bwTop;
@@ -664,34 +669,24 @@ public class UIRenderer {
                 if (box.node.attrs.containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.node.attrs.get("data-line-numbers"));
 
                 if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                     addElement(elements, id + "_textarea", "textarea", innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                 } else {
                     addElement(elements, id + "_textarea", "textarea", box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-                    if (hasBorder) drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                    if (hasBorder) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                 }
             }
             case "select" -> {
                 String currentVal = box.node.attrs.getOrDefault("value", "");
-                String displayLabel = currentVal;
-                for (HtmlNode child : box.node.children) {
-                    if ("option".equalsIgnoreCase(child.tag)) {
-                        String optVal = child.attrs.getOrDefault("value", child.getTextContent().trim());
-                        if (currentVal.isEmpty() || currentVal.equals(optVal)) {
-                            displayLabel = child.getTextContent().trim();
-                            if (currentVal.isEmpty()) currentVal = optVal;
-                            break;
-                        }
-                    }
-                }
+                String displayLabel = ClientWebManager.resolveSelectDisplayLabel(box.node, currentVal);
                 int innerX = box.x + bwLeft, innerY = box.y + bwTop;
                 int innerW = Math.max(0, box.w - bwLeft - bwRight), innerH = Math.max(0, box.h - bwTop - bwBottom);
                 if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                     addElement(elements, id + "_select", "select", innerX, innerY, innerW, innerH, displayLabel + " ▾", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                 } else {
                     addElement(elements, id + "_select", "select", box.x, box.y, box.w, box.h, displayLabel + " ▾", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-                    if (hasBorder) drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                    if (hasBorder) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                 }
             }
             case "input" -> {
@@ -709,37 +704,38 @@ public class UIRenderer {
                 if (inputType.equals("checkbox") || inputType.equals("radio")) {
                     val = Boolean.toString(box.node.attrs.containsKey("checked"));
                     if (useRoundedBorder) {
-                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                         addElement(elements, id + "_input", "toggle", innerX, innerY, innerW, innerH, val, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                     } else {
                         addElement(elements, id + "_input", "toggle", box.x, box.y, box.w, box.h, val, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                     }
                 } else if (inputType.equals("range")) {
                     String min = box.node.attrs.getOrDefault("min", "0"), max = box.node.attrs.getOrDefault("max", "100");
                     if (val.isEmpty()) val = "50";
+                    if (val.contains(":")) val = val.split(":")[0];
                     String rangeData = val + ":" + min + ":" + max;
                     if (useRoundedBorder) {
-                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                         addElement(elements, id + "_input", "range", innerX, innerY, innerW, innerH, rangeData, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                     } else {
                         addElement(elements, id + "_input", "range", box.x, box.y, box.w, box.h, rangeData, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                     }
                 } else {
-                    boolean hasPlaceholder = val.isEmpty() && box.node.attrs.containsKey("placeholder");
-                    String placeholderText = hasPlaceholder ? box.node.attrs.get("placeholder") : "";
+                    boolean hasPlaceholderAttr = box.node.attrs.containsKey("placeholder");
+                    String placeholderText = (hasPlaceholderAttr && val.isEmpty()) ? box.node.attrs.get("placeholder") : "";
                     if (useRoundedBorder) {
-                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                        addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                         addElement(elements, id + "_input", "input", innerX, innerY, innerW, innerH, val, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                     } else {
                         addElement(elements, id + "_input", "input", box.x, box.y, box.w, box.h, val, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                        if (hasBorder) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                     }
-                    if (hasPlaceholder) {
+                    if (hasPlaceholderAttr) {
                         int phColor = 0xFFAAAAAA, fontH = (int) fontHVal;
                         int phX = box.x + bwLeft + 4, phY = box.y + (box.h - fontH) / 2;
-                        Map<String, String> phEvents = new HashMap<>(partsEvents);
+                        Map<String, String> phEvents = new HashMap<>(passiveBorderEvents);
                         addElement(elements, id + "_ph", "text", phX, phY, box.w - bwLeft - bwRight, fontH, placeholderText, phColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
                     }
                 }
@@ -763,7 +759,7 @@ public class UIRenderer {
                         addElement(elements, id + "_bg", baseType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                     addElement(elements, id + "_cb", "circle_border", box.x, box.y, box.w, box.h, bData, 0, 0, Map.of("mc-parent", id), 0, 1f, 0, 0, 1f, 1f, 0, 0, "", new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1));
                 } else if (useRoundedBorder) {
-                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                    addElement(elements, id + "_bbg", "rect", box.x, box.y, box.w, box.h, "", 0, borderColor, passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
 
                     if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
                         Map<String, String> innerEvents = new HashMap<>(partsEvents);
@@ -780,11 +776,10 @@ public class UIRenderer {
                     if (bgColor != 0x00000000 || !partsEvents.isEmpty())
                         addElement(elements, id + "_bg", baseType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
                     if (hasBorder) {
-                        drawStraightBorders(elements, id, box, rOff, partsEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
+                        drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, baseMeta);
                     }
                 }
 
-                // data-ghost-slot にアイテムが設定されている場合、スロット中央にアイテムアイコンを重ね描画
                 if (box.node.attrs.containsKey("data-ghost-item")) {
                     String ghostItem = box.node.attrs.get("data-ghost-item").trim();
                     if (!ghostItem.isEmpty() && !ghostItem.equals("minecraft:air")) {
