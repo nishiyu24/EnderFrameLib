@@ -76,7 +76,7 @@ public class HitTestIndex {
 
         if (el.events() != null) {
             for (String key : el.events().keySet()) {
-                if (key.startsWith("on") || "mc-title".equals(key) || "draggable".equals(key)) {
+                if (key.startsWith("on") || RenderKeys.MC_TITLE.equals(key) || "draggable".equals(key)) {
                     return true;
                 }
             }

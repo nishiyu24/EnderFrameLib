@@ -144,11 +144,10 @@ public class DomUtils {
 
     // --- テンプレート（プレースホルダー置換）系 ---
 
-    public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
-        if (node == null || data == null) return;
-        applyTemplate(node, text -> replacePlaceholders(text, data));
-    }
-
+    /**
+     * テンプレート走査の共通実装。置換方法は呼び出し側が {@code replacer} で与える。
+     * 以前はこの走査処理が 4 箇所に複製されていた。
+     */
     public static void applyTemplate(HtmlNode node, java.util.function.Function<String, String> replacer) {
         if (node == null || replacer == null) return;
 

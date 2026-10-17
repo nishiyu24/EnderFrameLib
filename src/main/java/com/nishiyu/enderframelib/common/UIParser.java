@@ -315,19 +315,11 @@ public class UIParser {
         public HtmlNode root;
         public com.nishiyu.enderframelib.core.css.StyleSheet sheet;
         public String authorCss;
-        @Deprecated
-        public String clientScript = "";
 
         public Document(HtmlNode root, com.nishiyu.enderframelib.core.css.StyleSheet sheet, String authorCss) {
-            this(root, sheet, authorCss, "");
-        }
-
-        @Deprecated
-        public Document(HtmlNode root, com.nishiyu.enderframelib.core.css.StyleSheet sheet, String authorCss, String clientScript) {
             this.root = root;
             this.sheet = sheet;
             this.authorCss = authorCss;
-            this.clientScript = clientScript != null ? clientScript : "";
         }
     }
 }

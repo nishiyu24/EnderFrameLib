@@ -26,7 +26,7 @@ public record UIElement(
         float scaleY,
         float rotate,
         int transitionDuration,
-        String animDef,
+        AnimationSpec animDef,
         ImageFitMode fitMode,
         RenderMeta meta
 ) {
