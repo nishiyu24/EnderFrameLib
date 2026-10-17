@@ -20,21 +20,26 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class WebCanvasContext {
 
-    private static final Map<String, WebCanvasContext> CONTEXTS = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, WebCanvasContext>> SESSION_CANVASES = new ConcurrentHashMap<>();
 
     public static WebCanvasContext getOrCreate(String sessionId, String canvasId) {
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         String baseId = stripCanvasSuffix(canvasId);
-        return CONTEXTS.computeIfAbsent(sessionId + "::" + baseId, k -> new WebCanvasContext());
+        return SESSION_CANVASES
+                .computeIfAbsent(safeSessionId, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(baseId, k -> new WebCanvasContext());
     }
 
     public static WebCanvasContext get(String sessionId, String canvasId) {
         if (sessionId == null || canvasId == null) return null;
-        return CONTEXTS.get(sessionId + "::" + stripCanvasSuffix(canvasId));
+        Map<String, WebCanvasContext> map = SESSION_CANVASES.get(sessionId);
+        return map != null ? map.get(stripCanvasSuffix(canvasId)) : null;
     }
 
     public static void clearSession(String sessionId) {
-        String prefix = sessionId + "::";
-        CONTEXTS.keySet().removeIf(k -> k.startsWith(prefix));
+        if (sessionId != null) {
+            SESSION_CANVASES.remove(sessionId);
+        }
     }
 
     private static String stripCanvasSuffix(String id) {

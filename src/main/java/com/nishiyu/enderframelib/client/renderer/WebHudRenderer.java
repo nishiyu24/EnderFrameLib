@@ -75,11 +75,19 @@ public class WebHudRenderer {
         public List<String> requireNbt = new ArrayList<>();
     }
 
+    public static class TrackerEntry {
+        public final TrackerTemplateConfig config;
+        public final HtmlNode templateNode;
+
+        public TrackerEntry(TrackerTemplateConfig config, HtmlNode templateNode) {
+            this.config = config;
+            this.templateNode = templateNode;
+        }
+    }
+
     private static final Map<String, HudTemplateConfig> hudConfigs = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, String>> lastHudDataCache = new ConcurrentHashMap<>();
-    private static TrackerTemplateConfig currentTrackerConfig = null;
-    private static String currentTrackerSessionId = null;
-    private static HtmlNode trackerTemplateNode = null;
+    private static final Map<String, TrackerEntry> trackerConfigs = new ConcurrentHashMap<>();
 
     private static final Map<UUID, TrackerCache> trackerCaches = new ConcurrentHashMap<>();
     private static final Map<Integer, JsonObject> serverSyncedTrackerData = new ConcurrentHashMap<>();
@@ -131,40 +139,38 @@ public class WebHudRenderer {
         config.targetType = targetType;
         config.requireNbt.addAll(requireNbt);
 
-        trackerTemplateNode = templateNode;
-        currentTrackerSessionId = sessionId;
-        currentTrackerConfig = config;
-        trackerCaches.clear();
+        trackerConfigs.put(sessionId, new TrackerEntry(config, templateNode));
         requestSubscriptionSync();
     }
 
     public static void clearSession(String sessionId) {
         boolean changed = hudConfigs.remove(sessionId) != null;
         lastHudDataCache.remove(sessionId);
-        if (sessionId.equals(currentTrackerSessionId)) {
-            trackerTemplateNode = null;
-            currentTrackerSessionId = null;
-            currentTrackerConfig = null;
-            trackerCaches.clear();
+        if (trackerConfigs.remove(sessionId) != null) {
             changed = true;
+        }
+        if (trackerConfigs.isEmpty()) {
+            trackerCaches.clear();
         }
         if (changed) requestSubscriptionSync();
     }
 
     private static void executeSubscriptionSync() {
         boolean needsHud = !hudConfigs.isEmpty();
-        boolean needsTracker = currentTrackerConfig != null && trackerTemplateNode != null;
-        double radius = needsTracker ? currentTrackerConfig.radius : 24.0;
-        String type = needsTracker ? currentTrackerConfig.targetType : "living";
+        boolean needsTracker = !trackerConfigs.isEmpty();
+        double radius = 24.0;
+        String type = "living";
+
+        List<String> trackerNbtPaths = new ArrayList<>();
+        for (TrackerEntry te : trackerConfigs.values()) {
+            radius = Math.max(radius, te.config.radius);
+            type = te.config.targetType;
+            trackerNbtPaths.addAll(te.config.requireNbt);
+        }
 
         List<String> hudNbtPaths = new ArrayList<>();
         for (HudTemplateConfig cfg : hudConfigs.values()) {
             hudNbtPaths.addAll(cfg.requireNbt);
-        }
-
-        List<String> trackerNbtPaths = new ArrayList<>();
-        if (needsTracker) {
-            trackerNbtPaths.addAll(currentTrackerConfig.requireNbt);
         }
 
         PacketDistributor.sendToServer(new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths));
@@ -276,26 +282,27 @@ public class WebHudRenderer {
         String screenKey = activeHudSessionResolver != null ? activeHudSessionResolver.apply(mc) : null;
         if (screenKey == null || screenKey.isEmpty()) return;
 
-        if (trackerTemplateNode != null && screenKey.equals(currentTrackerSessionId) && currentTrackerConfig != null) {
-            renderTrackersInWorld(event.getPoseStack(), mc, screenKey);
+        TrackerEntry entry = trackerConfigs.get(screenKey);
+        if (entry != null) {
+            renderTrackersInWorld(event.getPoseStack(), mc, screenKey, entry);
         }
     }
 
-    private static void renderTrackersInWorld(PoseStack poseStack, Minecraft mc, String screenKey) {
+    private static void renderTrackersInWorld(PoseStack poseStack, Minecraft mc, String screenKey, TrackerEntry entry) {
         if (mc.player == null || mc.level == null) return;
         Camera camera = mc.gameRenderer.getMainCamera();
         var bufferSource = mc.renderBuffers().bufferSource();
         boolean renderedAny = false;
 
-        AABB box = mc.player.getBoundingBox().inflate(currentTrackerConfig.radius);
-        Class<? extends LivingEntity> targetClass = getTargetClass(currentTrackerConfig.targetType);
+        AABB box = mc.player.getBoundingBox().inflate(entry.config.radius);
+        Class<? extends LivingEntity> targetClass = getTargetClass(entry.config.targetType);
         List<? extends LivingEntity> entities = mc.level.getEntitiesOfClass(targetClass, box);
 
         Set<UUID> activeUuids = new HashSet<>(entities.size());
         for (LivingEntity le : entities) {
             if (le == mc.player) continue;
             activeUuids.add(le.getUUID());
-            if (processAndRenderSingleTracker(poseStack, bufferSource, camera, mc, le, screenKey)) {
+            if (processAndRenderSingleTracker(poseStack, bufferSource, camera, mc, le, screenKey, entry)) {
                 renderedAny = true;
             }
         }
@@ -334,13 +341,13 @@ public class WebHudRenderer {
         }
     }
 
-    private static void populateSyncedTrackerData(LivingEntity le, Map<String, String> dataMap) {
+    private static void populateSyncedTrackerData(LivingEntity le, Map<String, String> dataMap, TrackerTemplateConfig config) {
         JsonObject syncedData = serverSyncedTrackerData.get(le.getId());
         if (syncedData == null) return;
         Map<String, String> flatData = new HashMap<>();
         flattenJsonToMap(syncedData, "", flatData);
 
-        for (String searchKey2 : currentTrackerConfig.requireNbt) {
+        for (String searchKey2 : config.requireNbt) {
             String searchKey1 = "nbt." + searchKey2;
             String rawValue = flatData.getOrDefault(searchKey1, flatData.get(searchKey2));
 
@@ -385,11 +392,11 @@ public class WebHudRenderer {
         cache.elements = renderer.render(layoutBox);
     }
 
-    private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache) {
+    private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache, TrackerTemplateConfig config) {
         if (cache.elements == null || cache.elements.isEmpty()) return false;
 
         double x = le.getX();
-        double y = le.getY() + le.getBbHeight() + currentTrackerConfig.yOffset;
+        double y = le.getY() + le.getBbHeight() + config.yOffset;
         double z = le.getZ();
 
         Vec3 dir = new Vec3(x - camera.getPosition().x, y - camera.getPosition().y, z - camera.getPosition().z);
@@ -416,18 +423,18 @@ public class WebHudRenderer {
         return true;
     }
 
-    private static boolean processAndRenderSingleTracker(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey) {
+    private static boolean processAndRenderSingleTracker(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerEntry entry) {
         UUID uuid = le.getUUID();
         Map<String, String> dataMap = new HashMap<>();
         populateLivingEntityData(le, dataMap);
-        populateSyncedTrackerData(le, dataMap);
+        populateSyncedTrackerData(le, dataMap, entry.config);
 
         TrackerCache cache = trackerCaches.get(uuid);
         if (cache == null || cache.isChanged(dataMap)) {
             cache = new TrackerCache();
             cache.data.putAll(dataMap);
 
-            HtmlNode instanceNode = trackerTemplateNode.cloneNode();
+            HtmlNode instanceNode = entry.templateNode.cloneNode();
             applyTemplateData(instanceNode, dataMap);
             instanceNode.attrs.put("style", instanceNode.attrs.getOrDefault("style", "") + "; display: flex;");
 
@@ -435,7 +442,7 @@ public class WebHudRenderer {
             trackerCaches.put(uuid, cache);
         }
 
-        return renderTrackerBillboard(poseStack, bufferSource, camera, mc, le, screenKey, cache);
+        return renderTrackerBillboard(poseStack, bufferSource, camera, mc, le, screenKey, cache, entry.config);
     }
 
     private static Class<? extends LivingEntity> getTargetClass(String targetType) {
