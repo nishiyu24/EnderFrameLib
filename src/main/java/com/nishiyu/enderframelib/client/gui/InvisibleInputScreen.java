@@ -39,7 +39,7 @@ public class InvisibleInputScreen extends Screen {
         }
 
         this.hiddenEditBox = new EditBox(this.font, -1000, -1000, 200, 20, Component.empty());
-        this.hiddenEditBox.setMaxLength(2048);
+        this.hiddenEditBox.setMaxLength(8192); // textarea用に上限を拡張
         this.hiddenEditBox.setValue(initialVal);
         this.hiddenEditBox.moveCursorToEnd(false);
         this.hiddenEditBox.setResponder(newText ->
@@ -50,16 +50,44 @@ public class InvisibleInputScreen extends Screen {
         this.hiddenEditBox.setFocused(true);
     }
 
+    /**
+     * WebRenderCore がキャレット位置や入力中のテキストを同期するために使用します。
+     */
+    public EditBox getActiveEditBox() {
+        return this.hiddenEditBox;
+    }
+
     @Override
     public void render(@NotNull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // 背景を暗くせず、3Dスクリーン上のカーソル描画(WebRenderCore)に任せる
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        // ブロック上のUIを操作している場合、プレイヤーが離れすぎたら自動で閉じる
+        if (this.blockPos != null && this.minecraft != null && this.minecraft.player != null) {
+            if (this.minecraft.player.blockPosition().distSqr(this.blockPos) > 64.0) {
+                commitAndClose();
+            }
+        }
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             commitAndClose();
             return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            // textarea の場合は Enter で画面を閉じず、改行を挿入する
+            if ("textarea".equals(targetElement.type())) {
+                this.hiddenEditBox.insertText("\n");
+                return true;
+            } else {
+                commitAndClose();
+                return true;
+            }
         }
         return this.hiddenEditBox.keyPressed(keyCode, scanCode, modifiers) || super.keyPressed(keyCode, scanCode, modifiers);
     }

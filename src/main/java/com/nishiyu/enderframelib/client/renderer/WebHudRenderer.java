@@ -7,8 +7,10 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import com.nishiyu.enderframelib.client.ClientLocalEnvProvider;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -50,22 +52,12 @@ import java.lang.reflect.Array;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class WebHudRenderer {
 
     private static final float VIRTUAL_HEIGHT = 720.0f;
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.-]+)}}");
 
-    /**
-     * コマンド(/enderframe hud set)やスクリプトから設定された常時表示HUDセッションID
-     */
     public static String customActiveHudSessionId = "";
-
-    /**
-     * 現在HUDとして表示すべきセッションIDを返すリゾルバ。
-     */
     public static Function<Minecraft, String> activeHudSessionResolver = WebHudRenderer::defaultResolveActiveHudSession;
 
     public static class HudTemplateConfig {
@@ -83,11 +75,12 @@ public class WebHudRenderer {
     }
 
     private static final Map<String, HudTemplateConfig> hudConfigs = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, String>> lastHudDataCache = new ConcurrentHashMap<>();
     private static TrackerTemplateConfig currentTrackerConfig = null;
     private static String currentTrackerSessionId = null;
     private static HtmlNode trackerTemplateNode = null;
 
-    private static final Map<UUID, TrackerCache> trackerCaches = new HashMap<>();
+    private static final Map<UUID, TrackerCache> trackerCaches = new ConcurrentHashMap<>();
     private static final Map<Integer, JsonObject> serverSyncedTrackerData = new ConcurrentHashMap<>();
     private static JsonObject latestTargetData = null;
     private static boolean pendingSubscriptionSync = false;
@@ -126,6 +119,7 @@ public class WebHudRenderer {
         config.templateRoot = templateRoot;
         config.requireNbt.addAll(requireNbt);
         hudConfigs.put(sessionId, config);
+        lastHudDataCache.remove(sessionId);
         requestSubscriptionSync();
     }
 
@@ -145,6 +139,7 @@ public class WebHudRenderer {
 
     public static void clearSession(String sessionId) {
         boolean changed = hudConfigs.remove(sessionId) != null;
+        lastHudDataCache.remove(sessionId);
         if (sessionId.equals(currentTrackerSessionId)) {
             trackerTemplateNode = null;
             currentTrackerSessionId = null;
@@ -171,7 +166,8 @@ public class WebHudRenderer {
             trackerNbtPaths.addAll(currentTrackerConfig.requireNbt);
         }
 
-        PacketDistributor.sendToServer(new SubscribeC2SPacket("", needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths));
+        // 最新の8引数コンストラクタを使用 (channel="", isUnsubscribe=false)
+        PacketDistributor.sendToServer(new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths));
     }
 
     public static void onRenderGui(RenderGuiEvent.Post event) {
@@ -209,38 +205,46 @@ public class WebHudRenderer {
     }
 
     private static void processHudTemplates(Minecraft mc, String screenKey) {
-        if (!hudConfigs.containsKey(screenKey)) return;
-
         HudTemplateConfig config = hudConfigs.get(screenKey);
+        if (config == null || config.templateRoot == null) return;
+
         HtmlNode vRoot = ClientWebManager.getVirtualRoot(screenKey);
+        if (vRoot == null) return;
 
-        if (vRoot != null && config.templateRoot != null) {
-            HtmlNode containerNode = vRoot.getElementById(config.containerId);
-            if (containerNode != null) {
-                Map<String, String> dataMap = extractHudData(mc.hitResult);
+        HtmlNode containerNode = vRoot.getElementById(config.containerId);
+        if (containerNode == null) return;
 
-                if (dataMap.isEmpty()) {
-                    containerNode.attrs.put("style", containerNode.attrs.getOrDefault("style", "") + "; display: none;");
-                } else {
-                    containerNode.attrs.put("style", containerNode.attrs.getOrDefault("style", "").replace("display: none;", "") + "; display: " + config.origDisplay + ";");
+        Map<String, String> dataMap = extractHudData(mc.hitResult);
+        Map<String, String> prevData = lastHudDataCache.get(screenKey);
 
-                    HtmlNode clonedTemplate = config.templateRoot.cloneNode();
-                    applyTemplateData(clonedTemplate, dataMap);
-
-                    containerNode.children.clear();
-                    containerNode.children.addAll(clonedTemplate.children);
-                    for (HtmlNode child : containerNode.children) child.parent = containerNode;
-                }
-                ClientWebManager.requestRender(screenKey);
-            }
+        // 前フレームとターゲットデータが完全に同一であれば、毎フレームのDOM再構築・再レイアウトをスキップ
+        if (prevData != null && prevData.equals(dataMap)) {
+            return;
         }
+        lastHudDataCache.put(screenKey, new HashMap<>(dataMap));
+
+        if (dataMap.isEmpty()) {
+            containerNode.setStyleProperty("display", "none");
+        } else {
+            containerNode.setStyleProperty("display", config.origDisplay);
+            HtmlNode clonedTemplate = config.templateRoot.cloneNode();
+            applyTemplateData(clonedTemplate, dataMap);
+
+            containerNode.children.clear();
+            for (HtmlNode child : clonedTemplate.children) {
+                child.parent = containerNode;
+                containerNode.children.add(child);
+            }
+            containerNode.markDirty();
+        }
+        ClientWebManager.requestRender(screenKey);
     }
 
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
         List<UIElement> elements = ClientWebManager.getElements(screenKey);
         if (elements.isEmpty()) return;
 
-        List<UIElement> hudElements = new ArrayList<>();
+        List<UIElement> hudElements = new ArrayList<>(elements.size());
         for (UIElement el : elements) {
             if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
             hudElements.add(el);
@@ -248,8 +252,6 @@ public class WebHudRenderer {
         if (hudElements.isEmpty()) return;
 
         poseStack.pushPose();
-        poseStack.translate(0, 0, 0);
-
         int screenHeight = mc.getWindow().getGuiScaledHeight();
         float screenScale = (float) screenHeight / VIRTUAL_HEIGHT;
         poseStack.scale(screenScale, screenScale, 1.0f);
@@ -286,18 +288,27 @@ public class WebHudRenderer {
     }
 
     private static void renderTrackersInWorld(PoseStack poseStack, Minecraft mc, String screenKey) {
+        if (mc.player == null || mc.level == null) return;
         Camera camera = mc.gameRenderer.getMainCamera();
         var bufferSource = mc.renderBuffers().bufferSource();
         boolean renderedAny = false;
 
-        AABB box = Objects.requireNonNull(mc.player).getBoundingBox().inflate(currentTrackerConfig.radius);
+        AABB box = mc.player.getBoundingBox().inflate(currentTrackerConfig.radius);
         Class<? extends LivingEntity> targetClass = getTargetClass(currentTrackerConfig.targetType);
+        List<? extends LivingEntity> entities = mc.level.getEntitiesOfClass(targetClass, box);
 
-        for (LivingEntity le : Objects.requireNonNull(mc.level).getEntitiesOfClass(targetClass, box)) {
+        Set<UUID> activeUuids = new HashSet<>(entities.size());
+        for (LivingEntity le : entities) {
             if (le == mc.player) continue;
+            activeUuids.add(le.getUUID());
             if (processAndRenderSingleTracker(poseStack, bufferSource, camera, mc, le, screenKey)) {
                 renderedAny = true;
             }
+        }
+
+        // 範囲外または消滅したエンティティのキャッシュをクリーンアップ
+        if (trackerCaches.size() > activeUuids.size() + 10) {
+            trackerCaches.keySet().retainAll(activeUuids);
         }
 
         if (renderedAny) {
@@ -305,21 +316,18 @@ public class WebHudRenderer {
         }
     }
 
-    private static boolean processAndRenderSingleTracker(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey) {
-        UUID uuid = le.getUUID();
-        Map<String, String> dataMap = new HashMap<>();
-
+    private static void populateLivingEntityData(LivingEntity le, Map<String, String> dataMap) {
         dataMap.put("name", le.getDisplayName().getString());
         dataMap.put("hp", String.valueOf((int) le.getHealth()));
         dataMap.put("max_hp", String.valueOf((int) le.getMaxHealth()));
-        dataMap.put("hp_percent", String.valueOf(Math.round((le.getHealth() / le.getMaxHealth()) * 100)));
+        dataMap.put("hp_percent", String.valueOf(Math.round((le.getHealth() / Math.max(1f, le.getMaxHealth())) * 100)));
         dataMap.put("armor", String.valueOf(le.getArmorValue()));
 
         JsonArray effectsArray = new JsonArray();
         for (MobEffectInstance effect : le.getActiveEffects()) {
-            JsonObject obj = new JsonObject();
             ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect.getEffect().value());
             if (id != null) {
+                JsonObject obj = new JsonObject();
                 obj.addProperty("id", id.toString());
                 obj.addProperty("amplifier", effect.getAmplifier());
                 obj.addProperty("duration", effect.getDuration());
@@ -327,9 +335,16 @@ public class WebHudRenderer {
             }
         }
         if (!effectsArray.isEmpty()) {
-            dataMap.put("active_effects", effectsArray.toString());
-            dataMap.put("nbt.active_effects", effectsArray.toString());
+            String json = effectsArray.toString();
+            dataMap.put("active_effects", json);
+            dataMap.put("nbt.active_effects", json);
         }
+    }
+
+    private static boolean processAndRenderSingleTracker(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey) {
+        UUID uuid = le.getUUID();
+        Map<String, String> dataMap = new HashMap<>();
+        populateLivingEntityData(le, dataMap);
 
         JsonObject syncedData = serverSyncedTrackerData.get(le.getId());
         if (syncedData != null) {
@@ -338,36 +353,29 @@ public class WebHudRenderer {
 
             for (String searchKey2 : currentTrackerConfig.requireNbt) {
                 String searchKey1 = "nbt." + searchKey2;
-                String rawValue = flatData.containsKey(searchKey1) ? flatData.get(searchKey1) :
-                        flatData.getOrDefault(searchKey2, null);
+                String rawValue = flatData.getOrDefault(searchKey1, flatData.get(searchKey2));
 
                 if (rawValue != null) {
                     if ((rawValue.startsWith("[") || rawValue.startsWith("{")) && !rawValue.startsWith("{\"")) {
                         try {
                             CompoundTag dummy = TagParser.parseTag("{data:" + rawValue + "}");
-                            Tag parsedTag = dummy.get("data");
-                            JsonElement jsonElem = toJsonElement(parsedTag);
+                            JsonElement jsonElem = toJsonElement(dummy.get("data"));
                             if (jsonElem != null) rawValue = jsonElem.toString();
                         } catch (Exception ignored) {}
                     }
-                    dataMap.put("nbt." + searchKey2, rawValue);
+                    dataMap.put(searchKey1, rawValue);
                 }
             }
         }
 
         TrackerCache cache = trackerCaches.get(uuid);
-        boolean needsUpdate = (cache == null) || cache.isChanged(dataMap);
-
-        if (needsUpdate) {
+        if (cache == null || cache.isChanged(dataMap)) {
             cache = new TrackerCache();
             cache.data.putAll(dataMap);
 
             HtmlNode instanceNode = trackerTemplateNode.cloneNode();
             applyTemplateData(instanceNode, dataMap);
-
-            String style = instanceNode.attrs.getOrDefault("style", "");
-            style = style.replaceAll("(?i)display\\s*:\\s*none\\s*;?", "");
-            instanceNode.attrs.put("style", style + "; display: flex;");
+            instanceNode.setStyleProperty("display", "flex");
 
             UIParser.Document doc = ClientWebManager.getDocument(screenKey);
             if (doc != null) {
@@ -426,8 +434,8 @@ public class WebHudRenderer {
 
     private static Class<? extends LivingEntity> getTargetClass(String targetType) {
         if ("player".equalsIgnoreCase(targetType)) return Player.class;
-        else if ("monster".equalsIgnoreCase(targetType)) return Monster.class;
-        else if ("animal".equalsIgnoreCase(targetType)) return Animal.class;
+        if ("monster".equalsIgnoreCase(targetType)) return Monster.class;
+        if ("animal".equalsIgnoreCase(targetType)) return Animal.class;
         return LivingEntity.class;
     }
 
@@ -439,27 +447,10 @@ public class WebHudRenderer {
         if (hitResult.getType() == HitResult.Type.ENTITY) {
             EntityHitResult ehr = (EntityHitResult) hitResult;
             if (ehr.getEntity() instanceof LivingEntity le) {
-                map.put("name", le.getDisplayName().getString());
-                map.put("hp", String.valueOf((int) le.getHealth()));
-                map.put("max_hp", String.valueOf((int) le.getMaxHealth()));
-                map.put("armor", String.valueOf(le.getArmorValue()));
+                populateLivingEntityData(le, map);
                 map.put("is_on_fire", String.valueOf(le.isOnFire()));
                 map.put("type", "entity");
                 map.put("is_entity", "true");
-
-                JsonArray effectsArray = new JsonArray();
-                for (MobEffectInstance effect : le.getActiveEffects()) {
-                    JsonObject obj = new JsonObject();
-                    ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect.getEffect().value());
-                    if (id != null) {
-                        obj.addProperty("id", id.toString());
-                        obj.addProperty("amplifier", effect.getAmplifier());
-                        obj.addProperty("duration", effect.getDuration());
-                        effectsArray.add(obj);
-                    }
-                }
-                map.put("active_effects", effectsArray.toString());
-                map.put("nbt.active_effects", effectsArray.toString());
             }
         } else if (hitResult.getType() == HitResult.Type.BLOCK) {
             BlockHitResult bhr = (BlockHitResult) hitResult;
@@ -479,12 +470,12 @@ public class WebHudRenderer {
 
     private static void flattenJsonToMap(JsonElement element, String prefix, Map<String, String> map) {
         if (element.isJsonObject()) {
-            JsonObject obj = element.getAsJsonObject();
-            for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+            for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
                 JsonElement child = entry.getValue();
-                String newPrefix = prefix + entry.getKey();
-                if (child.isJsonPrimitive()) map.put(newPrefix, child.getAsString());
-                else {
+                String newPrefix = prefix.isEmpty() ? entry.getKey() : prefix + entry.getKey();
+                if (child.isJsonPrimitive()) {
+                    map.put(newPrefix, child.getAsString());
+                } else {
                     map.put(newPrefix, child.toString());
                     flattenJsonToMap(child, newPrefix + ".", map);
                 }
@@ -493,8 +484,9 @@ public class WebHudRenderer {
             int i = 0;
             for (JsonElement child : element.getAsJsonArray()) {
                 String newPrefix = prefix + i;
-                if (child.isJsonPrimitive()) map.put(newPrefix, child.getAsString());
-                else {
+                if (child.isJsonPrimitive()) {
+                    map.put(newPrefix, child.getAsString());
+                } else {
                     map.put(newPrefix, child.toString());
                     flattenJsonToMap(child, newPrefix + ".", map);
                 }
@@ -503,30 +495,36 @@ public class WebHudRenderer {
         }
     }
 
+    /**
+     * WebStateStore と ClientLocalEnvProvider の共通機能を用いてテンプレート内のプレースホルダー・i18n・条件・リストを展開する
+     */
     public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
-        if (node.text != null && node.text.contains("{{")) node.text = replacePlaceholders(node.text, data);
+        ClientLocalEnvProvider.applyI18nAttributes(node);
+        Map<String, String> localEnv = ClientLocalEnvProvider.captureCurrentEnv();
+
+        if (node.text != null && node.text.contains("{{")) {
+            node.text = resolveAllPlaceholders(node.text, data, localEnv);
+        }
         for (String key : new ArrayList<>(node.attrs.keySet())) {
             String val = node.attrs.get(key);
-            if (val != null && val.contains("{{")) node.attrs.put(key, replacePlaceholders(val, data));
+            if (val != null && val.contains("{{")) {
+                node.attrs.put(key, resolveAllPlaceholders(val, data, localEnv));
+            }
         }
         if (node.attrs.containsKey("id")) node.id = node.attrs.get("id");
 
         if (node.attrs.containsKey("data-show")) {
             String showVal = node.attrs.get("data-show").trim();
-            boolean hide = showVal.isEmpty() || showVal.equalsIgnoreCase("false") || showVal.equals("0") || showVal.contains("{{");
-            if (hide) node.attrs.put("style", node.attrs.getOrDefault("style", "") + "; display: none;");
+            Boolean condResult = WebStateStore.evaluateCondition(showVal, data);
+            boolean hide = (condResult != null) ? !condResult
+                    : (showVal.isEmpty() || "false".equalsIgnoreCase(showVal) || "0".equals(showVal) || showVal.contains("{{"));
+            if (hide) node.setStyleProperty("display", "none");
             node.attrs.remove("data-show");
         }
 
         if (node.attrs.containsKey("data-list")) {
-            String jsonStr = node.attrs.get("data-list");
-            node.attrs.remove("data-list");
-
-            List<HtmlNode> templateChildren = new ArrayList<>();
-            for (HtmlNode c : node.children) {
-                if ("template".equalsIgnoreCase(c.tag)) templateChildren.addAll(c.children);
-                else templateChildren.add(c);
-            }
+            String jsonStr = node.attrs.remove("data-list");
+            List<HtmlNode> templateChildren = WebStateStore.extractTemplateChildren(node);
             node.children.clear();
 
             if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.contains("{{")) {
@@ -538,32 +536,26 @@ public class WebHudRenderer {
                             Map<String, String> localData = new HashMap<>(data);
                             localData.put("_key", entry.getKey());
                             localData.put("_value", entry.getValue().getAsString());
-                            for (HtmlNode tmplChild : templateChildren) {
-                                HtmlNode clonedChild = tmplChild.cloneNode();
-                                applyTemplateData(clonedChild, localData);
-                                clonedChild.parent = node;
-                                node.children.add(clonedChild);
-                            }
+                            appendClonedTemplateItems(node, templateChildren, localData);
                         }
                     } else if (parsedJson.isJsonArray()) {
                         int idx = 0;
                         for (JsonElement elem : parsedJson.getAsJsonArray()) {
                             Map<String, String> localData = new HashMap<>(data);
                             localData.put("_key", String.valueOf(idx++));
-                            if (elem.isJsonPrimitive()) localData.put("_value", elem.getAsString());
-                            else if (elem.isJsonObject()) {
-                                JsonObject obj = elem.getAsJsonObject();
-                                for (Map.Entry<String, JsonElement> objEntry : obj.entrySet()) {
-                                    if (objEntry.getValue().isJsonPrimitive()) localData.put(objEntry.getKey(), objEntry.getValue().getAsString());
+                            if (elem.isJsonPrimitive()) {
+                                localData.put("_value", elem.getAsString());
+                            } else if (elem.isJsonObject()) {
+                                for (Map.Entry<String, JsonElement> objEntry : elem.getAsJsonObject().entrySet()) {
+                                    if (objEntry.getValue().isJsonPrimitive()) {
+                                        localData.put(objEntry.getKey(), objEntry.getValue().getAsString());
+                                    }
                                 }
                                 localData.put("_value", elem.toString());
-                            } else continue;
-                            for (HtmlNode tmplChild : templateChildren) {
-                                HtmlNode clonedChild = tmplChild.cloneNode();
-                                applyTemplateData(clonedChild, localData);
-                                clonedChild.parent = node;
-                                node.children.add(clonedChild);
+                            } else {
+                                continue;
                             }
+                            appendClonedTemplateItems(node, templateChildren, localData);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -571,25 +563,28 @@ public class WebHudRenderer {
             return;
         }
 
-        for (HtmlNode child : node.children) applyTemplateData(child, data);
+        for (HtmlNode child : node.children) {
+            applyTemplateData(child, data);
+        }
     }
 
-    private static String replacePlaceholders(String text, Map<String, String> data) {
-        Matcher m = PLACEHOLDER_PATTERN.matcher(text);
-        StringBuilder sb = new StringBuilder();
-        while (m.find()) {
-            String key = m.group(1);
-            String replacement = data.getOrDefault(key, "");
-            if (!data.containsKey(key)) replacement = "{{" + key + "}}";
-            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+    private static void appendClonedTemplateItems(HtmlNode parent, List<HtmlNode> templateChildren, Map<String, String> localData) {
+        for (HtmlNode tmplChild : templateChildren) {
+            HtmlNode clonedChild = tmplChild.cloneNode();
+            applyTemplateData(clonedChild, localData);
+            clonedChild.parent = parent;
+            parent.children.add(clonedChild);
         }
-        m.appendTail(sb);
-        return sb.toString();
+    }
+
+    private static String resolveAllPlaceholders(String text, Map<String, String> data, Map<String, String> localEnv) {
+        String step1 = WebStateStore.replacePlaceholdersWithData(text, data);
+        return ClientLocalEnvProvider.replaceLocalPlaceholders(step1, localEnv);
     }
 
     private static void buildLayoutTreeRecursively(HtmlNode node, LayoutBox box, CssParser.StyleSheet sheet) {
         for (HtmlNode child : node.children) {
-            if (child.tag.equals("#text") && (child.text == null || child.text.trim().isEmpty())) continue;
+            if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
             Map<String, String> childStyle = CssParser.computeNodeStyle(child, box.style, sheet, null);
             LayoutBox childBox = new LayoutBox(child, childStyle, null);
             box.children.add(childBox);
@@ -609,8 +604,7 @@ public class WebHudRenderer {
                 for (String entityIdStr : trackerDataObj.keySet()) {
                     try {
                         int entityId = Integer.parseInt(entityIdStr);
-                        JsonObject entityData = trackerDataObj.getAsJsonObject(entityIdStr);
-                        serverSyncedTrackerData.put(entityId, entityData);
+                        serverSyncedTrackerData.put(entityId, trackerDataObj.getAsJsonObject(entityIdStr));
                     } catch (NumberFormatException ignored) {}
                 }
             }
@@ -628,21 +622,11 @@ public class WebHudRenderer {
 
     private static JsonElement toJsonElement(Object v) {
         switch (v) {
-            case null -> {
-                return null;
-            }
-            case String s -> {
-                return new JsonPrimitive(s);
-            }
-            case Number n -> {
-                return new JsonPrimitive(n);
-            }
-            case Boolean b -> {
-                return new JsonPrimitive(b);
-            }
-            case ResourceLocation rl -> {
-                return new JsonPrimitive(rl.toString());
-            }
+            case null -> { return null; }
+            case String s -> { return new JsonPrimitive(s); }
+            case Number n -> { return new JsonPrimitive(n); }
+            case Boolean b -> { return new JsonPrimitive(b); }
+            case ResourceLocation rl -> { return new JsonPrimitive(rl.toString()); }
             case CompoundTag tag -> {
                 JsonObject obj = new JsonObject();
                 for (String key : tag.getAllKeys()) {
@@ -659,17 +643,8 @@ public class WebHudRenderer {
                 }
                 return arr;
             }
-            case StringTag strTag -> {
-                return new JsonPrimitive(strTag.getAsString());
-            }
-            case NumericTag numTag -> {
-                return new JsonPrimitive(numTag.getAsNumber());
-            }
-            default -> {
-            }
-        }
-
-        switch (v) {
+            case StringTag strTag -> { return new JsonPrimitive(strTag.getAsString()); }
+            case NumericTag numTag -> { return new JsonPrimitive(numTag.getAsNumber()); }
             case Map<?, ?> m -> {
                 JsonObject obj = new JsonObject();
                 for (Map.Entry<?, ?> entry : m.entrySet()) {
@@ -689,19 +664,18 @@ public class WebHudRenderer {
                 return arr;
             }
             default -> {
+                if (v.getClass().isArray()) {
+                    JsonArray arr = new JsonArray();
+                    int length = Array.getLength(v);
+                    for (int i = 0; i < length; i++) {
+                        JsonElement child = toJsonElement(Array.get(v, i));
+                        if (child != null) arr.add(child);
+                    }
+                    return arr;
+                }
+                return null;
             }
         }
-
-        if (v.getClass().isArray()) {
-            JsonArray arr = new JsonArray();
-            int length = Array.getLength(v);
-            for (int i = 0; i < length; i++) {
-                JsonElement child = toJsonElement(Array.get(v, i));
-                if (child != null) arr.add(child);
-            }
-            return arr;
-        }
-        return null;
     }
 
     private static JsonObject mapToJson(Map<String, Object> map) {
@@ -710,7 +684,7 @@ public class WebHudRenderer {
     }
 
     private static class TrackerCache {
-        Map<String, String> data = new HashMap<>();
+        final Map<String, String> data = new HashMap<>();
         List<UIElement> elements;
         int width, height;
         public boolean isChanged(Map<String, String> newData) { return !data.equals(newData); }

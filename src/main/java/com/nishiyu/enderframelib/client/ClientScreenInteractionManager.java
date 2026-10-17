@@ -46,7 +46,6 @@ public class ClientScreenInteractionManager {
     public static IClientEventCallback clientEventCallback = null;
     public static boolean forwardEventsToServer = false;
     public static boolean enableDefaultUiSounds = true;
-
     public static boolean mutateDomOnHover = false;
 
     public static Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
@@ -62,14 +61,23 @@ public class ClientScreenInteractionManager {
     static {
         try {
             NeoForge.EVENT_BUS.addListener(ClientScreenInteractionManager::onClientTick);
+            ClientWebManager.addSessionClearedListener(ClientScreenInteractionManager::clearSessionState);
         } catch (Throwable ignored) {}
+    }
+
+    public static void clearSessionState(String sessionId) {
+        if (sessionId == null) return;
+        states.remove(sessionId);
+        ROUTER_DISTANCE_CACHE.remove(sessionId);
+        if (sessionId.equals(lastHoveredSession)) {
+            lastHoveredSession = "";
+        }
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
-        // 2D GUI画面を開いている間は Screen 側の mouseClicked / mouseDragged に任せる
         if (mc.screen != null) {
             wasMouseDown = false;
             return;
@@ -99,13 +107,14 @@ public class ClientScreenInteractionManager {
                     double hitY = hitResult.getLocation().y - pos.getY();
                     double hitZ = hitResult.getLocation().z - pos.getZ();
 
-                    double blockU = 0, blockV = 1.0 - hitY;
-                    switch (facing) {
-                        case NORTH -> blockU = 1.0 - hitX;
-                        case SOUTH -> blockU = hitX;
-                        case WEST -> blockU = hitZ;
-                        case EAST -> blockU = 1.0 - hitZ;
-                    }
+                    double blockU = switch (facing) {
+                        case NORTH -> 1.0 - hitX;
+                        case SOUTH -> hitX;
+                        case WEST -> hitZ;
+                        case EAST -> 1.0 - hitZ;
+                        default -> 0.0;
+                    };
+                    double blockV = 1.0 - hitY;
 
                     IWebScreenBlockEntity master = screen.isMaster() ? screen :
                             (screen.getScreenMasterPos() != null && mc.level.getBlockEntity(screen.getScreenMasterPos()) instanceof IWebScreenBlockEntity m ? m : screen);
@@ -115,11 +124,13 @@ public class ClientScreenInteractionManager {
                     BlockPos masterPos = master.getScreenMasterPos() != null ? master.getScreenMasterPos() : pos;
 
                     Direction screenRight = facing.getCounterClockWise();
-                    int logicalX = 0;
-                    if (screenRight == Direction.WEST) logicalX = masterPos.getX() - pos.getX();
-                    else if (screenRight == Direction.EAST) logicalX = pos.getX() - masterPos.getX();
-                    else if (screenRight == Direction.NORTH) logicalX = masterPos.getZ() - pos.getZ();
-                    else if (screenRight == Direction.SOUTH) logicalX = pos.getZ() - masterPos.getZ();
+                    int logicalX = switch (screenRight) {
+                        case WEST -> masterPos.getX() - pos.getX();
+                        case EAST -> pos.getX() - masterPos.getX();
+                        case NORTH -> masterPos.getZ() - pos.getZ();
+                        case SOUTH -> pos.getZ() - masterPos.getZ();
+                        default -> 0;
+                    };
                     int logicalY = pos.getY() - masterPos.getY();
 
                     double pixelX = (logicalX + blockU) * WebRenderCore.RESOLUTION;
@@ -127,6 +138,7 @@ public class ClientScreenInteractionManager {
 
                     if (isMouseJustPressed) {
                         UIElement clickedEl = handleClick(sessionId, pixelX, pixelY);
+                        // ★ input と textarea をクリックした際に確実に InvisibleInputScreen を開く
                         if (clickedEl != null && ("input".equals(clickedEl.type()) || "textarea".equals(clickedEl.type()))) {
                             WebRenderCore.activeInputId = clickedEl.id();
                             openInputScreen(sessionId, clickedEl, masterPos);
@@ -151,6 +163,7 @@ public class ClientScreenInteractionManager {
 
     public static void openInputScreen(String sessionId, UIElement clickedElement, BlockPos pos) {
         if (clickedElement != null && ("input".equals(clickedElement.type()) || "textarea".equals(clickedElement.type()))) {
+            // ★ InvisibleInputScreen を開き、内部で EditBox が生成される
             Minecraft.getInstance().setScreen(new InvisibleInputScreen(sessionId, clickedElement, pos));
         }
     }
@@ -163,7 +176,7 @@ public class ClientScreenInteractionManager {
 
         float pitch = 1.0f;
         if (events != null && events.containsKey("data-sound-pitch")) {
-            try { pitch = Float.parseFloat(events.get("data-sound-pitch")); } catch (Exception ignored) {}
+            try { pitch = Float.parseFloat(events.get("data-sound-pitch")); } catch (NumberFormatException ignored) {}
         }
 
         if (soundId != null && !soundId.isEmpty()) {
@@ -185,9 +198,16 @@ public class ClientScreenInteractionManager {
         }
     }
 
+    private static boolean checkDistanceInfo(Minecraft mc, RouterDistanceInfo info) {
+        if (info == null) return true;
+        if (info.maxDistSqr() == Double.MAX_VALUE) return true;
+        boolean isSameDim = mc.level.dimension().location().toString().equals(info.dimension());
+        if (!isSameDim) return false;
+        return mc.player.blockPosition().distSqr(BlockPos.of(info.posLong())) <= info.maxDistSqr();
+    }
+
     public static boolean isWithinRange(String screenKey, CompoundTag tag, Minecraft mc) {
         if (mc.player == null || mc.level == null) return false;
-
         RouterDistanceInfo info = ROUTER_DISTANCE_CACHE.computeIfAbsent(screenKey, k -> {
             if (!tag.contains("RouterPos")) return null;
             double maxDist = tag.getDouble("RouterRange");
@@ -197,15 +217,7 @@ public class ClientScreenInteractionManager {
                     maxDist == Double.MAX_VALUE ? Double.MAX_VALUE : maxDist * maxDist
             );
         });
-
-        if (info == null) return true;
-
-        boolean isSameDim = mc.level.dimension().location().toString().equals(info.dimension());
-        if (!isSameDim) return info.maxDistSqr() == Double.MAX_VALUE;
-        if (info.maxDistSqr() == Double.MAX_VALUE) return true;
-
-        BlockPos pos = BlockPos.of(info.posLong());
-        return mc.player.blockPosition().distSqr(pos) <= info.maxDistSqr();
+        return checkDistanceInfo(mc, info);
     }
 
     public static boolean isItemInRange(Minecraft mc, ItemStack stack) {
@@ -218,13 +230,13 @@ public class ClientScreenInteractionManager {
         CompoundTag tag = customData.copyTag();
         if (!tag.contains("RouterPos")) return true;
 
-        BlockPos routerPos = BlockPos.of(tag.getLong("RouterPos"));
-        String routerDim = tag.getString("RouterDim");
         double maxDist = tag.getDouble("RouterRange");
-        boolean isSameDim = mc.level.dimension().location().toString().equals(routerDim);
-
-        if (!isSameDim && maxDist != Double.MAX_VALUE) return false;
-        return !isSameDim || maxDist == Double.MAX_VALUE || !(mc.player.blockPosition().distSqr(routerPos) > (maxDist * maxDist));
+        RouterDistanceInfo info = new RouterDistanceInfo(
+                tag.getLong("RouterPos"),
+                tag.getString("RouterDim"),
+                maxDist == Double.MAX_VALUE ? Double.MAX_VALUE : maxDist * maxDist
+        );
+        return checkDistanceInfo(mc, info);
     }
 
     public static void clearDistanceCache(String screenKey) {
@@ -276,13 +288,12 @@ public class ClientScreenInteractionManager {
 
         SessionState state = getState(sessionId);
         String key = "bind_" + el.id();
-
-        if (newValue == null) newValue = "";
+        String safeVal = newValue != null ? newValue : "";
         String lastValue = state.lastBindValues.getOrDefault(key, "");
 
-        if (!newValue.equals(lastValue)) {
-            state.lastBindValues.put(key, newValue);
-            triggerLocalEvent(sessionId, ClientWebManager.getBaseNodeId(el.id()), "onchange", getEventAction(el.events(), "onchange"), newValue);
+        if (!safeVal.equals(lastValue)) {
+            state.lastBindValues.put(key, safeVal);
+            triggerLocalEvent(sessionId, ClientWebManager.getBaseNodeId(el.id()), "onchange", getEventAction(el.events(), "onchange"), safeVal);
         }
     }
 
@@ -297,10 +308,6 @@ public class ClientScreenInteractionManager {
         return state != null ? state.hoveredId : "";
     }
 
-    /**
-     * サーバー側から /enderframe patch attr ... value 等で明示的に値が書き換えられた場合、
-     * ローカルキャッシュも同じ値に揃える。
-     */
     public static void syncServerValueOverride(String sessionId, String elementId, String newValue) {
         if (sessionId == null || elementId == null) return;
         String baseId = ClientWebManager.getBaseNodeId(elementId);
@@ -318,10 +325,8 @@ public class ClientScreenInteractionManager {
         if (!state.draggingId.isEmpty() && !state.lastRangeText.isEmpty()) {
             ClientWebManager.updateElementTextLocally(sessionId, state.draggingId, state.lastRangeText);
         }
-        if (System.currentTimeMillis() - state.lastSubmitTime < 1500) {
-            if (!state.lastSubmittedId.isEmpty()) {
-                ClientWebManager.updateElementTextLocally(sessionId, state.lastSubmittedId, state.lastSubmittedText);
-            }
+        if (System.currentTimeMillis() - state.lastSubmitTime < 1500 && !state.lastSubmittedId.isEmpty()) {
+            ClientWebManager.updateElementTextLocally(sessionId, state.lastSubmittedId, state.lastSubmittedText);
         }
         if (mutateDomOnHover && !state.hoveredId.isEmpty()) {
             ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", "true", false);
@@ -330,6 +335,7 @@ public class ClientScreenInteractionManager {
         if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
             EditBox eb = WebRenderCore.findActiveEditBox();
             if (eb != null) {
+                // ★ EditBox に入力されたテキストを、DOMとUI要素の表示テキストにリアルタイム同期する
                 updateInputLocally(sessionId, activeId, eb.getValue());
             }
         }
@@ -392,7 +398,7 @@ public class ClientScreenInteractionManager {
         }
     }
 
-    private static void cycleSelectOption(String sessionId, String baseId, Map<String, String> events) {
+    private static void cycleSelectOption(String sessionId, String baseId) {
         HtmlNode selectNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
         if (selectNode == null) return;
 
@@ -430,17 +436,22 @@ public class ClientScreenInteractionManager {
 
             triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
 
-            if ("toggle".equals(clickedEl.type()) || "checkbox".equals(clickedEl.type()) || "radio".equals(clickedEl.type())) {
+            if ("radio".equals(clickedEl.type())) {
+                HtmlNode target = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
+                if (target != null) {
+                    DomUtils.selectRadioButton(ClientWebManager.getVirtualRoot(sessionId), target);
+                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
+                    ClientWebManager.processRenderQueue();
+                }
+            } else if ("toggle".equals(clickedEl.type()) || "checkbox".equals(clickedEl.type())) {
                 ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
                 HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
                 String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
                 triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
                 ClientWebManager.processRenderQueue();
-            } else if ("select".equals(clickedEl.type())) {
-                // 3Dスクリーン操作時のみクリックで次の選択肢へ進める（2D画面はドロップダウンを開く）
-                if (Minecraft.getInstance().screen == null) {
-                    cycleSelectOption(sessionId, baseId, events);
-                }
+            } else if ("select".equals(clickedEl.type()) && Minecraft.getInstance().screen == null) {
+                // ★ select の場合、クリックするたびに値と表示が切り替わる
+                cycleSelectOption(sessionId, baseId);
             }
 
             if (hasEvent(events, "ondrag") || "range".equals(clickedEl.type())) {
@@ -490,11 +501,9 @@ public class ClientScreenInteractionManager {
                         state.lastEventTime = now;
                     }
                 }
-            } else {
-                if (now - state.lastEventTime > 40) {
-                    triggerLocalEvent(sessionId, state.draggingId, "ondrag", getEventAction(events, "ondrag"), String.format(Locale.US, "%.1f,%.1f", dragHit.localX(), dragHit.localY()));
-                    state.lastEventTime = now;
-                }
+            } else if (now - state.lastEventTime > 40) {
+                triggerLocalEvent(sessionId, state.draggingId, "ondrag", getEventAction(events, "ondrag"), String.format(Locale.US, "%.1f,%.1f", dragHit.localX(), dragHit.localY()));
+                state.lastEventTime = now;
             }
         }
         return true;
@@ -556,7 +565,7 @@ public class ClientScreenInteractionManager {
             try {
                 min = Float.parseFloat(parts[1]);
                 max = Float.parseFloat(parts[2]);
-            } catch (Exception ignored) {}
+            } catch (NumberFormatException ignored) {}
         }
         int newVal = Math.round(min + (max - min) * ratio);
         return newVal + ":" + min + ":" + max;
@@ -574,7 +583,7 @@ public class ClientScreenInteractionManager {
         String lastSubmittedId = "";
         String lastSubmittedText = "";
         long lastSubmitTime = 0;
-        Map<String, String> lastBindValues = new ConcurrentHashMap<>();
-        Map<String, String> localInputCache = new ConcurrentHashMap<>();
+        final Map<String, String> lastBindValues = new ConcurrentHashMap<>();
+        final Map<String, String> localInputCache = new ConcurrentHashMap<>();
     }
 }

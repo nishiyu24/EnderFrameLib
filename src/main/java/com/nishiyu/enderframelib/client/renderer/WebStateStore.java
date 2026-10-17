@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.binding;
 
+import com.nishiyu.enderframelib.client.ClientLocalEnvProvider;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -14,11 +15,13 @@ import java.util.regex.Pattern;
 
 /**
  * ローカルGUI画面やWebセッション向けに、リアクティブな状態管理・双方向バインディング(data-model)・
- * Supplier自動監視・DOM自動バインディングを提供するストア
+ * 条件分岐(data-if / mc-if / data-show)・反復展開(data-for / mc-for / data-list)・i18nローカライズを提供するストア。
  */
 public class WebStateStore {
 
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(?!@)([a-zA-Z0-9_.-]+)}}");
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(?!@)([^}]+)}}");
+    private static final Pattern FOR_EXPR_PATTERN = Pattern.compile("^([a-zA-Z0-9_]+)\\s+in\\s+([a-zA-Z0-9_.-]+)$");
+    private static final Pattern COMPARE_EXPR_PATTERN = Pattern.compile("^([a-zA-Z0-9_.-]+)\\s*(==|!=|>=|<=|>|<)\\s*(.+)$");
 
     private final String sessionId;
     private final Map<String, String> values = new ConcurrentHashMap<>();
@@ -27,7 +30,6 @@ public class WebStateStore {
     private final Map<String, List<Map<String, String>>> lastRenderedLists = new ConcurrentHashMap<>();
     private final Map<String, String> originalShowDisplay = new ConcurrentHashMap<>();
 
-    // リアクティブ Supplier & ウォッチャー
     private final Map<String, Supplier<?>> boundSuppliers = new ConcurrentHashMap<>();
     private final Map<String, Supplier<List<Map<String, String>>>> boundListSuppliers = new ConcurrentHashMap<>();
     private final Map<String, List<Consumer<String>>> watchers = new ConcurrentHashMap<>();
@@ -60,23 +62,16 @@ public class WebStateStore {
         return this;
     }
 
-    /**
-     * 毎フレーム自動的に Supplier を評価し、値が変化したときのみ DOM に差分反映する（CreateのPonder風宣言的バインド）
-     */
     public WebStateStore bind(String key, Supplier<?> supplier) {
         if (key != null && supplier != null) {
             boundSuppliers.put(key, supplier);
             try {
-                Object initial = supplier.get();
-                setInternal(key, initial, false);
+                setInternal(key, supplier.get(), false);
             } catch (Exception ignored) {}
         }
         return this;
     }
 
-    /**
-     * 毎フレーム自動的にリスト Supplier を評価し、変化したときのみ data-list を再展開する
-     */
     public WebStateStore bindList(String key, Supplier<List<Map<String, String>>> listSupplier) {
         if (key != null && listSupplier != null) {
             boundListSuppliers.put(key, listSupplier);
@@ -87,9 +82,6 @@ public class WebStateStore {
         return this;
     }
 
-    /**
-     * 指定キーの値変更（または data-model 入力による変更）を監視するリスナーを登録する
-     */
     public WebStateStore watch(String key, Consumer<String> listener) {
         if (key != null && listener != null) {
             watchers.computeIfAbsent(key, k -> new CopyOnWriteArrayList<>()).add(listener);
@@ -103,10 +95,6 @@ public class WebStateStore {
         watchers.clear();
     }
 
-    /**
-     * UI要素（input / textarea / select / checkbox / range）に data-model="key" が設定されている場合、
-     * ユーザーの入力値をストアへ逆反映し、watchリスナーを発火させる
-     */
     public void notifyElementModelChanged(String elementId, String newValue) {
         HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
         if (vRoot == null || elementId == null) return;
@@ -127,7 +115,7 @@ public class WebStateStore {
     public int getInt(String key, int defaultVal) {
         try {
             return Integer.parseInt(values.getOrDefault(key, String.valueOf(defaultVal)).trim());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             return defaultVal;
         }
     }
@@ -135,7 +123,7 @@ public class WebStateStore {
     public float getFloat(String key, float defaultVal) {
         try {
             return Float.parseFloat(values.getOrDefault(key, String.valueOf(defaultVal)).trim());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             return defaultVal;
         }
     }
@@ -146,16 +134,22 @@ public class WebStateStore {
     }
 
     public WebStateStore setList(String key, List<Map<String, String>> items) {
-        List<Map<String, String>> copy = new ArrayList<>();
-        if (items != null) {
-            for (Map<String, String> item : items) copy.add(new HashMap<>(item));
-        }
+        List<Map<String, String>> copy = copyListItems(items);
         List<Map<String, String>> prev = lists.put(key, copy);
         if (!Objects.equals(prev, copy)) {
             dirty = true;
             syncToDom();
         }
         return this;
+    }
+
+    private static List<Map<String, String>> copyListItems(List<Map<String, String>> items) {
+        if (items == null || items.isEmpty()) return new ArrayList<>();
+        List<Map<String, String>> copy = new ArrayList<>(items.size());
+        for (Map<String, String> item : items) {
+            copy.add(new HashMap<>(item));
+        }
+        return copy;
     }
 
     public void forceSync() {
@@ -178,11 +172,7 @@ public class WebStateStore {
         }
         for (Map.Entry<String, Supplier<List<Map<String, String>>>> entry : boundListSuppliers.entrySet()) {
             try {
-                List<Map<String, String>> items = entry.getValue().get();
-                List<Map<String, String>> copy = new ArrayList<>();
-                if (items != null) {
-                    for (Map<String, String> item : items) copy.add(new HashMap<>(item));
-                }
+                List<Map<String, String>> copy = copyListItems(entry.getValue().get());
                 List<Map<String, String>> prev = lists.put(entry.getKey(), copy);
                 if (!Objects.equals(prev, copy)) {
                     dirty = true;
@@ -206,12 +196,12 @@ public class WebStateStore {
 
     private boolean applyRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData) {
         if (vNode == null) return false;
-        boolean changed = false;
+        boolean changed = ClientLocalEnvProvider.applyI18nAttributes(vNode);
 
-        // 1. テキストの {{key}} プレースホルダー解決
+        // 1. テキストの {{key}} / {{ 'key' | i18n }} プレースホルダー解決
         String rawText = (origNode != null && origNode.text != null) ? origNode.text : vNode.text;
         if (rawText != null && rawText.contains("{{") && !rawText.contains("{{@")) {
-            String resolved = replacePlaceholders(rawText, scopeData);
+            String resolved = replacePlaceholdersWithData(rawText, scopeData);
             if (!Objects.equals(resolved, vNode.text)) {
                 vNode.text = resolved;
                 vNode.markDirty();
@@ -225,7 +215,7 @@ public class WebStateStore {
             String k = entry.getKey();
             String rawVal = entry.getValue();
             if (rawVal != null && rawVal.contains("{{") && !rawVal.contains("{{@")) {
-                String resolved = replacePlaceholders(rawVal, scopeData);
+                String resolved = replacePlaceholdersWithData(rawVal, scopeData);
                 if (!Objects.equals(resolved, vNode.attrs.get(k))) {
                     DomUtils.updateAttribute(vNode, k, resolved, false);
                     changed = true;
@@ -246,14 +236,11 @@ public class WebStateStore {
                         DomUtils.updateAttribute(vNode, "checked", shouldCheck ? "true" : null, !shouldCheck);
                         changed = true;
                     }
-                } else {
-                    if (!Objects.equals(vNode.attrs.get("value"), modelVal)) {
-                        DomUtils.updateAttribute(vNode, "value", modelVal, false);
-                        changed = true;
-                    }
+                } else if (!Objects.equals(vNode.attrs.get("value"), modelVal)) {
+                    DomUtils.updateAttribute(vNode, "value", modelVal, false);
+                    changed = true;
                 }
             } else {
-                // 初期値がまだストアにない場合、HTML要素側の初期 value / checked をストアに取り込む
                 String type = vNode.attrs.getOrDefault("type", "text");
                 if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
                     values.put(modelKey, Boolean.toString(vNode.attrs.containsKey("checked")));
@@ -265,16 +252,15 @@ public class WebStateStore {
 
         // 4. data-bind="key" または data-bind="attr:key, style.color:colorKey"
         if (vNode.attrs.containsKey("data-bind")) {
-            String bindDef = vNode.attrs.get("data-bind");
-            for (String part : bindDef.split(",")) {
+            for (String part : vNode.attrs.get("data-bind").split(",")) {
                 part = part.trim();
                 if (part.isEmpty()) continue;
                 String target = "text";
                 String key = part;
-                if (part.contains(":")) {
-                    String[] kv = part.split(":", 2);
-                    target = kv[0].trim();
-                    key = kv[1].trim();
+                int colon = part.indexOf(':');
+                if (colon > 0) {
+                    target = part.substring(0, colon).trim();
+                    key = part.substring(colon + 1).trim();
                 }
                 if (scopeData.containsKey(key)) {
                     String val = scopeData.get(key);
@@ -290,29 +276,35 @@ public class WebStateStore {
                         if (!Objects.equals(prevStyle, vNode.attrs.getOrDefault("style", ""))) {
                             changed = true;
                         }
-                    } else {
-                        if (!Objects.equals(vNode.attrs.get(target), val)) {
-                            DomUtils.updateAttribute(vNode, target, val, false);
-                            changed = true;
-                        }
+                    } else if (!Objects.equals(vNode.attrs.get(target), val)) {
+                        DomUtils.updateAttribute(vNode, target, val, false);
+                        changed = true;
                     }
                 }
             }
         }
 
-        // 5. data-show="condition" / data-show="!condition"
-        if (vNode.attrs.containsKey("data-show")) {
-            String cond = vNode.attrs.get("data-show").trim();
-            boolean invert = cond.startsWith("!");
-            String key = invert ? cond.substring(1).trim() : cond;
-            if (scopeData.containsKey(key)) {
-                String val = scopeData.getOrDefault(key, "");
-                boolean truthy = !val.isEmpty() && !"false".equalsIgnoreCase(val) && !"0".equals(val);
-                boolean visible = invert != truthy;
+        // 5a. data-if / mc-if
+        String ifExpr = vNode.attrs.getOrDefault("data-if", vNode.attrs.get("mc-if"));
+        if (ifExpr != null && !ifExpr.isBlank()) {
+            Boolean evalResult = evaluateCondition(ifExpr.trim(), scopeData);
+            if (evalResult != null) {
+                boolean currentlyHidden = vNode.attrs.containsKey("hidden");
+                boolean shouldBeHidden = !evalResult;
+                if (currentlyHidden != shouldBeHidden) {
+                    DomUtils.updateAttribute(vNode, "hidden", shouldBeHidden ? "true" : null, !shouldBeHidden);
+                    changed = true;
+                }
+            }
+        }
 
+        // 5b. data-show="condition"
+        if (vNode.attrs.containsKey("data-show")) {
+            Boolean visibleObj = evaluateCondition(vNode.attrs.get("data-show").trim(), scopeData);
+            if (visibleObj != null) {
                 String origDisp = originalShowDisplay.computeIfAbsent(vNode.id, id ->
                         vNode.attrs.getOrDefault("data-orig-display", "flex"));
-                String targetDisp = visible ? origDisp : "none";
+                String targetDisp = visibleObj ? origDisp : "none";
                 String curStyle = vNode.attrs.getOrDefault("style", "");
                 if (!curStyle.contains("display: " + targetDisp)) {
                     vNode.setStyleProperty("display", targetDisp);
@@ -321,24 +313,19 @@ public class WebStateStore {
             }
         }
 
-        // 6. data-class="className:conditionKey, otherClass:!conditionKey"
+        // 6. data-class="className:condition"
         if (vNode.attrs.containsKey("data-class")) {
-            String clsDef = vNode.attrs.get("data-class");
-            for (String item : clsDef.split(",")) {
-                String[] kv = item.trim().split(":", 2);
-                if (kv.length == 2) {
-                    String className = kv[0].trim();
-                    String cond = kv[1].trim();
-                    boolean invert = cond.startsWith("!");
-                    String key = invert ? cond.substring(1).trim() : cond;
-                    if (scopeData.containsKey(key)) {
-                        String val = scopeData.getOrDefault(key, "");
-                        boolean truthy = !val.isEmpty() && !"false".equalsIgnoreCase(val) && !"0".equals(val);
-                        boolean shouldHave = invert != truthy;
-                        if (shouldHave && !vNode.hasClass(className)) {
+            for (String item : vNode.attrs.get("data-class").split(",")) {
+                int colon = item.indexOf(':');
+                if (colon > 0) {
+                    String className = item.substring(0, colon).trim();
+                    String cond = item.substring(colon + 1).trim();
+                    Boolean shouldHaveObj = evaluateCondition(cond, scopeData);
+                    if (shouldHaveObj != null) {
+                        if (shouldHaveObj && !vNode.hasClass(className)) {
                             vNode.addClass(className);
                             changed = true;
-                        } else if (!shouldHave && vNode.hasClass(className)) {
+                        } else if (!shouldHaveObj && vNode.hasClass(className)) {
                             vNode.removeClass(className);
                             changed = true;
                         }
@@ -347,9 +334,25 @@ public class WebStateStore {
             }
         }
 
-        // 7. data-list="listKey" によるテンプレート反復展開
+        // 7. data-list / data-for / mc-for
+        String listKey = null;
+        String itemAlias = null;
         if (vNode.attrs.containsKey("data-list")) {
-            String listKey = vNode.attrs.get("data-list").trim();
+            listKey = vNode.attrs.get("data-list").trim();
+        } else {
+            String forAttr = vNode.attrs.getOrDefault("data-for", vNode.attrs.get("mc-for"));
+            if (forAttr != null && !forAttr.isBlank()) {
+                Matcher fm = FOR_EXPR_PATTERN.matcher(forAttr.trim());
+                if (fm.matches()) {
+                    itemAlias = fm.group(1).trim();
+                    listKey = fm.group(2).trim();
+                } else {
+                    listKey = forAttr.trim();
+                }
+            }
+        }
+
+        if (listKey != null && !listKey.isEmpty()) {
             if (lists.containsKey(listKey)) {
                 List<Map<String, String>> itemDataList = lists.get(listKey);
                 List<Map<String, String>> lastList = lastRenderedLists.get(vNode.id);
@@ -357,23 +360,18 @@ public class WebStateStore {
                     return changed;
                 }
 
-                List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.id, id -> {
-                    List<HtmlNode> extracted = new ArrayList<>();
-                    HtmlNode src = origNode != null ? origNode : vNode;
-                    for (HtmlNode c : src.children) {
-                        if ("template".equalsIgnoreCase(c.tag)) {
-                            for (HtmlNode tc : c.children) extracted.add(tc.cloneNode());
-                        }
-                    }
-                    return extracted;
-                });
-
+                List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.id, id -> extractTemplateChildren(origNode != null ? origNode : vNode));
                 if (!tmplNodes.isEmpty()) {
                     vNode.children.clear();
                     int idx = 0;
                     for (Map<String, String> itemMap : itemDataList) {
                         Map<String, String> merged = new HashMap<>(scopeData);
                         merged.putAll(itemMap);
+                        if (itemAlias != null && !itemAlias.isEmpty()) {
+                            for (Map.Entry<String, String> ie : itemMap.entrySet()) {
+                                merged.put(itemAlias + "." + ie.getKey(), ie.getValue());
+                            }
+                        }
                         merged.put("_index", String.valueOf(idx));
                         for (HtmlNode tmpl : tmplNodes) {
                             HtmlNode instance = tmpl.cloneNode();
@@ -404,7 +402,69 @@ public class WebStateStore {
         return changed;
     }
 
-    private void uniquifyIds(HtmlNode node, int index) {
+    public static List<HtmlNode> extractTemplateChildren(HtmlNode src) {
+        List<HtmlNode> extracted = new ArrayList<>();
+        for (HtmlNode c : src.children) {
+            if ("template".equalsIgnoreCase(c.tag)) {
+                for (HtmlNode tc : c.children) extracted.add(tc.cloneNode());
+            }
+        }
+        if (extracted.isEmpty()) {
+            for (HtmlNode c : src.children) {
+                extracted.add(c.cloneNode());
+            }
+        }
+        return extracted;
+    }
+
+    /**
+     * 条件式（例: "isActive", "!isLocked", "energy > 0", "mode == 'auto'"）を評価する共通メソッド。
+     */
+    public static Boolean evaluateCondition(String expr, Map<String, String> scopeData) {
+        if (expr == null || expr.isEmpty()) return null;
+        Matcher cm = COMPARE_EXPR_PATTERN.matcher(expr);
+        if (cm.matches()) {
+            String key = cm.group(1).trim();
+            String op = cm.group(2).trim();
+            String rhsRaw = cm.group(3).trim().replaceAll("^['\"]+|['\"]+$", "");
+            if (!scopeData.containsKey(key)) return null;
+            String lhsRaw = scopeData.getOrDefault(key, "");
+
+            try {
+                double lhsNum = Double.parseDouble(lhsRaw);
+                double rhsNum = Double.parseDouble(rhsRaw);
+                return switch (op) {
+                    case "==" -> Math.abs(lhsNum - rhsNum) < 1e-6;
+                    case "!=" -> Math.abs(lhsNum - rhsNum) >= 1e-6;
+                    case ">" -> lhsNum > rhsNum;
+                    case ">=" -> lhsNum >= rhsNum;
+                    case "<" -> lhsNum < rhsNum;
+                    case "<=" -> lhsNum <= rhsNum;
+                    default -> false;
+                };
+            } catch (NumberFormatException ignored) {
+                int cmp = lhsRaw.compareTo(rhsRaw);
+                return switch (op) {
+                    case "==" -> lhsRaw.equals(rhsRaw);
+                    case "!=" -> !lhsRaw.equals(rhsRaw);
+                    case ">" -> cmp > 0;
+                    case ">=" -> cmp >= 0;
+                    case "<" -> cmp < 0;
+                    case "<=" -> cmp <= 0;
+                    default -> false;
+                };
+            }
+        }
+
+        boolean invert = expr.startsWith("!");
+        String key = invert ? expr.substring(1).trim() : expr;
+        if (!scopeData.containsKey(key)) return null;
+        String val = scopeData.getOrDefault(key, "");
+        boolean truthy = !val.isEmpty() && !"false".equalsIgnoreCase(val) && !"0".equals(val);
+        return invert != truthy;
+    }
+
+    private static void uniquifyIds(HtmlNode node, int index) {
         if (node.id != null && !node.id.isEmpty()) {
             node.id = node.id + "_row_" + index;
             node.attrs.put("id", node.id);
@@ -412,12 +472,28 @@ public class WebStateStore {
         for (HtmlNode child : node.children) uniquifyIds(child, index);
     }
 
-    private String replacePlaceholders(String text, Map<String, String> data) {
+    /**
+     * {{key}} や {{ 'key' | i18n }}、{{ i18n:key }} を解決する共通ユーティリティ
+     */
+    public static String replacePlaceholdersWithData(String text, Map<String, String> data) {
+        if (text == null || !text.contains("{{")) return text != null ? text : "";
         Matcher m = PLACEHOLDER_PATTERN.matcher(text);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
-            String key = m.group(1);
-            String replacement = data.getOrDefault(key, m.group(0));
+            String expr = m.group(1).trim();
+            String replacement = null;
+
+            if (expr.contains("|") && expr.toLowerCase(Locale.ROOT).endsWith("i18n")) {
+                String rawKey = expr.substring(0, expr.indexOf('|')).trim().replaceAll("^['\"]+|['\"]+$", "");
+                String resolvedKey = data != null ? data.getOrDefault(rawKey, rawKey) : rawKey;
+                replacement = ClientLocalEnvProvider.translateKey(resolvedKey);
+            } else if (expr.startsWith("i18n:")) {
+                replacement = ClientLocalEnvProvider.translateKey(expr.substring(5).trim());
+            } else if (data != null && data.containsKey(expr)) {
+                replacement = data.get(expr);
+            }
+
+            if (replacement == null) replacement = m.group(0);
             m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);

@@ -41,8 +41,7 @@ public class LayoutBox {
         this.isRelative = pos.equals("relative");
         try {
             if (style.containsKey("z-index")) this.zIndex = Integer.parseInt(style.get("z-index"));
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
     }
 
     public int horizontalDecoration() { return pL + pR + bL + bR; }
@@ -60,14 +59,28 @@ public class LayoutBox {
 
     public int getMinContentWidth() {
         if (style.containsKey("min-width")) return CssParser.parseDim(style.get("min-width"), 9999, 1920, 1080);
+
+        // ★ Web標準の置換要素（input/button/select 等）の最小幅(Intrinsic Width)を保証し、潰れを防ぐ
+        if (node.tag.equals("input") || node.tag.equals("select") || node.tag.equals("button") || node.tag.equals("progress")) {
+            int inputW = 90;
+            String type = node.attrs.getOrDefault("type", "text");
+            if (node.tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) inputW = 16;
+            else if (node.attrs.containsKey("size")) {
+                try { inputW = Integer.parseInt(node.attrs.get("size")) * 8; } catch (Exception ignored) {}
+            }
+            return inputW + horizontalDecoration();
+        }
+
         if (node.tag.equals("#text")) {
             int maxWordW = 0;
             String text = this.displayText;
             boolean bold = style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900");
             String[] words = text.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
-            for (String word : words)
-                if (!word.trim().isEmpty())
+            for (String word : words) {
+                if (!word.trim().isEmpty()) {
                     maxWordW = Math.max(maxWordW, TextMetrics.getDisplayWidth(bold ? ("§l" + word) : word, this.fontSize));
+                }
+            }
             return maxWordW;
         } else if (children.isEmpty()) {
             return this.w > 0 ? this.w : 16;
@@ -187,13 +200,8 @@ public class LayoutBox {
                 this.w = 16 + horizontalDecoration();
             }
         } else if (node.tag.equals("input") || node.tag.equals("select") || node.tag.equals("progress")) {
-            int inputW = 90;
-            String type = node.attrs.getOrDefault("type", "text");
-            if (node.tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) inputW = 16;
-            else if (node.attrs.containsKey("size")) {
-                try { inputW = Integer.parseInt(node.attrs.get("size")) * 8; } catch (Exception ignored) {}
-            }
-            this.w = inputW + horizontalDecoration();
+            // ここで getMinContentWidth() と連携して初期幅を決定
+            this.w = getMinContentWidth();
         } else if (isAbsolute || isParentFlexRow || isParentShrink || display.equals("inline-block") || display.equals("inline")) {
             if (isParentFlexRow && isFlexBasisZero && !hasWidth) this.w = horizontalDecoration();
             else this.w = -1;
@@ -222,6 +230,7 @@ public class LayoutBox {
         LayoutEngine engine = LayoutEngineFactory.getEngine(display);
         engine.computeSize(this, tentativeInnerW, parentH, isParentFlexRow, isParentFlexColumn, parentAlignItems, isParentShrink, rootW, rootH);
 
+        // ComputeSize完了後に再度Min/Max制約を適用
         if (style.containsKey("max-width")) {
             String maxWStr = style.get("max-width");
             if (!(maxWStr.contains("%") && isParentShrink)) {
@@ -336,8 +345,7 @@ public class LayoutBox {
         try {
             if (node.attrs.containsKey("data-scroll-x")) scrollX = (int) Float.parseFloat(node.attrs.get("data-scroll-x"));
             if (node.attrs.containsKey("data-scroll-y")) scrollY = (int) Float.parseFloat(node.attrs.get("data-scroll-y"));
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
         int innerX = this.x + pL + bL - scrollX;
         int innerY = this.y + pT + bT - scrollY;
@@ -359,6 +367,7 @@ public class LayoutBox {
             if (offX != 0 || offY != 0) applyRelativeOffset(offX, offY);
         }
 
+        // ★ 子要素のスクロールオフセットを足し戻して、絶対的なコンテンツ終端を計算する
         int maxChildRight = this.x + pL + bL;
         int maxChildBottom = this.y + pT + bT;
         for (LayoutBox child : children) {
@@ -373,6 +382,8 @@ public class LayoutBox {
                 maxChildBottom = Math.max(maxChildBottom, item.box.y + item.box.h + item.box.mB + scrollY);
             }
         }
+
+        // ★ 親要素の高さ(h)が 100% などで制限されていても、内容がはみ出た分だけ scrollHeight が正しく伸びる
         int scrollWidth = Math.max(this.w, maxChildRight - this.x + pR + bR);
         int scrollHeight = Math.max(this.h, maxChildBottom - this.y + pB + bB);
         this.node.attrs.put("data-scroll-w", String.valueOf(scrollWidth));

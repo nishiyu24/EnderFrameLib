@@ -18,6 +18,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -30,13 +31,14 @@ import org.lwjgl.glfw.GLFW;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
  * 2D GUIとしてHTML/CSS画面を描画・操作するための汎用Screen基底クラス。
  * WebStateStore、ラムダ式イベントルーター、<textarea>、<select>、<canvas>、<mc-scene>、
- * ドラッグ＆ドロップ、1行サーバーRPC送信、F12 DevToolsインスペクタ、F5 ホットリロードを標準搭載。
- * また AbstractWebContainerScreen と共通のUI操作・オーバーレイ描画ロジック(WebUiScreenSupport)を提供する。
+ * ドラッグ＆ドロップ、1行サーバーRPC送信、F12 DevToolsインスペクタ、F5 ホットリロード、
+ * W3C標準のTabフォーカス移動＆矢印キースペーシャルナビゲーションを標準搭載。
  */
 public class AbstractWebScreen extends Screen {
     public static final float DEFAULT_VIRTUAL_WIDTH = 854.0f;
@@ -74,10 +76,6 @@ public class AbstractWebScreen extends Screen {
         this(title, sessionId, (int) DEFAULT_VIRTUAL_WIDTH, (int) DEFAULT_VIRTUAL_HEIGHT);
     }
 
-    /**
-     * virtualWidth または virtualHeight に 0 以下を指定すると、
-     * 画面全体の比率・解像度に自動追従するフルスクリーン・レスポンシブモードとして動作する
-     */
     public AbstractWebScreen(Component title, String sessionId, int virtualWidth, int virtualHeight) {
         super(title);
         this.sessionId = sessionId;
@@ -97,9 +95,6 @@ public class AbstractWebScreen extends Screen {
         this.htmlResourceLocation = location;
     }
 
-    /**
-     * リソースパックまたはMODのassetsからHTMLファイルを読み込む汎用ヘルパー
-     */
     public static String loadHtmlResource(ResourceLocation loc) {
         try {
             Optional<Resource> res = Minecraft.getInstance().getResourceManager().getResource(loc);
@@ -120,13 +115,14 @@ public class AbstractWebScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        this.hiddenEditBox = this.uiSupport.createHiddenEditBox(this.font, (baseId, newText) -> {
-            onInputChanged(baseId, newText);
-            onWebInputChanged(baseId, newText);
-        });
+        this.hiddenEditBox = this.uiSupport.createHiddenEditBox(this.font, this::notifyInputChanged);
         this.addWidget(this.hiddenEditBox);
-
         reloadWebUI(false);
+    }
+
+    private void notifyInputChanged(String baseId, String newText) {
+        onInputChanged(baseId, newText);
+        onWebInputChanged(baseId, newText);
     }
 
     public void reloadWebUI() {
@@ -188,33 +184,20 @@ public class AbstractWebScreen extends Screen {
     protected void onWebDrop(String draggedId, String dropTargetId, String dropAction) {}
 
     protected void updateViewportTransform() {
-        if (this.fullscreenResponsive) {
-            float aspect = (this.height > 0) ? ((float) this.width / (float) this.height) : (16.0f / 9.0f);
-            int targetW = Math.max(854, Math.round(480 * aspect));
-            int targetH = Math.max(480, Math.round(targetW / aspect));
-
-            if (this.virtualWidth != targetW || this.virtualHeight != targetH) {
-                this.virtualWidth = targetW;
-                this.virtualHeight = targetH;
-                if (ClientWebManager.hasDocument(sessionId)) {
-                    ClientWebManager.recomputeLayout(sessionId, this.virtualWidth, this.virtualHeight);
-                }
-            }
-        }
-
-        float scaleX = (this.width * viewportMarginRatio) / virtualWidth;
-        float scaleY = (this.height * viewportMarginRatio) / virtualHeight;
-        this.guiScaleFactor = Math.min(scaleX, scaleY);
-        this.offsetX = Math.round((this.width - virtualWidth * guiScaleFactor) / 2.0f);
-        this.offsetY = Math.round((this.height - virtualHeight * guiScaleFactor) / 2.0f);
+        this.uiSupport.updateViewport(this.width, this.height, this.virtualWidth, this.virtualHeight, this.fullscreenResponsive, this.viewportMarginRatio);
+        this.virtualWidth = this.uiSupport.getVirtualWidth();
+        this.virtualHeight = this.uiSupport.getVirtualHeight();
+        this.guiScaleFactor = this.uiSupport.getGuiScaleFactor();
+        this.offsetX = this.uiSupport.getOffsetX();
+        this.offsetY = this.uiSupport.getOffsetY();
     }
 
     protected double toWebX(double mouseX) {
-        return (mouseX - offsetX) / guiScaleFactor;
+        return this.uiSupport.toWebX(mouseX);
     }
 
     protected double toWebY(double mouseY) {
-        return (mouseY - offsetY) / guiScaleFactor;
+        return this.uiSupport.toWebY(mouseY);
     }
 
     @Override
@@ -268,18 +251,7 @@ public class AbstractWebScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-
-        boolean handled = this.uiSupport.handleMouseClicked(
-                this, this.font, webX, webY, button,
-                (id, val) -> {
-                    onInputChanged(id, val);
-                    onWebInputChanged(id, val);
-                },
-                this::onWebAction
-        );
-        if (handled) {
+        if (this.uiSupport.handleMouseClicked(this, this.font, toWebX(mouseX), toWebY(mouseY), button, this::notifyInputChanged, this::onWebAction)) {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -291,12 +263,7 @@ public class AbstractWebScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        if (this.uiSupport.handleMouseDragged(webX, webY, dragX, dragY, guiScaleFactor, (id, val) -> {
-            onInputChanged(id, val);
-            onWebInputChanged(id, val);
-        })) {
+        if (this.uiSupport.handleMouseDragged(toWebX(mouseX), toWebY(mouseY), dragX, dragY, guiScaleFactor, this::notifyInputChanged)) {
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
@@ -304,17 +271,13 @@ public class AbstractWebScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        this.uiSupport.handleMouseReleased(webX, webY, this::onWebDrop);
+        this.uiSupport.handleMouseReleased(toWebX(mouseX), toWebY(mouseY), this::onWebDrop);
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        if (this.uiSupport.handleMouseScrolled(webX, webY, scrollX, scrollY)) {
+        if (this.uiSupport.handleMouseScrolled(toWebX(mouseX), toWebY(mouseY), scrollX, scrollY)) {
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -330,10 +293,7 @@ public class AbstractWebScreen extends Screen {
             reloadWebUI(true);
             return true;
         }
-        if (this.uiSupport.handleKeyPressed(keyCode, scanCode, modifiers, false, (id, val) -> {
-            onInputChanged(id, val);
-            onWebInputChanged(id, val);
-        }, this::onWebInputSubmitted)) {
+        if (this.uiSupport.handleKeyPressed(this, this.font, keyCode, scanCode, modifiers, false, this::notifyInputChanged, this::onWebInputSubmitted, this::onWebAction)) {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -341,10 +301,7 @@ public class AbstractWebScreen extends Screen {
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (this.uiSupport.handleCharTyped(codePoint, modifiers, (id, val) -> {
-            onInputChanged(id, val);
-            onWebInputChanged(id, val);
-        })) {
+        if (this.uiSupport.handleCharTyped(codePoint, modifiers, this::notifyInputChanged)) {
             return true;
         }
         return super.charTyped(codePoint, modifiers);
@@ -381,7 +338,7 @@ public class AbstractWebScreen extends Screen {
     }
 
     // =========================================================================
-    // 共通サポートクラス (AbstractWebScreen & AbstractWebContainerScreen 共有)
+    // 共通サポートクラス (AbstractWebScreen, AbstractWebContainerScreen, InvisibleInputScreen 共有)
     // =========================================================================
 
     public static class WebUiScreenSupport {
@@ -396,17 +353,26 @@ public class AbstractWebScreen extends Screen {
         }
 
         private record SelectOption(String value, String label) {}
+        private record FocusCandidate(HtmlNode node, UIElement element, int tabIndex, int domOrder) {}
 
         private final String sessionId;
         private final WebStateStore state;
         private EditBox hiddenEditBox;
         private boolean suppressInputResponder = false;
 
+        // ビューポート変換状態
+        private int virtualWidth = 854;
+        private int virtualHeight = 480;
+        private float guiScaleFactor = 1.0f;
+        private float offsetX = 0.0f;
+        private float offsetY = 0.0f;
+
         private final Map<String, Runnable> exactActionHandlers = new HashMap<>();
         private final Map<String, Consumer<String>> prefixActionHandlers = new LinkedHashMap<>();
 
         private boolean isEditingTextarea = false;
         private String activeTextareaBaseId = "";
+        private String focusedElementBaseId = "";
 
         private String openSelectBaseId = "";
         private int selectPopupX, selectPopupY, selectPopupW;
@@ -423,7 +389,64 @@ public class AbstractWebScreen extends Screen {
             this.state = state;
         }
 
-        public EditBox createHiddenEditBox(Font font, java.util.function.BiConsumer<String, String> onInputChanged) {
+        public void updateViewport(int screenW, int screenH, int currentVirtualW, int currentVirtualH, boolean fullscreenResponsive, float marginRatio) {
+            int targetW = currentVirtualW;
+            int targetH = currentVirtualH;
+
+            if (fullscreenResponsive) {
+                float aspect = (screenH > 0) ? ((float) screenW / (float) screenH) : (16.0f / 9.0f);
+                targetW = Math.max(854, Math.round(480 * aspect));
+                targetH = Math.max(480, Math.round(targetW / aspect));
+
+                if (currentVirtualW != targetW || currentVirtualH != targetH) {
+                    if (ClientWebManager.hasDocument(sessionId)) {
+                        ClientWebManager.recomputeLayout(sessionId, targetW, targetH);
+                    }
+                }
+            }
+
+            this.virtualWidth = targetW;
+            this.virtualHeight = targetH;
+            float scaleX = (screenW * marginRatio) / Math.max(1, targetW);
+            float scaleY = (screenH * marginRatio) / Math.max(1, targetH);
+            this.guiScaleFactor = Math.min(scaleX, scaleY);
+            this.offsetX = Math.round((screenW - targetW * this.guiScaleFactor) / 2.0f);
+            this.offsetY = Math.round((screenH - targetH * this.guiScaleFactor) / 2.0f);
+        }
+
+        public int getVirtualWidth() { return virtualWidth; }
+        public int getVirtualHeight() { return virtualHeight; }
+        public float getGuiScaleFactor() { return guiScaleFactor; }
+        public float getOffsetX() { return offsetX; }
+        public float getOffsetY() { return offsetY; }
+
+        public double toWebX(double mouseX) {
+            return (mouseX - offsetX) / guiScaleFactor;
+        }
+
+        public double toWebY(double mouseY) {
+            return (mouseY - offsetY) / guiScaleFactor;
+        }
+
+        public Rect2i toScreenRect(int webX, int webY, int webW, int webH) {
+            return new Rect2i(
+                    Math.round(this.offsetX + webX * this.guiScaleFactor),
+                    Math.round(this.offsetY + webY * this.guiScaleFactor),
+                    Math.round(webW * this.guiScaleFactor),
+                    Math.round(webH * this.guiScaleFactor)
+            );
+        }
+
+        public Rect2i getViewportBounds() {
+            return new Rect2i(
+                    Math.round(this.offsetX),
+                    Math.round(this.offsetY),
+                    Math.round(this.virtualWidth * this.guiScaleFactor),
+                    Math.round(this.virtualHeight * this.guiScaleFactor)
+            );
+        }
+
+        public EditBox createHiddenEditBox(Font font, BiConsumer<String, String> onInputChanged) {
             this.hiddenEditBox = new EditBox(font, -2000, -2000, 400, 20, Component.empty());
             this.hiddenEditBox.setMaxLength(2048);
             this.hiddenEditBox.setResponder(newText -> {
@@ -431,7 +454,7 @@ public class AbstractWebScreen extends Screen {
                 if (!WebRenderCore.activeInputId.isEmpty() && !isEditingTextarea) {
                     String baseId = ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId);
                     syncInputValueToDomNodes(baseId, newText);
-                    this.state.notifyElementModelChanged(baseId, newText);
+                    if (this.state != null) this.state.notifyElementModelChanged(baseId, newText);
                     if (onInputChanged != null) onInputChanged.accept(baseId, newText);
                 }
             });
@@ -488,6 +511,9 @@ public class AbstractWebScreen extends Screen {
         public void renderOverlays(GuiGraphics guiGraphics, Font font, List<UIElement> elements, int webX, int webY, int virtualWidth, int virtualHeight, boolean devToolsEnabled) {
             RenderSystem.disableDepthTest();
             try {
+                if (!focusedElementBaseId.isEmpty() && elements != null) {
+                    renderKeyboardFocusRing(guiGraphics, elements);
+                }
                 if (!openSelectBaseId.isEmpty() && !selectOptions.isEmpty()) {
                     renderSelectDropdownOverlay(guiGraphics, font, webX, webY);
                 }
@@ -499,6 +525,32 @@ public class AbstractWebScreen extends Screen {
                 }
             } finally {
                 RenderSystem.enableDepthTest();
+            }
+        }
+
+        private void renderKeyboardFocusRing(GuiGraphics guiGraphics, List<UIElement> elements) {
+            UIElement focusedEl = null;
+            for (UIElement el : elements) {
+                if ("node".equals(el.type()) && focusedElementBaseId.equals(el.id())) {
+                    focusedEl = el;
+                    break;
+                }
+            }
+            if (focusedEl == null) {
+                focusedEl = ClientWebManager.getElementById(sessionId, focusedElementBaseId);
+            }
+            if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
+                PoseStack pose = guiGraphics.pose();
+                pose.pushPose();
+                pose.translate(0, 0, 280.0f);
+                guiGraphics.renderOutline(
+                        focusedEl.x() - 2,
+                        focusedEl.y() - 2,
+                        focusedEl.width() + 4,
+                        focusedEl.height() + 4,
+                        0xFF89B4FA
+                );
+                pose.popPose();
             }
         }
 
@@ -548,7 +600,7 @@ public class AbstractWebScreen extends Screen {
             pose.pushPose();
             pose.translate(0, 0, 350.0f);
 
-            String banner = " [F12] EnderFrame DevTools | [F5] Hot Reload | Viewport: " + virtualWidth + "x" + virtualHeight + " | Mouse: (" + webX + ", " + webY + ") ";
+            String banner = " [F12] EnderFrame DevTools | [F5] Hot Reload | [Tab/Arrows] Focus | Viewport: " + virtualWidth + "x" + virtualHeight + " | Mouse: (" + webX + ", " + webY + ") ";
             guiGraphics.fill(0, 0, font.width(banner) + 8, 13, 0xDD11111B);
             guiGraphics.drawString(font, banner, 4, 2, 0xFFA6E3A1, false);
 
@@ -629,7 +681,7 @@ public class AbstractWebScreen extends Screen {
 
         public boolean handleMouseClicked(
                 Screen screen, Font font, double webX, double webY, int button,
-                java.util.function.BiConsumer<String, String> onInputChanged,
+                BiConsumer<String, String> onInputChanged,
                 TriActionCallback onWebAction
         ) {
             if (!openSelectBaseId.isEmpty() && !selectOptions.isEmpty() && button == 0) {
@@ -642,7 +694,7 @@ public class AbstractWebScreen extends Screen {
                         ClientScreenInteractionManager.submitInput(sessionId, openSelectBaseId, chosenVal);
                         ClientWebManager.updateNodeAttributeLocally(sessionId, openSelectBaseId, "value", chosenVal, false);
                         ClientWebManager.processRenderQueue();
-                        this.state.notifyElementModelChanged(openSelectBaseId, chosenVal);
+                        if (this.state != null) this.state.notifyElementModelChanged(openSelectBaseId, chosenVal);
                         if (onInputChanged != null) onInputChanged.accept(openSelectBaseId, chosenVal);
                     }
                     openSelectBaseId = "";
@@ -670,12 +722,15 @@ public class AbstractWebScreen extends Screen {
 
             if (clicked != null && "textarea".equals(clicked.type()) && button == 0) {
                 unfocusWebInput();
+                String baseId = ClientWebManager.getBaseNodeId(clicked.id());
+                setFocusedDomElement(baseId);
                 focusWebTextarea(font, clicked, hit.localX(), hit.localY());
                 return true;
             }
 
             if (clicked != null && "input".equals(clicked.type()) && button == 0) {
                 String baseId = ClientWebManager.getBaseNodeId(clicked.id());
+                setFocusedDomElement(baseId);
                 String curVal = getInputValue(baseId);
                 if (curVal.isEmpty() && clicked.text() != null) curVal = clicked.text();
                 focusWebInput(screen, baseId, curVal);
@@ -686,11 +741,41 @@ public class AbstractWebScreen extends Screen {
 
             if (clicked != null) {
                 String baseId = ClientWebManager.getBaseNodeId(clicked.id());
+                setFocusedDomElement(baseId);
                 WebRenderCore.activePressedId = clicked.id();
 
                 HtmlNode domNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-                boolean isSelectElement = "select".equals(clicked.type()) || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
 
+                HtmlNode summaryNode = findAncestorByTag(domNode, "summary");
+                if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag) && button == 0) {
+                    ClientScreenInteractionManager.playElementSound(clicked);
+                    ClientWebManager.toggleNodeAttributeLocally(sessionId, summaryNode.parent.id, "open");
+                    ClientWebManager.processRenderQueue();
+                    return true;
+                }
+
+                HtmlNode labelNode = findAncestorByTag(domNode, "label");
+                if (labelNode != null && labelNode.attrs.containsKey("for") && button == 0) {
+                    String targetInputId = labelNode.attrs.get("for").trim();
+                    HtmlNode targetInput = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), targetInputId);
+                    if (targetInput != null) {
+                        ClientScreenInteractionManager.playElementSound(clicked);
+                        setFocusedDomElement(targetInput.id);
+                        String tType = targetInput.attrs.getOrDefault("type", "text");
+                        if ("checkbox".equalsIgnoreCase(tType) || "radio".equalsIgnoreCase(tType)) {
+                            ClientWebManager.toggleNodeAttributeLocally(sessionId, targetInput.id, "checked");
+                            ClientWebManager.processRenderQueue();
+                            String checkedStr = Boolean.toString(targetInput.attrs.containsKey("checked"));
+                            if (this.state != null) this.state.notifyElementModelChanged(targetInput.id, checkedStr);
+                            if (onInputChanged != null) onInputChanged.accept(targetInput.id, checkedStr);
+                        } else {
+                            focusWebInput(screen, targetInput.id, getInputValue(targetInput.id));
+                        }
+                        return true;
+                    }
+                }
+
+                boolean isSelectElement = "select".equals(clicked.type()) || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
                 if (isSelectElement && button == 0) {
                     ClientScreenInteractionManager.playElementSound(clicked);
                     openSelectDropdown(baseId, clicked);
@@ -703,13 +788,13 @@ public class AbstractWebScreen extends Screen {
                         UIElement updated = ClientWebManager.getElementById(sessionId, baseId);
                         if (updated != null && updated.text() != null) {
                             String val = updated.text().split(":")[0];
-                            this.state.notifyElementModelChanged(baseId, val);
+                            if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
                             if (onInputChanged != null) onInputChanged.accept(baseId, val);
                         }
                     } else {
                         HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
                         String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
-                        this.state.notifyElementModelChanged(baseId, checkedStr);
+                        if (this.state != null) this.state.notifyElementModelChanged(baseId, checkedStr);
                         if (onInputChanged != null) onInputChanged.accept(baseId, checkedStr);
                     }
                     return true;
@@ -722,6 +807,17 @@ public class AbstractWebScreen extends Screen {
 
                 ClientScreenInteractionManager.handleClick(sessionId, webX, webY);
                 String action = clicked.events() != null ? clicked.events().get("onclick") : null;
+                if ((action == null || action.equals(baseId)) && domNode != null && "button".equalsIgnoreCase(domNode.tag)) {
+                    String btnType = domNode.attrs.getOrDefault("type", "").toLowerCase(Locale.ROOT);
+                    HtmlNode parentForm = findAncestorByTag(domNode, "form");
+                    if (parentForm != null) {
+                        if ("submit".equals(btnType) && parentForm.attrs.containsKey("onsubmit")) {
+                            action = parentForm.attrs.get("onsubmit");
+                        } else if ("reset".equals(btnType) && parentForm.attrs.containsKey("onreset")) {
+                            action = parentForm.attrs.get("onreset");
+                        }
+                    }
+                }
                 if (action != null) {
                     if (button == 0 && dispatchRoutedAction(action)) {
                         return true;
@@ -729,8 +825,19 @@ public class AbstractWebScreen extends Screen {
                     if (onWebAction != null) onWebAction.onAction(action, clicked, button);
                     return true;
                 }
+            } else {
+                setFocusedDomElement("");
             }
             return false;
+        }
+
+        private static HtmlNode findAncestorByTag(HtmlNode start, String tag) {
+            HtmlNode cur = start;
+            while (cur != null) {
+                if (tag.equalsIgnoreCase(cur.tag)) return cur;
+                cur = cur.parent;
+            }
+            return null;
         }
 
         private void openSelectDropdown(String baseId, UIElement selectEl) {
@@ -757,7 +864,7 @@ public class AbstractWebScreen extends Screen {
             }
         }
 
-        public boolean handleMouseDragged(double webX, double webY, double dragX, double dragY, float guiScaleFactor, java.util.function.BiConsumer<String, String> onInputChanged) {
+        public boolean handleMouseDragged(double webX, double webY, double dragX, double dragY, float guiScaleFactor, BiConsumer<String, String> onInputChanged) {
             if (!activeSceneId.isEmpty()) {
                 WebSceneContext scene = WebSceneContext.getOrCreate(sessionId, activeSceneId);
                 if (activeSceneMouseButton == 0) {
@@ -774,7 +881,7 @@ public class AbstractWebScreen extends Screen {
                     UIElement updated = ClientWebManager.getElementById(sessionId, baseId);
                     if (updated != null && "range".equals(updated.type()) && updated.text() != null) {
                         String val = updated.text().split(":")[0];
-                        this.state.notifyElementModelChanged(baseId, val);
+                        if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
                         if (onInputChanged != null) onInputChanged.accept(baseId, val);
                     }
                 }
@@ -823,9 +930,26 @@ public class AbstractWebScreen extends Screen {
 
         public boolean handleKeyPressed(
                 int keyCode, int scanCode, int modifiers, boolean blockInventoryKey,
-                java.util.function.BiConsumer<String, String> onInputChanged,
-                java.util.function.BiConsumer<String, String> onInputSubmitted
+                BiConsumer<String, String> onInputChanged,
+                BiConsumer<String, String> onInputSubmitted
         ) {
+            return handleKeyPressed(Minecraft.getInstance().screen, Minecraft.getInstance().font, keyCode, scanCode, modifiers, blockInventoryKey, onInputChanged, onInputSubmitted, null);
+        }
+
+        public boolean handleKeyPressed(
+                Screen screen, Font font,
+                int keyCode, int scanCode, int modifiers, boolean blockInventoryKey,
+                BiConsumer<String, String> onInputChanged,
+                BiConsumer<String, String> onInputSubmitted,
+                TriActionCallback onWebAction
+        ) {
+            if (keyCode == GLFW.GLFW_KEY_TAB && !isEditingTextarea) {
+                boolean reverse = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || Screen.hasShiftDown();
+                if (cycleSequentialFocus(screen, reverse)) {
+                    return true;
+                }
+            }
+
             if (isEditingTextarea && !WebRenderCore.activeInputId.isEmpty()) {
                 if (handleTextareaKeyPressed(keyCode, onInputChanged)) return true;
                 if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
@@ -844,11 +968,251 @@ public class AbstractWebScreen extends Screen {
                 }
                 if (this.hiddenEditBox != null && this.hiddenEditBox.keyPressed(keyCode, scanCode, modifiers)) return true;
                 if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
+            } else {
+                if (!focusedElementBaseId.isEmpty()) {
+                    if (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
+                        if (adjustFocusedRangeSlider(keyCode == GLFW.GLFW_KEY_RIGHT ? 1 : -1, onInputChanged)) {
+                            return true;
+                        }
+                    }
+                    if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
+                        if (activateFocusedElement(screen, font, onInputChanged, onWebAction)) {
+                            return true;
+                        }
+                    }
+                }
+                if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN
+                        || keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
+                    if (navigateSpatialFocus(screen, keyCode)) {
+                        return true;
+                    }
+                }
             }
             return false;
         }
 
-        public boolean handleCharTyped(char codePoint, int modifiers, java.util.function.BiConsumer<String, String> onInputChanged) {
+        private void setFocusedDomElement(String nextBaseId) {
+            String safeNext = nextBaseId != null ? nextBaseId : "";
+            if (Objects.equals(this.focusedElementBaseId, safeNext)) return;
+
+            HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
+            if (vRoot != null) {
+                if (!this.focusedElementBaseId.isEmpty()) {
+                    HtmlNode prev = DomUtils.findNodeById(vRoot, this.focusedElementBaseId);
+                    if (prev != null) {
+                        prev.isFocused = false;
+                        prev.markDirty();
+                    }
+                }
+                if (!safeNext.isEmpty()) {
+                    HtmlNode next = DomUtils.findNodeById(vRoot, safeNext);
+                    if (next != null) {
+                        next.isFocused = true;
+                        next.markDirty();
+                    }
+                }
+                ClientWebManager.requestRender(sessionId);
+            }
+            this.focusedElementBaseId = safeNext;
+        }
+
+        private List<FocusCandidate> collectFocusableCandidates() {
+            HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
+            List<UIElement> elements = ClientWebManager.getElements(sessionId);
+            if (vRoot == null || elements == null || elements.isEmpty()) return Collections.emptyList();
+
+            Map<String, UIElement> boxByNodeId = new HashMap<>();
+            for (UIElement el : elements) {
+                String baseId = ClientWebManager.getBaseNodeId(el.id());
+                if ("node".equals(el.type())) {
+                    boxByNodeId.put(el.id(), el);
+                } else {
+                    boxByNodeId.putIfAbsent(baseId, el);
+                }
+            }
+
+            List<FocusCandidate> list = new ArrayList<>();
+            int[] orderCounter = new int[]{0};
+            collectFocusablesRecursive(vRoot, boxByNodeId, list, orderCounter);
+
+            list.sort((a, b) -> {
+                boolean aPos = a.tabIndex() > 0;
+                boolean bPos = b.tabIndex() > 0;
+                if (aPos && bPos) {
+                    int cmp = Integer.compare(a.tabIndex(), b.tabIndex());
+                    if (cmp != 0) return cmp;
+                } else if (aPos != bPos) {
+                    return aPos ? -1 : 1;
+                }
+                return Integer.compare(a.domOrder(), b.domOrder());
+            });
+            return list;
+        }
+
+        private void collectFocusablesRecursive(HtmlNode node, Map<String, UIElement> boxByNodeId, List<FocusCandidate> out, int[] orderCounter) {
+            if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")) return;
+            if (node.computedStyle != null && "none".equalsIgnoreCase(node.computedStyle.get("display"))) return;
+
+            int tabIndex = 0;
+            boolean hasExplicitTabIndex = false;
+            if (node.attrs.containsKey("tabindex")) {
+                try {
+                    tabIndex = Integer.parseInt(node.attrs.get("tabindex").trim());
+                    hasExplicitTabIndex = true;
+                } catch (NumberFormatException ignored) {}
+            }
+
+            String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
+            boolean naturallyFocusable = "button".equals(tag) || "input".equals(tag) || "select".equals(tag)
+                    || "textarea".equals(tag) || "summary".equals(tag)
+                    || ("a".equals(tag) && (node.attrs.containsKey("href") || node.attrs.containsKey("onclick")))
+                    || node.attrs.containsKey("onclick");
+
+            if (tabIndex >= 0 && (hasExplicitTabIndex || naturallyFocusable)) {
+                UIElement el = boxByNodeId.get(node.id);
+                if (el != null && el.width() > 0 && el.height() > 0) {
+                    out.add(new FocusCandidate(node, el, tabIndex, orderCounter[0]++));
+                }
+            }
+
+            boolean isClosedDetails = "details".equals(tag) && !node.attrs.containsKey("open");
+            for (HtmlNode child : node.children) {
+                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
+                collectFocusablesRecursive(child, boxByNodeId, out, orderCounter);
+            }
+        }
+
+        private boolean cycleSequentialFocus(Screen screen, boolean reverse) {
+            List<FocusCandidate> candidates = collectFocusableCandidates();
+            if (candidates.isEmpty()) return false;
+
+            int curIdx = -1;
+            for (int i = 0; i < candidates.size(); i++) {
+                if (candidates.get(i).node().id.equals(focusedElementBaseId)) {
+                    curIdx = i;
+                    break;
+                }
+            }
+
+            int nextIdx;
+            if (curIdx == -1) {
+                nextIdx = reverse ? candidates.size() - 1 : 0;
+            } else {
+                nextIdx = (curIdx + (reverse ? -1 : 1) + candidates.size()) % candidates.size();
+            }
+
+            applyFocusCandidate(screen, candidates.get(nextIdx));
+            return true;
+        }
+
+        private boolean navigateSpatialFocus(Screen screen, int keyCode) {
+            List<FocusCandidate> candidates = collectFocusableCandidates();
+            if (candidates.isEmpty()) return false;
+
+            FocusCandidate current = null;
+            for (FocusCandidate c : candidates) {
+                if (c.node().id.equals(focusedElementBaseId)) {
+                    current = c;
+                    break;
+                }
+            }
+            if (current == null) {
+                applyFocusCandidate(screen, candidates.getFirst());
+                return true;
+            }
+
+            double curCx = current.element().x() + current.element().width() / 2.0;
+            double curCy = current.element().y() + current.element().height() / 2.0;
+
+            FocusCandidate best = null;
+            double bestScore = Double.MAX_VALUE;
+
+            for (FocusCandidate cand : candidates) {
+                if (cand == current) continue;
+                double cx = cand.element().x() + cand.element().width() / 2.0;
+                double cy = cand.element().y() + cand.element().height() / 2.0;
+                double dx = cx - curCx;
+                double dy = cy - curCy;
+
+                boolean inDirection = switch (keyCode) {
+                    case GLFW.GLFW_KEY_UP -> dy < -2;
+                    case GLFW.GLFW_KEY_DOWN -> dy > 2;
+                    case GLFW.GLFW_KEY_LEFT -> dx < -2;
+                    case GLFW.GLFW_KEY_RIGHT -> dx > 2;
+                    default -> false;
+                };
+                if (!inDirection) continue;
+
+                double primaryDist = (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN) ? Math.abs(dy) : Math.abs(dx);
+                double orthoDist = (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN) ? Math.abs(dx) : Math.abs(dy);
+                double score = primaryDist + orthoDist * 2.5;
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = cand;
+                }
+            }
+
+            if (best != null) {
+                applyFocusCandidate(screen, best);
+                return true;
+            }
+            return false;
+        }
+
+        private void applyFocusCandidate(Screen screen, FocusCandidate candidate) {
+            unfocusWebInput();
+            String baseId = candidate.node().id;
+            setFocusedDomElement(baseId);
+            ClientWebManager.processRenderQueue();
+
+            HtmlNode node = candidate.node();
+            if ("input".equalsIgnoreCase(node.tag)) {
+                String inputType = node.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
+                if (!"checkbox".equals(inputType) && !"radio".equals(inputType) && !"range".equals(inputType) && !"color".equals(inputType)) {
+                    if (screen != null) {
+                        focusWebInput(screen, baseId, getInputValue(baseId));
+                    }
+                }
+            }
+        }
+
+        private boolean adjustFocusedRangeSlider(int dir, BiConsumer<String, String> onInputChanged) {
+            HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), focusedElementBaseId);
+            if (node == null || !"input".equalsIgnoreCase(node.tag)) return false;
+            if (!"range".equalsIgnoreCase(node.attrs.getOrDefault("type", ""))) return false;
+
+            double min = 0, max = 100, step = 1, cur = 50;
+            try { min = Double.parseDouble(node.attrs.getOrDefault("min", "0")); } catch (Exception ignored) {}
+            try { max = Double.parseDouble(node.attrs.getOrDefault("max", "100")); } catch (Exception ignored) {}
+            try { step = Double.parseDouble(node.attrs.getOrDefault("step", String.valueOf((max - min) / 20.0))); } catch (Exception ignored) {}
+            try { cur = Double.parseDouble(node.attrs.getOrDefault("value", String.valueOf(min))); } catch (Exception ignored) {}
+            if (step <= 0) step = 1;
+
+            double next = Math.clamp(cur + dir * step, min, max);
+            String formatted = (step == Math.floor(step) && min == Math.floor(min))
+                    ? String.valueOf(Math.round(next))
+                    : String.format(Locale.ROOT, "%.2f", next);
+
+            ClientWebManager.updateNodeAttributeLocally(sessionId, focusedElementBaseId, "value", formatted, false);
+            ClientWebManager.processRenderQueue();
+            if (this.state != null) this.state.notifyElementModelChanged(focusedElementBaseId, formatted);
+            if (onInputChanged != null) onInputChanged.accept(focusedElementBaseId, formatted);
+            return true;
+        }
+
+        private boolean activateFocusedElement(
+                Screen screen, Font font,
+                BiConsumer<String, String> onInputChanged,
+                TriActionCallback onWebAction
+        ) {
+            UIElement el = ClientWebManager.getElementById(sessionId, focusedElementBaseId);
+            if (el == null) return false;
+            double cx = el.x() + el.width() / 2.0;
+            double cy = el.y() + el.height() / 2.0;
+            return handleMouseClicked(screen, font, cx, cy, 0, onInputChanged, onWebAction);
+        }
+
+        public boolean handleCharTyped(char codePoint, int modifiers, BiConsumer<String, String> onInputChanged) {
             if (isEditingTextarea && !WebRenderCore.activeInputId.isEmpty()) {
                 if (codePoint >= 32 && codePoint != 127) {
                     insertIntoTextarea(String.valueOf(codePoint), onInputChanged);
@@ -860,15 +1224,21 @@ public class AbstractWebScreen extends Screen {
             return false;
         }
 
-        private void focusWebTextarea(Font font, UIElement taEl, double localX, double localY) {
+        public void focusWebTextarea(Font font, UIElement taEl, double localX, double localY) {
             this.isEditingTextarea = true;
             this.activeTextareaBaseId = ClientWebManager.getBaseNodeId(taEl.id());
-            WebRenderCore.activeInputId = taEl.id();
+            String renderTaId = taEl.id().endsWith("_textarea") ? taEl.id() : this.activeTextareaBaseId + "_textarea";
+            WebRenderCore.activeInputId = renderTaId;
             if (this.hiddenEditBox != null) this.hiddenEditBox.setFocused(false);
 
             String fullText = getTextareaValue(activeTextareaBaseId);
+            if (localX < 0 || localY < 0) {
+                WebRenderCore.textareaCursorIndex.put(renderTaId, fullText.length());
+                return;
+            }
+
             String[] lines = fullText.split("\n", -1);
-            int scrollRow = WebRenderCore.textareaScrollRow.getOrDefault(taEl.id(), 0);
+            int scrollRow = WebRenderCore.textareaScrollRow.getOrDefault(renderTaId, 0);
             int clickedRow = Math.clamp(scrollRow + (int) ((localY - 4.0) / 11.0), 0, Math.max(0, lines.length - 1));
 
             String syntax = taEl.events() != null ? taEl.events().getOrDefault("data-syntax", "") : "";
@@ -881,10 +1251,10 @@ public class AbstractWebScreen extends Screen {
             int index = 0;
             for (int i = 0; i < clickedRow; i++) index += lines[i].length() + 1;
             index += Math.min(clickedCol, lineStr.length());
-            WebRenderCore.textareaCursorIndex.put(taEl.id(), index);
+            WebRenderCore.textareaCursorIndex.put(renderTaId, index);
         }
 
-        private boolean handleTextareaKeyPressed(int keyCode, java.util.function.BiConsumer<String, String> onInputChanged) {
+        private boolean handleTextareaKeyPressed(int keyCode, BiConsumer<String, String> onInputChanged) {
             String renderId = WebRenderCore.activeInputId;
             String text = getTextareaValue(activeTextareaBaseId);
             int cursor = Math.clamp(WebRenderCore.textareaCursorIndex.getOrDefault(renderId, text.length()), 0, text.length());
@@ -945,7 +1315,7 @@ public class AbstractWebScreen extends Screen {
                         String next = text.substring(0, cursor - 1) + text.substring(cursor);
                         WebRenderCore.textareaCursorIndex.put(renderId, cursor - 1);
                         setTextareaValue(activeTextareaBaseId, next);
-                        this.state.notifyElementModelChanged(activeTextareaBaseId, next);
+                        if (this.state != null) this.state.notifyElementModelChanged(activeTextareaBaseId, next);
                         if (onInputChanged != null) onInputChanged.accept(activeTextareaBaseId, next);
                     }
                     return true;
@@ -954,7 +1324,7 @@ public class AbstractWebScreen extends Screen {
                     if (cursor < text.length()) {
                         String next = text.substring(0, cursor) + text.substring(cursor + 1);
                         setTextareaValue(activeTextareaBaseId, next);
-                        this.state.notifyElementModelChanged(activeTextareaBaseId, next);
+                        if (this.state != null) this.state.notifyElementModelChanged(activeTextareaBaseId, next);
                         if (onInputChanged != null) onInputChanged.accept(activeTextareaBaseId, next);
                     }
                     return true;
@@ -972,14 +1342,14 @@ public class AbstractWebScreen extends Screen {
             return false;
         }
 
-        private void insertIntoTextarea(String insertion, java.util.function.BiConsumer<String, String> onInputChanged) {
+        private void insertIntoTextarea(String insertion, BiConsumer<String, String> onInputChanged) {
             String renderId = WebRenderCore.activeInputId;
             String text = getTextareaValue(activeTextareaBaseId);
             int cursor = Math.clamp(WebRenderCore.textareaCursorIndex.getOrDefault(renderId, text.length()), 0, text.length());
             String next = text.substring(0, cursor) + insertion + text.substring(cursor);
             WebRenderCore.textareaCursorIndex.put(renderId, cursor + insertion.length());
             setTextareaValue(activeTextareaBaseId, next);
-            this.state.notifyElementModelChanged(activeTextareaBaseId, next);
+            if (this.state != null) this.state.notifyElementModelChanged(activeTextareaBaseId, next);
             if (onInputChanged != null) onInputChanged.accept(activeTextareaBaseId, next);
         }
 
@@ -1016,6 +1386,7 @@ public class AbstractWebScreen extends Screen {
             this.isEditingTextarea = false;
             this.activeTextareaBaseId = "";
             String baseId = ClientWebManager.getBaseNodeId(inputElementId);
+            setFocusedDomElement(baseId);
             String renderInputId = baseId + "_input";
             String safeVal = currentText != null ? currentText : "";
 
@@ -1026,7 +1397,7 @@ public class AbstractWebScreen extends Screen {
                 if (this.hiddenEditBox != null) {
                     this.hiddenEditBox.setValue(safeVal);
                     this.hiddenEditBox.moveCursorToEnd(false);
-                    screen.setFocused(this.hiddenEditBox);
+                    if (screen != null) screen.setFocused(this.hiddenEditBox);
                     this.hiddenEditBox.setFocused(true);
                 }
             } finally {
@@ -1056,6 +1427,10 @@ public class AbstractWebScreen extends Screen {
             if (this.hiddenEditBox != null) {
                 this.hiddenEditBox.setFocused(false);
             }
+        }
+
+        public boolean isInputActive() {
+            return !WebRenderCore.activeInputId.isEmpty();
         }
 
         public void setElementText(String id, String text) {
@@ -1122,6 +1497,7 @@ public class AbstractWebScreen extends Screen {
 
         public void onClose() {
             unfocusWebInput();
+            setFocusedDomElement("");
             activeSceneId = "";
             openSelectBaseId = "";
             selectOptions.clear();

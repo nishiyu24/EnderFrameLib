@@ -185,47 +185,6 @@ public class FlexLayoutEngine implements LayoutEngine {
                     if (oldH != null) child.style.put("height", oldH); else child.style.remove("height");
                 }
             }
-        } else if (isFlexColumn && flexWrap.equals("nowrap") && actualInnerH < usedH) {
-            String overflowY = box.style.getOrDefault("overflow-y", box.style.getOrDefault("overflow", "visible"));
-            if (!overflowY.equals("scroll") && !overflowY.equals("auto")) {
-                int deficitH = usedH - actualInnerH;
-                boolean[] frozen = new boolean[flowChildren.size()];
-                int loopCount = 0;
-                while (deficitH > 0 && loopCount < 10) {
-                    float currentTotalShrinkH = 0;
-                    for (int i = 0; i < flowChildren.size(); i++) {
-                        if (!frozen[i]) currentTotalShrinkH += Float.parseFloat(flowChildren.get(i).style.getOrDefault("flex-shrink", "1")) * flowChildren.get(i).h;
-                    }
-                    if (currentTotalShrinkH <= 0) break;
-
-                    int remainingDeficit = 0;
-                    for (int i = 0; i < flowChildren.size(); i++) {
-                        if (frozen[i]) continue;
-                        LayoutBox child = flowChildren.get(i);
-                        float shrink = Float.parseFloat(child.style.getOrDefault("flex-shrink", "1"));
-                        if (shrink > 0) {
-                            int shrinkAmount = (int) (deficitH * ((shrink * child.h) / currentTotalShrinkH));
-                            int minH = 24;
-                            if (child.h - shrinkAmount <= minH) {
-                                remainingDeficit += shrinkAmount - (child.h - minH);
-                                child.h = minH;
-                                frozen[i] = true;
-                            } else {
-                                child.h -= shrinkAmount;
-                            }
-                        }
-                    }
-                    deficitH = remainingDeficit;
-                    loopCount++;
-                }
-                for (LayoutBox child : flowChildren) {
-                    String oldH = child.style.get("height");
-                    int forcedH = child.h - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.verticalDecoration() : 0);
-                    child.style.put("height", Math.max(0, forcedH) + "px");
-                    child.computeSize(child.w, child.h, false, false, "stretch", false, rootW, rootH);
-                    if (oldH != null) child.style.put("height", oldH); else child.style.remove("height");
-                }
-            }
         }
 
         for (LayoutBox child : box.children) {

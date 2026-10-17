@@ -11,6 +11,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public record WebActionC2SPacket(String sessionId, String action, CompoundTag payload) implements CustomPacketPayload {
@@ -21,15 +22,16 @@ public record WebActionC2SPacket(String sessionId, String action, CompoundTag pa
             WebActionC2SPacket::new
     );
 
-    private static final Map<String, Long> RATE_LIMIT_MAP = new ConcurrentHashMap<>();
+    // プレイヤーUUID単位に階層化し、ログアウト時の安全な解放を実現
+    private static final Map<UUID, Map<String, Long>> RATE_LIMIT_MAP = new ConcurrentHashMap<>();
 
     public WebActionC2SPacket(FriendlyByteBuf buf) {
-        this(buf.readUtf(), buf.readUtf(), buf.readNbt());
+        this(buf.readUtf(256), buf.readUtf(64), buf.readNbt());
     }
 
     public void write(FriendlyByteBuf buf) {
-        buf.writeUtf(sessionId);
-        buf.writeUtf(action);
+        buf.writeUtf(sessionId, 256);
+        buf.writeUtf(action, 64);
         buf.writeNbt(payload != null ? payload : new CompoundTag());
     }
 
@@ -38,14 +40,24 @@ public record WebActionC2SPacket(String sessionId, String action, CompoundTag pa
         return TYPE;
     }
 
+    public static void clearRateLimitsForPlayer(UUID uuid) {
+        if (uuid != null) {
+            RATE_LIMIT_MAP.remove(uuid);
+        }
+    }
+
     private static boolean checkRateLimit(ServerPlayer player, String actionKey, long cooldownMs) {
         long now = System.currentTimeMillis();
-        String key = player.getUUID() + ":" + actionKey;
-        Long last = RATE_LIMIT_MAP.get(key);
+        Map<String, Long> playerLimits = RATE_LIMIT_MAP.computeIfAbsent(player.getUUID(), k -> new ConcurrentHashMap<>());
+
+        // メモリリーク防止のため、古い履歴（10秒以上経過）をパージ
+        playerLimits.entrySet().removeIf(e -> (now - e.getValue()) > 10000);
+
+        Long last = playerLimits.get(actionKey);
         if (last != null && (now - last) < cooldownMs) {
             return false;
         }
-        RATE_LIMIT_MAP.put(key, now);
+        playerLimits.put(actionKey, now);
         return true;
     }
 

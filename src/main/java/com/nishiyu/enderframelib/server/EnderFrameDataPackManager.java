@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -15,7 +16,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * データパック内の "data/<namespace>/enderframe_ui/<path>.html" (および .css) を読み込み、
+ * データパック内の "data/<namespace>/enderframe_ui/<path>.html" (.htm / .md / .css) を読み込み、
  * コマンドやスクリプトから ID ("namespace:path") で呼び出せるようにするマネージャー
  */
 public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Map<ResourceLocation, String>> {
@@ -27,16 +28,35 @@ public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Ma
     protected @NotNull Map<ResourceLocation, String> prepare(@NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profiler) {
         Map<ResourceLocation, String> map = new ConcurrentHashMap<>();
         Map<ResourceLocation, Resource> resources = resourceManager.listResources(FOLDER,
-                loc -> loc.getPath().endsWith(".html") || loc.getPath().endsWith(".htm") || loc.getPath().endsWith(".css"));
+                loc -> loc.getPath().endsWith(".html")
+                        || loc.getPath().endsWith(".htm")
+                        || loc.getPath().endsWith(".md")
+                        || loc.getPath().endsWith(".css"));
 
         for (Map.Entry<ResourceLocation, Resource> entry : resources.entrySet()) {
             ResourceLocation rawLoc = entry.getKey();
             try (InputStream is = entry.getValue().open()) {
                 String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                String cleanPath = rawLoc.getPath();
+
+                if (cleanPath.endsWith(".md")) {
+                    content = """
+                            <html>
+                            <head><link rel="stylesheet" href="enderframelib:dark.css"></head>
+                            <body style="padding: 16px;">
+                                <article class="mc-panel markdown-body" style="max-width: 780px; margin: 0 auto;">
+                            """
+                            + MarkdownParser.toHtml(content)
+                            + """
+                                </article>
+                            </body>
+                            </html>
+                            """;
+                }
+
                 map.put(rawLoc, content);
 
                 // "enderframe_ui/foo.html" -> "namespace:foo" でも引けるように正規化登録
-                String cleanPath = rawLoc.getPath();
                 if (cleanPath.startsWith(FOLDER + "/")) {
                     cleanPath = cleanPath.substring(FOLDER.length() + 1);
                 }
@@ -44,6 +64,8 @@ public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Ma
                     cleanPath = cleanPath.substring(0, cleanPath.length() - 5);
                 } else if (cleanPath.endsWith(".htm")) {
                     cleanPath = cleanPath.substring(0, cleanPath.length() - 4);
+                } else if (cleanPath.endsWith(".md")) {
+                    cleanPath = cleanPath.substring(0, cleanPath.length() - 3);
                 }
                 ResourceLocation shortId = ResourceLocation.fromNamespaceAndPath(rawLoc.getNamespace(), cleanPath);
                 map.put(shortId, content);

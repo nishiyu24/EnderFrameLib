@@ -1,12 +1,19 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
 import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
 import com.nishiyu.enderframelib.client.gui.AbstractWebScreen;
+import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
 import com.nishiyu.enderframelib.client.renderer.UIRenderer;
+import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
+import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
+import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.ServerImageRegistry;
 import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.network.c2s.SubscribeC2SPacket;
@@ -27,20 +34,35 @@ import java.util.List;
 public class EnderFrameClientInit {
 
     public static void init(IEventBus modEventBus) {
-        // 1. UIParser と DomUtils のクライアント専用コールバック注入
+        // 0. ビルトイン設定のランタイム反映フック登録と、Mod一覧「Config」ボタンへの設定画面登録
+        EnderFrameBuiltInConfig.runtimeApplier = () -> {
+            WebRenderCore.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
+            ClientScreenInteractionManager.enableDefaultUiSounds = EnderFrameBuiltInConfig.enableDefaultUiSounds;
+        };
+        EnderFrameBuiltInConfig.applyToRuntime();
+
+        EnderConfigManager.RegisteredConfig builtInCfg = EnderConfigManager.getConfig(EnderFrameLib.MODID);
+        if (builtInCfg != null) {
+            builtInCfg.addChangeListener(cfg -> EnderFrameBuiltInConfig.applyToRuntime());
+        }
+        EnderConfigScreen.registerForMod(EnderFrameLib.MODID);
+
+        // 1. UIParser / CssParser / DomUtils のクライアント専用コールバック注入
         UIParser.clientBoxRenderer = (rootBox, rootW, rootH, keyframes) -> {
             UIRenderer renderer = new UIRenderer(rootW, rootH, keyframes);
             return renderer.render(rootBox);
         };
 
+        CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
+
         UIParser.clientResourceFallback = path -> {
-            try {
-                ResourceLocation loc = ResourceLocation.parse(path);
+            ResourceLocation loc = ResourceLocation.tryParse(path);
+            if (loc != null) {
                 String loaded = AbstractWebScreen.loadHtmlResource(loc);
                 if (loaded != null && !loaded.contains("Failed to load HTML resource:")) {
                     return loaded;
                 }
-            } catch (Exception ignored) {}
+            }
             return "";
         };
 
@@ -49,12 +71,12 @@ public class EnderFrameClientInit {
         // 2. 画像サイズ確定時のクライアント自動再レイアウト登録
         ServerImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
 
-        // 3. PubSub・ローカルオーバーライド・HUDテンプレート結線
-        ClientPubSubManager.subscriptionSender = (channel) ->
+        // 3. PubSub・ローカルオーバーライド・HUDテンプレート結線（マルチリスナー登録）
+        ClientPubSubManager.subscriptionSender = channel ->
                 PacketDistributor.sendToServer(new SubscribeC2SPacket(channel));
 
         ClientWebManager.applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
-        ClientWebManager.sessionClearedCallback = WebHudRenderer::clearSession;
+        ClientWebManager.addSessionClearedListener(WebHudRenderer::clearSession);
 
         DeclarativeBindingManager.hudCallback = new DeclarativeBindingManager.IHudRegistrationCallback() {
             @Override
@@ -90,7 +112,7 @@ public class EnderFrameClientInit {
                 int h = data.getInt("Height");
                 String inlineHtml = data.getString("Html");
                 String resLocStr = data.getString("ResourceLocation");
-                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.parse(resLocStr) : null;
+                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.tryParse(resLocStr) : null;
 
                 Minecraft.getInstance().execute(() -> {
                     AbstractWebScreen screen = new AbstractWebScreen(Component.literal(title.isEmpty() ? "EnderFrame UI" : title), sessionId, w, h) {
@@ -108,7 +130,7 @@ public class EnderFrameClientInit {
             case "set_hud" -> {
                 String inlineHtml = data.getString("Html");
                 String resLocStr = data.getString("ResourceLocation");
-                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.parse(resLocStr) : null;
+                ResourceLocation resLoc = !resLocStr.isEmpty() ? ResourceLocation.tryParse(resLocStr) : null;
                 Minecraft.getInstance().execute(() -> {
                     ClientWebManager.initOrBindSession(sessionId, inlineHtml, resLoc, 1280, 720, false);
                     WebHudRenderer.customActiveHudSessionId = sessionId;

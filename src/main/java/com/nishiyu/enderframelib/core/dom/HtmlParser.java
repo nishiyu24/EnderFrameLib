@@ -81,7 +81,21 @@ public class HtmlParser {
                     if (text.startsWith("\n")) text = text.substring(1);
                     if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
                 } else {
-                    text = token.text.trim();
+                    String raw = token.text.replaceAll("[\\r\\n\\t]+", " ").replaceAll(" +", " ");
+                    String trimmed = raw.trim();
+                    if (trimmed.isEmpty()) {
+                        if (!token.text.contains("\n") && !token.text.contains("\r") && !parent.children.isEmpty()) {
+                            text = " ";
+                        } else {
+                            text = "";
+                        }
+                    } else {
+                        boolean leadSpace = !token.text.isEmpty() && Character.isWhitespace(token.text.charAt(0))
+                                && token.text.charAt(0) != '\n' && token.text.charAt(0) != '\r';
+                        boolean trailSpace = !token.text.isEmpty() && Character.isWhitespace(token.text.charAt(token.text.length() - 1))
+                                && token.text.charAt(token.text.length() - 1) != '\n' && token.text.charAt(token.text.length() - 1) != '\r';
+                        text = (leadSpace ? " " : "") + trimmed + (trailSpace ? " " : "");
+                    }
                 }
 
                 if (text.length() > 16384) text = text.substring(0, 16384);

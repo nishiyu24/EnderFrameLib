@@ -21,6 +21,9 @@ public class WebSessionManager {
     private static final Set<IWebSessionProvider> PROVIDERS = new CopyOnWriteArraySet<>();
     private static final Map<String, WebSession> STANDALONE_SESSIONS = new ConcurrentHashMap<>();
 
+    // 特定のセッションを現在閲覧・購読しているプレイヤーの追跡用マップ
+    private static final Map<String, Set<ServerPlayer>> SESSION_VIEWERS = new ConcurrentHashMap<>();
+
     public static void registerProvider(IWebSessionProvider provider) {
         PROVIDERS.add(provider);
     }
@@ -30,16 +33,39 @@ public class WebSessionManager {
     }
 
     public static WebSession getOrCreateStandaloneSession(String sessionId, int width, int height) {
-        return STANDALONE_SESSIONS.computeIfAbsent(sessionId, id -> {
+        WebSession session = STANDALONE_SESSIONS.computeIfAbsent(sessionId, id -> {
             WebSession s = new WebSession(id, WebSessionManager::broadcastDom);
             s.updateSize(width, height);
             return s;
         });
+        session.updateSize(width, height);
+        return session;
     }
 
     public static void removeStandaloneSession(String sessionId) {
         WebSession session = STANDALONE_SESSIONS.remove(sessionId);
         if (session != null) session.clear();
+        SESSION_VIEWERS.remove(sessionId);
+    }
+
+    public static void addViewer(String sessionId, ServerPlayer player) {
+        if (sessionId == null || player == null) return;
+        SESSION_VIEWERS.computeIfAbsent(sessionId, k -> new CopyOnWriteArraySet<>()).add(player);
+    }
+
+    public static void removeViewer(String sessionId, ServerPlayer player) {
+        if (sessionId == null || player == null) return;
+        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(sessionId);
+        if (viewers != null) {
+            viewers.remove(player);
+            if (viewers.isEmpty()) SESSION_VIEWERS.remove(sessionId);
+        }
+    }
+
+    public static void removePlayerAll(ServerPlayer player) {
+        if (player == null) return;
+        SESSION_VIEWERS.values().forEach(v -> v.remove(player));
+        SESSION_VIEWERS.entrySet().removeIf(e -> e.getValue().isEmpty());
     }
 
     public static CompoundTag packDom(WebSession session) {
@@ -57,15 +83,28 @@ public class WebSessionManager {
     }
 
     public static void broadcastDom(WebSession session) {
-        CompoundTag tag = packDom(session);
-        PacketDistributor.sendToAllPlayers(new WebSyncS2CPacket(session.getSessionId(), "dom_sync", tag));
+        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(session.getSessionId());
+        if (viewers != null && !viewers.isEmpty()) {
+            CompoundTag tag = packDom(session);
+            WebSyncS2CPacket packet = new WebSyncS2CPacket(session.getSessionId(), "dom_sync", tag);
+            for (ServerPlayer player : viewers) {
+                PacketDistributor.sendToPlayer(player, packet);
+            }
+        }
     }
 
     public static void broadcastPatch(String sessionId, CompoundTag patchPayload) {
-        PacketDistributor.sendToAllPlayers(new WebSyncS2CPacket(sessionId, "dom_patch", patchPayload));
+        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(sessionId);
+        if (viewers != null && !viewers.isEmpty()) {
+            WebSyncS2CPacket packet = new WebSyncS2CPacket(sessionId, "dom_patch", patchPayload);
+            for (ServerPlayer player : viewers) {
+                PacketDistributor.sendToPlayer(player, packet);
+            }
+        }
     }
 
     public static void forceSyncToPlayer(ServerPlayer player, String sessionId) {
+        addViewer(sessionId, player);
         WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
         if (standalone != null) {
             PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(standalone)));
@@ -83,6 +122,7 @@ public class WebSessionManager {
     }
 
     public static void handleFetchRequest(ServerPlayer player, String sessionId, String requestId, String endpoint, String jsonPayload) {
+        addViewer(sessionId, player);
         for (IWebSessionProvider provider : PROVIDERS) {
             if (provider.matchesSession(sessionId)) {
                 provider.onFetchRequest(player, sessionId, requestId, endpoint, jsonPayload);
@@ -93,15 +133,19 @@ public class WebSessionManager {
 
     public static void handleClientEvent(ServerPlayer player, String sessionId, String elementId, String eventName, String actionName, String value) {
         if (player == null) return;
+        addViewer(sessionId, player);
 
-        // 0. スタンドアロンセッション上のフォーム要素の変更(oninput / onchange)をサーバー側DOMにも反映しておく
+        // 0. スタンドアロンセッション上のフォーム要素の変更(oninput / onchange)をサーバー側DOMにも反映
         if (sessionId != null && elementId != null && !elementId.isEmpty() && ("oninput".equalsIgnoreCase(eventName) || "onchange".equalsIgnoreCase(eventName))) {
             WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
             if (standalone != null && standalone.getDocument() != null && standalone.getDocument().root != null) {
                 HtmlNode target = standalone.getDocument().root.getElementById(elementId);
                 if (target != null) {
                     String type = target.attrs.getOrDefault("type", "");
-                    if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                    if ("radio".equalsIgnoreCase(type)) {
+                        boolean checked = "true".equalsIgnoreCase(value) || "1".equals(value);
+                        if (checked) DomUtils.selectRadioButton(standalone.getDocument().root, target);
+                    } else if ("checkbox".equalsIgnoreCase(type)) {
                         boolean checked = "true".equalsIgnoreCase(value) || "1".equals(value);
                         DomUtils.updateAttribute(target, "checked", checked ? "true" : null, !checked);
                     } else {
@@ -111,7 +155,6 @@ public class WebSessionManager {
             }
         }
 
-        // 1. プレイヤーが現在開いている ContainerMenu が IWebActionReceiver を実装していれば直接ディスパッチ
         String cleanAction = actionName != null && actionName.startsWith("server:") ? actionName.substring(7) : actionName;
         String actionParam = value != null ? value : "";
         if (cleanAction != null && cleanAction.contains(":")) {
@@ -126,11 +169,12 @@ public class WebSessionManager {
         rpcPayload.putString("EventName", eventName != null ? eventName : "");
         rpcPayload.putString("Value", actionParam);
 
+        // 1. プレイヤーが現在開いている ContainerMenu が IWebActionReceiver を実装していればディスパッチ
         if (player.containerMenu instanceof IWebActionReceiver menuReceiver && player.containerMenu.stillValid(player)) {
             menuReceiver.onWebServerAction(player, cleanAction != null ? cleanAction : "", actionParam, rpcPayload);
         }
 
-        // 2. セッションIDが "block:x,y,z" 形式の場合、距離チェック(64ブロック以内)の上で対象 BlockEntity にディスパッチ
+        // 2. セッションIDが "block:x,y,z" 形式の場合、対象 BlockEntity にディスパッチ
         if (sessionId != null && sessionId.startsWith("block:") && player.level() != null) {
             try {
                 String[] coords = sessionId.substring(6).split(",");

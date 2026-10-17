@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -22,7 +21,6 @@ import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import org.joml.Matrix4f;
-import org.joml.Vector4f;
 
 import java.util.Locale;
 import java.util.Map;
@@ -33,20 +31,22 @@ public class WebSceneContext {
     private static final Map<String, WebSceneContext> SCENES = new ConcurrentHashMap<>();
 
     public static WebSceneContext getOrCreate(String sessionId, String sceneId) {
-        String baseId = sceneId != null && sceneId.endsWith("_scene") ? sceneId.substring(0, sceneId.length() - 6) : sceneId;
-        String key = sessionId + "::" + baseId;
-        return SCENES.computeIfAbsent(key, k -> new WebSceneContext());
+        String baseId = stripSceneSuffix(sceneId);
+        return SCENES.computeIfAbsent(sessionId + "::" + baseId, k -> new WebSceneContext());
     }
 
     public static WebSceneContext get(String sessionId, String sceneId) {
         if (sessionId == null || sceneId == null) return null;
-        String baseId = sceneId.endsWith("_scene") ? sceneId.substring(0, sceneId.length() - 6) : sceneId;
-        return SCENES.get(sessionId + "::" + baseId);
+        return SCENES.get(sessionId + "::" + stripSceneSuffix(sceneId));
     }
 
     public static void clearSession(String sessionId) {
         String prefix = sessionId + "::";
         SCENES.keySet().removeIf(k -> k.startsWith(prefix));
+    }
+
+    private static String stripSceneSuffix(String id) {
+        return (id != null && id.endsWith("_scene")) ? id.substring(0, id.length() - 6) : id;
     }
 
     private final Map<BlockPos, BlockState> blocks = new ConcurrentHashMap<>();
@@ -60,7 +60,7 @@ public class WebSceneContext {
     private float panY = 0.0f;
     private int maxVisibleY = Integer.MAX_VALUE;
     private boolean autoRotate = false;
-    private float autoRotateSpeed = 20.0f;
+    private final float autoRotateSpeed = 20.0f;
     private String lastParsedSpec = "";
 
     public WebSceneContext clear() {
@@ -82,10 +82,11 @@ public class WebSceneContext {
         try {
             String cleanId = blockId.trim().toLowerCase(Locale.ROOT);
             Block b = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(cleanId));
+            BlockPos pos = new BlockPos(x, y, z);
             if (b != Blocks.AIR) {
-                blocks.put(new BlockPos(x, y, z), b.defaultBlockState());
+                blocks.put(pos, b.defaultBlockState());
             } else {
-                blocks.remove(new BlockPos(x, y, z));
+                blocks.remove(pos);
             }
         } catch (Exception ignored) {}
         return this;
@@ -178,7 +179,7 @@ public class WebSceneContext {
         if (events.containsKey("data-slice-y")) {
             try {
                 this.maxVisibleY = Integer.parseInt(events.get("data-slice-y").trim());
-            } catch (Exception ignored) {
+            } catch (NumberFormatException ignored) {
                 this.maxVisibleY = Integer.MAX_VALUE;
             }
         }
@@ -202,7 +203,7 @@ public class WebSceneContext {
                             int y = Integer.parseInt(coords[1].trim());
                             int z = Integer.parseInt(coords[2].trim());
                             setBlock(x, y, z, blockId);
-                        } catch (Exception ignored) {}
+                        } catch (NumberFormatException ignored) {}
                     }
                 }
             }
@@ -253,12 +254,11 @@ public class WebSceneContext {
         BlockRenderDispatcher blockRenderer = mc.getBlockRenderer();
         Font font = mc.font;
 
-        // 1. まずこれまでの2Dバッチをフラッシュし、<mc-scene> の矩形で OpenGL Scissor を有効化（枠外への飛び出しを完全防止）
-        if (buffer instanceof MultiBufferSource.BufferSource bs) {
-            bs.endBatch();
-        }
-
-        boolean scissorEnabled = enableElementScissor(poseStack.last().pose(), el);
+        // WebRenderCore.enableScissorRect でこれまでのバッチをフラッシュし、<mc-scene> の矩形で OpenGL Scissor を有効化
+        boolean scissorEnabled = WebRenderCore.enableScissorRect(
+                poseStack.last().pose(), buffer,
+                el.x(), el.y(), el.x() + el.width(), el.y() + el.height()
+        );
 
         poseStack.pushPose();
         try {
@@ -291,8 +291,7 @@ public class WebSceneContext {
                 for (Map.Entry<BlockPos, Integer> hl : highlights.entrySet()) {
                     BlockPos pos = hl.getKey();
                     if (pos.getY() > maxVisibleY) continue;
-                    int color = hl.getValue();
-                    drawHighlightBox(poseStack, lineBuilder, pos, color, finalOpacity);
+                    drawHighlightBox(poseStack, lineBuilder, pos, hl.getValue(), finalOpacity);
                 }
             }
 
@@ -315,7 +314,6 @@ public class WebSceneContext {
                 }
             }
 
-            // シザーが有効なうちに3Dブロックのバッチを全てフラッシュして描画完了させる
             if (buffer instanceof MultiBufferSource.BufferSource bs) {
                 bs.endBatch();
             }
@@ -325,32 +323,6 @@ public class WebSceneContext {
                 RenderSystem.disableScissor();
             }
         }
-    }
-
-    private static boolean enableElementScissor(Matrix4f poseMat, UIElement el) {
-        try {
-            Window window = Minecraft.getInstance().getWindow();
-            double guiScale = window.getGuiScale();
-
-            Vector4f p0 = new Vector4f(el.x(), el.y(), 0f, 1f).mul(poseMat);
-            Vector4f p1 = new Vector4f(el.x() + el.width(), el.y() + el.height(), 0f, 1f).mul(poseMat);
-
-            float minGuiX = Math.min(p0.x, p1.x);
-            float maxGuiX = Math.max(p0.x, p1.x);
-            float minGuiY = Math.min(p0.y, p1.y);
-            float maxGuiY = Math.max(p0.y, p1.y);
-
-            int sx = Math.max(0, (int) Math.floor(minGuiX * guiScale));
-            int sy = Math.max(0, (int) Math.floor(window.getHeight() - maxGuiY * guiScale));
-            int sw = Math.max(0, (int) Math.ceil((maxGuiX - minGuiX) * guiScale));
-            int sh = Math.max(0, (int) Math.ceil((maxGuiY - minGuiY) * guiScale));
-
-            if (sw > 0 && sh > 0) {
-                RenderSystem.enableScissor(sx, sy, sw, sh);
-                return true;
-            }
-        } catch (Exception ignored) {}
-        return false;
     }
 
     private static void drawHighlightBox(PoseStack poseStack, VertexConsumer builder, BlockPos pos, int color, float opacity) {

@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 /**
@@ -17,6 +18,8 @@ import java.util.function.BiConsumer;
  * EnderFrameLib の全機能を呼び出すための静的ブリッジAPI
  */
 public class EnderFrameScriptingBridge {
+
+    private static final Map<String, IWebSessionProvider> GLOBAL_PROVIDERS = new ConcurrentHashMap<>();
 
     /**
      * プレイヤーに指定したHTML文字列で即座にWeb画面を開く
@@ -26,11 +29,12 @@ public class EnderFrameScriptingBridge {
         String sid = (sessionId == null || sessionId.isEmpty()) ? ("script_" + player.getStringUUID()) : sessionId;
         WebSession session = WebSessionManager.getOrCreateStandaloneSession(sid, width > 0 ? width : 854, height > 0 ? height : 480);
         session.loadHtml(html);
+
+        // DOMが同期されるので、open_screenパケットにはHTMLを含めず通信量を削減
         WebSessionManager.forceSyncToPlayer(player, sid);
 
         CompoundTag tag = new CompoundTag();
         tag.putString("Title", sid);
-        tag.putString("Html", html);
         tag.putInt("Width", width);
         tag.putInt("Height", height);
         PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sid, "open_screen", tag));
@@ -87,7 +91,13 @@ public class EnderFrameScriptingBridge {
      * クライアントの onclick="server:action" イベントをスクリプト側でグローバルに受信するリスナーを登録
      */
     public static void onGlobalServerAction(String sessionIdPrefix, BiConsumer<ServerPlayer, CompoundTag> handler) {
-        WebSessionManager.registerProvider(new IWebSessionProvider() {
+        // リロード等で重複して登録された場合は古いプロバイダを解除してメモリリークを防ぐ
+        IWebSessionProvider existing = GLOBAL_PROVIDERS.get(sessionIdPrefix);
+        if (existing != null) {
+            WebSessionManager.unregisterProvider(existing);
+        }
+
+        IWebSessionProvider provider = new IWebSessionProvider() {
             @Override
             public boolean matchesSession(String sessionId) {
                 return sessionId != null && sessionId.startsWith(sessionIdPrefix);
@@ -108,6 +118,9 @@ public class EnderFrameScriptingBridge {
                 tag.putString("Value", payload != null ? payload : "");
                 handler.accept(player, tag);
             }
-        });
+        };
+
+        GLOBAL_PROVIDERS.put(sessionIdPrefix, provider);
+        WebSessionManager.registerProvider(provider);
     }
 }

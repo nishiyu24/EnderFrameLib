@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
 
@@ -13,11 +14,23 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UIParser {
+
+    private static final Pattern INCLUDE_PATTERN = Pattern.compile("(?is)<include\\b[^>]*\\bsrc=[\"']([^\"']+)[\"'][^>]*(?:/>|>\\s*</include>)");
+    private static final Pattern MC_SLOT_PATTERN = Pattern.compile("(?is)<mc-slot\\b([^>]*)(?:/>|>\\s*</mc-slot>)");
+    private static final Pattern MC_SLOT_GRID_PATTERN = Pattern.compile("(?is)<mc-slot-grid\\b([^>]*)(?:/>|>\\s*</mc-slot-grid>)");
+    private static final Pattern MC_INVENTORY_PATTERN = Pattern.compile("(?is)<mc-inventory\\b([^>]*)(?:/>|>\\s*</mc-inventory>)");
+    private static final Pattern MC_BAR_PATTERN = Pattern.compile("(?is)<mc-bar\\b([^>]*)(?:/>|>\\s*</mc-bar>)");
+    private static final Pattern LINK_HREF_PATTERN = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>");
+    private static final Pattern SCRIPT_TAG_PATTERN = Pattern.compile("(?is)<script\\b[^>]*>\\s*(.*?)\\s*</script>");
+    private static final Pattern STYLE_TAG_PATTERN = Pattern.compile("(?is)<style\\b[^>]*>\\s*(.*?)\\s*</style>");
+    private static final Pattern TRIM_QUOTES_PATTERN = Pattern.compile("^[\"']|[\"']$");
+    private static final Map<String, Pattern> ATTR_PATTERN_CACHE = new ConcurrentHashMap<>();
 
     @FunctionalInterface
     public interface ILayoutBoxRenderer {
@@ -113,39 +126,73 @@ public class UIParser {
         return null;
     }
 
-    public CssParser.StyleSheet buildStyleSheet(String authorCss, int rootW) {
-        String defaultCss = """
-                    body, html { background-color: #ffffff; color: #333333; margin: 0; padding: 0; width: 100%; min-height: 100%; box-sizing: border-box; overflow: auto; }
-                    head, meta, title, link, style, script, template, option { display: none; }
-                    h1 { font-size: 2rem; font-weight: bold; margin: 0.67em 0; display: block; }
-                    h2 { font-size: 1.5rem; font-weight: bold; margin: 0.83em 0; display: block; }
-                    h3 { font-size: 1.17rem; font-weight: bold; margin: 1em 0; display: block; }
-                    p { margin: 1em 0; display: block; }
-                    ul { padding-left: 40px; margin: 1em 0; display: block; }
-                    li { display: block; }
-                    a { color: #0000ee; text-decoration: none; }
-                    b, strong { font-weight: bold; }
-                    img, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; object-fit: fill; }
-                    div, section, main, header, footer, article, nav { display: block; }
-                    hr { display: block; border: none; border-top: 1px solid #777777; margin: 10px 0; width: 100%; height: 0; }
-                    button { display: inline-block; cursor: pointer; background-color: #f0f0f0; color: #000000; border: 1px solid #767676; padding: 2px 6px; border-radius: 2px; transition: 0.1s; }
-                    button:hover { background-color: #e5e5e5; }
-                    button:active { background-color: #d5d5d5; border-color: #4f4f4f; transform: scale(0.95); }
-                    input, select, textarea { display: inline-block; background-color: #ffffff; color: #000000; border: 1px solid #777777; padding: 4px; box-sizing: border-box; border-radius: 2px; transition: 0.15s; }
-                    textarea { display: block; width: 100%; height: 120px; overflow-y: auto; }
-                    input:focus, select:hover, textarea:focus { background-color: #f8fbff; }
-                    input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; padding: 0; border: 2px solid #555555; transition: 0.1s; }
-                    input[type="checkbox"]:hover { border-color: #aaaaaa; }
-                    input[type="range"] { background-color: #ffffff; color: #007bff; border: none; padding: 0; height: 16px; border-radius: 8px; }
-                    progress { display: inline-block; background-color: #333333; color: #28a745; border: none; padding: 0; width: 120px; height: 12px; border-radius: 6px; }
-                    .mc-slot { width: 18px; height: 18px; background-color: #2b2b36; border: 1px solid #585b70; border-radius: 2px; box-sizing: border-box; display: inline-block; }
-                    .mc-slot:hover { background-color: #3e4055; border-color: #89b4fa; }
-                    .mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
-                    .mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
-                    .mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; background-color: #181825; border: 1px solid #45475a; border-radius: 4px; overflow: hidden; }
-                """;
+    public static final String DEFAULT_USER_AGENT_CSS = """
+            body, html { background-color: #ffffff; color: #333333; margin: 0; padding: 0; width: 100%; min-height: 100%; box-sizing: border-box; overflow: auto; }
+            head, meta, title, link, style, script, template, option { display: none; }
+            *[hidden] { display: none; }
+            h1 { font-size: 2rem; font-weight: bold; margin: 0.67em 0; display: block; }
+            h2 { font-size: 1.5rem; font-weight: bold; margin: 0.83em 0; display: block; }
+            h3 { font-size: 1.17rem; font-weight: bold; margin: 1em 0; display: block; }
+            h4 { font-size: 1.0rem; font-weight: bold; margin: 0.8em 0; display: block; }
+            h5 { font-size: 0.9rem; font-weight: bold; margin: 0.6em 0; display: block; }
+            h6 { font-size: 0.8rem; font-weight: bold; margin: 0.5em 0; color: #a6adc8; display: block; }
+            p { margin: 0.6em 0; display: block; }
+            ul, ol { padding-left: 20px; margin: 0.6em 0; display: block; }
+            li { display: block; margin: 2px 0; }
+            .task-list-item { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+            a { color: #89b4fa; text-decoration: underline; cursor: pointer; display: inline-block; }
+            a:hover { color: #b4befe; }
+            b, strong { font-weight: bold; }
+            i, em { font-style: italic; }
+            s, strike, del { text-decoration: line-through; }
+            u, ins { text-decoration: underline; }
+            code, kbd { background-color: rgba(137, 180, 250, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; display: inline-block; }
+            kbd { border: 1px solid #585b70; background-color: #313244; color: #cdd6f4; }
+            pre { background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 8px 10px; margin: 6px 0; display: block; overflow-x: auto; }
+            blockquote { border-left: 3px solid #89b4fa; background-color: rgba(137, 180, 250, 0.08); padding: 6px 10px; margin: 6px 0; border-radius: 2px; display: block; }
+            .markdown-alert-title { font-weight: bold; margin-bottom: 4px; color: #89b4fa; display: block; }
+            .markdown-alert-tip { border-left-color: #a6e3a1; background-color: rgba(166, 227, 161, 0.08); }
+            .markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
+            .markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
+            .markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
+            table { display: flex; flex-direction: column; width: 100%; border: 1px solid #45475a; border-radius: 4px; margin: 6px 0; overflow: hidden; }
+            thead, tbody { display: flex; flex-direction: column; width: 100%; }
+            thead { background-color: rgba(137, 180, 250, 0.12); font-weight: bold; }
+            tr { display: flex; flex-direction: row; width: 100%; border-bottom: 1px solid #313244; }
+            th, td { flex: 1; padding: 4px 8px; box-sizing: border-box; display: block; }
+            th { font-weight: bold; color: #89b4fa; }
+            label, output { display: inline-block; }
+            form, fieldset, details, summary, dialog, aside, figure, figcaption { display: block; }
+            fieldset { border: 1px solid #585b70; border-radius: 4px; padding: 8px 12px; margin: 4px 0; }
+            legend { font-weight: bold; padding: 0 4px; display: block; }
+            summary { cursor: pointer; font-weight: bold; user-select: none; }
+            dialog:not([open]) { display: none; }
+            dialog[open] { position: fixed; z-index: 100; background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #89b4fa; border-radius: 6px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+            img, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; object-fit: fill; }
+            div, section, main, header, footer, article, nav { display: block; }
+            hr { display: block; border: none; border-top: 1px solid #585b70; margin: 8px 0; width: 100%; height: 1px; background-color: #585b70; }
+            button { display: inline-block; cursor: pointer; background-color: #f0f0f0; color: #000000; border: 1px solid #767676; padding: 2px 6px; border-radius: 2px; transition: 0.1s; min-width: min-content; }
+            button:hover { background-color: #e5e5e5; }
+            button:active { background-color: #d5d5d5; border-color: #4f4f4f; transform: scale(0.95); }
+            button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { border-color: #89b4fa; box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.5); }
+            button[disabled], input[disabled], select[disabled], textarea[disabled] { opacity: 0.5; }
+            input, select, textarea { display: inline-block; background-color: #ffffff; color: #000000; border: 1px solid #777777; padding: 4px; box-sizing: border-box; border-radius: 2px; transition: 0.15s; min-width: min-content; }
+            textarea { display: block; width: 100%; height: 120px; overflow-y: auto; }
+            input:focus, select:hover, textarea:focus { background-color: #f8fbff; }
+            input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; padding: 0; border: 2px solid #555555; transition: 0.1s; }
+            input[type="checkbox"]:hover { border-color: #aaaaaa; }
+            input[type="range"] { background-color: #ffffff; color: #007bff; border: none; padding: 0; height: 16px; border-radius: 8px; }
+            input[type="color"] { width: 48px; height: 22px; padding: 2px; border-radius: 4px; }
+            progress, meter { display: inline-block; background-color: #333333; color: #28a745; border: none; padding: 0; width: 120px; height: 12px; border-radius: 6px; }
+            .mc-slot { width: 18px; height: 18px; background-color: #2b2b36; border: 1px solid #585b70; border-radius: 2px; box-sizing: border-box; display: inline-block; }
+            .mc-slot:hover { background-color: #3e4055; border-color: #89b4fa; }
+            .mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
+            .mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
+            .mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; background-color: #181825; border: 1px solid #45475a; border-radius: 4px; overflow: hidden; }
+            """;
 
-        CssParser.StyleSheet sheet = CssParser.parse(defaultCss, rootW);
+    public CssParser.StyleSheet buildStyleSheet(String authorCss, int rootW) {
+        CssParser.StyleSheet sheet = CssParser.parse(DEFAULT_USER_AGENT_CSS, rootW);
 
         if (authorCss != null && !authorCss.isEmpty()) {
             CssParser.StyleSheet authorSheet = CssParser.parse(authorCss, rootW);
@@ -163,13 +210,16 @@ public class UIParser {
 
     private String resolveIncludes(String html, int depth) {
         if (html == null || depth > 5 || !html.contains("<include")) return html;
-        Matcher incM = Pattern.compile("(?is)<include\\b[^>]*\\bsrc=[\"']([^\"']+)[\"'][^>]*(?:/>|>\\s*</include>)").matcher(html);
+        Matcher incM = INCLUDE_PATTERN.matcher(html);
         StringBuilder sb = new StringBuilder();
         boolean found = false;
         while (incM.find()) {
             found = true;
             String src = incM.group(1);
             String loaded = resourceTextResolver != null ? resourceTextResolver.apply(src) : "";
+            if (loaded != null && src.toLowerCase().endsWith(".md")) {
+                loaded = MarkdownParser.toHtml(loaded);
+            }
             incM.appendReplacement(sb, Matcher.quoteReplacement(loaded != null ? loaded : ""));
         }
         incM.appendTail(sb);
@@ -178,15 +228,19 @@ public class UIParser {
 
     private static String extractAttr(String attrsStr, String attrName, String defaultVal) {
         if (attrsStr == null || attrsStr.isEmpty()) return defaultVal;
-        Matcher m = Pattern.compile("(?i)\\b" + Pattern.quote(attrName) + "\\s*=\\s*[\"']([^\"']*)[\"']").matcher(attrsStr);
+        Pattern p = ATTR_PATTERN_CACHE.computeIfAbsent(attrName.toLowerCase(),
+                k -> Pattern.compile("(?i)\\b" + Pattern.quote(k) + "\\s*=\\s*[\"']([^\"']*)[\"']"));
+        Matcher m = p.matcher(attrsStr);
         if (m.find()) return m.group(1).trim();
         return defaultVal;
     }
 
     public static String expandCustomTags(String html) {
-        if (html == null || !html.contains("<mc-")) return html;
+        if (html == null) return null;
+        html = MarkdownParser.processDocumentOrBlocks(html);
+        if (!html.contains("<mc-")) return html;
 
-        Matcher slotM = Pattern.compile("(?is)<mc-slot\\b([^>]*)(?:/>|>\\s*</mc-slot>)").matcher(html);
+        Matcher slotM = MC_SLOT_PATTERN.matcher(html);
         StringBuilder sb = new StringBuilder();
         while (slotM.find()) {
             String attrs = slotM.group(1);
@@ -202,7 +256,7 @@ public class UIParser {
         slotM.appendTail(sb);
         html = sb.toString();
 
-        Matcher gridM = Pattern.compile("(?is)<mc-slot-grid\\b([^>]*)(?:/>|>\\s*</mc-slot-grid>)").matcher(html);
+        Matcher gridM = MC_SLOT_GRID_PATTERN.matcher(html);
         sb.setLength(0);
         while (gridM.find()) {
             String attrs = gridM.group(1);
@@ -229,7 +283,7 @@ public class UIParser {
         gridM.appendTail(sb);
         html = sb.toString();
 
-        Matcher invM = Pattern.compile("(?is)<mc-inventory\\b([^>]*)(?:/>|>\\s*</mc-inventory>)").matcher(html);
+        Matcher invM = MC_INVENTORY_PATTERN.matcher(html);
         sb.setLength(0);
         while (invM.find()) {
             String attrs = invM.group(1);
@@ -269,7 +323,7 @@ public class UIParser {
         invM.appendTail(sb);
         html = sb.toString();
 
-        Matcher barM = Pattern.compile("(?is)<mc-bar\\b([^>]*)(?:/>|>\\s*</mc-bar>)").matcher(html);
+        Matcher barM = MC_BAR_PATTERN.matcher(html);
         sb.setLength(0);
         while (barM.find()) {
             String attrs = barM.group(1);
@@ -305,12 +359,14 @@ public class UIParser {
         if (externalCss != null && externalCss.length() > 65536) externalCss = externalCss.substring(0, 65536);
 
         StringBuilder combinedCss = new StringBuilder();
-        if (externalCss != null) combinedCss.append(externalCss).append("\n");
+        if (externalCss != null && !externalCss.isEmpty()) {
+            combinedCss.append(externalCss).append("\n");
+        }
 
         StringBuilder extractedScript = new StringBuilder();
 
         if (html != null) {
-            Matcher linkM = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>").matcher(html);
+            Matcher linkM = LINK_HREF_PATTERN.matcher(html);
             while (linkM.find()) {
                 String tagFull = linkM.group(0).toLowerCase();
                 if (tagFull.contains("stylesheet") || linkM.group(1).endsWith(".css")) {
@@ -322,14 +378,16 @@ public class UIParser {
                 }
             }
 
-            Matcher scriptM = Pattern.compile("(?is)<script\\b[^>]*>\\s*(.*?)\\s*</script>").matcher(html);
+            Matcher scriptM = SCRIPT_TAG_PATTERN.matcher(html);
             while (scriptM.find()) {
                 extractedScript.append(scriptM.group(1)).append("\n");
             }
             html = scriptM.replaceAll("");
 
-            Matcher styleM = Pattern.compile("(?is)<style\\b[^>]*>\\s*(.*?)\\s*</style>").matcher(html);
-            while (styleM.find()) combinedCss.append(styleM.group(1)).append("\n");
+            Matcher styleM = STYLE_TAG_PATTERN.matcher(html);
+            while (styleM.find()) {
+                combinedCss.append(styleM.group(1)).append("\n");
+            }
             html = styleM.replaceAll("");
         }
 
@@ -364,6 +422,9 @@ public class UIParser {
         boolean wasDirty = node.isDirty;
 
         Map<String, String> style = CssParser.computeNodeStyle(node, inheritedStyle, sheet, env);
+        if (node.attrs.containsKey("hidden")) {
+            style.put("display", "none");
+        }
         LayoutBox box = new LayoutBox(node, style, env);
 
         HtmlNode beforeNode = createPseudoElement(node, sheet, true);
@@ -372,8 +433,10 @@ public class UIParser {
         }
 
         if (!"textarea".equalsIgnoreCase(node.tag)) {
+            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !node.attrs.containsKey("open");
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
+                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
                 box.children.add(buildLayoutTree(child, style, sheet, env, wasDirty));
             }
         }
@@ -417,7 +480,7 @@ public class UIParser {
             String attrName = content.substring(5, content.length() - 1).trim();
             textNode.text = parent.attrs.getOrDefault(attrName, "");
         } else {
-            textNode.text = content.replaceAll("^[\"']|[\"']$", "");
+            textNode.text = TRIM_QUOTES_PATTERN.matcher(content).replaceAll("");
         }
 
         pseudo.children.add(textNode);
