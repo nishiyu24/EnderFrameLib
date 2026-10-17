@@ -1,0 +1,10 @@
+/* EnderFrameLib 組み込みテーマ: vanilla */
+:root { --bg-base: #c6c6c6; --bg-surface: #8b8b8b; --text-main: #3f3f3f; --accent: #5555ff; }
+body, html { background-color: transparent; color: #3f3f3f; }
+.mc-panel { background-color: #c6c6c6; border-top: 2px solid #ffffff; border-left: 2px solid #ffffff; border-right: 2px solid #555555; border-bottom: 2px solid #555555; border-radius: 2px; padding: 10px; }
+.mc-card { background-color: #b0b0b0; border-top: 1px solid #555555; border-left: 1px solid #555555; border-right: 1px solid #ffffff; border-bottom: 1px solid #ffffff; padding: 6px; }
+.mc-title { color: #3f3f3f; font-weight: bold; margin-bottom: 4px; }
+.mc-btn { background-color: #8b8b8b; color: #ffffff; border-top: 1px solid #ffffff; border-left: 1px solid #ffffff; border-right: 1px solid #373737; border-bottom: 1px solid #373737; padding: 3px 8px; }
+.mc-btn:hover { background-color: #a0a0c8; color: #ffffa0; }
+.mc-slot { width: 18px; height: 18px; background-color: #8b8b8b; border-top: 1px solid #373737; border-left: 1px solid #373737; border-right: 1px solid #ffffff; border-bottom: 1px solid #ffffff; box-sizing: border-box; }
+.mc-slot:hover { background-color: #a8a8a8; }
