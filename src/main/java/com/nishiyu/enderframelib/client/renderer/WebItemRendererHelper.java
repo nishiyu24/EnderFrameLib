@@ -87,17 +87,13 @@ public class WebItemRendererHelper {
         int logicWidthBlocks = (int) Math.ceil(virtualWidth / WebRenderCore.RESOLUTION);
         int logicHeightBlocks = (int) Math.ceil(virtualHeight / WebRenderCore.RESOLUTION);
 
-        WebRenderCore.renderElements(
-                elements, logicWidthBlocks, logicHeightBlocks,
-                poseStack, buffer, packedLight, packedOverlay,
-                true, true, true,
-                0.02f, 0.01f,
-                ClientScreenInteractionManager.getHoveredId(sessionId),
-                0x00000000, false,
-                mc.level,
-                playAudio, true, sessionId,
-                null, null, 0
-        );
+        WebPaintPass.builder(elements, logicWidthBlocks, logicHeightBlocks, poseStack, buffer, sessionId, mc.level)
+                .light(packedLight, packedOverlay)
+                .renderFlags(true, true, true)
+                .zOffsets(0.02f, 0.01f)
+                .hoveredId(ClientScreenInteractionManager.getHoveredId(sessionId))
+                .audio(playAudio, true, null)
+                .render();
 
         poseStack.popPose();
     }

@@ -75,16 +75,14 @@ public class WebBlockRenderer<T extends BlockEntity & IWebScreenBlockEntity> imp
         poseStack.scale(scale, -scale, scale);
         poseStack.translate(0, -WebRenderCore.RESOLUTION * be.getScreenHeight(), 0);
 
-        WebRenderCore.renderElements(
-                elementsToRender, be.getScreenWidth(), be.getScreenHeight(),
-                poseStack, buffer, packedLight, packedOverlay,
-                renderItems, renderText, renderRounded,
-                zStep, subZOffset, hoveredId, lodColor, isLodMode,
-                be.getLevel(), true, false, sessionId,
-                be.getBlockPos(),
-                null,
-                0
-        );
+        WebPaintPass.builder(elementsToRender, be.getScreenWidth(), be.getScreenHeight(), poseStack, buffer, sessionId, be.getLevel())
+                .light(packedLight, packedOverlay)
+                .renderFlags(renderItems, renderText, renderRounded)
+                .zOffsets(zStep, subZOffset)
+                .hoveredId(hoveredId)
+                .lod(lodColor, isLodMode)
+                .audio(true, false, be.getBlockPos())
+                .render();
 
         poseStack.popPose();
     }

@@ -258,16 +258,12 @@ public class WebHudRenderer {
         int logicWidth = (int) Math.ceil((float) lastSentWidth / WebRenderCore.RESOLUTION);
         int logicHeight = (int) Math.ceil((float) lastSentHeight / WebRenderCore.RESOLUTION);
 
-        WebRenderCore.renderElements(
-                hudElements, logicWidth, logicHeight,
-                poseStack, bufferSource,
-                0xF000F0, OverlayTexture.NO_OVERLAY,
-                true, true, true,
-                0.0f, 0.0f, ClientScreenInteractionManager.getHoveredId(screenKey),
-                0x00000000, false,
-                mc.level, false, true, screenKey,
-                null, null, 0
-        );
+        WebPaintPass.builder(hudElements, logicWidth, logicHeight, poseStack, bufferSource, screenKey, mc.level)
+                .light(0xF000F0, OverlayTexture.NO_OVERLAY)
+                .zOffsets(0.0f, 0.0f)
+                .hoveredId(ClientScreenInteractionManager.getHoveredId(screenKey))
+                .audio(false, true, null)
+                .render();
 
         bufferSource.endBatch();
         poseStack.popPose();
@@ -421,16 +417,12 @@ public class WebHudRenderer {
             poseStack.scale(-scale, -scale, scale);
             poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
 
-            WebRenderCore.renderElements(
+            WebPaintPass.forBillboard(
                     cache.elements, cache.width, cache.height,
                     poseStack, bufferSource,
-                    0xF000F0, OverlayTexture.NO_OVERLAY,
-                    true, true, true,
-                    -0.01f, -0.005f, ClientScreenInteractionManager.getHoveredId(screenKey),
-                    0x00000000, false,
-                    mc.level, false, true, screenKey,
-                    null, null, 0
-            );
+                    screenKey, ClientScreenInteractionManager.getHoveredId(screenKey),
+                    mc.level
+            ).render();
             poseStack.popPose();
             return true;
         }
