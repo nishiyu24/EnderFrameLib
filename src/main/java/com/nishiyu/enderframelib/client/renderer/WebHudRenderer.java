@@ -334,32 +334,93 @@ public class WebHudRenderer {
         }
     }
 
+    private static void populateSyncedTrackerData(LivingEntity le, Map<String, String> dataMap) {
+        JsonObject syncedData = serverSyncedTrackerData.get(le.getId());
+        if (syncedData == null) return;
+        Map<String, String> flatData = new HashMap<>();
+        flattenJsonToMap(syncedData, "", flatData);
+
+        for (String searchKey2 : currentTrackerConfig.requireNbt) {
+            String searchKey1 = "nbt." + searchKey2;
+            String rawValue = flatData.getOrDefault(searchKey1, flatData.get(searchKey2));
+
+            if (rawValue != null) {
+                if ((rawValue.startsWith("[") || rawValue.startsWith("{")) && !rawValue.startsWith("{\"")) {
+                    try {
+                        CompoundTag dummy = TagParser.parseTag("{data:" + rawValue + "}");
+                        JsonElement jsonElem = toJsonElement(dummy.get("data"));
+                        if (jsonElem != null) rawValue = jsonElem.toString();
+                    } catch (Exception ignored) {}
+                }
+                dataMap.put(searchKey1, rawValue);
+            }
+        }
+    }
+
+    private static void buildTrackerLayout(HtmlNode instanceNode, String screenKey, TrackerCache cache) {
+        UIParser.Document doc = ClientWebManager.getDocument(screenKey);
+        if (doc == null) return;
+
+        com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
+        Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
+        com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
+
+        LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
+        buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
+
+        com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
+        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
+        com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
+                viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
+        com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
+
+        layoutBox.measure(1000, 1000, fmtCtx, ctx);
+        layoutBox.measure(1000, 1000, fmtCtx, ctx);
+        layoutBox.layout(0, 0, 1000, 1000, ctx);
+
+        cache.width = layoutBox.w;
+        cache.height = layoutBox.h;
+
+        UIRenderer renderer = new UIRenderer(layoutBox.w, layoutBox.h, doc.sheet.keyframes, scrollState);
+        cache.elements = renderer.render(layoutBox);
+    }
+
+    private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache) {
+        if (cache.elements == null || cache.elements.isEmpty()) return false;
+
+        double x = le.getX();
+        double y = le.getY() + le.getBbHeight() + currentTrackerConfig.yOffset;
+        double z = le.getZ();
+
+        Vec3 dir = new Vec3(x - camera.getPosition().x, y - camera.getPosition().y, z - camera.getPosition().z);
+        Vector3f viewVecF = camera.getLookVector();
+        Vec3 viewVec = new Vec3(viewVecF.x(), viewVecF.y(), viewVecF.z());
+        if (dir.dot(viewVec) <= 0) return false;
+
+        poseStack.pushPose();
+        poseStack.translate(x - camera.getPosition().x, y - camera.getPosition().y, z - camera.getPosition().z);
+        poseStack.mulPose(Axis.YP.rotationDegrees(-camera.getYRot()));
+        poseStack.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
+
+        float scale = 0.008f;
+        poseStack.scale(-scale, -scale, scale);
+        poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
+
+        WebPaintPass.forBillboard(
+                cache.elements, cache.width, cache.height,
+                poseStack, bufferSource,
+                screenKey, ClientScreenInteractionManager.getHoveredId(screenKey),
+                mc.level
+        ).render();
+        poseStack.popPose();
+        return true;
+    }
+
     private static boolean processAndRenderSingleTracker(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey) {
         UUID uuid = le.getUUID();
         Map<String, String> dataMap = new HashMap<>();
         populateLivingEntityData(le, dataMap);
-
-        JsonObject syncedData = serverSyncedTrackerData.get(le.getId());
-        if (syncedData != null) {
-            Map<String, String> flatData = new HashMap<>();
-            flattenJsonToMap(syncedData, "", flatData);
-
-            for (String searchKey2 : currentTrackerConfig.requireNbt) {
-                String searchKey1 = "nbt." + searchKey2;
-                String rawValue = flatData.getOrDefault(searchKey1, flatData.get(searchKey2));
-
-                if (rawValue != null) {
-                    if ((rawValue.startsWith("[") || rawValue.startsWith("{")) && !rawValue.startsWith("{\"")) {
-                        try {
-                            CompoundTag dummy = TagParser.parseTag("{data:" + rawValue + "}");
-                            JsonElement jsonElem = toJsonElement(dummy.get("data"));
-                            if (jsonElem != null) rawValue = jsonElem.toString();
-                        } catch (Exception ignored) {}
-                    }
-                    dataMap.put(searchKey1, rawValue);
-                }
-            }
-        }
+        populateSyncedTrackerData(le, dataMap);
 
         TrackerCache cache = trackerCaches.get(uuid);
         if (cache == null || cache.isChanged(dataMap)) {
@@ -370,63 +431,11 @@ public class WebHudRenderer {
             applyTemplateData(instanceNode, dataMap);
             instanceNode.attrs.put("style", instanceNode.attrs.getOrDefault("style", "") + "; display: flex;");
 
-            UIParser.Document doc = ClientWebManager.getDocument(screenKey);
-            if (doc != null) {
-                com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
-                Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
-                com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
-
-                LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
-                buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
-
-                com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
-                com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
-                com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
-                        viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
-                com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
-
-                layoutBox.measure(1000, 1000, fmtCtx, ctx);
-                layoutBox.measure(1000, 1000, fmtCtx, ctx);
-                layoutBox.layout(0, 0, 1000, 1000, ctx);
-
-                cache.width = layoutBox.w;
-                cache.height = layoutBox.h;
-
-                UIRenderer renderer = new UIRenderer(layoutBox.w, layoutBox.h, doc.sheet.keyframes, scrollState);
-                cache.elements = renderer.render(layoutBox);
-            }
+            buildTrackerLayout(instanceNode, screenKey, cache);
             trackerCaches.put(uuid, cache);
         }
 
-        if (cache.elements != null && !cache.elements.isEmpty()) {
-            double x = le.getX();
-            double y = le.getY() + le.getBbHeight() + currentTrackerConfig.yOffset;
-            double z = le.getZ();
-
-            Vec3 dir = new Vec3(x - camera.getPosition().x, y - camera.getPosition().y, z - camera.getPosition().z);
-            Vector3f viewVecF = camera.getLookVector();
-            Vec3 viewVec = new Vec3(viewVecF.x(), viewVecF.y(), viewVecF.z());
-            if (dir.dot(viewVec) <= 0) return false;
-
-            poseStack.pushPose();
-            poseStack.translate(x - camera.getPosition().x, y - camera.getPosition().y, z - camera.getPosition().z);
-            poseStack.mulPose(Axis.YP.rotationDegrees(-camera.getYRot()));
-            poseStack.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
-
-            float scale = 0.008f;
-            poseStack.scale(-scale, -scale, scale);
-            poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
-
-            WebPaintPass.forBillboard(
-                    cache.elements, cache.width, cache.height,
-                    poseStack, bufferSource,
-                    screenKey, ClientScreenInteractionManager.getHoveredId(screenKey),
-                    mc.level
-            ).render();
-            poseStack.popPose();
-            return true;
-        }
-        return false;
+        return renderTrackerBillboard(poseStack, bufferSource, camera, mc, le, screenKey, cache);
     }
 
     private static Class<? extends LivingEntity> getTargetClass(String targetType) {
