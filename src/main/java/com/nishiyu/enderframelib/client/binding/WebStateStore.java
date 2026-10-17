@@ -198,17 +198,30 @@ public class WebStateStore {
         if (vNode == null) return false;
         boolean changed = ClientLocalEnvProvider.applyI18nAttributes(vNode);
 
-        // 1. テキストの {{key}} / {{ 'key' | i18n }} プレースホルダー解決
+        if (applyTextPlaceholders(origNode, vNode, scopeData)) changed = true;
+        if (applyAttributePlaceholders(origNode, vNode, scopeData)) changed = true;
+        if (applyDataModel(vNode, scopeData)) changed = true;
+        if (applyDataBind(vNode, scopeData)) changed = true;
+        if (applyConditionalVisibility(vNode, scopeData)) changed = true;
+        if (applyDataClass(vNode, scopeData)) changed = true;
+
+        return handleListIterationOrChildren(origNode, vNode, scopeData, changed);
+    }
+
+    private boolean applyTextPlaceholders(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData) {
         String rawText = (origNode != null && origNode.text != null) ? origNode.text : vNode.text;
         if (rawText != null && rawText.contains("{{") && !rawText.contains("{{@")) {
             String resolved = replacePlaceholdersWithData(rawText, scopeData);
             if (!Objects.equals(resolved, vNode.text)) {
                 vNode.text = resolved;
-                changed = true;
+                return true;
             }
         }
+        return false;
+    }
 
-        // 2. 属性の {{key}} プレースホルダー解決
+    private boolean applyAttributePlaceholders(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData) {
+        boolean changed = false;
         HtmlNode attrSource = origNode != null ? origNode : vNode;
         for (Map.Entry<String, String> entry : new ArrayList<>(attrSource.attrs.entrySet())) {
             String k = entry.getKey();
@@ -221,68 +234,75 @@ public class WebStateStore {
                 }
             }
         }
+        return changed;
+    }
 
-        // 3. data-model="key" によるフォーム要素の双方向バインディング同期
-        if (vNode.attrs.containsKey("data-model")) {
-            String modelKey = vNode.attrs.get("data-model").trim();
-            if (scopeData.containsKey(modelKey)) {
-                String modelVal = scopeData.getOrDefault(modelKey, "");
-                String type = vNode.attrs.getOrDefault("type", "text");
-                if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
-                    boolean shouldCheck = "true".equalsIgnoreCase(modelVal) || "1".equals(modelVal);
-                    boolean isCurrentlyChecked = vNode.attrs.containsKey("checked");
-                    if (shouldCheck != isCurrentlyChecked) {
-                        DomUtils.updateAttribute(vNode, "checked", shouldCheck ? "true" : null, !shouldCheck);
+    private boolean applyDataModel(HtmlNode vNode, Map<String, String> scopeData) {
+        if (!vNode.attrs.containsKey("data-model")) return false;
+        String modelKey = vNode.attrs.get("data-model").trim();
+        if (scopeData.containsKey(modelKey)) {
+            String modelVal = scopeData.getOrDefault(modelKey, "");
+            String type = vNode.attrs.getOrDefault("type", "text");
+            if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                boolean shouldCheck = "true".equalsIgnoreCase(modelVal) || "1".equals(modelVal);
+                boolean isCurrentlyChecked = vNode.attrs.containsKey("checked");
+                if (shouldCheck != isCurrentlyChecked) {
+                    DomUtils.updateAttribute(vNode, "checked", shouldCheck ? "true" : null, !shouldCheck);
+                    return true;
+                }
+            } else if (!Objects.equals(vNode.attrs.get("value"), modelVal)) {
+                DomUtils.updateAttribute(vNode, "value", modelVal, false);
+                return true;
+            }
+        } else {
+            String type = vNode.attrs.getOrDefault("type", "text");
+            if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
+                values.put(modelKey, Boolean.toString(vNode.attrs.containsKey("checked")));
+            } else {
+                values.put(modelKey, vNode.attrs.getOrDefault("value", vNode.getTextContent().trim()));
+            }
+        }
+        return false;
+    }
+
+    private boolean applyDataBind(HtmlNode vNode, Map<String, String> scopeData) {
+        if (!vNode.attrs.containsKey("data-bind")) return false;
+        boolean changed = false;
+        for (String part : vNode.attrs.get("data-bind").split(",")) {
+            part = part.trim();
+            if (part.isEmpty()) continue;
+            String target = "text";
+            String key = part;
+            int colon = part.indexOf(':');
+            if (colon > 0) {
+                target = part.substring(0, colon).trim();
+                key = part.substring(colon + 1).trim();
+            }
+            if (scopeData.containsKey(key)) {
+                String val = scopeData.get(key);
+                if ("text".equalsIgnoreCase(target)) {
+                    if (!Objects.equals(vNode.getTextContent(), val)) {
+                        vNode.setTextContent(val);
                         changed = true;
                     }
-                } else if (!Objects.equals(vNode.attrs.get("value"), modelVal)) {
-                    DomUtils.updateAttribute(vNode, "value", modelVal, false);
+                } else if (target.startsWith("style.")) {
+                    String prop = target.substring(6).trim();
+                    String prevStyle = vNode.attrs.getOrDefault("style", "");
+                    vNode.setStyleProperty(prop, val);
+                    if (!Objects.equals(prevStyle, vNode.attrs.getOrDefault("style", ""))) {
+                        changed = true;
+                    }
+                } else if (!Objects.equals(vNode.attrs.get(target), val)) {
+                    DomUtils.updateAttribute(vNode, target, val, false);
                     changed = true;
                 }
-            } else {
-                String type = vNode.attrs.getOrDefault("type", "text");
-                if ("checkbox".equalsIgnoreCase(type) || "radio".equalsIgnoreCase(type)) {
-                    values.put(modelKey, Boolean.toString(vNode.attrs.containsKey("checked")));
-                } else {
-                    values.put(modelKey, vNode.attrs.getOrDefault("value", vNode.getTextContent().trim()));
-                }
             }
         }
+        return changed;
+    }
 
-        // 4. data-bind="key" または data-bind="attr:key, style.color:colorKey"
-        if (vNode.attrs.containsKey("data-bind")) {
-            for (String part : vNode.attrs.get("data-bind").split(",")) {
-                part = part.trim();
-                if (part.isEmpty()) continue;
-                String target = "text";
-                String key = part;
-                int colon = part.indexOf(':');
-                if (colon > 0) {
-                    target = part.substring(0, colon).trim();
-                    key = part.substring(colon + 1).trim();
-                }
-                if (scopeData.containsKey(key)) {
-                    String val = scopeData.get(key);
-                    if ("text".equalsIgnoreCase(target)) {
-                        if (!Objects.equals(vNode.getTextContent(), val)) {
-                            vNode.setTextContent(val);
-                            changed = true;
-                        }
-                    } else if (target.startsWith("style.")) {
-                        String prop = target.substring(6).trim();
-                        String prevStyle = vNode.attrs.getOrDefault("style", "");
-                        vNode.setStyleProperty(prop, val);
-                        if (!Objects.equals(prevStyle, vNode.attrs.getOrDefault("style", ""))) {
-                            changed = true;
-                        }
-                    } else if (!Objects.equals(vNode.attrs.get(target), val)) {
-                        DomUtils.updateAttribute(vNode, target, val, false);
-                        changed = true;
-                    }
-                }
-            }
-        }
-
+    private boolean applyConditionalVisibility(HtmlNode vNode, Map<String, String> scopeData) {
+        boolean changed = false;
         // 5a. data-if / mc-if
         String ifExpr = vNode.attrs.getOrDefault("data-if", vNode.attrs.get("mc-if"));
         if (ifExpr != null && !ifExpr.isBlank()) {
@@ -296,7 +316,6 @@ public class WebStateStore {
                 }
             }
         }
-
         // 5b. data-show="condition"
         if (vNode.attrs.containsKey("data-show")) {
             Boolean visibleObj = evaluateCondition(vNode.attrs.get("data-show").trim(), scopeData);
@@ -311,29 +330,33 @@ public class WebStateStore {
                 }
             }
         }
+        return changed;
+    }
 
-        // 6. data-class="className:condition"
-        if (vNode.attrs.containsKey("data-class")) {
-            for (String item : vNode.attrs.get("data-class").split(",")) {
-                int colon = item.indexOf(':');
-                if (colon > 0) {
-                    String className = item.substring(0, colon).trim();
-                    String cond = item.substring(colon + 1).trim();
-                    Boolean shouldHaveObj = evaluateCondition(cond, scopeData);
-                    if (shouldHaveObj != null) {
-                        if (shouldHaveObj && !vNode.hasClass(className)) {
-                            vNode.addClass(className);
-                            changed = true;
-                        } else if (!shouldHaveObj && vNode.hasClass(className)) {
-                            vNode.removeClass(className);
-                            changed = true;
-                        }
+    private boolean applyDataClass(HtmlNode vNode, Map<String, String> scopeData) {
+        if (!vNode.attrs.containsKey("data-class")) return false;
+        boolean changed = false;
+        for (String item : vNode.attrs.get("data-class").split(",")) {
+            int colon = item.indexOf(':');
+            if (colon > 0) {
+                String className = item.substring(0, colon).trim();
+                String cond = item.substring(colon + 1).trim();
+                Boolean shouldHaveObj = evaluateCondition(cond, scopeData);
+                if (shouldHaveObj != null) {
+                    if (shouldHaveObj && !vNode.hasClass(className)) {
+                        vNode.addClass(className);
+                        changed = true;
+                    } else if (!shouldHaveObj && vNode.hasClass(className)) {
+                        vNode.removeClass(className);
+                        changed = true;
                     }
                 }
             }
         }
+        return changed;
+    }
 
-        // 7. data-list / data-for / mc-for
+    private boolean handleListIterationOrChildren(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData, boolean changedSoFar) {
         String listKey = null;
         String itemAlias = null;
         if (vNode.attrs.containsKey("data-list")) {
@@ -356,7 +379,7 @@ public class WebStateStore {
                 List<Map<String, String>> itemDataList = lists.get(listKey);
                 List<Map<String, String>> lastList = lastRenderedLists.get(vNode.getId());
                 if (Objects.equals(itemDataList, lastList)) {
-                    return changed;
+                    return changedSoFar;
                 }
 
                 List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.getId(), id -> extractTemplateChildren(origNode != null ? origNode : vNode));
@@ -385,9 +408,10 @@ public class WebStateStore {
                     return true;
                 }
             }
-            return changed;
+            return changedSoFar;
         }
 
+        boolean changed = changedSoFar;
         int vSize = vNode.children.size();
         for (int i = 0; i < vSize; i++) {
             HtmlNode vChild = vNode.children.get(i);
