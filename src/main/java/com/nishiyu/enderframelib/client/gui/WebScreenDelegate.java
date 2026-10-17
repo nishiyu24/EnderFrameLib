@@ -38,8 +38,7 @@ public class WebScreenDelegate {
     private final WebTextareaEditor textareaEditor;
     private final InteractionHandler interactionHandler;
 
-    private EditBox hiddenEditBox;
-    private boolean suppressInputResponder = false;
+    private WebTextInputHost inputHost;
     private String lastHoveredElementId = "";
 
     public WebScreenDelegate(String sessionId, WebStateStore state) {
@@ -67,10 +66,7 @@ public class WebScreenDelegate {
     }
 
     public EditBox createHiddenEditBox(Font font, BiConsumer<String, String> onInputChanged) {
-        this.hiddenEditBox = new EditBox(font, -2000, -2000, 400, 20, Component.empty());
-        this.hiddenEditBox.setMaxLength(2048);
-        this.hiddenEditBox.setResponder(newText -> {
-            if (suppressInputResponder) return;
+        this.inputHost = new WebTextInputHost(font, newText -> {
             if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing()) {
                 String baseId = ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId);
                 syncInputValueToDomNodes(baseId, newText);
@@ -78,7 +74,7 @@ public class WebScreenDelegate {
                 if (onInputChanged != null) onInputChanged.accept(baseId, newText);
             }
         });
-        return this.hiddenEditBox;
+        return this.inputHost.editBox();
     }
 
     public void syncInputValueToDomNodes(String baseId, String safeVal) {
@@ -100,18 +96,12 @@ public class WebScreenDelegate {
         String renderInputId = baseId + "_input";
         String safeVal = currentText != null ? currentText : "";
 
-        this.suppressInputResponder = true;
-        try {
-            WebRenderCore.activeInputId = renderInputId;
-            syncInputValueToDomNodes(baseId, safeVal);
-            if (this.hiddenEditBox != null) {
-                this.hiddenEditBox.setValue(safeVal);
-                this.hiddenEditBox.moveCursorToEnd(false);
-                if (screen != null) screen.setFocused(this.hiddenEditBox);
-                this.hiddenEditBox.setFocused(true);
-            }
-        } finally {
-            this.suppressInputResponder = false;
+        WebRenderCore.activeInputId = renderInputId;
+        syncInputValueToDomNodes(baseId, safeVal);
+        if (this.inputHost != null) {
+            this.inputHost.setValue(safeVal);
+            if (screen != null) screen.setFocused(this.inputHost.editBox());
+            this.inputHost.activate();
         }
     }
 
@@ -124,13 +114,13 @@ public class WebScreenDelegate {
                 ClientScreenInteractionManager.submitInput(sessionId, baseId, fullVal);
                 textareaEditor.unfocus();
             } else {
-                String val = (this.hiddenEditBox != null) ? this.hiddenEditBox.getValue() : "";
+                String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                 ClientScreenInteractionManager.submitInput(sessionId, baseId, val);
             }
             WebRenderCore.activeInputId = "";
         }
-        if (this.hiddenEditBox != null) {
-            this.hiddenEditBox.setFocused(false);
+        if (this.inputHost != null) {
+            this.inputHost.deactivate();
         }
     }
 
@@ -255,7 +245,7 @@ public class WebScreenDelegate {
                 if (this.state != null) this.state.notifyElementModelChanged(textareaEditor.activeBaseId(), textareaEditor.getValue(textareaEditor.activeBaseId()));
             });
         } else if (!WebRenderCore.activeInputId.isEmpty()) {
-            if (this.hiddenEditBox != null && this.hiddenEditBox.charTyped(codePoint, modifiers)) return true;
+            if (this.inputHost != null && this.inputHost.charTyped(codePoint, modifiers)) return true;
         }
         return false;
     }
@@ -284,13 +274,13 @@ public class WebScreenDelegate {
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                String val = (this.hiddenEditBox != null) ? this.hiddenEditBox.getValue() : "";
+                String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                 syncInputValueToDomNodes(baseId, val);
                 ClientScreenInteractionManager.submitInput(sessionId, WebRenderCore.activeInputId, val);
                 if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
                 return true;
             }
-            if (this.hiddenEditBox != null && this.hiddenEditBox.keyPressed(keyCode, scanCode, modifiers)) {
+            if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
                 return true;
             }
             if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
@@ -384,13 +374,8 @@ public class WebScreenDelegate {
         String safeVal = value != null ? value : "";
         syncInputValueToDomNodes(baseId, safeVal);
         if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing() && ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId).equals(baseId)) {
-            if (this.hiddenEditBox != null && !Objects.equals(this.hiddenEditBox.getValue(), safeVal)) {
-                this.suppressInputResponder = true;
-                try {
-                    this.hiddenEditBox.setValue(safeVal);
-                } finally {
-                    this.suppressInputResponder = false;
-                }
+            if (this.inputHost != null && !Objects.equals(this.inputHost.getValue(), safeVal)) {
+                this.inputHost.setValue(safeVal);
             }
         }
     }
@@ -408,7 +393,7 @@ public class WebScreenDelegate {
     public String getInputValue(String id) {
         String baseId = ClientWebManager.getBaseNodeId(id);
         if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing() && ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId).equals(baseId)) {
-            if (this.hiddenEditBox != null) return this.hiddenEditBox.getValue();
+            if (this.inputHost != null) return this.inputHost.getValue();
         }
         HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
         return node != null ? node.attrs.getOrDefault("value", "") : "";

@@ -15,10 +15,13 @@ import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
 public class InvisibleInputScreen extends Screen {
+    private static final double MAX_INTERACTION_DISTANCE_BLOCKS = 8.0;
+    private static final double MAX_INTERACTION_DIST_SQR = MAX_INTERACTION_DISTANCE_BLOCKS * MAX_INTERACTION_DISTANCE_BLOCKS;
+
     private final String sessionId;
     private final UIElement targetElement;
     private final BlockPos blockPos;
-    private EditBox hiddenEditBox;
+    private WebTextInputHost inputHost;
     private boolean submitted = false;
 
     public InvisibleInputScreen(String sessionId, UIElement targetElement, BlockPos blockPos) {
@@ -38,23 +41,17 @@ public class InvisibleInputScreen extends Screen {
             initialVal = vNode.attrs.get("value");
         }
 
-        this.hiddenEditBox = new EditBox(this.font, -1000, -1000, 200, 20, Component.empty());
-        this.hiddenEditBox.setMaxLength(8192); // textarea用に上限を拡張
-        this.hiddenEditBox.setValue(initialVal);
-        this.hiddenEditBox.moveCursorToEnd(false);
-        this.hiddenEditBox.setResponder(newText ->
+        this.inputHost = new WebTextInputHost(this.font, newText ->
                 ClientScreenInteractionManager.updateInputLocally(sessionId, targetElement.id(), newText)
         );
-        this.addWidget(this.hiddenEditBox);
-        this.setInitialFocus(this.hiddenEditBox);
-        this.hiddenEditBox.setFocused(true);
+        this.inputHost.setValue(initialVal);
+        this.addWidget(this.inputHost.editBox());
+        this.setInitialFocus(this.inputHost.editBox());
+        this.inputHost.activate();
     }
 
-    /**
-     * WebRenderCore がキャレット位置や入力中のテキストを同期するために使用します。
-     */
     public EditBox getActiveEditBox() {
-        return this.hiddenEditBox;
+        return this.inputHost != null ? this.inputHost.editBox() : null;
     }
 
     @Override
@@ -67,7 +64,7 @@ public class InvisibleInputScreen extends Screen {
         super.tick();
         // ブロック上のUIを操作している場合、プレイヤーが離れすぎたら自動で閉じる
         if (this.blockPos != null && this.minecraft != null && this.minecraft.player != null) {
-            if (this.minecraft.player.blockPosition().distSqr(this.blockPos) > 64.0) {
+            if (this.minecraft.player.blockPosition().distSqr(this.blockPos) > MAX_INTERACTION_DIST_SQR) {
                 commitAndClose();
             }
         }
@@ -82,29 +79,32 @@ public class InvisibleInputScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             // textarea の場合は Enter で画面を閉じず、改行を挿入する
             if ("textarea".equals(targetElement.type())) {
-                this.hiddenEditBox.insertText("\n");
+                if (this.inputHost != null) this.inputHost.editBox().insertText("\n");
                 return true;
             } else {
                 commitAndClose();
                 return true;
             }
         }
-        return this.hiddenEditBox.keyPressed(keyCode, scanCode, modifiers) || super.keyPressed(keyCode, scanCode, modifiers);
+        return (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) || super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private void commitAndClose() {
-        if (!submitted && this.hiddenEditBox != null) {
+        if (!submitted && this.inputHost != null) {
             submitted = true;
-            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.hiddenEditBox.getValue());
+            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.inputHost.getValue());
         }
         this.onClose();
     }
 
     @Override
     public void onClose() {
-        if (!submitted && this.hiddenEditBox != null) {
+        if (!submitted && this.inputHost != null) {
             submitted = true;
-            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.hiddenEditBox.getValue());
+            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.inputHost.getValue());
+        }
+        if (this.inputHost != null) {
+            this.inputHost.deactivate();
         }
         WebRenderCore.activeInputId = "";
         super.onClose();
