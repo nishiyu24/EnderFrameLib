@@ -95,6 +95,9 @@ public class WebSdfShader {
             }
             """;
 
+    private static boolean passActive = false;
+    private static Matrix4f currentPoseMatrix = null;
+
     public static boolean isAvailable() {
         if (!RenderSystem.isOnRenderThread()) return false;
         if (!initialized) {
@@ -104,6 +107,7 @@ public class WebSdfShader {
     }
 
     public static synchronized void deleteProgram() {
+        endPass();
         if (programId != -1) {
             GL20.glDeleteProgram(programId);
             programId = -1;
@@ -117,6 +121,49 @@ public class WebSdfShader {
             deleteProgram();
         } else {
             RenderSystem.recordRenderCall(WebSdfShader::deleteProgram);
+        }
+    }
+
+    public static void beginPass(Matrix4f poseMatrix) {
+        if (!isAvailable()) return;
+        if (!passActive) {
+            Minecraft.getInstance().renderBuffers().bufferSource().endBatch();
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.enableDepthTest();
+            GL20.glUseProgram(programId);
+
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                FloatBuffer mvBuf = stack.mallocFloat(16);
+                RenderSystem.getModelViewMatrix().get(mvBuf);
+                GL20.glUniformMatrix4fv(uModelViewMat, false, mvBuf);
+
+                FloatBuffer projBuf = stack.mallocFloat(16);
+                RenderSystem.getProjectionMatrix().get(projBuf);
+                GL20.glUniformMatrix4fv(uProjMat, false, projBuf);
+
+                FloatBuffer poseBuf = stack.mallocFloat(16);
+                poseMatrix.get(poseBuf);
+                GL20.glUniformMatrix4fv(uPoseMat, false, poseBuf);
+            }
+            currentPoseMatrix = poseMatrix;
+            passActive = true;
+        } else if (currentPoseMatrix != poseMatrix && !java.util.Objects.equals(currentPoseMatrix, poseMatrix)) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                FloatBuffer poseBuf = stack.mallocFloat(16);
+                poseMatrix.get(poseBuf);
+                GL20.glUniformMatrix4fv(uPoseMat, false, poseBuf);
+            }
+            currentPoseMatrix = poseMatrix;
+        }
+    }
+
+    public static void endPass() {
+        if (passActive) {
+            GL20.glUseProgram(0);
+            RenderSystem.defaultBlendFunc();
+            passActive = false;
+            currentPoseMatrix = null;
         }
     }
 
@@ -213,28 +260,14 @@ public class WebSdfShader {
             return true;
         }
 
-        Minecraft.getInstance().renderBuffers().bufferSource().endBatch();
+        boolean localPass = !passActive;
+        if (localPass) {
+            beginPass(poseMatrix);
+        } else if (currentPoseMatrix != poseMatrix && !java.util.Objects.equals(currentPoseMatrix, poseMatrix)) {
+            beginPass(poseMatrix);
+        }
 
-        int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableDepthTest();
-
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            GL20.glUseProgram(programId);
-
-            FloatBuffer mvBuf = stack.mallocFloat(16);
-            RenderSystem.getModelViewMatrix().get(mvBuf);
-            GL20.glUniformMatrix4fv(uModelViewMat, false, mvBuf);
-
-            FloatBuffer projBuf = stack.mallocFloat(16);
-            RenderSystem.getProjectionMatrix().get(projBuf);
-            GL20.glUniformMatrix4fv(uProjMat, false, projBuf);
-
-            FloatBuffer poseBuf = stack.mallocFloat(16);
-            poseMatrix.get(poseBuf);
-            GL20.glUniformMatrix4fv(uPoseMat, false, poseBuf);
-
+        try {
             GL20.glUniform4f(uRect, minX, minY, maxX, maxY);
             GL20.glUniform4f(uRadii, rTL, rTR, rBR, rBL);
             GL20.glUniform4f(uClipRect, cx0, cy0, cx1, cy1);
@@ -254,7 +287,9 @@ public class WebSdfShader {
         } catch (Throwable t) {
             return false;
         } finally {
-            GL20.glUseProgram(prevProgram);
+            if (localPass) {
+                endPass();
+            }
         }
     }
 }
