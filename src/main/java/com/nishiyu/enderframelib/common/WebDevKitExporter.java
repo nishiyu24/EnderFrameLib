@@ -43,132 +43,19 @@ public final class WebDevKitExporter {
         return CssResources.load(CssResources.DEV_KIT);
     }
 
+    private static final String DEV_KIT_JS = "/assets/enderframelib/preview/enderframe-devkit.js";
+
     private static String buildDevKitJs() {
-        return """
-                /**
-                 * EnderFrameLib Browser Preview Runtime (W3C Web Components + Reactive State Store)
-                 */
-                (function () {
-                    const state = new Proxy({}, {
-                        set(target, key, value) {
-                            target[key] = value;
-                            syncStateToDom();
-                            return true;
-                        }
-                    });
-
-                    window.EnderFrame = {
-                        state,
-                        set(key, val) { state[key] = val; },
-                        get(key) { return state[key]; }
-                    };
-
-                    // 1. W3C Custom Elements (<mc-slot>, <mc-slot-grid>, <mc-inventory>, <mc-bar>)
-                    class McSlotElement extends HTMLElement {
-                        connectedCallback() {
-                            const idx = this.getAttribute('index') || this.getAttribute('slot') || '0';
-                            this.classList.add('mc-slot');
-                            this.dataset.slot = idx;
-                            if (!this.title) this.title = 'Slot #' + idx;
-                        }
-                    }
-                    class McSlotGridElement extends HTMLElement {
-                        connectedCallback() {
-                            const start = parseInt(this.getAttribute('start') || '0', 10);
-                            const cols = Math.max(1, parseInt(this.getAttribute('cols') || '3', 10));
-                            const rows = Math.max(1, parseInt(this.getAttribute('rows') || '3', 10));
-                            const gap = Math.max(0, parseInt(this.getAttribute('gap') || '0', 10));
-                            let idx = start;
-                            let html = `<div style="display:flex;flex-direction:column;gap:${gap}px;">`;
-                            for (let r = 0; r < rows; r++) {
-                                html += `<div style="display:flex;flex-direction:row;gap:${gap}px;">`;
-                                for (let c = 0; c < cols; c++) {
-                                    html += `<div class="mc-slot" data-slot="${idx}" title="Slot #${idx}">${idx++}</div>`;
-                                }
-                                html += `</div>`;
-                            }
-                            html += `</div>`;
-                            this.innerHTML = html;
-                        }
-                    }
-                    class McInventoryElement extends HTMLElement {
-                        connectedCallback() {
-                            const start = parseInt(this.getAttribute('start') || '0', 10);
-                            let idx = start;
-                            let html = `<div class="mc-inventory"><div style="display:flex;flex-direction:column;">`;
-                            for (let r = 0; r < 3; r++) {
-                                html += `<div class="mc-inventory-row">`;
-                                for (let c = 0; c < 9; c++) {
-                                    html += `<div class="mc-slot" data-slot="${idx}" title="Slot #${idx}"></div>`;
-                                    idx++;
-                                }
-                                html += `</div>`;
-                            }
-                            html += `</div><div class="mc-inventory-row">`;
-                            for (let c = 0; c < 9; c++) {
-                                html += `<div class="mc-slot" data-slot="${idx}" title="Hotbar #${idx}"></div>`;
-                                idx++;
-                            }
-                            html += `</div></div>`;
-                            this.innerHTML = html;
-                        }
-                    }
-                    class McBarElement extends HTMLElement {
-                        connectedCallback() {
-                            const val = parseFloat(this.getAttribute('value') || '0');
-                            const max = Math.max(1, parseFloat(this.getAttribute('max') || '100'));
-                            const color = this.getAttribute('color') || '#89b4fa';
-                            const bg = this.getAttribute('bg') || '#181825';
-                            const label = this.getAttribute('label') || '';
-                            const pct = Math.min(100, Math.max(0, (val / max) * 100));
-                            this.classList.add('mc-bar');
-                            this.style.backgroundColor = bg;
-                            this.innerHTML = `
-                                <div style="width:${pct}%;height:100%;background:${color};transition:width 0.15s;"></div>
-                                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;text-shadow:1px 1px 0 #000;">${label}</span>
-                            `;
-                        }
-                    }
-
-                    if (!customElements.get('mc-slot')) customElements.define('mc-slot', McSlotElement);
-                    if (!customElements.get('mc-slot-grid')) customElements.define('mc-slot-grid', McSlotGridElement);
-                    if (!customElements.get('mc-inventory')) customElements.define('mc-inventory', McInventoryElement);
-                    if (!customElements.get('mc-bar')) customElements.define('mc-bar', McBarElement);
-
-                    // 2. Two-way data-model & data-bind & data-if synchronization
-                    function initDataModels() {
-                        document.querySelectorAll('[data-model]').forEach(el => {
-                            const key = el.getAttribute('data-model').trim();
-                            if (!(key in state)) {
-                                if (el.type === 'checkbox') state[key] = el.checked;
-                                else state[key] = el.value || '';
-                            }
-                            el.addEventListener('input', () => {
-                                state[key] = (el.type === 'checkbox') ? el.checked : el.value;
-                            });
-                        });
-                    }
-
-                    function syncStateToDom() {
-                        document.querySelectorAll('[data-bind]').forEach(el => {
-                            const key = el.getAttribute('data-bind').trim();
-                            if (key in state) el.textContent = state[key];
-                        });
-                        document.querySelectorAll('[data-if]').forEach(el => {
-                            const expr = el.getAttribute('data-if').trim();
-                            const neg = expr.startsWith('!');
-                            const key = neg ? expr.slice(1).trim() : expr;
-                            const truthy = Boolean(state[key]) && state[key] !== 'false' && state[key] !== '0';
-                            el.hidden = neg ? truthy : !truthy;
-                        });
-                    }
-
-                    window.addEventListener('DOMContentLoaded', () => {
-                        initDataModels();
-                        syncStateToDom();
-                    });
-                })();
-                """;
+        try (java.io.InputStream is = WebDevKitExporter.class.getResourceAsStream(DEV_KIT_JS)) {
+            if (is == null) {
+                EnderFrameLib.LOGGER.warn("[EnderFrameLib] DevKit JS resource not found: {}", DEV_KIT_JS);
+                return "";
+            }
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            EnderFrameLib.LOGGER.warn("[EnderFrameLib] Failed to read DevKit JS resource: {}", DEV_KIT_JS, e);
+            return "";
+        }
     }
 
     private static String buildPlaygroundHtml() {
