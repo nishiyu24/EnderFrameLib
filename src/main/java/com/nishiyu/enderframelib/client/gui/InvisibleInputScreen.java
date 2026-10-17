@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
@@ -78,7 +79,7 @@ public class InvisibleInputScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             // textarea の場合は Enter で画面を閉じず、改行を挿入する
-            if ("textarea".equals(targetElement.type())) {
+            if (targetElement.type() == ElementType.TEXTAREA) {
                 if (this.inputHost != null) this.inputHost.editBox().insertText("\n");
                 return true;
             } else {

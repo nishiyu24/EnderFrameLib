@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.compat;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.gui.AbstractWebContainerScreen;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
@@ -65,7 +66,7 @@ public class WebRecipeViewerBridge {
         }
 
         for (UIElement el : ClientWebManager.getElements(sessionId)) {
-            if ("node".equals(el.type()) && explicitExcludeIds.contains(el.id()) && el.width() > 0 && el.height() > 0) {
+            if (el.type() == ElementType.NODE && explicitExcludeIds.contains(el.id()) && el.width() > 0 && el.height() > 0) {
                 zones.add(screen.toScreenRect(el.x(), el.y(), el.width(), el.height()));
             }
         }
@@ -105,7 +106,7 @@ public class WebRecipeViewerBridge {
         if (vRoot == null) return targets;
 
         for (UIElement el : ClientWebManager.getElements(sessionId)) {
-            if (!"node".equals(el.type()) || el.width() <= 0 || el.height() <= 0) continue;
+            if (el.type() != ElementType.NODE || el.width() <= 0 || el.height() <= 0) continue;
             HtmlNode domNode = DomUtils.findNodeById(vRoot, el.id());
             if (domNode == null) continue;
 

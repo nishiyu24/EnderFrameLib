@@ -141,7 +141,8 @@ public class InteractionHandler {
             }
 
             // 8. range / toggle / checkbox 要素
-            if ((clicked.type() == ElementType.RANGE || "toggle".equals(clicked.type().name().toLowerCase(Locale.ROOT)) || "checkbox".equals(clicked.type().name().toLowerCase(Locale.ROOT))) && button == 0) {
+            if ((clicked.type() == ElementType.RANGE || clicked.type() == ElementType.TOGGLE
+                    || clicked.type() == ElementType.CHECKBOX || clicked.type() == ElementType.RADIO) && button == 0) {
                 ClientScreenInteractionManager.handleClick(sessionId, webX, webY);
                 if (clicked.type() == ElementType.RANGE) {
                     UIElement updated = ClientWebManager.getElementById(sessionId, baseId);

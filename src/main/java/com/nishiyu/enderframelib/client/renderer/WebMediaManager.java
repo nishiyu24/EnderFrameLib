@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -323,7 +324,7 @@ public class WebMediaManager {
             List<UIElement> els = ClientWebManager.getElements(sessionKey);
             if (els != null) {
                 for (UIElement el : els) {
-                    if ("video".equals(el.type()) && el.text() != null) {
+                    if (el.type() == ElementType.VIDEO && el.text() != null) {
                         VideoTexture videoTex = ACTIVE_VIDEOS.get(el.text());
                         if (videoTex != null) {
                             videoTex.keepAlive2D(sessionKey);
@@ -345,7 +346,7 @@ public class WebMediaManager {
                 List<UIElement> els = ClientWebManager.getElements(sessionKey);
                 if (els == null || els.isEmpty()) return true;
                 for (UIElement el : els) {
-                    if ("video".equals(el.type()) && tex.url.equals(el.text())) return false;
+                    if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) return false;
                 }
                 return true;
             });
@@ -358,7 +359,7 @@ public class WebMediaManager {
                     List<UIElement> els = ClientWebManager.getElements("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
                     if (els != null) {
                         for (UIElement el : els) {
-                            if ("video".equals(el.type()) && tex.url.equals(el.text())) {
+                            if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) {
                                 tex.activeAudioPositions.put(pos, now);
                                 return false;
                             }
