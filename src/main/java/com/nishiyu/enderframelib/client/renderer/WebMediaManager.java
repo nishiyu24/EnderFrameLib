@@ -620,8 +620,8 @@ public class WebMediaManager {
         public VideoTexture(String url) {
             this.url = url;
             this.lastRenderTime = System.currentTimeMillis();
-            String safeHash = Integer.toUnsignedString(url.hashCode(), 16);
-            this.textureLocation = ResourceLocation.fromNamespaceAndPath("enderframelib", "video_" + safeHash);
+            // 32bit の String.hashCode では別の動画 URL が同じテクスチャを掴みうる。
+            this.textureLocation = ResourceLocation.fromNamespaceAndPath("enderframelib", "video_" + computeUrlHash(url));
             if (NativeVideoAPI.getInstance() != null) {
                 MEDIA_IO_EXECUTOR.submit(this::initVideoWorker);
             } else {
