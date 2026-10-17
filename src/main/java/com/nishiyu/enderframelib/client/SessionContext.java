@@ -35,6 +35,7 @@ public class SessionContext implements AutoCloseable {
 
     private String activeInputId = "";
     private String activePressedId = "";
+    private volatile HitTestIndex hitTestIndex;
 
     public SessionContext(String sessionId) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
@@ -50,6 +51,16 @@ public class SessionContext implements AutoCloseable {
 
     public void setRenderCache(List<UIElement> renderCache) {
         this.renderCache = renderCache != null ? renderCache : new ArrayList<>();
+        this.hitTestIndex = new HitTestIndex(this.renderCache);
+    }
+
+    public HitTestIndex hitTestIndex() {
+        HitTestIndex idx = this.hitTestIndex;
+        if (idx == null) {
+            idx = new HitTestIndex(this.renderCache);
+            this.hitTestIndex = idx;
+        }
+        return idx;
     }
 
     public UIParser.Document document() {
@@ -158,6 +169,7 @@ public class SessionContext implements AutoCloseable {
     @Override
     public void close() {
         renderCache.clear();
+        hitTestIndex = null;
         document = null;
         virtualDom = null;
         templateDom = null;

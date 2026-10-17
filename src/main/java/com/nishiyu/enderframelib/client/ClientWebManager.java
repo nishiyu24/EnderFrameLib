@@ -526,7 +526,7 @@ public class ClientWebManager {
         return false;
     }
 
-    private static double[] inverseTransform(double px, double py, UIElement el, WebAnimator.AnimatedValues anim) {
+    public static double[] inverseTransform(double px, double py, UIElement el, WebAnimator.AnimatedValues anim) {
         UIElement.RenderMeta meta = el.meta();
         float originX = meta != null ? meta.originX() : 0.5f;
         float originY = meta != null ? meta.originY() : 0.5f;
@@ -551,72 +551,18 @@ public class ClientWebManager {
         return new double[]{dx + cx, dy + cy};
     }
 
-    private static double[] getLocalPointRecursive(String sessionId, UIElement el, double px, double py, Map<String, UIElement> elementMap) {
-        if (el.events() != null && el.events().containsKey("mc-parent")) {
-            UIElement parent = elementMap.get(el.events().get("mc-parent"));
-            if (parent != null) {
-                double[] p = getLocalPointRecursive(sessionId, parent, px, py, elementMap);
-                px = p[0];
-                py = p[1];
-            }
-        }
-        WebAnimator.AnimatedValues anim = WebAnimator.getCurrentValues(sessionId, el);
-        return inverseTransform(px, py, el, anim);
-    }
-
     public static UIHitResult getHitElement(String sessionId, double pixelX, double pixelY) {
-        List<UIElement> elements = getElements(sessionId);
-        Map<String, UIElement> elementMap = new HashMap<>(elements.size());
-        for (UIElement el : elements) elementMap.put(el.id(), el);
-
-        for (int i = elements.size() - 1; i >= 0; i--) {
-            UIElement el = elements.get(i);
-            if ("node".equals(el.type()) || "text".equals(el.type()) || el.id().endsWith("_shadow") || el.id().contains("_sb_")
-                    || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_b_")) {
-                continue;
-            }
-
-            boolean isInput = "input".equals(el.type()) || "textarea".equals(el.type()) || "select".equals(el.type())
-                    || "range".equals(el.type()) || "toggle".equals(el.type()) || "checkbox".equals(el.type())
-                    || "button".equals(el.type()) || "a".equals(el.type()) || "scene".equals(el.type());
-            boolean hasInteraction = false;
-            if (el.events() != null) {
-                for (String key : el.events().keySet()) {
-                    if (key.startsWith("on") || "mc-title".equals(key) || "draggable".equals(key)) {
-                        hasInteraction = true;
-                        break;
-                    }
-                }
-            }
-            if (el.type() == ElementType.IMAGE && el.text() != null && (el.text().startsWith("item:") || el.text().startsWith("fluid:"))) {
-                hasInteraction = true;
-            }
-            UIElement parentAnchor = elementMap.get(el.events() != null ? el.events().get("mc-parent") : null);
-            boolean hasHoverAnim = parentAnchor != null && (parentAnchor.hasHover() || parentAnchor.hasPseudo());
-
-            if (!isInput && !hasInteraction && !hasHoverAnim) continue;
-
-            double[] localPt = getLocalPointRecursive(sessionId, el, pixelX, pixelY, elementMap);
-            double localX = localPt[0] - el.x();
-            double localY = localPt[1] - el.y();
-
-            if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                return new UIHitResult(el, localX, localY);
-            }
-        }
-        return null;
+        SessionContext session = getSession(sessionId);
+        if (session == null) return null;
+        return session.hitTestIndex().hitTest(sessionId, pixelX, pixelY);
     }
 
     public static UIHitResult getLocalCoords(String sessionId, String elementId, double pixelX, double pixelY) {
         UIElement el = getElementById(sessionId, elementId);
         if (el == null) return null;
         SessionContext session = getSession(sessionId);
-        List<UIElement> elements = session != null ? session.renderCache() : Collections.emptyList();
-        Map<String, UIElement> elementMap = new HashMap<>(elements.size());
-        for (UIElement e : elements) elementMap.put(e.id(), e);
-
-        double[] localPt = getLocalPointRecursive(sessionId, el, pixelX, pixelY, elementMap);
-        return new UIHitResult(el, localPt[0] - el.x(), localPt[1] - el.y());
+        if (session == null) return null;
+        return session.hitTestIndex().getLocalCoords(sessionId, el, pixelX, pixelY);
     }
 
     public static String resolveSelectDisplayLabel(HtmlNode selectNode, String currentVal) {
