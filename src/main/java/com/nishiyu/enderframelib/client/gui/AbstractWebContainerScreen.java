@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore; // ★これが必須です
 import com.nishiyu.enderframelib.client.compat.WebRecipeViewerBridge;
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
+import com.nishiyu.enderframelib.client.renderer.WebPaintPass;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
@@ -337,18 +338,13 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             int logicW = (int) Math.ceil(virtualWidth / WebRenderCore.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / WebRenderCore.RESOLUTION);
 
-            WebRenderCore.renderElements(
+            WebPaintPass.forGui(
                     elements, logicW, logicH,
                     poseStack, bufferSource,
-                    0xF000F0, OverlayTexture.NO_OVERLAY,
-                    true, true, true,
-                    0.05f, 0.02f,
-                    hoveredId,
-                    0x00000000, false,
+                    sessionId, hoveredId,
                     Minecraft.getInstance().level,
-                    false, true, sessionId,
-                    null, null, 0
-            );
+                    false
+            ).render();
             bufferSource.endBatch();
 
             this.uiSupport.renderOverlays(guiGraphics, this.font, elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);
