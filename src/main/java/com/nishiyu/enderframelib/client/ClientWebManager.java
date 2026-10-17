@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
 import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
 import com.nishiyu.enderframelib.client.renderer.WebAnimator;
@@ -410,11 +411,11 @@ public class ClientWebManager {
         SessionContext session = getSession(sessionId);
         List<UIElement> elements = session != null ? session.renderCache() : Collections.emptyList();
         for (UIElement el : elements) {
-            if (el.id().equals(id) && !"node".equals(el.type())) {
+            if (el.id().equals(id) && el.type() != ElementType.NODE) {
                 return el;
             }
             if (targetBase.equals(getBaseNodeId(el.id()))) {
-                if ("node".equals(el.type()) || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_")) {
+                if (el.type() == ElementType.NODE || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_")) {
                     if (fallback == null) fallback = el;
                     continue;
                 }

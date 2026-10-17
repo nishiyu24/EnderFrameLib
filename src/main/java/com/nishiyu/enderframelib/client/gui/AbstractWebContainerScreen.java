@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
@@ -248,7 +249,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
         Map<String, UIElement> nodeElements = new HashMap<>();
         for (UIElement el : ClientWebManager.getElements(sessionId)) {
-            if ("node".equals(el.type())) {
+            if (el.type() == ElementType.NODE) {
                 nodeElements.put(el.id(), el);
             }
         }

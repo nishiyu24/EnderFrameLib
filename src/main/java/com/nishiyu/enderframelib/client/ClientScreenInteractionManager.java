@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
@@ -152,7 +153,7 @@ public class ClientScreenInteractionManager {
                     if (isMouseJustPressed) {
                         UIElement clickedEl = handleClick(sessionId, pixelX, pixelY, pressedButton);
                         // ★ input と textarea をクリックした際に確実に InvisibleInputScreen を開く
-                        if (clickedEl != null && ("input".equals(clickedEl.type()) || "textarea".equals(clickedEl.type()))) {
+                        if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
                             WebRenderCore.activeInputId = clickedEl.id();
                             openInputScreen(sessionId, clickedEl, masterPos);
                         } else {
@@ -175,7 +176,7 @@ public class ClientScreenInteractionManager {
     }
 
     public static void openInputScreen(String sessionId, UIElement clickedElement, BlockPos pos) {
-        if (clickedElement != null && ("input".equals(clickedElement.type()) || "textarea".equals(clickedElement.type()))) {
+        if (clickedElement != null && (clickedElement.type() == ElementType.INPUT || clickedElement.type() == ElementType.TEXTAREA)) {
             // ★ InvisibleInputScreen を開き、内部で EditBox が生成される
             Minecraft.getInstance().setScreen(new InvisibleInputScreen(sessionId, clickedElement, pos));
         }
@@ -203,7 +204,7 @@ public class ClientScreenInteractionManager {
         }
 
         if (enableDefaultUiSounds) {
-            boolean isInteractive = "button".equals(el.type()) || "toggle".equals(el.type()) || "select".equals(el.type()) ||
+            boolean isInteractive = el.type() == ElementType.BUTTON || el.type() == ElementType.TOGGLE || el.type() == ElementType.SELECT ||
                     (events != null && events.containsKey("onclick"));
             if (isInteractive) {
                 Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, pitch));
@@ -436,6 +437,14 @@ public class ClientScreenInteractionManager {
         return handleClick(sessionId, pixelX, pixelY, 0);
     }
 
+    private static boolean isToggleLike(ElementType type) {
+        return type == ElementType.TOGGLE || type == ElementType.CHECKBOX || type == ElementType.RADIO;
+    }
+
+    private static boolean isRadioNode(HtmlNode node) {
+        return node != null && "radio".equalsIgnoreCase(node.attrs.getOrDefault("type", ""));
+    }
+
     public static UIElement handleClick(String sessionId, double pixelX, double pixelY, int button) {
         SessionState state = getState(sessionId);
         ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
@@ -456,30 +465,31 @@ public class ClientScreenInteractionManager {
                 triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
             }
 
-            if ("radio".equals(clickedEl.type())) {
-                HtmlNode target = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-                if (target != null) {
-                    DomUtils.selectRadioButton(ClientWebManager.getVirtualRoot(sessionId), target);
-                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
-                    ClientWebManager.processRenderQueue();
-                }
-            } else if ("toggle".equals(clickedEl.type()) || "checkbox".equals(clickedEl.type())) {
-                ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
+            // UIRenderer は <input type="checkbox"> と <input type="radio"> を
+            // どちらも ElementType.TOGGLE として描画するため、
+            // ラジオの排他選択は DOM の type 属性で判別する。
+            if (isToggleLike(clickedEl.type())) {
                 HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-                String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
-                triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
+                if (isRadioNode(node)) {
+                    DomUtils.selectRadioButton(ClientWebManager.getVirtualRoot(sessionId), node);
+                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
+                } else {
+                    ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
+                    String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
+                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
+                }
                 ClientWebManager.processRenderQueue();
-            } else if ("select".equals(clickedEl.type()) && Minecraft.getInstance().screen == null) {
+            } else if (clickedEl.type() == ElementType.SELECT && Minecraft.getInstance().screen == null) {
                 // ★ select の場合、クリックするたびに値と表示が切り替わる
                 cycleSelectOption(sessionId, baseId);
             }
 
-            if (hasEvent(events, "ondrag") || "range".equals(clickedEl.type())) {
+            if (hasEvent(events, "ondrag") || clickedEl.type() == ElementType.RANGE) {
                 state.draggingId = baseId;
                 state.lastSentX = hit.localX();
                 state.lastSentY = hit.localY();
 
-                if ("range".equals(clickedEl.type())) {
+                if (clickedEl.type() == ElementType.RANGE) {
                     state.lastRatio = Mth.clamp((float) (hit.localX() / Math.max(1.0, clickedEl.width())), 0.0f, 1.0f);
                     state.lastRangeText = generateRangeText(clickedEl.text(), state.lastRatio);
                     state.lastRangeAction = getEventAction(events, "oninput");
@@ -510,7 +520,7 @@ public class ClientScreenInteractionManager {
             state.lastSentY = dragHit.localY();
             Map<String, String> events = draggedEl.events() != null ? draggedEl.events() : Map.of();
 
-            if ("range".equals(draggedEl.type())) {
+            if (draggedEl.type() == ElementType.RANGE) {
                 float ratio = Mth.clamp((float) (dragHit.localX() / Math.max(1.0, draggedEl.width())), 0.0f, 1.0f);
                 if (Math.abs(state.lastRatio - ratio) > 0.002f) {
                     state.lastRatio = ratio;

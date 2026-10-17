@@ -271,7 +271,7 @@ public class WebRenderCore {
         String animSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
 
         for (UIElement el : uiElements) {
-            if ("node".equals(el.type())) continue;
+            if (el.type() == ElementType.NODE) continue;
 
             Font font = resolveElementFont(el, defaultFont);
             zOffset += effectiveZStep;
@@ -572,7 +572,7 @@ public class WebRenderCore {
             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
             float cRTL, float cRTR, float cRBR, float cRBL
     ) {
-        if ("video".equals(el.type())) {
+        if (el.type() == ElementType.VIDEO) {
             if (el.text() != null && !el.text().isEmpty()) {
                 WebMediaManager.VideoTexture vTex = WebMediaManager.getVideoTexture(el.text());
                 if (vTex != null) {
@@ -743,7 +743,7 @@ public class WebRenderCore {
         float textX = el.x(), textY = el.y();
 
         int safeCursorPos = -1;
-        if ("input".equals(el.type()) && isFocused) {
+        if (el.type() == ElementType.INPUT && isFocused) {
             String activeVal = WebTextInputHost.getActiveText();
             if (activeVal != null) {
                 textToDraw = activeVal;
@@ -758,7 +758,7 @@ public class WebRenderCore {
         Matrix4f currentPose = poseStack.last().pose();
         float matScale = Math.abs(currentPose.m00());
 
-        if ("input".equals(el.type()) || "select".equals(el.type())) {
+        if (el.type() == ElementType.INPUT || el.type() == ElementType.SELECT) {
             float maxAllowedScale = Math.max(0.75f, (el.height() - 4.0f) / 10.0f);
             textScale = Math.min(textScale, maxAllowedScale);
             textScale = snapTextScaleFor2D(currentPose, textScale, is2DAudio);
@@ -768,7 +768,7 @@ public class WebRenderCore {
             textScale = snapTextScaleFor2D(currentPose, el.height() / 12.0f, is2DAudio);
         }
 
-        if (!"input".equals(el.type()) && textToDraw.isEmpty()) return;
+        if (el.type() != ElementType.INPUT && textToDraw.isEmpty()) return;
         if (!renderText || textX >= maxAllowedX || textY >= maxAllowedY) return;
 
         int newA = (int) (((anim.color() >>> 24) & 0xFF) * finalOpacity);
@@ -781,7 +781,7 @@ public class WebRenderCore {
         boolean textScissor = enableClipScissorFor2D(currentPose, buffer, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DAudio);
         poseStack.pushPose();
         try {
-            if ("input".equals(el.type()) || "select".equals(el.type())) {
+            if (el.type() == ElementType.INPUT || el.type() == ElementType.SELECT) {
                 poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(textY, matScale, is2DAudio), zPos);
                 poseStack.scale(textScale, textScale, 1.0f);
 
