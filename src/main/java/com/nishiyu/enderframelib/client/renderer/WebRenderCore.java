@@ -10,6 +10,10 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.model.ClipRect;
+import com.nishiyu.enderframelib.core.model.Corners;
+import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -297,7 +301,7 @@ public class WebRenderCore {
 
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
             float cRTL = 0, cRTR = 0, cRBR = 0, cRBL = 0;
-            float[] clipArr = (meta != null && meta.clipRect() != null) ? meta.clipRect() : anim.clipData;
+            float[] clipArr = (meta != null && meta.clipRect() != null) ? meta.clipRect().toArray() : anim.clipData;
             if (clipArr != null && clipArr.length >= 8) {
                 clipMinX = clipArr[0]; clipMinY = clipArr[1]; clipMaxX = clipArr[2]; clipMaxY = clipArr[3];
                 cRTL = clipArr[4]; cRTR = clipArr[5]; cRBR = clipArr[6]; cRBL = clipArr[7];
@@ -311,9 +315,9 @@ public class WebRenderCore {
             if (renderRounded) {
                 float limit = Math.min(el.width(), el.height()) / 2.0f;
                 if (meta != null && meta.borderRadii() != null) {
-                    int[] br = meta.borderRadii();
-                    rTL = Math.min(br[0], limit); rTR = Math.min(br[1], limit);
-                    rBR = Math.min(br[2], limit); rBL = Math.min(br[3], limit);
+                    Corners br = meta.borderRadii();
+                    rTL = Math.min(br.topLeft(), limit); rTR = Math.min(br.topRight(), limit);
+                    rBR = Math.min(br.bottomRight(), limit); rBL = Math.min(br.bottomLeft(), limit);
                 } else if (anim.radiusData != null) {
                     rTL = Math.min(anim.radiusData[0], limit); rTR = Math.min(anim.radiusData[1], limit);
                     rBR = Math.min(anim.radiusData[2], limit); rBL = Math.min(anim.radiusData[3], limit);
@@ -344,41 +348,39 @@ public class WebRenderCore {
                     continue;
                 }
 
-                if ("circle_border".equals(el.type())) {
+                if (el.type() == ElementType.CIRCLE_BORDER) {
                     if (renderCircleBorderElement(el, meta, anim, poseStack, buffer, finalOpacity, zOffset + effectiveSubZ)) {
                         continue;
                     }
                 }
 
-                if (!"range".equals(el.type())) {
+                if (el.type() != ElementType.RANGE) {
                     renderElementBackground(el, meta, anim, isHovered, isActive, poseStack, buffer, finalOpacity, zOffset,
                             rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 }
 
-                String type = el.type();
+                ElementType type = el.type();
                 float contentZ = zOffset + effectiveSubZ;
 
-                if ("canvas".equals(type)) {
+                if (type == ElementType.CANVAS) {
                     WebCanvasContext ctx = WebCanvasContext.get(animSessionId, baseId);
                     if (ctx != null) {
                         ctx.renderCommands(el, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, packedLight);
                     }
-                } else if ("scene".equals(type)) {
+                } else if (type == ElementType.SCENE) {
                     WebSceneContext.getOrCreate(animSessionId, baseId).renderScene(el, poseStack, buffer, finalOpacity, contentZ);
-                } else if ("textarea".equals(type)) {
+                } else if (type == ElementType.TEXTAREA) {
                     if (renderText) {
                         renderTextareaElement(el, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DAudio, packedLight);
                     }
-                } else if ("progress".equals(type)) {
-                    renderProgressElement(el, anim, poseStack, buffer, finalOpacity, contentZ, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                } else if ("range".equals(type)) {
+                } else if (type == ElementType.RANGE) {
                     renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                } else if ("toggle".equals(type)) {
+                } else if (type == ElementType.TOGGLE || type == ElementType.CHECKBOX || type == ElementType.RADIO) {
                     renderToggleElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                } else if (type.startsWith("img") || "video".equals(type)) {
+                } else if (type == ElementType.IMAGE || type == ElementType.VIDEO) {
                     renderImageOrMediaElement(el, meta, poseStack, buffer, font, level, animSessionId, audioPos, playAudio, is2DAudio, renderItems, renderText,
                             finalOpacity, contentZ, packedLight, packedOverlay, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-                } else if ((el.text() != null && !el.text().isEmpty()) || "input".equals(type) || "select".equals(type)) {
+                } else if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
                     renderTextOrInputElement(el, meta, anim, isFocused, elementMap, animSessionId, poseStack, buffer, font, renderText, is2DAudio,
                             finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
                 }
@@ -406,7 +408,7 @@ public class WebRenderCore {
             if (!"false".equalsIgnoreCase(t) && !t.isEmpty()) {
                 return t;
             }
-        } else if (el.type().startsWith("img") && el.text() != null) {
+        } else if (el.type() == ElementType.IMAGE && el.text() != null) {
             if (el.text().startsWith("item:")) {
                 try {
                     String rawItem = el.text().substring(5).split("\\*")[0];
@@ -658,12 +660,12 @@ public class WebRenderCore {
         int imgW = info.width(), imgH = info.height();
         float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
         float drawMinX = el.x(), drawMinY = el.y(), drawMaxX = el.x() + el.width(), drawMaxY = el.y() + el.height();
-        String fit = el.type().contains(":") ? el.type().split(":")[1] : "fill";
+        ImageFitMode fit = el.fitMode() != null ? el.fitMode() : ImageFitMode.FILL;
         float boxW = drawMaxX - drawMinX, boxH = drawMaxY - drawMinY;
 
         if (imgW > 0 && imgH > 0 && boxW > 0 && boxH > 0) {
             float boxAspect = boxW / boxH, imgAspect = (float) imgW / imgH;
-            if ("contain".equalsIgnoreCase(fit)) {
+            if (fit == ImageFitMode.CONTAIN) {
                 if (imgAspect > boxAspect) {
                     float diff = (boxH - (boxW / imgAspect)) / 2.0f;
                     drawMinY += diff; drawMaxY -= diff;
@@ -671,7 +673,7 @@ public class WebRenderCore {
                     float diff = (boxW - (boxH * imgAspect)) / 2.0f;
                     drawMinX += diff; drawMaxX -= diff;
                 }
-            } else if ("cover".equalsIgnoreCase(fit)) {
+            } else if (fit == ImageFitMode.COVER) {
                 if (imgAspect > boxAspect) {
                     float crop = (imgW - (imgH * boxAspect)) / (2.0f * imgW);
                     u0 = crop; u1 = 1.0f - crop;
