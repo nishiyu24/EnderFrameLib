@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.client.gui;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -106,7 +105,7 @@ public class InteractionHandler {
         if (clicked != null) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
-            WebRenderCore.activePressedId = clicked.id();
+            ClientWebManager.setActivePressedId(sessionId, clicked.id());
 
             HtmlNode domNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
 

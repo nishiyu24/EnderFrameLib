@@ -48,30 +48,47 @@ public class ClientWebManager {
         return SESSIONS.computeIfAbsent(safeId, SessionContext::new);
     }
 
+    /**
+     * フォーカス中の入力要素のレンダー ID。セッション単位で保持されるため、
+     * GUI 画面とブロック画面が同時に開いていてもフォーカスは混ざらない。
+     */
     public static String getActiveInputId(String sessionId) {
         SessionContext session = getSession(sessionId);
-        return session != null ? session.activeInputId() : com.nishiyu.enderframelib.client.renderer.WebRenderCore.activeInputId;
+        return session != null ? session.activeInputId() : "";
     }
 
     public static void setActiveInputId(String sessionId, String id) {
-        com.nishiyu.enderframelib.client.renderer.WebRenderCore.activeInputId = id != null ? id : "";
-        SessionContext session = getSession(sessionId);
-        if (session != null) {
-            session.setActiveInputId(id);
-        }
+        // クリアだけのために空のセッションを作らない。
+        SessionContext session = (id == null || id.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
+        if (session != null) session.setActiveInputId(id);
     }
 
+    public static boolean isActiveInput(String sessionId, String renderId) {
+        String active = getActiveInputId(sessionId);
+        return !active.isEmpty() && active.equals(renderId);
+    }
+
+    /** 押下中（:active）の要素の基底ノード ID。セッション単位。 */
     public static String getActivePressedId(String sessionId) {
         SessionContext session = getSession(sessionId);
-        return session != null ? session.activePressedId() : com.nishiyu.enderframelib.client.renderer.WebRenderCore.activePressedId;
+        return session != null ? session.activePressedId() : "";
     }
 
     public static void setActivePressedId(String sessionId, String id) {
-        com.nishiyu.enderframelib.client.renderer.WebRenderCore.activePressedId = id != null ? id : "";
-        SessionContext session = getSession(sessionId);
-        if (session != null) {
-            session.setActivePressedId(id);
-        }
+        SessionContext session = (id == null || id.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
+        if (session != null) session.setActivePressedId(id);
+    }
+
+    /** フォーカス中の入力の基底ノード ID が {@code baseId} と一致するか。 */
+    public static boolean isFocusedBase(String sessionId, String baseId) {
+        String active = getActiveInputId(sessionId);
+        return !active.isEmpty() && getBaseNodeId(active).equals(baseId);
+    }
+
+    /** 押下中の要素の基底ノード ID が {@code baseId} と一致するか。 */
+    public static boolean isPressedBase(String sessionId, String baseId) {
+        String pressed = getActivePressedId(sessionId);
+        return !pressed.isEmpty() && getBaseNodeId(pressed).equals(baseId);
     }
 
     public static final FontMetrics CLIENT_FONT_METRICS = (text, scale, isBold) -> {

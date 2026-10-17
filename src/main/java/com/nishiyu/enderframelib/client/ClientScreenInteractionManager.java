@@ -154,10 +154,10 @@ public class ClientScreenInteractionManager {
                         UIElement clickedEl = handleClick(sessionId, pixelX, pixelY, pressedButton);
                         // ★ input と textarea をクリックした際に確実に InvisibleInputScreen を開く
                         if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
-                            WebRenderCore.activeInputId = clickedEl.id();
+                            ClientWebManager.setActiveInputId(sessionId, clickedEl.id());
                             openInputScreen(sessionId, clickedEl, masterPos);
                         } else {
-                            WebRenderCore.activeInputId = "";
+                            ClientWebManager.setActiveInputId(sessionId, "");
                         }
                     } else if (isMouseDown) {
                         handleDrag(sessionId, pixelX, pixelY);
@@ -345,7 +345,7 @@ public class ClientScreenInteractionManager {
         if (mutateDomOnHover && !state.hoveredId.isEmpty()) {
             ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", "true", false);
         }
-        String activeId = WebRenderCore.activeInputId;
+        String activeId = ClientWebManager.getActiveInputId(sessionId);
         if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
             String activeVal = WebTextInputHost.getActiveText();
             if (activeVal != null) {
@@ -452,7 +452,7 @@ public class ClientScreenInteractionManager {
         if (hit != null) {
             UIElement clickedEl = hit.element();
             String baseId = ClientWebManager.getBaseNodeId(clickedEl.id());
-            WebRenderCore.activePressedId = baseId;
+            ClientWebManager.setActivePressedId(sessionId, baseId);
             playElementSound(clickedEl);
 
             Map<String, String> events = clickedEl.events() != null ? clickedEl.events() : Map.of();
@@ -502,7 +502,7 @@ public class ClientScreenInteractionManager {
             }
             return clickedEl;
         } else {
-            WebRenderCore.activePressedId = "";
+            ClientWebManager.setActivePressedId(sessionId, "");
             triggerLocalEvent(sessionId, "", "onclick", "", String.format(Locale.US, "%.5f,%.5f", pixelX / WebRenderCore.RESOLUTION, pixelY / WebRenderCore.RESOLUTION));
             return null;
         }
@@ -540,7 +540,7 @@ public class ClientScreenInteractionManager {
     }
 
     public static void handleRelease(String sessionId) {
-        WebRenderCore.activePressedId = "";
+        ClientWebManager.setActivePressedId(sessionId, "");
         SessionState state = getState(sessionId);
         if (!state.draggingId.isEmpty()) {
             if (state.lastRatio >= 0 && !state.lastRangeText.isEmpty()) {

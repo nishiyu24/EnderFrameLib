@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.client.gui;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
@@ -107,7 +106,7 @@ public class InvisibleInputScreen extends Screen {
         if (this.inputHost != null) {
             this.inputHost.deactivate();
         }
-        WebRenderCore.activeInputId = "";
+        ClientWebManager.setActiveInputId(sessionId, "");
         super.onClose();
     }
 
