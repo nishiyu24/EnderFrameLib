@@ -30,7 +30,6 @@ import java.util.function.Consumer;
 
 public class ClientWebManager {
 
-    public static BiConsumer<String, String> scriptLoaderCallback = null;
     public static Consumer<String> sessionClearedCallback = null;
     private static final List<Consumer<String>> SESSION_CLEARED_LISTENERS = new CopyOnWriteArrayList<>();
     public static Consumer<String> applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
@@ -158,9 +157,8 @@ public class ClientWebManager {
             session.setServerManaged(true);
             CompoundTag domTag = tag.getCompound("DomTree");
             String cssString = tag.getString("CssString");
-            String clientScript = tag.getString("ClientScript");
 
-            int currentHash = Objects.hash(domTag.hashCode(), cssString.hashCode(), clientScript.hashCode());
+            int currentHash = Objects.hash(domTag.hashCode(), cssString.hashCode());
             if (session.domHash() == currentHash && session.document() != null) {
                 session.setRequested(false);
                 return;
@@ -171,7 +169,7 @@ public class ClientWebManager {
             int rootH = session.rootH() > 0 ? session.rootH() : (tag.contains("RootH") ? tag.getInt("RootH") : 480);
 
             HtmlNode rootNode = HtmlNodeSerializer.deserialize(domTag, null);
-            installDocumentInternal(sessionId, rootNode, cssString, clientScript, rootW, rootH, true);
+            installDocumentInternal(sessionId, rootNode, cssString, rootW, rootH, true);
         }
 
         SessionContext session = getSession(sessionId);
@@ -183,10 +181,10 @@ public class ClientWebManager {
     public static void loadLocalHtml(String sessionId, String html, int width, int height) {
         UIParser parser = new UIParser();
         UIParser.Document parsedDoc = parser.parseDocument(html, "", width, height);
-        installDocumentInternal(sessionId, parsedDoc.root, parsedDoc.authorCss, parsedDoc.clientScript, width, height, false);
+        installDocumentInternal(sessionId, parsedDoc.root, parsedDoc.authorCss, width, height, false);
     }
 
-    private static void installDocumentInternal(String sessionId, HtmlNode rootNode, String authorCss, String clientScript, int rootW, int rootH, boolean fromServer) {
+    private static void installDocumentInternal(String sessionId, HtmlNode rootNode, String authorCss, int rootW, int rootH, boolean fromServer) {
         SessionContext session = getOrCreateSession(sessionId);
         session.close();
         SESSIONS.put(sessionId, session);
@@ -198,7 +196,7 @@ public class ClientWebManager {
 
         UIParser parser = new UIParser();
         StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
-        UIParser.Document doc = new UIParser.Document(rootNode, sheet, authorCss, clientScript);
+        UIParser.Document doc = new UIParser.Document(rootNode, sheet, authorCss);
         session.setDocument(doc);
 
         HtmlNode templateRoot = rootNode.cloneNode();
@@ -216,9 +214,6 @@ public class ClientWebManager {
         session.setRenderCache(elements);
 
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
-        if (fromServer && scriptLoaderCallback != null && clientScript != null && !clientScript.isEmpty()) {
-            scriptLoaderCallback.accept(sessionId, clientScript);
-        }
     }
 
     public static void handlePatchPacket(String sessionId, CompoundTag data) {

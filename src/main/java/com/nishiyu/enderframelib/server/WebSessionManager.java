@@ -80,7 +80,6 @@ public class WebSessionManager {
         if (session != null && session.getDocument() != null && session.getDocument().root != null) {
             tag.put("DomTree", HtmlNodeSerializer.serialize(session.getDocument().root));
             tag.putString("CssString", session.getDocument().authorCss != null ? session.getDocument().authorCss : "");
-            tag.putString("ClientScript", session.getDocument().clientScript != null ? session.getDocument().clientScript : "");
             tag.putInt("RootW", session.getWidth());
             tag.putInt("RootH", session.getHeight());
         } else {
