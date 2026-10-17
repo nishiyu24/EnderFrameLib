@@ -8,27 +8,40 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * HtmlNode の querySelector などを処理するエンジン。
- * セレクタ文字列のパース結果をキャッシュし、毎回 new StyleRule するのを防ぎます。
+ * {@code querySelector} / {@code querySelectorAll} の実体。
+ *
+ * パース済みセレクタをキャッシュするため、呼び出しごとにセレクタを再トークナイズしない。
+ * {@code core/dom} が {@code core/css} の内部型を直接 new する循環もここで断っている。
  */
-public class SelectorEngine {
+public final class SelectorEngine {
 
-    private static final Map<String, CssParser.StyleRule> SELECTOR_CACHE = new ConcurrentHashMap<>();
+    /** 信頼できない作者 HTML がキーになり得るため上限を設ける。 */
+    private static final int MAX_CACHED_SELECTORS = 512;
 
-    private static CssParser.StyleRule getOrParse(String selector) {
-        String clean = selector.trim();
-        return SELECTOR_CACHE.computeIfAbsent(clean, CssParser.StyleRule::new);
+    private static final Map<String, Selector> SELECTOR_CACHE = new ConcurrentHashMap<>();
+
+    private SelectorEngine() {}
+
+    public static Selector getOrParse(String selector) {
+        String clean = selector == null ? "" : selector.trim();
+        Selector cached = SELECTOR_CACHE.get(clean);
+        if (cached != null) return cached;
+
+        Selector parsed = SelectorParser.parse(clean);
+        if (SELECTOR_CACHE.size() < MAX_CACHED_SELECTORS) {
+            SELECTOR_CACHE.put(clean, parsed);
+        }
+        return parsed;
     }
 
     public static HtmlNode querySelector(HtmlNode root, String selector) {
-        CssParser.StyleRule rule = getOrParse(selector);
-        return querySelectorInternal(root, rule);
+        return querySelectorInternal(root, getOrParse(selector));
     }
 
-    private static HtmlNode querySelectorInternal(HtmlNode node, CssParser.StyleRule rule) {
-        if (rule.matches(node)) return node;
+    private static HtmlNode querySelectorInternal(HtmlNode node, Selector selector) {
+        if (SelectorMatcher.matches(selector, node)) return node;
         for (HtmlNode child : node.children) {
-            HtmlNode found = querySelectorInternal(child, rule);
+            HtmlNode found = querySelectorInternal(child, selector);
             if (found != null) return found;
         }
         return null;
@@ -36,15 +49,14 @@ public class SelectorEngine {
 
     public static List<HtmlNode> querySelectorAll(HtmlNode root, String selector) {
         List<HtmlNode> results = new ArrayList<>();
-        CssParser.StyleRule rule = getOrParse(selector);
-        querySelectorAllInternal(root, rule, results);
+        querySelectorAllInternal(root, getOrParse(selector), results);
         return results;
     }
 
-    private static void querySelectorAllInternal(HtmlNode node, CssParser.StyleRule rule, List<HtmlNode> results) {
-        if (rule.matches(node)) results.add(node);
+    private static void querySelectorAllInternal(HtmlNode node, Selector selector, List<HtmlNode> results) {
+        if (SelectorMatcher.matches(selector, node)) results.add(node);
         for (HtmlNode child : node.children) {
-            querySelectorAllInternal(child, rule, results);
+            querySelectorAllInternal(child, selector, results);
         }
     }
 

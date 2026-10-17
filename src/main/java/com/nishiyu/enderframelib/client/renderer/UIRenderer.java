@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -67,8 +68,8 @@ public class UIRenderer {
         if ("root".equals(box.node.tag)) {
             int canvasBg = 0xFF111111;
             LayoutBox bodyBox = findBodyBox(box);
-            if (bodyBox != null && (bodyBox.style.containsKey("background") || bodyBox.style.containsKey("background-color"))) {
-                String bodyBg = bodyBox.style.getOrDefault("background", bodyBox.style.get("background-color"));
+            if (bodyBox != null && (bodyBox.style.containsKey(CssProperty.BACKGROUND) || bodyBox.style.containsKey(CssProperty.BACKGROUND_COLOR))) {
+                String bodyBg = bodyBox.style.getOrDefault(CssProperty.BACKGROUND, bodyBox.style.get(CssProperty.BACKGROUND_COLOR));
                 canvasBg = ColorParser.parseColor(bodyBg);
             }
             if (canvasBg != 0x00000000) {
@@ -138,7 +139,7 @@ public class UIRenderer {
 
     private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
         if (box.w <= 0 || box.h <= 0) return;
-        if ("none".equals(box.style.getOrDefault("display", "block"))) return;
+        if ("none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
@@ -157,7 +158,7 @@ public class UIRenderer {
             buildRenderQueue(child, queue, currentZ, childClip, currentId);
         }
 
-        String overflow = box.style.getOrDefault("overflow", "visible");
+        String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
         if ("scroll".equals(overflow) || "auto".equals(overflow)) {
             int sbOrder = domOrderCounter++;
             queue.add(new RenderTask(currentZ + 1, sbOrder, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
@@ -169,7 +170,7 @@ public class UIRenderer {
         boolean isRootElement = "root".equals(tag) || "html".equals(tag) || "body".equals(tag);
         if (isRootElement) return parentClip;
 
-        String overflow = box.style.getOrDefault("overflow", "visible");
+        String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
         boolean shouldClip = "hidden".equals(overflow) || "auto".equals(overflow)
                 || "scroll".equals(overflow) || "clip".equals(overflow)
                 || "true".equalsIgnoreCase(box.node.attrs.get("data-pan-zoom"));
@@ -180,7 +181,7 @@ public class UIRenderer {
         float nMaxX = box.x + box.w - box.bR;
         float nMaxY = box.y + box.h - box.bB;
 
-        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
+        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH);
         float maxBorder = Math.max(Math.max(box.bT, box.bB), Math.max(box.bL, box.bR));
 
         float limit = Math.min(nMaxX - nMinX, nMaxY - nMinY) / 2.0f;
@@ -199,7 +200,7 @@ public class UIRenderer {
     }
 
     private void drawScrollbarsIfNeeded(List<UIElement> elements, LayoutBox box, float[] clipRect) {
-        if ("none".equals(box.style.get("scrollbar-width"))) return;
+        if ("none".equals(box.style.get(CssProperty.SCROLLBAR_WIDTH))) return;
 
         float scrollW = box.scrollWidth;
         float scrollH = box.scrollHeight;
@@ -377,7 +378,7 @@ public class UIRenderer {
         int delayMs = 0;
         String easing = "ease-out";
 
-        String tr = style.get("transition");
+        String tr = style.get(CssProperty.TRANSITION);
         if (tr != null) {
             Matcher m = TIME_UNIT_PATTERN.matcher(tr);
             if (m.find()) {
@@ -396,7 +397,7 @@ public class UIRenderer {
             else if (tr.contains("ease-out") || tr.contains("ease")) easing = "ease-out";
         }
 
-        String td = style.get("transition-delay");
+        String td = style.get(CssProperty.TRANSITION_DELAY);
         if (td != null) {
             Matcher m = TIME_UNIT_PATTERN.matcher(td);
             if (m.find()) {
@@ -406,7 +407,7 @@ public class UIRenderer {
             }
         }
 
-        String ttf = style.get("transition-timing-function");
+        String ttf = style.get(CssProperty.TRANSITION_TIMING_FUNCTION);
         if (ttf != null && !ttf.isBlank()) {
             easing = ttf.trim();
         }
@@ -457,21 +458,21 @@ public class UIRenderer {
     }
 
     private void drawBoxSelf(List<UIElement> elements, LayoutBox box, float[] clipRect, String parentId) {
-        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
+        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH);
         int fallbackRadius = radii[0];
         int rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
 
-        int color = ColorParser.parseColor(box.style.get("color"));
+        int color = ColorParser.parseColor(box.style.get(CssProperty.COLOR));
         if (color == 0x00000000) color = 0xFFF5F5F0;
 
-        String bgProp = box.style.getOrDefault("background", box.style.getOrDefault("background-color", "transparent"));
+        String bgProp = box.style.getOrDefault(CssProperty.BACKGROUND, box.style.getOrDefault(CssProperty.BACKGROUND_COLOR, "transparent"));
         int bgColor = ColorParser.parseColor(bgProp);
         UIElement.GradientSpec gradientSpec = parseGradientSpec(bgProp);
 
         String id = box.node.getId();
 
-        float opacity = parseFloatAttr(box.style.getRawMap(), "opacity", 1.0f);
-        float[] tr = parseTransformProps(box.style.get("transform"), box.w, box.h, 0f, 0f, 1f, 1f, 0f);
+        float opacity = box.style.number(CssProperty.OPACITY, 1.0f);
+        float[] tr = parseTransformProps(box.style.get(CssProperty.TRANSFORM), box.w, box.h, 0f, 0f, 1f, 1f, 0f);
         float tx = tr[0] + parseFloatAttr(box.node.attrs, "data-pan-x", 0f);
         float ty = tr[1] + parseFloatAttr(box.node.attrs, "data-pan-y", 0f);
         float zoom = parseFloatAttr(box.node.attrs, "data-zoom", 1.0f);
@@ -479,20 +480,20 @@ public class UIRenderer {
         float sy = tr[3] * zoom;
         float rot = tr[4];
 
-        TransitionSpec transSpec = parseTransitionSpec(box.style.getRawMap());
+        TransitionSpec transSpec = parseTransitionSpec(box.style.asMap());
 
         String hoverStr = buildPseudoStateDef("hover", "@@HOVER@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
         String activeStr = buildPseudoStateDef("active", "@@ACTIVE@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
         String focusStr = buildPseudoStateDef("focus", "@@FOCUS@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
-        String animDef = parseAnimationDef(box.style.get("animation"), box.w, box.h) + hoverStr + activeStr + focusStr;
+        String animDef = parseAnimationDef(box.style.get(CssProperty.ANIMATION), box.w, box.h) + hoverStr + activeStr + focusStr;
 
         float ox = 0.5f, oy = 0.5f;
         Map<String, String> anchorEvents = new HashMap<>(4);
         if (parentId != null) anchorEvents.put("mc-parent", parentId);
         if (transSpec.delayMs() > 0) anchorEvents.put("mc-delay", String.valueOf(transSpec.delayMs()));
         if (!"ease-out".equals(transSpec.easing())) anchorEvents.put("mc-easing", transSpec.easing());
-        if (box.style.containsKey("transform-origin")) {
-            String[] parts = WHITESPACE_SPLIT.split(box.style.get("transform-origin").toLowerCase().trim());
+        if (box.style.containsKey(CssProperty.TRANSFORM_ORIGIN)) {
+            String[] parts = WHITESPACE_SPLIT.split(box.style.get(CssProperty.TRANSFORM_ORIGIN).toLowerCase().trim());
             if (parts.length > 0) ox = parseOriginProp(parts[0]);
             if (parts.length > 1) oy = parseOriginProp(parts[1]);
             anchorEvents.put("mc-origin", ox + "," + oy);
@@ -547,8 +548,8 @@ public class UIRenderer {
         Map<String, String> partsEvents = new HashMap<>();
         partsEvents.put("mc-parent", id);
         partsEvents.put("mc-font-h", String.valueOf(fontHVal));
-        if (box.style.containsKey("font-family")) {
-            partsEvents.put("font-family", box.style.get("font-family"));
+        if (box.style.containsKey(CssProperty.FONT_FAMILY)) {
+            partsEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
         }
         if (gradientSpec != null) {
             partsEvents.put("mc-gradient", gradientSpec.direction() + ":" + gradientSpec.startColor() + ":" + gradientSpec.endColor());
@@ -562,8 +563,8 @@ public class UIRenderer {
             }
         }
 
-        String overflowX = box.style.getOrDefault("overflow-x", box.style.getOrDefault("overflow", "visible"));
-        String overflowY = box.style.getOrDefault("overflow-y", box.style.getOrDefault("overflow", "visible"));
+        String overflowX = box.style.getOrDefault(CssProperty.OVERFLOW_X, box.style.getOrDefault(CssProperty.OVERFLOW, "visible"));
+        String overflowY = box.style.getOrDefault(CssProperty.OVERFLOW_Y, box.style.getOrDefault(CssProperty.OVERFLOW, "visible"));
         boolean isScrollable = "scroll".equals(overflowX) || "auto".equals(overflowX)
                 || "scroll".equals(overflowY) || "auto".equals(overflowY)
                 || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
@@ -582,7 +583,7 @@ public class UIRenderer {
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
             }
         }
-        for (Map.Entry<String, String> entry : box.style.getRawMap().entrySet()) {
+        for (Map.Entry<String, String> entry : box.style.asMap().entrySet()) {
             if (entry.getKey().toLowerCase().startsWith("on")) {
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
             }
@@ -607,7 +608,7 @@ public class UIRenderer {
     }
 
     private void drawBoxShadowIfPresent(List<UIElement> elements, LayoutBox box, String id, int fallbackRadius, int[] radii, float[] normalizedClip, float fontHVal, float ox, float oy) {
-        String shadow = box.style.get("box-shadow");
+        String shadow = box.style.get(CssProperty.BOX_SHADOW);
         if (shadow == null || "none".equals(shadow)) return;
         Map<String, String> shadowEv = Map.of("mc-parent", id);
         addElement(elements, id + "_shadow_1", "rect", box.x + 1, box.y + 2, box.w + 2, box.h + 2, "", 0, 0x22000000, shadowEv, fallbackRadius + 1, 1f, 0, 0, 1f, 1f, 0, 0, "",
@@ -644,14 +645,14 @@ public class UIRenderer {
                                   int[] radii, float[] normalizedClip, float fontHVal, float ox, float oy,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff) {
-        String src = box.style.getOrDefault("src", box.node.attrs.getOrDefault("src", ""));
+        String src = box.style.getOrDefault(CssProperty.SRC, box.node.attrs.getOrDefault("src", ""));
         if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
             src = "fluid:" + box.node.attrs.getOrDefault("fluid", src);
         } else if ("mc-entity".equals(box.node.tag) && !src.startsWith("entity:")) {
             src = "entity:" + box.node.attrs.getOrDefault("entity", src.isEmpty() ? "@self" : src);
         }
 
-        String type = "video".equals(box.node.tag) ? "video" : "img:" + box.style.getOrDefault("object-fit", "fill");
+        String type = "video".equals(box.node.tag) ? "video" : "img:" + box.style.getOrDefault(CssProperty.OBJECT_FIT, "fill");
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
@@ -676,10 +677,10 @@ public class UIRenderer {
     private void drawTextNodeElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor,
                                      float[] normalizedClip, float fontHVal, float ox, float oy, Map<String, String> partsEvents) {
         Map<String, String> baseTextEvents = new HashMap<>(partsEvents);
-        if (box.style.containsKey("font-weight")) baseTextEvents.put("font-weight", box.style.get("font-weight"));
-        if (box.style.containsKey("font-family")) baseTextEvents.put("font-family", box.style.get("font-family"));
-        if (box.style.containsKey("text-decoration")) baseTextEvents.put("text-decoration", box.style.get("text-decoration"));
-        if (box.style.containsKey("text-shadow") && !"none".equals(box.style.get("text-shadow"))) baseTextEvents.put("text-shadow", "true");
+        if (box.style.containsKey(CssProperty.FONT_WEIGHT)) baseTextEvents.put("font-weight", box.style.get(CssProperty.FONT_WEIGHT));
+        if (box.style.containsKey(CssProperty.FONT_FAMILY)) baseTextEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
+        if (box.style.containsKey(CssProperty.TEXT_DECORATION)) baseTextEvents.put("text-decoration", box.style.get(CssProperty.TEXT_DECORATION));
+        if (box.style.containsKey(CssProperty.TEXT_SHADOW) && !"none".equals(box.style.get(CssProperty.TEXT_SHADOW))) baseTextEvents.put("text-shadow", "true");
 
         UIElement.RenderMeta txtMeta = new UIElement.RenderMeta(normalizedClip, null, null, null, fontHVal, ox, oy, 1);
 
@@ -691,7 +692,7 @@ public class UIRenderer {
                 }
             }
         } else if (box.textLines != null && !box.textLines.isEmpty()) {
-            String align = box.style.getOrDefault("text-align", "left");
+            String align = box.style.getOrDefault(CssProperty.TEXT_ALIGN, "left");
             Map<String, String> textEvents = new HashMap<>(baseTextEvents);
             textEvents.put("text-align", align);
 
@@ -699,7 +700,7 @@ public class UIRenderer {
             int fontH = (int) (16 * box.fontSize);
 
             float lh = 1.375f;
-            String lhStr = box.style.get("line-height");
+            String lhStr = box.style.get(CssProperty.LINE_HEIGHT);
             if (lhStr != null) {
                 try {
                     lh = lhStr.endsWith("px") ? Float.parseFloat(lhStr.substring(0, lhStr.length() - 2)) / 16f : Float.parseFloat(lhStr);
@@ -707,7 +708,7 @@ public class UIRenderer {
             }
             int lineStep = (int) (fontH * lh);
             int availableW = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
-            boolean isUppercase = "uppercase".equals(box.style.get("text-transform"));
+            boolean isUppercase = "uppercase".equals(box.style.get(CssProperty.TEXT_TRANSFORM));
 
             for (String line : box.textLines) {
                 if (line == null || line.trim().isEmpty()) {

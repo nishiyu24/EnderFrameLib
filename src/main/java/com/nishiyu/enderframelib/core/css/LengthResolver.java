@@ -44,6 +44,90 @@ public class LengthResolver {
         return parseDim(val, maxPixels, rootW, rootH, 16.0f, 16.0f);
     }
 
+    // ==========================================
+    // 1 回だけ分解しておく長さ表現
+    // ==========================================
+
+    /** 長さの単位。 */
+    public enum Unit {
+        /** px、または単位なしの数値 */
+        PIXELS,
+        /** % （親の対応する寸法が基準） */
+        PERCENT,
+        VW,
+        VH,
+        EM,
+        REM,
+        /** auto / 不正値（0 として扱う） */
+        NONE,
+        /** calc() / clamp() など、解決時に式を評価する必要があるもの */
+        EXPRESSION
+    }
+
+    /**
+     * 「単位と数値への分解」を済ませた長さ。
+     * ComputedStyle がプロパティごとに 1 つ保持し、参照のたびに文字列を再パースしないようにする。
+     * EXPRESSION だけは式の評価が必要なので、生の文字列を保持して解決時に {@link #parseDim} へ委ねる。
+     */
+    public record CompiledLength(Unit unit, float value, String raw) {
+
+        public static final CompiledLength ZERO = new CompiledLength(Unit.NONE, 0f, null);
+
+        public int resolve(int maxPixels, int rootW, int rootH, float elementFontSize, float rootFontSize) {
+            return switch (unit) {
+                case PIXELS -> (int) value;
+                case PERCENT -> (int) (maxPixels * value / 100f);
+                case VW -> (int) (rootW * value / 100f);
+                case VH -> (int) (rootH * value / 100f);
+                case EM -> (int) (elementFontSize * value);
+                case REM -> (int) (rootFontSize * value);
+                case EXPRESSION -> parseDim(raw, maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+                case NONE -> 0;
+            };
+        }
+    }
+
+    /** 長さの文字列を単位と数値に分解する。失敗や auto は {@link CompiledLength#ZERO}。 */
+    public static CompiledLength compile(String val) {
+        if (val == null) return CompiledLength.ZERO;
+        String v = val.trim();
+        if (v.isEmpty() || v.equals("auto")) return CompiledLength.ZERO;
+
+        // calc() / clamp() / min() / max() は式の評価が必要
+        if (v.indexOf('(') >= 0) return new CompiledLength(Unit.EXPRESSION, 0f, v);
+
+        Unit unit;
+        String number;
+        if (v.endsWith("px")) {
+            unit = Unit.PIXELS;
+            number = v.substring(0, v.length() - 2);
+        } else if (v.endsWith("%")) {
+            unit = Unit.PERCENT;
+            number = v.substring(0, v.length() - 1);
+        } else if (v.endsWith("vw")) {
+            unit = Unit.VW;
+            number = v.substring(0, v.length() - 2);
+        } else if (v.endsWith("vh")) {
+            unit = Unit.VH;
+            number = v.substring(0, v.length() - 2);
+        } else if (v.endsWith("rem")) {
+            unit = Unit.REM;
+            number = v.substring(0, v.length() - 3);
+        } else if (v.endsWith("em")) {
+            unit = Unit.EM;
+            number = v.substring(0, v.length() - 2);
+        } else {
+            unit = Unit.PIXELS;
+            number = v;
+        }
+
+        try {
+            return new CompiledLength(unit, Float.parseFloat(number.trim()), v);
+        } catch (NumberFormatException e) {
+            return CompiledLength.ZERO;
+        }
+    }
+
     public static String[] parseBoxEdgesStr(String val) {
         if (val == null) return new String[]{"0", "0", "0", "0"};
         String[] parts = WHITESPACE_SPLIT.split(val.trim());

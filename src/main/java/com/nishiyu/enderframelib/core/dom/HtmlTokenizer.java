@@ -170,13 +170,64 @@ public class HtmlTokenizer {
 
     public static String decodeHtmlEntities(String s) {
         if (s == null || !s.contains("&")) return s;
-        return s.replace("&lt;", "<")
+
+        // 数値参照を先に解く。名前付きより後にすると "&amp;#39;" が二重に復号されてしまう。
+        // 名前付きの中では &amp; を最後に置き、"&amp;lt;" が "<" にならないようにする。
+        return decodeNumericReferences(s)
+                .replace("&lt;", "<")
                 .replace("&gt;", ">")
                 .replace("&quot;", "\"")
-                .replace("&#39;", "'")
                 .replace("&apos;", "'")
                 .replace("&nbsp;", " ")
                 .replace("&amp;", "&");
+    }
+
+    /**
+     * 数値文字参照（{@code &#38;} / {@code &#x1F600;}）を復号する。
+     * 以前は {@code &#39;} だけを個別に置換していたため、それ以外は生のまま表示されていた。
+     */
+    private static String decodeNumericReferences(String s) {
+        if (!s.contains("&#")) return s;
+
+        StringBuilder out = new StringBuilder(s.length());
+        int i = 0;
+        while (i < s.length()) {
+            if (s.charAt(i) != '&' || i + 2 >= s.length() || s.charAt(i + 1) != '#') {
+                out.append(s.charAt(i));
+                i++;
+                continue;
+            }
+
+            int digitsStart = i + 2;
+            int radix = 10;
+            if (s.charAt(digitsStart) == 'x' || s.charAt(digitsStart) == 'X') {
+                radix = 16;
+                digitsStart++;
+            }
+
+            int end = digitsStart;
+            while (end < s.length() && Character.digit(s.charAt(end), radix) >= 0) end++;
+
+            // 桁が 1 つも無い、または ';' で閉じていないものは参照として扱わない
+            if (end == digitsStart || end >= s.length() || s.charAt(end) != ';' || end - digitsStart > 7) {
+                out.append(s.charAt(i));
+                i++;
+                continue;
+            }
+
+            try {
+                int codePoint = Integer.parseInt(s.substring(digitsStart, end), radix);
+                if (Character.isValidCodePoint(codePoint)) {
+                    out.appendCodePoint(codePoint);
+                } else {
+                    out.append(s, i, end + 1);
+                }
+            } catch (NumberFormatException e) {
+                out.append(s, i, end + 1);
+            }
+            i = end + 1;
+        }
+        return out.toString();
     }
 
     private static boolean isValidTagNameChar(char c) {

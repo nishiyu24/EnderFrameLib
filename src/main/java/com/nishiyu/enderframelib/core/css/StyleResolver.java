@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.css;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -49,18 +49,15 @@ public class StyleResolver {
         // HTML属性は算術スタイルに混ぜず、必要な消費者が直接 node.attrs を読みます。
 
         if (node.attrs.containsKey("style")) {
-            String inlineStyle = node.attrs.get("style");
-            for (String prop : inlineStyle.split(";")) {
-                int colon = prop.indexOf(':');
-                if (colon > 0) {
-                    String key = prop.substring(0, colon).trim().toLowerCase();
-                    String val = prop.substring(colon + 1).trim();
-                    styleSet.base.put(key, val);
-                    // インラインスタイルはホバー等も上書きする
-                    styleSet.hover.put(key, val);
-                    styleSet.active.put(key, val);
-                    styleSet.focus.put(key, val);
-                }
+            // インラインスタイル（CascadeOrigin.INLINE 相当）はどのルールよりも後に適用される
+            for (Map.Entry<String, String> decl : CssTokenizer.parseDeclarations(node.attrs.get("style")).entrySet()) {
+                String key = decl.getKey();
+                String val = decl.getValue();
+                styleSet.base.put(key, val);
+                // インラインスタイルはホバー等の状態も上書きする
+                styleSet.hover.put(key, val);
+                styleSet.active.put(key, val);
+                styleSet.focus.put(key, val);
             }
         }
 
@@ -68,7 +65,17 @@ public class StyleResolver {
     }
 
     public static ComputedStyle finalizeComputedStyle(Map<String, String> rawStyle, StyleSheet sheet, Map<String, String> env) {
-        Map<String, String> style = new HashMap<>(rawStyle);
+        return finalizeComputedStyle(rawStyle, sheet, env, ComputedStyle.DEFAULT_FONT_SIZE, ComputedStyle.DEFAULT_FONT_SIZE);
+    }
+
+    /**
+     * 親のフォントサイズを基準に算出スタイルを確定する。
+     * em は要素自身のフォントサイズ、rem はルートのフォントサイズが基準になる。
+     */
+    public static ComputedStyle finalizeComputedStyle(Map<String, String> rawStyle, StyleSheet sheet,
+                                                      Map<String, String> env,
+                                                      float parentFontSize, float rootFontSize) {
+        Map<String, String> style = new LinkedHashMap<>(rawStyle);
         boolean changed;
         int depth = 0;
         do {
@@ -108,12 +115,12 @@ public class StyleResolver {
         expandBoxShorthand(style, "padding");
         expandGapShorthand(style);
 
-        if (style.containsKey("border")) {
-            String border = style.get("border");
-            style.putIfAbsent("border-top", border);
-            style.putIfAbsent("border-right", border);
-            style.putIfAbsent("border-bottom", border);
-            style.putIfAbsent("border-left", border);
+        if (style.containsKey(CssProperty.BORDER)) {
+            String border = style.get(CssProperty.BORDER);
+            style.putIfAbsent(CssProperty.BORDER_TOP, border);
+            style.putIfAbsent(CssProperty.BORDER_RIGHT, border);
+            style.putIfAbsent(CssProperty.BORDER_BOTTOM, border);
+            style.putIfAbsent(CssProperty.BORDER_LEFT, border);
         }
 
         for (String dir : DIRECTIONS) {
@@ -125,15 +132,15 @@ public class StyleResolver {
         }
 
         // A-8 修正: border-width ショートハンド展開
-        if (style.containsKey("border-width")) {
-            String[] edges = LengthResolver.parseBoxEdgesStr(style.get("border-width"));
-            style.putIfAbsent("border-top-width", edges[0]);
-            style.putIfAbsent("border-right-width", edges[1]);
-            style.putIfAbsent("border-bottom-width", edges[2]);
-            style.putIfAbsent("border-left-width", edges[3]);
+        if (style.containsKey(CssProperty.BORDER_WIDTH)) {
+            String[] edges = LengthResolver.parseBoxEdgesStr(style.get(CssProperty.BORDER_WIDTH));
+            style.putIfAbsent(CssProperty.BORDER_TOP_WIDTH, edges[0]);
+            style.putIfAbsent(CssProperty.BORDER_RIGHT_WIDTH, edges[1]);
+            style.putIfAbsent(CssProperty.BORDER_BOTTOM_WIDTH, edges[2]);
+            style.putIfAbsent(CssProperty.BORDER_LEFT_WIDTH, edges[3]);
         }
 
-        return new ComputedStyle(style);
+        return ComputedStyle.of(style, parentFontSize, rootFontSize);
     }
 
     /**
@@ -156,18 +163,18 @@ public class StyleResolver {
      * {@code grid-gap} / {@code grid-row-gap} / {@code grid-column-gap} も別名として受け付ける。
      */
     private static void expandGapShorthand(Map<String, String> style) {
-        if (style.containsKey("grid-row-gap")) style.putIfAbsent("row-gap", style.get("grid-row-gap"));
-        if (style.containsKey("grid-column-gap")) style.putIfAbsent("column-gap", style.get("grid-column-gap"));
+        if (style.containsKey(CssProperty.GRID_ROW_GAP)) style.putIfAbsent(CssProperty.ROW_GAP, style.get(CssProperty.GRID_ROW_GAP));
+        if (style.containsKey(CssProperty.GRID_COLUMN_GAP)) style.putIfAbsent(CssProperty.COLUMN_GAP, style.get(CssProperty.GRID_COLUMN_GAP));
 
-        String shorthand = style.get("gap");
-        if (shorthand == null || shorthand.trim().isEmpty()) shorthand = style.get("grid-gap");
+        String shorthand = style.get(CssProperty.GAP);
+        if (shorthand == null || shorthand.trim().isEmpty()) shorthand = style.get(CssProperty.GRID_GAP);
         if (shorthand == null || shorthand.trim().isEmpty()) return;
 
         String[] parts = WHITESPACE_SPLIT.split(shorthand.trim());
         String rowGap = parts[0];
         String columnGap = parts.length >= 2 ? parts[1] : parts[0];
 
-        style.putIfAbsent("row-gap", rowGap);
-        style.putIfAbsent("column-gap", columnGap);
+        style.putIfAbsent(CssProperty.ROW_GAP, rowGap);
+        style.putIfAbsent(CssProperty.COLUMN_GAP, columnGap);
     }
 }

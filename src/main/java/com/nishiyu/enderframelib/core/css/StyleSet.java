@@ -1,26 +1,28 @@
 package com.nishiyu.enderframelib.core.css;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 疑似クラス状態を型で表すためのクラス。
- * 従来の "hover-color" などのキープレフィックスを廃止し、状態ごとにマップを保持します。
+ * 疑似クラスの状態ごとに宣言集合を持つスタイル。
+ *
+ * 以前は {@code "hover-color"} のようなキープレフィックスで 5 つのプロパティだけを
+ * 特別扱いしていたため、{@code :hover} ブロック内のそれ以外のプロパティが黙って捨てられていた。
+ * ここでは状態ごとに宣言をそのまま保持するので、全プロパティが効く。
  */
 public class StyleSet {
-    public final Map<String, String> base = new HashMap<>();
-    public final Map<String, String> hover = new HashMap<>();
-    public final Map<String, String> active = new HashMap<>();
-    public final Map<String, String> focus = new HashMap<>();
+    public final Map<String, String> base = new LinkedHashMap<>();
+    public final Map<String, String> hover = new LinkedHashMap<>();
+    public final Map<String, String> active = new LinkedHashMap<>();
+    public final Map<String, String> focus = new LinkedHashMap<>();
 
-    /**
-     * 現在の対話状態に基づいて、適用すべきスタイルを合成して返します。
-     */
-    public Map<String, String> computeCurrentState(boolean isHovered, boolean isActive, boolean isFocused) {
-        Map<String, String> result = new HashMap<>(base);
-        if (isHovered) result.putAll(hover);
-        if (isFocused) result.putAll(focus);
-        if (isActive) result.putAll(active);
+    /** 現在の対話状態に基づいて、適用すべき宣言を合成して返す。 */
+    public Map<String, String> resolve(ElementState state) {
+        Map<String, String> result = new LinkedHashMap<>(base);
+        if (state == null) return result;
+        if (state.hover()) result.putAll(hover);
+        if (state.focus()) result.putAll(focus);
+        if (state.active()) result.putAll(active);
         return result;
     }
 }

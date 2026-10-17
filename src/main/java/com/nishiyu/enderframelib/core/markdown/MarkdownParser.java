@@ -23,9 +23,6 @@ import java.util.regex.Pattern;
  */
 public final class MarkdownParser {
 
-    private static final Pattern MD_CONTAINER_PATTERN = Pattern.compile(
-            "(?is)<(mc-markdown|article|section|div|script)\\b([^>]*)>(.*?)</\\1>"
-    );
     private static final Pattern CLASS_ATTR_PATTERN = Pattern.compile(
             "(?i)\\bclass\\s*=\\s*([\"'])(.*?)\\1"
     );
@@ -60,47 +57,178 @@ public final class MarkdownParser {
             return "<article class=\"markdown-body\">" + toHtml(trimmed) + "</article>";
         }
 
-        // HTML内のMarkdownブロック要素を展開（元のclass, style, id等の属性を保持）
-        Matcher m = MD_CONTAINER_PATTERN.matcher(input);
-        StringBuilder sb = new StringBuilder();
-        boolean anyReplaced = false;
-        while (m.find()) {
-            String rawTag = m.group(1).toLowerCase(Locale.ROOT);
-            String rawAttrs = m.group(2) != null ? m.group(2) : "";
-            String lowerAttrs = rawAttrs.toLowerCase(Locale.ROOT);
+        // C-5 修正: 以前はこの正規表現マッチャがすべての HTML に対して無条件に走っていた。
+        // Markdown ブロックの目印が無ければ入力をそのまま返す。
+        if (!hasMarkdownBlockMarker(input)) return input;
 
-            boolean isMdBlock = "mc-markdown".equals(rawTag)
-                    || lowerAttrs.contains("data-markdown")
-                    || lowerAttrs.contains("text/markdown");
-            if (!isMdBlock) {
+        // HTML内のMarkdownブロック要素を展開（元のclass, style, id等の属性を保持）
+        StringBuilder out = new StringBuilder();
+        int cursor = 0;
+        boolean anyReplaced = false;
+
+        for (MarkdownBlock block = findNextBlock(input, cursor); block != null;
+             block = findNextBlock(input, cursor)) {
+            out.append(input, cursor, block.startIndex);
+            out.append(renderBlock(block));
+            cursor = block.endIndex;
+            anyReplaced = true;
+        }
+
+        if (!anyReplaced) return input;
+        out.append(input, cursor, input.length());
+        return out.toString();
+    }
+
+    /** Markdown ブロックである目印。1 つも無ければブロック探索自体を省略できる。 */
+    private static boolean hasMarkdownBlockMarker(String input) {
+        String lower = input.toLowerCase(Locale.ROOT);
+        return lower.contains("data-markdown") || lower.contains("mc-markdown") || lower.contains("text/markdown");
+    }
+
+    /** 展開対象になり得るタグ。 */
+    private static final String[] MD_BLOCK_TAGS = {"mc-markdown", "article", "section", "div", "script"};
+
+    /** 見つかった Markdown ブロック 1 つ。 */
+    private record MarkdownBlock(String tag, String rawAttrs, String body, int startIndex, int endIndex) {}
+
+    /**
+     * {@code from} 以降にある最初の Markdown ブロックを探す。
+     *
+     * 以前は {@code <(tag)([^>]*)>(.*?)</>} という正規表現だったため、
+     * 同じタグが入れ子になっていると閉じタグを取り違えていた。ここでは開始タグを走査して
+     * 同名タグの深さを数えながら対応する閉じタグを見つける。
+     */
+    private static MarkdownBlock findNextBlock(String input, int from) {
+        int i = from;
+        while (i < input.length()) {
+            int lt = input.indexOf('<', i);
+            if (lt < 0) return null;
+
+            String matchedTag = matchTagNameAt(input, lt);
+            if (matchedTag == null) {
+                i = lt + 1;
                 continue;
             }
-            anyReplaced = true;
-            String outTag = ("mc-markdown".equals(rawTag) || "script".equals(rawTag)) ? "article" : rawTag;
-            String cleanedAttrs = rawAttrs
-                    .replaceAll("(?i)\\bdata-markdown(?:\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?", "")
-                    .replaceAll("(?i)\\btype\\s*=\\s*[\"']text/markdown[\"']", "")
-                    .trim();
 
-            Matcher cm = CLASS_ATTR_PATTERN.matcher(cleanedAttrs);
-            if (cm.find()) {
-                String existingClasses = cm.group(2).trim();
-                String mergedClasses = existingClasses.contains("markdown-body")
-                        ? existingClasses
-                        : (existingClasses + " markdown-body").trim();
-                cleanedAttrs = cm.replaceFirst("class=\"" + Matcher.quoteReplacement(mergedClasses) + "\"");
-            } else {
-                cleanedAttrs = ("class=\"markdown-body\" " + cleanedAttrs).trim();
+            int attrsEnd = findTagEnd(input, lt);
+            if (attrsEnd < 0) return null;
+
+            String rawAttrs = input.substring(lt + 1 + matchedTag.length(), attrsEnd);
+            boolean selfClosing = rawAttrs.trim().endsWith("/");
+            String lowerAttrs = rawAttrs.toLowerCase(Locale.ROOT);
+
+            boolean isMdBlock = !selfClosing && ("mc-markdown".equals(matchedTag)
+                    || lowerAttrs.contains("data-markdown")
+                    || lowerAttrs.contains("text/markdown"));
+            if (!isMdBlock) {
+                i = attrsEnd + 1;
+                continue;
             }
 
-            String rawMd = dedent(m.group(3));
-            String openTag = "<" + outTag + (cleanedAttrs.isEmpty() ? "" : " " + cleanedAttrs) + ">";
-            String rendered = openTag + toHtml(rawMd) + "</" + outTag + ">";
-            m.appendReplacement(sb, Matcher.quoteReplacement(rendered));
+            int bodyStart = attrsEnd + 1;
+            int bodyEnd = findMatchingClose(input, matchedTag, bodyStart);
+            if (bodyEnd < 0) {
+                i = attrsEnd + 1;
+                continue;
+            }
+
+            int blockEnd = bodyEnd + matchedTag.length() + 3; // "</" + tag + ">"
+            return new MarkdownBlock(matchedTag, rawAttrs, input.substring(bodyStart, bodyEnd), lt,
+                    Math.min(blockEnd, input.length()));
         }
-        if (!anyReplaced) return input;
-        m.appendTail(sb);
-        return sb.toString();
+        return null;
+    }
+
+    /** 位置 lt の "<" が MD_BLOCK_TAGS のいずれかの開始タグなら、そのタグ名を返す。 */
+    private static String matchTagNameAt(String input, int lt) {
+        for (String tag : MD_BLOCK_TAGS) {
+            int nameEnd = lt + 1 + tag.length();
+            if (nameEnd > input.length()) continue;
+            if (!input.regionMatches(true, lt + 1, tag, 0, tag.length())) continue;
+            if (nameEnd == input.length()) continue;
+            char after = input.charAt(nameEnd);
+            if (Character.isWhitespace(after) || after == '>' || after == '/') return tag;
+        }
+        return null;
+    }
+
+    /** 開始タグの ">" の位置。引用符の中の ">" は数えない。 */
+    private static int findTagEnd(String input, int lt) {
+        int i = lt + 1;
+        while (i < input.length()) {
+            char c = input.charAt(i);
+            if (c == '"' || c == '\'') {
+                int close = input.indexOf(c, i + 1);
+                if (close < 0) return -1;
+                i = close + 1;
+                continue;
+            }
+            if (c == '>') return i;
+            i++;
+        }
+        return -1;
+    }
+
+    /** 同名タグの入れ子を数えて、対応する閉じタグの "<" の位置を返す。 */
+    private static int findMatchingClose(String input, String tag, int from) {
+        int depth = 1;
+        int i = from;
+        String open = "<" + tag;
+        String close = "</" + tag;
+
+        while (i < input.length()) {
+            int nextOpen = indexOfTag(input, open, i);
+            int nextClose = indexOfTag(input, close, i);
+            if (nextClose < 0) return -1;
+
+            if (nextOpen >= 0 && nextOpen < nextClose) {
+                depth++;
+                i = nextOpen + open.length();
+            } else {
+                depth--;
+                if (depth == 0) return nextClose;
+                i = nextClose + close.length();
+            }
+        }
+        return -1;
+    }
+
+    /** タグ名の直後が区切り文字である出現位置だけを探す（article と articles を区別する）。 */
+    private static int indexOfTag(String input, String needle, int from) {
+        int i = from;
+        while (i < input.length()) {
+            int found = input.toLowerCase(Locale.ROOT).indexOf(needle, i);
+            if (found < 0) return -1;
+            int after = found + needle.length();
+            if (after >= input.length()) return -1;
+            char c = input.charAt(after);
+            if (Character.isWhitespace(c) || c == '>' || c == '/') return found;
+            i = found + 1;
+        }
+        return -1;
+    }
+
+    /** ブロックを Markdown として展開した HTML に変換する。 */
+    private static String renderBlock(MarkdownBlock block) {
+        String outTag = ("mc-markdown".equals(block.tag) || "script".equals(block.tag)) ? "article" : block.tag;
+        String cleanedAttrs = block.rawAttrs
+                .replaceAll("(?i)\\bdata-markdown(?:\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?", "")
+                .replaceAll("(?i)\\btype\\s*=\\s*[\"']text/markdown[\"']", "")
+                .trim();
+
+        Matcher cm = CLASS_ATTR_PATTERN.matcher(cleanedAttrs);
+        if (cm.find()) {
+            String existingClasses = cm.group(2).trim();
+            String mergedClasses = existingClasses.contains("markdown-body")
+                    ? existingClasses
+                    : (existingClasses + " markdown-body").trim();
+            cleanedAttrs = cm.replaceFirst("class=\"" + Matcher.quoteReplacement(mergedClasses) + "\"");
+        } else {
+            cleanedAttrs = ("class=\"markdown-body\" " + cleanedAttrs).trim();
+        }
+
+        String openTag = "<" + outTag + (cleanedAttrs.isEmpty() ? "" : " " + cleanedAttrs) + ">";
+        return openTag + toHtml(dedent(block.body)) + "</" + outTag + ">";
     }
 
     private static boolean looksLikeStandaloneMarkdown(String trimmed) {

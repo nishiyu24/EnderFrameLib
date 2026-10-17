@@ -71,7 +71,7 @@ public class EnderFrameClientInit {
 
         // --- 追加: core側の依存切り離し用フックの注入 ---
         DomUtils.innerHtmlParser = UIParser.INNER_HTML_PARSER;
-        LayoutBox.intrinsicSizeResolver = ServerImageRegistry.RESOLVER_ADAPTER;
+        UIParser.intrinsicSizeResolver = ServerImageRegistry.RESOLVER_ADAPTER;
 
         // 2. 画像サイズ確定時のクライアント自動再レイアウト登録
         ServerImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
