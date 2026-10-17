@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.dom.NodeType;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,13 +36,12 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
     public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
 
-        if (!box.style.containsKey("height") || "auto".equals(box.style.getOrDefault("height", "auto"))) {
+        if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
             int contentH = 0;
             List<LayoutBox> inlineRun = new ArrayList<>();
-            List<LayoutBox> flowChildren = box.getFlowChildren();
             int blockSegments = 0;
 
-            for (LayoutBox child : flowChildren) {
+            for (LayoutBox child : box.getFlowChildren()) {
                 if (isInlineBox(child)) {
                     inlineRun.add(child);
                 } else {
@@ -62,87 +64,17 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
             box.h = Math.max(box.h, contentH + box.verticalDecoration());
         }
 
-        int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
-        for (LayoutBox child : box.children) {
-            if (child.isAbsolute && !isDisplayNone(child.style)) {
-                child.measure(actualInnerW, actualInnerH, new FormattingContext("block", "stretch", false), ctx);
-            }
-        }
-    }
-
-    private int measureInlineRunHeight(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
-        List<FlatRun> runs = new ArrayList<>();
-        flattenInlines(inlines, runs, new ArrayList<>());
-        if (runs.isEmpty()) return 0;
-
-        int lineX = 0;
-        int totalH = 0;
-        int maxLineH = 0;
-
-        for (FlatRun run : runs) {
-            float lh = parseLineHeight(run.box.style);
-            int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
-            for (LayoutBox p : run.inlineParents) {
-                decoT += p.pT + p.bT;
-                decoB += p.pB + p.bB;
-                decoL += p.pL + p.bL;
-                decoR += p.pR + p.bR;
-            }
-
-            if (run.isText) {
-                String text = run.text;
-                boolean isBoldBox = isBold(run.box.style);
-
-                float scale = run.box.fontSize;
-                int fontH = (int) (16 * scale);
-                int runH = (int) (fontH * lh);
-                int totalRunH = runH + decoT + decoB;
-
-                String[] words = text.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
-                lineX += decoL;
-
-                for (String rawWord : words) {
-                    if (rawWord.isEmpty()) continue;
-                    // B-6 修正: §l の埋め込みを廃止し、FontMetrics の isBold に委譲
-                    int wordW = ctx.fontMetrics().getDisplayWidth(rawWord, scale, isBoldBox);
-                    if (maxW > 0 && lineX + wordW + decoR > maxW + 4 && lineX > decoL && !rawWord.trim().isEmpty()) {
-                        totalH += maxLineH > 0 ? maxLineH : totalRunH;
-                        lineX = decoL;
-                        maxLineH = 0;
-                    }
-                    lineX += wordW;
-                    maxLineH = Math.max(maxLineH, totalRunH);
-                }
-                lineX += decoR;
-            } else if ("\n".equals(run.text)) {
-                totalH += maxLineH > 0 ? maxLineH : (int) (16 * run.box.fontSize * lh);
-                lineX = 0;
-                maxLineH = 0;
-            } else {
-                int boxOuterW = run.box.w + run.box.mL + run.box.mR;
-                int boxOuterH = run.box.h + run.box.mT + run.box.mB + decoT + decoB;
-                if (maxW > 0 && lineX + boxOuterW > maxW + 4 && lineX > 0) {
-                    totalH += maxLineH > 0 ? maxLineH : boxOuterH;
-                    lineX = 0;
-                    maxLineH = 0;
-                }
-                lineX += boxOuterW;
-                maxLineH = Math.max(maxLineH, boxOuterH);
-            }
-        }
-        totalH += maxLineH;
-        return totalH;
+        measureAbsoluteChildren(box, ctx);
     }
 
     @Override
     public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
-        String textAlign = box.style.getOrDefault("text-align", "left");
+        String textAlign = box.style.getOrDefault(CssProperty.TEXT_ALIGN, "left");
         int currentY = innerY;
         List<LayoutBox> inlineRun = new ArrayList<>();
-        List<LayoutBox> flowChildren = box.getFlowChildren();
-        int availableInnerW = box.w - box.pL - box.pR - box.bL - box.bR;
+        int availableInnerW = box.w - box.horizontalDecoration();
 
-        for (LayoutBox child : flowChildren) {
+        for (LayoutBox child : box.getFlowChildren()) {
             if (isInlineBox(child)) {
                 inlineRun.add(child);
             } else {
@@ -150,7 +82,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
                     currentY = layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, ctx) + box.rowGap;
                     inlineRun.clear();
                 }
-                if ("auto".equals(child.style.get("margin-left")) && "auto".equals(child.style.get("margin-right"))) {
+                if ("auto".equals(child.style.get(CssProperty.MARGIN_LEFT)) && "auto".equals(child.style.get(CssProperty.MARGIN_RIGHT))) {
                     child.layout(innerX + Math.max(0, (availableInnerW - (child.w + child.mL + child.mR)) / 2), currentY, availableInnerW, child.h, ctx);
                 } else {
                     child.layout(innerX, currentY, availableInnerW, child.h, ctx);
@@ -163,13 +95,177 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
         }
     }
 
+    // ==========================================
+    // インライン整形
+    // ==========================================
+
+    /**
+     * インライン内容の高さを測る。
+     * 行分割そのものは {@link #breakIntoLines} が唯一の実装で、配置パスと必ず同じ結果になる。
+     * （以前は測定用と配置用に折り返しロジックが別々に書かれていて、
+     *  片方だけ直すと測定高と配置高がずれる状態だった）
+     */
+    private int measureInlineRunHeight(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
+        int totalH = 0;
+        for (InlineLine line : breakIntoLines(inlines, maxW, ctx)) {
+            totalH += line.height;
+        }
+        return totalH;
+    }
+
+    /**
+     * インライン内容を実際に配置し、次のブロックが始まる Y 座標を返す。
+     */
+    private int layoutInlineContext(List<LayoutBox> inlines, int startX, int startY, int maxW,
+                                    String textAlign, LayoutContext ctx) {
+        List<InlineLine> lines = breakIntoLines(inlines, maxW, ctx);
+        for (LayoutBox inlineBox : inlines) clearFragmentsRecursively(inlineBox);
+
+        int currentDrawY = startY;
+        for (InlineLine line : lines) {
+            placeLine(line, startX, currentDrawY, maxW, textAlign, ctx);
+            currentDrawY += line.height;
+        }
+        return currentDrawY;
+    }
+
+    /** 1 行分の断片を水平・垂直に揃えて確定する。 */
+    private void placeLine(InlineLine line, int startX, int drawY, int maxW, String textAlign, LayoutContext ctx) {
+        List<LayoutBox.InlineFragment> fragments = line.fragments;
+        if (fragments.isEmpty()) return;
+
+        int actualLineW = fragments.getLast().x + fragments.getLast().w - fragments.getFirst().x;
+        int offsetX = startX;
+        if (textAlign.equals("center")) offsetX += Math.max(0, (maxW - actualLineW) / 2);
+        else if (textAlign.equals("right")) offsetX += Math.max(0, maxW - actualLineW);
+
+        for (LayoutBox.InlineFragment f : fragments) {
+            int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
+            if (f.parents != null) {
+                for (LayoutBox p : f.parents) {
+                    decoT += p.pT + p.bT;
+                    decoB += p.pB + p.bB;
+                    decoL += p.pL + p.bL;
+                    decoR += p.pR + p.bR;
+                }
+            }
+            int outerH = f.h + f.box.mT + f.box.mB;
+            int offsetY = drawY + Math.max(0, (line.height - (outerH + decoT + decoB)) / 2);
+
+            f.x += offsetX;
+            f.y = offsetY + decoT + f.box.mT;
+            f.box.inlineFragments.add(f);
+
+            if (f.parents != null) {
+                for (LayoutBox p : f.parents) {
+                    p.inlineFragments.add(new LayoutBox.InlineFragment(
+                            p, f.x - decoL, offsetY, f.w + decoL + decoR, f.h + decoT + decoB, null));
+                }
+            }
+            if (!f.isText()) f.box.layout(f.x, f.y - f.box.mT, f.w, f.h, ctx);
+        }
+    }
+
+    /**
+     * インライン内容を行に分割する。測定と配置が共有する唯一の折り返し実装。
+     * 返される断片の x は行内の相対座標で、行の高さは断片から求めた実寸。
+     */
+    private List<InlineLine> breakIntoLines(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
+        List<FlatRun> runs = new ArrayList<>();
+        flattenInlines(inlines, runs, new ArrayList<>());
+
+        List<InlineLine> lines = new ArrayList<>();
+        List<LayoutBox.InlineFragment> currentLine = new ArrayList<>();
+        int lineX = 0;
+
+        for (FlatRun run : runs) {
+            float lh = parseLineHeight(run.box.style);
+            int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
+            for (LayoutBox p : run.inlineParents) {
+                decoT += p.pT + p.bT;
+                decoB += p.pB + p.bB;
+                decoL += p.pL + p.bL;
+                decoR += p.pR + p.bR;
+            }
+
+            if (run.isText) {
+                float scale = run.box.fontSize;
+                int runH = LayoutMetrics.lineHeightPx(scale, lh);
+                int fallbackH = runH + decoT + decoB;
+                boolean bold = isBold(run.box.style);
+
+                lineX += decoL;
+                for (String word : LayoutMetrics.splitWords(run.text)) {
+                    if (word.isEmpty()) continue;
+                    int wordW = ctx.fontMetrics().getDisplayWidth(word, scale, bold);
+
+                    if (needsWrap(lineX + wordW + decoR, maxW, lineX > decoL) && !word.trim().isEmpty()) {
+                        lines.add(finishLine(currentLine, fallbackH));
+                        currentLine = new ArrayList<>();
+                        lineX = decoL;
+                    }
+                    LayoutBox.InlineFragment frag =
+                            new LayoutBox.InlineFragment(run.box, lineX, decoT, wordW, runH, word);
+                    frag.parents = run.inlineParents;
+                    currentLine.add(frag);
+                    lineX += wordW;
+                }
+                lineX += decoR;
+            } else if ("\n".equals(run.text)) {
+                // <br>: 内容が無い行でもフォント 1 行分の高さを確保する
+                lines.add(finishLine(currentLine, LayoutMetrics.lineHeightPx(run.box.fontSize, lh)));
+                currentLine = new ArrayList<>();
+                lineX = 0;
+            } else {
+                int boxOuterW = run.box.w + run.box.mL + run.box.mR;
+                int fallbackH = run.box.h + run.box.mT + run.box.mB + decoT + decoB;
+                if (needsWrap(lineX + boxOuterW, maxW, lineX > 0)) {
+                    lines.add(finishLine(currentLine, fallbackH));
+                    currentLine = new ArrayList<>();
+                    lineX = 0;
+                }
+                LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(
+                        run.box, lineX + run.box.mL, 0, run.box.w, run.box.h, null);
+                frag.parents = run.inlineParents;
+                currentLine.add(frag);
+                lineX += boxOuterW;
+            }
+        }
+
+        if (!currentLine.isEmpty()) lines.add(finishLine(currentLine, 0));
+        return lines;
+    }
+
+    /**
+     * 折り返すかどうか。
+     * {@code maxW <= 0} は「幅の制約が無い」ことを意味するので折り返さない。
+     */
+    private boolean needsWrap(int lineEnd, int maxW, boolean hasContentOnLine) {
+        return maxW > 0 && hasContentOnLine && lineEnd > maxW + LayoutMetrics.INLINE_WRAP_SLOP;
+    }
+
+    /** 行を確定する。高さは断片の実寸から求め、断片が無い行は fallback を使う。 */
+    private InlineLine finishLine(List<LayoutBox.InlineFragment> fragments, int fallbackHeight) {
+        if (fragments.isEmpty()) return new InlineLine(fragments, fallbackHeight);
+
+        int height = 0;
+        for (LayoutBox.InlineFragment f : fragments) {
+            int decoH = 0;
+            if (f.parents != null) {
+                for (LayoutBox p : f.parents) decoH += p.pT + p.bT + p.pB + p.bB;
+            }
+            height = Math.max(height, f.h + f.box.mT + f.box.mB + decoH);
+        }
+        return new InlineLine(fragments, height);
+    }
+
     private boolean isInlineBox(LayoutBox box) {
         if (box.isAbsolute) return false;
-        String display = box.style.getOrDefault("display", "block");
+        String display = box.style.getOrDefault(CssProperty.DISPLAY, "block");
         if (display.equals("inline") || display.equals("inline-block")) return true;
         if (display.equals("block") || display.equals("flex") || display.equals("grid")) return false;
         String tag = box.node.tag;
-        return tag.equals("#text") || tag.equals("br") || tag.equals("span") || tag.equals("a")
+        return box.node.nodeType == NodeType.TEXT || tag.equals("br") || tag.equals("span") || tag.equals("a")
                 || tag.equals("b") || tag.equals("i") || tag.equals("strong") || tag.equals("em")
                 || tag.equals("img") || tag.equals("input") || tag.equals("button")
                 || tag.equals("select") || tag.equals("progress")
@@ -178,14 +274,11 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
 
     private void flattenInlines(List<LayoutBox> boxes, List<FlatRun> runs, List<LayoutBox> parents) {
         for (LayoutBox b : boxes) {
-            if (b.node.tag.equals("#text") && b.displayText != null && !b.displayText.isEmpty()) {
+            if (b.node.nodeType == NodeType.TEXT && b.displayText != null && !b.displayText.isEmpty()) {
                 runs.add(new FlatRun(b, true, b.displayText, new ArrayList<>(parents)));
             } else if (b.node.tag.equals("br")) {
                 runs.add(new FlatRun(b, false, "\n", new ArrayList<>(parents)));
-            } else if ("inline-block".equals(b.style.getOrDefault("display", "block"))
-                    || b.node.tag.equals("img") || b.node.tag.equals("input") || b.node.tag.equals("button")
-                    || b.node.tag.equals("select") || b.node.tag.equals("progress")
-                    || b.node.tag.equals("mc-fluid") || b.node.tag.equals("mc-entity") || b.node.tag.equals("mc-scene")) {
+            } else if (isAtomicInline(b)) {
                 runs.add(new FlatRun(b, false, null, new ArrayList<>(parents)));
             } else {
                 parents.add(b);
@@ -195,134 +288,23 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
         }
     }
 
+    /** 中身を分割せず 1 つの塊として置くインライン要素。 */
+    private boolean isAtomicInline(LayoutBox b) {
+        if ("inline-block".equals(b.style.getOrDefault(CssProperty.DISPLAY, "block"))) return true;
+        String tag = b.node.tag;
+        return tag.equals("img") || tag.equals("input") || tag.equals("button")
+                || tag.equals("select") || tag.equals("progress")
+                || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("mc-scene");
+    }
+
     private void clearFragmentsRecursively(LayoutBox box) {
         box.inlineFragments.clear();
         for (LayoutBox child : box.children) clearFragmentsRecursively(child);
     }
 
-    private int layoutInlineContext(List<LayoutBox> inlines, int startX, int startY, int maxW, String textAlign, LayoutContext ctx) {
-        List<FlatRun> runs = new ArrayList<>();
-        flattenInlines(inlines, runs, new ArrayList<>());
-        for (LayoutBox inlineBox : inlines) clearFragmentsRecursively(inlineBox);
+    /** 行分割の結果 1 行。 */
+    private record InlineLine(List<LayoutBox.InlineFragment> fragments, int height) {}
 
-        int lineX = 0, lineY = startY, maxLineH = 0;
-        List<LayoutBox.InlineFragment> currentLine = new ArrayList<>();
-        List<List<LayoutBox.InlineFragment>> lines = new ArrayList<>();
-
-        for (FlatRun run : runs) {
-            float lh = parseLineHeight(run.box.style);
-            int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
-            for (LayoutBox p : run.inlineParents) {
-                decoT += p.pT + p.bT; decoB += p.pB + p.bB; decoL += p.pL + p.bL; decoR += p.pR + p.bR;
-            }
-
-            if (run.isText) {
-                String text = run.text;
-                boolean isBoldBox = isBold(run.box.style);
-
-                float scale = run.box.fontSize;
-                int fontH = (int) (16 * scale), runH = (int) (fontH * lh), totalRunH = runH + decoT + decoB;
-
-                String[] words = text.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
-                lineX += decoL;
-
-                for (String rawWord : words) {
-                    if (rawWord.isEmpty()) continue;
-                    int wordW = ctx.fontMetrics().getDisplayWidth(rawWord, scale, isBoldBox);
-
-                    if (lineX + wordW + decoR > maxW + 4 && lineX > decoL && !rawWord.trim().isEmpty()) {
-                        lines.add(currentLine);
-                        lineY += maxLineH > 0 ? maxLineH : totalRunH;
-                        currentLine = new ArrayList<>();
-                        lineX = decoL;
-                        maxLineH = 0;
-                    }
-                    LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(run.box, lineX, decoT, wordW, runH, rawWord);
-                    frag.parents = run.inlineParents;
-                    currentLine.add(frag);
-                    lineX += wordW;
-                    maxLineH = Math.max(maxLineH, totalRunH);
-                }
-                lineX += decoR;
-            } else if ("\n".equals(run.text)) {
-                lines.add(currentLine);
-                lineY += maxLineH > 0 ? maxLineH : (int) (16 * run.box.fontSize * lh);
-                currentLine = new ArrayList<>();
-                lineX = 0;
-                maxLineH = 0;
-            } else {
-                int boxOuterW = run.box.w + run.box.mL + run.box.mR, boxOuterH = run.box.h + run.box.mT + run.box.mB;
-                if (lineX + boxOuterW > maxW + 4 && lineX > 0) {
-                    lines.add(currentLine);
-                    lineY += maxLineH > 0 ? maxLineH : boxOuterH;
-                    currentLine = new ArrayList<>();
-                    lineX = 0;
-                    maxLineH = 0;
-                }
-                LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(run.box, lineX + run.box.mL, 0, run.box.w, run.box.h, null);
-                frag.parents = run.inlineParents;
-                currentLine.add(frag);
-                lineX += boxOuterW;
-                maxLineH = Math.max(maxLineH, boxOuterH);
-            }
-        }
-        if (!currentLine.isEmpty()) {
-            lines.add(currentLine);
-            lineY += maxLineH;
-        }
-
-        int currentDrawY = startY;
-        for (List<LayoutBox.InlineFragment> line : lines) {
-            int lineMaxH = 0;
-            for (LayoutBox.InlineFragment f : line) {
-                int decoH = 0;
-                if (f.parents != null) for (LayoutBox p : f.parents) decoH += p.pT + p.bT + p.pB + p.bB;
-                lineMaxH = Math.max(lineMaxH, f.h + f.box.mT + f.box.mB + decoH);
-            }
-
-            int actualLineW = line.isEmpty() ? 0 : (line.getLast().x + line.getLast().w - line.getFirst().x);
-            int offsetX = startX;
-            if (textAlign.equals("center")) offsetX += Math.max(0, (maxW - actualLineW) / 2);
-            else if (textAlign.equals("right")) offsetX += Math.max(0, maxW - actualLineW);
-
-            for (LayoutBox.InlineFragment f : line) {
-                int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
-                if (f.parents != null) {
-                    for (LayoutBox p : f.parents) {
-                        decoT += p.pT + p.bT; decoB += p.pB + p.bB; decoL += p.pL + p.bL; decoR += p.pR + p.bR;
-                    }
-                }
-                int outerH = f.h + f.box.mT + f.box.mB;
-                int offsetY = currentDrawY + Math.max(0, (lineMaxH - (outerH + decoT + decoB)) / 2);
-
-                f.x += offsetX;
-                f.y = offsetY + decoT + f.box.mT;
-                f.box.inlineFragments.add(f);
-
-                if (f.parents != null) {
-                    for (LayoutBox p : f.parents) {
-                        LayoutBox.InlineFragment pFrag = new LayoutBox.InlineFragment(p, f.x - decoL, offsetY, f.w + decoL + decoR, f.h + decoT + decoB, null);
-                        p.inlineFragments.add(pFrag);
-                    }
-                }
-                if (!f.isText()) f.box.layout(f.x, f.y - f.box.mT, f.w, f.h, ctx);
-            }
-            currentDrawY += lineMaxH;
-        }
-        return currentDrawY;
-    }
-
-    private static class FlatRun {
-        LayoutBox box;
-        boolean isText;
-        String text;
-        List<LayoutBox> inlineParents;
-
-        public FlatRun(LayoutBox box, boolean isText, String text, List<LayoutBox> inlineParents) {
-            this.box = box;
-            this.isText = isText;
-            this.text = text;
-            this.inlineParents = inlineParents;
-        }
-    }
+    /** 入れ子のインライン要素を平坦化した 1 要素（テキスト / 改行 / 不可分なインラインボックス）。 */
+    private record FlatRun(LayoutBox box, boolean isText, String text, List<LayoutBox> inlineParents) {}
 }

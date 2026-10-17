@@ -377,7 +377,7 @@ public class WebHudRenderer {
             UIParser.Document doc = ClientWebManager.getDocument(screenKey);
             if (doc != null) {
                 com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
-                Map<String, String> rawStyle = styleSet.computeCurrentState(false, false, false);
+                Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
                 com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
 
                 LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
@@ -386,7 +386,7 @@ public class WebHudRenderer {
                 com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
                 com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
                 com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
-                        viewport, LayoutBox.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
+                        viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
                 com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
 
                 layoutBox.measure(1000, 1000, fmtCtx, ctx);
@@ -588,8 +588,8 @@ public class WebHudRenderer {
         for (HtmlNode child : node.children) {
             if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
 
-            com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.getRawMap(), sheet);
-            Map<String, String> rawStyle = styleSet.computeCurrentState(false, false, false);
+            com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
+            Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
             com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, sheet, null);
 
             LayoutBox childBox = new LayoutBox(child, computed);

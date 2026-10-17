@@ -1,47 +1,101 @@
 package com.nishiyu.enderframelib.core.css;
 
+/**
+ * CSS プロパティ名の定数。
+ *
+ * 以前は同じプロパティ名の文字列リテラルがレイアウト・レンダラ・パーサに散っていて
+ * （"display" 25 箇所、"height" 29 箇所…）、綴り間違いが黙って無視される no-op になっていた。
+ * 算出スタイルへのアクセスはすべてこの定数を経由する。
+ */
 public final class CssProperty {
-    public static final String DISPLAY = "display";
-    public static final String WIDTH = "width";
-    public static final String HEIGHT = "height";
-    public static final String MIN_WIDTH = "min-width";
-    public static final String MAX_WIDTH = "max-width";
-    public static final String MIN_HEIGHT = "min-height";
-    public static final String MAX_HEIGHT = "max-height";
-    public static final String POSITION = "position";
-    public static final String TOP = "top";
-    public static final String RIGHT = "right";
-    public static final String BOTTOM = "bottom";
-    public static final String LEFT = "left";
-    public static final String MARGIN = "margin";
-    public static final String MARGIN_TOP = "margin-top";
-    public static final String MARGIN_RIGHT = "margin-right";
-    public static final String MARGIN_BOTTOM = "margin-bottom";
-    public static final String MARGIN_LEFT = "margin-left";
-    public static final String PADDING = "padding";
-    public static final String PADDING_TOP = "padding-top";
-    public static final String PADDING_RIGHT = "padding-right";
-    public static final String PADDING_BOTTOM = "padding-bottom";
-    public static final String PADDING_LEFT = "padding-left";
-    public static final String BORDER = "border";
-    public static final String BORDER_WIDTH = "border-width";
-    public static final String BORDER_TOP_WIDTH = "border-top-width";
-    public static final String BORDER_RIGHT_WIDTH = "border-right-width";
-    public static final String BORDER_BOTTOM_WIDTH = "border-bottom-width";
-    public static final String BORDER_LEFT_WIDTH = "border-left-width";
-    public static final String COLOR = "color";
+
+    public static final String ALIGN_ITEMS = "align-items";
+    public static final String ALIGN_SELF = "align-self";
+    public static final String ANIMATION = "animation";
+    public static final String ASPECT_RATIO = "aspect-ratio";
+    public static final String BACKGROUND = "background";
     public static final String BACKGROUND_COLOR = "background-color";
-    public static final String FONT_SIZE = "font-size";
-    public static final String FONT_WEIGHT = "font-weight";
-    public static final String LINE_HEIGHT = "line-height";
+    public static final String BORDER = "border";
+    public static final String BORDER_BOTTOM = "border-bottom";
+    public static final String BORDER_BOTTOM_WIDTH = "border-bottom-width";
+    public static final String BORDER_LEFT = "border-left";
+    public static final String BORDER_LEFT_WIDTH = "border-left-width";
+    public static final String BORDER_RADIUS = "border-radius";
+    public static final String BORDER_RIGHT = "border-right";
+    public static final String BORDER_RIGHT_WIDTH = "border-right-width";
+    public static final String BORDER_TOP = "border-top";
+    public static final String BORDER_TOP_WIDTH = "border-top-width";
+    public static final String BORDER_WIDTH = "border-width";
+    public static final String BOTTOM = "bottom";
+    public static final String BOX_SHADOW = "box-shadow";
+    public static final String BOX_SIZING = "box-sizing";
+    public static final String COLOR = "color";
+    public static final String COLUMN_GAP = "column-gap";
+    public static final String CONTENT = "content";
+    public static final String CURSOR = "cursor";
+    public static final String DIRECTION = "direction";
+    public static final String DISPLAY = "display";
     public static final String FLEX = "flex";
+    public static final String FLEX_BASIS = "flex-basis";
+    public static final String FLEX_DIRECTION = "flex-direction";
     public static final String FLEX_GROW = "flex-grow";
     public static final String FLEX_SHRINK = "flex-shrink";
-    public static final String FLEX_BASIS = "flex-basis";
+    public static final String FLEX_WRAP = "flex-wrap";
+    public static final String FONT_FAMILY = "font-family";
+    public static final String FONT_SIZE = "font-size";
+    public static final String FONT_STYLE = "font-style";
+    public static final String FONT_WEIGHT = "font-weight";
     public static final String GAP = "gap";
-    public static final String ASPECT_RATIO = "aspect-ratio";
-    public static final String BOX_SIZING = "box-sizing";
+    public static final String GRID_COLUMN = "grid-column";
+    public static final String GRID_COLUMN_GAP = "grid-column-gap";
+    public static final String GRID_GAP = "grid-gap";
+    public static final String GRID_ROW = "grid-row";
+    public static final String GRID_ROW_GAP = "grid-row-gap";
+    public static final String GRID_TEMPLATE_COLUMNS = "grid-template-columns";
+    public static final String GRID_TEMPLATE_ROWS = "grid-template-rows";
+    public static final String HEIGHT = "height";
+    public static final String JUSTIFY_CONTENT = "justify-content";
+    public static final String LEFT = "left";
+    public static final String LETTER_SPACING = "letter-spacing";
+    public static final String LINE_HEIGHT = "line-height";
+    public static final String MARGIN = "margin";
+    public static final String MARGIN_BOTTOM = "margin-bottom";
+    public static final String MARGIN_LEFT = "margin-left";
+    public static final String MARGIN_RIGHT = "margin-right";
+    public static final String MARGIN_TOP = "margin-top";
+    public static final String MAX_HEIGHT = "max-height";
+    public static final String MAX_WIDTH = "max-width";
+    public static final String MIN_HEIGHT = "min-height";
+    public static final String MIN_WIDTH = "min-width";
+    public static final String OBJECT_FIT = "object-fit";
+    public static final String OPACITY = "opacity";
+    public static final String OVERFLOW = "overflow";
+    public static final String OVERFLOW_X = "overflow-x";
+    public static final String OVERFLOW_Y = "overflow-y";
+    public static final String PADDING = "padding";
+    public static final String PADDING_BOTTOM = "padding-bottom";
+    public static final String PADDING_LEFT = "padding-left";
+    public static final String PADDING_RIGHT = "padding-right";
+    public static final String PADDING_TOP = "padding-top";
+    public static final String POSITION = "position";
+    public static final String RIGHT = "right";
+    public static final String ROW_GAP = "row-gap";
+    public static final String SCROLLBAR_WIDTH = "scrollbar-width";
+    public static final String SRC = "src";
+    public static final String TEXT_ALIGN = "text-align";
+    public static final String TEXT_DECORATION = "text-decoration";
+    public static final String TEXT_SHADOW = "text-shadow";
+    public static final String TEXT_TRANSFORM = "text-transform";
+    public static final String TOP = "top";
+    public static final String TRANSFORM = "transform";
+    public static final String TRANSFORM_ORIGIN = "transform-origin";
+    public static final String TRANSITION = "transition";
+    public static final String TRANSITION_DELAY = "transition-delay";
+    public static final String TRANSITION_TIMING_FUNCTION = "transition-timing-function";
+    public static final String VISIBILITY = "visibility";
+    public static final String WHITE_SPACE = "white-space";
+    public static final String WIDTH = "width";
     public static final String Z_INDEX = "z-index";
 
-    private CssProperty() {} // Prevent instantiation
+    private CssProperty() {}
 }

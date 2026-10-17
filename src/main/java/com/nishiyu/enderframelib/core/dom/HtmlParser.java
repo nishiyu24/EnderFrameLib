@@ -36,6 +36,8 @@ public class HtmlParser {
             if (token.type == HtmlTokenizer.Token.Type.START_TAG) {
                 if (stack.size() > MAX_DEPTH) continue;
 
+                closeImpliedElements(stack, token.name);
+
                 HtmlNode node = new HtmlNode(NodeType.ELEMENT, token.name);
                 node.parent = stack.peek();
 
@@ -111,5 +113,36 @@ public class HtmlParser {
             }
         }
         return root;
+    }
+
+    /** {@code <p>} を暗黙に閉じる開始タグ（HTML の仕様に沿った最小限の集合）。 */
+    private static final Set<String> CLOSES_PARAGRAPH = Set.of(
+            "p", "div", "section", "article", "header", "footer", "main", "nav", "aside",
+            "ul", "ol", "li", "dl", "table", "blockquote", "pre", "hr", "form", "fieldset",
+            "h1", "h2", "h3", "h4", "h5", "h6", "details", "figure", "address");
+
+    /**
+     * 閉じタグが省略された {@code <p>} / {@code <li>} を、次の開始タグが来た時点で閉じる。
+     *
+     * これが無いと {@code <li>a<li>b} が入れ子のリストになり、
+     * 1 つ目の項目の中に 2 つ目が入ってしまう。
+     */
+    private static void closeImpliedElements(Stack<HtmlNode> stack, String startingTag) {
+        String tag = startingTag.toLowerCase();
+
+        // <li> は、同じリスト内の次の <li> が始まったら閉じる
+        if (tag.equals("li")) {
+            if (stack.size() > 1 && "li".equals(stack.peek().tag)) stack.pop();
+            return;
+        }
+        // <dt>/<dd> も同様に兄弟同士で閉じ合う
+        if (tag.equals("dt") || tag.equals("dd")) {
+            if (stack.size() > 1 && ("dt".equals(stack.peek().tag) || "dd".equals(stack.peek().tag))) stack.pop();
+            return;
+        }
+        // <p> はブロック要素の開始で閉じる
+        if (CLOSES_PARAGRAPH.contains(tag)) {
+            while (stack.size() > 1 && "p".equals(stack.peek().tag)) stack.pop();
+        }
     }
 }

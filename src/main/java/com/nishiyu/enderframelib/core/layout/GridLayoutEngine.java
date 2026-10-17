@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.LengthResolver;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,6 +41,17 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         });
     }
 
+    /** "2fr" の係数。単位だけ・不正値は 1fr として扱う。 */
+    private static float parseFr(String def) {
+        String num = def.substring(0, def.length() - 2).trim();
+        if (num.isEmpty()) return 1f;
+        try {
+            return Float.parseFloat(num);
+        } catch (NumberFormatException e) {
+            return 1f;
+        }
+    }
+
     private int parseGridLine(String val) {
         try { return Integer.parseInt(val.replaceAll("[^0-9-]", "")); } catch (Exception e) { return 1; }
     }
@@ -65,7 +78,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         int rootW = ctx.viewport().rootW();
         int rootH = ctx.viewport().rootH();
 
-        String gridCols = expandRepeat(box.style.getOrDefault("grid-template-columns", "1fr"));
+        String gridCols = expandRepeat(box.style.getOrDefault(CssProperty.GRID_TEMPLATE_COLUMNS, "1fr"));
         String[] colDefs = gridCols.split("\\s+");
         gs.colsCount = Math.max(1, colDefs.length);
         gs.colWidths = new float[gs.colsCount];
@@ -73,18 +86,17 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         int fixedW = 0;
         for (int i = 0; i < gs.colsCount; i++) {
             if (colDefs[i].endsWith("fr")) {
-                try { totalFr += Float.parseFloat(colDefs[i].replace("fr", "")); } catch (Exception ignored) {}
+                totalFr += parseFr(colDefs[i]);
             } else {
-                gs.colWidths[i] = com.nishiyu.enderframelib.core.css.LengthResolver.parseDim(colDefs[i], tentativeInnerW, rootW, rootH, box.fontSize * 16.0f, 16.0f);
+                gs.colWidths[i] = LengthResolver.parseDim(colDefs[i], tentativeInnerW, rootW, rootH,
+                        box.fontSize * LayoutMetrics.BASE_FONT_SIZE, LayoutMetrics.BASE_FONT_SIZE);
                 fixedW = (int) (fixedW + gs.colWidths[i]);
             }
         }
         int availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.columnGap - fixedW);
         for (int i = 0; i < gs.colsCount; i++) {
             if (colDefs[i].endsWith("fr") && totalFr > 0) {
-                float frVal = 1f;
-                try { frVal = Float.parseFloat(colDefs[i].replace("fr", "")); } catch (Exception ignored) {}
-                gs.colWidths[i] = availableW * (frVal / totalFr);
+                gs.colWidths[i] = availableW * (parseFr(colDefs[i]) / totalFr);
             }
         }
 
@@ -97,7 +109,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             GridItem item = new GridItem();
             item.box = child;
 
-            String gc = child.style.get("grid-column");
+            String gc = child.style.get(CssProperty.GRID_COLUMN);
             item.colSpan = 1; item.colStart = -1;
             if (gc != null) {
                 if (gc.contains("/")) {
@@ -114,7 +126,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             }
             item.colSpan = Math.min(item.colSpan, gs.colsCount);
 
-            String gr = child.style.get("grid-row");
+            String gr = child.style.get(CssProperty.GRID_ROW);
             item.rowSpan = 1; item.rowStart = -1;
             if (gr != null) {
                 if (gr.contains("/")) {
@@ -193,13 +205,14 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         int rootW = ctx.viewport().rootW();
         int rootH = ctx.viewport().rootH();
 
-        String gridRows = expandRepeat(box.style.getOrDefault("grid-template-rows", ""));
+        String gridRows = expandRepeat(box.style.getOrDefault(CssProperty.GRID_TEMPLATE_ROWS, ""));
         String[] rowDefs = gridRows.isEmpty() ? new String[0] : gridRows.split("\\s+");
         gs.rowHeights = new float[gs.rowsCount];
 
         for (int r = 0; r < gs.rowsCount; r++) {
             if (r < rowDefs.length && !"auto".equals(rowDefs[r]) && !rowDefs[r].endsWith("fr")) {
-                gs.rowHeights[r] = com.nishiyu.enderframelib.core.css.LengthResolver.parseDim(rowDefs[r], parentH, rootW, rootH, box.fontSize * 16f, 16f);
+                gs.rowHeights[r] = LengthResolver.parseDim(rowDefs[r], parentH, rootW, rootH,
+                        box.fontSize * LayoutMetrics.BASE_FONT_SIZE, LayoutMetrics.BASE_FONT_SIZE);
             } else {
                 float maxH = 0;
                 for (GridItem item : gs.items) {
@@ -210,7 +223,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             }
         }
 
-        String align = box.style.getOrDefault("align-items", "stretch");
+        String align = box.style.getOrDefault(CssProperty.ALIGN_ITEMS, "stretch");
         if ("stretch".equals(align)) {
             for (GridItem item : gs.items) {
                 float childGridH = 0;
@@ -220,14 +233,14 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
                 childGridH += Math.max(0, item.rowSpan - 1) * box.rowGap;
 
                 int targetH = (int) childGridH - item.box.mT - item.box.mB;
-                if (item.box.h < targetH && !item.box.style.containsKey("height")) {
+                if (item.box.h < targetH && !item.box.style.containsKey(CssProperty.HEIGHT)) {
                     item.box.h = Math.max(0, targetH);
                     item.box.resolveFlexibleHeights(parentH, new FormattingContext("grid", align, false), ctx);
                 }
             }
         }
 
-        if (!box.style.containsKey("height") || "auto".equals(box.style.getOrDefault("height", "auto").trim())) {
+        if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto").trim())) {
             int totalH = 0;
             for (GridItem item : gs.items) {
                 float itemY = item.box.mT + item.box.mB + item.box.h;
@@ -237,13 +250,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             box.h = Math.max(box.h, totalH + box.verticalDecoration());
         }
 
-        int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
-        int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
-        for (LayoutBox child : box.children) {
-            if (child.isAbsolute && !isDisplayNone(child.style)) {
-                child.measure(actualInnerW, actualInnerH, new FormattingContext("block", "stretch", false), ctx);
-            }
-        }
+        measureAbsoluteChildren(box, ctx);
     }
 
     @Override
