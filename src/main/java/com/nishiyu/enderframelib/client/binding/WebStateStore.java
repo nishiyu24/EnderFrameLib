@@ -204,7 +204,6 @@ public class WebStateStore {
             String resolved = replacePlaceholdersWithData(rawText, scopeData);
             if (!Objects.equals(resolved, vNode.text)) {
                 vNode.text = resolved;
-                vNode.markDirty();
                 changed = true;
             }
         }
@@ -302,7 +301,7 @@ public class WebStateStore {
         if (vNode.attrs.containsKey("data-show")) {
             Boolean visibleObj = evaluateCondition(vNode.attrs.get("data-show").trim(), scopeData);
             if (visibleObj != null) {
-                String origDisp = originalShowDisplay.computeIfAbsent(vNode.id, id ->
+                String origDisp = originalShowDisplay.computeIfAbsent(vNode.getId(), id ->
                         vNode.attrs.getOrDefault("data-orig-display", "flex"));
                 String targetDisp = visibleObj ? origDisp : "none";
                 String curStyle = vNode.attrs.getOrDefault("style", "");
@@ -355,12 +354,12 @@ public class WebStateStore {
         if (listKey != null && !listKey.isEmpty()) {
             if (lists.containsKey(listKey)) {
                 List<Map<String, String>> itemDataList = lists.get(listKey);
-                List<Map<String, String>> lastList = lastRenderedLists.get(vNode.id);
+                List<Map<String, String>> lastList = lastRenderedLists.get(vNode.getId());
                 if (Objects.equals(itemDataList, lastList)) {
                     return changed;
                 }
 
-                List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.id, id -> extractTemplateChildren(origNode != null ? origNode : vNode));
+                List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.getId(), id -> extractTemplateChildren(origNode != null ? origNode : vNode));
                 if (!tmplNodes.isEmpty()) {
                     vNode.children.clear();
                     int idx = 0;
@@ -378,13 +377,11 @@ public class WebStateStore {
                             uniquifyIds(instance, idx);
                             applyRecursive(instance.cloneNode(), instance, merged);
                             instance.parent = vNode;
-                            instance.isDirty = true;
                             vNode.children.add(instance);
                         }
                         idx++;
                     }
-                    lastRenderedLists.put(vNode.id, new ArrayList<>(itemDataList));
-                    vNode.markDirty();
+                    lastRenderedLists.put(vNode.getId(), new ArrayList<>(itemDataList));
                     return true;
                 }
             }
@@ -417,9 +414,6 @@ public class WebStateStore {
         return extracted;
     }
 
-    /**
-     * 条件式（例: "isActive", "!isLocked", "energy > 0", "mode == 'auto'"）を評価する共通メソッド。
-     */
     public static Boolean evaluateCondition(String expr, Map<String, String> scopeData) {
         if (expr == null || expr.isEmpty()) return null;
         Matcher cm = COMPARE_EXPR_PATTERN.matcher(expr);
@@ -465,16 +459,12 @@ public class WebStateStore {
     }
 
     private static void uniquifyIds(HtmlNode node, int index) {
-        if (node.id != null && !node.id.isEmpty()) {
-            node.id = node.id + "_row_" + index;
-            node.attrs.put("id", node.id);
+        if (!node.getId().isEmpty()) {
+            node.setId(node.getId() + "_row_" + index);
         }
         for (HtmlNode child : node.children) uniquifyIds(child, index);
     }
 
-    /**
-     * {{key}} や {{ 'key' | i18n }}、{{ i18n:key }} を解決する共通ユーティリティ
-     */
     public static String replacePlaceholdersWithData(String text, Map<String, String> data) {
         if (text == null || !text.contains("{{")) return text != null ? text : "";
         Matcher m = PLACEHOLDER_PATTERN.matcher(text);

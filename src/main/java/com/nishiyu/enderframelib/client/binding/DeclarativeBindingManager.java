@@ -27,7 +27,7 @@ public class DeclarativeBindingManager {
                 path = parts[1].trim();
             }
             String channel = resolveChannel(rootNode, path);
-            ClientPubSubManager.registerDataBinding(sessionId, rootNode.id, channel, path, targetAttr);
+            ClientPubSubManager.registerDataBinding(sessionId, rootNode.getId(), channel, path, targetAttr);
             ClientPubSubManager.requestSubscribe(sessionId, channel);
         }
 
@@ -40,7 +40,7 @@ public class DeclarativeBindingManager {
                 int itemH = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-height", "36"));
                 String channel = resolveChannel(rootNode, listPath);
                 String templateHtml = serializeToSimpleHtml(templateNode);
-                ClientPubSubManager.registerVirtualList(sessionId, rootNode.id, channel, templateHtml, itemW, itemH);
+                ClientPubSubManager.registerVirtualList(sessionId, rootNode.getId(), channel, templateHtml, itemW, itemH);
                 ClientPubSubManager.requestSubscribe(sessionId, channel);
             }
         }
@@ -52,7 +52,7 @@ public class DeclarativeBindingManager {
                 String[] nbtKeys = rootNode.attrs.get("data-hud-require-nbt").split(",");
                 for (String key : nbtKeys) requireNbt.add(key.trim());
             }
-            hudCallback.registerHudTemplate(sessionId, rootNode.id, origDisplay, rootNode, requireNbt);
+            hudCallback.registerHudTemplate(sessionId, rootNode.getId(), origDisplay, rootNode, requireNbt);
         }
 
         if (rootNode.attrs.containsKey("data-tracker") && hudCallback != null) {

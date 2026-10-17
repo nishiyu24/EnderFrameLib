@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.HashMap;
 
 /**
  * 仮想DOMツリー(virtualNode)の変更を、実DOMツリー(realNode)に差分適用するエンジン
@@ -33,9 +34,6 @@ public class DomDiffEngine {
             String key = it.next();
             if (!virtualNode.attrs.containsKey(key)) {
                 it.remove();
-                if (key.equals("class")) realNode.classes.clear();
-                if (key.equals("hover")) realNode.isHovered = false;
-                if (key.equals("checked")) realNode.isChecked = false;
                 changed = true;
             }
         }
@@ -45,69 +43,78 @@ public class DomDiffEngine {
             String rVal = realNode.attrs.get(key);
             if (!Objects.equals(rVal, vVal)) {
                 realNode.attrs.put(key, vVal);
-                if (key.equals("id")) realNode.id = vVal;
-                if (key.equals("class")) {
-                    realNode.classes.clear();
-                    if (vVal != null && !vVal.trim().isEmpty()) {
-                        realNode.classes.addAll(Arrays.asList(vVal.trim().split("\\s+")));
-                    }
-                }
-                if (key.equals("hover")) realNode.isHovered = true;
-                if (key.equals("checked")) realNode.isChecked = true;
                 changed = true;
             }
         }
 
-        if (changed) {
-            realNode.isDirty = true;
+        // 3. 子要素(Children)のDiff (キーベース)
+
+        // 旧子要素のマップを作成 (ID をキーにする。IDがない場合はインデックスなどをフォールバックにするのも手ですが、今回は簡易化のためIDが存在する前提、または位置フォールバックを入れます)
+        Map<String, HtmlNode> realChildrenMap = new HashMap<>();
+        for (HtmlNode child : realNode.children) {
+            String id = child.getId();
+            if (!id.isEmpty()) {
+                realChildrenMap.put(id, child);
+            }
         }
 
-        // 3. 子要素(Children)のDiff
-        int minSize = Math.min(realNode.children.size(), virtualNode.children.size());
-        boolean siblingDirty = false;
-
-        for (int i = 0; i < minSize; i++) {
-            HtmlNode rChild = realNode.children.get(i);
+        // 新しい子要素リストを構築
+        boolean childrenChanged = false;
+        for (int i = 0; i < virtualNode.children.size(); i++) {
             HtmlNode vChild = virtualNode.children.get(i);
+            String vId = vChild.getId();
 
-            if (!rChild.tag.equals(vChild.tag)) {
+            // 現在のインデックスにある実ノードを取得
+            HtmlNode currentRChild = (i < realNode.children.size()) ? realNode.children.get(i) : null;
+
+            HtmlNode rChildToUse = null;
+
+            // IDが一致するものをマップから探す（キーベース照合）
+            if (!vId.isEmpty() && realChildrenMap.containsKey(vId)) {
+                rChildToUse = realChildrenMap.get(vId);
+                // 場所が違えば移動してきた
+                if (currentRChild != rChildToUse) {
+                    childrenChanged = true;
+                }
+            } else if (currentRChild != null && currentRChild.tag.equals(vChild.tag) && currentRChild.getId().equals(vId)) {
+                // マップで見つからなくても、現在の位置のものが一致すればそのまま使う
+                rChildToUse = currentRChild;
+            }
+
+            // 見つからなかった、またはタグが違う場合は新しくクローン
+            if (rChildToUse == null || !rChildToUse.tag.equals(vChild.tag)) {
                 HtmlNode newRealChild = vChild.cloneNode();
                 newRealChild.parent = realNode;
-                newRealChild.isDirty = true;
-                realNode.children.set(i, newRealChild);
+
+                // リストに挿入/追加
+                if (i < realNode.children.size()) {
+                    realNode.children.add(i, newRealChild);
+                } else {
+                    realNode.children.add(newRealChild);
+                }
                 changed = true;
-                siblingDirty = true;
+                childrenChanged = true;
             } else {
-                if (siblingDirty) rChild.isDirty = true;
-                if (diffAndPatch(rChild, vChild)) {
+                // 既存ノードを再利用してパッチ
+                if (diffAndPatch(rChildToUse, vChild)) {
                     changed = true;
-                    siblingDirty = true;
+                }
+                // もし位置がずれていたらリスト上で移動
+                if (currentRChild != rChildToUse) {
+                    realNode.children.remove(rChildToUse);
+                    realNode.children.add(i, rChildToUse);
+                    changed = true;
                 }
             }
         }
 
-        // 超過分の削除
-        if (realNode.children.size() > virtualNode.children.size()) {
-            while (realNode.children.size() > virtualNode.children.size()) {
-                realNode.children.removeLast();
-                changed = true;
-            }
-        }
-        // 不足分の追加
-        else if (realNode.children.size() < virtualNode.children.size()) {
-            for (int i = minSize; i < virtualNode.children.size(); i++) {
-                HtmlNode newRealChild = virtualNode.children.get(i).cloneNode();
-                newRealChild.parent = realNode;
-                newRealChild.isDirty = true;
-                realNode.children.add(newRealChild);
-                changed = true;
-            }
+        // 超過分の削除（不要になったノードを刈り取る）
+        while (realNode.children.size() > virtualNode.children.size()) {
+            HtmlNode removed = realNode.children.removeLast();
+            removed.parent = null; // C-4: 削除時に親ポインタをクリア
+            changed = true;
         }
 
-        if (changed) {
-            realNode.isDirty = true;
-        }
-
-        return changed;
+        return changed || childrenChanged;
     }
 }

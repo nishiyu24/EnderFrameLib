@@ -75,9 +75,14 @@ configurations {
 }
 
 dependencies {
-    // 動画再生(ClientMediaManager)のネイティブAPI呼び出しに必要なJNAライブラリ
     implementation 'net.java.dev.jna:jna:5.14.0'
     implementation 'net.java.dev.jna:jna-platform:5.14.0'
+
+    // core/ は slf4j でログを出すため、ヘッドレステストの実行にも必要
+    testImplementation 'org.slf4j:slf4j-api:2.0.18'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
@@ -122,4 +127,9 @@ idea {
         downloadSources = true
         downloadJavadoc = true
     }
+}
+
+// --- 追加: JUnitを実行するための設定 ---
+tasks.named('test', Test) {
+    useJUnitPlatform()
 }

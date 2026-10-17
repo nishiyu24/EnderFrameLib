@@ -11,6 +11,9 @@ public class ServerImageRegistry {
     // WeakReferenceを使用して、参照先が破棄されたら自動的に回収されるように変更
     private static final List<WeakReference<Runnable>> REFLOW_LISTENERS = new CopyOnWriteArrayList<>();
 
+    // --- 追加: LayoutBoxに渡すためのアダプタ ---
+    public static final com.nishiyu.enderframelib.core.layout.IntrinsicSizeResolver RESOLVER_ADAPTER = ServerImageRegistry::getSize;
+
     public static void setSize(String url, int width, int height) {
         int[] existing = SIZES.get(url);
         // 既に同じサイズで登録済みなら無視（無限ループ防止）

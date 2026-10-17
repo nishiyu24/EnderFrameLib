@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.binding.WebStateStore;
+import com.nishiyu.enderframelib.client.binding.WebStateStore; // ★これが必須です
 import com.nishiyu.enderframelib.client.compat.WebRecipeViewerBridge;
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
@@ -31,11 +31,6 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Consumer;
 
-/**
- * WebStateStore、ラムダ式イベントルーター、<textarea> マルチライン編集、<canvas>、<mc-scene> 3D操作、
- * <select> ドロップダウン、ドラッグ＆ドロップ、バニラ Slot スケーリング完全同期、
- * 1行サーバーRPC送信、JEI/EMI連携ヘルパー、F12 DevTools、F5 ホットリロードを標準内蔵したコンテナ画面基底クラス。
- */
 public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu> extends AbstractContainerScreen<T> {
 
     protected final String sessionId;
@@ -53,11 +48,9 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     protected String hoveredId = "";
     private boolean inScaledSuperRender = false;
 
-    // DevTools (F12 インスペクタ & F5 ホットリロード)
     protected boolean devToolsEnabled = false;
     protected ResourceLocation htmlResourceLocation = null;
 
-    // バニラ Slot.x / Slot.y リフレクションキャッシュ
     private static Field slotXField;
     private static Field slotYField;
     static {
@@ -179,7 +172,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         return WebRecipeViewerBridge.getExclusionZones(this);
     }
 
-    public List<WebRecipeViewerBridge.GhostDropTarget> getWebGhostTargets() {
+    public List<WebRecipeViewerBridge.GhostDropTarget> getGhostTargets() {
         return WebRecipeViewerBridge.getGhostTargets(this);
     }
 
@@ -252,7 +245,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
             Slot slot = this.menu.slots.get(slotIdx);
             HtmlNode node = entry.getValue();
-            UIElement anchor = nodeElements.get(node.id);
+            UIElement anchor = nodeElements.get(node.getId());
 
             if (anchor != null && anchor.width() > 0 && anchor.height() > 0 && isNodeVisibleInDom(node)) {
                 int targetX = Math.round(anchor.x() + (anchor.width() - 16.0f) / 2.0f);
@@ -290,7 +283,6 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             }
             String style = cur.attrs.getOrDefault("style", "");
             if (style.replaceAll("\\s+", "").toLowerCase().contains("display:none")) return false;
-            if (cur.computedStyle != null && "none".equalsIgnoreCase(cur.computedStyle.get("display"))) return false;
             cur = cur.parent;
         }
         return true;

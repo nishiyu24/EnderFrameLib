@@ -1,22 +1,25 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.common.ServerImageRegistry;
-import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.text.TextMetrics;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public class LayoutBox {
-    public HtmlNode node;
-    public Map<String, String> style;
-    public List<LayoutBox> children = new ArrayList<>();
+
+    // ServerImageRegistryへの依存を切り離すためのフック
+    public static IntrinsicSizeResolver intrinsicSizeResolver = null;
+
+    public final HtmlNode node;
+    public final ComputedStyle style;
+    public final List<LayoutBox> children = new ArrayList<>();
     public int x, y, w, h;
     public String displayText = "";
 
-    public int mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL, gap;
+    public int mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
+    /** row-gap: 行（ブロック方向）の間隔 / column-gap: 列（インライン方向）の間隔 */
+    public int rowGap, columnGap;
     public boolean isAbsolute = false, isFixed = false, isRelative = false;
     public int zIndex = 0;
     public float fontSize = 1.0f;
@@ -24,8 +27,12 @@ public class LayoutBox {
 
     public List<InlineFragment> inlineFragments = new ArrayList<>();
     public Object engineState;
+    public SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
 
-    public LayoutBox(HtmlNode node, Map<String, String> style, Map<String, String> env) {
+    public int scrollWidth = 0;
+    public int scrollHeight = 0;
+
+    public LayoutBox(HtmlNode node, ComputedStyle style) {
         this.node = node;
         this.style = style;
 
@@ -36,9 +43,9 @@ public class LayoutBox {
         this.displayText = t != null ? t : "";
 
         String pos = style.getOrDefault("position", "static");
-        this.isFixed = pos.equals("fixed");
-        this.isAbsolute = pos.equals("absolute") || this.isFixed;
-        this.isRelative = pos.equals("relative");
+        this.isFixed = "fixed".equals(pos);
+        this.isAbsolute = "absolute".equals(pos) || this.isFixed;
+        this.isRelative = "relative".equals(pos);
         try {
             if (style.containsKey("z-index")) this.zIndex = Integer.parseInt(style.get("z-index"));
         } catch (Exception ignored) {}
@@ -50,17 +57,19 @@ public class LayoutBox {
     public List<LayoutBox> getFlowChildren() {
         List<LayoutBox> list = new ArrayList<>();
         for (LayoutBox c : children) {
-            if (!c.isAbsolute && !c.style.getOrDefault("display", "block").equals("none")) {
+            if (!c.isAbsolute && !"none".equals(c.style.getOrDefault("display", "block"))) {
                 list.add(c);
             }
         }
         return list;
     }
 
-    public int getMinContentWidth() {
-        if (style.containsKey("min-width")) return CssParser.parseDim(style.get("min-width"), 9999, 1920, 1080);
+    public int getMinContentWidth(LayoutContext ctx) {
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
 
-        // ★ Web標準の置換要素（input/button/select 等）の最小幅(Intrinsic Width)を保証し、潰れを防ぐ
+        if (style.containsKey("min-width")) return style.length("min-width", 9999, rootW, rootH);
+
         if (node.tag.equals("input") || node.tag.equals("select") || node.tag.equals("button") || node.tag.equals("progress")) {
             int inputW = 90;
             String type = node.attrs.getOrDefault("type", "text");
@@ -73,12 +82,11 @@ public class LayoutBox {
 
         if (node.tag.equals("#text")) {
             int maxWordW = 0;
-            String text = this.displayText;
             boolean bold = style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900");
-            String[] words = text.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
+            String[] words = this.displayText.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
             for (String word : words) {
                 if (!word.trim().isEmpty()) {
-                    maxWordW = Math.max(maxWordW, TextMetrics.getDisplayWidth(bold ? ("§l" + word) : word, this.fontSize));
+                    maxWordW = Math.max(maxWordW, ctx.fontMetrics().getDisplayWidth(word, this.fontSize, bold));
                 }
             }
             return maxWordW;
@@ -87,7 +95,7 @@ public class LayoutBox {
         } else {
             int max = 0;
             for (LayoutBox c : getFlowChildren()) {
-                max = Math.max(max, c.getMinContentWidth() + c.mL + c.mR);
+                max = Math.max(max, c.getMinContentWidth(ctx) + c.mL + c.mR);
             }
             return max + horizontalDecoration();
         }
@@ -103,147 +111,123 @@ public class LayoutBox {
         }
     }
 
-    public void computeSize(int parentW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
-        if (style.getOrDefault("display", "block").equals("none")) {
+    public void measure(int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+        if ("none".equals(style.getOrDefault("display", "block"))) {
             this.w = 0;
             this.h = 0;
             return;
         }
+
+        int parentW = tentativeInnerW;
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
+
         if (this.isFixed) {
             parentW = rootW;
             parentH = rootH;
         }
 
-        if (style.containsKey("flex")) {
-            String flexStr = style.get("flex").trim();
-            if (flexStr.equals("auto")) {
-                style.putIfAbsent("flex-grow", "1");
-                style.putIfAbsent("flex-shrink", "1");
-                style.putIfAbsent("flex-basis", "auto");
-            } else if (flexStr.equals("none")) {
-                style.putIfAbsent("flex-grow", "0");
-                style.putIfAbsent("flex-shrink", "0");
-                style.putIfAbsent("flex-basis", "auto");
-            } else if (flexStr.matches("^[\\d.]+$")) {
-                style.putIfAbsent("flex-grow", flexStr);
-                style.putIfAbsent("flex-shrink", "1");
-                style.putIfAbsent("flex-basis", "auto");
-            } else {
-                String[] parts = flexStr.split("\\s+");
-                if (parts.length > 0) style.putIfAbsent("flex-grow", parts[0]);
-                if (parts.length > 1 && parts[1].matches("^[\\d.]+$")) style.putIfAbsent("flex-shrink", parts[1]);
-                if (parts.length > 2) style.putIfAbsent("flex-basis", parts[2]);
-                else if (parts.length == 2 && !parts[1].matches("^[\\d.]+$")) style.putIfAbsent("flex-basis", parts[1]);
-            }
-        }
-
-        String fs = style.getOrDefault("font-size", "1rem");
-        int fsPx = CssParser.parseDim(fs, parentW, rootW, rootH);
+        int fsPx = style.length("font-size", parentW, rootW, rootH);
         this.fontSize = (fsPx > 0) ? (fsPx / 16.0f) : 1.0f;
 
-        String[] mStr = CssParser.parseBoxEdgesStr(style.get("margin"));
-        this.mT = CssParser.parseDim(style.getOrDefault("margin-top", mStr[0]), parentH, rootW, rootH);
-        this.mB = CssParser.parseDim(style.getOrDefault("margin-bottom", mStr[2]), parentH, rootW, rootH);
-        String mLStr = style.getOrDefault("margin-left", mStr[3]), mRStr = style.getOrDefault("margin-right", mStr[1]);
-        boolean autoLeft = mLStr.equals("auto"), autoRight = mRStr.equals("auto");
-        this.mL = autoLeft ? 0 : CssParser.parseDim(mLStr, parentW, rootW, rootH);
-        this.mR = autoRight ? 0 : CssParser.parseDim(mRStr, parentW, rootW, rootH);
+        this.mT = style.length("margin-top", parentH, rootW, rootH);
+        this.mR = style.length("margin-right", parentW, rootW, rootH);
+        this.mB = style.length("margin-bottom", parentH, rootW, rootH);
+        this.mL = style.length("margin-left", parentW, rootW, rootH);
+        boolean autoLeft = "auto".equals(style.get("margin-left"));
+        boolean autoRight = "auto".equals(style.get("margin-right"));
 
-        String[] pStr = CssParser.parseBoxEdgesStr(style.get("padding"));
-        this.pT = CssParser.parseDim(style.getOrDefault("padding-top", pStr[0]), parentH, rootW, rootH);
-        this.pR = CssParser.parseDim(style.getOrDefault("padding-right", pStr[1]), parentW, rootW, rootH);
-        this.pB = CssParser.parseDim(style.getOrDefault("padding-bottom", pStr[2]), parentH, rootW, rootH);
-        this.pL = CssParser.parseDim(style.getOrDefault("padding-left", pStr[3]), parentW, rootW, rootH);
+        this.pT = style.length("padding-top", parentH, rootW, rootH);
+        this.pR = style.length("padding-right", parentW, rootW, rootH);
+        this.pB = style.length("padding-bottom", parentH, rootW, rootH);
+        this.pL = style.length("padding-left", parentW, rootW, rootH);
 
-        this.bT = CssParser.parseDim(style.getOrDefault("border-top-width", "0"), parentH, rootW, rootH);
-        this.bR = CssParser.parseDim(style.getOrDefault("border-right-width", "0"), parentW, rootW, rootH);
-        this.bB = CssParser.parseDim(style.getOrDefault("border-bottom-width", "0"), parentH, rootW, rootH);
-        this.bL = CssParser.parseDim(style.getOrDefault("border-left-width", "0"), parentW, rootW, rootH);
+        this.bT = style.length("border-top-width", parentH, rootW, rootH);
+        this.bR = style.length("border-right-width", parentW, rootW, rootH);
+        this.bB = style.length("border-bottom-width", parentH, rootW, rootH);
+        this.bL = style.length("border-left-width", parentW, rootW, rootH);
 
-        this.gap = CssParser.parseDim(style.getOrDefault("gap", "0"), parentW, rootW, rootH);
-        boolean isBorderBox = !style.getOrDefault("box-sizing", "border-box").equals("content-box");
+        this.rowGap = style.length("row-gap", parentH, rootW, rootH);
+        this.columnGap = style.length("column-gap", parentW, rootW, rootH);
+        boolean isBorderBox = !"content-box".equals(style.getOrDefault("box-sizing", "border-box"));
 
-        String widthStr = style.getOrDefault("width", "").trim();
-        boolean hasWidth = style.containsKey("width") && !widthStr.equals("auto");
-        boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && isParentShrink;
-        boolean isFlexBasisZero = style.getOrDefault("flex-basis", "auto").equals("0") || style.getOrDefault("flex-basis", "auto").equals("0%") || style.getOrDefault("flex-basis", "auto").equals("0px");
+        String widthStr = style.getOrDefault("width", "auto").trim();
+        boolean hasWidth = !"auto".equals(widthStr);
+        boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && fmtCtx.isShrink();
         String display = style.getOrDefault("display", "block");
 
         if (hasWidth && !isPercentWidthAndShrinking) {
-            this.w = CssParser.parseDim(widthStr, parentW, rootW, rootH);
+            this.w = style.length("width", parentW, rootW, rootH);
             if (!isBorderBox) this.w += horizontalDecoration();
+            this.sizingMode = SizingMode.DEFINITE;
         } else if (node.tag.equals("#text")) {
             int limitW = parentW;
             if (style.containsKey("max-width")) {
-                int mw = CssParser.parseDim(style.get("max-width"), parentW, rootW, rootH);
+                int mw = style.length("max-width", parentW, rootW, rootH);
                 if (mw > 0) limitW = Math.min(limitW, mw);
             }
             if (limitW <= 0) limitW = 9999;
             boolean isBold = style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900");
-            List<String> rawLines = TextMetrics.wrapText(this.displayText, limitW, this.fontSize);
-            this.textLines = new ArrayList<>(rawLines.size());
+
+            List<String> rawLines = new ArrayList<>();
+            String[] tokens = this.displayText.split("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
+            StringBuilder currentLine = new StringBuilder();
+            int currentW = 0;
+            for (String token : tokens) {
+                int tokenW = ctx.fontMetrics().getDisplayWidth(token, this.fontSize, isBold);
+                if (currentW + tokenW > limitW && !currentLine.isEmpty() && !token.trim().isEmpty()) {
+                    rawLines.add(currentLine.toString().trim());
+                    currentLine = new StringBuilder();
+                    currentW = 0;
+                }
+                currentLine.append(token);
+                currentW += tokenW;
+            }
+            if (!currentLine.isEmpty()) rawLines.add(currentLine.toString().trim());
+
+            this.textLines = rawLines;
             int maxLineW = 0;
-            for (String s : rawLines) {
-                String formatted = isBold ? ("§l" + s) : s;
-                this.textLines.add(formatted);
-                maxLineW = Math.max(maxLineW, TextMetrics.getDisplayWidth(formatted, this.fontSize));
+            for (String line : rawLines) {
+                maxLineW = Math.max(maxLineW, ctx.fontMetrics().getDisplayWidth(line, this.fontSize, isBold));
             }
             this.w = maxLineW + horizontalDecoration();
+            this.sizingMode = SizingMode.DEFINITE;
         } else if (node.tag.equals("mc-scene")) {
             this.w = Math.max(64, parentW - mL - mR);
+            this.sizingMode = SizingMode.DEFINITE;
         } else if (node.tag.equals("img") || node.tag.equals("mc-fluid") || node.tag.equals("mc-entity")) {
             String src = node.attrs.getOrDefault("src", "");
             if (src.startsWith("http://") || src.startsWith("https://")) {
-                int[] imgSize = ServerImageRegistry.getSize(src);
+                int[] imgSize = intrinsicSizeResolver != null ? intrinsicSizeResolver.getSize(src) : null;
                 this.w = (imgSize != null && imgSize[0] > 0) ? imgSize[0] + horizontalDecoration() : 32 + horizontalDecoration();
             } else {
                 this.w = 16 + horizontalDecoration();
             }
+            this.sizingMode = SizingMode.DEFINITE;
         } else if (node.tag.equals("input") || node.tag.equals("select") || node.tag.equals("progress")) {
-            // ここで getMinContentWidth() と連携して初期幅を決定
-            this.w = getMinContentWidth();
-        } else if (isAbsolute || isParentFlexRow || isParentShrink || display.equals("inline-block") || display.equals("inline")) {
-            if (isParentFlexRow && isFlexBasisZero && !hasWidth) this.w = horizontalDecoration();
-            else this.w = -1;
-        } else if (isParentFlexColumn && !parentAlignItems.equals("stretch")) {
-            this.w = -1;
+            this.w = getMinContentWidth(ctx);
+            this.sizingMode = SizingMode.DEFINITE;
+        } else if (isAbsolute || fmtCtx.isFlexRow() || fmtCtx.isShrink() || display.equals("inline-block") || display.equals("inline")) {
+            this.w = 0;
+            this.sizingMode = SizingMode.SHRINK_TO_FIT;
+        } else if (fmtCtx.isFlexColumn() && !"stretch".equals(fmtCtx.alignItems())) {
+            this.w = 0;
+            this.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else {
             this.w = Math.max(0, parentW - mL - mR);
+            this.sizingMode = SizingMode.DEFINITE;
         }
 
-        if (this.w != -1 && style.containsKey("max-width")) {
-            String maxWStr = style.get("max-width");
-            if (!(maxWStr.contains("%") && isParentShrink)) {
-                int maxW = CssParser.parseDim(maxWStr, parentW, rootW, rootH);
-                if (!isBorderBox) maxW += horizontalDecoration();
-                this.w = Math.min(this.w, maxW);
-            }
-        }
-        if (this.w != -1 && style.containsKey("min-width")) {
-            int minW = CssParser.parseDim(style.get("min-width"), parentW, rootW, rootH);
-            if (!isBorderBox) minW += horizontalDecoration();
-            this.w = Math.max(this.w, minW);
-        }
+        applyMinMaxWidths(parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
-        int tentativeInnerW = this.w == -1 ? Math.max(0, parentW - mL - mR - horizontalDecoration()) : Math.max(0, this.w - horizontalDecoration());
+        int engineInnerW = this.sizingMode == SizingMode.SHRINK_TO_FIT
+                ? Math.max(0, parentW - mL - mR - horizontalDecoration())
+                : Math.max(0, this.w - horizontalDecoration());
 
         LayoutEngine engine = LayoutEngineFactory.getEngine(display);
-        engine.computeSize(this, tentativeInnerW, parentH, isParentFlexRow, isParentFlexColumn, parentAlignItems, isParentShrink, rootW, rootH);
+        engine.measure(this, engineInnerW, parentH, fmtCtx, ctx);
 
-        // ComputeSize完了後に再度Min/Max制約を適用
-        if (style.containsKey("max-width")) {
-            String maxWStr = style.get("max-width");
-            if (!(maxWStr.contains("%") && isParentShrink)) {
-                int maxW = CssParser.parseDim(maxWStr, parentW, rootW, rootH);
-                if (!isBorderBox) maxW += horizontalDecoration();
-                this.w = Math.min(this.w, maxW);
-            }
-        }
-        if (style.containsKey("min-width")) {
-            int minW = CssParser.parseDim(style.get("min-width"), parentW, rootW, rootH);
-            if (!isBorderBox) minW += horizontalDecoration();
-            this.w = Math.max(this.w, minW);
-        }
+        applyMinMaxWidths(parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
         if (!isAbsolute) {
             if (autoLeft && autoRight) {
@@ -253,27 +237,59 @@ public class LayoutBox {
             else if (autoRight) this.mR = Math.max(0, parentW - this.w - this.mL);
         }
 
-        float lh = 1.375f;
-        if (style.containsKey("line-height")) {
-            try { lh = Float.parseFloat(style.get("line-height")); }
-            catch (Exception e) {
-                if (style.get("line-height").endsWith("px")) lh = Float.parseFloat(style.get("line-height").replace("px", "")) / 16.0f;
+        // ここでresolveFlexibleHeightsを直接呼ぶのではなく、処理自体をインラインで行い、
+        // エンジンのresolveFlexibleHeightsを呼び出す
+        resolveHeights(parentH, ctx, isBorderBox, engine, fmtCtx);
+    }
+
+    private void applyMinMaxWidths(int parentW, int rootW, int rootH, boolean isPercentWidthAndShrinking, boolean isBorderBox) {
+        if (this.sizingMode == SizingMode.DEFINITE && style.containsKey("max-width")) {
+            String maxWStr = style.get("max-width");
+            if (!(maxWStr.contains("%") && isPercentWidthAndShrinking)) {
+                int maxW = style.length("max-width", parentW, rootW, rootH);
+                if (!isBorderBox) maxW += horizontalDecoration();
+                this.w = Math.min(this.w, maxW);
             }
         }
+        if (this.sizingMode == SizingMode.DEFINITE && style.containsKey("min-width")) {
+            int minW = style.length("min-width", parentW, rootW, rootH);
+            if (!isBorderBox) minW += horizontalDecoration();
+            this.w = Math.max(this.w, minW);
+        }
+    }
 
-        String heightStr = style.getOrDefault("height", "").trim();
-        if (style.containsKey("height") && !heightStr.equals("auto")) {
-            this.h = CssParser.parseDim(heightStr, parentH, rootW, rootH);
+    // ★ 追加：エンジンから呼び出せるように公開
+    public void resolveFlexibleHeights(int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+        boolean isBorderBox = !"content-box".equals(style.getOrDefault("box-sizing", "border-box"));
+        LayoutEngine engine = LayoutEngineFactory.getEngine(style.getOrDefault("display", "block"));
+        resolveHeights(parentH, ctx, isBorderBox, engine, fmtCtx);
+    }
+
+    private void resolveHeights(int parentH, LayoutContext ctx, boolean isBorderBox, LayoutEngine engine, FormattingContext fmtCtx) {
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
+
+        float lh = 1.375f;
+        String lhStr = style.get("line-height");
+        if (lhStr != null) {
+            try { lh = lhStr.endsWith("px") ? Float.parseFloat(lhStr.replace("px", "")) / 16.0f : Float.parseFloat(lhStr); }
+            catch (Exception ignored) {}
+        }
+
+        String heightStr = style.getOrDefault("height", "auto").trim();
+        if (style.containsKey("height") && !"auto".equals(heightStr)) {
+            this.h = style.length("height", parentH, rootW, rootH);
             if (!isBorderBox) this.h += verticalDecoration();
         } else if (style.containsKey("aspect-ratio") && this.w > 0) {
             try {
                 int innerW = Math.max(0, this.w - horizontalDecoration());
-                if (style.get("aspect-ratio").contains("/")) {
-                    String[] parts = style.get("aspect-ratio").split("/");
+                String ratioStr = style.get("aspect-ratio");
+                if (ratioStr.contains("/")) {
+                    String[] parts = ratioStr.split("/");
                     float rw = Float.parseFloat(parts[0].trim()), rh = Float.parseFloat(parts[1].trim());
                     if (rw > 0) this.h = (int) (innerW * (rh / rw)) + verticalDecoration();
                 } else {
-                    float ratio = Float.parseFloat(style.get("aspect-ratio"));
+                    float ratio = Float.parseFloat(ratioStr);
                     if (ratio > 0) this.h = (int) (innerW / ratio) + verticalDecoration();
                 }
             } catch (Exception ignored) { this.h = this.w; }
@@ -285,7 +301,7 @@ public class LayoutBox {
         } else if (node.tag.equals("img") || node.tag.equals("mc-fluid") || node.tag.equals("mc-entity")) {
             String src = node.attrs.getOrDefault("src", "");
             if (src.startsWith("http://") || src.startsWith("https://")) {
-                int[] imgSize = ServerImageRegistry.getSize(src);
+                int[] imgSize = intrinsicSizeResolver != null ? intrinsicSizeResolver.getSize(src) : null;
                 if (imgSize != null && imgSize[0] > 0 && imgSize[1] > 0) {
                     if (this.w > 0 && (!style.containsKey("height") || heightStr.equals("auto")))
                         this.h = (int) (Math.max(0, this.w - horizontalDecoration()) * ((float) imgSize[1] / imgSize[0])) + verticalDecoration();
@@ -303,12 +319,12 @@ public class LayoutBox {
             this.h = 12 + verticalDecoration();
         }
 
-        engine.computeHeightAndFinalizeChildren(this, parentH, isParentFlexRow, isParentFlexColumn, rootW, rootH);
+        engine.resolveFlexibleHeights(this, parentH, fmtCtx, ctx);
 
         if (style.containsKey("max-height")) {
             String maxHStr = style.get("max-height").trim();
-            if (!maxHStr.equals("none") && !maxHStr.isEmpty()) {
-                int maxH = CssParser.parseDim(maxHStr, parentH, rootW, rootH);
+            if (!"none".equals(maxHStr) && !maxHStr.isEmpty()) {
+                int maxH = style.length("max-height", parentH, rootW, rootH);
                 if (maxH > 0) {
                     if (!isBorderBox) maxH += verticalDecoration();
                     this.h = Math.min(this.h, maxH);
@@ -316,14 +332,18 @@ public class LayoutBox {
             }
         }
         if (style.containsKey("min-height")) {
-            int minH = CssParser.parseDim(style.get("min-height"), parentH, rootW, rootH);
-            if (!isBorderBox) minH += horizontalDecoration();
+            int minH = style.length("min-height", parentH, rootW, rootH);
+            if (!isBorderBox) minH += verticalDecoration();
             this.h = Math.max(this.h, minH);
         }
     }
 
-    public void layout(int parentX, int parentY, int parentOuterW, int parentOuterH, int rootW, int rootH) {
-        if (style.getOrDefault("display", "block").equals("none")) return;
+    public void layout(int parentX, int parentY, int parentOuterW, int parentOuterH, LayoutContext ctx) {
+        if ("none".equals(style.getOrDefault("display", "block"))) return;
+
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
+
         int refX = this.isFixed ? 0 : parentX;
         int refY = this.isFixed ? 0 : parentY;
         int refW = this.isFixed ? rootW : parentOuterW;
@@ -331,63 +351,56 @@ public class LayoutBox {
 
         if (this.isAbsolute) {
             if (style.containsKey("right"))
-                this.x = refX + refW - this.w - CssParser.parseDim(style.get("right"), refW, rootW, rootH) - mR;
-            else this.x = refX + CssParser.parseDim(style.getOrDefault("left", "0"), refW, rootW, rootH) + mL;
+                this.x = refX + refW - this.w - style.length("right", refW, rootW, rootH) - mR;
+            else this.x = refX + style.length("left", refW, rootW, rootH) + mL;
             if (style.containsKey("bottom"))
-                this.y = refY + refH - this.h - CssParser.parseDim(style.get("bottom"), refH, rootW, rootH) - mB;
-            else this.y = refY + CssParser.parseDim(style.getOrDefault("top", "0"), refH, rootW, rootH) + mT;
+                this.y = refY + refH - this.h - style.length("bottom", refH, rootW, rootH) - mB;
+            else this.y = refY + style.length("top", refH, rootW, rootH) + mT;
         } else {
             this.x = refX + mL;
             this.y = refY + mT;
         }
 
-        int scrollX = 0, scrollY = 0;
-        try {
-            if (node.attrs.containsKey("data-scroll-x")) scrollX = (int) Float.parseFloat(node.attrs.get("data-scroll-x"));
-            if (node.attrs.containsKey("data-scroll-y")) scrollY = (int) Float.parseFloat(node.attrs.get("data-scroll-y"));
-        } catch (Exception ignored) {}
+        int scrollX = ctx.scrollState().getScrollX(node.getId());
+        int scrollY = ctx.scrollState().getScrollY(node.getId());
 
         int innerX = this.x + pL + bL - scrollX;
         int innerY = this.y + pT + bT - scrollY;
 
         LayoutEngine engine = LayoutEngineFactory.getEngine(style.getOrDefault("display", "block"));
-        engine.layoutChildren(this, innerX, innerY, rootW, rootH);
+        engine.arrangeChildren(this, innerX, innerY, ctx);
 
         for (LayoutBox child : children) {
-            if (child.style.getOrDefault("display", "block").equals("none")) continue;
-            if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, rootW, rootH);
+            if ("none".equals(child.style.getOrDefault("display", "block"))) continue;
+            if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
         }
 
         if (this.isRelative) {
             int offX = 0, offY = 0;
-            if (style.containsKey("left")) offX += CssParser.parseDim(style.get("left"), parentOuterW, rootW, rootH);
-            else if (style.containsKey("right")) offX -= CssParser.parseDim(style.get("right"), parentOuterW, rootW, rootH);
-            if (style.containsKey("top")) offY += CssParser.parseDim(style.get("top"), parentOuterH, rootW, rootH);
-            else if (style.containsKey("bottom")) offY -= CssParser.parseDim(style.get("bottom"), parentOuterH, rootW, rootH);
+            if (style.containsKey("left")) offX += style.length("left", parentOuterW, rootW, rootH);
+            else if (style.containsKey("right")) offX -= style.length("right", parentOuterW, rootW, rootH);
+            if (style.containsKey("top")) offY += style.length("top", parentOuterH, rootW, rootH);
+            else if (style.containsKey("bottom")) offY -= style.length("bottom", parentOuterH, rootW, rootH);
             if (offX != 0 || offY != 0) applyRelativeOffset(offX, offY);
         }
 
-        // ★ 子要素のスクロールオフセットを足し戻して、絶対的なコンテンツ終端を計算する
         int maxChildRight = this.x + pL + bL;
         int maxChildBottom = this.y + pT + bT;
         for (LayoutBox child : children) {
-            if (child.style.getOrDefault("display", "block").equals("none") || child.isAbsolute) continue;
+            if ("none".equals(child.style.getOrDefault("display", "block")) || child.isAbsolute) continue;
             maxChildRight = Math.max(maxChildRight, child.x + child.w + child.mR + scrollX);
             maxChildBottom = Math.max(maxChildBottom, child.y + child.h + child.mB + scrollY);
         }
-        if (this.engineState instanceof GridLayoutEngine.GridState gs) {
-            for (GridLayoutEngine.GridItem item : gs.items) {
+        if (this.engineState instanceof GridState gs) {
+            for (GridItem item : gs.items) {
                 if (item.box.isAbsolute) continue;
                 maxChildRight = Math.max(maxChildRight, item.box.x + item.box.w + item.box.mR + scrollX);
                 maxChildBottom = Math.max(maxChildBottom, item.box.y + item.box.h + item.box.mB + scrollY);
             }
         }
 
-        // ★ 親要素の高さ(h)が 100% などで制限されていても、内容がはみ出た分だけ scrollHeight が正しく伸びる
-        int scrollWidth = Math.max(this.w, maxChildRight - this.x + pR + bR);
-        int scrollHeight = Math.max(this.h, maxChildBottom - this.y + pB + bB);
-        this.node.attrs.put("data-scroll-w", String.valueOf(scrollWidth));
-        this.node.attrs.put("data-scroll-h", String.valueOf(scrollHeight));
+        this.scrollWidth = Math.max(this.w, maxChildRight - this.x + pR + bR);
+        this.scrollHeight = Math.max(this.h, maxChildBottom - this.y + pB + bB);
     }
 
     public static class InlineFragment {

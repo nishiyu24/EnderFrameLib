@@ -1,8 +1,10 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.ColorParser;
+import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.gui.components.EditBox;
 
@@ -18,7 +20,6 @@ import java.util.regex.Pattern;
 
 public class UIRenderer {
 
-    // プリコンパイル済み正規表現パターン（毎フレームの再コンパイルを防止）
     private static final Pattern COLOR_TOKEN_PATTERN = Pattern.compile(
             "(#[0-9a-fA-F]{3,8}|rgba?\\s*\\([^)]+\\)|hsla?\\s*\\([^)]+\\)|\\b(?:red|green|lime|blue|yellow|aqua|cyan|magenta|purple|orange|gold|black|white|gray|grey)\\b)"
     );
@@ -46,13 +47,15 @@ public class UIRenderer {
     private final int rootW;
     private final int rootH;
     private final Map<String, String> keyframes;
+    private final ScrollState scrollState;
     private int fragIdCounter = 0;
     private int domOrderCounter = 0;
 
-    public UIRenderer(int rootW, int rootH, Map<String, String> keyframes) {
+    public UIRenderer(int rootW, int rootH, Map<String, String> keyframes, ScrollState scrollState) {
         this.rootW = rootW;
         this.rootH = rootH;
         this.keyframes = keyframes;
+        this.scrollState = scrollState;
     }
 
     public List<UIElement> render(LayoutBox box) {
@@ -66,7 +69,7 @@ public class UIRenderer {
             LayoutBox bodyBox = findBodyBox(box);
             if (bodyBox != null && (bodyBox.style.containsKey("background") || bodyBox.style.containsKey("background-color"))) {
                 String bodyBg = bodyBox.style.getOrDefault("background", bodyBox.style.get("background-color"));
-                canvasBg = CssParser.parseColor(bodyBg);
+                canvasBg = ColorParser.parseColor(bodyBg);
             }
             if (canvasBg != 0x00000000) {
                 addElement(elements, "bg_root", "rect", box.x, box.y, Math.max(box.w, rootW), Math.max(box.h, rootH),
@@ -125,7 +128,7 @@ public class UIRenderer {
         List<Integer> colors = new ArrayList<>(2);
         Matcher m = COLOR_TOKEN_PATTERN.matcher(bgProp);
         while (m.find()) {
-            colors.add(CssParser.parseColor(m.group(1)));
+            colors.add(ColorParser.parseColor(m.group(1)));
         }
         if (colors.size() >= 2) {
             return new UIElement.GradientSpec(dir, colors.getFirst(), colors.getLast());
@@ -139,7 +142,7 @@ public class UIRenderer {
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
-        String currentId = box.node.id;
+        String currentId = box.node.getId();
         int order = domOrderCounter++;
 
         queue.add(new RenderTask(currentZ, order, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
@@ -177,7 +180,7 @@ public class UIRenderer {
         float nMaxX = box.x + box.w - box.bR;
         float nMaxY = box.y + box.h - box.bB;
 
-        int[] radii = CssParser.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
+        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
         float maxBorder = Math.max(Math.max(box.bT, box.bB), Math.max(box.bL, box.bR));
 
         float limit = Math.min(nMaxX - nMinX, nMaxY - nMinY) / 2.0f;
@@ -198,13 +201,13 @@ public class UIRenderer {
     private void drawScrollbarsIfNeeded(List<UIElement> elements, LayoutBox box, float[] clipRect) {
         if ("none".equals(box.style.get("scrollbar-width"))) return;
 
-        float scrollW = parseFloatAttr(box.node.attrs, "data-scroll-w", box.w);
-        float scrollH = parseFloatAttr(box.node.attrs, "data-scroll-h", box.h);
-        float curX = parseFloatAttr(box.node.attrs, "data-scroll-x", 0f);
-        float curY = parseFloatAttr(box.node.attrs, "data-scroll-y", 0f);
+        float scrollW = box.scrollWidth;
+        float scrollH = box.scrollHeight;
+        float curX = scrollState.getScrollX(box.node.getId());
+        float curY = scrollState.getScrollY(box.node.getId());
 
         Map<String, String> sbEvents = new HashMap<>(4);
-        sbEvents.put("mc-parent", box.node.id);
+        sbEvents.put("mc-parent", box.node.getId());
         if (clipRect != null && clipRect.length >= 8) {
             sbEvents.put("mc-clip", formatClipRect(clipRect));
         }
@@ -219,8 +222,8 @@ public class UIRenderer {
             float maxScrollY = Math.max(1f, scrollH - box.h);
             int thumbY = trackY + (int) ((trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f));
 
-            addElement(elements, box.node.id + "_sb_vt", "rect", trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
-            addElement(elements, box.node.id + "_sb_v", "rect", trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId() + "_sb_vt", "rect", trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId() + "_sb_v", "rect", trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
             int trackX = box.x + box.bL + 2;
@@ -230,8 +233,8 @@ public class UIRenderer {
             float maxScrollX = Math.max(1f, scrollW - box.w);
             int thumbX = trackX + (int) ((trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f));
 
-            addElement(elements, box.node.id + "_sb_ht", "rect", trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
-            addElement(elements, box.node.id + "_sb_h", "rect", thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId() + "_sb_ht", "rect", trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId() + "_sb_h", "rect", thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
         }
     }
 
@@ -308,11 +311,11 @@ public class UIRenderer {
         }
         String colStr = box.style.get(prefix + "-color");
         if (colStr != null) {
-            col = CssParser.parseColor(colStr);
+            col = ColorParser.parseColor(colStr);
             has = true;
         }
         if (box.style.containsKey(prefix + "-background") || box.style.containsKey(prefix + "-background-color")) {
-            bgCol = CssParser.parseColor(box.style.getOrDefault(prefix + "-background", box.style.get(prefix + "-background-color")));
+            bgCol = ColorParser.parseColor(box.style.getOrDefault(prefix + "-background", box.style.get(prefix + "-background-color")));
             has = true;
         }
         return has ? (marker + op + ":" + tx + ":" + ty + ":" + sx + ":" + sy + ":" + rot + ":" + col + ":" + bgCol) : "";
@@ -421,9 +424,9 @@ public class UIRenderer {
             if (borderProp != null && !"none".equals(borderProp)) {
                 String[] parts = WHITESPACE_SPLIT.split(borderProp.trim());
                 if (parts.length >= 3) {
-                    int bw = CssParser.parseDim(parts[0], box.w, rootW, rootH);
+                    int bw = LengthResolver.parseDim(parts[0], box.w, rootW, rootH, box.fontSize * 16f, 16f);
                     if (bw > 0) {
-                        int bc = CssParser.parseColor(parts[parts.length - 1]);
+                        int bc = ColorParser.parseColor(parts[parts.length - 1]);
                         hasBorder = true;
                         borderColor = bc;
                         switch (dir) {
@@ -454,20 +457,20 @@ public class UIRenderer {
     }
 
     private void drawBoxSelf(List<UIElement> elements, LayoutBox box, float[] clipRect, String parentId) {
-        int[] radii = CssParser.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
+        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault("border-radius", "0"), box.w, rootW, rootH);
         int fallbackRadius = radii[0];
         int rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
 
-        int color = CssParser.parseColor(box.style.get("color"));
+        int color = ColorParser.parseColor(box.style.get("color"));
         if (color == 0x00000000) color = 0xFFF5F5F0;
 
         String bgProp = box.style.getOrDefault("background", box.style.getOrDefault("background-color", "transparent"));
-        int bgColor = CssParser.parseColor(bgProp);
+        int bgColor = ColorParser.parseColor(bgProp);
         UIElement.GradientSpec gradientSpec = parseGradientSpec(bgProp);
 
-        String id = box.node.id;
+        String id = box.node.getId();
 
-        float opacity = parseFloatAttr(box.style, "opacity", 1.0f);
+        float opacity = parseFloatAttr(box.style.getRawMap(), "opacity", 1.0f);
         float[] tr = parseTransformProps(box.style.get("transform"), box.w, box.h, 0f, 0f, 1f, 1f, 0f);
         float tx = tr[0] + parseFloatAttr(box.node.attrs, "data-pan-x", 0f);
         float ty = tr[1] + parseFloatAttr(box.node.attrs, "data-pan-y", 0f);
@@ -476,7 +479,7 @@ public class UIRenderer {
         float sy = tr[3] * zoom;
         float rot = tr[4];
 
-        TransitionSpec transSpec = parseTransitionSpec(box.style);
+        TransitionSpec transSpec = parseTransitionSpec(box.style.getRawMap());
 
         String hoverStr = buildPseudoStateDef("hover", "@@HOVER@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
         String activeStr = buildPseudoStateDef("active", "@@ACTIVE@@", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
@@ -507,7 +510,6 @@ public class UIRenderer {
 
         UIElement.RenderMeta baseMeta = new UIElement.RenderMeta(normalizedClip, radii, gradientSpec, null, fontHVal, ox, oy, itemCount);
 
-        // インラインフラグメント描画
         if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag)) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
@@ -566,8 +568,8 @@ public class UIRenderer {
                 || "scroll".equals(overflowY) || "auto".equals(overflowY)
                 || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
         if (isScrollable) {
-            partsEvents.put("mc-scrollable", box.node.attrs.getOrDefault("data-scroll-w", String.valueOf(box.w)) + "," + box.node.attrs.getOrDefault("data-scroll-h", String.valueOf(box.h)));
-            partsEvents.put("mc-scroll-current", box.node.attrs.getOrDefault("data-scroll-x", "0") + "," + box.node.attrs.getOrDefault("data-scroll-y", "0"));
+            partsEvents.put("mc-scrollable", box.scrollWidth + "," + box.scrollHeight);
+            partsEvents.put("mc-scroll-current", scrollState.getScrollX(box.node.getId()) + "," + scrollState.getScrollY(box.node.getId()));
         }
 
         partsEvents.put("mc-radius", formatRadii(radii));
@@ -580,7 +582,7 @@ public class UIRenderer {
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
             }
         }
-        for (Map.Entry<String, String> entry : box.style.entrySet()) {
+        for (Map.Entry<String, String> entry : box.style.getRawMap().entrySet()) {
             if (entry.getKey().toLowerCase().startsWith("on")) {
                 partsEvents.put(entry.getKey().toLowerCase(), entry.getValue());
             }
@@ -804,7 +806,7 @@ public class UIRenderer {
                 drawBorderedControl(elements, id, "_input", "range", box, innerX, innerY, innerW, innerH, rangeData, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff);
             }
             case "color" -> {
-                int swatchColor = CssParser.parseColor(val.isEmpty() ? "#89b4fa" : val);
+                int swatchColor = ColorParser.parseColor(val.isEmpty() ? "#89b4fa" : val);
                 drawBorderedControl(elements, id, "_input", "input", box, innerX, innerY, innerW, innerH, val, color, swatchColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff);
             }
             default -> {

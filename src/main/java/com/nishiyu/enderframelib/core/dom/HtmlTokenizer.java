@@ -21,7 +21,7 @@ public class HtmlTokenizer {
         while (i < len) {
             // コメントのスキップ <!-- ... -->
             if (html.startsWith("<!--", i)) {
-                flushText(tokens, textBuffer, false);
+                flushText(tokens, textBuffer, true); // true: エンティティデコードを行う
                 int end = html.indexOf("-->", i + 4);
                 if (end == -1) break;
                 i = end + 3;
@@ -30,7 +30,7 @@ public class HtmlTokenizer {
 
             // DOCTYPE等のスキップ <! ... >
             if (html.startsWith("<!", i)) {
-                flushText(tokens, textBuffer, false);
+                flushText(tokens, textBuffer, true);
                 int end = html.indexOf(">", i + 2);
                 if (end == -1) break;
                 i = end + 1;
@@ -38,7 +38,7 @@ public class HtmlTokenizer {
             }
 
             if (html.charAt(i) == '<') {
-                flushText(tokens, textBuffer, false);
+                flushText(tokens, textBuffer, true);
                 i++;
                 boolean isEndTag = false;
                 if (i < len && html.charAt(i) == '/') {
@@ -109,8 +109,7 @@ public class HtmlTokenizer {
                 }
                 tokens.add(t);
 
-                // ★プランA: <textarea>, <script>, <style> の内部は閉じタグまで生テキストとして読み取る
-                // （Luaコード等の `if x < 10 then` がタグとして誤認されるのを防ぐ）
+                // script, style, textarea 内部の処理
                 if (!isEndTag && !t.isSelfClosing && RAW_TEXT_TAGS.contains(tagName)) {
                     int closePos = findClosingTagIgnoreCase(html, i, tagName);
                     if (closePos != -1) {
@@ -118,7 +117,12 @@ public class HtmlTokenizer {
                         if (!rawContent.isEmpty()) {
                             Token rawToken = new Token();
                             rawToken.type = Token.Type.TEXT;
-                            rawToken.text = decodeHtmlEntities(rawContent);
+                            // ★ 修正: script / style の場合はエンティティを復号しない
+                            if (tagName.equals("script") || tagName.equals("style")) {
+                                rawToken.text = rawContent;
+                            } else {
+                                rawToken.text = decodeHtmlEntities(rawContent);
+                            }
                             rawToken.isRawText = true;
                             tokens.add(rawToken);
                         }
@@ -130,7 +134,7 @@ public class HtmlTokenizer {
                 i++;
             }
         }
-        flushText(tokens, textBuffer, false);
+        flushText(tokens, textBuffer, true);
         return tokens;
     }
 
@@ -152,12 +156,13 @@ public class HtmlTokenizer {
         return -1;
     }
 
-    private static void flushText(List<Token> tokens, StringBuilder textBuffer, boolean isRaw) {
+    // 引数を追加し、エンティティデコードするかどうかを制御
+    private static void flushText(List<Token> tokens, StringBuilder textBuffer, boolean decodeEntities) {
         if (!textBuffer.isEmpty()) {
             Token t = new Token();
             t.type = Token.Type.TEXT;
-            t.text = decodeHtmlEntities(textBuffer.toString());
-            t.isRawText = isRaw;
+            t.text = decodeEntities ? decodeHtmlEntities(textBuffer.toString()) : textBuffer.toString();
+            t.isRawText = false;
             tokens.add(t);
             textBuffer.setLength(0);
         }

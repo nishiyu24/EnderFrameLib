@@ -13,6 +13,7 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
@@ -166,7 +167,6 @@ public class WebHudRenderer {
             trackerNbtPaths.addAll(currentTrackerConfig.requireNbt);
         }
 
-        // 最新の8引数コンストラクタを使用 (channel="", isUnsubscribe=false)
         PacketDistributor.sendToServer(new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths));
     }
 
@@ -217,7 +217,6 @@ public class WebHudRenderer {
         Map<String, String> dataMap = extractHudData(mc.hitResult);
         Map<String, String> prevData = lastHudDataCache.get(screenKey);
 
-        // 前フレームとターゲットデータが完全に同一であれば、毎フレームのDOM再構築・再レイアウトをスキップ
         if (prevData != null && prevData.equals(dataMap)) {
             return;
         }
@@ -235,7 +234,6 @@ public class WebHudRenderer {
                 child.parent = containerNode;
                 containerNode.children.add(child);
             }
-            containerNode.markDirty();
         }
         ClientWebManager.requestRender(screenKey);
     }
@@ -306,7 +304,6 @@ public class WebHudRenderer {
             }
         }
 
-        // 範囲外または消滅したエンティティのキャッシュをクリーンアップ
         if (trackerCaches.size() > activeUuids.size() + 10) {
             trackerCaches.keySet().retainAll(activeUuids);
         }
@@ -375,23 +372,31 @@ public class WebHudRenderer {
 
             HtmlNode instanceNode = trackerTemplateNode.cloneNode();
             applyTemplateData(instanceNode, dataMap);
-            instanceNode.setStyleProperty("display", "flex");
+            instanceNode.attrs.put("style", instanceNode.attrs.getOrDefault("style", "") + "; display: flex;");
 
             UIParser.Document doc = ClientWebManager.getDocument(screenKey);
             if (doc != null) {
-                Map<String, String> rootStyle = new HashMap<>();
-                rootStyle.put("display", "inline-block");
+                com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
+                Map<String, String> rawStyle = styleSet.computeCurrentState(false, false, false);
+                com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
 
-                LayoutBox layoutBox = new LayoutBox(instanceNode, CssParser.computeNodeStyle(instanceNode, rootStyle, doc.sheet, null), null);
+                LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
                 buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
 
-                layoutBox.computeSize(1000, 1000, false, false, "flex-start", true, 1000, 1000);
-                layoutBox.layout(0, 0, 1000, 1000, 1000, 1000);
+                com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
+                com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
+                com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
+                        viewport, LayoutBox.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
+                com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
+
+                layoutBox.measure(1000, 1000, fmtCtx, ctx);
+                layoutBox.measure(1000, 1000, fmtCtx, ctx);
+                layoutBox.layout(0, 0, 1000, 1000, ctx);
 
                 cache.width = layoutBox.w;
                 cache.height = layoutBox.h;
 
-                UIRenderer renderer = new UIRenderer(layoutBox.w, layoutBox.h, doc.sheet.keyframes);
+                UIRenderer renderer = new UIRenderer(layoutBox.w, layoutBox.h, doc.sheet.keyframes, scrollState);
                 cache.elements = renderer.render(layoutBox);
             }
             trackerCaches.put(uuid, cache);
@@ -495,9 +500,6 @@ public class WebHudRenderer {
         }
     }
 
-    /**
-     * WebStateStore と ClientLocalEnvProvider の共通機能を用いてテンプレート内のプレースホルダー・i18n・条件・リストを展開する
-     */
     public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
         ClientLocalEnvProvider.applyI18nAttributes(node);
         Map<String, String> localEnv = ClientLocalEnvProvider.captureCurrentEnv();
@@ -511,7 +513,7 @@ public class WebHudRenderer {
                 node.attrs.put(key, resolveAllPlaceholders(val, data, localEnv));
             }
         }
-        if (node.attrs.containsKey("id")) node.id = node.attrs.get("id");
+        if (node.attrs.containsKey("id")) node.setId(node.attrs.get("id")); // ★ ここを node.id = ... から node.setId(...) に修正
 
         if (node.attrs.containsKey("data-show")) {
             String showVal = node.attrs.get("data-show").trim();
@@ -582,11 +584,15 @@ public class WebHudRenderer {
         return ClientLocalEnvProvider.replaceLocalPlaceholders(step1, localEnv);
     }
 
-    private static void buildLayoutTreeRecursively(HtmlNode node, LayoutBox box, CssParser.StyleSheet sheet) {
+    private static void buildLayoutTreeRecursively(HtmlNode node, LayoutBox box, StyleSheet sheet) {
         for (HtmlNode child : node.children) {
             if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
-            Map<String, String> childStyle = CssParser.computeNodeStyle(child, box.style, sheet, null);
-            LayoutBox childBox = new LayoutBox(child, childStyle, null);
+
+            com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.getRawMap(), sheet);
+            Map<String, String> rawStyle = styleSet.computeCurrentState(false, false, false);
+            com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, sheet, null);
+
+            LayoutBox childBox = new LayoutBox(child, computed);
             box.children.add(childBox);
             buildLayoutTreeRecursively(child, childBox, sheet);
         }

@@ -84,8 +84,8 @@ public class WebRecipeViewerBridge {
                 || ("dialog".equalsIgnoreCase(node.tag) && node.attrs.containsKey("open"))
                 || "complementary".equalsIgnoreCase(role)
                 || "dialog".equalsIgnoreCase(role);
-        if (isExclude && !node.id.isEmpty()) {
-            out.add(node.id);
+        if (isExclude && !node.getId().isEmpty()) {
+            out.add(node.getId());
         }
         for (HtmlNode child : node.children) {
             collectExclusionNodeIds(child, out);

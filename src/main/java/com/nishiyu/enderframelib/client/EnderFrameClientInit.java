@@ -16,6 +16,7 @@ import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.network.c2s.SubscribeC2SPacket;
 import com.nishiyu.enderframelib.network.s2c.PubSubUpdateS2CPacket;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
@@ -48,8 +49,8 @@ public class EnderFrameClientInit {
         EnderConfigScreen.registerForMod(EnderFrameLib.MODID);
 
         // 1. UIParser / CssParser / DomUtils のクライアント専用コールバック注入
-        UIParser.clientBoxRenderer = (rootBox, rootW, rootH, keyframes) -> {
-            UIRenderer renderer = new UIRenderer(rootW, rootH, keyframes);
+        UIParser.clientBoxRenderer = (rootBox, rootW, rootH, keyframes, scrollState) -> {
+            UIRenderer renderer = new UIRenderer(rootW, rootH, keyframes, scrollState);
             return renderer.render(rootBox);
         };
 
@@ -67,6 +68,10 @@ public class EnderFrameClientInit {
         };
 
         DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
+
+        // --- 追加: core側の依存切り離し用フックの注入 ---
+        DomUtils.innerHtmlParser = UIParser.INNER_HTML_PARSER;
+        LayoutBox.intrinsicSizeResolver = ServerImageRegistry.RESOLVER_ADAPTER;
 
         // 2. 画像サイズ確定時のクライアント自動再レイアウト登録
         ServerImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);

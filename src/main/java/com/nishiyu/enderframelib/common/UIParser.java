@@ -1,11 +1,19 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.StyleResolver;
+import com.nishiyu.enderframelib.core.css.StyleSet;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.layout.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.Viewport;
 import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
 import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.text.FontMetrics;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
 
 import java.io.InputStream;
@@ -34,18 +42,16 @@ public class UIParser {
 
     @FunctionalInterface
     public interface ILayoutBoxRenderer {
-        List<UIElement> render(LayoutBox rootBox, int rootW, int rootH, Map<String, String> keyframes);
+        List<UIElement> render(LayoutBox rootBox, int rootW, int rootH, Map<String, String> keyframes, ScrollState scrollState);
     }
 
-    /**
-     * クライアント起動時に EnderFrameClientInit から UIRenderer がバインドされる
-     */
     public static ILayoutBoxRenderer clientBoxRenderer = null;
-
-    /**
-     * クライアント起動時に ResourceManager ベースのリゾルバが注入される（サーバー側でもデータパック＆クラスパスから安全に解決）
-     */
     public static Function<String, String> clientResourceFallback = null;
+
+    public static final Function<String, HtmlNode> INNER_HTML_PARSER = html -> {
+        String expanded = expandCustomTags(html);
+        return HtmlParser.parse(expanded);
+    };
 
     public static Function<String, String> resourceTextResolver = path -> {
         if (path == null) return "";
@@ -53,17 +59,14 @@ public class UIParser {
         String builtIn = resolveBuiltInTheme(clean);
         if (builtIn != null) return builtIn;
 
-        // 1. データパックから検索
         String fromDatapack = EnderFrameDataPackManager.getHtml(clean);
         if (fromDatapack != null && !fromDatapack.isEmpty()) return fromDatapack;
 
-        // 2. クライアントのリソースパックから検索
         if (clientResourceFallback != null) {
             String fromClient = clientResourceFallback.apply(clean);
             if (fromClient != null && !fromClient.isEmpty()) return fromClient;
         }
 
-        // 3. サーバー/共通のクラスパス(/assets/ または /data/)から検索
         if (clean.contains(":")) {
             String[] sp = clean.split(":", 2);
             try (InputStream is = UIParser.class.getResourceAsStream("/assets/" + sp[0] + "/" + sp[1])) {
@@ -191,20 +194,20 @@ public class UIParser {
             .mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; background-color: #181825; border: 1px solid #45475a; border-radius: 4px; overflow: hidden; }
             """;
 
-    public CssParser.StyleSheet buildStyleSheet(String authorCss, int rootW) {
-        CssParser.StyleSheet sheet = CssParser.parse(DEFAULT_USER_AGENT_CSS, rootW);
+    public com.nishiyu.enderframelib.core.css.StyleSheet buildStyleSheet(String authorCss, int rootW) {
+        com.nishiyu.enderframelib.core.css.StyleSheet sheet = CssParser.parse(DEFAULT_USER_AGENT_CSS, rootW);
 
         if (authorCss != null && !authorCss.isEmpty()) {
-            CssParser.StyleSheet authorSheet = CssParser.parse(authorCss, rootW);
-            for (CssParser.StyleRule rule : authorSheet.rules) {
-                rule.specificity += 10000;
+            com.nishiyu.enderframelib.core.css.StyleSheet authorSheet = CssParser.parse(authorCss, rootW);
+            for (com.nishiyu.enderframelib.core.css.StyleRule rule : authorSheet.rules) {
+                rule.specificity = new com.nishiyu.enderframelib.core.css.Specificity(rule.specificity.id(), rule.specificity.clazz(), rule.specificity.type(), 10000);
             }
             sheet.rules.addAll(authorSheet.rules);
             sheet.keyframes.putAll(authorSheet.keyframes);
             sheet.variables.putAll(authorSheet.variables);
         }
 
-        sheet.rules.sort((a, b) -> Integer.compare(a.specificity, b.specificity));
+        sheet.rules.sort((a, b) -> a.specificity.compareTo(b.specificity));
         return sheet;
     }
 
@@ -392,67 +395,71 @@ public class UIParser {
         }
 
         String authorCss = combinedCss.toString();
-        CssParser.StyleSheet sheet = buildStyleSheet(authorCss, rootW);
+        com.nishiyu.enderframelib.core.css.StyleSheet sheet = buildStyleSheet(authorCss, rootW);
         HtmlNode htmlRoot = HtmlParser.parse(html == null ? "" : html);
-        htmlRoot.isDirty = true;
 
         return new Document(htmlRoot, sheet, authorCss, extractedScript.toString());
     }
 
-    public List<UIElement> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env) {
+    public List<UIElement> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontMetrics fontMetrics) {
         if (clientBoxRenderer == null) return new ArrayList<>();
 
-        Map<String, String> rootStyle = new HashMap<>();
-        rootStyle.put("width", String.valueOf(rootW));
-        rootStyle.put("min-height", String.valueOf(rootH));
-        rootStyle.put("color", "#f5f5f0");
-        rootStyle.put("box-sizing", "border-box");
+        Map<String, String> rootStyleRaw = new HashMap<>();
+        rootStyleRaw.put("width", String.valueOf(rootW));
+        rootStyleRaw.put("min-height", String.valueOf(rootH));
+        rootStyleRaw.put("color", "#f5f5f0");
+        rootStyleRaw.put("box-sizing", "border-box");
 
-        LayoutBox rootBox = buildLayoutTree(doc.root, rootStyle, doc.sheet, env, false);
+        LayoutBox rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, false);
 
-        rootBox.computeSize(rootW, rootH, false, false, "stretch", false, rootW, rootH);
-        rootBox.computeSize(rootW, rootH, false, false, "stretch", false, rootW, rootH);
-        rootBox.layout(0, 0, rootW, rootH, rootW, rootH);
+        Viewport viewport = new Viewport(rootW, rootH);
+        LayoutContext ctx = new LayoutContext(viewport, LayoutBox.intrinsicSizeResolver, scrollState, fontMetrics);
+        FormattingContext fmtCtx = new FormattingContext("block", "stretch", false);
 
-        return clientBoxRenderer.render(rootBox, rootW, rootH, doc.sheet.keyframes);
+        rootBox.measure(rootW, rootH, fmtCtx, ctx);
+        rootBox.measure(rootW, rootH, fmtCtx, ctx);
+        rootBox.layout(0, 0, rootW, rootH, ctx);
+
+        return clientBoxRenderer.render(rootBox, rootW, rootH, doc.sheet.keyframes, scrollState);
     }
 
-    private LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, CssParser.StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
-        if (forceDirty) node.isDirty = true;
-        boolean wasDirty = node.isDirty;
+    private LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle, com.nishiyu.enderframelib.core.css.StyleSheet sheet, Map<String, String> env, boolean forceDirty) {
+        boolean isHovered = false;
+        boolean isActive = false;
+        boolean isFocused = false;
 
-        Map<String, String> style = CssParser.computeNodeStyle(node, inheritedStyle, sheet, env);
+        StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
+        Map<String, String> rawStyle = styleSet.computeCurrentState(isHovered, isActive, isFocused);
         if (node.attrs.containsKey("hidden")) {
-            style.put("display", "none");
+            rawStyle.put("display", "none");
         }
-        LayoutBox box = new LayoutBox(node, style, env);
+
+        ComputedStyle computed = StyleResolver.finalizeComputedStyle(rawStyle, sheet, env);
+        LayoutBox box = new LayoutBox(node, computed);
 
         HtmlNode beforeNode = createPseudoElement(node, sheet, true);
-        if (beforeNode != null) {
-            box.children.add(buildLayoutTree(beforeNode, style, sheet, env, wasDirty));
-        }
+        if (beforeNode != null) box.children.add(buildLayoutTree(beforeNode, rawStyle, sheet, env, forceDirty));
 
         if (!"textarea".equalsIgnoreCase(node.tag)) {
             boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !node.attrs.containsKey("open");
             for (HtmlNode child : node.children) {
                 if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
                 if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
-                box.children.add(buildLayoutTree(child, style, sheet, env, wasDirty));
+                box.children.add(buildLayoutTree(child, rawStyle, sheet, env, forceDirty));
             }
         }
 
         HtmlNode afterNode = createPseudoElement(node, sheet, false);
-        if (afterNode != null) {
-            box.children.add(buildLayoutTree(afterNode, style, sheet, env, wasDirty));
-        }
+        if (afterNode != null) box.children.add(buildLayoutTree(afterNode, rawStyle, sheet, env, forceDirty));
+
         return box;
     }
 
-    private HtmlNode createPseudoElement(HtmlNode parent, CssParser.StyleSheet sheet, boolean isBefore) {
+    private HtmlNode createPseudoElement(HtmlNode parent, com.nishiyu.enderframelib.core.css.StyleSheet sheet, boolean isBefore) {
         Map<String, String> pseudoStyle = new HashMap<>();
         boolean matched = false;
 
-        for (CssParser.StyleRule rule : sheet.rules) {
+        for (com.nishiyu.enderframelib.core.css.StyleRule rule : sheet.rules) {
             if ((isBefore && rule.isBefore) || (!isBefore && rule.isAfter)) {
                 if (rule.matches(parent)) {
                     pseudoStyle.putAll(rule.properties);
@@ -467,14 +474,12 @@ public class UIParser {
 
         HtmlNode pseudo = new HtmlNode("span");
         pseudo.isPseudoNode = true;
-        pseudo.isDirty = parent.isDirty;
         pseudo.parent = parent;
-        pseudo.id = parent.id + (isBefore ? "_before" : "_after");
+        pseudo.setId(parent.getId() + (isBefore ? "_before" : "_after"));
 
-        HtmlNode textNode = new HtmlNode("#text");
+        HtmlNode textNode = HtmlNode.createTextNode("");
         textNode.parent = pseudo;
-        textNode.isDirty = pseudo.isDirty;
-        textNode.id = pseudo.id + "_txt";
+        textNode.setId(pseudo.getId() + "_txt");
 
         if (content.startsWith("attr(") && content.endsWith(")")) {
             String attrName = content.substring(5, content.length() - 1).trim();
@@ -496,11 +501,11 @@ public class UIParser {
 
     public static class Document {
         public HtmlNode root;
-        public CssParser.StyleSheet sheet;
+        public com.nishiyu.enderframelib.core.css.StyleSheet sheet;
         public String authorCss;
         public String clientScript;
 
-        public Document(HtmlNode root, CssParser.StyleSheet sheet, String authorCss, String clientScript) {
+        public Document(HtmlNode root, com.nishiyu.enderframelib.core.css.StyleSheet sheet, String authorCss, String clientScript) {
             this.root = root;
             this.sheet = sheet;
             this.authorCss = authorCss;
