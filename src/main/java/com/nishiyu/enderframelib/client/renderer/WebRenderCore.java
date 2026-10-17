@@ -66,8 +66,9 @@ public class WebRenderCore {
     public static final Map<String, Integer> textareaCursorIndex = new ConcurrentHashMap<>();
     public static final Map<String, Integer> textareaScrollRow = new ConcurrentHashMap<>();
     private static final Map<String, Entity> ENTITY_PREVIEW_CACHE = new ConcurrentHashMap<>();
-    public static String activeInputId = "";
-    public static String activePressedId = "";
+    // フォーカス / 押下状態は SessionContext が所有する（ClientWebManager 経由で参照）。
+    // かつてここに public static String で置かれていたため、GUI 画面とブロック画面が
+    // フォーカスを共有してしまっていた。
 
     private static ResourceLocation resolvePlayerSkin(String target) {
         Minecraft mc = Minecraft.getInstance();
@@ -199,8 +200,8 @@ public class WebRenderCore {
 
         String baseId = ClientWebManager.getBaseNodeId(el.id());
         boolean isHovered = baseId.equals(hoveredId);
-        boolean isActive = !activePressedId.isEmpty() && baseId.equals(ClientWebManager.getBaseNodeId(activePressedId));
-        boolean isFocused = !activeInputId.isEmpty() && baseId.equals(ClientWebManager.getBaseNodeId(activeInputId));
+        boolean isActive = ClientWebManager.isPressedBase(sessionId, baseId);
+        boolean isFocused = ClientWebManager.isFocusedBase(sessionId, baseId);
         WebAnimator.AnimatedValues anim = WebAnimator.getValues(sessionId, el, isHovered, isActive, isFocused);
 
         UIElement.RenderMeta meta = el.meta();
@@ -278,8 +279,9 @@ public class WebRenderCore {
 
             String baseId = ClientWebManager.getBaseNodeId(el.id());
             boolean isHovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
-            boolean isActive = !activePressedId.isEmpty() && baseId.equals(ClientWebManager.getBaseNodeId(activePressedId));
-            boolean isFocused = !activeInputId.isEmpty() && (el.id().equals(activeInputId) || baseId.equals(ClientWebManager.getBaseNodeId(activeInputId)));
+            boolean isActive = ClientWebManager.isPressedBase(animSessionId, baseId);
+            boolean isFocused = ClientWebManager.isActiveInput(animSessionId, el.id())
+                    || ClientWebManager.isFocusedBase(animSessionId, baseId);
 
             if (isHovered && resolvedTooltipText == null) {
                 resolvedTooltipText = extractTooltipText(el);
@@ -357,7 +359,7 @@ public class WebRenderCore {
                     WebSceneContext.getOrCreate(animSessionId, baseId).renderScene(el, poseStack, buffer, finalOpacity, contentZ);
                 } else if (type == ElementType.TEXTAREA) {
                     if (renderText) {
-                        renderTextareaElement(el, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DAudio, packedLight);
+                        renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DAudio, packedLight);
                     }
                 } else if (type == ElementType.RANGE) {
                     renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
@@ -718,7 +720,7 @@ public class WebRenderCore {
         if (inputEl != null && inputEl.text() != null && !inputEl.text().isEmpty()) {
             return true;
         }
-        if (!activeInputId.isEmpty() && ClientWebManager.getBaseNodeId(activeInputId).equals(inputNodeId)) {
+        if (ClientWebManager.isFocusedBase(animSessionId, inputNodeId)) {
             String activeVal = WebTextInputHost.getActiveText();
             if (activeVal != null && !activeVal.isEmpty()) return true;
         }
@@ -1043,7 +1045,7 @@ public class WebRenderCore {
     }
 
     private static void renderTextareaElement(
-            UIElement el, PoseStack poseStack, MultiBufferSource buffer, Font font,
+            UIElement el, String sessionId, PoseStack poseStack, MultiBufferSource buffer, Font font,
             WebAnimator.AnimatedValues anim, float finalOpacity, float zPos,
             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
             float maxAllowedX, float maxAllowedY, boolean is2D, int packedLight
@@ -1062,7 +1064,7 @@ public class WebRenderCore {
         boolean showLineNums = "lua".equalsIgnoreCase(syntax) || (el.events() != null && "true".equalsIgnoreCase(el.events().get("data-line-numbers")));
         float gutterW = showLineNums ? 28.0f * textScale : 4.0f;
 
-        boolean isFocused = el.id().equals(activeInputId);
+        boolean isFocused = ClientWebManager.isActiveInput(sessionId, el.id());
         int cursorIdx = Math.clamp(textareaCursorIndex.getOrDefault(el.id(), fullText.length()), 0, fullText.length());
 
         int cursorRow = 0, cursorCol = 0, charAccum = 0;

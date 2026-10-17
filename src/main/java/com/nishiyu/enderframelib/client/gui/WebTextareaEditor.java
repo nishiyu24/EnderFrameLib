@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.client.gui;
 
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
@@ -38,7 +37,7 @@ public class WebTextareaEditor {
         this.isEditing = true;
         this.activeBaseId = taEl.baseId();
         String renderTaId = taEl.id().endsWith("_textarea") ? taEl.id() : this.activeBaseId + "_textarea";
-        WebRenderCore.activeInputId = renderTaId;
+        ClientWebManager.setActiveInputId(sessionId, renderTaId);
 
         String fullText = getValue(activeBaseId);
         if (localX < 0 || localY < 0) {
@@ -84,7 +83,7 @@ public class WebTextareaEditor {
     }
 
     public void insert(String insertion, BiConsumer<String, String> onInputChanged, Runnable onModelChanged) {
-        String renderId = WebRenderCore.activeInputId;
+        String renderId = ClientWebManager.getActiveInputId(sessionId);
         String text = getValue(activeBaseId);
         int cursor = Math.clamp(TextEditState.getTextareaCursor(renderId, text.length()), 0, text.length());
         String next = text.substring(0, cursor) + insertion + text.substring(cursor);
@@ -95,7 +94,7 @@ public class WebTextareaEditor {
     }
 
     public boolean handleCharTyped(char codePoint, BiConsumer<String, String> onInputChanged, Runnable onModelChanged) {
-        if (!isEditing || WebRenderCore.activeInputId.isEmpty()) return false;
+        if (!isEditing || ClientWebManager.getActiveInputId(sessionId).isEmpty()) return false;
         if (codePoint >= 32 && codePoint != 127) {
             insert(String.valueOf(codePoint), onInputChanged, onModelChanged);
             return true;
@@ -104,15 +103,15 @@ public class WebTextareaEditor {
     }
 
     public boolean handleKeyPressed(int keyCode, BiConsumer<String, String> onInputChanged, Runnable onModelChanged) {
-        if (!isEditing || WebRenderCore.activeInputId.isEmpty()) return false;
-        String renderId = WebRenderCore.activeInputId;
+        if (!isEditing || ClientWebManager.getActiveInputId(sessionId).isEmpty()) return false;
+        String renderId = ClientWebManager.getActiveInputId(sessionId);
         String text = getValue(activeBaseId);
         int cursor = Math.clamp(TextEditState.getTextareaCursor(renderId, text.length()), 0, text.length());
 
         switch (keyCode) {
             case GLFW.GLFW_KEY_ESCAPE -> {
                 unfocus();
-                WebRenderCore.activeInputId = "";
+                ClientWebManager.setActiveInputId(sessionId, "");
                 return true;
             }
             case GLFW.GLFW_KEY_LEFT -> {

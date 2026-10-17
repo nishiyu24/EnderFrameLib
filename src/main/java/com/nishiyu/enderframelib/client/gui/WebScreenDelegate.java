@@ -4,7 +4,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -67,8 +66,8 @@ public class WebScreenDelegate {
 
     public EditBox createHiddenEditBox(Font font, BiConsumer<String, String> onInputChanged) {
         this.inputHost = new WebTextInputHost(font, newText -> {
-            if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing()) {
-                String baseId = ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId);
+            if (!ClientWebManager.getActiveInputId(sessionId).isEmpty() && !textareaEditor.isEditing()) {
+                String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActiveInputId(sessionId));
                 syncInputValueToDomNodes(baseId, newText);
                 if (this.state != null) this.state.notifyElementModelChanged(baseId, newText);
                 if (onInputChanged != null) onInputChanged.accept(baseId, newText);
@@ -96,7 +95,7 @@ public class WebScreenDelegate {
         String renderInputId = baseId + "_input";
         String safeVal = currentText != null ? currentText : "";
 
-        WebRenderCore.activeInputId = renderInputId;
+        ClientWebManager.setActiveInputId(sessionId, renderInputId);
         syncInputValueToDomNodes(baseId, safeVal);
         if (this.inputHost != null) {
             this.inputHost.setValue(safeVal);
@@ -106,8 +105,8 @@ public class WebScreenDelegate {
     }
 
     public void unfocusWebInput() {
-        if (!WebRenderCore.activeInputId.isEmpty()) {
-            String activeId = WebRenderCore.activeInputId;
+        if (!ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
+            String activeId = ClientWebManager.getActiveInputId(sessionId);
             String baseId = ClientWebManager.getBaseNodeId(activeId);
             if (textareaEditor.isEditing()) {
                 String fullVal = textareaEditor.getValue(baseId);
@@ -117,7 +116,7 @@ public class WebScreenDelegate {
                 String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                 ClientScreenInteractionManager.submitInput(sessionId, baseId, val);
             }
-            WebRenderCore.activeInputId = "";
+            ClientWebManager.setActiveInputId(sessionId, "");
         }
         if (this.inputHost != null) {
             this.inputHost.deactivate();
@@ -199,8 +198,8 @@ public class WebScreenDelegate {
         }
 
         if (ClientScreenInteractionManager.handleDrag(sessionId, webX, webY)) {
-            if (!WebRenderCore.activePressedId.isEmpty()) {
-                String baseId = ClientWebManager.getBaseNodeId(WebRenderCore.activePressedId);
+            if (!ClientWebManager.getActivePressedId(sessionId).isEmpty()) {
+                String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActivePressedId(sessionId));
                 UIElement updated = ClientWebManager.getElementById(sessionId, baseId);
                 if (updated != null && updated.type() == ElementType.RANGE && updated.text() != null) {
                     String val = updated.text().split(":")[0];
@@ -215,7 +214,7 @@ public class WebScreenDelegate {
 
     public void handleMouseReleased(double webX, double webY, DragDropController.DropCallback onWebDrop) {
         interactionHandler.clearScene();
-        WebRenderCore.activePressedId = "";
+        ClientWebManager.setActivePressedId(sessionId, "");
         ClientScreenInteractionManager.handleRelease(sessionId);
         dragDropController.handleRelease(sessionId, webX, webY, onWebDrop);
     }
@@ -244,7 +243,7 @@ public class WebScreenDelegate {
             return textareaEditor.handleCharTyped(codePoint, onInputChanged, () -> {
                 if (this.state != null) this.state.notifyElementModelChanged(textareaEditor.activeBaseId(), textareaEditor.getValue(textareaEditor.activeBaseId()));
             });
-        } else if (!WebRenderCore.activeInputId.isEmpty()) {
+        } else if (!ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
             if (this.inputHost != null && this.inputHost.charTyped(codePoint, modifiers)) return true;
         }
         return false;
@@ -262,13 +261,13 @@ public class WebScreenDelegate {
             });
         }
 
-        if (textareaEditor.isEditing() && !WebRenderCore.activeInputId.isEmpty()) {
+        if (textareaEditor.isEditing() && !ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
             if (textareaEditor.handleKeyPressed(keyCode, onInputChanged, () -> {
                 if (this.state != null) this.state.notifyElementModelChanged(textareaEditor.activeBaseId(), textareaEditor.getValue(textareaEditor.activeBaseId()));
             })) return true;
             if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
-        } else if (!WebRenderCore.activeInputId.isEmpty()) {
-            String baseId = ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId);
+        } else if (!ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
+            String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActiveInputId(sessionId));
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 unfocusWebInput();
                 return true;
@@ -276,7 +275,7 @@ public class WebScreenDelegate {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                 syncInputValueToDomNodes(baseId, val);
-                ClientScreenInteractionManager.submitInput(sessionId, WebRenderCore.activeInputId, val);
+                ClientScreenInteractionManager.submitInput(sessionId, ClientWebManager.getActiveInputId(sessionId), val);
                 if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
                 return true;
             }
@@ -373,7 +372,7 @@ public class WebScreenDelegate {
         String baseId = ClientWebManager.getBaseNodeId(id);
         String safeVal = value != null ? value : "";
         syncInputValueToDomNodes(baseId, safeVal);
-        if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing() && ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId).equals(baseId)) {
+        if (!textareaEditor.isEditing() && ClientWebManager.isFocusedBase(sessionId, baseId)) {
             if (this.inputHost != null && !Objects.equals(this.inputHost.getValue(), safeVal)) {
                 this.inputHost.setValue(safeVal);
             }
@@ -392,7 +391,7 @@ public class WebScreenDelegate {
 
     public String getInputValue(String id) {
         String baseId = ClientWebManager.getBaseNodeId(id);
-        if (!WebRenderCore.activeInputId.isEmpty() && !textareaEditor.isEditing() && ClientWebManager.getBaseNodeId(WebRenderCore.activeInputId).equals(baseId)) {
+        if (!textareaEditor.isEditing() && ClientWebManager.isFocusedBase(sessionId, baseId)) {
             if (this.inputHost != null) return this.inputHost.getValue();
         }
         HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
@@ -430,6 +429,6 @@ public class WebScreenDelegate {
         interactionHandler.clearScene();
         selectWidget.close();
         dragDropController.clear();
-        WebRenderCore.activePressedId = "";
+        ClientWebManager.setActivePressedId(sessionId, "");
     }
 }
