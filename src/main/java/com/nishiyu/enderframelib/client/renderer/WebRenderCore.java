@@ -378,6 +378,8 @@ public class WebRenderCore {
         if (renderText && hoveredTooltipEl != null && resolvedTooltipText != null && !resolvedTooltipText.isEmpty()) {
             renderTooltipOverlay(poseStack, buffer, defaultFont, hoveredTooltipEl, resolvedTooltipText, maxAllowedX, maxAllowedY, zOffset + effectiveZStep * 4 + 0.05f, packedLight);
         }
+
+        WebSdfShader.endPass();
     }
 
     private static Font resolveElementFont(UIElement el, Font defaultFont) {
