@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -74,7 +75,7 @@ public class UIRenderer {
             }
             if (canvasBg != 0x00000000) {
                 addElement(elements, "bg_root", "bg_root", ElementType.RECT, box.x, box.y, Math.max(box.w, rootW), Math.max(box.h, rootH),
-                        "", 0, canvasBg, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, "", UIElement.RenderMeta.EMPTY);
+                        "", 0, canvasBg, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, UIElement.RenderMeta.EMPTY);
             }
 
             for (LayoutBox child : box.children) {
@@ -221,8 +222,8 @@ public class UIRenderer {
             float maxScrollY = Math.max(1f, scrollH - box.h);
             int thumbY = trackY + (int) ((trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f));
 
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
             int trackX = box.x + box.bL + 2;
@@ -232,15 +233,15 @@ public class UIRenderer {
             float maxScrollX = Math.max(1f, scrollW - box.w);
             int thumbX = trackX + (int) ((trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f));
 
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, "", sbMeta);
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
     }
 
     private void addElement(List<UIElement> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
                             int x, int y, int w, int h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
-                            float tx, float ty, float sx, float sy, float rot, int trans, String animDef,
+                            float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             UIElement.RenderMeta meta) {
         elements.add(new UIElement(id, baseNodeId, type, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode, meta));
     }
@@ -248,7 +249,7 @@ public class UIRenderer {
     private void addElement(List<UIElement> elements, String baseNodeId, String id, ElementType type,
                             int x, int y, int w, int h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
-                            float tx, float ty, float sx, float sy, float rot, int trans, String animDef,
+                            float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             UIElement.RenderMeta meta) {
         addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta);
     }
@@ -320,10 +321,11 @@ public class UIRenderer {
         return has ? new PseudoTarget(op, tx, ty, sx, sy, rot, col, bgCol) : null;
     }
 
-    private String parseAnimationDef(String animProp, float baseW, float baseH) {
-        if (animProp == null || "none".equals(animProp)) return "";
+    /** CSS の {@code animation} 宣言と {@code @keyframes} を {@link AnimationSpec} に解決する。 */
+    private AnimationSpec parseAnimationDef(String animProp, float baseW, float baseH) {
+        if (animProp == null || "none".equals(animProp)) return AnimationSpec.NONE;
         String[] parts = WHITESPACE_SPLIT.split(animProp.trim());
-        if (parts.length == 0) return "";
+        if (parts.length == 0) return AnimationSpec.NONE;
 
         String name = "";
         for (String p : parts) {
@@ -332,7 +334,7 @@ public class UIRenderer {
                 break;
             }
         }
-        if (name.isEmpty()) return "";
+        if (name.isEmpty()) return AnimationSpec.NONE;
 
         int dur = 1000;
         boolean infinite = animProp.contains("infinite");
@@ -347,16 +349,19 @@ public class UIRenderer {
             }
         }
 
-        String rawContent = keyframes.get(name);
-        StringBuilder sb = new StringBuilder();
-        sb.append(dur).append('_').append(infinite ? '1' : '0').append('_');
-
-        for (String frame : rawContent.split("\\|")) {
+        List<AnimationSpec.Keyframe> frames = new ArrayList<>();
+        for (String frame : keyframes.get(name).split("\\|")) {
             if (frame.isEmpty()) continue;
             int tickIdx = frame.indexOf('`');
             if (tickIdx <= 0) continue;
-            String pct = frame.substring(0, tickIdx);
             String props = frame.substring(tickIdx + 1);
+
+            float pct;
+            try {
+                pct = Float.parseFloat(frame.substring(0, tickIdx));
+            } catch (NumberFormatException e) {
+                continue;
+            }
 
             float[] tr = parseTransformProps(props, (int) baseW, (int) baseH, 0, 0, 1, 1, 0);
             float op = 1f;
@@ -365,10 +370,10 @@ public class UIRenderer {
                 try { op = Float.parseFloat(om.group(1)); } catch (NumberFormatException ignored) {}
             }
 
-            sb.append(pct).append(':').append(tr[0]).append(',').append(tr[1]).append(',')
-                    .append(tr[2]).append(',').append(tr[3]).append(',').append(tr[4]).append(',').append(op).append('|');
+            frames.add(new AnimationSpec.Keyframe(pct, tr[0], tr[1], tr[2], tr[3], tr[4], op));
         }
-        return sb.toString();
+
+        return frames.isEmpty() ? AnimationSpec.NONE : new AnimationSpec(dur, infinite, frames);
     }
 
     private static TransitionSpec parseTransitionSpec(Map<String, String> style) {
@@ -485,7 +490,7 @@ public class UIRenderer {
         PseudoTarget active = buildPseudoTarget("active", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
         PseudoTarget focus = buildPseudoTarget("focus", box, opacity, tx, ty, sx, sy, rot, color, bgColor);
         PseudoStates pseudoStates = new PseudoStates(hover, active, focus);
-        String animDef = parseAnimationDef(box.style.get(CssProperty.ANIMATION), box.w, box.h);
+        AnimationSpec animDef = parseAnimationDef(box.style.get(CssProperty.ANIMATION), box.w, box.h);
 
         float ox = 0.5f, oy = 0.5f;
         Map<String, String> anchorEvents = new HashMap<>(4);
@@ -515,7 +520,7 @@ public class UIRenderer {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
                     addElement(elements, id, id + "_frag_" + (fragIdCounter++), ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
-                            "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                            "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
                 }
             }
             return;
@@ -534,7 +539,7 @@ public class UIRenderer {
                 String val = box.node.attrs.getOrDefault("value", "0");
                 String min = box.node.attrs.getOrDefault("min", "0");
                 String max = box.node.attrs.getOrDefault("max", "100");
-                addElement(elements, id, id + "_progress", ElementType.RANGE, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                addElement(elements, id, id + "_progress", ElementType.RANGE, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             }
             case "canvas" -> drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff);
             case "textarea" -> drawTextareaElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff);
@@ -605,13 +610,13 @@ public class UIRenderer {
         if (shadow == null || "none".equals(shadow)) return;
         Map<String, String> shadowEv = Map.of(RenderKeys.MC_PARENT, id);
         Corners r1 = new Corners(radii.topLeft() + 1, radii.topRight() + 1, radii.bottomRight() + 1, radii.bottomLeft() + 1);
-        addElement(elements, id, id + "_shadow_1", ElementType.RECT, box.x + 1, box.y + 2, box.w + 2, box.h + 2, "", 0, 0x22000000, shadowEv, fallbackRadius + 1, 1f, 0, 0, 1f, 1f, 0, 0, "",
+        addElement(elements, id, id + "_shadow_1", ElementType.RECT, box.x + 1, box.y + 2, box.w + 2, box.h + 2, "", 0, 0x22000000, shadowEv, fallbackRadius + 1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                 new UIElement.RenderMeta(normalizedClip, r1, null, null, fontHVal, ox, oy, 1, PseudoStates.EMPTY));
         Corners r2 = new Corners(radii.topLeft() + 2, radii.topRight() + 2, radii.bottomRight() + 2, radii.bottomLeft() + 2);
-        addElement(elements, id, id + "_shadow_2", ElementType.RECT, box.x + 2, box.y + 4, box.w + 4, box.h + 4, "", 0, 0x15000000, shadowEv, fallbackRadius + 2, 1f, 0, 0, 1f, 1f, 0, 0, "",
+        addElement(elements, id, id + "_shadow_2", ElementType.RECT, box.x + 2, box.y + 4, box.w + 4, box.h + 4, "", 0, 0x15000000, shadowEv, fallbackRadius + 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                 new UIElement.RenderMeta(normalizedClip, r2, null, null, fontHVal, ox, oy, 1, PseudoStates.EMPTY));
         Corners r3 = new Corners(radii.topLeft() + 3, radii.topRight() + 3, radii.bottomRight() + 3, radii.bottomLeft() + 3);
-        addElement(elements, id, id + "_shadow_3", ElementType.RECT, box.x + 3, box.y + 6, box.w + 6, box.h + 6, "", 0, 0x0B000000, shadowEv, fallbackRadius + 3, 1f, 0, 0, 1f, 1f, 0, 0, "",
+        addElement(elements, id, id + "_shadow_3", ElementType.RECT, box.x + 3, box.y + 6, box.w + 6, box.h + 6, "", 0, 0x0B000000, shadowEv, fallbackRadius + 3, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                 new UIElement.RenderMeta(normalizedClip, r3, null, null, fontHVal, ox, oy, 1, PseudoStates.EMPTY));
     }
 
@@ -619,7 +624,7 @@ public class UIRenderer {
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff) {
         if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
         } else if (border.hasBorder()) {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
@@ -634,7 +639,7 @@ public class UIRenderer {
         else if (box.node.attrs.containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.node.attrs.get("data-slice-y"));
         if (box.node.attrs.containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.node.attrs.get("auto-rotate"));
 
-        addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+        addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
     }
 
     private void drawMediaElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -655,10 +660,10 @@ public class UIRenderer {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             UIElement.CircleBorderSpec cbSpec = new UIElement.CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "",
+            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                     new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, PseudoStates.EMPTY));
         } else if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
         } else if (border.hasBorder()) {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
@@ -668,7 +673,7 @@ public class UIRenderer {
         int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
-        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
     }
 
     private void drawTextNodeElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor,
@@ -685,7 +690,7 @@ public class UIRenderer {
             int fontH = (int) (16 * box.fontSize);
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (frag.text != null && !frag.text.trim().isEmpty()) {
-                    addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, frag.x, frag.y, frag.w, fontH, frag.text, color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", txtMeta);
+                    addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, frag.x, frag.y, frag.w, fontH, frag.text, color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, txtMeta);
                 }
             }
         } else if (box.textLines != null && !box.textLines.isEmpty()) {
@@ -714,7 +719,7 @@ public class UIRenderer {
                 }
                 String renderedLine = isUppercase ? line.toUpperCase(Locale.ROOT) : line;
                 int lineX = box.x + box.pL + box.bL;
-                addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, lineX, lineY, availableW, fontH, renderedLine, color, bgColor, textEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", txtMeta);
+                addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, lineX, lineY, availableW, fontH, renderedLine, color, bgColor, textEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, txtMeta);
                 lineY += lineStep;
             }
         }
@@ -724,7 +729,7 @@ public class UIRenderer {
                                    Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
                                    BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff) {
         if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
         } else if (border.hasBorder()) {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
@@ -732,7 +737,7 @@ public class UIRenderer {
         int innerY = box.y + border.bwTop();
         int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
-        addElement(elements, id, id + "_canvas", ElementType.CANVAS, innerX, innerY, innerW, innerH, id, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+        addElement(elements, id, id + "_canvas", ElementType.CANVAS, innerX, innerY, innerW, innerH, id, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
     }
 
     private void drawTextareaElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -749,10 +754,10 @@ public class UIRenderer {
         if (box.node.attrs.containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.node.attrs.get("data-line-numbers"));
 
         if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
         } else {
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
     }
@@ -766,10 +771,10 @@ public class UIRenderer {
         int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-            addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
+            addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
         } else {
-            addElement(elements, id, id + "_select", ElementType.SELECT, box.x, box.y, box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_select", ElementType.SELECT, box.x, box.y, box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
     }
@@ -813,7 +818,7 @@ public class UIRenderer {
                     int phX = box.x + border.bwLeft() + 4;
                     int phY = box.y + (box.h - fontH) / 2;
                     Map<String, String> phEvents = new HashMap<>(passiveBorderEvents);
-                    addElement(elements, id, id + "_ph", ElementType.TEXT, phX, phY, innerW, fontH, placeholderText, 0xFFAAAAAA, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+                    addElement(elements, id, id + "_ph", ElementType.TEXT, phX, phY, innerW, fontH, placeholderText, 0xFFAAAAAA, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
                 }
             }
         }
@@ -824,10 +829,10 @@ public class UIRenderer {
                                      Map<String, String> partsEvents, Map<String, String> innerEvents, Map<String, String> passiveBorderEvents,
                                      BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff) {
         if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
-            addElement(elements, id, id + suffix, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
+            addElement(elements, id, id + suffix, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
         } else {
-            addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
         }
     }
@@ -840,7 +845,7 @@ public class UIRenderer {
             int dotSize = Math.max(2, (int) (4 * box.fontSize));
             int dotX = box.x - (int) (12 * box.fontSize);
             int dotY = box.y + box.pT + (int) (8 * box.fontSize) - (dotSize / 2);
-            addElement(elements, id, id + "_dot", ElementType.RECT, dotX, dotY, dotSize, dotSize, "", 0, color, Map.of(RenderKeys.MC_PARENT, id), dotSize / 2, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_dot", ElementType.RECT, dotX, dotY, dotSize, dotSize, "", 0, color, Map.of(RenderKeys.MC_PARENT, id), dotSize / 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
         }
 
         if (border.isCircle() && border.hasBorder()) {
@@ -848,23 +853,23 @@ public class UIRenderer {
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             UIElement.CircleBorderSpec cbSpec = new UIElement.CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
             if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
-                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             }
-            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, Map.of(RenderKeys.MC_PARENT, id), 0, 1f, 0, 0, 1f, 1f, 0, 0, "",
+            addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, Map.of(RenderKeys.MC_PARENT, id), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                     new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, PseudoStates.EMPTY));
         } else if (border.useRoundedBorder()) {
-            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+            addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
                 Map<String, String> innerEvents = new HashMap<>(partsEvents);
                 int innerX = box.x + border.bwLeft();
                 int innerY = box.y + border.bwTop();
                 int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
                 int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
-                addElement(elements, id, id + "_bg", ElementType.RECT, innerX, innerY, innerW, innerH, "", color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+                addElement(elements, id, id + "_bg", ElementType.RECT, innerX, innerY, innerW, innerH, "", color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
             }
         } else {
             if (bgColor != 0x00000000 || !partsEvents.isEmpty()) {
-                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, "", baseMeta);
+                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, baseMeta);
             }
             if (border.hasBorder()) {
                 drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta);
@@ -876,7 +881,7 @@ public class UIRenderer {
             if (!ghostItem.isEmpty() && !"minecraft:air".equals(ghostItem)) {
                 int iconX = box.x + (box.w - 16) / 2;
                 int iconY = box.y + (box.h - 16) / 2;
-                addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, "", innerMeta);
+                addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
             }
         }
     }
@@ -884,13 +889,13 @@ public class UIRenderer {
     private void drawStraightBorders(List<UIElement> elements, String id, LayoutBox box, int rOff, Map<String, String> partsEvents, BorderSpec b, UIElement.RenderMeta meta) {
         UIElement.RenderMeta borderMeta = new UIElement.RenderMeta(meta.clipRect(), null, null, null, meta.fontHeight(), meta.originX(), meta.originY(), 1, PseudoStates.EMPTY);
         if (b.bwTop() > 0)
-            addElement(elements, id, id + "_b_top", ElementType.RECT, box.x + rOff, box.y, box.w - rOff * 2, b.bwTop(), "", 0, b.bcTop(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", borderMeta);
+            addElement(elements, id, id + "_b_top", ElementType.RECT, box.x + rOff, box.y, box.w - rOff * 2, b.bwTop(), "", 0, b.bcTop(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, borderMeta);
         if (b.bwBottom() > 0)
-            addElement(elements, id, id + "_b_bottom", ElementType.RECT, box.x + rOff, box.y + box.h - b.bwBottom(), box.w - rOff * 2, b.bwBottom(), "", 0, b.bcBottom(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", borderMeta);
+            addElement(elements, id, id + "_b_bottom", ElementType.RECT, box.x + rOff, box.y + box.h - b.bwBottom(), box.w - rOff * 2, b.bwBottom(), "", 0, b.bcBottom(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, borderMeta);
         if (b.bwLeft() > 0)
-            addElement(elements, id, id + "_b_left", ElementType.RECT, box.x, box.y + rOff, b.bwLeft(), box.h - rOff * 2, "", 0, b.bcLeft(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", borderMeta);
+            addElement(elements, id, id + "_b_left", ElementType.RECT, box.x, box.y + rOff, b.bwLeft(), box.h - rOff * 2, "", 0, b.bcLeft(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, borderMeta);
         if (b.bwRight() > 0)
-            addElement(elements, id, id + "_b_right", ElementType.RECT, box.x + box.w - b.bwRight(), box.y + rOff, b.bwRight(), box.h - rOff * 2, "", 0, b.bcRight(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, "", borderMeta);
+            addElement(elements, id, id + "_b_right", ElementType.RECT, box.x + box.w - b.bwRight(), box.y + rOff, b.bwRight(), box.h - rOff * 2, "", 0, b.bcRight(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, borderMeta);
     }
 
     private static ClipRect normalizeClipRect(float[] clipRect) {

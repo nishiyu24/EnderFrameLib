@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.model.RenderKeys;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -193,8 +194,8 @@ public class WebRenderCore {
 
     private static void applyTransforms(PoseStack poseStack, UIElement el, String hoveredId, String sessionId, Map<String, UIElement> elementMap, float[] cumulativeOpacity) {
         if (el == null) return;
-        if (el.events() != null && el.events().containsKey("mc-parent")) {
-            String parentId = el.events().get("mc-parent");
+        if (el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT)) {
+            String parentId = el.events().get(RenderKeys.MC_PARENT);
             applyTransforms(poseStack, elementMap.get(parentId), hoveredId, sessionId, elementMap, cumulativeOpacity);
         }
 
@@ -319,8 +320,8 @@ public class WebRenderCore {
             poseStack.pushPose();
             try {
                 float[] cumulativeOpacity = {1.0f};
-                if (el.events() != null && el.events().containsKey("mc-parent")) {
-                    applyTransforms(poseStack, elementMap.get(el.events().get("mc-parent")), hoveredId, animSessionId, elementMap, cumulativeOpacity);
+                if (el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT)) {
+                    applyTransforms(poseStack, elementMap.get(el.events().get(RenderKeys.MC_PARENT)), hoveredId, animSessionId, elementMap, cumulativeOpacity);
                 }
 
                 float originX = meta != null ? meta.originX() : 0.5f;
@@ -393,8 +394,8 @@ public class WebRenderCore {
     }
 
     private static String extractTooltipText(UIElement el) {
-        if (el.events() != null && el.events().containsKey("mc-title")) {
-            String t = el.events().get("mc-title");
+        if (el.events() != null && el.events().containsKey(RenderKeys.MC_TITLE)) {
+            String t = el.events().get(RenderKeys.MC_TITLE);
             if (!"false".equalsIgnoreCase(t) && !t.isEmpty()) {
                 return t;
             }

@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.model.RenderKeys;
 import com.nishiyu.enderframelib.core.model.*;
 
 import java.util.ArrayList;
@@ -36,43 +38,21 @@ public class WebAnimator {
         return false;
     }
 
-    private static AnimationDef parseAnimDef(String defStr) {
-        if (defStr == null || defStr.isEmpty()) return null;
-        try {
-            int markerIdx = defStr.indexOf("@@");
-            String mainAnim = markerIdx >= 0 ? defStr.substring(0, markerIdx) : defStr;
-            if (mainAnim.isEmpty()) return null;
-
-            String[] parts = mainAnim.split("_", 3);
-            if (parts.length < 3) return null;
-
-            AnimationDef def = new AnimationDef();
-            def.durationMs = Math.max(1, parseIntSafe(parts[0], 1000));
-            def.infinite = "1".equals(parts[1]);
-
-            for (String fs : parts[2].split("\\|")) {
-                if (fs.isEmpty()) continue;
-                int colonIdx = fs.indexOf(':');
-                if (colonIdx <= 0) continue;
-
-                Keyframe kf = new Keyframe();
-                kf.pct = parseFloatSafe(fs.substring(0, colonIdx), 0f);
-                String[] vals = fs.substring(colonIdx + 1).split(",");
-                if (vals.length >= 6) {
-                    kf.tx = parseFloatSafe(vals[0], 0f);
-                    kf.ty = parseFloatSafe(vals[1], 0f);
-                    kf.sx = parseFloatSafe(vals[2], 1f);
-                    kf.sy = parseFloatSafe(vals[3], 1f);
-                    kf.rot = parseFloatSafe(vals[4], 0f);
-                    kf.op = parseFloatSafe(vals[5], 1f);
-                    def.frames.add(kf);
-                }
-            }
-            def.frames.sort(Comparator.comparingDouble(f -> f.pct));
-            return def.frames.isEmpty() ? null : def;
-        } catch (Exception e) {
-            return null;
-        }
+    /**
+     * UIRenderer が解決した {@link AnimationSpec} を、補間しやすい
+     * 進行度順のキーフレーム列に正規化する。
+     *
+     * <p>以前はここで {@code "1000_1_0:0,0,1,1,0,1|..."} という文字列を
+     * 毎回パースし直していた。
+     */
+    private static AnimationDef normalize(AnimationSpec spec) {
+        if (spec == null || spec.isEmpty()) return null;
+        AnimationDef def = new AnimationDef();
+        def.durationMs = spec.durationMs();
+        def.infinite = spec.infinite();
+        def.frames.addAll(spec.frames());
+        def.frames.sort(Comparator.comparingDouble(AnimationSpec.Keyframe::pct));
+        return def;
     }
 
     public static AnimatedValues getValues(String sessionId, UIElement el, boolean isHovered) {
@@ -140,14 +120,11 @@ public class WebAnimator {
         }
     }
 
-    static class Keyframe {
-        float pct, tx, ty, sx, sy, rot, op;
-    }
-
+    /** 進行度順に並べ替えたキーフレーム列。{@link AnimationSpec} から作る。 */
     static class AnimationDef {
         int durationMs;
         boolean infinite;
-        final List<Keyframe> frames = new ArrayList<>();
+        final List<AnimationSpec.Keyframe> frames = new ArrayList<>();
     }
 
     public static class AnimState {
@@ -165,7 +142,7 @@ public class WebAnimator {
         public int durationMs;
         public int delayMs;
         public String easing;
-        public String currentAnimDefStr = "";
+        public AnimationSpec currentAnimSpec = AnimationSpec.NONE;
         public AnimationDef currentAnimDef = null;
         public long animStartTime = 0;
 
@@ -195,8 +172,8 @@ public class WebAnimator {
             this.delayMs = 0;
             this.easing = "ease-out";
             this.startTime = System.currentTimeMillis();
-            this.currentAnimDefStr = el.animDef() != null ? el.animDef() : "";
-            this.currentAnimDef = parseAnimDef(this.currentAnimDefStr);
+            this.currentAnimSpec = el.animDef() != null ? el.animDef() : AnimationSpec.NONE;
+            this.currentAnimDef = normalize(this.currentAnimSpec);
             this.animStartTime = this.startTime;
             syncPseudoTargets(el);
             updateStyleCache(el);
@@ -216,7 +193,7 @@ public class WebAnimator {
                     || baseTx != el.translateX() || baseTy != el.translateY()
                     || baseSx != el.scaleX() || baseSy != el.scaleY() || baseRot != el.rotate()
                     || baseColor != el.color() || baseBgColor != el.bgColor()
-                    || (el.animDef() != null && !el.animDef().equals(currentAnimDefStr));
+                    || !Objects.equals(el.animDef(), currentAnimSpec);
         }
 
         public void syncBaseTargets(UIElement el) {
@@ -301,9 +278,9 @@ public class WebAnimator {
             this.startColor = current.color();
             this.startBgColor = current.bgColor();
 
-            if (el.animDef() != null && !el.animDef().equals(this.currentAnimDefStr)) {
-                this.currentAnimDefStr = el.animDef();
-                this.currentAnimDef = parseAnimDef(el.animDef());
+            if (!Objects.equals(el.animDef(), this.currentAnimSpec)) {
+                this.currentAnimSpec = el.animDef() != null ? el.animDef() : AnimationSpec.NONE;
+                this.currentAnimDef = normalize(this.currentAnimSpec);
                 this.animStartTime = now;
             }
             syncPseudoTargets(el);
@@ -340,11 +317,11 @@ public class WebAnimator {
             this.delayMs = 0;
             this.easing = "ease-out";
             if (el.events() != null) {
-                if (el.events().containsKey("mc-delay")) {
-                    this.delayMs = parseIntSafe(el.events().get("mc-delay"), 0);
+                if (el.events().containsKey(RenderKeys.MC_DELAY)) {
+                    this.delayMs = parseIntSafe(el.events().get(RenderKeys.MC_DELAY), 0);
                 }
-                if (el.events().containsKey("mc-easing")) {
-                    this.easing = el.events().get("mc-easing");
+                if (el.events().containsKey(RenderKeys.MC_EASING)) {
+                    this.easing = el.events().get(RenderKeys.MC_EASING);
                 }
             }
             this.startTime = now;
@@ -385,24 +362,24 @@ public class WebAnimator {
                         ? (float) (elapsed % currentAnimDef.durationMs) / currentAnimDef.durationMs
                         : Math.min(1.0f, (float) elapsed / currentAnimDef.durationMs);
                 float pct = progress * 100f;
-                Keyframe f0 = currentAnimDef.frames.getFirst();
-                Keyframe f1 = currentAnimDef.frames.getLast();
+                AnimationSpec.Keyframe f0 = currentAnimDef.frames.getFirst();
+                AnimationSpec.Keyframe f1 = currentAnimDef.frames.getLast();
                 for (int i = 0; i < currentAnimDef.frames.size() - 1; i++) {
-                    Keyframe cur = currentAnimDef.frames.get(i);
-                    Keyframe next = currentAnimDef.frames.get(i + 1);
-                    if (pct >= cur.pct && pct <= next.pct) {
+                    AnimationSpec.Keyframe cur = currentAnimDef.frames.get(i);
+                    AnimationSpec.Keyframe next = currentAnimDef.frames.get(i + 1);
+                    if (pct >= cur.pct() && pct <= next.pct()) {
                         f0 = cur;
                         f1 = next;
                         break;
                     }
                 }
-                float localT = f1.pct > f0.pct ? (pct - f0.pct) / (f1.pct - f0.pct) : 0f;
-                op = lerp(f0.op, f1.op, localT);
-                tx = lerp(f0.tx, f1.tx, localT);
-                ty = lerp(f0.ty, f1.ty, localT);
-                sx = lerp(f0.sx, f1.sx, localT);
-                sy = lerp(f0.sy, f1.sy, localT);
-                rot = lerp(f0.rot, f1.rot, localT);
+                float localT = f1.pct() > f0.pct() ? (pct - f0.pct()) / (f1.pct() - f0.pct()) : 0f;
+                op = lerp(f0.op(), f1.op(), localT);
+                tx = lerp(f0.tx(), f1.tx(), localT);
+                ty = lerp(f0.ty(), f1.ty(), localT);
+                sx = lerp(f0.sx(), f1.sx(), localT);
+                sy = lerp(f0.sy(), f1.sy(), localT);
+                rot = lerp(f0.rot(), f1.rot(), localT);
             }
 
             cachedValues.set(op, tx, ty, sx, sy, rot, col, bgCol);

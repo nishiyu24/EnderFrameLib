@@ -96,26 +96,4 @@ public class DeclarativeBindingManager {
         }
         return null;
     }
-
-    private static String serializeToSimpleHtml(HtmlNode node) {
-        if (node.tag.equals("#text")) return node.text;
-
-        StringBuilder sb = new StringBuilder();
-        if (!node.tag.equals("template")) {
-            sb.append("<").append(node.tag);
-            for (java.util.Map.Entry<String, String> attr : node.attrs.entrySet()) {
-                sb.append(" ").append(attr.getKey()).append("=\"").append(attr.getValue()).append("\"");
-            }
-            sb.append(">");
-        }
-
-        for (HtmlNode child : node.children) {
-            sb.append(serializeToSimpleHtml(child));
-        }
-
-        if (!node.tag.equals("template")) {
-            sb.append("</").append(node.tag).append(">");
-        }
-        return sb.toString();
-    }
 }

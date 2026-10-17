@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.model.RenderKeys;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.client.binding.ClientPubSubManager;
 import com.nishiyu.enderframelib.client.binding.DeclarativeBindingManager;
@@ -507,14 +508,14 @@ public class ClientWebManager {
 
         for (int i = elements.size() - 1; i >= 0; i--) {
             UIElement el = elements.get(i);
-            if (el.events() != null && el.events().containsKey("mc-scrollable")) {
+            if (el.events() != null && el.events().containsKey(RenderKeys.MC_SCROLLABLE)) {
                 WebAnimator.AnimatedValues anim = WebAnimator.getCurrentValues(sessionId, el);
                 double[] localPt = inverseTransform(pixelX, pixelY, el, anim);
                 double localX = localPt[0] - el.x();
                 double localY = localPt[1] - el.y();
 
                 if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                    String[] maxStrs = el.events().get("mc-scrollable").split(",");
+                    String[] maxStrs = el.events().get(RenderKeys.MC_SCROLLABLE).split(",");
                     float maxW = Float.parseFloat(maxStrs[0]), maxH = Float.parseFloat(maxStrs[1]);
 
                     SessionContext session = getOrCreateSession(sessionId);
