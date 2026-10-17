@@ -36,11 +36,12 @@ public class DeclarativeBindingManager {
             HtmlNode templateNode = findTemplateChild(rootNode);
 
             if (templateNode != null) {
-                int itemW = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-width", "36"));
-                int itemH = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-height", "36"));
+                int itemW = 36;
+                int itemH = 36;
+                try { itemW = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-width", "36")); } catch (Exception ignored) {}
+                try { itemH = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-height", "36")); } catch (Exception ignored) {}
                 String channel = resolveChannel(rootNode, listPath);
-                String templateHtml = serializeToSimpleHtml(templateNode);
-                ClientPubSubManager.registerVirtualList(sessionId, rootNode.getId(), channel, templateHtml, itemW, itemH);
+                ClientPubSubManager.registerVirtualList(sessionId, rootNode.getId(), channel, templateNode, itemW, itemH);
                 ClientPubSubManager.requestSubscribe(sessionId, channel);
             }
         }

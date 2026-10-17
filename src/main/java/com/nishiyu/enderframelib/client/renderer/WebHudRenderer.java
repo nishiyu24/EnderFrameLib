@@ -14,6 +14,7 @@ import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.model.UIElement;
@@ -512,16 +513,7 @@ public class WebHudRenderer {
         ClientLocalEnvProvider.applyI18nAttributes(node);
         Map<String, String> localEnv = ClientLocalEnvProvider.captureCurrentEnv();
 
-        if (node.text != null && node.text.contains("{{")) {
-            node.text = resolveAllPlaceholders(node.text, data, localEnv);
-        }
-        for (String key : new ArrayList<>(node.attrs.keySet())) {
-            String val = node.attrs.get(key);
-            if (val != null && val.contains("{{")) {
-                node.attrs.put(key, resolveAllPlaceholders(val, data, localEnv));
-            }
-        }
-        if (node.attrs.containsKey("id")) node.setId(node.attrs.get("id")); // ★ ここを node.id = ... から node.setId(...) に修正
+        DomUtils.applyTemplate(node, text -> resolveAllPlaceholders(text, data, localEnv));
 
         if (node.attrs.containsKey("data-show")) {
             String showVal = node.attrs.get("data-show").trim();

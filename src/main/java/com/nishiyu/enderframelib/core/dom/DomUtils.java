@@ -146,20 +146,29 @@ public class DomUtils {
 
     public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
         if (node == null || data == null) return;
+        applyTemplate(node, text -> replacePlaceholders(text, data));
+    }
+
+    public static void applyTemplate(HtmlNode node, java.util.function.Function<String, String> replacer) {
+        if (node == null || replacer == null) return;
 
         if (node.text != null && node.text.contains("{{")) {
-            node.text = replacePlaceholders(node.text, data);
+            node.text = replacer.apply(node.text);
         }
 
         for (String key : new ArrayList<>(node.attrs.keySet())) {
             String val = node.attrs.get(key);
             if (val != null && val.contains("{{")) {
-                node.attrs.put(key, replacePlaceholders(val, data));
+                updateAttribute(node, key, replacer.apply(val), false);
             }
         }
 
+        if (node.attrs.containsKey("id")) {
+            node.setId(node.attrs.get("id"));
+        }
+
         for (HtmlNode child : node.children) {
-            applyTemplateData(child, data);
+            applyTemplate(child, replacer);
         }
     }
 

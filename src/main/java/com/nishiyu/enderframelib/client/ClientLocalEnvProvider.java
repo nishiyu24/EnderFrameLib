@@ -14,9 +14,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -31,9 +33,11 @@ public class ClientLocalEnvProvider {
     private static final Pattern LOCAL_PLACEHOLDER = Pattern.compile("\\{\\{@([a-zA-Z0-9_.:-]+)}}");
     private static final Pattern I18N_PLACEHOLDER = Pattern.compile("\\{\\{@?i18n:([a-zA-Z0-9_.:-]+)}}");
     private static final Map<String, Supplier<String>> CUSTOM_PROVIDERS = new ConcurrentHashMap<>();
-    private static final Map<String, String> CACHED_SNAPSHOT = new ConcurrentHashMap<>();
+    private static volatile Map<String, String> CACHED_SNAPSHOT = Collections.emptyMap();
     private static final Map<String, Long> SESSION_LAST_UPDATE = new ConcurrentHashMap<>();
-    private static long lastSnapshotTime = 0;
+    private static final Map<String, Set<String>> SESSION_USED_KEYS = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, String>> SESSION_APPLIED_ENV = new ConcurrentHashMap<>();
+    private static volatile long lastSnapshotTime = 0;
 
     static {
         DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
@@ -57,13 +61,16 @@ public class ClientLocalEnvProvider {
     public static void clearSession(String sessionId) {
         if (sessionId != null) {
             SESSION_LAST_UPDATE.remove(sessionId);
+            SESSION_USED_KEYS.remove(sessionId);
+            SESSION_APPLIED_ENV.remove(sessionId);
         }
     }
 
     public static Map<String, String> captureCurrentEnv() {
         long now = System.currentTimeMillis();
-        if (now - lastSnapshotTime < 100 && !CACHED_SNAPSHOT.isEmpty()) {
-            return CACHED_SNAPSHOT;
+        Map<String, String> cached = CACHED_SNAPSHOT;
+        if (now - lastSnapshotTime < 100 && !cached.isEmpty()) {
+            return cached;
         }
 
         Minecraft mc = Minecraft.getInstance();
@@ -120,10 +127,10 @@ public class ClientLocalEnvProvider {
             } catch (Exception ignored) {}
         }
 
-        CACHED_SNAPSHOT.clear();
-        CACHED_SNAPSHOT.putAll(env);
+        Map<String, String> unmodifiable = Collections.unmodifiableMap(env);
+        CACHED_SNAPSHOT = unmodifiable;
         lastSnapshotTime = now;
-        return CACHED_SNAPSHOT;
+        return unmodifiable;
     }
 
     public static boolean applyI18nAttributes(HtmlNode vNode) {
@@ -165,8 +172,57 @@ public class ClientLocalEnvProvider {
         SESSION_LAST_UPDATE.put(sessionId, now);
 
         Map<String, String> currentEnv = captureCurrentEnv();
+        Set<String> usedKeys = SESSION_USED_KEYS.computeIfAbsent(sessionId, k -> {
+            Set<String> keys = new java.util.HashSet<>();
+            collectUsedKeys(templateRoot, keys);
+            return Collections.unmodifiableSet(keys);
+        });
+
+        Map<String, String> lastApplied = SESSION_APPLIED_ENV.get(sessionId);
+        if (lastApplied != null) {
+            boolean anyChanged = false;
+            for (String key : usedKeys) {
+                if (!Objects.equals(lastApplied.get(key), currentEnv.get(key))) {
+                    anyChanged = true;
+                    break;
+                }
+            }
+            if (!anyChanged) {
+                return;
+            }
+        }
+
+        SESSION_APPLIED_ENV.put(sessionId, currentEnv);
         if (applyLocalVarsRecursive(templateRoot, virtualRoot, currentEnv)) {
             ClientWebManager.requestRender(sessionId);
+        }
+    }
+
+    private static void collectUsedKeys(HtmlNode node, Set<String> keys) {
+        if (node == null) return;
+        if (node.text != null && node.text.contains("{{@")) {
+            Matcher m = LOCAL_PLACEHOLDER.matcher(node.text);
+            while (m.find()) {
+                String rawKey = m.group(1);
+                if (rawKey.startsWith("i18n:")) keys.add("@lang");
+                else keys.add("@" + rawKey);
+            }
+        }
+        if (node.attrs.containsKey("data-i18n") || node.attrs.containsKey("data-i18n-placeholder") || node.attrs.containsKey("data-i18n-title")) {
+            keys.add("@lang");
+        }
+        for (String val : node.attrs.values()) {
+            if (val != null && val.contains("{{@")) {
+                Matcher m = LOCAL_PLACEHOLDER.matcher(val);
+                while (m.find()) {
+                    String rawKey = m.group(1);
+                    if (rawKey.startsWith("i18n:")) keys.add("@lang");
+                    else keys.add("@" + rawKey);
+                }
+            }
+        }
+        for (HtmlNode child : node.children) {
+            collectUsedKeys(child, keys);
         }
     }
 

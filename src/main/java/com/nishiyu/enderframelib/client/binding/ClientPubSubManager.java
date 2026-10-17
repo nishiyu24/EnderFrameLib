@@ -22,6 +22,9 @@ public class ClientPubSubManager {
     private static final Map<String, List<DataBinding>> dataBindings = new ConcurrentHashMap<>();
     private static final Map<String, List<VirtualListBinding>> virtualListBindings = new ConcurrentHashMap<>();
 
+    public static final int DEFAULT_CONTAINER_WIDTH = 400;
+    public static final int DEFAULT_VISIBLE_ROWS = 15;
+
     public static void requestSubscribe(String sessionId, String channel) {
         activeSessions.computeIfAbsent(channel, k -> ConcurrentHashMap.newKeySet()).add(sessionId);
         if (subscriptionSender != null) subscriptionSender.accept(channel);
@@ -43,8 +46,13 @@ public class ClientPubSubManager {
     }
 
     public static void registerVirtualList(String sessionId, String targetId, String channel, String templateHtml, int itemW, int itemH) {
+        HtmlNode parsedTemplate = (templateHtml != null && !templateHtml.isEmpty()) ? HtmlParser.parse(templateHtml) : new HtmlNode("template");
+        registerVirtualList(sessionId, targetId, channel, parsedTemplate, itemW, itemH);
+    }
+
+    public static void registerVirtualList(String sessionId, String targetId, String channel, HtmlNode templateNode, int itemW, int itemH) {
         List<VirtualListBinding> list = virtualListBindings.computeIfAbsent(sessionId, k -> new CopyOnWriteArrayList<>());
-        VirtualListBinding binding = new VirtualListBinding(targetId, channel, templateHtml, itemW, itemH);
+        VirtualListBinding binding = new VirtualListBinding(targetId, channel, templateNode != null ? templateNode.cloneNode() : new HtmlNode("template"), itemW, itemH);
         list.removeIf(b -> b.targetId().equals(targetId));
         list.add(binding);
     }
@@ -60,17 +68,27 @@ public class ClientPubSubManager {
     public static void onReceiveUpdate(String channel, boolean isFull, Map<String, Object> diffData) {
         Map<String, Object> current = clientCache.computeIfAbsent(channel, k -> new ConcurrentHashMap<>());
 
+        boolean dataChanged = false;
         if (isFull) {
-            current.clear();
-            for (Map.Entry<String, Object> entry : diffData.entrySet()) {
-                if (entry.getValue() != null) current.put(entry.getKey(), entry.getValue());
+            if (!current.equals(diffData)) {
+                current.clear();
+                for (Map.Entry<String, Object> entry : diffData.entrySet()) {
+                    if (entry.getValue() != null) current.put(entry.getKey(), entry.getValue());
+                }
+                dataChanged = true;
             }
         } else {
             for (Map.Entry<String, Object> entry : diffData.entrySet()) {
-                if (entry.getValue() == null) current.remove(entry.getKey());
-                else current.put(entry.getKey(), entry.getValue());
+                if (entry.getValue() == null) {
+                    if (current.remove(entry.getKey()) != null) dataChanged = true;
+                } else {
+                    Object prev = current.put(entry.getKey(), entry.getValue());
+                    if (!Objects.equals(prev, entry.getValue())) dataChanged = true;
+                }
             }
         }
+
+        if (!dataChanged) return;
 
         Set<String> sessions = activeSessions.get(channel);
         if (sessions != null && !sessions.isEmpty()) {
@@ -102,12 +120,18 @@ public class ClientPubSubManager {
                     int scrollY = 0;
                     try { scrollY = (int) Float.parseFloat(targetNode.attrs.getOrDefault("data-scroll-y", "0")); } catch (Exception ignored) {}
 
-                    int estimatedContainerW = 400;
-                    int itemsPerRow = Math.max(1, estimatedContainerW / vBind.itemW);
+                    int estimatedContainerW = DEFAULT_CONTAINER_WIDTH;
+                    if (targetNode.attrs.containsKey("data-container-width")) {
+                        try { estimatedContainerW = Integer.parseInt(targetNode.attrs.get("data-container-width")); } catch (Exception ignored) {}
+                    }
+                    int itemsPerRow = Math.max(1, estimatedContainerW / Math.max(1, vBind.itemW));
                     int totalRows = (int) Math.ceil((double) dataList.size() / itemsPerRow);
 
-                    int startRow = Math.max(0, scrollY / vBind.itemH);
-                    int visibleRows = 15;
+                    int visibleRows = DEFAULT_VISIBLE_ROWS;
+                    if (targetNode.attrs.containsKey("data-visible-rows")) {
+                        try { visibleRows = Integer.parseInt(targetNode.attrs.get("data-visible-rows")); } catch (Exception ignored) {}
+                    }
+                    int startRow = Math.max(0, scrollY / Math.max(1, vBind.itemH));
                     int endRow = Math.min(totalRows, startRow + visibleRows);
 
                     int topPadding = startRow * vBind.itemH;
@@ -118,7 +142,7 @@ public class ClientPubSubManager {
                     topSpacer.parent = targetNode;
                     targetNode.children.add(topSpacer);
 
-                    HtmlNode templateRoot = HtmlParser.parse(vBind.templateHtml);
+                    HtmlNode templateRoot = vBind.templateNode != null ? vBind.templateNode.cloneNode() : new HtmlNode("template");
                     int startIndex = startRow * itemsPerRow;
                     int endIndex = Math.min(dataList.size(), endRow * itemsPerRow);
 
@@ -152,14 +176,24 @@ public class ClientPubSubManager {
                 String val = getValue(dBind.channel, dBind.path);
 
                 if ("text".equals(dBind.targetAttr)) {
-                    targetNode.setTextContent(val);
+                    if (!Objects.equals(targetNode.getTextContent(), val)) {
+                        targetNode.setTextContent(val);
+                        changedAny = true;
+                    }
                 } else if (dBind.targetAttr.startsWith("style.")) {
                     String styleKey = dBind.targetAttr.substring(6);
+                    String prevStyle = targetNode.attrs.getOrDefault("style", "");
                     targetNode.setStyleProperty(styleKey, val);
+                    if (!Objects.equals(prevStyle, targetNode.attrs.getOrDefault("style", ""))) {
+                        changedAny = true;
+                    }
                 } else {
-                    DomUtils.updateAttribute(targetNode, dBind.targetAttr, val, false);
+                    String prevVal = targetNode.attrs.get(dBind.targetAttr);
+                    if (!Objects.equals(prevVal, val)) {
+                        DomUtils.updateAttribute(targetNode, dBind.targetAttr, val, false);
+                        changedAny = true;
+                    }
                 }
-                changedAny = true;
             }
         }
 
@@ -169,21 +203,7 @@ public class ClientPubSubManager {
     }
 
     private static void applyTemplateData(HtmlNode node, Map<String, String> data) {
-        if (node.text != null && node.text.contains("{{")) {
-            node.text = replacePlaceholders(node.text, data);
-        }
-        for (String key : new ArrayList<>(node.attrs.keySet())) {
-            String val = node.attrs.get(key);
-            if (val != null && val.contains("{{")) {
-                DomUtils.updateAttribute(node, key, replacePlaceholders(val, data), false);
-            }
-        }
-        if (node.attrs.containsKey("id")) {
-            node.setId(node.attrs.get("id"));
-        }
-        for (HtmlNode child : node.children) {
-            applyTemplateData(child, data);
-        }
+        DomUtils.applyTemplate(node, text -> replacePlaceholders(text, data));
     }
 
     private static String replacePlaceholders(String text, Map<String, String> data) {
@@ -230,5 +250,5 @@ public class ClientPubSubManager {
     }
 
     private record DataBinding(String targetId, String channel, String path, String targetAttr) {}
-    private record VirtualListBinding(String targetId, String channel, String templateHtml, int itemW, int itemH) {}
+    private record VirtualListBinding(String targetId, String channel, HtmlNode templateNode, int itemW, int itemH) {}
 }
