@@ -23,6 +23,9 @@ public class WebStateStore {
     private static final Pattern FOR_EXPR_PATTERN = Pattern.compile("^([a-zA-Z0-9_]+)\\s+in\\s+([a-zA-Z0-9_.-]+)$");
     private static final Pattern COMPARE_EXPR_PATTERN = Pattern.compile("^([a-zA-Z0-9_.-]+)\\s*(==|!=|>=|<=|>|<)\\s*(.+)$");
 
+    /** {@link TemplateDeps#ALWAYS} と同じマーカー。{@link #forceSync()} が立てる。 */
+    private static final String DEP_ALWAYS = TemplateDeps.ALWAYS;
+
     private final String sessionId;
     private final Map<String, String> values = new ConcurrentHashMap<>();
     private final Map<String, List<Map<String, String>>> lists = new ConcurrentHashMap<>();
@@ -37,6 +40,9 @@ public class WebStateStore {
 
     private final Set<String> dirtyKeys = ConcurrentHashMap.newKeySet();
     private boolean dirty = false;
+
+    /** テンプレート木のキー単位依存索引（枝刈り用）。 */
+    private final TemplateDeps templateDeps = new TemplateDeps();
 
     public WebStateStore(String sessionId) {
         this.sessionId = sessionId;
@@ -158,7 +164,8 @@ public class WebStateStore {
 
     public void forceSync() {
         dirty = true;
-        dirtyKeys.add("*");
+        dirtyKeys.add(DEP_ALWAYS);
+        templateDeps.clear();
         listTemplates.clear();
         lastRenderedLists.clear();
         lastRawBoundLists.clear();
@@ -211,15 +218,39 @@ public class WebStateStore {
         HtmlNode tmplRoot = ClientWebManager.getTemplateRoot(sessionId);
         if (vRoot == null) return;
 
+        Set<String> changedKeys = Set.copyOf(dirtyKeys);
         dirty = false;
         dirtyKeys.clear();
-        if (applyRecursive(tmplRoot != null ? tmplRoot : vRoot, vRoot, values)) {
+
+        // キー単位の依存追跡。テンプレート木がある場合のみ有効にする
+        // （テンプレートが無いと仮想 DOM 自身が索引対象になり、
+        //   リスト展開で構造が動くため索引が安定しない）。
+        Set<String> scopeKeys = null;
+        if (tmplRoot != null && !changedKeys.contains(DEP_ALWAYS)) {
+            if (TemplateDeps.canSkip(templateDeps.index(tmplRoot), changedKeys)) {
+                // 変更されたキーはこの文書のどこからも参照されていない。
+                return;
+            }
+            scopeKeys = changedKeys;
+        }
+
+        if (applyRecursive(tmplRoot != null ? tmplRoot : vRoot, vRoot, values, scopeKeys)) {
             ClientWebManager.requestRender(sessionId);
         }
     }
 
-    private boolean applyRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData) {
+    /**
+     * @param changedKeys 変更されたキーの集合。{@code null} なら枝刈りせず全走査する
+     *                    （初回・{@link #forceSync()}・リスト行インスタンスの場合）。
+     */
+    private boolean applyRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData, Set<String> changedKeys) {
         if (vNode == null) return false;
+
+        // 索引済みのテンプレートノードで、どの変更キーにも依存しない部分木は丸ごと飛ばす。
+        if (changedKeys != null && TemplateDeps.canSkip(templateDeps.lookup(origNode), changedKeys)) {
+            return false;
+        }
+
         boolean changed = ClientLocalEnvProvider.applyI18nAttributes(vNode);
 
         if (applyTextPlaceholders(origNode, vNode, scopeData)) changed = true;
@@ -229,7 +260,7 @@ public class WebStateStore {
         if (applyConditionalVisibility(vNode, scopeData)) changed = true;
         if (applyDataClass(vNode, scopeData)) changed = true;
 
-        return handleListIterationOrChildren(origNode, vNode, scopeData, changed);
+        return handleListIterationOrChildren(origNode, vNode, scopeData, changed, changedKeys);
     }
 
     private boolean applyTextPlaceholders(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData) {
@@ -380,7 +411,8 @@ public class WebStateStore {
         return changed;
     }
 
-    private boolean handleListIterationOrChildren(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData, boolean changedSoFar) {
+    private boolean handleListIterationOrChildren(HtmlNode origNode, HtmlNode vNode, Map<String, String> scopeData,
+                                                  boolean changedSoFar, Set<String> changedKeys) {
         String listKey = null;
         String itemAlias = null;
         if (vNode.attrs.containsKey("data-list")) {
@@ -423,7 +455,8 @@ public class WebStateStore {
                         for (HtmlNode tmpl : tmplNodes) {
                             HtmlNode instance = tmpl.cloneNode();
                             uniquifyIds(instance, idx, rowKey);
-                            applyRecursive(instance.cloneNode(), instance, merged);
+                            // 行インスタンスは行固有のスコープデータで動くため枝刈りしない。
+                            applyRecursive(instance.cloneNode(), instance, merged, null);
                             instance.parent = vNode;
                             vNode.children.add(instance);
                         }
@@ -441,7 +474,7 @@ public class WebStateStore {
         for (int i = 0; i < vSize; i++) {
             HtmlNode vChild = vNode.children.get(i);
             HtmlNode oChild = (origNode != null && i < origNode.children.size()) ? origNode.children.get(i) : null;
-            if (applyRecursive(oChild, vChild, scopeData)) {
+            if (applyRecursive(oChild, vChild, scopeData, changedKeys)) {
                 changed = true;
             }
         }
