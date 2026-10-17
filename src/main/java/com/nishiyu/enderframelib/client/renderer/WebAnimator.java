@@ -4,25 +4,32 @@ import com.nishiyu.enderframelib.core.model.*;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WebAnimator {
 
-    private static final Map<String, AnimState> STATES = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, AnimState>> SESSION_STATES = new ConcurrentHashMap<>();
 
     public static boolean isElementAnimating(String sessionId, String elementId, long now) {
-        AnimState state = STATES.get(sessionId + "_" + elementId);
+        if (sessionId == null || elementId == null) return false;
+        Map<String, AnimState> states = SESSION_STATES.get(sessionId);
+        if (states == null) return false;
+        AnimState state = states.get(elementId);
         return state != null && state.isActiveAt(now);
     }
 
     public static boolean isAnimating(String sessionId, long now) {
-        String prefix = sessionId + "_";
-        for (Map.Entry<String, AnimState> entry : STATES.entrySet()) {
-            if (entry.getKey().startsWith(prefix) && entry.getValue().isActiveAt(now)) {
+        if (sessionId == null) return false;
+        Map<String, AnimState> states = SESSION_STATES.get(sessionId);
+        if (states == null || states.isEmpty()) return false;
+        for (AnimState state : states.values()) {
+            if (state.isActiveAt(now)) {
                 return true;
             }
         }
@@ -73,8 +80,9 @@ public class WebAnimator {
     }
 
     public static AnimatedValues getValues(String sessionId, UIElement el, boolean isHovered, boolean isActive, boolean isFocused) {
-        String key = sessionId + "_" + el.id();
-        AnimState state = STATES.computeIfAbsent(key, k -> new AnimState(el));
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        Map<String, AnimState> sessionMap = SESSION_STATES.computeIfAbsent(safeSessionId, k -> new ConcurrentHashMap<>());
+        AnimState state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el));
 
         if (state.hasTargetChanged(el, isHovered, isActive, isFocused)) {
             state.syncBaseTargets(el);
@@ -85,7 +93,9 @@ public class WebAnimator {
     }
 
     public static AnimatedValues getCurrentValues(String sessionId, UIElement el) {
-        AnimState state = STATES.get(sessionId + "_" + el.id());
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        Map<String, AnimState> sessionMap = SESSION_STATES.get(safeSessionId);
+        AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
         if (state != null) {
             return state.getInterpolatedValues(System.currentTimeMillis());
         }
@@ -95,15 +105,21 @@ public class WebAnimator {
     }
 
     public static void cleanup(String sessionId, List<UIElement> currentElements) {
-        String prefix = sessionId + "_";
-        STATES.keySet().removeIf(key -> {
-            if (!key.startsWith(prefix)) return false;
-            String id = key.substring(prefix.length());
-            for (UIElement el : currentElements) {
-                if (el.id().equals(id)) return false;
-            }
-            return true;
-        });
+        if (sessionId == null) return;
+        Map<String, AnimState> sessionMap = SESSION_STATES.get(sessionId);
+        if (sessionMap == null || sessionMap.isEmpty()) return;
+
+        Set<String> activeIds = new HashSet<>(currentElements.size());
+        for (UIElement el : currentElements) {
+            activeIds.add(el.id());
+        }
+        sessionMap.keySet().retainAll(activeIds);
+    }
+
+    public static void clearSession(String sessionId) {
+        if (sessionId != null) {
+            SESSION_STATES.remove(sessionId);
+        }
     }
 
     private static float parseFloatSafe(String s, float fallback) {

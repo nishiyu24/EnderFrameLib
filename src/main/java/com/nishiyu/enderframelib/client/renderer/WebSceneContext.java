@@ -28,21 +28,26 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class WebSceneContext {
 
-    private static final Map<String, WebSceneContext> SCENES = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, WebSceneContext>> SESSION_SCENES = new ConcurrentHashMap<>();
 
     public static WebSceneContext getOrCreate(String sessionId, String sceneId) {
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         String baseId = stripSceneSuffix(sceneId);
-        return SCENES.computeIfAbsent(sessionId + "::" + baseId, k -> new WebSceneContext());
+        return SESSION_SCENES
+                .computeIfAbsent(safeSessionId, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(baseId, k -> new WebSceneContext());
     }
 
     public static WebSceneContext get(String sessionId, String sceneId) {
         if (sessionId == null || sceneId == null) return null;
-        return SCENES.get(sessionId + "::" + stripSceneSuffix(sceneId));
+        Map<String, WebSceneContext> map = SESSION_SCENES.get(sessionId);
+        return map != null ? map.get(stripSceneSuffix(sceneId)) : null;
     }
 
     public static void clearSession(String sessionId) {
-        String prefix = sessionId + "::";
-        SCENES.keySet().removeIf(k -> k.startsWith(prefix));
+        if (sessionId != null) {
+            SESSION_SCENES.remove(sessionId);
+        }
     }
 
     private static String stripSceneSuffix(String id) {
