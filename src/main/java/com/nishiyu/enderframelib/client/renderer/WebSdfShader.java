@@ -103,6 +103,23 @@ public class WebSdfShader {
         return available;
     }
 
+    public static synchronized void deleteProgram() {
+        if (programId != -1) {
+            GL20.glDeleteProgram(programId);
+            programId = -1;
+        }
+        initialized = false;
+        available = false;
+    }
+
+    public static synchronized void reload() {
+        if (RenderSystem.isOnRenderThread()) {
+            deleteProgram();
+        } else {
+            RenderSystem.recordRenderCall(WebSdfShader::deleteProgram);
+        }
+    }
+
     private static void initShader() {
         initialized = true;
         int vShader = -1;

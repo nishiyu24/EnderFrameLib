@@ -38,6 +38,7 @@ public class WebFontManager {
 
     private static final Map<String, FontFaceSpec> REGISTERED_FACES = new ConcurrentHashMap<>();
     private static final Map<String, Font> FONT_CACHE = new ConcurrentHashMap<>();
+    private static final Set<FontSet> CREATED_FONT_SETS = ConcurrentHashMap.newKeySet();
     private static Method cachedGetFontSetMethod;
 
     /**
@@ -139,11 +140,16 @@ public class WebFontManager {
         if (mc == null || mc.font == null) return null;
         try {
             if (cachedGetFontSetMethod == null) {
-                for (Method m : Font.class.getDeclaredMethods()) {
-                    if (m.getReturnType() == FontSet.class && m.getParameterCount() == 1 && m.getParameterTypes()[0] == ResourceLocation.class) {
-                        m.setAccessible(true);
-                        cachedGetFontSetMethod = m;
-                        break;
+                try {
+                    cachedGetFontSetMethod = Font.class.getDeclaredMethod("getFontSet", ResourceLocation.class);
+                    cachedGetFontSetMethod.setAccessible(true);
+                } catch (NoSuchMethodException e) {
+                    for (Method m : Font.class.getDeclaredMethods()) {
+                        if (m.getReturnType() == FontSet.class && m.getParameterCount() == 1 && m.getParameterTypes()[0] == ResourceLocation.class) {
+                            m.setAccessible(true);
+                            cachedGetFontSetMethod = m;
+                            break;
+                        }
                     }
                 }
             }
@@ -216,6 +222,7 @@ public class WebFontManager {
                         FontOption.Filter.ALWAYS_PASS
                 );
                 fontSet.reload(List.of(conditional), Set.of());
+                CREATED_FONT_SETS.add(fontSet);
                 return new Font(id -> fontSet, false);
             }
         } catch (Exception e) {
@@ -226,6 +233,12 @@ public class WebFontManager {
 
     public static void clearCache() {
         FONT_CACHE.clear();
+        for (FontSet fs : CREATED_FONT_SETS) {
+            try {
+                fs.close();
+            } catch (Exception ignored) {}
+        }
+        CREATED_FONT_SETS.clear();
     }
 
     private static String cleanFamilyName(String raw) {
