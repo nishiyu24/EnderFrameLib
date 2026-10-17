@@ -2,13 +2,13 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
+import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -52,7 +52,8 @@ public class ClientScreenInteractionManager {
     public static BiPredicate<Minecraft, ItemStack> itemRangeValidator = ClientScreenInteractionManager::defaultIsItemInRange;
 
     private static final Map<String, SessionState> states = new ConcurrentHashMap<>();
-    private static boolean wasMouseDown = false;
+    private static boolean wasLeftDown = false;
+    private static boolean wasRightDown = false;
     private static String lastHoveredSession = "";
 
     private static final Map<String, RouterDistanceInfo> ROUTER_DISTANCE_CACHE = new ConcurrentHashMap<>();
@@ -72,6 +73,8 @@ public class ClientScreenInteractionManager {
         if (sessionId.equals(lastHoveredSession)) {
             lastHoveredSession = "";
         }
+        wasLeftDown = false;
+        wasRightDown = false;
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -79,17 +82,27 @@ public class ClientScreenInteractionManager {
         if (mc.player == null || mc.level == null) return;
 
         if (mc.screen != null) {
-            wasMouseDown = false;
+            wasLeftDown = false;
+            wasRightDown = false;
             return;
         }
 
         long window = mc.getWindow().getWindow();
         boolean glfwLeft = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         boolean glfwRight = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
-        boolean isMouseDown = glfwLeft || glfwRight || mc.options.keyUse.isDown() || mc.options.keyAttack.isDown();
-        boolean isMouseJustPressed = isMouseDown && !wasMouseDown;
-        boolean isMouseJustReleased = !isMouseDown && wasMouseDown;
-        wasMouseDown = isMouseDown;
+        boolean isLeftDown = glfwLeft || mc.options.keyAttack.isDown();
+        boolean isRightDown = glfwRight || mc.options.keyUse.isDown();
+
+        boolean leftJustPressed = isLeftDown && !wasLeftDown;
+        boolean rightJustPressed = isRightDown && !wasRightDown;
+        boolean isMouseJustPressed = leftJustPressed || rightJustPressed;
+        int pressedButton = leftJustPressed ? 0 : 1;
+
+        boolean isMouseDown = isLeftDown || isRightDown;
+        boolean isMouseJustReleased = (!isLeftDown && wasLeftDown) || (!isRightDown && wasRightDown);
+
+        wasLeftDown = isLeftDown;
+        wasRightDown = isRightDown;
 
         if (isMouseJustReleased && !lastHoveredSession.isEmpty()) {
             handleRelease(lastHoveredSession);
@@ -137,7 +150,7 @@ public class ClientScreenInteractionManager {
                     double pixelY = ((master.getScreenHeight() - 1 - logicalY) + blockV) * WebRenderCore.RESOLUTION;
 
                     if (isMouseJustPressed) {
-                        UIElement clickedEl = handleClick(sessionId, pixelX, pixelY);
+                        UIElement clickedEl = handleClick(sessionId, pixelX, pixelY, pressedButton);
                         // ★ input と textarea をクリックした際に確実に InvisibleInputScreen を開く
                         if (clickedEl != null && ("input".equals(clickedEl.type()) || "textarea".equals(clickedEl.type()))) {
                             WebRenderCore.activeInputId = clickedEl.id();
@@ -333,10 +346,9 @@ public class ClientScreenInteractionManager {
         }
         String activeId = WebRenderCore.activeInputId;
         if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
-            EditBox eb = WebRenderCore.findActiveEditBox();
-            if (eb != null) {
-                // ★ EditBox に入力されたテキストを、DOMとUI要素の表示テキストにリアルタイム同期する
-                updateInputLocally(sessionId, activeId, eb.getValue());
+            String activeVal = WebTextInputHost.getActiveText();
+            if (activeVal != null) {
+                updateInputLocally(sessionId, activeId, activeVal);
             }
         }
     }
@@ -421,6 +433,10 @@ public class ClientScreenInteractionManager {
     }
 
     public static UIElement handleClick(String sessionId, double pixelX, double pixelY) {
+        return handleClick(sessionId, pixelX, pixelY, 0);
+    }
+
+    public static UIElement handleClick(String sessionId, double pixelX, double pixelY, int button) {
         SessionState state = getState(sessionId);
         ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
 
@@ -434,7 +450,11 @@ public class ClientScreenInteractionManager {
             String cordStr = String.format(Locale.US, "%.1f,%.1f", hit.localX(), hit.localY());
             String clickPayload = baseId + "|" + cordStr;
 
-            triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
+            if (button == 1 && hasEvent(events, "oncontextmenu")) {
+                triggerLocalEvent(sessionId, baseId, "oncontextmenu", getEventAction(events, "oncontextmenu"), clickPayload);
+            } else {
+                triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
+            }
 
             if ("radio".equals(clickedEl.type())) {
                 HtmlNode target = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);

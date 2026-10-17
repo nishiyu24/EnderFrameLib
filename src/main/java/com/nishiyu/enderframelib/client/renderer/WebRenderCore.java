@@ -7,7 +7,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
+import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.ClipRect;
@@ -17,8 +17,6 @@ import com.nishiyu.enderframelib.core.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -218,32 +216,6 @@ public class WebRenderCore {
 
         cumulativeOpacity[0] *= anim.opacity();
     }
-
-    public static EditBox findActiveEditBox() {
-        Screen screen = Minecraft.getInstance().screen;
-        if (screen == null) return null;
-
-        if (screen instanceof InvisibleInputScreen iis) {
-            return iis.getActiveEditBox();
-        }
-
-        if (screen.getFocused() instanceof EditBox eb) {
-            return eb;
-        }
-        EditBox fallback = null;
-        for (var child : screen.children()) {
-            if (child instanceof EditBox eb) {
-                if (eb.isFocused()) return eb;
-                if (fallback == null) fallback = eb;
-            }
-        }
-        if (!activeInputId.isEmpty() && !activeInputId.endsWith("_textarea")) {
-            return fallback;
-        }
-        return null;
-    }
-
-
 
     public static void renderElements(WebPaintPass pass) {
         List<UIElement> uiElements = pass.elements();
@@ -745,8 +717,8 @@ public class WebRenderCore {
             return true;
         }
         if (!activeInputId.isEmpty() && ClientWebManager.getBaseNodeId(activeInputId).equals(inputNodeId)) {
-            EditBox eb = findActiveEditBox();
-            if (eb != null && !eb.getValue().isEmpty()) return true;
+            String activeVal = WebTextInputHost.getActiveText();
+            if (activeVal != null && !activeVal.isEmpty()) return true;
         }
         HtmlNode vRoot = ClientWebManager.getVirtualRoot(animSessionId);
         if (vRoot != null) {
@@ -770,10 +742,10 @@ public class WebRenderCore {
 
         int safeCursorPos = -1;
         if ("input".equals(el.type()) && isFocused) {
-            EditBox eb = findActiveEditBox();
-            if (eb != null) {
-                textToDraw = eb.getValue();
-                safeCursorPos = eb.getCursorPosition();
+            String activeVal = WebTextInputHost.getActiveText();
+            if (activeVal != null) {
+                textToDraw = activeVal;
+                safeCursorPos = WebTextInputHost.getActiveCursorPosition();
             }
         }
 
