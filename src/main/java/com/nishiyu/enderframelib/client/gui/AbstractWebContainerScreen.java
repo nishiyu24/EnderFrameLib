@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
@@ -309,7 +310,9 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             if (SLOT_X_FIELD != null) SLOT_X_FIELD.setInt(slot, x);
             if (SLOT_Y_FIELD != null) SLOT_Y_FIELD.setInt(slot, y);
         } catch (Throwable t) {
-            com.mojang.logging.LogUtils.getLogger().debug("Failed to set Slot position: ({}, {})", x, y, t);
+            // 失敗すると全スロットが黙って誤った位置に描かれるため warn で出す。
+            EnderFrameLib.LOGGER.warn("Failed to set Slot position to ({}, {}); "
+                    + "vanilla slots will render at their original positions", x, y, t);
         }
     }
 

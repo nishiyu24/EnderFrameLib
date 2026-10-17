@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
@@ -83,21 +84,45 @@ public class AbstractWebScreen extends Screen {
         this.htmlResourceLocation = location;
     }
 
-    public static String loadHtmlResource(ResourceLocation loc) {
+    /**
+     * HTML リソースを読み込む。見つからなければ空の {@link Optional} を返す。
+     *
+     * <p>以前はエラーを HTML 文字列で返しており、呼び出し側が
+     * {@code contains("Failed to load HTML resource:")} で部分文字列照合して
+     * 失敗を判定していた。正規の HTML がその文を含むだけで失敗扱いになるため、
+     * 成否は型で表す。表示用のエラー HTML が必要な場合は
+     * {@link #errorHtml(ResourceLocation)} を使う。
+     */
+    public static Optional<String> findHtmlResource(ResourceLocation loc) {
         try {
             Optional<Resource> res = Minecraft.getInstance().getResourceManager().getResource(loc);
             if (res.isPresent()) {
                 try (InputStream is = res.get().open()) {
-                    return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                    return Optional.of(new String(is.readAllBytes(), StandardCharsets.UTF_8));
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            EnderFrameLib.LOGGER.debug("Resource manager could not read HTML resource {}: {}", loc, e.getMessage());
+        }
+        // リソースパックに無い場合は jar 内の assets から直接読む。
         try (InputStream is = AbstractWebScreen.class.getResourceAsStream("/assets/" + loc.getNamespace() + "/" + loc.getPath())) {
             if (is != null) {
-                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                return Optional.of(new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            EnderFrameLib.LOGGER.debug("Classpath fallback could not read HTML resource {}: {}", loc, e.getMessage());
+        }
+        EnderFrameLib.LOGGER.warn("HTML resource not found: {}", loc);
+        return Optional.empty();
+    }
+
+    /** 読み込みに失敗したことを画面上に示すための HTML。 */
+    public static String errorHtml(ResourceLocation loc) {
         return "<html><body><div style='padding:20px;color:#f38ba8;'>Failed to load HTML resource: " + loc + "</div></body></html>";
+    }
+
+    public static String loadHtmlResource(ResourceLocation loc) {
+        return findHtmlResource(loc).orElseGet(() -> errorHtml(loc));
     }
 
     @Override

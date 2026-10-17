@@ -80,13 +80,11 @@ public class EnderFrameClientInit {
 
         UIParser.clientResourceFallback = path -> {
             ResourceLocation loc = ResourceLocation.tryParse(path);
-            if (loc != null) {
-                String loaded = AbstractWebScreen.loadHtmlResource(loc);
-                if (loaded != null && !loaded.contains("Failed to load HTML resource:")) {
-                    return loaded;
-                }
+            if (loc == null) {
+                EnderFrameLib.LOGGER.warn("Not a valid resource location, ignoring include: {}", path);
+                return "";
             }
-            return "";
+            return AbstractWebScreen.findHtmlResource(loc).orElse("");
         };
 
         DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
