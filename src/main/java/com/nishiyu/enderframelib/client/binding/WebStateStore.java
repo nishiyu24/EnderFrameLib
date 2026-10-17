@@ -28,12 +28,14 @@ public class WebStateStore {
     private final Map<String, List<Map<String, String>>> lists = new ConcurrentHashMap<>();
     private final Map<String, List<HtmlNode>> listTemplates = new ConcurrentHashMap<>();
     private final Map<String, List<Map<String, String>>> lastRenderedLists = new ConcurrentHashMap<>();
+    private final Map<String, List<Map<String, String>>> lastRawBoundLists = new ConcurrentHashMap<>();
     private final Map<String, String> originalShowDisplay = new ConcurrentHashMap<>();
 
     private final Map<String, Supplier<?>> boundSuppliers = new ConcurrentHashMap<>();
     private final Map<String, Supplier<List<Map<String, String>>>> boundListSuppliers = new ConcurrentHashMap<>();
     private final Map<String, List<Consumer<String>>> watchers = new ConcurrentHashMap<>();
 
+    private final Set<String> dirtyKeys = ConcurrentHashMap.newKeySet();
     private boolean dirty = false;
 
     public WebStateStore(String sessionId) {
@@ -49,6 +51,7 @@ public class WebStateStore {
         String prev = values.put(key, strVal);
         if (!Objects.equals(prev, strVal)) {
             dirty = true;
+            dirtyKeys.add(key);
             if (notifyWatchers) {
                 List<Consumer<String>> list = watchers.get(key);
                 if (list != null) {
@@ -138,6 +141,7 @@ public class WebStateStore {
         List<Map<String, String>> prev = lists.put(key, copy);
         if (!Objects.equals(prev, copy)) {
             dirty = true;
+            dirtyKeys.add(key);
             syncToDom();
         }
         return this;
@@ -154,8 +158,10 @@ public class WebStateStore {
 
     public void forceSync() {
         dirty = true;
+        dirtyKeys.add("*");
         listTemplates.clear();
         lastRenderedLists.clear();
+        lastRawBoundLists.clear();
         syncToDom();
     }
 
@@ -167,15 +173,32 @@ public class WebStateStore {
                 String prev = values.put(entry.getKey(), strVal);
                 if (!Objects.equals(prev, strVal)) {
                     dirty = true;
+                    dirtyKeys.add(entry.getKey());
                 }
             } catch (Exception ignored) {}
         }
         for (Map.Entry<String, Supplier<List<Map<String, String>>>> entry : boundListSuppliers.entrySet()) {
             try {
-                List<Map<String, String>> copy = copyListItems(entry.getValue().get());
+                List<Map<String, String>> raw = entry.getValue().get();
+                List<Map<String, String>> prevRaw = lastRawBoundLists.get(entry.getKey());
+                if (raw != null && raw == prevRaw) {
+                    continue;
+                }
+                if (raw == null && prevRaw == null) {
+                    continue;
+                }
+                lastRawBoundLists.put(entry.getKey(), raw);
+
+                List<Map<String, String>> currentList = lists.get(entry.getKey());
+                if (currentList != null && raw != null && currentList.size() == raw.size() && currentList.equals(raw)) {
+                    continue;
+                }
+
+                List<Map<String, String>> copy = copyListItems(raw);
                 List<Map<String, String>> prev = lists.put(entry.getKey(), copy);
                 if (!Objects.equals(prev, copy)) {
                     dirty = true;
+                    dirtyKeys.add(entry.getKey());
                 }
             } catch (Exception ignored) {}
         }
@@ -189,6 +212,7 @@ public class WebStateStore {
         if (vRoot == null) return;
 
         dirty = false;
+        dirtyKeys.clear();
         if (applyRecursive(tmplRoot != null ? tmplRoot : vRoot, vRoot, values)) {
             ClientWebManager.requestRender(sessionId);
         }
@@ -395,9 +419,10 @@ public class WebStateStore {
                             }
                         }
                         merged.put("_index", String.valueOf(idx));
+                        String rowKey = itemMap.getOrDefault("data-key", itemMap.getOrDefault("id", itemMap.get("key")));
                         for (HtmlNode tmpl : tmplNodes) {
                             HtmlNode instance = tmpl.cloneNode();
-                            uniquifyIds(instance, idx);
+                            uniquifyIds(instance, idx, rowKey);
                             applyRecursive(instance.cloneNode(), instance, merged);
                             instance.parent = vNode;
                             vNode.children.add(instance);
@@ -482,11 +507,12 @@ public class WebStateStore {
         return invert != truthy;
     }
 
-    private static void uniquifyIds(HtmlNode node, int index) {
+    private static void uniquifyIds(HtmlNode node, int index, String rowKey) {
         if (!node.getId().isEmpty()) {
-            node.setId(node.getId() + "_row_" + index);
+            String suffix = (rowKey != null && !rowKey.isEmpty()) ? "_k_" + rowKey : "_row_" + index;
+            node.setId(node.getId() + suffix);
         }
-        for (HtmlNode child : node.children) uniquifyIds(child, index);
+        for (HtmlNode child : node.children) uniquifyIds(child, index, rowKey);
     }
 
     public static String replacePlaceholdersWithData(String text, Map<String, String> data) {
