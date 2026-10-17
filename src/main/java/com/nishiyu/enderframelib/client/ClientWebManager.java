@@ -15,7 +15,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.ScrollState;
 import com.nishiyu.enderframelib.core.text.FontMetrics;
 import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.model.*;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -542,12 +542,11 @@ public class ClientWebManager {
                     }
                 }
             }
-            if (el.type().startsWith("img") && el.text() != null && (el.text().startsWith("item:") || el.text().startsWith("fluid:"))) {
+            if (el.type() == ElementType.IMAGE && el.text() != null && (el.text().startsWith("item:") || el.text().startsWith("fluid:"))) {
                 hasInteraction = true;
             }
             UIElement parentAnchor = elementMap.get(el.events() != null ? el.events().get("mc-parent") : null);
-            boolean hasHoverAnim = parentAnchor != null && parentAnchor.animDef() != null &&
-                    (parentAnchor.animDef().contains("@@HOVER@@") || parentAnchor.animDef().contains("@@ACTIVE@@") || parentAnchor.animDef().contains("@@FOCUS@@"));
+            boolean hasHoverAnim = parentAnchor != null && (parentAnchor.hasHover() || parentAnchor.hasPseudo());
 
             if (!isInput && !hasInteraction && !hasHoverAnim) continue;
 
@@ -623,17 +622,17 @@ public class ClientWebManager {
                 UIElement el = elements.get(i);
                 if (el.id().equals(elementId) || el.id().equals(inputRenderId) || el.id().equals(textareaRenderId) || el.id().equals(selectRenderId)) {
                     String renderText = safeText;
-                    if ("range".equals(el.type()) && !safeText.contains(":")) {
+                    if (el.type() == ElementType.RANGE && !safeText.contains(":")) {
                         String min = target != null ? target.attrs.getOrDefault("min", "0") : "0";
                         String max = target != null ? target.attrs.getOrDefault("max", "100") : "100";
                         renderText = safeText + ":" + min + ":" + max;
-                    } else if ("select".equals(el.type()) || isSelect) {
+                    } else if (el.type() == ElementType.SELECT || isSelect) {
                         renderText = resolveSelectDisplayLabel(target, domValue) + " \u25be";
                     }
-                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), renderText, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                    elements.set(i, el.withText(renderText));
                 } else if (el.id().equals(phId)) {
                     String nextPh = domValue.isEmpty() ? placeholderOrig : "";
-                    elements.set(i, new UIElement(el.id(), el.type(), el.x(), el.y(), el.width(), el.height(), nextPh, el.color(), el.bgColor(), el.events(), el.radius(), el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.transitionDuration(), el.animDef(), el.meta()));
+                    elements.set(i, el.withText(nextPh));
                 }
             }
         }

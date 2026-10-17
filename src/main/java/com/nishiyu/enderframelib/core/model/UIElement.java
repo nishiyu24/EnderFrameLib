@@ -4,12 +4,12 @@ import java.util.Map;
 
 /**
  * レンダリングパイプラインで使用されるUI要素モデル。
- * 文字列パースのオーバーヘッドを無くすための構造化メタデータ(RenderMeta)を保持しつつ、
- * 既存の19引数コンストラクタとも完全な後方互換性を維持する。
+ * 構造化メタデータ（RenderMeta）および型付きプロパティを保持する不変レコード。
  */
 public record UIElement(
         String id,
-        String type,
+        String baseNodeId,
+        ElementType type,
         int x,
         int y,
         int width,
@@ -27,20 +27,23 @@ public record UIElement(
         float rotate,
         int transitionDuration,
         String animDef,
+        ImageFitMode fitMode,
         RenderMeta meta
 ) {
-    /**
-     * 既存クラス（WebAnimator等）との後方互換用19引数コンストラクタ
-     */
-    public UIElement(
-            String id, String type, int x, int y, int width, int height,
-            String text, int color, int bgColor, Map<String, String> events,
-            int radius, float opacity, float translateX, float translateY,
-            float scaleX, float scaleY, float rotate, int transitionDuration, String animDef
-    ) {
-        this(id, type, x, y, width, height, text, color, bgColor, events,
-                radius, opacity, translateX, translateY, scaleX, scaleY, rotate,
-                transitionDuration, animDef, RenderMeta.fromEvents(events, radius, height));
+    public String baseId() {
+        return (baseNodeId != null && !baseNodeId.isEmpty()) ? baseNodeId : id;
+    }
+
+    public boolean hasHover() {
+        return meta != null && meta.pseudoStates() != null && meta.pseudoStates().hasHover();
+    }
+
+    public boolean hasPseudo() {
+        return meta != null && meta.pseudoStates() != null && meta.pseudoStates().hasAny();
+    }
+
+    public UIElement withText(String newText) {
+        return new UIElement(id, baseNodeId, type, x, y, width, height, newText, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta);
     }
 
     public record GradientSpec(String direction, int startColor, int endColor) {}
@@ -48,52 +51,66 @@ public record UIElement(
     public record CircleBorderSpec(float thickness, int colorTop, int colorRight, int colorBottom, int colorLeft) {}
 
     public record RenderMeta(
-            float[] clipRect,
-            int[] borderRadii,
+            ClipRect clipRect,
+            Corners borderRadii,
             GradientSpec gradient,
             CircleBorderSpec circleBorder,
             float fontHeight,
             float originX,
             float originY,
-            int itemCount
+            int itemCount,
+            PseudoStates pseudoStates
     ) {
-        public static final RenderMeta EMPTY = new RenderMeta(null, null, null, null, 16.0f, 0.5f, 0.5f, 1);
+        public static final RenderMeta EMPTY = new RenderMeta(null, null, null, null, 16.0f, 0.5f, 0.5f, 1, PseudoStates.EMPTY);
+
+        public boolean hasClip() {
+            return clipRect != null;
+        }
+
+        public boolean hasBorderRadii() {
+            return borderRadii != null && borderRadii.hasRadius();
+        }
 
         public static RenderMeta fromEvents(Map<String, String> events, int fallbackRadius, int boxH) {
             if (events == null || events.isEmpty()) {
-                int[] r = fallbackRadius > 0 ? new int[]{fallbackRadius, fallbackRadius, fallbackRadius, fallbackRadius} : null;
-                return new RenderMeta(null, r, null, null, Math.max(10.0f, boxH), 0.5f, 0.5f, 1);
+                Corners r = fallbackRadius > 0 ? Corners.all(fallbackRadius) : null;
+                return new RenderMeta(null, r, null, null, Math.max(10.0f, boxH), 0.5f, 0.5f, 1, PseudoStates.EMPTY);
             }
 
-            float[] clip = null;
-            if (events.containsKey("mc-clip")) {
-                String[] parts = events.get("mc-clip").split(",");
-                if (parts.length >= 8) {
+            ClipRect clip = null;
+            if (events.containsKey(RenderKeys.MC_CLIP)) {
+                String[] parts = events.get(RenderKeys.MC_CLIP).split(",");
+                if (parts.length >= 4) {
                     try {
-                        clip = new float[8];
-                        for (int i = 0; i < 8; i++) clip[i] = Float.parseFloat(parts[i]);
-                    } catch (Exception ignored) { clip = null; }
+                        float[] c = new float[8];
+                        for (int i = 0; i < Math.min(parts.length, 8); i++) {
+                            c[i] = Float.parseFloat(parts[i]);
+                        }
+                        clip = ClipRect.fromArray(c);
+                    } catch (Exception ignored) {
+                        clip = null;
+                    }
                 }
             }
 
-            int[] radii = null;
-            if (events.containsKey("mc-radius")) {
-                String[] parts = events.get("mc-radius").split(",");
+            Corners radii = null;
+            if (events.containsKey(RenderKeys.MC_RADIUS)) {
+                String[] parts = events.get(RenderKeys.MC_RADIUS).split(",");
                 if (parts.length >= 4) {
                     try {
-                        radii = new int[]{
+                        radii = new Corners(
                                 Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
                                 Integer.parseInt(parts[2]), Integer.parseInt(parts[3])
-                        };
+                        );
                     } catch (Exception ignored) {}
                 }
             } else if (fallbackRadius > 0) {
-                radii = new int[]{fallbackRadius, fallbackRadius, fallbackRadius, fallbackRadius};
+                radii = Corners.all(fallbackRadius);
             }
 
             GradientSpec grad = null;
-            if (events.containsKey("mc-gradient")) {
-                String[] gParts = events.get("mc-gradient").split(":");
+            if (events.containsKey(RenderKeys.MC_GRADIENT)) {
+                String[] gParts = events.get(RenderKeys.MC_GRADIENT).split(":");
                 if (gParts.length >= 3) {
                     try {
                         grad = new GradientSpec(gParts[0], Integer.parseInt(gParts[1]), Integer.parseInt(gParts[2]));
@@ -102,13 +119,13 @@ public record UIElement(
             }
 
             float fontH = Math.max(10.0f, boxH);
-            if (events.containsKey("mc-font-h")) {
-                try { fontH = Float.parseFloat(events.get("mc-font-h")); } catch (Exception ignored) {}
+            if (events.containsKey(RenderKeys.MC_FONT_H)) {
+                try { fontH = Float.parseFloat(events.get(RenderKeys.MC_FONT_H)); } catch (Exception ignored) {}
             }
 
             float ox = 0.5f, oy = 0.5f;
-            if (events.containsKey("mc-origin")) {
-                String[] parts = events.get("mc-origin").split(",");
+            if (events.containsKey(RenderKeys.MC_ORIGIN)) {
+                String[] parts = events.get(RenderKeys.MC_ORIGIN).split(",");
                 if (parts.length >= 2) {
                     try { ox = Float.parseFloat(parts[0]); oy = Float.parseFloat(parts[1]); } catch (Exception ignored) {}
                 }
@@ -119,7 +136,7 @@ public record UIElement(
                 try { count = Integer.parseInt(events.get("data-count").trim()); } catch (Exception ignored) {}
             }
 
-            return new RenderMeta(clip, radii, grad, null, fontH, ox, oy, count);
+            return new RenderMeta(clip, radii, grad, null, fontH, ox, oy, count, PseudoStates.EMPTY);
         }
     }
 }

@@ -1,10 +1,11 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.model.*;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -133,8 +134,6 @@ public class WebAnimator {
         final List<Keyframe> frames = new ArrayList<>();
     }
 
-    record PseudoTarget(float op, float tx, float ty, float sx, float sy, float rot, int color, int bgColor) {}
-
     public static class AnimState {
         private final AnimatedValues cachedValues = new AnimatedValues();
         public float startOpacity, targetOpacity, baseTargetOpacity;
@@ -183,7 +182,7 @@ public class WebAnimator {
             this.currentAnimDefStr = el.animDef() != null ? el.animDef() : "";
             this.currentAnimDef = parseAnimDef(this.currentAnimDefStr);
             this.animStartTime = this.startTime;
-            parsePseudoDefs(this.currentAnimDefStr);
+            syncPseudoTargets(el);
             updateStyleCache(el);
         }
 
@@ -215,31 +214,17 @@ public class WebAnimator {
             this.baseBgColor = el.bgColor();
         }
 
-        private static PseudoTarget extractMarker(String def, String marker) {
-            if (def == null || !def.contains(marker)) return null;
-            int idx = def.indexOf(marker) + marker.length();
-            int nextIdx = def.indexOf("@@", idx);
-            String sub = nextIdx == -1 ? def.substring(idx) : def.substring(idx, nextIdx);
-            String[] vals = sub.split(":");
-            if (vals.length >= 8) {
-                return new PseudoTarget(
-                        parseFloatSafe(vals[0], 1f),
-                        parseFloatSafe(vals[1], 0f),
-                        parseFloatSafe(vals[2], 0f),
-                        parseFloatSafe(vals[3], 1f),
-                        parseFloatSafe(vals[4], 1f),
-                        parseFloatSafe(vals[5], 0f),
-                        parseIntSafe(vals[6], 0),
-                        parseIntSafe(vals[7], 0)
-                );
+        private void syncPseudoTargets(UIElement el) {
+            if (el.meta() != null && el.meta().pseudoStates() != null) {
+                PseudoStates ps = el.meta().pseudoStates();
+                this.hoverTarget = ps.hover();
+                this.activeTarget = ps.active();
+                this.focusTarget = ps.focus();
+            } else {
+                this.hoverTarget = null;
+                this.activeTarget = null;
+                this.focusTarget = null;
             }
-            return null;
-        }
-
-        private void parsePseudoDefs(String def) {
-            this.hoverTarget = extractMarker(def, "@@HOVER@@");
-            this.activeTarget = extractMarker(def, "@@ACTIVE@@");
-            this.focusTarget = extractMarker(def, "@@FOCUS@@");
         }
 
         public void updateStyleCache(UIElement el) {
@@ -251,50 +236,22 @@ public class WebAnimator {
             cachedEvents = el.events();
             UIElement.RenderMeta meta = el.meta();
 
-            // RenderMeta から直接配列を取得し、無い場合のみ events 文字列からフォールバック解析する
             if (meta != null && meta.clipRect() != null) {
-                clipData = meta.clipRect();
-            } else if (el.events() != null && el.events().containsKey("mc-clip")) {
-                String[] pts = el.events().get("mc-clip").split(",");
-                clipData = new float[8];
-                if (pts.length >= 4) {
-                    clipData[0] = parseFloatSafe(pts[0], 0f);
-                    clipData[1] = parseFloatSafe(pts[1], 0f);
-                    clipData[2] = parseFloatSafe(pts[2], 0f);
-                    clipData[3] = parseFloatSafe(pts[3], 0f);
-                }
-                if (pts.length >= 8) {
-                    clipData[4] = parseFloatSafe(pts[4], 0f);
-                    clipData[5] = parseFloatSafe(pts[5], 0f);
-                    clipData[6] = parseFloatSafe(pts[6], 0f);
-                    clipData[7] = parseFloatSafe(pts[7], 0f);
-                } else if (pts.length >= 5) {
-                    clipData[4] = clipData[5] = clipData[6] = clipData[7] = parseFloatSafe(pts[4], 0f);
-                }
+                clipData = meta.clipRect().toArray();
             } else {
                 clipData = null;
             }
 
             if (meta != null && meta.borderRadii() != null) {
-                int[] br = meta.borderRadii();
-                radiusData = new float[]{br[0], br[1], br[2], br[3]};
+                radiusData = meta.borderRadii().toFloatArray();
             } else {
                 radiusData = new float[]{el.radius(), el.radius(), el.radius(), el.radius()};
-                if (el.events() != null && el.events().containsKey("mc-radius")) {
-                    String[] pts = el.events().get("mc-radius").split(",");
-                    if (pts.length >= 4) {
-                        radiusData[0] = parseFloatSafe(pts[0], el.radius());
-                        radiusData[1] = parseFloatSafe(pts[1], el.radius());
-                        radiusData[2] = parseFloatSafe(pts[2], el.radius());
-                        radiusData[3] = parseFloatSafe(pts[3], el.radius());
-                    }
-                }
             }
 
             textAlign = el.events() != null ? el.events().getOrDefault("text-align", "left") : "left";
 
             if (textChanged && el.text() != null) {
-                if ("range".equals(el.type()) || "progress".equals(el.type())) {
+                if (el.type() == ElementType.RANGE) {
                     String[] parts = el.text().split(":");
                     rangeVal = 50f; rangeMin = 0f; rangeMax = 100f;
                     if (parts.length >= 3) {
@@ -302,27 +259,14 @@ public class WebAnimator {
                         rangeMin = parseFloatSafe(parts[1], 0f);
                         rangeMax = parseFloatSafe(parts[2], 100f);
                     }
-                } else if ("circle_border".equals(el.type())) {
+                } else if (el.type() == ElementType.CIRCLE_BORDER) {
                     UIElement.CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
                     if (cb != null) {
                         circleThickness = cb.thickness();
                         circleColors = new int[]{cb.colorTop(), cb.colorRight(), cb.colorBottom(), cb.colorLeft()};
                     } else {
-                        String[] parts = el.text().split(":");
                         circleThickness = 0f;
                         circleColors = null;
-                        if (parts.length == 2) {
-                            circleThickness = parseFloatSafe(parts[0], 0f);
-                            String[] cols = parts[1].split(",");
-                            if (cols.length == 4) {
-                                circleColors = new int[]{
-                                        parseIntSafe(cols[0], 0),
-                                        parseIntSafe(cols[1], 0),
-                                        parseIntSafe(cols[2], 0),
-                                        parseIntSafe(cols[3], 0)
-                                };
-                            }
-                        }
                     }
                 }
             }
@@ -344,9 +288,9 @@ public class WebAnimator {
             if (el.animDef() != null && !el.animDef().equals(this.currentAnimDefStr)) {
                 this.currentAnimDefStr = el.animDef();
                 this.currentAnimDef = parseAnimDef(el.animDef());
-                parsePseudoDefs(el.animDef());
                 this.animStartTime = now;
             }
+            syncPseudoTargets(el);
 
             PseudoTarget chosen = null;
             if (isActive && this.activeTarget != null) chosen = this.activeTarget;
