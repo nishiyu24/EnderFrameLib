@@ -61,6 +61,7 @@ public class WebHudRenderer {
 
     public static String customActiveHudSessionId = "";
     public static Function<Minecraft, String> activeHudSessionResolver = WebHudRenderer::defaultResolveActiveHudSession;
+    public static java.util.function.Consumer<SubscribeC2SPacket> packetSender = PacketDistributor::sendToServer;
 
     public static class HudTemplateConfig {
         public String containerId;
@@ -174,7 +175,12 @@ public class WebHudRenderer {
             hudNbtPaths.addAll(cfg.requireNbt);
         }
 
-        PacketDistributor.sendToServer(new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths));
+        SubscribeC2SPacket packet = new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths);
+        if (packetSender != null) {
+            packetSender.accept(packet);
+        } else {
+            PacketDistributor.sendToServer(packet);
+        }
     }
 
     public static void onRenderGui(RenderGuiEvent.Post event) {

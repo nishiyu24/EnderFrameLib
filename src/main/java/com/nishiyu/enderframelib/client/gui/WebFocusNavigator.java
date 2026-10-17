@@ -50,7 +50,7 @@ public class WebFocusNavigator {
         if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
-            pose.translate(0, 0, 280.0f);
+            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.ZLayers.FOCUS_INDICATOR_OVERLAY_Z);
             guiGraphics.renderOutline(
                     focusedEl.x() - 2,
                     focusedEl.y() - 2,

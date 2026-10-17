@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSdfShader;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
-import com.nishiyu.enderframelib.common.ServerImageRegistry;
+import com.nishiyu.enderframelib.client.ClientImageRegistry;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
@@ -93,10 +93,10 @@ public class EnderFrameClientInit {
 
         // --- 追加: core側の依存切り離し用フックの注入 ---
         DomUtils.innerHtmlParser = UIParser.INNER_HTML_PARSER;
-        UIParser.intrinsicSizeResolver = ServerImageRegistry.RESOLVER_ADAPTER;
+        UIParser.intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
 
         // 2. 画像サイズ確定時のクライアント自動再レイアウト登録
-        ServerImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
+        ClientImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
 
         // 3. PubSub・ローカルオーバーライド・HUDテンプレート結線（マルチリスナー登録）
         ClientPubSubManager.subscriptionSender = channel ->

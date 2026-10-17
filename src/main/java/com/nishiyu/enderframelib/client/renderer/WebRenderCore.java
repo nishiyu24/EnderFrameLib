@@ -244,8 +244,8 @@ public class WebRenderCore {
         Font defaultFont = Minecraft.getInstance().font;
         float zOffset = 0.0f;
 
-        float effectiveZStep = (zStep == 0.0f) ? 0.002f : zStep;
-        float effectiveSubZ = (subZOffset == 0.0f) ? 0.0005f : subZOffset;
+        float effectiveZStep = (zStep == 0.0f) ? ZLayers.ELEMENT_Z_STEP : zStep;
+        float effectiveSubZ = (subZOffset == 0.0f) ? ZLayers.SUB_Z_OFFSET : subZOffset;
 
         if (isLodMode) {
             if ((lodColor >>> 24) > 0) {
@@ -543,7 +543,7 @@ public class WebRenderCore {
                     reR, reG, reB, reA, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
         }
         drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad,
-                thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zPos + 0.0005f,
+                thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zPos + ZLayers.SUB_Z_OFFSET,
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
     }
 
@@ -811,7 +811,7 @@ public class WebRenderCore {
                         float r = ((anim.color() >>> 16) & 0xFF) / 255.0f;
                         float g = ((anim.color() >>> 8) & 0xFF) / 255.0f;
                         float b = (anim.color() & 0xFF) / 255.0f;
-                        addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), cursorX, -1.0f, cursorX + 1.5f, 9.0f, r, g, b, newA / 255.0f, 0.0005f);
+                        addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), cursorX, -1.0f, cursorX + 1.5f, 9.0f, r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
                     }
                 }
             } else if (el.id().endsWith("_ph")) {
@@ -851,10 +851,10 @@ public class WebRenderCore {
                     float b = (anim.color() & 0xFF) / 255.0f;
                     VertexConsumer lineBuilder = buffer.getBuffer(RenderType.gui());
                     if (textDeco.contains("underline")) {
-                        addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 8.5f, rawTextW, 9.5f, r, g, b, newA / 255.0f, 0.0005f);
+                        addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 8.5f, rawTextW, 9.5f, r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
                     }
                     if (textDeco.contains("line-through")) {
-                        addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 4.0f, rawTextW, 5.0f, r, g, b, newA / 255.0f, 0.0005f);
+                        addQuadRaw(lineBuilder, poseStack.last().pose(), 0, 4.0f, rawTextW, 5.0f, r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
                     }
                 }
             }
@@ -891,7 +891,7 @@ public class WebRenderCore {
             Matrix4f mat = poseStack.last().pose();
             VertexConsumer builder = buffer.getBuffer(RenderType.gui());
             addQuadRaw(builder, mat, tipX - 1, tipY - 1, tipX + boxW + 1, tipY + boxH + 1, 0.31f, 0.0f, 1.0f, 0.7f, zPos);
-            addQuadRaw(builder, mat, tipX, tipY, tipX + boxW, tipY + boxH, 0.06f, 0.0f, 0.06f, 0.94f, zPos + 0.002f);
+            addQuadRaw(builder, mat, tipX, tipY, tipX + boxW, tipY + boxH, 0.06f, 0.0f, 0.06f, 0.94f, zPos + ZLayers.ELEMENT_Z_STEP);
 
             poseStack.translate(tipX + 5.0f, tipY + 4.0f, zPos + 0.005f);
             poseStack.scale(scale, scale, 1.0f);
@@ -1012,7 +1012,7 @@ public class WebRenderCore {
             float cx = el.x() + el.width() * 0.5f;
             float bottomY = el.y() + el.height() * 0.88f;
 
-            poseStack.translate(cx, bottomY, zPos + 20.0f);
+            poseStack.translate(cx, bottomY, zPos + ZLayers.ENTITY_PREVIEW_Z);
             poseStack.scale(scale, -scale, scale);
             poseStack.mulPose(Axis.XP.rotationDegrees(-15.0f));
 

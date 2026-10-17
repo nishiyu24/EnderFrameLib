@@ -26,7 +26,7 @@ public class WebDevTools {
 
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
-        pose.translate(0, 0, 350.0f);
+        pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.ZLayers.DEVTOOLS_OVERLAY_Z);
 
         String banner = " [F12] EnderFrame DevTools | [F5] Hot Reload | [Tab/Arrows] Focus | Viewport: "
                 + virtualWidth + "x" + virtualHeight + " | Mouse: (" + webX + ", " + webY + ") ";

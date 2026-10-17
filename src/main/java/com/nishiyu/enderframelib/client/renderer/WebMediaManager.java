@@ -3,8 +3,8 @@ package com.nishiyu.enderframelib.client.renderer;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.nishiyu.enderframelib.client.ClientImageRegistry;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.common.ServerImageRegistry;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -230,7 +230,7 @@ public class WebMediaManager {
 
                         IMG_CACHE.put(originalUrl, new ImageInfo(id, imgW, imgH));
                         IMG_DOWNLOADING.remove(originalUrl);
-                        ServerImageRegistry.setSize(originalUrl, imgW, imgH);
+                        ClientImageRegistry.setSize(originalUrl, imgW, imgH);
                     });
                 }
             } catch (Exception e) {

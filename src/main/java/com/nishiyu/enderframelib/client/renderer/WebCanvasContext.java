@@ -177,7 +177,7 @@ public class WebCanvasContext {
         List<ScheduledText> deferredTexts = null;
 
         for (DrawCmd cmd : this.commands) {
-            cmdZ += 0.0005f;
+            cmdZ += ZLayers.SUB_Z_OFFSET;
             switch (cmd) {
                 case TextCmd txt -> {
                     if (deferredTexts == null) deferredTexts = new ArrayList<>();

@@ -118,8 +118,8 @@ public class UIRenderer {
     }
 
     private static UIElement.GradientSpec parseGradientSpec(String bgProp) {
-        if (bgProp == null || !bgProp.toLowerCase().contains("linear-gradient")) return null;
-        String lower = bgProp.toLowerCase();
+        if (bgProp == null || !bgProp.toLowerCase(Locale.ROOT).contains("linear-gradient")) return null;
+        String lower = bgProp.toLowerCase(Locale.ROOT);
         String dir = "bottom";
         if (lower.contains("to right") || lower.contains("90deg")) dir = "right";
         else if (lower.contains("to left") || lower.contains("270deg") || lower.contains("-90deg")) dir = "left";
