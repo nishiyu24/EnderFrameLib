@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
@@ -64,7 +65,11 @@ public class ClientScreenInteractionManager {
         try {
             NeoForge.EVENT_BUS.addListener(ClientScreenInteractionManager::onClientTick);
             ClientWebManager.addSessionClearedListener(ClientScreenInteractionManager::clearSessionState);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            // 握り潰すと世界側スクリーンへの操作が一切届かなくなる。
+            EnderFrameLib.LOGGER.error("Failed to register ClientScreenInteractionManager listeners; "
+                    + "in-world screen interaction will not work", t);
+        }
     }
 
     public static void clearSessionState(String sessionId) {

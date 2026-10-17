@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.binding;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.client.ClientLocalEnvProvider;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
@@ -44,12 +45,31 @@ public class WebStateStore {
     /** テンプレート木のキー単位依存索引（枝刈り用）。 */
     private final TemplateDeps templateDeps = new TemplateDeps();
 
+    /**
+     * 既に警告を出したユーザーコールバック。{@code "<種別>:<キー>"} 形式。
+     * supplier の poll は毎フレーム走るため、同じ失敗でログを埋めないようにする。
+     */
+    private final Set<String> loggedCallbackFailures = ConcurrentHashMap.newKeySet();
+
     public WebStateStore(String sessionId) {
         this.sessionId = sessionId;
     }
 
     public WebStateStore set(String key, Object value) {
         return setInternal(key, value, true);
+    }
+
+    /**
+     * ユーザー提供コールバックの失敗を、種別とキーの組ごとに一度だけ警告する。
+     * 握り潰したままだと、バインディングが黙って更新されない状態の原因が追えない。
+     */
+    private void warnCallbackFailureOnce(String kind, String key, Throwable t) {
+        if (loggedCallbackFailures.add(kind + ":" + key)) {
+            EnderFrameLib.LOGGER.warn(
+                    "[WebStateStore] session={} の {} '{}' が例外を投げました。"
+                            + "このバインディングは以降更新されない可能性があります（以後この組み合わせでは警告しません）",
+                    sessionId, kind, key, t);
+        }
     }
 
     private WebStateStore setInternal(String key, Object value, boolean notifyWatchers) {
@@ -62,7 +82,7 @@ public class WebStateStore {
                 List<Consumer<String>> list = watchers.get(key);
                 if (list != null) {
                     for (Consumer<String> listener : list) {
-                        try { listener.accept(strVal); } catch (Exception ignored) {}
+                        try { listener.accept(strVal); } catch (Exception e) { warnCallbackFailureOnce("watcher", key, e); }
                     }
                 }
             }
@@ -76,7 +96,7 @@ public class WebStateStore {
             boundSuppliers.put(key, supplier);
             try {
                 setInternal(key, supplier.get(), false);
-            } catch (Exception ignored) {}
+            } catch (Exception e) { warnCallbackFailureOnce("bind supplier", key, e); }
         }
         return this;
     }
@@ -86,7 +106,7 @@ public class WebStateStore {
             boundListSuppliers.put(key, listSupplier);
             try {
                 setList(key, listSupplier.get());
-            } catch (Exception ignored) {}
+            } catch (Exception e) { warnCallbackFailureOnce("bindList supplier", key, e); }
         }
         return this;
     }
@@ -182,7 +202,9 @@ public class WebStateStore {
                     dirty = true;
                     dirtyKeys.add(entry.getKey());
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                warnCallbackFailureOnce("bind supplier", entry.getKey(), e);
+            }
         }
         for (Map.Entry<String, Supplier<List<Map<String, String>>>> entry : boundListSuppliers.entrySet()) {
             try {
@@ -207,7 +229,9 @@ public class WebStateStore {
                     dirty = true;
                     dirtyKeys.add(entry.getKey());
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                warnCallbackFailureOnce("bindList supplier", entry.getKey(), e);
+            }
         }
     }
 

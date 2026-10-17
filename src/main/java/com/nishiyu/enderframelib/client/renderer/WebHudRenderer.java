@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -103,7 +104,11 @@ public class WebHudRenderer {
         try {
             NeoForge.EVENT_BUS.addListener(WebHudRenderer::onRenderGui);
             NeoForge.EVENT_BUS.addListener(WebHudRenderer::onRenderLevelStage);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            // 握り潰すと HUD とトラッカーが無言で一切描かれなくなる。
+            EnderFrameLib.LOGGER.error("Failed to register WebHudRenderer render listeners; "
+                    + "HUD templates and entity trackers will not be drawn", t);
+        }
     }
 
     public static String defaultResolveActiveHudSession(Minecraft mc) {
