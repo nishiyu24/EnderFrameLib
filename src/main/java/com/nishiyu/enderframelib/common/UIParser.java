@@ -174,8 +174,6 @@ public class UIParser {
             combinedCss.append(externalCss).append("\n");
         }
 
-        StringBuilder extractedScript = new StringBuilder();
-
         if (html != null) {
             Matcher linkM = LINK_HREF_PATTERN.matcher(html);
             while (linkM.find()) {
@@ -190,9 +188,6 @@ public class UIParser {
             }
 
             Matcher scriptM = SCRIPT_TAG_PATTERN.matcher(html);
-            while (scriptM.find()) {
-                extractedScript.append(scriptM.group(1)).append("\n");
-            }
             html = scriptM.replaceAll("");
 
             Matcher styleM = STYLE_TAG_PATTERN.matcher(html);
@@ -208,7 +203,7 @@ public class UIParser {
         // <mc-slot> などのマクロは、正規表現での文字列置換ではなく DOM の部分木差し替えで展開する
         CustomTagExpander.expand(htmlRoot);
 
-        return new Document(htmlRoot, sheet, authorCss, extractedScript.toString());
+        return new Document(htmlRoot, sheet, authorCss);
     }
 
     public List<UIElement> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontMetrics fontMetrics) {
@@ -320,13 +315,19 @@ public class UIParser {
         public HtmlNode root;
         public com.nishiyu.enderframelib.core.css.StyleSheet sheet;
         public String authorCss;
-        public String clientScript;
+        @Deprecated
+        public String clientScript = "";
 
+        public Document(HtmlNode root, com.nishiyu.enderframelib.core.css.StyleSheet sheet, String authorCss) {
+            this(root, sheet, authorCss, "");
+        }
+
+        @Deprecated
         public Document(HtmlNode root, com.nishiyu.enderframelib.core.css.StyleSheet sheet, String authorCss, String clientScript) {
             this.root = root;
             this.sheet = sheet;
             this.authorCss = authorCss;
-            this.clientScript = clientScript;
+            this.clientScript = clientScript != null ? clientScript : "";
         }
     }
 }
