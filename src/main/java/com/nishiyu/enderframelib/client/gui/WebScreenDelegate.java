@@ -249,6 +249,26 @@ public class WebScreenDelegate {
         return false;
     }
 
+    /**
+     * キー入力をどう解釈するか。以前は
+     * {@code textareaEditor.isEditing()} と {@code activeInputId.isEmpty()} の
+     * 組み合わせが条件式に埋まっていて、どの状態が有効なのか読み取れなかった。
+     */
+    private enum KeyboardMode {
+        /** 複数行テキストエリアの編集中。キーはエディタが食う。 */
+        TEXTAREA_EDITING,
+        /** 単一行入力にフォーカスがある。Enter で確定、ESC で解除。 */
+        SINGLE_LINE_INPUT,
+        /** 入力にフォーカスが無い。Tab / 矢印でのフォーカス移動と Enter/Space の起動。 */
+        NAVIGATION
+    }
+
+    private KeyboardMode keyboardMode() {
+        boolean hasActiveInput = !ClientWebManager.getActiveInputId(sessionId).isEmpty();
+        if (!hasActiveInput) return KeyboardMode.NAVIGATION;
+        return textareaEditor.isEditing() ? KeyboardMode.TEXTAREA_EDITING : KeyboardMode.SINGLE_LINE_INPUT;
+    }
+
     public boolean handleKeyPressed(Screen screen, Font font, int keyCode, int scanCode, int modifiers,
                                    boolean blockInventoryKey,
                                    BiConsumer<String, String> onInputChanged,
@@ -261,28 +281,34 @@ public class WebScreenDelegate {
             });
         }
 
-        if (textareaEditor.isEditing() && !ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
-            if (textareaEditor.handleKeyPressed(keyCode, onInputChanged, () -> {
-                if (this.state != null) this.state.notifyElementModelChanged(textareaEditor.activeBaseId(), textareaEditor.getValue(textareaEditor.activeBaseId()));
-            })) return true;
-            if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
-        } else if (!ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
-            String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActiveInputId(sessionId));
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                unfocusWebInput();
-                return true;
+        switch (keyboardMode()) {
+            case TEXTAREA_EDITING -> {
+                if (textareaEditor.handleKeyPressed(keyCode, onInputChanged, () -> {
+                    if (this.state != null) this.state.notifyElementModelChanged(textareaEditor.activeBaseId(), textareaEditor.getValue(textareaEditor.activeBaseId()));
+                })) return true;
+                if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
-                String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
-                syncInputValueToDomNodes(baseId, val);
-                ClientScreenInteractionManager.submitInput(sessionId, ClientWebManager.getActiveInputId(sessionId), val);
-                if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
-                return true;
+            case SINGLE_LINE_INPUT -> {
+                String activeId = ClientWebManager.getActiveInputId(sessionId);
+                String baseId = ClientWebManager.getBaseNodeId(activeId);
+                if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                    unfocusWebInput();
+                    return true;
+                }
+                if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                    String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
+                    syncInputValueToDomNodes(baseId, val);
+                    ClientScreenInteractionManager.submitInput(sessionId, activeId, val);
+                    if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
+                    return true;
+                }
+                if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
+                    return true;
+                }
+                if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
             }
-            if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
-                return true;
-            }
-            if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
+            // フォーカス移動とウィジェット起動は以降の共通処理が扱う。
+            case NAVIGATION -> { }
         }
 
         if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN || keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {

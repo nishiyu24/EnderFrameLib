@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
+import net.neoforged.neoforge.client.event.InputEvent;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
@@ -45,31 +47,121 @@ public class ClientScreenInteractionManager {
         void onEvent(String sessionId, String elementId, String eventName, String actionName, String value);
     }
 
-    public static IClientEventCallback clientEventCallback = null;
-    public static boolean forwardEventsToServer = false;
-    public static boolean enableDefaultUiSounds = true;
-    public static boolean mutateDomOnHover = false;
+    // --- 拡張口 ---
+    // かつては public static な可変フィールドで、どこからでも書き換えられ、
+    // 誰が設定したのかも追えなかった。アクセサ経由にして入口を 1 本にする。
+    private static volatile IClientEventCallback clientEventCallback = null;
+    private static volatile boolean forwardEventsToServer = false;
+    private static volatile boolean enableDefaultUiSounds = true;
+    private static volatile boolean mutateDomOnHover = false;
+    private static volatile Function<ItemStack, String> itemSessionIdExtractor =
+            ClientScreenInteractionManager::defaultGetSessionIdFromItem;
+    private static volatile BiPredicate<Minecraft, ItemStack> itemRangeValidator =
+            ClientScreenInteractionManager::defaultIsItemInRange;
 
-    public static Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
-    public static BiPredicate<Minecraft, ItemStack> itemRangeValidator = ClientScreenInteractionManager::defaultIsItemInRange;
+    /** 要素イベントを受け取るコールバック。{@code null} で解除。 */
+    public static void setClientEventCallback(IClientEventCallback callback) {
+        clientEventCallback = callback;
+    }
+
+    /** ローカルセッションのイベントもサーバーへ転送するか。 */
+    public static void setForwardEventsToServer(boolean forward) {
+        forwardEventsToServer = forward;
+    }
+
+    public static boolean isForwardEventsToServer() {
+        return forwardEventsToServer;
+    }
+
+    /** 既定の UI クリック音を鳴らすか。 */
+    public static void setEnableDefaultUiSounds(boolean enable) {
+        enableDefaultUiSounds = enable;
+    }
+
+    public static boolean isEnableDefaultUiSounds() {
+        return enableDefaultUiSounds;
+    }
+
+    /** ホバー時に DOM へ {@code hover} 属性を書き込むか（レイアウト再計算を伴う）。 */
+    public static void setMutateDomOnHover(boolean mutate) {
+        mutateDomOnHover = mutate;
+    }
+
+    public static boolean isMutateDomOnHover() {
+        return mutateDomOnHover;
+    }
+
+    /** アイテムからセッション ID を取り出す方法の差し替え。{@code null} で既定に戻る。 */
+    public static void setItemSessionIdExtractor(Function<ItemStack, String> extractor) {
+        itemSessionIdExtractor = extractor != null
+                ? extractor : ClientScreenInteractionManager::defaultGetSessionIdFromItem;
+    }
+
+    /** アイテム UI の操作可能距離判定の差し替え。{@code null} で既定に戻る。 */
+    public static void setItemRangeValidator(BiPredicate<Minecraft, ItemStack> validator) {
+        itemRangeValidator = validator != null
+                ? validator : ClientScreenInteractionManager::defaultIsItemInRange;
+    }
 
     private static final Map<String, SessionState> states = new ConcurrentHashMap<>();
-    private static boolean wasLeftDown = false;
-    private static boolean wasRightDown = false;
+    /** 未消費の押下が無いことを表す番兵。 */
+    private static final int NO_PENDING_PRESS = -1;
     private static String lastHoveredSession = "";
 
     private static final Map<String, RouterDistanceInfo> ROUTER_DISTANCE_CACHE = new ConcurrentHashMap<>();
     public record RouterDistanceInfo(long posLong, String dimension, double maxDistSqr) {}
 
+    // --- 世界側スクリーンのマウス入力 ---
+    // 以前は onClientTick で GLFW を直接ポーリングして立ち上がり/立ち下がりを検出していた。
+    // tick は 20 Hz なので、50 ms 未満のクリックは押下と解放が同じ tick に入って
+    // 丸ごと落ちていた。実際の GLFW コールバック（InputEvent.MouseButton.Post）で
+    // ラッチし、tick がそれを消費する。
+    /** 未消費の押下ボタン（0=左 / 1=右）。-1 は押下なし。 */
+    private static final AtomicInteger pendingPressButton = new AtomicInteger(NO_PENDING_PRESS);
+    private static volatile boolean pendingRelease = false;
+    private static volatile boolean leftHeld = false;
+    private static volatile boolean rightHeld = false;
+
     static {
         try {
             NeoForge.EVENT_BUS.addListener(ClientScreenInteractionManager::onClientTick);
+            NeoForge.EVENT_BUS.addListener(ClientScreenInteractionManager::onMouseButton);
             ClientWebManager.addSessionClearedListener(ClientScreenInteractionManager::clearSessionState);
         } catch (Throwable t) {
             // 握り潰すと世界側スクリーンへの操作が一切届かなくなる。
             EnderFrameLib.LOGGER.error("Failed to register ClientScreenInteractionManager listeners; "
                     + "in-world screen interaction will not work", t);
         }
+    }
+
+    /**
+     * GLFW のマウスボタンコールバックで押下/解放をラッチする。
+     * 画面が開いているときは画面側が入力を扱うので無視する。
+     */
+    public static void onMouseButton(InputEvent.MouseButton.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null) return;
+
+        int button = event.getButton();
+        boolean isLeft = button == GLFW.GLFW_MOUSE_BUTTON_LEFT;
+        boolean isRight = button == GLFW.GLFW_MOUSE_BUTTON_RIGHT;
+        if (!isLeft && !isRight) return;
+
+        if (event.getAction() == GLFW.GLFW_PRESS) {
+            if (isLeft) leftHeld = true; else rightHeld = true;
+            // 同じ tick 内に 2 つ来た場合は先に来た方を優先する。
+            pendingPressButton.compareAndSet(NO_PENDING_PRESS, isLeft ? 0 : 1);
+        } else if (event.getAction() == GLFW.GLFW_RELEASE) {
+            if (isLeft) leftHeld = false; else rightHeld = false;
+            pendingRelease = true;
+        }
+    }
+
+    private static void resetMouseLatches() {
+        pendingPressButton.set(NO_PENDING_PRESS);
+        pendingRelease = false;
+        leftHeld = false;
+        rightHeld = false;
     }
 
     public static void clearSessionState(String sessionId) {
@@ -79,8 +171,7 @@ public class ClientScreenInteractionManager {
         if (sessionId.equals(lastHoveredSession)) {
             lastHoveredSession = "";
         }
-        wasLeftDown = false;
-        wasRightDown = false;
+        resetMouseLatches();
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -88,27 +179,20 @@ public class ClientScreenInteractionManager {
         if (mc.player == null || mc.level == null) return;
 
         if (mc.screen != null) {
-            wasLeftDown = false;
-            wasRightDown = false;
+            resetMouseLatches();
             return;
         }
 
-        long window = mc.getWindow().getWindow();
-        boolean glfwLeft = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        boolean glfwRight = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
-        boolean isLeftDown = glfwLeft || mc.options.keyAttack.isDown();
-        boolean isRightDown = glfwRight || mc.options.keyUse.isDown();
+        // コールバックでラッチされた押下/解放を消費する。短いクリックも落とさない。
+        int pressedButton = pendingPressButton.getAndSet(NO_PENDING_PRESS);
+        boolean isMouseJustPressed = pressedButton != NO_PENDING_PRESS;
+        boolean isMouseJustReleased = pendingRelease;
+        pendingRelease = false;
 
-        boolean leftJustPressed = isLeftDown && !wasLeftDown;
-        boolean rightJustPressed = isRightDown && !wasRightDown;
-        boolean isMouseJustPressed = leftJustPressed || rightJustPressed;
-        int pressedButton = leftJustPressed ? 0 : 1;
-
-        boolean isMouseDown = isLeftDown || isRightDown;
-        boolean isMouseJustReleased = (!isLeftDown && wasLeftDown) || (!isRightDown && wasRightDown);
-
-        wasLeftDown = isLeftDown;
-        wasRightDown = isRightDown;
+        // キーバインドが別のボタンに割り当てられている場合も拾えるよう、
+        // 押下継続（ドラッグ）判定はキーバインドの状態も見る。
+        boolean isMouseDown = leftHeld || rightHeld
+                || mc.options.keyAttack.isDown() || mc.options.keyUse.isDown();
 
         if (isMouseJustReleased && !lastHoveredSession.isEmpty()) {
             handleRelease(lastHoveredSession);

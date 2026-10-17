@@ -60,7 +60,7 @@ public class EnderFrameClientInit {
         // 0. ビルトイン設定のランタイム反映フック登録と、Mod一覧「Config」ボタンへの設定画面登録
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
             WebRenderCore.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
-            ClientScreenInteractionManager.enableDefaultUiSounds = EnderFrameBuiltInConfig.enableDefaultUiSounds;
+            ClientScreenInteractionManager.setEnableDefaultUiSounds(EnderFrameBuiltInConfig.enableDefaultUiSounds);
         };
         EnderFrameBuiltInConfig.applyToRuntime();
 
