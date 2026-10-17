@@ -267,7 +267,7 @@ public class WebSceneContext {
 
         poseStack.pushPose();
         try {
-            poseStack.translate(screenCX, screenCY, zOffset + 35.0f);
+            poseStack.translate(screenCX, screenCY, zOffset + ZLayers.SCENE_PREVIEW_Z);
             poseStack.scale(baseScale, -baseScale, baseScale);
             poseStack.mulPose(Axis.XP.rotationDegrees(this.rotationX));
             poseStack.mulPose(Axis.YP.rotationDegrees(currentYaw));

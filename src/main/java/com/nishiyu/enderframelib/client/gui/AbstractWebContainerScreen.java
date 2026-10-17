@@ -29,7 +29,6 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -54,22 +53,29 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     protected boolean devToolsEnabled = false;
     protected ResourceLocation htmlResourceLocation = null;
 
-    private static Field slotXField;
-    private static Field slotYField;
+    private static final java.lang.reflect.Field SLOT_X_FIELD;
+    private static final java.lang.reflect.Field SLOT_Y_FIELD;
+
     static {
+        java.lang.reflect.Field xField = null;
+        java.lang.reflect.Field yField = null;
         try {
-            for (Field f : Slot.class.getDeclaredFields()) {
+            for (java.lang.reflect.Field f : Slot.class.getDeclaredFields()) {
                 if (f.getType() == int.class) {
-                    if (f.getName().equals("x") || f.getName().equals("xPos")) {
+                    if ("x".equals(f.getName()) || "xPos".equals(f.getName())) {
                         f.setAccessible(true);
-                        slotXField = f;
-                    } else if (f.getName().equals("y") || f.getName().equals("yPos")) {
+                        xField = f;
+                    } else if ("y".equals(f.getName()) || "yPos".equals(f.getName())) {
                         f.setAccessible(true);
-                        slotYField = f;
+                        yField = f;
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Throwable t) {
+            com.mojang.logging.LogUtils.getLogger().warn("Failed to initialize Slot position reflection fields in AbstractWebContainerScreen", t);
+        }
+        SLOT_X_FIELD = xField;
+        SLOT_Y_FIELD = yField;
     }
 
     public AbstractWebContainerScreen(T menu, Inventory playerInventory, Component title) {
@@ -299,9 +305,11 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     private static void setSlotPosition(Slot slot, int x, int y) {
         if (slot == null) return;
         try {
-            if (slotXField != null) slotXField.setInt(slot, x);
-            if (slotYField != null) slotYField.setInt(slot, y);
-        } catch (Exception ignored) {}
+            if (SLOT_X_FIELD != null) SLOT_X_FIELD.setInt(slot, x);
+            if (SLOT_Y_FIELD != null) SLOT_Y_FIELD.setInt(slot, y);
+        } catch (Throwable t) {
+            com.mojang.logging.LogUtils.getLogger().debug("Failed to set Slot position: ({}, {})", x, y, t);
+        }
     }
 
     protected double toWebX(double mouseX) {
