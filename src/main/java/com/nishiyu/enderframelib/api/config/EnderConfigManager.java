@@ -6,7 +6,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.common.UIParser;
 import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.Reader;
@@ -26,15 +25,31 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
- * {@link EnderConfig} と {@link ConfigEntry} が付与された設定クラスを管理し、
- * JSONファイルへの保存・読み込み、デフォルト値の記憶・リセット、およびHTML5標準フォームとのバインディングを提供するマネージャー。
+ * Manages configuration classes annotated with {@link EnderConfig} and {@link ConfigEntry}:
+ * JSON load/save, remembering and restoring defaults, and binding to standard HTML5 forms.
+ *
+ * <h2>Client or server?</h2>
+ * This system has <b>no client/server distinction</b>. Every registered config is stored in
+ * the game instance's {@code config/} directory and is read where it is declared. On a client
+ * connected to a dedicated server, values come from that client's own file: registering a
+ * gameplay setting here silently makes it client-local. Use NeoForge's {@code ModConfigSpec}
+ * with {@code ModConfig.Type.SERVER} for anything that must be authoritative.
+ *
+ * <h2>Threading</h2>
+ * Values are written by reflection from the thread that applies a config change (the render
+ * thread for the in-game config screen) and read from wherever the owning mod reads them.
+ * Declare annotated fields {@code volatile} — the write path here is synchronized, but a
+ * non-volatile field gives the reader no happens-before guarantee.
  */
 public class EnderConfigManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Map<String, RegisteredConfig> CONFIGS = new ConcurrentHashMap<>();
+    /** 登録・ロード・保存の read-modify-write を直列化する。 */
+    private static final Object WRITE_LOCK = new Object();
 
     public record FieldSpec(
             String key,
@@ -46,9 +61,9 @@ public class EnderConfigManager {
             String label,
             String description
     ) {
+        // setAccessible は register() で 1 度だけ行う（以前は 3 箇所で毎回呼んでいた）
         public Object getCurrentValue() {
             try {
-                field.setAccessible(true);
                 return field.get(targetInstance);
             } catch (Exception e) {
                 return defaultValue;
@@ -64,10 +79,19 @@ public class EnderConfigManager {
             return String.valueOf(val);
         }
 
+        /**
+         * 文字列から値を設定する。型が合わない・パターンに合わない場合は false を返す。
+         * 失敗理由は呼び出し側（{@link #load} / HTML フォームの適用）が記録する。
+         */
         public boolean setFromString(String rawValue) {
             if (rawValue == null) return false;
+            synchronized (WRITE_LOCK) {
+                return setFromStringLocked(rawValue);
+            }
+        }
+
+        private boolean setFromStringLocked(String rawValue) {
             try {
-                field.setAccessible(true);
                 Class<?> type = field.getType();
                 String trimmed = rawValue.trim();
 
@@ -119,16 +143,20 @@ public class EnderConfigManager {
                         }
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                EnderFrameLib.LOGGER.warn("設定値 {} に \"{}\" を設定できませんでした: {}",
+                        key, rawValue, e.toString());
             }
             return false;
         }
 
         public void resetToDefault() {
-            try {
-                field.setAccessible(true);
-                field.set(targetInstance, defaultValue);
-            } catch (Exception ignored) {
+            synchronized (WRITE_LOCK) {
+                try {
+                    field.set(targetInstance, defaultValue);
+                } catch (Exception e) {
+                    EnderFrameLib.LOGGER.warn("設定値 {} を既定値に戻せませんでした: {}", key, e.toString());
+                }
             }
         }
     }
@@ -185,6 +213,20 @@ public class EnderConfigManager {
      * インスタンス（または static クラス）を登録し、configディレクトリから即時ロードする。
      */
     public static RegisteredConfig register(String modId, Class<?> configClass, Object instance) {
+        // 登録 → ロード → 保存 は 1 つの read-modify-write。途中で別スレッドに割り込まれると
+        // 既定値のまま保存して設定を失う
+        synchronized (WRITE_LOCK) {
+            RegisteredConfig reg = buildRegistration(modId, configClass, instance);
+            CONFIGS.put(modId, reg);
+            // 以前は load() と save() がそれぞれ通知していたため、登録だけで 2 回発火していた
+            loadInternal(modId, false);
+            saveInternal(modId, false);
+            reg.notifyListeners();
+            return reg;
+        }
+    }
+
+    private static RegisteredConfig buildRegistration(String modId, Class<?> configClass, Object instance) {
         EnderConfig meta = configClass.getAnnotation(EnderConfig.class);
         String fileName = (meta != null && !meta.fileName().isEmpty()) ? meta.fileName() : modId;
         if (!fileName.endsWith(".json")) fileName += ".json";
@@ -228,9 +270,6 @@ public class EnderConfigManager {
             ));
         }
 
-        CONFIGS.put(modId, reg);
-        load(modId);
-        save(modId);
         return reg;
     }
 
@@ -243,6 +282,12 @@ public class EnderConfigManager {
     }
 
     public static void load(String modId) {
+        synchronized (WRITE_LOCK) {
+            loadInternal(modId, true);
+        }
+    }
+
+    private static void loadInternal(String modId, boolean notify) {
         RegisteredConfig reg = CONFIGS.get(modId);
         if (reg == null || !Files.exists(reg.filePath)) return;
 
@@ -263,16 +308,29 @@ public class EnderConfigManager {
                 }
 
                 if (valEl != null && !valEl.isJsonNull()) {
-                    spec.setFromString(valEl.getAsString());
+                    // 型が合わない値を黙って捨てると、設定ファイルを直接編集した利用者が
+                    // 「保存したのに反映されない」状態に気づけない
+                    if (!spec.setFromString(valEl.getAsString())) {
+                        EnderFrameLib.LOGGER.warn(
+                                "設定 {} の値 \"{}\" を {} として解釈できなかったため、既定値 {} を使います ({})",
+                                spec.key(), valEl.getAsString(), spec.field().getType().getSimpleName(),
+                                spec.defaultValue(), reg.filePath.getFileName());
+                    }
                 }
             }
-            reg.notifyListeners();
+            if (notify) reg.notifyListeners();
         } catch (Exception e) {
             EnderFrameLib.LOGGER.warn("Failed to load config for {}: {}", modId, e.getMessage());
         }
     }
 
     public static void save(String modId) {
+        synchronized (WRITE_LOCK) {
+            saveInternal(modId, true);
+        }
+    }
+
+    private static void saveInternal(String modId, boolean notify) {
         RegisteredConfig reg = CONFIGS.get(modId);
         if (reg == null) return;
 
@@ -303,122 +361,140 @@ public class EnderConfigManager {
                 GSON.toJson(root, writer);
             }
 
-            reg.notifyListeners();
+            if (notify) reg.notifyListeners();
         } catch (Exception e) {
             EnderFrameLib.LOGGER.error("Failed to save config for {}: {}", modId, e.getMessage());
         }
     }
 
+    /** 既定のテーマ。{@link EnderConfig#theme()} が空のときに使う。 */
+    private static final String DEFAULT_THEME = "enderframelib:dark.css";
+    /** 設定画面自体のスタイルシート（jar 同梱リソース）。 */
+    private static final String CONFIG_FORM_CSS = "enderframelib:css/config-form.css";
+
     /**
-     * 指定したMODの設定クラスから、Web標準セマンティックHTML5に準拠したHTMLドキュメントを生成する。
+     * Resolves external resources (custom templates, stylesheets) by id.
+     * Installed by the library at startup; defaults to resolving nothing so that this
+     * package does not depend on the parser implementation.
+     */
+    public static Function<String, String> resourceResolver = path -> "";
+
+    /**
+     * Generates a semantic HTML5 document for a mod's configuration class.
+     *
+     * @param searchFilter free-text filter; only matching entries are emitted
      */
     public static String generateStandardHtml5Config(RegisteredConfig reg, String searchFilter) {
-        if (reg.configMeta != null && !reg.configMeta.customTemplate().isEmpty() && UIParser.resourceTextResolver != null) {
-            String customHtml = UIParser.resourceTextResolver.apply(reg.configMeta.customTemplate());
-            if (customHtml != null && !customHtml.isEmpty()) {
-                return customHtml;
-            }
-        }
+        String custom = resolveCustomTemplate(reg);
+        if (custom != null) return custom;
 
+        StringBuilder html = new StringBuilder();
+        appendHead(html, reg);
+        appendHeader(html, reg, searchFilter);
+
+        html.append("<form id=\"cfg_form\" class=\"cfg-form\" onsubmit=\"save_config\" onreset=\"reset_all\">");
+        String filterLower = searchFilter != null ? searchFilter.trim().toLowerCase(Locale.ROOT) : "";
+        for (Map.Entry<String, List<FieldSpec>> catEntry : reg.getFieldsByCategory().entrySet()) {
+            appendCategory(html, catEntry.getKey(), catEntry.getValue(), filterLower);
+        }
+        appendFooter(html);
+        html.append("</form></body></html>");
+        return html.toString();
+    }
+
+    /** {@link EnderConfig#customTemplate()} が解決できればそれを使う。 */
+    private static String resolveCustomTemplate(RegisteredConfig reg) {
+        if (reg.configMeta == null || reg.configMeta.customTemplate().isEmpty() || resourceResolver == null) {
+            return null;
+        }
+        String customHtml = resourceResolver.apply(reg.configMeta.customTemplate());
+        return (customHtml != null && !customHtml.isEmpty()) ? customHtml : null;
+    }
+
+    private static void appendHead(StringBuilder html, RegisteredConfig reg) {
         String theme = (reg.configMeta != null && !reg.configMeta.theme().isEmpty())
                 ? reg.configMeta.theme()
-                : "enderframelib:dark.css";
+                : DEFAULT_THEME;
+
+        html.append("<html><head>");
+        html.append("<link rel=\"stylesheet\" href=\"").append(escapeHtml(theme)).append("\" />");
+        // 設定画面のスタイルはリソース 1 箇所が出所。読めなかった場合でも
+        // テーマだけで最低限表示できるので、空のままにする
+        String formCss = resourceResolver != null ? resourceResolver.apply(CONFIG_FORM_CSS) : null;
+        if (formCss != null && !formCss.isEmpty()) {
+            html.append("<style>").append(formCss).append("</style>");
+        }
+        html.append("</head><body>");
+    }
+
+    private static void appendHeader(StringBuilder html, RegisteredConfig reg, String searchFilter) {
         String title = (reg.configMeta != null && !reg.configMeta.title().isEmpty())
                 ? reg.configMeta.title()
                 : (reg.modId + " Configuration");
-
-        String filterLower = searchFilter != null ? searchFilter.trim().toLowerCase(Locale.ROOT) : "";
-
-        StringBuilder html = new StringBuilder();
-        html.append("<html><head>");
-        html.append("<link rel=\"stylesheet\" href=\"").append(escapeHtml(theme)).append("\" />");
-        html.append("<style>");
-        html.append("""
-                body { display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
-                .cfg-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid #45475a; }
-                .cfg-title { font-size: 1.35rem; font-weight: bold; color: var(--accent, #89b4fa); }
-                .cfg-search { width: 220px; padding: 5px 10px; border-radius: 4px; background-color: var(--bg-surface, #313244); color: var(--text-main, #cdd6f4); border: 1px solid #585b70; }
-                .cfg-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
-                details.cfg-category { background-color: var(--bg-base, #1e1e2e); border: 1px solid #45475a; border-radius: 6px; padding: 8px 12px; display: block; }
-                summary.cfg-summary { font-weight: bold; font-size: 1.05rem; color: var(--accent, #89b4fa); padding: 4px 0; cursor: pointer; display: block; }
-                .cfg-row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding: 8px 6px; border-top: 1px solid #313244; gap: 12px; }
-                .cfg-row:hover { background-color: rgba(255, 255, 255, 0.04); border-radius: 4px; }
-                .cfg-label-col { display: flex; flex-direction: column; gap: 2px; width: 58%; }
-                .cfg-label { font-weight: bold; color: var(--text-main, #cdd6f4); }
-                .cfg-desc { font-size: 0.78rem; color: var(--text-sub, #a6adc8); }
-                .cfg-control-col { display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px; width: 40%; }
-                .cfg-input { width: 140px; background-color: var(--bg-surface, #313244); color: var(--text-main, #cdd6f4); border: 1px solid #585b70; border-radius: 4px; padding: 4px 8px; }
-                .cfg-range-wrap { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-                .cfg-range-val { width: 42px; text-align: right; font-size: 0.85rem; color: var(--accent, #89b4fa); }
-                .cfg-reset-btn { background-color: #313244; color: #a6adc8; border: 1px solid #45475a; border-radius: 4px; padding: 3px 7px; font-size: 0.75rem; }
-                .cfg-reset-btn:hover { background-color: #45475a; color: #ffffff; }
-                .cfg-footer { display: flex; flex-direction: row; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #45475a; }
-                .cfg-badge-restart { color: #f9e2af; font-size: 0.72rem; margin-left: 6px; }
-                """);
-        html.append("</style></head><body>");
 
         html.append("<header class=\"cfg-header\">");
         html.append("<div class=\"cfg-title\">").append(escapeHtml(title)).append("</div>");
         html.append("<input id=\"cfg_search\" type=\"search\" class=\"cfg-search\" placeholder=\"Search settings...\" value=\"")
                 .append(escapeHtml(searchFilter != null ? searchFilter : "")).append("\" />");
         html.append("</header>");
+    }
 
-        html.append("<form id=\"cfg_form\" class=\"cfg-form\" onsubmit=\"save_config\" onreset=\"reset_all\">");
-
-        for (Map.Entry<String, List<FieldSpec>> catEntry : reg.getFieldsByCategory().entrySet()) {
-            String category = catEntry.getKey();
-            List<FieldSpec> matchedSpecs = new ArrayList<>();
-            for (FieldSpec spec : catEntry.getValue()) {
-                if (filterLower.isEmpty()
-                        || spec.label().toLowerCase(Locale.ROOT).contains(filterLower)
-                        || spec.key().toLowerCase(Locale.ROOT).contains(filterLower)
-                        || spec.description().toLowerCase(Locale.ROOT).contains(filterLower)
-                        || category.toLowerCase(Locale.ROOT).contains(filterLower)) {
-                    matchedSpecs.add(spec);
-                }
-            }
-            if (matchedSpecs.isEmpty()) continue;
-
-            String catId = "cat_" + category.replaceAll("[^a-zA-Z0-9_]", "_");
-            html.append("<details id=\"").append(catId).append("\" class=\"cfg-category\" open=\"true\">");
-            html.append("<summary class=\"cfg-summary\">").append(escapeHtml(category)).append("</summary>");
-
-            for (FieldSpec spec : matchedSpecs) {
-                String inputId = "field_" + spec.key();
-                String tooltipAttr = spec.description().isEmpty() ? "" : " title=\"" + escapeHtml(spec.description()) + "\"";
-
-                html.append("<div class=\"cfg-row\"").append(tooltipAttr).append(">");
-                html.append("<div class=\"cfg-label-col\">");
-                html.append("<label class=\"cfg-label\" for=\"").append(inputId).append("\">")
-                        .append(escapeHtml(spec.label()));
-                if (spec.annotation().requiresRestart()) {
-                    html.append("<span class=\"cfg-badge-restart\">[Restart]</span>");
-                }
-                html.append("</label>");
-                if (!spec.description().isEmpty()) {
-                    html.append("<span class=\"cfg-desc\">").append(escapeHtml(spec.description())).append("</span>");
-                }
-                html.append("</div>");
-
-                html.append("<div class=\"cfg-control-col\">");
-                appendStandardControlHtml(html, spec, inputId);
-                html.append("<button type=\"button\" class=\"cfg-reset-btn\" title=\"Reset to default: ")
-                        .append(escapeHtml(String.valueOf(spec.defaultValue())))
-                        .append("\" onclick=\"reset_field:").append(spec.key()).append("\">↺</button>");
-                html.append("</div>");
-                html.append("</div>");
-            }
-
-            html.append("</details>");
+    private static void appendCategory(StringBuilder html, String category, List<FieldSpec> specs, String filterLower) {
+        List<FieldSpec> matchedSpecs = new ArrayList<>();
+        for (FieldSpec spec : specs) {
+            if (matchesFilter(spec, category, filterLower)) matchedSpecs.add(spec);
         }
+        if (matchedSpecs.isEmpty()) return;
 
+        String catId = "cat_" + category.replaceAll("[^a-zA-Z0-9_]", "_");
+        html.append("<details id=\"").append(catId).append("\" class=\"cfg-category\" open=\"true\">");
+        html.append("<summary class=\"cfg-summary\">").append(escapeHtml(category)).append("</summary>");
+        for (FieldSpec spec : matchedSpecs) {
+            appendRow(html, spec);
+        }
+        html.append("</details>");
+    }
+
+    private static boolean matchesFilter(FieldSpec spec, String category, String filterLower) {
+        if (filterLower.isEmpty()) return true;
+        return spec.label().toLowerCase(Locale.ROOT).contains(filterLower)
+                || spec.key().toLowerCase(Locale.ROOT).contains(filterLower)
+                || spec.description().toLowerCase(Locale.ROOT).contains(filterLower)
+                || category.toLowerCase(Locale.ROOT).contains(filterLower);
+    }
+
+    private static void appendRow(StringBuilder html, FieldSpec spec) {
+        String inputId = "field_" + spec.key();
+        String tooltipAttr = spec.description().isEmpty() ? "" : " title=\"" + escapeHtml(spec.description()) + "\"";
+
+        html.append("<div class=\"cfg-row\"").append(tooltipAttr).append(">");
+        html.append("<div class=\"cfg-label-col\">");
+        html.append("<label class=\"cfg-label\" for=\"").append(inputId).append("\">")
+                .append(escapeHtml(spec.label()));
+        if (spec.annotation().requiresRestart()) {
+            html.append("<span class=\"cfg-badge-restart\">[Restart]</span>");
+        }
+        html.append("</label>");
+        if (!spec.description().isEmpty()) {
+            html.append("<span class=\"cfg-desc\">").append(escapeHtml(spec.description())).append("</span>");
+        }
+        html.append("</div>");
+
+        html.append("<div class=\"cfg-control-col\">");
+        appendStandardControlHtml(html, spec, inputId);
+        html.append("<button type=\"button\" class=\"cfg-reset-btn\" title=\"Reset to default: ")
+                .append(escapeHtml(String.valueOf(spec.defaultValue())))
+                .append("\" onclick=\"reset_field:").append(spec.key()).append("\">↺</button>");
+        html.append("</div>");
+        html.append("</div>");
+    }
+
+    private static void appendFooter(StringBuilder html) {
         html.append("<footer class=\"cfg-footer\">");
         html.append("<button type=\"reset\" class=\"mc-btn\" onclick=\"reset_all\">Reset All</button>");
         html.append("<button type=\"button\" class=\"mc-btn\" onclick=\"cancel_config\">Cancel</button>");
         html.append("<button type=\"submit\" class=\"mc-btn mc-btn-primary\" onclick=\"save_config\">Save &amp; Apply</button>");
         html.append("</footer>");
-        html.append("</form></body></html>");
-        return html.toString();
     }
 
     private static void appendStandardControlHtml(StringBuilder html, FieldSpec spec, String inputId) {

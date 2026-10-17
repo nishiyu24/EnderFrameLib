@@ -18,6 +18,8 @@ import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.FontMetrics;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +31,10 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@org.jetbrains.annotations.ApiStatus.Internal
 public class UIParser {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(UIParser.class);
 
     private static final Pattern INCLUDE_PATTERN = Pattern.compile("(?is)<include\\b[^>]*\\bsrc=[\"']([^\"']+)[\"'][^>]*(?:/>|>\\s*</include>)");
     private static final Pattern LINK_HREF_PATTERN = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>");
@@ -84,15 +89,54 @@ public class UIParser {
 
         if (clean.contains(":")) {
             String[] sp = clean.split(":", 2);
-            try (InputStream is = UIParser.class.getResourceAsStream("/assets/" + sp[0] + "/" + sp[1])) {
-                if (is != null) return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            } catch (Exception ignored) {}
-            try (InputStream is = UIParser.class.getResourceAsStream("/data/" + sp[0] + "/enderframe_ui/" + sp[1])) {
-                if (is != null) return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            } catch (Exception ignored) {}
+            String namespace = sanitizeNamespace(sp[0]);
+            String resourcePath = sanitizeResourcePath(sp[1]);
+            // クラスパスの読み出しなので、".." や "/" 始まりを通すと jar 外（他 Mod のリソース）に出られる
+            if (namespace == null || resourcePath == null) {
+                LOGGER.warn("不正なリソースパスを拒否しました: {}", clean);
+                return "";
+            }
+            String fromClasspath = readClasspath("/assets/" + namespace + "/" + resourcePath);
+            if (fromClasspath != null) return fromClasspath;
+            fromClasspath = readClasspath("/data/" + namespace + "/enderframe_ui/" + resourcePath);
+            if (fromClasspath != null) return fromClasspath;
         }
         return "";
     };
+
+    private static final Pattern SAFE_NAMESPACE = Pattern.compile("[a-z0-9_.-]{1,64}");
+    private static final Pattern SAFE_RESOURCE_PATH = Pattern.compile("[a-zA-Z0-9_./-]{1,256}");
+
+    /** リソース名前空間の検証。Minecraft の名前空間と同じ文字種だけを許す。 */
+    private static String sanitizeNamespace(String raw) {
+        if (raw == null) return null;
+        String value = raw.trim().toLowerCase();
+        return SAFE_NAMESPACE.matcher(value).matches() ? value : null;
+    }
+
+    /**
+     * クラスパス相対パスの正規化（I-9）。
+     * 絶対パス・親ディレクトリ参照・バックスラッシュ・空セグメントを一切通さない。
+     */
+    private static String sanitizeResourcePath(String raw) {
+        if (raw == null) return null;
+        String value = raw.trim().replace('\\', '/');
+        while (value.startsWith("/")) value = value.substring(1);
+        if (value.isEmpty() || !SAFE_RESOURCE_PATH.matcher(value).matches()) return null;
+        for (String segment : value.split("/")) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) return null;
+        }
+        return value;
+    }
+
+    private static String readClasspath(String absolutePath) {
+        try (InputStream is = UIParser.class.getResourceAsStream(absolutePath)) {
+            if (is != null) return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            LOGGER.warn("リソースの読み込みに失敗しました: {} ({})", absolutePath, e.getMessage());
+        }
+        return null;
+    }
 
     public UIParser() {}
 
@@ -311,7 +355,8 @@ public class UIParser {
         return pseudo;
     }
 
-    public static class Document {
+    @org.jetbrains.annotations.ApiStatus.Internal
+    public static class Document implements com.nishiyu.enderframelib.api.WebDocument {
         public HtmlNode root;
         public com.nishiyu.enderframelib.core.css.StyleSheet sheet;
         public String authorCss;
@@ -320,6 +365,33 @@ public class UIParser {
             this.root = root;
             this.sheet = sheet;
             this.authorCss = authorCss;
+        }
+
+        @Override
+        public String authorCss() {
+            return authorCss != null ? authorCss : "";
+        }
+
+        @Override
+        public boolean hasElement(String elementId) {
+            return find(elementId) != null;
+        }
+
+        @Override
+        public String tagOf(String elementId) {
+            HtmlNode node = find(elementId);
+            return node != null ? node.tag : null;
+        }
+
+        @Override
+        public String attributeOf(String elementId, String attributeName) {
+            HtmlNode node = find(elementId);
+            return node != null && attributeName != null ? node.attrs.get(attributeName) : null;
+        }
+
+        private HtmlNode find(String elementId) {
+            if (root == null || elementId == null || elementId.isEmpty()) return null;
+            return root.getElementById(elementId);
         }
     }
 }

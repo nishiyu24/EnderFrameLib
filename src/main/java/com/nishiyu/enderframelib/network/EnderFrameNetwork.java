@@ -1,18 +1,33 @@
 package com.nishiyu.enderframelib.network;
 
+import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.network.c2s.SubscribeC2SPacket;
 import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
 import com.nishiyu.enderframelib.network.s2c.PubSubUpdateS2CPacket;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
-import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class EnderFrameNetwork {
 
-    @SubscribeEvent
+    private EnderFrameNetwork() {}
+
+    /**
+     * プロトコルバージョン。
+     * ハードコードした "1.0.0" のままだと、パケットの形を変えても
+     * 新旧クライアントが同じバージョンを名乗って接続できてしまう。
+     */
+    private static String protocolVersion() {
+        return ModList.get().getModContainerById(EnderFrameLib.MODID)
+                .map(container -> container.getModInfo().getVersion().toString())
+                .orElse("0.0.0");
+    }
+
     public static void registerPayloads(final RegisterPayloadHandlersEvent event) {
-        final PayloadRegistrar registrar = event.registrar("enderframelib").versioned("1.0.0");
+        final PayloadRegistrar registrar = event.registrar(EnderFrameLib.MODID).versioned(protocolVersion());
 
         registrar.playToClient(
                 WebSyncS2CPacket.TYPE,

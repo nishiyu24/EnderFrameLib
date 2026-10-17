@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Map<ResourceLocation, String>> {
 
     private static final String FOLDER = "enderframe_ui";
+    /** 生の ID（{@code enderframe_ui/foo.html}）と短縮 ID（{@code foo}）の両方をキーに持つ。 */
     private static final Map<ResourceLocation, String> LOADED_UIS = new ConcurrentHashMap<>();
 
     @Override
@@ -80,7 +81,21 @@ public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Ma
     protected void apply(@NotNull Map<ResourceLocation, String> prepared, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profiler) {
         LOADED_UIS.clear();
         LOADED_UIS.putAll(prepared);
-        EnderFrameLib.LOGGER.info("Loaded {} EnderFrame UI entries from datapacks.", LOADED_UIS.size() / 2);
+        // 1 ファイルにつき生 ID と短縮 ID の 2 キーを張るので、size()/2 は短縮 ID が
+        // 衝突した場合に件数を取り違える。生 ID だけを数える
+        EnderFrameLib.LOGGER.info("Loaded {} EnderFrame UI entries from datapacks.", entryCount());
+    }
+
+    /** 読み込んだファイル数（生 ID の数）。 */
+    static int entryCount() {
+        return (int) LOADED_UIS.keySet().stream()
+                .filter(loc -> loc.getPath().startsWith(FOLDER + "/"))
+                .count();
+    }
+
+    /** サーバー停止時に読み込み済みリソースを捨てる（I-6）。 */
+    static void clearAll() {
+        LOADED_UIS.clear();
     }
 
     public static String getHtml(ResourceLocation id) {

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.network.c2s;
 
+import com.nishiyu.enderframelib.server.PlayerRateLimiter;
 import com.nishiyu.enderframelib.server.ServerPubSubManager;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -29,6 +30,15 @@ public record SubscribeC2SPacket(
             (buf, packet) -> packet.write(buf),
             SubscribeC2SPacket::new
     );
+
+    private static final long SUBSCRIBE_COOLDOWN_MS = 200L;
+    private static final long AR_SUBSCRIBE_COOLDOWN_MS = 100L;
+
+    /** AR 購読要求の内容を表すレート制限キー。 */
+    private String arSubscriptionKey() {
+        return Integer.toHexString(java.util.Objects.hash(
+                needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths()));
+    }
 
     public SubscribeC2SPacket(String channel) {
         this(channel, false, false, false, 0.0, "", List.of(), List.of());
@@ -91,18 +101,23 @@ public record SubscribeC2SPacket(
 
     public void handle(IPayloadContext context) {
         context.enqueueWork(() -> {
-            if (context.player() instanceof ServerPlayer serverPlayer) {
-                if (channel() != null && !channel().isEmpty()) {
-                    if (isUnsubscribe()) {
-                        ServerPubSubManager.unsubscribe(serverPlayer, channel());
-                    } else {
-                        ServerPubSubManager.subscribe(serverPlayer, channel());
-                    }
+            if (!(context.player() instanceof ServerPlayer serverPlayer)) return;
+
+            if (channel() != null && !channel().isEmpty()) {
+                // 購読/解除はレート制限が無く、購読の張り直しを無制限に送れた（I-7）
+                if (!PlayerRateLimiter.allow(serverPlayer, "sub_" + channel(), SUBSCRIBE_COOLDOWN_MS)) return;
+                if (isUnsubscribe()) {
+                    ServerPubSubManager.unsubscribe(serverPlayer, channel());
                 } else {
-                    ServerPubSubManager.updateArSubscription(
-                            serverPlayer, needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths()
-                    );
+                    ServerPubSubManager.subscribe(serverPlayer, channel());
                 }
+            } else {
+                // キーに購読内容のハッシュを混ぜる。同じ要求の連打だけを弾き、
+                // 内容が変わった要求（＝落とすと HUD が止まる）は通す
+                if (!PlayerRateLimiter.allow(serverPlayer, "ar_sub_" + arSubscriptionKey(), AR_SUBSCRIBE_COOLDOWN_MS)) return;
+                ServerPubSubManager.updateArSubscription(
+                        serverPlayer, needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths()
+                );
             }
         });
     }

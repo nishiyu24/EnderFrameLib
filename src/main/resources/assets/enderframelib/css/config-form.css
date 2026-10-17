@@ -1,0 +1,24 @@
+/*
+ * 設定画面（EnderConfigManager.generateStandardHtml5Config）のスタイル。
+ * 以前は Java の文字列リテラルとして埋め込まれていた。
+ */
+body { display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
+.cfg-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid #45475a; }
+.cfg-title { font-size: 1.35rem; font-weight: bold; color: var(--accent, #89b4fa); }
+.cfg-search { width: 220px; padding: 5px 10px; border-radius: 4px; background-color: var(--bg-surface, #313244); color: var(--text-main, #cdd6f4); border: 1px solid #585b70; }
+.cfg-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+details.cfg-category { background-color: var(--bg-base, #1e1e2e); border: 1px solid #45475a; border-radius: 6px; padding: 8px 12px; display: block; }
+summary.cfg-summary { font-weight: bold; font-size: 1.05rem; color: var(--accent, #89b4fa); padding: 4px 0; cursor: pointer; display: block; }
+.cfg-row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding: 8px 6px; border-top: 1px solid #313244; gap: 12px; }
+.cfg-row:hover { background-color: rgba(255, 255, 255, 0.04); border-radius: 4px; }
+.cfg-label-col { display: flex; flex-direction: column; gap: 2px; width: 58%; }
+.cfg-label { font-weight: bold; color: var(--text-main, #cdd6f4); }
+.cfg-desc { font-size: 0.78rem; color: var(--text-sub, #a6adc8); }
+.cfg-control-col { display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px; width: 40%; }
+.cfg-input { width: 140px; background-color: var(--bg-surface, #313244); color: var(--text-main, #cdd6f4); border: 1px solid #585b70; border-radius: 4px; padding: 4px 8px; }
+.cfg-range-wrap { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.cfg-range-val { width: 42px; text-align: right; font-size: 0.85rem; color: var(--accent, #89b4fa); }
+.cfg-reset-btn { background-color: #313244; color: #a6adc8; border: 1px solid #45475a; border-radius: 4px; padding: 3px 7px; font-size: 0.75rem; }
+.cfg-reset-btn:hover { background-color: #45475a; color: #ffffff; }
+.cfg-footer { display: flex; flex-direction: row; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #45475a; }
+.cfg-badge-restart { color: #f9e2af; font-size: 0.72rem; margin-left: 6px; }
