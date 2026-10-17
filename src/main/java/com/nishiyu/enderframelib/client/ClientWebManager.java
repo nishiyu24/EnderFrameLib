@@ -8,12 +8,14 @@ import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.DomDiffEngine;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.text.FontMetrics;
+import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.TextMetrics;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -46,18 +48,20 @@ public class ClientWebManager {
     private static final Map<String, Integer> LAST_ROOT_H = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, String>> SESSION_ENV = new ConcurrentHashMap<>();
 
+    // セッション単位のスクロール管理
+    private static final Map<String, ScrollState> SESSION_SCROLL_STATES = new ConcurrentHashMap<>();
+
+    public static final FontMetrics CLIENT_FONT_METRICS = (text, scale, isBold) -> {
+        net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
+        float adjustedScale = scale * (16.0f / 12.0f);
+        String measureText = isBold ? ("§l" + text) : text;
+        return (int) Math.ceil(font.width(measureText) * adjustedScale);
+    };
+
     private static final String[] RENDER_SUFFIXES = {
             "_ghost_img", "_b_bottom", "_b_right", "_textarea", "_progress", "_b_left", "_select", "_canvas",
             "_b_top", "_sb_vt", "_sb_ht", "_scene", "_input", "_sb_v", "_sb_h", "_bbg", "_dot", "_img", "_cb", "_bg", "_ph"
     };
-
-    static {
-        TextMetrics.clientWidthFunction = (text, scale) -> {
-            net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
-            float adjustedScale = scale * (16.0f / 12.0f);
-            return (int) Math.ceil(font.width(text) * adjustedScale);
-        };
-    }
 
     public static void addSessionClearedListener(Consumer<String> listener) {
         if (listener != null && !SESSION_CLEARED_LISTENERS.contains(listener)) {
@@ -158,7 +162,7 @@ public class ClientWebManager {
         LAST_ROOT_H.put(sessionId, rootH);
 
         UIParser parser = new UIParser();
-        CssParser.StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
+        StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
         UIParser.Document doc = new UIParser.Document(rootNode, sheet, authorCss, clientScript);
         DOM_CACHE.put(sessionId, doc);
 
@@ -174,7 +178,8 @@ public class ClientWebManager {
         DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
 
         Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
-        List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, currentEnv);
+        ScrollState scrollState = SESSION_SCROLL_STATES.computeIfAbsent(sessionId, k -> new ScrollState());
+        List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, currentEnv, scrollState, CLIENT_FONT_METRICS);
         RENDER_CACHE.put(sessionId, elements);
 
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
@@ -312,13 +317,13 @@ public class ClientWebManager {
             DomDiffEngine.diffAndPatch(doc.root, vRoot);
             UIParser parser = new UIParser();
 
-            // 画面幅が変わった場合のみ、CSSを再パースして再構築する（大幅な高速化）
             if (doc.sheet == null || oldRootW != newRootW) {
                 doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW);
             }
 
             Map<String, String> currentEnv = SESSION_ENV.getOrDefault(sessionId, new HashMap<>());
-            List<UIElement> elements = parser.renderDocument(doc, newRootW, newRootH, currentEnv);
+            ScrollState scrollState = SESSION_SCROLL_STATES.computeIfAbsent(sessionId, k -> new ScrollState());
+            List<UIElement> elements = parser.renderDocument(doc, newRootW, newRootH, currentEnv, scrollState, CLIENT_FONT_METRICS);
             RENDER_CACHE.put(sessionId, elements);
             if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
         }
@@ -453,20 +458,21 @@ public class ClientWebManager {
                 if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
                     String[] maxStrs = el.events().get("mc-scrollable").split(",");
                     float maxW = Float.parseFloat(maxStrs[0]), maxH = Float.parseFloat(maxStrs[1]);
-                    float curX = 0, curY = 0;
-                    if (el.events().containsKey("mc-scroll-current")) {
-                        String[] curStrs = el.events().get("mc-scroll-current").split(",");
-                        curX = Float.parseFloat(curStrs[0]); curY = Float.parseFloat(curStrs[1]);
-                    }
+
+                    ScrollState state = SESSION_SCROLL_STATES.computeIfAbsent(sessionId, k -> new ScrollState());
+                    float curX = state.getScrollX(el.id());
+                    float curY = state.getScrollY(el.id());
 
                     float limitX = Math.max(0, maxW - el.width()), limitY = Math.max(0, maxH - el.height());
                     if (limitX > 0 || limitY > 0) {
                         float nextX = Mth.clamp(curX - (float) scrollX * sens, 0, limitX);
                         float nextY = Mth.clamp(curY - (float) scrollY * sens, 0, limitY);
-                        boolean changed = false;
-                        if (Math.abs(nextX - curX) > 0.1f) { updateNodeAttributeLocally(sessionId, el.id(), "data-scroll-x", String.valueOf(nextX), false); changed = true; }
-                        if (Math.abs(nextY - curY) > 0.1f) { updateNodeAttributeLocally(sessionId, el.id(), "data-scroll-y", String.valueOf(nextY), false); changed = true; }
-                        if (changed) return true;
+
+                        if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
+                            state.setScroll(el.id(), (int) nextX, (int) nextY);
+                            requestRender(sessionId);
+                            return true;
+                        }
                     }
                 }
             }
@@ -641,6 +647,7 @@ public class ClientWebManager {
         SERVER_MANAGED_SESSIONS.remove(sessionId);
         DIRTY_SESSIONS.remove(sessionId);
         SESSION_ENV.remove(sessionId);
+        SESSION_SCROLL_STATES.remove(sessionId);
         DOM_HASH_CACHE.remove(sessionId);
         LAST_ROOT_W.remove(sessionId);
         LAST_ROOT_H.remove(sessionId);

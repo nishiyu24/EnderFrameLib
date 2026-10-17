@@ -1,29 +1,21 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.css.CssParser;
-
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class GridLayoutEngine implements LayoutEngine {
+public class GridLayoutEngine extends AbstractLayoutEngine {
 
-    public static class GridState {
-        public float[] colWidths;
-        public float[] rowHeights;
-        public List<GridItem> items = new ArrayList<>();
-        public int colsCount = 1, rowsCount = 1;
-    }
-
-    public static class GridItem {
-        public int colStart, colSpan, rowStart, rowSpan;
-        public LayoutBox box;
-    }
-
-    private static final Map<String, String> REPEAT_CACHE = new ConcurrentHashMap<>();
+    // 信頼できないCSSがキーになるため、メモリリーク防止でLRUキャッシュ化
+    private static final Map<String, String> REPEAT_CACHE = new LinkedHashMap<>(128, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 1000;
+        }
+    };
 
     private String expandRepeat(String def) {
         if (def == null) return "1fr";
@@ -66,9 +58,12 @@ public class GridLayoutEngine implements LayoutEngine {
     }
 
     @Override
-    public void computeSize(LayoutBox box, int tentativeInnerW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
+    public void measure(LayoutBox box, int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         GridState gs = new GridState();
         box.engineState = gs;
+
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
 
         String gridCols = expandRepeat(box.style.getOrDefault("grid-template-columns", "1fr"));
         String[] colDefs = gridCols.split("\\s+");
@@ -78,21 +73,25 @@ public class GridLayoutEngine implements LayoutEngine {
         int fixedW = 0;
         for (int i = 0; i < gs.colsCount; i++) {
             if (colDefs[i].endsWith("fr")) {
-                totalFr += Float.parseFloat(colDefs[i].replace("fr", ""));
+                try { totalFr += Float.parseFloat(colDefs[i].replace("fr", "")); } catch (Exception ignored) {}
             } else {
-                gs.colWidths[i] = CssParser.parseDim(colDefs[i], tentativeInnerW, rootW, rootH);
+                gs.colWidths[i] = com.nishiyu.enderframelib.core.css.LengthResolver.parseDim(colDefs[i], tentativeInnerW, rootW, rootH, box.fontSize * 16.0f, 16.0f);
                 fixedW = (int) (fixedW + gs.colWidths[i]);
             }
         }
-        int availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.gap - fixedW);
+        int availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.columnGap - fixedW);
         for (int i = 0; i < gs.colsCount; i++) {
             if (colDefs[i].endsWith("fr") && totalFr > 0) {
-                gs.colWidths[i] = availableW * (Float.parseFloat(colDefs[i].replace("fr", "")) / totalFr);
+                float frVal = 1f;
+                try { frVal = Float.parseFloat(colDefs[i].replace("fr", "")); } catch (Exception ignored) {}
+                gs.colWidths[i] = availableW * (frVal / totalFr);
             }
         }
 
         List<boolean[]> occupied = new ArrayList<>();
         int currentR = 0, currentC = 0;
+
+        FormattingContext childCtx = new FormattingContext("grid", "stretch", false);
 
         for (LayoutBox child : box.getFlowChildren()) {
             GridItem item = new GridItem();
@@ -170,40 +169,37 @@ public class GridLayoutEngine implements LayoutEngine {
             for (int c = 0; c < item.colSpan; c++) {
                 if (item.colStart + c < gs.colsCount) childGridW += gs.colWidths[item.colStart + c];
             }
-            childGridW += Math.max(0, item.colSpan - 1) * box.gap;
+            childGridW += Math.max(0, item.colSpan - 1) * box.columnGap;
 
             int w = (int) childGridW;
             item.box.w = w;
-
-            String oldW = item.box.style.get("width");
-            int forcedW = w - (item.box.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? item.box.horizontalDecoration() : 0);
-            item.box.style.put("width", Math.max(0, forcedW) + "px");
-
-            item.box.computeSize(w, parentH, false, false, "stretch", false, rootW, rootH);
-
-            if (oldW != null) item.box.style.put("width", oldW); else item.box.style.remove("width");
+            item.box.sizingMode = SizingMode.DEFINITE; // A-5修正
+            item.box.measure(w, parentH, childCtx, ctx);
         }
 
-        if (box.w == -1) {
+        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             int totalW = 0;
             for (int c = 0; c < gs.colsCount; c++) totalW = (int) (totalW + gs.colWidths[c]);
-            totalW += Math.max(0, gs.colsCount - 1) * box.gap;
+            totalW += Math.max(0, gs.colsCount - 1) * box.columnGap;
             box.w = totalW + box.horizontalDecoration();
         }
     }
 
     @Override
-    public void computeHeightAndFinalizeChildren(LayoutBox box, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, int rootW, int rootH) {
+    public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         GridState gs = (GridState) box.engineState;
         if (gs == null) return;
+
+        int rootW = ctx.viewport().rootW();
+        int rootH = ctx.viewport().rootH();
 
         String gridRows = expandRepeat(box.style.getOrDefault("grid-template-rows", ""));
         String[] rowDefs = gridRows.isEmpty() ? new String[0] : gridRows.split("\\s+");
         gs.rowHeights = new float[gs.rowsCount];
 
         for (int r = 0; r < gs.rowsCount; r++) {
-            if (r < rowDefs.length && !rowDefs[r].equals("auto") && !rowDefs[r].endsWith("fr")) {
-                gs.rowHeights[r] = CssParser.parseDim(rowDefs[r], parentH, rootW, rootH);
+            if (r < rowDefs.length && !"auto".equals(rowDefs[r]) && !rowDefs[r].endsWith("fr")) {
+                gs.rowHeights[r] = com.nishiyu.enderframelib.core.css.LengthResolver.parseDim(rowDefs[r], parentH, rootW, rootH, box.fontSize * 16f, 16f);
             } else {
                 float maxH = 0;
                 for (GridItem item : gs.items) {
@@ -215,31 +211,27 @@ public class GridLayoutEngine implements LayoutEngine {
         }
 
         String align = box.style.getOrDefault("align-items", "stretch");
-        if (align.equals("stretch")) {
+        if ("stretch".equals(align)) {
             for (GridItem item : gs.items) {
                 float childGridH = 0;
                 for (int r = 0; r < item.rowSpan; r++) {
                     if (item.rowStart + r < gs.rowsCount) childGridH += gs.rowHeights[item.rowStart + r];
                 }
-                childGridH += Math.max(0, item.rowSpan - 1) * box.gap;
+                childGridH += Math.max(0, item.rowSpan - 1) * box.rowGap;
 
                 int targetH = (int) childGridH - item.box.mT - item.box.mB;
                 if (item.box.h < targetH && !item.box.style.containsKey("height")) {
                     item.box.h = Math.max(0, targetH);
-                    String oldH = item.box.style.get("height");
-                    int forcedH = item.box.h - (item.box.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? item.box.verticalDecoration() : 0);
-                    item.box.style.put("height", Math.max(0, forcedH) + "px");
-                    item.box.computeSize(item.box.w, item.box.h, false, false, "stretch", false, rootW, rootH);
-                    if (oldH != null) item.box.style.put("height", oldH); else item.box.style.remove("height");
+                    item.box.resolveFlexibleHeights(parentH, new FormattingContext("grid", align, false), ctx);
                 }
             }
         }
 
-        if (!box.style.containsKey("height") || box.style.getOrDefault("height", "").trim().equals("auto")) {
+        if (!box.style.containsKey("height") || "auto".equals(box.style.getOrDefault("height", "auto").trim())) {
             int totalH = 0;
             for (GridItem item : gs.items) {
                 float itemY = item.box.mT + item.box.mB + item.box.h;
-                for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.gap;
+                for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
                 totalH = Math.max(totalH, (int) itemY);
             }
             box.h = Math.max(box.h, totalH + box.verticalDecoration());
@@ -248,24 +240,24 @@ public class GridLayoutEngine implements LayoutEngine {
         int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
         int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute && !child.style.getOrDefault("display", "block").equals("none")) {
-                child.computeSize(actualInnerW, actualInnerH, false, false, "stretch", false, rootW, rootH);
+            if (child.isAbsolute && !isDisplayNone(child.style)) {
+                child.measure(actualInnerW, actualInnerH, new FormattingContext("block", "stretch", false), ctx);
             }
         }
     }
 
     @Override
-    public void layoutChildren(LayoutBox box, int innerX, int innerY, int rootW, int rootH) {
+    public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
         GridState gs = (GridState) box.engineState;
         if (gs == null) return;
         for (GridItem item : gs.items) {
             float itemX = innerX;
-            for (int c = 0; c < item.colStart; c++) itemX += gs.colWidths[c] + box.gap;
+            for (int c = 0; c < item.colStart; c++) itemX += gs.colWidths[c] + box.columnGap;
 
             float itemY = innerY;
-            for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.gap;
+            for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
 
-            item.box.layout((int) itemX + item.box.mL, (int) itemY + item.box.mT, item.box.w, item.box.h, rootW, rootH);
+            item.box.layout((int) itemX + item.box.mL, (int) itemY + item.box.mT, item.box.w, item.box.h, ctx);
         }
     }
 }

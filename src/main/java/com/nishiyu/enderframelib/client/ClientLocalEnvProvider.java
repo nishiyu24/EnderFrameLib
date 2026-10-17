@@ -144,7 +144,6 @@ public class ClientLocalEnvProvider {
             String tr = translateKey(vNode.attrs.get("data-i18n-placeholder").trim());
             if (!Objects.equals(vNode.attrs.get("placeholder"), tr)) {
                 vNode.attrs.put("placeholder", tr);
-                vNode.markDirty();
                 changed = true;
             }
         }
@@ -152,7 +151,6 @@ public class ClientLocalEnvProvider {
             String tr = translateKey(vNode.attrs.get("data-i18n-title").trim());
             if (!Objects.equals(vNode.attrs.get("title"), tr)) {
                 vNode.attrs.put("title", tr);
-                vNode.markDirty();
                 changed = true;
             }
         }
@@ -180,7 +178,6 @@ public class ClientLocalEnvProvider {
             String resolved = replaceLocalPlaceholders(origNode.text, env);
             if (!resolved.equals(vNode.text)) {
                 vNode.text = resolved;
-                vNode.markDirty();
                 changed = true;
             }
         }
@@ -191,7 +188,6 @@ public class ClientLocalEnvProvider {
                 String resolved = replaceLocalPlaceholders(origVal, env);
                 if (!resolved.equals(vNode.attrs.get(key))) {
                     vNode.attrs.put(key, resolved);
-                    vNode.markDirty();
                     changed = true;
                 }
             }

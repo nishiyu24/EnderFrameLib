@@ -1,33 +1,27 @@
 package com.nishiyu.enderframelib.core.dom;
 
-import com.nishiyu.enderframelib.common.UIParser;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DomUtils {
 
-    private static final Set<String> VOID_TAGS = Set.of("br", "hr", "img", "input", "meta", "link");
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.:-]+)}}");
-    private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
 
-    /**
-     * クライアント環境では ClientLocalEnvProvider により I18n.get が自動バインドされる。
-     * 専用サーバー環境でもクラッシュせずキー文字列にフォールバックする。
-     */
     public static Function<String, String> i18nResolver = key -> key;
+
+    // UIParserへの依存を切り離すためのフック
+    public static Function<String, HtmlNode> innerHtmlParser = null;
 
     // --- DOM検索・更新系 ---
 
     public static HtmlNode findNodeById(HtmlNode node, String id) {
         if (node == null || id == null || id.isEmpty()) return null;
-        if (id.equals(node.id)) return node;
+        if (id.equals(node.getId())) return node;
         for (HtmlNode child : node.children) {
             HtmlNode found = findNodeById(child, id);
             if (found != null) return found;
@@ -39,23 +33,11 @@ public class DomUtils {
         if (target == null || attrName == null) return;
         if (remove) {
             target.attrs.remove(attrName);
-            if ("class".equals(attrName)) target.classes.clear();
-            if ("hover".equals(attrName)) target.isHovered = false;
-            if ("checked".equals(attrName)) target.isChecked = false;
         } else {
             String val = attrValue != null ? attrValue : "true";
             target.attrs.put(attrName, val);
-            if ("id".equals(attrName)) target.id = val;
-            if ("class".equals(attrName)) {
-                target.classes.clear();
-                if (!val.trim().isEmpty()) {
-                    target.classes.addAll(Arrays.asList(WHITESPACE_SPLIT.split(val.trim())));
-                }
-            }
-            if ("hover".equals(attrName)) target.isHovered = true;
-            if ("checked".equals(attrName)) target.isChecked = true;
         }
-        target.markDirty();
+        // markDirty() の呼び出しは削除。スタイル無効化は InteractionState など別の仕組みで行う。
     }
 
     public static void toggleAttribute(HtmlNode target, String attrName) {
@@ -67,9 +49,6 @@ public class DomUtils {
         }
     }
 
-    /**
-     * ラジオボタン (input[type="radio"]) を選択状態にし、同一ツリー内で同じ name 属性を持つ他のラジオボタンの選択を解除する。
-     */
     public static void selectRadioButton(HtmlNode root, HtmlNode selectedRadio) {
         if (selectedRadio == null) return;
         String groupName = selectedRadio.attrs.getOrDefault("name", "");
@@ -84,7 +63,7 @@ public class DomUtils {
                 && "input".equalsIgnoreCase(current.tag)
                 && "radio".equalsIgnoreCase(current.attrs.getOrDefault("type", ""))
                 && groupName.equals(current.attrs.get("name"))) {
-            if (current.attrs.containsKey("checked") || current.isChecked) {
+            if (current.attrs.containsKey("checked")) {
                 updateAttribute(current, "checked", null, true);
             }
         }
@@ -96,26 +75,21 @@ public class DomUtils {
     public static void setTextNodeValue(HtmlNode node, String text) {
         if (node == null) return;
         String safeText = text != null ? text : "";
-        if ("#text".equals(node.tag)) {
+        if (node.nodeType == NodeType.TEXT) {
             node.text = safeText;
-            node.markDirty();
             return;
         }
-        node.children.removeIf(c -> !"#text".equals(c.tag));
+        node.children.removeIf(c -> c.nodeType != NodeType.TEXT);
         for (HtmlNode child : node.children) {
-            if ("#text".equals(child.tag)) {
+            if (child.nodeType == NodeType.TEXT) {
                 child.text = safeText;
-                child.markDirty();
-                node.markDirty();
                 return;
             }
         }
-        HtmlNode txtNode = new HtmlNode("#text");
-        txtNode.text = safeText;
-        txtNode.id = node.id + "_txt";
+        HtmlNode txtNode = HtmlNode.createTextNode(safeText);
+        txtNode.setId(node.getId() + "_txt");
         txtNode.parent = node;
         node.children.add(txtNode);
-        node.markDirty();
     }
 
     // --- innerHTML / outerHTML 操作系 ---
@@ -124,20 +98,21 @@ public class DomUtils {
         if (target == null) return;
         target.children.clear();
         if (html != null && !html.trim().isEmpty()) {
-            String expanded = UIParser.expandCustomTags(html);
-            HtmlNode parsedRoot = HtmlParser.parse(expanded);
-            for (HtmlNode child : parsedRoot.children) {
-                child.parent = target;
-                child.isDirty = true;
-                target.children.add(child);
+            if (innerHtmlParser != null) {
+                HtmlNode parsedRoot = innerHtmlParser.apply(html);
+                if (parsedRoot != null) {
+                    for (HtmlNode child : parsedRoot.children) {
+                        child.parent = target;
+                        target.children.add(child);
+                    }
+                }
             }
         }
-        target.markDirty();
     }
 
     public static String getInnerHTML(HtmlNode node) {
         if (node == null) return "";
-        if ("#text".equals(node.tag)) return node.text != null ? node.text : "";
+        if (node.nodeType == NodeType.TEXT) return node.text != null ? node.text : "";
         StringBuilder sb = new StringBuilder();
         for (HtmlNode child : node.children) {
             sb.append(getOuterHTML(child));
@@ -147,15 +122,15 @@ public class DomUtils {
 
     public static String getOuterHTML(HtmlNode node) {
         if (node == null) return "";
-        if ("#text".equals(node.tag)) return node.text != null ? node.text : "";
-        if ("root".equals(node.tag)) return getInnerHTML(node);
+        if (node.nodeType == NodeType.TEXT) return node.text != null ? node.text : "";
+        if (node.nodeType == NodeType.ROOT) return getInnerHTML(node);
 
         StringBuilder sb = new StringBuilder();
         sb.append("<").append(node.tag);
         for (Map.Entry<String, String> entry : node.attrs.entrySet()) {
             sb.append(" ").append(entry.getKey()).append("=\"").append(entry.getValue()).append("\"");
         }
-        if (VOID_TAGS.contains(node.tag)) {
+        if (VoidElements.isVoid(node.tag)) {
             sb.append(" />");
             return sb.toString();
         }
@@ -180,17 +155,6 @@ public class DomUtils {
             String val = node.attrs.get(key);
             if (val != null && val.contains("{{")) {
                 node.attrs.put(key, replacePlaceholders(val, data));
-            }
-        }
-
-        if (node.attrs.containsKey("id")) {
-            node.id = node.attrs.get("id");
-        }
-        if (node.attrs.containsKey("class")) {
-            node.classes.clear();
-            String cls = node.attrs.get("class").trim();
-            if (!cls.isEmpty()) {
-                node.classes.addAll(Arrays.asList(WHITESPACE_SPLIT.split(cls)));
             }
         }
 

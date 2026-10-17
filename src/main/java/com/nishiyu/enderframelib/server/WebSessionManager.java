@@ -2,9 +2,10 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.IWebActionReceiver;
 import com.nishiyu.enderframelib.api.IWebSessionProvider;
+import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -18,6 +19,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 public class WebSessionManager {
+
+    // --- 追加: サーバー側でもDOMをパースする際のためにフックを登録 ---
+    static {
+        DomUtils.innerHtmlParser = UIParser.INNER_HTML_PARSER;
+    }
+
     private static final Set<IWebSessionProvider> PROVIDERS = new CopyOnWriteArraySet<>();
     private static final Map<String, WebSession> STANDALONE_SESSIONS = new ConcurrentHashMap<>();
 
@@ -135,7 +142,6 @@ public class WebSessionManager {
         if (player == null) return;
         addViewer(sessionId, player);
 
-        // 0. スタンドアロンセッション上のフォーム要素の変更(oninput / onchange)をサーバー側DOMにも反映
         if (sessionId != null && elementId != null && !elementId.isEmpty() && ("oninput".equalsIgnoreCase(eventName) || "onchange".equalsIgnoreCase(eventName))) {
             WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
             if (standalone != null && standalone.getDocument() != null && standalone.getDocument().root != null) {
@@ -169,12 +175,10 @@ public class WebSessionManager {
         rpcPayload.putString("EventName", eventName != null ? eventName : "");
         rpcPayload.putString("Value", actionParam);
 
-        // 1. プレイヤーが現在開いている ContainerMenu が IWebActionReceiver を実装していればディスパッチ
         if (player.containerMenu instanceof IWebActionReceiver menuReceiver && player.containerMenu.stillValid(player)) {
             menuReceiver.onWebServerAction(player, cleanAction != null ? cleanAction : "", actionParam, rpcPayload);
         }
 
-        // 2. セッションIDが "block:x,y,z" 形式の場合、対象 BlockEntity にディスパッチ
         if (sessionId != null && sessionId.startsWith("block:") && player.level() != null) {
             try {
                 String[] coords = sessionId.substring(6).split(",");
@@ -190,7 +194,6 @@ public class WebSessionManager {
             } catch (Exception ignored) {}
         }
 
-        // 3. 既存の IWebSessionProvider へのルーティング
         for (IWebSessionProvider provider : PROVIDERS) {
             if (provider.matchesSession(sessionId)) {
                 provider.onClientEvent(player, sessionId, elementId, eventName, actionName, value);

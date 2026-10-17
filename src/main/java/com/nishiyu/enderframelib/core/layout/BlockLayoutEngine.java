@@ -1,18 +1,20 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.text.TextMetrics;
-
 import java.util.ArrayList;
 import java.util.List;
 
-public class BlockLayoutEngine implements LayoutEngine {
+public class BlockLayoutEngine extends AbstractLayoutEngine {
+
     @Override
-    public void computeSize(LayoutBox box, int tentativeInnerW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
+    public void measure(LayoutBox box, int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         int maxChildW = 0;
         int currentInlineW = 0;
+
+        FormattingContext childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
+
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute || child.style.getOrDefault("display", "block").equals("none")) continue;
-            child.computeSize(tentativeInnerW, parentH, false, false, "stretch", box.w == -1, rootW, rootH);
+            if (child.isAbsolute || isDisplayNone(child.style)) continue;
+            child.measure(tentativeInnerW, parentH, childCtx, ctx);
             int childOuterW = child.w + child.mL + child.mR;
             if (isInlineBox(child)) {
                 currentInlineW += childOuterW;
@@ -22,16 +24,16 @@ public class BlockLayoutEngine implements LayoutEngine {
                 maxChildW = Math.max(maxChildW, childOuterW);
             }
         }
-        if (box.w == -1) {
+        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             box.w = maxChildW + box.horizontalDecoration();
         }
     }
 
     @Override
-    public void computeHeightAndFinalizeChildren(LayoutBox box, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, int rootW, int rootH) {
+    public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
 
-        if (!box.style.containsKey("height") || box.style.get("height").equals("auto")) {
+        if (!box.style.containsKey("height") || "auto".equals(box.style.getOrDefault("height", "auto"))) {
             int contentH = 0;
             List<LayoutBox> inlineRun = new ArrayList<>();
             List<LayoutBox> flowChildren = box.getFlowChildren();
@@ -42,7 +44,7 @@ public class BlockLayoutEngine implements LayoutEngine {
                     inlineRun.add(child);
                 } else {
                     if (!inlineRun.isEmpty()) {
-                        contentH += measureInlineRunHeight(inlineRun, actualInnerW);
+                        contentH += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
                         inlineRun.clear();
                         blockSegments++;
                     }
@@ -51,36 +53,24 @@ public class BlockLayoutEngine implements LayoutEngine {
                 }
             }
             if (!inlineRun.isEmpty()) {
-                contentH += measureInlineRunHeight(inlineRun, actualInnerW);
+                contentH += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
                 blockSegments++;
             }
             if (blockSegments > 1) {
-                contentH += box.gap * (blockSegments - 1);
+                contentH += box.rowGap * (blockSegments - 1);
             }
             box.h = Math.max(box.h, contentH + box.verticalDecoration());
         }
 
         int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute && !child.style.getOrDefault("display", "block").equals("none")) {
-                child.computeSize(actualInnerW, actualInnerH, false, false, "stretch", false, rootW, rootH);
+            if (child.isAbsolute && !isDisplayNone(child.style)) {
+                child.measure(actualInnerW, actualInnerH, new FormattingContext("block", "stretch", false), ctx);
             }
         }
     }
 
-    private static boolean isBoldBox(LayoutBox box, List<LayoutBox> parents) {
-        if (box.node.tag.equals("b") || box.node.tag.equals("strong")) return true;
-        if (box.style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900")) return true;
-        if (parents != null) {
-            for (LayoutBox p : parents) {
-                if (p.node.tag.equals("b") || p.node.tag.equals("strong")) return true;
-                if (p.style.getOrDefault("font-weight", "").matches("(?i)bold|bolder|700|800|900")) return true;
-            }
-        }
-        return false;
-    }
-
-    private int measureInlineRunHeight(List<LayoutBox> inlines, int maxW) {
+    private int measureInlineRunHeight(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
         List<FlatRun> runs = new ArrayList<>();
         flattenInlines(inlines, runs, new ArrayList<>());
         if (runs.isEmpty()) return 0;
@@ -90,16 +80,7 @@ public class BlockLayoutEngine implements LayoutEngine {
         int maxLineH = 0;
 
         for (FlatRun run : runs) {
-            float lh = 1.375f;
-            if (run.box.style.containsKey("line-height")) {
-                try {
-                    lh = Float.parseFloat(run.box.style.get("line-height"));
-                } catch (Exception e) {
-                    if (run.box.style.get("line-height").endsWith("px")) {
-                        lh = Float.parseFloat(run.box.style.get("line-height").replace("px", "")) / 16f;
-                    }
-                }
-            }
+            float lh = parseLineHeight(run.box.style);
             int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
             for (LayoutBox p : run.inlineParents) {
                 decoT += p.pT + p.bT;
@@ -110,7 +91,7 @@ public class BlockLayoutEngine implements LayoutEngine {
 
             if (run.isText) {
                 String text = run.text;
-                boolean isBold = isBoldBox(run.box, run.inlineParents);
+                boolean isBoldBox = isBold(run.box.style);
 
                 float scale = run.box.fontSize;
                 int fontH = (int) (16 * scale);
@@ -122,8 +103,8 @@ public class BlockLayoutEngine implements LayoutEngine {
 
                 for (String rawWord : words) {
                     if (rawWord.isEmpty()) continue;
-                    String word = (isBold && !rawWord.trim().isEmpty()) ? ("§l" + rawWord) : rawWord;
-                    int wordW = TextMetrics.getDisplayWidth(word, scale);
+                    // B-6 修正: §l の埋め込みを廃止し、FontMetrics の isBold に委譲
+                    int wordW = ctx.fontMetrics().getDisplayWidth(rawWord, scale, isBoldBox);
                     if (maxW > 0 && lineX + wordW + decoR > maxW + 4 && lineX > decoL && !rawWord.trim().isEmpty()) {
                         totalH += maxLineH > 0 ? maxLineH : totalRunH;
                         lineX = decoL;
@@ -154,7 +135,7 @@ public class BlockLayoutEngine implements LayoutEngine {
     }
 
     @Override
-    public void layoutChildren(LayoutBox box, int innerX, int innerY, int rootW, int rootH) {
+    public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
         String textAlign = box.style.getOrDefault("text-align", "left");
         int currentY = innerY;
         List<LayoutBox> inlineRun = new ArrayList<>();
@@ -166,25 +147,25 @@ public class BlockLayoutEngine implements LayoutEngine {
                 inlineRun.add(child);
             } else {
                 if (!inlineRun.isEmpty()) {
-                    currentY = layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, rootW, rootH) + box.gap;
+                    currentY = layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, ctx) + box.rowGap;
                     inlineRun.clear();
                 }
-                if (child.style.getOrDefault("margin-left", "").equals("auto") && child.style.getOrDefault("margin-right", "").equals("auto")) {
-                    child.layout(innerX + Math.max(0, (availableInnerW - (child.w + child.mL + child.mR)) / 2), currentY, availableInnerW, child.h, rootW, rootH);
+                if ("auto".equals(child.style.get("margin-left")) && "auto".equals(child.style.get("margin-right"))) {
+                    child.layout(innerX + Math.max(0, (availableInnerW - (child.w + child.mL + child.mR)) / 2), currentY, availableInnerW, child.h, ctx);
                 } else {
-                    child.layout(innerX, currentY, availableInnerW, child.h, rootW, rootH);
+                    child.layout(innerX, currentY, availableInnerW, child.h, ctx);
                 }
-                currentY += child.h + child.mT + child.mB + box.gap;
+                currentY += child.h + child.mT + child.mB + box.rowGap;
             }
         }
         if (!inlineRun.isEmpty()) {
-            layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, rootW, rootH);
+            layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, ctx);
         }
     }
 
     private boolean isInlineBox(LayoutBox box) {
         if (box.isAbsolute) return false;
-        String display = box.style.getOrDefault("display", "");
+        String display = box.style.getOrDefault("display", "block");
         if (display.equals("inline") || display.equals("inline-block")) return true;
         if (display.equals("block") || display.equals("flex") || display.equals("grid")) return false;
         String tag = box.node.tag;
@@ -201,7 +182,7 @@ public class BlockLayoutEngine implements LayoutEngine {
                 runs.add(new FlatRun(b, true, b.displayText, new ArrayList<>(parents)));
             } else if (b.node.tag.equals("br")) {
                 runs.add(new FlatRun(b, false, "\n", new ArrayList<>(parents)));
-            } else if (b.style.getOrDefault("display", "").equals("inline-block")
+            } else if ("inline-block".equals(b.style.getOrDefault("display", "block"))
                     || b.node.tag.equals("img") || b.node.tag.equals("input") || b.node.tag.equals("button")
                     || b.node.tag.equals("select") || b.node.tag.equals("progress")
                     || b.node.tag.equals("mc-fluid") || b.node.tag.equals("mc-entity") || b.node.tag.equals("mc-scene")) {
@@ -219,7 +200,7 @@ public class BlockLayoutEngine implements LayoutEngine {
         for (LayoutBox child : box.children) clearFragmentsRecursively(child);
     }
 
-    private int layoutInlineContext(List<LayoutBox> inlines, int startX, int startY, int maxW, String textAlign, int rootW, int rootH) {
+    private int layoutInlineContext(List<LayoutBox> inlines, int startX, int startY, int maxW, String textAlign, LayoutContext ctx) {
         List<FlatRun> runs = new ArrayList<>();
         flattenInlines(inlines, runs, new ArrayList<>());
         for (LayoutBox inlineBox : inlines) clearFragmentsRecursively(inlineBox);
@@ -229,14 +210,7 @@ public class BlockLayoutEngine implements LayoutEngine {
         List<List<LayoutBox.InlineFragment>> lines = new ArrayList<>();
 
         for (FlatRun run : runs) {
-            float lh = 1.375f;
-            if (run.box.style.containsKey("line-height")) {
-                try {
-                    lh = Float.parseFloat(run.box.style.get("line-height"));
-                } catch (Exception e) {
-                    if (run.box.style.get("line-height").endsWith("px")) lh = Float.parseFloat(run.box.style.get("line-height").replace("px", "")) / 16f;
-                }
-            }
+            float lh = parseLineHeight(run.box.style);
             int decoT = 0, decoB = 0, decoL = 0, decoR = 0;
             for (LayoutBox p : run.inlineParents) {
                 decoT += p.pT + p.bT; decoB += p.pB + p.bB; decoL += p.pL + p.bL; decoR += p.pR + p.bR;
@@ -244,7 +218,7 @@ public class BlockLayoutEngine implements LayoutEngine {
 
             if (run.isText) {
                 String text = run.text;
-                boolean isBold = isBoldBox(run.box, run.inlineParents);
+                boolean isBoldBox = isBold(run.box.style);
 
                 float scale = run.box.fontSize;
                 int fontH = (int) (16 * scale), runH = (int) (fontH * lh), totalRunH = runH + decoT + decoB;
@@ -254,9 +228,7 @@ public class BlockLayoutEngine implements LayoutEngine {
 
                 for (String rawWord : words) {
                     if (rawWord.isEmpty()) continue;
-                    // ★ すべての分割トークンに §l を付与することで2単語目以降も確実に太字を維持
-                    String word = (isBold && !rawWord.trim().isEmpty()) ? ("§l" + rawWord) : rawWord;
-                    int wordW = TextMetrics.getDisplayWidth(word, scale);
+                    int wordW = ctx.fontMetrics().getDisplayWidth(rawWord, scale, isBoldBox);
 
                     if (lineX + wordW + decoR > maxW + 4 && lineX > decoL && !rawWord.trim().isEmpty()) {
                         lines.add(currentLine);
@@ -265,7 +237,7 @@ public class BlockLayoutEngine implements LayoutEngine {
                         lineX = decoL;
                         maxLineH = 0;
                     }
-                    LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(run.box, lineX, decoT, wordW, runH, word);
+                    LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(run.box, lineX, decoT, wordW, runH, rawWord);
                     frag.parents = run.inlineParents;
                     currentLine.add(frag);
                     lineX += wordW;
@@ -333,7 +305,7 @@ public class BlockLayoutEngine implements LayoutEngine {
                         p.inlineFragments.add(pFrag);
                     }
                 }
-                if (!f.isText()) f.box.layout(f.x, f.y - f.box.mT, f.w, f.h, rootW, rootH);
+                if (!f.isText()) f.box.layout(f.x, f.y - f.box.mT, f.w, f.h, ctx);
             }
             currentDrawY += lineMaxH;
         }

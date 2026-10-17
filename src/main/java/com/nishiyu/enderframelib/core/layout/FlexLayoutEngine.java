@@ -1,11 +1,21 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
+
 import java.util.ArrayList;
 import java.util.List;
 
-public class FlexLayoutEngine implements LayoutEngine {
+public class FlexLayoutEngine extends AbstractLayoutEngine {
+
+    private float getFloatProp(ComputedStyle style, String key, float defaultVal) {
+        if (style.containsKey(key)) {
+            try { return Float.parseFloat(style.get(key)); } catch (Exception ignored) {}
+        }
+        return defaultVal;
+    }
+
     @Override
-    public void computeSize(LayoutBox box, int tentativeInnerW, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, String parentAlignItems, boolean isParentShrink, int rootW, int rootH) {
+    public void measure(LayoutBox box, int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         String dir = box.style.getOrDefault("flex-direction", "row");
         boolean isFlexRow = dir.startsWith("row");
         boolean isFlexColumn = dir.startsWith("column");
@@ -13,22 +23,25 @@ public class FlexLayoutEngine implements LayoutEngine {
 
         int maxChildW = 0, sumChildW = 0, activeChildren = 0;
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute || child.style.getOrDefault("display", "block").equals("none")) continue;
+            if (child.isAbsolute || isDisplayNone(child.style)) continue;
             String childAlign = child.style.getOrDefault("align-self", alignItems);
-            child.computeSize(tentativeInnerW, parentH, isFlexRow, isFlexColumn, childAlign, box.w == -1, rootW, rootH);
+
+            FormattingContext childCtx = new FormattingContext(dir, childAlign, box.sizingMode == SizingMode.SHRINK_TO_FIT);
+            child.measure(tentativeInnerW, parentH, childCtx, ctx);
+
             maxChildW = Math.max(maxChildW, child.w + child.mL + child.mR);
             sumChildW += child.w + child.mL + child.mR;
             activeChildren++;
         }
 
-        if (box.w == -1) {
-            if (isFlexRow) box.w = sumChildW + (activeChildren > 1 ? box.gap * (activeChildren - 1) : 0) + box.horizontalDecoration();
+        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
+            if (isFlexRow) box.w = sumChildW + (activeChildren > 1 ? box.columnGap * (activeChildren - 1) : 0) + box.horizontalDecoration();
             else box.w = maxChildW + box.horizontalDecoration();
         }
     }
 
     @Override
-    public void computeHeightAndFinalizeChildren(LayoutBox box, int parentH, boolean isParentFlexRow, boolean isParentFlexColumn, int rootW, int rootH) {
+    public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         String dir = box.style.getOrDefault("flex-direction", "row");
         boolean isFlexRow = dir.startsWith("row");
         boolean isFlexColumn = dir.startsWith("column");
@@ -36,18 +49,18 @@ public class FlexLayoutEngine implements LayoutEngine {
 
         int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
 
-        if (!box.style.containsKey("height") || box.style.get("height").equals("auto")) {
+        if (!box.style.containsKey("height") || "auto".equals(box.style.getOrDefault("height", "auto"))) {
             int contentH = 0;
-            if (isFlexRow && flexWrap.equals("wrap")) {
+            if (isFlexRow && "wrap".equals(flexWrap)) {
                 int currentLineW = 0, currentLineH = 0;
                 for (LayoutBox child : box.getFlowChildren()) {
                     int childOuterW = child.w + child.mL + child.mR, childOuterH = child.h + child.mT + child.mB;
                     if (currentLineW + childOuterW > actualInnerW && currentLineW > 0) {
-                        contentH += currentLineH + box.gap;
+                        contentH += currentLineH + box.rowGap;
                         currentLineW = 0;
                         currentLineH = 0;
                     }
-                    currentLineW += childOuterW + box.gap;
+                    currentLineW += childOuterW + box.columnGap;
                     currentLineH = Math.max(currentLineH, childOuterH);
                 }
                 contentH += currentLineH;
@@ -59,7 +72,7 @@ public class FlexLayoutEngine implements LayoutEngine {
                 for (LayoutBox child : box.getFlowChildren()) {
                     contentH += child.h + child.mT + child.mB;
                 }
-                if (box.getFlowChildren().size() > 1) contentH += box.gap * (box.getFlowChildren().size() - 1);
+                if (box.getFlowChildren().size() > 1) contentH += box.rowGap * (box.getFlowChildren().size() - 1);
             }
             box.h = Math.max(box.h, contentH + box.verticalDecoration());
         }
@@ -67,36 +80,25 @@ public class FlexLayoutEngine implements LayoutEngine {
         int actualInnerH = Math.max(0, box.h - box.verticalDecoration());
         String align = box.style.getOrDefault("align-items", "stretch");
 
-        if (flexWrap.equals("nowrap")) {
+        // A-5バグ修正: キャッシュの可変マップを直接書き換えず、LayoutBox のフィールドと SizingMode を更新して再計算を促す
+        if ("nowrap".equals(flexWrap)) {
             for (LayoutBox child : box.getFlowChildren()) {
                 String effAlign = child.style.getOrDefault("align-self", align);
-                if (!effAlign.equals("stretch")) continue;
+                if (!"stretch".equals(effAlign)) continue;
 
-                boolean stretched = false;
-                String oldProp = null;
                 if (isFlexRow && !child.style.containsKey("height")) {
                     int targetH = actualInnerH - child.mT - child.mB;
                     if (child.h < targetH) {
                         child.h = Math.max(0, targetH);
-                        stretched = true;
-                        oldProp = child.style.get("height");
-                        int forcedH = child.h - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.verticalDecoration() : 0);
-                        child.style.put("height", Math.max(0, forcedH) + "px");
+                        child.resolveFlexibleHeights(parentH, new FormattingContext(dir, effAlign, false), ctx);
                     }
                 } else if (isFlexColumn && !child.style.containsKey("width")) {
                     int targetW = actualInnerW - child.mL - child.mR;
                     if (child.w < targetW) {
                         child.w = Math.max(0, targetW);
-                        stretched = true;
-                        oldProp = child.style.get("width");
-                        int forcedW = child.w - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.horizontalDecoration() : 0);
-                        child.style.put("width", Math.max(0, forcedW) + "px");
+                        child.sizingMode = SizingMode.DEFINITE;
+                        child.resolveFlexibleHeights(parentH, new FormattingContext(dir, effAlign, false), ctx);
                     }
-                }
-                if (stretched) {
-                    child.computeSize(child.w, child.h, false, false, "stretch", false, rootW, rootH);
-                    if (isFlexRow) { if (oldProp != null) child.style.put("height", oldProp); else child.style.remove("height"); }
-                    else { if (oldProp != null) child.style.put("width", oldProp); else child.style.remove("width"); }
                 }
             }
         }
@@ -107,40 +109,37 @@ public class FlexLayoutEngine implements LayoutEngine {
         for (LayoutBox child : flowChildren) {
             if (isFlexRow) {
                 usedW += child.w + child.mL + child.mR;
-                if (child.style.containsKey("flex-grow")) totalGrowW += Float.parseFloat(child.style.get("flex-grow"));
+                totalGrowW += getFloatProp(child.style, "flex-grow", 0f);
             } else if (isFlexColumn) {
                 usedH += child.h + child.mT + child.mB;
-                if (child.style.containsKey("flex-grow")) totalGrowH += Float.parseFloat(child.style.get("flex-grow"));
+                totalGrowH += getFloatProp(child.style, "flex-grow", 0f);
             }
         }
         if (flowChildren.size() > 1) {
-            if (isFlexRow) usedW += box.gap * (flowChildren.size() - 1);
-            if (isFlexColumn) usedH += box.gap * (flowChildren.size() - 1);
+            if (isFlexRow) usedW += box.columnGap * (flowChildren.size() - 1);
+            if (isFlexColumn) usedH += box.rowGap * (flowChildren.size() - 1);
         }
 
-        if (isFlexRow && flexWrap.equals("nowrap") && totalGrowW > 0 && actualInnerW > usedW) {
+        if (isFlexRow && "nowrap".equals(flexWrap) && totalGrowW > 0 && actualInnerW > usedW) {
             int extraW = Math.max(0, actualInnerW - usedW);
             for (LayoutBox child : flowChildren) {
-                if (child.style.containsKey("flex-grow")) {
-                    float grow = Float.parseFloat(child.style.get("flex-grow"));
+                float grow = getFloatProp(child.style, "flex-grow", 0f);
+                if (grow > 0) {
                     child.w += (int) (extraW * (grow / totalGrowW));
-                    String oldW = child.style.get("width");
-                    int forcedW = child.w - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.horizontalDecoration() : 0);
-                    child.style.put("width", Math.max(0, forcedW) + "px");
-                    child.computeSize(child.w, child.h, false, false, "stretch", false, rootW, rootH);
-                    if (oldW != null) child.style.put("width", oldW); else child.style.remove("width");
+                    child.sizingMode = SizingMode.DEFINITE;
+                    child.resolveFlexibleHeights(parentH, new FormattingContext(dir, align, false), ctx);
                 }
             }
-        } else if (isFlexRow && flexWrap.equals("nowrap") && actualInnerW < usedW) {
+        } else if (isFlexRow && "nowrap".equals(flexWrap) && actualInnerW < usedW) {
             String overflowX = box.style.getOrDefault("overflow-x", box.style.getOrDefault("overflow", "visible"));
-            if (!overflowX.equals("scroll") && !overflowX.equals("auto")) {
+            if (!"scroll".equals(overflowX) && !"auto".equals(overflowX)) {
                 int deficitW = usedW - actualInnerW;
                 boolean[] frozen = new boolean[flowChildren.size()];
                 int loopCount = 0;
                 while (deficitW > 0 && loopCount < 10) {
                     float currentTotalShrinkW = 0;
                     for (int i = 0; i < flowChildren.size(); i++) {
-                        if (!frozen[i]) currentTotalShrinkW += Float.parseFloat(flowChildren.get(i).style.getOrDefault("flex-shrink", "1")) * flowChildren.get(i).w;
+                        if (!frozen[i]) currentTotalShrinkW += getFloatProp(flowChildren.get(i).style, "flex-shrink", 1f) * flowChildren.get(i).w;
                     }
                     if (currentTotalShrinkW <= 0) break;
 
@@ -148,10 +147,10 @@ public class FlexLayoutEngine implements LayoutEngine {
                     for (int i = 0; i < flowChildren.size(); i++) {
                         if (frozen[i]) continue;
                         LayoutBox child = flowChildren.get(i);
-                        float shrink = Float.parseFloat(child.style.getOrDefault("flex-shrink", "1"));
+                        float shrink = getFloatProp(child.style, "flex-shrink", 1f);
                         if (shrink > 0) {
                             int shrinkAmount = (int) (deficitW * ((shrink * child.w) / currentTotalShrinkW));
-                            int minW = child.getMinContentWidth();
+                            int minW = child.getMinContentWidth(ctx);
                             if (child.w - shrinkAmount <= minW) {
                                 remainingDeficit += shrinkAmount - (child.w - minW);
                                 child.w = minW;
@@ -165,44 +164,37 @@ public class FlexLayoutEngine implements LayoutEngine {
                     loopCount++;
                 }
                 for (LayoutBox child : flowChildren) {
-                    String oldW = child.style.get("width");
-                    int forcedW = child.w - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.horizontalDecoration() : 0);
-                    child.style.put("width", Math.max(0, forcedW) + "px");
-                    child.computeSize(child.w, -1, false, false, "stretch", false, rootW, rootH);
-                    if (oldW != null) child.style.put("width", oldW); else child.style.remove("width");
+                    child.sizingMode = SizingMode.DEFINITE;
+                    child.resolveFlexibleHeights(parentH, new FormattingContext(dir, align, false), ctx);
                 }
             }
-        } else if (isFlexColumn && flexWrap.equals("nowrap") && totalGrowH > 0 && actualInnerH > usedH) {
+        } else if (isFlexColumn && "nowrap".equals(flexWrap) && totalGrowH > 0 && actualInnerH > usedH) {
             int extraH = Math.max(0, actualInnerH - usedH);
             for (LayoutBox child : flowChildren) {
-                if (child.style.containsKey("flex-grow")) {
-                    float grow = Float.parseFloat(child.style.get("flex-grow"));
+                float grow = getFloatProp(child.style, "flex-grow", 0f);
+                if (grow > 0) {
                     child.h += (int) (extraH * (grow / totalGrowH));
-                    String oldH = child.style.get("height");
-                    int forcedH = child.h - (child.style.getOrDefault("box-sizing", "border-box").equals("content-box") ? child.verticalDecoration() : 0);
-                    child.style.put("height", Math.max(0, forcedH) + "px");
-                    child.computeSize(child.w, child.h, false, false, "stretch", false, rootW, rootH);
-                    if (oldH != null) child.style.put("height", oldH); else child.style.remove("height");
+                    child.resolveFlexibleHeights(parentH, new FormattingContext(dir, align, false), ctx);
                 }
             }
         }
 
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute && !child.style.getOrDefault("display", "block").equals("none")) {
-                child.computeSize(actualInnerW, actualInnerH, false, false, "stretch", false, rootW, rootH);
+            if (child.isAbsolute && !isDisplayNone(child.style)) {
+                child.measure(actualInnerW, actualInnerH, new FormattingContext("block", "stretch", false), ctx);
             }
         }
     }
 
     @Override
-    public void layoutChildren(LayoutBox box, int innerX, int innerY, int rootW, int rootH) {
+    public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
         String flexDir = box.style.getOrDefault("flex-direction", "row");
         String flexWrap = box.style.getOrDefault("flex-wrap", "nowrap");
         String justify = box.style.getOrDefault("justify-content", "flex-start");
         String align = box.style.getOrDefault("align-items", "stretch");
         List<LayoutBox> flowChildren = box.getFlowChildren();
 
-        if (flexDir.startsWith("row") && flexWrap.equals("wrap")) {
+        if (flexDir.startsWith("row") && "wrap".equals(flexWrap)) {
             List<List<LayoutBox>> lines = new ArrayList<>();
             List<LayoutBox> currentLine = new ArrayList<>();
             int currentLineW = 0;
@@ -214,7 +206,7 @@ public class FlexLayoutEngine implements LayoutEngine {
                     currentLineW = 0;
                 }
                 currentLine.add(child);
-                currentLineW += childW + box.gap;
+                currentLineW += childW + box.columnGap;
             }
             if (!currentLine.isEmpty()) lines.add(currentLine);
 
@@ -225,51 +217,51 @@ public class FlexLayoutEngine implements LayoutEngine {
                     lineH = Math.max(lineH, child.h + child.mT + child.mB);
                     lineW += child.w + child.mL + child.mR;
                 }
-                int activeCount = line.size(), dynamicGap = box.gap, startX = innerX;
-                int totalLineContentW = lineW + box.gap * Math.max(0, activeCount - 1);
+                int activeCount = line.size(), dynamicGap = box.columnGap, startX = innerX;
+                int totalLineContentW = lineW + box.columnGap * Math.max(0, activeCount - 1);
                 float containerInnerW = Math.max(totalLineContentW, (box.w - box.horizontalDecoration()));
 
-                if (justify.equals("space-between") && activeCount > 1) {
+                if ("space-between".equals(justify) && activeCount > 1) {
                     dynamicGap = (int) (Math.max(0, containerInnerW - lineW) / (activeCount - 1));
-                } else if (justify.equals("space-around") && activeCount > 0) {
+                } else if ("space-around".equals(justify) && activeCount > 0) {
                     int space = (int) Math.max(0, containerInnerW - lineW);
                     dynamicGap = space / activeCount;
                     startX += dynamicGap / 2;
-                } else if (justify.equals("space-evenly") && activeCount > 0) {
+                } else if ("space-evenly".equals(justify) && activeCount > 0) {
                     int space = (int) Math.max(0, containerInnerW - lineW);
                     dynamicGap = space / (activeCount + 1);
                     startX += dynamicGap;
-                } else if (justify.equals("center")) {
+                } else if ("center".equals(justify)) {
                     startX = (int) (startX + Math.max(0, containerInnerW - totalLineContentW) / 2);
-                } else if (justify.equals("flex-end") || justify.equals("end")) {
+                } else if ("flex-end".equals(justify) || "end".equals(justify)) {
                     startX = (int) (startX + Math.max(0, containerInnerW - totalLineContentW));
                 }
 
                 for (LayoutBox child : line) {
                     String effAlign = child.style.getOrDefault("align-self", align);
                     int itemY = lineY;
-                    if (effAlign.equals("center")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB)) / 2;
-                    else if (effAlign.equals("flex-end") || effAlign.equals("end")) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB));
-                    else if (effAlign.equals("stretch") && !child.style.containsKey("height"))
+                    if ("center".equals(effAlign)) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB)) / 2;
+                    else if ("flex-end".equals(effAlign) || "end".equals(effAlign)) itemY += Math.max(0, lineH - (child.h + child.mT + child.mB));
+                    else if ("stretch".equals(effAlign) && !child.style.containsKey("height"))
                         child.h = Math.max(child.h, lineH - child.mT - child.mB);
-                    child.layout(startX, itemY, child.w, child.h, rootW, rootH);
+                    child.layout(startX, itemY, child.w, child.h, ctx);
                     startX += child.w + child.mL + child.mR + dynamicGap;
                 }
-                lineY += lineH + box.gap;
+                lineY += lineH + box.rowGap;
             }
-        } else if (flexDir.startsWith("column") && flexWrap.equals("wrap")) {
+        } else if (flexDir.startsWith("column") && "wrap".equals(flexWrap)) {
             int maxColH = Math.max(1, box.h - box.verticalDecoration());
             int colX = innerX, curY = innerY, colMaxW = 0;
             for (LayoutBox child : flowChildren) {
                 int childOuterW = child.w + child.mL + child.mR;
                 int childOuterH = child.h + child.mT + child.mB;
                 if (curY > innerY && (curY - innerY) + childOuterH > maxColH) {
-                    colX += colMaxW + box.gap;
+                    colX += colMaxW + box.columnGap;
                     curY = innerY;
                     colMaxW = 0;
                 }
-                child.layout(colX, curY, child.w, child.h, rootW, rootH);
-                curY += childOuterH + box.gap;
+                child.layout(colX, curY, child.w, child.h, ctx);
+                curY += childOuterH + box.rowGap;
                 colMaxW = Math.max(colMaxW, childOuterW);
             }
         } else {
@@ -278,24 +270,25 @@ public class FlexLayoutEngine implements LayoutEngine {
             int mainTotalSize = 0, activeCount = flowChildren.size();
             for (LayoutBox child : flowChildren)
                 mainTotalSize += isRow ? (child.w + child.mL + child.mR) : (child.h + child.mT + child.mB);
-            int currentMain = isRow ? innerX : innerY, dynamicGap = box.gap;
+            int mainGap = isRow ? box.columnGap : box.rowGap;
+            int currentMain = isRow ? innerX : innerY, dynamicGap = mainGap;
 
-            int totalMainSpaceWithGap = mainTotalSize + box.gap * Math.max(0, activeCount - 1);
+            int totalMainSpaceWithGap = mainTotalSize + mainGap * Math.max(0, activeCount - 1);
             int containerMainSpace = Math.max(totalMainSpaceWithGap, mainSpace);
 
-            if (justify.equals("space-between") && activeCount > 1) {
+            if ("space-between".equals(justify) && activeCount > 1) {
                 dynamicGap = Math.max(0, containerMainSpace - mainTotalSize) / (activeCount - 1);
-            } else if (justify.equals("space-around") && activeCount > 0) {
+            } else if ("space-around".equals(justify) && activeCount > 0) {
                 int space = Math.max(0, containerMainSpace - mainTotalSize);
                 dynamicGap = space / activeCount;
                 currentMain += dynamicGap / 2;
-            } else if (justify.equals("space-evenly") && activeCount > 0) {
+            } else if ("space-evenly".equals(justify) && activeCount > 0) {
                 int space = Math.max(0, containerMainSpace - mainTotalSize);
                 dynamicGap = space / (activeCount + 1);
                 currentMain += dynamicGap;
-            } else if (justify.equals("center")) {
+            } else if ("center".equals(justify)) {
                 currentMain += Math.max(0, containerMainSpace - totalMainSpaceWithGap) / 2;
-            } else if (justify.equals("flex-end") || justify.equals("end")) {
+            } else if ("flex-end".equals(justify) || "end".equals(justify)) {
                 currentMain += Math.max(0, containerMainSpace - totalMainSpaceWithGap);
             }
 
@@ -316,7 +309,7 @@ public class FlexLayoutEngine implements LayoutEngine {
                     }
                 }
                 int childX = isRow ? currentMain : crossStart, childY = isRow ? crossStart : currentMain;
-                child.layout(childX, childY, child.w, child.h, rootW, rootH);
+                child.layout(childX, childY, child.w, child.h, ctx);
                 currentMain += (isRow ? child.w + child.mL + child.mR : child.h + child.mT + child.mB) + dynamicGap;
             }
         }

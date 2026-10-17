@@ -1,60 +1,58 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Stack;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class HtmlParser {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(HtmlParser.class);
+
     private static final int MAX_NODES = 5000;
     private static final int MAX_DEPTH = 100;
-    private static final Set<String> VOID_TAGS = Set.of(
-            "br", "hr", "img", "input", "meta", "link",
-            "mc-fluid", "mc-entity", "mc-scene", "mc-slot", "mc-slot-grid", "mc-inventory", "mc-bar"
-    );
+
+    // VoidElements に統合したため、ここでは PRESERVE_WHITESPACE_TAGS のみ定義
     private static final Set<String> PRESERVE_WHITESPACE_TAGS = Set.of("textarea", "pre", "code", "script", "style");
-    private static final AtomicInteger globalAutoId = new AtomicInteger(0);
 
     public static HtmlNode parse(String html) {
-        HtmlNode root = new HtmlNode("root");
-        root.id = "html_root";
+        // パーサ呼び出しの度にIDカウンタをリセットし、安定したIDを生成する
+        NodeId.resetCounter();
+
+        HtmlNode root = new HtmlNode(NodeType.ROOT, "root");
+        root.setId("html_root");
         Stack<HtmlNode> stack = new Stack<>();
         stack.push(root);
 
         int nodeCount = 0;
 
         for (HtmlTokenizer.Token token : HtmlTokenizer.tokenize(html)) {
-            if (++nodeCount > MAX_NODES) break;
+            if (++nodeCount > MAX_NODES) {
+                LOGGER.warn("HTML Parser: MAX_NODES ({}) exceeded. Truncating document.", MAX_NODES);
+                break;
+            }
 
             if (token.type == HtmlTokenizer.Token.Type.START_TAG) {
                 if (stack.size() > MAX_DEPTH) continue;
 
-                HtmlNode node = new HtmlNode(token.name);
+                HtmlNode node = new HtmlNode(NodeType.ELEMENT, token.name);
                 node.parent = stack.peek();
 
                 for (var entry : token.attrs.entrySet()) {
                     String key = entry.getKey();
                     String val = entry.getValue();
                     if (val != null && val.length() > 4096) val = val.substring(0, 4096);
-
                     node.attrs.put(key, val);
-                    if (key.equals("id")) node.id = val;
-                    else if (key.equals("class")) {
-                        for (String c : Objects.requireNonNull(val).trim().split("\\s+")) {
-                            if (!c.isEmpty()) node.classes.add(c);
-                        }
-                    }
                 }
 
-                if (node.id.isEmpty()) {
-                    node.id = "html_gen_" + globalAutoId.incrementAndGet();
-                    node.attrs.put("id", node.id);
+                if (node.getId().isEmpty()) {
+                    node.setId(NodeId.generateId());
                 }
 
                 stack.peek().children.add(node);
 
-                boolean isSelfClosing = token.isSelfClosing || VOID_TAGS.contains(token.name);
+                boolean isSelfClosing = token.isSelfClosing || VoidElements.isVoid(token.name);
                 if (!isSelfClosing) {
                     stack.push(node);
                 }
@@ -101,9 +99,8 @@ public class HtmlParser {
                 if (text.length() > 16384) text = text.substring(0, 16384);
 
                 if (!text.isEmpty()) {
-                    HtmlNode textNode = new HtmlNode("#text");
-                    textNode.text = text;
-                    textNode.id = "html_txt_" + globalAutoId.incrementAndGet();
+                    HtmlNode textNode = HtmlNode.createTextNode(text);
+                    textNode.setId(NodeId.generateTextId());
                     textNode.parent = parent;
                     parent.children.add(textNode);
 

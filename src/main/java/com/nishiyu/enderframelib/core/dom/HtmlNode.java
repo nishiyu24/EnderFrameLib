@@ -1,38 +1,75 @@
 package com.nishiyu.enderframelib.core.dom;
 
-import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.SelectorEngine;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class HtmlNode {
     private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
 
-    public String tag;
-    public String id = "";
-    public List<String> classes = new ArrayList<>();
-    public Map<String, String> attrs = new HashMap<>();
-    public List<HtmlNode> children = new ArrayList<>();
+    public final NodeType nodeType;
+    public final String tag;
+
+    // attrsを真のデータソース（Single Source of Truth）とする
+    public final Map<String, String> attrs = new LinkedHashMap<>();
+
+    public final List<HtmlNode> children = new ArrayList<>();
     public String text = "";
     public HtmlNode parent = null;
-    public boolean isHovered = false;
-    public boolean isChecked = false;
-    public boolean isActive = false;
-    public boolean isFocused = false;
-    public boolean isDirty = true;
-    public Map<String, String> computedStyle = null;
     public boolean isPseudoNode = false;
 
+    // Elementノード用コンストラクタ
     public HtmlNode(String tag) {
+        this(NodeType.ELEMENT, tag);
+    }
+
+    // 指定タイプ用コンストラクタ
+    public HtmlNode(NodeType type, String tag) {
+        this.nodeType = type;
         this.tag = tag;
     }
 
+    // テキストノード用ファクトリ
+    public static HtmlNode createTextNode(String text) {
+        HtmlNode node = new HtmlNode(NodeType.TEXT, "#text");
+        node.text = text;
+        return node;
+    }
+
     // ==========================================
-    // 1. 検索系 API
+    // 1. プロパティ・アクセサ (非正規化の解消)
+    // ==========================================
+
+    // IDは attrs("id") から取得/設定
+    public String getId() {
+        return attrs.getOrDefault("id", "");
+    }
+
+    public void setId(String id) {
+        if (id == null || id.trim().isEmpty()) {
+            attrs.remove("id");
+        } else {
+            attrs.put("id", id.trim());
+        }
+    }
+
+    // Classesは attrs("class") をパースして返す
+    public List<String> getClasses() {
+        String classStr = attrs.get("class");
+        if (classStr == null || classStr.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(Arrays.asList(WHITESPACE_SPLIT.split(classStr.trim())));
+    }
+
+    // ==========================================
+    // 2. 検索系 API
     // ==========================================
 
     public HtmlNode getElementById(String targetId) {
@@ -40,7 +77,7 @@ public class HtmlNode {
     }
 
     public Map<String, String> getDataset() {
-        Map<String, String> dataset = new HashMap<>();
+        Map<String, String> dataset = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : attrs.entrySet()) {
             if (entry.getKey().startsWith("data-")) {
                 dataset.put(entry.getKey(), entry.getValue());
@@ -49,96 +86,81 @@ public class HtmlNode {
         return dataset;
     }
 
+    // ※ フェーズ2-4 で SelectorEngine.query() に委譲するように変更予定
     public HtmlNode querySelector(String selector) {
         if (selector == null || selector.trim().isEmpty()) return null;
-        CssParser.StyleRule rule = new CssParser.StyleRule(selector);
-        return querySelectorInternal(this, rule);
-    }
-
-    private HtmlNode querySelectorInternal(HtmlNode node, CssParser.StyleRule rule) {
-        if (rule.matches(node)) return node;
-        for (HtmlNode child : node.children) {
-            HtmlNode found = querySelectorInternal(child, rule);
-            if (found != null) return found;
-        }
-        return null;
+        return SelectorEngine.querySelector(this, selector);
     }
 
     public List<HtmlNode> querySelectorAll(String selector) {
-        List<HtmlNode> results = new ArrayList<>();
-        if (selector == null || selector.trim().isEmpty()) return results;
-        CssParser.StyleRule rule = new CssParser.StyleRule(selector);
-        querySelectorAllInternal(this, rule, results);
-        return results;
-    }
-
-    private void querySelectorAllInternal(HtmlNode node, CssParser.StyleRule rule, List<HtmlNode> results) {
-        if (rule.matches(node)) results.add(node);
-        for (HtmlNode child : node.children) {
-            querySelectorAllInternal(child, rule, results);
-        }
+        if (selector == null || selector.trim().isEmpty()) return new ArrayList<>();
+        return SelectorEngine.querySelectorAll(this, selector);
     }
 
     // ==========================================
-    // 2. classList 操作系 API
+    // 3. classList 操作系 API
     // ==========================================
 
     public boolean hasClass(String className) {
-        return className != null && this.classes.contains(className.trim());
+        if (className == null) return false;
+        return getClasses().contains(className.trim());
     }
 
     public void addClass(String... classNames) {
+        List<String> currentClasses = getClasses();
         boolean modified = false;
         for (String cn : classNames) {
             if (cn == null) continue;
             for (String part : WHITESPACE_SPLIT.split(cn.trim())) {
-                if (!part.isEmpty() && !this.classes.contains(part)) {
-                    this.classes.add(part);
+                if (!part.isEmpty() && !currentClasses.contains(part)) {
+                    currentClasses.add(part);
                     modified = true;
                 }
             }
         }
-        if (modified) syncClassAttribute();
+        if (modified) syncClassAttribute(currentClasses);
     }
 
     public void removeClass(String... classNames) {
+        List<String> currentClasses = getClasses();
         boolean modified = false;
         for (String cn : classNames) {
             if (cn == null) continue;
             for (String part : WHITESPACE_SPLIT.split(cn.trim())) {
-                if (this.classes.remove(part)) {
+                if (currentClasses.remove(part)) {
                     modified = true;
                 }
             }
         }
-        if (modified) syncClassAttribute();
+        if (modified) syncClassAttribute(currentClasses);
     }
 
     public boolean toggleClass(String className) {
         if (className == null || className.trim().isEmpty()) return false;
         String clean = className.trim();
-        if (this.classes.contains(clean)) {
-            this.classes.remove(clean);
-            syncClassAttribute();
+        List<String> currentClasses = getClasses();
+
+        if (currentClasses.contains(clean)) {
+            currentClasses.remove(clean);
+            syncClassAttribute(currentClasses);
             return false;
         } else {
-            this.classes.add(clean);
-            syncClassAttribute();
+            currentClasses.add(clean);
+            syncClassAttribute(currentClasses);
             return true;
         }
     }
 
-    private void syncClassAttribute() {
-        if (this.classes.isEmpty()) {
+    private void syncClassAttribute(List<String> classList) {
+        if (classList.isEmpty()) {
             this.attrs.remove("class");
         } else {
-            this.attrs.put("class", String.join(" ", this.classes));
+            this.attrs.put("class", String.join(" ", classList));
         }
-        this.markDirty();
     }
 
     // ==========================================
-    // 3. 属性・インラインスタイル・テキスト操作系 API
+    // 4. 属性・インラインスタイル・テキスト操作系 API
     // ==========================================
 
     public String getAttribute(String name) {
@@ -188,13 +210,11 @@ public class HtmlNode {
         if (map.isEmpty()) {
             this.attrs.remove("style");
         } else {
-            StringBuilder sb = new StringBuilder();
-            for (Map.Entry<String, String> e : map.entrySet()) {
-                sb.append(e.getKey()).append(": ").append(e.getValue()).append("; ");
-            }
-            this.attrs.put("style", sb.toString().trim());
+            String styleStr = map.entrySet().stream()
+                    .map(e -> e.getKey() + ": " + e.getValue() + ";")
+                    .collect(Collectors.joining(" "));
+            this.attrs.put("style", styleStr);
         }
-        this.markDirty();
     }
 
     public void setTextContent(String text) {
@@ -202,7 +222,7 @@ public class HtmlNode {
     }
 
     public String getTextContent() {
-        if ("#text".equals(this.tag)) return this.text;
+        if (this.nodeType == NodeType.TEXT) return this.text;
         StringBuilder sb = new StringBuilder();
         for (HtmlNode child : this.children) {
             sb.append(child.getTextContent());
@@ -223,7 +243,7 @@ public class HtmlNode {
     }
 
     // ==========================================
-    // 4. ツリー構造変更系 API
+    // 5. ツリー構造変更系 API
     // ==========================================
 
     public void appendChild(HtmlNode child) {
@@ -231,8 +251,6 @@ public class HtmlNode {
         if (child.parent != null) child.parent.children.remove(child);
         child.parent = this;
         this.children.add(child);
-        child.markDirty();
-        this.markDirty();
     }
 
     public void prependChild(HtmlNode child) {
@@ -240,14 +258,11 @@ public class HtmlNode {
         if (child.parent != null) child.parent.children.remove(child);
         child.parent = this;
         this.children.addFirst(child);
-        child.markDirty();
-        this.markDirty();
     }
 
     public void removeChild(HtmlNode child) {
         if (child != null && this.children.remove(child)) {
             child.parent = null;
-            this.markDirty();
         }
     }
 
@@ -257,30 +272,11 @@ public class HtmlNode {
         }
     }
 
-    public void markDirty() {
-        this.isDirty = true;
-        if (this.parent != null) {
-            for (HtmlNode sibling : this.parent.children) {
-                sibling.isDirty = true;
-            }
-            HtmlNode p = this.parent;
-            while (p != null) {
-                p.isDirty = true;
-                p = p.parent;
-            }
-        }
-    }
-
     public HtmlNode cloneNode() {
-        HtmlNode copy = new HtmlNode(this.tag);
-        copy.id = this.id;
-        copy.classes.addAll(this.classes);
+        HtmlNode copy = new HtmlNode(this.nodeType, this.tag);
+        // id, classは attrs に含まれるため、attrsのコピーだけで完結する
         copy.attrs.putAll(this.attrs);
         copy.text = this.text;
-        copy.isHovered = this.isHovered;
-        copy.isChecked = this.isChecked;
-        copy.isActive = this.isActive;
-        copy.isFocused = this.isFocused;
         copy.isPseudoNode = this.isPseudoNode;
         for (HtmlNode child : this.children) {
             HtmlNode childCopy = child.cloneNode();

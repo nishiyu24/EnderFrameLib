@@ -4,7 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.binding.WebStateStore;
+import com.nishiyu.enderframelib.client.binding.WebStateStore; // ★これが必須です
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
@@ -34,12 +34,6 @@ import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/**
- * 2D GUIとしてHTML/CSS画面を描画・操作するための汎用Screen基底クラス。
- * WebStateStore、ラムダ式イベントルーター、<textarea>、<select>、<canvas>、<mc-scene>、
- * ドラッグ＆ドロップ、1行サーバーRPC送信、F12 DevToolsインスペクタ、F5 ホットリロード、
- * W3C標準のTabフォーカス移動＆矢印キースペーシャルナビゲーションを標準搭載。
- */
 public class AbstractWebScreen extends Screen {
     public static final float DEFAULT_VIRTUAL_WIDTH = 854.0f;
     public static final float DEFAULT_VIRTUAL_HEIGHT = 480.0f;
@@ -59,7 +53,6 @@ public class AbstractWebScreen extends Screen {
     protected String hoveredId = "";
     private boolean isLocalHtmlSession = false;
 
-    // DevTools (F12 インスペクタ & F5 ホットリロード)
     protected boolean devToolsEnabled = false;
     protected ResourceLocation htmlResourceLocation = null;
 
@@ -360,7 +353,6 @@ public class AbstractWebScreen extends Screen {
         private EditBox hiddenEditBox;
         private boolean suppressInputResponder = false;
 
-        // ビューポート変換状態
         private int virtualWidth = 854;
         private int virtualHeight = 480;
         private float guiScaleFactor = 1.0f;
@@ -620,42 +612,16 @@ public class AbstractWebScreen extends Screen {
                 HtmlNode domNode = vRoot != null ? DomUtils.findNodeById(vRoot, targetAnchor.id()) : null;
                 int x = targetAnchor.x(), y = targetAnchor.y(), w = targetAnchor.width(), h = targetAnchor.height();
 
-                Map<String, String> st = (domNode != null && domNode.computedStyle != null) ? domNode.computedStyle : Map.of();
-                String[] mEdges = CssParser.parseBoxEdgesStr(st.get("margin"));
-                int mT = CssParser.parseDim(st.getOrDefault("margin-top", mEdges[0]), h, virtualWidth, virtualHeight);
-                int mR = CssParser.parseDim(st.getOrDefault("margin-right", mEdges[1]), w, virtualWidth, virtualHeight);
-                int mB = CssParser.parseDim(st.getOrDefault("margin-bottom", mEdges[2]), h, virtualWidth, virtualHeight);
-                int mL = CssParser.parseDim(st.getOrDefault("margin-left", mEdges[3]), w, virtualWidth, virtualHeight);
+                Map<String, String> st = Map.of(); // DevToolsのマージン・パディング解析は別で再実装します
 
-                String[] pEdges = CssParser.parseBoxEdgesStr(st.get("padding"));
-                int pT = CssParser.parseDim(st.getOrDefault("padding-top", pEdges[0]), h, virtualWidth, virtualHeight);
-                int pR = CssParser.parseDim(st.getOrDefault("padding-right", pEdges[1]), w, virtualWidth, virtualHeight);
-                int pB = CssParser.parseDim(st.getOrDefault("padding-bottom", pEdges[2]), h, virtualWidth, virtualHeight);
-                int pL = CssParser.parseDim(st.getOrDefault("padding-left", pEdges[3]), w, virtualWidth, virtualHeight);
-
-                if (mT > 0) guiGraphics.fill(x - mL, y - mT, x + w + mR, y, 0x44FAB387);
-                if (mB > 0) guiGraphics.fill(x - mL, y + h, x + w + mR, y + h + mB, 0x44FAB387);
-                if (mL > 0) guiGraphics.fill(x - mL, y, x, y + h, 0x44FAB387);
-                if (mR > 0) guiGraphics.fill(x + w, y, x + w + mR, y + h, 0x44FAB387);
-
-                if (pT > 0) guiGraphics.fill(x, y, x + w, y + pT, 0x44A6E3A1);
-                if (pB > 0) guiGraphics.fill(x, y + h - pB, x + w, y + h, 0x44A6E3A1);
-                if (pL > 0) guiGraphics.fill(x, y + pT, x + pL, y + h - pB, 0x44A6E3A1);
-                if (pR > 0) guiGraphics.fill(x + w - pR, y + pT, x + w, y + h - pB, 0x44A6E3A1);
-
-                guiGraphics.fill(x + pL, y + pT, x + w - pR, y + h - pB, 0x3389B4FA);
                 guiGraphics.renderOutline(x, y, w, h, 0xFF89B4FA);
 
                 List<String> infoLines = new ArrayList<>();
                 String tagLabel = domNode != null ? "<" + domNode.tag + ">" : "<node>";
-                String idLabel = (domNode != null && !domNode.id.isEmpty()) ? "#" + domNode.id : "#" + targetAnchor.id();
-                String clsLabel = (domNode != null && !domNode.classes.isEmpty()) ? "." + String.join(".", domNode.classes) : "";
+                String idLabel = (domNode != null && !domNode.getId().isEmpty()) ? "#" + domNode.getId() : "#" + targetAnchor.id();
+                String clsLabel = (domNode != null && !domNode.getClasses().isEmpty()) ? "." + String.join(".", domNode.getClasses()) : "";
                 infoLines.add("§b" + tagLabel + " §e" + idLabel + "§a" + clsLabel);
                 infoLines.add("§7Rect: §f" + w + "x" + h + " §7at (" + x + ", " + y + ")");
-                if (!st.isEmpty()) {
-                    infoLines.add("§7display: §f" + st.getOrDefault("display", "block")
-                            + (st.containsKey("flex-direction") ? " (" + st.get("flex-direction") + ")" : ""));
-                }
                 if (domNode != null) {
                     if (domNode.attrs.containsKey("data-model")) infoLines.add("§ddata-model: §f" + domNode.attrs.get("data-model"));
                     if (domNode.attrs.containsKey("data-bind")) infoLines.add("§ddata-bind: §f" + domNode.attrs.get("data-bind"));
@@ -749,7 +715,7 @@ public class AbstractWebScreen extends Screen {
                 HtmlNode summaryNode = findAncestorByTag(domNode, "summary");
                 if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag) && button == 0) {
                     ClientScreenInteractionManager.playElementSound(clicked);
-                    ClientWebManager.toggleNodeAttributeLocally(sessionId, summaryNode.parent.id, "open");
+                    ClientWebManager.toggleNodeAttributeLocally(sessionId, summaryNode.parent.getId(), "open");
                     ClientWebManager.processRenderQueue();
                     return true;
                 }
@@ -760,16 +726,16 @@ public class AbstractWebScreen extends Screen {
                     HtmlNode targetInput = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), targetInputId);
                     if (targetInput != null) {
                         ClientScreenInteractionManager.playElementSound(clicked);
-                        setFocusedDomElement(targetInput.id);
+                        setFocusedDomElement(targetInput.getId());
                         String tType = targetInput.attrs.getOrDefault("type", "text");
                         if ("checkbox".equalsIgnoreCase(tType) || "radio".equalsIgnoreCase(tType)) {
-                            ClientWebManager.toggleNodeAttributeLocally(sessionId, targetInput.id, "checked");
+                            ClientWebManager.toggleNodeAttributeLocally(sessionId, targetInput.getId(), "checked");
                             ClientWebManager.processRenderQueue();
                             String checkedStr = Boolean.toString(targetInput.attrs.containsKey("checked"));
-                            if (this.state != null) this.state.notifyElementModelChanged(targetInput.id, checkedStr);
-                            if (onInputChanged != null) onInputChanged.accept(targetInput.id, checkedStr);
+                            if (this.state != null) this.state.notifyElementModelChanged(targetInput.getId(), checkedStr);
+                            if (onInputChanged != null) onInputChanged.accept(targetInput.getId(), checkedStr);
                         } else {
-                            focusWebInput(screen, targetInput.id, getInputValue(targetInput.id));
+                            focusWebInput(screen, targetInput.getId(), getInputValue(targetInput.getId()));
                         }
                         return true;
                     }
@@ -997,20 +963,6 @@ public class AbstractWebScreen extends Screen {
 
             HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
             if (vRoot != null) {
-                if (!this.focusedElementBaseId.isEmpty()) {
-                    HtmlNode prev = DomUtils.findNodeById(vRoot, this.focusedElementBaseId);
-                    if (prev != null) {
-                        prev.isFocused = false;
-                        prev.markDirty();
-                    }
-                }
-                if (!safeNext.isEmpty()) {
-                    HtmlNode next = DomUtils.findNodeById(vRoot, safeNext);
-                    if (next != null) {
-                        next.isFocused = true;
-                        next.markDirty();
-                    }
-                }
                 ClientWebManager.requestRender(sessionId);
             }
             this.focusedElementBaseId = safeNext;
@@ -1051,7 +1003,9 @@ public class AbstractWebScreen extends Screen {
 
         private void collectFocusablesRecursive(HtmlNode node, Map<String, UIElement> boxByNodeId, List<FocusCandidate> out, int[] orderCounter) {
             if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")) return;
-            if (node.computedStyle != null && "none".equalsIgnoreCase(node.computedStyle.get("display"))) return;
+
+            String styleAttr = node.attrs.getOrDefault("style", "").replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            if (styleAttr.contains("display:none")) return;
 
             int tabIndex = 0;
             boolean hasExplicitTabIndex = false;
@@ -1069,7 +1023,7 @@ public class AbstractWebScreen extends Screen {
                     || node.attrs.containsKey("onclick");
 
             if (tabIndex >= 0 && (hasExplicitTabIndex || naturallyFocusable)) {
-                UIElement el = boxByNodeId.get(node.id);
+                UIElement el = boxByNodeId.get(node.getId());
                 if (el != null && el.width() > 0 && el.height() > 0) {
                     out.add(new FocusCandidate(node, el, tabIndex, orderCounter[0]++));
                 }
@@ -1088,7 +1042,7 @@ public class AbstractWebScreen extends Screen {
 
             int curIdx = -1;
             for (int i = 0; i < candidates.size(); i++) {
-                if (candidates.get(i).node().id.equals(focusedElementBaseId)) {
+                if (candidates.get(i).node().getId().equals(focusedElementBaseId)) {
                     curIdx = i;
                     break;
                 }
@@ -1111,7 +1065,7 @@ public class AbstractWebScreen extends Screen {
 
             FocusCandidate current = null;
             for (FocusCandidate c : candidates) {
-                if (c.node().id.equals(focusedElementBaseId)) {
+                if (c.node().getId().equals(focusedElementBaseId)) {
                     current = c;
                     break;
                 }
@@ -1161,7 +1115,7 @@ public class AbstractWebScreen extends Screen {
 
         private void applyFocusCandidate(Screen screen, FocusCandidate candidate) {
             unfocusWebInput();
-            String baseId = candidate.node().id;
+            String baseId = candidate.node().getId();
             setFocusedDomElement(baseId);
             ClientWebManager.processRenderQueue();
 
@@ -1474,7 +1428,7 @@ public class AbstractWebScreen extends Screen {
             HtmlNode root = ClientWebManager.getVirtualRoot(sessionId);
             if (root == null) return;
             HtmlNode target = DomUtils.findNodeById(root, id);
-            if (target != null && !target.classes.contains(cls)) {
+            if (target != null && !target.hasClass(cls)) {
                 target.addClass(cls);
                 ClientWebManager.requestRender(sessionId);
             }
@@ -1484,7 +1438,7 @@ public class AbstractWebScreen extends Screen {
             HtmlNode root = ClientWebManager.getVirtualRoot(sessionId);
             if (root == null) return;
             HtmlNode target = DomUtils.findNodeById(root, id);
-            if (target != null && target.classes.contains(cls)) {
+            if (target != null && target.hasClass(cls)) {
                 target.removeClass(cls);
                 ClientWebManager.requestRender(sessionId);
             }

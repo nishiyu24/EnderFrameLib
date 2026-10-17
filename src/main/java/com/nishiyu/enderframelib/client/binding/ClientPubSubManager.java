@@ -130,7 +130,6 @@ public class ClientPubSubManager {
                     targetNode.children.add(botSpacer);
 
                     targetNode.attrs.put("data-scroll-h", String.valueOf(totalRows * vBind.itemH));
-                    targetNode.markDirty();
                 }
             }
         }
@@ -173,7 +172,7 @@ public class ClientPubSubManager {
             }
         }
         if (node.attrs.containsKey("id")) {
-            node.id = node.attrs.get("id");
+            node.setId(node.attrs.get("id"));
         }
         for (HtmlNode child : node.children) {
             applyTemplateData(child, data);
