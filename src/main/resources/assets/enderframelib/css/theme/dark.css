@@ -1,0 +1,13 @@
+/* EnderFrameLib 組み込みテーマ: dark */
+:root { --bg-base: #1e1e2e; --bg-surface: #313244; --bg-elevated: #45475a; --text-main: #cdd6f4; --text-sub: #a6adc8; --accent: #89b4fa; --success: #a6e3a1; --danger: #f38ba8; --warning: #f9e2af; }
+body, html { background-color: #181825; color: #cdd6f4; }
+.mc-panel { background-color: #1e1e2e; border: 1px solid #45475a; border-radius: 6px; padding: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
+.mc-card { background-color: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 8px; }
+.mc-title { color: #89b4fa; font-weight: bold; font-size: 1.1rem; margin-bottom: 6px; }
+.mc-btn { background-color: #313244; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; padding: 4px 10px; transition: 0.12s; }
+.mc-btn:hover { background-color: #45475a; color: #ffffff; }
+.mc-btn:active { transform: scale(0.95); }
+.mc-btn-primary { background-color: #89b4fa; color: #11111b; border: 1px solid #b4befe; font-weight: bold; }
+.mc-btn-primary:hover { background-color: #b4befe; }
+.mc-slot { width: 18px; height: 18px; background-color: #11111b; border: 1px solid #45475a; border-radius: 2px; box-sizing: border-box; transition: 0.1s; }
+.mc-slot:hover { background-color: #313244; border-color: #89b4fa; }
