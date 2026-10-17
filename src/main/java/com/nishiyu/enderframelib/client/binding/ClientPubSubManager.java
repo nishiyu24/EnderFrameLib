@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlParser;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,7 +23,7 @@ public class ClientPubSubManager {
     private static final Map<String, List<VirtualListBinding>> virtualListBindings = new ConcurrentHashMap<>();
 
     public static void requestSubscribe(String sessionId, String channel) {
-        activeSessions.computeIfAbsent(channel, k -> new HashSet<>()).add(sessionId);
+        activeSessions.computeIfAbsent(channel, k -> ConcurrentHashMap.newKeySet()).add(sessionId);
         if (subscriptionSender != null) subscriptionSender.accept(channel);
     }
 
@@ -35,11 +36,17 @@ public class ClientPubSubManager {
     }
 
     public static void registerDataBinding(String sessionId, String targetId, String channel, String path, String targetAttr) {
-        dataBindings.computeIfAbsent(sessionId, k -> new ArrayList<>()).add(new DataBinding(targetId, channel, path, targetAttr));
+        List<DataBinding> list = dataBindings.computeIfAbsent(sessionId, k -> new CopyOnWriteArrayList<>());
+        DataBinding binding = new DataBinding(targetId, channel, path, targetAttr);
+        list.removeIf(b -> b.targetId().equals(targetId) && b.targetAttr().equals(targetAttr));
+        list.add(binding);
     }
 
     public static void registerVirtualList(String sessionId, String targetId, String channel, String templateHtml, int itemW, int itemH) {
-        virtualListBindings.computeIfAbsent(sessionId, k -> new ArrayList<>()).add(new VirtualListBinding(targetId, channel, templateHtml, itemW, itemH));
+        List<VirtualListBinding> list = virtualListBindings.computeIfAbsent(sessionId, k -> new CopyOnWriteArrayList<>());
+        VirtualListBinding binding = new VirtualListBinding(targetId, channel, templateHtml, itemW, itemH);
+        list.removeIf(b -> b.targetId().equals(targetId));
+        list.add(binding);
     }
 
     public static void clearSession(String sessionId) {

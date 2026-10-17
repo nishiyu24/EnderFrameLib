@@ -110,8 +110,39 @@ public class WebMediaManager {
     // ==========================================
     // 1. Web Image Cache System
     // ==========================================
-    private static final ConcurrentHashMap<String, ImageInfo> IMG_CACHE = new ConcurrentHashMap<>();
+    private static final int MAX_CACHED_IMAGES = 256;
+    private static final Map<String, ImageInfo> IMG_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<String, ImageInfo>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, ImageInfo> eldest) {
+                    if (size() > MAX_CACHED_IMAGES) {
+                        ImageInfo removed = eldest.getValue();
+                        if (removed != null && removed.textureId() != null) {
+                            try {
+                                Minecraft.getInstance().getTextureManager().release(removed.textureId());
+                            } catch (Exception ignored) {}
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+            }
+    );
     private static final ConcurrentHashMap<String, Boolean> IMG_DOWNLOADING = new ConcurrentHashMap<>();
+
+    private static String computeUrlHash(String url) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(url.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 16; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return Integer.toUnsignedString(url.hashCode(), 16);
+        }
+    }
 
     public record ImageInfo(ResourceLocation textureId, int width, int height) {}
 
@@ -190,7 +221,7 @@ public class WebMediaManager {
                     NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(baos.toByteArray()));
                     int imgW = nativeImage.getWidth();
                     int imgH = nativeImage.getHeight();
-                    String safeHash = Integer.toUnsignedString(originalUrl.hashCode(), 16);
+                    String safeHash = computeUrlHash(originalUrl);
 
                     Minecraft.getInstance().execute(() -> {
                         DynamicTexture texture = new DynamicTexture(nativeImage);
@@ -339,6 +370,8 @@ public class WebMediaManager {
             }
             return false;
         });
+
+        YT_DLP_CACHE.entrySet().removeIf(e -> (now - e.getValue().timestamp) > 3600000L);
     }
 
     private static String resolveYouTubeUrlViaYtDlp(String youtubeUrl) {
@@ -850,23 +883,25 @@ public class WebMediaManager {
                 this.nativeHandle = 0L;
                 this.isFailed = true;
 
-                if (!this.alSources.isEmpty()) {
-                    List<Integer> srcs = new ArrayList<>(this.alSources);
-                    int[] bufs = this.alBuffers;
-                    this.alSources.clear();
-                    RenderSystem.recordRenderCall(() -> {
-                        try {
-                            for (int src : srcs) {
-                                if (AL10.alIsSource(src)) {
-                                    AL10.alSourceStop(src);
-                                    AL10.alSourcei(src, 4105, 0);
-                                    AL10.alDeleteSources(src);
-                                }
+                List<Integer> srcs = new ArrayList<>(this.alSources);
+                int[] bufs = this.alBuffers;
+                this.alSources.clear();
+                RenderSystem.recordRenderCall(() -> {
+                    try {
+                        for (int src : srcs) {
+                            if (AL10.alIsSource(src)) {
+                                AL10.alSourceStop(src);
+                                AL10.alSourcei(src, 4105, 0);
+                                AL10.alDeleteSources(src);
                             }
-                            AL10.alDeleteBuffers(bufs);
-                        } catch (Exception ignored) {}
-                    });
-                }
+                        }
+                        for (int b : bufs) {
+                            if (b != 0 && AL10.alIsBuffer(b)) {
+                                AL10.alDeleteBuffers(b);
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                });
 
                 if (handleToClose != 0L && NativeVideoAPI.INSTANCE != null) {
                     MEDIA_IO_EXECUTOR.submit(() -> {

@@ -110,6 +110,10 @@ public class WebRenderCore {
         });
     }
 
+    public static void clearEntityPreviewCache() {
+        ENTITY_PREVIEW_CACHE.clear();
+    }
+
     private static float snapTextScaleFor2D(Matrix4f pose, float rawTextScale, boolean is2D) {
         if (!is2D) return rawTextScale;
         float matScale = Math.abs(pose.m00());

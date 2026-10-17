@@ -1,12 +1,22 @@
 package com.nishiyu.enderframelib.common;
 
 import java.lang.ref.WeakReference;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ServerImageRegistry {
-    private static final ConcurrentHashMap<String, int[]> SIZES = new ConcurrentHashMap<>();
+    private static final int MAX_SIZES = 2000;
+    private static final Map<String, int[]> SIZES = Collections.synchronizedMap(
+            new LinkedHashMap<String, int[]>(512, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, int[]> eldest) {
+                    return size() > MAX_SIZES;
+                }
+            }
+    );
 
     // WeakReferenceを使用して、参照先が破棄されたら自動的に回収されるように変更
     private static final List<WeakReference<Runnable>> REFLOW_LISTENERS = new CopyOnWriteArrayList<>();

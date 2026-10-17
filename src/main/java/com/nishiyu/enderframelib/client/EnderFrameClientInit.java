@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
+import com.nishiyu.enderframelib.client.renderer.WebSdfShader;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.ServerImageRegistry;
 import com.nishiyu.enderframelib.common.UIParser;
@@ -24,7 +25,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
@@ -35,6 +41,22 @@ import java.util.List;
 public class EnderFrameClientInit {
 
     public static void init(IEventBus modEventBus) {
+        // -1. リソースリロードリスナーおよびレベルアンロードリスナーの登録（リソースリーク防止）
+        modEventBus.addListener((RegisterClientReloadListenersEvent event) -> {
+            event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
+                WebFontManager.clearCache();
+                WebSdfShader.reload();
+            });
+        });
+        NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
+            if (event.getLevel() != null && event.getLevel().isClientSide()) {
+                WebRenderCore.clearEntityPreviewCache();
+            }
+        });
+        NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
+            WebRenderCore.clearEntityPreviewCache();
+        });
+
         // 0. ビルトイン設定のランタイム反映フック登録と、Mod一覧「Config」ボタンへの設定画面登録
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
             WebRenderCore.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
