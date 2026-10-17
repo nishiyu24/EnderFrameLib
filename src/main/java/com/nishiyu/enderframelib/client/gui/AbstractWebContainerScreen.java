@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore; // ★これが必須です
 import com.nishiyu.enderframelib.client.compat.WebRecipeViewerBridge;
@@ -49,6 +50,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     protected String hoveredId = "";
     private boolean inScaledSuperRender = false;
 
+    protected boolean isLocalHtmlSession = true;
     protected boolean devToolsEnabled = false;
     protected ResourceLocation htmlResourceLocation = null;
 
@@ -112,7 +114,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         this.titleLabelX = 10000;
         this.inventoryLabelY = 10000;
 
-        this.hiddenEditBox = this.uiSupport.createHiddenEditBox(this.font, this::onWebInputChanged);
+        this.hiddenEditBox = this.uiSupport.createHiddenEditBox(this.font, this::notifyInputChanged);
         this.addWidget(this.hiddenEditBox);
 
         reloadWebUI(false);
@@ -128,7 +130,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         registerWebActions();
         updateViewportTransform();
 
-        ClientWebManager.initOrBindSession(
+        this.isLocalHtmlSession = ClientWebManager.initOrBindSession(
                 this.sessionId,
                 buildInitialHtml(),
                 this.htmlResourceLocation,
@@ -209,8 +211,13 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         return WebSceneContext.getOrCreate(this.sessionId, sceneId);
     }
 
+    protected void onInputChanged(String elementId, String newText) {}
     protected void onWebAction(String action, UIElement clickedElement, int mouseButton) {}
     protected void onWebInputChanged(String elementId, String newText) {}
+    protected void notifyInputChanged(String elementId, String newText) {
+        onInputChanged(elementId, newText);
+        onWebInputChanged(elementId, newText);
+    }
     protected void onWebInputSubmitted(String elementId, String text) {}
     protected void onWebDrop(String draggedId, String dropTargetId, String dropAction) {}
     protected void onWebGhostDrop(String elementId, Object ingredient, String resourceId) {}
@@ -322,11 +329,11 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     protected void renderBg(@NotNull GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        double webX = mouseX - this.leftPos;
-        double webY = mouseY - this.topPos;
+        double webX = toWebX(mouseX);
+        double webY = toWebY(mouseY);
 
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
-        hoveredId = (hit != null && hit.element() != null) ? ClientWebManager.getBaseNodeId(hit.element().id()) : "";
+        hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
+        this.uiSupport.updateHoverState(webX, webY);
 
         List<UIElement> elements = ClientWebManager.getElements(sessionId);
         if (elements != null && !elements.isEmpty()) {
@@ -364,6 +371,9 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     public void render(@NotNull GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.state.syncToDom();
         ClientWebManager.processRenderQueue();
+        if (!isLocalHtmlSession) {
+            ClientScreenInteractionManager.ensureSynced(sessionId);
+        }
         updateViewportTransform();
         syncVanillaSlotsToDom();
 
@@ -391,7 +401,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.uiSupport.handleMouseClicked(this, this.font, toWebX(mouseX), toWebY(mouseY), button, this::onWebInputChanged, this::onWebAction)) {
+        if (this.uiSupport.handleMouseClicked(this, this.font, toWebX(mouseX), toWebY(mouseY), button, this::notifyInputChanged, this::onWebAction)) {
             return true;
         }
         return super.mouseClicked(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), button);
@@ -403,7 +413,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (this.uiSupport.handleMouseDragged(toWebX(mouseX), toWebY(mouseY), dragX, dragY, guiScaleFactor, this::onWebInputChanged)) {
+        if (this.uiSupport.handleMouseDragged(toWebX(mouseX), toWebY(mouseY), dragX, dragY, guiScaleFactor, this::notifyInputChanged)) {
             return true;
         }
         return super.mouseDragged(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), button, dragX / guiScaleFactor, dragY / guiScaleFactor);
@@ -433,7 +443,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             reloadWebUI(true);
             return true;
         }
-        if (this.uiSupport.handleKeyPressed(this, this.font, keyCode, scanCode, modifiers, true, this::onWebInputChanged, this::onWebInputSubmitted, this::onWebAction)) {
+        if (this.uiSupport.handleKeyPressed(this, this.font, keyCode, scanCode, modifiers, true, this::notifyInputChanged, this::onWebInputSubmitted, this::onWebAction)) {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -441,7 +451,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (this.uiSupport.handleCharTyped(codePoint, modifiers, this::onWebInputChanged)) {
+        if (this.uiSupport.handleCharTyped(codePoint, modifiers, this::notifyInputChanged)) {
             return true;
         }
         return super.charTyped(codePoint, modifiers);
@@ -464,7 +474,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     @Override
     public void onClose() {
         this.uiSupport.onClose();
-        if (!ClientWebManager.isServerManagedSession(this.sessionId)) {
+        if (isLocalHtmlSession && !ClientWebManager.isServerManagedSession(this.sessionId)) {
             WebCanvasContext.clearSession(this.sessionId);
             WebSceneContext.clearSession(this.sessionId);
             ClientWebManager.clearSession(this.sessionId);
