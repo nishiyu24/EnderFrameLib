@@ -3,6 +3,9 @@ package com.nishiyu.enderframelib.server;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.ArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.common.WebDevKitExporter;
@@ -31,7 +34,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@org.jetbrains.annotations.ApiStatus.Internal
 public class EnderFrameCommands {
+
+    private static final int DEFAULT_WIDTH = 854;
+    private static final int DEFAULT_HEIGHT = 480;
+    private static final int HUD_WIDTH = 1280;
+    private static final int HUD_HEIGHT = 720;
+    private static final int MIN_SIZE = 32;
+    private static final int MAX_WIDTH = 3840;
+    private static final int MAX_HEIGHT = 2160;
 
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_DATAPACK_UIS = (ctx, builder) ->
             SharedSuggestionProvider.suggestResource(EnderFrameDataPackManager.getAvailableShortIds(), builder);
@@ -42,157 +54,188 @@ public class EnderFrameCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("enderframe")
                 .requires(src -> src.hasPermission(2))
-
-                // 1. /enderframe open
-                .then(Commands.literal("open")
-                        .then(Commands.argument("targets", EntityArgument.players())
-                                .then(Commands.argument("ui_id", ResourceLocationArgument.id())
-                                        .suggests(SUGGEST_DATAPACK_UIS)
-                                        .executes(ctx -> openDatapackUi(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), ResourceLocationArgument.getId(ctx, "ui_id"), "", 0, 0))
-                                        .then(Commands.argument("session_id", StringArgumentType.word())
-                                                .executes(ctx -> openDatapackUi(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), ResourceLocationArgument.getId(ctx, "ui_id"), StringArgumentType.getString(ctx, "session_id"), 0, 0))
-                                                .then(Commands.argument("width", IntegerArgumentType.integer(0, 3840))
-                                                        .then(Commands.argument("height", IntegerArgumentType.integer(0, 2160))
-                                                                .executes(ctx -> openDatapackUi(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), ResourceLocationArgument.getId(ctx, "ui_id"), StringArgumentType.getString(ctx, "session_id"), IntegerArgumentType.getInteger(ctx, "width"), IntegerArgumentType.getInteger(ctx, "height")))
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                )
-
-                // 2. /enderframe open_inline
-                .then(Commands.literal("open_inline")
-                        .then(Commands.argument("targets", EntityArgument.players())
-                                .then(Commands.argument("html", StringArgumentType.greedyString())
-                                        .executes(ctx -> openInlineUi(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), StringArgumentType.getString(ctx, "html")))
-                                )
-                        )
-                )
-
-                // 3. /enderframe hud
-                .then(Commands.literal("hud")
-                        .then(Commands.literal("set")
-                                .then(Commands.argument("targets", EntityArgument.players())
-                                        .then(Commands.argument("ui_id", ResourceLocationArgument.id())
-                                                .suggests(SUGGEST_DATAPACK_UIS)
-                                                .executes(ctx -> setPlayerHud(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), ResourceLocationArgument.getId(ctx, "ui_id")))
-                                        )
-                                )
-                        )
-                        .then(Commands.literal("clear")
-                                .then(Commands.argument("targets", EntityArgument.players())
-                                        .executes(ctx -> clearPlayerHud(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets")))
-                                )
-                        )
-                )
-
-                // 4. /enderframe session
-                .then(Commands.literal("session")
-                        .then(Commands.literal("load")
-                                .then(Commands.argument("session_id", StringArgumentType.string())
-                                        .then(Commands.argument("ui_id", ResourceLocationArgument.id())
-                                                .suggests(SUGGEST_DATAPACK_UIS)
-                                                .executes(ctx -> loadSessionFromDatapack(ctx.getSource(), StringArgumentType.getString(ctx, "session_id"), ResourceLocationArgument.getId(ctx, "ui_id"), 854, 480))
-                                                .then(Commands.argument("width", IntegerArgumentType.integer(32, 3840))
-                                                        .then(Commands.argument("height", IntegerArgumentType.integer(32, 2160))
-                                                                .executes(ctx -> loadSessionFromDatapack(ctx.getSource(), StringArgumentType.getString(ctx, "session_id"), ResourceLocationArgument.getId(ctx, "ui_id"), IntegerArgumentType.getInteger(ctx, "width"), IntegerArgumentType.getInteger(ctx, "height")))
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                        .then(Commands.literal("clear")
-                                .then(Commands.argument("session_id", StringArgumentType.string())
-                                        .executes(ctx -> {
-                                            String sid = StringArgumentType.getString(ctx, "session_id");
-                                            WebSessionManager.removeStandaloneSession(sid);
-                                            ctx.getSource().sendSuccess(() -> Component.literal("Cleared session: " + sid), true);
-                                            return 1;
-                                        })
-                                )
-                        )
-                )
-
-                // 5. /enderframe patch
-                .then(Commands.literal("patch")
-                        .then(buildPatchCommand("text", (s, el, arg) -> s.patchText(el, arg)))
-                        .then(Commands.literal("style")
-                                .then(Commands.argument("session_id", StringArgumentType.string())
-                                        .then(Commands.argument("element_id", StringArgumentType.word())
-                                                .then(Commands.argument("property", StringArgumentType.word())
-                                                        .then(Commands.argument("value", StringArgumentType.greedyString())
-                                                                .executes(ctx -> {
-                                                                    WebSession s = WebSessionManager.getOrCreateStandaloneSession(StringArgumentType.getString(ctx, "session_id"), 854, 480);
-                                                                    s.patchStyle(StringArgumentType.getString(ctx, "element_id"), StringArgumentType.getString(ctx, "property"), StringArgumentType.getString(ctx, "value"));
-                                                                    return 1;
-                                                                })
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                        .then(Commands.literal("attr")
-                                .then(Commands.argument("session_id", StringArgumentType.string())
-                                        .then(Commands.argument("element_id", StringArgumentType.word())
-                                                .then(Commands.argument("attr_name", StringArgumentType.word())
-                                                        .then(Commands.argument("attr_value", StringArgumentType.greedyString())
-                                                                .executes(ctx -> {
-                                                                    WebSession s = WebSessionManager.getOrCreateStandaloneSession(StringArgumentType.getString(ctx, "session_id"), 854, 480);
-                                                                    s.patchAttribute(StringArgumentType.getString(ctx, "element_id"), StringArgumentType.getString(ctx, "attr_name"), StringArgumentType.getString(ctx, "attr_value"), false);
-                                                                    return 1;
-                                                                })
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                        .then(Commands.literal("class")
-                                .then(Commands.argument("session_id", StringArgumentType.string())
-                                        .then(Commands.argument("element_id", StringArgumentType.word())
-                                                .then(Commands.argument("mode", StringArgumentType.word()).suggests(SUGGEST_PATCH_MODES)
-                                                        .then(Commands.argument("class_name", StringArgumentType.greedyString())
-                                                                .executes(ctx -> {
-                                                                    WebSession s = WebSessionManager.getOrCreateStandaloneSession(StringArgumentType.getString(ctx, "session_id"), 854, 480);
-                                                                    s.patchClass(StringArgumentType.getString(ctx, "element_id"), StringArgumentType.getString(ctx, "class_name"), StringArgumentType.getString(ctx, "mode"));
-                                                                    return 1;
-                                                                })
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                        .then(buildPatchCommand("html", (s, el, arg) -> s.patchInnerHtml(el, arg)))
-                )
-
-                // 6. /enderframe publish
-                .then(Commands.literal("publish")
-                        .then(Commands.argument("channel", StringArgumentType.word())
-                                .then(Commands.argument("snbt", StringArgumentType.greedyString())
-                                        .executes(ctx -> publishChannelData(ctx.getSource(), StringArgumentType.getString(ctx, "channel"), StringArgumentType.getString(ctx, "snbt")))
-                                )
-                        )
-                )
-
-                // 7. /enderframe devkit
-                .then(Commands.literal("devkit")
-                        .executes(ctx -> exportBrowserDevKit(ctx.getSource()))
-                )
+                .then(buildOpen())
+                .then(buildOpenInline())
+                .then(buildHud())
+                .then(buildSession())
+                .then(buildPatch())
+                .then(buildPublish())
+                .then(Commands.literal("devkit").executes(ctx -> exportBrowserDevKit(ctx.getSource())))
         );
     }
 
+    private static ArgumentBuilder<CommandSourceStack, ?> buildOpen() {
+        return Commands.literal("open")
+                .then(Commands.argument("targets", EntityArgument.players())
+                        .then(Commands.argument("ui_id", ResourceLocationArgument.id())
+                                .suggests(SUGGEST_DATAPACK_UIS)
+                                .executes(ctx -> openDatapackUi(ctx.getSource(), targets(ctx), uiId(ctx), "", 0, 0))
+                                .then(Commands.argument("session_id", StringArgumentType.word())
+                                        .executes(ctx -> openDatapackUi(ctx.getSource(), targets(ctx), uiId(ctx), str(ctx, "session_id"), 0, 0))
+                                        .then(Commands.argument("width", IntegerArgumentType.integer(0, MAX_WIDTH))
+                                                .then(Commands.argument("height", IntegerArgumentType.integer(0, MAX_HEIGHT))
+                                                        .executes(ctx -> openDatapackUi(ctx.getSource(), targets(ctx), uiId(ctx),
+                                                                str(ctx, "session_id"), num(ctx, "width"), num(ctx, "height")))
+                                                )
+                                        )
+                                )
+                        )
+                );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildOpenInline() {
+        return Commands.literal("open_inline")
+                .then(Commands.argument("targets", EntityArgument.players())
+                        .then(Commands.argument("html", StringArgumentType.greedyString())
+                                .executes(ctx -> openInlineUi(ctx.getSource(), targets(ctx), str(ctx, "html")))
+                        )
+                );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildHud() {
+        return Commands.literal("hud")
+                .then(Commands.literal("set")
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .then(Commands.argument("ui_id", ResourceLocationArgument.id())
+                                        .suggests(SUGGEST_DATAPACK_UIS)
+                                        .executes(ctx -> setPlayerHud(ctx.getSource(), targets(ctx), uiId(ctx)))
+                                )
+                        )
+                )
+                .then(Commands.literal("clear")
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> clearPlayerHud(ctx.getSource(), targets(ctx)))
+                        )
+                );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildSession() {
+        return Commands.literal("session")
+                .then(Commands.literal("load")
+                        .then(Commands.argument("session_id", StringArgumentType.string())
+                                .then(Commands.argument("ui_id", ResourceLocationArgument.id())
+                                        .suggests(SUGGEST_DATAPACK_UIS)
+                                        .executes(ctx -> loadSessionFromDatapack(ctx.getSource(), str(ctx, "session_id"), uiId(ctx),
+                                                DEFAULT_WIDTH, DEFAULT_HEIGHT))
+                                        .then(Commands.argument("width", IntegerArgumentType.integer(MIN_SIZE, MAX_WIDTH))
+                                                .then(Commands.argument("height", IntegerArgumentType.integer(MIN_SIZE, MAX_HEIGHT))
+                                                        .executes(ctx -> loadSessionFromDatapack(ctx.getSource(), str(ctx, "session_id"), uiId(ctx),
+                                                                num(ctx, "width"), num(ctx, "height")))
+                                                )
+                                        )
+                                )
+                        )
+                )
+                .then(Commands.literal("clear")
+                        .then(Commands.argument("session_id", StringArgumentType.string())
+                                .executes(ctx -> clearSession(ctx.getSource(), str(ctx, "session_id")))
+                        )
+                );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildPatch() {
+        return Commands.literal("patch")
+                .then(buildSingleArgPatch("text", (s, el, arg) -> s.patchText(el, arg)))
+                .then(buildSingleArgPatch("html", (s, el, arg) -> s.patchInnerHtml(el, arg)))
+                .then(buildKeyedPatch("style", "property", "value",
+                        (s, el, key, arg) -> s.patchStyle(el, key, arg)))
+                .then(buildKeyedPatch("attr", "attr_name", "attr_value",
+                        (s, el, key, arg) -> s.patchAttribute(el, key, arg, false)))
+                .then(buildKeyedPatch("class", "mode", "class_name", SUGGEST_PATCH_MODES,
+                        (s, el, mode, className) -> s.patchClass(el, className, mode)));
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildPublish() {
+        return Commands.literal("publish")
+                .then(Commands.argument("channel", StringArgumentType.word())
+                        .then(Commands.argument("snbt", StringArgumentType.greedyString())
+                                .executes(ctx -> publishChannelData(ctx.getSource(), str(ctx, "channel"), str(ctx, "snbt")))
+                        )
+                );
+    }
+
+    // ==========================================
+    // 引数取得のヘルパ（Brigadier の呼び出しが長くなるのを避ける）
+    // ==========================================
+
+    private static Collection<ServerPlayer> targets(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        return EntityArgument.getPlayers(ctx, "targets");
+    }
+
+    private static ResourceLocation uiId(CommandContext<CommandSourceStack> ctx) {
+        return ResourceLocationArgument.getId(ctx, "ui_id");
+    }
+
+    private static String str(CommandContext<CommandSourceStack> ctx, String name) {
+        return StringArgumentType.getString(ctx, name);
+    }
+
+    private static int num(CommandContext<CommandSourceStack> ctx, String name) {
+        return IntegerArgumentType.getInteger(ctx, name);
+    }
+
+    /**
+     * {@code session_id} 引数のセッションを取得する。
+     * ID の文字種が不正な場合は失敗メッセージを出して null を返す。
+     */
+    private static WebSession sessionOf(CommandContext<CommandSourceStack> ctx) {
+        String sessionId = str(ctx, "session_id");
+        if (!WebSessionManager.isValidSessionId(sessionId)) {
+            ctx.getSource().sendFailure(Component.literal("Invalid session id: " + sessionId));
+            return null;
+        }
+        return WebSessionManager.getOrCreateStandaloneSession(sessionId, DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    }
+
+    private static int clearSession(CommandSourceStack source, String sessionId) {
+        WebSessionManager.removeStandaloneSession(sessionId);
+        source.sendSuccess(() -> Component.literal("Cleared session: " + sessionId), true);
+        return 1;
+    }
+
+    /** {@code patch <op> <session> <element> <arg>} */
     private interface PatchAction { void apply(WebSession s, String elementId, String arg); }
 
-    private static com.mojang.brigadier.builder.ArgumentBuilder<CommandSourceStack, ?> buildPatchCommand(String name, PatchAction action) {
+    /** {@code patch <op> <session> <element> <key> <arg>} */
+    private interface KeyedPatchAction { void apply(WebSession s, String elementId, String key, String arg); }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildSingleArgPatch(String name, PatchAction action) {
         return Commands.literal(name)
                 .then(Commands.argument("session_id", StringArgumentType.string())
                         .then(Commands.argument("element_id", StringArgumentType.word())
                                 .then(Commands.argument("arg", StringArgumentType.greedyString())
                                         .executes(ctx -> {
-                                            WebSession s = WebSessionManager.getOrCreateStandaloneSession(StringArgumentType.getString(ctx, "session_id"), 854, 480);
-                                            action.apply(s, StringArgumentType.getString(ctx, "element_id"), StringArgumentType.getString(ctx, "arg"));
+                                            WebSession session = sessionOf(ctx);
+                                            if (session == null) return 0;
+                                            action.apply(session, str(ctx, "element_id"), str(ctx, "arg"));
                                             return 1;
                                         })
+                                )
+                        )
+                );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildKeyedPatch(String name, String keyArg, String valueArg, KeyedPatchAction action) {
+        return buildKeyedPatch(name, keyArg, valueArg, null, action);
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildKeyedPatch(
+            String name, String keyArg, String valueArg,
+            SuggestionProvider<CommandSourceStack> keySuggestions, KeyedPatchAction action) {
+        var keyNode = Commands.argument(keyArg, StringArgumentType.word());
+        if (keySuggestions != null) keyNode.suggests(keySuggestions);
+        return Commands.literal(name)
+                .then(Commands.argument("session_id", StringArgumentType.string())
+                        .then(Commands.argument("element_id", StringArgumentType.word())
+                                .then(keyNode
+                                        .then(Commands.argument(valueArg, StringArgumentType.greedyString())
+                                                .executes(ctx -> {
+                                                    WebSession session = sessionOf(ctx);
+                                                    if (session == null) return 0;
+                                                    action.apply(session, str(ctx, "element_id"), str(ctx, keyArg), str(ctx, valueArg));
+                                                    return 1;
+                                                })
+                                        )
                                 )
                         )
                 );
@@ -223,8 +266,14 @@ public class EnderFrameCommands {
                 ? ("dp_ui_" + uiId.getNamespace() + "_" + uiId.getPath().replace('/', '_'))
                 : customSessionId;
 
+        if (!WebSessionManager.isValidSessionId(sessionId)) {
+            source.sendFailure(Component.literal("Invalid session id: " + sessionId));
+            return 0;
+        }
+
         if (html != null) {
-            WebSession session = WebSessionManager.getOrCreateStandaloneSession(sessionId, w > 0 ? w : 854, h > 0 ? h : 480);
+            WebSession session = WebSessionManager.getOrCreateStandaloneSession(
+                    sessionId, w > 0 ? w : DEFAULT_WIDTH, h > 0 ? h : DEFAULT_HEIGHT);
             session.loadHtml(html);
         }
 
@@ -244,7 +293,7 @@ public class EnderFrameCommands {
 
     private static int openInlineUi(CommandSourceStack source, Collection<ServerPlayer> targets, String html) {
         String sessionId = "inline_ui_" + Math.abs(html.hashCode());
-        WebSession session = WebSessionManager.getOrCreateStandaloneSession(sessionId, 854, 480);
+        WebSession session = WebSessionManager.getOrCreateStandaloneSession(sessionId, DEFAULT_WIDTH, DEFAULT_HEIGHT);
         session.loadHtml(html);
 
         CompoundTag payload = new CompoundTag();
@@ -264,7 +313,7 @@ public class EnderFrameCommands {
         String sessionId = "hud_" + uiId.getNamespace() + "_" + uiId.getPath().replace('/', '_');
 
         if (html != null) {
-            WebSession session = WebSessionManager.getOrCreateStandaloneSession(sessionId, 1280, 720);
+            WebSession session = WebSessionManager.getOrCreateStandaloneSession(sessionId, HUD_WIDTH, HUD_HEIGHT);
             session.loadHtml(html);
         }
 
@@ -290,6 +339,10 @@ public class EnderFrameCommands {
 
     private static int loadSessionFromDatapack(CommandSourceStack source, String sessionId, ResourceLocation uiId, int w, int h) {
         String html = resolveServerHtml(uiId);
+        if (!WebSessionManager.isValidSessionId(sessionId)) {
+            source.sendFailure(Component.literal("Invalid session id: " + sessionId));
+            return 0;
+        }
         if (html == null) {
             source.sendFailure(Component.literal("Datapack UI not found: " + uiId + " (Place at data/" + uiId.getNamespace() + "/enderframe_ui/" + uiId.getPath() + ".html)"));
             return 0;

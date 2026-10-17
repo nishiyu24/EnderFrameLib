@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@org.jetbrains.annotations.ApiStatus.Internal
 public class HtmlNode {
     private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
 

@@ -8,6 +8,7 @@ import java.util.List;
 /**
  * ワールド内に配置されるマルチブロックスクリーン用の共通インターフェース
  */
+@org.jetbrains.annotations.ApiStatus.AvailableSince("1.0")
 public interface IWebScreenBlockEntity {
     boolean isMaster();
     BlockPos getScreenMasterPos();

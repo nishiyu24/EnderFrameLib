@@ -15,12 +15,15 @@ import com.nishiyu.enderframelib.api.config.EnderConfig;
 )
 public class EnderFrameBuiltInConfig {
 
+    // 設定値はリフレクションで書き込まれ、レンダースレッドなど別のスレッドから読まれる。
+    // volatile でないと読み側に happens-before の保証が無い（EnderConfigManager の Javadoc 参照）
+
     @ConfigEntry(
             category = "Rendering",
             label = "Use SDF Shader",
             description = "Enable hardware-accelerated Signed Distance Field (SDF) rendering for anti-aliased rounded corners and borders."
     )
-    public static boolean useSdfShader = true;
+    public static volatile boolean useSdfShader = true;
 
     @ConfigEntry(
             category = "Rendering",
@@ -28,14 +31,14 @@ public class EnderFrameBuiltInConfig {
             description = "Primary accent color used across default Web UI components.",
             colorPicker = true
     )
-    public static int accentColor = 0x89B4FA;
+    public static volatile int accentColor = 0x89B4FA;
 
     @ConfigEntry(
             category = "Interaction",
             label = "Enable Default UI Sounds",
             description = "Play standard click sounds when interacting with buttons, selects, and toggles."
     )
-    public static boolean enableDefaultUiSounds = true;
+    public static volatile boolean enableDefaultUiSounds = true;
 
     @ConfigEntry(
             category = "Interaction",
@@ -46,7 +49,7 @@ public class EnderFrameBuiltInConfig {
             step = 5,
             slider = true
     )
-    public static int scrollSensitivity = 30;
+    public static volatile int scrollSensitivity = 30;
 
     @ConfigEntry(
             category = "Developer Tools",
@@ -54,7 +57,7 @@ public class EnderFrameBuiltInConfig {
             description = "Built-in CSS stylesheet applied when no theme is specified.",
             options = {"enderframelib:dark.css", "enderframelib:vanilla.css", "enderframelib:brass.css"}
     )
-    public static String defaultTheme = "enderframelib:dark.css";
+    public static volatile String defaultTheme = "enderframelib:dark.css";
 
     /**
      * クライアント起動時に EnderFrameClientInit からバインドされるランタイム反映フック。

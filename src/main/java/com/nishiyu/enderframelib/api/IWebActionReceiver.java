@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
  * クライアント画面の <button onclick="server:action_name"> や sendServerAction(...) を
  * カスタムパケット定義なしで直接受信するためのインターフェース
  */
+@org.jetbrains.annotations.ApiStatus.AvailableSince("1.0")
 public interface IWebActionReceiver {
 
     /**
