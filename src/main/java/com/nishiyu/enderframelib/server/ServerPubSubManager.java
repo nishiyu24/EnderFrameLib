@@ -17,6 +17,7 @@ public class ServerPubSubManager {
     private static final Map<String, Set<ServerPlayer>> subscribers = new ConcurrentHashMap<>();
 
     public static void subscribe(ServerPlayer player, String channel) {
+        if (player == null || channel == null || channel.isEmpty()) return;
         subscribers.computeIfAbsent(channel, k -> new CopyOnWriteArraySet<>()).add(player);
         if (channelData.containsKey(channel)) {
             PacketDistributor.sendToPlayer(player, new PubSubUpdateS2CPacket(channel, true, channelData.get(channel)));
@@ -24,18 +25,24 @@ public class ServerPubSubManager {
     }
 
     public static void unsubscribe(ServerPlayer player, String channel) {
+        if (player == null || channel == null || channel.isEmpty()) return;
         Set<ServerPlayer> subs = subscribers.get(channel);
-        if (subs != null) subs.remove(player);
+        if (subs != null) {
+            subs.remove(player);
+            if (subs.isEmpty()) {
+                subscribers.remove(channel);
+            }
+        }
     }
 
     public static void removePlayerAll(ServerPlayer player) {
         if (player == null) return;
-        for (Set<ServerPlayer> subs : subscribers.values()) {
-            subs.removeIf(p -> p == player || p.getUUID().equals(player.getUUID()));
-        }
+        subscribers.values().forEach(subs -> subs.remove(player));
+        subscribers.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     public static void publish(String channel, Map<String, Object> newData) {
+        if (channel == null || newData == null) return;
         Map<String, Object> current = channelData.computeIfAbsent(channel, k -> new ConcurrentHashMap<>());
         Map<String, Object> diff = new HashMap<>();
 

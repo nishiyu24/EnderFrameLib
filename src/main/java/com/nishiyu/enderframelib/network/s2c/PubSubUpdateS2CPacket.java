@@ -7,7 +7,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, Object> diffData) implements CustomPacketPayload {
@@ -66,27 +68,22 @@ public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, 
     private static void writeValue(FriendlyByteBuf buf, Object value) {
         switch (value) {
             case null -> buf.writeByte(0);
-            case String s -> {
-                buf.writeByte(1);
-                buf.writeUtf(s);
-            }
-            case Integer i -> {
-                buf.writeByte(2);
-                buf.writeVarInt(i);
-            }
-            case Double d -> {
-                buf.writeByte(3);
-                buf.writeDouble(d);
-            }
-            case Boolean b -> {
-                buf.writeByte(4);
-                buf.writeBoolean(b);
-            }
+            case String s -> { buf.writeByte(1); buf.writeUtf(s); }
+            case Integer i -> { buf.writeByte(2); buf.writeVarInt(i); }
+            case Double d -> { buf.writeByte(3); buf.writeDouble(d); }
+            case Boolean b -> { buf.writeByte(4); buf.writeBoolean(b); }
             case Map<?, ?> m -> {
                 buf.writeByte(5);
                 @SuppressWarnings("unchecked")
                 Map<String, Object> map = (Map<String, Object>) m;
                 writeMap(buf, map);
+            }
+            case Long l -> { buf.writeByte(6); buf.writeLong(l); }
+            case Float f -> { buf.writeByte(7); buf.writeFloat(f); }
+            case List<?> list -> {
+                buf.writeByte(8);
+                buf.writeVarInt(list.size());
+                for (Object o : list) writeValue(buf, o);
             }
             default -> {
                 buf.writeByte(1);
@@ -103,6 +100,14 @@ public record PubSubUpdateS2CPacket(String channel, boolean isFull, Map<String, 
             case 3 -> buf.readDouble();
             case 4 -> buf.readBoolean();
             case 5 -> readMap(buf);
+            case 6 -> buf.readLong();
+            case 7 -> buf.readFloat();
+            case 8 -> {
+                int size = buf.readVarInt();
+                List<Object> list = new ArrayList<>(size);
+                for (int i = 0; i < size; i++) list.add(readValue(buf));
+                yield list;
+            }
             default -> null;
         };
     }

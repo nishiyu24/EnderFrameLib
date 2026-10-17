@@ -6,11 +6,34 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CssParser {
     private static final Pattern CSS_PATTERN = Pattern.compile("([^{]+)\\{([^}]+)}");
+    private static final Pattern GRADIENT_COLOR_PATTERN = Pattern.compile("(#([0-9a-f]{3,8})|rgba?\\([^)]+\\)|hsla?\\([^)]+\\))");
+    private static final Pattern RGBA_PATTERN = Pattern.compile("rgba?\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)");
+    private static final Pattern HSLA_PATTERN = Pattern.compile("hsla?\\s*\\(\\s*([-\\d.]+)(?:deg)?\\s*,\\s*([\\d.]+)%\\s*,\\s*([\\d.]+)%(?:\\s*,\\s*([\\d.]+))?\\s*\\)");
+    private static final Pattern VAR_PATTERN = Pattern.compile("var\\(\\s*(--[\\w-]+)(?:\\s*,\\s*([^)]+))?\\s*\\)");
+    private static final Pattern COMMENT_PATTERN = Pattern.compile("(?s)/\\*.*?\\*/");
+    private static final Pattern FONT_FACE_PATTERN = Pattern.compile("(?is)@font-face\\s*\\{[^}]*}");
+    private static final Pattern MAX_WIDTH_MEDIA_PATTERN = Pattern.compile("max-width:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MIN_WIDTH_MEDIA_PATTERN = Pattern.compile("min-width:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_SELECTOR_PATTERN = Pattern.compile(":not\\(([^)]+)\\)");
+    private static final Pattern NTH_CHILD_PATTERN = Pattern.compile(":nth-child\\(([^)]+)\\)");
+    private static final Pattern ATTR_SELECTOR_PATTERN = Pattern.compile("\\[([^]=^*$~|]+)(?:([^*$=~|]?=)[\\\"']?([^]\\\"']*)[\\\"']?)?]");
+    private static final Pattern BRACKET_STRIP_PATTERN = Pattern.compile("\\[.*?]");
+    private static final Pattern SPEC_CLEAN_PATTERN = Pattern.compile("[#.\\[:].*");
+    private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
+
+    private static final Set<String> INHERITABLE_PROPS = Set.of(
+            "color", "text-align", "font-family", "font-size", "line-height", "text-transform", "font-weight"
+    );
+    private static final String[] DIRECTIONS = {"top", "right", "bottom", "left"};
+
+    public static Consumer<String> fontFaceCallback = null;
 
     public static int parseColor(String c) {
         if (c == null || c.isEmpty()) return 0x00000000;
@@ -18,20 +41,31 @@ public class CssParser {
         c = c.toLowerCase().trim();
 
         if (c.startsWith("linear-gradient") || c.startsWith("radial-gradient")) {
-            Matcher m = Pattern.compile("(#([0-9a-f]{3,8})|rgba?\\([^)]+\\))").matcher(c);
+            Matcher m = GRADIENT_COLOR_PATTERN.matcher(c);
             if (m.find()) return parseColor(m.group(1));
             return 0xFF555555;
         }
 
         if (c.startsWith("rgba") || c.startsWith("rgb")) {
-            Matcher m = Pattern.compile("rgba?\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)").matcher(c);
+            Matcher m = RGBA_PATTERN.matcher(c);
             if (m.find()) {
-                int r = Integer.parseInt(m.group(1));
-                int g = Integer.parseInt(m.group(2));
-                int b = Integer.parseInt(m.group(3));
-                float a = m.group(4) != null ? Float.parseFloat(m.group(4)) : 1.0f;
+                int r = Math.clamp(Integer.parseInt(m.group(1)), 0, 255);
+                int g = Math.clamp(Integer.parseInt(m.group(2)), 0, 255);
+                int b = Math.clamp(Integer.parseInt(m.group(3)), 0, 255);
+                float a = m.group(4) != null ? Math.clamp(Float.parseFloat(m.group(4)), 0f, 1f) : 1.0f;
                 int alpha = (int) (a * 255);
                 return (alpha << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+
+        if (c.startsWith("hsla") || c.startsWith("hsl")) {
+            Matcher m = HSLA_PATTERN.matcher(c);
+            if (m.find()) {
+                float h = Float.parseFloat(m.group(1));
+                float s = Math.clamp(Float.parseFloat(m.group(2)) / 100.0f, 0f, 1f);
+                float l = Math.clamp(Float.parseFloat(m.group(3)) / 100.0f, 0f, 1f);
+                float a = m.group(4) != null ? Math.clamp(Float.parseFloat(m.group(4)), 0f, 1f) : 1.0f;
+                return hslToArgb(h, s, l, a);
             }
         }
 
@@ -47,6 +81,20 @@ public class CssParser {
             case "white" -> 0xFFFFFF;
             case "gray", "grey" -> 0xAAAAAA;
             case "darkgray", "darkgrey" -> 0x555555;
+            case "lightgray", "lightgrey", "silver" -> 0xD3D3D3;
+            case "coral" -> 0xFF7F50;
+            case "crimson" -> 0xDC143C;
+            case "dodgerblue" -> 0x1E90FF;
+            case "skyblue" -> 0x87CEEB;
+            case "teal" -> 0x008080;
+            case "indigo" -> 0x4B0082;
+            case "violet" -> 0xEE82EE;
+            case "pink" -> 0xFFC0CB;
+            case "salmon" -> 0xFA8072;
+            case "tomato" -> 0xFF6347;
+            case "turquoise" -> 0x40E0D0;
+            case "wheat" -> 0xF5DEB3;
+            case "rebeccapurple" -> 0x663399;
             default -> {
                 if (c.startsWith("#")) {
                     try {
@@ -70,11 +118,30 @@ public class CssParser {
         return (c.length() == 9 && c.startsWith("#")) ? rgb : (0xFF000000 | rgb);
     }
 
+    private static int hslToArgb(float h, float s, float l, float a) {
+        h = ((h % 360.0f) + 360.0f) % 360.0f;
+        float c = (1.0f - Math.abs(2.0f * l - 1.0f)) * s;
+        float x = c * (1.0f - Math.abs(((h / 60.0f) % 2.0f) - 1.0f));
+        float m = l - c / 2.0f;
+        float r1 = 0, g1 = 0, b1 = 0;
+        if (h < 60) { r1 = c; g1 = x; }
+        else if (h < 120) { r1 = x; g1 = c; }
+        else if (h < 180) { g1 = c; b1 = x; }
+        else if (h < 240) { g1 = x; b1 = c; }
+        else if (h < 300) { r1 = x; b1 = c; }
+        else { r1 = c; b1 = x; }
+        int r = Math.clamp(Math.round((r1 + m) * 255.0f), 0, 255);
+        int g = Math.clamp(Math.round((g1 + m) * 255.0f), 0, 255);
+        int b = Math.clamp(Math.round((b1 + m) * 255.0f), 0, 255);
+        int alpha = Math.clamp(Math.round(a * 255.0f), 0, 255);
+        return (alpha << 24) | (r << 16) | (g << 8) | b;
+    }
+
     public static int parseDim(String val, int maxPixels, int rootW, int rootH) {
         if (val == null || val.equals("auto")) return 0;
         val = val.trim();
 
-        if (val.startsWith("clamp(")) {
+        if (val.startsWith("clamp(") && val.endsWith(")")) {
             String inner = val.substring(6, val.length() - 1);
             String[] args = inner.split(",");
             if (args.length == 3) {
@@ -92,13 +159,11 @@ public class CssParser {
 
         try {
             if (val.endsWith("px")) return (int) Float.parseFloat(val.substring(0, val.length() - 2));
-            if (val.endsWith("%")) return (int) (maxPixels * Float.parseFloat(val.replace("%", "")) / 100f);
-            if (val.endsWith("vw")) return (int) (rootW * Float.parseFloat(val.replace("vw", "")) / 100f);
-            if (val.endsWith("vh")) return (int) (rootH * Float.parseFloat(val.replace("vh", "")) / 100f);
-            if (val.endsWith("rem") || val.endsWith("em")) {
-                float v = Float.parseFloat(val.replaceAll("[a-z]", ""));
-                return (int) (16 * v);
-            }
+            if (val.endsWith("%")) return (int) (maxPixels * Float.parseFloat(val.substring(0, val.length() - 1)) / 100f);
+            if (val.endsWith("vw")) return (int) (rootW * Float.parseFloat(val.substring(0, val.length() - 2)) / 100f);
+            if (val.endsWith("vh")) return (int) (rootH * Float.parseFloat(val.substring(0, val.length() - 2)) / 100f);
+            if (val.endsWith("rem")) return (int) (16 * Float.parseFloat(val.substring(0, val.length() - 3)));
+            if (val.endsWith("em")) return (int) (16 * Float.parseFloat(val.substring(0, val.length() - 2)));
             return (int) Float.parseFloat(val);
         } catch (Exception ignored) {
         }
@@ -150,11 +215,12 @@ public class CssParser {
                 } else if ((ch >= '0' && ch <= '9') || ch == '.') {
                     while ((ch >= '0' && ch <= '9') || ch == '.') nextChar();
                     String numStr = str.substring(startPos, this.pos);
-                    String unit = "";
+                    StringBuilder unitSb = new StringBuilder();
                     while ((ch >= 'a' && ch <= 'z') || ch == '%') {
-                        unit += (char) ch;
+                        unitSb.append((char) ch);
                         nextChar();
                     }
+                    String unit = unitSb.toString();
                     try {
                         float val = Float.parseFloat(numStr);
                         x = switch (unit) {
@@ -177,7 +243,7 @@ public class CssParser {
 
     public static String[] parseBoxEdgesStr(String val) {
         if (val == null) return new String[]{"0", "0", "0", "0"};
-        String[] parts = val.trim().split("\\s+");
+        String[] parts = WHITESPACE_SPLIT.split(val.trim());
         String[] edges = new String[4];
         if (parts.length == 1) {
             edges[0] = edges[1] = edges[2] = edges[3] = parts[0];
@@ -212,8 +278,7 @@ public class CssParser {
         }
 
         Map<String, String> style = new HashMap<>();
-        String[] inheritable = {"color", "text-align", "font-family", "font-size", "line-height", "text-transform", "font-weight"};
-        for (String k : inheritable) {
+        for (String k : INHERITABLE_PROPS) {
             if (inheritedStyle.containsKey(k)) style.put(k, inheritedStyle.get(k));
         }
 
@@ -246,17 +311,16 @@ public class CssParser {
         if (node.attrs.containsKey("style")) {
             String inlineStyle = node.attrs.get("style");
             for (String prop : inlineStyle.split(";")) {
-                if (prop.contains(":")) {
-                    String[] kv = prop.split(":", 2);
-                    String key = kv[0].trim().toLowerCase();
-                    String val = kv[1].trim();
+                int colon = prop.indexOf(':');
+                if (colon > 0) {
+                    String key = prop.substring(0, colon).trim().toLowerCase();
+                    String val = prop.substring(colon + 1).trim();
                     style.put(key, val);
                     style.remove("hover-" + key);
                 }
             }
         }
 
-        Pattern varPattern = Pattern.compile("var\\(\\s*(--[\\w-]+)(?:\\s*,\\s*([^)]+))?\\s*\\)");
         boolean changed;
         int depth = 0;
         do {
@@ -264,7 +328,7 @@ public class CssParser {
             for (Map.Entry<String, String> entry : style.entrySet()) {
                 String val = entry.getValue();
                 if (val != null && val.contains("var(")) {
-                    Matcher vm = varPattern.matcher(val);
+                    Matcher vm = VAR_PATTERN.matcher(val);
                     StringBuilder sb = new StringBuilder();
                     while (vm.find()) {
                         String varName = vm.group(1).trim();
@@ -273,7 +337,7 @@ public class CssParser {
                         if (resolved == null) resolved = sheet.variables.get(varName);
 
                         if (resolved == null && env != null) {
-                            String envKey = varName.replace("--", "");
+                            String envKey = varName.substring(2);
                             if (env.containsKey(envKey)) resolved = env.get(envKey);
                         }
                         if (resolved == null || resolved.isEmpty()) resolved = fallback;
@@ -298,11 +362,10 @@ public class CssParser {
             style.putIfAbsent("border-left", border);
         }
 
-        String[] directions = {"top", "right", "bottom", "left"};
-        for (String dir : directions) {
+        for (String dir : DIRECTIONS) {
             String borderProp = style.get("border-" + dir);
             if (borderProp != null && !borderProp.equals("none")) {
-                String[] parts = borderProp.split("\\s+");
+                String[] parts = WHITESPACE_SPLIT.split(borderProp.trim());
                 if (parts.length > 0) style.putIfAbsent("border-" + dir + "-width", parts[0]);
             }
         }
@@ -344,13 +407,20 @@ public class CssParser {
 
                 if (condition.startsWith("@media")) {
                     boolean conditionMet = false;
-                    Matcher m = Pattern.compile("max-width:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE).matcher(condition);
+                    Matcher m = MAX_WIDTH_MEDIA_PATTERN.matcher(condition);
                     if (m.find()) {
                         int maxWidth = Integer.parseInt(m.group(1));
                         if (rootW <= maxWidth) conditionMet = true;
                     }
-                    if (conditionMet) sb.append(css, contentStart, i);
-                } else {
+                    Matcher minM = MIN_WIDTH_MEDIA_PATTERN.matcher(condition);
+                    if (minM.find()) {
+                        int minWidth = Integer.parseInt(minM.group(1));
+                        if (rootW >= minWidth) conditionMet = true;
+                    }
+                    if (conditionMet && contentStart <= i && i <= len) {
+                        sb.append(css, contentStart, i);
+                    }
+                } else if (contentStart <= i && i <= len) {
                     sb.append(css, blockStart, contentStart - 1);
                     sb.append("{").append(css, contentStart, i).append("}");
                 }
@@ -366,7 +436,12 @@ public class CssParser {
     public static StyleSheet parse(String css, int rootW) {
         StyleSheet sheet = new StyleSheet();
         if (css == null || css.isEmpty()) return sheet;
-        css = css.replaceAll("(?s)/\\*.*?\\*/", "");
+        css = COMMENT_PATTERN.matcher(css).replaceAll("");
+
+        if (fontFaceCallback != null && css.toLowerCase().contains("@font-face")) {
+            fontFaceCallback.accept(css);
+        }
+        css = FONT_FACE_PATTERN.matcher(css).replaceAll("");
         css = processAtRules(css, rootW);
 
         int kfIdx = 0;
@@ -407,10 +482,10 @@ public class CssParser {
             String propertiesStr = m.group(2).trim();
             Map<String, String> properties = new HashMap<>();
             for (String prop : propertiesStr.split(";")) {
-                if (prop.contains(":")) {
-                    String[] kv = prop.split(":", 2);
-                    String key = kv[0].trim().toLowerCase();
-                    String val = kv[1].trim();
+                int colon = prop.indexOf(':');
+                if (colon > 0) {
+                    String key = prop.substring(0, colon).trim().toLowerCase();
+                    String val = prop.substring(colon + 1).trim();
 
                     properties.put(key, val);
                     if (key.startsWith("--") && selectorsStr.contains(":root")) {
@@ -437,6 +512,9 @@ public class CssParser {
         String id = null;
         List<String> classes = new ArrayList<>();
         Map<String, String> requiredAttrs = new HashMap<>();
+        Map<String, String> prefixAttrs = new HashMap<>();
+        Map<String, String> suffixAttrs = new HashMap<>();
+        Map<String, String> containsAttrs = new HashMap<>();
         List<String> requiredExistsAttrs = new ArrayList<>();
         List<SelectorToken> notSelectors = new ArrayList<>();
         boolean isHover = false;
@@ -445,12 +523,15 @@ public class CssParser {
         boolean parsedFocus = false;
         boolean isChecked = false;
         boolean isDisabled = false;
-        int nthChild = -1;
+        boolean isFirstChild = false;
+        boolean isLastChild = false;
+        boolean isEmpty = false;
+        int nthChild = -1; // >0 = specific 1-based index, -2 = odd, -3 = even
 
         SelectorToken(String sel) {
             this.rawSelector = sel;
 
-            Matcher notMatcher = Pattern.compile(":not\\(([^)]+)\\)").matcher(sel);
+            Matcher notMatcher = NOT_SELECTOR_PATTERN.matcher(sel);
             while (notMatcher.find()) {
                 String notSel = notMatcher.group(1).trim();
                 notSelectors.add(new SelectorToken(notSel));
@@ -465,6 +546,10 @@ public class CssParser {
                 parsedActive = true;
                 sel = sel.replace(":active", "");
             }
+            if (sel.contains(":focus-visible")) {
+                parsedFocus = true;
+                sel = sel.replace(":focus-visible", "");
+            }
             if (sel.contains(":focus")) {
                 parsedFocus = true;
                 sel = sel.replace(":focus", "");
@@ -477,23 +562,50 @@ public class CssParser {
                 isDisabled = true;
                 sel = sel.replace(":disabled", "");
             }
+            if (sel.contains(":first-child")) {
+                isFirstChild = true;
+                sel = sel.replace(":first-child", "");
+            }
+            if (sel.contains(":last-child")) {
+                isLastChild = true;
+                sel = sel.replace(":last-child", "");
+            }
+            if (sel.contains(":empty")) {
+                isEmpty = true;
+                sel = sel.replace(":empty", "");
+            }
             if (sel.contains(":nth-child")) {
-                Matcher m = Pattern.compile(":nth-child\\((\\d+)\\)").matcher(sel);
+                Matcher m = NTH_CHILD_PATTERN.matcher(sel);
                 if (m.find()) {
-                    nthChild = Integer.parseInt(m.group(1));
+                    String arg = m.group(1).trim().toLowerCase();
+                    if ("odd".equals(arg) || "2n+1".equals(arg)) {
+                        nthChild = -2;
+                    } else if ("even".equals(arg) || "2n".equals(arg)) {
+                        nthChild = -3;
+                    } else {
+                        try { nthChild = Integer.parseInt(arg); } catch (Exception ignored) {}
+                    }
                     sel = m.replaceAll("");
                 }
             }
 
-            Matcher attrMatcher = Pattern.compile("\\[([^]=]+)(?:=[\"']?([^]\"']+)[\"']?)?]").matcher(sel);
+            Matcher attrMatcher = ATTR_SELECTOR_PATTERN.matcher(sel);
             while (attrMatcher.find()) {
-                if (attrMatcher.group(2) != null) {
-                    requiredAttrs.put(attrMatcher.group(1), attrMatcher.group(2));
+                String attrKey = attrMatcher.group(1).trim();
+                String op = attrMatcher.group(2);
+                String attrVal = attrMatcher.group(3);
+                if (op != null && attrVal != null) {
+                    switch (op) {
+                        case "^=" -> prefixAttrs.put(attrKey, attrVal);
+                        case "$=" -> suffixAttrs.put(attrKey, attrVal);
+                        case "*=" -> containsAttrs.put(attrKey, attrVal);
+                        default -> requiredAttrs.put(attrKey, attrVal);
+                    }
                 } else {
-                    requiredExistsAttrs.add(attrMatcher.group(1));
+                    requiredExistsAttrs.add(attrKey);
                 }
             }
-            sel = sel.replaceAll("\\[.*?]", "");
+            sel = BRACKET_STRIP_PATTERN.matcher(sel).replaceAll("");
 
             if (sel.contains("#")) {
                 int hashIdx = sel.indexOf("#");
@@ -533,6 +645,19 @@ public class CssParser {
                 if (!nodeHovered) return false;
             }
 
+            if (isEmpty) {
+                boolean hasContent = (node.text != null && !node.text.trim().isEmpty());
+                if (!hasContent) {
+                    for (HtmlNode c : node.children) {
+                        if (!c.isPseudoNode && (!c.tag.equals("#text") || (c.text != null && !c.text.trim().isEmpty()))) {
+                            hasContent = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasContent) return false;
+            }
+
             for (String req : requiredExistsAttrs) {
                 if (!node.attrs.containsKey(req)) return false;
             }
@@ -543,16 +668,33 @@ public class CssParser {
                 if (!node.attrs.containsKey(req.getKey())) return false;
                 if (req.getValue() != null && !req.getValue().equals(node.attrs.get(req.getKey()))) return false;
             }
+            for (Map.Entry<String, String> req : prefixAttrs.entrySet()) {
+                String actual = node.attrs.get(req.getKey());
+                if (actual == null || !actual.startsWith(req.getValue())) return false;
+            }
+            for (Map.Entry<String, String> req : suffixAttrs.entrySet()) {
+                String actual = node.attrs.get(req.getKey());
+                if (actual == null || !actual.endsWith(req.getValue())) return false;
+            }
+            for (Map.Entry<String, String> req : containsAttrs.entrySet()) {
+                String actual = node.attrs.get(req.getKey());
+                if (actual == null || !actual.contains(req.getValue())) return false;
+            }
 
-            if (nthChild != -1 && node.parent != null) {
-                int idx = 0;
+            if ((nthChild != -1 || isFirstChild || isLastChild) && node.parent != null) {
+                List<HtmlNode> elementSiblings = new ArrayList<>();
                 for (HtmlNode child : node.parent.children) {
                     if (!child.tag.startsWith("#") && !child.tag.equals("template") && !child.isPseudoNode) {
-                        idx++;
-                        if (child == node) break;
+                        elementSiblings.add(child);
                     }
                 }
-                return idx == nthChild;
+                int idx = elementSiblings.indexOf(node) + 1; // 1-based
+                if (idx <= 0) return false;
+                if (isFirstChild && idx != 1) return false;
+                if (isLastChild && idx != elementSiblings.size()) return false;
+                if (nthChild > 0 && idx != nthChild) return false;
+                if (nthChild == -2 && (idx % 2 == 0)) return false; // odd
+                if (nthChild == -3 && (idx % 2 != 0)) return false; // even
             }
             return true;
         }
@@ -587,9 +729,9 @@ public class CssParser {
         }
 
         private void parseSelectorTokens(String sel) {
-            sel = sel.replaceAll("\\s+", " ")
+            sel = WHITESPACE_SPLIT.matcher(sel).replaceAll(" ")
                     .replace(" > ", ">").replace(" >", ">").replace("> ", ">")
-                    .replaceAll(" \\+ ", "+").replaceAll(" \\+", "+").replaceAll("\\+ ", "+")
+                    .replace(" + ", "+").replace(" +", "+").replace("+ ", "+")
                     .replace(" ~ ", "~").replace(" ~", "~").replace("~ ", "~").trim();
 
             int lastIdx = 0;
@@ -625,15 +767,14 @@ public class CssParser {
 
         private int calculateSpecificity(String sel) {
             int spec = 0;
-            String[] parts = sel.split("\\s+");
+            String[] parts = WHITESPACE_SPLIT.split(sel.trim());
             for (String part : parts) {
-                for (char c : part.toCharArray()) {
+                for (int i = 0; i < part.length(); i++) {
+                    char c = part.charAt(i);
                     if (c == '#') spec += 100;
-                    else if (c == '.') spec += 10;
-                    else if (c == '[') spec += 10;
-                    else if (c == ':') spec += 10;
+                    else if (c == '.' || c == '[' || c == ':') spec += 10;
                 }
-                String cleanPart = part.replaceAll("[#.\\[:].*", "");
+                String cleanPart = SPEC_CLEAN_PATTERN.matcher(part).replaceAll("");
                 if (!cleanPart.isEmpty() && !cleanPart.equals("*")) spec += 1;
             }
             return spec;

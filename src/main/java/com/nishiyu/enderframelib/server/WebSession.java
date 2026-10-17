@@ -89,7 +89,7 @@ public class WebSession {
     }
 
     // ==========================================
-    // 軽量差分パッチ配信 API (DOM全体を再送しない高速更新)
+    // 軽量差分パッチ配信 API
     // ==========================================
 
     public void patchText(String elementId, String newText) {

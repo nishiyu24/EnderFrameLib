@@ -9,10 +9,12 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public record SubscribeC2SPacket(
         String channel,
+        boolean isUnsubscribe,
         boolean needsHud,
         boolean needsTracker,
         double radius,
@@ -29,29 +31,57 @@ public record SubscribeC2SPacket(
     );
 
     public SubscribeC2SPacket(String channel) {
-        this(channel, false, false, 0.0, "", List.of(), List.of());
+        this(channel, false, false, false, 0.0, "", List.of(), List.of());
+    }
+
+    public SubscribeC2SPacket(String channel, boolean isUnsubscribe) {
+        this(channel, isUnsubscribe, false, false, 0.0, "", List.of(), List.of());
     }
 
     public SubscribeC2SPacket(FriendlyByteBuf buf) {
         this(
-                buf.readUtf(),
+                buf.readUtf(256),
                 buf.readBoolean(),
                 buf.readBoolean(),
-                buf.readDouble(),
-                buf.readUtf(),
-                buf.readList(FriendlyByteBuf::readUtf),
-                buf.readList(FriendlyByteBuf::readUtf)
+                buf.readBoolean(),
+                sanitizeRadius(buf.readDouble()),
+                buf.readUtf(64),
+                readLimitedPaths(buf),
+                readLimitedPaths(buf)
         );
     }
 
+    private static double sanitizeRadius(double r) {
+        if (Double.isNaN(r) || Double.isInfinite(r)) return 0.0;
+        return Math.clamp(r, 0.0, 64.0);
+    }
+
+    private static List<String> readLimitedPaths(FriendlyByteBuf buf) {
+        int size = Math.min(buf.readVarInt(), 16); // 最大16パスに制限（DoS対策）
+        List<String> list = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            list.add(buf.readUtf(128)); // パス長も最大128文字に制限
+        }
+        return list;
+    }
+
     public void write(FriendlyByteBuf buf) {
-        buf.writeUtf(channel());
+        buf.writeUtf(channel(), 256);
+        buf.writeBoolean(isUnsubscribe());
         buf.writeBoolean(needsHud());
         buf.writeBoolean(needsTracker());
         buf.writeDouble(radius());
-        buf.writeUtf(targetType());
-        buf.writeCollection(hudNbtPaths(), FriendlyByteBuf::writeUtf);
-        buf.writeCollection(trackerNbtPaths(), FriendlyByteBuf::writeUtf);
+        buf.writeUtf(targetType(), 64);
+        writeLimitedPaths(buf, hudNbtPaths());
+        writeLimitedPaths(buf, trackerNbtPaths());
+    }
+
+    private static void writeLimitedPaths(FriendlyByteBuf buf, List<String> paths) {
+        int size = Math.min(paths.size(), 16);
+        buf.writeVarInt(size);
+        for (int i = 0; i < size; i++) {
+            buf.writeUtf(paths.get(i), 128);
+        }
     }
 
     @Override
@@ -63,10 +93,15 @@ public record SubscribeC2SPacket(
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer serverPlayer) {
                 if (channel() != null && !channel().isEmpty()) {
-                    ServerPubSubManager.subscribe(serverPlayer, channel());
+                    if (isUnsubscribe()) {
+                        ServerPubSubManager.unsubscribe(serverPlayer, channel());
+                    } else {
+                        ServerPubSubManager.subscribe(serverPlayer, channel());
+                    }
                 } else {
-                    // channel が空の場合は AR 購読状態の更新（false/false による購読解除も含む）
-                    ServerPubSubManager.updateArSubscription(serverPlayer, needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths());
+                    ServerPubSubManager.updateArSubscription(
+                            serverPlayer, needsHud(), needsTracker(), radius(), targetType(), hudNbtPaths(), trackerNbtPaths()
+                    );
                 }
             }
         });

@@ -7,8 +7,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class HtmlNode {
+    private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
+
     public String tag;
     public String id = "";
     public List<String> classes = new ArrayList<>();
@@ -33,13 +36,7 @@ public class HtmlNode {
     // ==========================================
 
     public HtmlNode getElementById(String targetId) {
-        if (targetId == null || targetId.isEmpty()) return null;
-        if (targetId.equals(this.id)) return this;
-        for (HtmlNode child : children) {
-            HtmlNode found = child.getElementById(targetId);
-            if (found != null) return found;
-        }
-        return null;
+        return DomUtils.findNodeById(this, targetId);
     }
 
     public Map<String, String> getDataset() {
@@ -53,6 +50,7 @@ public class HtmlNode {
     }
 
     public HtmlNode querySelector(String selector) {
+        if (selector == null || selector.trim().isEmpty()) return null;
         CssParser.StyleRule rule = new CssParser.StyleRule(selector);
         return querySelectorInternal(this, rule);
     }
@@ -67,8 +65,9 @@ public class HtmlNode {
     }
 
     public List<HtmlNode> querySelectorAll(String selector) {
-        CssParser.StyleRule rule = new CssParser.StyleRule(selector);
         List<HtmlNode> results = new ArrayList<>();
+        if (selector == null || selector.trim().isEmpty()) return results;
+        CssParser.StyleRule rule = new CssParser.StyleRule(selector);
         querySelectorAllInternal(this, rule, results);
         return results;
     }
@@ -92,7 +91,7 @@ public class HtmlNode {
         boolean modified = false;
         for (String cn : classNames) {
             if (cn == null) continue;
-            for (String part : cn.trim().split("\\s+")) {
+            for (String part : WHITESPACE_SPLIT.split(cn.trim())) {
                 if (!part.isEmpty() && !this.classes.contains(part)) {
                     this.classes.add(part);
                     modified = true;
@@ -106,7 +105,7 @@ public class HtmlNode {
         boolean modified = false;
         for (String cn : classNames) {
             if (cn == null) continue;
-            for (String part : cn.trim().split("\\s+")) {
+            for (String part : WHITESPACE_SPLIT.split(cn.trim())) {
                 if (this.classes.remove(part)) {
                     modified = true;
                 }
@@ -263,6 +262,11 @@ public class HtmlNode {
         if (this.parent != null) {
             for (HtmlNode sibling : this.parent.children) {
                 sibling.isDirty = true;
+            }
+            HtmlNode p = this.parent;
+            while (p != null) {
+                p.isDirty = true;
+                p = p.parent;
             }
         }
     }

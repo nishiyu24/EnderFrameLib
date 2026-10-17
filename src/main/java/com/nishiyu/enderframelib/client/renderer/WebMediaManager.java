@@ -35,12 +35,11 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class WebMediaManager {
 
@@ -52,6 +51,14 @@ public class WebMediaManager {
     }
 
     public static IExternalVideoContext externalContext = null;
+
+    // 共通非同期メディアI/Oスレッドプール（無制限なスレッド生成を防止）
+    private static final AtomicInteger THREAD_COUNTER = new AtomicInteger(1);
+    private static final ExecutorService MEDIA_IO_EXECUTOR = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "EnderFrameLib-MediaWorker-" + THREAD_COUNTER.getAndIncrement());
+        t.setDaemon(true);
+        return t;
+    });
 
     // ==========================================
     // セキュリティ・ガードレール設定 (大手MODパック基準)
@@ -66,7 +73,7 @@ public class WebMediaManager {
         try {
             URI uri = URI.create(urlString.trim());
             String scheme = uri.getScheme();
-            if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
+            if (scheme == null || (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme))) {
                 return false;
             }
             String host = uri.getHost();
@@ -86,7 +93,7 @@ public class WebMediaManager {
             }
 
             if (blockPrivateNetworkAccess) {
-                if (lowerHost.equals("localhost") || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
+                if ("localhost".equals(lowerHost) || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
                     return false;
                 }
                 InetAddress addr = InetAddress.getByName(host);
@@ -110,9 +117,9 @@ public class WebMediaManager {
 
     public static ImageInfo getImage(String urlString) {
         if (urlString == null || urlString.isEmpty() || !allowExternalMedia) return null;
-        if (IMG_CACHE.containsKey(urlString)) return IMG_CACHE.get(urlString);
-        if (!IMG_DOWNLOADING.containsKey(urlString)) {
-            IMG_DOWNLOADING.put(urlString, true);
+        ImageInfo cached = IMG_CACHE.get(urlString);
+        if (cached != null) return cached;
+        if (IMG_DOWNLOADING.putIfAbsent(urlString, Boolean.TRUE) == null) {
             downloadImageAsync(urlString);
         }
         return null;
@@ -132,7 +139,7 @@ public class WebMediaManager {
     }
 
     private static void downloadImageAsync(String originalUrl) {
-        Thread thread = new Thread(() -> {
+        MEDIA_IO_EXECUTOR.submit(() -> {
             try {
                 String directUrlString = convertToDirectLink(originalUrl);
                 if (!isUrlSafe(directUrlString)) {
@@ -140,7 +147,7 @@ public class WebMediaManager {
                     return;
                 }
 
-                HttpURLConnection conn = (HttpURLConnection) new URL(directUrlString).openConnection();
+                HttpURLConnection conn = (HttpURLConnection) URI.create(directUrlString).toURL().openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(5000);
@@ -154,7 +161,7 @@ public class WebMediaManager {
                         IMG_DOWNLOADING.remove(originalUrl);
                         return;
                     }
-                    conn = (HttpURLConnection) new URL(newUrl).openConnection();
+                    conn = (HttpURLConnection) URI.create(newUrl).toURL().openConnection();
                     conn.setConnectTimeout(5000);
                     conn.setReadTimeout(5000);
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0");
@@ -183,15 +190,15 @@ public class WebMediaManager {
                     NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(baos.toByteArray()));
                     int imgW = nativeImage.getWidth();
                     int imgH = nativeImage.getHeight();
+                    String safeHash = Integer.toUnsignedString(originalUrl.hashCode(), 16);
 
                     Minecraft.getInstance().execute(() -> {
                         DynamicTexture texture = new DynamicTexture(nativeImage);
-                        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("enderframelib", "webimg_" + Math.abs(originalUrl.hashCode()));
+                        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("enderframelib", "webimg_" + safeHash);
                         Minecraft.getInstance().getTextureManager().register(id, texture);
 
                         IMG_CACHE.put(originalUrl, new ImageInfo(id, imgW, imgH));
                         IMG_DOWNLOADING.remove(originalUrl);
-                        // 画像サイズ判明時に ServerImageRegistry へ登録し、待機中の全セッションを自動リフロー
                         ServerImageRegistry.setSize(originalUrl, imgW, imgH);
                     });
                 }
@@ -199,9 +206,6 @@ public class WebMediaManager {
                 IMG_DOWNLOADING.remove(originalUrl);
             }
         });
-        thread.setName("EnderFrameLib-WebImageDownloader");
-        thread.setDaemon(true);
-        thread.start();
     }
 
     // ==========================================
@@ -239,7 +243,7 @@ public class WebMediaManager {
         if (existing != null && (existing.isClosed || existing.isFailed)) {
             ACTIVE_VIDEOS.remove(url);
         }
-        return ACTIVE_VIDEOS.computeIfAbsent(url, (k) -> {
+        return ACTIVE_VIDEOS.computeIfAbsent(url, k -> {
             VideoTexture tex = new VideoTexture(url);
             if (RenderSystem.isOnRenderThread()) {
                 Minecraft.getInstance().getTextureManager().register(tex.textureLocation, tex);
@@ -290,7 +294,7 @@ public class WebMediaManager {
             }
         }
 
-        ACTIVE_VIDEOS.entrySet().removeIf((entry) -> {
+        ACTIVE_VIDEOS.entrySet().removeIf(entry -> {
             VideoTexture tex = entry.getValue();
             if (tex.forceClose) {
                 tex.close();
@@ -345,11 +349,11 @@ public class WebMediaManager {
         YtDlpCache cache = YT_DLP_CACHE.get(youtubeUrl);
         if (cache != null) {
             if (cache.resolvedUrl != null && (now - cache.timestamp < 3600000L)) return cache.resolvedUrl;
-            else if (cache.resolvedUrl == null && (now - cache.timestamp < 60000L)) return null;
+            if (cache.resolvedUrl == null && (now - cache.timestamp < 60000L)) return null;
         }
 
         try {
-            String osName = System.getProperty("os.name").toLowerCase();
+            String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
             String ytDlpFileName = "yt-dlp";
             String downloadUrlStr = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
             if (osName.contains("win")) {
@@ -365,12 +369,12 @@ public class WebMediaManager {
 
             File ytDlpFile = new File(dir, ytDlpFileName);
             if (!ytDlpFile.exists()) {
-                URL downloadUrl = new URL(downloadUrlStr);
+                URL downloadUrl = URI.create(downloadUrlStr).toURL();
                 HttpURLConnection conn = (HttpURLConnection) downloadUrl.openConnection();
                 conn.setRequestProperty("User-Agent", "Mozilla/5.0");
                 conn.setInstanceFollowRedirects(true);
                 try (InputStream in = conn.getInputStream()) {
-                    Files.copy(in, ytDlpFile.toPath(), new CopyOption[]{StandardCopyOption.REPLACE_EXISTING});
+                    Files.copy(in, ytDlpFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
                 ytDlpFile.setExecutable(true);
             }
@@ -387,17 +391,16 @@ public class WebMediaManager {
                     "--extractor-args", "youtube:player_client=android",
                     "--no-warnings", "-g", youtubeUrl
             ).start();
-            Scanner scanner = new Scanner(process.getInputStream(), StandardCharsets.UTF_8);
             String rawUrl = null;
-
-            while (scanner.hasNextLine()) {
-                String line = scanner.nextLine().trim();
-                if (line.startsWith("http")) {
-                    rawUrl = line;
-                    break;
+            try (Scanner scanner = new Scanner(process.getInputStream(), StandardCharsets.UTF_8)) {
+                while (scanner.hasNextLine()) {
+                    String line = scanner.nextLine().trim();
+                    if (line.startsWith("http")) {
+                        rawUrl = line;
+                        break;
+                    }
                 }
             }
-            scanner.close();
             process.waitFor();
 
             if (rawUrl != null && rawUrl.startsWith("http")) {
@@ -416,7 +419,7 @@ public class WebMediaManager {
             if (!targetUrl.contains("youtube.com/watch") && !targetUrl.contains("youtu.be/")) {
                 if (!targetUrl.startsWith("file://") && !targetUrl.contains(":\\") && !targetUrl.startsWith("/") && targetUrl.contains("://")) {
                     if (!isUrlSafe(targetUrl)) return null;
-                    URL url = new URL(targetUrl);
+                    URL url = URI.create(targetUrl).toURL();
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0");
                     conn.setInstanceFollowRedirects(false);
@@ -429,13 +432,11 @@ public class WebMediaManager {
                         return null;
                     }
                     return targetUrl;
-                } else {
-                    return null;
                 }
-            } else {
-                return resolveYouTubeUrlViaYtDlp(targetUrl);
+                return null;
             }
-        } catch (Exception var5) {
+            return resolveYouTubeUrlViaYtDlp(targetUrl);
+        } catch (Exception e) {
             return null;
         }
     }
@@ -447,7 +448,7 @@ public class WebMediaManager {
                 File customLibDir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
                 if (!customLibDir.exists()) customLibDir.mkdirs();
 
-                String osName = System.getProperty("os.name").toLowerCase();
+                String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
                 String libName = "lunex_video";
                 String libFileName;
                 if (osName.contains("win")) libFileName = libName + ".dll";
@@ -457,11 +458,11 @@ public class WebMediaManager {
                 File extractedLib = new File(customLibDir, libFileName);
 
                 try (InputStream in = WebMediaManager.class.getResourceAsStream("/assets/enderframelib/natives/" + libFileName)) {
-                    if (in != null) Files.copy(in, extractedLib.toPath(), new CopyOption[]{StandardCopyOption.REPLACE_EXISTING});
+                    if (in != null) Files.copy(in, extractedLib.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 } catch (Exception ignored) {}
 
                 NativeLibrary.addSearchPath(libName, customLibDir.getAbsolutePath());
-                return (NativeVideoAPI) Native.load(libName, NativeVideoAPI.class);
+                return Native.load(libName, NativeVideoAPI.class);
             } catch (Throwable t) {
                 return null;
             }
@@ -481,11 +482,7 @@ public class WebMediaManager {
         void closeVideo(long var1);
     }
 
-    private static class YtDlpCache {
-        String resolvedUrl;
-        long timestamp;
-        YtDlpCache(String url, long time) { this.resolvedUrl = url; this.timestamp = time; }
-    }
+    private record YtDlpCache(String resolvedUrl, long timestamp) {}
 
     public static class VideoTexture extends AbstractTexture {
         public final String url;
@@ -520,73 +517,72 @@ public class WebMediaManager {
         public VideoTexture(String url) {
             this.url = url;
             this.lastRenderTime = System.currentTimeMillis();
-            this.textureLocation = ResourceLocation.fromNamespaceAndPath("enderframelib", "video_" + Math.abs(url.hashCode()));
+            String safeHash = Integer.toUnsignedString(url.hashCode(), 16);
+            this.textureLocation = ResourceLocation.fromNamespaceAndPath("enderframelib", "video_" + safeHash);
             if (NativeVideoAPI.INSTANCE != null) {
-                new Thread(() -> {
-                    try {
-                        String targetUrl = url;
-                        int atIndex = targetUrl.lastIndexOf("@");
-                        if (atIndex != -1) targetUrl = targetUrl.substring(0, atIndex);
-
-                        if (targetUrl.contains("drive.google.com/file/d/")) {
-                            String[] parts = targetUrl.split("/file/d/");
-                            if (parts.length > 1) {
-                                String id = parts[1].split("/")[0];
-                                targetUrl = "https://drive.google.com/uc?export=download&id=" + id;
-                            }
-                        }
-
-                        targetUrl = WebMediaManager.resolveDirectStreamUrl(targetUrl);
-                        if (targetUrl == null) { this.isFailed = true; return; }
-
-                        if (!targetUrl.contains(".mp4") && targetUrl.startsWith("http") && !targetUrl.contains("googlevideo.com")) {
-                            targetUrl = targetUrl + "#.mp4";
-                        }
-
-                        if (this.isClosed) return;
-
-                        long handle = NativeVideoAPI.INSTANCE.initVideo(new WString(targetUrl));
-                        if (this.isClosed) {
-                            NativeVideoAPI.INSTANCE.closeVideo(handle);
-                            return;
-                        }
-
-                        if (handle != 0L) {
-                            this.nativeHandle = handle;
-                            this.width = NativeVideoAPI.INSTANCE.getVideoWidth(handle);
-                            this.height = NativeVideoAPI.INSTANCE.getVideoHeight(handle);
-                            if (this.width > 0 && this.height > 0) {
-                                this.pixelBuffer = ByteBuffer.allocateDirect(this.width * this.height * 4).order(ByteOrder.nativeOrder());
-                                RenderSystem.recordRenderCall(() -> {
-                                    RenderSystem.bindTexture(this.getId());
-                                    TextureUtil.prepareImage(this.getId(), this.width, this.height);
-                                    this.setFilter(true, false);
-                                    this.isInitialized = true;
-                                });
-                            }
-
-                            if (NativeVideoAPI.INSTANCE.hasAudio(handle) == 1) {
-                                this.hasAudio = true;
-                                this.audioSampleRate = NativeVideoAPI.INSTANCE.getAudioSampleRate(handle);
-                                this.audioChannels = NativeVideoAPI.INSTANCE.getAudioChannels(handle);
-                                this.alFormat = this.audioChannels == 1 ? 4353 : 4355;
-                                this.audioReadBuffer = ByteBuffer.allocateDirect(65536).order(ByteOrder.nativeOrder());
-
-                                RenderSystem.recordRenderCall(() -> {
-                                    try {
-                                        AL10.alGenBuffers(this.alBuffers);
-                                        for (int b : this.alBuffers) this.freeBuffers.add(b);
-                                    } catch (Exception ignored) {}
-                                });
-                            }
-                        } else {
-                            this.isFailed = true;
-                        }
-                    } catch (Throwable t) {
-                        this.isFailed = true;
-                    }
-                }, "Video-Init-Thread").start();
+                MEDIA_IO_EXECUTOR.submit(this::initVideoWorker);
             } else {
+                this.isFailed = true;
+            }
+        }
+
+        private void initVideoWorker() {
+            try {
+                String targetUrl = url;
+                int atIndex = targetUrl.lastIndexOf('@');
+                if (atIndex != -1) targetUrl = targetUrl.substring(0, atIndex);
+
+                targetUrl = convertToDirectLink(targetUrl);
+                targetUrl = WebMediaManager.resolveDirectStreamUrl(targetUrl);
+                if (targetUrl == null) {
+                    this.isFailed = true;
+                    return;
+                }
+
+                if (!targetUrl.contains(".mp4") && targetUrl.startsWith("http") && !targetUrl.contains("googlevideo.com")) {
+                    targetUrl = targetUrl + "#.mp4";
+                }
+
+                if (this.isClosed) return;
+
+                long handle = NativeVideoAPI.INSTANCE.initVideo(new WString(targetUrl));
+                if (this.isClosed) {
+                    NativeVideoAPI.INSTANCE.closeVideo(handle);
+                    return;
+                }
+
+                if (handle != 0L) {
+                    this.nativeHandle = handle;
+                    this.width = NativeVideoAPI.INSTANCE.getVideoWidth(handle);
+                    this.height = NativeVideoAPI.INSTANCE.getVideoHeight(handle);
+                    if (this.width > 0 && this.height > 0) {
+                        this.pixelBuffer = ByteBuffer.allocateDirect(this.width * this.height * 4).order(ByteOrder.nativeOrder());
+                        RenderSystem.recordRenderCall(() -> {
+                            RenderSystem.bindTexture(this.getId());
+                            TextureUtil.prepareImage(this.getId(), this.width, this.height);
+                            this.setFilter(true, false);
+                            this.isInitialized = true;
+                        });
+                    }
+
+                    if (NativeVideoAPI.INSTANCE.hasAudio(handle) == 1) {
+                        this.hasAudio = true;
+                        this.audioSampleRate = NativeVideoAPI.INSTANCE.getAudioSampleRate(handle);
+                        this.audioChannels = NativeVideoAPI.INSTANCE.getAudioChannels(handle);
+                        this.alFormat = this.audioChannels == 1 ? 4353 : 4355;
+                        this.audioReadBuffer = ByteBuffer.allocateDirect(65536).order(ByteOrder.nativeOrder());
+
+                        RenderSystem.recordRenderCall(() -> {
+                            try {
+                                AL10.alGenBuffers(this.alBuffers);
+                                for (int b : this.alBuffers) this.freeBuffers.add(b);
+                            } catch (Exception ignored) {}
+                        });
+                    }
+                } else {
+                    this.isFailed = true;
+                }
+            } catch (Throwable t) {
                 this.isFailed = true;
             }
         }
@@ -605,6 +601,7 @@ public class WebMediaManager {
             }
         }
 
+        @Override
         public void load(@NotNull ResourceManager manager) {}
 
         public void setVolume(float volume) {
@@ -617,8 +614,9 @@ public class WebMediaManager {
 
         public void setPlaybackSpeed(float speed) {
             this.playbackSpeed = speed;
-            if (this.nativeHandle != 0L && NativeVideoAPI.INSTANCE != null)
+            if (this.nativeHandle != 0L && NativeVideoAPI.INSTANCE != null) {
                 NativeVideoAPI.INSTANCE.setVideoSpeed(this.nativeHandle, speed);
+            }
 
             RenderSystem.recordRenderCall(() -> {
                 for (int src : this.alSources) {
@@ -637,13 +635,14 @@ public class WebMediaManager {
 
         public void setPaused(boolean paused) {
             this.isPaused = paused;
-            if (this.nativeHandle != 0L && NativeVideoAPI.INSTANCE != null)
+            if (this.nativeHandle != 0L && NativeVideoAPI.INSTANCE != null) {
                 NativeVideoAPI.INSTANCE.setVideoPaused(this.nativeHandle, paused ? 1 : 0);
+            }
 
             RenderSystem.recordRenderCall(() -> {
                 for (int src : this.alSources) {
                     if (AL10.alIsSource(src)) {
-                        if (!paused && !(this.playbackSpeed <= 0.0F)) AL10.alSourcePlay(src);
+                        if (!paused && this.playbackSpeed > 0.0F) AL10.alSourcePlay(src);
                         else AL10.alSourcePause(src);
                     }
                 }
@@ -681,31 +680,18 @@ public class WebMediaManager {
             for (BlockPos pos : this.activeAudioPositions.keySet()) {
                 List<BlockPos> linked = SCREEN_AUDIO_LINKS.get(pos);
                 if (linked != null && !linked.isEmpty()) {
+                    Minecraft mc = Minecraft.getInstance();
                     for (BlockPos sp : linked) {
-                        Minecraft mc = Minecraft.getInstance();
                         if (mc.level != null && externalContext != null && externalContext.isScreenOrSpeaker(sp)) {
                             if (!newSpeakers.contains(sp)) newSpeakers.add(sp);
                         }
                     }
-                } else {
-                    if (!newSpeakers.contains(pos)) newSpeakers.add(pos);
+                } else if (!newSpeakers.contains(pos)) {
+                    newSpeakers.add(pos);
                 }
             }
 
-            boolean needsRebuild = this.is2DEnabled != needs2D;
-            if (!needsRebuild) {
-                if (this.customSpeakers.size() != newSpeakers.size()) {
-                    needsRebuild = true;
-                } else {
-                    for (int i = 0; i < newSpeakers.size(); i++) {
-                        if (!this.customSpeakers.get(i).equals(newSpeakers.get(i))) {
-                            needsRebuild = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
+            boolean needsRebuild = (this.is2DEnabled != needs2D) || !this.customSpeakers.equals(newSpeakers);
             if (needsRebuild) {
                 this.customSpeakers.clear();
                 this.customSpeakers.addAll(newSpeakers);
@@ -721,20 +707,12 @@ public class WebMediaManager {
                     }
                     this.alSources.clear();
 
-                    if (this.is2DEnabled) {
+                    int totalSources = (this.is2DEnabled ? 1 : 0) + newSpeakers.size();
+                    for (int i = 0; i < totalSources; i++) {
                         int src = AL10.alGenSources();
                         AL10.alSourcef(src, 4106, 1.0F);
                         AL10.alSourcef(src, 4099, Math.clamp(this.playbackSpeed, 0.1F, 2.0F));
                         this.alSources.add(src);
-                    }
-
-                    if (!newSpeakers.isEmpty()) {
-                        for (int i = 0; i < newSpeakers.size(); i++) {
-                            int src = AL10.alGenSources();
-                            AL10.alSourcef(src, 4106, 1.0F);
-                            AL10.alSourcef(src, 4099, Math.clamp(this.playbackSpeed, 0.1F, 2.0F));
-                            this.alSources.add(src);
-                        }
                     }
 
                     this.freeBuffers.clear();
@@ -745,126 +723,126 @@ public class WebMediaManager {
         }
 
         public synchronized void updateFrame() {
-            if (!this.isFailed && !this.isClosed && this.nativeHandle != 0L && this.isRegistered && this.isInitialized && this.pixelBuffer != null) {
-                long currentTime = System.currentTimeMillis();
-                long timeSinceLast = currentTime - this.lastRenderTime;
+            if (this.isFailed || this.isClosed || this.nativeHandle == 0L || !this.isRegistered || !this.isInitialized || this.pixelBuffer == null) {
+                return;
+            }
+            long currentTime = System.currentTimeMillis();
+            long timeSinceLast = currentTime - this.lastRenderTime;
 
-                updateAudioSourcesIfNeeded();
+            updateAudioSourcesIfNeeded();
 
-                if (timeSinceLast > 500L && this.hasAudio && !this.alSources.isEmpty()) {
+            if (timeSinceLast > 500L && this.hasAudio && !this.alSources.isEmpty()) {
+                this.audioReadBuffer.clear();
+                while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) : 0) > 0) {
                     this.audioReadBuffer.clear();
-                    while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) : 0) > 0) {
+                }
+                for (int src : this.alSources) {
+                    if (AL10.alIsSource(src)) {
+                        AL10.alGetError();
+                        AL10.alSourceStop(src);
+                        AL10.alSourcei(src, 4105, 0);
+                    }
+                }
+                this.freeBuffers.clear();
+                for (int b : this.alBuffers) this.freeBuffers.add(b);
+            }
+
+            try {
+                if ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.checkNewFrame(this.nativeHandle) : 0) == 1) {
+                    this.pixelBuffer.clear();
+                    if (NativeVideoAPI.INSTANCE.copyVideoFrame(this.nativeHandle, this.pixelBuffer) == 1) {
+                        RenderSystem.bindTexture(this.getId());
+                        GL11.glBindTexture(3553, this.getId());
+                        GL21.glBindBuffer(35052, 0);
+                        GL11.glPixelStorei(3314, 0);
+                        GL11.glPixelStorei(3316, 0);
+                        GL11.glPixelStorei(3315, 0);
+                        GL11.glPixelStorei(3317, 1);
+                        GL11.glTexSubImage2D(3553, 0, 0, 0, this.width, this.height, 6408, 5121, this.pixelBuffer);
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            if (this.hasAudio && !this.isPaused && this.playbackSpeed > 0.0F && this.audioReadBuffer != null) {
+                if (this.alSources.isEmpty()) {
+                    while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) : 0) > 0) {
                         this.audioReadBuffer.clear();
                     }
-                    for (int src : this.alSources) {
-                        if (AL10.alIsSource(src)) {
-                            AL10.alGetError();
-                            AL10.alSourceStop(src);
-                            AL10.alSourcei(src, 4105, 0);
-                        }
-                    }
-                    this.freeBuffers.clear();
-                    for (int b : this.alBuffers) this.freeBuffers.add(b);
-                }
+                } else {
+                    try {
+                        AL10.alGetError();
+                        Minecraft mc = Minecraft.getInstance();
+                        int sourceIndex = 0;
 
-                try {
-                    if ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.checkNewFrame(this.nativeHandle) : 0) == 1) {
-                        this.pixelBuffer.clear();
-                        if (NativeVideoAPI.INSTANCE.copyVideoFrame(this.nativeHandle, this.pixelBuffer) == 1) {
-                            RenderSystem.bindTexture(this.getId());
-                            GL11.glBindTexture(3553, this.getId());
-                            GL21.glBindBuffer(35052, 0);
-                            GL11.glPixelStorei(3314, 0);
-                            GL11.glPixelStorei(3316, 0);
-                            GL11.glPixelStorei(3315, 0);
-                            GL11.glPixelStorei(3317, 1);
-                            GL11.glTexSubImage2D(3553, 0, 0, 0, this.width, this.height, 6408, 5121, this.pixelBuffer);
+                        if (this.is2DEnabled && sourceIndex < this.alSources.size()) {
+                            int src = this.alSources.get(sourceIndex++);
+                            AL10.alSourcei(src, 514, 1);
+                            AL10.alSource3f(src, 4100, 0.0f, 0.0f, 0.0f);
+                            AL10.alSourcef(src, 4106, 1.0f);
+                            AL10.alSourcef(src, 4128, 2.0F);
+                            AL10.alSourcei(src, 53248, 53252);
                         }
-                    }
-                } catch (Exception ignored) {}
 
-                if (this.hasAudio && !this.isPaused && this.playbackSpeed > 0.0F && this.audioReadBuffer != null) {
-                    if (this.alSources.isEmpty()) {
-                        while ((NativeVideoAPI.INSTANCE != null ? NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) : 0) > 0) {
+                        for (int i = 0; i < this.customSpeakers.size() && sourceIndex < this.alSources.size(); i++) {
+                            int src = this.alSources.get(sourceIndex++);
+                            BlockPos sp = this.customSpeakers.get(i);
+                            AL10.alSourcei(src, 514, 0);
+
+                            float maxDist = (mc.level != null && externalContext != null)
+                                    ? externalContext.getSpeakerMaxDistance(sp) : 10.0f;
+
+                            AL10.alSource3f(src, 4100, sp.getX() + 0.5f, sp.getY() + 0.5f, sp.getZ() + 0.5f);
+
+                            float gain = 0.0f;
+                            if (maxDist > 0.0f && mc.player != null) {
+                                double distance = Math.sqrt(mc.player.blockPosition().distSqr(sp));
+                                if (distance <= maxDist) gain = 1.0f - (float) (distance / maxDist);
+                            }
+                            AL10.alSourcef(src, 4106, gain);
+                            AL10.alSourcef(src, 4128, 2.0F);
+                            AL10.alSourcei(src, 53248, 53252);
+                        }
+
+                        int minProcessed = Integer.MAX_VALUE;
+                        for (int src : this.alSources) {
+                            int processed = AL10.alGetSourcei(src, 4118);
+                            if (processed < minProcessed) minProcessed = processed;
+                        }
+
+                        for (int p = 0; p < minProcessed; p++) {
+                            int unqueued = 0;
+                            for (int src : this.alSources) unqueued = AL10.alSourceUnqueueBuffers(src);
+                            if (unqueued != 0) this.freeBuffers.add(unqueued);
+                        }
+
+                        int chunkSize = 16384;
+                        int frameSize = this.audioChannels * 2;
+
+                        while (!this.freeBuffers.isEmpty()) {
                             this.audioReadBuffer.clear();
+                            int readBytes = NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, chunkSize);
+                            if (readBytes <= 0) break;
+
+                            int validBytes = readBytes - readBytes % frameSize;
+                            if (validBytes > 0) {
+                                this.audioReadBuffer.limit(validBytes);
+                                int bufferId = this.freeBuffers.poll();
+                                AL10.alBufferData(bufferId, this.alFormat, this.audioReadBuffer, this.audioSampleRate);
+                                for (int src : this.alSources) AL10.alSourceQueueBuffers(src, bufferId);
+                            }
                         }
-                    } else {
-                        try {
-                            AL10.alGetError();
-                            Minecraft mc = Minecraft.getInstance();
-                            int sourceIndex = 0;
 
-                            if (this.is2DEnabled && sourceIndex < this.alSources.size()) {
-                                int src = this.alSources.get(sourceIndex++);
-                                AL10.alSourcei(src, 514, 1);
-                                AL10.alSource3f(src, 4100, 0.0f, 0.0f, 0.0f);
-                                AL10.alSourcef(src, 4106, 1.0f);
-                                AL10.alSourcef(src, 4128, 2.0F);
-                                AL10.alSourcei(src, 53248, 53252);
-                            }
-
-                            for (int i = 0; i < this.customSpeakers.size() && sourceIndex < this.alSources.size(); i++) {
-                                int src = this.alSources.get(sourceIndex++);
-                                BlockPos sp = this.customSpeakers.get(i);
-                                AL10.alSourcei(src, 514, 0);
-
-                                float maxDist = 10.0f;
-                                if (mc.level != null && externalContext != null) {
-                                    maxDist = externalContext.getSpeakerMaxDistance(sp);
-                                }
-
-                                AL10.alSource3f(src, 4100, sp.getX() + 0.5f, sp.getY() + 0.5f, sp.getZ() + 0.5f);
-
-                                float gain = 0.0f;
-                                if (maxDist > 0.0f && mc.player != null) {
-                                    double distance = Math.sqrt(mc.player.blockPosition().distSqr(sp));
-                                    if (distance <= maxDist) gain = 1.0f - (float) (distance / maxDist);
-                                }
-                                AL10.alSourcef(src, 4106, gain);
-                                AL10.alSourcef(src, 4128, 2.0F);
-                                AL10.alSourcei(src, 53248, 53252);
-                            }
-
-                            int minProcessed = Integer.MAX_VALUE;
-                            for (int src : this.alSources) {
-                                int processed = AL10.alGetSourcei(src, 4118);
-                                if (processed < minProcessed) minProcessed = processed;
-                            }
-
-                            for (int p = 0; p < minProcessed; p++) {
-                                int unqueued = 0;
-                                for (int src : this.alSources) unqueued = AL10.alSourceUnqueueBuffers(src);
-                                if (unqueued != 0) this.freeBuffers.add(unqueued);
-                            }
-
-                            int chunkSize = 16384;
-                            int frameSize = this.audioChannels * 2;
-
-                            while (!this.freeBuffers.isEmpty()) {
-                                this.audioReadBuffer.clear();
-                                int readBytes = NativeVideoAPI.INSTANCE.fetchAudioData(this.nativeHandle, this.audioReadBuffer, chunkSize);
-                                if (readBytes <= 0) break;
-
-                                int validBytes = readBytes - readBytes % frameSize;
-                                if (validBytes > 0) {
-                                    this.audioReadBuffer.limit(validBytes);
-                                    int bufferId = this.freeBuffers.poll();
-                                    AL10.alBufferData(bufferId, this.alFormat, this.audioReadBuffer, this.audioSampleRate);
-                                    for (int src : this.alSources) AL10.alSourceQueueBuffers(src, bufferId);
-                                }
-                            }
-
-                            for (int src : this.alSources) {
-                                int state = AL10.alGetSourcei(src, 4112);
-                                int queued = AL10.alGetSourcei(src, 4117);
-                                if (state != 4114 && queued > 0) AL10.alSourcePlay(src);
-                            }
-                        } catch (Exception ignored) {}
-                    }
+                        for (int src : this.alSources) {
+                            int state = AL10.alGetSourcei(src, 4112);
+                            int queued = AL10.alGetSourcei(src, 4117);
+                            if (state != 4114 && queued > 0) AL10.alSourcePlay(src);
+                        }
+                    } catch (Exception ignored) {}
                 }
             }
         }
 
+        @Override
         public synchronized void close() {
             if (!this.isClosed) {
                 this.isClosed = true;
@@ -890,15 +868,13 @@ public class WebMediaManager {
                     });
                 }
 
-                Thread cleanupThread = new Thread(() -> {
-                    if (handleToClose != 0L && NativeVideoAPI.INSTANCE != null) {
+                if (handleToClose != 0L && NativeVideoAPI.INSTANCE != null) {
+                    MEDIA_IO_EXECUTOR.submit(() -> {
                         try {
                             NativeVideoAPI.INSTANCE.closeVideo(handleToClose);
                         } catch (Exception ignored) {}
-                    }
-                }, "Video-Cleanup-Thread");
-                cleanupThread.setDaemon(true);
-                cleanupThread.start();
+                    });
+                }
                 super.close();
             }
         }

@@ -1,17 +1,21 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.common.UIParser;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DomUtils {
 
-    private static final List<String> VOID_TAGS = List.of("br", "hr", "img", "input", "meta", "link");
+    private static final Set<String> VOID_TAGS = Set.of("br", "hr", "img", "input", "meta", "link");
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{([a-zA-Z0-9_.:-]+)}}");
+    private static final Pattern WHITESPACE_SPLIT = Pattern.compile("\\s+");
 
     /**
      * クライアント環境では ClientLocalEnvProvider により I18n.get が自動バインドされる。
@@ -22,7 +26,7 @@ public class DomUtils {
     // --- DOM検索・更新系 ---
 
     public static HtmlNode findNodeById(HtmlNode node, String id) {
-        if (node == null || id == null) return null;
+        if (node == null || id == null || id.isEmpty()) return null;
         if (id.equals(node.id)) return node;
         for (HtmlNode child : node.children) {
             HtmlNode found = findNodeById(child, id);
@@ -45,7 +49,7 @@ public class DomUtils {
             if ("class".equals(attrName)) {
                 target.classes.clear();
                 if (!val.trim().isEmpty()) {
-                    target.classes.addAll(Arrays.asList(val.trim().split("\\s+")));
+                    target.classes.addAll(Arrays.asList(WHITESPACE_SPLIT.split(val.trim())));
                 }
             }
             if ("hover".equals(attrName)) target.isHovered = true;
@@ -60,6 +64,32 @@ public class DomUtils {
             updateAttribute(target, attrName, null, true);
         } else {
             updateAttribute(target, attrName, "true", false);
+        }
+    }
+
+    /**
+     * ラジオボタン (input[type="radio"]) を選択状態にし、同一ツリー内で同じ name 属性を持つ他のラジオボタンの選択を解除する。
+     */
+    public static void selectRadioButton(HtmlNode root, HtmlNode selectedRadio) {
+        if (selectedRadio == null) return;
+        String groupName = selectedRadio.attrs.getOrDefault("name", "");
+        if (root != null && !groupName.isEmpty()) {
+            clearRadioGroupRecursive(root, groupName, selectedRadio);
+        }
+        updateAttribute(selectedRadio, "checked", "true", false);
+    }
+
+    private static void clearRadioGroupRecursive(HtmlNode current, String groupName, HtmlNode keepNode) {
+        if (current != keepNode
+                && "input".equalsIgnoreCase(current.tag)
+                && "radio".equalsIgnoreCase(current.attrs.getOrDefault("type", ""))
+                && groupName.equals(current.attrs.get("name"))) {
+            if (current.attrs.containsKey("checked") || current.isChecked) {
+                updateAttribute(current, "checked", null, true);
+            }
+        }
+        for (HtmlNode child : current.children) {
+            clearRadioGroupRecursive(child, groupName, keepNode);
         }
     }
 
@@ -94,7 +124,8 @@ public class DomUtils {
         if (target == null) return;
         target.children.clear();
         if (html != null && !html.trim().isEmpty()) {
-            HtmlNode parsedRoot = HtmlParser.parse(html);
+            String expanded = UIParser.expandCustomTags(html);
+            HtmlNode parsedRoot = HtmlParser.parse(expanded);
             for (HtmlNode child : parsedRoot.children) {
                 child.parent = target;
                 child.isDirty = true;
@@ -159,7 +190,7 @@ public class DomUtils {
             node.classes.clear();
             String cls = node.attrs.get("class").trim();
             if (!cls.isEmpty()) {
-                node.classes.addAll(Arrays.asList(cls.split("\\s+")));
+                node.classes.addAll(Arrays.asList(WHITESPACE_SPLIT.split(cls)));
             }
         }
 
@@ -169,6 +200,7 @@ public class DomUtils {
     }
 
     public static String replacePlaceholders(String text, Map<String, String> data) {
+        if (text == null || !text.contains("{{")) return text != null ? text : "";
         Matcher m = PLACEHOLDER_PATTERN.matcher(text);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {

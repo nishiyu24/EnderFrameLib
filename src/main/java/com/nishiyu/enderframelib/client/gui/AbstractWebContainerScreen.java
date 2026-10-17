@@ -3,9 +3,11 @@ package com.nishiyu.enderframelib.client.gui;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
+import com.nishiyu.enderframelib.client.compat.WebRecipeViewerBridge;
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
+import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;
@@ -20,9 +22,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
@@ -35,7 +35,6 @@ import java.util.function.Consumer;
  * WebStateStore、ラムダ式イベントルーター、<textarea> マルチライン編集、<canvas>、<mc-scene> 3D操作、
  * <select> ドロップダウン、ドラッグ＆ドロップ、バニラ Slot スケーリング完全同期、
  * 1行サーバーRPC送信、JEI/EMI連携ヘルパー、F12 DevTools、F5 ホットリロードを標準内蔵したコンテナ画面基底クラス。
- * UI操作・オーバーレイ描画ロジックは AbstractWebScreen.WebUiScreenSupport と共通化されている。
  */
 public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu> extends AbstractContainerScreen<T> {
 
@@ -105,6 +104,10 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         }
     }
 
+    public String getWebSessionId() {
+        return this.sessionId;
+    }
+
     protected void setHtmlResource(ResourceLocation location) {
         this.htmlResourceLocation = location;
     }
@@ -164,40 +167,44 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         this.uiSupport.sendServerAction(actionName, value);
     }
 
-    /**
-     * JEI / EMI の Exclusion Area（アイテム一覧除外領域）登録にそのまま渡せる画面矩形
-     */
-    public Rect2i getWebViewportBounds() {
-        return new Rect2i(
-                Math.round(this.offsetX),
-                Math.round(this.offsetY),
-                Math.round(this.virtualWidth * this.guiScaleFactor),
-                Math.round(this.virtualHeight * this.guiScaleFactor)
-        );
+    public Rect2i toScreenRect(int webX, int webY, int webW, int webH) {
+        return this.uiSupport.toScreenRect(webX, webY, webW, webH);
     }
 
-    /**
-     * マウスホバー中の Web要素が item:... や fluid:... の場合、JEI/EMIのレシピ表示用に ItemStack / FluidStack を返す
-     */
-    public Object getHoveredWebIngredient(double mouseX, double mouseY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, toWebX(mouseX), toWebY(mouseY));
-        if (hit == null || hit.element() == null || hit.element().text() == null) return null;
-        String src = hit.element().text();
-        if (src.startsWith("item:")) {
-            try {
-                String rawItem = src.substring(5).split("\\*")[0].trim();
-                Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(rawItem));
-                if (item != Items.AIR) return new ItemStack(item);
-            } catch (Exception ignored) {}
-        } else if (src.startsWith("fluid:")) {
-            try {
-                var fluid = BuiltInRegistries.FLUID.get(ResourceLocation.parse(src.substring(6).trim()));
-                if (fluid != net.minecraft.world.level.material.Fluids.EMPTY) {
-                    return new FluidStack(fluid, 1000);
-                }
-            } catch (Exception ignored) {}
+    public Rect2i getWebViewportBounds() {
+        return this.uiSupport.getViewportBounds();
+    }
+
+    public List<Rect2i> getWebExclusionZones() {
+        return WebRecipeViewerBridge.getExclusionZones(this);
+    }
+
+    public List<WebRecipeViewerBridge.GhostDropTarget> getWebGhostTargets() {
+        return WebRecipeViewerBridge.getGhostTargets(this);
+    }
+
+    public void acceptGhostIngredientDrop(String elementId, Object ingredient) {
+        String idStr = "";
+        if (ingredient instanceof ItemStack stack && !stack.isEmpty()) {
+            idStr = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            setAttribute(elementId, "data-ghost-item", idStr);
+            setAttribute(elementId, "data-item", idStr);
+        } else if (ingredient instanceof FluidStack fluidStack && !fluidStack.isEmpty()) {
+            idStr = BuiltInRegistries.FLUID.getKey(fluidStack.getFluid()).toString();
+            setAttribute(elementId, "data-fluid", idStr);
         }
-        return null;
+        if (!idStr.isEmpty()) {
+            HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), elementId);
+            if (node != null && node.attrs.containsKey("data-model")) {
+                this.state.set(node.attrs.get("data-model").trim(), idStr);
+            }
+            sendServerAction("ghost_drop:" + elementId, idStr);
+            onWebGhostDrop(elementId, ingredient, idStr);
+        }
+    }
+
+    public Object getHoveredWebIngredient(double mouseX, double mouseY) {
+        return WebRecipeViewerBridge.resolveIngredientAt(sessionId, toWebX(mouseX), toWebY(mouseY));
     }
 
     public WebCanvasContext getCanvas(String canvasId) {
@@ -212,32 +219,17 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     protected void onWebInputChanged(String elementId, String newText) {}
     protected void onWebInputSubmitted(String elementId, String text) {}
     protected void onWebDrop(String draggedId, String dropTargetId, String dropAction) {}
+    protected void onWebGhostDrop(String elementId, Object ingredient, String resourceId) {}
 
     protected void updateViewportTransform() {
-        if (this.fullscreenResponsive) {
-            float aspect = (this.height > 0) ? ((float) this.width / (float) this.height) : (16.0f / 9.0f);
-            int targetW = Math.max(854, Math.round(480 * aspect));
-            int targetH = Math.max(480, Math.round(targetW / aspect));
-
-            if (this.virtualWidth != targetW || this.virtualHeight != targetH) {
-                this.virtualWidth = targetW;
-                this.virtualHeight = targetH;
-                if (ClientWebManager.hasDocument(sessionId)) {
-                    ClientWebManager.recomputeLayout(sessionId, this.virtualWidth, this.virtualHeight);
-                }
-            }
-        }
-
-        float scaleX = (this.width * viewportMarginRatio) / virtualWidth;
-        float scaleY = (this.height * viewportMarginRatio) / virtualHeight;
-        this.guiScaleFactor = Math.min(scaleX, scaleY);
-        this.offsetX = Math.round((this.width - virtualWidth * guiScaleFactor) / 2.0f);
-        this.offsetY = Math.round((this.height - virtualHeight * guiScaleFactor) / 2.0f);
+        this.uiSupport.updateViewport(this.width, this.height, this.virtualWidth, this.virtualHeight, this.fullscreenResponsive, this.viewportMarginRatio);
+        this.virtualWidth = this.uiSupport.getVirtualWidth();
+        this.virtualHeight = this.uiSupport.getVirtualHeight();
+        this.guiScaleFactor = this.uiSupport.getGuiScaleFactor();
+        this.offsetX = this.uiSupport.getOffsetX();
+        this.offsetY = this.uiSupport.getOffsetY();
     }
 
-    /**
-     * HTML内の <div data-slot="0"> または <slot index="0"> にバニラ Slot を同期する。
-     */
     protected void syncVanillaSlotsToDom() {
         if (this.menu == null || this.menu.slots.isEmpty()) return;
         HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
@@ -292,6 +284,10 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     private boolean isNodeVisibleInDom(HtmlNode node) {
         HtmlNode cur = node;
         while (cur != null) {
+            if (cur.attrs.containsKey("hidden")) return false;
+            if (cur.parent != null && "details".equalsIgnoreCase(cur.parent.tag) && !cur.parent.attrs.containsKey("open") && !"summary".equalsIgnoreCase(cur.tag)) {
+                return false;
+            }
             String style = cur.attrs.getOrDefault("style", "");
             if (style.replaceAll("\\s+", "").toLowerCase().contains("display:none")) return false;
             if (cur.computedStyle != null && "none".equalsIgnoreCase(cur.computedStyle.get("display"))) return false;
@@ -309,11 +305,11 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
     }
 
     protected double toWebX(double mouseX) {
-        return (mouseX - offsetX) / guiScaleFactor;
+        return this.uiSupport.toWebX(mouseX);
     }
 
     protected double toWebY(double mouseY) {
-        return (mouseY - offsetY) / guiScaleFactor;
+        return this.uiSupport.toWebY(mouseY);
     }
 
     protected double toSlotSpaceX(double mouseX) {
@@ -383,10 +379,8 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         updateViewportTransform();
         syncVanillaSlotsToDom();
 
-        // 1. 背景の暗転はフルスクリーン等倍で描画
         super.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
 
-        // 2. Web UI とバニラ Slot・ドラッグ中アイテムを全て同一の guiScaleFactor 空間で描画
         int slotMouseX = (int) Math.round(toSlotSpaceX(mouseX));
         int slotMouseY = (int) Math.round(toSlotSpaceY(mouseY));
 
@@ -404,21 +398,12 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             pose.popPose();
         }
 
-        // 3. ツールチップは実際のスクリーンマウス位置に描画
         this.renderTooltip(guiGraphics, mouseX, mouseY);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-
-        boolean handled = this.uiSupport.handleMouseClicked(
-                this, this.font, webX, webY, button,
-                this::onWebInputChanged,
-                this::onWebAction
-        );
-        if (handled) {
+        if (this.uiSupport.handleMouseClicked(this, this.font, toWebX(mouseX), toWebY(mouseY), button, this::onWebInputChanged, this::onWebAction)) {
             return true;
         }
         return super.mouseClicked(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), button);
@@ -430,9 +415,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        if (this.uiSupport.handleMouseDragged(webX, webY, dragX, dragY, guiScaleFactor, this::onWebInputChanged)) {
+        if (this.uiSupport.handleMouseDragged(toWebX(mouseX), toWebY(mouseY), dragX, dragY, guiScaleFactor, this::onWebInputChanged)) {
             return true;
         }
         return super.mouseDragged(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), button, dragX / guiScaleFactor, dragY / guiScaleFactor);
@@ -440,17 +423,13 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        this.uiSupport.handleMouseReleased(webX, webY, this::onWebDrop);
+        this.uiSupport.handleMouseReleased(toWebX(mouseX), toWebY(mouseY), this::onWebDrop);
         return super.mouseReleased(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), button);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        double webX = toWebX(mouseX);
-        double webY = toWebY(mouseY);
-        if (this.uiSupport.handleMouseScrolled(webX, webY, scrollX, scrollY)) {
+        if (this.uiSupport.handleMouseScrolled(toWebX(mouseX), toWebY(mouseY), scrollX, scrollY)) {
             return true;
         }
         return super.mouseScrolled(toSlotSpaceX(mouseX), toSlotSpaceY(mouseY), scrollX, scrollY);
@@ -466,7 +445,7 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
             reloadWebUI(true);
             return true;
         }
-        if (this.uiSupport.handleKeyPressed(keyCode, scanCode, modifiers, true, this::onWebInputChanged, this::onWebInputSubmitted)) {
+        if (this.uiSupport.handleKeyPressed(this, this.font, keyCode, scanCode, modifiers, true, this::onWebInputChanged, this::onWebInputSubmitted, this::onWebAction)) {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

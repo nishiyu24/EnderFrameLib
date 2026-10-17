@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
@@ -35,8 +36,7 @@ public class ClientLocalEnvProvider {
     private static long lastSnapshotTime = 0;
 
     static {
-        // DomUtils 側の {{i18n:key}} 解決からもクライアントの I18n を安全に呼べるよう登録
-        com.nishiyu.enderframelib.core.dom.DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
+        DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
     }
 
     public static String translateKey(String key) {
@@ -48,12 +48,16 @@ public class ClientLocalEnvProvider {
         }
     }
 
-    /**
-     * 外部MODから独自のローカル変数（例: "mana" -> {{@mana}}）を登録する
-     */
     public static void registerCustomVariable(String key, Supplier<String> supplier) {
+        if (key == null || supplier == null) return;
         String cleanKey = key.startsWith("@") ? key.substring(1) : key;
         CUSTOM_PROVIDERS.put(cleanKey, supplier);
+    }
+
+    public static void clearSession(String sessionId) {
+        if (sessionId != null) {
+            SESSION_LAST_UPDATE.remove(sessionId);
+        }
     }
 
     public static Map<String, String> captureCurrentEnv() {
@@ -122,32 +126,18 @@ public class ClientLocalEnvProvider {
         return CACHED_SNAPSHOT;
     }
 
-    /**
-     * テンプレートツリー（初期状態）に {{@...}} や {{i18n:...}}、data-i18n が含まれている場合、仮想DOMを更新する
-     */
-    public static void tickSessionLocalVariables(String sessionId, HtmlNode templateRoot, HtmlNode virtualRoot) {
-        if (templateRoot == null || virtualRoot == null) return;
-        long now = System.currentTimeMillis();
-        long lastSessionTick = SESSION_LAST_UPDATE.getOrDefault(sessionId, 0L);
-        if (now - lastSessionTick < 100) return;
-        SESSION_LAST_UPDATE.put(sessionId, now);
-
-        Map<String, String> currentEnv = captureCurrentEnv();
-        if (applyLocalVarsRecursive(templateRoot, virtualRoot, currentEnv)) {
-            ClientWebManager.requestRender(sessionId);
-        }
-    }
-
-    private static boolean applyLocalVarsRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> env) {
-        if (origNode == null || vNode == null) return false;
+    public static boolean applyI18nAttributes(HtmlNode vNode) {
+        if (vNode == null) return false;
         boolean changed = false;
 
-        // 1. data-i18n / data-i18n-placeholder / data-i18n-title 属性による多言語解決
         if (vNode.attrs.containsKey("data-i18n")) {
-            String tr = translateKey(vNode.attrs.get("data-i18n").trim());
-            if (!Objects.equals(vNode.getTextContent(), tr)) {
-                vNode.setTextContent(tr);
-                changed = true;
+            String key = vNode.attrs.get("data-i18n").trim();
+            if (!key.isEmpty()) {
+                String tr = translateKey(key);
+                if (!Objects.equals(vNode.getTextContent(), tr)) {
+                    vNode.setTextContent(tr);
+                    changed = true;
+                }
             }
         }
         if (vNode.attrs.containsKey("data-i18n-placeholder")) {
@@ -166,8 +156,26 @@ public class ClientLocalEnvProvider {
                 changed = true;
             }
         }
+        return changed;
+    }
 
-        // 2. テキストの {{@...}} および {{i18n:...}} 解決
+    public static void tickSessionLocalVariables(String sessionId, HtmlNode templateRoot, HtmlNode virtualRoot) {
+        if (templateRoot == null || virtualRoot == null) return;
+        long now = System.currentTimeMillis();
+        long lastSessionTick = SESSION_LAST_UPDATE.getOrDefault(sessionId, 0L);
+        if (now - lastSessionTick < 100) return;
+        SESSION_LAST_UPDATE.put(sessionId, now);
+
+        Map<String, String> currentEnv = captureCurrentEnv();
+        if (applyLocalVarsRecursive(templateRoot, virtualRoot, currentEnv)) {
+            ClientWebManager.requestRender(sessionId);
+        }
+    }
+
+    private static boolean applyLocalVarsRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> env) {
+        if (origNode == null || vNode == null) return false;
+        boolean changed = applyI18nAttributes(vNode);
+
         if (origNode.text != null && (origNode.text.contains("{{@") || origNode.text.contains("{{i18n:"))) {
             String resolved = replaceLocalPlaceholders(origNode.text, env);
             if (!resolved.equals(vNode.text)) {
@@ -177,7 +185,6 @@ public class ClientLocalEnvProvider {
             }
         }
 
-        // 3. 属性の {{@...}} および {{i18n:...}} 解決
         for (String key : new ArrayList<>(origNode.attrs.keySet())) {
             String origVal = origNode.attrs.get(key);
             if (origVal != null && (origVal.contains("{{@") || origVal.contains("{{i18n:"))) {
@@ -200,7 +207,7 @@ public class ClientLocalEnvProvider {
     }
 
     public static String replaceLocalPlaceholders(String text, Map<String, String> env) {
-        if (text == null) return "";
+        if (text == null || !text.contains("{{")) return text != null ? text : "";
         String result = text;
 
         if (result.contains("i18n:")) {

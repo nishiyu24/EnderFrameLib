@@ -24,6 +24,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -39,6 +40,8 @@ public class ServerTargetSyncHandler {
     ) {}
 
     private static final Map<UUID, ArSubscription> SUBSCRIPTIONS = new ConcurrentHashMap<>();
+    // 前回送信した完全な同期データ状態を保持（Diff計算用）
+    private static final Map<UUID, Map<String, Object>> LAST_SYNC_STATE = new ConcurrentHashMap<>();
 
     static {
         NeoForge.EVENT_BUS.addListener(ServerTargetSyncHandler::onPlayerTick);
@@ -47,13 +50,17 @@ public class ServerTargetSyncHandler {
     public static void setSubscription(ServerPlayer player, boolean needsHud, boolean needsTracker, double radius, String targetType, List<String> hudPaths, List<String> trackerPaths) {
         if (!needsHud && !needsTracker) {
             SUBSCRIPTIONS.remove(player.getUUID());
+            LAST_SYNC_STATE.remove(player.getUUID());
         } else {
             SUBSCRIPTIONS.put(player.getUUID(), new ArSubscription(needsHud, needsTracker, Math.min(radius, 64.0), targetType, hudPaths, trackerPaths));
         }
     }
 
     public static void removePlayer(UUID uuid) {
-        if (uuid != null) SUBSCRIPTIONS.remove(uuid);
+        if (uuid != null) {
+            SUBSCRIPTIONS.remove(uuid);
+            LAST_SYNC_STATE.remove(uuid);
+        }
     }
 
     private static void onPlayerTick(PlayerTickEvent.Post event) {
@@ -63,12 +70,12 @@ public class ServerTargetSyncHandler {
         ArSubscription sub = SUBSCRIPTIONS.get(player.getUUID());
         if (sub == null) return;
 
-        Map<String, Object> syncPayload = new HashMap<>();
+        Map<String, Object> currentPayload = new HashMap<>();
 
         if (sub.needsHud() && !sub.hudPaths().isEmpty()) {
             Map<String, Object> targetMap = extractLookTargetData(player, sub.hudPaths());
             if (targetMap != null && !targetMap.isEmpty()) {
-                syncPayload.put("target", targetMap);
+                currentPayload.put("target", targetMap);
             }
         }
 
@@ -86,10 +93,31 @@ public class ServerTargetSyncHandler {
                     trackerMap.put(String.valueOf(le.getId()), entityData);
                 }
             }
-            syncPayload.put("tracker_data", trackerMap);
+            if (!trackerMap.isEmpty()) {
+                currentPayload.put("tracker_data", trackerMap);
+            }
         }
 
-        PacketDistributor.sendToPlayer(player, new PubSubUpdateS2CPacket("ar_sync", true, syncPayload));
+        Map<String, Object> lastPayload = LAST_SYNC_STATE.getOrDefault(player.getUUID(), new HashMap<>());
+        Map<String, Object> diffPayload = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : currentPayload.entrySet()) {
+            if (!Objects.equals(entry.getValue(), lastPayload.get(entry.getKey()))) {
+                diffPayload.put(entry.getKey(), entry.getValue());
+            }
+        }
+        for (String key : lastPayload.keySet()) {
+            if (!currentPayload.containsKey(key)) {
+                diffPayload.put(key, null); // 削除された要素の伝達
+            }
+        }
+
+        // 差分がある場合のみ送信（通信量とクライアント負荷を大幅に削減）
+        if (!diffPayload.isEmpty()) {
+            LAST_SYNC_STATE.put(player.getUUID(), currentPayload);
+            // ar_sync は isFull=false（差分パッチ）として送ることで、クライアント側も差分マージが可能になる
+            PacketDistributor.sendToPlayer(player, new PubSubUpdateS2CPacket("ar_sync", false, diffPayload));
+        }
     }
 
     private static Map<String, Object> extractLookTargetData(ServerPlayer player, List<String> paths) {

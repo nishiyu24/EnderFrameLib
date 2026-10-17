@@ -16,8 +16,9 @@ import org.lwjgl.system.MemoryStack;
 import java.nio.FloatBuffer;
 
 /**
- * Web仮想座標空間(localPos)とスクリーン変換行列(poseMatrix)を分離し、
- * 単色およびグラデーションの角丸・親角丸クリッピングを 1-Quad で正確に描画するSDFシェーダー
+ * Web仮想座標空間(localPos)とスクリーン/ワールド変換行列(poseMatrix)を分離し、
+ * 2D GUI・3Dブロック表面・手持ちアイテム表面の全てにおいて、
+ * 単色およびグラデーションの角丸・親角丸クリッピングを 1-Quad で描画するSDFシェーダー。
  */
 public class WebSdfShader {
 
@@ -47,7 +48,6 @@ public class WebSdfShader {
             out vec4 vColor;
 
             void main() {
-                // Position.xy には変換前の Web 仮想座標がそのまま入るため、uRect / uClipRect と完全一致する
                 vLocalPos = Position.xy;
                 vColor = Color;
                 gl_Position = ProjMat * ModelViewMat * uPoseMat * vec4(Position, 1.0);
@@ -105,23 +105,14 @@ public class WebSdfShader {
 
     private static void initShader() {
         initialized = true;
+        int vShader = -1;
+        int fShader = -1;
         try {
-            int vShader = GL20.glCreateShader(GL20.GL_VERTEX_SHADER);
-            GL20.glShaderSource(vShader, VERTEX_GLSL);
-            GL20.glCompileShader(vShader);
-            if (GL20.glGetShaderi(vShader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-                GL20.glDeleteShader(vShader);
-                return;
-            }
+            vShader = compileShader(GL20.GL_VERTEX_SHADER, VERTEX_GLSL);
+            if (vShader == -1) return;
 
-            int fShader = GL20.glCreateShader(GL20.GL_FRAGMENT_SHADER);
-            GL20.glShaderSource(fShader, FRAGMENT_GLSL);
-            GL20.glCompileShader(fShader);
-            if (GL20.glGetShaderi(fShader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-                GL20.glDeleteShader(vShader);
-                GL20.glDeleteShader(fShader);
-                return;
-            }
+            fShader = compileShader(GL20.GL_FRAGMENT_SHADER, FRAGMENT_GLSL);
+            if (fShader == -1) return;
 
             programId = GL20.glCreateProgram();
             GL20.glBindAttribLocation(programId, 0, "Position");
@@ -131,9 +122,6 @@ public class WebSdfShader {
             GL20.glAttachShader(programId, vShader);
             GL20.glAttachShader(programId, fShader);
             GL20.glLinkProgram(programId);
-
-            GL20.glDeleteShader(vShader);
-            GL20.glDeleteShader(fShader);
 
             if (GL20.glGetProgrami(programId, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
                 GL20.glDeleteProgram(programId);
@@ -152,7 +140,21 @@ public class WebSdfShader {
             available = true;
         } catch (Throwable t) {
             available = false;
+        } finally {
+            if (vShader != -1) GL20.glDeleteShader(vShader);
+            if (fShader != -1) GL20.glDeleteShader(fShader);
         }
+    }
+
+    private static int compileShader(int type, String source) {
+        int shader = GL20.glCreateShader(type);
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+            GL20.glDeleteShader(shader);
+            return -1;
+        }
+        return shader;
     }
 
     public static boolean drawSdfRect(
@@ -199,6 +201,7 @@ public class WebSdfShader {
         int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.enableDepthTest();
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             GL20.glUseProgram(programId);
@@ -220,7 +223,6 @@ public class WebSdfShader {
             GL20.glUniform4f(uClipRect, cx0, cy0, cx1, cy1);
             GL20.glUniform4f(uClipRadii, cRTL, cRTR, cRBR, cRBL);
 
-            // 頂点カラーは要素全体の四隅(minX, minY, maxX, maxY)に配置し、クリップはフラグメントシェーダーで行う
             BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
             builder.addVertex(minX, maxY, zOffset).setUv(0f, 1f).setColor(rBLCol, gBLCol, bBLCol, aBLCol);
             builder.addVertex(maxX, maxY, zOffset).setUv(1f, 1f).setColor(rBRCol, gBRCol, bBRCol, aBRCol);

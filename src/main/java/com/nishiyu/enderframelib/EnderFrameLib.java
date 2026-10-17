@@ -1,12 +1,13 @@
 package com.nishiyu.enderframelib;
 
+import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.EnderFrameClientInit;
+import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.network.EnderFrameNetwork;
 import com.nishiyu.enderframelib.server.EnderFrameCommands;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
 import com.nishiyu.enderframelib.server.ServerPubSubManager;
 import com.nishiyu.enderframelib.server.ServerTargetSyncHandler;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -24,6 +25,9 @@ public class EnderFrameLib {
     public static final Logger LOGGER = LoggerFactory.getLogger(EnderFrameLib.class);
 
     public EnderFrameLib(IEventBus modEventBus) {
+        // 0. 組み込み設定クラスの登録（HTML5標準フォームによるMod設定画面自動生成）
+        EnderConfigManager.register(MODID, EnderFrameBuiltInConfig.class);
+
         // 1. ネットワークペイロード登録
         modEventBus.addListener(EnderFrameNetwork::registerPayloads);
 
