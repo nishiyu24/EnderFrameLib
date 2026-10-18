@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.FontResolver;
 import org.junit.jupiter.api.Test;

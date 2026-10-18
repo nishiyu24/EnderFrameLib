@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.text.FontFace;
 import com.nishiyu.enderframelib.core.text.FontStyle;
 import com.nishiyu.enderframelib.core.text.TextShaper;
@@ -18,7 +20,7 @@ import java.util.List;
  * 与える）、インラインブロックへの {@code white-space: nowrap} が無い。W4 で直す。
  * FIDELITY.md の「W4 — 整形コンテキスト」と README の "Not supported" に対応。
  */
-public class BlockLayoutEngine extends AbstractLayoutEngine {
+public class BlockLayoutEngine extends LayoutEngine {
 
     @Override
     public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {

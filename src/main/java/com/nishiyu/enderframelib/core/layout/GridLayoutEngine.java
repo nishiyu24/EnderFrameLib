@@ -2,6 +2,10 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,7 +24,7 @@ import java.util.regex.Pattern;
  * align-items / justify-content によるアイテムとトラックの揃えも無い。W4 で直す。
  * FIDELITY.md の「W4 — 整形コンテキスト」と README の "Not supported" と対応。
  */
-public class GridLayoutEngine extends AbstractLayoutEngine {
+public class GridLayoutEngine extends LayoutEngine {
 
     // 信頼できないCSSがキーになるため、メモリリーク防止でLRUキャッシュ化
     private static final Map<String, String> REPEAT_CACHE = new LinkedHashMap<>(128, 0.75f, true) {
@@ -337,6 +341,28 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
 
             item.box.layout(itemX + item.box.mL, itemY + item.box.mT, item.box.w, item.box.h, ctx);
+        }
+    }
+
+    public static class GridItem {
+        public int colStart, colSpan, rowStart, rowSpan;
+        public LayoutBox box;
+    }
+
+    /** グリッドの行列サイズと配置済みアイテム。 */
+    public static class GridState implements LayoutEngineState {
+        public float[] colWidths;
+        public float[] rowHeights;
+        public List<GridItem> items = new ArrayList<>();
+        public int colsCount = 1, rowsCount = 1;
+
+        @Override
+        public void contributeScrollExtent(ScrollExtent extent, float scrollX, float scrollY) {
+            // グリッドアイテムは box.children とは別に保持しているため、ここで範囲に足し込む
+            for (GridItem item : items) {
+                if (item.box.isAbsolute) continue;
+                extent.include(item.box, scrollX, scrollY);
+            }
         }
     }
 }

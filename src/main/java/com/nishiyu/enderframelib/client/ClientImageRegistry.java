@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.layout.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
 
 import java.lang.ref.WeakReference;
 import java.util.Collections;

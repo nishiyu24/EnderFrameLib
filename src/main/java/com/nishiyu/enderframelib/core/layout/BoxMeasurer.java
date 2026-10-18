@@ -4,6 +4,9 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.List;
@@ -78,7 +81,7 @@ public final class BoxMeasurer {
             engineInnerW = Math.max(0, box.w - box.horizontalDecoration());
         }
 
-        LayoutEngine engine = LayoutEngineFactory.getEngine(display);
+        LayoutEngine engine = LayoutEngine.getEngine(display);
         engine.measure(box, engineInnerW, parentH, fmtCtx, ctx);
 
         if (intrinsicWidth != null) {
@@ -108,7 +111,7 @@ public final class BoxMeasurer {
      */
     public static void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx,
                                               LayoutContext ctx) {
-        LayoutEngine engine = LayoutEngineFactory.getEngine(box.style.getOrDefault(CssProperty.DISPLAY, "block"));
+        LayoutEngine engine = LayoutEngine.getEngine(box.style.getOrDefault(CssProperty.DISPLAY, "block"));
         resolveHeights(box, parentH, ctx, isBorderBox(box.style), engine, fmtCtx);
     }
 

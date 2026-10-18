@@ -8,7 +8,7 @@ import com.nishiyu.enderframelib.core.css.CssTokenizer;
 import com.nishiyu.enderframelib.core.css.EasingFunction;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.model.ClipRect;
 import com.nishiyu.enderframelib.core.model.Corners;

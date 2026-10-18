@@ -14,7 +14,7 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.DomDiffEngine;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.text.FontResolver;
 import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.core.model.*;
@@ -752,7 +752,7 @@ public class ClientWebManager {
         com.nishiyu.enderframelib.core.layout.LayoutBox box = session.layoutRoot().findByNodeId(baseId);
         if (box == null) return false;
 
-        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = session.scrollState();
+        com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState scrollState = session.scrollState();
 
         if (isVTrack) {
             float trackY = box.y + box.bT + 2;
@@ -793,7 +793,7 @@ public class ClientWebManager {
         com.nishiyu.enderframelib.core.layout.LayoutBox box = session.layoutRoot().findByNodeId(baseId);
         if (box == null) return false;
 
-        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = session.scrollState();
+        com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState scrollState = session.scrollState();
 
         if (isVThumb) {
             float trackY = box.y + box.bT + 2;

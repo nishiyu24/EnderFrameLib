@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.event.DomEvent;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.core.model.TextSelection;

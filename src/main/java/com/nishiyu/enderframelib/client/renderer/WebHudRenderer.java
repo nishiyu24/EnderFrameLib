@@ -387,11 +387,11 @@ public class WebHudRenderer {
         LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
         buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
 
-        com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
-        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
+        com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport viewport = new com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport(1000, 1000);
+        com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState();
         com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
                 viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONTS);
-        com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
+        com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext("block", "stretch", false);
 
         layoutBox.measure(1000, 1000, fmtCtx, ctx);
         layoutBox.measure(1000, 1000, fmtCtx, ctx);
