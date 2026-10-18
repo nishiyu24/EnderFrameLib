@@ -19,6 +19,9 @@ sourceSets.main.resources {
 }
 
 repositories {
+    // JNA はここから解決する。ModDevGradle が NeoForge / Parchment 用の
+    // リポジトリを足すが、通常の依存の出所は明示しておく
+    mavenCentral()
 }
 
 base {

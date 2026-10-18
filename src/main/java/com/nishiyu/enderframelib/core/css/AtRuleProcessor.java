@@ -41,7 +41,13 @@ public final class AtRuleProcessor {
         return false;
     }
 
-    /** 1 つのメディアクエリ内の条件は AND で評価する。 */
+    /**
+     * 1 つのメディアクエリ内の条件は AND で評価する。
+     *
+     * LIMITATION(制約): 対応する特性は min-width / max-width だけ。
+     * prefers-* ・orientation ・resolution と @supports は、条件が無いものとして
+     * 常に真になる（無視される）。README の "Not supported" と対応。
+     */
     private static boolean evaluateSingleQuery(String query, int rootW) {
         boolean negated = query.trim().toLowerCase().startsWith("not ");
         boolean result = true;

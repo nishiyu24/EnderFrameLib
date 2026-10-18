@@ -35,6 +35,12 @@ jobs:
       - name: Build and test
         run: ./gradlew build test --stacktrace
 
+      # サーバー側のセッション寿命（ログアウト・サーバー停止で static マップが空に戻るか）は
+      # Minecraft を起動しないと確認できないため、ここで専用サーバーを 1 回走らせる。
+      # このテストは実際にサーバー停止時のクラッシュを 1 件検出している。
+      - name: Game test server
+        run: ./gradlew runGameTestServer --stacktrace
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

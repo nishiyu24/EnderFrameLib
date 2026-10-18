@@ -9,6 +9,14 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * grid レイアウト。
+ *
+ * LIMITATION(制約): トラックの定義は grid-template-columns / grid-template-rows の
+ * px ・% ・fr ・auto ・repeat() ・minmax() のみ。名前付きグリッド線と
+ * grid-template-areas は未対応で、grid-column / grid-row は番号指定だけを解釈する。
+ * README の "Not supported" と対応。
+ */
 public class GridLayoutEngine extends AbstractLayoutEngine {
 
     // 信頼できないCSSがキーになるため、メモリリーク防止でLRUキャッシュ化

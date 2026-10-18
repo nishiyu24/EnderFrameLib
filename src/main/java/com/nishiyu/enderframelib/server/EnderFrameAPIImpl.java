@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,7 +60,7 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
         tag.putString("Title", sid);
         tag.putInt("Width", width);
         tag.putInt("Height", height);
-        PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sid, "open_screen", tag));
+        ServerPacketSender.send(player, new WebSyncS2CPacket(sid, "open_screen", tag));
     }
 
     @Override
@@ -79,7 +78,7 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
         tag.putString("ResourceLocation", uiId);
         tag.putInt("Width", width);
         tag.putInt("Height", height);
-        PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sid, "open_screen", tag));
+        ServerPacketSender.send(player, new WebSyncS2CPacket(sid, "open_screen", tag));
     }
 
     @Override
@@ -96,13 +95,13 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
 
         CompoundTag tag = new CompoundTag();
         tag.putString("Html", html);
-        PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sid, "set_hud", tag));
+        ServerPacketSender.send(player, new WebSyncS2CPacket(sid, "set_hud", tag));
     }
 
     @Override
     public void clearHud(ServerPlayer player) {
         if (player == null) return;
-        PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket("", "clear_hud", new CompoundTag()));
+        ServerPacketSender.send(player, new WebSyncS2CPacket("", "clear_hud", new CompoundTag()));
     }
 
     @Override

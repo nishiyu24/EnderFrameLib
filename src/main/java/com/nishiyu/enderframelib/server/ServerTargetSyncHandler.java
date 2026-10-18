@@ -22,7 +22,6 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.HashMap;
@@ -148,7 +147,7 @@ public final class ServerTargetSyncHandler {
         if (!diffPayload.isEmpty()) {
             LAST_SYNC_STATE.put(player.getUUID(), currentPayload);
             // ar_sync は isFull=false（差分パッチ）として送ることで、クライアント側も差分マージが可能になる
-            PacketDistributor.sendToPlayer(player, new PubSubUpdateS2CPacket("ar_sync", false, diffPayload));
+            ServerPacketSender.send(player, new PubSubUpdateS2CPacket("ar_sync", false, diffPayload));
         }
     }
 

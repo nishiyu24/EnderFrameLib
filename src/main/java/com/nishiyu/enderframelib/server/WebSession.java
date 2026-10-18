@@ -98,12 +98,24 @@ public class WebSession implements WebSessionHandle {
 
     @Override
     public void clear() {
+        discard();
+        if (broadcastCallback != null) broadcastCallback.accept(this);
+    }
+
+    /**
+     * 文書を捨てるが、閲覧者には知らせない。
+     *
+     * <p>サーバー停止時の後片付け専用。{@link #clear()} は空の DOM を配信するが、
+     * 停止中は接続が既に畳まれていることがあり、そこへ送ろうとした例外が
+     * {@code ServerStoppingEvent} のリスナから抜けてサーバーをクラッシュさせていた。
+     * 相手がもういない場面で「空になった」と伝える意味も無い。</p>
+     */
+    void discard() {
         this.currentDocument = null;
         this.lastSource = null;
         this.currentCss = "";
         this.declaredActions = Set.of();
         this.valueTargets = Set.of();
-        if (broadcastCallback != null) broadcastCallback.accept(this);
     }
 
     @Override

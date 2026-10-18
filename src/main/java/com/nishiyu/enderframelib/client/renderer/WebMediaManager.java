@@ -503,6 +503,11 @@ public class WebMediaManager {
             private static final AtomicBoolean WARNED_LOAD_FAIL = new AtomicBoolean(false);
             private static final NativeVideoAPI INSTANCE = loadLibrary();
 
+            /**
+             * LIMITATION(制約): 同杳のデコーダは lunex_video.dll のみ。
+             * Windows x86_64 以外では <video> は再生されず、要素は空のままになる。
+             * README の "Not supported" と NOTICE の第三者表記と対応。
+             */
             private static NativeVideoAPI loadLibrary() {
                 String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
                 String osArch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);

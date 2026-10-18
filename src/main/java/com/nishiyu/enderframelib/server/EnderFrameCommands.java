@@ -25,7 +25,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -285,7 +284,7 @@ public class EnderFrameCommands {
 
         for (ServerPlayer player : targets) {
             if (html != null) WebSessionManager.forceSyncToPlayer(player, sessionId);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "open_screen", payload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "open_screen", payload));
         }
         source.sendSuccess(() -> Component.literal("Opened Web UI '" + uiId + "' for " + targets.size() + " player(s)."), false);
         return targets.size();
@@ -303,7 +302,7 @@ public class EnderFrameCommands {
 
         for (ServerPlayer player : targets) {
             WebSessionManager.forceSyncToPlayer(player, sessionId);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "open_screen", payload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "open_screen", payload));
         }
         return targets.size();
     }
@@ -322,7 +321,7 @@ public class EnderFrameCommands {
 
         for (ServerPlayer player : targets) {
             if (html != null) WebSessionManager.forceSyncToPlayer(player, sessionId);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "set_hud", payload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "set_hud", payload));
         }
         source.sendSuccess(() -> Component.literal("Set Web HUD '" + uiId + "' for " + targets.size() + " player(s)."), true);
         return targets.size();
@@ -331,7 +330,7 @@ public class EnderFrameCommands {
     private static int clearPlayerHud(CommandSourceStack source, Collection<ServerPlayer> targets) {
         CompoundTag payload = new CompoundTag();
         for (ServerPlayer player : targets) {
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket("", "clear_hud", payload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket("", "clear_hud", payload));
         }
         source.sendSuccess(() -> Component.literal("Cleared Web HUD for " + targets.size() + " player(s)."), true);
         return targets.size();
