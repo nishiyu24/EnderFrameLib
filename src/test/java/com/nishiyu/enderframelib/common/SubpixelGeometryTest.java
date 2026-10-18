@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.FontResolver;
 import org.junit.jupiter.api.Test;

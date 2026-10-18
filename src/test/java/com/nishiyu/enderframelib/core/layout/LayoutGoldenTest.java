@@ -4,6 +4,9 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
 import com.nishiyu.enderframelib.core.text.FontResolver;
 import org.junit.jupiter.api.Test;
 

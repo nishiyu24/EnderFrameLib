@@ -9,7 +9,7 @@ import com.nishiyu.enderframelib.core.css.ElementState;
 import com.nishiyu.enderframelib.core.css.Specificity;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.FontResolver;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +17,7 @@ import java.util.List;
  * 仕様の自動最小サイズになっていない。W4 で直す。FIDELITY.md の
  * 「W4 — 整形コンテキスト」と README の "Not supported" に対応。
  */
-public class FlexLayoutEngine extends AbstractLayoutEngine {
+public class FlexLayoutEngine extends LayoutEngine {
 
     @Override
     public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {

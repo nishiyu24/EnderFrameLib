@@ -4,6 +4,8 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 import com.nishiyu.enderframelib.core.text.FontFace;
 import com.nishiyu.enderframelib.core.text.FontStyle;
 import com.nishiyu.enderframelib.core.text.TextShaper;
@@ -293,7 +295,7 @@ public class LayoutBox {
         float innerX = this.x + pL + bL - scrollX;
         float innerY = this.y + pT + bT - scrollY;
 
-        LayoutEngine engine = LayoutEngineFactory.getEngine(style.getOrDefault(CssProperty.DISPLAY, "block"));
+        LayoutEngine engine = LayoutEngine.getEngine(style.getOrDefault(CssProperty.DISPLAY, "block"));
         engine.arrangeChildren(this, innerX, innerY, ctx);
 
         for (LayoutBox child : children) {
@@ -356,5 +358,43 @@ public class LayoutBox {
         }
 
         public boolean isText() { return text != null; }
+    }
+
+    public enum SizingMode {
+        DEFINITE,       // 幅がピクセルやパーセントで確定している
+        SHRINK_TO_FIT   // 子要素のサイズに合わせて縮む (従来の w == -1)
+    }
+
+    /**
+     * スクロール範囲（内容がどこまで広がっているか）の集計。
+     * エンジン固有の子要素も自分で寄与できるようにするための受け皿。
+     */
+    public static final class ScrollExtent {
+
+        private float right;
+        private float bottom;
+
+        public ScrollExtent(float initialRight, float initialBottom) {
+            this.right = initialRight;
+            this.bottom = initialBottom;
+        }
+
+        /** 1 つのボックスの右下端を取り込む。 */
+        public void include(LayoutBox box, float scrollX, float scrollY) {
+            include(box.x + box.w + box.mR + scrollX, box.y + box.h + box.mB + scrollY);
+        }
+
+        public void include(float rightEdge, float bottomEdge) {
+            if (rightEdge > right) right = rightEdge;
+            if (bottomEdge > bottom) bottom = bottomEdge;
+        }
+
+        public float right() {
+            return right;
+        }
+
+        public float bottom() {
+            return bottom;
+        }
     }
 }
