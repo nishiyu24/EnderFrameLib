@@ -380,7 +380,7 @@ public class WebHudRenderer {
         UIParser.Document doc = ClientWebManager.getDocument(screenKey);
         if (doc == null) return;
 
-        com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
+        com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
         Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
         com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
 
@@ -599,7 +599,7 @@ public class WebHudRenderer {
         for (HtmlNode child : node.children) {
             if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
 
-            com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
+            com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
             Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
             // 親の算出スタイルを渡さないと inherit が初期値になり、子の em が 16px 基準になる
             com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
