@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
+import com.nishiyu.enderframelib.client.gui.WebScreenDelegate.WebDevTools;
 import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.client.renderer.WebPaintPass;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;

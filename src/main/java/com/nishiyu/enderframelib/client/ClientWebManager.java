@@ -151,10 +151,10 @@ public class ClientWebManager {
     /**
      * 測定に使う書体の出所。
      * 換算（{@code 16/12} の倍率）と太字の {@code §l} 前置は
-     * {@link com.nishiyu.enderframelib.client.renderer.McFontResolver} の内側に移した。
+     * {@link com.nishiyu.enderframelib.client.renderer.WebFontManager.McFontResolver} の内側に移した。
      */
     public static final FontResolver CLIENT_FONTS =
-            com.nishiyu.enderframelib.client.renderer.McFontResolver.INSTANCE;
+            com.nishiyu.enderframelib.client.renderer.WebFontManager.McFontResolver.INSTANCE;
 
     private static final String[] RENDER_SUFFIXES = {
             "_ghost_img", "_b_bottom", "_b_right", "_textarea", "_progress", "_b_left", "_select", "_canvas",

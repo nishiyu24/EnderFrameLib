@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.client.renderer.WebSdfShader;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
-import com.nishiyu.enderframelib.client.ClientImageRegistry;
+import com.nishiyu.enderframelib.client.renderer.WebMediaManager.ClientImageRegistry;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.dom.DomUtils;

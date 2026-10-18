@@ -90,7 +90,7 @@ public class SelectDropdownWidget {
 
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
-        pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.ZLayers.DROPDOWN_POPUP_OVERLAY_Z);
+        pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.WebRenderCore.ZLayers.DROPDOWN_POPUP_OVERLAY_Z);
 
         int itemH = 18;
         int totalH = options.size() * itemH + 2;
