@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
-import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.dom.DomUtils;

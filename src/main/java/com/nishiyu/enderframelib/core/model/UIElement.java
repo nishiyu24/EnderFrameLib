@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.model;
 
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -169,5 +170,161 @@ public record UIElement(
 
             return new RenderMeta(clip, radii, grad, null, fontH, ox, oy, count, false);
         }
+    }
+
+    /**
+     * UIElement の型分類。
+     */
+    public enum ElementType {
+        NODE,
+        RECT,
+        TEXT,
+        IMAGE,
+        VIDEO,
+        CANVAS,
+        SCENE,
+        TEXTAREA,
+        SELECT,
+        INPUT,
+        RANGE,
+        PROGRESS,
+        TOGGLE,
+        CHECKBOX,
+        RADIO,
+        CIRCLE_BORDER,
+        BUTTON,
+        A;
+
+        public boolean isInput() {
+            return this == INPUT || this == TEXTAREA || this == SELECT
+                    || this == RANGE || this == TOGGLE || this == CHECKBOX || this == RADIO
+                    || this == BUTTON || this == A || this == SCENE;
+        }
+
+        public static ElementType fromString(String str) {
+            if (str == null) return NODE;
+            if (str.startsWith("img")) return IMAGE;
+            return switch (str.toLowerCase(Locale.ROOT)) {
+                case "node" -> NODE;
+                case "rect" -> RECT;
+                case "text" -> TEXT;
+                case "image", "img" -> IMAGE;
+                case "video" -> VIDEO;
+                case "canvas" -> CANVAS;
+                case "scene" -> SCENE;
+                case "textarea" -> TEXTAREA;
+                case "select" -> SELECT;
+                case "input" -> INPUT;
+                case "range" -> RANGE;
+                case "progress", "meter" -> PROGRESS;
+                case "toggle" -> TOGGLE;
+                case "checkbox" -> CHECKBOX;
+                case "radio" -> RADIO;
+                case "circle_border" -> CIRCLE_BORDER;
+                case "button" -> BUTTON;
+                case "a" -> A;
+                default -> NODE;
+            };
+        }
+    }
+
+    /**
+     * クリップ矩形と角丸情報（8値タプル）。
+     */
+    public record ClipRect(
+            float minX, float minY, float maxX, float maxY,
+            float radiusTopLeft, float radiusTopRight, float radiusBottomRight, float radiusBottomLeft
+    ) {
+        public static final ClipRect EMPTY = null;
+
+        public float[] toArray() {
+            return new float[]{minX, minY, maxX, maxY, radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft};
+        }
+
+        public static ClipRect fromArray(float[] arr) {
+            if (arr == null || arr.length < 4) return null;
+            float rtl = arr.length >= 5 ? arr[4] : 0f;
+            float rtr = arr.length >= 6 ? arr[5] : rtl;
+            float rbr = arr.length >= 7 ? arr[6] : rtl;
+            float rbl = arr.length >= 8 ? arr[7] : rtl;
+            return new ClipRect(arr[0], arr[1], arr[2], arr[3], rtl, rtr, rbr, rbl);
+        }
+
+        public boolean contains(double x, double y) {
+            return x >= minX && x <= maxX && y >= minY && y <= maxY;
+        }
+    }
+
+    /**
+     * 4隅の角丸半径（4値タプル）。
+     */
+    public record Corners(int topLeft, int topRight, int bottomRight, int bottomLeft) {
+        public static final Corners ZERO = new Corners(0, 0, 0, 0);
+
+        public static Corners all(int radius) {
+            if (radius <= 0) return ZERO;
+            return new Corners(radius, radius, radius, radius);
+        }
+
+        public int[] toArray() {
+            return new int[]{topLeft, topRight, bottomRight, bottomLeft};
+        }
+
+        public float[] toFloatArray() {
+            return new float[]{topLeft, topRight, bottomRight, bottomLeft};
+        }
+
+        public static Corners fromArray(int[] arr) {
+            if (arr == null || arr.length == 0) return ZERO;
+            if (arr.length == 1) return all(arr[0]);
+            if (arr.length >= 4) return new Corners(arr[0], arr[1], arr[2], arr[3]);
+            return ZERO;
+        }
+
+        public boolean hasRadius() {
+            return topLeft > 0 || topRight > 0 || bottomRight > 0 || bottomLeft > 0;
+        }
+    }
+
+    /**
+     * 画像およびメディア要素のフィットモード（object-fit）。
+     */
+    public enum ImageFitMode {
+        FILL,
+        CONTAIN,
+        COVER,
+        SCALE_DOWN,
+        NONE;
+
+        public static ImageFitMode fromString(String str) {
+            if (str == null) return FILL;
+            return switch (str.toLowerCase(Locale.ROOT)) {
+                case "contain" -> CONTAIN;
+                case "cover" -> COVER;
+                case "scale-down" -> SCALE_DOWN;
+                case "none" -> NONE;
+                default -> FILL;
+            };
+        }
+    }
+
+    /**
+     * UIElement の events マップで使用される内部プロトコルキー定数。
+     */
+    public static final class RenderKeys {
+        private RenderKeys() {}
+
+        public static final String MC_PARENT = "mc-parent";
+        public static final String MC_CLIP = "mc-clip";
+        public static final String MC_RADIUS = "mc-radius";
+        public static final String MC_GRADIENT = "mc-gradient";
+        public static final String MC_FONT_H = "mc-font-h";
+        public static final String MC_TITLE = "mc-title";
+        public static final String MC_ORIGIN = "mc-origin";
+        public static final String MC_DELAY = "mc-delay";
+        public static final String MC_EASING = "mc-easing";
+        public static final String MC_TRANSITION_PROP = "mc-transition-prop";
+        public static final String MC_SCROLLABLE = "mc-scrollable";
+        public static final String MC_SCROLL_CURRENT = "mc-scroll-current";
     }
 }

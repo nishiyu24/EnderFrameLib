@@ -11,7 +11,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.event.DomEvent;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
 import com.nishiyu.enderframelib.core.model.TextSelection;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;

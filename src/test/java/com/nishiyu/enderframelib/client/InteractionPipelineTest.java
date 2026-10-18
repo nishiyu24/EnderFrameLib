@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.event.DomEvent;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
 import com.nishiyu.enderframelib.core.model.TextSelection;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import org.junit.jupiter.api.DisplayName;
@@ -55,7 +55,7 @@ public class InteractionPipelineTest {
                 "btn", "btn", ElementType.BUTTON,
                 10, 10, 100, 50,
                 "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
         );
 
         // 前面にある不透明なモーダル背景 (z=2, x=0, y=0, w=200, h=100, 不透明色 0xFFFFFFFF)
@@ -63,7 +63,7 @@ public class InteractionPipelineTest {
                 "modal", "modal", ElementType.RECT,
                 0, 0, 200, 100,
                 "", 0, 0xFFFFFFFF, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
         );
 
         HitTestIndex index = new HitTestIndex(List.of(button, modal));
@@ -85,7 +85,7 @@ public class InteractionPipelineTest {
                 "btn", "btn", ElementType.BUTTON,
                 10, 10, 100, 50,
                 "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
         );
 
         // 前面にあるが pointer-events: none のオーバーレイ
@@ -93,7 +93,7 @@ public class InteractionPipelineTest {
                 "overlay", "overlay", ElementType.RECT,
                 0, 0, 200, 100,
                 "", 0, 0xFFFFFFFF, Map.of("pointer-events", "none"),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
         );
 
         HitTestIndex index = new HitTestIndex(List.of(button, overlay));
@@ -160,7 +160,7 @@ public class InteractionPipelineTest {
                 "scrollBox_sb_vt", "scrollBox", ElementType.RECT,
                 94, 2, 4, 96,
                 "", 0, 0x33000000, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
         );
 
         // トラックの中央 (y = 50) をクリック -> 約 50% のスクロール位置 (約 100px) にジャンプ

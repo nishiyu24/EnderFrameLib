@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.client;
 import net.neoforged.neoforge.client.event.InputEvent;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
 import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
