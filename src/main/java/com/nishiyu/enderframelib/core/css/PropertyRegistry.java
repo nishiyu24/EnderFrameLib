@@ -71,7 +71,7 @@ public final class PropertyRegistry {
             "grid-row-gap", "grid-column-gap", "gap", "grid-gap",
             "flex", "flex-flow", "overflow", "inset",
             "place-content", "place-items", "place-self",
-            "font", "list-style", "outline",
+            "font", "list-style", "outline", "background",
             "border", "border-color", "border-width", "border-style",
             "border-top", "border-right", "border-bottom", "border-left"
     );
@@ -239,8 +239,7 @@ public final class PropertyRegistry {
         paint("background-clip", "border-box", false, ValueType.LIST, false);
         paint("background-origin", "padding-box", false, ValueType.LIST, false);
         paint("background-attachment", "scroll", false, ValueType.LIST, false);
-        // background は描画がショートハンドの文字列を直接読む（W5 でレイヤーに展開する）
-        shorthand("background", Invalidation.PAINT, null,
+        shorthand("background", Invalidation.PAINT, ShorthandExpanders::background,
                 "background-color", "background-image", "background-position", "background-size",
                 "background-repeat", "background-clip", "background-origin", "background-attachment");
         paint("box-shadow", "none", false, ValueType.LIST, true);

@@ -256,7 +256,7 @@ public class StateStyleTest {
         LayoutBox customBtn = findById(root, "custom-btn");
         LayoutBox styledHover = findById(root, "styled-hover");
 
-        assertEquals("#f0f0f0", defBtn.style.get(CssProperty.BACKGROUND_COLOR), "UA の button 初期背景色");
+        assertEquals("#efefef", defBtn.style.get(CssProperty.BACKGROUND_COLOR), "UA の button 初期背景色");
         assertEquals("#123456", customBtn.style.get(CssProperty.BACKGROUND_COLOR), "Author の通常宣言による背景色");
 
         // 1. デフォルトボタンをホバー: UA の button:hover (#e5e5e5) が適用される

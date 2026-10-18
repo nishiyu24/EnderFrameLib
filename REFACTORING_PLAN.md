@@ -31,14 +31,13 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | | W2 | float 幾何と使用値 | **完了** |
 | | W3 | ボックスツリー構築 | **完了** |
 | | W4 | 整形コンテキストの網羅（float / table / flex / grid / sticky） | **完了** |
-| | W5 | 描画モデル（スタッキングコンテキスト・border-style・背景） | 未着手 |
-| | W6 | UA スタイルシートを HTML 標準に | 未着手 |
+| | W5 | 描画モデル（スタッキングコンテキスト・border-style・背景） | **完了** |
+| | W6 | UA スタイルシートを HTML 標準に | **完了** |
 | | W7 | HTML ツリー構築 | 未着手 |
 
-テスト 243 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
-忠実度コーパス 115 ケース（9 領域）、うち 109 ケースがブラウザと一致（幾何は ±0.5px）。
-忠実度台帳の残り **13 行（6 ケース）**: W5 8 / W6 5（W1 の 9 行・W2 の 10 行・W3 の 21 行・
-W3 の副作用で消えた W4 の 54 行・W4 の 161 行と、W4 の副作用で消えた W5 の 1 行は解消）。
+テスト 254 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
+忠実度コーパス 115 ケース（9 領域）がすべてブラウザと一致（幾何は ±0.5px、描画順は完全一致）。
+忠実度台帳は **0 行**（W0 で起こした 269 行は W1〜W6 ですべて解消）。
 各フェーズの完了条件は、FIDELITY.md の該当フェーズの節の行が台帳から消えること。
 
 ### 第 3 期の方針
@@ -58,7 +57,7 @@ W3 の副作用で消えた W4 の 54 行・W4 の 161 行と、W4 の副作用�
 
 ## 設計の軸
 
-残りのフェーズはこの 6 つの不変条件に収束させる。各フェーズはこのどれかを立てる作業。
+残りのフェーズはこの 7 つの不変条件に収束させる。各フェーズはこのどれかを立てる作業。
 
 **軸 1 — 測定の出所は 1 つ。**
 テキストの幅・高さ・ベースライン・折り返し位置・省略位置は `core/text` が決め、
@@ -86,6 +85,10 @@ W3 の副作用で消えた W4 の 54 行・W4 の 161 行と、W4 の副作用�
 レイアウトは DOM ではなく**ボックスツリー**を入力にする。匿名ブロック・匿名表ボックス・
 `display: contents`・`::marker` は DOM に無い箱で、DOM → `LayoutBox` 1:1 では作れない。
 → **W3 で達成**（`BoxTreeBuilder`）。
+
+**軸 7 — 描画順は木で決める。**
+描画順はボックスツリーから組んだスタッキングコンテキストの木を CSS 2.2 付録 E の層の順に平らにしたもの。
+描画・ヒットテスト・忠実度ダンプの z 列が同じ並びを読む。→ **W5 で達成**（`UIRenderer.paintTasks`）。
 
 ---
 
@@ -444,11 +447,76 @@ W3 の副作用で消えた W4 の 54 行・W4 の 161 行と、W4 の副作用�
 - 破壊的変更: HTML の表の列が内容から決まる（以前は等分）、float が浮く、relative が後続を動かさない、
   `width` を持つ flex アイテムが縮む、インラインブロックのベースライン、行の strut。README に移行メモを書いた。
 
+### W5 — 描画モデル（CSS 2.2 付録 E）
+
+- **スタッキングコンテキストと描画の層。** z-index を親に足し込んで全体を 1 回並べ替える方式をやめ、
+  `UIRenderer.paintTasks` がボックスツリーからスタッキングコンテキストの木を組んで付録 E の順に平らにする:
+  負の z-index → 通常フローのブロック → float → インラインレベル → z-index: auto / 0 の位置指定要素と
+  コンテキスト → 正の z-index。float・z-index: auto の位置指定要素・不可分なインライン・flex / grid アイテムは
+  中身ごと描く疑似コンテキストで、中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
+  コンテキストを作るのは z-index を持つ位置指定要素と flex / grid アイテム、`opacity < 1`、`transform`、
+  `filter`、`isolation: isolate`、`mix-blend-mode`、fixed / sticky。`HitTestIndex` は描画リストの逆順を
+  引くので同じ順序になる。台帳の W5 の 8 行が消えた。
+- **キャンバスの背景**（Backgrounds 3 §2.11.2）。`html` の背景、それが透明なら `body` の背景がキャンバスを塗り、
+  譲った要素は自分の箱に色を描かない（以前は body の色を 2 回塗り、負の z-index が body の背景の下に潜っていた）。
+  どちらも背景を持たなければ透明（ゲームの上に重ねる文書は iframe と同じ扱い。以前は #111111）。
+- **枠線の算出値と線種。** `border-*-width` / `outline-width` は線種が none / hidden なら 0、線種だけなら
+  `medium` = 3px、`thin` / `thick` は 1px / 5px（`ValueComputer`）。描画は幅をレイアウトの値（`box.bT` など）から
+  取り、色が無ければ `currentcolor`（以前は透明）。`dashed` / `dotted`（両端が線で終わるよう間隔を均す。
+  2px 以上の点は丸）/ `double` / `groove` / `ridge` / `inset` / `outset` を `BoxDecorations` が矩形の片に分ける。
+- **輪郭線。** `outline` / `outline-offset` を枠線の外に描く（レイアウトに影響しない）。`outline: auto` を読む。
+- **背景のレイヤー。** `background` ショートハンドをロングハンドのリストに展開し（W1 で残していた分）、
+  `background-image`（`url()` / `linear-gradient()`）の各レイヤーを `background-size / position / repeat`
+  （`space` / `round` を含む）/ `origin` に従ってタイルに並べ、`background-clip` の箱で切る。背景色は最後の
+  レイヤーの `background-clip` で塗る。画像の固有サイズは `UIParser.intrinsicSizeResolver` から引く。
+- 付随: W3 の `::marker` の箱と別に `li` が描いていた丸（`_dot`）が残っていて、マーカーが 2 重になっていた。消した。
+  線種で分けた片と背景のタイルは id に番号を持つので、`ClientWebManager.getBaseNodeId` が持ち主の id に戻す。
+- **見送ったもの。** opacity のグループ合成と、変形した子孫を祖先の空間で切るクリップ。どちらも
+  `WebRenderCore` に別のフレームバッファかステンシルが要り、ゲームを起動しないと確かめられない。角丸の枠線の
+  線種、輪郭線の角丸、インラインの断片の背景画像、グラデーションの途中の色、`background-attachment`、
+  flex / grid アイテムの `order` 順の描画も入れていない。いずれも README の "Not supported" とコードの `LIMITATION`。
+- 検証: `PaintModelTest`（11 件。付録 E の層、キャンバスへの伝播、枠線の幅の算出値と線種、輪郭線、背景の
+  ショートハンドとタイル、`background-clip`）。台帳の W5 の 8 行が消え、回帰 0、ゴールデンは差分なし。
+- 破壊的変更: z-index が外へ漏れない、静的なブロックの z-index が効かない、`border-width` だけでは枠が出ない、
+  色の無い枠が `currentcolor` で出る、背景の無い文書が透明。README に移行メモを書いた。
+
+### W6 — UA スタイルシートを HTML 標準に
+
+- **ua.css を WHATWG HTML の Rendering 節（§15.3）の既定値に置き換えた。** `body { margin: 8px }`、見出しは `em`、
+  `p` / リスト / `blockquote` / `figure` / `pre` の 1em の上下 margin、リストと `dd` の 40px、表の
+  `border-spacing: 2px` とセルの `padding: 1px`、`a[href]` の `#0000ee`、`pre` / `code` は装飾なしの monospace、
+  `hr` の inset、`fieldset` の groove、`summary` の開閉の三角（`list-style: disclosure-*`）、
+  `:focus-visible { outline: auto }`。論理プロパティは物理プロパティに、`:is()` は子孫セレクタの列挙に、
+  `:link` は `a[href]` に置き換えてある。標準に無いものはインライン要素の `display: inline`（エンジンが
+  display の宣言の無い要素の多くをブロックと推測するため）・フォームコントロールの見た目・`mc-*` の 3 つだけ。
+- **装飾を組み込みテーマ 3 本へ移した。** 詰めた余白（`p` / リスト / `li`）、リンク色、`pre` / `code` / `kbd` /
+  `blockquote` / 表 / `fieldset` / `dialog` / `hr` の見た目、GitHub Alerts とタスクリスト（Markdown）、
+  フォーカスの輪郭線の色、`body { margin: 0 }`。dark は以前の ua.css の値、vanilla と brass はそれぞれの配色。
+  Markdown のページは従来どおり dark.css を読む。`config-form.css` は独自テーマでも崩れないよう body の
+  margin を自分で 0 にする。
+- **フォームコントロールの既定の見た目**（`appearance: auto` 相当）を ua.css の 1 節にまとめ、寸法を Chromium の
+  ライトテーマに揃えた（button `padding: 1px 6px`、テキスト入力 `1px 2px`、チェックボックス 13×13 と margin、
+  range 129×16、progress 160×16 / meter 80×16）。`transform: scale(0.95)` の押下表現・トランジション・
+  `min-width: min-content`（W4 の flex の自動最小幅で不要になった）は外した。
+- **忠実度コーパスの土台。** `FidelityDumper` がケースをブラウザ側と同じ `<html><body>` で包むようにした
+  （パーサは html / body を暗黙に補わないので、包まないと body の margin がブラウザ側にしか付かない）。
+  新しい ua.css で全 115 ケースを Edge 155 ヘッドレスで採り直した（112 ケースが body の margin で動いた）。
+  台帳の W6 の 5 行が消えた。
+- 付随: 採り直しで `transform` を持つ箱が絶対配置の包含ブロックにならない差が見えた（以前は body が原点に
+  あったので座標が偶然一致していた）。`LayoutBox.findContainingBlock` が `transform` / `filter` を持つ祖先を、
+  固定配置も含めて包含ブロックにする（CSS Transforms 1 §2）。
+- **見送ったもの。** legend を fieldset の枠に重ねる配置、OS の部品としてのフォームコントロール、
+  `::marker` の照合と `list-style-image` / `<ol reversed>`（W3 から残っているもの）。README の "Not supported"。
+- 検証: 台帳は 0 行、回帰 0。`FormattingContextTest` / `StateStyleTest` の UA の値（表の `border-spacing`、
+  button の背景色）を標準の値に更新した。
+- 破壊的変更: テーマを読まない文書の見た目が変わる（body の margin、黒い文字、青いリンク、装飾の無い
+  `pre` / 表、Chromium の寸法のフォームコントロール）。README に移行メモを書いた。
+
 ---
 
 # 残りのフェーズ（第 3 期）
 
-W0〜W4 は完了。以下は W5 から。
+W0〜W6 は完了。残りは W7。
 各フェーズの完了条件は原則として「W0 で台帳に記録した行が消えること」で表す。
 
 ## 第 3 期の出発点（調査で分かったこと）
@@ -463,36 +531,21 @@ W0〜W4 は完了。以下は W5 から。
 - **整形コンテキストの欠落**（W4 で解消）。 flex: `order` / `*-reverse` / `align-content` / auto margin /
   baseline 揃え。grid: 自動配置・暗黙トラック・areas・名前付き線。block: float / clear / BFC。
   inline: `vertical-align` / `text-indent`。`position: sticky`。表は `ua.css` で flex 行に化けていた。
-- **描画モデル。** z-index は親に足し込むだけ（`UIRenderer.java:158`）でスタッキング
-  コンテキストが無い。`border-style`（dashed / dotted / double）、複数背景と
-  `background-size / position / repeat`、transform 後のクリップが無い。
-- **UA が UA ではない。** `ua.css` がテーマ的な装飾を持つ（`h6` の色、`pre` の暗背景、
-  リンク色 `#89b4fa`、見出しが `rem` 基準、`table` が flex）。素の HTML がブラウザと違って見える。
+- **描画モデル**（W5 で解消。opacity のグループ合成と transform 後のクリップは見送り）。z-index は親に足し込む
+  だけでスタッキングコンテキストが無かった。`border-style`（dashed / dotted / double）、複数背景と
+  `background-size / position / repeat`、transform 後のクリップが無かった。
+- **UA が UA ではない**（W6 で解消）。`ua.css` がテーマ的な装飾を持っていた（`h6` の色、`pre` の暗背景、
+  リンク色 `#89b4fa`、見出しが `rem` 基準、`table` が flex）。素の HTML がブラウザと違って見えた。
 - **HTML パーサ。** 暗黙終了は `p` / `li` 程度。暗黙の `tbody`、`dt` / `dd` / `option` /
   `tr` / `td` の暗黙終了など WHATWG のツリー構築規則が足りない。
 
-
-## W5 — 描画モデル（CSS 2.2 付録 E）
-
-- スタッキングコンテキスト（positioned + `z-index`、`opacity < 1`、`transform`）と描画順の各層。
-  `UIRenderer` の z-index 足し込み方式を置き換え、`HitTestIndex` も同じ順序を使う。
-- `border-style`（solid / dashed / dotted / double / none / hidden）、`outline`、
-  複数背景レイヤーと `background-size / position / repeat / clip / origin`。
-- transform 後の空間でのクリップ、opacity のグループ合成。
-
-## W6 — UA スタイルシートを HTML 標準に
-
-- `ua.css` を WHATWG HTML の Rendering 節の既定値に置き換える
-  （見出しは `em` 基準、`body { margin: 8px }`、標準のリンク色、`pre` は装飾なし など）。
-  装飾は組み込みテーマ 3 本へ移す。
-- フォームコントロールの既定の見た目を `appearance: auto` 相当として UA 側にまとめる。
-- `showcase.html` / `guidebook.md` / `config-form.css` / テーマを同じコミットで追従させ、
-  README に移行メモを書く。
 
 ## W7 — HTML ツリー構築
 
 - WHATWG のツリー構築の主要規則: 暗黙終了（`p` / `li` / `dt` / `dd` / `option` / `tr` / `td` / `th`）、
   暗黙の `tbody`、表の中に誤って置かれた要素の扱い、文字参照の完全な名前表。
+- 暗黙の `html` / `head` / `body`。今は断片の文書に body が無く、ua.css の `body { margin: 8px }` が
+  効かない（忠実度コーパスは `FidelityDumper` が包んで揃えている。W6）。
 
 ---
 
@@ -538,9 +591,9 @@ W0〜W4 は完了。以下は W5 から。
 - **W1 → W2 → W3 は直列。** 値の型 → 幾何の型 → 箱の構造の順。逆にすると、
   後のフェーズが古いシグネチャ（文字列の値・`int` の幾何）の上に積まれる。
   W4 は W3 のボックスツリーの上に乗る。
-- **W5 は W1 の後なら W2〜W4 と並行してよい**（`client/renderer` 中心で、触る層が違う）。
-- **W6 は W4（表、完了）と W5（`border-style`）の後。** UA の表は W4 で `display: table` に切り替えた。
-  W6 では表の装飾（`width: 100%`・枠線・色・余白）を HTML 標準の既定値（`border-spacing: 2px` など）に置き換える。
+- **W5 と W6 は完了。** W6 は W5 の `border-style`（hr の inset・fieldset の groove）の上に乗った。
+  W6 で期待値を採り直すと body の margin で全ケースの座標が動くので、採り直しの前後で台帳の行の出入りを
+  確かめた（W6 の 5 行が消え、`transform` の包含ブロックの 2 行が新しく見えて同じフェーズで直した）。
 - **W7 は独立**（`core/dom` だけ）。いつ入れてもよい。
 - **W3 の SPI 移行が最大のリスクだった（完了）。** 旧 SPI への橋渡しを置き、エンジンを 1 つずつ移して
   各段で回帰 0 とゴールデン差分なしを確かめた。
@@ -558,10 +611,11 @@ F3 と F4 は並行、F4 は幾何 → SPI → エンジン移行の順、F5 は
 台帳は「コーパスで測れた差」だけを持つ。W0 で大半はコーパスに入り台帳の行になった。
 次はコーパスの形式（矩形と描画順）では測れないが分かっている差で、該当フェーズで扱う。
 
-- `::marker` のセレクタを照合しない・`list-style-image` と `<ol reversed>` が無い（W6。マーカーは
-  id を持てないので矩形に出ない。マーカーと CSS カウンタ自体は W3 で入った）
-- transform 後の空間でクリップしていない（W5）
-- `border-style` が solid のみ、複数背景が無い（W5。描画の見た目で、矩形に出ない）
-- UA スタイルシートの装飾（色・背景）が HTML 標準と違う（W6。寸法に出る分は台帳にある）
+- `::marker` のセレクタを照合しない・`list-style-image` と `<ol reversed>` が無い（マーカーは
+  id を持てないので矩形に出ない。マーカーと CSS カウンタ自体は W3 で入った。フェーズ未定）
+- transform 後の空間でクリップしていない・opacity をグループで合成しない（W5 で見送り。`WebRenderCore` に
+  別のフレームバッファかステンシルが要る）
+- 角丸の枠線の線種・輪郭線の角丸・インラインの断片の背景画像（W5 で見送り。描画の見た目で、矩形に出ない）
+- 断片の文書に暗黙の body が無い（W7）
 - グリフの送り幅に由来する差（折り返し位置・省略位置・中央寄せの offset）は
   **原理的に一致しないので台帳に載せない**。根拠は FIDELITY.md の「意図的に違うもの」。

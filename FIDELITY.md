@@ -47,14 +47,16 @@ chrome --headless --disable-gpu --hide-scrollbars --virtual-time-budget=8000   -
 ```
 
 現在の期待値は Chromium の実測（Edge 155 ヘッドレス。F1 時点で Chrome と Edge が同値であることを確認済み）。
+W6 で ua.css を HTML 標準の既定値に置き換えたときに全ケースを採り直した（`body` の margin 8px で 112 ケースが動いた）。
 
 コーパスを書くときの約束:
 
 - **字幅に依存させない。** 寸法は明示し、インラインブロックを並べる行は `font-size: 0` にして
   字幅と strut を消す（`font-size: 0` の行で strut の高さを測るケースだけは例外）。
-- **ua.css の副作用を避ける。** ua.css はブラウザ側では作者スタイルとして当たる。
-  `body { overflow: auto }` は `body` をスクロールコンテナにするので、位置指定された祖先の
-  外へはみ出す要素はブラウザでだけ切られる。はみ出させたいときは祖先に高さを与える。
+- **ケースは `body` の中身として書く。** ブラウザ側は `<html><head><style>ua.css</style></head><body>` で、
+  エンジン側は `FidelityDumper` が `<html><head></head><body>` で包むので、両側とも ua.css の
+  `body { margin: 8px }` が効く（パーサは html / body を暗黙に補わない。W7）。ua.css はブラウザ側では
+  作者スタイルとして当たるが、W6 以降は HTML 標準の既定値と同じなので、ブラウザ自身の UA と食い違わない。
 - **表の行に id を付けない。** Chromium は `table-row` をヒットテストしないので、行の `z` が
   常に -1 になる（行の幾何はセルから分かる）。
 
@@ -87,31 +89,27 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（13 件・6 ケース）
+## 既知の差異（0 件）
 
-W0 でコーパスを領域別に広げて起こした行。各フェーズの完了条件は、そのフェーズの節の行が台帳から消えること。
+W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 ですべて消えた。
+新しく測れた差はフェーズを振ってここと `known-divergences.txt` に足す。
 値は「ブラウザ / エンジン」。`z` は描画順の列（矩形の中心で上に重なっている id 付き要素の数）。
-
-### W5 — 描画モデル（8 件）
-
-- **`z-stacking-context`** — z-index を親に足し込むだけで、スタッキングコンテキストが中の z-index を閉じ込めない。
-  `z-stacking-context#inner.z` 1 / 0
-- **`z-negative-in-context`** — スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる。
-  `z-negative-in-context#ctx.z` 1 / 0、`z-negative-in-context#neg.z` 0 / 1
-- **`z-index-unpositioned`** — 位置指定されていないブロックの z-index が効いてしまう。
-  `z-index-unpositioned#a.z` 1 / 0
-- **`z-opacity-context`** — `opacity < 1` がスタッキングコンテキストを作らない。
-  `z-opacity-context#inner.z` 1 / 0、`z-opacity-context#over.z` 0 / 1
-- **`z-transform-context`** — `transform` がスタッキングコンテキストを作らない。
-  `z-transform-context#inner.z` 1 / 0、`z-transform-context#over.z` 0 / 1
-
-### W6 — UA スタイルシート（5 件）
-
-- **`definition-list`** — ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い。
-  `definition-list#dl.y` 16 / 0、`definition-list#term.y` 16 / 0、`definition-list#desc.x` 40 / 0、`definition-list#desc.y` 36 / 20、`definition-list#desc.w` 280 / 320
 
 ## 解消済みの差異
 
+- **W6（5 行）**: `definition-list`。ua.css を WHATWG HTML の Rendering 節の既定値に置き換え
+  （`dl` の `margin: 1em 0`、`dd` の `margin-left: 40px`、`body` の `margin: 8px`、見出しの `em`、表の
+  `border-spacing: 2px` など）、装飾は組み込みテーマへ移した。採り直しで `body` の margin が全ケースに
+  入ったことで、`transform` が絶対配置の包含ブロックを作らない差（`z-transform-context#inner.x / .y`）が
+  新しく見えたので、同じフェーズで直した（`transform` / `filter` を持つ箱は固定配置を含む位置指定の子孫の
+  包含ブロックになる）。
+- **W5（8 行）**: `z-stacking-context` / `z-negative-in-context` / `z-index-unpositioned` /
+  `z-opacity-context` / `z-transform-context`。z-index を親に足し込んで全体を並べ替える方式をやめ、
+  ボックスツリーからスタッキングコンテキストの木を組んで CSS 2.2 付録 E の層の順（負の z-index →
+  ブロック → float → インライン → z-index: auto / 0 の位置指定 → 正の z-index）に平らにした。
+  コンテキストを作るのは z-index を持つ位置指定要素と flex / grid アイテム、`opacity < 1`、`transform`、
+  `filter`、`isolation: isolate`、`mix-blend-mode`、fixed / sticky。描画とヒットテスト
+  （`HitTestIndex` は描画順の逆を引く）が同じ順序を使う。
 - **W4（161 行 + W5 の 1 行）**: block（`float-*` / `margin-collapse-empty` / `z-float-over-block`）、
   inline（`inline-block-margin` / `inline-text-indent` / `vertical-align-*` / `line-height-strut` /
   `inline-nowrap-overflow`）、position（`position-*`）、flex（`flex-*`）、grid（`grid-*`）、
@@ -172,9 +170,12 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
 - **table**: `display: table-*` の列幅（セルの幅の最大と、表の幅の余りの配分）、行の高さを
   セルの最大に揃えること、`table-cell` だけの並びに補われる匿名の表と行、`table-layout: fixed`、
   `colspan` / `rowspan`、`border-collapse`
-- **list**: `ul` / `ol` の字下げと `li` の積み方、入れ子
+- **list**: `ul` / `ol` の字下げと `li` の積み方、入れ子、`dl` / `dt` / `dd`（ua.css の HTML 標準の既定値）
 - **position / overflow**: 絶対配置の包含ブロックと shrink-to-fit、静的位置、両側の inset による
   寸法、padding box 基準の %、`position: relative` が後続を動かさないこと、`position: sticky`、`position: fixed`、
   `overflow: hidden` のクリップ、スクロールコンテナの寸法
 - **z-order**: 文書順、位置指定要素どうしの `z-index`、flex アイテムの `z-index`、
-  通常フローのブロックより下に描かれる負の `z-index`、後続の通常フローのブロックより上に描かれる位置指定要素
+  通常フローのブロックより下に描かれる負の `z-index`、後続の通常フローのブロックより上に描かれる位置指定要素、
+  スタッキングコンテキストが中の `z-index` を閉じ込めること、コンテキストの中の負の `z-index` が親の背景より
+  上に描かれること、位置指定されていないブロックの `z-index` が効かないこと、`opacity` / `transform` が
+  コンテキストを作ること、`transform` を持つ箱が絶対配置の包含ブロックになること

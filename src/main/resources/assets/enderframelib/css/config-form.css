@@ -2,7 +2,7 @@
  * 設定画面（EnderConfigManager.generateStandardHtml5Config）のスタイル。
  * 以前は Java の文字列リテラルとして埋め込まれていた。
  */
-body { display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
+body { margin: 0; display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
 .cfg-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid #45475a; }
 .cfg-title { font-size: 1.35rem; font-weight: bold; color: var(--accent, #89b4fa); }
 .cfg-search { width: 220px; padding: 5px 10px; border-radius: 4px; background-color: var(--bg-surface, #313244); color: var(--text-main, #cdd6f4); border: 1px solid #585b70; }

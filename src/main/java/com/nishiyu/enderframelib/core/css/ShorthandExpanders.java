@@ -184,7 +184,8 @@ final class ShorthandExpanders {
         if (parts.isEmpty() || parts.size() > 3) return out;
         for (String part : parts) {
             String lower = part.toLowerCase();
-            if (BORDER_STYLES.contains(lower)) {
+            // outline-style だけは auto（UA のフォーカスリング）を取る
+            if (BORDER_STYLES.contains(lower) || ("auto".equals(lower) && "outline".equals(prefix))) {
                 if (out.containsKey(prefix + "-style")) return Map.of();
                 out.put(prefix + "-style", lower);
             } else if (BORDER_WIDTH_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches()
@@ -198,6 +199,105 @@ final class ShorthandExpanders {
             }
         }
         return out;
+    }
+
+    private static final Set<String> BG_REPEATS = Set.of("repeat-x", "repeat-y", "repeat", "space", "round", "no-repeat");
+    private static final Set<String> BG_ATTACHMENTS = Set.of("scroll", "fixed", "local");
+    private static final Set<String> BG_BOXES = Set.of("border-box", "padding-box", "content-box");
+    private static final Set<String> BG_POSITION_KEYWORDS = Set.of("left", "center", "right", "top", "bottom");
+    private static final Set<String> BG_SIZE_KEYWORDS = Set.of("auto", "cover", "contain");
+
+    /**
+     * {@code background: [<bg-layer>,]* <final-bg-layer>}（CSS Backgrounds 3 §3.10）。
+     * 各ロングハンドはレイヤーごとの値をカンマで並べたリストになり、書かれなかった値は初期値に戻る。
+     * 色は最後のレイヤーにだけ書ける。箱のキーワードが 1 つなら origin と clip の両方、2 つなら順に origin・clip。
+     *
+     * 何が壊れていたか: 以前はショートハンドを展開せず、描画が文字列全体を色として読んでいたため、
+     * {@code background: url(a.png) red} は色も画像も出ず、{@code linear-gradient} は最初と最後の
+     * 色だけを拾っていた。
+     */
+    static Map<String, String> background(String value) {
+        List<String> layers = CssParser.CssTokenizer.splitTopLevel(value, ',');
+        List<String> images = new ArrayList<>(), positions = new ArrayList<>(), sizes = new ArrayList<>(),
+                repeats = new ArrayList<>(), attachments = new ArrayList<>(), origins = new ArrayList<>(),
+                clips = new ArrayList<>();
+        String color = "transparent";
+        for (int li = 0; li < layers.size(); li++) {
+            boolean last = li == layers.size() - 1;
+            List<String> tokens = splitTopLevelTokens(spaceOutSlash(layers.get(li).trim()));
+            if (tokens.isEmpty()) return Map.of();
+            String image = null, attachment = null, layerColor = null;
+            List<String> position = new ArrayList<>(), size = new ArrayList<>(), repeat = new ArrayList<>(),
+                    boxes = new ArrayList<>();
+            for (int i = 0; i < tokens.size(); i++) {
+                String t = tokens.get(i);
+                String lower = t.toLowerCase();
+                if ("/".equals(t)) {
+                    if (position.isEmpty() || !size.isEmpty()) return Map.of();
+                    while (i + 1 < tokens.size() && isBackgroundSize(tokens.get(i + 1)) && size.size() < 2) {
+                        size.add(tokens.get(++i));
+                    }
+                    if (size.isEmpty()) return Map.of();
+                } else if ("none".equals(lower) || lower.startsWith("url(") || lower.contains("gradient(")) {
+                    if (image != null) return Map.of();
+                    image = t;
+                } else if (BG_REPEATS.contains(lower)) {
+                    if (repeat.size() >= 2) return Map.of();
+                    repeat.add(lower);
+                } else if (BG_ATTACHMENTS.contains(lower)) {
+                    if (attachment != null) return Map.of();
+                    attachment = lower;
+                } else if (BG_BOXES.contains(lower)) {
+                    if (boxes.size() >= 2) return Map.of();
+                    boxes.add(lower);
+                } else if (BG_POSITION_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches()
+                        || lower.startsWith("calc(")) {
+                    if (position.size() >= 4) return Map.of();
+                    position.add(t);
+                } else if (last && layerColor == null) {
+                    layerColor = t;
+                } else {
+                    return Map.of();
+                }
+            }
+            images.add(image != null ? image : "none");
+            positions.add(position.isEmpty() ? "0% 0%" : String.join(" ", position));
+            sizes.add(size.isEmpty() ? "auto" : String.join(" ", size));
+            repeats.add(repeat.isEmpty() ? "repeat" : String.join(" ", repeat));
+            attachments.add(attachment != null ? attachment : "scroll");
+            origins.add(boxes.isEmpty() ? "padding-box" : boxes.get(0));
+            clips.add(boxes.isEmpty() ? "border-box" : boxes.get(boxes.size() - 1));
+            if (layerColor != null) color = layerColor;
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("background-color", color);
+        out.put("background-image", String.join(", ", images));
+        out.put("background-position", String.join(", ", positions));
+        out.put("background-size", String.join(", ", sizes));
+        out.put("background-repeat", String.join(", ", repeats));
+        out.put("background-attachment", String.join(", ", attachments));
+        out.put("background-origin", String.join(", ", origins));
+        out.put("background-clip", String.join(", ", clips));
+        return out;
+    }
+
+    private static boolean isBackgroundSize(String token) {
+        String lower = token.toLowerCase();
+        return BG_SIZE_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches() || lower.startsWith("calc(");
+    }
+
+    /** 括弧の外の {@code /} を前後の空白で区切る（{@code center/cover} を 3 語に分けるため）。 */
+    private static String spaceOutSlash(String s) {
+        StringBuilder sb = new StringBuilder(s.length() + 4);
+        int depth = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')' && depth > 0) depth--;
+            if (c == '/' && depth == 0) sb.append(" / ");
+            else sb.append(c);
+        }
+        return sb.toString();
     }
 
     static Map<String, String> listStyle(String value) {

@@ -84,6 +84,42 @@ final class ValueComputer {
             }
             style.put(key, value);
         }
+        computeLineWidths(style);
+    }
+
+    private static final String[] SIDES = {"top", "right", "bottom", "left"};
+
+    /** 枠線の幅のキーワード（CSS Backgrounds 3 §3.3 の UA の推奨値）。 */
+    private static final Map<String, String> LINE_WIDTH_KEYWORDS = Map.of("thin", "1px", "medium", "3px", "thick", "5px");
+
+    /**
+     * {@code border-*-width} / {@code outline-width} の算出値。線種が {@code none} / {@code hidden} なら 0、
+     * 線種があって幅が書かれていなければ初期値の {@code medium}（3px）。
+     *
+     * 何が壊れていたか: 以前は幅を線種と無関係に読んでいたため、{@code border-width: 2px} だけの箱に
+     * 線種なしの枠が付き（ブラウザでは 0）、{@code border-style: solid} だけの箱には枠が付かなかった
+     * （ブラウザでは 3px）。
+     */
+    private static void computeLineWidths(Map<String, String> style) {
+        for (String side : SIDES) {
+            computeLineWidth(style, "border-" + side + "-style", "border-" + side + "-width");
+        }
+        computeLineWidth(style, "outline-style", "outline-width");
+    }
+
+    private static void computeLineWidth(Map<String, String> style, String styleKey, String widthKey) {
+        String lineStyle = trimmed(style.get(styleKey));
+        if (lineStyle == null || "none".equalsIgnoreCase(lineStyle) || "hidden".equalsIgnoreCase(lineStyle)) {
+            if (style.containsKey(widthKey)) style.put(widthKey, "0");
+            return;
+        }
+        String width = trimmed(style.get(widthKey));
+        if (width == null) {
+            style.put(widthKey, LINE_WIDTH_KEYWORDS.get("medium"));
+        } else {
+            String keyword = LINE_WIDTH_KEYWORDS.get(width.toLowerCase(Locale.ROOT));
+            if (keyword != null) style.put(widthKey, keyword);
+        }
     }
 
     private static void resolveCssWideKeywords(Map<String, String> style, Context ctx) {

@@ -8,3 +8,34 @@ body, html { background-color: transparent; color: #3f3f3f; }
 .mc-btn:hover { background-color: #a0a0c8; color: #ffffa0; }
 .mc-slot { width: 18px; height: 18px; background-color: #8b8b8b; border-top: 1px solid #373737; border-left: 1px solid #373737; border-right: 1px solid #ffffff; border-bottom: 1px solid #ffffff; box-sizing: border-box; }
 .mc-slot:hover { background-color: #a8a8a8; }
+
+/* 文書の既定の装飾（W6 で ua.css から移した。ua.css は HTML 標準の既定値だけを持つ） */
+body { margin: 0; }
+p { margin: 0.6em 0; }
+ul, ol { padding-left: 20px; margin: 0.6em 0; }
+li { margin: 2px 0; }
+a[href] { color: #5555ff; }
+a[href]:hover { color: #3f3fbf; }
+h6 { color: #555555; }
+:focus-visible { outline: 2px solid #5555ff; outline-offset: 1px; }
+code { background-color: rgba(0, 0, 0, 0.1); color: #3f3f3f; padding: 1px 4px; border-radius: 3px; }
+kbd { background-color: #b0b0b0; color: #3f3f3f; border: 1px solid #555555; padding: 1px 4px; border-radius: 3px; display: inline-block; }
+pre { background-color: #8b8b8b; color: #3f3f3f; border: 1px solid #8b8b8b; border-radius: 4px; padding: 8px 10px; margin: 6px 0; overflow-x: auto; }
+blockquote { border-left: 3px solid #5555ff; background-color: rgba(85, 85, 255, 0.08); padding: 6px 10px; margin: 6px 0; border-radius: 2px; }
+hr { border: none; border-top: 1px solid #555555; margin: 8px 0; }
+table { width: 100%; border: 1px solid #8b8b8b; border-radius: 4px; margin: 6px 0; border-spacing: 0; }
+thead { background-color: rgba(0, 0, 0, 0.1); font-weight: bold; }
+th, td { padding: 4px 8px; }
+th { color: #5555ff; text-align: left; }
+fieldset { border: 1px solid #555555; border-radius: 4px; padding: 8px 12px; margin: 4px 0; }
+legend { font-weight: bold; padding: 0 4px; }
+summary { cursor: pointer; font-weight: bold; user-select: none; }
+dialog[open] { position: fixed; z-index: 100; background-color: #c6c6c6; color: #3f3f3f; border: 1px solid #5555ff; border-radius: 6px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+button, input[type="button"], input[type="submit"], input[type="reset"] { cursor: pointer; }
+.task-list-item { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.markdown-alert-title { font-weight: bold; margin-bottom: 4px; color: #5555ff; display: block; }
+.markdown-alert-tip { border-left-color: #a6e3a1; background-color: rgba(166, 227, 161, 0.08); }
+.markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
+.markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
+.markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
+.mc-bar { background-color: #8b8b8b; border: 1px solid #8b8b8b; border-radius: 4px; }

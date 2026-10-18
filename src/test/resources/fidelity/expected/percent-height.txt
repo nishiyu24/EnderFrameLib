@@ -1,2 +1,2 @@
-parent 0 0 200 100 0
-child 0 0 200 50 0
+parent 8 8 200 100 0
+child 8 8 200 50 0
