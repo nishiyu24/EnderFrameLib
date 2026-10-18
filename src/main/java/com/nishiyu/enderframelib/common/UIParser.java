@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.ElementState;
-import com.nishiyu.enderframelib.core.css.StyleSet;
+import com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -179,24 +179,24 @@ public class UIParser {
      * {@code height} / {@code orientation} の評価に使う（0 は「分からない」）。
      */
     public com.nishiyu.enderframelib.core.css.StyleSheet buildStyleSheet(String authorCss, int rootW, int rootH) {
-        com.nishiyu.enderframelib.core.css.MediaEnvironment media =
-                com.nishiyu.enderframelib.core.css.MediaEnvironment.of(rootW, rootH)
+        com.nishiyu.enderframelib.core.css.CssParser.MediaEnvironment media =
+                com.nishiyu.enderframelib.core.css.CssParser.MediaEnvironment.of(rootW, rootH)
                         .withImportResolver(resourceTextResolver);
         com.nishiyu.enderframelib.core.css.StyleSheet sheet =
-                CssParser.parse(userAgentCss(), media, com.nishiyu.enderframelib.core.css.CascadeOrigin.USER_AGENT);
+                CssParser.parse(userAgentCss(), media, com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin.USER_AGENT);
 
         if (authorCss != null && !authorCss.isEmpty()) {
             com.nishiyu.enderframelib.core.css.StyleSheet authorSheet =
-                    CssParser.parse(authorCss, media, com.nishiyu.enderframelib.core.css.CascadeOrigin.AUTHOR);
-            for (com.nishiyu.enderframelib.core.css.StyleRule rule : authorSheet.rules) {
-                rule.setOrigin(com.nishiyu.enderframelib.core.css.CascadeOrigin.AUTHOR);
+                    CssParser.parse(authorCss, media, com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin.AUTHOR);
+            for (com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule rule : authorSheet.rules) {
+                rule.setOrigin(com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin.AUTHOR);
             }
             sheet.rules.addAll(authorSheet.rules);
             sheet.keyframes.putAll(authorSheet.keyframes);
             sheet.variables.putAll(authorSheet.variables);
         }
 
-        sheet.rules.sort(com.nishiyu.enderframelib.core.css.StyleRule::compareSpecificity);
+        sheet.rules.sort(com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule::compareSpecificity);
         return sheet;
     }
 
@@ -540,7 +540,7 @@ public class UIParser {
         com.nishiyu.enderframelib.core.css.SelectorMatcher.StateLookup lookup =
                 interactionState != null ? interactionState : com.nishiyu.enderframelib.core.css.SelectorMatcher.STATIC_ATTRIBUTES;
 
-        for (com.nishiyu.enderframelib.core.css.StyleRule rule : sheet.rules) {
+        for (com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule rule : sheet.rules) {
             if ((isBefore && rule.isBefore) || (!isBefore && rule.isAfter)) {
                 if (rule.matches(parent, lookup)) {
                     pseudoStyle.putAll(rule.properties);

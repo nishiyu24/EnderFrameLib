@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.ValueComputer.CssWideKeyword;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;

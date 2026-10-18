@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
-import com.nishiyu.enderframelib.core.css.SelectorEngine;
+import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
 
 import java.util.ArrayList;
 import java.util.Arrays;

@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
+import com.nishiyu.enderframelib.core.css.StyleSheet.Specificity;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;

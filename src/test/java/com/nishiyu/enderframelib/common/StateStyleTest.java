@@ -2,11 +2,11 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebAnimator;
-import com.nishiyu.enderframelib.core.css.CascadeOrigin;
+import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.EasingFunction;
 import com.nishiyu.enderframelib.core.css.ElementState;
-import com.nishiyu.enderframelib.core.css.Specificity;
+import com.nishiyu.enderframelib.core.css.StyleSheet.Specificity;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
