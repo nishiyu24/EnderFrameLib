@@ -265,7 +265,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
   （`box-sizing` 既定・マージン相殺・ブロックフローの `gap`・`flex-basis`・% height・
   縦方向の % 余白・包含ブロック・`minmax()`）と、実装済みの `@font-face` を README から消し、
   `StyleResolver` の古い `flex-basis` の `LIMITATION` を削除。新しく測れた差は、
-  エンジンごとに 1 つの `LIMITATION`（`LayoutEngineFactory` / `BlockLayoutEngine` /
+  エンジンごとに 1 つの `LIMITATION`（`LayoutEngine.getEngine` / `BlockLayoutEngine` /
   `FlexLayoutEngine` / `GridLayoutEngine` / `LayoutBox` の位置指定 / `UIRenderer` の z-index /
   `StyleResolver` / `ua.css`）と README の項目にした。
 - **見立ての確認。** 「`em` の継承が複利で増える」は再現した（`em-inheritance`）。
@@ -353,8 +353,8 @@ W0〜W2 は完了。以下は W3 から。
   `unset` / `revert` / `currentcolor` が無く（`width: inherit` は 0）、`em` の継承は複利で増え、
   `font-size: 2vw` は既定のサイズのままだった。
 - **幾何が `int`**（W2 で解消）。`ComputedStyle.length()`、`LayoutBox.x/y/w/h`・余白・ボーダー、
-  `AbstractLayoutEngine.distributeMainAxis` の整数除算。
-- **ボックスツリーが無い。** `LayoutEngineFactory` は flex / grid 以外を全部
+  `LayoutEngine.distributeMainAxis` の整数除算。
+- **ボックスツリーが無い。** `LayoutEngine.getEngine` は flex / grid 以外を全部
   `BlockLayoutEngine` に落とす（table / list-item / inline-block も）。
 - **整形コンテキストの欠落。** flex: `order` / `*-reverse` / `align-content` / auto margin /
   baseline 揃え。grid: 自動配置・暗黙トラック・areas・名前付き線。block: float / clear / BFC。
@@ -373,7 +373,7 @@ W0〜W2 は完了。以下は W3 から。
 - `core/layout/BoxTreeBuilder`: DOM + 算出値 → ボックスツリー。`display` を outer / inner に分ける。
 - 匿名ブロック（ブロック内でのインライン混在）、匿名表ボックス、`display: contents`、
   `flow-root`、`list-item` と `::marker`（`list-style-type` と CSS カウンタ）。
-- `LayoutEngineFactory` を inner display（flow / flow-root / flex / grid / table）で選ぶようにする。
+- `LayoutEngine.getEngine` を inner display（flow / flow-root / flex / grid / table）で選ぶようにする。
 - エンジン SPI を「制約（利用可能幅・% 基準・BFC）を受け取り、フラグメントを返す」形に移す。
   **3 エンジンを同時に書き換えず**、Block → Flex → Grid の順で 1 つずつ。
 
