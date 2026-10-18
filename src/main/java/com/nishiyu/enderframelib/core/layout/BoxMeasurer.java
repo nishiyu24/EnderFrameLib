@@ -45,6 +45,9 @@ public final class BoxMeasurer {
 
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
+        // 測り直しは前回の高さから始めない。高さは「今の値と内容の高さの大きい方」で決まるので、
+        // 以前は親が伸ばした高さ（表の行・stretch）が次の測定に残り、内容の高さが分からなくなっていた
+        box.h = 0;
 
         float parentW = tentativeInnerW;
         if (box.isFixed) {
@@ -74,6 +77,12 @@ public final class BoxMeasurer {
                 isPercentWidthAndShrinking, isBorderBox, fmtCtx);
 
         applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        // 親のエンジンが決めた幅（flex の伸縮・stretch）は min / max で切り詰め済み
+        boolean overridden = !Float.isNaN(box.overrideWidth);
+        if (overridden) {
+            box.w = box.overrideWidth;
+            box.sizingMode = SizingMode.DEFINITE;
+        }
 
         float engineInnerW;
         if ("max-content".equals(intrinsicWidth)) {
@@ -93,13 +102,14 @@ public final class BoxMeasurer {
             box.w = contentW + box.horizontalDecoration();
         }
 
-        if (intrinsicWidth != null) {
+        if (intrinsicWidth != null && !overridden) {
             resolveIntrinsicWidth(box, ctx, intrinsicWidth, parentW, rootW, rootH, isBorderBox);
         }
 
-        applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        if (!overridden) applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
-        if (!box.isAbsolute) {
+        // auto マージンで中央に寄せるのはブロックフローだけ。flex / grid は自分の揃えで auto マージンを解く
+        if (!box.isAbsolute && "block".equals(fmtCtx.parentDisplay())) {
             if (autoLeft && autoRight) {
                 box.mL = Math.max(0, (parentW - box.w) / 2);
                 box.mR = Math.max(0, parentW - box.w - box.mL);
@@ -130,6 +140,8 @@ public final class BoxMeasurer {
         box.mR = style.length(CssProperty.MARGIN_RIGHT, parentW, rootW, rootH);
         box.mB = style.length(CssProperty.MARGIN_BOTTOM, parentW, rootW, rootH);
         box.mL = style.length(CssProperty.MARGIN_LEFT, parentW, rootW, rootH);
+        box.ownMarginTop = box.mT;
+        box.ownMarginBottom = box.mB;
 
         box.pT = style.length(CssProperty.PADDING_TOP, parentW, rootW, rootH);
         box.pR = style.length(CssProperty.PADDING_RIGHT, parentW, rootW, rootH);
@@ -141,6 +153,16 @@ public final class BoxMeasurer {
         box.bR = style.length(CssProperty.BORDER_RIGHT_WIDTH, parentW, rootW, rootH);
         box.bB = style.length(CssProperty.BORDER_BOTTOM_WIDTH, parentH, rootW, rootH);
         box.bL = style.length(CssProperty.BORDER_LEFT_WIDTH, parentW, rootW, rootH);
+        if (box.collapsedBorders != null) {
+            box.bT = box.collapsedBorders[0];
+            box.bR = box.collapsedBorders[1];
+            box.bB = box.collapsedBorders[2];
+            box.bL = box.collapsedBorders[3];
+        }
+        // 枠線を重ねる表は padding を持たない（CSS 2.2 §17.6.2）
+        if (box.display.inner() == Inner.TABLE && "collapse".equals(style.keyword(CssProperty.BORDER_COLLAPSE, "separate"))) {
+            box.pT = box.pR = box.pB = box.pL = 0;
+        }
 
         box.rowGap = style.length(CssProperty.ROW_GAP, parentH, rootW, rootH);
         box.columnGap = style.length(CssProperty.COLUMN_GAP, parentW, rootW, rootH);
@@ -174,9 +196,16 @@ public final class BoxMeasurer {
         } else if (tag.equals("input") || tag.equals("select") || tag.equals("progress")) {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (box.isAbsolute || fmtCtx.isFlexRow() || fmtCtx.isShrink()
+        } else if (box.isAbsolute && hasBothInsets(style, CssProperty.LEFT, CssProperty.RIGHT)) {
+            // left と right の両方があれば width: auto は間の幅（CSS 2.2 §10.3.7）。
+            // 以前は shrink-to-fit にしていて、内容の無い箱は幅 0 になっていた
+            float insets = style.length(CssProperty.LEFT, parentW, rootW, rootH)
+                    + style.length(CssProperty.RIGHT, parentW, rootW, rootH);
+            box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
+            box.sizingMode = SizingMode.DEFINITE;
+        } else if (box.isAbsolute || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
                 || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE) {
-            // インラインレベルの箱と表は shrink-to-fit（表の幅は列幅の合計）
+            // インラインレベルの箱・float・表は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else if (fmtCtx.isFlexColumn() && !"stretch".equals(fmtCtx.alignItems())) {
@@ -289,10 +318,20 @@ public final class BoxMeasurer {
 
         String heightStr = style.getOrDefault(CssProperty.HEIGHT, "auto").trim();
         boolean hasHeight = style.containsKey(CssProperty.HEIGHT) && !"auto".equals(heightStr);
+        boolean overridden = !Float.isNaN(box.overrideHeight);
 
-        if (hasHeight) {
+        if (overridden) {
+            box.h = box.overrideHeight;
+            hasHeight = true;
+        } else if (hasHeight) {
             box.h = toBorderBox(style.length(CssProperty.HEIGHT, parentH, rootW, rootH),
                     box.verticalDecoration(), isBorderBox);
+        } else if (box.isAbsolute && hasBothInsets(style, CssProperty.TOP, CssProperty.BOTTOM)) {
+            // top と bottom の両方があれば height: auto は間の高さ（CSS 2.2 §10.6.4）
+            float insets = style.length(CssProperty.TOP, parentH, rootW, rootH)
+                    + style.length(CssProperty.BOTTOM, parentH, rootW, rootH);
+            box.h = Math.max(box.verticalDecoration(), parentH - insets - box.mT - box.mB);
+            hasHeight = true;
         } else if (style.containsKey(CssProperty.ASPECT_RATIO) && box.w > 0) {
             applyAspectRatio(box);
         } else {
@@ -303,6 +342,7 @@ public final class BoxMeasurer {
         float contentH = engine.contentBlockSize(box, space, ctx);
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
         engine.finishLayout(box, space, ctx);
+        if (overridden) return;
 
         if (style.containsKey(CssProperty.MAX_HEIGHT)) {
             String maxHStr = style.get(CssProperty.MAX_HEIGHT).trim();
@@ -451,6 +491,16 @@ public final class BoxMeasurer {
     private static boolean isScrollContainerOrClip(String overflow) {
         String v = overflow.trim();
         return !v.equals("visible") && !v.equals("clip");
+    }
+
+    /** 両側の inset が auto でないか（絶対配置の寸法を inset から決められるか）。 */
+    static boolean hasBothInsets(ComputedStyle style, String start, String end) {
+        return !isAutoInset(style, start) && !isAutoInset(style, end);
+    }
+
+    static boolean isAutoInset(ComputedStyle style, String side) {
+        String v = style.get(side);
+        return v == null || "auto".equalsIgnoreCase(v.trim());
     }
 
     private static boolean isBorderBox(ComputedStyle style) {

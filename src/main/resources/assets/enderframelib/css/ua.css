@@ -36,15 +36,18 @@ blockquote { border-left: 3px solid #89b4fa; background-color: rgba(137, 180, 25
 .markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
 .markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
 .markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
-/* LIMITATION(制約): 表は flex の行として組む。display: table の表レイアウトは
- * colspan / rowspan をまだ読まないので、HTML の表は W4 で切り替える。
- * 列幅は th / td の flex と width で指定する。README の "Not supported" と対応。 */
-table { display: flex; flex-direction: column; width: 100%; border: 1px solid #45475a; border-radius: 4px; margin: 6px 0; overflow: hidden; }
-thead, tbody { display: flex; flex-direction: column; width: 100%; }
-thead { background-color: rgba(137, 180, 250, 0.12); font-weight: bold; }
-tr { display: flex; flex-direction: row; width: 100%; border-bottom: 1px solid #313244; }
-th, td { flex: 1; padding: 4px 8px; box-sizing: border-box; display: block; }
+/* 表は CSS の表レイアウト（display: table）で組む。W4 までは flex の行として組んでいた。
+ * 幅・枠線・色・余白はテーマ的な装飾で、HTML 標準の既定値（border-spacing: 2px など）への置き換えは W6。 */
+table { display: table; width: 100%; border: 1px solid #45475a; border-radius: 4px; margin: 6px 0; box-sizing: border-box; }
+caption { display: table-caption; text-align: center; }
+thead { display: table-header-group; vertical-align: middle; background-color: rgba(137, 180, 250, 0.12); font-weight: bold; }
+tbody { display: table-row-group; vertical-align: middle; }
+tfoot { display: table-footer-group; vertical-align: middle; }
+tr { display: table-row; vertical-align: inherit; }
+th, td { display: table-cell; vertical-align: inherit; padding: 4px 8px; box-sizing: border-box; }
 th { font-weight: bold; color: #89b4fa; }
+colgroup { display: table-column-group; }
+col { display: table-column; }
 label, output { display: inline-block; }
 form, fieldset, details, summary, dialog, aside, figure, figcaption { display: block; }
 fieldset { border: 1px solid #585b70; border-radius: 4px; padding: 8px 12px; margin: 4px 0; }

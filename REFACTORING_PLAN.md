@@ -30,15 +30,15 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | | W1 | CSS 値モデルとプロパティレジストリ | **完了** |
 | | W2 | float 幾何と使用値 | **完了** |
 | | W3 | ボックスツリー構築 | **完了** |
-| | W4 | 整形コンテキストの網羅（float / table / flex / grid / sticky） | 未着手 |
+| | W4 | 整形コンテキストの網羅（float / table / flex / grid / sticky） | **完了** |
 | | W5 | 描画モデル（スタッキングコンテキスト・border-style・背景） | 未着手 |
 | | W6 | UA スタイルシートを HTML 標準に | 未着手 |
 | | W7 | HTML ツリー構築 | 未着手 |
 
-テスト 239 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
-忠実度コーパス 115 ケース（9 領域）、うち 63 ケースがブラウザと一致（幾何は ±0.5px）。
-忠実度台帳の残り **175 行（52 ケース）**: W4 161 / W5 9 / W6 5（W1 の 9 行・W2 の 10 行・W3 の 21 行と、
-W3 の副作用で消えた W4 の 54 行は解消）。
+テスト 243 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
+忠実度コーパス 115 ケース（9 領域）、うち 109 ケースがブラウザと一致（幾何は ±0.5px）。
+忠実度台帳の残り **13 行（6 ケース）**: W5 8 / W6 5（W1 の 9 行・W2 の 10 行・W3 の 21 行・
+W3 の副作用で消えた W4 の 54 行・W4 の 161 行と、W4 の副作用で消えた W5 の 1 行は解消）。
 各フェーズの完了条件は、FIDELITY.md の該当フェーズの節の行が台帳から消えること。
 
 ### 第 3 期の方針
@@ -391,11 +391,64 @@ W3 の副作用で消えた W4 の 54 行は解消）。
 - 破壊的変更: リスト項目にマーカーが出る。インラインとブロックが混ざった内容は重ならずに積まれ、
   BFC の箱では子のマージンが外へ抜けなくなる。README に移行メモを書いた。
 
+### W4 — 整形コンテキストの網羅
+
+- **block**（`BlockLayoutEngine` を作り直した）。子の位置を高さを決める段（`contentBlockSize`）で
+  内容ボックス相対に一度だけ決め（`FlowState`）、`arrangeChildren` は平行移動するだけにした。
+  以前は配置の段で「直前の子の下端」から積み直していて、`position: relative` のずれが後続の兄弟を
+  動かしていた。
+  - **float / clear。** BFC ごとに float の領域（`FloatSpace`）を持ち、BFC を作らない子孫は
+    親の領域を共有する（子の高さを領域の中で解き直す）。float は CSS 2.2 §9.5.1 の規則で置き、
+    行は float の横の残り幅に入り、BFC の箱は float を避けて残り幅に縮むか下へ下がる。BFC は自分の
+    float を高さに含める。float と絶対配置は blockify する（`Display.blockified`）。
+  - **マージン相殺を strut にした**（正の最大 + 負の最小）。空の箱は上下のマージンが自分を貫通して
+    前後と畳まれる。親子の相殺は解き直すたびに相殺前のマージン（`ownMarginTop` / `-Bottom`）から始める。
+  - **行ボックス。** strut（ブロックの書体と `line-height`）、`vertical-align`（baseline / top / bottom /
+    middle / sub / super / text-top / text-bottom / 長さ / %）、`text-indent`、不可分なインラインの
+    ベースライン（最後の行、無ければ下マージンの端）、`nowrap` の行でインラインブロックを折り返さない。
+    インラインブロックの左マージンが二重に足されていたのも直した。
+- **position。** inset が両方 auto の軸は静的位置（ブロックフローが記録する）に置き、両側の inset で
+  `width` / `height: auto` を決め、包含ブロックは padding box。過剰制約では left / top が勝つ。
+  `position: sticky` は最も近いスクロールコンテナのスクロールポートと親の内容ボックスの間でずらす。
+  インラインボックスの中の絶対配置も置かれるようになった（以前は平坦化されて位置が決まらなかった）。
+- **flex**（`FlexLayoutEngine` を作り直した）。CSS Flexbox §9: `order` で並べ、仮の主軸の寸法で行に分け、
+  伸縮長を min / max での凍結つきで解き、`min-width: auto`（指定値と内容の最小幅の小さい方、
+  スクロールコンテナは 0）を入れた。`*-reverse` / `wrap-reverse`、`align-content`（normal は stretch）、
+  auto マージン、`baseline`。親が決めた寸法で子を測り直すため `LayoutBox.overrideWidth` /
+  `overrideHeight` を足した（BoxMeasurer は指定値と内容よりこちらを使う）。
+- **grid**（`GridLayoutEngine` を作り直した）。CSS Grid §8 の自動配置（`grid-auto-flow` の row / column /
+  dense、行・列が固定されたアイテムの先置き）、暗黙のトラック（`grid-auto-rows` / `-columns`）、線の解決
+  （番号・負の番号・名前・`span`・areas の `-start` / `-end`）、トラックの定義（`min-content` /
+  `max-content` / `fit-content()` / `minmax()` / `repeat()` と `auto-fill`・線の名前）、§11 の簡略版の
+  寸法（固定 → 内容依存 → 上限まで → fr → auto の stretch）、トラックの `*-content` とアイテムの
+  `*-items` / `*-self`・auto マージン。
+- **table**（`TableLayoutEngine` を作り直した）。セルの格子（`colspan` / `rowspan`、`rowspan="0"`、
+  thead を先頭・tfoot を末尾）、自動レイアウトの列幅（min / max-content、またがるセルの配分、
+  表の幅による補間と余りの配分）、`table-layout: fixed`（列要素と 1 行目）、`border-spacing`、
+  `border-collapse`（隣り合う枠線を太い方に重ね、両側が半分ずつ持つ。`LayoutBox.collapsedBorders` を
+  描画も読む）、キャプション、セルの `vertical-align`。行グループと行は測らず、表が寸法と子の位置を渡す。
+  **ua.css の表を flex の行から `display: table` に切り替えた**（装飾は W6 まで残す）。
+- **描画の層。** 同じ z-index の中で float を通常フローより上、位置指定要素をさらに上に描く
+  （CSS 2.2 付録 E の層 5 / 6）。W5 の `z-positioned-over-flow` も消えた。スタッキングコンテキストは W5。
+- 付随: `BoxMeasurer.measure` が前回の高さから測り始めていた（高さは「今の値と内容の高さの大きい方」で
+  決まるので、表の行や stretch で伸ばした高さが次の測定に残っていた）。0 から始めるようにした。
+  flex / grid のアイテムに block の auto マージンの中央寄せが掛かっていたのも外した。
+- **見送ったもの。** float の横の行の幅は行の上端で決める（行が後から高くなっても測り直さない）。
+  列方向の flex アイテムの自動最小高さは、指定された高さか内容の高さで近似。grid のトラックの寸法は
+  §11 の簡略版（またがるアイテムは等分）で、subgrid・`grid-template` / `grid` ショートハンド・負の方向の
+  暗黙のトラック・`baseline` 揃え・`auto-fit` の空トラックの畳み込みは無い。表の列幅の % と、
+  行・行グループ・列の枠線の重ね合わせは無い。いずれも README の "Not supported" とコードの `LIMITATION`。
+- 検証: 台帳の W4 の 161 行がすべて消え、回帰 0。ゴールデン（`LayoutGoldenTest` /
+  `InlineLayoutConsistencyTest`）は差分なし。`FormattingContextTest`（4 件: ua.css の HTML の表と
+  `colspan`、セルの `vertical-align: middle`、float の横を流れる行、インラインの中の絶対配置）。
+- 破壊的変更: HTML の表の列が内容から決まる（以前は等分）、float が浮く、relative が後続を動かさない、
+  `width` を持つ flex アイテムが縮む、インラインブロックのベースライン、行の strut。README に移行メモを書いた。
+
 ---
 
 # 残りのフェーズ（第 3 期）
 
-W0〜W3 は完了。以下は W4 から。
+W0〜W4 は完了。以下は W5 から。
 各フェーズの完了条件は原則として「W0 で台帳に記録した行が消えること」で表す。
 
 ## 第 3 期の出発点（調査で分かったこと）
@@ -407,9 +460,9 @@ W0〜W3 は完了。以下は W4 から。
   `LayoutEngine.distributeMainAxis` の整数除算。
 - **ボックスツリーが無い**（W3 で解消）。`LayoutEngine.getEngine` は flex / grid 以外を全部
   `BlockLayoutEngine` に落としていた（table / list-item / inline-block も）。
-- **整形コンテキストの欠落。** flex: `order` / `*-reverse` / `align-content` / auto margin /
+- **整形コンテキストの欠落**（W4 で解消）。 flex: `order` / `*-reverse` / `align-content` / auto margin /
   baseline 揃え。grid: 自動配置・暗黙トラック・areas・名前付き線。block: float / clear / BFC。
-  inline: `vertical-align` / `text-indent`。`position: sticky`。表は `ua.css` で flex 行に化けている。
+  inline: `vertical-align` / `text-indent`。`position: sticky`。表は `ua.css` で flex 行に化けていた。
 - **描画モデル。** z-index は親に足し込むだけ（`UIRenderer.java:158`）でスタッキング
   コンテキストが無い。`border-style`（dashed / dotted / double）、複数背景と
   `background-size / position / repeat`、transform 後のクリップが無い。
@@ -418,19 +471,6 @@ W0〜W3 は完了。以下は W4 から。
 - **HTML パーサ。** 暗黙終了は `p` / `li` 程度。暗黙の `tbody`、`dt` / `dd` / `option` /
   `tr` / `td` の暗黙終了など WHATWG のツリー構築規則が足りない。
 
-
-## W4 — 整形コンテキストの網羅
-
-- **block**: float / clear / BFC（float の回避と包含）、`text-indent`。
-- **inline**: `vertical-align`（baseline / middle / top / bottom / sub / super / 長さ）。
-- **flex**: `order`、`row-reverse` / `column-reverse` / `wrap-reverse`、`align-content`、
-  auto margin、`align-items: baseline`、`min-width: auto` の仕様どおりの扱い。
-- **grid**: 自動配置（`grid-auto-flow`、`dense`）、暗黙トラック（`grid-auto-rows` / `-columns`）、
-  `grid-template-areas`、名前付き線、`span`、`justify-items` / `place-*`。
-- **table**: W3 の最小の表レイアウト（`TableLayoutEngine`）を本物にする（min-content / max-content
-  からの自動列幅、`table-layout: fixed`、`colspan` / `rowspan`、`border-collapse` /
-  `border-spacing`、キャプション、セルの `vertical-align`）。`ua.css` の表の flex 化を撤去する。
-- `position: sticky`。
 
 ## W5 — 描画モデル（CSS 2.2 付録 E）
 
@@ -499,7 +539,8 @@ W0〜W3 は完了。以下は W4 から。
   後のフェーズが古いシグネチャ（文字列の値・`int` の幾何）の上に積まれる。
   W4 は W3 のボックスツリーの上に乗る。
 - **W5 は W1 の後なら W2〜W4 と並行してよい**（`client/renderer` 中心で、触る層が違う）。
-- **W6 は W4（表）と W5（`border-style`）の後。** UA から flex の表を外すには本物の表レイアウトが要る。
+- **W6 は W4（表、完了）と W5（`border-style`）の後。** UA の表は W4 で `display: table` に切り替えた。
+  W6 では表の装飾（`width: 100%`・枠線・色・余白）を HTML 標準の既定値（`border-spacing: 2px` など）に置き換える。
 - **W7 は独立**（`core/dom` だけ）。いつ入れてもよい。
 - **W3 の SPI 移行が最大のリスクだった（完了）。** 旧 SPI への橋渡しを置き、エンジンを 1 つずつ移して
   各段で回帰 0 とゴールデン差分なしを確かめた。

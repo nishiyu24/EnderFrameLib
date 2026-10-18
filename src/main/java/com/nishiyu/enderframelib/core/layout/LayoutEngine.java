@@ -90,8 +90,10 @@ public abstract class LayoutEngine {
                     cbW = rootW;
                     cbH = rootH;
                 } else {
-                    cbW = Math.max(0, cb.w - cb.horizontalDecoration());
-                    cbH = Math.max(0, cb.h - cb.verticalDecoration());
+                    // 絶対配置の包含ブロックは padding box（CSS 2.2 §10.1）。以前は内容ボックスで、
+                    // padding を持つ親の中の width / height の % が小さく出ていた
+                    cbW = Math.max(0, cb.w - cb.bL - cb.bR);
+                    cbH = Math.max(0, cb.h - cb.bT - cb.bB);
                 }
                 child.measure(ConstraintSpace.block(cbW, cbH), ctx);
             }
@@ -107,7 +109,7 @@ public abstract class LayoutEngine {
      * @param baseGap      スタイル指定の gap
      * @param itemCount    アイテム数
      */
-    protected MainAxisSpacing distributeMainAxis(String justify, float start, float availableMain,
+    protected static MainAxisSpacing distributeMainAxis(String justify, float start, float availableMain,
                                                  float itemsTotal, float baseGap, int itemCount) {
         float totalWithGap = itemsTotal + baseGap * Math.max(0, itemCount - 1);
         float container = Math.max(totalWithGap, availableMain);

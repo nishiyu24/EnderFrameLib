@@ -25,6 +25,14 @@ public interface FontFace {
     /** 行と行の間に入る余白（px）。{@code line-height: normal} はこれを含む。 */
     float lineGap(FontStyle style);
 
+    /**
+     * x ハイト（px）。{@code vertical-align: middle} の基準。
+     * 既定は ascent の 5/7 で、Minecraft のフォント（ascent 7 / 小文字の高さ 5）と一致する。
+     */
+    default float xHeight(FontStyle style) {
+        return ascent(style) * (5f / 7f);
+    }
+
     /** 文字数（コードポイント単位）。省略位置とキャレット位置の決定に使う。 */
     default int glyphCount(String text) {
         return text == null || text.isEmpty() ? 0 : text.codePointCount(0, text.length());
