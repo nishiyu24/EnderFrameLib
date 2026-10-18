@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -65,11 +66,11 @@ public class UIParser {
     public static IntrinsicSizeResolver intrinsicSizeResolver = null;
 
     /**
-     * innerHTML 相当のフラグメント解析。
+     * innerHTML 相当のフラグメント解析（引数は HTML と文脈の要素のタグ）。
      * Markdown は文字列段階、カスタムタグはパース後の DOM 段階で展開する。
      */
-    public static final Function<String, HtmlNode> INNER_HTML_PARSER = html -> {
-        HtmlNode root = HtmlParser.parse(MarkdownParser.processDocumentOrBlocks(html));
+    public static final BiFunction<String, String, HtmlNode> INNER_HTML_PARSER = (html, contextTag) -> {
+        HtmlNode root = HtmlParser.parseFragment(MarkdownParser.processDocumentOrBlocks(html), contextTag);
         CustomTagExpander.expand(root);
         return root;
     };
@@ -256,7 +257,8 @@ public class UIParser {
 
         String authorCss = combinedCss.toString();
         com.nishiyu.enderframelib.core.css.StyleSheet sheet = buildStyleSheet(authorCss, rootW, rootH);
-        HtmlNode htmlRoot = HtmlParser.parse(html == null ? "" : html);
+        // 文書として解析するので、断片だけの文書にも html / head / body が補われる（W7）
+        HtmlNode htmlRoot = HtmlParser.parseDocument(html == null ? "" : html);
         // <mc-slot> などのマクロは、正規表現での文字列置換ではなく DOM の部分木差し替えで展開する
         CustomTagExpander.expand(htmlRoot);
 

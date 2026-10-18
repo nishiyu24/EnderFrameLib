@@ -290,7 +290,9 @@ public class WebFontManager {
                 protected float naturalAdvance(String text, boolean bold) {
                     Font font = fontFor(fontFamily);
                     if (font == null) return FontFace.FALLBACK.advance(text, FontStyleHolder.NATURAL);
-                    return font.width(bold ? ("§l" + text) : text);
+                    // U+00A0（&nbsp;）は Minecraft のフォントに空白の幅の字形が無いので、空白として測る（描画も同じ置き換えをする）
+                    String measured = text.replace(' ', ' ');
+                    return font.width(bold ? ("§l" + measured) : measured);
                 }
             };
         }

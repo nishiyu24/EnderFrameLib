@@ -118,7 +118,7 @@ public class UIRenderer {
 
     /**
      * 背景の指定が無い文書のキャンバス。ゲームの上に重ねて描く文書は iframe と同じ扱いで透明
-     * （ブラウザが白で塗るのは最上位の文書だけ）。HUD の断片のように html / body を持たない文書も透明になる。
+     * （ブラウザが白で塗るのは最上位の文書だけ）。html / body はパーサが必ず補う（W7）ので、背景を書かない HUD の断片も透明になる。
      * 以前は ua.css が body を白で塗り、body の無い文書は #111111 で塗りつぶしていた。
      */
     private static final int DEFAULT_CANVAS_COLOR = 0x00000000;

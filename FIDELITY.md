@@ -53,10 +53,10 @@ W6 で ua.css を HTML 標準の既定値に置き換えたときに全ケース
 
 - **字幅に依存させない。** 寸法は明示し、インラインブロックを並べる行は `font-size: 0` にして
   字幅と strut を消す（`font-size: 0` の行で strut の高さを測るケースだけは例外）。
-- **ケースは `body` の中身として書く。** ブラウザ側は `<html><head><style>ua.css</style></head><body>` で、
-  エンジン側は `FidelityDumper` が `<html><head></head><body>` で包むので、両側とも ua.css の
-  `body { margin: 8px }` が効く（パーサは html / body を暗黙に補わない。W7）。ua.css はブラウザ側では
-  作者スタイルとして当たるが、W6 以降は HTML 標準の既定値と同じなので、ブラウザ自身の UA と食い違わない。
+- **ケースは `body` の中身として書く。** ブラウザ側は `<html><head><style>ua.css</style></head><body>` で包み、
+  エンジン側はパーサが html / head / body を暗黙に補う（W7。W6 では `FidelityDumper` が包んでいた）ので、
+  両側とも ua.css の `body { margin: 8px }` が効く。ua.css はブラウザ側では作者スタイルとして当たるが、
+  W6 以降は HTML 標準の既定値と同じなので、ブラウザ自身の UA と食い違わない。
 - **表の行に id を付けない。** Chromium は `table-row` をヒットテストしないので、行の `z` が
   常に -1 になる（行の幾何はセルから分かる）。
 
@@ -65,6 +65,14 @@ W6 で ua.css を HTML 標準の既定値に置き換えたときに全ケース
 F2 で**フォント指標に依存しないテキストの幾何**が入った。
 行送り（`line-height` が長さ指定のとき）・強制改行の行数・`white-space: pre` の
 行分割は、グリフの送り幅に左右されないのでブラウザと直接突き合わせられる。
+
+矩形のコーパスの外で、**HTML のツリー構築**もブラウザと突き合わせている（W7）。
+`HtmlTreeConstructionTest` の各ケースは、入力を Edge 155 の `DOMParser`（文書）と innerHTML（断片。文脈は
+`body` / `tbody` / `tr` / `template`）に通して書き出した木を期待値にしている（暗黙の html / head / body・
+暗黙終了・暗黙の `tbody` / `tr` / `colgroup`・表の前に出される要素と文字・文字参照）。
+書式要素の再構築（`<p><b>x</p>y` の 2 つ目の `b`）は入れていない（`HtmlParser` の `LIMITATION`）。
+属性値の中の `;` の無い文字参照は仕様に従う。Chromium は同じ属性に `&amp;` があると `&copy=` のような
+名前も解く（仕様では `=` が続けば解かない）ので、そのケースは期待値にしていない。
 
 測れていないのは次の 2 つ。
 
@@ -97,6 +105,9 @@ W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 で�
 
 ## 解消済みの差異
 
+- **W7（0 行）**: 台帳の行は無かった。パーサが html / head / body を暗黙に補うようにし、`FidelityDumper` が
+  ケースを包むのをやめても全ケースが一致することを確かめた。ツリー構築そのものは `HtmlTreeConstructionTest` が
+  ブラウザの木と突き合わせる（上の「測れていること」）。
 - **W6（5 行）**: `definition-list`。ua.css を WHATWG HTML の Rendering 節の既定値に置き換え
   （`dl` の `margin: 1em 0`、`dd` の `margin-left: 40px`、`body` の `margin: 8px`、見出しの `em`、表の
   `border-spacing: 2px` など）、装飾は組み込みテーマへ移した。採り直しで `body` の margin が全ケースに
