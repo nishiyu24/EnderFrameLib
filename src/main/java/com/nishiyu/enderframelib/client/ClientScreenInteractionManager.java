@@ -14,7 +14,7 @@ import com.nishiyu.enderframelib.core.event.DomEvent;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;

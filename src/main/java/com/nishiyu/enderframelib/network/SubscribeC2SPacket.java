@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.network.c2s;
+package com.nishiyu.enderframelib.network;
 
 import com.nishiyu.enderframelib.server.PlayerRateLimiter;
 import com.nishiyu.enderframelib.server.ServerPubSubManager;

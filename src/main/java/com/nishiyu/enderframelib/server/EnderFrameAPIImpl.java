@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.server;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.IWebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
-import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;

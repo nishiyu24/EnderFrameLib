@@ -1,10 +1,6 @@
 package com.nishiyu.enderframelib.network;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.network.c2s.SubscribeC2SPacket;
-import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
-import com.nishiyu.enderframelib.network.s2c.PubSubUpdateS2CPacket;
-import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;

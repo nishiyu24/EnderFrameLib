@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.network.dom;
+package com.nishiyu.enderframelib.network;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;

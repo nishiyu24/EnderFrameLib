@@ -9,7 +9,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.common.WebDevKitExporter;
-import com.nishiyu.enderframelib.network.s2c.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
