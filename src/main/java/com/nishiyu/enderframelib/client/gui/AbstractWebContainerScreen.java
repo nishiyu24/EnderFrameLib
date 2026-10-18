@@ -147,7 +147,6 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
                 forceReload
         );
         this.state.forceSync();
-        ClientWebManager.processRenderQueue();
         syncVanillaSlotsToDom();
     }
 
@@ -345,7 +344,6 @@ public abstract class AbstractWebContainerScreen<T extends AbstractContainerMenu
         double webY = toWebY(mouseY);
 
         hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
-        this.uiSupport.updateHoverState(webX, webY);
 
         List<UIElement> elements = ClientWebManager.getElements(sessionId);
         if (elements != null && !elements.isEmpty()) {

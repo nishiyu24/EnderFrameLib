@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.network.dom;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.NodeType;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -48,7 +49,10 @@ public class HtmlNodeSerializer {
             return new HtmlNode("div");
         }
 
-        HtmlNode node = new HtmlNode(tag.getString("tag"));
+        String tagName = tag.getString("tag");
+        HtmlNode node = "#text".equals(tagName)
+                ? HtmlNode.createTextNode(tag.getString("text"))
+                : new HtmlNode(NodeType.ELEMENT, tagName);
         node.setId(tag.getString("id"));
         node.text = tag.getString("text");
         node.parent = parent;

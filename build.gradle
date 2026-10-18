@@ -135,4 +135,13 @@ idea {
 // --- 追加: JUnitを実行するための設定 ---
 tasks.named('test', Test) {
     useJUnitPlatform()
+
+    // -D で渡したフラグは Gradle デーモンのプロパティになるだけで、テスト JVM には伝わらない。
+    // CONTRIBUTING に書いてある -Dgolden.update=true が黙って無効になっていたため明示的に渡す。
+    // inputs.property があるのは、フラグを変えただけでは UP-TO-DATE で素通りしてしまうため。
+    ['golden.update', 'fidelity.dump'].each { key ->
+        def value = System.getProperty(key)
+        if (value != null) systemProperty key, value
+        inputs.property key, value ?: ''
+    }
 }

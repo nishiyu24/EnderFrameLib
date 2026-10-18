@@ -25,9 +25,9 @@ public class HtmlNode {
     public HtmlNode parent = null;
     public boolean isPseudoNode = false;
 
-    // Elementノード用コンストラクタ
+    // Elementノード用コンストラクタ（"#text" の場合は NodeType.TEXT として扱う）
     public HtmlNode(String tag) {
-        this(NodeType.ELEMENT, tag);
+        this("#text".equals(tag) ? NodeType.TEXT : NodeType.ELEMENT, tag);
     }
 
     // 指定タイプ用コンストラクタ

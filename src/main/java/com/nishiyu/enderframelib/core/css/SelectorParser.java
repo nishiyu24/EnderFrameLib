@@ -50,11 +50,16 @@ public final class SelectorParser {
         boolean isHover = false;
         boolean isActive = false;
         boolean isFocus = false;
+        int stateMask = 0;
         for (SelectorToken t : compounds) {
-            // A-2 修正: 結合子の有無に関わらず、ルール全体として状態フラグを立てる
+            // 結合子の有無に関わらず、ルール全体が依存する状態マスクを集約する
             isHover |= t.parsedHover;
             isActive |= t.parsedActive;
             isFocus |= t.parsedFocus;
+            stateMask |= t.stateFlags;
+            for (SelectorToken nt : t.notSelectors) {
+                stateMask |= nt.stateFlags;
+            }
         }
 
         // 疑似要素は構造上の照合対象から外すため、セレクタ本体のテキストからは取り除いた形を保持する
@@ -64,7 +69,7 @@ public final class SelectorParser {
 
         Specificity specificity = new Specificity(origin, important, spec[0], spec[1], spec[2]);
         return new Selector(bodyText.trim(), compounds, combinators, isBefore, isAfter,
-                isHover, isActive, isFocus, specificity);
+                isHover, isActive, isFocus, stateMask, specificity);
     }
 
     /** 後方互換用。複合セレクタ 1 つを既存のトークンに書き込む。 */
@@ -168,11 +173,42 @@ public final class SelectorParser {
         }
 
         switch (name) {
-            case "hover" -> out.parsedHover = true;
-            case "active" -> out.parsedActive = true;
-            case "focus", "focus-visible", "focus-within" -> out.parsedFocus = true;
-            case "checked" -> out.isChecked = true;
-            case "disabled" -> out.isDisabled = true;
+            case "hover" -> {
+                out.parsedHover = true;
+                out.stateFlags |= ElementState.HOVER;
+            }
+            case "active" -> {
+                out.parsedActive = true;
+                out.stateFlags |= ElementState.ACTIVE;
+            }
+            case "focus" -> {
+                out.parsedFocus = true;
+                out.stateFlags |= ElementState.FOCUS;
+            }
+            case "focus-visible" -> {
+                out.parsedFocusVisible = true;
+                out.stateFlags |= ElementState.FOCUS_VISIBLE;
+            }
+            case "focus-within" -> {
+                out.parsedFocusWithin = true;
+                out.stateFlags |= ElementState.FOCUS_WITHIN;
+            }
+            case "checked" -> {
+                out.isChecked = true;
+                out.stateFlags |= ElementState.CHECKED;
+            }
+            case "disabled" -> {
+                out.isDisabled = true;
+                out.stateFlags |= ElementState.DISABLED;
+            }
+            case "indeterminate" -> {
+                out.isIndeterminate = true;
+                out.stateFlags |= ElementState.INDETERMINATE;
+            }
+            case "open" -> {
+                out.isOpen = true;
+                out.stateFlags |= ElementState.OPEN;
+            }
             case "first-child" -> out.isFirstChild = true;
             case "last-child" -> out.isLastChild = true;
             case "empty" -> out.isEmpty = true;

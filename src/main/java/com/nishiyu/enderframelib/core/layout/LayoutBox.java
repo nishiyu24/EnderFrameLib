@@ -4,6 +4,9 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.text.FontFace;
+import com.nishiyu.enderframelib.core.text.FontStyle;
+import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +22,11 @@ import java.util.List;
 public class LayoutBox {
 
     public final HtmlNode node;
-    public final ComputedStyle style;
+    public ComputedStyle style;
     public final List<LayoutBox> children = new ArrayList<>();
+
+    /** この要素に対話状態（:hover / :active / :focus 等）のセレクタが関与するか。 */
+    public boolean hasInteractiveRules = false;
 
     public int x, y, w, h;
     public String displayText = "";
@@ -32,10 +38,19 @@ public class LayoutBox {
 
     public boolean isAbsolute = false, isFixed = false, isRelative = false;
     public int zIndex = 0;
-    /** 基準フォントサイズ（16px）に対する倍率。 */
-    public float fontSize = 1.0f;
-    /** テキストノードの折り返し結果。 */
-    public List<String> textLines = null;
+    /**
+     * 解決済みの 1 行分の高さ（px）。
+     * 自分で複数行を並べる要素（textarea）と描画側の行送りがこれを読む。
+     * 以前は描画側が line-height を独自に解析していて、% / em / normal で食い違っていた。
+     */
+    public float lineHeightPx = 0;
+    /**
+     * テキストノードの整形結果。幅・ベースライン・行高を各行が持つ。
+     *
+     * 以前は折り返した文字列（{@code List<String>}）だけを持っていたため、
+     * 描画側が行の幅と行送りを自前で測り直していた。
+     */
+    public List<TextShaper.ShapedLine> shapedLines = null;
 
     public List<InlineFragment> inlineFragments = new ArrayList<>();
     /** エンジン固有の状態（グリッドの行列など）。 */
@@ -51,16 +66,24 @@ public class LayoutBox {
 
     public LayoutBox(HtmlNode node, ComputedStyle style) {
         this.node = node;
-        this.style = style;
+        updateStyle(style);
+    }
 
-        String text = LayoutMetrics.collapseWhitespace(node.text);
-        this.displayText = text != null ? text : "";
+    /**
+     * 算出スタイルを更新する（再スタイル時にジオメトリを保ったまま描画属性だけ差し替える用途を含む）。
+     */
+    public void updateStyle(ComputedStyle newStyle) {
+        this.style = newStyle;
 
-        String pos = style.getOrDefault(CssProperty.POSITION, "static");
+        // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
+        String text = TextShaper.normalize(node.text, TextShaper.WhiteSpace.of(newStyle.get(CssProperty.WHITE_SPACE)));
+        this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
+
+        String pos = newStyle.getOrDefault(CssProperty.POSITION, "static");
         this.isFixed = "fixed".equals(pos);
         this.isAbsolute = "absolute".equals(pos) || this.isFixed;
         this.isRelative = "relative".equals(pos);
-        this.zIndex = (int) style.number(CssProperty.Z_INDEX, 0f);
+        this.zIndex = (int) newStyle.number(CssProperty.Z_INDEX, 0f);
     }
 
     public int horizontalDecoration() { return pL + pR + bL + bR; }
@@ -97,7 +120,9 @@ public class LayoutBox {
         int rootW = ctx.viewport().rootW();
         int rootH = ctx.viewport().rootH();
 
-        if (style.containsKey(CssProperty.MIN_WIDTH)) {
+        // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
+        String minWidthDecl = style.get(CssProperty.MIN_WIDTH);
+        if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)) {
             return style.length(CssProperty.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
         }
 
@@ -117,14 +142,16 @@ public class LayoutBox {
         }
 
         if (node.nodeType == NodeType.TEXT) {
-            int maxWordW = 0;
-            boolean bold = LayoutMetrics.isBold(style);
-            for (String word : LayoutMetrics.splitWords(this.displayText)) {
-                if (!word.trim().isEmpty()) {
-                    maxWordW = Math.max(maxWordW, ctx.fontMetrics().getDisplayWidth(word, this.fontSize, bold));
-                }
+            // これ以上縮められない幅 = 最も長い「折り返し候補で切れない塊」の幅
+            TextShaper.TextStyle textStyle = ctx.textStyleFor(style);
+            FontFace face = ctx.faceFor(style);
+            FontStyle font = textStyle.font();
+            float maxWordW = 0;
+            for (String segment : TextShaper.segments(this.displayText, textStyle.wordBreak())) {
+                String word = segment.strip();
+                if (!word.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(word, font));
             }
-            return maxWordW;
+            return (int) Math.ceil(maxWordW);
         }
 
         if (children.isEmpty()) {
@@ -245,6 +272,12 @@ public class LayoutBox {
     public static class InlineFragment {
         public LayoutBox box;
         public int x, y, w, h;
+        /**
+         * 断片の上端からベースラインまでの距離（px）。
+         * これが無かったため描画側は「高さ 8px の箱」を仮定した行内センタリングで
+         * 位置を推測していて、フォントサイズが混ざった行で文字が揃わなかった。
+         */
+        public float baseline;
         public String text;
         public List<LayoutBox> parents;
 

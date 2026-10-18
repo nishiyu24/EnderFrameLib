@@ -97,7 +97,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
                 totalFr += parseFr(colDefs[i]);
             } else {
                 gs.colWidths[i] = LengthResolver.parseDim(colDefs[i], tentativeInnerW, rootW, rootH,
-                        box.fontSize * LayoutMetrics.BASE_FONT_SIZE, LayoutMetrics.BASE_FONT_SIZE);
+                        box.style.fontSizePx(), box.style.rootFontSizePx());
                 fixedW = (int) (fixedW + gs.colWidths[i]);
             }
         }
@@ -220,7 +220,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         for (int r = 0; r < gs.rowsCount; r++) {
             if (r < rowDefs.length && !"auto".equals(rowDefs[r]) && !rowDefs[r].endsWith("fr")) {
                 gs.rowHeights[r] = LengthResolver.parseDim(rowDefs[r], parentH, rootW, rootH,
-                        box.fontSize * LayoutMetrics.BASE_FONT_SIZE, LayoutMetrics.BASE_FONT_SIZE);
+                        box.style.fontSizePx(), box.style.rootFontSizePx());
             } else {
                 float maxH = 0;
                 for (GridItem item : gs.items) {

@@ -35,11 +35,11 @@ public record UIElement(
     }
 
     public boolean hasHover() {
-        return meta != null && meta.pseudoStates() != null && meta.pseudoStates().hasHover();
+        return meta != null && meta.interactiveState();
     }
 
     public boolean hasPseudo() {
-        return meta != null && meta.pseudoStates() != null && meta.pseudoStates().hasAny();
+        return meta != null && meta.interactiveState();
     }
 
     public UIElement withText(String newText) {
@@ -56,12 +56,43 @@ public record UIElement(
             GradientSpec gradient,
             CircleBorderSpec circleBorder,
             float fontHeight,
+            float baseline,
+            float lineHeight,
             float originX,
             float originY,
             int itemCount,
-            PseudoStates pseudoStates
+            boolean interactiveState
     ) {
-        public static final RenderMeta EMPTY = new RenderMeta(null, null, null, null, 16.0f, 0.5f, 0.5f, 1, PseudoStates.EMPTY);
+        public static final RenderMeta EMPTY = new RenderMeta(null, null, null, null, 16.0f, 0.5f, 0.5f, 1, false);
+
+        /**
+         * 行の情報を持たない要素（テキスト以外）のための短縮形。
+         *
+         * {@code baseline} はレイアウトが決めた「要素の上端からベースラインまでの距離」で、
+         * テキスト要素だけが値を持つ。0 のときは描画側が書体から中央に置く。
+         * {@code lineHeight} は複数行を自分で並べる要素（textarea）のための行送り。
+         */
+        public RenderMeta(ClipRect clipRect, Corners borderRadii, GradientSpec gradient,
+                          CircleBorderSpec circleBorder, float fontHeight, float originX, float originY,
+                          int itemCount, boolean interactiveState) {
+            this(clipRect, borderRadii, gradient, circleBorder, fontHeight, 0.0f, 0.0f,
+                    originX, originY, itemCount, interactiveState);
+        }
+
+        /**
+         * 素のサイズからのフォントの倍率。
+         * 描画もクリック位置の解釈もこの 1 つの式を使う
+         * （別々に書くと、見えている文字とキャレットの位置が食い違う）。
+         */
+        public float textScale() {
+            return fontHeight / com.nishiyu.enderframelib.core.text.BitmapFontFace.MC_UNITS_PER_EM;
+        }
+
+        /** 行送り（px）。レイアウトが解決していなければ {@code line-height: normal} 相当。 */
+        public float resolvedLineHeight() {
+            if (lineHeight > 0) return lineHeight;
+            return fontHeight * (1.0f + com.nishiyu.enderframelib.core.text.BitmapFontFace.MC_LINE_GAP_RATIO);
+        }
 
         public boolean hasClip() {
             return clipRect != null;
@@ -74,7 +105,7 @@ public record UIElement(
         public static RenderMeta fromEvents(Map<String, String> events, int fallbackRadius, int boxH) {
             if (events == null || events.isEmpty()) {
                 Corners r = fallbackRadius > 0 ? Corners.all(fallbackRadius) : null;
-                return new RenderMeta(null, r, null, null, Math.max(10.0f, boxH), 0.5f, 0.5f, 1, PseudoStates.EMPTY);
+                return new RenderMeta(null, r, null, null, Math.max(10.0f, boxH), 0.5f, 0.5f, 1, false);
             }
 
             ClipRect clip = null;
@@ -136,7 +167,7 @@ public record UIElement(
                 try { count = Integer.parseInt(events.get("data-count").trim()); } catch (Exception ignored) {}
             }
 
-            return new RenderMeta(clip, radii, grad, null, fontH, ox, oy, count, PseudoStates.EMPTY);
+            return new RenderMeta(clip, radii, grad, null, fontH, ox, oy, count, false);
         }
     }
 }

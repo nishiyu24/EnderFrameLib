@@ -44,7 +44,8 @@ public class ClientScreenInteractionManager {
 
     @FunctionalInterface
     public interface IClientEventCallback {
-        void onEvent(String sessionId, String elementId, String eventName, String actionName, String value);
+        /** @return ローカルで処理したなら true（その場合はサーバーへ転送しない）。 */
+        boolean onEvent(String sessionId, String elementId, String eventName, String actionName, String value);
     }
 
     // --- 拡張口 ---
@@ -62,6 +63,14 @@ public class ClientScreenInteractionManager {
     /** 要素イベントを受け取るコールバック。{@code null} で解除。 */
     public static void setClientEventCallback(IClientEventCallback callback) {
         clientEventCallback = callback;
+    }
+
+    /**
+     * 自分が登録したコールバックだけを外す。
+     * 画面が閉じるときに、後から開いた別画面の登録を消さないため。
+     */
+    public static void removeClientEventCallback(IClientEventCallback callback) {
+        if (clientEventCallback == callback) clientEventCallback = null;
     }
 
     /** ローカルセッションのイベントもサーバーへ転送するか。 */
@@ -353,14 +362,29 @@ public class ClientScreenInteractionManager {
     private static void triggerLocalEvent(String sessionId, String elementId, String eventName, String actionName, String value) {
         if (sessionId == null || sessionId.isEmpty()) return;
         boolean hasCustomAction = actionName != null && !actionName.isEmpty() && !"auto".equals(actionName);
+
+        // 呼び出し側がアクション名を持っていない経路（onmouseleave / ondragend の "auto"）では、
+        // DOM の属性から引く。これが無いと、離脱イベントのローカルハンドラが呼ばれない。
+        if (!hasCustomAction) {
+            String domAction = resolveDomAction(sessionId, elementId, eventName);
+            if (!domAction.isEmpty()) {
+                actionName = domAction;
+                hasCustomAction = true;
+            }
+        }
         boolean isFormSyncEvent = ("oninput".equalsIgnoreCase(eventName) || "onchange".equalsIgnoreCase(eventName))
                 && elementId != null && !elementId.isEmpty();
 
+        boolean handledLocally = false;
         if (hasCustomAction && clientEventCallback != null) {
-            clientEventCallback.onEvent(sessionId, elementId, eventName, actionName, value);
+            handledLocally = clientEventCallback.onEvent(sessionId, elementId, eventName, actionName, value);
         }
 
-        if ((hasCustomAction || isFormSyncEvent) && (forwardEventsToServer || ClientWebManager.isServerManagedSession(sessionId))) {
+        // ローカルのルータが処理したイベントは、そのルータ自身がサーバー送信まで面倒を見る
+        // (server: プレフィックス)。ここで重ねて送るとサーバーに 2 回届く。
+        if (!handledLocally
+                && (hasCustomAction || isFormSyncEvent)
+                && (forwardEventsToServer || ClientWebManager.isServerManagedSession(sessionId))) {
             CompoundTag tag = new CompoundTag();
             tag.putString("ElementId", elementId != null ? elementId : "");
             tag.putString("EventName", eventName != null ? eventName : "");
@@ -368,6 +392,15 @@ public class ClientScreenInteractionManager {
             tag.putString("Value", value != null ? value : "");
             PacketDistributor.sendToServer(new WebActionC2SPacket(sessionId, "ui_event", tag));
         }
+    }
+
+    /** DOM 側の {@code on*} 属性からアクション名を引く。無ければ空文字。 */
+    private static String resolveDomAction(String sessionId, String elementId, String eventName) {
+        if (elementId == null || elementId.isEmpty() || eventName == null) return "";
+        HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), elementId);
+        if (node == null) return "";
+        String action = node.attrs.get(eventName);
+        return action != null ? action : "";
     }
 
     private static String getEventAction(Map<String, String> events, String eventName) {
@@ -482,6 +515,7 @@ public class ClientScreenInteractionManager {
                     ClientWebManager.updateNodeAttributeLocally(sessionId, currentHitId, "hover", "true", false);
                 }
                 state.hoveredId = currentHitId;
+                ClientWebManager.setHoveredElement(sessionId, currentHitId);
             }
             if (hasEvent(events, "onmousemove") && (now - state.lastEventTime > 50)) {
                 triggerLocalEvent(sessionId, currentHitId, "onmousemove", getEventAction(events, "onmousemove"), coordStr);
@@ -495,6 +529,7 @@ public class ClientScreenInteractionManager {
                     ClientWebManager.updateNodeAttributeLocally(sessionId, state.hoveredId, "hover", null, true);
                 }
                 state.hoveredId = "";
+                ClientWebManager.setHoveredElement(sessionId, "");
             }
             return "";
         }
@@ -519,7 +554,6 @@ public class ClientScreenInteractionManager {
 
         submitInput(sessionId, baseId, nextVal);
         ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", nextVal, false);
-        ClientWebManager.processRenderQueue();
     }
 
     public static UIElement handleClick(String sessionId, double pixelX, double pixelY) {
@@ -561,13 +595,15 @@ public class ClientScreenInteractionManager {
                 HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
                 if (isRadioNode(node)) {
                     DomUtils.selectRadioButton(ClientWebManager.getVirtualRoot(sessionId), node);
+                    SessionContext session = ClientWebManager.getSession(sessionId);
+                    if (session != null) session.interactionState().markAllDirty();
+                    ClientWebManager.requestRender(sessionId);
                     triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
                 } else {
                     ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
                     String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
                     triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
                 }
-                ClientWebManager.processRenderQueue();
             } else if (clickedEl.type() == ElementType.SELECT && Minecraft.getInstance().screen == null) {
                 // ★ select の場合、クリックするたびに値と表示が切り替わる
                 cycleSelectOption(sessionId, baseId);

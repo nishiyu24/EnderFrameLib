@@ -3,13 +3,19 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.text.FontMetrics;
+import com.nishiyu.enderframelib.core.text.FontFace;
+import com.nishiyu.enderframelib.core.text.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontStyle;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -23,8 +29,17 @@ public class InlineLayoutConsistencyTest {
 
     private static final Viewport VIEWPORT = new Viewport(1920, 1080);
 
+    /**
+     * 既定の 1 行の高さ。
+     * 以前は {@code 16 * 1.375 = 22} の固定値だったが、{@code line-height: normal} は
+     * 書体の ascent + descent + 行間から決まる（F2）。値を書き写すとどちらが正しいか
+     * 分からなくなるので、書体から引く。
+     */
+    private static final int LINE_H =
+            Math.round(FontFace.FALLBACK.normalLineHeight(new FontStyle(16.0f, false, false, 0f)));
+
     private static LayoutContext newContext() {
-        return new LayoutContext(VIEWPORT, src -> new int[]{32, 32}, new ScrollState(), FontMetrics.FALLBACK);
+        return new LayoutContext(VIEWPORT, src -> new int[]{32, 32}, new ScrollState(), FontResolver.FALLBACK);
     }
 
     private static ComputedStyle style(String... keyValues) {
@@ -60,9 +75,8 @@ public class InlineLayoutConsistencyTest {
                 "配置した行が測定した高さを超えている: 行の下端=" + lowestFragmentBottom
                         + " 親の下端=" + (pBox.y + pBox.h));
 
-        // 行数 × 行高 が親の高さに収まっていること（行高は 16px * 1.375 = 22px）
         int lineCount = countDistinctLines(textBox);
-        assertEquals(lineCount * 22, pBox.h, "親の高さが行数と一致しない");
+        assertEquals(lineCount * LINE_H, pBox.h, "親の高さが行数と一致しない");
     }
 
     /** 連続した br が、測定でも配置でも同じ行数分の高さを占めること。 */
@@ -80,13 +94,13 @@ public class InlineLayoutConsistencyTest {
         divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
         divBox.layout(0, 0, 400, 600, ctx);
 
-        // a / 空行 / b の 3 行分（22px * 3）
-        assertEquals(66, divBox.h);
+        // a / 空行 / b の 3 行分
+        assertEquals(3 * LINE_H, divBox.h);
 
         LayoutBox lastText = divBox.children.getLast();
         assertEquals(1, lastText.inlineFragments.size());
         // 最後の "b" は 3 行目に置かれる
-        assertEquals(divBox.y + 44, lastText.inlineFragments.getFirst().y);
+        assertEquals(divBox.y + 2 * LINE_H, lastText.inlineFragments.getFirst().y);
     }
 
     /**
@@ -108,7 +122,90 @@ public class InlineLayoutConsistencyTest {
 
         int lineCount = countDistinctLines(textBox);
         assertTrue(lineCount >= 1, "断片が置かれていない");
-        assertEquals(lineCount * 22, spanBox.h, "測定した高さと配置した行数が一致しない");
+        assertEquals(lineCount * LINE_H, spanBox.h, "測定した高さと配置した行数が一致しない");
+    }
+
+    /**
+     * display が明示されていない #text / span / b / br でもインライン整形コンテキストで配置されること。
+     * StyleResolver を通した実戦スタイル（ua.css に display: inline 指定がない状態）を再現する。
+     */
+    @Test
+    public void testInlineElementsWithoutExplicitDisplayPropertyAreLaidOutInline() {
+        HtmlNode root = HtmlParser.parse("<div>Hello <b>bold</b> and <span>inline</span><br>next line</div>");
+        HtmlNode div = root.children.get(0);
+
+        LayoutBox divBox = new LayoutBox(div, style("display", "block", "width", "300px"));
+        for (HtmlNode child : div.children) {
+            LayoutBox childBox = new LayoutBox(child, style());
+            for (HtmlNode grandChild : child.children) {
+                childBox.children.add(new LayoutBox(grandChild, style()));
+            }
+            divBox.children.add(childBox);
+        }
+
+        LayoutContext ctx = newContext();
+        divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        divBox.layout(0, 0, 400, 600, ctx);
+
+        // 1行目: "Hello " + "bold" + " and " + "inline"、2行目: "next line" の 2 行
+        assertEquals(2 * LINE_H, divBox.h, "インライン要素が横並びにならずブロック積みになっている");
+        LayoutBox firstText = divBox.children.get(0);
+        LayoutBox lastText = divBox.children.getLast();
+        assertFalse(firstText.inlineFragments.isEmpty());
+        assertFalse(lastText.inlineFragments.isEmpty());
+        assertEquals(0, firstText.inlineFragments.getFirst().y);
+        assertEquals(LINE_H, lastText.inlineFragments.getFirst().y);
+    }
+
+    /**
+     * 同じ行に乗った断片のベースラインが一致し、x が重ならずに進むこと。
+     *
+     * F4（フラグメントツリーとインライン整形の作り直し）はこの経路を大きく触る。
+     * 行数と親への収まりだけでは「各断片がどこに置かれたか」が守られないので、
+     * 座標そのものを固定しておく。
+     */
+    @Test
+    public void testFragmentsOnOneLineShareABaselineAndAdvanceInOrder() {
+        HtmlNode root = HtmlParser.parse("<div>Hello <b>bold</b> tail</div>");
+        HtmlNode div = root.children.get(0);
+
+        LayoutBox divBox = new LayoutBox(div, style("display", "block", "width", "400px"));
+        for (HtmlNode child : div.children) {
+            LayoutBox childBox = new LayoutBox(child, style());
+            for (HtmlNode grandChild : child.children) {
+                childBox.children.add(new LayoutBox(grandChild, style()));
+            }
+            divBox.children.add(childBox);
+        }
+
+        LayoutContext ctx = newContext();
+        divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        divBox.layout(0, 0, 400, 600, ctx);
+
+        // 幅 400px なら 1 行に収まる
+        assertEquals(LINE_H, divBox.h, "1 行に収まっていない");
+
+        List<LayoutBox.InlineFragment> fragments = new ArrayList<>();
+        collectTextFragments(divBox, fragments);
+        assertTrue(fragments.size() >= 3, "断片が足りない: " + fragments.size());
+        fragments.sort(Comparator.comparingInt(f -> f.x));
+
+        float expectedBaseline = fragments.getFirst().y + fragments.getFirst().baseline;
+        int previousRight = Integer.MIN_VALUE;
+        for (LayoutBox.InlineFragment f : fragments) {
+            assertEquals(expectedBaseline, f.y + f.baseline, 0.001f,
+                    "同じ行の断片のベースラインが揃っていない: " + f.text);
+            assertTrue(f.x >= previousRight, "断片が前の断片に重なっている: " + f.text);
+            previousRight = f.x + f.w;
+        }
+        assertTrue(previousRight <= divBox.x + divBox.w, "行が親の幅を超えている: " + previousRight);
+    }
+
+    private static void collectTextFragments(LayoutBox box, List<LayoutBox.InlineFragment> out) {
+        for (LayoutBox.InlineFragment f : box.inlineFragments) {
+            if (f.isText()) out.add(f);
+        }
+        for (LayoutBox child : box.children) collectTextFragments(child, out);
     }
 
     private static int countDistinctLines(LayoutBox box) {

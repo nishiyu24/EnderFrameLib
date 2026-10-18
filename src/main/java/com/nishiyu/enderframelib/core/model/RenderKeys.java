@@ -15,6 +15,7 @@ public final class RenderKeys {
     public static final String MC_ORIGIN = "mc-origin";
     public static final String MC_DELAY = "mc-delay";
     public static final String MC_EASING = "mc-easing";
+    public static final String MC_TRANSITION_PROP = "mc-transition-prop";
     public static final String MC_SCROLLABLE = "mc-scrollable";
     public static final String MC_SCROLL_CURRENT = "mc-scroll-current";
 }

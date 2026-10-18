@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.client.gui;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.TextEditState;
 import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
@@ -38,7 +39,7 @@ public class WebScreenDelegate {
     private final InteractionHandler interactionHandler;
 
     private WebTextInputHost inputHost;
-    private String lastHoveredElementId = "";
+    private final ClientScreenInteractionManager.IClientEventCallback eventCallback;
 
     public WebScreenDelegate(String sessionId, WebStateStore state) {
         this.sessionId = sessionId;
@@ -50,6 +51,18 @@ public class WebScreenDelegate {
         this.focusNavigator = new WebFocusNavigator(sessionId);
         this.textareaEditor = new WebTextareaEditor(sessionId);
         this.interactionHandler = new InteractionHandler(sessionId, state);
+
+        // 何が壊れていたか: 以前はこの画面が独自にホバーを追跡して
+        // onmouseenter / onmouseleave を発火し、ClientScreenInteractionManager 側も
+        // 同じイベントを発火していたため、1 回のホバーで 2 回飛んでいた
+        // （server: アクションならサーバーにも 2 回届いた）。
+        // 追跡は ClientScreenInteractionManager に 1 本化し、ローカルのルータは
+        // そこからのコールバックで受ける。
+        this.eventCallback = (sid, elementId, eventName, actionName, value) -> {
+            if (!this.sessionId.equals(sid)) return false;
+            return router.dispatch(actionName);
+        };
+        ClientScreenInteractionManager.setClientEventCallback(this.eventCallback);
     }
 
     public WebViewport viewport() { return viewport; }
@@ -124,28 +137,13 @@ public class WebScreenDelegate {
     }
 
     public void setFocusedDomElement(String baseId) {
-        String safeNext = baseId != null ? baseId : "";
-        if (Objects.equals(focusNavigator.focusedId(), safeNext)) return;
-        focusNavigator.setFocused(safeNext);
-        HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
-        if (vRoot != null) {
-            ClientWebManager.requestRender(sessionId);
-        }
+        setFocusedDomElement(baseId, false);
     }
 
-    public void updateHoverState(double webX, double webY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
-        String currentHoveredId = (hit != null && hit.element() != null) ? hit.element().baseId() : "";
-
-        if (!currentHoveredId.equals(lastHoveredElementId)) {
-            if (!lastHoveredElementId.isEmpty()) {
-                triggerLocalEvent(lastHoveredElementId, "onmouseleave", null);
-            }
-            if (!currentHoveredId.isEmpty()) {
-                triggerLocalEvent(currentHoveredId, "onmouseenter", null);
-            }
-            lastHoveredElementId = currentHoveredId;
-        }
+    public void setFocusedDomElement(String baseId, boolean focusVisible) {
+        String safeNext = baseId != null ? baseId : "";
+        focusNavigator.setFocused(safeNext);
+        ClientWebManager.setFocusedElement(sessionId, safeNext, focusVisible);
     }
 
     private void triggerLocalEvent(String elementId, String eventType, String value) {
@@ -343,8 +341,7 @@ public class WebScreenDelegate {
     private void applyFocusCandidate(Screen screen, WebFocusNavigator.FocusCandidate candidate) {
         unfocusWebInput();
         String baseId = candidate.node().getId();
-        setFocusedDomElement(baseId);
-        ClientWebManager.processRenderQueue();
+        setFocusedDomElement(baseId, true);
 
         HtmlNode node = candidate.node();
         if ("input".equalsIgnoreCase(node.tag)) {
@@ -354,6 +351,7 @@ public class WebScreenDelegate {
                     HtmlNode vNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
                     String val = (vNode != null) ? vNode.attrs.getOrDefault("value", "") : "";
                     focusWebInput(screen, baseId, val);
+                    ClientWebManager.setFocusedElement(sessionId, baseId, true);
                 }
             }
         }
@@ -376,7 +374,6 @@ public class WebScreenDelegate {
                 : String.format(Locale.ROOT, "%.2f", next);
 
         ClientWebManager.updateNodeAttributeLocally(sessionId, focusedId, "value", formatted, false);
-        ClientWebManager.processRenderQueue();
         if (this.state != null) this.state.notifyElementModelChanged(focusedId, formatted);
         if (onInputChanged != null) onInputChanged.accept(focusedId, formatted);
         return true;
@@ -450,6 +447,7 @@ public class WebScreenDelegate {
     }
 
     public void onClose() {
+        ClientScreenInteractionManager.removeClientEventCallback(this.eventCallback);
         unfocusWebInput();
         setFocusedDomElement("");
         interactionHandler.clearScene();

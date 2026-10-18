@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.text.FontMetrics;
+import com.nishiyu.enderframelib.core.text.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -23,7 +23,7 @@ public class LayoutGoldenTest {
                 VIEWPORT,
                 src -> new int[]{32, 32},
                 new ScrollState(),
-                FontMetrics.FALLBACK
+                FontResolver.FALLBACK
         );
     }
 
@@ -277,7 +277,7 @@ public class LayoutGoldenTest {
         LayoutContext ctx = newContext();
         box.measure(60, 600, blockRoot(), ctx);
 
-        assertTrue(box.textLines.size() > 1, "狭い幅では折り返される: " + box.textLines);
+        assertTrue(box.shapedLines.size() > 1, "狭い幅では折り返される: " + box.shapedLines);
         assertTrue(box.w <= 60, "折り返し後の幅は制限内に収まる: " + box.w);
     }
 
@@ -289,7 +289,7 @@ public class LayoutGoldenTest {
         LayoutBox child = box("div", style("display", "block", "height", "20px"));
         parent.children.add(child);
 
-        LayoutContext ctx = new LayoutContext(VIEWPORT, src -> new int[]{32, 32}, new ScrollState(), FontMetrics.FALLBACK);
+        LayoutContext ctx = new LayoutContext(VIEWPORT, src -> new int[]{32, 32}, new ScrollState(), FontResolver.FALLBACK);
         ctx.scrollState().setScroll("scroller", 0, 30);
 
         parent.measure(800, 600, blockRoot(), ctx);

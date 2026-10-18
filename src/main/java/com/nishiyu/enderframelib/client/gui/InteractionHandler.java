@@ -86,6 +86,7 @@ public class InteractionHandler {
             if (unfocusInputCallback != null) unfocusInputCallback.run();
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
+            ClientWebManager.setFocusedElement(sessionId, baseId, false);
             textareaEditor.focus(font, clicked, hit.localX(), hit.localY());
             return true;
         }
@@ -94,6 +95,7 @@ public class InteractionHandler {
         if (clicked != null && clicked.type() == ElementType.INPUT && button == 0) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
+            ClientWebManager.setFocusedElement(sessionId, baseId, false);
             String curVal = getInputValue(baseId);
             if (curVal.isEmpty() && clicked.text() != null) curVal = clicked.text();
             if (focusInputCallback != null) focusInputCallback.accept(baseId, curVal);
@@ -105,6 +107,7 @@ public class InteractionHandler {
         if (clicked != null) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
+            ClientWebManager.setFocusedElement(sessionId, baseId, false);
             ClientWebManager.setActivePressedId(sessionId, clicked.id());
 
             HtmlNode domNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
@@ -114,7 +117,6 @@ public class InteractionHandler {
             if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag) && button == 0) {
                 ClientScreenInteractionManager.playElementSound(clicked);
                 ClientWebManager.toggleNodeAttributeLocally(sessionId, summaryNode.parent.getId(), "open");
-                ClientWebManager.processRenderQueue();
                 return true;
             }
 
@@ -189,7 +191,6 @@ public class InteractionHandler {
     private void commitValue(String baseId, String value, BiConsumer<String, String> onInputChanged) {
         ClientScreenInteractionManager.submitInput(sessionId, baseId, value);
         ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", value, false);
-        ClientWebManager.processRenderQueue();
         if (this.state != null) this.state.notifyElementModelChanged(baseId, value);
         if (onInputChanged != null) onInputChanged.accept(baseId, value);
     }

@@ -17,6 +17,7 @@ public enum ElementType {
     SELECT,
     INPUT,
     RANGE,
+    PROGRESS,
     TOGGLE,
     CHECKBOX,
     RADIO,
@@ -45,6 +46,7 @@ public enum ElementType {
             case "select" -> SELECT;
             case "input" -> INPUT;
             case "range" -> RANGE;
+            case "progress", "meter" -> PROGRESS;
             case "toggle" -> TOGGLE;
             case "checkbox" -> CHECKBOX;
             case "radio" -> RADIO;

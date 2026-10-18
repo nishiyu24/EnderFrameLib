@@ -104,6 +104,7 @@ common/, server/, client/, network/  →  core/, api/ とその層
 src/test/java/.../core/        core/ の単体テスト・ゴールデンテスト
 src/test/java/.../api/         API 境界テスト（内部型が漏れていないか）
 src/test/resources/golden/     期待出力
+src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の台帳
 ```
 
 - `core/` に手を入れる変更には、素の JUnit テストを付ける。
@@ -117,6 +118,42 @@ src/test/resources/golden/     期待出力
 
   **更新後は必ず `git diff` を目視し、変わるべき差分だけが出ていることを
   確認してからコミットする。** 更新モードで通しただけの差分は受け取らない。
+- **Web 挙動との差はゴールデンではなくブラウザ実測で固定する。**
+  `WebFidelityTest` が忠実度コーパス
+  （`src/main/resources/assets/enderframelib/preview/fidelity/cases/`）を
+  エンジンに通し、ブラウザで測った期待値
+  （`src/test/resources/fidelity/expected/`）と ±1px で突き合わせる。
+
+  ```bash
+  ./gradlew test --tests '*WebFidelityTest'
+  ./gradlew test --tests '*WebFidelityTest' -Dfidelity.dump=true   # 現状の出力を build/fidelity へ
+  ```
+
+  ブラウザ側の期待値は `/enderframe devkit` が出す `fidelity-dump.html` で採る。
+  ヘッドレスでも採れる（`?auto=1` で自動実行し、結果は `<pre id="efl_result">` に入る）:
+
+  ```bash
+  chrome --headless --disable-gpu --hide-scrollbars --virtual-time-budget=8000     --dump-dom "file:///<gameDir>/enderframe_devkit/fidelity-dump.html?auto=1"
+  ```
+
+  一致しない差異は `src/test/resources/fidelity/known-divergences.txt` と
+  [FIDELITY.md](FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く
+  （前者に書いて後者に書き忘れるとテストが落ちる）。
+  **台帳に無い差異は回帰として落ち、台帳にあるのに一致した差異も「台帳が古い」として
+  落ちる。** 差異を 1 つ埋めたら、同じコミットで台帳の行・コードの `LIMITATION`・
+  README の "Not supported" を揃えて消す。
+- **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
+  `ua.css` と組み込みテーマをそのまま同梱して読む。
+  `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
+- **テキストの測定は `core/text` が唯一の出所。** 文字幅・ascent・descent・行間は
+  `FontFace`（`font-family` の引き当ては `FontResolver` / `McFontResolver`）、
+  折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
+  行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
+  **描画側（`WebRenderCore`）でテキストを測り直さないこと。**
+  `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、
+  予約した行数と見える行数が食い違う（F2 以前がその状態だった）。
+  フォントの倍率は `fontSizePx / BitmapFontFace.MC_UNITS_PER_EM` で、
+  描画時に丸めてはいけない（送り幅が変わって測定と合わなくなる）。
 - サーバー側のライフサイクル（ログアウト・ディメンション移動・サーバー停止で
   static マップが空に戻るか）は `gametest/WebScreenGameTest` が
   `./gradlew runGameTestServer` で検証する。
