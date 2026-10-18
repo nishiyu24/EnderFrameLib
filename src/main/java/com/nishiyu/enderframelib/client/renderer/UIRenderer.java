@@ -98,12 +98,40 @@ public class UIRenderer {
             buildRenderQueue(box, renderQueue, 0, null, null);
         }
 
-        renderQueue.sort(Comparator.comparingInt(RenderTask::zIndex).thenComparingInt(RenderTask::domOrder));
+        sortPaintOrder(renderQueue);
 
         for (RenderTask task : renderQueue) {
             task.drawAction().accept(elements);
         }
         return elements;
+    }
+
+    /**
+     * 箱の描画順（先に描くものが先頭）。{@link #render} と同じ並べ替えを通す。
+     *
+     * 忠実度コーパスが z-order をブラウザと突き合わせるための読み口
+     * （{@code FidelityDumper} の paint 列）。描画順の決め方を変えるときは
+     * ここも同じ経路を通るので、テストが描画と食い違うことはない。
+     */
+    public List<LayoutBox> paintOrder(LayoutBox root) {
+        fragIdCounter = 0;
+        domOrderCounter = 0;
+        List<RenderTask> queue = new ArrayList<>();
+        if ("root".equals(root.node.tag)) {
+            for (LayoutBox child : root.children) buildRenderQueue(child, queue, 0, null, null);
+        } else {
+            buildRenderQueue(root, queue, 0, null, null);
+        }
+        sortPaintOrder(queue);
+        List<LayoutBox> order = new ArrayList<>(queue.size());
+        for (RenderTask task : queue) {
+            if (task.box() != null) order.add(task.box());
+        }
+        return order;
+    }
+
+    private static void sortPaintOrder(List<RenderTask> queue) {
+        queue.sort(Comparator.comparingInt(RenderTask::zIndex).thenComparingInt(RenderTask::domOrder));
     }
 
     private LayoutBox findBodyBox(LayoutBox box) {
@@ -152,15 +180,20 @@ public class UIRenderer {
     }
 
     private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
-        if (box.w <= 0 || box.h <= 0) return;
         if ("none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
+        // LIMITATION(制約): z-index を親に足し込むだけで、スタッキングコンテキストが無い。
+        // 中の z-index が外へ漏れ、opacity / transform はコンテキストを作らず、位置指定の有無で
+        // 描画の層（CSS 2.2 付録 E）が変わらない（静的なブロックの z-index も効いてしまう）。
+        // W5 で直す。FIDELITY.md の「W5 — 描画モデル」と README の "Not supported" に対応。
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
         String currentId = box.node.getId();
         int order = domOrderCounter++;
 
-        queue.add(new RenderTask(currentZ, order, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
+        if (box.w > 0 && box.h > 0) {
+            queue.add(new RenderTask(currentZ, order, box, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
+        }
 
         String tag = box.node.tag;
         if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) {
@@ -173,9 +206,9 @@ public class UIRenderer {
         }
 
         String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
-        if ("scroll".equals(overflow) || "auto".equals(overflow)) {
+        if (box.w > 0 && box.h > 0 && ("scroll".equals(overflow) || "auto".equals(overflow))) {
             int sbOrder = domOrderCounter++;
-            queue.add(new RenderTask(currentZ + 1, sbOrder, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
+            queue.add(new RenderTask(currentZ + 1, sbOrder, null, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
         }
     }
 
@@ -195,7 +228,7 @@ public class UIRenderer {
         float nMaxX = box.x + box.w - box.bR;
         float nMaxY = box.y + box.h - box.bB;
 
-        int[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH);
+        float[] radii = LengthResolver.parseBorderRadius(box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH);
         float maxBorder = Math.max(Math.max(box.bT, box.bB), Math.max(box.bL, box.bR));
 
         float limit = Math.min(nMaxX - nMinX, nMaxY - nMinY) / 2.0f;
@@ -228,39 +261,50 @@ public class UIRenderer {
 
         int barThickness = 4;
         if (scrollH > box.h + 2 && box.h > 12) {
-            int trackX = box.x + box.w - box.bR - barThickness - 2;
-            int trackY = box.y + box.bT + 2;
-            int trackH = box.h - box.bT - box.bB - 4;
-            int thumbH = Math.max(12, (int) (trackH * (box.h / scrollH)));
+            float trackX = box.x + box.w - box.bR - barThickness - 2;
+            float trackY = box.y + box.bT + 2;
+            float trackH = box.h - box.bT - box.bB - 4;
+            float thumbH = Math.max(12, trackH * (box.h / scrollH));
             float maxScrollY = Math.max(1f, scrollH - box.h);
-            int thumbY = trackY + (int) ((trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f));
+            float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
-            int trackX = box.x + box.bL + 2;
-            int trackY = box.y + box.h - box.bB - barThickness - 2;
-            int trackW = box.w - box.bL - box.bR - 4;
-            int thumbW = Math.max(12, (int) (trackW * (box.w / scrollW)));
+            float trackX = box.x + box.bL + 2;
+            float trackY = box.y + box.h - box.bB - barThickness - 2;
+            float trackW = box.w - box.bL - box.bR - 4;
+            float thumbW = Math.max(12, trackW * (box.w / scrollW));
             float maxScrollX = Math.max(1f, scrollW - box.w);
-            int thumbX = trackX + (int) ((trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f));
+            float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
     }
 
+    /**
+     * 描画要素を 1 つ足す。レイアウトの float 座標を整数に丸めるのはここ 1 箇所だけ（軸 3）。
+     *
+     * 幅と高さを個別に丸めず、左右（上下）の辺をそれぞれ丸めて差を取る。こうすると
+     * 隣り合う箱の辺が同じ整数に落ち、端数の幅が並んでも隙間や重なりが出ない。
+     * 以前はレイアウトの各段が int に切り捨てていたため、丸め誤差が入れ子の深さだけ溜まっていた。
+     */
     private void addElement(List<UIElement> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
-                            int x, int y, int w, int h, String text,
+                            float x, float y, float w, float h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             UIElement.RenderMeta meta) {
-        elements.add(new UIElement(id, baseNodeId, type, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode, meta));
+        int left = Math.round(x);
+        int top = Math.round(y);
+        int width = Math.round(x + w) - left;
+        int height = Math.round(y + h) - top;
+        elements.add(new UIElement(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode, meta));
     }
 
     private void addElement(List<UIElement> elements, String baseNodeId, String id, ElementType type,
-                            int x, int y, int w, int h, String text,
+                            float x, float y, float w, float h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             UIElement.RenderMeta meta) {
@@ -271,7 +315,7 @@ public class UIRenderer {
         return attrValue != null ? attrValue : "";
     }
 
-    private static float[] parseTransformProps(String t, int boxW, int boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
+    private static float[] parseTransformProps(String t, float boxW, float boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
         float tx = defTx, ty = defTy, sx = defSx, sy = defSy, rot = defRot;
         if (t == null || t.isEmpty()) return new float[]{tx, ty, sx, sy, rot};
 
@@ -422,7 +466,7 @@ public class UIRenderer {
 
             float[] tr = new float[]{0f, 0f, 1f, 1f, 0f};
             if (decls.containsKey(CssProperty.TRANSFORM)) {
-                tr = parseTransformProps(decls.get(CssProperty.TRANSFORM), (int) baseW, (int) baseH, 0f, 0f, 1f, 1f, 0f);
+                tr = parseTransformProps(decls.get(CssProperty.TRANSFORM), baseW, baseH, 0f, 0f, 1f, 1f, 0f);
                 definedChannels |= AnimationSpec.CH_TRANSFORM;
             }
 
@@ -549,11 +593,11 @@ public class UIRenderer {
     private BorderSpec parseBorderSpec(LayoutBox box, int[] radii) {
         boolean hasBorder = false;
         int borderColor = 0x00000000;
-        int bwTop = 0, bwRight = 0, bwBottom = 0, bwLeft = 0;
+        float bwTop = 0, bwRight = 0, bwBottom = 0, bwLeft = 0;
         int bcTop = 0, bcRight = 0, bcBottom = 0, bcLeft = 0;
 
         for (String dir : BORDER_DIRECTIONS) {
-            int bw = 0;
+            float bw = 0;
             int bc = 0x00000000;
 
             String widthProp = box.style.get("border-" + dir + "-width");
@@ -605,10 +649,10 @@ public class UIRenderer {
         boolean useRoundedBorder = (radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0) && hasBorder && !isCircle;
 
         Corners innerRadii = new Corners(
-                Math.max(0, radii[0] - Math.max(bwTop, bwLeft)),
-                Math.max(0, radii[1] - Math.max(bwTop, bwRight)),
-                Math.max(0, radii[2] - Math.max(bwBottom, bwRight)),
-                Math.max(0, radii[3] - Math.max(bwBottom, bwLeft))
+                Math.max(0, Math.round(radii[0] - Math.max(bwTop, bwLeft))),
+                Math.max(0, Math.round(radii[1] - Math.max(bwTop, bwRight))),
+                Math.max(0, Math.round(radii[2] - Math.max(bwBottom, bwRight))),
+                Math.max(0, Math.round(radii[3] - Math.max(bwBottom, bwLeft)))
         );
 
         return new BorderSpec(hasBorder, isCircle, useRoundedBorder, borderColor,
@@ -616,10 +660,11 @@ public class UIRenderer {
     }
 
     private void drawBoxSelf(List<UIElement> elements, LayoutBox box, float[] clipRect, String parentId) {
-        int[] rawRadii = LengthResolver.parseBorderRadius(box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH);
+        int[] rawRadii = roundRadii(LengthResolver.parseBorderRadius(
+                box.style.getOrDefault(CssProperty.BORDER_RADIUS, "0"), box.w, rootW, rootH));
         Corners radii = Corners.fromArray(rawRadii);
         int fallbackRadius = radii.topLeft();
-        int rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
+        float rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
 
         int color = ColorParser.parseColor(box.style.get(CssProperty.COLOR));
         if (color == 0x00000000) color = 0xFFF5F5F0;
@@ -808,17 +853,17 @@ public class UIRenderer {
 
     private void drawSceneElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         if (border.useRoundedBorder()) {
             addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
         } else if (border.hasBorder()) {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
-        int innerX = box.x + border.bwLeft();
-        int innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         Map<String, String> sceneEvents = new HashMap<>(partsEvents);
         if (box.node.attrs.containsKey("data-blocks")) sceneEvents.put("data-blocks", box.node.attrs.get("data-blocks"));
@@ -832,7 +877,7 @@ public class UIRenderer {
     private void drawMediaElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                   Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         String src = box.style.getOrDefault(CssProperty.SRC, box.node.attrs.getOrDefault("src", ""));
         if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
@@ -856,10 +901,10 @@ public class UIRenderer {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
 
-        int innerX = box.x + border.bwLeft();
-        int innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
@@ -884,18 +929,18 @@ public class UIRenderer {
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
             // ここがするのは text-align の offset と丸めだけで、描画側は測り直さない。
             String align = box.style.getOrDefault(CssProperty.TEXT_ALIGN, "left");
-            int contentX = box.x + box.pL + box.bL;
-            int availableW = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
+            float contentX = box.x + box.pL + box.bL;
+            float availableW = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
             float lineY = box.y + box.pT + box.bT;
 
             for (TextShaper.ShapedLine line : box.shapedLines) {
                 if (!line.text().isBlank()) {
-                    int lineW = (int) Math.ceil(line.width());
-                    int lineX = contentX + alignOffset(align, availableW, lineW);
+                    float lineW = line.width();
+                    float lineX = contentX + alignOffset(align, availableW, lineW);
                     UIElement.RenderMeta lineMeta = new UIElement.RenderMeta(
                             normalizedClip, null, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
-                    addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, lineX, Math.round(lineY), lineW, Math.round(line.height()), line.text(), color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, lineMeta);
+                    addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, lineMeta);
                 }
                 lineY += line.height();
             }
@@ -903,7 +948,7 @@ public class UIRenderer {
     }
 
     /** text-align が行に与える水平方向のずれ。 */
-    private static int alignOffset(String align, int availableW, int lineW) {
+    private static float alignOffset(String align, float availableW, float lineW) {
         return switch (align) {
             case "center" -> Math.max(0, (availableW - lineW) / 2);
             case "right" -> Math.max(0, availableW - lineW);
@@ -913,29 +958,29 @@ public class UIRenderer {
 
     private void drawCanvasElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                    Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         if (border.useRoundedBorder()) {
             addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
         } else if (border.hasBorder()) {
             drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
-        int innerX = box.x + border.bwLeft();
-        int innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, innerX, innerY, innerW, innerH, id, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 
     private void drawTextareaElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                      Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                     BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                     BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         String val = box.node.attrs.getOrDefault("value", box.node.getTextContent());
-        int innerX = box.x + border.bwLeft();
-        int innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         Map<String, String> taEvents = new HashMap<>(partsEvents);
         if (box.node.attrs.containsKey("data-syntax")) taEvents.put("data-syntax", box.node.attrs.get("data-syntax"));
@@ -952,12 +997,12 @@ public class UIRenderer {
 
     private void drawSelectElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                    Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                   BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         String currentVal = box.node.attrs.getOrDefault("value", "");
         String displayLabel = ClientWebManager.resolveSelectDisplayLabel(box.node, currentVal) + " \u25be";
-        int innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         if (border.useRoundedBorder()) {
             addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
@@ -970,22 +1015,23 @@ public class UIRenderer {
 
     private void drawInputElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                  BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         String inputType = box.node.attrs.getOrDefault("type", "text");
         String val = resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""));
 
-        int innerX = box.x + border.bwLeft();
-        int innerY = box.y + border.bwTop();
-        int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-        int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
         Map<String, String> innerEvents = new HashMap<>(partsEvents);
 
         switch (inputType) {
             case "checkbox", "radio" -> {
+                ElementType toggleType = "radio".equalsIgnoreCase(inputType) ? ElementType.RADIO : ElementType.CHECKBOX;
                 String checkedVal = Boolean.toString(box.node.attrs.containsKey("checked"));
-                drawBorderedControl(elements, id, "_input", ElementType.TOGGLE, box, innerX, innerY, innerW, innerH, checkedVal, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                drawBorderedControl(elements, id, "_input", toggleType, box, innerX, innerY, innerW, innerH, checkedVal, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             }
             case "range" -> {
                 String min = box.node.attrs.getOrDefault("min", "0");
@@ -1006,7 +1052,7 @@ public class UIRenderer {
                     String placeholderText = val.isEmpty() ? box.node.attrs.get("placeholder") : "";
                     // 入力欄の内容領域をそのまま渡す。縦方向の中央寄せは書体の
                     // ascent / descent を知っている描画側が 1 箇所で行う
-                    int phX = box.x + border.bwLeft() + 4;
+                    float phX = box.x + border.bwLeft() + 4;
                     Map<String, String> phEvents = new HashMap<>(passiveBorderEvents);
                     addElement(elements, id, id + "_ph", ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, 0xFFAAAAAA, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
                 }
@@ -1015,9 +1061,9 @@ public class UIRenderer {
     }
 
     private void drawBorderedControl(List<UIElement> elements, String id, String suffix, ElementType type, LayoutBox box,
-                                     int innerX, int innerY, int innerW, int innerH, String text, int color, int bgColor, int fallbackRadius,
+                                     float innerX, float innerY, float innerW, float innerH, String text, int color, int bgColor, int fallbackRadius,
                                      Map<String, String> partsEvents, Map<String, String> innerEvents, Map<String, String> passiveBorderEvents,
-                                     BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                     BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         if (border.useRoundedBorder()) {
             addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
@@ -1031,39 +1077,47 @@ public class UIRenderer {
     private void drawDefaultBlockElement(List<UIElement> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                          Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                          Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                         BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, int rOff,
+                                         BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                          int transDur, AnimationSpec colorBgAnim) {
         if ("li".equals(box.node.tag)) {
             // マーカーは font-size に比例させ、縦は 1 行目の中央に合わせる
             float fontSizePx = box.style.fontSizePx();
             int dotSize = Math.max(2, Math.round(fontSizePx / 4f));
-            int dotX = box.x - Math.round(fontSizePx * 0.75f);
-            int dotY = box.y + box.pT + Math.round(box.lineHeightPx / 2f) - (dotSize / 2);
+            float dotX = box.x - fontSizePx * 0.75f;
+            float dotY = box.y + box.pT + box.lineHeightPx / 2f - dotSize / 2f;
             addElement(elements, id, id + "_dot", ElementType.RECT, dotX, dotY, dotSize, dotSize, "", 0, color, Map.of(RenderKeys.MC_PARENT, id), dotSize / 2, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
         }
+
+        ElementType bgType = ElementType.RECT;
+        if ("button".equalsIgnoreCase(box.node.tag)) {
+            bgType = ElementType.BUTTON;
+        } else if ("a".equalsIgnoreCase(box.node.tag)) {
+            bgType = ElementType.A;
+        }
+        boolean isInteractiveBox = bgType != ElementType.RECT;
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             UIElement.CircleBorderSpec cbSpec = new UIElement.CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
-                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
+                addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             }
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
         } else if (border.useRoundedBorder()) {
             addElement(elements, id, id + "_bbg", ElementType.RECT, box.x, box.y, box.w, box.h, "", 0, border.borderColor(), passiveBorderEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
-            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
+            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
                 Map<String, String> innerEvents = new HashMap<>(partsEvents);
-                int innerX = box.x + border.bwLeft();
-                int innerY = box.y + border.bwTop();
-                int innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
-                int innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
-                addElement(elements, id, id + "_bg", ElementType.RECT, innerX, innerY, innerW, innerH, "", color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+                float innerX = box.x + border.bwLeft();
+                float innerY = box.y + border.bwTop();
+                float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+                float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+                addElement(elements, id, id + "_bg", bgType, innerX, innerY, innerW, innerH, "", color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
             }
         } else {
-            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
-                addElement(elements, id, id + "_bg", ElementType.RECT, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
+                addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             }
             if (border.hasBorder()) {
                 drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
@@ -1073,14 +1127,14 @@ public class UIRenderer {
         if (box.node.attrs.containsKey("data-ghost-item")) {
             String ghostItem = box.node.attrs.get("data-ghost-item").trim();
             if (!ghostItem.isEmpty() && !"minecraft:air".equals(ghostItem)) {
-                int iconX = box.x + (box.w - 16) / 2;
-                int iconY = box.y + (box.h - 16) / 2;
+                float iconX = box.x + (box.w - 16) / 2;
+                float iconY = box.y + (box.h - 16) / 2;
                 addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
             }
         }
     }
 
-    private void drawStraightBorders(List<UIElement> elements, String id, LayoutBox box, int rOff, Map<String, String> partsEvents, BorderSpec b, UIElement.RenderMeta meta, int transDur) {
+    private void drawStraightBorders(List<UIElement> elements, String id, LayoutBox box, float rOff, Map<String, String> partsEvents, BorderSpec b, UIElement.RenderMeta meta, int transDur) {
         UIElement.RenderMeta borderMeta = new UIElement.RenderMeta(meta.clipRect(), null, null, null, meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
         if (b.bwTop() > 0)
             addElement(elements, id, id + "_b_top", ElementType.RECT, box.x + rOff, box.y, box.w - rOff * 2, b.bwTop(), "", 0, b.bcTop(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
@@ -1090,6 +1144,13 @@ public class UIRenderer {
             addElement(elements, id, id + "_b_left", ElementType.RECT, box.x, box.y + rOff, b.bwLeft(), box.h - rOff * 2, "", 0, b.bcLeft(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
         if (b.bwRight() > 0)
             addElement(elements, id, id + "_b_right", ElementType.RECT, box.x + box.w - b.bwRight(), box.y + rOff, b.bwRight(), box.h - rOff * 2, "", 0, b.bcRight(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
+    }
+
+    /** 角丸の半径は描画側の整数値（{@link Corners}）なので、解いた長さをここで丸める。 */
+    private static int[] roundRadii(float[] radii) {
+        int[] rounded = new int[radii.length];
+        for (int i = 0; i < radii.length; i++) rounded[i] = Math.round(radii[i]);
+        return rounded;
     }
 
     private static ClipRect normalizeClipRect(float[] clipRect) {
@@ -1111,14 +1172,15 @@ public class UIRenderer {
 
     private record BorderSpec(
             boolean hasBorder, boolean isCircle, boolean useRoundedBorder, int borderColor,
-            int bwTop, int bwRight, int bwBottom, int bwLeft,
+            float bwTop, float bwRight, float bwBottom, float bwLeft,
             int bcTop, int bcRight, int bcBottom, int bcLeft,
             Corners innerRadii
     ) {
         int maxThickness() {
-            return Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft));
+            return Math.round(Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft)));
         }
     }
 
-    private record RenderTask(int zIndex, int domOrder, Consumer<List<UIElement>> drawAction) {}
+    /** {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。 */
+    private record RenderTask(int zIndex, int domOrder, LayoutBox box, Consumer<List<UIElement>> drawAction) {}
 }

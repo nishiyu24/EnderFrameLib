@@ -56,6 +56,8 @@ public class SessionContext implements AutoCloseable {
 
     private String activeInputId = "";
     private String activePressedId = "";
+    private String focusedElementBaseId = "";
+    private final com.nishiyu.enderframelib.core.model.TextSelection textSelection = new com.nishiyu.enderframelib.core.model.TextSelection();
     private volatile HitTestIndex hitTestIndex;
 
     public SessionContext(String sessionId) {
@@ -217,6 +219,18 @@ public class SessionContext implements AutoCloseable {
         this.activePressedId = activePressedId != null ? activePressedId : "";
     }
 
+    public String focusedElementBaseId() {
+        return focusedElementBaseId;
+    }
+
+    public void setFocusedElementBaseId(String focusedElementBaseId) {
+        this.focusedElementBaseId = focusedElementBaseId != null ? focusedElementBaseId : "";
+    }
+
+    public com.nishiyu.enderframelib.core.model.TextSelection textSelection() {
+        return textSelection;
+    }
+
     @Override
     public void close() {
         renderCache = Collections.emptyList();
@@ -230,6 +244,8 @@ public class SessionContext implements AutoCloseable {
         invalidationLevel = InvalidationLevel.NONE;
         activeInputId = "";
         activePressedId = "";
+        focusedElementBaseId = "";
+        textSelection.clear();
 
         ClientPubSubManager.clearSession(sessionId);
         WebCanvasContext.clearSession(sessionId);

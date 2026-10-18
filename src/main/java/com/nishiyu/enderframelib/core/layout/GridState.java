@@ -11,7 +11,7 @@ public class GridState implements LayoutEngineState {
     public int colsCount = 1, rowsCount = 1;
 
     @Override
-    public void contributeScrollExtent(ScrollExtent extent, int scrollX, int scrollY) {
+    public void contributeScrollExtent(ScrollExtent extent, float scrollX, float scrollY) {
         // グリッドアイテムは box.children とは別に保持しているため、ここで範囲に足し込む
         for (GridItem item : items) {
             if (item.box.isAbsolute) continue;

@@ -9,19 +9,39 @@ import com.nishiyu.enderframelib.core.text.TextShaper;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * ブロックとインラインの整形。
+ *
+ * LIMITATION(制約): {@code float} / {@code clear} と BFC が無い（{@code overflow: hidden} の親も
+ * 子のマージン貫通を止めない）。高さ 0 の空ブロックはマージンが自分を貫通して相殺しない。
+ * インラインでは {@code text-indent}、行ボックスの strut（内容の無い行に {@code line-height} を
+ * 与える）、インラインブロックへの {@code white-space: nowrap} が無い。W4 で直す。
+ * FIDELITY.md の「W4 — 整形コンテキスト」と README の "Not supported" に対応。
+ */
 public class BlockLayoutEngine extends AbstractLayoutEngine {
 
     @Override
-    public void measure(LayoutBox box, int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
-        int maxChildW = 0;
-        int currentInlineW = 0;
+    public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+        float maxChildW = 0;
+        float currentInlineW = 0;
+
+        float childParentH = 0;
+        if (box.parent == null) {
+            childParentH = Math.max(0, parentH - box.verticalDecoration());
+        } else if (box.style.containsKey(CssProperty.HEIGHT) && !"auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
+            float rootW = ctx.viewport().rootW();
+            float rootH = ctx.viewport().rootH();
+            float resolvedH = box.style.length(CssProperty.HEIGHT, parentH, rootW, rootH);
+            boolean isBorderBox = "border-box".equals(box.style.get(CssProperty.BOX_SIZING));
+            childParentH = Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
+        }
 
         FormattingContext childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
 
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || isDisplayNone(child.style)) continue;
-            child.measure(tentativeInnerW, parentH, childCtx, ctx);
-            int childOuterW = child.w + child.mL + child.mR;
+            child.measure(tentativeInnerW, childParentH, childCtx, ctx);
+            float childOuterW = child.w + child.mL + child.mR;
             if (isInlineBox(child)) {
                 currentInlineW += childOuterW;
                 maxChildW = Math.max(maxChildW, Math.min(tentativeInnerW > 0 ? tentativeInnerW : currentInlineW, currentInlineW));
@@ -36,67 +56,124 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
     }
 
     @Override
-    public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
-        int actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
+    public void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+        float actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
+
+        // 親子のマージン相殺（親の上パディング・ボーダーが0の場合、最初の子のmargin-topが親へ貫通する）
+        applyParentChildMarginCollapsing(box);
+        boolean collapsesWithParentTop = box.parent != null && box.pT == 0 && box.bT == 0;
 
         if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
-            int contentH = 0;
+            float currentBottom = 0;
             List<LayoutBox> inlineRun = new ArrayList<>();
-            int blockSegments = 0;
+            float prevMarginBottom = 0;
+            boolean hasPrevBlock = false;
 
             for (LayoutBox child : box.getFlowChildren()) {
                 if (isInlineBox(child)) {
                     inlineRun.add(child);
                 } else {
                     if (!inlineRun.isEmpty()) {
-                        contentH += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
+                        currentBottom += prevMarginBottom;
+                        currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
                         inlineRun.clear();
-                        blockSegments++;
+                        prevMarginBottom = 0;
+                        hasPrevBlock = false;
                     }
-                    contentH += child.h + child.mT + child.mB;
-                    blockSegments++;
+                    if (hasPrevBlock) {
+                        float collapsedMargin = collapseMargins(prevMarginBottom, child.mT);
+                        currentBottom += collapsedMargin;
+                    } else if (!collapsesWithParentTop) {
+                        currentBottom += child.mT;
+                    }
+                    currentBottom += child.h;
+                    prevMarginBottom = child.mB;
+                    hasPrevBlock = true;
                 }
             }
             if (!inlineRun.isEmpty()) {
-                contentH += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
-                blockSegments++;
+                currentBottom += prevMarginBottom;
+                currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
+            } else if (hasPrevBlock) {
+                if (box.pB > 0 || box.bB > 0) {
+                    currentBottom += prevMarginBottom;
+                } else if (box.parent != null) {
+                    box.mB = collapseMargins(box.mB, prevMarginBottom);
+                }
             }
-            if (blockSegments > 1) {
-                contentH += box.rowGap * (blockSegments - 1);
-            }
-            box.h = Math.max(box.h, contentH + box.verticalDecoration());
+            box.h = Math.max(box.h, currentBottom + box.verticalDecoration());
         }
 
         measureAbsoluteChildren(box, ctx);
     }
 
     @Override
-    public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
+    public void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx) {
         String textAlign = box.style.getOrDefault(CssProperty.TEXT_ALIGN, "left");
-        int currentY = innerY;
+        float currentBottom = innerY;
         List<LayoutBox> inlineRun = new ArrayList<>();
-        int availableInnerW = box.w - box.horizontalDecoration();
+        float availableInnerW = box.w - box.horizontalDecoration();
+        float prevMarginBottom = 0;
+        boolean hasPrevBlock = false;
+        boolean collapsesWithParentTop = box.parent != null && box.pT == 0 && box.bT == 0;
 
         for (LayoutBox child : box.getFlowChildren()) {
             if (isInlineBox(child)) {
                 inlineRun.add(child);
             } else {
                 if (!inlineRun.isEmpty()) {
-                    currentY = layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, ctx) + box.rowGap;
+                    currentBottom += prevMarginBottom;
+                    currentBottom = layoutInlineContext(inlineRun, innerX, currentBottom, availableInnerW, textAlign, ctx);
                     inlineRun.clear();
+                    prevMarginBottom = 0;
+                    hasPrevBlock = false;
                 }
-                if ("auto".equals(child.style.get(CssProperty.MARGIN_LEFT)) && "auto".equals(child.style.get(CssProperty.MARGIN_RIGHT))) {
-                    child.layout(innerX + Math.max(0, (availableInnerW - (child.w + child.mL + child.mR)) / 2), currentY, availableInnerW, child.h, ctx);
+                float targetY;
+                if (hasPrevBlock) {
+                    float collapsedMargin = collapseMargins(prevMarginBottom, child.mT);
+                    targetY = currentBottom + collapsedMargin;
                 } else {
-                    child.layout(innerX, currentY, availableInnerW, child.h, ctx);
+                    if (collapsesWithParentTop) {
+                        targetY = innerY;
+                    } else {
+                        targetY = innerY + child.mT;
+                    }
                 }
-                currentY += child.h + child.mT + child.mB + box.rowGap;
+                float refY = targetY - child.mT;
+                if ("auto".equals(child.style.get(CssProperty.MARGIN_LEFT)) && "auto".equals(child.style.get(CssProperty.MARGIN_RIGHT))) {
+                    child.layout(innerX + Math.max(0, (availableInnerW - (child.w + child.mL + child.mR)) / 2), refY, availableInnerW, child.h, ctx);
+                } else {
+                    child.layout(innerX, refY, availableInnerW, child.h, ctx);
+                }
+                currentBottom = child.y + child.h;
+                prevMarginBottom = child.mB;
+                hasPrevBlock = true;
             }
         }
         if (!inlineRun.isEmpty()) {
-            layoutInlineContext(inlineRun, innerX, currentY, availableInnerW, textAlign, ctx);
+            currentBottom += prevMarginBottom;
+            layoutInlineContext(inlineRun, innerX, currentBottom, availableInnerW, textAlign, ctx);
         }
     }
+
+    private static void applyParentChildMarginCollapsing(LayoutBox box) {
+        if (box.parent != null && box.pT == 0 && box.bT == 0) {
+            List<LayoutBox> flow = box.getFlowChildren();
+            if (!flow.isEmpty()) {
+                LayoutBox first = flow.getFirst();
+                if (!isInlineBox(first)) {
+                    box.mT = collapseMargins(box.mT, first.mT);
+                }
+            }
+        }
+    }
+
+    public static float collapseMargins(float m1, float m2) {
+        if (m1 >= 0 && m2 >= 0) return Math.max(m1, m2);
+        if (m1 <= 0 && m2 <= 0) return Math.min(m1, m2);
+        return m1 + m2;
+    }
+
 
     // ==========================================
     // インライン整形
@@ -108,8 +185,8 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
      * （以前は測定用と配置用に折り返しロジックが別々に書かれていて、
      *  片方だけ直すと測定高と配置高がずれる状態だった）
      */
-    private int measureInlineRunHeight(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
-        int totalH = 0;
+    private float measureInlineRunHeight(List<LayoutBox> inlines, float maxW, LayoutContext ctx) {
+        float totalH = 0;
         for (InlineLine line : breakIntoLines(inlines, maxW, ctx)) {
             totalH += line.height;
         }
@@ -119,12 +196,12 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
     /**
      * インライン内容を実際に配置し、次のブロックが始まる Y 座標を返す。
      */
-    private int layoutInlineContext(List<LayoutBox> inlines, int startX, int startY, int maxW,
+    private float layoutInlineContext(List<LayoutBox> inlines, float startX, float startY, float maxW,
                                     String textAlign, LayoutContext ctx) {
         List<InlineLine> lines = breakIntoLines(inlines, maxW, ctx);
         for (LayoutBox inlineBox : inlines) clearFragmentsRecursively(inlineBox);
 
-        int currentDrawY = startY;
+        float currentDrawY = startY;
         for (InlineLine line : lines) {
             placeLine(line, startX, currentDrawY, maxW, textAlign, ctx);
             currentDrawY += line.height;
@@ -143,19 +220,19 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
      * 置換要素とインラインブロックのベースラインは下端で近似している
      * （CSS は最後の行ボックスのベースライン）。
      */
-    private void placeLine(InlineLine line, int startX, int drawY, int maxW, String textAlign, LayoutContext ctx) {
+    private void placeLine(InlineLine line, float startX, float drawY, float maxW, String textAlign, LayoutContext ctx) {
         List<LayoutBox.InlineFragment> fragments = line.fragments;
         if (fragments.isEmpty()) return;
 
-        int actualLineW = fragments.getLast().x + fragments.getLast().w - fragments.getFirst().x;
-        int offsetX = startX;
+        float actualLineW = fragments.getLast().x + fragments.getLast().w - fragments.getFirst().x;
+        float offsetX = startX;
         if (textAlign.equals("center")) offsetX += Math.max(0, (maxW - actualLineW) / 2);
         else if (textAlign.equals("right")) offsetX += Math.max(0, maxW - actualLineW);
 
         for (LayoutBox.InlineFragment f : fragments) {
             Decoration deco = decorationOf(f.parents);
             // 装飾箱の上端。断片のベースラインが行のベースラインに重なる位置に置く
-            int offsetY = Math.round(drawY + line.baseline() - (deco.top() + f.box.mT + f.baseline));
+            float offsetY = drawY + line.baseline() - (deco.top() + f.box.mT + f.baseline);
 
             f.x += offsetX;
             f.y = offsetY + deco.top() + f.box.mT;
@@ -176,7 +253,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
 
     /** インラインの祖先が足す padding + border の合計。 */
     private Decoration decorationOf(List<LayoutBox> parents) {
-        int t = 0, r = 0, b = 0, l = 0;
+        float t = 0, r = 0, b = 0, l = 0;
         if (parents != null) {
             for (LayoutBox p : parents) {
                 t += p.pT + p.bT;
@@ -188,13 +265,13 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
         return new Decoration(t, r, b, l);
     }
 
-    private record Decoration(int top, int right, int bottom, int left) {}
+    private record Decoration(float top, float right, float bottom, float left) {}
 
     /**
      * インライン内容を行に分割する。測定と配置が共有する唯一の折り返し実装。
      * 返される断片の x は行内の相対座標で、行の高さは断片から求めた実寸。
      */
-    private List<InlineLine> breakIntoLines(List<LayoutBox> inlines, int maxW, LayoutContext ctx) {
+    private List<InlineLine> breakIntoLines(List<LayoutBox> inlines, float maxW, LayoutContext ctx) {
         List<FlatRun> runs = new ArrayList<>();
         flattenInlines(inlines, runs, new ArrayList<>());
 
@@ -211,7 +288,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
                 TextShaper.TextStyle textStyle = ctx.textStyleFor(run.box.style);
                 FontFace face = ctx.faceFor(run.box.style);
                 FontStyle font = textStyle.font();
-                int runH = Math.round(textStyle.lineHeightPx());
+                float runH = textStyle.lineHeightPx();
                 float baseline = baselineWithin(textStyle, face);
 
                 lineX += deco.left();
@@ -240,11 +317,9 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
                             currentLine = new ArrayList<>();
                             lineX = deco.left();
                         }
-                        // 丸めるのは座標に落とすこの 1 箇所だけ
-                        int fragX = Math.round(lineX);
-                        int fragW = Math.round(lineX + advance) - fragX;
+                        // 断片の座標も float のまま持つ。丸めるのは描画（UIRenderer）の 1 箇所だけ
                         LayoutBox.InlineFragment frag =
-                                new LayoutBox.InlineFragment(run.box, fragX, deco.top(), fragW, runH, segment);
+                                new LayoutBox.InlineFragment(run.box, lineX, deco.top(), advance, runH, segment);
                         frag.baseline = baseline;
                         frag.parents = run.inlineParents;
                         currentLine.add(frag);
@@ -255,20 +330,20 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
             } else if (isLineBreak(run)) {
                 // <br>: 内容が無い行でもフォント 1 行分の高さを確保する
                 TextShaper.TextStyle brStyle = ctx.textStyleFor(run.box.style);
-                lines.add(finishLine(currentLine, Math.round(brStyle.lineHeightPx()),
+                lines.add(finishLine(currentLine, brStyle.lineHeightPx(),
                         baselineWithin(brStyle, ctx.faceFor(run.box.style))));
                 currentLine = new ArrayList<>();
                 lineX = 0;
             } else {
-                int boxOuterW = run.box.w + run.box.mL + run.box.mR;
-                int fallbackH = run.box.h + run.box.mT + run.box.mB + deco.top() + deco.bottom();
+                float boxOuterW = run.box.w + run.box.mL + run.box.mR;
+                float fallbackH = run.box.h + run.box.mT + run.box.mB + deco.top() + deco.bottom();
                 if (needsWrap(lineX + boxOuterW, maxW, lineX > 0)) {
                     lines.add(finishLine(currentLine, fallbackH, fallbackH));
                     currentLine = new ArrayList<>();
                     lineX = 0;
                 }
                 LayoutBox.InlineFragment frag = new LayoutBox.InlineFragment(
-                        run.box, Math.round(lineX) + run.box.mL, 0, run.box.w, run.box.h, null);
+                        run.box, lineX + run.box.mL, 0, run.box.w, run.box.h, null);
                 // 置換要素・インラインブロックのベースラインは下端（CSS の近似）
                 frag.baseline = run.box.h;
                 frag.parents = run.inlineParents;
@@ -298,7 +373,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
      * 測定と描画が同じ送り幅を見るようになったので余裕は不要になり、
      * 代わりに「ブラウザなら折り返す幅で折り返さない」差を生むだけになっていた。
      */
-    private boolean needsWrap(float lineEnd, int maxW, boolean hasContentOnLine) {
+    private boolean needsWrap(float lineEnd, float maxW, boolean hasContentOnLine) {
         return maxW > 0 && hasContentOnLine && lineEnd > maxW;
     }
 
@@ -307,7 +382,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
      * 断片が無い行は渡された fallback を使う。
      */
     private InlineLine finishLine(List<LayoutBox.InlineFragment> fragments,
-                                  int fallbackHeight, float fallbackBaseline) {
+                                  float fallbackHeight, float fallbackBaseline) {
         if (fragments.isEmpty()) return new InlineLine(fragments, fallbackHeight, fallbackBaseline);
 
         float baseline = 0;
@@ -317,13 +392,13 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
             baseline = Math.max(baseline, deco.top() + f.box.mT + f.baseline);
             belowBaseline = Math.max(belowBaseline, f.h - f.baseline + f.box.mB + deco.bottom());
         }
-        return new InlineLine(fragments, Math.round(baseline + belowBaseline), baseline);
+        return new InlineLine(fragments, baseline + belowBaseline, baseline);
     }
 
-    private boolean isInlineBox(LayoutBox box) {
+    public static boolean isInlineBox(LayoutBox box) {
         if (box.isAbsolute) return false;
         String display = box.style.getOrDefault(CssProperty.DISPLAY, "");
-        if (display.equals("inline") || display.equals("inline-block")) return true;
+        if (display.equals("inline") || display.equals("inline-block") || display.equals("inline-flex") || display.equals("inline-grid")) return true;
         if (display.equals("block") || display.equals("flex") || display.equals("grid")) return false;
         String tag = box.node.tag;
         return box.node.nodeType == NodeType.TEXT || tag.equals("br") || tag.equals("span") || tag.equals("a")
@@ -369,7 +444,7 @@ public class BlockLayoutEngine extends AbstractLayoutEngine {
     }
 
     /** 行分割の結果 1 行。{@code baseline} は行の上端からベースラインまでの距離。 */
-    private record InlineLine(List<LayoutBox.InlineFragment> fragments, int height, float baseline) {}
+    private record InlineLine(List<LayoutBox.InlineFragment> fragments, float height, float baseline) {}
 
     /** 入れ子のインライン要素を平坦化した 1 要素（テキスト / 改行 / 不可分なインラインボックス）。 */
     private record FlatRun(LayoutBox box, boolean isText, String text, List<LayoutBox> inlineParents) {}

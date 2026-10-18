@@ -74,8 +74,12 @@
 
 現在 README に記録されている主な制約（コード側と対応させること）:
 JavaScript 非対応、Markdown のネストリスト非対応、表レイアウトが flex 行、
-`float` / 段組み非対応、`@media` は幅のみ、`grid-template-areas` 非対応、
+`float` / 段組み非対応、BFC とボックスツリー（匿名箱・`display: contents`）が無い、
+flex / grid / 位置指定の未実装機能、スタッキングコンテキストが無い、
+`vertical-align` / `text-indent` 非対応、UA が HTML 標準の既定値でない、
+`@media` の `prefers-*` は固定値（light / 動きの抑制なし）、
 `::before` / `::after` 以外の疑似要素は照合しない、動画は Windows 専用。
+忠実度コーパスで測れる差は FIDELITY.md の「既知の差異」がフェーズ別に持つ。
 
 ---
 
@@ -122,7 +126,9 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   `WebFidelityTest` が忠実度コーパス
   （`src/main/resources/assets/enderframelib/preview/fidelity/cases/`）を
   エンジンに通し、ブラウザで測った期待値
-  （`src/test/resources/fidelity/expected/`）と ±1px で突き合わせる。
+  （`src/test/resources/fidelity/expected/`）と突き合わせる。
+  幾何（x / y / w / h）は ±0.5px、描画順の列（z）は完全一致。列の定義と
+  コーパスを書くときの約束は [FIDELITY.md](FIDELITY.md) の「仕組み」にある。
 
   ```bash
   ./gradlew test --tests '*WebFidelityTest'
@@ -135,6 +141,10 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   ```bash
   chrome --headless --disable-gpu --hide-scrollbars --virtual-time-budget=8000     --dump-dom "file:///<gameDir>/enderframe_devkit/fidelity-dump.html?auto=1"
   ```
+
+  Chrome の代わりに Edge（`msedge.exe`）でも同じ引数で採れる。
+  ケースを足すときは `cases.txt` の該当領域の節に名前を書き、期待値ファイルを
+  ブラウザの出力から作る（エンジンの出力 `build/fidelity` を期待値にしてはいけない）。
 
   一致しない差異は `src/test/resources/fidelity/known-divergences.txt` と
   [FIDELITY.md](FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く

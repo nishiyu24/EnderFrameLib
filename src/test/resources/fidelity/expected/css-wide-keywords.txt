@@ -1,0 +1,3 @@
+parent 0 0 157 40 0
+inherit 7 0 157 10 0
+initial 7 10 150 10 0

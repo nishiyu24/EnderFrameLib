@@ -27,25 +27,29 @@ public class WebFocusNavigator {
     }
 
     public String focusedId() {
+        String sessionFocused = ClientWebManager.getFocusedElementBaseId(sessionId);
+        if (!sessionFocused.isEmpty()) return sessionFocused;
         return focusedElementBaseId;
     }
 
     public void setFocused(String baseId) {
         this.focusedElementBaseId = (baseId != null) ? baseId : "";
+        ClientWebManager.setFocusedElement(sessionId, this.focusedElementBaseId, false);
     }
 
     public void renderFocusRing(GuiGraphics guiGraphics, List<UIElement> elements) {
-        if (focusedElementBaseId.isEmpty() || elements == null) return;
+        String currentFocusedId = focusedId();
+        if (currentFocusedId.isEmpty() || elements == null) return;
 
         UIElement focusedEl = null;
         for (UIElement el : elements) {
-            if (el.type() == ElementType.NODE && focusedElementBaseId.equals(el.id())) {
+            if (el.type() == ElementType.NODE && currentFocusedId.equals(el.id())) {
                 focusedEl = el;
                 break;
             }
         }
         if (focusedEl == null) {
-            focusedEl = ClientWebManager.getElementById(sessionId, focusedElementBaseId);
+            focusedEl = ClientWebManager.getElementById(sessionId, currentFocusedId);
         }
         if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
             PoseStack pose = guiGraphics.pose();

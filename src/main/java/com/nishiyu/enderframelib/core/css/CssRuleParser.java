@@ -12,36 +12,90 @@ import java.util.Map;
  */
 public final class CssRuleParser {
 
-    /** @media / @supports のネストが異常に深い CSS で再帰が暴走しないための上限。 */
+    /** @media / @supports / @import のネストが異常に深い CSS で再帰が暴走しないための上限。 */
     private static final int MAX_AT_RULE_DEPTH = 16;
 
     private CssRuleParser() {}
 
     public static void parseInto(String css, StyleSheet sheet, int rootW, CascadeOrigin origin) {
-        parseInto(css, sheet, rootW, origin, 0);
+        parseInto(css, sheet, MediaEnvironment.of(rootW, 0), origin);
     }
 
-    private static void parseInto(String css, StyleSheet sheet, int rootW, CascadeOrigin origin, int depth) {
+    public static void parseInto(String css, StyleSheet sheet, MediaEnvironment env, CascadeOrigin origin) {
+        parseInto(css, sheet, env, origin, 0);
+    }
+
+    private static void parseInto(String css, StyleSheet sheet, MediaEnvironment env, CascadeOrigin origin, int depth) {
         if (depth > MAX_AT_RULE_DEPTH) return;
 
+        // @import はシートの先頭（他の規則より前）にあるときだけ有効（CSS の規定）
+        boolean importsAllowed = true;
         for (CssTokenizer.Block block : CssTokenizer.tokenize(css)) {
+            if (block.isStatement()) {
+                if (importsAllowed) handleImport(block, sheet, env, origin, depth);
+                continue;
+            }
+            importsAllowed = false;
             if (block.isAtRule()) {
-                handleAtRule(block, sheet, rootW, origin, depth);
+                handleAtRule(block, sheet, env, origin, depth);
             } else {
                 handleStyleRule(block, sheet, origin);
             }
         }
     }
 
-    private static void handleAtRule(CssTokenizer.Block block, StyleSheet sheet, int rootW,
+    /**
+     * {@code @import url(x.css) <media>?;} / {@code @import "x.css" <media>?;}。
+     * 読み込んだシートは @import を書いた位置に、同じオリジンの規則として入る。
+     * {@code layer()} / {@code supports()} の付いた @import は読まない（カスケードレイヤーが無いため）。
+     */
+    private static void handleImport(CssTokenizer.Block block, StyleSheet sheet, MediaEnvironment env,
+                                     CascadeOrigin origin, int depth) {
+        if (env.importResolver() == null || !"@import".equalsIgnoreCase(block.atRuleName())) return;
+        String params = block.atRuleParams();
+        String url;
+        String rest;
+        if (params.regionMatches(true, 0, "url(", 0, 4)) {
+            int close = params.indexOf(')');
+            if (close < 0) return;
+            url = unquote(params.substring(4, close).trim());
+            rest = params.substring(close + 1).trim();
+        } else if (!params.isEmpty() && (params.charAt(0) == '"' || params.charAt(0) == '\'')) {
+            int close = params.indexOf(params.charAt(0), 1);
+            if (close < 0) return;
+            url = params.substring(1, close);
+            rest = params.substring(close + 1).trim();
+        } else {
+            return;
+        }
+        String lowerRest = rest.toLowerCase();
+        if (lowerRest.startsWith("layer") || lowerRest.startsWith("supports(")) return;
+        if (!rest.isEmpty() && !AtRuleProcessor.evaluateMediaQuery(rest, env)) return;
+
+        String imported = env.importResolver().apply(url);
+        if (imported != null && !imported.isEmpty()) parseInto(imported, sheet, env, origin, depth + 1);
+    }
+
+    private static String unquote(String s) {
+        if (s.length() >= 2 && (s.charAt(0) == '"' || s.charAt(0) == '\'') && s.charAt(s.length() - 1) == s.charAt(0)) {
+            return s.substring(1, s.length() - 1);
+        }
+        return s;
+    }
+
+    private static void handleAtRule(CssTokenizer.Block block, StyleSheet sheet, MediaEnvironment env,
                                      CascadeOrigin origin, int depth) {
         switch (block.atRuleName().toLowerCase()) {
             case "@media" -> {
-                if (AtRuleProcessor.evaluateMediaQuery(block.atRuleParams(), rootW)) {
-                    parseInto(block.body(), sheet, rootW, origin, depth + 1);
+                if (AtRuleProcessor.evaluateMediaQuery(block.atRuleParams(), env)) {
+                    parseInto(block.body(), sheet, env, origin, depth + 1);
                 }
             }
-            case "@supports" -> parseInto(block.body(), sheet, rootW, origin, depth + 1);
+            case "@supports" -> {
+                if (AtRuleProcessor.evaluateSupports(block.atRuleParams())) {
+                    parseInto(block.body(), sheet, env, origin, depth + 1);
+                }
+            }
             case "@keyframes", "@-webkit-keyframes" -> collectKeyframes(block, sheet);
             case "@font-face" -> {
                 // フォント登録は CssParser.fontFaceCallback が CSS 全体を受け取って処理する

@@ -13,9 +13,12 @@ import java.util.regex.Pattern;
  * grid レイアウト。
  *
  * LIMITATION(制約): トラックの定義は grid-template-columns / grid-template-rows の
- * px ・% ・fr ・auto ・repeat() ・minmax() のみ。名前付きグリッド線と
- * grid-template-areas は未対応で、grid-column / grid-row は番号指定だけを解釈する。
- * README の "Not supported" と対応。
+ * px ・% ・fr ・repeat() ・minmax() のみ。名前付きグリッド線と grid-template-areas、
+ * repeat(auto-fill / auto-fit) は未対応で、grid-column / grid-row は正の番号指定だけを解釈する
+ * （span と負の番号は読まない）。暗黙のトラック（grid-auto-rows / -columns）・
+ * grid-auto-flow（column / dense）・auto トラックの内容サイズ・justify-items /
+ * align-items / justify-content によるアイテムとトラックの揃えも無い。W4 で直す。
+ * FIDELITY.md の「W4 — 整形コンテキスト」と README の "Not supported" と対応。
  */
 public class GridLayoutEngine extends AbstractLayoutEngine {
 
@@ -60,6 +63,34 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         }
     }
 
+    private static List<String> splitTrackList(String def) {
+        List<String> list = new ArrayList<>();
+        if (def == null || def.isBlank()) return list;
+        StringBuilder current = new StringBuilder();
+        float depth = 0;
+        for (int i = 0; i < def.length(); i++) {
+            char c = def.charAt(i);
+            if (c == '(') {
+                depth++;
+                current.append(c);
+            } else if (c == ')') {
+                depth--;
+                current.append(c);
+            } else if (Character.isWhitespace(c) && depth == 0) {
+                if (current.length() > 0) {
+                    list.add(current.toString());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        if (current.length() > 0) {
+            list.add(current.toString());
+        }
+        return list;
+    }
+
     private int parseGridLine(String val) {
         try { return Integer.parseInt(val.replaceAll("[^0-9-]", "")); } catch (Exception e) { return 1; }
     }
@@ -79,34 +110,67 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
     }
 
     @Override
-    public void measure(LayoutBox box, int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         GridState gs = new GridState();
         box.engineState = gs;
 
-        int rootW = ctx.viewport().rootW();
-        int rootH = ctx.viewport().rootH();
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
 
         String gridCols = expandRepeat(box.style.getOrDefault(CssProperty.GRID_TEMPLATE_COLUMNS, "1fr"));
-        String[] colDefs = gridCols.split("\\s+");
-        gs.colsCount = Math.max(1, colDefs.length);
+        List<String> colTokens = splitTrackList(gridCols);
+        if (colTokens.isEmpty()) colTokens = List.of("1fr");
+        gs.colsCount = colTokens.size();
         gs.colWidths = new float[gs.colsCount];
         float totalFr = 0;
-        int fixedW = 0;
+        float fixedW = 0;
+        float[] minWidths = new float[gs.colsCount];
+
         for (int i = 0; i < gs.colsCount; i++) {
-            if (colDefs[i].endsWith("fr")) {
-                totalFr += parseFr(colDefs[i]);
+            String def = colTokens.get(i);
+            if (def.startsWith("minmax(") && def.endsWith(")")) {
+                String inner = def.substring(7, def.length() - 1).trim();
+                int comma = inner.indexOf(',');
+                if (comma >= 0) {
+                    String minStr = inner.substring(0, comma).trim();
+                    String maxStr = inner.substring(comma + 1).trim();
+                    minWidths[i] = LengthResolver.parseDim(minStr, tentativeInnerW, rootW, rootH,
+                            box.style.fontSizePx(), box.style.rootFontSizePx());
+                    if (maxStr.endsWith("fr")) {
+                        totalFr += parseFr(maxStr);
+                    } else {
+                        float maxW = LengthResolver.parseDim(maxStr, tentativeInnerW, rootW, rootH,
+                                box.style.fontSizePx(), box.style.rootFontSizePx());
+                        gs.colWidths[i] = Math.max(minWidths[i], maxW);
+                        fixedW = (fixedW + gs.colWidths[i]);
+                    }
+                }
+            } else if (def.endsWith("fr")) {
+                totalFr += parseFr(def);
             } else {
-                gs.colWidths[i] = LengthResolver.parseDim(colDefs[i], tentativeInnerW, rootW, rootH,
+                gs.colWidths[i] = LengthResolver.parseDim(def, tentativeInnerW, rootW, rootH,
                         box.style.fontSizePx(), box.style.rootFontSizePx());
-                fixedW = (int) (fixedW + gs.colWidths[i]);
+                fixedW = (fixedW + gs.colWidths[i]);
             }
         }
-        int availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.columnGap - fixedW);
+        float availableW = Math.max(0, tentativeInnerW - (gs.colsCount - 1) * box.columnGap - fixedW);
         for (int i = 0; i < gs.colsCount; i++) {
-            if (colDefs[i].endsWith("fr") && totalFr > 0) {
-                gs.colWidths[i] = availableW * (parseFr(colDefs[i]) / totalFr);
+            String def = colTokens.get(i);
+            if (def.startsWith("minmax(") && def.endsWith(")")) {
+                String inner = def.substring(7, def.length() - 1).trim();
+                int comma = inner.indexOf(',');
+                if (comma >= 0) {
+                    String maxStr = inner.substring(comma + 1).trim();
+                    if (maxStr.endsWith("fr") && totalFr > 0) {
+                        float frW = availableW * (parseFr(maxStr) / totalFr);
+                        gs.colWidths[i] = Math.max(minWidths[i], frW);
+                    }
+                }
+            } else if (def.endsWith("fr") && totalFr > 0) {
+                gs.colWidths[i] = availableW * (parseFr(def) / totalFr);
             }
         }
+
 
         List<boolean[]> occupied = new ArrayList<>();
         int currentR = 0, currentC = 0;
@@ -191,35 +255,35 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             }
             childGridW += Math.max(0, item.colSpan - 1) * box.columnGap;
 
-            int w = (int) childGridW;
+            float w = childGridW;
             item.box.w = w;
             item.box.sizingMode = SizingMode.DEFINITE; // A-5修正
             item.box.measure(w, parentH, childCtx, ctx);
         }
 
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
-            int totalW = 0;
-            for (int c = 0; c < gs.colsCount; c++) totalW = (int) (totalW + gs.colWidths[c]);
+            float totalW = 0;
+            for (int c = 0; c < gs.colsCount; c++) totalW = (totalW + gs.colWidths[c]);
             totalW += Math.max(0, gs.colsCount - 1) * box.columnGap;
             box.w = totalW + box.horizontalDecoration();
         }
     }
 
     @Override
-    public void resolveFlexibleHeights(LayoutBox box, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         GridState gs = (GridState) box.engineState;
         if (gs == null) return;
 
-        int rootW = ctx.viewport().rootW();
-        int rootH = ctx.viewport().rootH();
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
 
         String gridRows = expandRepeat(box.style.getOrDefault(CssProperty.GRID_TEMPLATE_ROWS, ""));
-        String[] rowDefs = gridRows.isEmpty() ? new String[0] : gridRows.split("\\s+");
+        List<String> rowTokens = splitTrackList(gridRows);
         gs.rowHeights = new float[gs.rowsCount];
 
         for (int r = 0; r < gs.rowsCount; r++) {
-            if (r < rowDefs.length && !"auto".equals(rowDefs[r]) && !rowDefs[r].endsWith("fr")) {
-                gs.rowHeights[r] = LengthResolver.parseDim(rowDefs[r], parentH, rootW, rootH,
+            if (r < rowTokens.size() && !"auto".equals(rowTokens.get(r)) && !rowTokens.get(r).endsWith("fr")) {
+                gs.rowHeights[r] = LengthResolver.parseDim(rowTokens.get(r), parentH, rootW, rootH,
                         box.style.fontSizePx(), box.style.rootFontSizePx());
             } else {
                 float maxH = 0;
@@ -240,7 +304,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
                 }
                 childGridH += Math.max(0, item.rowSpan - 1) * box.rowGap;
 
-                int targetH = (int) childGridH - item.box.mT - item.box.mB;
+                float targetH = childGridH - item.box.mT - item.box.mB;
                 if (item.box.h < targetH && !item.box.style.containsKey(CssProperty.HEIGHT)) {
                     item.box.h = Math.max(0, targetH);
                     item.box.resolveFlexibleHeights(parentH, new FormattingContext("grid", align, false), ctx);
@@ -249,11 +313,11 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
         }
 
         if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto").trim())) {
-            int totalH = 0;
+            float totalH = 0;
             for (GridItem item : gs.items) {
                 float itemY = item.box.mT + item.box.mB + item.box.h;
                 for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
-                totalH = Math.max(totalH, (int) itemY);
+                totalH = Math.max(totalH, itemY);
             }
             box.h = Math.max(box.h, totalH + box.verticalDecoration());
         }
@@ -262,7 +326,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
     }
 
     @Override
-    public void arrangeChildren(LayoutBox box, int innerX, int innerY, LayoutContext ctx) {
+    public void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx) {
         GridState gs = (GridState) box.engineState;
         if (gs == null) return;
         for (GridItem item : gs.items) {
@@ -272,7 +336,7 @@ public class GridLayoutEngine extends AbstractLayoutEngine {
             float itemY = innerY;
             for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
 
-            item.box.layout((int) itemX + item.box.mL, (int) itemY + item.box.mT, item.box.w, item.box.h, ctx);
+            item.box.layout(itemX + item.box.mL, itemY + item.box.mT, item.box.w, item.box.h, ctx);
         }
     }
 }

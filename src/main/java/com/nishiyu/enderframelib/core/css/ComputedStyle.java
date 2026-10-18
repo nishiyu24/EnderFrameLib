@@ -48,16 +48,19 @@ public final class ComputedStyle {
     }
 
     /**
-     * 親のフォントサイズを基準に、この要素のフォントサイズを解決した算出スタイルを作る。
-     * {@code em} はこの要素のフォントサイズ、{@code rem} はルートのフォントサイズが基準になる。
+     * 算出値の {@code font-size}（{@link ValueComputer} が px に解いたもの）からこの要素の
+     * フォントサイズを読んで算出スタイルを作る。宣言が無ければ親のフォントサイズを継承する。
+     *
+     * 何が壊れていたか: 以前はここで {@code font-size} を解いていたが、ビューポートを 0 で渡し
+     * 結果を int に切り捨て、0 以下を無効としていたため、{@code 2vw} が無効扱いで既定の 16px に、
+     * {@code 6.4px} が 6px に、{@code 0} が 16px になっていた。
      */
     public static ComputedStyle of(Map<String, String> properties, float parentFontSize, float rootFontSize) {
         float own = parentFontSize;
         String fontSize = properties.get(CssProperty.FONT_SIZE);
         if (fontSize != null) {
-            // font-size 自身の em / % は「親の」フォントサイズが基準
-            int resolved = LengthResolver.parseDim(fontSize, (int) parentFontSize, 0, 0, parentFontSize, rootFontSize);
-            if (resolved > 0) own = resolved;
+            own = ValueComputer.resolveFontSize(fontSize,
+                    new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
         }
         return new ComputedStyle(properties, own, rootFontSize);
     }
@@ -89,15 +92,18 @@ public final class ComputedStyle {
         return properties;
     }
 
-    /** 長さをピクセルに解決する。{@code maxPixels} はパーセント指定の基準。 */
-    public int length(String propertyName, int maxPixels, int rootW, int rootH) {
+    /**
+     * 長さをピクセルに解決する。{@code maxPixels} はパーセント指定の基準。
+     * 結果は丸めない（軸 3: 丸めは描画の 1 箇所だけ）。以前は int に切り捨てていた。
+     */
+    public float length(String propertyName, float maxPixels, float rootW, float rootH) {
         String val = properties.get(propertyName);
         if (val == null) return 0;
         return compiledLength(propertyName, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
     }
 
     /** 宣言が無い場合に {@code defaultPixels} を返す {@link #length}。 */
-    public int lengthOrDefault(String propertyName, int defaultPixels, int maxPixels, int rootW, int rootH) {
+    public float lengthOrDefault(String propertyName, float defaultPixels, float maxPixels, float rootW, float rootH) {
         if (!properties.containsKey(propertyName)) return defaultPixels;
         return length(propertyName, maxPixels, rootW, rootH);
     }

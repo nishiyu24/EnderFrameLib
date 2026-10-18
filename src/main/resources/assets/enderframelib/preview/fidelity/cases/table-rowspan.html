@@ -1,0 +1,11 @@
+<!-- rowspan はセルを複数の行にまたがらせる。 -->
+<style>
+  #t { display: table; width: auto; margin: 0; border: 0; border-radius: 0; overflow: visible; border-spacing: 0; }
+  #t tbody { display: table-row-group; width: auto; }
+  #t tr { display: table-row; width: auto; border: 0; }
+  #t td { display: table-cell; flex: none; padding: 0; width: 50px; height: 20px; }
+</style>
+<table id="t">
+  <tr><td id="tall" rowspan="2"></td><td id="a"></td></tr>
+  <tr><td id="b"></td></tr>
+</table>

@@ -34,7 +34,7 @@ public class ClientWebManager {
 
     public static Consumer<String> sessionClearedCallback = null;
     private static final List<Consumer<String>> SESSION_CLEARED_LISTENERS = new CopyOnWriteArrayList<>();
-    public static Consumer<String> applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
+    public static Consumer<String> applyOverridesCallback = null;
 
     private static final Map<String, SessionContext> SESSIONS = new ConcurrentHashMap<>();
     private static final Set<String> DIRTY_SESSIONS = ConcurrentHashMap.newKeySet();
@@ -111,6 +111,7 @@ public class ClientWebManager {
     public static void setFocusedElement(String sessionId, String baseId, boolean focusVisible) {
         SessionContext session = (baseId == null || baseId.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
         if (session != null) {
+            session.setFocusedElementBaseId(baseId);
             HtmlNode root = session.document() != null ? session.document().root : session.virtualDom();
             if (session.interactionState().setFocusedNode(root, baseId, focusVisible)) {
                 requestRestyle(sessionId);
@@ -118,8 +119,25 @@ public class ClientWebManager {
         }
     }
 
-    /** フォーカス中の入力の基底ノード ID が {@code baseId} と一致するか。 */
+    /** 現在フォーカスされている要素の基底 ID を取得する。無ければ空文字。 */
+    public static String getFocusedElementBaseId(String sessionId) {
+        SessionContext session = getSession(sessionId);
+        return session != null ? session.focusedElementBaseId() : "";
+    }
+
+    /** テキスト選択状態モデルを取得する。無ければ null。 */
+    public static com.nishiyu.enderframelib.core.model.TextSelection getTextSelection(String sessionId) {
+        SessionContext session = getSession(sessionId);
+        return session != null ? session.textSelection() : null;
+    }
+
+    /** フォーカス中の要素または入力の基底ノード ID が {@code baseId} と一致するか。 */
     public static boolean isFocusedBase(String sessionId, String baseId) {
+        if (baseId == null || baseId.isEmpty()) return false;
+        SessionContext session = getSession(sessionId);
+        if (session != null && baseId.equals(session.focusedElementBaseId())) {
+            return true;
+        }
         String active = getActiveInputId(sessionId);
         return !active.isEmpty() && getBaseNodeId(active).equals(baseId);
     }
@@ -254,6 +272,7 @@ public class ClientWebManager {
         }
 
         int oldRootW = session.rootW();
+        int oldRootH = session.rootH();
         session.setRootW(rootW);
         session.setRootH(rootH);
         if (fromServer) session.setServerManaged(true);
@@ -261,12 +280,12 @@ public class ClientWebManager {
         UIParser parser = new UIParser();
         UIParser.Document doc = session.document();
         if (doc == null || !existingServerDoc) {
-            StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
+            StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW, rootH);
             doc = new UIParser.Document(rootNode, sheet, authorCss);
             session.setDocument(doc);
         } else {
-            if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null || oldRootW != rootW) {
-                doc.sheet = parser.buildStyleSheet(authorCss, rootW);
+            if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null || oldRootW != rootW || oldRootH != rootH) {
+                doc.sheet = parser.buildStyleSheet(authorCss, rootW, rootH);
                 doc.authorCss = authorCss;
             }
         }
@@ -521,10 +540,11 @@ public class ClientWebManager {
             boolean domPatched = DomDiffEngine.diffAndPatch(doc.root, vRoot);
             UIParser parser = new UIParser();
 
-            if (doc.sheet == null || oldRootW != newRootW) {
-                doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW);
+            // @media の height / orientation が高さに依存するので、高さが変わってもシートを組み直す
+            if (doc.sheet == null || oldRootW != newRootW || oldRootH != newRootH) {
+                doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW, newRootH);
                 session.interactionState().markAllDirty();
-            } else if (domPatched || oldRootH != newRootH) {
+            } else if (domPatched) {
                 session.interactionState().markAllDirty();
             }
 
@@ -712,6 +732,91 @@ public class ClientWebManager {
                     }
                 }
             }
+        }
+        return false;
+    }
+
+    public static boolean handleScrollbarClick(String sessionId, UIElement clickedEl, double pixelX, double pixelY) {
+        if (clickedEl == null || clickedEl.id() == null) return false;
+        String id = clickedEl.id();
+        boolean isVTrack = id.endsWith("_sb_vt");
+        boolean isHTrack = id.endsWith("_sb_ht");
+        boolean isVThumb = id.endsWith("_sb_v");
+        boolean isHThumb = id.endsWith("_sb_h");
+        if (!isVTrack && !isHTrack && !isVThumb && !isHThumb) return false;
+
+        SessionContext session = getSession(sessionId);
+        if (session == null || session.layoutRoot() == null) return false;
+
+        String baseId = getBaseNodeId(id);
+        com.nishiyu.enderframelib.core.layout.LayoutBox box = session.layoutRoot().findByNodeId(baseId);
+        if (box == null) return false;
+
+        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = session.scrollState();
+
+        if (isVTrack) {
+            float trackY = box.y + box.bT + 2;
+            float trackH = box.h - box.bT - box.bB - 4;
+            float thumbH = Math.max(12, trackH * (box.h / (float) Math.max(1, box.scrollHeight)));
+            float availH = Math.max(1, trackH - thumbH);
+            float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
+            float maxScrollY = Math.max(0, box.scrollHeight - box.h);
+            float curX = scrollState.getScrollX(baseId);
+            scrollState.setScroll(baseId, (int) curX, (int) (ratio * maxScrollY));
+            requestRender(sessionId);
+            return true;
+        } else if (isHTrack) {
+            float trackX = box.x + box.bL + 2;
+            float trackW = box.w - box.bL - box.bR - 4;
+            float thumbW = Math.max(12, trackW * (box.w / (float) Math.max(1, box.scrollWidth)));
+            float availW = Math.max(1, trackW - thumbW);
+            float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
+            float maxScrollX = Math.max(0, box.scrollWidth - box.w);
+            float curY = scrollState.getScrollY(baseId);
+            scrollState.setScroll(baseId, (int) (ratio * maxScrollX), (int) curY);
+            requestRender(sessionId);
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean handleScrollbarDrag(String sessionId, String draggingId, double pixelX, double pixelY) {
+        if (draggingId == null || draggingId.isEmpty()) return false;
+        boolean isVThumb = draggingId.endsWith("_sb_v") || draggingId.endsWith("_sb_vt");
+        boolean isHThumb = draggingId.endsWith("_sb_h") || draggingId.endsWith("_sb_ht");
+        if (!isVThumb && !isHThumb) return false;
+
+        SessionContext session = getSession(sessionId);
+        if (session == null || session.layoutRoot() == null) return false;
+
+        String baseId = getBaseNodeId(draggingId);
+        com.nishiyu.enderframelib.core.layout.LayoutBox box = session.layoutRoot().findByNodeId(baseId);
+        if (box == null) return false;
+
+        com.nishiyu.enderframelib.core.layout.ScrollState scrollState = session.scrollState();
+
+        if (isVThumb) {
+            float trackY = box.y + box.bT + 2;
+            float trackH = box.h - box.bT - box.bB - 4;
+            float thumbH = Math.max(12, trackH * (box.h / (float) Math.max(1, box.scrollHeight)));
+            float availH = Math.max(1, trackH - thumbH);
+            float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
+            float maxScrollY = Math.max(0, box.scrollHeight - box.h);
+            float curX = scrollState.getScrollX(baseId);
+            scrollState.setScroll(baseId, (int) curX, (int) (ratio * maxScrollY));
+            requestRender(sessionId);
+            return true;
+        } else if (isHThumb) {
+            float trackX = box.x + box.bL + 2;
+            float trackW = box.w - box.bL - box.bR - 4;
+            float thumbW = Math.max(12, trackW * (box.w / (float) Math.max(1, box.scrollWidth)));
+            float availW = Math.max(1, trackW - thumbW);
+            float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
+            float maxScrollX = Math.max(0, box.scrollWidth - box.w);
+            float curY = scrollState.getScrollY(baseId);
+            scrollState.setScroll(baseId, (int) (ratio * maxScrollX), (int) curY);
+            requestRender(sessionId);
+            return true;
         }
         return false;
     }

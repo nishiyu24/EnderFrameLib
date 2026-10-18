@@ -1,0 +1,265 @@
+# ブラウザ実測と一致しないと分かっている差異の台帳（機械可読側）。
+# 形式: <case>#<id>.<field> <担当フェーズ>: <理由>
+# ここに無い差異が出たら WebFidelityTest が回帰として落とす。
+# ここに載っているのに一致した差異も落とす（台帳が古い）。
+# 各行は FIDELITY.md にも同じキーで書かれていること（WebFidelityTest が検査する）。
+#
+# W0 でコーパスを領域別に広げて起こした行。行が消えることが各フェーズの完了条件。
+
+# --- W3 — ボックスツリー
+display-flow-root#parent.y W3: `display: flow-root` が BFC を作らず、子のマージンが親を貫通する
+display-flow-root#parent.h W3: `display: flow-root` が BFC を作らず、子のマージンが親を貫通する
+display-contents#a.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#contents.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#contents.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#b.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#b.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#b.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#b.z W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#c.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#c.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#c.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+display-contents#c.z W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
+anonymous-block#parent.z W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
+anonymous-block#inline.z W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
+anonymous-block#block.y W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
+anonymous-block#inline2.y W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
+table-anonymous#wrap.h W3: `table-cell` だけの並びに匿名の table / table-row を補わない
+table-anonymous#a.h W3: `table-cell` だけの並びに匿名の table / table-row を補わない
+table-anonymous#b.x W3: `table-cell` だけの並びに匿名の table / table-row を補わない
+table-anonymous#b.y W3: `table-cell` だけの並びに匿名の table / table-row を補わない
+
+# --- W4 — 整形コンテキスト
+margin-collapse-empty#b.y W4: 高さ 0 の空ブロックの上下マージンが自分を貫通して前後と相殺しない
+margin-collapse-bfc#parent.y W4: `overflow: hidden` の親が BFC として子のマージン貫通を止めない
+margin-collapse-bfc#parent.h W4: `overflow: hidden` の親が BFC として子のマージン貫通を止めない
+float-left#wrap.h W4: `float` が無く、ブロックとして縦に積まれる
+float-left#wrap.z W4: `float` が無く、ブロックとして縦に積まれる
+float-left#b.x W4: `float` が無く、ブロックとして縦に積まれる
+float-left#b.y W4: `float` が無く、ブロックとして縦に積まれる
+float-left#after.y W4: `float` が無く、ブロックとして縦に積まれる
+float-left#after.z W4: `float` が無く、ブロックとして縦に積まれる
+float-right#a.x W4: `float` が無く、ブロックとして縦に積まれる
+float-right#b.x W4: `float` が無く、ブロックとして縦に積まれる
+float-right#b.y W4: `float` が無く、ブロックとして縦に積まれる
+float-clear#wrap.h W4: `float` / `clear` が無く、ブロックとして縦に積まれる
+float-clear#b.x W4: `float` / `clear` が無く、ブロックとして縦に積まれる
+float-clear#b.y W4: `float` / `clear` が無く、ブロックとして縦に積まれる
+float-clear#cleared.y W4: `float` / `clear` が無く、ブロックとして縦に積まれる
+float-containment#plain.h W4: `float` が無いため、通常フローの親が float を高さに含めてしまう
+float-containment#plain.z W4: `float` が無いため、通常フローの親が float を高さに含めてしまう
+float-wrap#wrap.h W4: `float` が無く、段の折り返しが起きない
+float-wrap#wrap.z W4: `float` が無く、段の折り返しが起きない
+float-wrap#b.x W4: `float` が無く、段の折り返しが起きない
+float-wrap#b.y W4: `float` が無く、段の折り返しが起きない
+float-wrap#c.y W4: `float` が無く、段の折り返しが起きない
+float-bfc-avoid#wrap.h W4: `float` が無く、BFC が float の横の残り幅に収まらない
+float-bfc-avoid#wrap.z W4: `float` が無く、BFC が float の横の残り幅に収まらない
+float-bfc-avoid#bfc.x W4: `float` が無く、BFC が float の横の残り幅に収まらない
+float-bfc-avoid#bfc.y W4: `float` が無く、BFC が float の横の残り幅に収まらない
+float-bfc-avoid#bfc.w W4: `float` が無く、BFC が float の横の残り幅に収まらない
+inline-block-margin#a.x W4: インラインブロックの左 margin が二重に足され、縦 margin がベースライン揃えに入らない
+inline-block-margin#b.y W4: インラインブロックの左 margin が二重に足され、縦 margin がベースライン揃えに入らない
+inline-text-indent#a.x W4: `text-indent` を読まない
+vertical-align-top-bottom#top.y W4: `vertical-align` を読まず、常にベースライン揃え
+vertical-align-middle#line.h W4: `vertical-align` を読まず、常にベースライン揃え
+vertical-align-middle#mid.y W4: `vertical-align` を読まず、常にベースライン揃え
+vertical-align-length#line.h W4: `vertical-align` を読まず、常にベースライン揃え
+vertical-align-length#base.y W4: `vertical-align` を読まず、常にベースライン揃え
+line-height-strut#line.h W4: 行ボックスに strut が無く、`line-height` が内容の無い行の高さにならない
+inline-nowrap-overflow#line.h W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
+inline-nowrap-overflow#b.x W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
+inline-nowrap-overflow#b.y W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
+inline-flex#line.h W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
+inline-flex#before.y W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
+inline-flex#before.z W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
+inline-flex#flex.x W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
+inline-flex#item.x W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
+flex-align-baseline#a.y W4: `align-items: baseline` を読まない
+flex-wrap-reverse#row.z W4: `flex-wrap: wrap-reverse` を読まない
+flex-wrap-reverse#a.y W4: `flex-wrap: wrap-reverse` を読まない
+flex-wrap-reverse#b.x W4: `flex-wrap: wrap-reverse` を読まない
+flex-wrap-reverse#b.y W4: `flex-wrap: wrap-reverse` を読まない
+flex-align-content#b.y W4: `align-content` を読まない
+flex-align-content#c.y W4: `align-content` を読まない
+flex-align-content#d.y W4: `align-content` を読まない
+flex-row-reverse#a.x W4: `flex-direction: row-reverse` を読まない
+flex-row-reverse#b.x W4: `flex-direction: row-reverse` を読まない
+flex-column-reverse#col.z W4: `flex-direction: column-reverse` を読まない
+flex-column-reverse#a.y W4: `flex-direction: column-reverse` を読まない
+flex-column-reverse#b.y W4: `flex-direction: column-reverse` を読まない
+flex-order#a.x W4: `order` を読まない
+flex-order#b.x W4: `order` を読まない
+flex-order#c.x W4: `order` を読まない
+flex-auto-margin#pushed.x W4: flex アイテムの auto margin が余りを吸わない
+flex-auto-margin#pushed.z W4: flex アイテムの auto margin が余りを吸わない
+flex-auto-margin#centered.y W4: flex アイテムの auto margin が余りを吸わない
+flex-shrink#a.w W4: `width` を持つアイテムが `flex-shrink` で縮まない
+flex-shrink#b.x W4: `width` を持つアイテムが `flex-shrink` で縮まない
+flex-shrink#b.w W4: `width` を持つアイテムが `flex-shrink` で縮まない
+flex-max-clamp#a.w W4: 伸長が `max-width` で止まらず、止まった分を他のアイテムに回さない
+flex-max-clamp#b.x W4: 伸長が `max-width` で止まらず、止まった分を他のアイテムに回さない
+flex-max-clamp#b.w W4: 伸長が `max-width` で止まらず、止まった分を他のアイテムに回さない
+flex-min-auto#b.w W4: `min-width: auto` の下限が内容の最小幅ではなく基本サイズになり、縮むべきアイテムが縮まない
+flex-column-overflow#scroller.h W4: スクロールコンテナの `min-height: auto` が 0 にならず、アイテムが内容の高さまで伸びる
+flex-column-overflow#content.z W4: スクロールコンテナの `min-height: auto` が 0 にならず、アイテムが内容の高さまで伸びる
+grid-auto-placement#grid.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#grid.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#a.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#a.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#b.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#b.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#c.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#c.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#d.y W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#d.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#d.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#e.y W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#e.h W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-auto-placement#e.z W4: 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる
+grid-span#wide.h W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#wide.z W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#a.h W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#a.z W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#b.y W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#b.h W4: `grid-column: span N` と暗黙の行を読まない
+grid-span#b.z W4: `grid-column: span N` と暗黙の行を読まない
+grid-line-placement#b.w W4: 負の線番号（`1 / -1`）を末尾から数えない
+grid-areas#main.x W4: `grid-template-areas` / `grid-area` を読まない
+grid-areas#main.y W4: `grid-template-areas` / `grid-area` を読まない
+grid-areas#main.w W4: `grid-template-areas` / `grid-area` を読まない
+grid-areas#main.h W4: `grid-template-areas` / `grid-area` を読まない
+grid-areas#head.x W4: `grid-template-areas` / `grid-area` を読まない
+grid-areas#head.w W4: `grid-template-areas` / `grid-area` を読まない
+grid-named-lines#a.x W4: 名前付きの線を読まない
+grid-named-lines#a.w W4: 名前付きの線を読まない
+grid-named-lines#a.z W4: 名前付きの線を読まない
+grid-repeat-auto-fill#a.w W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#a.h W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#a.z W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#b.x W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#b.w W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#b.h W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#b.z W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#c.x W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#c.w W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#c.h W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#c.z W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#d.x W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#d.w W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#d.h W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#d.z W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#e.y W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#e.w W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#e.h W4: `repeat(auto-fill, ...)` を展開しない
+grid-repeat-auto-fill#e.z W4: `repeat(auto-fill, ...)` を展開しない
+grid-item-alignment#a.x W4: `justify-items` / `align-items` / `*-self` がセル内の位置に効かない
+grid-item-alignment#a.y W4: `justify-items` / `align-items` / `*-self` がセル内の位置に効かない
+grid-justify-content#a.x W4: `justify-content` がトラック全体を寄せない
+grid-justify-content#b.x W4: `justify-content` がトラック全体を寄せない
+grid-auto-flow-column#a.w W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#b.w W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#c.x W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#c.y W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#c.w W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#c.h W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-auto-flow-column#c.z W4: `grid-auto-flow: column` と `grid-auto-columns` を読まない
+grid-dense#a.h W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#a.z W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#wide.y W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#wide.h W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#wide.z W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#b.x W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#b.h W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-dense#b.z W4: `grid-auto-flow: dense` と暗黙の行を読まない
+grid-auto-tracks#a.w W4: `auto` トラックを内容の寸法から決めない
+grid-auto-tracks#a.z W4: `auto` トラックを内容の寸法から決めない
+grid-auto-tracks#b.x W4: `auto` トラックを内容の寸法から決めない
+table-fixed-widths#t.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#t.h W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#b.x W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#b.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#c.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#c.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#d.x W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#d.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#d.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-fixed-widths#d.h W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
+table-auto-width#t.h W4: 表レイアウトが無く、列幅を内容から配らない
+table-auto-width#a.w W4: 表レイアウトが無く、列幅を内容から配らない
+table-auto-width#b.x W4: 表レイアウトが無く、列幅を内容から配らない
+table-auto-width#b.y W4: 表レイアウトが無く、列幅を内容から配らない
+table-auto-width#b.w W4: 表レイアウトが無く、列幅を内容から配らない
+table-layout-fixed#t.h W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#b.x W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#b.y W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#b.w W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#c.x W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#c.y W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-layout-fixed#c.w W4: 表レイアウトが無く、`table-layout: fixed` を読まない
+table-row-height#t.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#t.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#t.z W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#a.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#b.x W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#b.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#c.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#c.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#d.x W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#d.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#d.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#d.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-row-height#d.z W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
+table-colspan#t.w W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#t.h W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#t.z W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#b.x W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#b.y W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#span.y W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-colspan#span.w W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
+table-rowspan#t.w W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#t.h W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#t.z W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#tall.h W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#a.x W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#a.y W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#b.x W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-rowspan#b.y W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
+table-border-collapse#t.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#t.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#t.z W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.x W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.y W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.x W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.y W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+position-relative#b.y W4: `position: relative` のずれが後続の兄弟の配置まで動かす
+position-abs-insets#stretch.x W4: `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない
+position-abs-insets#stretch.w W4: `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない
+position-abs-insets#stretch.z W4: `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない
+position-abs-percent#abs.w W4: 絶対配置の `width` / `height` の % が包含ブロックの padding box ではなく内容ボックス基準
+position-abs-percent#abs.h W4: 絶対配置の `width` / `height` の % が包含ブロックの padding box ではなく内容ボックス基準
+position-abs-static#abs.y W4: inset が全部 auto の絶対配置を静的位置ではなく包含ブロックの原点に置く
+position-sticky#sticky.y W4: `position: sticky` を読まない
+z-float-over-block#block.y W4: `float` が無く、後続のブロックが float の下へ押し下げられる
+
+# --- W5 — 描画モデル
+z-stacking-context#inner.z W5: z-index を親に足し込むだけで、スタッキングコンテキストが中の z-index を閉じ込めない
+z-negative-in-context#ctx.z W5: スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる
+z-negative-in-context#neg.z W5: スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる
+z-positioned-over-flow#pos.z W5: 位置指定要素（z-index: auto）が後続の通常フローのブロックより上の層に描かれない
+z-index-unpositioned#a.z W5: 位置指定されていないブロックの z-index が効いてしまう
+z-opacity-context#inner.z W5: `opacity < 1` がスタッキングコンテキストを作らない
+z-opacity-context#over.z W5: `opacity < 1` がスタッキングコンテキストを作らない
+z-transform-context#inner.z W5: `transform` がスタッキングコンテキストを作らない
+z-transform-context#over.z W5: `transform` がスタッキングコンテキストを作らない
+
+# --- W6 — UA スタイルシート
+definition-list#dl.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
+definition-list#term.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
+definition-list#desc.x W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
+definition-list#desc.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
+definition-list#desc.w W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
