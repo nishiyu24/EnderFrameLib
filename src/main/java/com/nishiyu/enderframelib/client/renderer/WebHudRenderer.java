@@ -386,6 +386,7 @@ public class WebHudRenderer {
 
         LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
         buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
+        com.nishiyu.enderframelib.core.layout.BoxTreeBuilder.build(layoutBox);
 
         com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport viewport = new com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport(1000, 1000);
         com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState();
@@ -607,7 +608,7 @@ public class WebHudRenderer {
                     com.nishiyu.enderframelib.core.css.ComputedStyle.DEFAULT_FONT_SIZE, 1000, 1000);
 
             LayoutBox childBox = new LayoutBox(child, computed);
-            box.children.add(childBox);
+            box.addElementChild(childBox);
             buildLayoutTreeRecursively(child, childBox, sheet);
         }
     }

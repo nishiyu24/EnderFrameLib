@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.text.FontFace;
 import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
@@ -14,8 +15,8 @@ import java.util.List;
 /**
  * ブロックとインラインの整形。
  *
- * LIMITATION(制約): {@code float} / {@code clear} と BFC が無い（{@code overflow: hidden} の親も
- * 子のマージン貫通を止めない）。高さ 0 の空ブロックはマージンが自分を貫通して相殺しない。
+ * LIMITATION(制約): {@code float} / {@code clear} が無い（BFC はあるが、float を避けず、
+ * float を高さに含めない）。高さ 0 の空ブロックはマージンが自分を貫通して相殺しない。
  * インラインでは {@code text-indent}、行ボックスの strut（内容の無い行に {@code line-height} を
  * 与える）、インラインブロックへの {@code white-space: nowrap} が無い。W4 で直す。
  * FIDELITY.md の「W4 — 整形コンテキスト」と README の "Not supported" に対応。
@@ -23,7 +24,9 @@ import java.util.List;
 public class BlockLayoutEngine extends LayoutEngine {
 
     @Override
-    public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float tentativeInnerW = space.availableInlineSize();
+        float parentH = space.percentageBlockSize();
         float maxChildW = 0;
         float currentInlineW = 0;
 
@@ -42,7 +45,12 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || isDisplayNone(child.style)) continue;
-            child.measure(tentativeInnerW, childParentH, childCtx, ctx);
+            if (child.isOutsideMarker) {
+                // 外側のマーカーは通常フローの外にあり、リスト項目の幅に寄与しない
+                child.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, childParentH, MARKER_CONTEXT), ctx);
+                continue;
+            }
+            child.measure(new ConstraintSpace(tentativeInnerW, childParentH, childCtx), ctx);
             float childOuterW = child.w + child.mL + child.mR;
             if (isInlineBox(child)) {
                 currentInlineW += childOuterW;
@@ -52,60 +60,63 @@ public class BlockLayoutEngine extends LayoutEngine {
                 maxChildW = Math.max(maxChildW, childOuterW);
             }
         }
-        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
-            box.w = maxChildW + box.horizontalDecoration();
-        }
+        return maxChildW;
     }
 
     @Override
-    public void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         float actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
 
         // 親子のマージン相殺（親の上パディング・ボーダーが0の場合、最初の子のmargin-topが親へ貫通する）
         applyParentChildMarginCollapsing(box);
-        boolean collapsesWithParentTop = box.parent != null && box.pT == 0 && box.bT == 0;
+        boolean collapsesWithParentTop = collapsesThroughTop(box);
 
-        if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
-            float currentBottom = 0;
-            List<LayoutBox> inlineRun = new ArrayList<>();
-            float prevMarginBottom = 0;
-            boolean hasPrevBlock = false;
-
-            for (LayoutBox child : box.getFlowChildren()) {
-                if (isInlineBox(child)) {
-                    inlineRun.add(child);
-                } else {
-                    if (!inlineRun.isEmpty()) {
-                        currentBottom += prevMarginBottom;
-                        currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
-                        inlineRun.clear();
-                        prevMarginBottom = 0;
-                        hasPrevBlock = false;
-                    }
-                    if (hasPrevBlock) {
-                        float collapsedMargin = collapseMargins(prevMarginBottom, child.mT);
-                        currentBottom += collapsedMargin;
-                    } else if (!collapsesWithParentTop) {
-                        currentBottom += child.mT;
-                    }
-                    currentBottom += child.h;
-                    prevMarginBottom = child.mB;
-                    hasPrevBlock = true;
-                }
-            }
-            if (!inlineRun.isEmpty()) {
-                currentBottom += prevMarginBottom;
-                currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
-            } else if (hasPrevBlock) {
-                if (box.pB > 0 || box.bB > 0) {
-                    currentBottom += prevMarginBottom;
-                } else if (box.parent != null) {
-                    box.mB = collapseMargins(box.mB, prevMarginBottom);
-                }
-            }
-            box.h = Math.max(box.h, currentBottom + box.verticalDecoration());
+        // 高さが指定されていれば内容の高さは使われず、末子の下マージンも親を貫通しない
+        if (box.style.containsKey(CssProperty.HEIGHT) && !"auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
+            return 0;
         }
+        float currentBottom = 0;
+        List<LayoutBox> inlineRun = new ArrayList<>();
+        float prevMarginBottom = 0;
+        boolean hasPrevBlock = false;
 
+        for (LayoutBox child : box.getFlowChildren()) {
+            if (isInlineBox(child)) {
+                inlineRun.add(child);
+            } else {
+                if (!inlineRun.isEmpty()) {
+                    currentBottom += prevMarginBottom;
+                    currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
+                    inlineRun.clear();
+                    prevMarginBottom = 0;
+                    hasPrevBlock = false;
+                }
+                if (hasPrevBlock) {
+                    float collapsedMargin = collapseMargins(prevMarginBottom, child.mT);
+                    currentBottom += collapsedMargin;
+                } else if (!collapsesWithParentTop) {
+                    currentBottom += child.mT;
+                }
+                currentBottom += child.h;
+                prevMarginBottom = child.mB;
+                hasPrevBlock = true;
+            }
+        }
+        if (!inlineRun.isEmpty()) {
+            currentBottom += prevMarginBottom;
+            currentBottom += measureInlineRunHeight(inlineRun, actualInnerW, ctx);
+        } else if (hasPrevBlock) {
+            if (box.pB > 0 || box.bB > 0 || box.establishesBfc) {
+                currentBottom += prevMarginBottom;
+            } else {
+                box.mB = collapseMargins(box.mB, prevMarginBottom);
+            }
+        }
+        return currentBottom;
+    }
+
+    @Override
+    public void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         measureAbsoluteChildren(box, ctx);
     }
 
@@ -117,7 +128,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         float availableInnerW = box.w - box.horizontalDecoration();
         float prevMarginBottom = 0;
         boolean hasPrevBlock = false;
-        boolean collapsesWithParentTop = box.parent != null && box.pT == 0 && box.bT == 0;
+        boolean collapsesWithParentTop = collapsesThroughTop(box);
 
         for (LayoutBox child : box.getFlowChildren()) {
             if (isInlineBox(child)) {
@@ -156,10 +167,54 @@ public class BlockLayoutEngine extends LayoutEngine {
             currentBottom += prevMarginBottom;
             layoutInlineContext(inlineRun, innerX, currentBottom, availableInnerW, textAlign, ctx);
         }
+        placeOutsideMarkers(box, innerY, ctx);
+    }
+
+    /** 外側のマーカーを測るときの文脈。折り返さず、内容の幅に縮む。 */
+    private static final FormattingContext MARKER_CONTEXT = new FormattingContext("block", "stretch", true);
+
+    /**
+     * 外側の {@code ::marker} を、リスト項目の境界ボックスの左外に、最初の行のベースラインに揃えて置く。
+     * 行が無い（中身がブロックだけで文字を持たない）ときは内容の上端に揃える。
+     */
+    private void placeOutsideMarkers(LayoutBox box, float innerY, LayoutContext ctx) {
+        for (LayoutBox marker : box.children) {
+            if (!marker.isOutsideMarker || isDisplayNone(marker.style)) continue;
+            float markerX = box.x - marker.w - marker.mR;
+            marker.layout(markerX - marker.mL, 0, marker.w, marker.h, ctx);
+            Float markerBaseline = firstBaseline(marker);
+            Float lineBaseline = firstBaseline(box);
+            float y = (markerBaseline != null && lineBaseline != null)
+                    ? lineBaseline - (markerBaseline - marker.y)
+                    : innerY;
+            marker.layout(markerX - marker.mL, y - marker.mT, marker.w, marker.h, ctx);
+        }
+    }
+
+    /** 箱の中で最初に置かれた行のベースライン（絶対座標）。マーカーと位置指定の外は見ない。 */
+    private static Float firstBaseline(LayoutBox box) {
+        if (!box.inlineFragments.isEmpty()) {
+            LayoutBox.InlineFragment first = box.inlineFragments.getFirst();
+            return first.y + first.baseline;
+        }
+        for (LayoutBox child : box.children) {
+            if (child.isOutsideMarker || child.isAbsolute || child.display.isNone()) continue;
+            Float found = firstBaseline(child);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /**
+     * 最初の子の上マージンが親を貫通するか。
+     * 親が上パディング・上ボーダーを持つか、BFC を作るなら貫通しない（CSS 2.2 §8.3.1）。
+     */
+    private static boolean collapsesThroughTop(LayoutBox box) {
+        return !box.establishesBfc && box.pT == 0 && box.bT == 0;
     }
 
     private static void applyParentChildMarginCollapsing(LayoutBox box) {
-        if (box.parent != null && box.pT == 0 && box.bT == 0) {
+        if (collapsesThroughTop(box)) {
             List<LayoutBox> flow = box.getFlowChildren();
             if (!flow.isEmpty()) {
                 LayoutBox first = flow.getFirst();
@@ -399,15 +454,7 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     public static boolean isInlineBox(LayoutBox box) {
         if (box.isAbsolute) return false;
-        String display = box.style.getOrDefault(CssProperty.DISPLAY, "");
-        if (display.equals("inline") || display.equals("inline-block") || display.equals("inline-flex") || display.equals("inline-grid")) return true;
-        if (display.equals("block") || display.equals("flex") || display.equals("grid")) return false;
-        String tag = box.node.tag;
-        return box.node.nodeType == NodeType.TEXT || tag.equals("br") || tag.equals("span") || tag.equals("a")
-                || tag.equals("b") || tag.equals("i") || tag.equals("strong") || tag.equals("em")
-                || tag.equals("img") || tag.equals("input") || tag.equals("button")
-                || tag.equals("select") || tag.equals("progress")
-                || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("mc-scene");
+        return box.display.isInlineLevel();
     }
 
     private void flattenInlines(List<LayoutBox> boxes, List<FlatRun> runs, List<LayoutBox> parents) {
@@ -428,7 +475,9 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     /** 中身を分割せず 1 つの塊として置くインライン要素。 */
     private boolean isAtomicInline(LayoutBox b) {
-        if ("inline-block".equals(b.style.getOrDefault(CssProperty.DISPLAY, "block"))) return true;
+        // inline-block / inline-flex / inline-grid / inline-table は中身を自分の整形コンテキストで組む。
+        // 以前は inline-block だけを見ていて、inline-flex の子がインライン内容として平坦化されていた
+        if (b.display.isInlineLevel() && b.display.inner() != LayoutBox.Display.Inner.FLOW) return true;
         String tag = b.node.tag;
         return tag.equals("img") || tag.equals("input") || tag.equals("button")
                 || tag.equals("select") || tag.equals("progress")

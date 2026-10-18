@@ -29,15 +29,16 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | 第 3 期 | W0 | 現状を正しく測る（コーパス拡張・文書の整合） | **完了** |
 | | W1 | CSS 値モデルとプロパティレジストリ | **完了** |
 | | W2 | float 幾何と使用値 | **完了** |
-| | W3 | ボックスツリー構築 | 未着手 |
+| | W3 | ボックスツリー構築 | **完了** |
 | | W4 | 整形コンテキストの網羅（float / table / flex / grid / sticky） | 未着手 |
 | | W5 | 描画モデル（スタッキングコンテキスト・border-style・背景） | 未着手 |
 | | W6 | UA スタイルシートを HTML 標準に | 未着手 |
 | | W7 | HTML ツリー構築 | 未着手 |
 
-テスト 227 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
-忠実度コーパス 115 ケース（9 領域）、うち 53 ケースがブラウザと一致（幾何は ±0.5px）。
-忠実度台帳の残り **250 行（62 ケース）**: W3 21 / W4 215 / W5 9 / W6 5（W1 の 9 行・W2 の 10 行は解消）。
+テスト 239 件 / 失敗 0。`./gradlew build test` が CI と同じ経路。
+忠実度コーパス 115 ケース（9 領域）、うち 63 ケースがブラウザと一致（幾何は ±0.5px）。
+忠実度台帳の残り **175 行（52 ケース）**: W4 161 / W5 9 / W6 5（W1 の 9 行・W2 の 10 行・W3 の 21 行と、
+W3 の副作用で消えた W4 の 54 行は解消）。
 各フェーズの完了条件は、FIDELITY.md の該当フェーズの節の行が台帳から消えること。
 
 ### 第 3 期の方針
@@ -83,8 +84,8 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 **軸 6 — DOM と箱は別物。**
 レイアウトは DOM ではなく**ボックスツリー**を入力にする。匿名ブロック・匿名表ボックス・
-`display: contents`・`::marker` は DOM に無い箱で、いまの DOM → `LayoutBox` 1:1 では作れない。
-→ **W3**。
+`display: contents`・`::marker` は DOM に無い箱で、DOM → `LayoutBox` 1:1 では作れない。
+→ **W3 で達成**（`BoxTreeBuilder`）。
 
 ---
 
@@ -340,11 +341,61 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 - 破壊的変更: `line-height: normal` の行が 18px ではなく 18.4px で進むので、長い文章は
   わずかに高くなる。README に移行メモを書いた。
 
+### W3 — ボックスツリー構築（軸 6）
+
+- **要素ツリーとボックスツリーを分けた。** `LayoutBox.elementChildren` が DOM と 1:1 の要素ツリーで、
+  `UIParser` はこちらを作り、再スタイルと継承もこちらを辿る。`LayoutBox.children` はボックスツリーで、
+  `BoxTreeBuilder` が要素ツリーから組み、レイアウトと描画はこちらだけを読む。
+  `display: contents` の要素は要素ツリーにだけ残り、子が親の箱に繰り上がる。
+  ブロックコンテナの中でブロックとインラインが混ざるとインラインの並びを匿名ブロックで包み
+  （畳まれる空白だけの並びは捨てる）、表の構造が欠けていると匿名の table / table-row / table-cell を補う
+  （CSS 2.2 §9.2.1.1 / §17.2.1）。匿名ボックスは持ち主の継承値だけを受け継ぎ、id は持ち主ごとの通し番号。
+- **`display` を outer / inner に分けた**（`LayoutBox.Display`）。2 キーワード構文と `list-item` も読む。
+  `LayoutEngine.getEngine` は inner display（flow / flow-root / flex / grid / table）で選び、
+  インラインレベルかどうか・不可分なインラインかどうかも display から決める。これで
+  `inline-flex` の子がインライン内容として平坦化されていたのが直った（W4 の `inline-flex` が消えた）。
+- **BFC。** `BoxMeasurer.establishesBfc` が `flow-root`・`overflow` が `visible` / `clip` 以外・
+  flex / grid アイテム・インラインブロック・表のセル・絶対配置・ルートを BFC とし、
+  BFC は子のマージンを上下とも貫通させない（W4 の `margin-collapse-bfc` も消えた）。
+- **最小の表レイアウト**（`TableLayoutEngine`）。匿名表を組むために入れた。列幅はセルの幅の最大、
+  行の高さはセルの最大でセルは行の高さまで伸び、表に指定幅があれば余りを幅の指定が無い列へ
+  列幅の比で配る。W4 の表のケースのうち `colspan` / `rowspan` / `border-collapse` に依らない行が消えた。
+  HTML の `<table>` は ua.css が flex の行として組んだまま（W4 で切り替える）。
+- **`::marker` と CSS カウンタ。** `list-item` に匿名のマーカー箱を作る。`outside` は通常フローの外で、
+  `BlockLayoutEngine` がリスト項目の左外に最初の行のベースラインで揃えて置く。`inside` は先頭の
+  インライン内容。`list-style-type`（記号・decimal 系・alpha / latin / roman / greek・文字列）、
+  `counter-reset` / `counter-increment` / `counter-set`（レジストリに登録）と暗黙の `list-item`、
+  `<ol start>` / `<li value>` を数える。ua.css に `ol { decimal }`・入れ子の `ul` の circle / square・
+  `counter-reset: list-item` を足した。
+- **生成内容の評価を `BoxTreeBuilder` に移した。** 以前はパーサが `content` の前後の引用符を外すか
+  `attr()` 1 つだけを読んでいたので、連結が文字列のまま出ていた。文字列・`attr()`・`counter()`・
+  `counters()` の並びを評価する。
+- **エンジン SPI を「制約を受け取り、内容の寸法を返す」形にした。** 入力は
+  `LayoutContext.ConstraintSpace`（利用可能幅・% の基準・親の整形コンテキスト）、BFC かどうかは
+  `BoxMeasurer` が決めて箱に持たせる。エンジンは `measureContent`（内容の幅）・`contentBlockSize`
+  （内容の高さ）・`finishLayout`（伸長・stretch・絶対配置の子）を実装し、箱自身の幅と高さ
+  （shrink-to-fit なら内容幅 + 装飾、auto なら内容高 + 装飾）は `BoxMeasurer` だけが決める。
+  旧 SPI への橋渡しを置いて Table → Block → Flex → Grid の順に 1 つずつ移し、各段で回帰 0・
+  ゴールデン差分なしを確かめてから橋渡しを消した。
+- 付随: 描画だけの再スタイルは再レイアウトを通らないため、匿名ボックスとマーカーのスタイルを
+  `BoxTreeBuilder.restyleGeneratedBoxes` が持ち主から作り直す（`li:hover { color }` でマーカーの色が変わる）。
+  `UIRenderer` は匿名ボックスを描かず、子の持ち主の id を匿名ボックスの外の要素のままにする。
+  `FidelityDumper` は要素ツリーを辿る（`display: contents` の要素もブラウザ同様 0 矩形で出す）。
+- **見送ったもの。** インラインボックスの中のブロックでインラインを分割しない・flex / grid 内の
+  テキストを匿名アイテムで包まない・`::marker` のセレクタ照合と `list-style-image`・
+  `<ol reversed>`（いずれも README の "Not supported" と `BoxTreeBuilder` の `LIMITATION`）。
+  エンジンが返すのは内容の寸法までで、位置は従来どおり `arrangeChildren` が `LayoutBox` に書く
+  （独立したフラグメントの木にはしていない。読み手のレンダラ・ヒットテストが `LayoutBox` を読むため）。
+- 検証: `BoxTreeTest`（12 件。箱の組み方、マーカーの文字列とカウンタ、生成内容、描画だけの再スタイル）。
+  `LayoutGoldenTest` / `InlineLayoutConsistencyTest` は差分なし。
+- 破壊的変更: リスト項目にマーカーが出る。インラインとブロックが混ざった内容は重ならずに積まれ、
+  BFC の箱では子のマージンが外へ抜けなくなる。README に移行メモを書いた。
+
 ---
 
 # 残りのフェーズ（第 3 期）
 
-W0〜W2 は完了。以下は W3 から。
+W0〜W3 は完了。以下は W4 から。
 各フェーズの完了条件は原則として「W0 で台帳に記録した行が消えること」で表す。
 
 ## 第 3 期の出発点（調査で分かったこと）
@@ -354,8 +405,8 @@ W0〜W2 は完了。以下は W3 から。
   `font-size: 2vw` は既定のサイズのままだった。
 - **幾何が `int`**（W2 で解消）。`ComputedStyle.length()`、`LayoutBox.x/y/w/h`・余白・ボーダー、
   `LayoutEngine.distributeMainAxis` の整数除算。
-- **ボックスツリーが無い。** `LayoutEngine.getEngine` は flex / grid 以外を全部
-  `BlockLayoutEngine` に落とす（table / list-item / inline-block も）。
+- **ボックスツリーが無い**（W3 で解消）。`LayoutEngine.getEngine` は flex / grid 以外を全部
+  `BlockLayoutEngine` に落としていた（table / list-item / inline-block も）。
 - **整形コンテキストの欠落。** flex: `order` / `*-reverse` / `align-content` / auto margin /
   baseline 揃え。grid: 自動配置・暗黙トラック・areas・名前付き線。block: float / clear / BFC。
   inline: `vertical-align` / `text-indent`。`position: sticky`。表は `ua.css` で flex 行に化けている。
@@ -368,15 +419,6 @@ W0〜W2 は完了。以下は W3 から。
   `tr` / `td` の暗黙終了など WHATWG のツリー構築規則が足りない。
 
 
-## W3 — ボックスツリー構築（軸 6）
-
-- `core/layout/BoxTreeBuilder`: DOM + 算出値 → ボックスツリー。`display` を outer / inner に分ける。
-- 匿名ブロック（ブロック内でのインライン混在）、匿名表ボックス、`display: contents`、
-  `flow-root`、`list-item` と `::marker`（`list-style-type` と CSS カウンタ）。
-- `LayoutEngine.getEngine` を inner display（flow / flow-root / flex / grid / table）で選ぶようにする。
-- エンジン SPI を「制約（利用可能幅・% 基準・BFC）を受け取り、フラグメントを返す」形に移す。
-  **3 エンジンを同時に書き換えず**、Block → Flex → Grid の順で 1 つずつ。
-
 ## W4 — 整形コンテキストの網羅
 
 - **block**: float / clear / BFC（float の回避と包含）、`text-indent`。
@@ -385,8 +427,9 @@ W0〜W2 は完了。以下は W3 から。
   auto margin、`align-items: baseline`、`min-width: auto` の仕様どおりの扱い。
 - **grid**: 自動配置（`grid-auto-flow`、`dense`）、暗黙トラック（`grid-auto-rows` / `-columns`）、
   `grid-template-areas`、名前付き線、`span`、`justify-items` / `place-*`。
-- **table**: 本物の表レイアウト（自動列幅、`table-layout: fixed`、`colspan` / `rowspan`、
-  `border-collapse`）。`ua.css` の表の flex 化を撤去する。
+- **table**: W3 の最小の表レイアウト（`TableLayoutEngine`）を本物にする（min-content / max-content
+  からの自動列幅、`table-layout: fixed`、`colspan` / `rowspan`、`border-collapse` /
+  `border-spacing`、キャプション、セルの `vertical-align`）。`ua.css` の表の flex 化を撤去する。
 - `position: sticky`。
 
 ## W5 — 描画モデル（CSS 2.2 付録 E）
@@ -458,8 +501,8 @@ W0〜W2 は完了。以下は W3 から。
 - **W5 は W1 の後なら W2〜W4 と並行してよい**（`client/renderer` 中心で、触る層が違う）。
 - **W6 は W4（表）と W5（`border-style`）の後。** UA から flex の表を外すには本物の表レイアウトが要る。
 - **W7 は独立**（`core/dom` だけ）。いつ入れてもよい。
-- **W3 の SPI 移行が最大のリスク。** F2 と同じく、先に `InlineLayoutConsistencyTest` /
-  `LayoutGoldenTest` を広げてから、エンジンを 1 つずつ移す。
+- **W3 の SPI 移行が最大のリスクだった（完了）。** 旧 SPI への橋渡しを置き、エンジンを 1 つずつ移して
+  各段で回帰 0 とゴールデン差分なしを確かめた。
 - **破壊的変更の通知**: UA の刷新（W6）・float 幾何（W2）・表レイアウト（W4）は既存 UI の
   見た目を変える。フェーズごとに README に移行メモを書き、`showcase.html` / `guidebook.md` /
   `config-form.css` / テーマ 3 本を同じコミットで追従させる。
@@ -474,7 +517,8 @@ F3 と F4 は並行、F4 は幾何 → SPI → エンジン移行の順、F5 は
 台帳は「コーパスで測れた差」だけを持つ。W0 で大半はコーパスに入り台帳の行になった。
 次はコーパスの形式（矩形と描画順）では測れないが分かっている差で、該当フェーズで扱う。
 
-- `::marker` と CSS カウンタが無い（W3。マーカーは id を持てない）
+- `::marker` のセレクタを照合しない・`list-style-image` と `<ol reversed>` が無い（W6。マーカーは
+  id を持てないので矩形に出ない。マーカーと CSS カウンタ自体は W3 で入った）
 - transform 後の空間でクリップしていない（W5）
 - `border-style` が solid のみ、複数背景が無い（W5。描画の見た目で、矩形に出ない）
 - UA スタイルシートの装飾（色・背景）が HTML 標準と違う（W6。寸法に出る分は台帳にある）

@@ -75,8 +75,28 @@ public record LayoutContext(
      * 広がってから shrink で削られる挙動になり、{@code flex: 1} の等分が効かなかった。
      */
     public record FormattingContext(String parentDisplay, String alignItems, boolean isShrink) {
+        /** 通常のブロックフロー（幅いっぱいに広がる）。 */
+        public static final FormattingContext BLOCK = new FormattingContext("block", "stretch", false);
+
         public boolean isFlexRow() { return parentDisplay.startsWith("row"); }
         public boolean isFlexColumn() { return parentDisplay.startsWith("column"); }
+    }
+
+    /**
+     * 親が子の整形に渡す制約（エンジン SPI の入力）。
+     *
+     * @param availableInlineSize 内容が使える幅（px）。shrink-to-fit の上限でもある
+     * @param percentageBlockSize 高さの % を解く基準（px）
+     * @param parent              親の整形コンテキスト（flex の方向・揃え・shrink の有無）
+     *
+     * 以前はこの 3 つが {@code measure(box, w, h, fmtCtx, ctx)} の別々の引数だった。
+     */
+    public record ConstraintSpace(float availableInlineSize, float percentageBlockSize, FormattingContext parent) {
+
+        /** 通常のブロックフローの子として、幅と高さの基準だけを与える。 */
+        public static ConstraintSpace block(float availableInlineSize, float percentageBlockSize) {
+            return new ConstraintSpace(availableInlineSize, percentageBlockSize, FormattingContext.BLOCK);
+        }
     }
 
     public static class ScrollState {

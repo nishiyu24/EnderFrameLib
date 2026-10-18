@@ -70,10 +70,12 @@ final class FidelityDumper {
         List<LayoutBox> painted = new UIRenderer(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
                 .paintOrder(root);
 
-        // ルート箱はパーサが作る合成ノード（html_root）なので、著者が書いた要素だけを拾う
+        // ルート箱はパーサが作る合成ノード（html_root）なので、著者が書いた要素だけを拾う。
+        // 辿るのは要素ツリー: display: contents の要素は箱を作らないが、ブラウザ側も
+        // getBoundingClientRect の 0 矩形として出すので、ダンプからは落とさない
         Set<String> authored = authoredIds(caseHtml(caseName));
         Map<String, LayoutBox> boxes = new LinkedHashMap<>();
-        for (LayoutBox child : root.children) collect(child, authored, boxes);
+        for (LayoutBox child : root.elementChildren) collect(child, authored, boxes);
 
         List<LayoutBox> paintedWithId = new ArrayList<>();
         for (LayoutBox box : painted) {
@@ -89,7 +91,7 @@ final class FidelityDumper {
     private static void collect(LayoutBox box, Set<String> authored, Map<String, LayoutBox> out) {
         String id = box.node.attrs.get("id");
         if (id != null && authored.contains(id)) out.putIfAbsent(id, box);
-        for (LayoutBox child : box.children) collect(child, authored, out);
+        for (LayoutBox child : box.elementChildren) collect(child, authored, out);
     }
 
     /**

@@ -512,7 +512,8 @@ public class StateStyleTest {
     private static LayoutBox findById(LayoutBox box, String id) {
         if (box == null) return null;
         if (box.node != null && id.equals(box.node.getId())) return box;
-        for (LayoutBox child : box.children) {
+        // buildLayoutTree が作るのは要素ツリー（ボックスツリーは BoxTreeBuilder が組む）
+        for (LayoutBox child : box.elementChildren) {
             LayoutBox hit = findById(child, id);
             if (hit != null) return hit;
         }

@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 
 import java.util.ArrayList;
@@ -20,7 +21,9 @@ import java.util.List;
 public class FlexLayoutEngine extends LayoutEngine {
 
     @Override
-    public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float tentativeInnerW = space.availableInlineSize();
+        float parentH = space.percentageBlockSize();
         String dir = box.style.getOrDefault(CssProperty.FLEX_DIRECTION, "row");
         boolean isFlexRow = dir.startsWith("row");
         boolean isFlexColumn = dir.startsWith("column");
@@ -32,7 +35,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             String childAlign = child.style.getOrDefault(CssProperty.ALIGN_SELF, alignItems);
 
             FormattingContext childCtx = new FormattingContext(dir, childAlign, box.sizingMode == SizingMode.SHRINK_TO_FIT);
-            child.measure(tentativeInnerW, parentH, childCtx, ctx);
+            child.measure(new ConstraintSpace(tentativeInnerW, parentH, childCtx), ctx);
 
             if (isFlexRow && child.style.containsKey(CssProperty.FLEX_BASIS) && !"auto".equalsIgnoreCase(child.style.get(CssProperty.FLEX_BASIS).trim())) {
                 child.w = resolveFlexBasis(child, true, tentativeInnerW, ctx);
@@ -44,10 +47,8 @@ public class FlexLayoutEngine extends LayoutEngine {
             activeChildren++;
         }
 
-        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
-            if (isFlexRow) box.w = sumChildW + (activeChildren > 1 ? box.columnGap * (activeChildren - 1) : 0) + box.horizontalDecoration();
-            else box.w = maxChildW + box.horizontalDecoration();
-        }
+        if (isFlexRow) return sumChildW + (activeChildren > 1 ? box.columnGap * (activeChildren - 1) : 0);
+        return maxChildW;
     }
 
     private float resolveFlexBasis(LayoutBox child, boolean isRow, float availableSize, LayoutContext ctx) {
@@ -67,7 +68,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
 
     @Override
-    public void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         String dir = box.style.getOrDefault(CssProperty.FLEX_DIRECTION, "row");
         boolean isFlexRow = dir.startsWith("row");
         boolean isFlexColumn = dir.startsWith("column");
@@ -75,34 +76,43 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
 
-        if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto"))) {
-            float contentH = 0;
-            if (isFlexRow && "wrap".equals(flexWrap)) {
-                float currentLineW = 0, currentLineH = 0;
-                for (LayoutBox child : box.getFlowChildren()) {
-                    float childOuterW = child.w + child.mL + child.mR, childOuterH = child.h + child.mT + child.mB;
-                    if (currentLineW + childOuterW > actualInnerW && currentLineW > 0) {
-                        contentH += currentLineH + box.rowGap;
-                        currentLineW = 0;
-                        currentLineH = 0;
-                    }
-                    currentLineW += childOuterW + box.columnGap;
-                    currentLineH = Math.max(currentLineH, childOuterH);
+        float contentH = 0;
+        if (isFlexRow && "wrap".equals(flexWrap)) {
+            float currentLineW = 0, currentLineH = 0;
+            for (LayoutBox child : box.getFlowChildren()) {
+                float childOuterW = child.w + child.mL + child.mR, childOuterH = child.h + child.mT + child.mB;
+                if (currentLineW + childOuterW > actualInnerW && currentLineW > 0) {
+                    contentH += currentLineH + box.rowGap;
+                    currentLineW = 0;
+                    currentLineH = 0;
                 }
-                contentH += currentLineH;
-            } else if (isFlexRow) {
-                for (LayoutBox child : box.getFlowChildren()) {
-                    contentH = Math.max(contentH, child.h + child.mT + child.mB);
-                }
-            } else if (isFlexColumn) {
-                for (LayoutBox child : box.getFlowChildren()) {
-                    contentH += child.h + child.mT + child.mB;
-                }
-                if (box.getFlowChildren().size() > 1) contentH += box.rowGap * (box.getFlowChildren().size() - 1);
+                currentLineW += childOuterW + box.columnGap;
+                currentLineH = Math.max(currentLineH, childOuterH);
             }
-            box.h = Math.max(box.h, contentH + box.verticalDecoration());
+            contentH += currentLineH;
+        } else if (isFlexRow) {
+            for (LayoutBox child : box.getFlowChildren()) {
+                contentH = Math.max(contentH, child.h + child.mT + child.mB);
+            }
+        } else if (isFlexColumn) {
+            for (LayoutBox child : box.getFlowChildren()) {
+                contentH += child.h + child.mT + child.mB;
+            }
+            if (box.getFlowChildren().size() > 1) contentH += box.rowGap * (box.getFlowChildren().size() - 1);
         }
+        return contentH;
+    }
 
+    /** 箱の高さが決まってから、交差軸の stretch と主軸の伸縮を解く。 */
+    @Override
+    public void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float parentH = space.percentageBlockSize();
+        String dir = box.style.getOrDefault(CssProperty.FLEX_DIRECTION, "row");
+        boolean isFlexRow = dir.startsWith("row");
+        boolean isFlexColumn = dir.startsWith("column");
+        String flexWrap = box.style.getOrDefault(CssProperty.FLEX_WRAP, "nowrap");
+
+        float actualInnerW = Math.max(0, box.w - box.horizontalDecoration());
         float actualInnerH = Math.max(0, box.h - box.verticalDecoration());
         String align = box.style.getOrDefault(CssProperty.ALIGN_ITEMS, "stretch");
 

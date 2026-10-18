@@ -143,7 +143,8 @@ the engine against.
 `ins` `code` `kbd` `pre` `blockquote` `label` `output`
 
 **Lists / tables** `ul` `ol` `li` `table` `thead` `tbody` `tr` `th` `td`
-(tables are laid out as flex rows, not as a real table formatting context)
+(the built-in stylesheet lays `<table>` out as flex rows; `display: table` and
+`table-*` get a basic table layout, see "Not supported")
 
 **Forms** `form` `fieldset` `legend` `button` `input`
 (`text` `number` `checkbox` `radio` `range` `color`) `select` `option`
@@ -188,9 +189,18 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 `:checked` `:disabled` `:first-child` `:last-child` `:nth-child()` (`odd`,
 `even`, integer) `:empty` `:root` `:not()`
 
-**Pseudo-elements** `::before` `::after` (with `content`)
+**Pseudo-elements** `::before` `::after` (`content` with strings, `attr()`,
+`counter()` and `counters()`); list items get a `::marker` box
 
-**Box model** `display` (`block` `inline-block` `flex` `grid` `none`)
+**Lists and counters** `list-style-type` (`disc` `circle` `square` `decimal`
+`decimal-leading-zero` `lower-` / `upper-alpha` / `latin` / `roman`
+`lower-greek` `none`, or a string), `list-style-position`, `counter-reset`
+`counter-increment` `counter-set`, `<ol start>` and `<li value>`
+
+**Box model** `display` (`block` `inline` `inline-block` `flow-root` `flex`
+`inline-flex` `grid` `inline-grid` `table` `inline-table` `table-*`
+`list-item` `contents` `none`, and the two-keyword forms such as
+`inline flow-root`)
 `position` (`static` `relative` `absolute` `fixed`) `top` `right` `bottom`
 `left` `z-index` `width` `height` `min-*` `max-*` `margin` `padding` `border`
 `border-*-width` `border-radius` `box-sizing` `aspect-ratio` `overflow`
@@ -239,6 +249,16 @@ are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > with `font-size`. Documents that were tuned against the old numbers need their
 > font sizes revisited. The reasoning is in [FIDELITY.md](FIDELITY.md).
 
+> **Breaking change — box tree.** Layout now runs on a box tree built from the
+> DOM, as in a browser. Inline content that sits next to a block is wrapped in an
+> anonymous block and stacks below or above it instead of overlapping it;
+> `display: contents` removes the element's own box; stray `table-cell` /
+> `table-row` boxes get anonymous table parents; and `display: flow-root`,
+> `overflow` other than `visible`, flex and grid items, inline-blocks and table
+> cells stop their children's margins from collapsing through them. List items
+> now draw a bullet or number (`ol` counts in `decimal`, nested `ul` use
+> `circle` then `square`); set `list-style: none` to remove it.
+
 > **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
 > whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
 > (18.4px at 16px) keep their fractions, and positions are rounded once, when
@@ -261,18 +281,22 @@ Layout differences from a real browser are measured, case by case, in
   as an action name, never evaluated.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
-- **Real table layout.** `table`/`tr`/`td` are flex rows, and `display: table`
-  / `table-row` / `table-cell` lay out as plain blocks: no `colspan`, no
-  `rowspan`, no automatic column sizing, no `table-layout`, `border-collapse`
-  or `border-spacing`.
+- **Real table layout.** The built-in stylesheet still lays `table`/`tr`/`td`
+  out as flex rows. `display: table` / `table-row` / `table-cell` (and the
+  anonymous table boxes generated around stray cells) get a basic table layout:
+  a column is as wide as its widest cell, a row as tall as its tallest cell,
+  and a wider table hands the spare width to its unsized columns. There is no
+  `colspan`, `rowspan`, `table-layout: fixed`, `border-collapse`,
+  `border-spacing`, caption or cell `vertical-align`.
 - **`float`, `clear`, multi-column layout, writing modes.** Floats stack as
   ordinary blocks.
-- **Block formatting contexts.** `display: flow-root` and `overflow` other than
-  `visible` do not stop a child's margin from collapsing through its parent, and
-  an empty block's own top and bottom margins do not collapse together.
-- **Box-tree generation.** Elements map 1:1 to boxes: no anonymous block boxes
-  around inline content mixed with blocks, no anonymous table boxes, and
-  `display: contents` still generates a box.
+- **Collapsing through empty blocks.** An empty block's own top and bottom
+  margins do not collapse together.
+- **Box-tree generation in full.** A block inside an inline box does not split
+  the inline box, and text directly inside a flex or grid container is not
+  wrapped in an anonymous item. `<ol reversed>` does not count down.
+- **`::marker` styling.** Markers are drawn with the list item's inherited
+  style: `::marker` rules never match and `list-style-image` is ignored.
 - **Intrinsic sizing keywords in grid tracks and heights.** `min-content`,
   `max-content` and `fit-content` work as `width`, `min-width` and `max-width`;
   in `grid-template-*` and as a `height` they are not understood.
@@ -315,9 +339,9 @@ Layout differences from a real browser are measured, case by case, in
   a mouse. `@import` with `layer()` or `supports()` is ignored, as there are no
   cascade layers.
 - **Named grid lines and areas.** `grid-template-areas` is not implemented.
-- **Pseudo-elements beyond `::before` / `::after`.** `::placeholder`,
-  `::selection` and friends parse (and count toward specificity) but never
-  match.
+- **Pseudo-elements beyond `::before` / `::after`.** `::marker`,
+  `::placeholder`, `::selection` and friends parse (and count toward
+  specificity) but never match.
 - **Custom fonts.** Rendering uses Minecraft's font system; `font-family`
   selects among the fonts Minecraft has and the TrueType / OpenType fonts
   registered with `@font-face`.
