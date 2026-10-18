@@ -6,33 +6,8 @@
 #
 # W0 でコーパスを領域別に広げて起こした行。行が消えることが各フェーズの完了条件。
 
-# --- W3 — ボックスツリー
-display-flow-root#parent.y W3: `display: flow-root` が BFC を作らず、子のマージンが親を貫通する
-display-flow-root#parent.h W3: `display: flow-root` が BFC を作らず、子のマージンが親を貫通する
-display-contents#a.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#contents.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#contents.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#b.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#b.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#b.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#b.z W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#c.x W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#c.w W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#c.h W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-display-contents#c.z W3: `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない
-anonymous-block#parent.z W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
-anonymous-block#inline.z W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
-anonymous-block#block.y W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
-anonymous-block#inline2.y W3: ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる
-table-anonymous#wrap.h W3: `table-cell` だけの並びに匿名の table / table-row を補わない
-table-anonymous#a.h W3: `table-cell` だけの並びに匿名の table / table-row を補わない
-table-anonymous#b.x W3: `table-cell` だけの並びに匿名の table / table-row を補わない
-table-anonymous#b.y W3: `table-cell` だけの並びに匿名の table / table-row を補わない
-
 # --- W4 — 整形コンテキスト
 margin-collapse-empty#b.y W4: 高さ 0 の空ブロックの上下マージンが自分を貫通して前後と相殺しない
-margin-collapse-bfc#parent.y W4: `overflow: hidden` の親が BFC として子のマージン貫通を止めない
-margin-collapse-bfc#parent.h W4: `overflow: hidden` の親が BFC として子のマージン貫通を止めない
 float-left#wrap.h W4: `float` が無く、ブロックとして縦に積まれる
 float-left#wrap.z W4: `float` が無く、ブロックとして縦に積まれる
 float-left#b.x W4: `float` が無く、ブロックとして縦に積まれる
@@ -70,11 +45,6 @@ line-height-strut#line.h W4: 行ボックスに strut が無く、`line-height` 
 inline-nowrap-overflow#line.h W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
 inline-nowrap-overflow#b.x W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
 inline-nowrap-overflow#b.y W4: `white-space: nowrap` がインラインブロックの折り返しを止めない
-inline-flex#line.h W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
-inline-flex#before.y W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
-inline-flex#before.z W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
-inline-flex#flex.x W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
-inline-flex#item.x W4: `inline-flex` が直前のインライン内容と同じ行に並ばない
 flex-align-baseline#a.y W4: `align-items: baseline` を読まない
 flex-wrap-reverse#row.z W4: `flex-wrap: wrap-reverse` を読まない
 flex-wrap-reverse#a.y W4: `flex-wrap: wrap-reverse` を読まない
@@ -175,67 +145,20 @@ grid-dense#b.z W4: `grid-auto-flow: dense` と暗黙の行を読まない
 grid-auto-tracks#a.w W4: `auto` トラックを内容の寸法から決めない
 grid-auto-tracks#a.z W4: `auto` トラックを内容の寸法から決めない
 grid-auto-tracks#b.x W4: `auto` トラックを内容の寸法から決めない
-table-fixed-widths#t.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#t.h W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#b.x W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#b.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#c.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#c.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#d.x W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#d.y W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#d.w W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-fixed-widths#d.h W4: 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる
-table-auto-width#t.h W4: 表レイアウトが無く、列幅を内容から配らない
-table-auto-width#a.w W4: 表レイアウトが無く、列幅を内容から配らない
-table-auto-width#b.x W4: 表レイアウトが無く、列幅を内容から配らない
-table-auto-width#b.y W4: 表レイアウトが無く、列幅を内容から配らない
-table-auto-width#b.w W4: 表レイアウトが無く、列幅を内容から配らない
-table-layout-fixed#t.h W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#b.x W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#b.y W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#b.w W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#c.x W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#c.y W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-layout-fixed#c.w W4: 表レイアウトが無く、`table-layout: fixed` を読まない
-table-row-height#t.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#t.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#t.z W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#a.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#b.x W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#b.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#c.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#c.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#d.x W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#d.y W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#d.w W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#d.h W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-row-height#d.z W4: 表レイアウトが無く、行の高さをセルの最大に揃えない
-table-colspan#t.w W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#t.h W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#t.z W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#b.x W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#b.y W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#span.y W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-colspan#span.w W4: 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）
-table-rowspan#t.w W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#t.h W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#t.z W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#tall.h W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#a.x W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#a.y W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#b.x W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-rowspan#b.y W4: 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）
-table-border-collapse#t.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#t.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#t.z W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#a.x W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#a.y W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#a.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#a.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#b.x W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#b.y W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#b.w W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
-table-border-collapse#b.h W4: 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない
+table-colspan#t.z W4: `colspan` を読まない（暗黙の tbody は W7）
+table-colspan#span.w W4: `colspan` を読まない（暗黙の tbody は W7）
+table-rowspan#t.z W4: `rowspan` を読まない
+table-rowspan#tall.h W4: `rowspan` を読まない
+table-rowspan#b.x W4: `rowspan` を読まない
+table-border-collapse#t.w W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.x W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.y W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.w W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#a.h W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.x W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.y W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.w W4: `border-collapse` と `border-spacing` を読まない
+table-border-collapse#b.h W4: `border-collapse` と `border-spacing` を読まない
 position-relative#b.y W4: `position: relative` のずれが後続の兄弟の配置まで動かす
 position-abs-insets#stretch.x W4: `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない
 position-abs-insets#stretch.w W4: `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない

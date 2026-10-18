@@ -73,8 +73,9 @@
 - 制約を解消したら、コードのマーカーと README の記述を同じコミットで消す。
 
 現在 README に記録されている主な制約（コード側と対応させること）:
-JavaScript 非対応、Markdown のネストリスト非対応、表レイアウトが flex 行、
-`float` / 段組み非対応、BFC とボックスツリー（匿名箱・`display: contents`）が無い、
+JavaScript 非対応、Markdown のネストリスト非対応、表レイアウトが最小限（ua.css の表は flex 行）、
+`float` / 段組み非対応、ボックスツリーの未対応部分（インライン中のブロックで分割しない・
+flex / grid 内のテキストを匿名アイテムで包まない）、`::marker` を照合しない、
 flex / grid / 位置指定の未実装機能、スタッキングコンテキストが無い、
 `vertical-align` / `text-indent` 非対応、UA が HTML 標準の既定値でない、
 `@media` の `prefers-*` は固定値（light / 動きの抑制なし）、

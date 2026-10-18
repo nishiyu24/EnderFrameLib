@@ -11,6 +11,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
@@ -41,7 +42,6 @@ public class UIParser {
     private static final Pattern LINK_HREF_PATTERN = Pattern.compile("(?is)<link\\b[^>]*\\bhref=[\"']([^\"']+)[\"'][^>]*>");
     private static final Pattern SCRIPT_TAG_PATTERN = Pattern.compile("(?is)<script\\b[^>]*>\\s*(.*?)\\s*</script>");
     private static final Pattern STYLE_TAG_PATTERN = Pattern.compile("(?is)<style\\b[^>]*>\\s*(.*?)\\s*</style>");
-    private static final Pattern TRIM_QUOTES_PATTERN = Pattern.compile("^[\"']|[\"']$");
 
     @FunctionalInterface
     public interface ILayoutBoxRenderer {
@@ -297,6 +297,7 @@ public class UIParser {
         LayoutBox rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, false,
                 ComputedStyle.DEFAULT_FONT_SIZE, new StyleScope(rootW, rootH, ComputedStyle.DEFAULT_FONT_SIZE),
                 effectiveState);
+        BoxTreeBuilder.build(rootBox);
 
         runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
         return rootBox;
@@ -306,7 +307,7 @@ public class UIParser {
         rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH);
         LayoutContext ctx = new LayoutContext(viewport, intrinsicSizeResolver, scrollState, fonts);
-        FormattingContext fmtCtx = new FormattingContext("block", "stretch", false);
+        FormattingContext fmtCtx = FormattingContext.BLOCK;
 
         // 測定は 1 パスでは収束しない。shrink-to-fit の子は親の幅が決まらないと最終幅が決まらず、
         // 親の幅はその子の幅から決まるという相互依存があるため、同じパスを規定回数だけ回す。
@@ -427,7 +428,7 @@ public class UIParser {
 
             if ("details".equalsIgnoreCase(node.tag)) {
                 boolean isOpen = interactionState.stateOf(node).open();
-                boolean wasOpen = box.children.size() > 1;
+                boolean wasOpen = box.elementChildren.size() > 1;
                 if (isOpen != wasOpen) {
                     styleChanged = true;
                     layoutRequired = true;
@@ -435,6 +436,7 @@ public class UIParser {
             }
 
             box.updateStyle(computed);
+            BoxTreeBuilder.restyleGeneratedBoxes(box);
             box.hasInteractiveRules = hasInteractive;
             cacheStyle(flags, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
@@ -445,7 +447,8 @@ public class UIParser {
         boolean childForceDirty = isDirty;
         float nextParentFontSize = computed.fontSizePx();
         StyleScope childScope = scope.enter(node, computed);
-        for (LayoutBox child : box.children) {
+        // 要素ツリーを辿る（ボックスツリーには匿名ボックスが挟まり、display: contents の要素が無い）
+        for (LayoutBox child : box.elementChildren) {
             RestyleResult childRes = restyleBoxRecursive(child, computed.asMap(), sheet, env,
                     childForceDirty, nextParentFontSize, childScope, interactionState);
             styleChanged |= childRes.styleChanged();
@@ -510,7 +513,7 @@ public class UIParser {
 
         HtmlNode beforeNode = createPseudoElement(node, sheet, true, interactionState);
         if (beforeNode != null) {
-            box.addChild(buildLayoutTree(beforeNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
+            box.addElementChild(buildLayoutTree(beforeNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
         }
 
         if (!"textarea".equalsIgnoreCase(node.tag)) {
@@ -519,15 +522,16 @@ public class UIParser {
                     : node.attrs.containsKey("open");
             boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
             for (HtmlNode child : node.children) {
-                if (child.tag.equals("#text") && child.text.isEmpty()) continue;
+                // 擬似要素のテキストは BoxTreeBuilder が content から埋めるので、空でも箱を作る
+                if (child.tag.equals("#text") && child.text.isEmpty() && !node.isPseudoNode) continue;
                 if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
-                box.addChild(buildLayoutTree(child, childInherited, sheet, env, childForceDirty, computed.fontSizePx(), childScope, interactionState));
+                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, childForceDirty, computed.fontSizePx(), childScope, interactionState));
             }
         }
 
         HtmlNode afterNode = createPseudoElement(node, sheet, false, interactionState);
         if (afterNode != null) {
-            box.addChild(buildLayoutTree(afterNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
+            box.addElementChild(buildLayoutTree(afterNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
         }
 
         return box;
@@ -562,12 +566,7 @@ public class UIParser {
         textNode.parent = pseudo;
         textNode.setId(pseudo.getId() + "_txt");
 
-        if (content.startsWith("attr(") && content.endsWith(")")) {
-            String attrName = content.substring(5, content.length() - 1).trim();
-            textNode.text = parent.attrs.getOrDefault(attrName, "");
-        } else {
-            textNode.text = TRIM_QUOTES_PATTERN.matcher(content).replaceAll("");
-        }
+        // 文字列・attr()・counter() の評価はカウンタを数える BoxTreeBuilder が行う
 
         pseudo.children.add(textNode);
 

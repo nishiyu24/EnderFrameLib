@@ -4,7 +4,9 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.text.TextShaper;
@@ -28,8 +30,10 @@ public final class BoxMeasurer {
      * @param tentativeInnerW 親が与える暫定の内容幅
      * @param parentH         親の内容高（パーセント指定の基準）
      */
-    public static void measure(LayoutBox box, float tentativeInnerW, float parentH,
-                               FormattingContext fmtCtx, LayoutContext ctx) {
+    public static void measure(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float tentativeInnerW = space.availableInlineSize();
+        float parentH = space.percentageBlockSize();
+        FormattingContext fmtCtx = space.parent();
         ComputedStyle style = box.style;
         box.invalidateMinContentCache();
 
@@ -64,10 +68,10 @@ public final class BoxMeasurer {
                 ? widthStr.toLowerCase() : null;
         boolean hasWidth = !"auto".equals(widthStr) && intrinsicWidth == null;
         boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && fmtCtx.isShrink();
-        String display = style.getOrDefault(CssProperty.DISPLAY, "block");
+        box.establishesBfc = establishesBfc(box, fmtCtx);
 
         resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != null,
-                isPercentWidthAndShrinking, isBorderBox, display, fmtCtx);
+                isPercentWidthAndShrinking, isBorderBox, fmtCtx);
 
         applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
@@ -81,8 +85,13 @@ public final class BoxMeasurer {
             engineInnerW = Math.max(0, box.w - box.horizontalDecoration());
         }
 
-        LayoutEngine engine = LayoutEngine.getEngine(display);
-        engine.measure(box, engineInnerW, parentH, fmtCtx, ctx);
+        LayoutEngine engine = LayoutEngine.getEngine(box.display);
+        // 箱自身の幅はここで決める。エンジンは子を測って内容の幅を返すだけ
+        ConstraintSpace contentSpace = new ConstraintSpace(engineInnerW, parentH, fmtCtx);
+        float contentW = engine.measureContent(box, contentSpace, ctx);
+        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
+            box.w = contentW + box.horizontalDecoration();
+        }
 
         if (intrinsicWidth != null) {
             resolveIntrinsicWidth(box, ctx, intrinsicWidth, parentW, rootW, rootH, isBorderBox);
@@ -101,7 +110,7 @@ public final class BoxMeasurer {
             }
         }
 
-        resolveHeights(box, parentH, ctx, isBorderBox, engine, fmtCtx);
+        resolveHeights(box, contentSpace, ctx, isBorderBox, engine);
     }
 
     /**
@@ -109,10 +118,9 @@ public final class BoxMeasurer {
      * flex の grow/shrink やグリッドの stretch で幅・高さが変わった子に対して、
      * エンジンから呼ばれる。
      */
-    public static void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx,
-                                              LayoutContext ctx) {
-        LayoutEngine engine = LayoutEngine.getEngine(box.style.getOrDefault(CssProperty.DISPLAY, "block"));
-        resolveHeights(box, parentH, ctx, isBorderBox(box.style), engine, fmtCtx);
+    public static void resolveFlexibleHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        LayoutEngine engine = LayoutEngine.getEngine(box.display);
+        resolveHeights(box, space, ctx, isBorderBox(box.style), engine);
     }
 
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
@@ -140,7 +148,7 @@ public final class BoxMeasurer {
 
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
                                      boolean hasWidth, boolean hasIntrinsicWidth, boolean isPercentWidthAndShrinking,
-                                     boolean isBorderBox, String display, FormattingContext fmtCtx) {
+                                     boolean isBorderBox, FormattingContext fmtCtx) {
         ComputedStyle style = box.style;
         String tag = box.node.tag;
 
@@ -167,7 +175,8 @@ public final class BoxMeasurer {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute || fmtCtx.isFlexRow() || fmtCtx.isShrink()
-                || display.equals("inline-block") || display.equals("inline")) {
+                || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE) {
+            // インラインレベルの箱と表は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else if (fmtCtx.isFlexColumn() && !"stretch".equals(fmtCtx.alignItems())) {
@@ -271,8 +280,9 @@ public final class BoxMeasurer {
         }
     }
 
-    private static void resolveHeights(LayoutBox box, float parentH, LayoutContext ctx, boolean isBorderBox,
-                                       LayoutEngine engine, FormattingContext fmtCtx) {
+    private static void resolveHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean isBorderBox,
+                                       LayoutEngine engine) {
+        float parentH = space.percentageBlockSize();
         ComputedStyle style = box.style;
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
@@ -289,7 +299,10 @@ public final class BoxMeasurer {
             resolveIntrinsicHeight(box, ctx, heightStr);
         }
 
-        engine.resolveFlexibleHeights(box, parentH, fmtCtx, ctx);
+        // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う
+        float contentH = engine.contentBlockSize(box, space, ctx);
+        if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
+        engine.finishLayout(box, space, ctx);
 
         if (style.containsKey(CssProperty.MAX_HEIGHT)) {
             String maxHStr = style.get(CssProperty.MAX_HEIGHT).trim();
@@ -406,6 +419,38 @@ public final class BoxMeasurer {
         String src = box.node.attrs.getOrDefault("src", "");
         boolean remote = src.startsWith("http://") || src.startsWith("https://");
         return remote ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;
+    }
+
+    /**
+     * この箱が子のためにブロック整形コンテキスト（BFC）を作るか（CSS 2.2 §9.4.1）。
+     *
+     * 何が壊れていたか: 以前は BFC という概念が無く、親子のマージン相殺が「親の上パディングと
+     * ボーダーが 0 か」だけで決まっていた。そのため {@code display: flow-root} や
+     * {@code overflow: hidden} の親、flex アイテムの中でも子のマージンが外へ貫通していた。
+     */
+    static boolean establishesBfc(LayoutBox box, FormattingContext fmtCtx) {
+        if (box.parent == null || "html".equals(box.node.tag)) return true;
+        switch (box.display.inner()) {
+            case FLOW_ROOT, FLEX, GRID, TABLE, TABLE_CELL, TABLE_CAPTION -> {
+                return true;
+            }
+            default -> {
+            }
+        }
+        if (box.isAbsolute) return true;
+        if (!"none".equals(box.style.getOrDefault(CssProperty.FLOAT, "none"))) return true;
+        // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
+        if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;
+        return isScrollContainerOrClip(box.style.getOrDefault(CssProperty.OVERFLOW_X,
+                        box.style.getOrDefault(CssProperty.OVERFLOW, "visible")))
+                || isScrollContainerOrClip(box.style.getOrDefault(CssProperty.OVERFLOW_Y,
+                        box.style.getOrDefault(CssProperty.OVERFLOW, "visible")));
+    }
+
+    /** {@code visible} と {@code clip} 以外の overflow は BFC を作る（clip はスクロールコンテナにならない）。 */
+    private static boolean isScrollContainerOrClip(String overflow) {
+        String v = overflow.trim();
+        return !v.equals("visible") && !v.equals("clip");
     }
 
     private static boolean isBorderBox(ComputedStyle style) {

@@ -87,28 +87,15 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（250 件・62 ケース）
+## 既知の差異（175 件・52 ケース）
 
 W0 でコーパスを領域別に広げて起こした行。各フェーズの完了条件は、そのフェーズの節の行が台帳から消えること。
 値は「ブラウザ / エンジン」。`z` は描画順の列（矩形の中心で上に重なっている id 付き要素の数）。
 
-### W3 — ボックスツリー（21 件）
-
-- **`display-flow-root`** — `display: flow-root` が BFC を作らず、子のマージンが親を貫通する。
-  `display-flow-root#parent.y` 0 / 15、`display-flow-root#parent.h` 50 / 20
-- **`display-contents`** — `display: contents` が箱を作ってしまい、子が祖父の flex アイテムにならない。
-  `display-contents#a.w` 100 / 300、`display-contents#contents.x` 0 / 300、`display-contents#contents.h` 0 / 20、`display-contents#b.x` 100 / 300、`display-contents#b.w` 100 / 0、`display-contents#b.h` 20 / 0、`display-contents#b.z` 0 / -1、`display-contents#c.x` 200 / 300、`display-contents#c.w` 100 / 0、`display-contents#c.h` 20 / 0、`display-contents#c.z` 0 / -1
-- **`anonymous-block`** — ブロックとインラインが混在しても匿名ブロックを作らず、インラインがブロックと重なる。
-  `anonymous-block#parent.z` 1 / 0、`anonymous-block#inline.z` 0 / 1、`anonymous-block#block.y` 20 / 0、`anonymous-block#inline2.y` 30 / 10
-- **`table-anonymous`** — `table-cell` だけの並びに匿名の table / table-row を補わない。
-  `table-anonymous#wrap.h` 30 / 50、`table-anonymous#a.h` 30 / 20、`table-anonymous#b.x` 40 / 0、`table-anonymous#b.y` 0 / 20
-
-### W4 — 整形コンテキスト（215 件）
+### W4 — 整形コンテキスト（161 件）
 
 - **`margin-collapse-empty`** — 高さ 0 の空ブロックの上下マージンが自分を貫通して前後と相殺しない。
   `margin-collapse-empty#b.y` 30 / 45
-- **`margin-collapse-bfc`** — `overflow: hidden` の親が BFC として子のマージン貫通を止めない。
-  `margin-collapse-bfc#parent.y` 0 / 20、`margin-collapse-bfc#parent.h` 40 / 20
 - **`float-left`** — `float` が無く、ブロックとして縦に積まれる。
   `float-left#wrap.h` 10 / 60、`float-left#wrap.z` 2 / 0、`float-left#b.x` 100 / 0、`float-left#b.y` 0 / 30、`float-left#after.y` 0 / 50、`float-left#after.z` 1 / 0
 - **`float-right`** — `float` が無く、ブロックとして縦に積まれる。
@@ -135,8 +122,6 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
   `line-height-strut#line.h` 40 / 20
 - **`inline-nowrap-overflow`** — `white-space: nowrap` がインラインブロックの折り返しを止めない。
   `inline-nowrap-overflow#line.h` 10 / 20、`inline-nowrap-overflow#b.x` 60 / 0、`inline-nowrap-overflow#b.y` 0 / 10
-- **`inline-flex`** — `inline-flex` が直前のインライン内容と同じ行に並ばない。
-  `inline-flex#line.h` 20 / 10、`inline-flex#before.y` 10 / 0、`inline-flex#before.z` 0 / 2、`inline-flex#flex.x` 30 / 0、`inline-flex#item.x` 30 / 0
 - **`flex-align-baseline`** — `align-items: baseline` を読まない。
   `flex-align-baseline#a.y` 20 / 0
 - **`flex-wrap-reverse`** — `flex-wrap: wrap-reverse` を読まない。
@@ -181,20 +166,12 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
   `grid-dense#a.h` 20 / 0、`grid-dense#a.z` 0 / -1、`grid-dense#wide.y` 20 / 0、`grid-dense#wide.h` 20 / 0、`grid-dense#wide.z` 0 / -1、`grid-dense#b.x` 100 / 0、`grid-dense#b.h` 20 / 0、`grid-dense#b.z` 0 / -1
 - **`grid-auto-tracks`** — `auto` トラックを内容の寸法から決めない。
   `grid-auto-tracks#a.w` 200 / 0、`grid-auto-tracks#a.z` 0 / -1、`grid-auto-tracks#b.x` 200 / 0
-- **`table-fixed-widths`** — 表レイアウトが無く、`display: table-*` がブロックとして縦に積まれる。
-  `table-fixed-widths#t.w` 150 / 320、`table-fixed-widths#t.h` 50 / 80、`table-fixed-widths#b.x` 50 / 0、`table-fixed-widths#b.y` 0 / 20、`table-fixed-widths#c.y` 20 / 40、`table-fixed-widths#c.w` 50 / 320、`table-fixed-widths#d.x` 50 / 0、`table-fixed-widths#d.y` 20 / 70、`table-fixed-widths#d.w` 100 / 320、`table-fixed-widths#d.h` 30 / 10
-- **`table-auto-width`** — 表レイアウトが無く、列幅を内容から配らない。
-  `table-auto-width#t.h` 20 / 40、`table-auto-width#a.w` 200 / 300、`table-auto-width#b.x` 200 / 0、`table-auto-width#b.y` 0 / 20、`table-auto-width#b.w` 100 / 300
-- **`table-layout-fixed`** — 表レイアウトが無く、`table-layout: fixed` を読まない。
-  `table-layout-fixed#t.h` 20 / 60、`table-layout-fixed#b.x` 100 / 0、`table-layout-fixed#b.y` 0 / 20、`table-layout-fixed#b.w` 100 / 300、`table-layout-fixed#c.x` 200 / 0、`table-layout-fixed#c.y` 0 / 40、`table-layout-fixed#c.w` 100 / 300
-- **`table-row-height`** — 表レイアウトが無く、行の高さをセルの最大に揃えない。
-  `table-row-height#t.w` 80 / 320、`table-row-height#t.h` 45 / 55、`table-row-height#t.z` 1 / 0、`table-row-height#a.h` 30 / 10、`table-row-height#b.x` 40 / 0、`table-row-height#b.y` 0 / 10、`table-row-height#c.y` 30 / 40、`table-row-height#c.w` 40 / 320、`table-row-height#d.x` 40 / 0、`table-row-height#d.y` 30 / 55、`table-row-height#d.w` 40 / 320、`table-row-height#d.h` 15 / 0、`table-row-height#d.z` 0 / -1
-- **`table-colspan`** — 表レイアウトが無く、`colspan` を読まない（暗黙の tbody は W7）。
-  `table-colspan#t.w` 150 / 320、`table-colspan#t.h` 40 / 60、`table-colspan#t.z` 1 / 0、`table-colspan#b.x` 60 / 0、`table-colspan#b.y` 0 / 20、`table-colspan#span.y` 20 / 40、`table-colspan#span.w` 150 / 320
-- **`table-rowspan`** — 表レイアウトが無く、`rowspan` を読まない（暗黙の tbody は W7）。
-  `table-rowspan#t.w` 100 / 320、`table-rowspan#t.h` 40 / 60、`table-rowspan#t.z` 1 / 0、`table-rowspan#tall.h` 40 / 20、`table-rowspan#a.x` 50 / 0、`table-rowspan#a.y` 0 / 20、`table-rowspan#b.x` 50 / 0、`table-rowspan#b.y` 20 / 40
-- **`table-border-collapse`** — 表レイアウトが無く、`border-collapse` と `border-spacing` を読まない。
-  `table-border-collapse#t.w` 92 / 320、`table-border-collapse#t.h` 28 / 56、`table-border-collapse#t.z` 1 / 0、`table-border-collapse#a.x` 2 / 0、`table-border-collapse#a.y` 2 / 0、`table-border-collapse#a.w` 44 / 48、`table-border-collapse#a.h` 24 / 28、`table-border-collapse#b.x` 46 / 0、`table-border-collapse#b.y` 2 / 28、`table-border-collapse#b.w` 44 / 48、`table-border-collapse#b.h` 24 / 28
+- **`table-colspan`** — 表レイアウトはあるが、`colspan` を読まない（暗黙の tbody は W7）。
+  `table-colspan#t.z` 1 / 0、`table-colspan#span.w` 150 / 60
+- **`table-rowspan`** — 表レイアウトはあるが、`rowspan` を読まない。
+  `table-rowspan#t.z` 1 / 0、`table-rowspan#tall.h` 40 / 20、`table-rowspan#b.x` 50 / 0
+- **`table-border-collapse`** — 表レイアウトはあるが、`border-collapse` と `border-spacing` を読まない。
+  `table-border-collapse#t.w` 92 / 96、`table-border-collapse#a.x` 2 / 0、`table-border-collapse#a.y` 2 / 0、`table-border-collapse#a.w` 44 / 48、`table-border-collapse#a.h` 24 / 28、`table-border-collapse#b.x` 46 / 48、`table-border-collapse#b.y` 2 / 0、`table-border-collapse#b.w` 44 / 48、`table-border-collapse#b.h` 24 / 28
 - **`position-relative`** — `position: relative` のずれが後続の兄弟の配置まで動かす。
   `position-relative#b.y` 20 / 30
 - **`position-abs-insets`** — `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない。
@@ -230,6 +207,17 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
 
 ## 解消済みの差異
 
+- **W3（21 行 + W4 の 54 行）**: `display-flow-root` / `display-contents` / `anonymous-block` /
+  `table-anonymous`。要素ツリーからボックスツリーを組む段（`BoxTreeBuilder`）を入れ、
+  `display: contents` の子の繰り上げ・匿名ブロック・匿名の表ボックスを作るようにした。
+  エンジンは inner display（flow / flow-root / flex / grid / table）で選び、BFC を作る箱
+  （`flow-root`・`overflow` が `visible` 以外・flex / grid アイテム・インラインブロック・
+  表のセルなど）は子のマージンを貫通させない。匿名表を組むために入れた最小の表レイアウト
+  （列幅 = セルの最大、行の高さ = セルの最大、余りは幅の指定が無い列へ列幅の比で配る）と、
+  インラインレベルの箱を inner display で不可分に扱うようにした副作用で、W4 に振っていた
+  `margin-collapse-bfc` / `inline-flex` / `table-fixed-widths` / `table-auto-width` /
+  `table-layout-fixed` / `table-row-height` の全行と、`table-colspan` / `table-rowspan` /
+  `table-border-collapse` の一部（合わせて 54 行）も消えた。
 - **W2（10 行）**: `border-box-sizing` / `intrinsic-width-keywords`。`border-box` で padding + border が
   指定値を超えるときに内容ボックスを 0 で止め、`width` の `min-content` / `max-content` /
   `fit-content`（と `fit-content(<長さ>)`）を内容から解くようにした。あわせて箱の幾何を
@@ -247,16 +235,21 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
 次のケースは現状ブラウザと一致しており、台帳に行が無い。崩すとテストが落ちる。
 
 - **block**: 縦積みと `margin-top`（`block-stacking`）、`box-sizing`、隣接兄弟と末子の
-  マージン相殺（`margin-collapse` / `margin-collapse-bottom`）、負のマージン、
+  マージン相殺（`margin-collapse` / `margin-collapse-bottom`）、BFC（`display: flow-root`・
+  `overflow: hidden`）が子のマージン貫通を止めること、インラインとブロックが混ざったときの
+  匿名ブロック、負のマージン、
   `margin: auto` の水平中央寄せ、`min-*` / `max-*`、% height・% 余白・% padding、
   `calc()`、`rem`、`vw` / `vh`、`em` の継承（算出値の px を継承する）、`font-size` の `vw`、
   `inherit` / `initial`
 - **inline**: インラインブロックの横並びと折り返し・ベースライン揃え、`text-align`、
-  長さ指定の `line-height`、`<br>` の強制改行、`white-space: pre`
+  長さ指定の `line-height`、`<br>` の強制改行、`white-space: pre`、`inline-flex` が
+  前のインライン内容と同じ行に並ぶこと
 - **flex**: `flex: 1` の等分と `flex-grow` の比、`flex-basis`（固定・%）、
   `justify-content`（5 種）、`align-items` / `align-self`、`flex-wrap`、`gap`、縦 flex の
-  stretch と `justify-content`
+  stretch と `justify-content`、`display: contents` の子が祖父の flex アイテムになること
 - **grid**: `fr`、`minmax()`、`gap`
+- **table**: `display: table-*` の列幅（セルの幅の最大と、表の幅の余りの配分）、行の高さを
+  セルの最大に揃えること、`table-cell` だけの並びに補われる匿名の表と行
 - **list**: `ul` / `ol` の字下げと `li` の積み方、入れ子
 - **position / overflow**: 絶対配置の包含ブロックと shrink-to-fit、`position: fixed`、
   `overflow: hidden` のクリップ、スクロールコンテナの寸法

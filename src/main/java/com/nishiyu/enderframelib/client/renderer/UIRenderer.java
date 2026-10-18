@@ -188,10 +188,11 @@ public class UIRenderer {
         // 描画の層（CSS 2.2 付録 E）が変わらない（静的なブロックの z-index も効いてしまう）。
         // W5 で直す。FIDELITY.md の「W5 — 描画モデル」と README の "Not supported" に対応。
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
-        String currentId = box.node.getId();
+        // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
+        String currentId = box.isAnonymous ? parentId : box.node.getId();
         int order = domOrderCounter++;
 
-        if (box.w > 0 && box.h > 0) {
+        if (box.w > 0 && box.h > 0 && !box.isAnonymous) {
             queue.add(new RenderTask(currentZ, order, box, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
         }
 

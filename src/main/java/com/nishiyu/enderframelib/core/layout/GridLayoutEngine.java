@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 import java.util.ArrayList;
@@ -114,7 +115,9 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     @Override
-    public void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float tentativeInnerW = space.availableInlineSize();
+        float parentH = space.percentageBlockSize();
         GridState gs = new GridState();
         box.engineState = gs;
 
@@ -262,21 +265,21 @@ public class GridLayoutEngine extends LayoutEngine {
             float w = childGridW;
             item.box.w = w;
             item.box.sizingMode = SizingMode.DEFINITE; // A-5修正
-            item.box.measure(w, parentH, childCtx, ctx);
+            item.box.measure(new ConstraintSpace(w, parentH, childCtx), ctx);
         }
 
-        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
-            float totalW = 0;
-            for (int c = 0; c < gs.colsCount; c++) totalW = (totalW + gs.colWidths[c]);
-            totalW += Math.max(0, gs.colsCount - 1) * box.columnGap;
-            box.w = totalW + box.horizontalDecoration();
-        }
+        float totalW = 0;
+        for (int c = 0; c < gs.colsCount; c++) totalW = (totalW + gs.colWidths[c]);
+        totalW += Math.max(0, gs.colsCount - 1) * box.columnGap;
+        return totalW;
     }
 
+    /** 行の高さを決め、アイテムをセルの高さまで伸ばしてから、内容の高さを返す。 */
     @Override
-    public void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float parentH = space.percentageBlockSize();
         GridState gs = (GridState) box.engineState;
-        if (gs == null) return;
+        if (gs == null) return 0;
 
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
@@ -316,16 +319,17 @@ public class GridLayoutEngine extends LayoutEngine {
             }
         }
 
-        if (!box.style.containsKey(CssProperty.HEIGHT) || "auto".equals(box.style.getOrDefault(CssProperty.HEIGHT, "auto").trim())) {
-            float totalH = 0;
-            for (GridItem item : gs.items) {
-                float itemY = item.box.mT + item.box.mB + item.box.h;
-                for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
-                totalH = Math.max(totalH, itemY);
-            }
-            box.h = Math.max(box.h, totalH + box.verticalDecoration());
+        float totalH = 0;
+        for (GridItem item : gs.items) {
+            float itemY = item.box.mT + item.box.mB + item.box.h;
+            for (int r = 0; r < item.rowStart; r++) itemY += gs.rowHeights[r] + box.rowGap;
+            totalH = Math.max(totalH, itemY);
         }
+        return totalH;
+    }
 
+    @Override
+    public void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         measureAbsoluteChildren(box, ctx);
     }
 

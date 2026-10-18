@@ -44,10 +44,14 @@ public final class CssProperty {
     public static final String COLOR = "color";
     public static final String COLUMN_GAP = "column-gap";
     public static final String CONTENT = "content";
+    public static final String COUNTER_INCREMENT = "counter-increment";
+    public static final String COUNTER_RESET = "counter-reset";
+    public static final String COUNTER_SET = "counter-set";
     public static final String CURSOR = "cursor";
     public static final String DIRECTION = "direction";
     public static final String DISPLAY = "display";
     public static final String FLEX = "flex";
+    public static final String FLOAT = "float";
     public static final String FLEX_BASIS = "flex-basis";
     public static final String FLEX_DIRECTION = "flex-direction";
     public static final String FLEX_GROW = "flex-grow";
@@ -70,6 +74,8 @@ public final class CssProperty {
     public static final String LEFT = "left";
     public static final String LETTER_SPACING = "letter-spacing";
     public static final String LINE_HEIGHT = "line-height";
+    public static final String LIST_STYLE_POSITION = "list-style-position";
+    public static final String LIST_STYLE_TYPE = "list-style-type";
     public static final String MARGIN = "margin";
     public static final String MARGIN_BOTTOM = "margin-bottom";
     public static final String MARGIN_LEFT = "margin-left";

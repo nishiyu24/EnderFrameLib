@@ -224,6 +224,9 @@ public final class PropertyRegistry {
 
         // ---- 生成内容・置換要素
         layout("content", "normal", false, ValueType.STRING, false);
+        for (String p : List.of("counter-reset", "counter-increment", "counter-set")) {
+            layout(p, "none", false, ValueType.LIST, false);
+        }
         layout("src", null, false, ValueType.STRING, false);
         layout("object-fit", "fill", false, ValueType.KEYWORD, false);
 

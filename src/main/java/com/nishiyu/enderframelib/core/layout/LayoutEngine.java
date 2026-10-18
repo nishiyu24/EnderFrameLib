@@ -2,11 +2,12 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.Display;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
 
 /**
- * 整形コンテキストのエンジン（block / flex / grid）の基底と、{@code display} からの選択。
+ * 整形コンテキストのエンジン（block / flex / grid / table）の基底と、inner display からの選択。
  *
  * 3 つのレイアウトエンジンに共通する処理もここに置く。
  * 以前は「絶対配置子の確定」「justify-content の余白配分」
@@ -20,30 +21,47 @@ public abstract class LayoutEngine {
         static final LayoutEngine BLOCK = new BlockLayoutEngine();
         static final LayoutEngine FLEX = new FlexLayoutEngine();
         static final LayoutEngine GRID = new GridLayoutEngine();
+        static final LayoutEngine TABLE = new TableLayoutEngine();
     }
 
     /**
-     * {@code display} から整形コンテキストのエンジンを選ぶ。
+     * inner display（子をどう整形するか）から整形コンテキストのエンジンを選ぶ。
      *
-     * LIMITATION(制約): DOM と箱が 1:1 で、ボックスツリーを作らない。そのため
-     * 匿名ブロック（ブロック内のインライン混在）・匿名表ボックス・{@code display: contents}・
-     * {@code flow-root} の BFC が無く、{@code table} / {@code table-*} / {@code list-item} は
-     * ブロックとして組まれる（表レイアウトが無い）。W3（ボックスツリー）と W4（表）で直す。
-     * FIDELITY.md の「W3 — ボックスツリー」「W4 — 整形コンテキスト」と README の
-     * "Not supported" に対応。
+     * 何が壊れていたか: 以前は {@code display} の文字列で選び、flex / grid 以外は全部ブロックに
+     * 落としていた。{@code inline-flex} も外側の振る舞い（インライン）と内側の整形（flex）を
+     * 区別できず、{@code table} / {@code table-*} はブロックとして縦に積まれていた。
      */
-    public static LayoutEngine getEngine(String display) {
+    public static LayoutEngine getEngine(Display display) {
         if (display == null) return Engines.BLOCK;
-        return switch (display.trim().toLowerCase()) {
-            case "flex", "inline-flex" -> Engines.FLEX;
-            case "grid", "inline-grid" -> Engines.GRID;
-            default -> Engines.BLOCK; // block, inline, inline-block, table 等はすべてブロックレイアウトで処理
+        return switch (display.inner()) {
+            case FLEX -> Engines.FLEX;
+            case GRID -> Engines.GRID;
+            case TABLE, TABLE_ROW_GROUP, TABLE_ROW -> Engines.TABLE;
+            // flow / flow-root / table-cell / table-caption はブロックコンテナ
+            default -> Engines.BLOCK;
         };
     }
 
-    public abstract void measure(LayoutBox box, float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx);
+    // ==========================================
+    // エンジン SPI
+    // ==========================================
+    //
+    // 制約（ConstraintSpace）を受け取り、内容の寸法を返す。箱自身の幅・高さ（装飾・指定値・
+    // min / max）は BoxMeasurer が決め、エンジンは子の寸法と配置だけを受け持つ。
+    // 以前はエンジンが box.w / box.h を自分で書き換えていて、「shrink-to-fit なら内容幅 + 装飾」
+    // 「auto なら内容高 + 装飾」が各エンジンにコピーされていた。
 
-    public abstract void resolveFlexibleHeights(LayoutBox box, float parentH, FormattingContext fmtCtx, LayoutContext ctx);
+    /**
+     * 子を測り、内容の幅（装飾を含まない）を返す。箱が shrink-to-fit なら
+     * {@link BoxMeasurer} がこの幅を箱の幅にする。
+     */
+    public abstract float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx);
+
+    /** 幅が確定した後、内容の高さ（装飾を含まない）を返す。箱の高さが auto ならこれが高さになる。 */
+    public abstract float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx);
+
+    /** 箱の高さが決まった後の仕上げ（伸長・stretch・絶対配置の子の測定）。 */
+    public abstract void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx);
 
     public abstract void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx);
 
@@ -61,7 +79,6 @@ public abstract class LayoutEngine {
      * 3 エンジンに同じ 5 行がコピーされていた部分。
      */
     protected void measureAbsoluteChildren(LayoutBox box, LayoutContext ctx) {
-        FormattingContext absCtx = new FormattingContext("block", "stretch", false);
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
@@ -76,7 +93,7 @@ public abstract class LayoutEngine {
                     cbW = Math.max(0, cb.w - cb.horizontalDecoration());
                     cbH = Math.max(0, cb.h - cb.verticalDecoration());
                 }
-                child.measure(cbW, cbH, absCtx, ctx);
+                child.measure(ConstraintSpace.block(cbW, cbH), ctx);
             }
         }
     }
