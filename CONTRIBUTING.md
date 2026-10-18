@@ -100,6 +100,19 @@ common/, server/, client/, network/  →  core/, api/ とその層
 `api/` 以外の public 型には `@ApiStatus.Internal` を付ける。
 `api/` の破壊的変更は、`@ApiStatus.AvailableSince` の表記と合わせて扱う。
 
+### ファイルの分け方
+
+**1 つのクラスからしか使われない小さな型は、新しいファイルにせずそのクラスの入れ子にする。**
+record・enum・コールバック用インターフェース・数十行の補助クラスは、持ち主の末尾に
+`public static` の入れ子型として置く（例: `LayoutContext.Viewport`、`StyleSheet.StyleRule`、
+`UIElement.ElementType`、`HtmlParser.HtmlTokenizer`）。参照側は入れ子型を直接 import する。
+新しいトップレベルのファイルを作るのは、複数の層から使われる中心的な型か、
+数百行規模で独立した責務を持つものに限る。
+
+ただし `AbstractWebScreen` / `AbstractWebContainerScreen`（と、それらが継承する
+`WebScreenDelegate`）の public シグネチャに現れる型は下流 Mod から参照されるので、
+入れ子に移したりパッケージを変えたりしないこと。
+
 ---
 
 ## テスト
@@ -156,13 +169,13 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
 - **テキストの測定は `core/text` が唯一の出所。** 文字幅・ascent・descent・行間は
-  `FontFace`（`font-family` の引き当ては `FontResolver` / `McFontResolver`）、
+  `FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
   折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
   **描画側（`WebRenderCore`）でテキストを測り直さないこと。**
   `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、
   予約した行数と見える行数が食い違う（F2 以前がその状態だった）。
-  フォントの倍率は `fontSizePx / BitmapFontFace.MC_UNITS_PER_EM` で、
+  フォントの倍率は `fontSizePx / FontFace.BitmapFontFace.MC_UNITS_PER_EM` で、
   描画時に丸めてはいけない（送り幅が変わって測定と合わなくなる）。
 - サーバー側のライフサイクル（ログアウト・ディメンション移動・サーバー停止で
   static マップが空に戻るか）は `gametest/WebScreenGameTest` が
