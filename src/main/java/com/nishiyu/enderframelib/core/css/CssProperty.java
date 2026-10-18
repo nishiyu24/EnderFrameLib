@@ -9,6 +9,7 @@ package com.nishiyu.enderframelib.core.css;
  */
 public final class CssProperty {
 
+    public static final String ALIGN_CONTENT = "align-content";
     public static final String ALIGN_ITEMS = "align-items";
     public static final String ALIGN_SELF = "align-self";
     public static final String ANIMATION = "animation";
@@ -26,6 +27,7 @@ public final class CssProperty {
     public static final String BORDER_BOTTOM = "border-bottom";
     public static final String BORDER_BOTTOM_COLOR = "border-bottom-color";
     public static final String BORDER_BOTTOM_WIDTH = "border-bottom-width";
+    public static final String BORDER_COLLAPSE = "border-collapse";
     public static final String BORDER_COLOR = "border-color";
     public static final String BORDER_LEFT = "border-left";
     public static final String BORDER_LEFT_COLOR = "border-left-color";
@@ -34,6 +36,7 @@ public final class CssProperty {
     public static final String BORDER_RIGHT = "border-right";
     public static final String BORDER_RIGHT_COLOR = "border-right-color";
     public static final String BORDER_RIGHT_WIDTH = "border-right-width";
+    public static final String BORDER_SPACING = "border-spacing";
     public static final String BORDER_TOP = "border-top";
     public static final String BORDER_TOP_COLOR = "border-top-color";
     public static final String BORDER_TOP_WIDTH = "border-top-width";
@@ -41,6 +44,8 @@ public final class CssProperty {
     public static final String BOTTOM = "bottom";
     public static final String BOX_SHADOW = "box-shadow";
     public static final String BOX_SIZING = "box-sizing";
+    public static final String CAPTION_SIDE = "caption-side";
+    public static final String CLEAR = "clear";
     public static final String COLOR = "color";
     public static final String COLUMN_GAP = "column-gap";
     public static final String CONTENT = "content";
@@ -51,26 +56,37 @@ public final class CssProperty {
     public static final String DIRECTION = "direction";
     public static final String DISPLAY = "display";
     public static final String FLEX = "flex";
-    public static final String FLOAT = "float";
     public static final String FLEX_BASIS = "flex-basis";
     public static final String FLEX_DIRECTION = "flex-direction";
     public static final String FLEX_GROW = "flex-grow";
     public static final String FLEX_SHRINK = "flex-shrink";
     public static final String FLEX_WRAP = "flex-wrap";
+    public static final String FLOAT = "float";
     public static final String FONT_FAMILY = "font-family";
     public static final String FONT_SIZE = "font-size";
     public static final String FONT_STYLE = "font-style";
     public static final String FONT_WEIGHT = "font-weight";
     public static final String GAP = "gap";
+    public static final String GRID_AREA = "grid-area";
+    public static final String GRID_AUTO_COLUMNS = "grid-auto-columns";
+    public static final String GRID_AUTO_FLOW = "grid-auto-flow";
+    public static final String GRID_AUTO_ROWS = "grid-auto-rows";
     public static final String GRID_COLUMN = "grid-column";
+    public static final String GRID_COLUMN_END = "grid-column-end";
     public static final String GRID_COLUMN_GAP = "grid-column-gap";
+    public static final String GRID_COLUMN_START = "grid-column-start";
     public static final String GRID_GAP = "grid-gap";
     public static final String GRID_ROW = "grid-row";
+    public static final String GRID_ROW_END = "grid-row-end";
     public static final String GRID_ROW_GAP = "grid-row-gap";
+    public static final String GRID_ROW_START = "grid-row-start";
+    public static final String GRID_TEMPLATE_AREAS = "grid-template-areas";
     public static final String GRID_TEMPLATE_COLUMNS = "grid-template-columns";
     public static final String GRID_TEMPLATE_ROWS = "grid-template-rows";
     public static final String HEIGHT = "height";
     public static final String JUSTIFY_CONTENT = "justify-content";
+    public static final String JUSTIFY_ITEMS = "justify-items";
+    public static final String JUSTIFY_SELF = "justify-self";
     public static final String LEFT = "left";
     public static final String LETTER_SPACING = "letter-spacing";
     public static final String LINE_HEIGHT = "line-height";
@@ -87,10 +103,11 @@ public final class CssProperty {
     public static final String MIN_WIDTH = "min-width";
     public static final String OBJECT_FIT = "object-fit";
     public static final String OPACITY = "opacity";
+    public static final String ORDER = "order";
     public static final String OVERFLOW = "overflow";
+    public static final String OVERFLOW_WRAP = "overflow-wrap";
     public static final String OVERFLOW_X = "overflow-x";
     public static final String OVERFLOW_Y = "overflow-y";
-    public static final String OVERFLOW_WRAP = "overflow-wrap";
     public static final String PADDING = "padding";
     public static final String PADDING_BOTTOM = "padding-bottom";
     public static final String PADDING_LEFT = "padding-left";
@@ -101,8 +118,10 @@ public final class CssProperty {
     public static final String ROW_GAP = "row-gap";
     public static final String SCROLLBAR_WIDTH = "scrollbar-width";
     public static final String SRC = "src";
+    public static final String TABLE_LAYOUT = "table-layout";
     public static final String TEXT_ALIGN = "text-align";
     public static final String TEXT_DECORATION = "text-decoration";
+    public static final String TEXT_INDENT = "text-indent";
     public static final String TEXT_OVERFLOW = "text-overflow";
     public static final String TEXT_SHADOW = "text-shadow";
     public static final String TEXT_TRANSFORM = "text-transform";
@@ -114,6 +133,7 @@ public final class CssProperty {
     public static final String TRANSITION_DURATION = "transition-duration";
     public static final String TRANSITION_PROPERTY = "transition-property";
     public static final String TRANSITION_TIMING_FUNCTION = "transition-timing-function";
+    public static final String VERTICAL_ALIGN = "vertical-align";
     public static final String VISIBILITY = "visibility";
     public static final String WHITE_SPACE = "white-space";
     public static final String WIDTH = "width";

@@ -1,0 +1,234 @@
+package com.nishiyu.enderframelib.common;
+
+import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.LayoutBox.Display;
+import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 軸 6「DOM と箱は別物」（W3）の検証。
+ *
+ * 矩形に出る振る舞い（匿名ブロック・{@code display: contents}・匿名表・BFC）は忠実度コーパスが
+ * ブラウザと突き合わせている。ここでは箱の組み方そのものと、矩形に出ない振る舞い
+ * （{@code ::marker} の文字列・CSS カウンタ・生成内容の評価）を固定する。
+ */
+public class BoxTreeTest {
+
+    private static final int VIEWPORT_W = 320;
+    private static final int VIEWPORT_H = 200;
+
+    @Test
+    public void testInlineRunsNextToBlocksAreWrappedInAnonymousBlocks() {
+        LayoutBox root = layout("""
+                <div id="parent"><span id="a">x</span><div id="block"></div><span id="b">y</span></div>
+                """);
+        LayoutBox parent = findElement(root, "parent");
+        assertEquals(3, parent.children.size());
+        assertTrue(parent.children.get(0).isAnonymous);
+        assertSame(findElement(root, "a"), parent.children.get(0).children.getFirst());
+        assertSame(findElement(root, "block"), parent.children.get(1));
+        assertTrue(parent.children.get(2).isAnonymous);
+        // 匿名ブロックは別々の id を持つ（再レイアウトしても同じ id になる）
+        assertFalse(parent.children.get(0).node.getId().equals(parent.children.get(2).node.getId()));
+    }
+
+    @Test
+    public void testWhitespaceOnlyRunsDoNotCreateAnonymousBlocks() {
+        LayoutBox root = layout("<div id=\"parent\"><div id=\"a\"></div> <div id=\"b\"></div></div>");
+        LayoutBox parent = findElement(root, "parent");
+        assertEquals(2, parent.children.size());
+        assertFalse(parent.children.stream().anyMatch(c -> c.isAnonymous));
+    }
+
+    @Test
+    public void testInlineOnlyContentIsNotWrapped() {
+        LayoutBox root = layout("<p id=\"p\">a <b>b</b> c</p>");
+        LayoutBox p = findElement(root, "p");
+        assertFalse(p.children.stream().anyMatch(c -> c.isAnonymous));
+    }
+
+    @Test
+    public void testDisplayContentsPromotesChildrenAndHasNoBox() {
+        LayoutBox root = layout("""
+                <div id="row" style="display: flex;">
+                  <div id="contents" style="display: contents;"><div id="b"></div><div id="c"></div></div>
+                </div>
+                """);
+        LayoutBox row = findElement(root, "row");
+        LayoutBox contents = findElement(root, "contents");
+        assertNotNull(contents, "要素ツリーには残る（再スタイルと継承はこちらを辿る）");
+        assertFalse(row.children.contains(contents));
+        assertSame(findElement(root, "b"), row.children.get(0));
+        assertSame(findElement(root, "c"), row.children.get(1));
+        assertSame(row, findElement(root, "b").parent);
+    }
+
+    @Test
+    public void testStrayTableCellsGetAnonymousTableAndRow() {
+        LayoutBox root = layout("""
+                <div id="wrap"><div id="a" style="display: table-cell;"></div><div id="b" style="display: table-cell;"></div></div>
+                """);
+        LayoutBox wrap = findElement(root, "wrap");
+        assertEquals(1, wrap.children.size());
+        LayoutBox table = wrap.children.getFirst();
+        assertTrue(table.isAnonymous);
+        assertEquals(Display.Inner.TABLE, table.display.inner());
+        LayoutBox row = table.children.getFirst();
+        assertTrue(row.isAnonymous);
+        assertEquals(Display.Inner.TABLE_ROW, row.display.inner());
+        assertEquals(List.of(findElement(root, "a"), findElement(root, "b")), row.children);
+    }
+
+    @Test
+    public void testDisplayParsesTwoKeywordSyntax() {
+        assertEquals(Display.parse("inline-block"), Display.parse("inline flow-root"));
+        assertEquals(Display.parse("flex"), Display.parse("block flex"));
+        assertTrue(Display.parse("list-item").listItem());
+        assertTrue(Display.parse("inline list-item").isInlineLevel());
+        assertNull(Display.parse("list-item flex"), "list-item は flow / flow-root とだけ組める");
+        assertNull(Display.parse("bogus"));
+    }
+
+    @Test
+    public void testListItemsGetMarkersFromListStyleType() {
+        LayoutBox root = layout("""
+                <ul><li id="u1">a</li><li id="u2">b</li></ul>
+                <ol><li id="o1">a</li><li id="o2">b</li></ol>
+                <ul style="list-style-type: none;"><li id="none">a</li></ul>
+                <ul><li><ul><li id="nested">a</li></ul></li></ul>
+                """);
+        assertEquals("• ", markerText(findElement(root, "u1")));
+        assertEquals("1. ", markerText(findElement(root, "o1")));
+        assertEquals("2. ", markerText(findElement(root, "o2")));
+        assertNull(markerText(findElement(root, "none")));
+        assertEquals("◦ ", markerText(findElement(root, "nested")));
+    }
+
+    @Test
+    public void testOlStartAndLiValue() {
+        LayoutBox root = layout("""
+                <ol start="3"><li id="a">a</li><li id="b">b</li><li id="c" value="10">c</li><li id="d">d</li></ol>
+                <ol style="list-style-type: lower-roman;"><li>a</li><li>b</li><li>c</li><li id="roman">d</li></ol>
+                """);
+        assertEquals("3. ", markerText(findElement(root, "a")));
+        assertEquals("4. ", markerText(findElement(root, "b")));
+        assertEquals("10. ", markerText(findElement(root, "c")));
+        assertEquals("11. ", markerText(findElement(root, "d")));
+        assertEquals("iv. ", markerText(findElement(root, "roman")));
+    }
+
+    @Test
+    public void testOutsideMarkerSitsLeftOfTheItemWithoutTakingSpace() {
+        LayoutBox root = layout("""
+                <ul style="margin: 0; padding-left: 40px;"><li id="li" style="margin: 0; line-height: 20px;">text</li></ul>
+                """);
+        LayoutBox li = findElement(root, "li");
+        LayoutBox marker = li.children.getFirst();
+        assertTrue(marker.isOutsideMarker);
+        assertEquals(li.x, marker.x + marker.w, 0.01f, "マーカーの右端はリスト項目の左端");
+        assertEquals(20f, li.h, 0.01f, "外側のマーカーは高さに寄与しない");
+        assertFalse(li.getFlowChildren().contains(marker));
+    }
+
+    @Test
+    public void testInsideMarkerIsInlineContent() {
+        LayoutBox root = layout("""
+                <ul style="list-style-position: inside;"><li id="li">text</li></ul>
+                """);
+        LayoutBox marker = findElement(root, "li").children.getFirst();
+        assertFalse(marker.isOutsideMarker);
+        assertTrue(findElement(root, "li").getFlowChildren().contains(marker));
+    }
+
+    @Test
+    public void testGeneratedContentConcatenatesStringsAttrAndCounters() {
+        LayoutBox root = layout("""
+                <style>
+                  .t::before { content: "(" attr(title) ")"; }
+                  ol.n { counter-reset: s; list-style-type: none; }
+                  ol.n > li { counter-increment: s; }
+                  ol.n > li::before { content: counters(s, ".") " "; }
+                </style>
+                <div id="t" class="t" title="hi"></div>
+                <ol class="n"><li>a</li><li id="second">b<ol class="n"><li id="inner">c</li></ol></li></ol>
+                """);
+        assertEquals("(hi)", beforeText(findElement(root, "t")));
+        assertEquals("2 ", beforeText(findElement(root, "second")));
+        assertEquals("2.1 ", beforeText(findElement(root, "inner")));
+    }
+
+    @Test
+    public void testPaintOnlyRestyleUpdatesMarkerAndAnonymousBoxes() {
+        UIParser parser = new UIParser();
+        UIParser.Document doc = parser.parseDocument("""
+                <style>
+                  body { margin: 0; }
+                  li { color: #111111; }
+                  li:hover { color: #222222; }
+                </style>
+                <ul><li id="li">text<div>block</div></li></ul>
+                """, "", VIEWPORT_W, VIEWPORT_H);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(),
+                FontResolver.FALLBACK, state);
+        LayoutBox li = findElement(root, "li");
+        LayoutBox marker = li.children.getFirst();
+        LayoutBox anonymous = li.children.get(1);
+        assertTrue(anonymous.isAnonymous);
+        assertEquals("#111111", marker.children.getFirst().style.get(CssProperty.COLOR));
+
+        state.setHoveredNode(doc.root, "li");
+        UIParser.RestyleResult res = parser.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+        assertFalse(res.layoutRequired(), "色だけの変化なのでボックスツリーは組み直されない");
+        assertEquals("#222222", marker.children.getFirst().style.get(CssProperty.COLOR));
+        assertEquals("#222222", anonymous.style.get(CssProperty.COLOR));
+    }
+
+    // ==========================================
+
+    private static LayoutBox layout(String html) {
+        UIParser parser = new UIParser();
+        UIParser.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
+        return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+    }
+
+    /** 要素ツリーから id で探す（display: contents の要素も見つかる）。 */
+    private static LayoutBox findElement(LayoutBox box, String id) {
+        if (id.equals(box.node.attrs.get("id"))) return box;
+        for (LayoutBox child : box.elementChildren) {
+            LayoutBox hit = findElement(child, id);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    private static String markerText(LayoutBox listItem) {
+        if (listItem.children.isEmpty()) return null;
+        LayoutBox first = listItem.children.getFirst();
+        if (!first.node.getId().endsWith("_marker")) return null;
+        return first.children.getFirst().displayText;
+    }
+
+    private static String beforeText(LayoutBox element) {
+        List<LayoutBox> pseudo = new ArrayList<>();
+        for (LayoutBox child : element.elementChildren) {
+            if (child.node.isPseudoNode && child.node.getId().endsWith("_before")) pseudo.add(child);
+        }
+        assertEquals(1, pseudo.size());
+        return pseudo.getFirst().elementChildren.getFirst().displayText;
+    }
+}

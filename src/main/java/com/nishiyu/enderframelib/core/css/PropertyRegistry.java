@@ -172,7 +172,7 @@ public final class PropertyRegistry {
         shorthand("grid-column-gap", Invalidation.LAYOUT, v -> Map.of("column-gap", v.trim()), "column-gap");
 
         // ---- grid
-        // grid-column / grid-row / grid-area はレイアウトがショートハンドの文字列を直接読む（W4 で展開する）
+        // grid-column / grid-row / grid-area は展開せず、GridLayoutEngine がロングハンド → ショートハンドの順に直接読む
         for (String p : List.of("grid-template-columns", "grid-template-rows", "grid-template-areas")) {
             layout(p, "none", false, ValueType.LIST, true);
         }

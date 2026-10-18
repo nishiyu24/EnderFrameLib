@@ -142,9 +142,8 @@ the engine against.
 **Text** `h1`–`h6` `p` `br` `hr` `b` `strong` `i` `em` `s` `strike` `del` `u`
 `ins` `code` `kbd` `pre` `blockquote` `label` `output`
 
-**Lists / tables** `ul` `ol` `li` `table` `thead` `tbody` `tr` `th` `td`
-(the built-in stylesheet lays `<table>` out as flex rows; `display: table` and
-`table-*` get a basic table layout, see "Not supported")
+**Lists / tables** `ul` `ol` `li` `table` `caption` `thead` `tbody` `tfoot`
+`tr` `th` `td` (`colspan`, `rowspan`) `colgroup` `col` (`span`)
 
 **Forms** `form` `fieldset` `legend` `button` `input`
 (`text` `number` `checkbox` `radio` `range` `color`) `select` `option`
@@ -201,21 +200,31 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 `inline-flex` `grid` `inline-grid` `table` `inline-table` `table-*`
 `list-item` `contents` `none`, and the two-keyword forms such as
 `inline flow-root`)
-`position` (`static` `relative` `absolute` `fixed`) `top` `right` `bottom`
-`left` `z-index` `width` `height` `min-*` `max-*` `margin` `padding` `border`
+`position` (`static` `relative` `absolute` `fixed` `sticky`) `top` `right`
+`bottom` `left` `z-index` `float` `clear` `width` `height` `min-*` `max-*` `margin` `padding` `border`
 `border-*-width` `border-radius` `box-sizing` `aspect-ratio` `overflow`
 `overflow-x` `overflow-y` `scrollbar-width` `visibility` `opacity`
 
 **Flexbox** `flex` `flex-grow` `flex-shrink` `flex-basis` `flex-direction`
-`flex-wrap` `justify-content` `align-items` `align-self` `gap` `row-gap`
-`column-gap`
+(including `*-reverse`) `flex-wrap` (including `wrap-reverse`) `flex-flow`
+`order` `justify-content` `align-items` `align-self` (including `baseline`)
+`align-content` `gap` `row-gap` `column-gap`, auto margins
 
-**Grid** `grid-template-columns` `grid-template-rows` (`px`, `fr`, `auto`,
-`repeat()`, `minmax()`) `grid-column` `grid-row` `grid-gap` `grid-row-gap`
-`grid-column-gap`
+**Grid** `grid-template-columns` `grid-template-rows` (lengths, `%`, `fr`,
+`auto`, `min-content`, `max-content`, `fit-content()`, `minmax()`, `repeat()`
+including `auto-fill`, named lines) `grid-template-areas` `grid-auto-rows`
+`grid-auto-columns` `grid-auto-flow` (`row` `column` `dense`) `grid-row`
+`grid-column` `grid-area` and their `-start` / `-end` longhands (line numbers,
+negative numbers, names, `span`) `justify-items` `align-items` `justify-self`
+`align-self` `justify-content` `align-content` `place-*` `gap`
+
+**Tables** `table-layout` `border-collapse` `border-spacing` `caption-side`,
+`vertical-align` on cells
 
 **Text** `color` `font-size` `font-family` `font-weight` `font-style`
-`line-height` `letter-spacing` `text-align` `text-decoration` `text-shadow`
+`line-height` `letter-spacing` `text-align` `text-indent` `vertical-align`
+(`baseline` `top` `bottom` `middle` `sub` `super` `text-top` `text-bottom`,
+lengths, `%`) `text-decoration` `text-shadow`
 `text-transform` `white-space` (`normal` `nowrap` `pre` `pre-wrap` `pre-line`)
 `word-break` `overflow-wrap` `text-overflow` `direction`
 
@@ -259,6 +268,18 @@ are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > now draw a bullet or number (`ol` counts in `decimal`, nested `ul` use
 > `circle` then `square`); set `list-style: none` to remove it.
 
+> **Breaking change — formatting contexts.** `<table>` is now laid out as a CSS
+> table (it used to be a column of flex rows): columns are sized from their
+> cells' content instead of sharing the width equally, and `colspan` /
+> `rowspan` work. If you relied on equal columns, set `table-layout: fixed`
+> with a `width` on the table. `float` floats instead of stacking, `position:
+> relative` no longer pushes the following siblings, absolutely positioned
+> boxes with `auto` insets sit at their static position, flex items with a
+> `width` now shrink, and an inline-block's baseline is its last line of text
+> (or its bottom margin edge), so buttons on a line of text sit on its
+> baseline. Line boxes are at least as tall as their block's `line-height`
+> (the strut).
+
 > **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
 > whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
 > (18.4px at 16px) keep their fractions, and positions are rounded once, when
@@ -281,49 +302,35 @@ Layout differences from a real browser are measured, case by case, in
   as an action name, never evaluated.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
-- **Real table layout.** The built-in stylesheet still lays `table`/`tr`/`td`
-  out as flex rows. `display: table` / `table-row` / `table-cell` (and the
-  anonymous table boxes generated around stray cells) get a basic table layout:
-  a column is as wide as its widest cell, a row as tall as its tallest cell,
-  and a wider table hands the spare width to its unsized columns. There is no
-  `colspan`, `rowspan`, `table-layout: fixed`, `border-collapse`,
-  `border-spacing`, caption or cell `vertical-align`.
-- **`float`, `clear`, multi-column layout, writing modes.** Floats stack as
-  ordinary blocks.
-- **Collapsing through empty blocks.** An empty block's own top and bottom
-  margins do not collapse together.
+- **Tables in full.** Percentage column widths are treated as `auto`.
+  `border-collapse: collapse` merges cell and table borders by width only
+  (not by `border-style` precedence) and ignores row, row-group and column
+  borders. No `empty-cells` and no `visibility: collapse`.
+- **Floats in full; multi-column layout, writing modes.** A line next to a
+  float takes its width from the float area at the top of the line, and a
+  float inside an inline box that does not fit is moved to the next line
+  rather than back to an earlier one. No multi-column layout or writing modes.
 - **Box-tree generation in full.** A block inside an inline box does not split
   the inline box, and text directly inside a flex or grid container is not
   wrapped in an anonymous item. `<ol reversed>` does not count down.
 - **`::marker` styling.** Markers are drawn with the list item's inherited
   style: `::marker` rules never match and `list-style-image` is ignored.
-- **Intrinsic sizing keywords in grid tracks and heights.** `min-content`,
-  `max-content` and `fit-content` work as `width`, `min-width` and `max-width`;
-  in `grid-template-*` and as a `height` they are not understood.
-- **Flexbox in full.** `order`, `row-reverse` / `column-reverse` /
-  `wrap-reverse`, `align-content`, auto margins and `align-items: baseline` are
-  not implemented. Items with a `width` do not shrink, growing ignores
-  `max-width`, and the automatic minimum size (`min-width: auto`, and its
-  zero value for scroll containers) is not the spec's.
-- **Grid in full.** No implicit tracks (`grid-auto-rows` / `grid-auto-columns`),
-  no `grid-auto-flow` (`column`, `dense`), no `span` or negative line numbers,
-  no `repeat(auto-fill | auto-fit, …)`, no content-sized `auto` tracks, and
-  `justify-items` / `align-items` / `justify-content` do not align items or
-  tracks.
-- **Positioning in full.** An absolutely positioned box with all insets `auto`
-  is placed at its containing block's origin rather than its static position;
-  `left` + `right` with `width: auto` does not stretch; percentages resolve
-  against the content box instead of the padding box. `position: relative`
-  also moves the following siblings, and `position: sticky` is not supported.
+- **Intrinsic sizing keywords as heights.** `min-content`, `max-content` and
+  `fit-content` work as widths and grid track sizes, but not as a `height`.
+- **Flexbox in full.** `align-items: baseline` uses the first baseline of row
+  items only. In a column, an item's automatic minimum height is its specified
+  height if it has one, otherwise its content height. Lines are broken by the
+  items' hypothetical sizes.
+- **Grid in full.** Track sizing is a simplified version of the spec's: an
+  item spanning several content-sized tracks spreads its size evenly over
+  them. No subgrid, no `grid-template` / `grid` shorthands, no implicit tracks
+  before the explicit grid, no `baseline` alignment, and `auto-fit` keeps its
+  empty tracks (it behaves like `auto-fill`).
 - **Stacking contexts.** `z-index` values are added to the parent's, so a
   child's `z-index` escapes its stacking context; `opacity` and `transform` do
-  not create stacking contexts; positioned and non-positioned boxes share one
-  painting layer, so `z-index` also takes effect on non-positioned blocks.
-- **Inline formatting contexts in full.** Inline boxes line-break, measure and
-  align on a common baseline, but `vertical-align`, `text-indent` and the line
-  box strut (an empty line taking its `line-height`) are not implemented, and
-  `white-space: nowrap` does not keep inline-blocks on one line. An
-  inline-block's horizontal margin is counted twice.
+  not create stacking contexts, and `z-index` also takes effect on
+  non-positioned blocks. (Floats do paint above in-flow blocks, and positioned
+  boxes above floats, as in a browser.)
 - **HTML-standard user-agent defaults.** `ua.css` carries theme-like styling
   and lacks some HTML defaults (`dl` / `dd` margins, for example), so unstyled
   HTML does not look the way it does in a browser.
@@ -338,7 +345,6 @@ Layout differences from a real browser are measured, case by case, in
   `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
   a mouse. `@import` with `layer()` or `supports()` is ignored, as there are no
   cascade layers.
-- **Named grid lines and areas.** `grid-template-areas` is not implemented.
 - **Pseudo-elements beyond `::before` / `::after`.** `::marker`,
   `::placeholder`, `::selection` and friends parse (and count toward
   specificity) but never match.

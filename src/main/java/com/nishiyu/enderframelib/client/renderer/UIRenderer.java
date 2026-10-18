@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssParser.CssTokenizer;
 import com.nishiyu.enderframelib.core.css.EasingFunction;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
+import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
@@ -131,7 +132,8 @@ public class UIRenderer {
     }
 
     private static void sortPaintOrder(List<RenderTask> queue) {
-        queue.sort(Comparator.comparingInt(RenderTask::zIndex).thenComparingInt(RenderTask::domOrder));
+        queue.sort(Comparator.comparingInt(RenderTask::zIndex).thenComparingInt(RenderTask::layer)
+                .thenComparingInt(RenderTask::domOrder));
     }
 
     private LayoutBox findBodyBox(LayoutBox box) {
@@ -180,20 +182,33 @@ public class UIRenderer {
     }
 
     private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
+        buildRenderQueue(box, queue, parentZIndex, 0, clipRect, parentId);
+    }
+
+    /**
+     * {@code layer} は同じ z-index の中での層。float とその中身は通常フローのブロックより上（CSS 2.2 付録 E の
+     * 層 5 が層 4 より上）、位置指定要素とその中身はさらに上（層 6）に描く。以前は文書順だけで、
+     * 後続のブロックの背景が float と位置指定要素を隠していた。
+     */
+    private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, int parentLayer,
+                                  float[] clipRect, String parentId) {
         if ("none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
         // LIMITATION(制約): z-index を親に足し込むだけで、スタッキングコンテキストが無い。
-        // 中の z-index が外へ漏れ、opacity / transform はコンテキストを作らず、位置指定の有無で
-        // 描画の層（CSS 2.2 付録 E）が変わらない（静的なブロックの z-index も効いてしまう）。
+        // 中の z-index が外へ漏れ、opacity / transform はコンテキストを作らず、静的なブロックの
+        // z-index も効いてしまう（層は float と位置指定だけを分けている）。
         // W5 で直す。FIDELITY.md の「W5 — 描画モデル」と README の "Not supported" に対応。
         int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
         String currentId = box.isAnonymous ? parentId : box.node.getId();
         int order = domOrderCounter++;
+        int layer = parentLayer;
+        if (box.isRelative || box.isAbsolute || box.isSticky) layer = 2;
+        else if (BlockLayoutEngine.isFloating(box)) layer = Math.max(parentLayer, 1);
 
         if (box.w > 0 && box.h > 0 && !box.isAnonymous) {
-            queue.add(new RenderTask(currentZ, order, box, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
+            queue.add(new RenderTask(currentZ, layer, order, box, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
         }
 
         String tag = box.node.tag;
@@ -203,13 +218,13 @@ public class UIRenderer {
 
         float[] childClip = computeChildClipRect(box, clipRect);
         for (LayoutBox child : box.children) {
-            buildRenderQueue(child, queue, currentZ, childClip, currentId);
+            buildRenderQueue(child, queue, currentZ, layer, childClip, currentId);
         }
 
         String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
         if (box.w > 0 && box.h > 0 && ("scroll".equals(overflow) || "auto".equals(overflow))) {
             int sbOrder = domOrderCounter++;
-            queue.add(new RenderTask(currentZ + 1, sbOrder, null, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
+            queue.add(new RenderTask(currentZ + 1, layer, sbOrder, null, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
         }
     }
 
@@ -612,6 +627,16 @@ public class UIRenderer {
                 if (parts.length >= 1) {
                     bw = LengthResolver.parseDim(parts[0], box.w, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
                 }
+            }
+
+            // 枠線を重ねる表のセルは、隣と分け合った半分の幅を描く（隣の半分と合わせて 1 本になる）
+            if (box.collapsedBorders != null) {
+                bw = switch (dir) {
+                    case "top" -> box.bT;
+                    case "right" -> box.bR;
+                    case "bottom" -> box.bB;
+                    default -> box.bL;
+                };
             }
 
             if (colorProp != null && !"none".equals(colorProp)) {
@@ -1183,5 +1208,5 @@ public class UIRenderer {
     }
 
     /** {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。 */
-    private record RenderTask(int zIndex, int domOrder, LayoutBox box, Consumer<List<UIElement>> drawAction) {}
+    private record RenderTask(int zIndex, int layer, int domOrder, LayoutBox box, Consumer<List<UIElement>> drawAction) {}
 }

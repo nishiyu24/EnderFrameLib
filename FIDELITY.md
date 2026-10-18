@@ -87,112 +87,17 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（175 件・52 ケース）
+## 既知の差異（13 件・6 ケース）
 
 W0 でコーパスを領域別に広げて起こした行。各フェーズの完了条件は、そのフェーズの節の行が台帳から消えること。
 値は「ブラウザ / エンジン」。`z` は描画順の列（矩形の中心で上に重なっている id 付き要素の数）。
 
-### W4 — 整形コンテキスト（161 件）
-
-- **`margin-collapse-empty`** — 高さ 0 の空ブロックの上下マージンが自分を貫通して前後と相殺しない。
-  `margin-collapse-empty#b.y` 30 / 45
-- **`float-left`** — `float` が無く、ブロックとして縦に積まれる。
-  `float-left#wrap.h` 10 / 60、`float-left#wrap.z` 2 / 0、`float-left#b.x` 100 / 0、`float-left#b.y` 0 / 30、`float-left#after.y` 0 / 50、`float-left#after.z` 1 / 0
-- **`float-right`** — `float` が無く、ブロックとして縦に積まれる。
-  `float-right#a.x` 200 / 0、`float-right#b.x` 150 / 0、`float-right#b.y` 0 / 30
-- **`float-clear`** — `float` / `clear` が無く、ブロックとして縦に積まれる。
-  `float-clear#wrap.h` 60 / 90、`float-clear#b.x` 200 / 0、`float-clear#b.y` 0 / 30、`float-clear#cleared.y` 50 / 80
-- **`float-containment`** — `float` が無いため、通常フローの親が float を高さに含めてしまう。
-  `float-containment#plain.h` 0 / 40、`float-containment#plain.z` -1 / 0
-- **`float-wrap`** — `float` が無く、段の折り返しが起きない。
-  `float-wrap#wrap.h` 0 / 70、`float-wrap#wrap.z` -1 / 0、`float-wrap#b.x` 100 / 0、`float-wrap#b.y` 0 / 20、`float-wrap#c.y` 30 / 50
-- **`float-bfc-avoid`** — `float` が無く、BFC が float の横の残り幅に収まらない。
-  `float-bfc-avoid#wrap.h` 20 / 60、`float-bfc-avoid#wrap.z` 1 / 0、`float-bfc-avoid#bfc.x` 100 / 0、`float-bfc-avoid#bfc.y` 0 / 40、`float-bfc-avoid#bfc.w` 200 / 300
-- **`inline-block-margin`** — インラインブロックの左 margin が二重に足され、縦 margin がベースライン揃えに入らない。
-  `inline-block-margin#a.x` 10 / 20、`inline-block-margin#b.y` 10 / 5
-- **`inline-text-indent`** — `text-indent` を読まない。
-  `inline-text-indent#a.x` 30 / 0
-- **`vertical-align-top-bottom`** — `vertical-align` を読まず、常にベースライン揃え。
-  `vertical-align-top-bottom#top.y` 0 / 30
-- **`vertical-align-middle`** — `vertical-align` を読まず、常にベースライン揃え。
-  `vertical-align-middle#line.h` 45 / 40、`vertical-align-middle#mid.y` 35 / 30
-- **`vertical-align-length`** — `vertical-align` を読まず、常にベースライン揃え。
-  `vertical-align-length#line.h` 30 / 20、`vertical-align-length#base.y` 10 / 0
-- **`line-height-strut`** — 行ボックスに strut が無く、`line-height` が内容の無い行の高さにならない。
-  `line-height-strut#line.h` 40 / 20
-- **`inline-nowrap-overflow`** — `white-space: nowrap` がインラインブロックの折り返しを止めない。
-  `inline-nowrap-overflow#line.h` 10 / 20、`inline-nowrap-overflow#b.x` 60 / 0、`inline-nowrap-overflow#b.y` 0 / 10
-- **`flex-align-baseline`** — `align-items: baseline` を読まない。
-  `flex-align-baseline#a.y` 20 / 0
-- **`flex-wrap-reverse`** — `flex-wrap: wrap-reverse` を読まない。
-  `flex-wrap-reverse#row.z` 1 / 0、`flex-wrap-reverse#a.y` 40 / 0、`flex-wrap-reverse#b.x` 0 / 200、`flex-wrap-reverse#b.y` 20 / 0
-- **`flex-align-content`** — `align-content` を読まない。
-  `flex-align-content#b.y` 60 / 20、`flex-align-content#c.y` 100 / 80、`flex-align-content#d.y` 120 / 100
-- **`flex-row-reverse`** — `flex-direction: row-reverse` を読まない。
-  `flex-row-reverse#a.x` 250 / 0、`flex-row-reverse#b.x` 180 / 50
-- **`flex-column-reverse`** — `flex-direction: column-reverse` を読まない。
-  `flex-column-reverse#col.z` 1 / 0、`flex-column-reverse#a.y` 80 / 0、`flex-column-reverse#b.y` 50 / 20
-- **`flex-order`** — `order` を読まない。
-  `flex-order#a.x` 130 / 0、`flex-order#b.x` 70 / 50、`flex-order#c.x` 0 / 110
-- **`flex-auto-margin`** — flex アイテムの auto margin が余りを吸わない。
-  `flex-auto-margin#pushed.x` 250 / 300、`flex-auto-margin#pushed.z` 0 / -1、`flex-auto-margin#centered.y` 35 / 20
-- **`flex-shrink`** — `width` を持つアイテムが `flex-shrink` で縮まない。
-  `flex-shrink#a.w` 175 / 200、`flex-shrink#b.x` 175 / 200、`flex-shrink#b.w` 125 / 200
-- **`flex-max-clamp`** — 伸長が `max-width` で止まらず、止まった分を他のアイテムに回さない。
-  `flex-max-clamp#a.w` 50 / 150、`flex-max-clamp#b.x` 50 / 150、`flex-max-clamp#b.w` 250 / 150
-- **`flex-min-auto`** — `min-width: auto` の下限が内容の最小幅ではなく基本サイズになり、縮むべきアイテムが縮まない。
-  `flex-min-auto#b.w` 50 / 150
-- **`flex-column-overflow`** — スクロールコンテナの `min-height: auto` が 0 にならず、アイテムが内容の高さまで伸びる。
-  `flex-column-overflow#scroller.h` 70 / 300、`flex-column-overflow#content.z` -1 / 0
-- **`grid-auto-placement`** — 暗黙の行（`grid-auto-rows`）を作らず、溢れたアイテムの高さが 0 になる。
-  `grid-auto-placement#grid.h` 60 / 0、`grid-auto-placement#grid.z` 1 / -1、`grid-auto-placement#a.h` 30 / 0、`grid-auto-placement#a.z` 0 / -1、`grid-auto-placement#b.h` 30 / 0、`grid-auto-placement#b.z` 0 / -1、`grid-auto-placement#c.h` 30 / 0、`grid-auto-placement#c.z` 0 / -1、`grid-auto-placement#d.y` 30 / 0、`grid-auto-placement#d.h` 30 / 0、`grid-auto-placement#d.z` 0 / -1、`grid-auto-placement#e.y` 30 / 0、`grid-auto-placement#e.h` 30 / 0、`grid-auto-placement#e.z` 0 / -1
-- **`grid-span`** — `grid-column: span N` と暗黙の行を読まない。
-  `grid-span#wide.h` 20 / 0、`grid-span#wide.z` 0 / -1、`grid-span#a.h` 20 / 0、`grid-span#a.z` 0 / -1、`grid-span#b.y` 20 / 0、`grid-span#b.h` 20 / 0、`grid-span#b.z` 0 / -1
-- **`grid-line-placement`** — 負の線番号（`1 / -1`）を末尾から数えない。
-  `grid-line-placement#b.w` 300 / 100
-- **`grid-areas`** — `grid-template-areas` / `grid-area` を読まない。
-  `grid-areas#main.x` 100 / 0、`grid-areas#main.y` 20 / 0、`grid-areas#main.w` 200 / 100、`grid-areas#main.h` 40 / 20、`grid-areas#head.x` 0 / 100、`grid-areas#head.w` 300 / 200
-- **`grid-named-lines`** — 名前付きの線を読まない。
-  `grid-named-lines#a.x` 100 / 0、`grid-named-lines#a.w` 200 / 0、`grid-named-lines#a.z` 0 / -1
-- **`grid-repeat-auto-fill`** — `repeat(auto-fill, ...)` を展開しない。
-  `grid-repeat-auto-fill#a.w` 75 / 0、`grid-repeat-auto-fill#a.h` 20 / 0、`grid-repeat-auto-fill#a.z` 0 / -1、`grid-repeat-auto-fill#b.x` 75 / 0、`grid-repeat-auto-fill#b.w` 75 / 0、`grid-repeat-auto-fill#b.h` 20 / 0、`grid-repeat-auto-fill#b.z` 0 / -1、`grid-repeat-auto-fill#c.x` 150 / 0、`grid-repeat-auto-fill#c.w` 75 / 0、`grid-repeat-auto-fill#c.h` 20 / 0、`grid-repeat-auto-fill#c.z` 0 / -1、`grid-repeat-auto-fill#d.x` 225 / 0、`grid-repeat-auto-fill#d.w` 75 / 0、`grid-repeat-auto-fill#d.h` 20 / 0、`grid-repeat-auto-fill#d.z` 0 / -1、`grid-repeat-auto-fill#e.y` 20 / 0、`grid-repeat-auto-fill#e.w` 75 / 0、`grid-repeat-auto-fill#e.h` 20 / 0、`grid-repeat-auto-fill#e.z` 0 / -1
-- **`grid-item-alignment`** — `justify-items` / `align-items` / `*-self` がセル内の位置に効かない。
-  `grid-item-alignment#a.x` 40 / 0、`grid-item-alignment#a.y` 30 / 0
-- **`grid-justify-content`** — `justify-content` がトラック全体を寄せない。
-  `grid-justify-content#a.x` 100 / 0、`grid-justify-content#b.x` 150 / 50
-- **`grid-auto-flow-column`** — `grid-auto-flow: column` と `grid-auto-columns` を読まない。
-  `grid-auto-flow-column#a.w` 50 / 300、`grid-auto-flow-column#b.w` 50 / 300、`grid-auto-flow-column#c.x` 50 / 0、`grid-auto-flow-column#c.y` 0 / 40、`grid-auto-flow-column#c.w` 50 / 300、`grid-auto-flow-column#c.h` 20 / 0、`grid-auto-flow-column#c.z` 0 / -1
-- **`grid-dense`** — `grid-auto-flow: dense` と暗黙の行を読まない。
-  `grid-dense#a.h` 20 / 0、`grid-dense#a.z` 0 / -1、`grid-dense#wide.y` 20 / 0、`grid-dense#wide.h` 20 / 0、`grid-dense#wide.z` 0 / -1、`grid-dense#b.x` 100 / 0、`grid-dense#b.h` 20 / 0、`grid-dense#b.z` 0 / -1
-- **`grid-auto-tracks`** — `auto` トラックを内容の寸法から決めない。
-  `grid-auto-tracks#a.w` 200 / 0、`grid-auto-tracks#a.z` 0 / -1、`grid-auto-tracks#b.x` 200 / 0
-- **`table-colspan`** — 表レイアウトはあるが、`colspan` を読まない（暗黙の tbody は W7）。
-  `table-colspan#t.z` 1 / 0、`table-colspan#span.w` 150 / 60
-- **`table-rowspan`** — 表レイアウトはあるが、`rowspan` を読まない。
-  `table-rowspan#t.z` 1 / 0、`table-rowspan#tall.h` 40 / 20、`table-rowspan#b.x` 50 / 0
-- **`table-border-collapse`** — 表レイアウトはあるが、`border-collapse` と `border-spacing` を読まない。
-  `table-border-collapse#t.w` 92 / 96、`table-border-collapse#a.x` 2 / 0、`table-border-collapse#a.y` 2 / 0、`table-border-collapse#a.w` 44 / 48、`table-border-collapse#a.h` 24 / 28、`table-border-collapse#b.x` 46 / 48、`table-border-collapse#b.y` 2 / 0、`table-border-collapse#b.w` 44 / 48、`table-border-collapse#b.h` 24 / 28
-- **`position-relative`** — `position: relative` のずれが後続の兄弟の配置まで動かす。
-  `position-relative#b.y` 20 / 30
-- **`position-abs-insets`** — `left` と `right` の両方を持つ `width: auto` の絶対配置が間の幅に広がらない。
-  `position-abs-insets#stretch.x` 10 / 270、`position-abs-insets#stretch.w` 260 / 0、`position-abs-insets#stretch.z` 0 / -1
-- **`position-abs-percent`** — 絶対配置の `width` / `height` の % が包含ブロックの padding box ではなく内容ボックス基準。
-  `position-abs-percent#abs.w` 22 / 20、`position-abs-percent#abs.h` 12 / 10
-- **`position-abs-static`** — inset が全部 auto の絶対配置を静的位置ではなく包含ブロックの原点に置く。
-  `position-abs-static#abs.y` 40 / 0
-- **`position-sticky`** — `position: sticky` を読まない。
-  `position-sticky#sticky.y` 10 / 0
-- **`z-float-over-block`** — `float` が無く、後続のブロックが float の下へ押し下げられる。
-  `z-float-over-block#block.y` 0 / 50
-
-### W5 — 描画モデル（9 件）
+### W5 — 描画モデル（8 件）
 
 - **`z-stacking-context`** — z-index を親に足し込むだけで、スタッキングコンテキストが中の z-index を閉じ込めない。
   `z-stacking-context#inner.z` 1 / 0
 - **`z-negative-in-context`** — スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる。
   `z-negative-in-context#ctx.z` 1 / 0、`z-negative-in-context#neg.z` 0 / 1
-- **`z-positioned-over-flow`** — 位置指定要素（z-index: auto）が後続の通常フローのブロックより上の層に描かれない。
-  `z-positioned-over-flow#pos.z` 0 / 1
 - **`z-index-unpositioned`** — 位置指定されていないブロックの z-index が効いてしまう。
   `z-index-unpositioned#a.z` 1 / 0
 - **`z-opacity-context`** — `opacity < 1` がスタッキングコンテキストを作らない。
@@ -207,6 +112,16 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
 
 ## 解消済みの差異
 
+- **W4（161 行 + W5 の 1 行）**: block（`float-*` / `margin-collapse-empty` / `z-float-over-block`）、
+  inline（`inline-block-margin` / `inline-text-indent` / `vertical-align-*` / `line-height-strut` /
+  `inline-nowrap-overflow`）、position（`position-*`）、flex（`flex-*`）、grid（`grid-*`）、
+  table（`table-*`）の全行。ブロックフローは位置を高さを決める段で一度だけ決め（float の領域・
+  マージンの strut・clear・BFC の回避）、行ボックスに strut・`vertical-align`・`text-indent` を入れた。
+  flex は CSS Flexbox §9 の伸縮長の解決（min / max での凍結・`min-width: auto`）と `order` /
+  `*-reverse` / `align-content` / auto マージン / `baseline`、grid は §8 の自動配置と暗黙のトラック・
+  名前付きの線・areas・内容依存のトラック・揃え、表は格子（`colspan` / `rowspan`）・自動 / 固定の
+  列幅・`border-spacing` / `border-collapse`・キャプション・セルの縦揃えを組む。位置指定要素を
+  通常フローと float より上の層に描くようにしたので、W5 の `z-positioned-over-flow` も消えた。
 - **W3（21 行 + W4 の 54 行）**: `display-flow-root` / `display-contents` / `anonymous-block` /
   `table-anonymous`。要素ツリーからボックスツリーを組む段（`BoxTreeBuilder`）を入れ、
   `display: contents` の子の繰り上げ・匿名ブロック・匿名の表ボックスを作るようにした。
@@ -235,7 +150,8 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
 次のケースは現状ブラウザと一致しており、台帳に行が無い。崩すとテストが落ちる。
 
 - **block**: 縦積みと `margin-top`（`block-stacking`）、`box-sizing`、隣接兄弟と末子の
-  マージン相殺（`margin-collapse` / `margin-collapse-bottom`）、BFC（`display: flow-root`・
+  マージン相殺（`margin-collapse` / `margin-collapse-bottom`）、空の箱を貫通する相殺、
+  float（左右・折り返し・`clear`・BFC による包含と回避・通常フローより上に描かれること）、BFC（`display: flow-root`・
   `overflow: hidden`）が子のマージン貫通を止めること、インラインとブロックが混ざったときの
   匿名ブロック、負のマージン、
   `margin: auto` の水平中央寄せ、`min-*` / `max-*`、% height・% 余白・% padding、
@@ -243,15 +159,22 @@ W0 でコーパスを領域別に広げて起こした行。各フェーズの�
   `inherit` / `initial`
 - **inline**: インラインブロックの横並びと折り返し・ベースライン揃え、`text-align`、
   長さ指定の `line-height`、`<br>` の強制改行、`white-space: pre`、`inline-flex` が
-  前のインライン内容と同じ行に並ぶこと
+  前のインライン内容と同じ行に並ぶこと、インラインブロックのマージン、`text-indent`、
+  `vertical-align`（top / bottom / middle / 長さ）、行の strut、`nowrap`
 - **flex**: `flex: 1` の等分と `flex-grow` の比、`flex-basis`（固定・%）、
-  `justify-content`（5 種）、`align-items` / `align-self`、`flex-wrap`、`gap`、縦 flex の
-  stretch と `justify-content`、`display: contents` の子が祖父の flex アイテムになること
-- **grid**: `fr`、`minmax()`、`gap`
+  `justify-content`（5 種）、`align-items` / `align-self`（`baseline` を含む）、`flex-wrap` /
+  `wrap-reverse`、`align-content`、`gap`、縦 flex の stretch と `justify-content`、`order`、
+  `*-reverse`、auto マージン、縮小と `max-width` での停止、`min-width: auto`、スクロールコンテナの
+  最小高さ 0、`display: contents` の子が祖父の flex アイテムになること
+- **grid**: `fr`、`minmax()`、`gap`、自動配置と暗黙の行・列、`span`、負の線番号、名前付きの線、
+  `grid-template-areas`、`repeat(auto-fill)`、`grid-auto-flow: column` / `dense`、`auto` トラック、
+  `justify-items` / `align-items` / `*-self`、`justify-content`
 - **table**: `display: table-*` の列幅（セルの幅の最大と、表の幅の余りの配分）、行の高さを
-  セルの最大に揃えること、`table-cell` だけの並びに補われる匿名の表と行
+  セルの最大に揃えること、`table-cell` だけの並びに補われる匿名の表と行、`table-layout: fixed`、
+  `colspan` / `rowspan`、`border-collapse`
 - **list**: `ul` / `ol` の字下げと `li` の積み方、入れ子
-- **position / overflow**: 絶対配置の包含ブロックと shrink-to-fit、`position: fixed`、
+- **position / overflow**: 絶対配置の包含ブロックと shrink-to-fit、静的位置、両側の inset による
+  寸法、padding box 基準の %、`position: relative` が後続を動かさないこと、`position: sticky`、`position: fixed`、
   `overflow: hidden` のクリップ、スクロールコンテナの寸法
 - **z-order**: 文書順、位置指定要素どうしの `z-index`、flex アイテムの `z-index`、
-  通常フローのブロックより下に描かれる負の `z-index`
+  通常フローのブロックより下に描かれる負の `z-index`、後続の通常フローのブロックより上に描かれる位置指定要素

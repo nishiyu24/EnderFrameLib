@@ -57,6 +57,30 @@ public class LayoutBox {
      * BFC を作る箱は子のマージンを自分の外へ貫通させない。
      */
     public boolean establishesBfc = false;
+    /**
+     * 親が組んでいる BFC の float の領域と、その中でのこの箱の内容ボックスの原点。
+     * BFC を作らないブロックは親の float を避けて行を組み、自分の float を親の領域に置く。
+     * {@link BlockLayoutEngine} が子の高さを解き直す直前に入れ、子は読んだら消す
+     * （前回のレイアウトの領域を持ち越さないため）。
+     */
+    BlockLayoutEngine.FloatSpace floatSpace;
+    float floatSpaceX, floatSpaceY;
+    /**
+     * 親のエンジンが決めた border box の幅・高さ（flex の伸縮後の寸法、stretch、表の列幅）。
+     * NaN でなければ {@link BoxMeasurer} は指定値と内容よりこちらを使う。エンジンは測定の直前に入れ、
+     * 測定が終わったら NaN に戻す（別の文脈に移った箱に古い値を残さないため）。
+     */
+    float overrideWidth = Float.NaN, overrideHeight = Float.NaN;
+    /**
+     * {@code border-collapse: collapse} の表で、隣と共有する枠線を半分ずつに分けた幅（上・右・下・左）。
+     * null でなければ {@link BoxMeasurer} は {@code border-*-width} の代わりにこれを使い、描画もこの幅で描く。
+     * 表のエンジンがセルと表自身に入れる。
+     */
+    public float[] collapsedBorders;
+    /** 内容を縦にずらす量（px）。表のセルの {@code vertical-align} を表のエンジンが入れる。 */
+    float contentOffsetY = 0;
+    /** 相殺する前の上下マージン（px）。親子のマージン相殺は解き直すたびにここから始める。 */
+    public float ownMarginTop, ownMarginBottom;
 
     public void addChild(LayoutBox child) {
         if (child != null) {
@@ -93,7 +117,7 @@ public class LayoutBox {
     public LayoutBox findContainingBlock() {
         LayoutBox cur = this.parent;
         while (cur != null) {
-            if (cur.isRelative || cur.isAbsolute || cur.isFixed) {
+            if (cur.isRelative || cur.isAbsolute || cur.isFixed || cur.isSticky) {
                 return cur;
             }
             cur = cur.parent;
@@ -131,7 +155,12 @@ public class LayoutBox {
     /** row-gap: 行（ブロック方向）の間隔 / column-gap: 列（インライン方向）の間隔 */
     public float rowGap, columnGap;
 
-    public boolean isAbsolute = false, isFixed = false, isRelative = false;
+    public boolean isAbsolute = false, isFixed = false, isRelative = false, isSticky = false;
+    /**
+     * 絶対配置の静的位置（通常フローに置かれたはずのマージンボックスの左上、絶対座標）。
+     * inset が両方 auto の軸はここに置く。親のエンジンが子を並べるときに入れる。
+     */
+    public float staticX = Float.NaN, staticY = Float.NaN;
     public int zIndex = 0;
     /**
      * 解決済みの 1 行分の高さ（px）。
@@ -179,7 +208,7 @@ public class LayoutBox {
      */
     public void updateStyle(ComputedStyle newStyle) {
         this.style = newStyle;
-        this.display = Display.of(node, newStyle);
+        this.display = Display.of(node, newStyle).blockified(newStyle);
 
         // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
         String text = TextShaper.normalize(node.text, TextShaper.WhiteSpace.of(newStyle.get(CssProperty.WHITE_SPACE)));
@@ -189,10 +218,14 @@ public class LayoutBox {
         this.isFixed = "fixed".equals(pos);
         this.isAbsolute = "absolute".equals(pos) || this.isFixed;
         this.isRelative = "relative".equals(pos);
+        this.isSticky = "sticky".equals(pos);
         this.zIndex = (int) newStyle.number(CssProperty.Z_INDEX, 0f);
     }
 
     public float horizontalDecoration() { return pL + pR + bL + bR; }
+
+    /** 親の内容ボックスの幅（% の基準）。親が無ければ 0。 */
+    float parentInnerWidth() { return parent == null ? 0 : Math.max(0, parent.w - parent.horizontalDecoration()); }
     public float verticalDecoration() { return pT + pB + bT + bB; }
 
     /** 通常フローに参加する子（絶対配置・display:none・外側のマーカーを除く）。 */
@@ -315,11 +348,6 @@ public class LayoutBox {
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
-        // LIMITATION(制約): inset が全部 auto の絶対配置を静的位置ではなく包含ブロックの原点に置き、
-        // left と right の両方を持つ width: auto を間の幅に広げない。width / height の % は
-        // padding box ではなく内容ボックス基準。position: relative のずれは後続の兄弟まで動かし、
-        // position: sticky は読まない。W4 で直す。FIDELITY.md の「W4 — 整形コンテキスト」と
-        // README の "Not supported" に対応。
         if (this.isAbsolute) {
             ContainingBlock cb = resolveContainingBlock(ctx);
             float refX = cb.x();
@@ -327,15 +355,22 @@ public class LayoutBox {
             float refW = cb.w();
             float refH = cb.h();
 
-            if (style.containsKey(CssProperty.RIGHT)) {
+            // 両方あれば left / top が勝つ（過剰制約のときは end 側を無視する。CSS 2.2 §10.3.7）。
+            // 両方 auto の軸は静的位置に置く。以前は right / bottom が勝ち、両方 auto なら
+            // 包含ブロックの原点に置いていた
+            if (!BoxMeasurer.isAutoInset(style, CssProperty.LEFT)) {
+                this.x = refX + style.length(CssProperty.LEFT, refW, rootW, rootH) + mL;
+            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.RIGHT)) {
                 this.x = refX + refW - this.w - style.length(CssProperty.RIGHT, refW, rootW, rootH) - mR;
             } else {
-                this.x = refX + style.length(CssProperty.LEFT, refW, rootW, rootH) + mL;
+                this.x = (Float.isNaN(staticX) ? refX : staticX) + mL;
             }
-            if (style.containsKey(CssProperty.BOTTOM)) {
+            if (!BoxMeasurer.isAutoInset(style, CssProperty.TOP)) {
+                this.y = refY + style.length(CssProperty.TOP, refH, rootW, rootH) + mT;
+            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.BOTTOM)) {
                 this.y = refY + refH - this.h - style.length(CssProperty.BOTTOM, refH, rootW, rootH) - mB;
             } else {
-                this.y = refY + style.length(CssProperty.TOP, refH, rootW, rootH) + mT;
+                this.y = (Float.isNaN(staticY) ? refY : staticY) + mT;
             }
         } else {
             float refX = this.isFixed ? 0 : parentX;
@@ -348,7 +383,15 @@ public class LayoutBox {
         float scrollY = ctx.scrollState().getScrollY(node.getId());
 
         float innerX = this.x + pL + bL - scrollX;
-        float innerY = this.y + pT + bT - scrollY;
+        float innerY = this.y + pT + bT - scrollY + contentOffsetY;
+
+        // 静的位置の既定は内容ボックスの原点。ブロックフローは通常フローの位置で上書きする
+        for (LayoutBox child : children) {
+            if (child.isAbsolute) {
+                child.staticX = innerX;
+                child.staticY = innerY;
+            }
+        }
 
         LayoutEngine engine = LayoutEngine.getEngine(display);
         engine.arrangeChildren(this, innerX, innerY, ctx);
@@ -359,7 +402,63 @@ public class LayoutBox {
         }
 
         applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
+        if (this.isSticky) applyStickyOffset(ctx);
         updateScrollExtent(scrollX, scrollY);
+    }
+
+    /**
+     * {@code position: sticky} のずれ。通常フローの位置に置いたあと、最も近いスクロールコンテナの
+     * スクロールポート（無ければビューポート）の端から inset だけ内側に留まるようずらし、
+     * 親の内容ボックスからははみ出させない（CSS Positioned Layout 3 §3.4）。
+     * relative と同じく描画位置だけを動かし、後続の配置には影響しない。
+     */
+    private void applyStickyOffset(LayoutContext ctx) {
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
+        float portX = 0, portY = 0, portW = rootW, portH = rootH;
+        for (LayoutBox cur = parent; cur != null; cur = cur.parent) {
+            if (cur.isScrollContainer()) {
+                portX = cur.x + cur.bL;
+                portY = cur.y + cur.bT;
+                portW = Math.max(0, cur.w - cur.bL - cur.bR);
+                portH = Math.max(0, cur.h - cur.bT - cur.bB);
+                break;
+            }
+        }
+        if (parent == null) return;
+        float cbTop = parent.y + parent.bT + parent.pT;
+        float cbBottom = parent.y + parent.h - parent.bB - parent.pB;
+        float cbLeft = parent.x + parent.bL + parent.pL;
+        float cbRight = parent.x + parent.w - parent.bR - parent.pR;
+
+        float dx = 0, dy = 0;
+        if (!BoxMeasurer.isAutoInset(style, CssProperty.TOP)) {
+            float limit = portY + style.length(CssProperty.TOP, portH, rootW, rootH);
+            if (y < limit) dy = Math.max(0, Math.min(limit - y, cbBottom - (y + h + mB)));
+        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.BOTTOM)) {
+            float limit = portY + portH - style.length(CssProperty.BOTTOM, portH, rootW, rootH);
+            if (y + h > limit) dy = -Math.max(0, Math.min(y + h - limit, y - mT - cbTop));
+        }
+        if (!BoxMeasurer.isAutoInset(style, CssProperty.LEFT)) {
+            float limit = portX + style.length(CssProperty.LEFT, portW, rootW, rootH);
+            if (x < limit) dx = Math.max(0, Math.min(limit - x, cbRight - (x + w + mR)));
+        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.RIGHT)) {
+            float limit = portX + portW - style.length(CssProperty.RIGHT, portW, rootW, rootH);
+            if (x + w > limit) dx = -Math.max(0, Math.min(x + w - limit, x - mL - cbLeft));
+        }
+        if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
+    }
+
+    /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
+    public boolean isScrollContainer() {
+        String overflow = style.getOrDefault(CssProperty.OVERFLOW, "visible");
+        return scrolls(style.getOrDefault(CssProperty.OVERFLOW_X, overflow))
+                || scrolls(style.getOrDefault(CssProperty.OVERFLOW_Y, overflow));
+    }
+
+    private static boolean scrolls(String overflow) {
+        String v = overflow.trim();
+        return !v.equals("visible") && !v.equals("clip");
     }
 
     private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
@@ -498,6 +597,21 @@ public class LayoutBox {
             // list-item は flow / flow-root とだけ組める（CSS Display 3）
             if (listItem && inner != null && inner != Inner.FLOW && inner != Inner.FLOW_ROOT) return null;
             return new Display(outer != null ? outer : Outer.BLOCK, inner != null ? inner : Inner.FLOW, listItem);
+        }
+
+        /**
+         * float と絶対配置はブロックレベルになる（CSS 2.2 §9.7 / CSS Display 3 の blockification）。
+         * {@code inline-block} は {@code block flow-root} に、{@code inline-flex} は {@code flex} になる。
+         *
+         * 何が壊れていたか: 以前は {@code float: left} の {@code span} がインラインのまま行に並び、
+         * 絶対配置の {@code span} はインラインの祖先として中身を行に平坦化されていた。
+         */
+        public Display blockified(ComputedStyle style) {
+            if (outer != Outer.INLINE) return this;
+            String position = style.getOrDefault(CssProperty.POSITION, "static");
+            boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position)
+                    || !"none".equals(style.getOrDefault(CssProperty.FLOAT, "none"));
+            return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;
         }
 
         public boolean isNone() { return outer == Outer.NONE; }
