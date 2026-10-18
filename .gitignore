@@ -1,4 +1,22 @@
-# プロジェクトの除外パス
+# ビルド成果物
 /.gradle/
 /build/
-/build/classes/java/main/
+/repo/
+
+# データジェネレータの出力（build.gradle が srcDir として読むが、生成物なので追跡しない）
+/src/generated/
+
+# 開発用の Minecraft 実行ディレクトリ（ワールド・設定・ログ・DL キャッシュ）
+/run/
+
+# IDE
+/.idea/
+*.iml
+/.vscode/
+/.eclipse/
+/bin/
+
+# ログ
+*.log
+*.log.gz
+hs_err_pid*.log

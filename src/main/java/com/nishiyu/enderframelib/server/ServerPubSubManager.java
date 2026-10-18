@@ -4,7 +4,6 @@ import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.network.s2c.PubSubUpdateS2CPacket;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.HashMap;
@@ -81,7 +80,7 @@ public class ServerPubSubManager {
         Map<String, Object> current = channelData.get(channel);
         if (current != null && !current.isEmpty() && !noReplayChannels.contains(channel)) {
             // 全状態の再生は購読が成立した本人にだけ、かつ上限付きで送る
-            PacketDistributor.sendToPlayer(player, new PubSubUpdateS2CPacket(channel, true, limited(current)));
+            ServerPacketSender.send(player, new PubSubUpdateS2CPacket(channel, true, limited(current)));
         }
     }
 
@@ -138,7 +137,7 @@ public class ServerPubSubManager {
                 PubSubUpdateS2CPacket packet = new PubSubUpdateS2CPacket(channel, false, diff);
                 subs.removeIf(ServerPlayer::hasDisconnected);
                 for (ServerPlayer player : subs) {
-                    PacketDistributor.sendToPlayer(player, packet);
+                    ServerPacketSender.send(player, packet);
                 }
             }
         }

@@ -334,6 +334,8 @@ public final class MarkdownParser {
             }
 
             // 7. 箇条書きリスト (-, *, +) およびタスクリスト (- [x])
+            // LIMITATION(制約): リストは平坦。字下げした入れ子リストは兄弟の <li> になる。
+            // 入れ子が必要なら HTML で書く。README の "Not supported" と対応。
             if (UL_PATTERN.matcher(line).matches()) {
                 out.append("<ul>\n");
                 while (i < n) {

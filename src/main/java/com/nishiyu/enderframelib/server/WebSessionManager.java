@@ -13,7 +13,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
@@ -288,13 +287,13 @@ public class WebSessionManager {
         CompoundTag tag = null;
         for (ServerPlayer player : viewersOf(session.getSessionId())) {
             if (tag == null) tag = packDom(session);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(session.getSessionId(), "dom_sync", tag));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(session.getSessionId(), "dom_sync", tag));
         }
     }
 
     public static void broadcastPatch(String sessionId, CompoundTag patchPayload) {
         for (ServerPlayer player : viewersOf(sessionId)) {
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "dom_patch", patchPayload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_patch", patchPayload));
         }
     }
 
@@ -328,14 +327,14 @@ public class WebSessionManager {
         if (standalone != null) {
             standalone.markAccessed();
             addViewer(sessionId, player);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(standalone)));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(standalone)));
             return;
         }
 
         WebSession resolved = resolveFromProviders(player, sessionId);
         if (resolved != null) {
             addViewer(sessionId, player);
-            PacketDistributor.sendToPlayer(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(resolved)));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(resolved)));
         }
     }
 
@@ -540,7 +539,9 @@ public class WebSessionManager {
 
     /** サーバー停止時に全ての static 状態を捨てる（I-6）。 */
     static void clearAll() {
-        STANDALONE_SESSIONS.values().forEach(WebSession::clear);
+        // clear() ではなく discard()。停止中に空の DOM を配信しようとすると、
+        // 畳まれた接続への送信例外が ServerStoppingEvent のリスナから抜けてしまう
+        STANDALONE_SESSIONS.values().forEach(WebSession::discard);
         STANDALONE_SESSIONS.clear();
         SESSION_VIEWERS.clear();
         SESSION_OWNERS.clear();

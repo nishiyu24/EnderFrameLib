@@ -28,6 +28,9 @@ blockquote { border-left: 3px solid #89b4fa; background-color: rgba(137, 180, 25
 .markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
 .markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
 .markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
+/* LIMITATION(制約): 表は flex の行として組む。本来の table フォーマットコンテキストでは
+ * ないため、colspan / rowspan と列幅の自動決定は効かない。
+ * 列幅は th / td の flex と width で指定する。README の "Not supported" と対応。 */
 table { display: flex; flex-direction: column; width: 100%; border: 1px solid #45475a; border-radius: 4px; margin: 6px 0; overflow: hidden; }
 thead, tbody { display: flex; flex-direction: column; width: 100%; }
 thead { background-color: rgba(137, 180, 250, 0.12); font-weight: bold; }
