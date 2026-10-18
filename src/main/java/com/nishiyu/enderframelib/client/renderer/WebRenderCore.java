@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.nishiyu.enderframelib.core.model.RenderKeys;
+import com.nishiyu.enderframelib.core.model.UIElement.RenderKeys;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -12,10 +12,10 @@ import com.nishiyu.enderframelib.client.TextEditState;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.model.ClipRect;
-import com.nishiyu.enderframelib.core.model.Corners;
-import com.nishiyu.enderframelib.core.model.ElementType;
-import com.nishiyu.enderframelib.core.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.model.UIElement.ClipRect;
+import com.nishiyu.enderframelib.core.model.UIElement.Corners;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.FontFace.BitmapFontFace;
 import net.minecraft.client.Minecraft;

@@ -2,8 +2,8 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.core.css.EasingFunction;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.model.ElementType;
-import com.nishiyu.enderframelib.core.model.RenderKeys;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.RenderKeys;
 import com.nishiyu.enderframelib.core.model.UIElement;
 
 import java.util.ArrayList;

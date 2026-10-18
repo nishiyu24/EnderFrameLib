@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.nishiyu.enderframelib.core.model.ClipRect;
-import com.nishiyu.enderframelib.core.model.Corners;
+import com.nishiyu.enderframelib.core.model.UIElement.ClipRect;
+import com.nishiyu.enderframelib.core.model.UIElement.Corners;
 import org.joml.Matrix4f;
 
 /**

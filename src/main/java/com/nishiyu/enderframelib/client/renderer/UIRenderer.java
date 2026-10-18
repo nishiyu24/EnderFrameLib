@@ -10,11 +10,11 @@ import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.model.ClipRect;
-import com.nishiyu.enderframelib.core.model.Corners;
-import com.nishiyu.enderframelib.core.model.ElementType;
-import com.nishiyu.enderframelib.core.model.ImageFitMode;
-import com.nishiyu.enderframelib.core.model.RenderKeys;
+import com.nishiyu.enderframelib.core.model.UIElement.ClipRect;
+import com.nishiyu.enderframelib.core.model.UIElement.Corners;
+import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
+import com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode;
+import com.nishiyu.enderframelib.core.model.UIElement.RenderKeys;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
