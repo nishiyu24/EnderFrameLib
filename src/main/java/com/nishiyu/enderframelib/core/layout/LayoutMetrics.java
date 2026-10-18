@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontStyle;
+import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
 
 import java.util.regex.Pattern;
 

@@ -250,7 +250,7 @@ public class InteractionPipelineTest {
         assertNotNull(doc.root);
 
         com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
-                doc, 854, 480, Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.FontResolver.FALLBACK, new InteractionState());
+                doc, 854, 480, Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.FontFace.FontResolver.FALLBACK, new InteractionState());
         assertNotNull(rootBox);
         com.nishiyu.enderframelib.client.renderer.UIRenderer renderer =
                 new com.nishiyu.enderframelib.client.renderer.UIRenderer(854, 480, doc.sheet.keyframes, new ScrollState());

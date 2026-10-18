@@ -3,11 +3,11 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontStyle;
+import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;

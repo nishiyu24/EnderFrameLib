@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
-import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;

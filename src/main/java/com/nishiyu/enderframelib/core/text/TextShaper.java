@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.text;
 
+import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;

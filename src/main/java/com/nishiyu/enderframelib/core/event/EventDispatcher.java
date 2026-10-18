@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.event;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.event.DomEvent.EventPhase;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -96,5 +97,22 @@ public class EventDispatcher {
         }
 
         return !event.isDefaultPrevented();
+    }
+
+    /**
+     * DOM イベントリスナ。
+     */
+    @FunctionalInterface
+    public interface EventListener {
+        void handleEvent(DomEvent event);
+    }
+
+    /**
+     * イベントの既定動作（Default Action）を実行するハンドラ。
+     * キャンセル（preventDefault）されていない場合に、イベントディスパッチの最終段で呼び出される。
+     */
+    @FunctionalInterface
+    public interface DefaultActionHandler {
+        void executeDefaultAction(DomEvent event);
     }
 }

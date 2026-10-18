@@ -154,4 +154,14 @@ public class DomEvent {
     public void setDetail(String detail) {
         this.detail = detail;
     }
+
+    /**
+     * DOM イベントの伝播フェーズ（W3C DOM Level 2 Event 仕様準拠）。
+     */
+    public enum EventPhase {
+        NONE,
+        CAPTURING_PHASE,
+        AT_TARGET,
+        BUBBLING_PHASE
+    }
 }

@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.NodeId;
-import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlParser.NodeId;
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 
 import java.util.List;
 

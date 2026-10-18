@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.client.renderer.UIRenderer;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.text.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
 
 import java.io.InputStream;
 import java.io.UncheckedIOException;

@@ -85,13 +85,13 @@ public record UIElement(
          * （別々に書くと、見えている文字とキャレットの位置が食い違う）。
          */
         public float textScale() {
-            return fontHeight / com.nishiyu.enderframelib.core.text.BitmapFontFace.MC_UNITS_PER_EM;
+            return fontHeight / com.nishiyu.enderframelib.core.text.FontFace.BitmapFontFace.MC_UNITS_PER_EM;
         }
 
         /** 行送り（px）。レイアウトが解決していなければ {@code line-height: normal} 相当。 */
         public float resolvedLineHeight() {
             if (lineHeight > 0) return lineHeight;
-            return fontHeight * (1.0f + com.nishiyu.enderframelib.core.text.BitmapFontFace.MC_LINE_GAP_RATIO);
+            return fontHeight * (1.0f + com.nishiyu.enderframelib.core.text.FontFace.BitmapFontFace.MC_LINE_GAP_RATIO);
         }
 
         public boolean hasClip() {

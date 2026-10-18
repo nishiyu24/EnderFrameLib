@@ -17,7 +17,7 @@ import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
 import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
