@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.binding;
 
+import com.nishiyu.enderframelib.client.binding.WebStateStore.TemplateDeps;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import org.junit.jupiter.api.Test;

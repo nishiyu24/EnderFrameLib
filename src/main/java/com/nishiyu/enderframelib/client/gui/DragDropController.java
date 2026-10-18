@@ -41,7 +41,7 @@ public class DragDropController {
 
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
-        pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.ZLayers.DRAG_DROP_OVERLAY_Z);
+        pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.WebRenderCore.ZLayers.DRAG_DROP_OVERLAY_Z);
         int w = Math.max(60, font.width(draggingLabel) + 12);
         guiGraphics.fill(webX + 6, webY + 6, webX + 6 + w, webY + 24, 0xAA89B4FA);
         guiGraphics.drawString(font, draggingLabel, webX + 12, webY + 11, 0xFF11111B, false);
