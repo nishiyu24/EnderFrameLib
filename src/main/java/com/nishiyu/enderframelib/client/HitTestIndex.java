@@ -47,7 +47,7 @@ public class HitTestIndex {
         for (int i = elements.size() - 1; i >= 0; i--) {
             UIElement el = elements.get(i);
             if (isIgnoredElement(el)) continue;
-            if (!isInteractive(el, elementMap)) continue;
+            if (!isInteractiveOrOpaque(el, elementMap)) continue;
 
             List<UIElement> chain = buildTransformChain(el, elementMap);
             ClipRect clip = el.meta() != null ? el.meta().clipRect() : null;
@@ -56,24 +56,42 @@ public class HitTestIndex {
         this.interactiveEntries = entries;
     }
 
+    private static boolean isPointerEventsNone(UIElement el) {
+        if (el.events() != null) {
+            String pe = el.events().get("pointer-events");
+            if ("none".equalsIgnoreCase(pe)) return true;
+        }
+        return false;
+    }
+
     private static boolean isIgnoredElement(UIElement el) {
+        if (el == null) return true;
+        if (el.type() == ElementType.NODE) return true;
+        if (isPointerEventsNone(el)) return true;
+
         String id = el.id();
-        return el.type() == ElementType.NODE
-                || el.type() == ElementType.TEXT
-                || id.endsWith("_shadow")
-                || id.contains("_sb_")
+        return id.endsWith("_shadow")
                 || id.endsWith("_bbg")
                 || id.endsWith("_ph")
                 || id.contains("_b_");
     }
 
-    private static boolean isInteractive(UIElement el, Map<String, UIElement> elementMap) {
+    private static boolean isInteractiveOrOpaque(UIElement el, Map<String, UIElement> elementMap) {
+        if (isPointerEventsNone(el)) return false;
+
         ElementType t = el.type();
         boolean isInput = t == ElementType.INPUT || t == ElementType.TEXTAREA || t == ElementType.SELECT
                 || t == ElementType.RANGE || t == ElementType.TOGGLE || t == ElementType.CHECKBOX
-                || t == ElementType.BUTTON || t == ElementType.A || t == ElementType.SCENE;
+                || t == ElementType.RADIO || t == ElementType.BUTTON || t == ElementType.A || t == ElementType.SCENE;
         if (isInput) return true;
 
+        // スクロールバー
+        if (el.id().contains("_sb_")) return true;
+
+        // テキストノード
+        if (t == ElementType.TEXT) return true;
+
+        // イベントや対話属性がある
         if (el.events() != null) {
             for (String key : el.events().keySet()) {
                 if (key.startsWith("on") || RenderKeys.MC_TITLE.equals(key) || "draggable".equals(key)) {
@@ -82,7 +100,13 @@ public class HitTestIndex {
             }
         }
 
-        if (el.type() == ElementType.IMAGE && el.text() != null && (el.text().startsWith("item:") || el.text().startsWith("fluid:"))) {
+        // 置換要素（画像・キャンバス）
+        if (t == ElementType.IMAGE || t == ElementType.CANVAS) {
+            return true;
+        }
+
+        // 不透明な背景色（Alpha > 0）を持つ要素（遮蔽物として下のボタン貫通を防止）
+        if ((el.bgColor() & 0xFF000000) != 0) {
             return true;
         }
 

@@ -1,0 +1,5 @@
+<!-- z-index を持つ位置指定要素はスタッキングコンテキストを作る。中の z-index: 100 は外の z-index: 2 を越えない。 -->
+<div id="ctx" style="position: absolute; left: 0; top: 0; width: 100px; height: 100px; z-index: 1;">
+  <div id="inner" style="position: absolute; left: 20px; top: 20px; width: 60px; height: 60px; z-index: 100;"></div>
+</div>
+<div id="sibling" style="position: absolute; left: 0; top: 0; width: 200px; height: 200px; z-index: 2;"></div>

@@ -2,15 +2,15 @@ package com.nishiyu.enderframelib.core.css;
 
 public class CalcEvaluator {
     private final String str;
-    private final int maxPixels;
-    private final int rootW;
-    private final int rootH;
+    private final float maxPixels;
+    private final float rootW;
+    private final float rootH;
     private final float elementFontSize;
     private final float rootFontSize;
     private int pos = -1;
     private int ch;
 
-    public CalcEvaluator(String str, int maxPixels, int rootW, int rootH, float elementFontSize, float rootFontSize) {
+    public CalcEvaluator(String str, float maxPixels, float rootW, float rootH, float elementFontSize, float rootFontSize) {
         this.str = str;
         this.maxPixels = maxPixels;
         this.rootW = rootW;

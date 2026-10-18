@@ -21,6 +21,11 @@ public final class CssParser {
     }
 
     public static StyleSheet parse(String css, int rootW, CascadeOrigin origin) {
+        return parse(css, MediaEnvironment.of(rootW, 0), origin);
+    }
+
+    /** {@code @media} の評価と {@code @import} の解決に使う環境を指定してパースする。 */
+    public static StyleSheet parse(String css, MediaEnvironment env, CascadeOrigin origin) {
         StyleSheet sheet = new StyleSheet();
         if (css == null || css.isEmpty()) return sheet;
 
@@ -29,7 +34,7 @@ public final class CssParser {
             fontFaceCallback.accept(css);
         }
 
-        CssRuleParser.parseInto(css, sheet, rootW, origin);
+        CssRuleParser.parseInto(css, sheet, env, origin);
 
         // 安定ソートなので、詳細度が同じルールは記述順（後勝ち）が保たれる
         sheet.rules.sort(StyleRule::compareSpecificity);

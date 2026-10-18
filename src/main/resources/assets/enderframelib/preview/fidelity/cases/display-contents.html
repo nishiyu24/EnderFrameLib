@@ -1,0 +1,5 @@
+<!-- display: contents の要素は箱を作らず、子が祖父の flex アイテムになる。 -->
+<div id="row" style="display: flex; width: 300px; height: 20px;">
+  <div id="a" style="flex: 1;"></div>
+  <div id="contents" style="display: contents;"><div id="b" style="flex: 1;"></div><div id="c" style="flex: 1;"></div></div>
+</div>

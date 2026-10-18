@@ -1,5 +1,8 @@
 /* EnderFrameLib ユーザーエージェントスタイルシート（組み込みの既定値）
- * CascadeOrigin.USER_AGENT として読み込まれ、作者スタイルシートより弱い。 */
+ * CascadeOrigin.USER_AGENT として読み込まれ、作者スタイルシートより弱い。
+ * LIMITATION(制約): WHATWG HTML の Rendering 節の既定値ではない。テーマ的な装飾を持ち、
+ * dl / dd などの既定値が欠けている。W6 で置き換える。FIDELITY.md の「W6 — UA スタイルシート」と
+ * README の "Not supported" に対応。 */
 body, html { background-color: #ffffff; color: #333333; margin: 0; padding: 0; width: 100%; min-height: 100%; box-sizing: border-box; overflow: auto; }
 head, meta, title, link, style, script, template, option { display: none; }
 *[hidden] { display: none; }
@@ -11,16 +14,17 @@ h5 { font-size: 0.9rem; font-weight: bold; margin: 0.6em 0; display: block; }
 h6 { font-size: 0.8rem; font-weight: bold; margin: 0.5em 0; color: #a6adc8; display: block; }
 p { margin: 0.6em 0; display: block; }
 ul, ol { padding-left: 20px; margin: 0.6em 0; display: block; }
-li { display: block; margin: 2px 0; }
+li { display: list-item; margin: 2px 0; }
 .task-list-item { display: flex; flex-direction: row; align-items: center; gap: 6px; }
-a { color: #89b4fa; text-decoration: underline; cursor: pointer; display: inline-block; }
+a { color: #89b4fa; text-decoration: underline; cursor: pointer; display: inline; }
 a:hover { color: #b4befe; }
+span, b, strong, i, em, s, strike, del, u, ins { display: inline; }
 b, strong { font-weight: bold; }
 i, em { font-style: italic; }
 s, strike, del { text-decoration: line-through; }
 u, ins { text-decoration: underline; }
-code, kbd { background-color: rgba(137, 180, 250, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; display: inline-block; }
-kbd { border: 1px solid #585b70; background-color: #313244; color: #cdd6f4; }
+code { background-color: rgba(137, 180, 250, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; display: inline; }
+kbd { background-color: #313244; color: #cdd6f4; border: 1px solid #585b70; padding: 1px 4px; border-radius: 3px; display: inline-block; }
 pre { background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 8px 10px; margin: 6px 0; display: block; overflow-x: auto; white-space: pre; }
 blockquote { border-left: 3px solid #89b4fa; background-color: rgba(137, 180, 250, 0.08); padding: 6px 10px; margin: 6px 0; border-radius: 2px; display: block; }
 .markdown-alert-title { font-weight: bold; margin-bottom: 4px; color: #89b4fa; display: block; }

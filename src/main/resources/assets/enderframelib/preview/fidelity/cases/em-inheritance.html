@@ -1,0 +1,7 @@
+<!-- 継承されるのは算出値（px）。font-size: 2em を指定しない子孫は 32px を受け取り、2em を親に掛け直さない。 -->
+<div id="outer" style="font-size: 2em; width: 5em;">
+  <div id="mid" style="width: 5em; height: 10px;">
+    <div id="inner" style="width: 5em; height: 10px;"></div>
+  </div>
+  <div id="own" style="font-size: 1em; width: 5em; height: 10px;"></div>
+</div>

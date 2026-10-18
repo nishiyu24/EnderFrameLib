@@ -397,10 +397,10 @@ public class WebHudRenderer {
         layoutBox.measure(1000, 1000, fmtCtx, ctx);
         layoutBox.layout(0, 0, 1000, 1000, ctx);
 
-        cache.width = layoutBox.w;
-        cache.height = layoutBox.h;
+        cache.width = Math.round(layoutBox.w);
+        cache.height = Math.round(layoutBox.h);
 
-        UIRenderer renderer = new UIRenderer(layoutBox.w, layoutBox.h, doc.sheet.keyframes, scrollState);
+        UIRenderer renderer = new UIRenderer(cache.width, cache.height, doc.sheet.keyframes, scrollState);
         cache.elements = renderer.render(layoutBox);
     }
 
@@ -601,7 +601,10 @@ public class WebHudRenderer {
 
             com.nishiyu.enderframelib.core.css.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
             Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
-            com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, sheet, null);
+            // 親の算出スタイルを渡さないと inherit が初期値になり、子の em が 16px 基準になる
+            com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
+                    rawStyle, sheet, null, box.style.asMap(), box.style.fontSizePx(),
+                    com.nishiyu.enderframelib.core.css.ComputedStyle.DEFAULT_FONT_SIZE, 1000, 1000);
 
             LayoutBox childBox = new LayoutBox(child, computed);
             box.children.add(childBox);

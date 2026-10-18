@@ -1,0 +1,5 @@
+<!-- overflow が visible でないアイテムの min-height: auto は 0 なので、内容が大きくても縮む。 -->
+<div id="col" style="display: flex; flex-direction: column; width: 100px; height: 100px;">
+  <div id="head" style="height: 30px;"></div>
+  <div id="scroller" style="flex: 1; overflow: auto;"><div id="content" style="height: 300px;"></div></div>
+</div>

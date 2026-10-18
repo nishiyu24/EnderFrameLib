@@ -40,6 +40,11 @@ public class InteractionState implements SelectorMatcher.StateLookup {
         public ComputedStyle computedStyle;
         /** 算出時の親フォントサイズ（px）。 */
         public float cachedParentFontSize = -1f;
+        /** 算出時のルート要素のフォントサイズ（px、rem の基準）。 */
+        public float cachedRootFontSize = -1f;
+        /** 算出時のビューポート。font-size の vw / vh が算出値に入るので、変わったら再スタイルする。 */
+        public int cachedViewportW = -1;
+        public int cachedViewportH = -1;
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */

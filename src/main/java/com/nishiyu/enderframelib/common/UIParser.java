@@ -171,11 +171,23 @@ public class UIParser {
     }
 
     public com.nishiyu.enderframelib.core.css.StyleSheet buildStyleSheet(String authorCss, int rootW) {
+        return buildStyleSheet(authorCss, rootW, 0);
+    }
+
+    /**
+     * UA と作者のシートを 1 枚にまとめる。{@code rootH} は {@code @media} の
+     * {@code height} / {@code orientation} の評価に使う（0 は「分からない」）。
+     */
+    public com.nishiyu.enderframelib.core.css.StyleSheet buildStyleSheet(String authorCss, int rootW, int rootH) {
+        com.nishiyu.enderframelib.core.css.MediaEnvironment media =
+                com.nishiyu.enderframelib.core.css.MediaEnvironment.of(rootW, rootH)
+                        .withImportResolver(resourceTextResolver);
         com.nishiyu.enderframelib.core.css.StyleSheet sheet =
-                CssParser.parse(userAgentCss(), rootW, com.nishiyu.enderframelib.core.css.CascadeOrigin.USER_AGENT);
+                CssParser.parse(userAgentCss(), media, com.nishiyu.enderframelib.core.css.CascadeOrigin.USER_AGENT);
 
         if (authorCss != null && !authorCss.isEmpty()) {
-            com.nishiyu.enderframelib.core.css.StyleSheet authorSheet = CssParser.parse(authorCss, rootW);
+            com.nishiyu.enderframelib.core.css.StyleSheet authorSheet =
+                    CssParser.parse(authorCss, media, com.nishiyu.enderframelib.core.css.CascadeOrigin.AUTHOR);
             for (com.nishiyu.enderframelib.core.css.StyleRule rule : authorSheet.rules) {
                 rule.setOrigin(com.nishiyu.enderframelib.core.css.CascadeOrigin.AUTHOR);
             }
@@ -243,7 +255,7 @@ public class UIParser {
         }
 
         String authorCss = combinedCss.toString();
-        com.nishiyu.enderframelib.core.css.StyleSheet sheet = buildStyleSheet(authorCss, rootW);
+        com.nishiyu.enderframelib.core.css.StyleSheet sheet = buildStyleSheet(authorCss, rootW, rootH);
         HtmlNode htmlRoot = HtmlParser.parse(html == null ? "" : html);
         // <mc-slot> などのマクロは、正規表現での文字列置換ではなく DOM の部分木差し替えで展開する
         CustomTagExpander.expand(htmlRoot);
@@ -282,13 +294,16 @@ public class UIParser {
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
-        LayoutBox rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, false, effectiveState);
+        LayoutBox rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, false,
+                ComputedStyle.DEFAULT_FONT_SIZE, new StyleScope(rootW, rootH, ComputedStyle.DEFAULT_FONT_SIZE),
+                effectiveState);
 
         runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
         return rootBox;
     }
 
     public void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
+        rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH);
         LayoutContext ctx = new LayoutContext(viewport, intrinsicSizeResolver, scrollState, fonts);
         FormattingContext fmtCtx = new FormattingContext("block", "stretch", false);
@@ -318,6 +333,53 @@ public class UIParser {
     public record RestyleResult(boolean styleChanged, boolean layoutRequired) {}
 
     /**
+     * 部分木の算出値が依存する文書全体の値。
+     *
+     * @param rootFontSize ルート要素（{@code <html>}）のフォントサイズ。{@code rem} の基準
+     */
+    private record StyleScope(int viewportW, int viewportH, float rootFontSize) {
+        /** {@code <html>} の子孫では、その算出フォントサイズが rem の基準になる。 */
+        StyleScope enter(HtmlNode node, ComputedStyle computed) {
+            return "html".equalsIgnoreCase(node.tag) ? new StyleScope(viewportW, viewportH, computed.fontSizePx()) : this;
+        }
+    }
+
+    /** キャッシュした算出スタイルが、今の親・スコープのもとでも有効か。 */
+    private static boolean isStyleCacheValid(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
+        return flags != null
+                && !flags.isStyleDirty
+                && flags.computedStyle != null
+                && Float.compare(flags.cachedParentFontSize, parentFontSize) == 0
+                && Float.compare(flags.cachedRootFontSize, scope.rootFontSize()) == 0
+                && flags.cachedViewportW == scope.viewportW()
+                && flags.cachedViewportH == scope.viewportH();
+    }
+
+    private static void cacheStyle(InteractionState.StateFlags flags, Map<String, String> rawStyle,
+                                   ComputedStyle computed, float parentFontSize, StyleScope scope,
+                                   boolean hasInteractive) {
+        flags.computedStyleCache = rawStyle;
+        flags.computedStyle = computed;
+        flags.cachedParentFontSize = parentFontSize;
+        flags.cachedRootFontSize = scope.rootFontSize();
+        flags.cachedViewportW = scope.viewportW();
+        flags.cachedViewportH = scope.viewportH();
+        flags.hasInteractiveRules = hasInteractive;
+        flags.isStyleDirty = false;
+    }
+
+    /**
+     * カスケードと算出値の確定。子に渡す継承元は<b>算出</b>スタイル
+     * （{@code font-size: 2em} を子孫が親に掛け直さないよう、継承するのは解決済みの px）。
+     */
+    private static ComputedStyle computeStyle(Map<String, String> rawStyle, Map<String, String> parentStyle,
+                                              com.nishiyu.enderframelib.core.css.StyleSheet sheet,
+                                              Map<String, String> env, float parentFontSize, StyleScope scope) {
+        return StyleResolver.finalizeComputedStyle(rawStyle, sheet, env, parentStyle,
+                parentFontSize, scope.rootFontSize(), scope.viewportW(), scope.viewportH());
+    }
+
+    /**
      * 既存の {@link LayoutBox} ツリーに対して、状態が変化した部分木だけを再スタイルする。
      * 色・背景・枠線色・影・不透明度・transform など描画のみのプロパティ変化であれば
      * {@code layoutRequired == false} を返し、呼び出し側は {@code measure()} / {@code layout()} を省略できる。
@@ -329,34 +391,30 @@ public class UIParser {
         }
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
         return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, false,
-                ComputedStyle.DEFAULT_FONT_SIZE, interactionState);
+                ComputedStyle.DEFAULT_FONT_SIZE, new StyleScope(rootW, rootH, ComputedStyle.DEFAULT_FONT_SIZE),
+                interactionState);
     }
 
     private RestyleResult restyleBoxRecursive(LayoutBox box, Map<String, String> inheritedStyle,
                                               com.nishiyu.enderframelib.core.css.StyleSheet sheet,
                                               Map<String, String> env, boolean forceDirty,
-                                              float parentFontSize, InteractionState interactionState) {
+                                              float parentFontSize, StyleScope scope,
+                                              InteractionState interactionState) {
         HtmlNode node = box.node;
         InteractionState.StateFlags flags = interactionState.getOrCreate(node.getId());
-        boolean isDirty = forceDirty
-                || flags.isStyleDirty
-                || flags.computedStyle == null
-                || flags.computedStyleCache == null
-                || Float.compare(flags.cachedParentFontSize, parentFontSize) != 0;
+        boolean isDirty = forceDirty || !isStyleCacheValid(flags, parentFontSize, scope);
 
         boolean styleChanged = false;
         boolean layoutRequired = false;
-        Map<String, String> rawStyle;
         ComputedStyle computed;
 
         if (isDirty) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
-            rawStyle = styleSet.resolve(interactionState);
+            Map<String, String> rawStyle = styleSet.resolve(interactionState);
             if (node.attrs.containsKey("hidden")) {
                 rawStyle.put(CssProperty.DISPLAY, "none");
             }
-            computed = StyleResolver.finalizeComputedStyle(
-                    rawStyle, sheet, env, parentFontSize, ComputedStyle.DEFAULT_FONT_SIZE);
+            computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope);
             boolean hasInteractive = styleSet.hasInteractiveRules();
 
             ComputedStyle prevStyle = box.style;
@@ -378,23 +436,18 @@ public class UIParser {
 
             box.updateStyle(computed);
             box.hasInteractiveRules = hasInteractive;
-
-            flags.computedStyleCache = rawStyle;
-            flags.computedStyle = computed;
-            flags.cachedParentFontSize = parentFontSize;
-            flags.hasInteractiveRules = hasInteractive;
-            flags.isStyleDirty = false;
+            cacheStyle(flags, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
-            rawStyle = flags.computedStyleCache;
             computed = flags.computedStyle;
         }
 
         // 現在のノードが再スタイル対象だった場合のみ、子孫に forceDirty を伝播して部分木を再スタイルする
         boolean childForceDirty = isDirty;
         float nextParentFontSize = computed.fontSizePx();
+        StyleScope childScope = scope.enter(node, computed);
         for (LayoutBox child : box.children) {
-            RestyleResult childRes = restyleBoxRecursive(
-                    child, rawStyle, sheet, env, childForceDirty, nextParentFontSize, interactionState);
+            RestyleResult childRes = restyleBoxRecursive(child, computed.asMap(), sheet, env,
+                    childForceDirty, nextParentFontSize, childScope, interactionState);
             styleChanged |= childRes.styleChanged();
             layoutRequired |= childRes.layoutRequired();
         }
@@ -414,52 +467,40 @@ public class UIParser {
                                      Map<String, String> env, boolean forceDirty,
                                      InteractionState interactionState) {
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
+        // ビューポートが分からない呼び出し（ヘッドレステスト）では vw / vh のフォントサイズは 0 で解かれる
         return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty,
-                ComputedStyle.DEFAULT_FONT_SIZE, effectiveState);
+                ComputedStyle.DEFAULT_FONT_SIZE, new StyleScope(0, 0, ComputedStyle.DEFAULT_FONT_SIZE), effectiveState);
     }
 
     private LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
                                       com.nishiyu.enderframelib.core.css.StyleSheet sheet,
                                       Map<String, String> env, boolean forceDirty,
-                                      float parentFontSize, InteractionState interactionState) {
+                                      float parentFontSize, StyleScope scope, InteractionState interactionState) {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node.getId()) : null;
-        boolean needsRestyle = forceDirty
-                || flags == null
-                || flags.isStyleDirty
-                || flags.computedStyle == null
-                || flags.computedStyleCache == null
-                || Float.compare(flags.cachedParentFontSize, parentFontSize) != 0;
+        boolean needsRestyle = forceDirty || !isStyleCacheValid(flags, parentFontSize, scope);
 
-        Map<String, String> rawStyle;
         ComputedStyle computed;
         boolean hasInteractive;
 
         if (needsRestyle) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
-            rawStyle = interactionState != null
+            Map<String, String> rawStyle = interactionState != null
                     ? styleSet.resolve(interactionState)
                     : styleSet.resolve(ElementState.NONE);
             if (node.attrs.containsKey("hidden")) {
                 rawStyle.put(CssProperty.DISPLAY, "none");
             }
 
-            // em は要素自身、rem はルートのフォントサイズが基準になるよう親の値を引き継ぐ
-            computed = StyleResolver.finalizeComputedStyle(
-                    rawStyle, sheet, env, parentFontSize, ComputedStyle.DEFAULT_FONT_SIZE);
+            computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope);
             hasInteractive = styleSet.hasInteractiveRules();
 
-            if (flags != null) {
-                flags.computedStyleCache = rawStyle;
-                flags.computedStyle = computed;
-                flags.cachedParentFontSize = parentFontSize;
-                flags.hasInteractiveRules = hasInteractive;
-                flags.isStyleDirty = false;
-            }
+            if (flags != null) cacheStyle(flags, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
-            rawStyle = flags.computedStyleCache;
             computed = flags.computedStyle;
             hasInteractive = flags.hasInteractiveRules;
         }
+        Map<String, String> childInherited = computed.asMap();
+        StyleScope childScope = scope.enter(node, computed);
 
         LayoutBox box = new LayoutBox(node, computed);
         box.hasInteractiveRules = hasInteractive;
@@ -469,7 +510,7 @@ public class UIParser {
 
         HtmlNode beforeNode = createPseudoElement(node, sheet, true, interactionState);
         if (beforeNode != null) {
-            box.children.add(buildLayoutTree(beforeNode, rawStyle, sheet, env, true, computed.fontSizePx(), interactionState));
+            box.addChild(buildLayoutTree(beforeNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
         }
 
         if (!"textarea".equalsIgnoreCase(node.tag)) {
@@ -478,15 +519,15 @@ public class UIParser {
                     : node.attrs.containsKey("open");
             boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
             for (HtmlNode child : node.children) {
-                if (child.tag.equals("#text") && child.text.trim().isEmpty()) continue;
+                if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
-                box.children.add(buildLayoutTree(child, rawStyle, sheet, env, childForceDirty, computed.fontSizePx(), interactionState));
+                box.addChild(buildLayoutTree(child, childInherited, sheet, env, childForceDirty, computed.fontSizePx(), childScope, interactionState));
             }
         }
 
         HtmlNode afterNode = createPseudoElement(node, sheet, false, interactionState);
         if (afterNode != null) {
-            box.children.add(buildLayoutTree(afterNode, rawStyle, sheet, env, true, computed.fontSizePx(), interactionState));
+            box.addChild(buildLayoutTree(afterNode, childInherited, sheet, env, true, computed.fontSizePx(), childScope, interactionState));
         }
 
         return box;

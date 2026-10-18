@@ -25,8 +25,14 @@ public final class CssTokenizer {
      * 1 つの波括弧ブロック。
      * prelude は波括弧の前の部分（セレクタリスト、または @media などのアットルール）、
      * body は波括弧の中身（ネストしたブロックを含み得る生テキスト）。
+     * 波括弧を持たない文のアットルール（{@code @import ...;}）は body が null。
      */
     public record Block(String prelude, String body) {
+        /** {@code @import} のように {@code ;} で終わるアットルールなら true。 */
+        public boolean isStatement() {
+            return body == null;
+        }
+
         /** @media などのアットルールなら true。 */
         public boolean isAtRule() {
             return prelude.startsWith("@");
@@ -49,7 +55,10 @@ public final class CssTokenizer {
         }
     }
 
-    /** トップレベルのブロック列に切り出す。波括弧を伴わない @import 等は捨てる。 */
+    /**
+     * トップレベルのブロック列に切り出す。波括弧を伴わないアットルールは {@code @import} だけを
+     * 文として残し（body が null の {@link Block}）、{@code @charset} などは捨てる。
+     */
     public static List<Block> tokenize(String css) {
         List<Block> blocks = new ArrayList<>();
         if (css == null || css.isEmpty()) return blocks;
@@ -67,7 +76,9 @@ public final class CssTokenizer {
                 prelude.append(src, i, end);
                 i = end;
             } else if (c == ';') {
-                // 波括弧を伴わないアットルール（@import / @charset）や迷子の宣言は捨てる
+                // @import は文として渡す。それ以外の波括弧を伴わないアットルール（@charset）や迷子の宣言は捨てる
+                String statement = prelude.toString().trim();
+                if (statement.regionMatches(true, 0, "@import", 0, 7)) blocks.add(new Block(statement, null));
                 prelude.setLength(0);
                 i++;
             } else if (c == '{') {

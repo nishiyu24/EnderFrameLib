@@ -6,7 +6,11 @@ import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.event.DomEvent;
+import com.nishiyu.enderframelib.core.event.EventDispatcher;
+import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.TextSelection;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.screens.Screen;
@@ -68,7 +72,20 @@ public class InteractionHandler {
         ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
         UIElement clicked = hit != null ? hit.element() : null;
 
-        // 2. scene 要素
+        // 2. スクロールバーのトラッククリック・サムドラッグ
+        if (button == 0 && clicked != null) {
+            String elId = clicked.id();
+            if (elId.endsWith("_sb_vt") || elId.endsWith("_sb_ht")) {
+                ClientWebManager.handleScrollbarClick(sessionId, clicked, webX, webY);
+                return true;
+            } else if (elId.endsWith("_sb_v") || elId.endsWith("_sb_h")) {
+                // スクロールバーのサムドラッグ開始
+                ClientScreenInteractionManager.setDraggingId(sessionId, elId);
+                return true;
+            }
+        }
+
+        // 3. scene 要素
         if (clicked != null && clicked.type() == ElementType.SCENE) {
             if (unfocusInputCallback != null) unfocusInputCallback.run();
             String baseId = clicked.baseId();
@@ -81,7 +98,7 @@ public class InteractionHandler {
             return true;
         }
 
-        // 3. textarea 要素
+        // 4. textarea 要素
         if (clicked != null && clicked.type() == ElementType.TEXTAREA && button == 0) {
             if (unfocusInputCallback != null) unfocusInputCallback.run();
             String baseId = clicked.baseId();
@@ -91,7 +108,7 @@ public class InteractionHandler {
             return true;
         }
 
-        // 4. input 要素
+        // 5. input 要素
         if (clicked != null && clicked.type() == ElementType.INPUT && button == 0) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
@@ -104,6 +121,15 @@ public class InteractionHandler {
             if (unfocusInputCallback != null) unfocusInputCallback.run();
         }
 
+        // 6. テキスト要素のクリックによるテキスト選択開始
+        if (clicked != null && clicked.type() == ElementType.TEXT && button == 0) {
+            TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+            if (sel != null && clicked.text() != null) {
+                int charOffset = estimateCharOffset(font, clicked.text(), hit.localX());
+                sel.startSelection(clicked.baseId(), charOffset);
+            }
+        }
+
         if (clicked != null) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
@@ -111,27 +137,6 @@ public class InteractionHandler {
             ClientWebManager.setActivePressedId(sessionId, clicked.id());
 
             HtmlNode domNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-
-            // 5. details/summary 要素
-            HtmlNode summaryNode = findAncestorByTag(domNode, "summary");
-            if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag) && button == 0) {
-                ClientScreenInteractionManager.playElementSound(clicked);
-                ClientWebManager.toggleNodeAttributeLocally(sessionId, summaryNode.parent.getId(), "open");
-                return true;
-            }
-
-            // 6. label[for] 要素
-            HtmlNode labelNode = findAncestorByTag(domNode, "label");
-            if (labelNode != null && labelNode.attrs.containsKey("for") && button == 0) {
-                String targetId = labelNode.attrs.get("for");
-                UIElement targetEl = ClientWebManager.getElementById(sessionId, targetId);
-                if (targetEl != null) {
-                    double cx = targetEl.x() + targetEl.width() / 2.0;
-                    double cy = targetEl.y() + targetEl.height() / 2.0;
-                    return handleMouseClicked(screen, font, cx, cy, 0, textareaEditor, selectWidget, dragDropController,
-                            focusNavigator, focusInputCallback, unfocusInputCallback, onInputChanged, onWebAction);
-                }
-            }
 
             // 7. select 要素
             boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
@@ -141,20 +146,13 @@ public class InteractionHandler {
                 return true;
             }
 
-            // 8. range / toggle / checkbox 要素
-            if ((clicked.type() == ElementType.RANGE || clicked.type() == ElementType.TOGGLE
-                    || clicked.type() == ElementType.CHECKBOX || clicked.type() == ElementType.RADIO) && button == 0) {
+            // 8. range スライダー要素
+            if (clicked.type() == ElementType.RANGE && button == 0) {
                 ClientScreenInteractionManager.handleClick(sessionId, webX, webY);
-                if (clicked.type() == ElementType.RANGE) {
-                    UIElement updated = ClientWebManager.getElementById(sessionId, baseId);
-                    if (updated != null && updated.text() != null) {
-                        String val = updated.text().split(":")[0];
-                        commitValue(baseId, val, onInputChanged);
-                    }
-                } else {
-                    HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-                    String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
-                    commitValue(baseId, checkedStr, onInputChanged);
+                UIElement updated = ClientWebManager.getElementById(sessionId, baseId);
+                if (updated != null && updated.text() != null) {
+                    String val = updated.text().split(":")[0];
+                    commitValue(baseId, val, onInputChanged);
                 }
                 return true;
             }
@@ -165,27 +163,93 @@ public class InteractionHandler {
                 dragDropController.startDrag(baseId, label);
             }
 
-            // 10. onclick / form submit
-            ClientScreenInteractionManager.handleClick(sessionId, webX, webY);
-            String action = clicked.events() != null ? clicked.events().get("onclick") : null;
-            if ((action == null || action.equals(baseId)) && domNode != null && "button".equalsIgnoreCase(domNode.tag)) {
-                String btnType = domNode.attrs.getOrDefault("type", "").toLowerCase(Locale.ROOT);
-                HtmlNode parentForm = findAncestorByTag(domNode, "form");
-                if (parentForm != null) {
-                    if ("submit".equals(btnType) && parentForm.attrs.containsKey("onsubmit")) {
-                        action = parentForm.attrs.get("onsubmit");
-                    } else if ("reset".equals(btnType) && parentForm.attrs.containsKey("onreset")) {
-                        action = parentForm.attrs.get("onreset");
+            // 10. W3C DOM EventDispatcher によるバブリングイベントディスパッチと標準既定動作
+            ClientScreenInteractionManager.playElementSound(clicked);
+
+            boolean[] actionInvoked = new boolean[]{false};
+
+            if (domNode != null) {
+                DomEvent clickEvent = DomEvent.click(hit.localX(), hit.localY(), button);
+                EventDispatcher.dispatchEvent(domNode, clickEvent, (targetNode, action) -> {
+                    actionInvoked[0] = true;
+                    if (onWebAction != null) {
+                        onWebAction.onAction(action, clicked, button);
                     }
+                    ClientScreenInteractionManager.triggerLocalEvent(
+                            sessionId, targetNode.getId(), "onclick", action,
+                            targetNode.getId() + "|" + String.format(Locale.US, "%.1f,%.1f", hit.localX(), hit.localY())
+                    );
+                }, (evt) -> {
+                    StandardDefaultActions.execute(evt, new StandardDefaultActions.Context() {
+                        @Override
+                        public void onAttributeChanged(HtmlNode node, String attrName, String attrValue) {
+                            if (attrValue == null) {
+                                ClientWebManager.updateNodeAttributeLocally(sessionId, node.getId(), attrName, null, true);
+                            } else {
+                                ClientWebManager.updateNodeAttributeLocally(sessionId, node.getId(), attrName, attrValue, false);
+                            }
+                            if ("checked".equalsIgnoreCase(attrName)) {
+                                commitValue(node.getId(), Boolean.toString(attrValue != null), onInputChanged);
+                            }
+                        }
+
+                        @Override
+                        public void dispatchClickTo(HtmlNode target) {
+                            if (target != null) {
+                                UIElement targetEl = ClientWebManager.getElementById(sessionId, target.getId());
+                                if (targetEl != null) {
+                                    double cx = targetEl.x() + targetEl.width() / 2.0;
+                                    double cy = targetEl.y() + targetEl.height() / 2.0;
+                                    handleMouseClicked(screen, font, cx, cy, 0, textareaEditor, selectWidget, dragDropController,
+                                            focusNavigator, focusInputCallback, unfocusInputCallback, onInputChanged, onWebAction);
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void navigateTo(String href) {
+                            if (onWebAction != null) {
+                                onWebAction.onAction(href, clicked, button);
+                            }
+                        }
+
+                        @Override
+                        public void executeFormAction(HtmlNode form, String eventType) {
+                            String act = form.attrs.get(eventType);
+                            if (act != null && onWebAction != null) {
+                                onWebAction.onAction(act, clicked, button);
+                            }
+                        }
+                    });
+                });
+            } else {
+                // フォールバック: DOM ノードが存在しない要素
+                String action = clicked.events() != null ? clicked.events().get("onclick") : null;
+                if (action != null && onWebAction != null) {
+                    onWebAction.onAction(action, clicked, button);
+                    actionInvoked[0] = true;
                 }
             }
 
-            if (action != null && onWebAction != null) {
-                onWebAction.onAction(action, clicked, button);
+            if (actionInvoked[0]) {
                 return true;
             }
         }
         return false;
+    }
+
+    public static int estimateCharOffset(Font font, String text, double localX) {
+        if (text == null || text.isEmpty() || font == null || localX <= 0) return 0;
+        int len = text.length();
+        int prevW = 0;
+        for (int i = 1; i <= len; i++) {
+            int curW = font.width(text.substring(0, i));
+            if (localX < (prevW + curW) / 2.0) {
+                return i - 1;
+            }
+            prevW = curW;
+        }
+        return len;
     }
 
     private void commitValue(String baseId, String value, BiConsumer<String, String> onInputChanged) {

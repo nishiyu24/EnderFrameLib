@@ -15,4 +15,8 @@ public class ScrollState {
     public void setScroll(String nodeId, int x, int y) {
         scrollOffsets.put(nodeId, new int[]{x, y});
     }
+
+    public void clear() {
+        scrollOffsets.clear();
+    }
 }

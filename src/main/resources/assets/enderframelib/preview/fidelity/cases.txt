@@ -1,0 +1,136 @@
+# 忠実度コーパスの索引。1 行 1 ケース（空行と # はコメント）。
+# ヘッドレステスト（WebFidelityTest）とブラウザ側（fidelity-dump.html）が
+# 同じ一覧を読むため、ケースの追加はここだけに書く。
+
+# --- block
+block-stacking
+box-sizing
+margin-collapse
+block-gap
+percent-height
+percent-margin
+percent-margin-narrow
+block-auto-margin
+block-min-max-width
+block-min-max-height
+block-negative-margin
+margin-collapse-bottom
+margin-collapse-empty
+margin-collapse-bfc
+display-flow-root
+display-contents
+anonymous-block
+padding-percent
+border-box-sizing
+intrinsic-width-keywords
+calc-length
+em-inheritance
+rem-length
+vw-font-size
+vw-vh-length
+css-wide-keywords
+float-left
+float-right
+float-clear
+float-containment
+float-wrap
+float-bfc-avoid
+
+# --- inline
+line-height-length
+forced-line-breaks
+white-space-pre
+inline-block-row
+inline-block-wrap
+inline-block-margin
+inline-text-align
+inline-text-indent
+vertical-align-top-bottom
+vertical-align-middle
+vertical-align-length
+line-height-strut
+inline-nowrap-overflow
+inline-flex
+
+# --- flex
+flex-grow
+flex-basis-fixed
+flex-column-stretch
+flex-justify-content
+flex-align-items
+flex-align-self
+flex-align-baseline
+flex-wrap
+flex-wrap-reverse
+flex-align-content
+flex-row-reverse
+flex-column-reverse
+flex-order
+flex-auto-margin
+flex-shrink
+flex-grow-ratio
+flex-max-clamp
+flex-gap
+flex-basis-percent
+flex-min-auto
+flex-column-justify
+flex-column-overflow
+
+# --- grid
+grid-minmax
+grid-fr
+grid-auto-placement
+grid-gap
+grid-span
+grid-line-placement
+grid-areas
+grid-named-lines
+grid-repeat-auto-fill
+grid-item-alignment
+grid-justify-content
+grid-auto-flow-column
+grid-dense
+grid-auto-tracks
+
+# --- table
+table-fixed-widths
+table-auto-width
+table-layout-fixed
+table-row-height
+table-colspan
+table-rowspan
+table-border-collapse
+table-anonymous
+
+# --- list
+list-basic
+list-nested
+list-ordered
+definition-list
+
+# --- position
+abs-containing-block
+position-relative
+position-abs-insets
+position-abs-percent
+position-abs-static
+position-abs-shrink
+position-fixed
+position-sticky
+
+# --- overflow
+overflow-hidden-clip
+overflow-size
+
+# --- z-order
+z-dom-order
+z-index-basic
+z-stacking-context
+z-negative
+z-negative-in-context
+z-positioned-over-flow
+z-index-unpositioned
+z-flex-item
+z-opacity-context
+z-transform-context
+z-float-over-block

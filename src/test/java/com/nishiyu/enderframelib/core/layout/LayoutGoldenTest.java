@@ -184,7 +184,8 @@ public class LayoutGoldenTest {
     }
 
     @Test
-    public void testRowGapSeparatesBlockChildren() {
+    public void testRowGapDoesNotApplyToBlockChildren() {
+        // CSS では block コンテナに gap / row-gap は効かない
         LayoutBox parent = resolvedBox("div", "display", "block", "gap", "6px", "width", "200px");
         LayoutBox a = resolvedBox("div", "display", "block", "height", "20px");
         LayoutBox b = resolvedBox("div", "display", "block", "height", "20px");
@@ -195,23 +196,23 @@ public class LayoutGoldenTest {
         parent.measure(800, 600, blockRoot(), ctx);
         parent.layout(0, 0, 800, 600, ctx);
 
-        assertEquals(26, b.y);
+        assertEquals(20, b.y);
     }
 
     @Test
-    public void testBorderBoxIsTheDefault() {
-        // box-sizing の既定は border-box。padding は width の内側に入る
-        LayoutBox borderBox = box("div", style("display", "block", "width", "100px",
+    public void testContentBoxIsTheDefault() {
+        // box-sizing の既定は content-box。padding は width の外側に足される
+        LayoutBox defaultBox = box("div", style("display", "block", "width", "100px",
                 "height", "40px", "padding-left", "10px", "padding-right", "10px"));
-        LayoutBox contentBox = box("div", style("display", "block", "box-sizing", "content-box",
+        LayoutBox borderBox = box("div", style("display", "block", "box-sizing", "border-box",
                 "width", "100px", "height", "40px", "padding-left", "10px", "padding-right", "10px"));
 
         LayoutContext ctx = newContext();
+        defaultBox.measure(800, 600, blockRoot(), ctx);
         borderBox.measure(800, 600, blockRoot(), ctx);
-        contentBox.measure(800, 600, blockRoot(), ctx);
 
+        assertEquals(120, defaultBox.w);
         assertEquals(100, borderBox.w);
-        assertEquals(120, contentBox.w);
     }
 
     @Test

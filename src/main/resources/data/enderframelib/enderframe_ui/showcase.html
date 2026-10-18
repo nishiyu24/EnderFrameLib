@@ -1,16 +1,19 @@
 <link rel="stylesheet" href="enderframelib:theme/dark.css">
 <style>
-    /* すべての要素にborder-boxを適用してサイズ計算を安定させる */
+    /* Web Standards Suite Stylesheet */
     * {
         box-sizing: border-box;
     }
     .dashboard {
         display: flex;
         flex-direction: column;
-        padding: 10px; /* 少しパディングを減らす */
+        padding: 10px;
         width: 100%;
         height: 100%;
-        /* gapの代わりに子要素のmarginで余白を作るのがEnderFrameLibでは確実 */
+        gap: 10px;
+        background-color: #181825;
+        color: #cdd6f4;
+        font-family: sans-serif;
     }
     .header-bar {
         display: flex;
@@ -21,24 +24,65 @@
         border: 1px solid #89b4fa;
         border-radius: 8px;
         padding: 8px 14px;
-        margin-bottom: 10px; /* gapの代わり */
-        width: 100%; /* 明示的な幅指定 */
-    }
-    .flex-main {
-        /* Gridの代わりにFlexを使用し、安定性を向上 */
-        display: flex;
-        flex-direction: row;
         width: 100%;
-        height: 100%; /* flex: 1 の代わりに高さを埋める */
-        /* gap: 10px; */
+        gap: 12px;
+    }
+    .web-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
     }
     .col {
-        /* 各カラムに均等な幅を与え、間にマージンを取る */
         display: flex;
         flex-direction: column;
-        width: 33.33%;
         height: 100%;
-        padding: 0 5px; /* カラム間の隙間 */
+        gap: 10px;
+        min-height: 0;
+    }
+    .panel, .mc-panel {
+        background-color: #1e1e2e;
+        border: 1px solid #45475a;
+        border-radius: 6px;
+        padding: 12px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 8px;
+        min-height: 0;
+    }
+    .card, .mc-card {
+        background-color: #313244;
+        border: 1px solid #45475a;
+        border-radius: 4px;
+        padding: 8px;
+    }
+    .title, .mc-title {
+        color: #89b4fa;
+        font-weight: bold;
+        font-size: 1.05rem;
+    }
+    .btn, .mc-btn {
+        background-color: #313244;
+        color: #cdd6f4;
+        border: 1px solid #585b70;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+        transition: 0.12s;
+    }
+    .btn:hover, .mc-btn:hover {
+        background-color: #45475a;
+        color: #ffffff;
+    }
+    .btn-primary, .mc-btn-primary {
+        background-color: #89b4fa;
+        color: #11111b;
+        border: 1px solid #b4befe;
+        font-weight: bold;
     }
     .badge {
         background-color: #45475a;
@@ -47,63 +91,107 @@
         padding: 2px 8px;
         font-size: 0.85rem;
     }
+    .badge-std {
+        background-color: rgba(137, 180, 250, 0.2);
+        color: #89b4fa;
+        border: 1px solid #89b4fa;
+    }
     .sdf-clip-box {
-        height: 76px;
-        border-radius: 10px;
+        height: 72px;
+        border-radius: 8px;
         border: 1px solid #585b70;
         background-color: #181825;
         overflow: auto;
         padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
     }
     .row-between {
         display: flex;
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 4px;
         width: 100%;
     }
-    .mc-panel-custom {
-        /* mc-panelに100%の幅を持たせる */
-        width: 100%;
+    .avatar-card {
+        width: 48px;
+        height: 64px;
+        background: linear-gradient(180deg, #313244, #181825);
+        border-radius: 6px;
+        border: 1px solid #45475a;
         display: flex;
         flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+    .canvas-viewport {
+        width: 100%;
+        height: 135px;
+        background: radial-gradient(circle at center, #313244, #11111b);
+        border: 1px solid #585b70;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
     }
 </style>
 
 <div class="dashboard" data-channel="test_channel">
-    <!-- 1. ヘッダー -->
+    <!-- 1. ヘッダー (Flexbox gap & W3C Standards Badge) -->
     <div class="header-bar" id="header_panel">
-        <div style="display:flex; flex-direction:row; align-items:center;">
-            <img src="item:minecraft:ender_eye" style="width:20px; height:20px; margin-right: 8px;" />
-            <span id="page_title" style="font-size:1.2rem; font-weight:bold; color:#89b4fa;">EnderFrameLib Test Suite</span>
+        <div style="display:flex; flex-direction:row; align-items:center; gap:8px;">
+            <div style="width:20px; height:20px; border-radius:50%; background:radial-gradient(circle at center, #89b4fa, #1e1e2e); border:1px solid #89b4fa; display:flex; align-items:center; justify-content:center;">
+                <div style="width:8px; height:8px; border-radius:50%; background-color:#a6e3a1;"></div>
+            </div>
+            <span id="page_title" style="font-size:1.2rem; font-weight:bold; color:#89b4fa;">EnderFrameLib Web Standards Suite</span>
         </div>
-        <div style="display:flex; flex-direction:row; align-items:center;">
-            <span class="badge" style="margin-right: 8px;">FPS: {{@fps}}</span>
-            <span class="badge" style="margin-right: 8px;">Pos: {{@x}}, {{@y}}, {{@z}}</span>
+        <div style="display:flex; flex-direction:row; align-items:center; gap:8px;">
+            <span class="badge badge-std">W3C Grid &amp; Flex</span>
+            <span class="badge">FPS: {{@fps}}</span>
+            <span class="badge">Pos: {{@x}}, {{@y}}, {{@z}}</span>
             <span class="badge">Time: {{@time}}</span>
         </div>
     </div>
 
-    <!-- 2. メイン3カラム (Flexboxに変更) -->
-    <div class="flex-main">
+    <!-- 2. CSS Grid メイン 3 カラム -->
+    <div class="web-grid">
 
-        <!-- 左カラム -->
+        <!-- 左カラム: W3C Layout & DOM Standards -->
         <div class="col">
-            <div class="mc-panel mc-panel-custom">
-                <div class="mc-title">1. Player & PubSub Sync</div>
+            <div class="panel">
+                <div class="title">1. Layout &amp; Semantic DOM</div>
 
-                <div style="display:flex; flex-direction:row; align-items:center; margin-bottom: 8px;">
-                    <mc-entity entity="@self" style="width:48px; height:64px; background-color:#11111b; border-radius:6px; border:1px solid #45475a; margin-right: 10px;" />
-                    <div style="display:flex; flex-direction:column; width: 100%;">
-                        <span style="margin-bottom: 4px;">Player: <b>{{@player_name}}</b></span>
-                        <mc-bar value="{{@hp}}" max="{{@max_hp}}" color="#f38ba8" label="HP: {{@hp}} / {{@max_hp}}" style="width:100%; margin-bottom: 4px;" />
+                <!-- W3C Semantic <details> & <summary> -->
+                <details open class="card">
+                    <summary style="color:#89b4fa; cursor:pointer;">Semantic Details/Summary</summary>
+                    <div style="font-size:0.8rem; color:#a6adc8; margin-top:4px;">
+                        Interactive toggle element verified by W3C DOM standards.
+                    </div>
+                </details>
+
+                <!-- Profile Avatar & Progress Bar (Web Standard HTML) -->
+                <div style="display:flex; flex-direction:row; align-items:center; gap:10px;">
+                    <div class="avatar-card">
+                        <div style="width:24px; height:24px; border-radius:50%; background-color:#89b4fa;"></div>
+                        <div style="width:32px; height:18px; border-radius:4px; background-color:#45475a;"></div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; width:100%; gap:4px;">
+                        <span>Player: <b>{{@player_name}}</b></span>
+                        <div style="width:100%; height:14px; background-color:#11111b; border:1px solid #45475a; border-radius:4px; overflow:hidden;">
+                            <div style="width:80%; height:100%; background:linear-gradient(to right, #f38ba8, #eba0ac); display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#11111b; font-weight:bold;">
+                                HP: {{@hp}} / {{@max_hp}}
+                            </div>
+                        </div>
                         <span>Biome: <b style="color:#f9e2af;">{{@biome}}</b></span>
                     </div>
                 </div>
 
-                <!-- PubSub & パッチ確認カード -->
-                <div class="mc-card" style="display:flex; flex-direction:column; margin-bottom: 8px;">
+                <!-- PubSub & Data Binding Sync Card -->
+                <div class="card" style="display:flex; flex-direction:column; gap:4px;">
                     <div class="row-between">
                         <span>PubSub Msg:</span>
                         <b id="pubsub_msg" data-bind="text:msg" style="color:#a6e3a1;">Waiting...</b>
@@ -118,68 +206,100 @@
                     </div>
                 </div>
 
-                <!-- SDF角丸クリッピング & スクロール検証 -->
-                <div class="mc-title" style="margin-top:2px; font-size:0.95rem;">SDF Rounded Clip</div>
-                <div class="sdf-clip-box" style="width: 100%;">
-                    <div style="background:linear-gradient(to right, #f38ba8, #89b4fa); padding:6px; border-radius:6px; margin-bottom:4px; color:#11111b; font-weight:bold;">
-                        Gradient Bar 1
+                <!-- CSS Overflow & SDF Rounded Clip -->
+                <div class="title" style="font-size:0.95rem;">SDF Rounded Clip &amp; Scroll</div>
+                <div class="sdf-clip-box" style="width:100%;">
+                    <div style="background:linear-gradient(to right, #f38ba8, #89b4fa); padding:4px 6px; border-radius:6px; color:#11111b; font-weight:bold;">
+                        CSS Linear Gradient
                     </div>
-                    <div style="background-color:#313244; padding:6px; border-radius:6px; margin-bottom:4px;">
-                        Scroll item 2
+                    <div style="background-color:#313244; padding:4px 6px; border-radius:6px;">
+                        Scroll item 2 (Flex item)
                     </div>
-                    <div style="background-color:#313244; padding:6px; border-radius:6px; margin-bottom:4px;">
-                        Scroll item 3
+                    <div style="background-color:#313244; padding:4px 6px; border-radius:6px;">
+                        Scroll item 3 (Flex item)
                     </div>
-                    <div style="background-color:#45475a; padding:6px; border-radius:6px;">
-                        End of list
+                    <div style="background-color:#45475a; padding:4px 6px; border-radius:6px;">
+                        End of overflow content
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 中央カラム -->
+        <!-- 中央カラム: Visual Canvas, Swatches & Typography -->
         <div class="col">
-            <div class="mc-panel mc-panel-custom">
-                <div class="mc-title">2. 3D Scene</div>
+            <div class="panel">
+                <div class="title">2. Canvas &amp; Typography</div>
 
-                <mc-scene id="demo_scene"
-                          auto-rotate="true"
-                          data-blocks="0,0,0:minecraft:iron_block; 1,0,0:minecraft:iron_block; 0,0,1:minecraft:iron_block; 1,0,1:minecraft:iron_block; 0,1,0:minecraft:glass; 1,1,0:minecraft:redstone_lamp; 0,1,1:minecraft:Copper_bulb; 1,1,1:minecraft:blast_furnace; 0,2,0:minecraft:hopper"
-                          style="width:100%; height:145px; background-color:#11111b; border:1px solid #585b70; border-radius:8px; margin-bottom: 8px;" />
+                <div id="demo_scene" class="canvas-viewport">
+                    <div style="font-size:0.95rem; font-weight:bold; color:#89b4fa;">Canvas / Viewport Area</div>
+                    <div style="font-size:0.8rem; color:#a6adc8;">Standard Element Benchmark</div>
+                    <div style="display:flex; gap:6px;">
+                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #89b4fa;">X: 0</span>
+                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #a6e3a1;">Y: 0</span>
+                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #f9e2af;">Z: 0</span>
+                    </div>
+                </div>
 
-                <div class="mc-title" style="font-size:0.95rem;">Fluids & Items</div>
-                <div style="display:flex; flex-direction:row; justify-content:space-evenly; align-items:center; background-color:#181825; padding:8px; border-radius:6px; border:1px solid #45475a; width: 100%;">
-                    <mc-fluid fluid="minecraft:water" style="width:32px; height:32px; border-radius:6px; border:1px solid #89b4fa;" />
-                    <mc-fluid fluid="minecraft:lava" style="width:32px; height:32px; border-radius:6px; border:1px solid #fab387;" />
-                    <img src="item:minecraft:diamond_pickaxe" title="Custom Tooltip:\nDiamond Pickaxe" style="width:28px; height:28px;" />
-                    <img src="item:minecraft:golden_apple*16" style="width:28px; height:28px;" />
-                    <img src="effect:minecraft:speed" title="Speed Effect Icon" style="width:24px; height:24px;" />
+                <div class="title" style="font-size:0.95rem;">Color Swatches &amp; Palettes</div>
+                <div style="display:flex; flex-direction:row; justify-content:space-evenly; align-items:center; background-color:#181825; padding:6px; border-radius:6px; border:1px solid #45475a; width:100%; gap:6px;">
+                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #89b4fa; background:linear-gradient(135deg, #3b82f6, #1d4ed8);" title="Ocean Blue"></div>
+                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #fab387; background:linear-gradient(135deg, #f97316, #c2410c);" title="Magma Orange"></div>
+                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #a6e3a1; background:linear-gradient(135deg, #22c55e, #15803d);" title="Forest Green"></div>
+                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #cba6f7; background:linear-gradient(135deg, #a855f7, #7e22ce);" title="Violet Purple"></div>
+                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #f38ba8; background:linear-gradient(135deg, #f43f5e, #be123c);" title="Rose Red"></div>
+                </div>
+
+                <!-- Typography & Text Overflow Ellipsis -->
+                <div class="title" style="font-size:0.95rem;">Inline &amp; Text Standards</div>
+                <div class="card" style="display:flex; flex-direction:column; gap:4px; font-size:0.85rem;">
+                    <div>Style: <b>Bold</b>, <i>Italic</i>, <code>CSS Grid</code></div>
+                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; color:#a6adc8;" title="CSS text-overflow ellipsis verification">
+                        Ellipsis: Demonstrating standard text-overflow truncation behavior in EnderFrameLib
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 右カラム -->
+        <!-- 右カラム: W3C Form Controls & Interaction -->
         <div class="col">
-            <div class="mc-panel mc-panel-custom">
-                <div class="mc-title">3. Interactive Inputs</div>
+            <div class="panel">
+                <div class="title">3. Forms &amp; DOM Events</div>
 
-                <div style="display:flex; flex-direction:row; align-items:center; margin-bottom: 8px; width: 100%;">
-                    <input id="test_input" type="text" placeholder="Type text here..." style="width: 130px; margin-right: 6px;" />
-                    <button class="mc-btn mc-btn-primary" onclick="server:test_click:hello">Send RPC</button>
+                <!-- Text Input & RPC Action -->
+                <div style="display:flex; flex-direction:row; align-items:center; gap:6px; width:100%;">
+                    <input id="test_input" type="text" placeholder="Type text here..." style="flex:1; min-width:0;" />
+                    <button class="btn btn-primary" onclick="server:test_click:hello">Send RPC</button>
                 </div>
 
-                <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; margin-bottom: 8px; width: 100%;">
-                    <select id="mode_select" style="width:100px;">
+                <!-- Select, Checkbox with <label>, Range Slider -->
+                <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; gap:6px; width:100%;">
+                    <select id="mode_select" style="width:95px;">
                         <option value="normal">Mode: Normal</option>
                         <option value="turbo">Mode: Turbo</option>
                         <option value="eco">Mode: Eco</option>
                     </select>
-                    <input id="test_check" type="checkbox" checked="true" />
-                    <input id="test_range" type="range" min="0" max="100" value="75" style="width:60px;" />
+                    <label for="test_check" style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.85rem;">
+                        <input id="test_check" type="checkbox" checked="true" />
+                        <span>Sync</span>
+                    </label>
+                    <input id="test_range" type="range" min="0" max="100" value="75" style="width:50px;" />
                 </div>
 
-                <div class="mc-title" style="font-size:0.95rem;">Lua Code Editor</div>
-                <textarea id="code_editor" data-syntax="lua" data-line-numbers="true" style="width:100%; height:115px; background-color:#11111b; color:#cdd6f4; border-radius:6px;">-- Click to edit!
+                <!-- Exclusive Radio Button Group (W3C Standard) -->
+                <fieldset style="border:1px solid #45475a; border-radius:6px; padding:4px 8px; display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
+                    <legend style="font-size:0.75rem; color:#89b4fa; padding:0 4px;">Exclusive Radio</legend>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.82rem;">
+                        <input type="radio" name="profile" value="standard" checked="true" />
+                        <span>Standard</span>
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.82rem;">
+                        <input type="radio" name="profile" value="strict" />
+                        <span>Strict</span>
+                    </label>
+                </fieldset>
+
+                <div class="title" style="font-size:0.95rem;">Lua Code Editor</div>
+                <textarea id="code_editor" data-syntax="lua" data-line-numbers="true" style="width:100%; height:90px; background-color:#11111b; color:#cdd6f4; border-radius:6px;">-- Click to edit!
 local power = 100
 if power < 200 then
   print("System Online")

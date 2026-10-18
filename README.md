@@ -214,12 +214,19 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
 `object-fit` `cursor` `content` `src`
 
-**Units & functions** `px` `%` `em` `rem` `vw` `vh` `fr`, `calc()`, `var()`
-with custom properties, `rgb()` `rgba()` `hsl()` `hsla()`, `#rgb` `#rrggbb`
-`#rrggbbaa`, named colors
+**Units & functions** `px` `%` `em` `rem` `vw` `vh` `fr`, `calc()`, `min()`
+`max()` `clamp()`, `var()` with custom properties (nested, with fallbacks;
+cycles make the declaration invalid), `rgb()` `rgba()` `hsl()` `hsla()`, `#rgb`
+`#rrggbb` `#rrggbbaa`, named colors, `currentcolor`
 
-**At-rules** `@media (min-width: …px)` / `(max-width: …px)` — comma lists are
-OR, conditions within one query are AND, `not` is honoured — and `@keyframes`
+**Cascade** `inherit` `initial` `unset` `revert` and `all`. Children inherit
+computed values, so `font-size: 2em` does not compound down the tree.
+
+**At-rules** `@media` with media types (`all`, `screen`, `print`), `width` /
+`height` / `aspect-ratio` (with `min-` / `max-` and the range syntax),
+`orientation`, `prefers-color-scheme`, `prefers-reduced-motion`, `hover`,
+`pointer`; `@supports` (declarations, `selector()`, `and` / `or` / `not`);
+`@import` (with a media list); `@keyframes`; `@font-face`
 
 **Built-in stylesheets** `enderframelib:ua.css` is the user-agent sheet; themes
 are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
@@ -231,6 +238,15 @@ are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > reserves 1.15em instead of 1.375em, and `line-height: <length>` no longer scales
 > with `font-size`. Documents that were tuned against the old numbers need their
 > font sizes revisited. The reasoning is in [FIDELITY.md](FIDELITY.md).
+
+> **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
+> whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
+> (18.4px at 16px) keep their fractions, and positions are rounded once, when
+> drawn, by snapping each box's edges. Boxes that used to come out a pixel short
+> (or a few pixels short after several nested percentages) now line up with a
+> browser, and lines of text advance by their exact line height, so tall blocks
+> of text grow slightly. With `box-sizing: border-box`, padding and border wider
+> than `width` now widen the box instead of being squeezed into it.
 
 ---
 
@@ -245,49 +261,66 @@ Layout differences from a real browser are measured, case by case, in
   as an action name, never evaluated.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
-- **Real table layout.** `table`/`tr`/`td` are flex rows: no `colspan`,
-  no `rowspan`, no automatic column sizing.
-- **`float`, `clear`, multi-column layout, writing modes.**
-- **`flex-basis`.** The `flex` shorthand expands to `flex-grow` / `flex-shrink` /
-  `flex-basis`, and the first two are honoured, but the basis itself is not read:
-  an item's base size comes from its content and its `width`.
-- **Intrinsic sizing keywords outside `min-width` / `max-width`.**
-  `min-content`, `max-content` and `fit-content` are understood as a `min-width`
-  or `max-width` value; as a `width` or in `grid-template-*` they are not.
-- **`box-sizing` defaults to `border-box`.** CSS defaults to `content-box`:
-  `width: 100px; padding: 10px; border-width: 2px` should occupy 124px, and here
-  it occupies 100px.
-- **Margin collapsing.** Adjacent vertical margins are added, not collapsed, and a
-  child's top margin does not collapse through its parent's top edge.
-- **`gap` in block flow.** `row-gap` separates block-level children here; in CSS
-  `gap` only applies to flex, grid and multi-column containers.
-- **Percentage `height`.** The percentage resolves against a size handed down from
-  an ancestor rather than against the containing block.
-- **Percentage vertical `margin` / `padding`.** CSS resolves these against the
-  containing block's *inline* size; here they resolve against a height-like value
-  handed down from an ancestor.
-- **Containing blocks for `position: absolute`.** A `position: static` parent is
-  treated as the containing block; CSS uses the nearest positioned ancestor, or the
-  initial containing block if there is none.
-- **`minmax()` in a track list.** Track lists are split on whitespace, so
-  `minmax(100px, 1fr)` is read as two tracks.
+- **Real table layout.** `table`/`tr`/`td` are flex rows, and `display: table`
+  / `table-row` / `table-cell` lay out as plain blocks: no `colspan`, no
+  `rowspan`, no automatic column sizing, no `table-layout`, `border-collapse`
+  or `border-spacing`.
+- **`float`, `clear`, multi-column layout, writing modes.** Floats stack as
+  ordinary blocks.
+- **Block formatting contexts.** `display: flow-root` and `overflow` other than
+  `visible` do not stop a child's margin from collapsing through its parent, and
+  an empty block's own top and bottom margins do not collapse together.
+- **Box-tree generation.** Elements map 1:1 to boxes: no anonymous block boxes
+  around inline content mixed with blocks, no anonymous table boxes, and
+  `display: contents` still generates a box.
+- **Intrinsic sizing keywords in grid tracks and heights.** `min-content`,
+  `max-content` and `fit-content` work as `width`, `min-width` and `max-width`;
+  in `grid-template-*` and as a `height` they are not understood.
+- **Flexbox in full.** `order`, `row-reverse` / `column-reverse` /
+  `wrap-reverse`, `align-content`, auto margins and `align-items: baseline` are
+  not implemented. Items with a `width` do not shrink, growing ignores
+  `max-width`, and the automatic minimum size (`min-width: auto`, and its
+  zero value for scroll containers) is not the spec's.
+- **Grid in full.** No implicit tracks (`grid-auto-rows` / `grid-auto-columns`),
+  no `grid-auto-flow` (`column`, `dense`), no `span` or negative line numbers,
+  no `repeat(auto-fill | auto-fit, …)`, no content-sized `auto` tracks, and
+  `justify-items` / `align-items` / `justify-content` do not align items or
+  tracks.
+- **Positioning in full.** An absolutely positioned box with all insets `auto`
+  is placed at its containing block's origin rather than its static position;
+  `left` + `right` with `width: auto` does not stretch; percentages resolve
+  against the content box instead of the padding box. `position: relative`
+  also moves the following siblings, and `position: sticky` is not supported.
+- **Stacking contexts.** `z-index` values are added to the parent's, so a
+  child's `z-index` escapes its stacking context; `opacity` and `transform` do
+  not create stacking contexts; positioned and non-positioned boxes share one
+  painting layer, so `z-index` also takes effect on non-positioned blocks.
 - **Inline formatting contexts in full.** Inline boxes line-break, measure and
-  align on a common baseline, but `vertical-align` and floats around them are
-  not implemented.
+  align on a common baseline, but `vertical-align`, `text-indent` and the line
+  box strut (an empty line taking its `line-height`) are not implemented, and
+  `white-space: nowrap` does not keep inline-blocks on one line. An
+  inline-block's horizontal margin is counted twice.
+- **HTML-standard user-agent defaults.** `ua.css` carries theme-like styling
+  and lacks some HTML defaults (`dl` / `dd` margins, for example), so unstyled
+  HTML does not look the way it does in a browser.
 - **Glyph-level fidelity.** `font-size: Npx` scales Minecraft's bitmap font so
   that its cap height and x-height land where a browser's UI font would
   (1em = the font's natural 9px line box), and `line-height: normal` reserves
   1.15em. Individual glyph widths still differ from any OS font, so wrap
   positions, ellipsis positions and centring offsets cannot match a browser
   exactly. See [FIDELITY.md](FIDELITY.md) for what is measured instead.
-- **`@media` beyond width.** No `prefers-*`, orientation or resolution
-  features, no `@supports`, no `@import`, no `@font-face`.
+- **Media features that need a display.** `resolution` and `color-gamut` are
+  unknown (and therefore false). `prefers-color-scheme` is always `light` and
+  `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
+  a mouse. `@import` with `layer()` or `supports()` is ignored, as there are no
+  cascade layers.
 - **Named grid lines and areas.** `grid-template-areas` is not implemented.
 - **Pseudo-elements beyond `::before` / `::after`.** `::placeholder`,
   `::selection` and friends parse (and count toward specificity) but never
   match.
 - **Custom fonts.** Rendering uses Minecraft's font system; `font-family`
-  selects among the fonts Minecraft has.
+  selects among the fonts Minecraft has and the TrueType / OpenType fonts
+  registered with `@font-face`.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
   YouTube sources download `yt-dlp` at first use (see [NOTICE](NOTICE)).
 

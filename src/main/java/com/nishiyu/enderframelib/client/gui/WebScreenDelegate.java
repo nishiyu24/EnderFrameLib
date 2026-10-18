@@ -8,7 +8,11 @@ import com.nishiyu.enderframelib.client.binding.WebStateStore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.event.DomEvent;
+import com.nishiyu.enderframelib.core.event.EventDispatcher;
+import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.model.ElementType;
+import com.nishiyu.enderframelib.core.model.TextSelection;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -207,6 +211,20 @@ public class WebScreenDelegate {
             }
             return true;
         }
+
+        // テキスト選択のドラッグ更新
+        TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+        if (sel != null && !sel.anchorNodeId().isEmpty()) {
+            ClientWebManager.UIHitResult dragHit = ClientWebManager.getHitElement(sessionId, webX, webY);
+            if (dragHit != null && dragHit.element() != null && dragHit.element().text() != null) {
+                if (sel.anchorNodeId().equals(dragHit.element().baseId())) {
+                    Font font = Minecraft.getInstance().font;
+                    int offset = InteractionHandler.estimateCharOffset(font, dragHit.element().text(), dragHit.localX());
+                    sel.updateWithinNode(sel.anchorNodeId(), offset, dragHit.element().text());
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
@@ -323,19 +341,89 @@ public class WebScreenDelegate {
             });
         }
 
+        if (keyCode == GLFW.GLFW_KEY_C && (modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
+            TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+            if (sel != null && !sel.isEmpty()) {
+                Minecraft.getInstance().keyboardHandler.setClipboard(sel.selectedText());
+                return true;
+            }
+        }
+
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
             String focusedId = focusNavigator.focusedId();
             if (!focusedId.isEmpty()) {
-                UIElement el = ClientWebManager.getElementById(sessionId, focusedId);
-                if (el != null) {
-                    double cx = el.x() + el.width() / 2.0;
-                    double cy = el.y() + el.height() / 2.0;
-                    return handleMouseClicked(screen, font, cx, cy, 0, onInputChanged, onWebAction);
+                HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), focusedId);
+                if (node != null) {
+                    return dispatchActivateToNode(screen, font, node, onInputChanged, onWebAction);
                 }
             }
         }
 
         return false;
+    }
+
+    private boolean dispatchActivateToNode(Screen screen, Font font, HtmlNode node,
+                                           BiConsumer<String, String> onInputChanged,
+                                           InteractionHandler.TriActionCallback onWebAction) {
+        UIElement el = ClientWebManager.getElementById(sessionId, node.getId());
+        if (el != null) {
+            ClientScreenInteractionManager.playElementSound(el);
+        }
+        DomEvent clickEvent = DomEvent.click(0);
+        boolean[] handled = new boolean[]{false};
+        EventDispatcher.dispatchEvent(node, clickEvent, (targetNode, action) -> {
+            handled[0] = true;
+            if (onWebAction != null) {
+                onWebAction.onAction(action, el, 0);
+            }
+            ClientScreenInteractionManager.triggerLocalEvent(
+                    sessionId, targetNode.getId(), "onclick", action, targetNode.getId() + "|0.0,0.0"
+            );
+        }, (evt) -> {
+            StandardDefaultActions.execute(evt, new StandardDefaultActions.Context() {
+                @Override
+                public void onAttributeChanged(HtmlNode n, String attrName, String attrValue) {
+                    if (attrValue == null) {
+                        ClientWebManager.updateNodeAttributeLocally(sessionId, n.getId(), attrName, null, true);
+                    } else {
+                        ClientWebManager.updateNodeAttributeLocally(sessionId, n.getId(), attrName, attrValue, false);
+                    }
+                    if ("checked".equalsIgnoreCase(attrName)) {
+                        commitInputValue(n.getId(), Boolean.toString(attrValue != null), onInputChanged);
+                    }
+                }
+
+                @Override
+                public void dispatchClickTo(HtmlNode target) {
+                    if (target != null) {
+                        dispatchActivateToNode(screen, font, target, onInputChanged, onWebAction);
+                    }
+                }
+
+                @Override
+                public void navigateTo(String href) {
+                    if (onWebAction != null) {
+                        onWebAction.onAction(href, el, 0);
+                    }
+                }
+
+                @Override
+                public void executeFormAction(HtmlNode form, String eventType) {
+                    String act = form.attrs.get(eventType);
+                    if (act != null && onWebAction != null) {
+                        onWebAction.onAction(act, el, 0);
+                    }
+                }
+            });
+        });
+        return handled[0];
+    }
+
+    private void commitInputValue(String baseId, String value, BiConsumer<String, String> onInputChanged) {
+        ClientScreenInteractionManager.submitInput(sessionId, baseId, value);
+        ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", value, false);
+        if (this.state != null) this.state.notifyElementModelChanged(baseId, value);
+        if (onInputChanged != null) onInputChanged.accept(baseId, value);
     }
 
     private void applyFocusCandidate(Screen screen, WebFocusNavigator.FocusCandidate candidate) {

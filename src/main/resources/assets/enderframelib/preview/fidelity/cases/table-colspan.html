@@ -1,0 +1,11 @@
+<!-- colspan はセルを複数の列にまたがらせる（暗黙の tbody が入る）。 -->
+<style>
+  #t { display: table; width: auto; margin: 0; border: 0; border-radius: 0; overflow: visible; border-spacing: 0; }
+  #t tbody { display: table-row-group; width: auto; }
+  #t tr { display: table-row; width: auto; border: 0; }
+  #t td { display: table-cell; flex: none; padding: 0; height: 20px; }
+</style>
+<table id="t">
+  <tr><td id="a" style="width: 60px;"></td><td id="b" style="width: 90px;"></td></tr>
+  <tr><td id="span" colspan="2"></td></tr>
+</table>

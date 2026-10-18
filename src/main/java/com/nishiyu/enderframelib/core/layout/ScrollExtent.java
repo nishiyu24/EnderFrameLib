@@ -6,29 +6,29 @@ package com.nishiyu.enderframelib.core.layout;
  */
 public final class ScrollExtent {
 
-    private int right;
-    private int bottom;
+    private float right;
+    private float bottom;
 
-    public ScrollExtent(int initialRight, int initialBottom) {
+    public ScrollExtent(float initialRight, float initialBottom) {
         this.right = initialRight;
         this.bottom = initialBottom;
     }
 
     /** 1 つのボックスの右下端を取り込む。 */
-    public void include(LayoutBox box, int scrollX, int scrollY) {
+    public void include(LayoutBox box, float scrollX, float scrollY) {
         include(box.x + box.w + box.mR + scrollX, box.y + box.h + box.mB + scrollY);
     }
 
-    public void include(int rightEdge, int bottomEdge) {
+    public void include(float rightEdge, float bottomEdge) {
         if (rightEdge > right) right = rightEdge;
         if (bottomEdge > bottom) bottom = bottomEdge;
     }
 
-    public int right() {
+    public float right() {
         return right;
     }
 
-    public int bottom() {
+    public float bottom() {
         return bottom;
     }
 }

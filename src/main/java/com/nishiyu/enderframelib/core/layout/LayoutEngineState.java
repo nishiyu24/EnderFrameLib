@@ -14,6 +14,6 @@ public interface LayoutEngineState {
      * 通常フローの子以外に、このエンジンが配置した要素の範囲を足し込む。
      * 何も追加しないエンジンは実装しなくてよい（既定は何もしない）。
      */
-    default void contributeScrollExtent(ScrollExtent extent, int scrollX, int scrollY) {
+    default void contributeScrollExtent(ScrollExtent extent, float scrollX, float scrollY) {
     }
 }

@@ -10,6 +10,9 @@ import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.event.DomEvent;
+import com.nishiyu.enderframelib.core.event.EventDispatcher;
+import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.model.UIElement;
 import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
@@ -359,7 +362,11 @@ public class ClientScreenInteractionManager {
         return states.computeIfAbsent(sessionId, k -> new SessionState());
     }
 
-    private static void triggerLocalEvent(String sessionId, String elementId, String eventName, String actionName, String value) {
+    public static void setDraggingId(String sessionId, String draggingId) {
+        getState(sessionId).draggingId = (draggingId != null) ? draggingId : "";
+    }
+
+    public static void triggerLocalEvent(String sessionId, String elementId, String eventName, String actionName, String value) {
         if (sessionId == null || sessionId.isEmpty()) return;
         boolean hasCustomAction = actionName != null && !actionName.isEmpty() && !"auto".equals(actionName);
 
@@ -574,7 +581,20 @@ public class ClientScreenInteractionManager {
 
         if (hit != null) {
             UIElement clickedEl = hit.element();
-            String baseId = ClientWebManager.getBaseNodeId(clickedEl.id());
+            String elementId = clickedEl.id();
+
+            // 1. スクロールバーのトラッククリック・サムドラッグ
+            if (elementId.endsWith("_sb_vt") || elementId.endsWith("_sb_ht")) {
+                ClientWebManager.handleScrollbarClick(sessionId, clickedEl, pixelX, pixelY);
+                return clickedEl;
+            } else if (elementId.endsWith("_sb_v") || elementId.endsWith("_sb_h")) {
+                state.draggingId = elementId;
+                state.lastSentX = hit.localX();
+                state.lastSentY = hit.localY();
+                return clickedEl;
+            }
+
+            String baseId = ClientWebManager.getBaseNodeId(elementId);
             ClientWebManager.setActivePressedId(sessionId, baseId);
             playElementSound(clickedEl);
 
@@ -582,30 +602,71 @@ public class ClientScreenInteractionManager {
             String cordStr = String.format(Locale.US, "%.1f,%.1f", hit.localX(), hit.localY());
             String clickPayload = baseId + "|" + cordStr;
 
-            if (button == 1 && hasEvent(events, "oncontextmenu")) {
-                triggerLocalEvent(sessionId, baseId, "oncontextmenu", getEventAction(events, "oncontextmenu"), clickPayload);
+            HtmlNode domNode = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
+
+            if (button == 1) {
+                if (domNode != null) {
+                    DomEvent contextEvent = DomEvent.contextMenu(button);
+                    EventDispatcher.dispatchEvent(domNode, contextEvent, (node, action) -> {
+                        triggerLocalEvent(sessionId, node.getId(), "oncontextmenu", action, clickPayload);
+                    }, null);
+                } else if (hasEvent(events, "oncontextmenu")) {
+                    triggerLocalEvent(sessionId, baseId, "oncontextmenu", getEventAction(events, "oncontextmenu"), clickPayload);
+                }
             } else {
-                triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
+                if (domNode != null) {
+                    DomEvent clickEvent = DomEvent.click(hit.localX(), hit.localY(), button);
+                    EventDispatcher.dispatchEvent(domNode, clickEvent, (node, action) -> {
+                        triggerLocalEvent(sessionId, node.getId(), "onclick", action, clickPayload);
+                    }, (evt) -> {
+                        StandardDefaultActions.execute(evt, new StandardDefaultActions.Context() {
+                            @Override
+                            public void onAttributeChanged(HtmlNode node, String attrName, String attrValue) {
+                                if (attrValue == null) {
+                                    ClientWebManager.updateNodeAttributeLocally(sessionId, node.getId(), attrName, null, true);
+                                } else {
+                                    ClientWebManager.updateNodeAttributeLocally(sessionId, node.getId(), attrName, attrValue, false);
+                                }
+                                if ("checked".equalsIgnoreCase(attrName)) {
+                                    triggerLocalEvent(sessionId, node.getId(), "onchange", getEventAction(node.attrs, "onchange"), Boolean.toString(attrValue != null));
+                                }
+                            }
+
+                            @Override
+                            public void dispatchClickTo(HtmlNode target) {
+                                if (target != null) {
+                                    EventDispatcher.dispatchEvent(target, DomEvent.click(button), (tNode, action) -> {
+                                        triggerLocalEvent(sessionId, tNode.getId(), "onclick", action, tNode.getId() + "|0.0,0.0");
+                                    }, null);
+                                }
+                            }
+
+                            @Override
+                            public void navigateTo(String href) {}
+
+                            @Override
+                            public void executeFormAction(HtmlNode form, String actionType) {
+                                String act = form.attrs.get(actionType);
+                                if (act != null) {
+                                    triggerLocalEvent(sessionId, form.getId(), actionType, act, "");
+                                }
+                            }
+                        });
+                    });
+                } else {
+                    triggerLocalEvent(sessionId, baseId, "onclick", getEventAction(events, "onclick"), clickPayload);
+                }
             }
 
-            // UIRenderer は <input type="checkbox"> と <input type="radio"> を
-            // どちらも ElementType.TOGGLE として描画するため、
-            // ラジオの排他選択は DOM の type 属性で判別する。
-            if (isToggleLike(clickedEl.type())) {
-                HtmlNode node = DomUtils.findNodeById(ClientWebManager.getVirtualRoot(sessionId), baseId);
-                if (isRadioNode(node)) {
-                    DomUtils.selectRadioButton(ClientWebManager.getVirtualRoot(sessionId), node);
-                    SessionContext session = ClientWebManager.getSession(sessionId);
-                    if (session != null) session.interactionState().markAllDirty();
-                    ClientWebManager.requestRender(sessionId);
-                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
-                } else {
+            // フォールバック: DOM ノードが存在しなかった場合のトグル・セレクト処理
+            if (domNode == null) {
+                if (isToggleLike(clickedEl.type())) {
                     ClientWebManager.toggleNodeAttributeLocally(sessionId, baseId, "checked");
-                    String checkedStr = Boolean.toString(node != null && node.attrs.containsKey("checked"));
-                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), checkedStr);
+                    triggerLocalEvent(sessionId, baseId, "onchange", getEventAction(events, "onchange"), "true");
+                } else if (clickedEl.type() == ElementType.SELECT && Minecraft.getInstance().screen == null) {
+                    cycleSelectOption(sessionId, baseId);
                 }
             } else if (clickedEl.type() == ElementType.SELECT && Minecraft.getInstance().screen == null) {
-                // ★ select の場合、クリックするたびに値と表示が切り替わる
                 cycleSelectOption(sessionId, baseId);
             }
 
@@ -636,6 +697,9 @@ public class ClientScreenInteractionManager {
     public static boolean handleDrag(String sessionId, double pixelX, double pixelY) {
         SessionState state = getState(sessionId);
         if (state.draggingId.isEmpty()) return false;
+        if (ClientWebManager.handleScrollbarDrag(sessionId, state.draggingId, pixelX, pixelY)) {
+            return true;
+        }
         ClientWebManager.UIHitResult dragHit = ClientWebManager.getLocalCoords(sessionId, state.draggingId, pixelX, pixelY);
         long now = System.currentTimeMillis();
 

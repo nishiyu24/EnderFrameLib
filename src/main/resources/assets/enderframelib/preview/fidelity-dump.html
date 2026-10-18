@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>EnderFrameLib - Fidelity Dump</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; background: #11111b; color: #cdd6f4; }
+  h1 { font-size: 1.1rem; margin: 0 0 4px; }
+  p { color: #a6adc8; margin: 0 0 14px; max-width: 72ch; line-height: 1.6; }
+  code { background: rgba(137, 180, 250, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; }
+  button { background: #89b4fa; color: #11111b; border: none; border-radius: 4px; padding: 6px 14px; font-weight: bold; cursor: pointer; }
+  textarea { width: 100%; height: 42vh; margin-top: 12px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; font-family: monospace; font-size: 12px; padding: 8px; box-sizing: border-box; }
+  iframe { width: 320px; height: 200px; border: 0; position: absolute; left: -9999px; top: 0; }
+  #efl_result { display: none; }
+</style>
+</head>
+<body>
+<h1>Fidelity Dump</h1>
+<p>
+  忠実度コーパスをこのブラウザで測り、<code>src/test/resources/fidelity/expected/</code> に置く
+  期待値を出します。ケースごとに 320&times;200 の iframe を作り、ゲーム内と同じ
+  <code>ua.css</code> だけを当てた状態で <code>getBoundingClientRect()</code> を読みます。
+  ブラウザ間で値が違う場合は、その差異そのものを <code>FIDELITY.md</code> に記録してください。
+</p>
+<p>
+  <code>?auto=1</code> を付けて開くと読み込み時に自動で測り、結果を
+  <code>&lt;pre id="efl_result"&gt;</code> にも入れます（ヘッドレスからの採取用）。
+  コマンドは <code>CONTRIBUTING.md</code> にあります。
+</p>
+<button id="run">測定する</button>
+<textarea id="out" readonly></textarea>
+<pre id="efl_result"></pre>
+<div id="stage"></div>
+
+<script>
+// エクスポート時に埋め込まれる（file:// でも fetch 無しで動くようにするため）
+const UA_CSS = /*__UA_CSS__*/ "";
+const CASES = /*__CASES__*/ {};
+
+// 描画順の列: 矩形の中心で、この要素より上に描かれている id 付き要素の数（0 = 最前面）。
+// 中心が自分に当たらない（大きさ 0・ビューポート外・クリップされている）ときは -1。
+// エンジン側（FidelityDumper）も同じ定義で数える。
+function stackDepth(doc, el, r) {
+  if (r.width <= 0 || r.height <= 0) return -1;
+  const stack = doc.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).filter(e => e.id);
+  return stack.indexOf(el);
+}
+
+function measure(name, html) {
+  return new Promise(resolve => {
+    const frame = document.createElement('iframe');
+    frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+      + UA_CSS + '</style></head><body>' + html + '</body></html>';
+    frame.onload = () => {
+      const lines = [];
+      const doc = frame.contentDocument;
+      doc.querySelectorAll('[id]').forEach(el => {
+        const r = el.getBoundingClientRect();
+        lines.push([el.id, Math.round(r.left), Math.round(r.top),
+                    Math.round(r.width), Math.round(r.height), stackDepth(doc, el, r)].join(' '));
+      });
+      frame.remove();
+      resolve(lines);
+    };
+    document.getElementById('stage').appendChild(frame);
+  });
+}
+
+async function run() {
+  // 人が読む形（ファイルごとに切って保存する）と、スクリプトが読む 1 行形の両方を出す
+  let readable = '';
+  const flat = [];
+  for (const name of Object.keys(CASES)) {
+    const lines = await measure(name, CASES[name]);
+    readable += '===== ' + name + '.txt =====\n' + lines.join('\n') + '\n\n';
+    flat.push('=== ' + name, ...lines);
+  }
+  document.getElementById('out').value = readable;
+  document.getElementById('efl_result').textContent = 'RESULT:' + flat.join('|');
+}
+
+document.getElementById('run').addEventListener('click', run);
+if (location.search.indexOf('auto') >= 0) window.addEventListener('load', run);
+</script>
+</body>
+</html>

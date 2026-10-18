@@ -23,18 +23,73 @@ public class LayoutBox {
 
     public final HtmlNode node;
     public ComputedStyle style;
+    public LayoutBox parent = null;
     public final List<LayoutBox> children = new ArrayList<>();
+
+    public void addChild(LayoutBox child) {
+        if (child != null) {
+            child.parent = this;
+            this.children.add(child);
+        }
+    }
+
+    public void linkParents() {
+        for (LayoutBox child : children) {
+            child.parent = this;
+            child.linkParents();
+        }
+    }
+
+    public LayoutBox findByNodeId(String id) {
+        if (id == null || id.isEmpty()) return null;
+        if (node != null && id.equals(node.getId())) return this;
+        for (LayoutBox child : children) {
+            LayoutBox found = child.findByNodeId(id);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    public LayoutBox findContainingBlock() {
+        LayoutBox cur = this.parent;
+        while (cur != null) {
+            if (cur.isRelative || cur.isAbsolute || cur.isFixed) {
+                return cur;
+            }
+            cur = cur.parent;
+        }
+        return null;
+    }
+
+    public record ContainingBlock(float x, float y, float w, float h) {}
+
+    public ContainingBlock resolveContainingBlock(LayoutContext ctx) {
+        if (this.isFixed) {
+            return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        }
+        LayoutBox cb = findContainingBlock();
+        if (cb == null) {
+            return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        }
+        float cbScrollX = ctx.scrollState().getScrollX(cb.node.getId());
+        float cbScrollY = ctx.scrollState().getScrollY(cb.node.getId());
+        float cbX = cb.x + cb.bL - cbScrollX;
+        float cbY = cb.y + cb.bT - cbScrollY;
+        float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
+        float cbH = Math.max(0, cb.h - cb.bT - cb.bB);
+        return new ContainingBlock(cbX, cbY, cbW, cbH);
+    }
 
     /** この要素に対話状態（:hover / :active / :focus 等）のセレクタが関与するか。 */
     public boolean hasInteractiveRules = false;
 
-    public int x, y, w, h;
+    public float x, y, w, h;
     public String displayText = "";
 
     /** margin / padding / border の 4 辺（解決済みのピクセル値）。 */
-    public int mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
+    public float mT, mR, mB, mL, pT, pR, pB, pL, bT, bR, bB, bL;
     /** row-gap: 行（ブロック方向）の間隔 / column-gap: 列（インライン方向）の間隔 */
-    public int rowGap, columnGap;
+    public float rowGap, columnGap;
 
     public boolean isAbsolute = false, isFixed = false, isRelative = false;
     public int zIndex = 0;
@@ -57,11 +112,11 @@ public class LayoutBox {
     public LayoutEngineState engineState;
     public SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
 
-    public int scrollWidth = 0;
-    public int scrollHeight = 0;
+    public float scrollWidth = 0;
+    public float scrollHeight = 0;
 
     /** min-content 幅のメモ化。flex の shrink ループから何度も問われるため。 */
-    private int cachedMinContentWidth = -1;
+    private float cachedMinContentWidth = -1;
     private long cachedMinContentKey = Long.MIN_VALUE;
 
     public LayoutBox(HtmlNode node, ComputedStyle style) {
@@ -86,8 +141,8 @@ public class LayoutBox {
         this.zIndex = (int) newStyle.number(CssProperty.Z_INDEX, 0f);
     }
 
-    public int horizontalDecoration() { return pL + pR + bL + bR; }
-    public int verticalDecoration() { return pT + pB + bT + bB; }
+    public float horizontalDecoration() { return pL + pR + bL + bR; }
+    public float verticalDecoration() { return pT + pB + bT + bB; }
 
     /** 通常フローに参加する子（絶対配置と display:none を除く）。 */
     public List<LayoutBox> getFlowChildren() {
@@ -106,19 +161,19 @@ public class LayoutBox {
      * flex の shrink 解決ループから 1 要素あたり最大 10 回問われ、そのたびに
      * 部分木全体を再帰していたため、ビューポートごとに結果をメモ化する。
      */
-    public int getMinContentWidth(LayoutContext ctx) {
+    public float getMinContentWidth(LayoutContext ctx) {
         long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
         if (cachedMinContentKey == key && cachedMinContentWidth >= 0) return cachedMinContentWidth;
 
-        int result = computeMinContentWidth(ctx);
+        float result = computeMinContentWidth(ctx);
         cachedMinContentKey = key;
         cachedMinContentWidth = result;
         return result;
     }
 
-    private int computeMinContentWidth(LayoutContext ctx) {
-        int rootW = ctx.viewport().rootW();
-        int rootH = ctx.viewport().rootH();
+    private float computeMinContentWidth(LayoutContext ctx) {
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
 
         // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
         String minWidthDecl = style.get(CssProperty.MIN_WIDTH);
@@ -128,7 +183,7 @@ public class LayoutBox {
 
         String tag = node.tag;
         if (tag.equals("input") || tag.equals("select") || tag.equals("button") || tag.equals("progress")) {
-            int inputW = 90;
+            float inputW = 90;
             String type = node.attrs.getOrDefault("type", "text");
             if (tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) {
                 inputW = LayoutMetrics.FALLBACK_REPLACED_SIZE;
@@ -151,14 +206,14 @@ public class LayoutBox {
                 String word = segment.strip();
                 if (!word.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(word, font));
             }
-            return (int) Math.ceil(maxWordW);
+            return maxWordW;
         }
 
         if (children.isEmpty()) {
             return this.w > 0 ? this.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
         }
 
-        int max = 0;
+        float max = 0;
         for (LayoutBox c : getFlowChildren()) {
             max = Math.max(max, c.getMinContentWidth(ctx) + c.mL + c.mR);
         }
@@ -171,7 +226,7 @@ public class LayoutBox {
         cachedMinContentWidth = -1;
     }
 
-    public void applyRelativeOffset(int dx, int dy) {
+    public void applyRelativeOffset(float dx, float dy) {
         this.x += dx;
         this.y += dy;
         for (LayoutBox child : children) child.applyRelativeOffset(dx, dy);
@@ -185,28 +240,36 @@ public class LayoutBox {
      * 寸法を決める。実装は {@link BoxMeasurer}。
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
-    public void measure(int tentativeInnerW, int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public void measure(float tentativeInnerW, float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+        for (LayoutBox child : children) child.parent = this;
         BoxMeasurer.measure(this, tentativeInnerW, parentH, fmtCtx, ctx);
     }
 
     /** 高さだけ再解決する（flex grow/shrink、grid stretch の後処理用）。 */
-    public void resolveFlexibleHeights(int parentH, FormattingContext fmtCtx, LayoutContext ctx) {
+    public void resolveFlexibleHeights(float parentH, FormattingContext fmtCtx, LayoutContext ctx) {
         BoxMeasurer.resolveFlexibleHeights(this, parentH, fmtCtx, ctx);
     }
 
     /** 決まった寸法をもとに自分と子の位置を確定する。 */
-    public void layout(int parentX, int parentY, int parentOuterW, int parentOuterH, LayoutContext ctx) {
+    public void layout(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if ("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
+        for (LayoutBox child : children) child.parent = this;
 
-        int rootW = ctx.viewport().rootW();
-        int rootH = ctx.viewport().rootH();
+        float rootW = ctx.viewport().rootW();
+        float rootH = ctx.viewport().rootH();
 
-        int refX = this.isFixed ? 0 : parentX;
-        int refY = this.isFixed ? 0 : parentY;
-        int refW = this.isFixed ? rootW : parentOuterW;
-        int refH = this.isFixed ? rootH : parentOuterH;
-
+        // LIMITATION(制約): inset が全部 auto の絶対配置を静的位置ではなく包含ブロックの原点に置き、
+        // left と right の両方を持つ width: auto を間の幅に広げない。width / height の % は
+        // padding box ではなく内容ボックス基準。position: relative のずれは後続の兄弟まで動かし、
+        // position: sticky は読まない。W4 で直す。FIDELITY.md の「W4 — 整形コンテキスト」と
+        // README の "Not supported" に対応。
         if (this.isAbsolute) {
+            ContainingBlock cb = resolveContainingBlock(ctx);
+            float refX = cb.x();
+            float refY = cb.y();
+            float refW = cb.w();
+            float refH = cb.h();
+
             if (style.containsKey(CssProperty.RIGHT)) {
                 this.x = refX + refW - this.w - style.length(CssProperty.RIGHT, refW, rootW, rootH) - mR;
             } else {
@@ -218,15 +281,17 @@ public class LayoutBox {
                 this.y = refY + style.length(CssProperty.TOP, refH, rootW, rootH) + mT;
             }
         } else {
+            float refX = this.isFixed ? 0 : parentX;
+            float refY = this.isFixed ? 0 : parentY;
             this.x = refX + mL;
             this.y = refY + mT;
         }
 
-        int scrollX = ctx.scrollState().getScrollX(node.getId());
-        int scrollY = ctx.scrollState().getScrollY(node.getId());
+        float scrollX = ctx.scrollState().getScrollX(node.getId());
+        float scrollY = ctx.scrollState().getScrollY(node.getId());
 
-        int innerX = this.x + pL + bL - scrollX;
-        int innerY = this.y + pT + bT - scrollY;
+        float innerX = this.x + pL + bL - scrollX;
+        float innerY = this.y + pT + bT - scrollY;
 
         LayoutEngine engine = LayoutEngineFactory.getEngine(style.getOrDefault(CssProperty.DISPLAY, "block"));
         engine.arrangeChildren(this, innerX, innerY, ctx);
@@ -240,10 +305,10 @@ public class LayoutBox {
         updateScrollExtent(scrollX, scrollY);
     }
 
-    private void applyRelativePositioning(int parentOuterW, int parentOuterH, int rootW, int rootH) {
+    private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
         if (!this.isRelative) return;
 
-        int offX = 0, offY = 0;
+        float offX = 0, offY = 0;
         if (style.containsKey(CssProperty.LEFT)) offX += style.length(CssProperty.LEFT, parentOuterW, rootW, rootH);
         else if (style.containsKey(CssProperty.RIGHT)) offX -= style.length(CssProperty.RIGHT, parentOuterW, rootW, rootH);
         if (style.containsKey(CssProperty.TOP)) offY += style.length(CssProperty.TOP, parentOuterH, rootW, rootH);
@@ -256,7 +321,7 @@ public class LayoutBox {
      * スクロール範囲を更新する。
      * エンジン固有の子（グリッドアイテムなど）は {@link LayoutEngineState} が自分で足し込む。
      */
-    private void updateScrollExtent(int scrollX, int scrollY) {
+    private void updateScrollExtent(float scrollX, float scrollY) {
         ScrollExtent extent = new ScrollExtent(this.x + pL + bL, this.y + pT + bT);
         for (LayoutBox child : children) {
             if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) || child.isAbsolute) continue;
@@ -271,7 +336,7 @@ public class LayoutBox {
     /** インライン整形で 1 行に置かれた断片（テキスト 1 語、またはインラインブロック 1 つ）。 */
     public static class InlineFragment {
         public LayoutBox box;
-        public int x, y, w, h;
+        public float x, y, w, h;
         /**
          * 断片の上端からベースラインまでの距離（px）。
          * これが無かったため描画側は「高さ 8px の箱」を仮定した行内センタリングで
@@ -281,7 +346,7 @@ public class LayoutBox {
         public String text;
         public List<LayoutBox> parents;
 
-        public InlineFragment(LayoutBox box, int x, int y, int w, int h, String text) {
+        public InlineFragment(LayoutBox box, float x, float y, float w, float h, String text) {
             this.box = box;
             this.x = x;
             this.y = y;
