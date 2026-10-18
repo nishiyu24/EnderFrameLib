@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -17,8 +18,11 @@ public class DomUtils {
 
     public static Function<String, String> i18nResolver = key -> key;
 
-    // UIParserへの依存を切り離すためのフック
-    public static Function<String, HtmlNode> innerHtmlParser = null;
+    /**
+     * UIParserへの依存を切り離すためのフック。引数は (HTML, 文脈の要素のタグ)。
+     * 文脈を渡すのは断片の解析が挿入モードを文脈から決めるため（tbody の innerHTML の {@code <tr>} を捨てない）。
+     */
+    public static BiFunction<String, String, HtmlNode> innerHtmlParser = null;
 
     // --- DOM検索・更新系 ---
 
@@ -102,7 +106,7 @@ public class DomUtils {
         target.children.clear();
         if (html != null && !html.trim().isEmpty()) {
             if (innerHtmlParser != null) {
-                HtmlNode parsedRoot = innerHtmlParser.apply(html);
+                HtmlNode parsedRoot = innerHtmlParser.apply(html, target.tag);
                 if (parsedRoot != null) {
                     for (HtmlNode child : parsedRoot.children) {
                         child.parent = target;

@@ -46,7 +46,8 @@ public class ClientPubSubManager {
     }
 
     public static void registerVirtualList(String sessionId, String targetId, String channel, String templateHtml, int itemW, int itemH) {
-        HtmlNode parsedTemplate = (templateHtml != null && !templateHtml.isEmpty()) ? HtmlParser.parse(templateHtml) : new HtmlNode("template");
+        // template の中身として解析する（行のテンプレート "<tr>…" を表の外として捨てないため）
+        HtmlNode parsedTemplate = (templateHtml != null && !templateHtml.isEmpty()) ? HtmlParser.parseFragment(templateHtml, "template") : new HtmlNode("template");
         registerVirtualList(sessionId, targetId, channel, parsedTemplate, itemW, itemH);
     }
 

@@ -61,11 +61,10 @@ final class FidelityDumper {
 
     /** ケースをレイアウトして、id 付き要素の矩形を文書順に返す。 */
     static Map<String, Rect> dump(String caseName) {
-        // ブラウザ側（fidelity-dump.html）と同じ文書の形にする。ケースは body の中身として書かれており、
-        // パーサは html / body を暗黙に補わない（W7）ので、ここで包まないと body の margin が片側にしか付かない
+        // ケースは body の中身として書かれている。ブラウザ側（fidelity-dump.html）と同じく、
+        // パーサが html / head / body を暗黙に補う（W7。W6 まではここで包んでいた）
         UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("<html><head></head><body>" + caseHtml(caseName) + "</body></html>",
-                "", VIEWPORT_W, VIEWPORT_H);
+        UIParser.Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
 

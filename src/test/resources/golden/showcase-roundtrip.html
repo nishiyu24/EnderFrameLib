@@ -2,6 +2,10 @@
     * {
         box-sizing: border-box;
     }
+    /* html / body are implied by the parser; chain the height so .dashboard's 100% reaches the viewport (as in a browser) */
+    html, body {
+        height: 100%;
+    }
     .dashboard {
         display: flex;
         flex-direction: column;

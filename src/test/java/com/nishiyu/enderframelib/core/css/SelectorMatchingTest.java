@@ -28,6 +28,15 @@ public class SelectorMatchingTest {
     }
 
     @Test
+    public void testRootMatchesOnlyTheDocumentElement() {
+        HtmlNode root = HtmlParser.parseDocument("<div id=\"a\"></div>");
+        List<HtmlNode> found = SelectorEngine.querySelectorAll(root, ":root");
+        // 以前はパーサの合成ノード（html_root）にも一致し、:root の宣言が 2 つの箱に掛かっていた
+        assertEquals(1, found.size());
+        assertEquals("html", found.getFirst().tag);
+    }
+
+    @Test
     public void testTypeIdAndClassSelectors() {
         HtmlNode root = doc("<div id=\"a\" class=\"x y\"></div><span id=\"b\" class=\"x\"></span>");
         assertEquals("a,b", ids(root, ".x"));

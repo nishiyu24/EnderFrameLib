@@ -55,11 +55,54 @@ public class HtmlParserRecoveryTest {
     }
 
     @Test
-    public void testMalformedNumericReferencesArePreserved() {
-        // 桁が無い・閉じていない・範囲外のものは参照として扱わない
+    public void testMalformedNumericReferencesFollowTheSpec() {
+        // 桁が無いものは参照ではない。';' の無いものも解き、範囲外とサロゲートと 0 は U+FFFD（HTML §13.2.5.80）。
+        // W6 までは ';' の無いものと範囲外を生のまま残していた
         assertEquals("&#;", HtmlTokenizer.decodeHtmlEntities("&#;"));
-        assertEquals("&#65", HtmlTokenizer.decodeHtmlEntities("&#65"));
-        assertEquals("&#99999999;", HtmlTokenizer.decodeHtmlEntities("&#99999999;"));
+        assertEquals("A", HtmlTokenizer.decodeHtmlEntities("&#65"));
+        assertEquals("�", HtmlTokenizer.decodeHtmlEntities("&#99999999;"));
+        assertEquals("�", HtmlTokenizer.decodeHtmlEntities("&#xD800;"));
+        // 0x80〜0x9F は Windows-1252 の文字
+        assertEquals("™", HtmlTokenizer.decodeHtmlEntities("&#153;"));
+    }
+
+    @Test
+    public void testNamedReferencesUseTheFullTable() {
+        // 以前は 6 つの名前しか知らず、&nbsp; は普通の空白になっていた
+        assertEquals("© …  ", HtmlTokenizer.decodeHtmlEntities("&copy; &hellip; &nbsp;"));
+        assertEquals("∳", HtmlTokenizer.decodeHtmlEntities("&CounterClockwiseContourIntegral;"));
+        // 2 文字に展開される名前
+        assertEquals("≂̸", HtmlTokenizer.decodeHtmlEntities("&NotEqualTilde;"));
+        // 未知の名前はそのまま
+        assertEquals("&nosuch;", HtmlTokenizer.decodeHtmlEntities("&nosuch;"));
+    }
+
+    @Test
+    public void testInnerHtmlUsesTheTargetAsContext() {
+        var previous = DomUtils.innerHtmlParser;
+        DomUtils.innerHtmlParser = HtmlParser::parseFragment;
+        try {
+            HtmlNode root = HtmlParser.parse("<table><tbody id=\"body\"></tbody></table>");
+            HtmlNode tbody = root.getElementById("body");
+            tbody.setInnerHTML("<tr><td>a</td></tr>");
+            // body の文脈で解析すると表の外の <tr> / <td> は捨てられ、"a" だけが残る
+            assertEquals("tr", tbody.children.getFirst().tag);
+            assertEquals("td", tbody.children.getFirst().children.getFirst().tag);
+        } finally {
+            DomUtils.innerHtmlParser = previous;
+        }
+    }
+
+    @Test
+    public void testDocumentGetsImpliedHtmlHeadBody() {
+        HtmlNode root = HtmlParser.parseDocument("<link rel=\"stylesheet\" href=\"a.css\"><div id=\"x\"></div>");
+        assertEquals(1, root.children.size());
+        HtmlNode html = root.children.getFirst();
+        assertEquals("html", html.tag);
+        assertEquals("head", html.children.get(0).tag);
+        assertEquals("link", html.children.get(0).children.getFirst().tag);
+        assertEquals("body", html.children.get(1).tag);
+        assertEquals("x", html.children.get(1).children.getFirst().getId());
     }
 
     @Test

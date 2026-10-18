@@ -742,7 +742,8 @@ public class WebRenderCore {
     ) {
         if (shouldSkipPlaceholder(el, elementMap, animSessionId)) return;
 
-        String textToDraw = el.text() == null ? "" : el.text();
+        // &nbsp; は U+00A0 で届く。Minecraft のフォントはこの字形を空白の幅で持たないので、測定（McFontResolver）と同じく空白で描く
+        String textToDraw = el.text() == null ? "" : el.text().replace(' ', ' ');
         float textX = el.x(), textY = el.y();
 
         int safeCursorPos = -1;

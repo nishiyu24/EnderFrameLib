@@ -119,7 +119,9 @@ public final class SelectorMatcher {
      */
     public static boolean matchesCompoundWithoutInteractiveState(SelectorToken token, HtmlNode node) {
         if (node == null) return false;
-        if (token.isRoot && node.nodeType != NodeType.ROOT && !"html".equals(node.tag)) return false;
+        // :root は文書要素（ルートの子の html）だけ。W7 までは文書に html が無いことがあったので、
+        // パーサの合成ノードにも一致させていた（html を書いた文書では :root の宣言が 2 つの箱に掛かっていた）
+        if (token.isRoot && !isDocumentElement(node)) return false;
         if (token.id != null && !token.id.equals(node.getId())) return false;
         if (!token.tag.equals("*") && !token.tag.equals(node.tag)) return false;
 
@@ -196,6 +198,11 @@ public final class SelectorMatcher {
         if (token.nthChild == SelectorParser.NTH_ODD && idx % 2 == 0) return false;
         if (token.nthChild == SelectorParser.NTH_EVEN && idx % 2 != 0) return false;
         return true;
+    }
+
+    private static boolean isDocumentElement(HtmlNode node) {
+        return node.nodeType == NodeType.ELEMENT && "html".equals(node.tag)
+                && (node.parent == null || node.parent.nodeType == NodeType.ROOT);
     }
 
     private static boolean hasContent(HtmlNode node) {

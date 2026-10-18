@@ -73,7 +73,8 @@
 - 制約を解消したら、コードのマーカーと README の記述を同じコミットで消す。
 
 現在 README に記録されている主な制約（コード側と対応させること）:
-JavaScript 非対応、Markdown のネストリスト非対応、表の未対応部分（列幅の %・枠線の重ね方の簡略化）、
+JavaScript 非対応、HTML のツリー構築の未対応部分（書式要素の再構築と adoption agency・SVG / MathML・
+`<template>` の中身を別の断片にしない）、Markdown のネストリスト非対応、表の未対応部分（列幅の %・枠線の重ね方の簡略化）、
 float の横の行幅は行の上端で決める・段組みと書字方向は非対応、ボックスツリーの未対応部分（インライン中のブロックで分割しない・
 flex / grid 内のテキストを匿名アイテムで包まない）、`::marker` を照合しない、
 flex / grid の簡略化した部分（列方向の自動最小高さ・トラックの寸法・subgrid など）、
@@ -161,6 +162,9 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   Chrome の代わりに Edge（`msedge.exe`）でも同じ引数で採れる。
   ケースを足すときは `cases.txt` の該当領域の節に名前を書き、期待値ファイルを
   ブラウザの出力から作る（エンジンの出力 `build/fidelity` を期待値にしてはいけない）。
+
+  HTML のツリー構築も同じ考え方で、`HtmlTreeConstructionTest` の期待値はブラウザ
+  （`DOMParser` と innerHTML）が組んだ木を書き出したもの。パーサの出力を期待値にしない。
 
   一致しない差異は `src/test/resources/fidelity/known-divergences.txt` と
   [FIDELITY.md](FIDELITY.md) の**両方**に同じキー（`case#id.field`）で書く

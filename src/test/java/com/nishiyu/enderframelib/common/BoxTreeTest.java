@@ -198,6 +198,19 @@ public class BoxTreeTest {
         assertEquals("#222222", anonymous.style.get(CssProperty.COLOR));
     }
 
+    @Test
+    public void testFragmentDocumentGetsImpliedBodyWithUaMargin() {
+        UIParser parser = new UIParser();
+        UIParser.Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
+        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        // W7 まではパーサが body を補わず、断片だけの文書では ua.css の body { margin: 8px } が効かなかった
+        LayoutBox a = findElement(root, "a");
+        assertEquals("body", a.parent.node.tag);
+        assertEquals(8, a.x, 0.01f);
+        assertEquals(8, a.y, 0.01f);
+        assertEquals(VIEWPORT_W - 16, a.w, 0.01f);
+    }
+
     // ==========================================
 
     private static LayoutBox layout(String html) {

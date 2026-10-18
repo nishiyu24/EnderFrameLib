@@ -171,6 +171,16 @@ the engine against.
 `data-sound` `data-markdown` `data-syntax` `data-theme` `data-hud`
 `data-tracker` `data-dropzone` `data-slot` `data-zoom` `data-pan-zoom`
 
+**Parsing** Documents are built with the HTML standard's tree-construction
+rules, as a browser's `DOMParser` would: `html`, `head` and `body` are implied
+when you write only a fragment (leading `<link>`, `<meta>` and `<title>` go
+into `head`); end tags may be omitted for `p`, `li`, `dt`, `dd`, `option`,
+`optgroup`, `tr`, `td`, `th`, the table sections and `colgroup`; a table gets
+its implied `tbody`, `tr` and `colgroup`; content misplaced inside a `<table>`
+is moved in front of it; and all 2,231 named character references are known.
+`innerHTML` patches are parsed in the context of their target element, so a
+`<tr>` patched into a `<tbody>` stays a row.
+
 **Markdown** CommonMark / GFM subset, via `data-markdown` on
 `<article>`/`<section>`, `<script type="text/markdown">`, `<mc-markdown>`, or a
 `.md` file in `enderframe_ui/`: headings, paragraphs, emphasis, inline code,
@@ -319,6 +329,19 @@ on); themes are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > `html` or `body`, a document is now transparent over the game instead of
 > white.
 
+> **Breaking change — HTML parsing.** Every document now has `html`, `head` and
+> `body` elements, even when you write only a fragment, so the user-agent
+> `body { margin: 8px }` applies (the built-in themes reset it to 0), and a
+> top-level `height: 100%` now resolves against `body`, whose height is `auto`:
+> add `html, body { height: 100%; }` (as in a browser) or use `100vh`.
+> `:root` matches only the `html` element. A trailing `/>` is ignored on
+> non-void elements, so `<div/>` opens a `div` that runs to its parent's end
+> tag. `<tr>` / `<td>` outside a table are dropped (their content is kept),
+> and text or elements written directly inside `<table>` move in front of the
+> table. `&nbsp;` is now U+00A0 (it does not collapse or break), named and
+> numeric references follow the standard (`&#65` without `;` is `A`), and when
+> an attribute is repeated the first one wins.
+
 > **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
 > whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
 > (18.4px at 16px) keep their fractions, and positions are rounded once, when
@@ -339,6 +362,12 @@ Layout differences from a real browser are measured, case by case, in
 - **Scripting.** No JavaScript, anywhere. Behaviour is server-side; the
   reactive `data-*` attributes above are the substitute. `onclick` is read only
   as an action name, never evaluated.
+- **HTML parsing in full.** Formatting elements are not reconstructed and the
+  adoption agency algorithm is not run: in `<p><b>x<p>y` the second paragraph
+  is not bold, and misnested formatting tags such as `<b><i></b></i>` close by
+  the generic end-tag rule. SVG and MathML are parsed as ordinary HTML
+  elements, and `<template>` content is part of the document tree (hidden by
+  `display: none`) rather than an inert fragment.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
 - **Tables in full.** Percentage column widths are treated as `auto`.
