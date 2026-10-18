@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.network.s2c;
+package com.nishiyu.enderframelib.network;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;

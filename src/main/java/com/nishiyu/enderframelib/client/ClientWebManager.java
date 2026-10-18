@@ -16,7 +16,7 @@ import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
-import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.core.model.*;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;

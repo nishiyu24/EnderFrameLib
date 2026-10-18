@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.network.s2c;
+package com.nishiyu.enderframelib.network;
 
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.FriendlyByteBuf;

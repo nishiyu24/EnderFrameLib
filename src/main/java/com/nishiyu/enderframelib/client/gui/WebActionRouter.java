@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
-import com.nishiyu.enderframelib.network.c2s.WebActionC2SPacket;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.neoforged.neoforge.network.PacketDistributor;
 
