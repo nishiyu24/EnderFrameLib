@@ -1,0 +1,68 @@
+EnderFrameLib
+Copyright (C) 2025 Nishiyu
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Lesser General Public License version 3 as
+published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser
+General Public License for more details.
+
+The full license texts are in this repository:
+  LICENSE                 GNU Lesser General Public License, version 3
+  LICENSE.GPL-3.0.txt     GNU General Public License, version 3
+                          (LGPL-3.0 incorporates its terms)
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+1. lunex_video (bundled binary)
+
+   File: src/main/resources/assets/enderframelib/natives/lunex_video.dll
+   A native video decoding library, shipped inside the mod jar and
+   extracted at runtime by client/renderer/WebMediaManager.
+
+   This is a prebuilt binary and is NOT covered by the LGPL-3.0 grant
+   above. It is redistributed as a separate work; its own license terms
+   apply to it. If you redistribute EnderFrameLib, carry this notice
+   with it.
+
+2. yt-dlp (downloaded at runtime, not bundled)
+
+   Project: https://github.com/yt-dlp/yt-dlp
+   License: The Unlicense (public domain dedication)
+
+   When a YouTube URL is used as a video source, WebMediaManager
+   downloads the official yt-dlp release binary into the game directory
+   and runs it as an external process to resolve the stream URL. The
+   binary is fetched from the yt-dlp GitHub releases at first use; it is
+   not distributed as part of this mod. No network download and no
+   external process occurs unless a YouTube source is actually used.
+
+   yt-dlp is released into the public domain under The Unlicense. See
+   https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE for the text.
+
+3. Java Native Access (JNA)
+
+   Coordinates: net.java.dev.jna:jna, net.java.dev.jna:jna-platform
+   License: dual-licensed under LGPL-2.1-or-later and Apache-2.0.
+   Used to call into lunex_video. Resolved as an ordinary Maven
+   dependency; not redistributed inside this repository.
+
+4. NeoForge MDK template files
+
+   File: TEMPLATE_LICENSE.txt
+   License: MIT, Copyright (c) 2023 NeoForged project
+   Applies only to the MDK scaffolding files this repository started
+   from (gradle wrapper, build scaffolding), not to EnderFrameLib's own
+   source.
+
+5. Minecraft mapping names
+
+   Method and field names come from Mojang's official mappings via
+   Parchment. Those names are covered by Mojang's own mapping license;
+   see https://github.com/NeoForged/NeoForm/blob/main/Mojang.md.
+   No Minecraft code or asset is redistributed by this repository.
