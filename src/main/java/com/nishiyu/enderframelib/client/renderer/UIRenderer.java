@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -65,7 +66,8 @@ public class UIRenderer {
     private final Map<String, String> keyframes;
     private final ScrollState scrollState;
     private int fragIdCounter = 0;
-    private int domOrderCounter = 0;
+    /** 背景をキャンバスに譲った要素（html か body）。自分の箱には背景色を描かない。 */
+    private LayoutBox canvasBackgroundSource;
 
     public UIRenderer(int rootW, int rootH, Map<String, String> keyframes, ScrollState scrollState) {
         this.rootW = rootW;
@@ -75,33 +77,25 @@ public class UIRenderer {
     }
 
     public List<UIElement> render(LayoutBox box) {
-        fragIdCounter = 0;
-        domOrderCounter = 0;
-        List<RenderTask> renderQueue = new ArrayList<>();
         List<UIElement> elements = new ArrayList<>();
+        canvasBackgroundSource = null;
 
         if ("root".equals(box.node.tag)) {
-            int canvasBg = 0xFF111111;
-            LayoutBox bodyBox = findBodyBox(box);
-            if (bodyBox != null && (bodyBox.style.containsKey(CssProperty.BACKGROUND) || bodyBox.style.containsKey(CssProperty.BACKGROUND_COLOR))) {
-                String bodyBg = bodyBox.style.getOrDefault(CssProperty.BACKGROUND, bodyBox.style.get(CssProperty.BACKGROUND_COLOR));
-                canvasBg = ColorParser.parseColor(bodyBg);
+            // キャンバスの背景はルート要素の背景、それが透明なら body の背景（CSS Backgrounds 3 §2.11.2）。
+            // 背景を譲った要素は自分の箱には背景色を描かない
+            int canvasBg = DEFAULT_CANVAS_COLOR;
+            LayoutBox source = canvasBackgroundSource(box);
+            if (source != null) {
+                canvasBg = ColorParser.parseColor(source.style.getOrDefault(CssProperty.BACKGROUND_COLOR, "transparent"));
+                canvasBackgroundSource = source;
             }
             if (canvasBg != 0x00000000) {
                 addElement(elements, "bg_root", "bg_root", ElementType.RECT, box.x, box.y, Math.max(box.w, rootW), Math.max(box.h, rootH),
                         "", 0, canvasBg, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, UIElement.RenderMeta.EMPTY);
             }
-
-            for (LayoutBox child : box.children) {
-                buildRenderQueue(child, renderQueue, 0, null, null);
-            }
-        } else {
-            buildRenderQueue(box, renderQueue, 0, null, null);
         }
 
-        sortPaintOrder(renderQueue);
-
-        for (RenderTask task : renderQueue) {
+        for (RenderTask task : paintTasks(box)) {
             task.drawAction().accept(elements);
         }
         return elements;
@@ -115,34 +109,206 @@ public class UIRenderer {
      * ここも同じ経路を通るので、テストが描画と食い違うことはない。
      */
     public List<LayoutBox> paintOrder(LayoutBox root) {
-        fragIdCounter = 0;
-        domOrderCounter = 0;
-        List<RenderTask> queue = new ArrayList<>();
-        if ("root".equals(root.node.tag)) {
-            for (LayoutBox child : root.children) buildRenderQueue(child, queue, 0, null, null);
-        } else {
-            buildRenderQueue(root, queue, 0, null, null);
-        }
-        sortPaintOrder(queue);
-        List<LayoutBox> order = new ArrayList<>(queue.size());
-        for (RenderTask task : queue) {
+        List<LayoutBox> order = new ArrayList<>();
+        for (RenderTask task : paintTasks(root)) {
             if (task.box() != null) order.add(task.box());
         }
         return order;
     }
 
-    private static void sortPaintOrder(List<RenderTask> queue) {
-        queue.sort(Comparator.comparingInt(RenderTask::zIndex).thenComparingInt(RenderTask::layer)
-                .thenComparingInt(RenderTask::domOrder));
+    /**
+     * 背景の指定が無い文書のキャンバス。ゲームの上に重ねて描く文書は iframe と同じ扱いで透明
+     * （ブラウザが白で塗るのは最上位の文書だけ）。HUD の断片のように html / body を持たない文書も透明になる。
+     * 以前は ua.css が body を白で塗り、body の無い文書は #111111 で塗りつぶしていた。
+     */
+    private static final int DEFAULT_CANVAS_COLOR = 0x00000000;
+
+    private static LayoutBox canvasBackgroundSource(LayoutBox root) {
+        LayoutBox html = childWithTag(root, "html");
+        if (html != null && hasBackground(html)) return html;
+        LayoutBox body = childWithTag(html != null ? html : root, "body");
+        return body != null && hasBackground(body) ? body : null;
     }
 
-    private LayoutBox findBodyBox(LayoutBox box) {
-        if ("body".equals(box.node.tag)) return box;
-        for (LayoutBox child : box.children) {
-            LayoutBox found = findBodyBox(child);
-            if (found != null) return found;
+    private static LayoutBox childWithTag(LayoutBox parent, String tag) {
+        for (LayoutBox child : parent.children) {
+            if (tag.equals(child.node.tag)) return child;
         }
         return null;
+    }
+
+    private static boolean hasBackground(LayoutBox box) {
+        return box.style.containsKey(CssProperty.BACKGROUND_COLOR) || box.style.containsKey(CssProperty.BACKGROUND);
+    }
+
+    // ==========================================
+    // 描画順（CSS 2.2 付録 E）
+    // ==========================================
+
+    /**
+     * 描画順に並べたタスク。ボックスツリーからスタッキングコンテキストの木を組み、付録 E の層の順に平らにする。
+     *
+     * 何が壊れていたか: 以前は z-index を親に足し込んだ値と「通常フロー / float / 位置指定」の 3 層で
+     * 全体を 1 回並べ替えていた。スタッキングコンテキストが無いので中の z-index が外へ漏れ
+     * （z-index: 1 の箱の中の z-index: 100 が外の z-index: 2 を越えた）、opacity と transform は
+     * コンテキストを作らず、位置指定されていないブロックの z-index も効き、
+     * コンテキストの中の負の z-index は親の背景より下に潜っていた。
+     */
+    private List<RenderTask> paintTasks(LayoutBox root) {
+        fragIdCounter = 0;
+        PaintNode top;
+        if ("root".equals(root.node.tag)) {
+            top = new PaintNode(null, true, 0);
+            collectChildren(root, null, null, top.layers, top.layers);
+        } else {
+            top = new PaintNode(selfTask(root, null, null), true, 0);
+            collectChildren(root, null, null, top.layers, top.layers);
+        }
+        List<RenderTask> out = new ArrayList<>();
+        emit(top, out);
+        return out;
+    }
+
+    /**
+     * 子を描画の層に振り分ける。
+     *
+     * @param sc    いちばん近い本物のスタッキングコンテキストの層（負・0・正の z-index と位置指定要素が入る）
+     * @param local 今いる層（float・位置指定要素・不可分なインラインは自分の中身だけを持つ疑似コンテキストを作る）
+     */
+    private void collectChildren(LayoutBox box, float[] clip, String parentId, PaintLayers sc, PaintLayers local) {
+        String tag = box.node.tag;
+        if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) return;
+
+        float[] childClip = computeChildClipRect(box, clip);
+        // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
+        String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.getId();
+        for (LayoutBox child : box.children) classify(child, childClip, childParent, sc, local);
+
+        String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
+        if (!"root".equals(tag) && box.w > 0 && box.h > 0 && ("scroll".equals(overflow) || "auto".equals(overflow))) {
+            local.after.add(new RenderTask(null, elements -> drawScrollbarsIfNeeded(elements, box, clip)));
+        }
+    }
+
+    /**
+     * 付録 E の分類。スタッキングコンテキストは z-index の符号で親のコンテキストの層 2 / 8 / 9 に入り、
+     * 中身を自分の層に閉じ込める。z-index: auto の位置指定要素（層 8）・float（層 5）・
+     * 不可分なインラインと flex / grid アイテム（層 7）は「コンテキストを作ったかのように」中身ごと描くが、
+     * 中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
+     */
+    private void classify(LayoutBox box, float[] clip, String parentId, PaintLayers sc, PaintLayers local) {
+        if (box.display.isNone() || "none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
+        if ("option".equalsIgnoreCase(box.node.tag)) return;
+
+        RenderTask self = selfTask(box, clip, parentId);
+        if (createsStackingContext(box)) {
+            int z = isZIndexAuto(box) ? 0 : box.zIndex;
+            PaintNode node = new PaintNode(self, true, z);
+            (z < 0 ? sc.negative : z > 0 ? sc.positive : sc.positioned).add(node);
+            collectChildren(box, clip, parentId, node.layers, node.layers);
+        } else if (isPositioned(box)) {
+            // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
+            PaintNode node = new PaintNode(self, false, 0);
+            sc.positioned.add(node);
+            collectChildren(box, clip, parentId, sc, node.layers);
+        } else if (BlockLayoutEngine.isFloating(box)) {
+            PaintNode node = new PaintNode(self, false, 0);
+            local.floats.add(node);
+            collectChildren(box, clip, parentId, sc, node.layers);
+        } else if (isAtomicInline(box)) {
+            PaintNode node = new PaintNode(self, false, 0);
+            local.inlines.add(node);
+            collectChildren(box, clip, parentId, sc, node.layers);
+        } else {
+            PaintNode leaf = new PaintNode(self, false, 0, null);
+            (box.display.isInlineLevel() ? local.inlines : local.blocks).add(leaf);
+            collectChildren(box, clip, parentId, sc, local);
+        }
+    }
+
+    /** 付録 E の層の順に平らにする。z-index の並べ替えは安定（同じ値なら木の順）。 */
+    private static void emit(PaintNode node, List<RenderTask> out) {
+        if (node.self != null) out.add(node.self);
+        PaintLayers l = node.layers;
+        if (l == null) return;
+        if (node.stackingContext) {
+            l.negative.sort(Comparator.comparingInt(PaintNode::z));
+            for (PaintNode n : l.negative) emit(n, out);
+        }
+        for (PaintNode n : l.blocks) emit(n, out);
+        for (PaintNode n : l.floats) emit(n, out);
+        for (PaintNode n : l.inlines) emit(n, out);
+        if (node.stackingContext) {
+            for (PaintNode n : l.positioned) emit(n, out);
+            l.positive.sort(Comparator.comparingInt(PaintNode::z));
+            for (PaintNode n : l.positive) emit(n, out);
+        }
+        out.addAll(l.after);
+    }
+
+    private RenderTask selfTask(LayoutBox box, float[] clip, String parentId) {
+        if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
+        return new RenderTask(box, elements -> drawBoxSelf(elements, box, clip, parentId));
+    }
+
+    private static boolean isPositioned(LayoutBox box) {
+        return box.isRelative || box.isAbsolute || box.isSticky;
+    }
+
+    private static boolean isZIndexAuto(LayoutBox box) {
+        String z = box.style.get(CssProperty.Z_INDEX);
+        return z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
+    }
+
+    /** flex / grid アイテムは位置指定が無くても z-index でコンテキストを作る（CSS Flexbox §5.4 / Grid §9.5）。 */
+    private static boolean isFlexOrGridItem(LayoutBox box) {
+        if (box.parent == null || box.isAbsolute) return false;
+        LayoutBox.Display.Inner inner = box.parent.display.inner();
+        return inner == LayoutBox.Display.Inner.FLEX || inner == LayoutBox.Display.Inner.GRID;
+    }
+
+    /**
+     * スタッキングコンテキストを作るか（CSS 2.2 §9.9.1 と CSS Positioned Layout 3 / Color 4 /
+     * Compositing 1 / Transforms 1 の追加分）。
+     */
+    static boolean createsStackingContext(LayoutBox box) {
+        boolean zAuto = isZIndexAuto(box);
+        if (isPositioned(box) && !zAuto) return true;
+        if (box.isFixed || box.isSticky) return true;
+        if (!zAuto && isFlexOrGridItem(box)) return true;
+        if (box.style.number(CssProperty.OPACITY, 1f) < 1f) return true;
+        if (!isNone(box.style.get(CssProperty.TRANSFORM))) return true;
+        if (!isNone(box.style.get("filter"))) return true;
+        if ("isolate".equals(box.style.keyword("isolation", "auto"))) return true;
+        return !"normal".equals(box.style.keyword("mix-blend-mode", "normal"));
+    }
+
+    private static boolean isNone(String value) {
+        return value == null || value.isBlank() || "none".equalsIgnoreCase(value.trim());
+    }
+
+    /** 中身ごと 1 つの単位として描くインラインレベルの箱（inline-block / inline-flex など）と flex / grid アイテム。 */
+    private static boolean isAtomicInline(LayoutBox box) {
+        if (isFlexOrGridItem(box)) return true;
+        return box.display.isInlineLevel() && box.display.inner() != LayoutBox.Display.Inner.FLOW;
+    }
+
+    /** スタッキングコンテキスト（または疑似コンテキスト）の中の層。番号は付録 E の手順。 */
+    private static final class PaintLayers {
+        final List<PaintNode> negative = new ArrayList<>();   // 2: 負の z-index のコンテキスト
+        final List<PaintNode> blocks = new ArrayList<>();     // 4: 通常フローのブロックレベル
+        final List<PaintNode> floats = new ArrayList<>();     // 5: float
+        final List<PaintNode> inlines = new ArrayList<>();    // 7: インラインレベル
+        final List<PaintNode> positioned = new ArrayList<>(); // 8: z-index: auto / 0 の位置指定要素とコンテキスト
+        final List<PaintNode> positive = new ArrayList<>();   // 9: 正の z-index のコンテキスト
+        final List<RenderTask> after = new ArrayList<>();     // スクロールバー（中身より上）
+    }
+
+    /** {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。 */
+    private record PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers) {
+        PaintNode(RenderTask self, boolean stackingContext, int z) {
+            this(self, stackingContext, z, new PaintLayers());
+        }
     }
 
     private static float parseOriginProp(String p) {
@@ -179,53 +345,6 @@ public class UIRenderer {
             return new UIElement.GradientSpec(dir, colors.getFirst(), colors.getLast());
         }
         return null;
-    }
-
-    private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, float[] clipRect, String parentId) {
-        buildRenderQueue(box, queue, parentZIndex, 0, clipRect, parentId);
-    }
-
-    /**
-     * {@code layer} は同じ z-index の中での層。float とその中身は通常フローのブロックより上（CSS 2.2 付録 E の
-     * 層 5 が層 4 より上）、位置指定要素とその中身はさらに上（層 6）に描く。以前は文書順だけで、
-     * 後続のブロックの背景が float と位置指定要素を隠していた。
-     */
-    private void buildRenderQueue(LayoutBox box, List<RenderTask> queue, int parentZIndex, int parentLayer,
-                                  float[] clipRect, String parentId) {
-        if ("none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
-        if ("option".equalsIgnoreCase(box.node.tag)) return;
-
-        // LIMITATION(制約): z-index を親に足し込むだけで、スタッキングコンテキストが無い。
-        // 中の z-index が外へ漏れ、opacity / transform はコンテキストを作らず、静的なブロックの
-        // z-index も効いてしまう（層は float と位置指定だけを分けている）。
-        // W5 で直す。FIDELITY.md の「W5 — 描画モデル」と README の "Not supported" に対応。
-        int currentZ = box.zIndex != 0 ? (parentZIndex + box.zIndex) : parentZIndex;
-        // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
-        String currentId = box.isAnonymous ? parentId : box.node.getId();
-        int order = domOrderCounter++;
-        int layer = parentLayer;
-        if (box.isRelative || box.isAbsolute || box.isSticky) layer = 2;
-        else if (BlockLayoutEngine.isFloating(box)) layer = Math.max(parentLayer, 1);
-
-        if (box.w > 0 && box.h > 0 && !box.isAnonymous) {
-            queue.add(new RenderTask(currentZ, layer, order, box, elements -> drawBoxSelf(elements, box, clipRect, parentId)));
-        }
-
-        String tag = box.node.tag;
-        if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) {
-            return;
-        }
-
-        float[] childClip = computeChildClipRect(box, clipRect);
-        for (LayoutBox child : box.children) {
-            buildRenderQueue(child, queue, currentZ, layer, childClip, currentId);
-        }
-
-        String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
-        if (box.w > 0 && box.h > 0 && ("scroll".equals(overflow) || "auto".equals(overflow))) {
-            int sbOrder = domOrderCounter++;
-            queue.add(new RenderTask(currentZ + 1, layer, sbOrder, null, elements -> drawScrollbarsIfNeeded(elements, box, clipRect)));
-        }
     }
 
     private float[] computeChildClipRect(LayoutBox box, float[] parentClip) {
@@ -606,72 +725,37 @@ public class UIRenderer {
         return new TransitionSpec(durationMs, delayMs, easing, property);
     }
 
-    private BorderSpec parseBorderSpec(LayoutBox box, int[] radii) {
+    /**
+     * 枠線の幅・色・線種。幅はレイアウトが決めた値（{@code box.bT} など）をそのまま使う（軸 1・3）。
+     * 線種が none / hidden の辺は算出値の段で幅 0 になっている。色が無ければ {@code currentcolor}。
+     *
+     * 何が壊れていたか: 以前は描画が {@code border-<辺>} の文字列から幅と色を読み直しており、
+     * 色を書かない {@code border: 1px solid} の枠が透明になり、線種は読まずに常に実線だった。
+     */
+    private BorderSpec parseBorderSpec(LayoutBox box, int[] radii, int textColor) {
+        float[] widths = {box.bT, box.bR, box.bB, box.bL};
+        int[] colors = new int[4];
+        String[] styles = new String[4];
         boolean hasBorder = false;
         int borderColor = 0x00000000;
-        float bwTop = 0, bwRight = 0, bwBottom = 0, bwLeft = 0;
-        int bcTop = 0, bcRight = 0, bcBottom = 0, bcLeft = 0;
-
-        for (String dir : BORDER_DIRECTIONS) {
-            float bw = 0;
-            int bc = 0x00000000;
-
-            String widthProp = box.style.get("border-" + dir + "-width");
+        for (int i = 0; i < 4; i++) {
+            String dir = BORDER_DIRECTIONS[i];
             String colorProp = box.style.get("border-" + dir + "-color");
-            String borderProp = box.style.get("border-" + dir);
-
-            if (widthProp != null && !"none".equals(widthProp)) {
-                bw = LengthResolver.parseDim(widthProp, box.w, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-            } else if (borderProp != null && !"none".equals(borderProp)) {
-                String[] parts = WHITESPACE_SPLIT.split(borderProp.trim());
-                if (parts.length >= 1) {
-                    bw = LengthResolver.parseDim(parts[0], box.w, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-                }
-            }
-
-            // 枠線を重ねる表のセルは、隣と分け合った半分の幅を描く（隣の半分と合わせて 1 本になる）
-            if (box.collapsedBorders != null) {
-                bw = switch (dir) {
-                    case "top" -> box.bT;
-                    case "right" -> box.bR;
-                    case "bottom" -> box.bB;
-                    default -> box.bL;
-                };
-            }
-
-            if (colorProp != null && !"none".equals(colorProp)) {
-                bc = ColorParser.parseColor(colorProp);
-            } else if (borderProp != null && !"none".equals(borderProp)) {
-                Matcher cm = COLOR_TOKEN_PATTERN.matcher(borderProp);
-                String lastColor = null;
-                while (cm.find()) {
-                    lastColor = cm.group(1);
-                }
-                if (lastColor != null) {
-                    bc = ColorParser.parseColor(lastColor);
-                } else {
-                    String[] parts = WHITESPACE_SPLIT.split(borderProp.trim());
-                    if (parts.length >= 3) {
-                        bc = ColorParser.parseColor(parts[parts.length - 1]);
-                    }
-                }
-            }
-
-            if (bw > 0) {
+            colors[i] = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
+            styles[i] = box.style.keyword("border-" + dir + "-style", "solid");
+            if (widths[i] > 0) {
                 hasBorder = true;
-                borderColor = bc;
-                switch (dir) {
-                    case "top" -> { bwTop = bw; bcTop = bc; }
-                    case "right" -> { bwRight = bw; bcRight = bc; }
-                    case "bottom" -> { bwBottom = bw; bcBottom = bc; }
-                    case "left" -> { bwLeft = bw; bcLeft = bc; }
-                }
+                borderColor = colors[i];
             }
         }
+        float bwTop = widths[0], bwRight = widths[1], bwBottom = widths[2], bwLeft = widths[3];
+        int bcTop = colors[0], bcRight = colors[1], bcBottom = colors[2], bcLeft = colors[3];
 
         boolean isCircle = radii[0] >= (box.w / 2) - 1 && radii[1] >= (box.w / 2) - 1
                 && radii[2] >= (box.w / 2) - 1 && radii[3] >= (box.w / 2) - 1
                 && box.w > 0 && box.h > 0 && Math.abs(box.w - box.h) <= 2;
+        // LIMITATION(制約): 角丸の枠線は枠の色で塗った角丸矩形に内側の背景を重ねて描くので、線種は実線になり、
+        // 辺ごとの色も 1 色（最後の辺の色）になる。README の "Not supported" に対応。
         boolean useRoundedBorder = (radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0) && hasBorder && !isCircle;
 
         Corners innerRadii = new Corners(
@@ -682,7 +766,7 @@ public class UIRenderer {
         );
 
         return new BorderSpec(hasBorder, isCircle, useRoundedBorder, borderColor,
-                bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, innerRadii);
+                bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, styles, innerRadii);
     }
 
     private void drawBoxSelf(List<UIElement> elements, LayoutBox box, float[] clipRect, String parentId) {
@@ -695,9 +779,10 @@ public class UIRenderer {
         int color = ColorParser.parseColor(box.style.get(CssProperty.COLOR));
         if (color == 0x00000000) color = 0xFFF5F5F0;
 
-        String bgProp = box.style.getOrDefault(CssProperty.BACKGROUND, box.style.getOrDefault(CssProperty.BACKGROUND_COLOR, "transparent"));
-        int bgColor = ColorParser.parseColor(bgProp);
-        UIElement.GradientSpec gradientSpec = parseGradientSpec(bgProp);
+        // 背景色と画像のレイヤーは別物（色はいちばん下）。background ショートハンドは算出の段で
+        // ロングハンドに展開済み。キャンバスに背景を譲った要素は色を描かない
+        int bgColor = box == canvasBackgroundSource ? 0x00000000
+                : ColorParser.parseColor(box.style.getOrDefault(CssProperty.BACKGROUND_COLOR, "transparent"));
 
         String id = box.node.getId();
 
@@ -736,10 +821,10 @@ public class UIRenderer {
         UIElement.RenderMeta anchorMeta = new UIElement.RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta);
 
-        Map<String, String> partsEvents = buildPartsEvents(box, id, fontHVal, gradientSpec, transSpec);
+        Map<String, String> partsEvents = buildPartsEvents(box, id, fontHVal, transSpec);
         Map<String, String> passiveBorderEvents = buildPassiveBorderEvents(id, transSpec);
 
-        UIElement.RenderMeta baseMeta = new UIElement.RenderMeta(normalizedClip, radii, gradientSpec, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+        UIElement.RenderMeta baseMeta = new UIElement.RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
         if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag)) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
@@ -753,8 +838,8 @@ public class UIRenderer {
 
         drawBoxShadowIfPresent(elements, box, id, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy);
 
-        BorderSpec border = parseBorderSpec(box, rawRadii);
-        UIElement.RenderMeta innerMeta = new UIElement.RenderMeta(normalizedClip, border.innerRadii(), gradientSpec, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+        BorderSpec border = parseBorderSpec(box, rawRadii, color);
+        UIElement.RenderMeta innerMeta = new UIElement.RenderMeta(normalizedClip, border.innerRadii(), null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
         switch (box.node.tag) {
             case "mc-scene" -> drawSceneElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
@@ -775,6 +860,34 @@ public class UIRenderer {
             case "input" -> drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             default -> drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
         }
+        drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
+    }
+
+    /**
+     * 輪郭線。枠線の外側に {@code outline-offset} だけ離して描き、レイアウトには影響しない。
+     * 付録 E は輪郭線を最後の層に描いてもよいとしているが、箱自身と一緒に描くのも認めている（こちらを取る）。
+     *
+     * LIMITATION(制約): 輪郭線は角丸に沿わず、インラインボックスでは行ごとの断片に描かない。
+     * README の "Not supported" に対応。
+     */
+    private void drawOutline(List<UIElement> elements, LayoutBox box, String id, int color,
+                             Map<String, String> events, UIElement.RenderMeta meta, int transDur) {
+        String lineStyle = box.style.keyword("outline-style", "none");
+        if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
+        float w = box.style.length("outline-width", box.w, rootW, rootH);
+        if (w <= 0) return;
+        float offset = box.style.length("outline-offset", box.w, rootW, rootH);
+        String colorProp = box.style.get("outline-color");
+        int c = colorProp == null || "invert".equalsIgnoreCase(colorProp.trim()) ? color : ColorParser.parseColor(colorProp);
+        if ("auto".equals(lineStyle)) lineStyle = "solid";
+
+        float x = box.x - offset - w, y = box.y - offset - w;
+        float ow = box.w + 2 * (offset + w), oh = box.h + 2 * (offset + w);
+        if (ow <= 0 || oh <= 0) return;
+        String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
+        int[] colors = {c, c, c, c};
+        float[] widths = {w, w, w, w};
+        drawLines(elements, id, "_o_", x, y, ow, oh, widths, styles, colors, 0, events, meta, transDur);
     }
 
     private static void applyTransitionEvents(Map<String, String> events, TransitionSpec transSpec) {
@@ -789,16 +902,13 @@ public class UIRenderer {
         }
     }
 
-    private Map<String, String> buildPartsEvents(LayoutBox box, String id, float fontHVal, UIElement.GradientSpec gradientSpec, TransitionSpec transSpec) {
+    private Map<String, String> buildPartsEvents(LayoutBox box, String id, float fontHVal, TransitionSpec transSpec) {
         Map<String, String> partsEvents = new HashMap<>();
         partsEvents.put(RenderKeys.MC_PARENT, id);
         partsEvents.put(RenderKeys.MC_FONT_H, String.valueOf(fontHVal));
         applyTransitionEvents(partsEvents, transSpec);
         if (box.style.containsKey(CssProperty.FONT_FAMILY)) {
             partsEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
-        }
-        if (gradientSpec != null) {
-            partsEvents.put(RenderKeys.MC_GRADIENT, gradientSpec.direction() + ":" + gradientSpec.startColor() + ":" + gradientSpec.endColor());
         }
         if (box.node.attrs.containsKey("title")) partsEvents.put(RenderKeys.MC_TITLE, box.node.attrs.get("title"));
         else if (box.node.attrs.containsKey("data-tooltip")) partsEvents.put(RenderKeys.MC_TITLE, box.node.attrs.get("data-tooltip"));
@@ -1105,15 +1215,6 @@ public class UIRenderer {
                                          Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
                                          BorderSpec border, UIElement.RenderMeta baseMeta, UIElement.RenderMeta innerMeta, float rOff,
                                          int transDur, AnimationSpec colorBgAnim) {
-        if ("li".equals(box.node.tag)) {
-            // マーカーは font-size に比例させ、縦は 1 行目の中央に合わせる
-            float fontSizePx = box.style.fontSizePx();
-            int dotSize = Math.max(2, Math.round(fontSizePx / 4f));
-            float dotX = box.x - fontSizePx * 0.75f;
-            float dotY = box.y + box.pT + box.lineHeightPx / 2f - dotSize / 2f;
-            addElement(elements, id, id + "_dot", ElementType.RECT, dotX, dotY, dotSize, dotSize, "", 0, color, Map.of(RenderKeys.MC_PARENT, id), dotSize / 2, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, baseMeta);
-        }
-
         ElementType bgType = ElementType.RECT;
         if ("button".equalsIgnoreCase(box.node.tag)) {
             bgType = ElementType.BUTTON;
@@ -1129,6 +1230,7 @@ public class UIRenderer {
             if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
                 addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             }
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
                     new UIElement.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
         } else if (border.useRoundedBorder()) {
@@ -1141,10 +1243,23 @@ public class UIRenderer {
                 float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
                 addElement(elements, id, id + "_bg", bgType, innerX, innerY, innerW, innerH, "", color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
             }
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
         } else {
-            if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
-                addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            // background-clip が border-box でなければ、色は箱の内側だけに塗る。_bg はヒットテストと
+            // 状態の受け口なので箱いっぱいのまま残し、色だけを切った矩形に移す
+            String colorClip = BoxDecorations.colorClip(box.style);
+            int bgFill = bgColor;
+            if (bgColor != 0x00000000 && !"border-box".equals(colorClip)) {
+                bgFill = 0x00000000;
+                BoxDecorations.Rect area = BoxDecorations.boxArea(box, colorClip);
+                addElement(elements, id, id + "_bgl" + BoxDecorations.layers(box.style).size() + "_0", ElementType.RECT,
+                        area.x(), area.y(), area.w(), area.h(), "", 0, bgColor, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
+                        new UIElement.RenderMeta(normalizedClip, null, null, null, fontHVal, ox, oy, 1, false));
             }
+            if (bgFill != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
+                addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            }
+            drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             if (border.hasBorder()) {
                 drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
             }
@@ -1160,16 +1275,110 @@ public class UIRenderer {
         }
     }
 
+    /**
+     * 背景の画像レイヤー（{@code url()} とグラデーション）。リストの末尾がいちばん下なので後ろから描く。
+     * 各レイヤーは {@code background-origin} の箱を基準にタイルを並べ、{@code background-clip} の箱で切る。
+     *
+     * 何が壊れていたか: 以前は背景を色 1 つと 2 色のグラデーション 1 つしか持てず、
+     * {@code background-image: url()} は描かれず、{@code background-size / position / repeat / clip / origin} も
+     * 読んでいなかった。
+     *
+     * LIMITATION(制約): グラデーションは linear-gradient の最初と最後の色・8 方向だけ、
+     * {@code background-attachment} は常に scroll、インラインボックスの断片には画像を描かない。
+     * 角丸の箱でタイルが描画領域より小さいと、タイルは角の丸みで切られない。README の "Not supported" に対応。
+     */
+    private void drawBackgroundImages(List<UIElement> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
+                                      BorderSpec border, Map<String, String> events, float fontHVal, float ox, float oy) {
+        List<BoxDecorations.BackgroundLayer> layers = BoxDecorations.layers(box.style);
+        for (int i = layers.size() - 1; i >= 0; i--) {
+            BoxDecorations.BackgroundLayer layer = layers.get(i);
+            String url = layer.url();
+            UIElement.GradientSpec gradient = layer.isGradient() ? parseGradientSpec(layer.image()) : null;
+            if (url == null && gradient == null) continue;
+
+            int[] intrinsic = url != null && UIParser.intrinsicSizeResolver != null ? UIParser.intrinsicSizeResolver.getSize(url) : null;
+            // 角丸の枠線は枠の色の下地に内側を重ねて描くので、border-box まで塗ると枠を覆ってしまう
+            String clipBox = border.useRoundedBorder() && "border-box".equals(layer.clip()) ? "padding-box" : layer.clip();
+            BoxDecorations.Rect paint = BoxDecorations.boxArea(box, clipBox);
+            Corners paintRadii = "border-box".equals(clipBox) ? radii : border.innerRadii();
+            ClipRect layerClip = intersectClip(clip, paint, paintRadii);
+
+            List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(
+                    new BoxDecorations.BackgroundLayer(layer.image(), layer.position(), layer.size(), layer.repeat(), layer.origin(), clipBox),
+                    box, intrinsic, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
+            for (int k = 0; k < tiles.size(); k++) {
+                BoxDecorations.Rect t = tiles.get(k);
+                // タイルが描画領域とぴったり重なるときだけ角丸を付ける（小さいタイルを角で丸めると隙間が出る）
+                boolean fills = Math.abs(t.x() - paint.x()) < 0.01f && Math.abs(t.y() - paint.y()) < 0.01f
+                        && Math.abs(t.w() - paint.w()) < 0.01f && Math.abs(t.h() - paint.h()) < 0.01f;
+                UIElement.RenderMeta meta = new UIElement.RenderMeta(layerClip, fills ? paintRadii : null, gradient, null,
+                        fontHVal, ox, oy, 1, false);
+                String tileId = id + "_bgl" + i + "_" + k;
+                if (url != null) {
+                    addElement(elements, id, tileId, ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), url,
+                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                } else {
+                    addElement(elements, id, tileId, ElementType.RECT, t.x(), t.y(), t.w(), t.h(), "",
+                            0, gradient.startColor(), events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                }
+            }
+        }
+    }
+
+    /** 描画領域で親のクリップを狭める。親が領域を含んでいれば領域の角丸、そうでなければ親の角丸を残す。 */
+    private static ClipRect intersectClip(ClipRect parent, BoxDecorations.Rect area, Corners r) {
+        float minX = area.x(), minY = area.y(), maxX = area.x() + area.w(), maxY = area.y() + area.h();
+        if (parent == null || (parent.minX() <= minX && parent.minY() <= minY && parent.maxX() >= maxX && parent.maxY() >= maxY)) {
+            return r == null ? new ClipRect(minX, minY, maxX, maxY, 0, 0, 0, 0)
+                    : new ClipRect(minX, minY, maxX, maxY, r.topLeft(), r.topRight(), r.bottomRight(), r.bottomLeft());
+        }
+        return new ClipRect(Math.max(parent.minX(), minX), Math.max(parent.minY(), minY),
+                Math.min(parent.maxX(), maxX), Math.min(parent.maxY(), maxY),
+                parent.radiusTopLeft(), parent.radiusTopRight(), parent.radiusBottomRight(), parent.radiusBottomLeft());
+    }
+
     private void drawStraightBorders(List<UIElement> elements, String id, LayoutBox box, float rOff, Map<String, String> partsEvents, BorderSpec b, UIElement.RenderMeta meta, int transDur) {
-        UIElement.RenderMeta borderMeta = new UIElement.RenderMeta(meta.clipRect(), null, null, null, meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
-        if (b.bwTop() > 0)
-            addElement(elements, id, id + "_b_top", ElementType.RECT, box.x + rOff, box.y, box.w - rOff * 2, b.bwTop(), "", 0, b.bcTop(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
-        if (b.bwBottom() > 0)
-            addElement(elements, id, id + "_b_bottom", ElementType.RECT, box.x + rOff, box.y + box.h - b.bwBottom(), box.w - rOff * 2, b.bwBottom(), "", 0, b.bcBottom(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
-        if (b.bwLeft() > 0)
-            addElement(elements, id, id + "_b_left", ElementType.RECT, box.x, box.y + rOff, b.bwLeft(), box.h - rOff * 2, "", 0, b.bcLeft(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
-        if (b.bwRight() > 0)
-            addElement(elements, id, id + "_b_right", ElementType.RECT, box.x + box.w - b.bwRight(), box.y + rOff, b.bwRight(), box.h - rOff * 2, "", 0, b.bcRight(), partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, borderMeta);
+        float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
+        int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
+        drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur);
+    }
+
+    /**
+     * 矩形の内側に沿った 4 辺の線（枠線と輪郭線で共有）。辺ごとに線種で片に分ける（{@link BoxDecorations}）。
+     * 上下の辺は幅いっぱい、左右の辺は高さいっぱいの帯で、角は重ねて塗る（従来どおり）。
+     *
+     * 片の id は {@code <id><prefix><辺>} と、2 つ目からは {@code _<番号>} を足したもの
+     * （{@code ClientWebManager.getBaseNodeId} がどちらも持ち主の id に戻す）。
+     */
+    private void drawLines(List<UIElement> elements, String id, String prefix, float x, float y, float w, float h,
+                           float[] widths, String[] styles, int[] colors, float rOff,
+                           Map<String, String> events, UIElement.RenderMeta meta, int transDur) {
+        float[][] bands = {
+                {x + rOff, y, w - rOff * 2, widths[0]},
+                {x + w - widths[1], y + rOff, widths[1], h - rOff * 2},
+                {x + rOff, y + h - widths[2], w - rOff * 2, widths[2]},
+                {x, y + rOff, widths[3], h - rOff * 2},
+        };
+        BoxDecorations.Side[] sides = BoxDecorations.Side.values();
+        // 帯の両端に接する辺（上下は左右、左右は上下）
+        float[][] insets = {{widths[3], widths[1]}, {widths[0], widths[2]}, {widths[3], widths[1]}, {widths[0], widths[2]}};
+        for (int i = 0; i < 4; i++) {
+            if (widths[i] <= 0) continue;
+            float[] band = bands[i];
+            List<BoxDecorations.Segment> segments = BoxDecorations.sideSegments(styles[i], sides[i],
+                    band[0], band[1], band[2], band[3], insets[i][0], insets[i][1]);
+            String base = id + prefix + BORDER_DIRECTIONS[i];
+            for (int k = 0; k < segments.size(); k++) {
+                BoxDecorations.Segment seg = segments.get(k);
+                int radius = seg.round() ? Math.round(Math.min(seg.w(), seg.h()) / 2f) : 0;
+                Corners corners = radius > 0 ? new Corners(radius, radius, radius, radius) : null;
+                UIElement.RenderMeta segMeta = new UIElement.RenderMeta(meta.clipRect(), corners, null, null,
+                        meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
+                addElement(elements, id, k == 0 ? base : base + "_" + k, ElementType.RECT, seg.x(), seg.y(), seg.w(), seg.h(),
+                        "", 0, BoxDecorations.shade(colors[i], seg.shade()), events, radius, 1f, 0, 0, 1f, 1f, 0, transDur,
+                        AnimationSpec.NONE, segMeta);
+            }
+        }
     }
 
     /** 角丸の半径は描画側の整数値（{@link Corners}）なので、解いた長さをここで丸める。 */
@@ -1200,7 +1409,7 @@ public class UIRenderer {
             boolean hasBorder, boolean isCircle, boolean useRoundedBorder, int borderColor,
             float bwTop, float bwRight, float bwBottom, float bwLeft,
             int bcTop, int bcRight, int bcBottom, int bcLeft,
-            Corners innerRadii
+            String[] styles, Corners innerRadii
     ) {
         int maxThickness() {
             return Math.round(Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft)));
@@ -1208,5 +1417,5 @@ public class UIRenderer {
     }
 
     /** {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。 */
-    private record RenderTask(int zIndex, int layer, int domOrder, LayoutBox box, Consumer<List<UIElement>> drawAction) {}
+    private record RenderTask(LayoutBox box, Consumer<List<UIElement>> drawAction) {}
 }

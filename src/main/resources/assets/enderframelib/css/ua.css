@@ -1,78 +1,145 @@
 /* EnderFrameLib ユーザーエージェントスタイルシート（組み込みの既定値）
  * CascadeOrigin.USER_AGENT として読み込まれ、作者スタイルシートより弱い。
- * LIMITATION(制約): WHATWG HTML の Rendering 節の既定値ではない。テーマ的な装飾を持ち、
- * dl / dd などの既定値が欠けている。W6 で置き換える。FIDELITY.md の「W6 — UA スタイルシート」と
+ *
+ * WHATWG HTML の Rendering 節（§15.3 / §15.4）の既定値を、このエンジンが読める形で書いたもの。
+ * 論理プロパティは横書き・左から右の物理プロパティに、:is() は子孫セレクタの列挙に、
+ * :link / :visited は a[href] に置き換えてある。色・角丸・背景などの装飾は持たず、
+ * 組み込みテーマ（dark / vanilla / brass）が持つ。標準に無いものは次の 3 つだけ:
+ *   - インライン要素の display: inline（エンジンは display の宣言が無い要素の多くをブロックと推測するため）
+ *   - フォームコントロールの見た目（appearance: auto 相当。ブラウザは OS の部品で描くので CSS に現れない）
+ *   - EnderFrameLib のカスタムタグ（mc-*）とそれが展開するクラス（ブラウザに無い要素の既定値）
+ *
+ * 何が壊れていたか: 以前は UA がテーマ的な装飾（暗い pre・リンク色 #89b4fa・h6 の色・表の枠と幅 100%・
+ * 白い body）を持ち、dl / dd などの既定値が欠け、body の margin が 0 だったため、素の HTML が
+ * ブラウザと違って見えた。
+ *
+ * LIMITATION(制約): legend は fieldset の枠の上に重ねず、普通のブロックとして置く。
  * README の "Not supported" に対応。 */
-body, html { background-color: #ffffff; color: #333333; margin: 0; padding: 0; width: 100%; min-height: 100%; box-sizing: border-box; overflow: auto; }
-head, meta, title, link, style, script, template, option { display: none; }
-*[hidden] { display: none; }
-h1 { font-size: 2rem; font-weight: bold; margin: 0.67em 0; display: block; }
-h2 { font-size: 1.5rem; font-weight: bold; margin: 0.83em 0; display: block; }
-h3 { font-size: 1.17rem; font-weight: bold; margin: 1em 0; display: block; }
-h4 { font-size: 1.0rem; font-weight: bold; margin: 0.8em 0; display: block; }
-h5 { font-size: 0.9rem; font-weight: bold; margin: 0.6em 0; display: block; }
-h6 { font-size: 0.8rem; font-weight: bold; margin: 0.5em 0; color: #a6adc8; display: block; }
-p { margin: 0.6em 0; display: block; }
-ul, ol { padding-left: 20px; margin: 0.6em 0; display: block; counter-reset: list-item; }
-ul { list-style-type: disc; }
-ol { list-style-type: decimal; }
-ul ul, ol ul { list-style-type: circle; }
-ul ul ul, ul ol ul, ol ul ul, ol ol ul { list-style-type: square; }
-li { display: list-item; margin: 2px 0; }
-.task-list-item { display: flex; flex-direction: row; align-items: center; gap: 6px; }
-a { color: #89b4fa; text-decoration: underline; cursor: pointer; display: inline; }
-a:hover { color: #b4befe; }
-span, b, strong, i, em, s, strike, del, u, ins { display: inline; }
+
+/* §15.3.1 隠す要素 */
+area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none; }
+[hidden] { display: none; }
+input[type="hidden"] { display: none !important; }
+
+/* §15.3.2 ページ */
+html, body { display: block; }
+body { margin: 8px; }
+
+/* §15.3.3 フローコンテンツ */
+address, blockquote, center, dialog, div, figure, figcaption, footer, form, header, hr, legend, listing, main, p, plaintext, pre, search, xmp { display: block; }
+blockquote, figure, listing, p, plaintext, pre, xmp { margin-top: 1em; margin-bottom: 1em; }
+blockquote, figure { margin-left: 40px; margin-right: 40px; }
+address { font-style: italic; }
+listing, plaintext, pre, xmp { font-family: monospace; white-space: pre; }
+dialog:not([open]) { display: none; }
+dialog { position: absolute; left: 0; right: 0; width: fit-content; margin: auto; border: solid; padding: 1em; background-color: white; color: black; }
+slot { display: contents; }
+
+/* §15.3.4 フレージングコンテンツ（display: inline は標準では初期値。エンジンの推測を上書きするために書く） */
+a, abbr, acronym, b, bdi, bdo, big, cite, code, data, del, dfn, em, font, i, ins, kbd, label, mark, nobr, output, q, s, samp, small, span, strike, strong, sub, sup, time, tt, u, var { display: inline; }
+cite, dfn, em, i, var { font-style: italic; }
 b, strong { font-weight: bold; }
-i, em { font-style: italic; }
-s, strike, del { text-decoration: line-through; }
-u, ins { text-decoration: underline; }
-code { background-color: rgba(137, 180, 250, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; display: inline; }
-kbd { background-color: #313244; color: #cdd6f4; border: 1px solid #585b70; padding: 1px 4px; border-radius: 3px; display: inline-block; }
-pre { background-color: #11111b; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 8px 10px; margin: 6px 0; display: block; overflow-x: auto; white-space: pre; }
-blockquote { border-left: 3px solid #89b4fa; background-color: rgba(137, 180, 250, 0.08); padding: 6px 10px; margin: 6px 0; border-radius: 2px; display: block; }
-.markdown-alert-title { font-weight: bold; margin-bottom: 4px; color: #89b4fa; display: block; }
-.markdown-alert-tip { border-left-color: #a6e3a1; background-color: rgba(166, 227, 161, 0.08); }
-.markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
-.markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
-.markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
-/* 表は CSS の表レイアウト（display: table）で組む。W4 までは flex の行として組んでいた。
- * 幅・枠線・色・余白はテーマ的な装飾で、HTML 標準の既定値（border-spacing: 2px など）への置き換えは W6。 */
-table { display: table; width: 100%; border: 1px solid #45475a; border-radius: 4px; margin: 6px 0; box-sizing: border-box; }
+code, kbd, samp, tt { font-family: monospace; }
+big { font-size: larger; }
+small { font-size: smaller; }
+sub { vertical-align: sub; }
+sup { vertical-align: super; }
+sub, sup { line-height: normal; font-size: smaller; }
+a[href] { color: #0000ee; text-decoration: underline; cursor: pointer; }
+a[href]:active { color: #ff0000; }
+:focus-visible { outline: auto 1px; }
+mark { background-color: yellow; color: black; }
+abbr[title], acronym[title] { text-decoration: dotted underline; }
+ins, u { text-decoration: underline; }
+del, s, strike { text-decoration: line-through; }
+nobr { white-space: nowrap; }
+
+/* §15.3.6 セクションと見出し */
+article, aside, h1, h2, h3, h4, h5, h6, hgroup, nav, section { display: block; }
+h1 { margin-top: 0.67em; margin-bottom: 0.67em; font-size: 2em; font-weight: bold; }
+h2 { margin-top: 0.83em; margin-bottom: 0.83em; font-size: 1.5em; font-weight: bold; }
+h3 { margin-top: 1em; margin-bottom: 1em; font-size: 1.17em; font-weight: bold; }
+h4 { margin-top: 1.33em; margin-bottom: 1.33em; font-size: 1em; font-weight: bold; }
+h5 { margin-top: 1.67em; margin-bottom: 1.67em; font-size: 0.83em; font-weight: bold; }
+h6 { margin-top: 2.33em; margin-bottom: 2.33em; font-size: 0.67em; font-weight: bold; }
+
+/* §15.3.7 リスト */
+dir, dd, dl, dt, menu, ol, ul { display: block; }
+li { display: list-item; }
+dir, dl, menu, ol, ul { margin-top: 1em; margin-bottom: 1em; }
+dl dl, dl menu, dl ol, dl ul, menu dl, menu menu, menu ol, menu ul,
+ol dl, ol menu, ol ol, ol ul, ul dl, ul menu, ul ol, ul ul { margin-top: 0; margin-bottom: 0; }
+dd { margin-left: 40px; }
+dir, menu, ol, ul { padding-left: 40px; }
+menu, ol, ul { counter-reset: list-item; }
+ol { list-style-type: decimal; }
+dir, menu, ul { list-style-type: disc; }
+menu menu, menu ul, ol menu, ol ul, ul menu, ul ul { list-style-type: circle; }
+menu menu menu, menu menu ul, menu ol menu, menu ol ul, menu ul menu, menu ul ul,
+ol menu menu, ol menu ul, ol ol menu, ol ol ul, ol ul menu, ol ul ul,
+ul menu menu, ul menu ul, ul ol menu, ul ol ul, ul ul menu, ul ul ul { list-style-type: square; }
+
+/* §15.3.8 表 */
+table { display: table; box-sizing: border-box; border-spacing: 2px; border-collapse: separate; text-indent: initial; }
 caption { display: table-caption; text-align: center; }
-thead { display: table-header-group; vertical-align: middle; background-color: rgba(137, 180, 250, 0.12); font-weight: bold; }
-tbody { display: table-row-group; vertical-align: middle; }
-tfoot { display: table-footer-group; vertical-align: middle; }
-tr { display: table-row; vertical-align: inherit; }
-th, td { display: table-cell; vertical-align: inherit; padding: 4px 8px; box-sizing: border-box; }
-th { font-weight: bold; color: #89b4fa; }
 colgroup { display: table-column-group; }
 col { display: table-column; }
-label, output { display: inline-block; }
-form, fieldset, details, summary, dialog, aside, figure, figcaption { display: block; }
-fieldset { border: 1px solid #585b70; border-radius: 4px; padding: 8px 12px; margin: 4px 0; }
-legend { font-weight: bold; padding: 0 4px; display: block; }
-summary { cursor: pointer; font-weight: bold; user-select: none; }
-dialog:not([open]) { display: none; }
-dialog[open] { position: fixed; z-index: 100; background-color: #1e1e2e; color: #cdd6f4; border: 1px solid #89b4fa; border-radius: 6px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
-img, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; object-fit: fill; }
-div, section, main, header, footer, article, nav { display: block; }
-hr { display: block; border: none; border-top: 1px solid #585b70; margin: 8px 0; width: 100%; height: 1px; background-color: #585b70; }
-button { display: inline-block; cursor: pointer; background-color: #f0f0f0; color: #000000; border: 1px solid #767676; padding: 2px 6px; border-radius: 2px; transition: 0.1s; min-width: min-content; }
-button:hover { background-color: #e5e5e5; }
-button:active { background-color: #d5d5d5; border-color: #4f4f4f; transform: scale(0.95); }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { border-color: #89b4fa; box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.5); }
+thead { display: table-header-group; }
+tbody { display: table-row-group; }
+tfoot { display: table-footer-group; }
+tr { display: table-row; }
+td, th { display: table-cell; padding: 1px; }
+th { font-weight: bold; text-align: center; }
+thead, tbody, tfoot, table > tr { vertical-align: middle; }
+tr, td, th { vertical-align: inherit; }
+table, td, th { border-color: gray; }
+thead, tbody, tfoot, tr { border-color: inherit; }
+
+/* §15.3.10 フォームコントロール（標準） */
+input, select, button, textarea { letter-spacing: initial; word-spacing: initial; line-height: initial; text-transform: initial; text-indent: initial; text-shadow: initial; }
+input, select, textarea { text-align: initial; }
+input[type="reset"], input[type="button"], input[type="submit"], button { text-align: center; }
+input, button, select, textarea { display: inline-block; }
+input[type="radio"], input[type="checkbox"], input[type="reset"], input[type="button"], input[type="submit"], input[type="color"], input[type="search"], select, button { box-sizing: border-box; }
+textarea { white-space: pre-wrap; }
+
+/* §15.3.11 hr */
+hr { color: gray; border-style: inset; border-width: 1px; margin: 0.5em auto; overflow: hidden; }
+
+/* §15.3.12 fieldset と legend */
+fieldset { display: block; margin-left: 2px; margin-right: 2px; border: groove 2px #c0c0c0; padding: 0.35em 0.75em 0.625em; min-width: min-content; }
+legend { padding-left: 2px; padding-right: 2px; }
+
+/* §15.3.13 埋め込みコンテンツ（置換要素は不可分なインラインとして組む） */
+img, video, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; }
+iframe { border: 2px inset; }
+video { object-fit: contain; }
+
+/* §15.5.? details と summary */
+details, summary { display: block; }
+details > summary { display: list-item; counter-increment: list-item 0; list-style: disclosure-closed inside; }
+details[open] > summary { list-style-type: disclosure-open; }
+
+/* フォームコントロールの見た目（appearance: auto 相当）。
+ * ブラウザは OS の部品で描き、寸法は Chromium の既定値（ライトテーマ）に合わせる。
+ * option はエンジンが select の中で描くので箱を作らない。 */
+option { display: none; }
+button, input[type="button"], input[type="submit"], input[type="reset"] { background-color: #efefef; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 6px; }
+button:hover, input[type="button"]:hover, input[type="submit"]:hover, input[type="reset"]:hover { background-color: #e5e5e5; border-color: #4f4f4f; }
+button:active, input[type="button"]:active, input[type="submit"]:active, input[type="reset"]:active { background-color: #f5f5f5; border-color: #8d8d8d; }
+input, textarea { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 2px; }
+select { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 0 4px; }
+textarea { padding: 2px; width: 100%; height: 120px; overflow: auto; }
+input[type="checkbox"], input[type="radio"] { width: 13px; height: 13px; padding: 0; margin: 3px 3px 3px 4px; }
+input[type="radio"] { margin: 3px 3px 0 5px; border-radius: 50%; }
+input[type="range"] { width: 129px; height: 16px; margin: 2px; padding: 0; border: none; background-color: #efefef; color: #0075ff; border-radius: 8px; }
+input[type="color"] { width: 50px; height: 27px; padding: 1px 2px; background-color: #efefef; }
+progress { width: 160px; height: 16px; background-color: #efefef; color: #0075ff; border: none; padding: 0; border-radius: 8px; }
+meter { width: 80px; height: 16px; background-color: #efefef; color: #107c10; border: none; padding: 0; border-radius: 8px; }
 button[disabled], input[disabled], select[disabled], textarea[disabled] { opacity: 0.5; }
-input, select, textarea { display: inline-block; background-color: #ffffff; color: #000000; border: 1px solid #777777; padding: 4px; box-sizing: border-box; border-radius: 2px; transition: 0.15s; min-width: min-content; }
-textarea { display: block; width: 100%; height: 120px; overflow-y: auto; white-space: pre-wrap; }
-input:focus, select:hover, textarea:focus { background-color: #f8fbff; }
-input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; padding: 0; border: 2px solid #555555; transition: 0.1s; }
-input[type="checkbox"]:hover { border-color: #aaaaaa; }
-input[type="range"] { background-color: #ffffff; color: #007bff; border: none; padding: 0; height: 16px; border-radius: 8px; }
-input[type="color"] { width: 48px; height: 22px; padding: 2px; border-radius: 4px; }
-progress, meter { display: inline-block; background-color: #333333; color: #28a745; border: none; padding: 0; width: 120px; height: 12px; border-radius: 6px; }
-.mc-slot { width: 18px; height: 18px; background-color: #2b2b36; border: 1px solid #585b70; border-radius: 2px; box-sizing: border-box; display: inline-block; }
-.mc-slot:hover { background-color: #3e4055; border-color: #89b4fa; }
+
+/* EnderFrameLib のカスタムタグ（CustomTagExpander が展開するクラス） */
+.mc-slot { width: 18px; height: 18px; background-color: #8b8b8b; border: 1px solid #373737; box-sizing: border-box; display: inline-block; }
 .mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
 .mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
-.mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; background-color: #181825; border: 1px solid #45475a; border-radius: 4px; overflow: hidden; }
+.mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; overflow: hidden; }

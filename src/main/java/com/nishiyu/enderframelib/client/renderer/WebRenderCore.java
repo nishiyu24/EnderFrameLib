@@ -203,6 +203,9 @@ public class WebRenderCore {
         if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
         poseStack.translate(-cx, -cy, 0);
 
+        // LIMITATION(制約): opacity はグループとして合成せず、部品ごとに祖先の不透明度を掛けて描く。
+        // 半透明の箱の中で重なった子孫が互いに透けて見える（ブラウザは中身を 1 枚に描いてから透かす）。
+        // 正しくするには描画先を別のフレームバッファに切り替える必要がある。README の "Not supported" に対応。
         cumulativeOpacity[0] *= anim.opacity();
     }
 
@@ -281,6 +284,9 @@ public class WebRenderCore {
 
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
             float cRTL = 0, cRTR = 0, cRBR = 0, cRBL = 0;
+            // LIMITATION(制約): クリップの矩形は要素自身の変形の後の座標で当てる。クリップする祖先と要素の間に
+            // transform があると、祖先の矩形ではなく変形した矩形で切られる（回転した子は回転した矩形で切られる）。
+            // 祖先の空間で切るにはステンシルが要る。README の "Not supported" に対応。
             float[] clipArr = (meta != null && meta.clipRect() != null) ? meta.clipRect().toArray() : anim.clipData;
             if (clipArr != null && clipArr.length >= 8) {
                 clipMinX = clipArr[0]; clipMinY = clipArr[1]; clipMaxX = clipArr[2]; clipMaxY = clipArr[3];

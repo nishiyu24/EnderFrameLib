@@ -34,10 +34,11 @@ public class FormattingContextTest {
         // 以前は ua.css が flex の行として組んでいた
         assertEquals(Display.Inner.TABLE, table.display.inner());
         LayoutBox a = find(root, "a"), b = find(root, "b"), c = find(root, "c");
-        assertEquals(a.x + 30, b.x, 0.01f);
-        assertEquals(50, c.w, 0.01f);
+        // ua.css の border-spacing: 2px（HTML 標準の既定値）がセルの間に入る
+        assertEquals(a.x + 30 + 2, b.x, 0.01f);
+        assertEquals(30 + 2 + 20, c.w, 0.01f);
         assertEquals(a.x, c.x, 0.01f);
-        assertEquals(a.y + 10, c.y, 0.01f);
+        assertEquals(a.y + 10 + 2, c.y, 0.01f);
     }
 
     @Test

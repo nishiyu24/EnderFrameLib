@@ -202,7 +202,9 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 `inline flow-root`)
 `position` (`static` `relative` `absolute` `fixed` `sticky`) `top` `right`
 `bottom` `left` `z-index` `float` `clear` `width` `height` `min-*` `max-*` `margin` `padding` `border`
-`border-*-width` `border-radius` `box-sizing` `aspect-ratio` `overflow`
+`border-*-width` `border-style` (`solid` `dashed` `dotted` `double` `groove`
+`ridge` `inset` `outset` `none` `hidden`) `border-radius` `outline`
+`outline-offset` `box-sizing` `aspect-ratio` `overflow`
 `overflow-x` `overflow-y` `scrollbar-width` `visibility` `opacity`
 
 **Flexbox** `flex` `flex-grow` `flex-shrink` `flex-basis` `flex-direction`
@@ -228,7 +230,13 @@ lengths, `%`) `text-decoration` `text-shadow`
 `text-transform` `white-space` (`normal` `nowrap` `pre` `pre-wrap` `pre-line`)
 `word-break` `overflow-wrap` `text-overflow` `direction`
 
-**Paint / effects** `background` `background-color` `box-shadow` `transform`
+**Paint / effects** stacking contexts (positioned boxes with a `z-index`,
+flex and grid items with a `z-index`, `opacity` below 1, `transform`, `filter`,
+`isolation: isolate`, `mix-blend-mode`, and fixed / sticky boxes) painted in
+CSS 2.2 Appendix E order; `background` with multiple layers,
+`background-color` `background-image` (`url()`, `linear-gradient()`)
+`background-size` `background-position` `background-repeat` (including
+`space` and `round`) `background-clip` `background-origin`; `box-shadow` `transform`
 (`translate` `scale` `rotate`) `transform-origin` `transition`
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
 `object-fit` `cursor` `content` `src`
@@ -247,9 +255,11 @@ computed values, so `font-size: 2em` does not compound down the tree.
 `pointer`; `@supports` (declarations, `selector()`, `and` / `or` / `not`);
 `@import` (with a media list); `@keyframes`; `@font-face`
 
-**Built-in stylesheets** `enderframelib:ua.css` is the user-agent sheet; themes
-are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
-`enderframelib:brass.css`.
+**Built-in stylesheets** `enderframelib:ua.css` is the user-agent sheet, with
+the HTML standard's rendering defaults (`body { margin: 8px }`, `em`-based
+headings, `dl` / `dd`, `border-spacing: 2px` tables, `#0000ee` links, and so
+on); themes are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
+`enderframelib:brass.css`, and carry all the decoration.
 
 > **Breaking change — text metrics.** `font-size` and `line-height` now mean what
 > they mean in a browser. A given `font-size` renders about 1.3× larger than
@@ -279,6 +289,35 @@ are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > (or its bottom margin edge), so buttons on a line of text sit on its
 > baseline. Line boxes are at least as tall as their block's `line-height`
 > (the strut).
+
+> **Breaking change — painting.** Elements are painted in the browser's order.
+> A `z-index` no longer escapes the stacking context it is in (a child with
+> `z-index: 100` stays below its parent's `z-index: 2` sibling), `z-index` on a
+> non-positioned block has no effect (use `position: relative`), and `opacity`
+> below 1 or a `transform` makes a box a stacking context. In-flow block
+> backgrounds paint below all inline content of their stacking context. The
+> root element's background (or `<body>`'s, if the root has none) fills the
+> whole canvas; with neither, the canvas is transparent. Border widths follow
+> `border-style`: `border-width: 2px` alone draws nothing (add a style, e.g.
+> `border: 2px solid`), and `border-style: solid` alone is 3px wide. A border
+> without a colour uses `currentcolor` (it used to be invisible).
+
+> **Breaking change — user-agent stylesheet.** `ua.css` now holds the HTML
+> standard's defaults and nothing else, so unstyled HTML looks the way it does
+> in a browser: `body` has an 8px margin and no background, text is black,
+> links are `#0000ee`, `p` / lists / `blockquote` / `figure` / `pre` have 1em
+> vertical margins, lists are indented 40px, `dd` 40px, tables have
+> `border-spacing: 2px` and 1px cell padding (no border, no 100% width),
+> `pre` / `code` / `kbd` are plain monospace, `hr` is a 2px inset line,
+> `fieldset` has a grooved border, `summary` shows a disclosure triangle, and
+> focus is shown with an outline. Form controls take Chromium's sizes (button
+> padding `1px 6px`, text inputs `1px 2px`, checkboxes 13×13). The previous
+> look — compact margins, dark `pre` / `code`, styled tables, blockquotes,
+> GitHub alerts and task lists — moved to the built-in themes, which also reset
+> `body { margin: 0 }`. Link a theme (Markdown pages get `dark.css`
+> automatically) or restyle the elements yourself. Without a background on
+> `html` or `body`, a document is now transparent over the game instead of
+> white.
 
 > **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
 > whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
@@ -326,14 +365,29 @@ Layout differences from a real browser are measured, case by case, in
   them. No subgrid, no `grid-template` / `grid` shorthands, no implicit tracks
   before the explicit grid, no `baseline` alignment, and `auto-fit` keeps its
   empty tracks (it behaves like `auto-fill`).
-- **Stacking contexts.** `z-index` values are added to the parent's, so a
-  child's `z-index` escapes its stacking context; `opacity` and `transform` do
-  not create stacking contexts, and `z-index` also takes effect on
-  non-positioned blocks. (Floats do paint above in-flow blocks, and positioned
-  boxes above floats, as in a browser.)
-- **HTML-standard user-agent defaults.** `ua.css` carries theme-like styling
-  and lacks some HTML defaults (`dl` / `dd` margins, for example), so unstyled
-  HTML does not look the way it does in a browser.
+- **Compositing.** Stacking contexts and the CSS 2.2 painting order are
+  implemented, but `opacity` is applied to each painted part separately rather
+  than to the group, so overlapping descendants of a translucent box show
+  through each other. `overflow` clipping is applied in each element's own
+  transformed space, so a transformed descendant of a clipping box is clipped
+  by a transformed copy of the clip rather than the ancestor's rectangle.
+  Flex and grid items paint in document order, not `order`-modified order.
+- **Borders and outlines in full.** On a box with `border-radius` the border is
+  drawn solid in a single colour, whatever its `border-style`. Outlines do not
+  follow `border-radius` and are not drawn per line fragment on inline boxes.
+  The shading of `inset` / `outset` / `groove` / `ridge` is an approximation
+  (the spec leaves it to the user agent).
+- **Backgrounds in full.** Multiple layers, `url()` images and
+  `background-size / position / repeat / clip / origin` work on block-level
+  boxes; inline boxes paint only their background colour. Gradients are
+  `linear-gradient` with the first and last colour stop and eight directions.
+  `background-attachment` is always `scroll`. On a rounded box, tiles smaller
+  than the painting area are clipped to its rectangle, not its rounded corners.
+- **Native form controls and `legend`.** `ua.css` follows the HTML standard's
+  rendering defaults, but form controls are drawn by EnderFrameLib (sized after
+  Chromium's light theme) rather than by the operating system, and a `legend`
+  is laid out as an ordinary block instead of sitting on its `fieldset`'s
+  border.
 - **Glyph-level fidelity.** `font-size: Npx` scales Minecraft's bitmap font so
   that its cap height and x-height land where a browser's UI font would
   (1em = the font's natural 9px line box), and `line-height: normal` reserves

@@ -8,3 +8,34 @@ body, html { background-color: #1c140f; color: #f5e0dc; }
 .mc-btn:hover { background-color: #7a5935; color: #ffffff; }
 .mc-slot { width: 18px; height: 18px; background-color: #1e150f; border: 1px solid #9c7a38; border-radius: 2px; box-sizing: border-box; }
 .mc-slot:hover { background-color: #38281c; border-color: #f9e2af; }
+
+/* 文書の既定の装飾（W6 で ua.css から移した。ua.css は HTML 標準の既定値だけを持つ） */
+body { margin: 0; }
+p { margin: 0.6em 0; }
+ul, ol { padding-left: 20px; margin: 0.6em 0; }
+li { margin: 2px 0; }
+a[href] { color: #e5c890; }
+a[href]:hover { color: #f9e2af; }
+h6 { color: #c9a978; }
+:focus-visible { outline: 2px solid #e5c890; outline-offset: 1px; }
+code { background-color: rgba(229, 200, 144, 0.14); color: #f9e2af; padding: 1px 4px; border-radius: 3px; }
+kbd { background-color: #261c15; color: #f5e0dc; border: 1px solid #9c7a38; padding: 1px 4px; border-radius: 3px; display: inline-block; }
+pre { background-color: #1c140f; color: #f5e0dc; border: 1px solid #8c6a2b; border-radius: 4px; padding: 8px 10px; margin: 6px 0; overflow-x: auto; }
+blockquote { border-left: 3px solid #e5c890; background-color: rgba(229, 200, 144, 0.08); padding: 6px 10px; margin: 6px 0; border-radius: 2px; }
+hr { border: none; border-top: 1px solid #9c7a38; margin: 8px 0; }
+table { width: 100%; border: 1px solid #8c6a2b; border-radius: 4px; margin: 6px 0; border-spacing: 0; }
+thead { background-color: rgba(229, 200, 144, 0.12); font-weight: bold; }
+th, td { padding: 4px 8px; }
+th { color: #e5c890; text-align: left; }
+fieldset { border: 1px solid #9c7a38; border-radius: 4px; padding: 8px 12px; margin: 4px 0; }
+legend { font-weight: bold; padding: 0 4px; }
+summary { cursor: pointer; font-weight: bold; user-select: none; }
+dialog[open] { position: fixed; z-index: 100; background-color: #3b2d22; color: #f5e0dc; border: 1px solid #e5c890; border-radius: 6px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+button, input[type="button"], input[type="submit"], input[type="reset"] { cursor: pointer; }
+.task-list-item { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.markdown-alert-title { font-weight: bold; margin-bottom: 4px; color: #e5c890; display: block; }
+.markdown-alert-tip { border-left-color: #a6e3a1; background-color: rgba(166, 227, 161, 0.08); }
+.markdown-alert-important { border-left-color: #cba6f7; background-color: rgba(203, 166, 247, 0.08); }
+.markdown-alert-warning { border-left-color: #f9e2af; background-color: rgba(249, 226, 175, 0.08); }
+.markdown-alert-caution { border-left-color: #f38ba8; background-color: rgba(243, 139, 168, 0.08); }
+.mc-bar { background-color: #1c140f; border: 1px solid #8c6a2b; border-radius: 4px; }

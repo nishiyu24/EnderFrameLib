@@ -6,19 +6,4 @@
 #
 # W0 でコーパスを領域別に広げて起こした行。行が消えることが各フェーズの完了条件。
 
-# --- W5 — 描画モデル
-z-stacking-context#inner.z W5: z-index を親に足し込むだけで、スタッキングコンテキストが中の z-index を閉じ込めない
-z-negative-in-context#ctx.z W5: スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる
-z-negative-in-context#neg.z W5: スタッキングコンテキストの中の負の z-index が親の背景より下に描かれる
-z-index-unpositioned#a.z W5: 位置指定されていないブロックの z-index が効いてしまう
-z-opacity-context#inner.z W5: `opacity < 1` がスタッキングコンテキストを作らない
-z-opacity-context#over.z W5: `opacity < 1` がスタッキングコンテキストを作らない
-z-transform-context#inner.z W5: `transform` がスタッキングコンテキストを作らない
-z-transform-context#over.z W5: `transform` がスタッキングコンテキストを作らない
 
-# --- W6 — UA スタイルシート
-definition-list#dl.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
-definition-list#term.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
-definition-list#desc.x W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
-definition-list#desc.y W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い
-definition-list#desc.w W6: ua.css に `dl` / `dd` の既定値（`margin: 1em 0` / `margin-left: 40px`）が無い

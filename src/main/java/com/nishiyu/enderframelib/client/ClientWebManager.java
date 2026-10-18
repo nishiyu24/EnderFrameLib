@@ -29,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ClientWebManager {
 
@@ -158,8 +160,16 @@ public class ClientWebManager {
 
     private static final String[] RENDER_SUFFIXES = {
             "_ghost_img", "_b_bottom", "_b_right", "_textarea", "_progress", "_b_left", "_select", "_canvas",
-            "_b_top", "_sb_vt", "_sb_ht", "_scene", "_input", "_sb_v", "_sb_h", "_bbg", "_dot", "_img", "_cb", "_bg", "_ph"
+            "_b_top", "_o_bottom", "_o_right", "_o_left", "_o_top", "_sb_vt", "_sb_ht", "_scene", "_input", "_sb_v", "_sb_h",
+            "_bbg", "_img", "_cb", "_bg", "_ph"
     };
+
+    /**
+     * 番号の付く部品: 線種で分けた枠線・輪郭線の 2 つ目以降の片（{@code _b_top_3}）と背景のレイヤーのタイル
+     * （{@code _bgl0_5}）。数が決まっていないので接尾辞の一覧では表せない。
+     */
+    private static final Pattern NUMBERED_RENDER_PART = Pattern.compile(
+            "_(?:[bo]_(?:top|right|bottom|left)_\\d+|bgl\\d+_\\d+)$");
 
     public static void addSessionClearedListener(Consumer<String> listener) {
         if (listener != null && !SESSION_CLEARED_LISTENERS.contains(listener)) {
@@ -592,6 +602,8 @@ public class ClientWebManager {
     public static String getBaseNodeId(String renderId) {
         if (renderId == null || renderId.isEmpty()) return "";
 
+        Matcher numbered = NUMBERED_RENDER_PART.matcher(renderId);
+        if (numbered.find() && numbered.start() > 0) return renderId.substring(0, numbered.start());
         for (String suffix : RENDER_SUFFIXES) {
             if (renderId.length() > suffix.length() && renderId.endsWith(suffix)) {
                 return renderId.substring(0, renderId.length() - suffix.length());
@@ -611,7 +623,7 @@ public class ClientWebManager {
                 return el;
             }
             if (targetBase.equals(getBaseNodeId(el.id()))) {
-                if (el.type() == ElementType.NODE || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_")) {
+                if (el.type() == ElementType.NODE || el.id().endsWith("_bbg") || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_") || el.id().contains("_o_") || el.id().contains("_bgl")) {
                     if (fallback == null) fallback = el;
                     continue;
                 }

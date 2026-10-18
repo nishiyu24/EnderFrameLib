@@ -322,7 +322,9 @@ public class SessionContext implements AutoCloseable {
             return id.endsWith("_shadow")
                     || id.endsWith("_bbg")
                     || id.endsWith("_ph")
-                    || id.contains("_b_");
+                    || id.contains("_b_")
+                    || id.contains("_o_")
+                    || id.contains("_bgl");
         }
 
         private static boolean isInteractiveOrOpaque(UIElement el, Map<String, UIElement> elementMap) {

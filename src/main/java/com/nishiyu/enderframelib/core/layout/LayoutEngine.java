@@ -86,7 +86,7 @@ public abstract class LayoutEngine {
             if (child.isAbsolute && !isDisplayNone(child.style)) {
                 LayoutBox cb = child.findContainingBlock();
                 float cbW, cbH;
-                if (child.isFixed || cb == null) {
+                if (cb == null) {
                     cbW = rootW;
                     cbH = rootH;
                 } else {

@@ -1,4 +1,4 @@
-parent 0 0 200 45 1
-inline 0 0 40 20 0
-block 0 20 200 10 0
-inline2 0 30 40 15 0
+parent 8 8 200 45 1
+inline 8 8 40 20 0
+block 8 28 200 10 0
+inline2 8 38 40 15 0

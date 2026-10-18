@@ -114,10 +114,18 @@ public class LayoutBox {
         return null;
     }
 
+    /**
+     * 絶対配置・固定配置の包含ブロックを作る祖先。無ければ null（初期包含ブロック = ビューポート）。
+     *
+     * 位置指定要素は絶対配置の、transform / filter を持つ要素は固定配置を含むすべての位置指定の子孫の
+     * 包含ブロックになる（CSS Transforms 1 §2 / Filter Effects 1 §3）。何が壊れていたか: 以前は
+     * position だけを見ていたため、transform を持つ箱の中の絶対配置要素が外の祖先を基準に置かれていた。
+     */
     public LayoutBox findContainingBlock() {
         LayoutBox cur = this.parent;
         while (cur != null) {
-            if (cur.isRelative || cur.isAbsolute || cur.isFixed || cur.isSticky) {
+            boolean transformLike = cur.hasTransformOrFilter();
+            if (transformLike || (!this.isFixed && (cur.isRelative || cur.isAbsolute || cur.isSticky))) {
                 return cur;
             }
             cur = cur.parent;
@@ -125,12 +133,17 @@ public class LayoutBox {
         return null;
     }
 
+    private boolean hasTransformOrFilter() {
+        return isSet(style.get(CssProperty.TRANSFORM)) || isSet(style.get("filter"));
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank() && !"none".equalsIgnoreCase(value.trim());
+    }
+
     public record ContainingBlock(float x, float y, float w, float h) {}
 
     public ContainingBlock resolveContainingBlock(LayoutContext ctx) {
-        if (this.isFixed) {
-            return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-        }
         LayoutBox cb = findContainingBlock();
         if (cb == null) {
             return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
