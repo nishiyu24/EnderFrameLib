@@ -390,7 +390,7 @@ public class WebHudRenderer {
         com.nishiyu.enderframelib.core.layout.Viewport viewport = new com.nishiyu.enderframelib.core.layout.Viewport(1000, 1000);
         com.nishiyu.enderframelib.core.layout.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.ScrollState();
         com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
-                viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONT_METRICS);
+                viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONTS);
         com.nishiyu.enderframelib.core.layout.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.FormattingContext("block", "stretch", false);
 
         layoutBox.measure(1000, 1000, fmtCtx, ctx);

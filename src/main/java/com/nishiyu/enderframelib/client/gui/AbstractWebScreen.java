@@ -157,7 +157,6 @@ public class AbstractWebScreen extends Screen {
                 forceReload
         );
         this.state.forceSync();
-        ClientWebManager.processRenderQueue();
     }
 
     protected String buildInitialHtml() {
@@ -226,7 +225,6 @@ public class AbstractWebScreen extends Screen {
         double webX = toWebX(mouseX);
         double webY = toWebY(mouseY);
         hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
-        this.uiSupport.updateHoverState(webX, webY);
 
         List<UIElement> elements = ClientWebManager.getElements(sessionId);
         if (elements != null && !elements.isEmpty()) {

@@ -12,18 +12,30 @@ public final class CssProperty {
     public static final String ALIGN_ITEMS = "align-items";
     public static final String ALIGN_SELF = "align-self";
     public static final String ANIMATION = "animation";
+    public static final String ANIMATION_DELAY = "animation-delay";
+    public static final String ANIMATION_DIRECTION = "animation-direction";
+    public static final String ANIMATION_DURATION = "animation-duration";
+    public static final String ANIMATION_FILL_MODE = "animation-fill-mode";
+    public static final String ANIMATION_ITERATION_COUNT = "animation-iteration-count";
+    public static final String ANIMATION_NAME = "animation-name";
+    public static final String ANIMATION_TIMING_FUNCTION = "animation-timing-function";
     public static final String ASPECT_RATIO = "aspect-ratio";
     public static final String BACKGROUND = "background";
     public static final String BACKGROUND_COLOR = "background-color";
     public static final String BORDER = "border";
     public static final String BORDER_BOTTOM = "border-bottom";
+    public static final String BORDER_BOTTOM_COLOR = "border-bottom-color";
     public static final String BORDER_BOTTOM_WIDTH = "border-bottom-width";
+    public static final String BORDER_COLOR = "border-color";
     public static final String BORDER_LEFT = "border-left";
+    public static final String BORDER_LEFT_COLOR = "border-left-color";
     public static final String BORDER_LEFT_WIDTH = "border-left-width";
     public static final String BORDER_RADIUS = "border-radius";
     public static final String BORDER_RIGHT = "border-right";
+    public static final String BORDER_RIGHT_COLOR = "border-right-color";
     public static final String BORDER_RIGHT_WIDTH = "border-right-width";
     public static final String BORDER_TOP = "border-top";
+    public static final String BORDER_TOP_COLOR = "border-top-color";
     public static final String BORDER_TOP_WIDTH = "border-top-width";
     public static final String BORDER_WIDTH = "border-width";
     public static final String BOTTOM = "bottom";
@@ -72,6 +84,7 @@ public final class CssProperty {
     public static final String OVERFLOW = "overflow";
     public static final String OVERFLOW_X = "overflow-x";
     public static final String OVERFLOW_Y = "overflow-y";
+    public static final String OVERFLOW_WRAP = "overflow-wrap";
     public static final String PADDING = "padding";
     public static final String PADDING_BOTTOM = "padding-bottom";
     public static final String PADDING_LEFT = "padding-left";
@@ -84,6 +97,7 @@ public final class CssProperty {
     public static final String SRC = "src";
     public static final String TEXT_ALIGN = "text-align";
     public static final String TEXT_DECORATION = "text-decoration";
+    public static final String TEXT_OVERFLOW = "text-overflow";
     public static final String TEXT_SHADOW = "text-shadow";
     public static final String TEXT_TRANSFORM = "text-transform";
     public static final String TOP = "top";
@@ -91,10 +105,13 @@ public final class CssProperty {
     public static final String TRANSFORM_ORIGIN = "transform-origin";
     public static final String TRANSITION = "transition";
     public static final String TRANSITION_DELAY = "transition-delay";
+    public static final String TRANSITION_DURATION = "transition-duration";
+    public static final String TRANSITION_PROPERTY = "transition-property";
     public static final String TRANSITION_TIMING_FUNCTION = "transition-timing-function";
     public static final String VISIBILITY = "visibility";
     public static final String WHITE_SPACE = "white-space";
     public static final String WIDTH = "width";
+    public static final String WORD_BREAK = "word-break";
     public static final String Z_INDEX = "z-index";
 
     private CssProperty() {}

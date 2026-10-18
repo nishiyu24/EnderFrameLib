@@ -19,16 +19,39 @@ public record Selector(
         boolean isHover,
         boolean isActive,
         boolean isFocus,
+        int stateMask,
         Specificity specificity
 ) {
+
+    public Selector(
+            String text,
+            List<SelectorToken> compounds,
+            List<Character> combinators,
+            boolean isBefore,
+            boolean isAfter,
+            boolean isHover,
+            boolean isActive,
+            boolean isFocus,
+            Specificity specificity
+    ) {
+        this(text, compounds, combinators, isBefore, isAfter, isHover, isActive, isFocus,
+                (isHover ? ElementState.HOVER : 0)
+                        | (isActive ? ElementState.ACTIVE : 0)
+                        | (isFocus ? ElementState.FOCUS : 0),
+                specificity);
+    }
 
     public boolean matches(HtmlNode node) {
         return SelectorMatcher.matches(this, node);
     }
 
+    public boolean matches(HtmlNode node, SelectorMatcher.StateLookup stateLookup) {
+        return SelectorMatcher.matches(this, node, stateLookup);
+    }
+
     /** オリジンだけを差し替えた同等のセレクタを返す（UA → 作者の昇格などに使う）。 */
     public Selector withOrigin(CascadeOrigin origin) {
         return new Selector(text, compounds, combinators, isBefore, isAfter, isHover, isActive, isFocus,
-                specificity.withOrigin(origin));
+                stateMask, specificity.withOrigin(origin));
     }
 }

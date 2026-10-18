@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.TextEditState;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
@@ -16,6 +17,7 @@ import com.nishiyu.enderframelib.core.model.Corners;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.core.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.text.BitmapFontFace;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -63,9 +65,8 @@ public class WebRenderCore {
     private static final Pattern LUA_BUILTINS_PATTERN = Pattern.compile("\\b(turtle|system|net|ui|math|string|table|os|print|sleep)\\b");
     private static final Pattern TOOLTIP_SPLIT_PATTERN = Pattern.compile("\\\\n|\\n");
 
-    public static final Map<String, Integer> inputScrollOffsets = new ConcurrentHashMap<>();
-    public static final Map<String, Integer> textareaCursorIndex = new ConcurrentHashMap<>();
-    public static final Map<String, Integer> textareaScrollRow = new ConcurrentHashMap<>();
+    // キャレット位置と入力欄のスクロールは TextEditState が唯一の出所。
+    // 以前ここに同名の static マップが 3 本あり、編集側の書き込みが描画に届いていなかった。
     private static final Map<String, Entity> ENTITY_PREVIEW_CACHE = new ConcurrentHashMap<>();
     // フォーカス / 押下状態は SessionContext が所有する（ClientWebManager 経由で参照）。
     // かつてここに public static String で置かれていたため、GUI 画面とブロック画面が
@@ -114,24 +115,9 @@ public class WebRenderCore {
         ENTITY_PREVIEW_CACHE.clear();
     }
 
-    private static float snapTextScaleFor2D(Matrix4f pose, float rawTextScale, boolean is2D) {
-        if (!is2D) return rawTextScale;
-        float matScale = Math.abs(pose.m00());
-        if (matScale <= 0.0001f) return rawTextScale;
-
-        double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
-        float physicalFontScale = (float) (rawTextScale * matScale * guiScale);
-
-        if (physicalFontScale < 1.0f) {
-            return (float) (1.0 / (matScale * guiScale));
-        }
-
-        float snappedPhys = Math.round(physicalFontScale * 2.0f) / 2.0f;
-        if (Math.abs(physicalFontScale - snappedPhys) < 0.18f) {
-            return (float) (snappedPhys / (matScale * guiScale));
-        }
-        return rawTextScale;
-    }
+    // 以前ここに snapTextScaleFor2D があり、フォントの倍率を物理ピクセルの 0.5 刻みに
+    // 丸めていた。倍率を変えると送り幅も変わるため、測定が決めた折り返し位置・省略位置と
+    // 描画が食い違う原因になっていた。スナップするのは位置だけ（snapCoordFor2D）。
 
     private static float snapCoordFor2D(float coord, float matScale, boolean is2D) {
         if (!is2D || matScale <= 0.0001f) return coord;
@@ -344,7 +330,7 @@ public class WebRenderCore {
                 }
 
                 if (el.type() != ElementType.RANGE) {
-                    renderElementBackground(el, meta, anim, isHovered, isActive, poseStack, buffer, finalOpacity, zOffset,
+                    renderElementBackground(el, meta, anim, poseStack, buffer, finalOpacity, zOffset,
                             rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 }
 
@@ -364,6 +350,8 @@ public class WebRenderCore {
                     }
                 } else if (type == ElementType.RANGE) {
                     renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                } else if (type == ElementType.PROGRESS) {
+                    renderProgressElement(el, anim, poseStack, buffer, finalOpacity, contentZ, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if (type == ElementType.TOGGLE || type == ElementType.CHECKBOX || type == ElementType.RADIO) {
                     renderToggleElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if (type == ElementType.IMAGE || type == ElementType.VIDEO) {
@@ -385,9 +373,10 @@ public class WebRenderCore {
         WebSdfShader.endPass();
     }
 
+    /** 測定に使った書体と同じものを引く（引き当ては McFontResolver が唯一の出所）。 */
     private static Font resolveElementFont(UIElement el, Font defaultFont) {
         if (el.events() != null && el.events().containsKey("font-family")) {
-            Font customFont = WebFontManager.resolveFont(el.events().get("font-family"));
+            Font customFont = McFontResolver.fontFor(el.events().get("font-family"));
             if (customFont != null) return customFont;
         }
         return defaultFont;
@@ -445,12 +434,16 @@ public class WebRenderCore {
     }
 
     private static void renderElementBackground(UIElement el, UIElement.RenderMeta meta, WebAnimator.AnimatedValues anim,
-                                                boolean isHovered, boolean isActive, PoseStack poseStack, MultiBufferSource buffer,
+                                                PoseStack poseStack, MultiBufferSource buffer,
                                                 float finalOpacity, float zOffset, float rTL, float rTR, float rBR, float rBL,
                                                 float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                                 float cRTL, float cRTR, float cRBR, float cRBL) {
         UIElement.GradientSpec grad = meta != null ? meta.gradient() : null;
-        if (grad != null && !isHovered && !isActive) {
+        // 何が壊れていたか: 以前は isHovered / isActive でグラデーションを無効にしていたため、
+        // グラデーション背景の要素にカーソルを乗せると平坦な色に落ちていた。
+        // 判定すべきは「状態が背景色を実際に差し替えたか」で、ホバー中かどうかではない。
+        boolean backgroundOverriddenByState = anim.bgColor() != el.bgColor();
+        if (grad != null && !backgroundOverriddenByState) {
             VertexConsumer builder = buffer.getBuffer(RenderType.gui());
             drawGradientRoundedRect(
                     builder, poseStack.last().pose(),
@@ -757,19 +750,27 @@ public class WebRenderCore {
         if (textY >= clipMaxY || textY + el.height() <= clipMinY) return;
 
         float fontH = meta != null ? meta.fontHeight() : el.height();
-        float textScale = fontH / 12.0f;
+        // 書体の em（素のサイズ 9px）からの倍率。測定側（BitmapFontFace）と同じ式を使う。
+        // 以前は測定が 16/12、描画が /12 という別々の換算で、しかも
+        // 要素の高さを font-size の代わりに使っていた。
+        float textScale = fontH / BitmapFontFace.MC_UNITS_PER_EM;
+        float ascent = BitmapFontFace.MC_ASCENT * textScale;
+        float descent = BitmapFontFace.MC_DESCENT * textScale;
         Matrix4f currentPose = poseStack.last().pose();
         float matScale = Math.abs(currentPose.m00());
 
+        // ベースラインはレイアウトが決める。持たない要素（入力欄・プレースホルダ）だけ
+        // 内容領域の中央に置く。以前は全要素を「高さ 8px の箱」として中央寄せしていた。
+        boolean centersInBox = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT
+                || el.id().endsWith("_ph") || meta == null || meta.baseline() <= 0;
+        float baseline = centersInBox
+                ? (el.height() + ascent - descent) / 2.0f
+                : meta.baseline();
         if (el.type() == ElementType.INPUT || el.type() == ElementType.SELECT) {
-            float maxAllowedScale = Math.max(0.75f, (el.height() - 4.0f) / 10.0f);
-            textScale = Math.min(textScale, maxAllowedScale);
-            textScale = snapTextScaleFor2D(currentPose, textScale, is2DAudio);
             textX += 4.0f;
-            textY += (el.height() - (8.0f * textScale)) / 2.0f;
-        } else {
-            textScale = snapTextScaleFor2D(currentPose, el.height() / 12.0f, is2DAudio);
         }
+        // Minecraft のフォントは ascent の上端を原点に描くので、ベースラインから戻す
+        textY += baseline - ascent;
 
         if (el.type() != ElementType.INPUT && textToDraw.isEmpty()) return;
         if (!renderText || textX >= maxAllowedX || textY >= maxAllowedY) return;
@@ -788,7 +789,7 @@ public class WebRenderCore {
                 poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(textY, matScale, is2DAudio), zPos);
                 poseStack.scale(textScale, textScale, 1.0f);
 
-                int scrollOffset = inputScrollOffsets.getOrDefault(el.id(), 0);
+                int scrollOffset = TextEditState.getInputScrollOffset(el.id());
                 float maxAvailableWidth = (clipMaxX - textX) / textScale;
                 float availableWidth = Math.max(0, Math.min((el.width() - 8.0f) / textScale, maxAvailableWidth));
 
@@ -798,7 +799,7 @@ public class WebRenderCore {
                     while (scrollOffset < safeCursorPos && font.width(textToDraw.substring(scrollOffset, safeCursorPos)) > availableWidth) {
                         scrollOffset++;
                     }
-                    inputScrollOffsets.put(el.id(), scrollOffset);
+                    TextEditState.setInputScrollOffset(el.id(), scrollOffset);
                 } else if (scrollOffset > textToDraw.length()) {
                     scrollOffset = textToDraw.length();
                 }
@@ -818,8 +819,7 @@ public class WebRenderCore {
                     }
                 }
             } else if (el.id().endsWith("_ph")) {
-                float phY = textY + (el.height() - (8.0f * textScale)) / 2.0f;
-                poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(phY, matScale, is2DAudio), zPos);
+                poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(textY, matScale, is2DAudio), zPos);
                 poseStack.scale(textScale, textScale, 1.0f);
                 float availableWidth = Math.max(0, Math.min((el.width() - 8.0f) / textScale, (clipMaxX - textX) / textScale));
                 String visibleText = font.plainSubstrByWidth(textToDraw, (int) availableWidth);
@@ -827,22 +827,16 @@ public class WebRenderCore {
                     font.drawInBatch(visibleText, 0, 0, argbColor, useShadow, poseStack.last().pose(), buffer, Font.DisplayMode.NORMAL, 0, packedLight);
                 }
             } else if (!textToDraw.isEmpty()) {
-                float availableWidth = Math.max(0, Math.min(el.width() / textScale, (clipMaxX - textX) / textScale));
-                String visibleText = textToDraw;
-                if (el.width() > 0 && font.width(textToDraw) > availableWidth * 1.3f + 4) {
-                    int ellipsisW = font.width("...");
-                    visibleText = availableWidth > ellipsisW
-                            ? font.plainSubstrByWidth(textToDraw, (int) availableWidth - ellipsisW) + "..."
-                            : font.plainSubstrByWidth(textToDraw, (int) availableWidth);
-                }
-                float rawTextW = font.width(visibleText);
-                float alignOffsetX = 0;
-                float actualTextWidth = rawTextW * textScale;
-                if ("center".equals(anim.textAlign)) alignOffsetX = Math.max(0, (el.width() - actualTextWidth) / 2.0f);
-                else if ("right".equals(anim.textAlign)) alignOffsetX = Math.max(0, el.width() - actualTextWidth);
+                // 折り返し・省略・text-align はすべてレイアウト側で確定済み。
+                // 以前はここで font.width を使って測り直し、「幅の 1.3 倍 + 4px」という
+                // 独自の基準で省略を判定し、中央寄せも自前でやっていたため、
+                // レイアウトが予約した行と実際に見える行が一致しなかった。
+                boolean isBold = el.events() != null && com.nishiyu.enderframelib.core.layout.LayoutMetrics.isBoldWeight(el.events().get("font-weight"));
+                String visibleText = isBold && !textToDraw.startsWith("§l") ? "§l" + textToDraw : textToDraw;
+                float rawTextW = textScale > 0 ? el.width() / textScale : 0;
 
-                float drawX = snapCoordFor2D(textX + alignOffsetX, matScale, is2DAudio);
-                float drawY = snapCoordFor2D(textY + ((el.height() - (8.0f * textScale)) / 2.0f), matScale, is2DAudio);
+                float drawX = snapCoordFor2D(textX, matScale, is2DAudio);
+                float drawY = snapCoordFor2D(textY, matScale, is2DAudio);
 
                 poseStack.translate(drawX, drawY, zPos);
                 poseStack.scale(textScale, textScale, 1.0f);
@@ -1045,6 +1039,18 @@ public class WebRenderCore {
         }
     }
 
+    /** textarea が行番号を出すか。クリック位置の解釈（WebTextareaEditor）と共有する。 */
+    public static boolean showsLineNumbers(UIElement el) {
+        if (el.events() == null) return false;
+        String syntax = el.events().getOrDefault("data-syntax", "");
+        return "lua".equalsIgnoreCase(syntax) || "true".equalsIgnoreCase(el.events().get("data-line-numbers"));
+    }
+
+    /** textarea の本文が始まる x 位置（行番号ガターの幅）。同じく編集側と共有する。 */
+    public static float textareaGutterWidth(UIElement el, float textScale) {
+        return showsLineNumbers(el) ? 28.0f * textScale : 4.0f;
+    }
+
     private static void renderTextareaElement(
             UIElement el, String sessionId, PoseStack poseStack, MultiBufferSource buffer, Font font,
             WebAnimator.AnimatedValues anim, float finalOpacity, float zPos,
@@ -1055,18 +1061,21 @@ public class WebRenderCore {
         String[] lines = fullText.replace("\r\n", "\n").split("\n", -1);
 
         UIElement.RenderMeta meta = el.meta();
-        float fontH = meta != null ? meta.fontHeight() : 12.0f;
+        UIElement.RenderMeta safeMeta = meta != null ? meta : UIElement.RenderMeta.EMPTY;
+        float fontH = safeMeta.fontHeight();
         Matrix4f mat = poseStack.last().pose();
         float matScale = Math.abs(mat.m00());
-        float textScale = snapTextScaleFor2D(mat, fontH / 12.0f, is2D);
-        float lineHeight = Math.max(12.0f * textScale, 11.0f);
+        float textScale = safeMeta.textScale();
+        // 行送りは CSS の line-height をレイアウトが解決した値。
+        // 以前は max(12 * textScale, 11.0f) という独自の式で、line-height を無視していた。
+        float lineHeight = safeMeta.resolvedLineHeight();
 
         String syntax = el.events() != null ? el.events().getOrDefault("data-syntax", "") : "";
-        boolean showLineNums = "lua".equalsIgnoreCase(syntax) || (el.events() != null && "true".equalsIgnoreCase(el.events().get("data-line-numbers")));
-        float gutterW = showLineNums ? 28.0f * textScale : 4.0f;
+        boolean showLineNums = showsLineNumbers(el);
+        float gutterW = textareaGutterWidth(el, textScale);
 
         boolean isFocused = ClientWebManager.isActiveInput(sessionId, el.id());
-        int cursorIdx = Math.clamp(textareaCursorIndex.getOrDefault(el.id(), fullText.length()), 0, fullText.length());
+        int cursorIdx = Math.clamp(TextEditState.getTextareaCursor(el.id(), fullText.length()), 0, fullText.length());
 
         int cursorRow = 0, cursorCol = 0, charAccum = 0;
         for (int i = 0; i < lines.length; i++) {
@@ -1080,13 +1089,13 @@ public class WebRenderCore {
         }
 
         int maxVisibleRows = Math.max(1, (int) ((el.height() - 8.0f) / lineHeight));
-        int scrollRow = textareaScrollRow.getOrDefault(el.id(), 0);
+        int scrollRow = TextEditState.getTextareaScrollRow(el.id());
         if (isFocused) {
             if (cursorRow < scrollRow) scrollRow = cursorRow;
             else if (cursorRow >= scrollRow + maxVisibleRows) scrollRow = cursorRow - maxVisibleRows + 1;
         }
         scrollRow = Math.clamp(scrollRow, 0, Math.max(0, lines.length - maxVisibleRows));
-        textareaScrollRow.put(el.id(), scrollRow);
+        TextEditState.setTextareaScrollRow(el.id(), scrollRow);
 
         float taClipMinX = Math.max(clipMinX, el.x());
         float taClipMinY = Math.max(clipMinY, el.y());

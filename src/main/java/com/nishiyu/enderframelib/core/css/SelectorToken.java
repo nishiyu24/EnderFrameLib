@@ -38,11 +38,18 @@ public class SelectorToken {
 
     public List<SelectorToken> notSelectors = new ArrayList<>();
 
+    /** この複合セレクタが要求する {@link ElementState} ビット集合。 */
+    public int stateFlags = 0;
+
     public boolean parsedHover = false;
     public boolean parsedActive = false;
     public boolean parsedFocus = false;
+    public boolean parsedFocusVisible = false;
+    public boolean parsedFocusWithin = false;
     public boolean isChecked = false;
     public boolean isDisabled = false;
+    public boolean isIndeterminate = false;
+    public boolean isOpen = false;
     public boolean isFirstChild = false;
     public boolean isLastChild = false;
     public boolean isEmpty = false;
@@ -61,5 +68,9 @@ public class SelectorToken {
 
     public boolean matches(HtmlNode node) {
         return SelectorMatcher.matchesCompound(this, node);
+    }
+
+    public boolean matches(HtmlNode node, SelectorMatcher.StateLookup stateLookup) {
+        return SelectorMatcher.matchesCompound(this, node, stateLookup);
     }
 }

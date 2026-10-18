@@ -6,6 +6,8 @@ import com.nishiyu.enderframelib.client.renderer.WebCanvasContext;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.common.UIParser;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
 
@@ -19,9 +21,26 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class SessionContext implements AutoCloseable {
 
+    /**
+     * 画面更新の無効化段階（F3-2）。
+     * <ul>
+     *   <li>{@link #NONE}: 再計算不要</li>
+     *   <li>{@link #REPAINT}: 既存の {@link LayoutBox} から描画要素リストのみ再生成（measure/layout を省略）</li>
+     *   <li>{@link #RESTYLE}: 状態変化した部分木のみ再スタイルし、レイアウト影響があれば {@link #RELAYOUT}、無ければ {@link #REPAINT} に分岐</li>
+     *   <li>{@link #RELAYOUT}: スタイル解決・measure・layout・描画要素生成の全パスを実行</li>
+     * </ul>
+     */
+    public enum InvalidationLevel {
+        NONE,
+        REPAINT,
+        RESTYLE,
+        RELAYOUT
+    }
+
     private final String sessionId;
-    private List<UIElement> renderCache = new ArrayList<>();
+    private volatile List<UIElement> renderCache = Collections.emptyList();
     private UIParser.Document document;
+    private LayoutBox layoutRoot;
     private HtmlNode virtualDom;
     private HtmlNode templateDom;
     private boolean serverManaged = false;
@@ -32,6 +51,8 @@ public class SessionContext implements AutoCloseable {
     private int rootH = 480;
     private final Map<String, String> env = new ConcurrentHashMap<>();
     private final ScrollState scrollState = new ScrollState();
+    private final InteractionState interactionState = new InteractionState();
+    private volatile InvalidationLevel invalidationLevel = InvalidationLevel.NONE;
 
     private String activeInputId = "";
     private String activePressedId = "";
@@ -50,7 +71,9 @@ public class SessionContext implements AutoCloseable {
     }
 
     public void setRenderCache(List<UIElement> renderCache) {
-        this.renderCache = renderCache != null ? renderCache : new ArrayList<>();
+        this.renderCache = (renderCache != null && !renderCache.isEmpty())
+                ? List.copyOf(renderCache)
+                : Collections.emptyList();
         this.hitTestIndex = new HitTestIndex(this.renderCache);
     }
 
@@ -69,6 +92,34 @@ public class SessionContext implements AutoCloseable {
 
     public void setDocument(UIParser.Document document) {
         this.document = document;
+    }
+
+    public LayoutBox layoutRoot() {
+        return layoutRoot;
+    }
+
+    public void setLayoutRoot(LayoutBox layoutRoot) {
+        this.layoutRoot = layoutRoot;
+    }
+
+    public InteractionState interactionState() {
+        return interactionState;
+    }
+
+    public InvalidationLevel invalidationLevel() {
+        return invalidationLevel;
+    }
+
+    public synchronized void markInvalidation(InvalidationLevel level) {
+        if (level != null && level.ordinal() > this.invalidationLevel.ordinal()) {
+            this.invalidationLevel = level;
+        }
+    }
+
+    public synchronized InvalidationLevel consumeInvalidationLevel() {
+        InvalidationLevel current = this.invalidationLevel;
+        this.invalidationLevel = InvalidationLevel.NONE;
+        return current;
     }
 
     public HtmlNode virtualDom() {
@@ -168,12 +219,15 @@ public class SessionContext implements AutoCloseable {
 
     @Override
     public void close() {
-        renderCache.clear();
+        renderCache = Collections.emptyList();
         hitTestIndex = null;
         document = null;
+        layoutRoot = null;
         virtualDom = null;
         templateDom = null;
         env.clear();
+        interactionState.clear();
+        invalidationLevel = InvalidationLevel.NONE;
         activeInputId = "";
         activePressedId = "";
 

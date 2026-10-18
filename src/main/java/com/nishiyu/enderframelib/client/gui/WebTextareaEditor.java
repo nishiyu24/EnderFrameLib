@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.client.gui;
 
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.TextEditState;
+import com.nishiyu.enderframelib.client.renderer.WebRenderCore;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.model.UIElement;
@@ -45,16 +47,21 @@ public class WebTextareaEditor {
             return;
         }
 
+        // 行送り・ガター幅・フォントの倍率は描画側と同じ出所から取る。
+        // 以前はここが行高 11px / ガター 28px を固定で持ち、倍率も掛けていなかったため、
+        // クリックした位置と実際に動くキャレットの位置が食い違っていた。
+        UIElement.RenderMeta meta = taEl.meta() != null ? taEl.meta() : UIElement.RenderMeta.EMPTY;
+        float textScale = meta.textScale();
+        float lineHeight = meta.resolvedLineHeight();
+        float gutterW = WebRenderCore.textareaGutterWidth(taEl, textScale);
+
         String[] lines = fullText.split("\n", -1);
         int scrollRow = TextEditState.getTextareaScrollRow(renderTaId);
-        int clickedRow = Math.clamp(scrollRow + (int) ((localY - 4.0) / 11.0), 0, Math.max(0, lines.length - 1));
-
-        String syntax = taEl.events() != null ? taEl.events().getOrDefault("data-syntax", "") : "";
-        boolean showLineNums = "lua".equalsIgnoreCase(syntax) || (taEl.events() != null && "true".equalsIgnoreCase(taEl.events().get("data-line-numbers")));
-        float gutterW = showLineNums ? 28.0f : 4.0f;
+        int clickedRow = Math.clamp(scrollRow + (int) ((localY - 4.0) / lineHeight), 0, Math.max(0, lines.length - 1));
 
         String lineStr = lines[clickedRow];
-        int clickedCol = font.plainSubstrByWidth(lineStr, Math.max(0, (int) (localX - gutterW))).length();
+        int clickedCol = font.plainSubstrByWidth(lineStr,
+                Math.max(0, (int) ((localX - gutterW) / textScale))).length();
 
         int index = 0;
         for (int i = 0; i < clickedRow; i++) index += lines[i].length() + 1;

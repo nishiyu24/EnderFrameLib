@@ -1,8 +1,10 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.css.EasingFunction;
 import com.nishiyu.enderframelib.core.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.core.model.RenderKeys;
-import com.nishiyu.enderframelib.core.model.*;
+import com.nishiyu.enderframelib.core.model.UIElement;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -14,6 +16,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * {@link UIElement} の前値→次値の汎用トランジション補間および {@code @keyframes} アニメーションを評価する。
+ *
+ * <p>以前は {@code PseudoTarget} を介して {@code :hover}/{@code :active}/{@code :focus} の 4 プロパティだけを
+ * 特例補間していたが、状態がスタイル解決の入力になったことで、再スタイル後の {@link UIElement} の目標値変化を
+ * そのまま検知して補間する一般化された仕組みとなった。
+ */
 public class WebAnimator {
 
     private static final Map<String, Map<String, AnimState>> SESSION_STATES = new ConcurrentHashMap<>();
@@ -39,37 +48,41 @@ public class WebAnimator {
     }
 
     /**
-     * UIRenderer が解決した {@link AnimationSpec} を、補間しやすい
-     * 進行度順のキーフレーム列に正規化する。
-     *
-     * <p>以前はここで {@code "1000_1_0:0,0,1,1,0,1|..."} という文字列を
-     * 毎回パースし直していた。
+     * UIRenderer が解決した {@link AnimationSpec} を、補間しやすい進行度順のキーフレーム列に正規化する。
      */
     private static AnimationDef normalize(AnimationSpec spec) {
         if (spec == null || spec.isEmpty()) return null;
-        AnimationDef def = new AnimationDef();
-        def.durationMs = spec.durationMs();
-        def.infinite = spec.infinite();
+        AnimationDef def = new AnimationDef(spec);
         def.frames.addAll(spec.frames());
         def.frames.sort(Comparator.comparingDouble(AnimationSpec.Keyframe::pct));
         return def;
     }
 
+    public static AnimatedValues getValues(String sessionId, UIElement el) {
+        return getValuesAt(sessionId, el, System.currentTimeMillis());
+    }
+
     public static AnimatedValues getValues(String sessionId, UIElement el, boolean isHovered) {
-        return getValues(sessionId, el, isHovered, false, false);
+        return getValuesAt(sessionId, el, System.currentTimeMillis());
     }
 
     public static AnimatedValues getValues(String sessionId, UIElement el, boolean isHovered, boolean isActive, boolean isFocused) {
+        return getValuesAt(sessionId, el, System.currentTimeMillis());
+    }
+
+    /**
+     * テストやフレーム同期から時刻を明示して補間値を取得する。
+     */
+    public static AnimatedValues getValuesAt(String sessionId, UIElement el, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = SESSION_STATES.computeIfAbsent(safeSessionId, k -> new ConcurrentHashMap<>());
-        AnimState state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el));
+        AnimState state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
 
-        if (state.hasTargetChanged(el, isHovered, isActive, isFocused)) {
-            state.syncBaseTargets(el);
-            state.updateTarget(el, isHovered, isActive, isFocused);
+        if (state.hasTargetChanged(el)) {
+            state.updateTarget(el, now);
         }
         state.updateStyleCache(el);
-        return state.getInterpolatedValues(System.currentTimeMillis());
+        return state.getInterpolatedValues(now);
     }
 
     public static AnimatedValues getCurrentValues(String sessionId, UIElement el) {
@@ -120,11 +133,62 @@ public class WebAnimator {
         }
     }
 
+    /**
+     * {@code transition-property} の指定文字列をアニメーション対象チャネルのビットマスクに変換する。
+     */
+    static int parseTransitionPropertyMask(String propSpec) {
+        if (propSpec == null || propSpec.isBlank()) {
+            return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
+        }
+        int mask = 0;
+        for (String token : propSpec.toLowerCase(Locale.ROOT).split("[,\\s]+")) {
+            String t = token.trim();
+            if (t.isEmpty()) continue;
+            switch (t) {
+                case "none" -> { return 0; }
+                case "all" -> {
+                    return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
+                }
+                case "opacity" -> mask |= AnimationSpec.CH_OPACITY;
+                case "transform", "translate", "scale", "rotate" -> mask |= AnimationSpec.CH_TRANSFORM;
+                case "color" -> mask |= AnimationSpec.CH_COLOR;
+                case "background", "background-color", "border", "border-color",
+                     "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" ->
+                        mask |= AnimationSpec.CH_BG_COLOR;
+                default -> {}
+            }
+        }
+        return mask;
+    }
+
     /** 進行度順に並べ替えたキーフレーム列。{@link AnimationSpec} から作る。 */
     static class AnimationDef {
-        int durationMs;
-        boolean infinite;
+        final int durationMs;
+        final int delayMs;
+        final float iterationCount;
+        final AnimationSpec.Direction direction;
+        final AnimationSpec.FillMode fillMode;
+        final String easing;
+        final int animatedChannels;
         final List<AnimationSpec.Keyframe> frames = new ArrayList<>();
+
+        AnimationDef(AnimationSpec spec) {
+            this.durationMs = spec.durationMs();
+            this.delayMs = spec.delayMs();
+            this.iterationCount = spec.iterationCount();
+            this.direction = spec.direction();
+            this.fillMode = spec.fillMode();
+            this.easing = spec.easing();
+            this.animatedChannels = spec.animatedChannels();
+        }
+
+        boolean infinite() {
+            return Float.isInfinite(iterationCount);
+        }
+
+        double totalActiveDurationMs() {
+            return infinite() ? Double.POSITIVE_INFINITY : (double) durationMs * iterationCount;
+        }
     }
 
     public static class AnimState {
@@ -142,12 +206,10 @@ public class WebAnimator {
         public int durationMs;
         public int delayMs;
         public String easing;
+        public int transitionMask = AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
         public AnimationSpec currentAnimSpec = AnimationSpec.NONE;
         public AnimationDef currentAnimDef = null;
         public long animStartTime = 0;
-
-        public boolean wasHovered = false, wasActive = false, wasFocused = false;
-        private PseudoTarget hoverTarget = null, activeTarget = null, focusTarget = null;
 
         public String cachedText = null;
         public Map<String, String> cachedEvents = null;
@@ -155,9 +217,12 @@ public class WebAnimator {
         public float[] radiusData = null;
         public float rangeVal = 50, rangeMin = 0, rangeMax = 100, circleThickness = 0;
         public int[] circleColors = null;
-        public String textAlign = "left";
 
         public AnimState(UIElement el) {
+            this(el, System.currentTimeMillis());
+        }
+
+        public AnimState(UIElement el, long now) {
             syncBaseTargets(el);
             this.targetOpacity = this.startOpacity = this.baseTargetOpacity;
             this.targetTx = this.startTx = this.baseTx;
@@ -170,29 +235,33 @@ public class WebAnimator {
 
             this.durationMs = 0;
             this.delayMs = 0;
-            this.easing = "ease-out";
-            this.startTime = System.currentTimeMillis();
+            this.easing = EasingFunction.DEFAULT_EASING;
+            this.startTime = now;
             this.currentAnimSpec = el.animDef() != null ? el.animDef() : AnimationSpec.NONE;
             this.currentAnimDef = normalize(this.currentAnimSpec);
-            this.animStartTime = this.startTime;
-            syncPseudoTargets(el);
+            this.animStartTime = now;
             updateStyleCache(el);
         }
 
         public boolean isActiveAt(long now) {
             if (durationMs > 0 && now < startTime + delayMs + durationMs) return true;
             if (currentAnimDef != null) {
-                return currentAnimDef.infinite || now < animStartTime + currentAnimDef.durationMs;
+                if (currentAnimDef.infinite()) return true;
+                double endMs = (double) animStartTime + currentAnimDef.delayMs + currentAnimDef.totalActiveDurationMs();
+                return now < endMs;
             }
             return false;
         }
 
-        public boolean hasTargetChanged(UIElement el, boolean isHovered, boolean isActive, boolean isFocused) {
-            return wasHovered != isHovered || wasActive != isActive || wasFocused != isFocused
-                    || baseTargetOpacity != el.opacity()
-                    || baseTx != el.translateX() || baseTy != el.translateY()
-                    || baseSx != el.scaleX() || baseSy != el.scaleY() || baseRot != el.rotate()
-                    || baseColor != el.color() || baseBgColor != el.bgColor()
+        public boolean hasTargetChanged(UIElement el) {
+            return Float.compare(baseTargetOpacity, el.opacity()) != 0
+                    || Float.compare(baseTx, el.translateX()) != 0
+                    || Float.compare(baseTy, el.translateY()) != 0
+                    || Float.compare(baseSx, el.scaleX()) != 0
+                    || Float.compare(baseSy, el.scaleY()) != 0
+                    || Float.compare(baseRot, el.rotate()) != 0
+                    || baseColor != el.color()
+                    || baseBgColor != el.bgColor()
                     || !Objects.equals(el.animDef(), currentAnimSpec);
         }
 
@@ -205,19 +274,6 @@ public class WebAnimator {
             this.baseRot = el.rotate();
             this.baseColor = el.color();
             this.baseBgColor = el.bgColor();
-        }
-
-        private void syncPseudoTargets(UIElement el) {
-            if (el.meta() != null && el.meta().pseudoStates() != null) {
-                PseudoStates ps = el.meta().pseudoStates();
-                this.hoverTarget = ps.hover();
-                this.activeTarget = ps.active();
-                this.focusTarget = ps.focus();
-            } else {
-                this.hoverTarget = null;
-                this.activeTarget = null;
-                this.focusTarget = null;
-            }
         }
 
         public void updateStyleCache(UIElement el) {
@@ -241,10 +297,8 @@ public class WebAnimator {
                 radiusData = new float[]{el.radius(), el.radius(), el.radius(), el.radius()};
             }
 
-            textAlign = el.events() != null ? el.events().getOrDefault("text-align", "left") : "left";
-
             if (textChanged && el.text() != null) {
-                if (el.type() == ElementType.RANGE) {
+                if (el.type() == ElementType.RANGE || el.type() == ElementType.PROGRESS) {
                     String[] parts = el.text().split(":");
                     rangeVal = 50f; rangeMin = 0f; rangeMax = 100f;
                     if (parts.length >= 3) {
@@ -265,57 +319,29 @@ public class WebAnimator {
             }
         }
 
-        public void updateTarget(UIElement el, boolean isHovered, boolean isActive, boolean isFocused) {
-            long now = System.currentTimeMillis();
+        public void updateTarget(UIElement el, long now) {
             AnimatedValues current = getInterpolatedValues(now);
-
-            this.startOpacity = current.opacity();
-            this.startTx = current.tx();
-            this.startTy = current.ty();
-            this.startSx = current.sx();
-            this.startSy = current.sy();
-            this.startRot = current.rot();
-            this.startColor = current.color();
-            this.startBgColor = current.bgColor();
 
             if (!Objects.equals(el.animDef(), this.currentAnimSpec)) {
                 this.currentAnimSpec = el.animDef() != null ? el.animDef() : AnimationSpec.NONE;
                 this.currentAnimDef = normalize(this.currentAnimSpec);
                 this.animStartTime = now;
             }
-            syncPseudoTargets(el);
 
-            PseudoTarget chosen = null;
-            if (isActive && this.activeTarget != null) chosen = this.activeTarget;
-            else if (isFocused && this.focusTarget != null) chosen = this.focusTarget;
-            else if (isHovered && this.hoverTarget != null) chosen = this.hoverTarget;
-
-            if (chosen != null) {
-                this.targetOpacity = chosen.op();
-                this.targetTx = chosen.tx();
-                this.targetTy = chosen.ty();
-                this.targetSx = chosen.sx();
-                this.targetSy = chosen.sy();
-                this.targetRot = chosen.rot();
-                this.targetColor = chosen.color();
-                this.targetBgColor = chosen.bgColor();
-            } else {
-                this.targetOpacity = el.opacity();
-                this.targetTx = el.translateX();
-                this.targetTy = el.translateY();
-                this.targetSx = el.scaleX();
-                this.targetSy = el.scaleY();
-                this.targetRot = el.rotate();
-                this.targetColor = el.color();
-                this.targetBgColor = el.bgColor();
-            }
+            syncBaseTargets(el);
+            this.targetOpacity = el.opacity();
+            this.targetTx = el.translateX();
+            this.targetTy = el.translateY();
+            this.targetSx = el.scaleX();
+            this.targetSy = el.scaleY();
+            this.targetRot = el.rotate();
+            this.targetColor = el.color();
+            this.targetBgColor = el.bgColor();
 
             this.durationMs = el.transitionDuration();
-            if (this.durationMs == 0 && (this.hoverTarget != null || this.activeTarget != null || this.focusTarget != null)) {
-                this.durationMs = 150;
-            }
             this.delayMs = 0;
-            this.easing = "ease-out";
+            this.easing = EasingFunction.DEFAULT_EASING;
+            String propSpec = "all";
             if (el.events() != null) {
                 if (el.events().containsKey(RenderKeys.MC_DELAY)) {
                     this.delayMs = parseIntSafe(el.events().get(RenderKeys.MC_DELAY), 0);
@@ -323,18 +349,56 @@ public class WebAnimator {
                 if (el.events().containsKey(RenderKeys.MC_EASING)) {
                     this.easing = el.events().get(RenderKeys.MC_EASING);
                 }
+                if (el.events().containsKey(RenderKeys.MC_TRANSITION_PROP)) {
+                    propSpec = el.events().get(RenderKeys.MC_TRANSITION_PROP);
+                }
+            }
+            this.transitionMask = parseTransitionPropertyMask(propSpec);
+
+            // transition-property に含まれるチャネルは現在値から補間し、含まれないチャネルは即座に目標値へスナップする
+            if ((this.transitionMask & AnimationSpec.CH_OPACITY) != 0) {
+                this.startOpacity = current.opacity();
+            } else {
+                this.startOpacity = this.targetOpacity;
+            }
+
+            if ((this.transitionMask & AnimationSpec.CH_TRANSFORM) != 0) {
+                this.startTx = current.tx();
+                this.startTy = current.ty();
+                this.startSx = current.sx();
+                this.startSy = current.sy();
+                this.startRot = current.rot();
+            } else {
+                this.startTx = this.targetTx;
+                this.startTy = this.targetTy;
+                this.startSx = this.targetSx;
+                this.startSy = this.targetSy;
+                this.startRot = this.targetRot;
+            }
+
+            if ((this.transitionMask & AnimationSpec.CH_COLOR) != 0) {
+                this.startColor = current.color();
+            } else {
+                this.startColor = this.targetColor;
+            }
+
+            if ((this.transitionMask & AnimationSpec.CH_BG_COLOR) != 0) {
+                this.startBgColor = current.bgColor();
+            } else {
+                this.startBgColor = this.targetBgColor;
+            }
+
+            if (this.transitionMask == 0) {
+                this.durationMs = 0;
             }
             this.startTime = now;
-            this.wasHovered = isHovered;
-            this.wasActive = isActive;
-            this.wasFocused = isFocused;
         }
 
         public AnimatedValues getInterpolatedValues(long now) {
             float op, tx, ty, sx, sy, rot;
             int col, bgCol;
 
-            if (durationMs <= 0 || now >= startTime + delayMs + durationMs) {
+            if (durationMs <= 0 || transitionMask == 0 || now >= startTime + delayMs + durationMs) {
                 op = targetOpacity; tx = targetTx; ty = targetTy;
                 sx = targetSx; sy = targetSy; rot = targetRot;
                 col = targetColor; bgCol = targetBgColor;
@@ -343,8 +407,8 @@ public class WebAnimator {
                 sx = startSx; sy = startSy; rot = startRot;
                 col = startColor; bgCol = startBgColor;
             } else {
-                float t = (float) (now - (startTime + delayMs)) / durationMs;
-                t = applyEasing(t, easing);
+                float rawT = (float) (now - (startTime + delayMs)) / durationMs;
+                float t = EasingFunction.apply(rawT, easing);
 
                 op = lerp(startOpacity, targetOpacity, t);
                 tx = lerp(startTx, targetTx, t);
@@ -356,30 +420,42 @@ public class WebAnimator {
                 bgCol = lerpColor(startBgColor, targetBgColor, t);
             }
 
-            if (currentAnimDef != null && !currentAnimDef.frames.isEmpty()) {
-                long elapsed = now - animStartTime;
-                float progress = currentAnimDef.infinite
-                        ? (float) (elapsed % currentAnimDef.durationMs) / currentAnimDef.durationMs
-                        : Math.min(1.0f, (float) elapsed / currentAnimDef.durationMs);
-                float pct = progress * 100f;
-                AnimationSpec.Keyframe f0 = currentAnimDef.frames.getFirst();
-                AnimationSpec.Keyframe f1 = currentAnimDef.frames.getLast();
-                for (int i = 0; i < currentAnimDef.frames.size() - 1; i++) {
-                    AnimationSpec.Keyframe cur = currentAnimDef.frames.get(i);
-                    AnimationSpec.Keyframe next = currentAnimDef.frames.get(i + 1);
-                    if (pct >= cur.pct() && pct <= next.pct()) {
-                        f0 = cur;
-                        f1 = next;
-                        break;
+            if (currentAnimDef != null && !currentAnimDef.frames.isEmpty() && currentAnimDef.animatedChannels != 0) {
+                float animPct = computeKeyframePct(currentAnimDef, now - animStartTime);
+                if (!Float.isNaN(animPct)) {
+                    AnimationSpec.Keyframe f0 = currentAnimDef.frames.getFirst();
+                    AnimationSpec.Keyframe f1 = currentAnimDef.frames.getLast();
+                    for (int i = 0; i < currentAnimDef.frames.size() - 1; i++) {
+                        AnimationSpec.Keyframe cur = currentAnimDef.frames.get(i);
+                        AnimationSpec.Keyframe next = currentAnimDef.frames.get(i + 1);
+                        if (animPct >= cur.pct() && animPct <= next.pct()) {
+                            f0 = cur;
+                            f1 = next;
+                            break;
+                        }
+                    }
+                    float span = f1.pct() - f0.pct();
+                    float rawLocalT = span > 0f ? Math.clamp((animPct - f0.pct()) / span, 0f, 1f) : 0f;
+                    float localT = EasingFunction.apply(rawLocalT, currentAnimDef.easing);
+
+                    // @keyframes で実際に宣言されたチャネルだけを上書きし、他のチャネルのトランジションを潰さない
+                    if ((currentAnimDef.animatedChannels & AnimationSpec.CH_OPACITY) != 0) {
+                        op = lerp(f0.op(), f1.op(), localT);
+                    }
+                    if ((currentAnimDef.animatedChannels & AnimationSpec.CH_TRANSFORM) != 0) {
+                        tx = lerp(f0.tx(), f1.tx(), localT);
+                        ty = lerp(f0.ty(), f1.ty(), localT);
+                        sx = lerp(f0.sx(), f1.sx(), localT);
+                        sy = lerp(f0.sy(), f1.sy(), localT);
+                        rot = lerp(f0.rot(), f1.rot(), localT);
+                    }
+                    if ((currentAnimDef.animatedChannels & AnimationSpec.CH_COLOR) != 0) {
+                        col = lerpColor(f0.color(), f1.color(), localT);
+                    }
+                    if ((currentAnimDef.animatedChannels & AnimationSpec.CH_BG_COLOR) != 0) {
+                        bgCol = lerpColor(f0.bgColor(), f1.bgColor(), localT);
                     }
                 }
-                float localT = f1.pct() > f0.pct() ? (pct - f0.pct()) / (f1.pct() - f0.pct()) : 0f;
-                op = lerp(f0.op(), f1.op(), localT);
-                tx = lerp(f0.tx(), f1.tx(), localT);
-                ty = lerp(f0.ty(), f1.ty(), localT);
-                sx = lerp(f0.sx(), f1.sx(), localT);
-                sy = lerp(f0.sy(), f1.sy(), localT);
-                rot = lerp(f0.rot(), f1.rot(), localT);
             }
 
             cachedValues.set(op, tx, ty, sx, sy, rot, col, bgCol);
@@ -390,16 +466,60 @@ public class WebAnimator {
             cachedValues.rangeMax = this.rangeMax;
             cachedValues.circleThickness = this.circleThickness;
             cachedValues.circleColors = this.circleColors;
-            cachedValues.textAlign = this.textAlign;
             return cachedValues;
         }
 
-        private static float applyEasing(float t, String easing) {
-            return switch (easing) {
-                case "linear" -> t;
-                case "ease-in" -> t * t * t;
-                case "ease-in-out" -> t < 0.5f ? 4f * t * t * t : 1.0f - (float) Math.pow(-2f * t + 2f, 3) / 2.0f;
-                default -> 1.0f - (float) Math.pow(1.0f - t, 3);
+        /**
+         * {@code animation-delay}, {@code animation-iteration-count}, {@code animation-direction},
+         * {@code animation-fill-mode} を考慮して現在のキーフレーム進行度（0〜100）を返す。
+         * アニメーションの適用外（delay 中で backwards 無し、または終了後で forwards 無し）の場合は {@code Float.NaN}。
+         */
+        private static float computeKeyframePct(AnimationDef def, long elapsedFromStartMs) {
+            long activeElapsed = elapsedFromStartMs - def.delayMs;
+            int dur = Math.max(1, def.durationMs);
+
+            if (activeElapsed < 0) {
+                if (def.fillMode == AnimationSpec.FillMode.BACKWARDS || def.fillMode == AnimationSpec.FillMode.BOTH) {
+                    boolean reverseFirst = (def.direction == AnimationSpec.Direction.REVERSE
+                            || def.direction == AnimationSpec.Direction.ALTERNATE_REVERSE);
+                    return reverseFirst ? 100f : 0f;
+                }
+                return Float.NaN;
+            }
+
+            double totalActive = def.totalActiveDurationMs();
+            if (!def.infinite() && activeElapsed >= totalActive) {
+                if (def.fillMode == AnimationSpec.FillMode.FORWARDS || def.fillMode == AnimationSpec.FillMode.BOTH) {
+                    float ic = def.iterationCount;
+                    long finalIterIndex;
+                    float finalProgress;
+                    if (Math.floor(ic) == ic && ic >= 1.0f) {
+                        finalIterIndex = (long) ic - 1L;
+                        finalProgress = 1.0f;
+                    } else {
+                        finalIterIndex = (long) Math.floor(ic);
+                        finalProgress = ic - finalIterIndex;
+                    }
+                    boolean reverse = isIterationReversed(def.direction, finalIterIndex);
+                    float dirProgress = reverse ? (1.0f - finalProgress) : finalProgress;
+                    return dirProgress * 100f;
+                }
+                return Float.NaN;
+            }
+
+            long iterIndex = activeElapsed / dur;
+            float iterProgress = (float) (activeElapsed % dur) / dur;
+            boolean reverse = isIterationReversed(def.direction, iterIndex);
+            float dirProgress = reverse ? (1.0f - iterProgress) : iterProgress;
+            return dirProgress * 100f;
+        }
+
+        private static boolean isIterationReversed(AnimationSpec.Direction dir, long iterIndex) {
+            return switch (dir) {
+                case NORMAL -> false;
+                case REVERSE -> true;
+                case ALTERNATE -> (iterIndex % 2L) == 1L;
+                case ALTERNATE_REVERSE -> (iterIndex % 2L) == 0L;
             };
         }
 
@@ -411,10 +531,10 @@ public class WebAnimator {
             if (c1 == c2) return c1;
             float a1 = ((c1 >>> 24) & 0xFF) / 255f, r1 = ((c1 >>> 16) & 0xFF) / 255f, g1 = ((c1 >>> 8) & 0xFF) / 255f, b1 = (c1 & 0xFF) / 255f;
             float a2 = ((c2 >>> 24) & 0xFF) / 255f, r2 = ((c2 >>> 16) & 0xFF) / 255f, g2 = ((c2 >>> 8) & 0xFF) / 255f, b2 = (c2 & 0xFF) / 255f;
-            int a = (int) (lerp(a1, a2, t) * 255f) & 0xFF;
-            int r = (int) (lerp(r1, r2, t) * 255f) & 0xFF;
-            int g = (int) (lerp(g1, g2, t) * 255f) & 0xFF;
-            int b = (int) (lerp(b1, b2, t) * 255f) & 0xFF;
+            int a = Math.round(lerp(a1, a2, t) * 255f) & 0xFF;
+            int r = Math.round(lerp(r1, r2, t) * 255f) & 0xFF;
+            int g = Math.round(lerp(g1, g2, t) * 255f) & 0xFF;
+            int b = Math.round(lerp(b1, b2, t) * 255f) & 0xFF;
             return (a << 24) | (r << 16) | (g << 8) | b;
         }
     }
@@ -424,7 +544,6 @@ public class WebAnimator {
         public float[] radiusData;
         public float rangeVal, rangeMin, rangeMax, circleThickness;
         public int[] circleColors;
-        public String textAlign;
         private float opacity, tx, ty, sx, sy, rot;
         private int color, bgColor;
 

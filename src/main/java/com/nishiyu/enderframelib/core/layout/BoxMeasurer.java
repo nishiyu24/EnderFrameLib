@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.List;
 
@@ -43,8 +44,9 @@ public final class BoxMeasurer {
             parentH = rootH;
         }
 
-        int fsPx = style.length(CssProperty.FONT_SIZE, parentW, rootW, rootH);
-        box.fontSize = (fsPx > 0) ? (fsPx / LayoutMetrics.BASE_FONT_SIZE) : 1.0f;
+        // font-size は算出スタイルが親のフォントサイズを基準に解決済み（ComputedStyle.of）。
+        // ここで length() を使って解き直していたため、% が包含ブロックの「幅」基準になっていた。
+        box.lineHeightPx = lineHeightOf(box, ctx);
 
         resolveBoxEdges(box, parentW, parentH, rootW, rootH);
 
@@ -60,7 +62,7 @@ public final class BoxMeasurer {
         resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, isPercentWidthAndShrinking, isBorderBox,
                 display, fmtCtx);
 
-        applyMinMaxWidths(box, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
         int engineInnerW = box.sizingMode == SizingMode.SHRINK_TO_FIT
                 ? Math.max(0, parentW - box.mL - box.mR - box.horizontalDecoration())
@@ -69,7 +71,7 @@ public final class BoxMeasurer {
         LayoutEngine engine = LayoutEngineFactory.getEngine(display);
         engine.measure(box, engineInnerW, parentH, fmtCtx, ctx);
 
-        applyMinMaxWidths(box, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
         if (!box.isAbsolute) {
             if (autoLeft && autoRight) {
@@ -155,7 +157,7 @@ public final class BoxMeasurer {
         }
     }
 
-    /** テキストノードは折り返した結果の最長行が幅になる。 */
+    /** テキストノードは整形した結果の最長行が幅になる。 */
     private static void measureTextWidth(LayoutBox box, LayoutContext ctx, int parentW, int rootW, int rootH) {
         ComputedStyle style = box.style;
 
@@ -166,35 +168,48 @@ public final class BoxMeasurer {
         }
         if (limitW <= 0) limitW = LayoutMetrics.UNBOUNDED_WIDTH;
 
-        boolean isBold = LayoutMetrics.isBold(style);
-        List<String> lines = LayoutMetrics.wrapText(box.displayText, limitW, box.fontSize, isBold, ctx.fontMetrics());
-        box.textLines = lines;
+        box.shapedLines = TextShaper.shape(box.displayText, ctx.faceFor(style), ctx.textStyleFor(style), limitW);
 
-        int maxLineW = 0;
-        for (String line : lines) {
-            maxLineW = Math.max(maxLineW, ctx.fontMetrics().getDisplayWidth(line, box.fontSize, isBold));
+        float maxLineW = 0;
+        for (TextShaper.ShapedLine line : box.shapedLines) {
+            maxLineW = Math.max(maxLineW, line.width());
         }
-        box.w = maxLineW + box.horizontalDecoration();
+        box.w = (int) Math.ceil(maxLineW) + box.horizontalDecoration();
         box.sizingMode = SizingMode.DEFINITE;
     }
 
-    private static void applyMinMaxWidths(LayoutBox box, int parentW, int rootW, int rootH,
+    private static void applyMinMaxWidths(LayoutBox box, LayoutContext ctx, int parentW, int rootW, int rootH,
                                           boolean isPercentWidthAndShrinking, boolean isBorderBox) {
         ComputedStyle style = box.style;
         if (box.sizingMode != SizingMode.DEFINITE) return;
 
-        if (style.containsKey(CssProperty.MAX_WIDTH)) {
-            String maxWStr = style.get(CssProperty.MAX_WIDTH);
-            if (!(maxWStr.contains("%") && isPercentWidthAndShrinking)) {
+        String maxWStr = style.get(CssProperty.MAX_WIDTH);
+        if (maxWStr != null) {
+            if (LayoutMetrics.isIntrinsicSizeKeyword(maxWStr)) {
+                // max-content / fit-content / auto は上限を課さない。min-content だけが上限になる。
+                if ("min-content".equals(maxWStr.trim().toLowerCase())) {
+                    box.w = Math.min(box.w, box.getMinContentWidth(ctx));
+                }
+            } else if (!(maxWStr.contains("%") && isPercentWidthAndShrinking)) {
                 int maxW = style.length(CssProperty.MAX_WIDTH, parentW, rootW, rootH);
                 if (!isBorderBox) maxW += box.horizontalDecoration();
                 box.w = Math.min(box.w, maxW);
             }
         }
-        if (style.containsKey(CssProperty.MIN_WIDTH)) {
-            int minW = style.length(CssProperty.MIN_WIDTH, parentW, rootW, rootH);
-            if (!isBorderBox) minW += box.horizontalDecoration();
-            box.w = Math.max(box.w, minW);
+
+        String minWStr = style.get(CssProperty.MIN_WIDTH);
+        if (minWStr != null) {
+            if (LayoutMetrics.isIntrinsicSizeKeyword(minWStr)) {
+                // min-content / fit-content / auto はいずれも「内容がこれ以上縮まない幅」が下限。
+                // getMinContentWidth は装飾込みで返すため、ここで足し直さない。
+                if (!"max-content".equals(minWStr.trim().toLowerCase())) {
+                    box.w = Math.max(box.w, box.getMinContentWidth(ctx));
+                }
+            } else {
+                int minW = style.length(CssProperty.MIN_WIDTH, parentW, rootW, rootH);
+                if (!isBorderBox) minW += box.horizontalDecoration();
+                box.w = Math.max(box.w, minW);
+            }
         }
     }
 
@@ -264,11 +279,14 @@ public final class BoxMeasurer {
         String tag = box.node.tag;
 
         if (box.node.nodeType == NodeType.TEXT) {
-            float lh = LayoutMetrics.lineHeightFactor(box.style);
-            int lineCount = (box.textLines != null && !box.textLines.isEmpty()) ? box.textLines.size() : 1;
-            box.h = (Math.max(0, lineCount - 1) * LayoutMetrics.lineHeightPx(box.fontSize, lh))
-                    + LayoutMetrics.fontHeightPx(box.fontSize)
-                    + box.verticalDecoration();
+            // 高さは整形結果の行高の合計。行数と行送りを別々に数え直さない。
+            float total = 0;
+            if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
+                for (TextShaper.ShapedLine line : box.shapedLines) total += line.height();
+            } else {
+                total = box.lineHeightPx;
+            }
+            box.h = (int) Math.ceil(total) + box.verticalDecoration();
             return;
         }
 
@@ -298,7 +316,7 @@ public final class BoxMeasurer {
             String type = box.node.attrs.getOrDefault("type", "text");
             boolean compact = type.equals("checkbox") || type.equals("radio") || type.equals("range");
             if (tag.equals("select") || !compact) {
-                box.h = LayoutMetrics.fontHeightPx(box.fontSize) + 8 + box.verticalDecoration();
+                box.h = (int) Math.ceil(box.lineHeightPx) + 8 + box.verticalDecoration();
             }
             return;
         }
@@ -306,6 +324,11 @@ public final class BoxMeasurer {
         if (tag.equals("progress")) {
             box.h = 12 + box.verticalDecoration();
         }
+    }
+
+    /** この要素の 1 行分の高さ（px）。書体と line-height から決まる。 */
+    private static float lineHeightOf(LayoutBox box, LayoutContext ctx) {
+        return LayoutMetrics.lineHeightPx(box.style, ctx.faceFor(box.style), ctx.fontStyleFor(box.style));
     }
 
     private static boolean isReplacedImage(String tag) {

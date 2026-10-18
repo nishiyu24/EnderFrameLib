@@ -1,11 +1,19 @@
-package com.nishiyu.enderframelib.client.gui;
+package com.nishiyu.enderframelib.client;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * テキスト入力およびテキストエリアのスクロール・キャレット位置状態を管理するオブジェクト。
- * レンダリング層と入力制御層の結合を解き、エディタ所有とする。
+ * テキスト入力・テキストエリアのキャレット位置とスクロール状態。
+ *
+ * 何が壊れていたか: 同じ状態が WebRenderCore 側に 3 本の static マップとして
+ * 二重に存在し、編集側 (WebTextareaEditor / WebScreenDelegate) が書くのは
+ * こちら、描画側が読むのはあちらだったため、textarea のキャレットは常に
+ * 文末に描かれ、矢印キー・Home / End・クリックでの移動もホイールスクロールも
+ * 画面に反映されなかった。ここが唯一の出所。
+ *
+ * {@code client/gui} ではなく {@code client} に置いてあるのは、描画層
+ * ({@code client/renderer}) を GUI 層に依存させないため。
  */
 public class TextEditState {
 

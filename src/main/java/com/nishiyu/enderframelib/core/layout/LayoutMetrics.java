@@ -2,7 +2,8 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.text.FontMetrics;
+import com.nishiyu.enderframelib.core.text.FontFace;
+import com.nishiyu.enderframelib.core.text.FontStyle;
 
 import java.util.regex.Pattern;
 
@@ -13,20 +14,10 @@ import java.util.regex.Pattern;
  * （line-height の解析が 4 コピー、単語分割の正規表現が 4 コピー、
  *  太字判定が 4 コピー、基準フォントサイズ 16 が 11 箇所）、
  * 片方だけ直すと測定と配置がずれる状態だった。ここが唯一の出所。
+ *
+ * 折り返し・空白・省略そのものは {@link com.nishiyu.enderframelib.core.text.TextShaper} が持つ。
  */
 public final class LayoutMetrics {
-
-    /** 基準フォントサイズ（px）。fontSize スケール 1.0 がこの値に対応する。 */
-    public static final float BASE_FONT_SIZE = 16.0f;
-
-    /** line-height の既定値（CSS の normal 相当として扱う）。 */
-    public static final float DEFAULT_LINE_HEIGHT = 1.375f;
-
-    /**
-     * インラインの折り返し判定に与える余裕（px）。
-     * 幅計算の丸めで最後の 1 単語が不必要に折り返されるのを防ぐためのもの。
-     */
-    public static final int INLINE_WRAP_SLOP = 4;
 
     /** 「幅の制約が無い」ことを表す十分大きな幅。 */
     public static final int UNBOUNDED_WIDTH = 9999;
@@ -36,94 +27,95 @@ public final class LayoutMetrics {
     /** リモート画像のサイズが未取得のときの暫定サイズ（px）。 */
     public static final int PENDING_IMAGE_SIZE = 32;
 
-    /**
-     * 単語分割の規則。英語は空白、日本語は句読点の直後で分割する。
-     * 空白自体もトークンとして残すため、前後の空白が保たれる。
-     */
-    private static final Pattern WORD_SPLIT = Pattern.compile("(?<=\\s)|(?=\\s)|(?<=[、。！？.,])");
-
     /** font-weight が太字扱いになる値。 */
     private static final Pattern BOLD_FONT_WEIGHT = Pattern.compile("(?i)bold|bolder|700|800|900");
 
-    /** 改行・タブを半角空白に置き換えるための規則。 */
-    private static final Pattern LINE_BREAKS = Pattern.compile("[\\r\\n\\t]+");
-    /** 連続した半角空白を 1 つに畳むための規則。 */
-    private static final Pattern SPACE_RUN = Pattern.compile(" +");
-
     private LayoutMetrics() {}
 
-    public static String[] splitWords(String text) {
-        return WORD_SPLIT.split(text);
+    /**
+     * 長さではなく内容から決まるサイズのキーワードか。
+     *
+     * 何が壊れていたか: これらは {@code LengthResolver} で解析できず 0 px になるため、
+     * ua.css の {@code button, input { min-width: min-content }} が
+     * 「最小幅 0」として扱われ、flex の shrink でボタンが潰れていた。
+     */
+    public static boolean isIntrinsicSizeKeyword(String value) {
+        if (value == null) return false;
+        String v = value.trim().toLowerCase();
+        return v.equals("min-content") || v.equals("max-content")
+                || v.equals("fit-content") || v.startsWith("fit-content(") || v.equals("auto");
     }
 
     public static boolean isBold(ComputedStyle style) {
-        return BOLD_FONT_WEIGHT.matcher(style.getOrDefault(CssProperty.FONT_WEIGHT, "")).matches();
+        return isBoldWeight(style.getOrDefault(CssProperty.FONT_WEIGHT, ""));
     }
 
-    /** 連続する空白を 1 つに畳む（white-space: normal の正規化）。 */
-    public static String collapseWhitespace(String text) {
-        if (text == null) return null;
-        return SPACE_RUN.matcher(LINE_BREAKS.matcher(text).replaceAll(" ")).replaceAll(" ");
+    public static boolean isBoldWeight(String weight) {
+        return weight != null && BOLD_FONT_WEIGHT.matcher(weight.trim()).matches();
     }
 
     /**
-     * line-height を「フォントサイズに対する倍率」として解決する。
-     * 数値・px・% と normal に対応し、解釈できない値は {@link #DEFAULT_LINE_HEIGHT}。
+     * {@code text-transform} を適用する。
+     *
+     * 何が壊れていたか: 以前は描画側（UIRenderer）だけが uppercase を適用し、
+     * 測定側は変換前の文字列を測っていたため、大文字化したテキストは
+     * 幅を狭く見積もられて描画がはみ出していた。しかもインラインフラグメント経路では
+     * 変換そのものが抜けていた。変換は表示文字列を作るこの 1 箇所だけで行う。
      */
-    public static float lineHeightFactor(ComputedStyle style) {
+    public static String applyTextTransform(String text, ComputedStyle style) {
+        if (text == null || text.isEmpty()) return text;
+        String transform = style.keyword(CssProperty.TEXT_TRANSFORM, "none");
+        return switch (transform) {
+            case "uppercase" -> text.toUpperCase(java.util.Locale.ROOT);
+            case "lowercase" -> text.toLowerCase(java.util.Locale.ROOT);
+            case "capitalize" -> capitalizeWords(text);
+            default -> text;
+        };
+    }
+
+    private static String capitalizeWords(String text) {
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean atWordStart = true;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            sb.append(atWordStart ? Character.toUpperCase(c) : c);
+            atWordStart = Character.isWhitespace(c);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 1 行が占める高さ（px）。
+     *
+     * 何が壊れていたか: 以前は line-height を「フォントサイズに対する倍率」に
+     * 変換して返していたため、{@code line-height: 20px} が {@code 20/16} の倍率になり、
+     * 使う側が {@code 16 * fontScale} を掛け戻すことで
+     * 実際には {@code 20 * fontScale} px になっていた（font-size に比例してしまう）。
+     * 長さ指定は長さのまま、倍率指定だけがフォントサイズに比例する。
+     *
+     * {@code normal} は書体の ascent + descent + 行間から決まる。
+     * 以前は 1.375 という固定値だった。
+     */
+    public static float lineHeightPx(ComputedStyle style, FontFace face, FontStyle font) {
         String raw = style.get(CssProperty.LINE_HEIGHT);
-        if (raw == null) return DEFAULT_LINE_HEIGHT;
+        if (raw == null) return face.normalLineHeight(font);
 
         String value = raw.trim();
-        if (value.isEmpty() || value.equalsIgnoreCase("normal")) return DEFAULT_LINE_HEIGHT;
+        if (value.isEmpty() || value.equalsIgnoreCase("normal")) return face.normalLineHeight(font);
 
         try {
             if (value.endsWith("px")) {
-                return Float.parseFloat(value.substring(0, value.length() - 2).trim()) / BASE_FONT_SIZE;
-            }
-            if (value.endsWith("%")) {
-                return Float.parseFloat(value.substring(0, value.length() - 1).trim()) / 100f;
-            }
-            if (value.endsWith("em")) {
                 return Float.parseFloat(value.substring(0, value.length() - 2).trim());
             }
-            return Float.parseFloat(value);
-        } catch (NumberFormatException e) {
-            return DEFAULT_LINE_HEIGHT;
-        }
-    }
-
-    /** フォントスケールに対応する 1 行分の高さ（px）。 */
-    public static int lineHeightPx(float fontScale, float lineHeightFactor) {
-        return (int) (BASE_FONT_SIZE * fontScale * lineHeightFactor);
-    }
-
-    /** フォントスケールに対応する文字の高さ（px）。 */
-    public static int fontHeightPx(float fontScale) {
-        return (int) (BASE_FONT_SIZE * fontScale);
-    }
-
-    /** 指定幅に収まるように単語単位で折り返す。単語内の強制分割はしない。 */
-    public static java.util.List<String> wrapText(String text, int maxW, float fontScale, boolean bold,
-                                                  FontMetrics fontMetrics) {
-        java.util.List<String> lines = new java.util.ArrayList<>();
-        if (text == null || text.isEmpty()) return lines;
-
-        int limit = maxW > 0 ? maxW : UNBOUNDED_WIDTH;
-        StringBuilder current = new StringBuilder();
-        int currentW = 0;
-
-        for (String token : splitWords(text)) {
-            int tokenW = fontMetrics.getDisplayWidth(token, fontScale, bold);
-            if (currentW + tokenW > limit && !current.isEmpty() && !token.trim().isEmpty()) {
-                lines.add(current.toString().trim());
-                current = new StringBuilder();
-                currentW = 0;
+            if (value.endsWith("%")) {
+                return Float.parseFloat(value.substring(0, value.length() - 1).trim()) / 100f * font.fontSizePx();
             }
-            current.append(token);
-            currentW += tokenW;
+            if (value.endsWith("em")) {
+                return Float.parseFloat(value.substring(0, value.length() - 2).trim()) * font.fontSizePx();
+            }
+            return Float.parseFloat(value) * font.fontSizePx();
+        } catch (NumberFormatException e) {
+            return face.normalLineHeight(font);
         }
-        if (!current.isEmpty()) lines.add(current.toString().trim());
-        return lines;
     }
 }

@@ -21,6 +21,7 @@ public class StyleRule {
     public boolean isHover;
     public boolean isActive;
     public boolean isFocus;
+    public int stateMask;
     public boolean isBefore;
     public boolean isAfter;
 
@@ -42,6 +43,7 @@ public class StyleRule {
         this.isHover = parsed.isHover();
         this.isActive = parsed.isActive();
         this.isFocus = parsed.isFocus();
+        this.stateMask = parsed.stateMask();
         this.isBefore = parsed.isBefore();
         this.isAfter = parsed.isAfter();
     }
@@ -58,6 +60,10 @@ public class StyleRule {
 
     public boolean matches(HtmlNode node) {
         return SelectorMatcher.matches(parsed, node);
+    }
+
+    public boolean matches(HtmlNode node, SelectorMatcher.StateLookup stateLookup) {
+        return SelectorMatcher.matches(parsed, node, stateLookup);
     }
 
     /** カスケード順（詳細度の弱い順）の比較子。 */

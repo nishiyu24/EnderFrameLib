@@ -15,7 +15,7 @@ import com.nishiyu.enderframelib.core.dom.DomDiffEngine;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.ScrollState;
-import com.nishiyu.enderframelib.core.text.FontMetrics;
+import com.nishiyu.enderframelib.core.text.FontResolver;
 import com.nishiyu.enderframelib.network.dom.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.core.model.*;
 import net.minecraft.nbt.CompoundTag;
@@ -61,7 +61,16 @@ public class ClientWebManager {
     public static void setActiveInputId(String sessionId, String id) {
         // クリアだけのために空のセッションを作らない。
         SessionContext session = (id == null || id.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
-        if (session != null) session.setActiveInputId(id);
+        if (session != null) {
+            session.setActiveInputId(id);
+            String baseId = getBaseNodeId(id);
+            if (!baseId.isEmpty()) {
+                HtmlNode root = session.document() != null ? session.document().root : session.virtualDom();
+                if (session.interactionState().setFocusedNode(root, baseId, false)) {
+                    requestRestyle(sessionId);
+                }
+            }
+        }
     }
 
     public static boolean isActiveInput(String sessionId, String renderId) {
@@ -77,7 +86,36 @@ public class ClientWebManager {
 
     public static void setActivePressedId(String sessionId, String id) {
         SessionContext session = (id == null || id.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
-        if (session != null) session.setActivePressedId(id);
+        if (session != null) {
+            session.setActivePressedId(id);
+            String baseId = getBaseNodeId(id);
+            HtmlNode root = session.document() != null ? session.document().root : session.virtualDom();
+            if (session.interactionState().setActiveNode(root, baseId)) {
+                requestRestyle(sessionId);
+            }
+        }
+    }
+
+    /** ホバー中（:hover）の要素の基底ノード ID を更新し、変化があれば再スタイルを要求する。 */
+    public static void setHoveredElement(String sessionId, String baseId) {
+        SessionContext session = (baseId == null || baseId.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
+        if (session != null) {
+            HtmlNode root = session.document() != null ? session.document().root : session.virtualDom();
+            if (session.interactionState().setHoveredNode(root, baseId)) {
+                requestRestyle(sessionId);
+            }
+        }
+    }
+
+    /** フォーカス中（:focus / :focus-visible / :focus-within）の要素を更新し、変化があれば再スタイルを要求する。 */
+    public static void setFocusedElement(String sessionId, String baseId, boolean focusVisible) {
+        SessionContext session = (baseId == null || baseId.isEmpty()) ? getSession(sessionId) : getOrCreateSession(sessionId);
+        if (session != null) {
+            HtmlNode root = session.document() != null ? session.document().root : session.virtualDom();
+            if (session.interactionState().setFocusedNode(root, baseId, focusVisible)) {
+                requestRestyle(sessionId);
+            }
+        }
     }
 
     /** フォーカス中の入力の基底ノード ID が {@code baseId} と一致するか。 */
@@ -92,12 +130,13 @@ public class ClientWebManager {
         return !pressed.isEmpty() && getBaseNodeId(pressed).equals(baseId);
     }
 
-    public static final FontMetrics CLIENT_FONT_METRICS = (text, scale, isBold) -> {
-        net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
-        float adjustedScale = scale * (16.0f / 12.0f);
-        String measureText = isBold ? ("§l" + text) : text;
-        return (int) Math.ceil(font.width(measureText) * adjustedScale);
-    };
+    /**
+     * 測定に使う書体の出所。
+     * 換算（{@code 16/12} の倍率）と太字の {@code §l} 前置は
+     * {@link com.nishiyu.enderframelib.client.renderer.McFontResolver} の内側に移した。
+     */
+    public static final FontResolver CLIENT_FONTS =
+            com.nishiyu.enderframelib.client.renderer.McFontResolver.INSTANCE;
 
     private static final String[] RENDER_SUFFIXES = {
             "_ghost_img", "_b_bottom", "_b_right", "_textarea", "_progress", "_b_left", "_select", "_canvas",
@@ -129,7 +168,6 @@ public class ClientWebManager {
                 recomputeLayout(sessionId, targetW, targetH);
             } else {
                 requestRender(sessionId);
-                processRenderQueue();
             }
             return false;
         }
@@ -205,18 +243,33 @@ public class ClientWebManager {
 
     private static void installDocumentInternal(String sessionId, HtmlNode rootNode, String authorCss, int rootW, int rootH, boolean fromServer) {
         SessionContext session = getOrCreateSession(sessionId);
-        session.close();
-        SESSIONS.put(sessionId, session);
-        notifySessionCleared(sessionId);
+        boolean existingServerDoc = fromServer && session.document() != null;
 
+        // サーバーからの dom_sync で既存セッションがある場合は session.close() を呼ばず、
+        // WebAnimator の補間状態や WebCanvasContext のピクセルバッファを維持したまま差分更新する。
+        if (!existingServerDoc) {
+            session.close();
+            SESSIONS.put(sessionId, session);
+            notifySessionCleared(sessionId);
+        }
+
+        int oldRootW = session.rootW();
         session.setRootW(rootW);
         session.setRootH(rootH);
         if (fromServer) session.setServerManaged(true);
 
         UIParser parser = new UIParser();
-        StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
-        UIParser.Document doc = new UIParser.Document(rootNode, sheet, authorCss);
-        session.setDocument(doc);
+        UIParser.Document doc = session.document();
+        if (doc == null || !existingServerDoc) {
+            StyleSheet sheet = parser.buildStyleSheet(authorCss, rootW);
+            doc = new UIParser.Document(rootNode, sheet, authorCss);
+            session.setDocument(doc);
+        } else {
+            if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null || oldRootW != rootW) {
+                doc.sheet = parser.buildStyleSheet(authorCss, rootW);
+                doc.authorCss = authorCss;
+            }
+        }
 
         HtmlNode templateRoot = rootNode.cloneNode();
         session.setTemplateDom(templateRoot);
@@ -229,7 +282,13 @@ public class ClientWebManager {
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
         DomDiffEngine.diffAndPatch(doc.root, virtualRoot);
 
-        List<UIElement> elements = parser.renderDocument(doc, rootW, rootH, session.env(), session.scrollState(), CLIENT_FONT_METRICS);
+        session.interactionState().markAllDirty();
+        com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
+                doc, rootW, rootH, session.env(), session.scrollState(), CLIENT_FONTS, session.interactionState());
+        session.setLayoutRoot(rootBox);
+        List<UIElement> elements = UIParser.clientBoxRenderer != null
+                ? UIParser.clientBoxRenderer.render(rootBox, rootW, rootH, doc.sheet.keyframes, session.scrollState())
+                : new ArrayList<>();
         session.setRenderCache(elements);
 
         if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
@@ -239,6 +298,7 @@ public class ClientWebManager {
         HtmlNode vRoot = getVirtualRoot(sessionId);
         if (vRoot == null || data == null) return;
 
+        SessionContext session = getSession(sessionId);
         HtmlNode tmplRoot = getTemplateRoot(sessionId);
         ListTag patches = data.getList("Patches", Tag.TAG_COMPOUND);
         boolean anyChanged = false;
@@ -268,6 +328,7 @@ public class ClientWebManager {
                     if ("value".equalsIgnoreCase(key)) {
                         ClientScreenInteractionManager.syncServerValueOverride(sessionId, targetId, remove ? "" : val);
                     }
+                    syncAttributeToInteractionState(session, targetId, key, !remove);
                     anyChanged = true;
                 }
                 case "style" -> {
@@ -308,6 +369,9 @@ public class ClientWebManager {
                     anyChanged = true;
                 }
             }
+            if (session != null) {
+                session.interactionState().markDirty(targetId);
+            }
         }
 
         if (anyChanged) {
@@ -315,7 +379,17 @@ public class ClientWebManager {
                 ClientLocalEnvProvider.tickSessionLocalVariables(sessionId, tmplRoot, vRoot);
             }
             requestRender(sessionId);
-            processRenderQueue();
+        }
+    }
+
+    private static void syncAttributeToInteractionState(SessionContext session, String baseId, String attrName, boolean present) {
+        if (session == null || attrName == null) return;
+        String lower = attrName.toLowerCase(Locale.ROOT);
+        switch (lower) {
+            case "checked" -> session.interactionState().setChecked(baseId, present);
+            case "disabled" -> session.interactionState().setDisabled(baseId, present);
+            case "indeterminate" -> session.interactionState().setIndeterminate(baseId, present);
+            case "open" -> session.interactionState().setOpen(baseId, present);
         }
     }
 
@@ -329,8 +403,34 @@ public class ClientWebManager {
         return session != null ? session.templateDom() : null;
     }
 
+    /** 描画要素リストのみ再生成（measure / layout 省略）を要求する。 */
+    public static void requestRepaint(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) return;
+        SessionContext session = getSession(sessionId);
+        if (session != null) {
+            session.markInvalidation(SessionContext.InvalidationLevel.REPAINT);
+        }
+        DIRTY_SESSIONS.add(sessionId);
+    }
+
+    /** 状態変化に伴う部分木の再スタイル（必要に応じて再レイアウトまたは再描画へ分岐）を要求する。 */
+    public static void requestRestyle(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty()) return;
+        SessionContext session = getSession(sessionId);
+        if (session != null) {
+            session.markInvalidation(SessionContext.InvalidationLevel.RESTYLE);
+        }
+        DIRTY_SESSIONS.add(sessionId);
+    }
+
+    /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
     public static void requestRender(String sessionId) {
-        if (sessionId != null && !sessionId.isEmpty()) DIRTY_SESSIONS.add(sessionId);
+        if (sessionId == null || sessionId.isEmpty()) return;
+        SessionContext session = getSession(sessionId);
+        if (session != null) {
+            session.markInvalidation(SessionContext.InvalidationLevel.RELAYOUT);
+        }
+        DIRTY_SESSIONS.add(sessionId);
     }
 
     public static void processRenderQueue() {
@@ -339,19 +439,68 @@ public class ClientWebManager {
             DIRTY_SESSIONS.remove(sessionId);
             if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
             SessionContext session = getSession(sessionId);
-            if (session != null && session.document() != null && session.document().root != null && session.virtualDom() != null) {
-                boolean changed = DomDiffEngine.diffAndPatch(session.document().root, session.virtualDom());
-                if (changed) {
-                    recomputeLayout(sessionId, session.rootW(), session.rootH());
+            if (session == null || session.document() == null || session.document().root == null || session.virtualDom() == null) {
+                continue;
+            }
+
+            SessionContext.InvalidationLevel level = session.consumeInvalidationLevel();
+            boolean domChanged = DomDiffEngine.diffAndPatch(session.document().root, session.virtualDom());
+            if (domChanged || session.layoutRoot() == null) {
+                level = SessionContext.InvalidationLevel.RELAYOUT;
+                session.interactionState().markAllDirty();
+            }
+
+            switch (level) {
+                case RELAYOUT -> recomputeLayout(sessionId, session.rootW(), session.rootH());
+                case RESTYLE -> {
+                    UIParser parser = new UIParser();
+                    UIParser.RestyleResult res = parser.restyleLayoutTree(
+                            session.layoutRoot(), session.document(),
+                            session.rootW(), session.rootH(),
+                            session.env(), session.interactionState());
+                    if (res.layoutRequired()) {
+                        recomputeLayout(sessionId, session.rootW(), session.rootH());
+                    } else if (res.styleChanged()) {
+                        repaintFromLayout(session);
+                    }
+                }
+                case REPAINT -> repaintFromLayout(session);
+                case NONE -> {
+                    if (session.interactionState().hasDirtyNodes()) {
+                        UIParser parser = new UIParser();
+                        UIParser.RestyleResult res = parser.restyleLayoutTree(
+                                session.layoutRoot(), session.document(),
+                                session.rootW(), session.rootH(),
+                                session.env(), session.interactionState());
+                        if (res.layoutRequired()) {
+                            recomputeLayout(sessionId, session.rootW(), session.rootH());
+                        } else if (res.styleChanged()) {
+                            repaintFromLayout(session);
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private static void repaintFromLayout(SessionContext session) {
+        if (session == null || session.layoutRoot() == null || session.document() == null) return;
+        if (UIParser.clientBoxRenderer == null) return;
+        List<UIElement> elements = UIParser.clientBoxRenderer.render(
+                session.layoutRoot(),
+                session.rootW(),
+                session.rootH(),
+                session.document().sheet.keyframes,
+                session.scrollState());
+        session.setRenderCache(elements);
+        if (applyOverridesCallback != null) applyOverridesCallback.accept(session.sessionId());
     }
 
     public static void updateEnvAndRecomputeIfChanged(String sessionId, Map<String, String> newEnv) {
         SessionContext session = getOrCreateSession(sessionId);
         if (!Objects.equals(session.env(), newEnv)) {
             session.setEnv(newEnv);
+            session.interactionState().markAllDirty();
             recomputeLayout(sessionId, session.rootW(), session.rootH());
         }
     }
@@ -360,6 +509,7 @@ public class ClientWebManager {
         SessionContext session = getSession(sessionId);
         if (session == null) return;
         int oldRootW = session.rootW();
+        int oldRootH = session.rootH();
         session.setRootW(newRootW);
         session.setRootH(newRootH);
 
@@ -368,14 +518,22 @@ public class ClientWebManager {
         UIParser.Document doc = session.document();
         HtmlNode vRoot = session.virtualDom();
         if (doc != null && vRoot != null) {
-            DomDiffEngine.diffAndPatch(doc.root, vRoot);
+            boolean domPatched = DomDiffEngine.diffAndPatch(doc.root, vRoot);
             UIParser parser = new UIParser();
 
             if (doc.sheet == null || oldRootW != newRootW) {
                 doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW);
+                session.interactionState().markAllDirty();
+            } else if (domPatched || oldRootH != newRootH) {
+                session.interactionState().markAllDirty();
             }
 
-            List<UIElement> elements = parser.renderDocument(doc, newRootW, newRootH, session.env(), session.scrollState(), CLIENT_FONT_METRICS);
+            com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
+                    doc, newRootW, newRootH, session.env(), session.scrollState(), CLIENT_FONTS, session.interactionState());
+            session.setLayoutRoot(rootBox);
+            List<UIElement> elements = UIParser.clientBoxRenderer != null
+                    ? UIParser.clientBoxRenderer.render(rootBox, newRootW, newRootH, doc.sheet.keyframes, session.scrollState())
+                    : new ArrayList<>();
             session.setRenderCache(elements);
             if (applyOverridesCallback != null) applyOverridesCallback.accept(sessionId);
         }
@@ -455,6 +613,11 @@ public class ClientWebManager {
             if ("value".equalsIgnoreCase(attrName)) {
                 updateElementTextLocally(sessionId, baseId, remove || attrValue == null ? "" : attrValue);
             }
+            SessionContext session = getSession(sessionId);
+            if (session != null) {
+                syncAttributeToInteractionState(session, baseId, attrName, !remove);
+                session.interactionState().markDirty(baseId);
+            }
             requestRender(sessionId);
         }
     }
@@ -471,6 +634,11 @@ public class ClientWebManager {
             if (tmplTarget != null) {
                 DomUtils.updateAttribute(tmplTarget, attrName, valNow, !hasNow);
             }
+            SessionContext session = getSession(sessionId);
+            if (session != null) {
+                syncAttributeToInteractionState(session, baseId, attrName, hasNow);
+                session.interactionState().markDirty(baseId);
+            }
             requestRender(sessionId);
         }
     }
@@ -485,6 +653,8 @@ public class ClientWebManager {
                 tmplTarget.setInnerHTML(html);
             }
             DeclarativeBindingManager.initializeBindings(sessionId, target);
+            SessionContext session = getSession(sessionId);
+            if (session != null) session.interactionState().markDirty(baseId);
             requestRender(sessionId);
         }
     }
@@ -498,6 +668,8 @@ public class ClientWebManager {
             if (tmplTarget != null) {
                 tmplTarget.setStyleProperty(prop, val);
             }
+            SessionContext session = getSession(sessionId);
+            if (session != null) session.interactionState().markDirty(baseId);
             requestRender(sessionId);
         }
     }
@@ -520,8 +692,12 @@ public class ClientWebManager {
 
                     SessionContext session = getOrCreateSession(sessionId);
                     ScrollState state = session.scrollState();
-                    float curX = state.getScrollX(el.id());
-                    float curY = state.getScrollY(el.id());
+                    // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。
+                    // 読み手 (LayoutBox / UIRenderer) はベースノード ID を使うため、
+                    // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
+                    String scrollId = el.baseId();
+                    float curX = state.getScrollX(scrollId);
+                    float curY = state.getScrollY(scrollId);
 
                     float limitX = Math.max(0, maxW - el.width()), limitY = Math.max(0, maxH - el.height());
                     if (limitX > 0 || limitY > 0) {
@@ -529,7 +705,7 @@ public class ClientWebManager {
                         float nextY = Mth.clamp(curY - (float) scrollY * sens, 0, limitY);
 
                         if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
-                            state.setScroll(el.id(), (int) nextX, (int) nextY);
+                            state.setScroll(scrollId, (int) nextX, (int) nextY);
                             requestRender(sessionId);
                             return true;
                         }
@@ -619,29 +795,39 @@ public class ClientWebManager {
 
         SessionContext session = getSession(sessionId);
         List<UIElement> elements = session != null ? session.renderCache() : null;
-        if (elements != null) {
+        if (elements != null && !elements.isEmpty()) {
             String phId = baseId + "_ph";
             String inputRenderId = baseId + "_input";
             String textareaRenderId = baseId + "_textarea";
             String selectRenderId = baseId + "_select";
             String placeholderOrig = target != null ? target.attrs.getOrDefault("placeholder", "") : "";
 
+            List<UIElement> updated = null;
             for (int i = 0; i < elements.size(); i++) {
                 UIElement el = elements.get(i);
                 if (el.id().equals(elementId) || el.id().equals(inputRenderId) || el.id().equals(textareaRenderId) || el.id().equals(selectRenderId)) {
                     String renderText = safeText;
-                    if (el.type() == ElementType.RANGE && !safeText.contains(":")) {
+                    if ((el.type() == ElementType.RANGE || el.type() == ElementType.PROGRESS) && !safeText.contains(":")) {
                         String min = target != null ? target.attrs.getOrDefault("min", "0") : "0";
                         String max = target != null ? target.attrs.getOrDefault("max", "100") : "100";
                         renderText = safeText + ":" + min + ":" + max;
                     } else if (el.type() == ElementType.SELECT || isSelect) {
                         renderText = resolveSelectDisplayLabel(target, domValue) + " \u25be";
                     }
-                    elements.set(i, el.withText(renderText));
+                    if (!Objects.equals(el.text(), renderText)) {
+                        if (updated == null) updated = new ArrayList<>(elements);
+                        updated.set(i, el.withText(renderText));
+                    }
                 } else if (el.id().equals(phId)) {
                     String nextPh = domValue.isEmpty() ? placeholderOrig : "";
-                    elements.set(i, el.withText(nextPh));
+                    if (!Objects.equals(el.text(), nextPh)) {
+                        if (updated == null) updated = new ArrayList<>(elements);
+                        updated.set(i, el.withText(nextPh));
+                    }
                 }
+            }
+            if (updated != null) {
+                session.setRenderCache(updated);
             }
         }
     }

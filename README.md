@@ -125,6 +125,13 @@ HTML/CSS/JS kit. Open `preview-playground.html` in Chrome, Edge, Firefox or VS
 Code Live Server and author your UI without launching Minecraft — the custom
 elements and the reactive attributes below are reimplemented there.
 
+The kit ships the engine's own user-agent sheet (`enderframe-ua.css`) and the
+built-in themes verbatim, and links them in the same order the game does, so the
+preview is not styled by a parallel set of defaults. It also contains
+`fidelity-dump.html`, which measures the fidelity corpus in your browser; the
+measured values are what [FIDELITY.md](FIDELITY.md) and `WebFidelityTest` compare
+the engine against.
+
 ---
 
 ## Supported HTML
@@ -199,7 +206,8 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 
 **Text** `color` `font-size` `font-family` `font-weight` `font-style`
 `line-height` `letter-spacing` `text-align` `text-decoration` `text-shadow`
-`text-transform` `white-space` `direction`
+`text-transform` `white-space` (`normal` `nowrap` `pre` `pre-wrap` `pre-line`)
+`word-break` `overflow-wrap` `text-overflow` `direction`
 
 **Paint / effects** `background` `background-color` `box-shadow` `transform`
 (`translate` `scale` `rotate`) `transform-origin` `transition`
@@ -217,11 +225,20 @@ OR, conditions within one query are AND, `not` is honoured — and `@keyframes`
 are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 `enderframelib:brass.css`.
 
+> **Breaking change — text metrics.** `font-size` and `line-height` now mean what
+> they mean in a browser. A given `font-size` renders about 1.3× larger than
+> before (1em is the font's natural 9px line box, not 12px), `line-height: normal`
+> reserves 1.15em instead of 1.375em, and `line-height: <length>` no longer scales
+> with `font-size`. Documents that were tuned against the old numbers need their
+> font sizes revisited. The reasoning is in [FIDELITY.md](FIDELITY.md).
+
 ---
 
 ## Not supported
 
-Known gaps, listed so you do not have to discover them by debugging:
+Known gaps, listed so you do not have to discover them by debugging.
+Layout differences from a real browser are measured, case by case, in
+[FIDELITY.md](FIDELITY.md).
 
 - **Scripting.** No JavaScript, anywhere. Behaviour is server-side; the
   reactive `data-*` attributes above are the substitute. `onclick` is read only
@@ -231,8 +248,38 @@ Known gaps, listed so you do not have to discover them by debugging:
 - **Real table layout.** `table`/`tr`/`td` are flex rows: no `colspan`,
   no `rowspan`, no automatic column sizing.
 - **`float`, `clear`, multi-column layout, writing modes.**
-- **Inline formatting contexts in full.** Inline boxes line-break and measure,
-  but baselines, vertical alignment and floats around them are approximations.
+- **`flex-basis`.** The `flex` shorthand expands to `flex-grow` / `flex-shrink` /
+  `flex-basis`, and the first two are honoured, but the basis itself is not read:
+  an item's base size comes from its content and its `width`.
+- **Intrinsic sizing keywords outside `min-width` / `max-width`.**
+  `min-content`, `max-content` and `fit-content` are understood as a `min-width`
+  or `max-width` value; as a `width` or in `grid-template-*` they are not.
+- **`box-sizing` defaults to `border-box`.** CSS defaults to `content-box`:
+  `width: 100px; padding: 10px; border-width: 2px` should occupy 124px, and here
+  it occupies 100px.
+- **Margin collapsing.** Adjacent vertical margins are added, not collapsed, and a
+  child's top margin does not collapse through its parent's top edge.
+- **`gap` in block flow.** `row-gap` separates block-level children here; in CSS
+  `gap` only applies to flex, grid and multi-column containers.
+- **Percentage `height`.** The percentage resolves against a size handed down from
+  an ancestor rather than against the containing block.
+- **Percentage vertical `margin` / `padding`.** CSS resolves these against the
+  containing block's *inline* size; here they resolve against a height-like value
+  handed down from an ancestor.
+- **Containing blocks for `position: absolute`.** A `position: static` parent is
+  treated as the containing block; CSS uses the nearest positioned ancestor, or the
+  initial containing block if there is none.
+- **`minmax()` in a track list.** Track lists are split on whitespace, so
+  `minmax(100px, 1fr)` is read as two tracks.
+- **Inline formatting contexts in full.** Inline boxes line-break, measure and
+  align on a common baseline, but `vertical-align` and floats around them are
+  not implemented.
+- **Glyph-level fidelity.** `font-size: Npx` scales Minecraft's bitmap font so
+  that its cap height and x-height land where a browser's UI font would
+  (1em = the font's natural 9px line box), and `line-height: normal` reserves
+  1.15em. Individual glyph widths still differ from any OS font, so wrap
+  positions, ellipsis positions and centring offsets cannot match a browser
+  exactly. See [FIDELITY.md](FIDELITY.md) for what is measured instead.
 - **`@media` beyond width.** No `prefers-*`, orientation or resolution
   features, no `@supports`, no `@import`, no `@font-face`.
 - **Named grid lines and areas.** `grid-template-areas` is not implemented.
@@ -272,7 +319,8 @@ enforced by `ArchitectureTest`, which runs in CI.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the comment-language convention and
-for how known limitations are recorded.
+for how known limitations are recorded, and [FIDELITY.md](FIDELITY.md) for the
+browser-measured divergence ledger.
 
 ## License
 

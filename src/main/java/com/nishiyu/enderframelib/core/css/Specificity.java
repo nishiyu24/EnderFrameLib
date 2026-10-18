@@ -33,7 +33,13 @@ public record Specificity(CascadeOrigin origin, boolean important, int id, int c
     @Override
     public int compareTo(Specificity other) {
         if (this.important != other.important) return this.important ? 1 : -1;
-        if (this.origin != other.origin) return Integer.compare(this.origin.rank(), other.origin.rank());
+        if (this.origin != other.origin) {
+            // 通常宣言では UA < Author < Inline の順だが、!important 同士ではカスケード順が反転し
+            // UA の !important が作者の !important に優先する。
+            return this.important
+                    ? Integer.compare(other.origin.rank(), this.origin.rank())
+                    : Integer.compare(this.origin.rank(), other.origin.rank());
+        }
         if (this.id != other.id) return Integer.compare(this.id, other.id);
         if (this.clazz != other.clazz) return Integer.compare(this.clazz, other.clazz);
         return Integer.compare(this.type, other.type);
