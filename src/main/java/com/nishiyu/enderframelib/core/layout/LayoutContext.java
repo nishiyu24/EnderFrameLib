@@ -3,8 +3,8 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontResolver;
-import com.nishiyu.enderframelib.core.text.FontStyle;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.Map;

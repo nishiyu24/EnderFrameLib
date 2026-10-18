@@ -11,7 +11,7 @@ import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;

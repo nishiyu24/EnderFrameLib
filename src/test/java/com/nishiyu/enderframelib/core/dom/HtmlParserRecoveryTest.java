@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.HtmlParser.HtmlTokenizer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.network.dom;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;

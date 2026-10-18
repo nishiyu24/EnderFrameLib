@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 
 import java.util.ArrayList;
 import java.util.List;

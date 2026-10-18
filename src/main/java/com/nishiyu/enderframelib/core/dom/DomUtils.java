@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.HtmlParser.VoidElements;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

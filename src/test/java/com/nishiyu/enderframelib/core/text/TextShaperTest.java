@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.text;
 
+import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

@@ -5,7 +5,7 @@ import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
 import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.text.FontResolver;
+import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;

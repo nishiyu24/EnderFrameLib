@@ -17,7 +17,7 @@ import com.nishiyu.enderframelib.core.model.Corners;
 import com.nishiyu.enderframelib.core.model.ElementType;
 import com.nishiyu.enderframelib.core.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.BitmapFontFace;
+import com.nishiyu.enderframelib.core.text.FontFace.BitmapFontFace;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.PlayerInfo;
