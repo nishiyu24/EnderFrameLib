@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -906,4 +908,19 @@ public final class CssSyntax {
         }
         return out;
     }
+
+    /**
+     * カンマ区切りの文字列をトップレベルで分割し、各部分の文字列リストを返す。
+     * 関数や括弧の内側のカンマでは分割しない。
+     */
+    public static List<String> parseCommaList(String text) {
+        List<String> out = new ArrayList<>();
+        if (text == null || text.isBlank()) return out;
+        for (List<ComponentValue> part : split(parseComponentValues(text), Type.COMMA)) {
+            String s = serialize(part).trim();
+            if (!s.isEmpty()) out.add(s);
+        }
+        return out;
+    }
+
 }

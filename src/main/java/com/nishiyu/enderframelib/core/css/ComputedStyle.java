@@ -1,10 +1,18 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.*;
+
+
+
+import com.nishiyu.enderframelib.core.css.*;
+import com.nishiyu.enderframelib.core.css.model.*;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 算出スタイルを保持する不変の値型。
@@ -186,23 +194,23 @@ public final class ComputedStyle {
     }
 
     /** 横方向の {@code overflow}。{@code overflow-x} が無ければショートハンド {@code overflow} の最初の値。 */
-    public CssKeywords.Overflow overflowX() {
+    public Overflow overflowX() {
         return overflowAxis(CssProperty.OVERFLOW_X, 0);
     }
 
     /** 縦方向の {@code overflow}。{@code overflow-y} が無ければショートハンドの 2 つ目（1 つなら同じ値）。 */
-    public CssKeywords.Overflow overflowY() {
+    public Overflow overflowY() {
         return overflowAxis(CssProperty.OVERFLOW_Y, 1);
     }
 
-    private CssKeywords.Overflow overflowAxis(String property, int shorthandIndex) {
-        if (properties.containsKey(property)) return keywordOf(property, CssKeywords.Overflow.class);
+    private Overflow overflowAxis(String property, int shorthandIndex) {
+        if (properties.containsKey(property)) return keywordOf(property, Overflow.class);
         String shorthand = properties.get(CssProperty.OVERFLOW);
-        if (shorthand == null) return CssKeywords.Overflow.VISIBLE;
+        if (shorthand == null) return Overflow.VISIBLE;
         String[] parts = shorthand.trim().split("\\s+");
         String part = parts[Math.min(shorthandIndex, parts.length - 1)];
-        CssKeywords.Overflow parsed = CssKeywords.parse(CssKeywords.Overflow.class, part);
-        return parsed != null ? parsed : CssKeywords.Overflow.VISIBLE;
+        Overflow parsed = CssKeywords.parse(Overflow.class, part);
+        return parsed != null ? parsed : Overflow.VISIBLE;
     }
 
     /** キーワード値（小文字・前後空白なしに正規化）。 */

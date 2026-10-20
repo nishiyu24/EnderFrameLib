@@ -4,9 +4,9 @@ import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -14,6 +14,20 @@ import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * DisplayListBuilder の出力（ディスプレイリスト）を型付きテキストとして固定するゴールデンテスト。
@@ -110,7 +124,7 @@ public class DisplayListGoldenTest {
 
     public static String dumpDisplayList(String html, int viewportW, int viewportH) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument(html, "", viewportW, viewportH);
+        Document doc = parser.parseDocument(html, "", viewportW, viewportH);
         LayoutBox root = parser.layoutDocument(doc, viewportW, viewportH, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
         DisplayListBuilder renderer = new DisplayListBuilder(viewportW, viewportH, doc.sheet.keyframes, new ScrollState());
@@ -133,29 +147,29 @@ public class DisplayListGoldenTest {
                         e.translateX(), e.translateY(), e.scaleX(), e.scaleY(), e.rotate()));
             }
             if (e.meta() != null) {
-                DisplayItem.RenderMeta meta = e.meta();
+                RenderMeta meta = e.meta();
                 if (meta.hasClip()) {
-                    DisplayItem.ClipRect c = meta.clipRect();
+                    ClipRect c = meta.clipRect();
                     sb.append(String.format(Locale.ROOT, " clip=[%.1f,%.1f,%.1f,%.1f]", c.minX(), c.minY(), c.maxX(), c.maxY()));
                 }
                 if (meta.hasBorderRadii()) {
-                    DisplayItem.Corners cr = meta.borderRadii();
+                    Corners cr = meta.borderRadii();
                     sb.append(String.format(Locale.ROOT, " radii=[%d,%d,%d,%d]", cr.topLeft(), cr.topRight(), cr.bottomRight(), cr.bottomLeft()));
                 }
                 if (meta.gradient() != null) {
-                    DisplayItem.GradientSpec g = meta.gradient();
+                    GradientSpec g = meta.gradient();
                     sb.append(String.format(Locale.ROOT, " gradient=[#%08X,#%08X,#%08X,#%08X]",
                             g.topLeft(), g.topRight(), g.bottomRight(), g.bottomLeft()));
                 }
                 if (meta.roundedBorder() != null) {
-                    DisplayItem.RoundedBorderSpec rb = meta.roundedBorder();
+                    RoundedBorderSpec rb = meta.roundedBorder();
                     sb.append(String.format(Locale.ROOT, " roundedBorder=[w=%.1f,%.1f,%.1f,%.1f,c=#%08X,#%08X,#%08X,#%08X]",
                             rb.widthTop(), rb.widthRight(), rb.widthBottom(), rb.widthLeft(),
                             rb.colorTop(), rb.colorRight(), rb.colorBottom(), rb.colorLeft()));
                 }
             }
-            if (e.events() != null && e.events().containsKey(DisplayItem.RenderKeys.POINTER_EVENTS)) {
-                sb.append(" pointer-events=").append(e.events().get(DisplayItem.RenderKeys.POINTER_EVENTS));
+            if (e.events() != null && e.events().containsKey(RenderKeys.POINTER_EVENTS)) {
+                sb.append(" pointer-events=").append(e.events().get(RenderKeys.POINTER_EVENTS));
             }
             sb.append('\n');
         }

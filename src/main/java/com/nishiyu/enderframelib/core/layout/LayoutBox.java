@@ -1,22 +1,30 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
+import com.nishiyu.enderframelib.core.layout.model.*;
+
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * レイアウト結果（ジオメトリ）の保持。
@@ -199,7 +207,7 @@ public class LayoutBox {
      * 以前は折り返した文字列（{@code List<String>}）だけを持っていたため、
      * 描画側が行の幅と行送りを自前で測り直していた。
      */
-    public List<TextShaper.ShapedLine> shapedLines = null;
+    public List<ShapedLine> shapedLines = null;
 
     public List<InlineFragment> inlineFragments = new ArrayList<>();
     /** エンジン固有の状態（グリッドの行列など）。 */
@@ -242,7 +250,7 @@ public class LayoutBox {
         this.display = Display.of(node, newStyle).blockified(newStyle);
 
         // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
-        String text = TextShaper.normalize(node.text, TextShaper.WhiteSpace.of(newStyle.get(CssProperty.WHITE_SPACE)));
+        String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssProperty.WHITE_SPACE)));
         this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
 
         String pos = newStyle.getOrDefault(CssProperty.POSITION, "static");
@@ -314,7 +322,7 @@ public class LayoutBox {
 
         if (node.nodeType == NodeType.TEXT) {
             // これ以上縮められない幅 = 最も長い「折り返し候補で切れない塊」の幅
-            TextShaper.TextStyle textStyle = ctx.textStyleFor(style);
+            TextStyle textStyle = ctx.textStyleFor(style);
             FontFace face = ctx.faceFor(style);
             FontStyle font = textStyle.font();
             float maxWordW = 0;

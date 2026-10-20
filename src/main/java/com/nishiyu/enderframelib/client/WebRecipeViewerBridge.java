@@ -1,9 +1,11 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.*;
+
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderContainerScreen;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -49,7 +51,8 @@ public class WebRecipeViewerBridge {
         if (screen == null) return zones;
 
         String sessionId = screen.getWebSessionId();
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot == null) {
             zones.add(screen.getWebViewportBounds());
             return zones;
@@ -63,7 +66,7 @@ public class WebRecipeViewerBridge {
             return zones;
         }
 
-        for (DisplayItem el : ClientWebManager.getElements(sessionId)) {
+        for (DisplayItem el : session.elements()) {
             if (el.type() == ElementType.NODE && explicitExcludeIds.contains(el.id()) && el.width() > 0 && el.height() > 0) {
                 zones.add(screen.toScreenRect(el.x(), el.y(), el.width(), el.height()));
             }
@@ -100,10 +103,11 @@ public class WebRecipeViewerBridge {
         if (screen == null) return targets;
 
         String sessionId = screen.getWebSessionId();
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot == null) return targets;
 
-        for (DisplayItem el : ClientWebManager.getElements(sessionId)) {
+        for (DisplayItem el : session.elements()) {
             if (el.type() != ElementType.NODE || el.width() <= 0 || el.height() <= 0) continue;
             HtmlNode domNode = vRoot.getNodeById(el.id());
             if (domNode == null) continue;
@@ -125,7 +129,9 @@ public class WebRecipeViewerBridge {
      * {@code src="item:..."} だけでなく、任意のHTML要素の {@code data-item="minecraft:diamond"} や {@code data-fluid="minecraft:water"} にも対応。
      */
     public static Object resolveIngredientAt(String sessionId, double webX, double webY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return null;
+        SessionContext.UIHitResult hit = session.hitTest(webX, webY);
         if (hit == null || hit.element() == null) return null;
 
         DisplayItem el = hit.element();
@@ -140,7 +146,7 @@ public class WebRecipeViewerBridge {
             }
         }
 
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        HtmlNode vRoot = session.rootNode();
         if (vRoot != null) {
             String baseId = ClientWebManager.getBaseNodeId(el.id());
             HtmlNode domNode = vRoot.getNodeById(baseId);

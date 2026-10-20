@@ -1,16 +1,16 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
+import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.Selector.AttrMatcher;
 import com.nishiyu.enderframelib.core.css.Selector.DocumentPseudoClass;
 import com.nishiyu.enderframelib.core.css.Selector.Nth;
 import com.nishiyu.enderframelib.core.css.Selector.RelativeSelector;
 import com.nishiyu.enderframelib.core.css.Selector.SelectorToken;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.HtmlElement;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
+import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.ConstraintValidator;
 
 import java.util.ArrayList;
@@ -33,54 +33,6 @@ import java.util.function.BiPredicate;
  * もっと外側の {@code .b}（親が {@code .a}）があっても一致しなかった。いまは全候補を後戻りして試す。
  */
 public final class SelectorMatcher {
-
-    /** コンテナの種類（{@code container-type}）。{@code NORMAL} は問い合わせの対象にならない。 */
-    public enum ContainerType { NORMAL, INLINE_SIZE, SIZE }
-
-    /**
-     * 問い合わせコンテナの寸法・名前・カスタムプロパティの算出値。
-     * 寸法の問い合わせに答えられるのは {@code container-type} が {@code normal} でない要素で、寸法はレイアウトの結果
-     * （内容ボックス、px。測っていなければ NaN）。{@code style()} の問い合わせにはどの要素も答えられる。
-     */
-    public record ContainerBox(float width, float height, ContainerType type, List<String> names,
-                               Map<String, String> customProperties) {
-
-        /** コンテナが無いときの寸法（幅も高さも NaN）。{@code cqw} などの単位はビューポートに戻る。 */
-        public static final ContainerBox NONE_SIZE =
-                new ContainerBox(Float.NaN, Float.NaN, ContainerType.NORMAL, List.of(), Map.of());
-
-        /** 寸法の問い合わせ（{@code @container (min-width: …)}）に答えられるコンテナか。 */
-        public boolean isSizeContainer() {
-            return type != ContainerType.NORMAL;
-        }
-
-        public boolean hasName(String name) {
-            return name.isEmpty() || names.contains(name);
-        }
-    }
-
-    /** 任意の DOM ノードに対する現在の {@link ElementState} を返す関数。 */
-    @FunctionalInterface
-    public interface StateLookup {
-        ElementState stateOf(HtmlNode node);
-
-        /** {@code node} をコンテナとして見たときの種類・寸法・カスタムプロパティ。算出スタイルが無ければ null。 */
-        default ContainerBox containerOf(HtmlNode node) {
-            return null;
-        }
-
-        /**
-         * {@code from} から祖先へたどって、最初の（寸法の問い合わせに答えられる）コンテナ。
-         * {@code cqw} などのコンテナ単位の基準になる。無ければ {@link ContainerBox#NONE_SIZE}。
-         */
-        default ContainerBox nearestSizeContainer(HtmlNode from) {
-            for (HtmlNode cur = from; cur != null; cur = cur.parent) {
-                ContainerBox box = containerOf(cur);
-                if (box != null && box.isSizeContainer()) return box;
-            }
-            return ContainerBox.NONE_SIZE;
-        }
-    }
 
     /** 実行時の対話状態が無い場合、DOM ノードの静的属性だけから状態を導出する既定の参照先。 */
     public static final StateLookup STATIC_ATTRIBUTES = ElementState::fromNodeAttributes;

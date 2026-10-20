@@ -1,10 +1,13 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
@@ -26,11 +29,16 @@ public class WebFocusNavigator {
     }
 
     public String focusedId() {
-        return ClientWebManager.getFocusedElementBaseId(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        return session != null ? session.focusedId() : "";
     }
 
     public void setFocused(String baseId) {
-        ClientWebManager.setFocusedElement(sessionId, (baseId != null) ? baseId : "", false);
+        String safeId = (baseId != null) ? baseId : "";
+        SessionContext session = safeId.isEmpty()
+                ? ClientWebManager.getSession(sessionId)
+                : ClientWebManager.getOrCreateSession(sessionId);
+        if (session != null) session.setFocusedElement(safeId, false);
     }
 
     public void renderFocusRing(GuiGraphics guiGraphics, List<DisplayItem> elements) {
@@ -45,7 +53,8 @@ public class WebFocusNavigator {
             }
         }
         if (focusedEl == null) {
-            focusedEl = ClientWebManager.getElementById(sessionId, currentFocusedId);
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            focusedEl = session != null ? session.elementById(currentFocusedId) : null;
         }
         if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
             PoseStack pose = guiGraphics.pose();
@@ -63,8 +72,9 @@ public class WebFocusNavigator {
     }
 
     public List<FocusCandidate> collectFocusableCandidates() {
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
-        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vRoot = session != null ? session.rootNode() : null;
+        List<DisplayItem> elements = session != null ? session.elements() : Collections.emptyList();
         if (vRoot == null || elements == null || elements.isEmpty()) return Collections.emptyList();
 
         Map<String, DisplayItem> boxByNodeId = new HashMap<>();

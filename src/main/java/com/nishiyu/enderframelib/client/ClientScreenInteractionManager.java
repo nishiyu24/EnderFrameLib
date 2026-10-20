@@ -1,22 +1,19 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import net.neoforged.neoforge.client.event.InputEvent;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
-import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
-import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.event.UiEvents;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebActionC2SPacket;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
@@ -27,7 +24,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.phys.BlockHitResult;
@@ -37,13 +33,20 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.ArrayList;
-import java.util.List;
 
+/**
+ * ワールド内（ブロック面・アイテム・HUD）の入力ホスト。
+ *
+ * <p>ホスト固有の仕事は「ブロック面のどこを指しているか」を Web 座標へ直すことと、マウスの押下・解放を
+ * tick に合わせて 1 回だけ配送することだけ。イベントの合成はすべて {@link SessionInput} が行う
+ * （STRUCTURE_PLAN S4）。ここに残る static メソッドは、既存の呼び出し側とテストのための互換の窓口。</p>
+ */
 public class ClientScreenInteractionManager {
 
     @FunctionalInterface
@@ -59,18 +62,37 @@ public class ClientScreenInteractionManager {
     private static volatile BiPredicate<Minecraft, ItemStack> itemRangeValidator = ClientScreenInteractionManager::defaultIsItemInRange;
 
     public static void setClientEventCallback(IClientEventCallback callback) { clientEventCallback = callback; }
+    static IClientEventCallback clientEventCallback() { return clientEventCallback; }
     public static void removeClientEventCallback(IClientEventCallback callback) { if (clientEventCallback == callback) clientEventCallback = null; }
     public static void setServerActionSender(Consumer<WebActionC2SPacket> sender) { serverActionSender = sender != null ? sender : PacketDistributor::sendToServer; }
     public static void sendToServer(WebActionC2SPacket packet) { serverActionSender.accept(packet); }
+    /**
+     * ボタンクリックなどの対話時に Minecraft の既定 UI 効果音（クリック音など）を再生するかどうかを設定する。
+     *
+     * @param enable 既定の効果音を有効にする場合は {@code true}
+     */
     public static void setEnableDefaultUiSounds(boolean enable) { enableDefaultUiSounds = enable; }
+
+    /**
+     * ボタンクリックなどの対話時に Minecraft の既定 UI 効果音（クリック音など）を再生するかどうかを取得する。
+     *
+     * @return 既定の効果音が有効な場合は {@code true}
+     */
     public static boolean isEnableDefaultUiSounds() { return enableDefaultUiSounds; }
     public static void setMutateDomOnHover(boolean mutate) { mutateDomOnHover = mutate; }
     public static boolean isMutateDomOnHover() { return mutateDomOnHover; }
+
+    /**
+     * 対象アイテム（{@link ItemStack}）から Web セッション ID を抽出する関数を登録する。
+     * <p>
+     * 独自コンポーネントや NBT、カスタムタグなどからセッション ID を読み取る下流 Mod 向けの差し込み口。
+     * {@code null} を渡すと既定の抽出器に戻る。
+     *
+     * @param extractor アイテムスタックからセッション ID 文字列を抽出する関数
+     */
     public static void setItemSessionIdExtractor(Function<ItemStack, String> extractor) { itemSessionIdExtractor = extractor != null ? extractor : ClientScreenInteractionManager::defaultGetSessionIdFromItem; }
     public static void setItemRangeValidator(BiPredicate<Minecraft, ItemStack> validator) { itemRangeValidator = validator != null ? validator : ClientScreenInteractionManager::defaultIsItemInRange; }
 
-    private static final long MOVE_EVENT_INTERVAL_MS = 50;
-    private static final long DRAG_EVENT_INTERVAL_MS = 40;
     private static final int NO_PENDING_PRESS = -1;
     private static String lastHoveredSession = "";
 
@@ -183,10 +205,12 @@ public class ClientScreenInteractionManager {
                     if (isMouseJustPressed) {
                         DisplayItem clickedEl = handleClick(sessionId, pixelX, pixelY, pressedButton);
                         if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
-                            ClientWebManager.setActiveInputId(sessionId, clickedEl.id());
+                            SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+                            session.activateInput(clickedEl.id());
                             openInputScreen(sessionId, clickedEl, masterPos);
                         } else {
-                            ClientWebManager.setActiveInputId(sessionId, "");
+                            SessionContext session = ClientWebManager.getSession(sessionId);
+                            if (session != null) session.setActiveInputId("");
                         }
                     } else if (isMouseDown) {
                         handleDrag(sessionId, pixelX, pixelY);
@@ -266,82 +290,38 @@ public class ClientScreenInteractionManager {
         return checkDistanceInfo(mc, info);
     }
 
-    private static SessionContext.InputSessionState getState(String sessionId) {
-        return ClientWebManager.getOrCreateSession(sessionId).inputState();
-    }
-
     /** ホバー中の節の ID。ホバーの持ち主は {@link com.nishiyu.enderframelib.core.dom.InteractionState}。 */
-    private static String getHoveredNodeId(String sessionId) {
+    public static String getHoveredId(String sessionId) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        HtmlNode hovered = session != null ? session.interactionState().hoveredNode() : null;
-        return hovered != null ? hovered.getId() : "";
+        return session != null ? session.input().hoveredId() : "";
     }
 
     public static void setDraggingId(String sessionId, String draggingId) {
-        getState(sessionId).draggingId = (draggingId != null) ? draggingId : "";
+        ClientWebManager.getOrCreateSession(sessionId).input().setDraggingId(draggingId);
     }
 
     public static void forwardDeclared(String sessionId, HtmlNode node, Event event, EventForwardDeclaration declaration) {
-        ClientDomEventDispatcher.forwardDeclared(sessionId, node, event, declaration);
+        ClientWebManager.getOrCreateSession(sessionId).input().forwardDeclared(node, event, declaration);
     }
 
     public static void runInlineAction(String sessionId, HtmlNode node, Event event, String action) {
-        ClientDomEventDispatcher.runInlineAction(sessionId, node, event, action, clientEventCallback);
-    }
-
-    private static boolean hasEvent(Map<String, String> events, String eventName) {
-        if (events == null || events.isEmpty()) return false;
-        for (String key : events.keySet()) {
-            if (key.equalsIgnoreCase(eventName)) return true;
-        }
-        return false;
-    }
-
-    private static void dispatchFormEvent(HtmlNode control, Event event) {
-        control.dispatchEvent(event);
+        ClientWebManager.getOrCreateSession(sessionId).input().runInlineAction(node, event, action);
     }
 
     public static void ensureSynced(String sessionId) {
-        if (!ClientWebManager.hasDocument(sessionId) && ClientWebManager.shouldRequestSync(sessionId)) {
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        if (session.document() == null && session.shouldRequestSync()) {
             sendToServer(new WebActionC2SPacket(sessionId, "request_sync", new CompoundTag()));
         }
     }
 
-    public static String getHoveredId(String sessionId) {
-        return getHoveredNodeId(sessionId);
-    }
-
     public static void syncServerValueOverride(String sessionId, String elementId, String newValue) {
         if (sessionId == null || elementId == null) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
-        SessionContext.InputSessionState state = getState(sessionId);
-        if (state.localInputCache.containsKey(baseId)) {
-            state.localInputCache.put(baseId, newValue != null ? newValue : "");
-        }
+        ClientWebManager.getOrCreateSession(sessionId).input().syncServerValueOverride(elementId, newValue);
     }
 
     public static void applyLocalOverrides(String sessionId) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        for (Map.Entry<String, String> entry : state.localInputCache.entrySet()) {
-            ClientWebManager.updateElementTextLocally(sessionId, entry.getKey(), entry.getValue());
-        }
-        if (!state.draggingId.isEmpty() && !state.lastRangeText.isEmpty()) {
-            ClientWebManager.updateElementTextLocally(sessionId, state.draggingId, state.lastRangeText);
-        }
-        if (System.currentTimeMillis() - state.lastSubmitTime < 1500 && !state.lastSubmittedId.isEmpty()) {
-            ClientWebManager.updateElementTextLocally(sessionId, state.lastSubmittedId, state.lastSubmittedText);
-        }
-        String hoveredId = getHoveredNodeId(sessionId);
-        if (mutateDomOnHover && !hoveredId.isEmpty()) {
-            ClientWebManager.updateNodeAttributeLocally(sessionId, hoveredId, "hover", "true", false);
-        }
-        String activeId = ClientWebManager.getActiveInputId(sessionId);
-        if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
-            String activeVal = WebTextInputHost.getActiveText(sessionId);
-            if (activeVal != null) {
-                updateInputLocally(sessionId, activeId, activeVal);
-            }
-        }
+        ClientWebManager.getOrCreateSession(sessionId).input().applyLocalOverrides();
     }
 
     public static String getSessionIdFromItem(ItemStack stack) {
@@ -361,43 +341,12 @@ public class ClientScreenInteractionManager {
     }
 
     public static String handleHover(String sessionId, double pixelX, double pixelY) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
-        state.hoverX = pixelX;
-        state.hoverY = pixelY;
-
-        String currentHitId = hit != null ? ClientWebManager.getBaseNodeId(hit.element().id()) : "";
-        double localX = hit != null ? hit.localX() : 0;
-        double localY = hit != null ? hit.localY() : 0;
-
-        HtmlNode previous = ClientWebManager.getSession(sessionId) != null
-                ? ClientWebManager.getSession(sessionId).interactionState().hoveredNode() : null;
-        HtmlNode next = hit != null ? ClientWebManager.findInteractiveNode(sessionId, currentHitId) : null;
-        boolean enteredNewTarget = previous != next;
-        if (enteredNewTarget) {
-            ClientDomEventDispatcher.dispatchHoverTransition(previous, next, localX, localY);
-            if (mutateDomOnHover) {
-                if (previous != null && !previous.getId().isEmpty()) {
-                    ClientWebManager.updateNodeAttributeLocally(sessionId, previous.getId(), "hover", null, true);
-                }
-                if (next != null && !next.getId().isEmpty()) {
-                    ClientWebManager.updateNodeAttributeLocally(sessionId, next.getId(), "hover", "true", false);
-                }
-            }
-            ClientWebManager.setHoveredElement(sessionId, next != null ? next.getId() : "");
-        }
-
-        long now = System.currentTimeMillis();
-        if (next != null && (enteredNewTarget || now - state.lastEventTime > MOVE_EVENT_INTERVAL_MS)) {
-            next.dispatchEvent(UiEvents.pointer("pointermove", localX, localY, 0, 0, false, false, false, false, null));
-            next.dispatchEvent(UiEvents.mouse("mousemove", localX, localY, 0, 0, false, false, false, false, null));
-            state.lastEventTime = now;
-        }
-        return currentHitId;
+        return ClientWebManager.getOrCreateSession(sessionId).input().hover(pixelX, pixelY);
     }
 
     private static void cycleSelectOption(String sessionId, String baseId) {
-        HtmlNode selectNode = ClientWebManager.findNode(sessionId, baseId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode selectNode = session != null ? session.findNode(baseId) : null;
         if (selectNode == null) return;
 
         List<String> values = new ArrayList<>();
@@ -414,7 +363,8 @@ public class ClientScreenInteractionManager {
         String nextVal = values.get(nextIdx);
 
         submitInput(sessionId, baseId, nextVal);
-        ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", nextVal, false);
+        SessionContext updated = ClientWebManager.getSession(sessionId);
+        if (updated != null) updated.updateNodeAttributeLocally(baseId, "value", nextVal, false);
     }
 
     public static DisplayItem handleClick(String sessionId, double pixelX, double pixelY) {
@@ -422,267 +372,64 @@ public class ClientScreenInteractionManager {
     }
 
     public static void dispatchPress(String sessionId, HtmlNode target, double x, double y, int minecraftButton) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        state.pressedButton = minecraftButton;
-        ClientDomEventDispatcher.dispatchPress(target, x, y, minecraftButton);
+        ClientWebManager.getOrCreateSession(sessionId).input().dispatchPress(target, x, y, minecraftButton);
     }
 
     public static DisplayItem handleClick(String sessionId, double pixelX, double pixelY, int button) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
-        if (hit == null) {
-            ClientWebManager.setActivePressedId(sessionId, "");
-            return null;
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        SessionInput.PressResult result = session.input().press(pixelX, pixelY, button, SessionInput.Host.NONE);
+        if (result == null) return null;
+        if (!result.consumed() && result.element() != null && result.element().type() == ElementType.SELECT
+                && Minecraft.getInstance().screen == null) {
+            cycleSelectOption(sessionId, ClientWebManager.getBaseNodeId(result.element().id()));
         }
-
-        DisplayItem clickedEl = hit.element();
-        String elementId = clickedEl.id();
-
-        if (elementId.endsWith("_sb_vt") || elementId.endsWith("_sb_ht")) {
-            ClientWebManager.handleScrollbarClick(sessionId, clickedEl, pixelX, pixelY);
-            return clickedEl;
-        } else if (elementId.endsWith("_sb_v") || elementId.endsWith("_sb_h")) {
-            state.draggingId = elementId;
-            state.lastSentX = hit.localX();
-            state.lastSentY = hit.localY();
-            return clickedEl;
-        }
-
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
-        ClientWebManager.setActivePressedId(sessionId, baseId);
-        playElementSound(clickedEl);
-
-        HtmlNode pressed = ClientWebManager.findInteractiveNode(sessionId, baseId);
-        if (pressed != null) {
-            dispatchPress(sessionId, pressed, hit.localX(), hit.localY(), button);
-        }
-
-        if (clickedEl.type() == ElementType.SELECT && Minecraft.getInstance().screen == null) {
-            cycleSelectOption(sessionId, baseId);
-        }
-
-        startDragInteraction(sessionId, hit, pressed);
-        return clickedEl;
+        return result.element();
     }
 
     public static void beginDrag(String sessionId, double pixelX, double pixelY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
-        if (hit == null) return;
-        HtmlNode pressed = ClientWebManager.findInteractiveNode(sessionId, ClientWebManager.getBaseNodeId(hit.element().id()));
-        startDragInteraction(sessionId, hit, pressed);
-    }
-
-    private static void startDragInteraction(String sessionId, ClientWebManager.UIHitResult hit, HtmlNode pressed) {
-        DisplayItem element = hit.element();
-        Map<String, String> events = element.events() != null ? element.events() : Map.of();
-        if (!hasEvent(events, "ondrag") && element.type() != ElementType.RANGE) return;
-
-        SessionContext.InputSessionState state = getState(sessionId);
-        state.draggingId = ClientWebManager.getBaseNodeId(element.id());
-        state.lastSentX = hit.localX();
-        state.lastSentY = hit.localY();
-
-        if (element.type() == ElementType.RANGE) {
-            state.lastRatio = Mth.clamp((float) (hit.localX() / Math.max(1.0, element.width())), 0.0f, 1.0f);
-            state.lastRangeText = generateRangeText(element.text(), state.lastRatio);
-            updateInputLocally(sessionId, state.draggingId, state.lastRangeText);
-            dispatchRangeInput(sessionId, state.draggingId, rangeValue(state.lastRangeText));
-        } else if (pressed != null) {
-            pressed.dispatchEvent(UiEvents.mouse("dragstart", hit.localX(), hit.localY(), 0, 1, false, false, false, false, null));
-        }
-    }
-
-    private static void dispatchRangeInput(String sessionId, String baseId, String value) {
-        HtmlNode slider = ClientWebManager.findNode(sessionId, baseId);
-        if (slider == null) return;
-        slider.attrs.put("value", value);
-        dispatchFormEvent(slider, new CoreEvent.CoreUIEvent("input", true, false, 0));
-    }
-
-    private static String rangeValue(String rangeText) {
-        return rangeText.split(":")[0];
-    }
-
-    private static void dispatchClick(String sessionId, HtmlNode target, double x, double y, int minecraftButton) {
-        int button = ClientDomEventDispatcher.domButton(minecraftButton);
-        if (button == 0) {
-            DomEvent click = DomEvent.click(x, y, 0);
-            target.dispatchEvent(click, event -> StandardDefaultActions.execute(event, ClientDomEventDispatcher.createClickDefaults(sessionId, x, y, null, minecraftButton, null, null,
-                    (t) -> dispatchClick(sessionId, t, x, y, 0))));
-            ClientDomEventDispatcher.dispatchDoubleClickIfRepeated(sessionId, target, x, y);
-            return;
-        }
-        if (button == 2) {
-            target.dispatchEvent(UiEvents.mouse("contextmenu", x, y, button, 0, false, false, false, false, null));
-        }
-        target.dispatchEvent(UiEvents.mouse("auxclick", x, y, button, 0, false, false, false, false, null));
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return;
+        session.input().beginDrag(pixelX, pixelY);
     }
 
     public static boolean handleDrag(String sessionId, double pixelX, double pixelY) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        if (state.draggingId.isEmpty()) return false;
-        if (ClientWebManager.handleScrollbarDrag(sessionId, state.draggingId, pixelX, pixelY)) {
-            return true;
-        }
-        ClientWebManager.UIHitResult dragHit = ClientWebManager.getLocalCoords(sessionId, state.draggingId, pixelX, pixelY);
-        long now = System.currentTimeMillis();
-
-        if (dragHit != null) {
-            DisplayItem draggedEl = dragHit.element();
-            state.lastSentX = dragHit.localX();
-            state.lastSentY = dragHit.localY();
-
-            if (draggedEl.type() == ElementType.RANGE) {
-                float ratio = Mth.clamp((float) (dragHit.localX() / Math.max(1.0, draggedEl.width())), 0.0f, 1.0f);
-                if (Math.abs(state.lastRatio - ratio) > 0.002f) {
-                    state.lastRatio = ratio;
-                    state.lastRangeText = generateRangeText(draggedEl.text(), ratio);
-                    updateInputLocally(sessionId, state.draggingId, state.lastRangeText);
-                    if (now - state.lastEventTime > DRAG_EVENT_INTERVAL_MS) {
-                        dispatchRangeInput(sessionId, state.draggingId, rangeValue(state.lastRangeText));
-                        state.lastEventTime = now;
-                    }
-                }
-            } else if (now - state.lastEventTime > DRAG_EVENT_INTERVAL_MS) {
-                HtmlNode dragged = ClientWebManager.findInteractiveNode(sessionId, state.draggingId);
-                if (dragged != null) {
-                    dragged.dispatchEvent(UiEvents.mouse("drag", dragHit.localX(), dragHit.localY(), 0, 1, false, false, false, false, null));
-                }
-                state.lastEventTime = now;
-            }
-        }
-        return true;
+        return ClientWebManager.getOrCreateSession(sessionId).input().drag(pixelX, pixelY);
     }
 
     public static void handleRelease(String sessionId) {
-        SessionContext.InputSessionState state = getState(sessionId);
+        SessionContext.InputSessionState state = ClientWebManager.getOrCreateSession(sessionId).inputState();
         handleRelease(sessionId, state.hoverX, state.hoverY, state.pressedButton, true);
     }
 
     public static void handleRelease(String sessionId, double pixelX, double pixelY, int minecraftButton, boolean synthesizeClick) {
-        SessionContext.InputSessionState state = getState(sessionId);
-        // 押下中の節は InteractionState が持つ。解除する前に読み、クリック合成に使う。
-        HtmlNode pressed = ClientWebManager.getSession(sessionId) != null
-                ? ClientWebManager.getSession(sessionId).interactionState().activeNode() : null;
-        ClientWebManager.setActivePressedId(sessionId, "");
-
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
-        HtmlNode released = hit != null
-                ? ClientWebManager.findInteractiveNode(sessionId, ClientWebManager.getBaseNodeId(hit.element().id()))
-                : null;
-        int button = ClientDomEventDispatcher.domButton(minecraftButton);
-        if (released != null) {
-            released.dispatchEvent(UiEvents.pointer("pointerup", hit.localX(), hit.localY(), button, 0, false, false, false, false, null));
-            released.dispatchEvent(UiEvents.mouse("mouseup", hit.localX(), hit.localY(), button, 0, false, false, false, false, null));
-        }
-
-        finishDrag(sessionId, state);
-
-        if (synthesizeClick && pressed != null && released != null) {
-            HtmlNode target = ClientDomEventDispatcher.nearestCommonAncestor(pressed, released);
-            if (target != null) {
-                dispatchClick(sessionId, target, hit.localX(), hit.localY(), minecraftButton);
-            }
-        }
-    }
-
-    private static void finishDrag(String sessionId, SessionContext.InputSessionState state) {
-        if (state.draggingId.isEmpty()) return;
-
-        HtmlNode dragged = ClientWebManager.findInteractiveNode(sessionId, state.draggingId);
-        if (state.lastRatio >= 0 && !state.lastRangeText.isEmpty()) {
-            String value = rangeValue(state.lastRangeText);
-            if (dragged != null) {
-                dispatchRangeInput(sessionId, state.draggingId, value);
-                dispatchFormEvent(dragged, new CoreEvent.CoreUIEvent("change", true, false, 0));
-            }
-            state.lastSubmittedId = state.draggingId;
-            state.lastSubmittedText = state.lastRangeText;
-            state.lastSubmitTime = System.currentTimeMillis();
-        }
-        if (dragged != null) {
-            dragged.dispatchEvent(UiEvents.mouse("dragend", state.lastSentX, state.lastSentY, 0, 0, false, false, false, false, null));
-        }
-        state.draggingId = "";
-        state.lastRatio = -1.0f;
-        state.lastRangeText = "";
+        ClientWebManager.getOrCreateSession(sessionId).input()
+                .release(pixelX, pixelY, minecraftButton, synthesizeClick, SessionInput.ClickSink.NONE);
     }
 
     public static boolean handleScroll(String sessionId, double pixelX, double pixelY, double deltaX, double deltaY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, pixelX, pixelY);
-        if (hit != null) {
-            String baseId = ClientWebManager.getBaseNodeId(hit.element().id());
-            HtmlNode domNode = ClientWebManager.findInteractiveNode(sessionId, baseId);
-            if (domNode != null) {
-                var wheelEv = UiEvents.wheel(hit.localX(), hit.localY(), deltaX, deltaY, false, false, false, false);
-                domNode.dispatchEvent(wheelEv);
-                if (wheelEv.isDefaultPrevented()) {
-                    return true;
-                }
-            }
-        }
-        return ClientWebManager.handleScrollLocally(sessionId, pixelX, pixelY, deltaX, deltaY);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return false;
+        return session.input().scroll(pixelX, pixelY, deltaX, deltaY, false, false, false, SessionInput.Host.NONE);
     }
 
     public static void updateInputLocally(String sessionId, String elementId, String text) {
-        if (elementId == null || elementId.isEmpty()) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
-        String safeText = text != null ? text : "";
-        SessionContext.InputSessionState state = getState(sessionId);
-        state.localInputCache.put(baseId, safeText);
-        ClientWebManager.updateElementTextLocally(sessionId, baseId, safeText);
+        ClientWebManager.getOrCreateSession(sessionId).input().updateInputLocally(elementId, text);
     }
 
     public static boolean beginTextEdit(String sessionId, String elementId, String data, String inputType) {
-        HtmlNode control = ClientWebManager.findNode(sessionId, ClientWebManager.getBaseNodeId(elementId));
-        if (control == null) return true;
-        var beforeInput = UiEvents.input("beforeinput", data, false, inputType);
-        control.dispatchEvent(beforeInput);
-        return !beforeInput.isDefaultPrevented();
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return true;
+        return session.input().beginTextEdit(elementId, data, inputType);
     }
 
     public static void commitTextEdit(String sessionId, String elementId, String newValue, String data, String inputType) {
-        HtmlNode control = ClientWebManager.findNode(sessionId, ClientWebManager.getBaseNodeId(elementId));
-        String safeValue = newValue != null ? newValue : "";
-        if (control == null || safeValue.equals(control.attrs.getOrDefault("value", ""))) return;
-        control.attrs.put("value", safeValue);
-        dispatchFormEvent(control, UiEvents.input("input", data, false, inputType));
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return;
+        session.input().commitTextEdit(elementId, newValue, data, inputType);
     }
 
     public static void submitInput(String sessionId, String elementId, String text) {
         if (elementId == null || elementId.isEmpty()) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
-        String safeText = text != null ? text : "";
-        updateInputLocally(sessionId, baseId, safeText);
-
-        HtmlNode control = ClientWebManager.findNode(sessionId, baseId);
-        if (control != null) {
-            boolean valueChanged = !safeText.equals(control.attrs.getOrDefault("value", ""));
-            control.attrs.put("value", safeText);
-            if (!ClientDomEventDispatcher.isCheckable(control)) {
-                if (valueChanged) {
-                    dispatchFormEvent(control, UiEvents.input("input", safeText, false, "insertText"));
-                }
-                dispatchFormEvent(control, new CoreEvent.CoreUIEvent("change", true, false, 0));
-            }
-        }
-        SessionContext.InputSessionState state = getState(sessionId);
-        state.lastSubmittedId = baseId;
-        state.lastSubmittedText = safeText;
-        state.lastSubmitTime = System.currentTimeMillis();
+        ClientWebManager.getOrCreateSession(sessionId).input().submitInput(elementId, text);
     }
-
-    private static String generateRangeText(String oldText, float ratio) {
-        float min = 0, max = 100;
-        String[] parts = (oldText != null ? oldText : "").split(":");
-        if (parts.length >= 3) {
-            try {
-                min = Float.parseFloat(parts[1]);
-                max = Float.parseFloat(parts[2]);
-            } catch (NumberFormatException ignored) {}
-        }
-        int newVal = Math.round(min + (max - min) * ratio);
-        return newVal + ":" + min + ":" + max;
-    }
-
 }

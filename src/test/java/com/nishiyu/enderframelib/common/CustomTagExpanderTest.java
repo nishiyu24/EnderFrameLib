@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,6 +10,20 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * カスタムタグのマクロ展開が、正規表現による文字列置換から DOM の部分木差し替えに

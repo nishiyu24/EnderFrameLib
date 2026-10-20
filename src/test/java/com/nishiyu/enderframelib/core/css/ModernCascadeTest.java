@@ -1,15 +1,30 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R4 の構文・カスケード・条件付き規則・{@code @property}・{@code :has()} を、
@@ -212,7 +227,7 @@ public class ModernCascadeTest {
 
     private static LayoutBox layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
         return parser.layoutDocument(doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK);
     }

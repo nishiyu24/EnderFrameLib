@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.dom.TemplateEngine;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.Bindings;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
@@ -26,13 +26,13 @@ import java.util.regex.Pattern;
 
 public class ClientLocalEnvProvider {
 
-    private static final Pattern LOCAL_PLACEHOLDER = Pattern.compile("\\{\\{@([a-zA-Z0-9_.:-]+)}}");
+
     private static final Map<String, Supplier<String>> CUSTOM_PROVIDERS = new ConcurrentHashMap<>();
     private static volatile Map<String, String> CACHED_SNAPSHOT = Collections.emptyMap();
     private static volatile long lastSnapshotTime = 0;
 
     static {
-        TemplateEngine.i18nResolver = ClientLocalEnvProvider::translateKey;
+        Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
     }
 
     public static String translateKey(String key) {
@@ -44,6 +44,15 @@ public class ClientLocalEnvProvider {
         }
     }
 
+    /**
+     * クライアント固有のカスタム環境変数サプライヤを登録する。
+     * <p>
+     * 登録された変数は、HTML/CSS テンプレート中のプレースホルダ（{@code {{@key}}}）や
+     * スタイルシートのローカル変数として参照できる。キーの先頭に {@code @} が付いていても内部で正規化される。
+     *
+     * @param key 変数名（例: {@code "player_mana"} または {@code "@player_mana"}）
+     * @param supplier 変数の現在値を返すサプライヤ。null の場合は登録を無視する
+     */
     public static void registerCustomVariable(String key, Supplier<String> supplier) {
         if (key == null || supplier == null) return;
         String cleanKey = key.startsWith("@") ? key.substring(1) : key;
@@ -133,34 +142,7 @@ public class ClientLocalEnvProvider {
     }
 
     public static boolean applyI18nAttributes(HtmlNode vNode) {
-        if (vNode == null) return false;
-        boolean changed = false;
-
-        if (vNode.attrs.containsKey("data-i18n")) {
-            String key = vNode.attrs.get("data-i18n").trim();
-            if (!key.isEmpty()) {
-                String tr = translateKey(key);
-                if (!Objects.equals(vNode.getTextContent(), tr)) {
-                    vNode.setTextContent(tr);
-                    changed = true;
-                }
-            }
-        }
-        if (vNode.attrs.containsKey("data-i18n-placeholder")) {
-            String tr = translateKey(vNode.attrs.get("data-i18n-placeholder").trim());
-            if (!Objects.equals(vNode.attrs.get("placeholder"), tr)) {
-                vNode.attrs.put("placeholder", tr);
-                changed = true;
-            }
-        }
-        if (vNode.attrs.containsKey("data-i18n-title")) {
-            String tr = translateKey(vNode.attrs.get("data-i18n-title").trim());
-            if (!Objects.equals(vNode.attrs.get("title"), tr)) {
-                vNode.attrs.put("title", tr);
-                changed = true;
-            }
-        }
-        return changed;
+        return Bindings.applyI18nAttributes(vNode);
     }
 
     public static void tickSessionLocalVariables(String sessionId, HtmlNode templateRoot, HtmlNode virtualRoot) {
@@ -174,7 +156,7 @@ public class ClientLocalEnvProvider {
         Set<String> usedKeys = session.envUsedKeys();
         if (usedKeys == null) {
             Set<String> keys = new java.util.HashSet<>();
-            collectUsedKeys(templateRoot, keys);
+            Bindings.collectLocalVariableKeys(templateRoot, keys);
             usedKeys = Collections.unmodifiableSet(keys);
             session.setEnvUsedKeys(usedKeys);
         }
@@ -194,68 +176,8 @@ public class ClientLocalEnvProvider {
         }
 
         session.setEnvApplied(currentEnv);
-        if (applyLocalVarsRecursive(templateRoot, virtualRoot, currentEnv)) {
-            ClientWebManager.requestRender(sessionId);
+        if (Bindings.applyLocalVariables(templateRoot, virtualRoot, currentEnv)) {
+            session.requestRender();
         }
-    }
-
-    private static void collectUsedKeys(HtmlNode node, Set<String> keys) {
-        if (node == null) return;
-        if (node.text != null && node.text.contains("{{@")) {
-            Matcher m = LOCAL_PLACEHOLDER.matcher(node.text);
-            while (m.find()) {
-                String rawKey = m.group(1);
-                if (rawKey.startsWith("i18n:")) keys.add("@lang");
-                else keys.add("@" + rawKey);
-            }
-        }
-        if (node.attrs.containsKey("data-i18n") || node.attrs.containsKey("data-i18n-placeholder") || node.attrs.containsKey("data-i18n-title")) {
-            keys.add("@lang");
-        }
-        for (String val : node.attrs.values()) {
-            if (val != null && val.contains("{{@")) {
-                Matcher m = LOCAL_PLACEHOLDER.matcher(val);
-                while (m.find()) {
-                    String rawKey = m.group(1);
-                    if (rawKey.startsWith("i18n:")) keys.add("@lang");
-                    else keys.add("@" + rawKey);
-                }
-            }
-        }
-        for (HtmlNode child : node.children) {
-            collectUsedKeys(child, keys);
-        }
-    }
-
-    private static boolean applyLocalVarsRecursive(HtmlNode origNode, HtmlNode vNode, Map<String, String> env) {
-        if (origNode == null || vNode == null) return false;
-        boolean changed = applyI18nAttributes(vNode);
-
-        if (origNode.text != null && (origNode.text.contains("{{@") || origNode.text.contains("{{i18n:"))) {
-            String resolved = TemplateEngine.resolve(origNode.text, null, env);
-            if (!resolved.equals(vNode.text)) {
-                vNode.text = resolved;
-                changed = true;
-            }
-        }
-
-        for (String key : new ArrayList<>(origNode.attrs.keySet())) {
-            String origVal = origNode.attrs.get(key);
-            if (origVal != null && (origVal.contains("{{@") || origVal.contains("{{i18n:"))) {
-                String resolved = TemplateEngine.resolve(origVal, null, env);
-                if (!resolved.equals(vNode.attrs.get(key))) {
-                    vNode.attrs.put(key, resolved);
-                    changed = true;
-                }
-            }
-        }
-
-        int min = Math.min(origNode.children.size(), vNode.children.size());
-        for (int i = 0; i < min; i++) {
-            if (applyLocalVarsRecursive(origNode.children.get(i), vNode.children.get(i), env)) {
-                changed = true;
-            }
-        }
-        return changed;
     }
 }

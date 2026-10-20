@@ -108,6 +108,14 @@ public interface EnderFrameAPI {
     /** Unregisters a host registered with {@link #registerProvider(WebSessionProvider)}. */
     void unregisterProvider(WebSessionProvider provider);
 
+    /** Registers a prefix-keyed provider. Internal bridge implementation. */
+    @ApiStatus.Internal
+    default void registerPrefixProvider(String prefix, WebSessionProvider provider) {}
+
+    /** Unregisters a prefix-keyed provider. Internal bridge implementation. */
+    @ApiStatus.Internal
+    default void unregisterPrefixProvider(String prefix) {}
+
 
     /** Decides whether a player may subscribe to a pub/sub channel. */
     @FunctionalInterface

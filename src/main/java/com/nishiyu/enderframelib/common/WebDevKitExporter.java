@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.common.UiDocumentCompiler.CssResources;
+import com.nishiyu.enderframelib.common.CssResources;
 import com.nishiyu.enderframelib.EnderFrameLib;
 
 import java.io.IOException;

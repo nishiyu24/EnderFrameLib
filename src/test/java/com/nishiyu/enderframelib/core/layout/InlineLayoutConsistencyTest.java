@@ -1,15 +1,15 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -21,6 +21,16 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * インラインの「測定した高さ」と「実際に配置した高さ」が一致することの番人。
@@ -211,7 +221,7 @@ public class InlineLayoutConsistencyTest {
     @Test
     public void testWhitespaceBetweenInlineSpansIsPreserved() {
         com.nishiyu.enderframelib.common.UiDocumentCompiler parser = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
-        com.nishiyu.enderframelib.common.UiDocumentCompiler.Document doc =
+        com.nishiyu.enderframelib.common.Document doc =
                 parser.parseDocument("<div><span>a</span> <span>b</span></div>", "", 400, 200);
         LayoutBox root = parser.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
 
@@ -302,7 +312,7 @@ public class InlineLayoutConsistencyTest {
 
     private static LayoutBox layoutDocument(String html) {
         com.nishiyu.enderframelib.common.UiDocumentCompiler parser = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
-        com.nishiyu.enderframelib.common.UiDocumentCompiler.Document doc =
+        com.nishiyu.enderframelib.common.Document doc =
                 parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", 400, 200);
         return parser.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }

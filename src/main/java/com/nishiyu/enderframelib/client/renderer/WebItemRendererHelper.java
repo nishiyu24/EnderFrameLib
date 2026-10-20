@@ -1,10 +1,13 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.util.Mth;
@@ -62,12 +65,12 @@ public class WebItemRendererHelper {
 
         ClientScreenInteractionManager.ensureSynced(sessionId);
 
-        if (ClientWebManager.getLastRootW(sessionId) != virtualWidth ||
-                ClientWebManager.getLastRootH(sessionId) != virtualHeight) {
-            ClientWebManager.recomputeLayout(sessionId, virtualWidth, virtualHeight);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null && (session.rootW() != virtualWidth || session.rootH() != virtualHeight)) {
+            session.recomputeLayout(virtualWidth, virtualHeight);
         }
 
-        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
+        List<DisplayItem> elements = session != null ? session.elements() : List.of();
         if (elements == null || elements.isEmpty()) return;
 
         poseStack.pushPose();

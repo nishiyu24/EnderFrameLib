@@ -279,6 +279,13 @@ public class EnderConfigManager {
         return CONFIGS.get(modId);
     }
 
+    /**
+     * 登録されているすべての設定情報（{@link RegisteredConfig}）を取得する。
+     * <p>
+     * 設定画面の一覧表示や一括保存・読み込みなど、下流 Mod や管理機能から全設定を走査するための差し込み口。
+     *
+     * @return 登録済み設定のコレクション
+     */
     public static Collection<RegisteredConfig> getAllConfigs() {
         return CONFIGS.values();
     }

@@ -1,11 +1,14 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -43,7 +46,8 @@ public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> impl
         String sessionId = be.getSessionId();
         ClientScreenInteractionManager.ensureSynced(sessionId);
 
-        List<DisplayItem> elementsToRender = ClientWebManager.getElements(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        List<DisplayItem> elementsToRender = session != null ? session.elements() : List.of();
         int lodColor = be.getLodColor();
 
         if ((elementsToRender == null || elementsToRender.isEmpty()) && lodColor == 0x00000000) return;

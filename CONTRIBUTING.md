@@ -120,8 +120,7 @@ common/, server/, client/, network/  →  core/, api/ とその層
    破棄は `SessionContext.close()` の 1 箇所に集める。
 3. **ノードを指すのはノードの参照で。** 文字列 ID は描画とネットワークの境界でだけ使い、
    境界でノードに解決する。文字列 ID をキーにした新しい状態を作らない。
-4. **`{{…}}` と `data-*` のバインディングを解釈するのは `core/dom/Bindings` だけ。**
-   T4 で作る。それまでは既存の解釈クラスを増やさない（M4）。
+4. **`{{…}}` と `data-*` のバインディングを解釈するのは `core/dom/Bindings` だけ**（M4）。
 5. **CSS の値は `CssSyntax` のコンポーネント値として読む。**
    文字列を自前で分割する関数を新しく書かない（M8）。
 6. **同じ処理の 2 つめの入口を作らない。** 既存の入口が使いにくいなら、入口のほうを直す
@@ -220,8 +219,8 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
-- **テキストの測定は `core/layout` の `TextShaper` が唯一の出所。** 文字幅・ascent・descent・行間は
-  `TextShaper.FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
+- **テキストの測定は `core/text` の `TextShaper` が唯一の出所。** 文字幅・ascent・descent・行間は
+  `FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
   折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
   **描画側（`DisplayItemDrawer`）でテキストを測り直さないこと。**

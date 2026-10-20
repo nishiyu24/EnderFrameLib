@@ -2,11 +2,11 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec.EasingFunction;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.RenderKeys;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
+import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,6 +16,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
 
 /**
  * {@link DisplayItem} の前値→次値の汎用トランジション補間および {@code @keyframes} アニメーションを評価する。
@@ -258,7 +260,7 @@ public class CssAnimator {
 
             cachedText = el.text();
             cachedEvents = el.events();
-            DisplayItem.RenderMeta meta = el.meta();
+            RenderMeta meta = el.meta();
 
             if (meta != null && meta.clipRect() != null) {
                 clipData = meta.clipRect().toArray();
@@ -282,7 +284,7 @@ public class CssAnimator {
                         rangeMax = parseFloatSafe(parts[2], 100f);
                     }
                 } else if (el.type() == ElementType.CIRCLE_BORDER) {
-                    DisplayItem.CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
+                    CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
                     if (cb != null) {
                         circleThickness = cb.thickness();
                         circleColors = new int[]{cb.colorTop(), cb.colorRight(), cb.colorBottom(), cb.colorLeft()};

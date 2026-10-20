@@ -1,16 +1,16 @@
 package com.nishiyu.enderframelib.network;
 
-import com.nishiyu.enderframelib.core.dom.DomUtils;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.HtmlElement;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
+import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import net.minecraft.nbt.CompoundTag;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.function.Consumer;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlText;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import java.util.Map;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;

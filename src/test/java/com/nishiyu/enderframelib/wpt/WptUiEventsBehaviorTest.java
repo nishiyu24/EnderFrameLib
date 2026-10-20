@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.wpt;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.client.UiEventFixture;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.wpt.WptHarness.WptCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +18,20 @@ import static com.nishiyu.enderframelib.wpt.WptHarness.assertEqualsWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.assertFalseWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.assertTrueWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.test;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * WPT の {@code uievents/} 領域から採用したケースの移植。ブラウザのポインタ操作（{@code test_driver.Actions}）の代わりに、

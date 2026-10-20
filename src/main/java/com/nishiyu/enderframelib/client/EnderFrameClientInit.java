@@ -1,6 +1,9 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.ClientWebManager.DeclarativeBindingManager;
+import com.nishiyu.enderframelib.core.text.model.*;
+
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
 import com.nishiyu.enderframelib.api.config.EnderConfigManager;
@@ -15,12 +18,17 @@ import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.client.renderer.WebMediaManager.ClientImageRegistry;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.CssParser;
-import com.nishiyu.enderframelib.core.dom.DomUtils;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.TemplateEngine;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.SubscribeC2SPacket;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.PubSubUpdateS2CPacket;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.Bindings;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.network.PubSubUpdateS2CPacket;
+import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -89,8 +97,44 @@ public class EnderFrameClientInit {
             return AbstractEnderScreen.findHtmlResource(loc).orElse("");
         };
 
-        // --- 修正箇所: DomUtils から TemplateEngine に変更 ---
-        TemplateEngine.i18nResolver = ClientLocalEnvProvider::translateKey;
+        Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
+        Bindings.jsonListParser = jsonStr -> {
+            try {
+                com.google.gson.JsonElement parsedJson = com.google.gson.JsonParser.parseString(jsonStr);
+                List<Map<String, String>> result = new ArrayList<>();
+                if (parsedJson.isJsonObject()) {
+                    for (Map.Entry<String, com.google.gson.JsonElement> entry : parsedJson.getAsJsonObject().entrySet()) {
+                        if (!entry.getValue().isJsonPrimitive()) continue;
+                        Map<String, String> item = new HashMap<>();
+                        item.put("_key", entry.getKey());
+                        item.put("_value", entry.getValue().getAsString());
+                        result.add(item);
+                    }
+                } else if (parsedJson.isJsonArray()) {
+                    int idx = 0;
+                    for (com.google.gson.JsonElement elem : parsedJson.getAsJsonArray()) {
+                        Map<String, String> item = new HashMap<>();
+                        item.put("_key", String.valueOf(idx++));
+                        if (elem.isJsonPrimitive()) {
+                            item.put("_value", elem.getAsString());
+                        } else if (elem.isJsonObject()) {
+                            for (Map.Entry<String, com.google.gson.JsonElement> objEntry : elem.getAsJsonObject().entrySet()) {
+                                if (objEntry.getValue().isJsonPrimitive()) {
+                                    item.put(objEntry.getKey(), objEntry.getValue().getAsString());
+                                }
+                            }
+                            item.put("_value", elem.toString());
+                        } else {
+                            continue;
+                        }
+                        result.add(item);
+                    }
+                }
+                return result;
+            } catch (Exception e) {
+                return Collections.emptyList();
+            }
+        };
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
         UiDocumentCompiler.intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
@@ -100,35 +144,33 @@ public class EnderFrameClientInit {
         ClientPubSubManager.subscriptionSender = channel ->
                 PacketDistributor.sendToServer(new SubscribeC2SPacket(channel));
 
-        ClientWebManager.applyOverridesCallback = ClientScreenInteractionManager::applyLocalOverrides;
+        ClientWebManager.setApplyOverridesCallback(ClientScreenInteractionManager::applyLocalOverrides);
 
-        DeclarativeBindingManager.setHudCallback(new DeclarativeBindingManager.IHudRegistrationCallback() {
-            @Override
-            public void registerHudTemplate(String sessionId, String containerId, String origDisplay, HtmlNode templateRoot, List<String> requireNbt) {
-                WebHudRenderer.enableHudTemplate(sessionId, containerId, origDisplay, templateRoot, requireNbt);
-            }
-
-            @Override
-            public void registerTrackerTemplate(String sessionId, HtmlNode templateNode, double radius, double yOffset, String targetType, List<String> requireNbt) {
-                WebHudRenderer.setTrackerTemplate(sessionId, templateNode, radius, yOffset, targetType, requireNbt);
-            }
-        });
-
-        PubSubUpdateS2CPacket.clientHandler = (channel, isFull, diffData) -> {
-            if ("ar_sync".equals(channel)) {
-                WebHudRenderer.handleBinaryTargetDataSync(diffData);
-            } else {
-                ClientPubSubManager.onReceiveUpdate(channel, isFull, diffData);
-            }
-        };
+        ClientPubSubManager.addChannelListener("ar_sync", WebHudRenderer::handleBinaryTargetDataSync);
+        PubSubUpdateS2CPacket.clientHandler = ClientPubSubManager::onReceiveUpdate;
 
         WebSyncS2CPacket.clientHandler = EnderFrameClientInit::handleWebSyncPacket;
     }
 
     private static void handleWebSyncPacket(String sessionId, String action, CompoundTag data) {
         switch (action) {
-            case "dom_sync" -> ClientWebManager.handleSyncPacket(sessionId, data);
-            case "dom_patch", "dom_mutations" -> ClientWebManager.handlePatchPacket(sessionId, data);
+            case "dom_sync" -> {
+                if (data == null) break;
+                if (data.getBoolean("IsEmpty")) {
+                    ClientWebManager.clearSession(sessionId);
+                } else if (data.contains("DomTree")) {
+                    ClientWebManager.getOrCreateSession(sessionId).applySync(data);
+                } else {
+                    SessionContext session = ClientWebManager.getSession(sessionId);
+                    if (session != null) session.setRequested(false);
+                }
+            }
+            case "dom_mutations" -> {
+                SessionContext session = ClientWebManager.getSession(sessionId);
+                if (session != null) {
+                    session.applyMutations(data);
+                }
+            }
             case "open_screen" -> {
                 String title = data.getString("Title");
                 int w = data.getInt("Width");
@@ -188,8 +230,8 @@ public class EnderFrameClientInit {
             int targetW = width > 0 ? width : 854;
             int targetH = height > 0 ? height : 480;
 
-            ClientWebManager.loadLocalHtml(id, html, targetW, targetH);
             SessionContext session = ClientWebManager.getOrCreateSession(id);
+            session.loadLocalHtml(html, targetW, targetH);
             session.setServerManaged(false);
 
             Minecraft mc = Minecraft.getInstance();
@@ -205,24 +247,25 @@ public class EnderFrameClientInit {
                 });
             }
 
-            return ClientWebManager.getDomDocument(id);
+            return session.domDocument();
         }
 
         @Override
         public Document setHud(@Nullable String sessionId, String html) {
             String id = sanitizeSessionId(sessionId, "client_hud");
-            ClientWebManager.loadLocalHtml(id, html, 1280, 720);
             SessionContext session = ClientWebManager.getOrCreateSession(id);
+            session.loadLocalHtml(html, 1280, 720);
             session.setServerManaged(false);
             WebHudRenderer.customActiveHudSessionId = id;
-            return ClientWebManager.getDomDocument(id);
+            return session.domDocument();
         }
 
         @Nullable
         @Override
         public Document getDocument(String sessionId) {
             if (sessionId == null || sessionId.isEmpty()) return null;
-            return ClientWebManager.getDomDocument(sessionId);
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            return session != null ? session.domDocument() : null;
         }
 
         @Override

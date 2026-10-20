@@ -3,9 +3,9 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +15,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R2: 入力経路の DOM イベント化。実際の文書を解析・レイアウト・描画してヒットテストの対象にし、
@@ -30,7 +45,7 @@ public class UiEventPipelineTest {
 
     private UiEventFixture fixture;
     private List<String> log;
-    private UiDocumentCompiler.Document document;
+    private Document document;
 
     @BeforeEach
     void setUp() {
@@ -83,7 +98,7 @@ public class UiEventPipelineTest {
         assertInstanceOf(HtmlDocument.class, document.root);
         assertNotNull(((HtmlDocument) document.root).inlineActionSink());
 
-        node("a").dispatchEvent(com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent.click(3, 4, 0));
+        node("a").dispatchEvent(com.nishiyu.enderframelib.core.event.CoreEvent.click(3, 4, 0));
 
         assertEquals(List.of("action:onclick=doA@a[a|3.0,4.0]"), log);
     }
@@ -236,8 +251,8 @@ public class UiEventPipelineTest {
         record(node("one"), "one", "focusin", "focus", "blur", "focusout");
         record(node("two"), "two", "focusin", "focus");
 
-        ClientWebManager.setFocusedElement(SESSION, "one", true);
-        ClientWebManager.setFocusedElement(SESSION, "two", true);
+        ClientWebManager.getOrCreateSession(SESSION).setFocusedElement("one", true);
+        ClientWebManager.getOrCreateSession(SESSION).setFocusedElement("two", true);
 
         assertEquals(List.of(
                 "one:focusin", "one:focus", "action:onfocus=focusedOne@one[]",
@@ -279,7 +294,7 @@ public class UiEventPipelineTest {
         double[] point = center("vol");
         ClientScreenInteractionManager.handleHover(SESSION, point[0], point[1]);
         DisplayItem pressed = ClientScreenInteractionManager.handleClick(SESSION, point[0], point[1], MC_LEFT);
-        assertEquals(DisplayItem.ElementType.RANGE, pressed.type());
+        assertEquals(ElementType.RANGE, pressed.type());
         ClientScreenInteractionManager.handleRelease(SESSION, point[0], point[1], MC_LEFT, true);
 
         assertEquals(List.of("vol:input", "vol:input", "vol:change"), log.stream().filter(e -> e.startsWith("vol:")).toList());

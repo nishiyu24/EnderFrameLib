@@ -1,14 +1,14 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen.WebTextInputHost;
+import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
 import com.nishiyu.enderframelib.client.renderer.CssAnimator;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.css.model.ElementState;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -18,6 +18,21 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * S1: セッションごとの状態は {@link SessionContext} が所有し、{@link SessionContext#close()} で
@@ -53,9 +68,9 @@ public class SessionContextCleanupTest {
         session.inputState().lastClickNode = target;
         session.inputState().lastClickTime = 7L;
 
-        DisplayItem item = new DisplayItem("target", "target", DisplayItem.ElementType.NODE,
+        DisplayItem item = new DisplayItem("target", "target", ElementType.NODE,
                 0, 0, 10, 10, null, 0, 0, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0,
-                AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY);
+                AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY);
         session.setRenderCache(List.of(item));
         session.cssAnimations().put("target", new CssAnimator.AnimState(item));
         session.canvases().put("target", new Canvas2DContext());

@@ -2,9 +2,9 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.font.GlyphProvider;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.BitmapFontFace;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.font.FontOption;
@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 /**
  * W3C CSS Fonts Module Level 3 標準の {@code @font-face} ルールおよび {@code font-family} プロパティを解決し、
@@ -302,8 +303,8 @@ public class WebFontManager {
          * 1em = 素のサイズなので倍率 1.0 になる。
          */
         private static final class FontStyleHolder {
-            static final FontFace.FontStyle NATURAL =
-                    new FontFace.FontStyle(BitmapFontFace.MC_UNITS_PER_EM, false, false, 0f);
+            static final FontStyle NATURAL =
+                    new FontStyle(BitmapFontFace.MC_UNITS_PER_EM, false, false, 0f);
         }
     }
 }

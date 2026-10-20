@@ -1,14 +1,14 @@
 package com.nishiyu.enderframelib.network;
 
-import com.nishiyu.enderframelib.network.DomMutationRecord.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -20,6 +20,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * {@code new HtmlNode("#text")} や {@link HtmlNodeSerializer} のデシリアライズ経路で
@@ -33,8 +47,8 @@ public class HtmlNodeSerializerTest {
     private static HtmlNode simulateNetworkRoundTrip(HtmlNode src, HtmlNode parent) {
         String tagName = src.tag != null ? src.tag : "";
         HtmlNode node = "#text".equals(tagName)
-                ? new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(src.text != null ? src.text : "")
-                : new com.nishiyu.enderframelib.core.dom.HtmlElement(tagName);
+                ? new com.nishiyu.enderframelib.core.dom.node.HtmlText(src.text != null ? src.text : "")
+                : new com.nishiyu.enderframelib.core.dom.node.HtmlElement(tagName);
         node.setId(src.getId() != null ? src.getId() : "");
         node.text = src.text != null ? src.text : "";
         node.parent = parent;
@@ -84,13 +98,13 @@ public class HtmlNodeSerializerTest {
     public void testShowcaseHtmlProducesNonZeroTextBoxesAfterNetworkRoundTrip() {
         String showcaseHtml = GoldenFiles.readFixture("showcase.html");
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument(showcaseHtml, "", 800, 600);
+        Document doc = parser.parseDocument(showcaseHtml, "", 800, 600);
 
         // サーバー → クライアントの dom_sync 経路と同様に全ノードを再構築する
         doc.root = simulateNetworkRoundTrip(doc.root, null);
 
         AtomicReference<LayoutBox> capturedRootBox = new AtomicReference<>();
-        UiDocumentCompiler.ILayoutBoxRenderer prevRenderer = UiDocumentCompiler.clientBoxRenderer;
+        RenderPipeline.ILayoutBoxRenderer prevRenderer = UiDocumentCompiler.clientBoxRenderer;
         UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) -> {
             capturedRootBox.set(rootBox);
             return List.<DisplayItem>of();

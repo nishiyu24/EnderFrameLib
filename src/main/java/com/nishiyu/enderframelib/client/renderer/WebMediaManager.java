@@ -1,12 +1,15 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.*;
+
+import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
@@ -315,6 +318,17 @@ public class WebMediaManager {
         }
     }
 
+    /**
+     * セッションが消えている場合も、旧 {@code getElements} と同じく描画キューの処理だけは行う。
+     * 消えたセッションの描画要素は常に空。
+     */
+    private static List<DisplayItem> elementsOf(String sessionId) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null) return session.elements();
+        ClientWebManager.processRenderQueue();
+        return List.of();
+    }
+
     public static void cleanup() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.isPaused() || mc.level == null || mc.player == null) return;
@@ -327,7 +341,7 @@ public class WebMediaManager {
         }
 
         for (String sessionKey : activeIps) {
-            List<DisplayItem> els = ClientWebManager.getElements(sessionKey);
+            List<DisplayItem> els = elementsOf(sessionKey);
             if (els != null) {
                 for (DisplayItem el : els) {
                     if (el.type() == ElementType.VIDEO && el.text() != null) {
@@ -349,7 +363,7 @@ public class WebMediaManager {
             }
 
             tex.activeIps.removeIf(sessionKey -> {
-                List<DisplayItem> els = ClientWebManager.getElements(sessionKey);
+                List<DisplayItem> els = elementsOf(sessionKey);
                 if (els == null || els.isEmpty()) return true;
                 for (DisplayItem el : els) {
                     if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) return false;
@@ -362,7 +376,7 @@ public class WebMediaManager {
                 BlockPos pos = e.getKey();
                 if (!mc.level.isLoaded(pos)) return false;
                 if (externalContext != null && externalContext.isScreenOrSpeaker(pos)) {
-                    List<DisplayItem> els = ClientWebManager.getElements("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
+                    List<DisplayItem> els = elementsOf("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
                     if (els != null) {
                         for (DisplayItem el : els) {
                             if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) {
@@ -1064,6 +1078,13 @@ public class WebMediaManager {
             return SIZES.get(url);
         }
 
+        /**
+         * 画像のサイズ確定時に自動リフローを呼び出すリスナーを登録する。
+         * <p>
+         * リスナーは弱参照（{@link WeakReference}）で保持される。
+         *
+         * @param listener サイズ確定時に実行されるコールバック
+         */
         public static void addReflowListener(Runnable listener) {
             boolean exists = false;
             for (WeakReference<Runnable> ref : REFLOW_LISTENERS) {
@@ -1078,6 +1099,13 @@ public class WebMediaManager {
             }
         }
 
+        /**
+         * 画像のサイズ確定時に自動リフローを呼び出すリスナーを登録解除する。
+         * <p>
+         * 画面やレンダラーの破棄時にリスナーを明示的に解除するための差し込み口。
+         *
+         * @param listener 解除するリスナー
+         */
         public static void removeReflowListener(Runnable listener) {
             REFLOW_LISTENERS.removeIf(ref -> ref.get() == null || ref.get() == listener);
         }

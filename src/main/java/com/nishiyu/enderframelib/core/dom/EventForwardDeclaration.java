@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -134,7 +137,7 @@ public record EventForwardDeclaration(String eventType, Payload payload, String 
     }
 
     private static boolean isValueControl(HtmlNode node) {
-        if (node.nodeType != HtmlNode.NodeType.ELEMENT) return false;
+        if (node.nodeType != NodeType.ELEMENT) return false;
         String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
         return tag.equals("input") || tag.equals("textarea") || tag.equals("select");
     }

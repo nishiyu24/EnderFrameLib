@@ -6,10 +6,10 @@ import com.nishiyu.enderframelib.api.WebActionReceiver;
 import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.DomUtils;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.network.DomMutationRecord.HtmlNodeSerializer;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.regex.Pattern;
+import com.nishiyu.enderframelib.common.Document;
 
 /**
  * サーバー側セッションの登録簿・配信・クライアント要求の検証。
@@ -46,7 +47,7 @@ public class WebSessionManager {
      * 操作を許す距離。
      * セッション ID が指すのはマルチブロック画面の master 1 点なので、
      * プレイヤーの操作距離（約 5）＋ 大きな画面の master からの距離分をマージンに取る。
-     * 以前は 64 ブロック（distSqr &lt;= 4096）で、見えない画面すら操作できた。
+     * 以前は 64 ブロック（distSqr <= 4096）で、見えない画面すら操作できた。
      */
     private static final double INTERACT_RANGE_SQR = 12.0 * 12.0;
 
@@ -57,16 +58,8 @@ public class WebSessionManager {
     private static final int MAX_VALUE_LENGTH = 4096;
 
     private static final Set<WebSessionProvider> PROVIDERS = new CopyOnWriteArraySet<>();
+    private static final Map<String, WebSessionProvider> PREFIX_PROVIDERS = new ConcurrentHashMap<>();
     private static final Map<String, WebSession> STANDALONE_SESSIONS = new ConcurrentHashMap<>();
-
-    /** 特定のセッションを現在閲覧・購読しているプレイヤーの追跡用マップ */
-    private static final Map<String, Set<ServerPlayer>> SESSION_VIEWERS = new ConcurrentHashMap<>();
-
-    /**
-     * プレイヤー専用に開いたセッションの所有者。
-     * 所有者が居るセッションは、その本人以外が同期要求もアクション送出もできない（I-2）。
-     */
-    private static final Map<String, UUID> SESSION_OWNERS = new ConcurrentHashMap<>();
 
     private static volatile boolean initialized = false;
 
@@ -86,6 +79,27 @@ public class WebSessionManager {
 
     public static void unregisterProvider(WebSessionProvider provider) {
         PROVIDERS.remove(provider);
+    }
+
+    /**
+     * スクリプティングブリッジ向けの接頭辞プロバイダ登録。
+     * 古い登録の解除も含め WebSessionManager で一元管理する（S11）。
+     */
+    public static void registerPrefixProvider(String prefix, WebSessionProvider provider) {
+        if (prefix == null || provider == null) return;
+        WebSessionProvider old = PREFIX_PROVIDERS.put(prefix, provider);
+        if (old != null) {
+            PROVIDERS.remove(old);
+        }
+        PROVIDERS.add(provider);
+    }
+
+    public static void unregisterPrefixProvider(String prefix) {
+        if (prefix == null) return;
+        WebSessionProvider old = PREFIX_PROVIDERS.remove(prefix);
+        if (old != null) {
+            PROVIDERS.remove(old);
+        }
     }
 
     // ==========================================
@@ -117,21 +131,49 @@ public class WebSessionManager {
         return STANDALONE_SESSIONS.get(sessionId);
     }
 
+    /** スタンドアロンまたはプロバイダからセッションを探す。 */
+    @Nullable
+    public static WebSession findSession(String sessionId) {
+        if (sessionId == null) return null;
+        WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
+        if (standalone != null) return standalone;
+        for (WebSessionProvider provider : PROVIDERS) {
+            if (provider.matchesSession(sessionId)) {
+                WebSessionHandle handle = provider.getSessionForClient(sessionId);
+                if (handle instanceof WebSession ws) return ws;
+            }
+        }
+        return null;
+    }
+
     public static void removeStandaloneSession(String sessionId) {
         WebSession session = STANDALONE_SESSIONS.remove(sessionId);
         if (session != null) session.clear();
-        SESSION_VIEWERS.remove(sessionId);
-        SESSION_OWNERS.remove(sessionId);
     }
 
     /** セッションをプレイヤー専用にする。HUD や個別に開いた画面はこれを通す。 */
     public static void setSessionOwner(String sessionId, ServerPlayer owner) {
         if (sessionId == null || owner == null) return;
-        SESSION_OWNERS.put(sessionId, owner.getUUID());
+        WebSession session = findStandaloneSession(sessionId);
+        if (session != null) {
+            session.setOwner(owner);
+        }
     }
 
+    /**
+     * セッションのプレイヤー専用割り当てを解除する。
+     * <p>
+     * HUD や専用画面が閉じられた際、セッションの所有権をクリアして共有状態に戻す、
+     * またはセッションの再利用に備えるための差し込み口。
+     *
+     * @param sessionId 解除対象のセッション ID
+     */
     public static void clearSessionOwner(String sessionId) {
-        if (sessionId != null) SESSION_OWNERS.remove(sessionId);
+        if (sessionId == null) return;
+        WebSession session = findStandaloneSession(sessionId);
+        if (session != null) {
+            session.setOwner((UUID) null);
+        }
     }
 
     public static boolean isValidSessionId(String sessionId) {
@@ -149,17 +191,12 @@ public class WebSessionManager {
         long now = System.currentTimeMillis();
         // まず期限切れを落とし、それでも空かなければ最も古いものを落とす
         STANDALONE_SESSIONS.entrySet().removeIf(e -> {
-            boolean idle = (now - e.getValue().lastAccessMillis()) > SESSION_IDLE_TIMEOUT_MS
-                    && !hasViewers(e.getKey());
-            if (idle) {
-                SESSION_VIEWERS.remove(e.getKey());
-                SESSION_OWNERS.remove(e.getKey());
-            }
-            return idle;
+            WebSession s = e.getValue();
+            return !s.hasViewers() && (now - s.lastAccessMillis()) > SESSION_IDLE_TIMEOUT_MS;
         });
         while (STANDALONE_SESSIONS.size() >= MAX_STANDALONE_SESSIONS) {
             String oldest = STANDALONE_SESSIONS.entrySet().stream()
-                    .filter(e -> !hasViewers(e.getKey()))
+                    .filter(e -> !e.getValue().hasViewers())
                     .min(Comparator.comparingLong(e -> e.getValue().lastAccessMillis()))
                     .map(Map.Entry::getKey)
                     .orElse(null);
@@ -177,49 +214,65 @@ public class WebSessionManager {
     static void evictIdleSessions() {
         long now = System.currentTimeMillis();
         STANDALONE_SESSIONS.entrySet().removeIf(e -> {
-            if (hasViewers(e.getKey())) return false;
-            if ((now - e.getValue().lastAccessMillis()) <= SESSION_IDLE_TIMEOUT_MS) return false;
-            SESSION_VIEWERS.remove(e.getKey());
-            SESSION_OWNERS.remove(e.getKey());
-            return true;
+            WebSession s = e.getValue();
+            if (s.hasViewers()) return false;
+            return (now - s.lastAccessMillis()) > SESSION_IDLE_TIMEOUT_MS;
         });
     }
 
     private static boolean hasViewers(String sessionId) {
-        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(sessionId);
-        return viewers != null && !viewers.isEmpty();
+        WebSession session = findSession(sessionId);
+        return session != null && session.hasViewers();
     }
 
     // ==========================================
     // 閲覧者
     // ==========================================
 
+    /**
+     * セッションの閲覧者としてプレイヤーを追加する。
+     * <p>
+     * 登録されたプレイヤーには、セッションの DOM 差分や全木同期パケットが配信される。
+     *
+     * @param sessionId 対象のセッション ID
+     * @param player    追加するプレイヤー
+     */
     public static void addViewer(String sessionId, ServerPlayer player) {
         if (sessionId == null || player == null) return;
-        SESSION_VIEWERS.computeIfAbsent(sessionId, k -> new CopyOnWriteArraySet<>()).add(player);
+        WebSession session = findSession(sessionId);
+        if (session != null) {
+            session.addViewer(player);
+        }
     }
 
+    /**
+     * セッションの閲覧者リストから指定したプレイヤーを削除する。
+     * <p>
+     * 画面を閉じた際やワールド内スクリーンから離れた際など、更新パケットの配信対象からプレイヤーを除外するための差し込み口。
+     *
+     * @param sessionId 対象のセッション ID
+     * @param player    除外するプレイヤー
+     */
     public static void removeViewer(String sessionId, ServerPlayer player) {
         if (sessionId == null || player == null) return;
-        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(sessionId);
-        if (viewers != null) {
-            viewers.remove(player);
-            if (viewers.isEmpty()) SESSION_VIEWERS.remove(sessionId);
+        WebSession session = findSession(sessionId);
+        if (session != null) {
+            session.removeViewer(player);
         }
     }
 
     public static void removePlayerAll(ServerPlayer player) {
         if (player == null) return;
-        SESSION_VIEWERS.values().forEach(v -> v.remove(player));
-        SESSION_VIEWERS.entrySet().removeIf(e -> e.getValue().isEmpty());
-
-        // 本人専用に開いたセッションはログアウト・ディメンション移動で畳む（I-6）
         UUID uuid = player.getUUID();
-        SESSION_OWNERS.entrySet().stream()
-                .filter(e -> uuid.equals(e.getValue()))
-                .map(Map.Entry::getKey)
-                .toList()
-                .forEach(WebSessionManager::removeStandaloneSession);
+        // 各セッションから閲覧者としてのプレイヤーを外し、本人専用セッションは破棄する（I-6 / S11）
+        STANDALONE_SESSIONS.values().removeIf(session -> {
+            session.removeViewer(player);
+            if (uuid.equals(session.getOwner())) {
+                session.clear();
+                return true;
+            }
+            return false;
+        });
     }
 
     // ==========================================
@@ -235,9 +288,12 @@ public class WebSessionManager {
         if (player == null || !isValidSessionId(sessionId)) return false;
         if (player.hasDisconnected()) return false;
 
-        UUID owner = SESSION_OWNERS.get(sessionId);
-        if (owner != null && !owner.equals(player.getUUID())) {
-            return false;
+        WebSession session = findStandaloneSession(sessionId);
+        if (session != null) {
+            UUID owner = session.getOwner();
+            if (owner != null && !owner.equals(player.getUUID())) {
+                return false;
+            }
         }
 
         if (sessionId.startsWith("block:")) {
@@ -286,8 +342,10 @@ public class WebSessionManager {
 
     public static void broadcastDom(WebSession session) {
         if (session == null) return;
+        session.viewers().removeIf(ServerPlayer::hasDisconnected);
+        if (!session.hasViewers()) return;
         CompoundTag tag = null;
-        for (ServerPlayer player : viewersOf(session.getSessionId())) {
+        for (ServerPlayer player : session.viewers()) {
             if (tag == null) tag = packDom(session);
             ServerPacketSender.send(player, new WebSyncS2CPacket(session.getSessionId(), "dom_sync", tag));
         }
@@ -295,13 +353,17 @@ public class WebSessionManager {
 
     public static void broadcastMutations(String sessionId, java.util.List<com.nishiyu.enderframelib.network.DomMutationRecord> mutations) {
         if (mutations == null || mutations.isEmpty()) return;
+        WebSession session = findSession(sessionId);
+        if (session == null) return;
+        session.viewers().removeIf(ServerPlayer::hasDisconnected);
+        if (!session.hasViewers()) return;
         ListTag list = new ListTag();
         for (com.nishiyu.enderframelib.network.DomMutationRecord mut : mutations) {
             list.add(mut.toTag());
         }
         CompoundTag payload = new CompoundTag();
         payload.put("Mutations", list);
-        for (ServerPlayer player : viewersOf(sessionId)) {
+        for (ServerPlayer player : session.viewers()) {
             ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_mutations", payload));
         }
     }
@@ -309,22 +371,6 @@ public class WebSessionManager {
     public static void broadcastMutation(String sessionId, com.nishiyu.enderframelib.network.DomMutationRecord mutation) {
         if (mutation == null) return;
         broadcastMutations(sessionId, java.util.List.of(mutation));
-    }
-
-
-    /**
-     * 送信対象の閲覧者。切断済みのプレイヤーはここで取り除く
-     * （{@code ServerPubSubManager.publish} には元々あったガードを揃えた）。
-     */
-    private static Iterable<ServerPlayer> viewersOf(String sessionId) {
-        Set<ServerPlayer> viewers = SESSION_VIEWERS.get(sessionId);
-        if (viewers == null || viewers.isEmpty()) return Set.of();
-        viewers.removeIf(ServerPlayer::hasDisconnected);
-        if (viewers.isEmpty()) {
-            SESSION_VIEWERS.remove(sessionId);
-            return Set.of();
-        }
-        return viewers;
     }
 
     /**
@@ -341,14 +387,14 @@ public class WebSessionManager {
         WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
         if (standalone != null) {
             standalone.markAccessed();
-            addViewer(sessionId, player);
+            standalone.addViewer(player);
             ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(standalone)));
             return;
         }
 
         WebSession resolved = resolveFromProviders(player, sessionId);
         if (resolved != null) {
-            addViewer(sessionId, player);
+            resolved.addViewer(player);
             ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_sync", packDom(resolved)));
         }
     }
@@ -507,7 +553,7 @@ public class WebSessionManager {
             EnderFrameLib.LOGGER.debug("入力要素でない対象への値の書き戻しを拒否しました: {}", elementId);
             return;
         }
-        UiDocumentCompiler.Document doc = session.getDocument();
+        Document doc = session.getDocument();
         if (doc == null || doc.root == null) return;
         HtmlNode target = doc.root.getElementById(elementId);
         if (target == null) return;
@@ -552,14 +598,13 @@ public class WebSessionManager {
     // ライフサイクル
     // ==========================================
 
-    /** サーバー停止時に全ての static 状態を捨てる（I-6）。 */
+    /** サーバー停止時に全ての static 状態を捨てる（I-6 / S11）。 */
     static void clearAll() {
         // clear() ではなく discard()。停止中に空の DOM を配信しようとすると、
         // 畳まれた接続への送信例外が ServerStoppingEvent のリスナから抜けてしまう
         STANDALONE_SESSIONS.values().forEach(WebSession::discard);
         STANDALONE_SESSIONS.clear();
-        SESSION_VIEWERS.clear();
-        SESSION_OWNERS.clear();
+        PREFIX_PROVIDERS.clear();
         PROVIDERS.clear();
     }
 
@@ -568,7 +613,11 @@ public class WebSessionManager {
     }
 
     static int viewerMapSize() {
-        return SESSION_VIEWERS.size();
+        int count = 0;
+        for (WebSession s : STANDALONE_SESSIONS.values()) {
+            if (s.hasViewers()) count++;
+        }
+        return count;
     }
 
     static int providerCount() {

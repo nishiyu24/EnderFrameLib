@@ -1,21 +1,23 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore; // ★これが必須です
+import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.WebRecipeViewerBridge;
-import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
 import com.nishiyu.enderframelib.client.renderer.PaintRequest;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
-import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -32,7 +34,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.*;
 import java.util.function.Consumer;
 
-public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMenu> extends AbstractContainerScreen<T> {
+public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMenu> extends AbstractContainerScreen<T> implements EnderScreenHost {
 
     protected final String sessionId;
     public final ReactiveStateStore state;
@@ -106,12 +108,19 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         }
     }
 
+    @Override
     public String getWebSessionId() {
         return this.sessionId;
     }
 
+    @Override
     public EnderScreenDelegate getUiDelegate() {
         return this.uiSupport;
+    }
+
+    @Override
+    public Screen getWebScreen() {
+        return this;
     }
 
     protected void setHtmlResource(ResourceLocation location) {
@@ -164,22 +173,6 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         this.uiSupport.onActionPrefix(prefix, payloadHandler);
     }
 
-    public void sendServerAction(String actionName) {
-        sendServerAction(actionName, "");
-    }
-
-    public void sendServerAction(String actionName, Object value) {
-        this.uiSupport.sendServerAction(actionName, value);
-    }
-
-    public Rect2i toScreenRect(int webX, int webY, int webW, int webH) {
-        return this.uiSupport.toScreenRect(webX, webY, webW, webH);
-    }
-
-    public Rect2i getWebViewportBounds() {
-        return this.uiSupport.getViewportBounds();
-    }
-
     public List<Rect2i> getWebExclusionZones() {
         return WebRecipeViewerBridge.getExclusionZones(this);
     }
@@ -199,7 +192,8 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             setAttribute(elementId, "data-fluid", idStr);
         }
         if (!idStr.isEmpty()) {
-            HtmlNode node = ClientWebManager.findNode(sessionId, elementId);
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            HtmlNode node = session != null ? session.findNode(elementId) : null;
             if (node != null && node.attrs.containsKey("data-model")) {
                 this.state.set(node.attrs.get("data-model").trim(), idStr);
             }
@@ -210,14 +204,6 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
 
     public Object getHoveredWebIngredient(double mouseX, double mouseY) {
         return WebRecipeViewerBridge.resolveIngredientAt(sessionId, toWebX(mouseX), toWebY(mouseY));
-    }
-
-    public Canvas2DContext getCanvas(String canvasId) {
-        return Canvas2DContext.getOrCreate(this.sessionId, canvasId);
-    }
-
-    public WebSceneContext getScene(String sceneId) {
-        return WebSceneContext.getOrCreate(this.sessionId, sceneId);
     }
 
     protected void onInputChanged(String elementId, String newText) {}
@@ -242,7 +228,8 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
 
     protected void syncVanillaSlotsToDom() {
         if (this.menu == null || this.menu.slots.isEmpty()) return;
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot == null) return;
 
         Map<Integer, HtmlNode> slotNodes = new HashMap<>();
@@ -250,7 +237,7 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         if (slotNodes.isEmpty()) return;
 
         Map<String, DisplayItem> nodeElements = new HashMap<>();
-        for (DisplayItem el : ClientWebManager.getElements(sessionId)) {
+        for (DisplayItem el : session.elements()) {
             if (el.type() == ElementType.NODE) {
                 nodeElements.put(el.id(), el);
             }
@@ -347,7 +334,9 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
 
         hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
 
-        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
+        List<DisplayItem> elements = ClientWebManager.getSession(sessionId) != null
+                ? ClientWebManager.getSession(sessionId).elements()
+                : java.util.Collections.emptyList();
         if (elements != null && !elements.isEmpty()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
@@ -477,24 +466,11 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         return super.charTyped(codePoint, modifiers);
     }
 
-    public void setTextareaValue(String id, String value) { this.uiSupport.setTextareaValue(id, value); }
-    public String getTextareaValue(String id) { return this.uiSupport.getTextareaValue(id); }
-    public void focusWebInput(String inputElementId, String currentText) { this.uiSupport.focusWebInput(this, inputElementId, currentText); }
-    public void unfocusWebInput() { this.uiSupport.unfocusWebInput(); }
-    public void setElementText(String id, String text) { this.uiSupport.setElementText(id, text); }
-    public void setInputValue(String id, String value) { this.uiSupport.setInputValue(id, value); }
-    public String getInputValue(String id) { return this.uiSupport.getInputValue(id); }
-    public void setInnerHtml(String id, String html) { ClientWebManager.updateNodeInnerHtmlLocally(sessionId, id, html); }
-    public void setStyle(String id, String prop, String val) { ClientWebManager.updateNodeStyleLocally(sessionId, id, prop, val); }
-    public void setAttribute(String id, String attr, String val) { ClientWebManager.updateNodeAttributeLocally(sessionId, id, attr, val, false); }
-    public void addClass(String id, String cls) { this.uiSupport.addClass(id, cls); }
-    public void removeClass(String id, String cls) { this.uiSupport.removeClass(id, cls); }
-    public void toggleClass(String id, String cls, boolean enable) { this.uiSupport.toggleClass(id, cls, enable); }
-
     @Override
     public void onClose() {
         this.uiSupport.onClose();
-        if (isLocalHtmlSession && !ClientWebManager.isServerManagedSession(this.sessionId)) {
+        SessionContext session = ClientWebManager.getSession(this.sessionId);
+        if (isLocalHtmlSession && (session == null || !session.isServerManaged())) {
             ClientWebManager.clearSession(this.sessionId);
         }
         super.onClose();

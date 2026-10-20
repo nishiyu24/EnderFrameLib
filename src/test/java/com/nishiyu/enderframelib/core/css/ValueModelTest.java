@@ -1,10 +1,12 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssParser.CssTokenizer;
 import com.nishiyu.enderframelib.core.css.CssParser.MediaEnvironment;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -15,6 +17,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * W1 の値モデル（指定値 → 算出値、CSS 全域キーワード、var()、アットルール）を固定する。

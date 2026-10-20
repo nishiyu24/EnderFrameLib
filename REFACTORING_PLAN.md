@@ -23,7 +23,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 |---|---|---|
 | R0 | 測定の拡張（計算値・DOM の振る舞い・ディスプレイリスト・性能） | 完了 |
 | R1 | ライブ DOM | 完了 |
-| R2 | イベントとフォーム | 実装済み（残: `runClient` / `WebScreenGameTest` での実機観測・GUI の click 合成・IME composition） |
+| R2 | イベントとフォーム | 実装済み（残: `runClient` / `WebScreenGameTest` での実機観測・IME composition） |
 | R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 実装済み（残: `runClient` / `WebScreenGameTest` での実機観測） |
 | R4 | CSS の構文・カスケード・値の現代化 | 未着手 |
 | R5 | インクリメンタル・パイプラインと CSSOM | 未着手 |
@@ -76,16 +76,16 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
 - `uievents/` の WPT 4 件（`mouse/attributes`・`click-order`・`mouseover-out`・`click-cancel`）を移植（`WptUiEventsBehaviorTest`）。
   `UiEventPipelineTest` が実際のヒットテストを通して順序とアクション名の呼び出し回数を固定。テスト 453 件・失敗 0。
 **R2 — 残**:
-- GUI 画面（`EnderScreenDelegate`）の `click` は押下時に配送する（画面の `mouseClicked` の戻り値＝入力の消費が `click` のアクション有無に依存するため）。
-  `pointerup`/`mouseup` は解放で届くので、GUI では `click` が `mouseup` より先になる。
-- IME の `composition*` は Minecraft の `EditBox` が preedit を渡さないため配送できない（型と `UiEvents` 以外の経路は無い）。
+- GUI とワールド内の入力は `SessionInput` の 1 本に統合し、`click` はどちらも解放時に `pointerup`/`mouseup` の後で配送する
+  （`SessionInputPipelineTest` が GUI とワールド内の DOM イベント順を比較。T3）。
+- IME の `composition*` は Minecraft の `EditBox` が preedit を渡さないため配送できない（型と `CoreEvent` 以外の経路は無い）。
 - `runClient` での観測と `gametest/WebScreenGameTest` の確認は未実施。
 
 **R3 — 達成**: クライアント駆動 API（`openClientHtmlScreen` / `setClientCustomHud` / `getClientDocument`）、
 `requestAnimationFrame` / `setTimeout` / `setInterval`、`DomMutationRecord` と `WebSession.patch*`、README の所有権の節。
 **R3 — 残項目の解消（2026-10-19）**:
 - 旧差分適用エンジンと `SessionContext.virtualDom/templateDom`、`ClientWebManager.getVirtualRoot/getTemplateRoot` を削除。そのテストは `DomMutationRecordTest` に置き換えた。
-  旧経路が黙って落としていた「サーバーからの全木の再同期」は `ClientWebManager.adoptServerTree` が受ける（文書のハンドルは変えず、中身を差し替える）。
+  旧経路が黙って落としていた「サーバーからの全木の再同期」は `SessionContext.adoptServerTree` が受ける（文書のハンドルは変えず、中身を差し替える）。
   あわせて、サーバー駆動の文書がクライアントで `HtmlDocument` にならず（`Document` ハンドルも id 索引もイベントの送り先も無かった）、`HtmlNodeSerializer.deserialize` が最上位の `root` を `HtmlDocument` に戻すよう直した。
 - 所有権: `core/dom/Ownership`（`data-owner`、継承、文書の既定）。サーバー同期の文書は既定でサーバー所有、クライアントだけの文書は既定でクライアント所有。
   クライアント所有の部分木へのサーバー変異は適用しない。再同期はクライアント所有の島を同じ id の位置へ移して残す。

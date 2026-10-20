@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.PubSubUpdateS2CPacket;
+import com.nishiyu.enderframelib.network.PubSubUpdateS2CPacket;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
 

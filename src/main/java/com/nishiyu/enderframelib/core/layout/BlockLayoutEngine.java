@@ -1,21 +1,29 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
+import com.nishiyu.enderframelib.core.layout.model.*;
+
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.InlineFragment;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * ブロックとインラインの整形（float と BFC を含む）。
@@ -92,7 +100,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     private static void addInlineWidth(LayoutBox b, InlineWidth line, LayoutContext ctx) {
         if (b.isAbsolute || b.display.isNone() || b.isOutsideMarker) return;
         if (b.node.nodeType == NodeType.TEXT) {
-            TextShaper.TextStyle textStyle = ctx.textStyleFor(b.style);
+            TextStyle textStyle = ctx.textStyleFor(b.style);
             if (b.displayText == null || !textStyle.whiteSpace().preservesNewlines() || b.displayText.indexOf('\n') < 0) {
                 line.add(b.w + b.mL + b.mR);
                 return;
@@ -170,7 +178,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             state = new FlowBuilder(box, ConstraintSpace.block(innerW, 0), ctx).build();
             box.engineState = state;
         }
-        CssKeywords.TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, CssKeywords.TextAlign.class);
+        TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class);
 
         for (Object item : state.items) {
             switch (item) {
@@ -759,7 +767,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.lineTop = startY;
             this.indent = indent;
             // 行ボックスの strut: 内容の無い行でも、ブロックの書体と line-height の高さを持つ（CSS 2.2 §10.8.1）
-            TextShaper.TextStyle strut = ctx.textStyleFor(flow.box.style);
+            TextStyle strut = ctx.textStyleFor(flow.box.style);
             this.strutHeight = strut.lineHeightPx();
             this.strutBaseline = baselineWithin(strut, ctx.faceFor(flow.box.style));
         }
@@ -911,7 +919,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         private void addText(FlatRun run, float closing) {
-            TextShaper.TextStyle textStyle = ctx.textStyleFor(run.box.style);
+            TextStyle textStyle = ctx.textStyleFor(run.box.style);
             FontFace face = ctx.faceFor(run.box.style);
             FontStyle font = textStyle.font();
             float runH = textStyle.lineHeightPx();
@@ -964,7 +972,7 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         private void addBreak(FlatRun run) {
             // <br>: 内容が無い行でもフォント 1 行分の高さを確保する
-            TextShaper.TextStyle brStyle = ctx.textStyleFor(run.box.style);
+            TextStyle brStyle = ctx.textStyleFor(run.box.style);
             ensureLine();
             markContent();
             newLine(brStyle.lineHeightPx(), baselineWithin(brStyle, ctx.faceFor(run.box.style)), false);
@@ -980,7 +988,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // 折り返せるかは不可分なインラインを含む側（親）の white-space で決まる。
             // 以前は見ておらず、nowrap の行でもインラインブロックが折り返していた
             ComputedStyle around = run.inlineParents.isEmpty() ? flow.box.style : run.inlineParents.getLast().style;
-            if (TextShaper.WhiteSpace.of(around.get(CssProperty.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
+            if (WhiteSpace.of(around.get(CssProperty.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
                 newLine(0, 0, true);
                 ensureLine();
             }
@@ -1111,15 +1119,15 @@ public class BlockLayoutEngine extends LayoutEngine {
      * CSS はベースラインを揃える。また不可分なインラインの左マージンを断片の位置と
      * {@link LayoutBox#layout} の両方で足していて、二重にずれていた。
      */
-    private void placeLine(InlineLine line, float startX, float drawY, float maxW, CssKeywords.TextAlign textAlign,
+    private void placeLine(InlineLine line, float startX, float drawY, float maxW, TextAlign textAlign,
                            LayoutContext ctx) {
         List<LineItem> items = line.items();
         if (items.isEmpty() && line.spans().isEmpty()) return;
 
         // 揃えの幅は行の左端から内容の終わりまで（text-indent と開始端の装飾を含み、行末の空白を除く）
         float offsetX = startX;
-        if (textAlign == CssKeywords.TextAlign.CENTER) offsetX += Math.max(0, (maxW - line.used()) / 2);
-        else if (textAlign == CssKeywords.TextAlign.RIGHT || textAlign == CssKeywords.TextAlign.END) {
+        if (textAlign == TextAlign.CENTER) offsetX += Math.max(0, (maxW - line.used()) / 2);
+        else if (textAlign == TextAlign.RIGHT || textAlign == TextAlign.END) {
             offsetX += Math.max(0, maxW - line.used());
         }
 
@@ -1207,7 +1215,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 断片の上端からベースラインまでの距離。整形器と同じ half-leading の分け方を使う。 */
-    private static float baselineWithin(TextShaper.TextStyle textStyle, FontFace face) {
+    private static float baselineWithin(TextStyle textStyle, FontFace face) {
         FontStyle font = textStyle.font();
         float ascent = face.ascent(font);
         float descent = face.descent(font);

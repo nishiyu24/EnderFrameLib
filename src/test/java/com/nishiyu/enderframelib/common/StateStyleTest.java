@@ -6,17 +6,17 @@ import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.client.renderer.CssAnimator;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec.EasingFunction;
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
+import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
+import com.nishiyu.enderframelib.core.css.model.ElementState;
 import com.nishiyu.enderframelib.core.css.StyleSheet.Specificity;
 import com.nishiyu.enderframelib.core.css.CssParser;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -29,6 +29,20 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * F3（状態をパイプラインの入力にする）のテスト群。
@@ -52,7 +66,7 @@ public class StateStyleTest {
     @Test
     public void testHoverDeclarationsResolveThroughInteractionState() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   button { background-color: #111111; border: 1px solid #000000; }
                   button:hover { background-color: #222222; border-color: #333333; }
@@ -68,7 +82,7 @@ public class StateStyleTest {
         assertTrue(button.hasInteractiveRules, "対話疑似クラスを持つ要素は hasInteractiveRules が true");
 
         state.setHoveredNode(doc.root.getElementById("b"));
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "色のみの変化はレイアウト再計算を要求しない");
         assertEquals("#222222", button.style.get(CssProperty.BACKGROUND_COLOR));
@@ -80,7 +94,7 @@ public class StateStyleTest {
         // #btn (ID=1) は .primary:hover (class+pseudo=2) より詳細度が高いため、
         // ホバー時でも #btn の指定が勝つことを確認する（旧4バケット putAll 方式では .primary:hover が不正に勝っていた）
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #btn { background-color: #112233; }
                   .primary:hover { background-color: #998877; }
@@ -112,7 +126,7 @@ public class StateStyleTest {
     @Test
     public void testFocusVisibleAndFocusWithinSeparation() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #wrap { background-color: #101010; }
                   #wrap:focus-within { background-color: #204060; }
@@ -141,7 +155,7 @@ public class StateStyleTest {
     @Test
     public void testFormAndDisclosureRuntimeStates() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #cb { opacity: 0.4; }
                   #cb:checked { opacity: 1.0; }
@@ -186,7 +200,7 @@ public class StateStyleTest {
     @Test
     public void testHoverPaddingTriggersLayoutChange() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #box { width: 100px; padding: 4px; }
                   #box:hover { padding: 20px; }
@@ -202,7 +216,7 @@ public class StateStyleTest {
         float initialHeight = box.h;
 
         state.setHoveredNode(doc.root.getElementById("box"));
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertTrue(res.layoutRequired(), "padding の変化はレイアウト再計算を要求する");
 
@@ -215,7 +229,7 @@ public class StateStyleTest {
     @Test
     public void testParentHoverColorPropagatesToChildInheritedStyle() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #parent { color: #111111; }
                   #parent:hover { color: #ff0000; }
@@ -233,7 +247,7 @@ public class StateStyleTest {
         assertEquals("#111111", child.style.get(CssProperty.COLOR), "子は親の color を初期継承する");
 
         state.setHoveredNode(doc.root.getElementById("parent"));
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "色のみの変更なので再レイアウトは不要");
 
@@ -245,7 +259,7 @@ public class StateStyleTest {
     public void testAuthorNormalDeclarationBeatsUserAgentHoverDeclaration() {
         // CSS のカスケード仕様に従い、Author の通常宣言は UA の疑似クラス付き通常宣言（button:hover 等）に優先する
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #custom-btn { background-color: #123456; }
                   #styled-hover:hover { background-color: #abcdef; }
@@ -306,7 +320,7 @@ public class StateStyleTest {
         ClientWebManager.clearSession(sessionId);
 
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #card {
                     width: 80px;
@@ -359,7 +373,7 @@ public class StateStyleTest {
         ClientWebManager.clearSession(sessionId);
 
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   @keyframes slideX {
                     0% { transform: translateX(0px); }
@@ -414,7 +428,7 @@ public class StateStyleTest {
         ClientWebManager.clearSession(sessionId);
 
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   @keyframes pulseBg {
                     from { background-color: #000000; }
@@ -459,7 +473,7 @@ public class StateStyleTest {
         ClientWebManager.clearSession(sessionId);
 
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   @keyframes shiftX {
                     0% { transform: translateX(50px); }
@@ -523,7 +537,7 @@ public class StateStyleTest {
     @Test
     public void testCheckedRestylesAdjacentSibling() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   label { color: #111111; }
                   input:checked + label { color: #ff0000; }
@@ -536,7 +550,7 @@ public class StateStyleTest {
 
         // 汚れるのは input だけ。以前は兄弟の label に再スタイルが届かなかった
         state.setChecked(doc.root.getElementById("cb"), true);
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "色だけの変化");
         assertEquals("#ff0000", findById(root, "near").style.get(CssProperty.COLOR));
@@ -550,7 +564,7 @@ public class StateStyleTest {
     @Test
     public void testStateRestylesGeneralSiblingsAndTheirDescendants() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   .a:hover ~ .b { background-color: #00ff00; }
                   input:disabled ~ .b span { color: #0000ff; }
@@ -572,7 +586,7 @@ public class StateStyleTest {
     @Test
     public void testHoverBeforeAppearsAndDisappears() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>.btn:hover::before { content: "→"; color: #123456; }</style>
                 <div class="btn" id="b">go</div>
                 """, "", 320, 200);
@@ -581,7 +595,7 @@ public class StateStyleTest {
         assertNull(findById(root, "b_before"));
 
         state.setHoveredNode(doc.root.getElementById("b"));
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.layoutRequired(), "擬似要素が現れるとボックスツリーが変わる");
         LayoutBox b = findById(root, "b");
         assertEquals("b_before", b.elementChildren.getFirst().node.getId(), "::before は先頭の子");
@@ -602,7 +616,7 @@ public class StateStyleTest {
     @Test
     public void testCheckedAfterOnSiblingRestylesPaintOnly() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   label::after { content: "!"; color: #111111; }
                   input:checked + label::after { color: #222222; }
@@ -615,7 +629,7 @@ public class StateStyleTest {
         assertEquals("#111111", after.style.get(CssProperty.COLOR));
 
         state.setChecked(doc.root.getElementById("cb"), true);
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "内容が変わらず色だけなら再描画で済む");
         assertSame(after, findById(root, "l_after"), "同じ箱のスタイルを書き換える");
@@ -626,7 +640,7 @@ public class StateStyleTest {
     @Test
     public void testContentChangeOnStateRequiresLayout() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   #t::after { content: "off"; }
                   #t:focus::after { content: "on"; }
@@ -638,7 +652,7 @@ public class StateStyleTest {
         assertEquals("off", findById(root, "t_after").elementChildren.getFirst().displayText);
 
         state.setFocusedNode(doc.root.getElementById("t"), false);
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.layoutRequired(), "content の変化は文字を評価し直すので再レイアウト");
         root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
         assertEquals("on", findById(root, "t_after").elementChildren.getFirst().displayText);
@@ -647,13 +661,13 @@ public class StateStyleTest {
     @Test
     public void testHoveringGeneratedContentHoversItsOwner() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("<div id=\"p\"><div id=\"b\">x</div></div>", "", 320, 200);
+        Document doc = parser.parseDocument("<div id=\"p\"><div id=\"b\">x</div></div>", "", 320, 200);
         String sessionId = "hover-generated-content";
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         session.setDocument(doc);
         try {
             // 擬似要素とその文字は DOM に無いので、ヒットテストが返す id から持ち主へ戻して祖先を辿る
-            ClientWebManager.setHoveredElement(sessionId, "b_before_txt");
+            session.setHoveredElement("b_before_txt");
             assertTrue(session.interactionState().stateOf(doc.root.getElementById("b")).hover());
             assertTrue(session.interactionState().stateOf(doc.root.getElementById("p")).hover());
         } finally {
@@ -663,7 +677,7 @@ public class StateStyleTest {
 
     @Test
     public void testHasInteractiveRulesHonorsLeftCompounds() {
-        UiDocumentCompiler.Document doc = new UiDocumentCompiler().parseDocument("""
+        Document doc = new UiDocumentCompiler().parseDocument("""
                 <div class="menu"><div class="item" id="in"></div></div>
                 <div class="item" id="out"></div>
                 <div class="parent" id="p"><div class="child" id="c"></div></div>

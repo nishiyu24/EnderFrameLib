@@ -1,18 +1,20 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.client.renderer.Gradients;
-import com.nishiyu.enderframelib.client.renderer.Gradients.ConicGradient;
-import com.nishiyu.enderframelib.client.renderer.Gradients.LinearGradient;
-import com.nishiyu.enderframelib.client.renderer.Gradients.RadialGradient;
+import com.nishiyu.enderframelib.core.css.model.*;
+
+import com.nishiyu.enderframelib.core.paint.Gradients;
+import com.nishiyu.enderframelib.core.paint.Gradients.ConicGradient;
+import com.nishiyu.enderframelib.core.paint.Gradients.LinearGradient;
+import com.nishiyu.enderframelib.core.paint.Gradients.RadialGradient;
 import com.nishiyu.enderframelib.core.css.LengthResolver.Dimension;
 import com.nishiyu.enderframelib.core.css.LengthResolver.Metrics;
 import com.nishiyu.enderframelib.core.css.LengthResolver.Quantity;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
-import com.nishiyu.enderframelib.core.css.StyleSheet.KeyframeBlock;
-import com.nishiyu.enderframelib.core.css.StyleSheet.Keyframes;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
+import com.nishiyu.enderframelib.core.css.model.Keyframes;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,6 +25,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R4 のセレクタ（文書・入力の状態で決まる疑似クラス、{@code :nth-child(An+B of S)}）と値

@@ -3,13 +3,14 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.Ownership;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.Ownership;
 import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
+import com.nishiyu.enderframelib.core.event.CoreEvent;
 import com.nishiyu.enderframelib.network.DomMutationRecord;
-import com.nishiyu.enderframelib.network.DomMutationRecord.HtmlNodeSerializer;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebActionC2SPacket;
+import com.nishiyu.enderframelib.core.event.CoreUIEvent;
+import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import org.junit.jupiter.api.AfterEach;
@@ -21,6 +22,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R3: 所有権（サーバー所有 / クライアント所有）と、イベントのサーバー転送の宣言を、
@@ -71,15 +85,16 @@ public class ServerOwnershipAndForwardingTest {
     }
 
     private void syncServerDocument(String bodyHtml) {
-        ClientWebManager.handleSyncPacket(SESSION, syncPacketFor("<html><body>" + bodyHtml + "</body></html>"));
+        ClientWebManager.getOrCreateSession(SESSION).applySync(syncPacketFor("<html><body>" + bodyHtml + "</body></html>"));
     }
 
     private void loadClientDocument(String bodyHtml) {
-        ClientWebManager.loadLocalHtml(SESSION, "<html><body>" + bodyHtml + "</body></html>", WIDTH, HEIGHT);
+        ClientWebManager.getOrCreateSession(SESSION).loadLocalHtml("<html><body>" + bodyHtml + "</body></html>", WIDTH, HEIGHT);
     }
 
     private HtmlNode node(String id) {
-        HtmlNode root = ClientWebManager.getRootNode(SESSION);
+        SessionContext session = ClientWebManager.getSession(SESSION);
+        HtmlNode root = session != null ? session.rootNode() : null;
         assertNotNull(root, "セッションに文書があること");
         HtmlNode found = root.getNodeById(id);
         assertNotNull(found, "要素 #" + id + " が文書にあること");
@@ -100,7 +115,7 @@ public class ServerOwnershipAndForwardingTest {
 
         ClientWebManager.clearSession(SESSION);
         syncServerDocument("<p id=\"theirs\">x</p>");
-        assertTrue(ClientWebManager.isServerManagedSession(SESSION));
+        assertTrue(ClientWebManager.getOrCreateSession(SESSION).isServerManaged());
         assertEquals(Ownership.SERVER, node("theirs").ownership());
     }
 
@@ -112,7 +127,7 @@ public class ServerOwnershipAndForwardingTest {
         node("score").setTextContent("client says 99");
         assertEquals("client says 99", node("score").getTextContent(), "書き込み自体はできる");
 
-        ClientWebManager.handlePatchPacket(SESSION, mutationPacket(DomMutationRecord.text("score", "7")));
+        ClientWebManager.getOrCreateSession(SESSION).applyMutations(mutationPacket(DomMutationRecord.text("score", "7")));
 
         assertEquals("7", node("score").getTextContent(), "サーバーの変異が正になる");
     }
@@ -124,7 +139,7 @@ public class ServerOwnershipAndForwardingTest {
                 + "<div id=\"overlay\" data-owner=\"client\"><span id=\"fps\">60</span></div>");
         node("fps").setTextContent("144");
 
-        ClientWebManager.handlePatchPacket(SESSION, mutationPacket(
+        ClientWebManager.getOrCreateSession(SESSION).applyMutations(mutationPacket(
                 DomMutationRecord.text("fps", "from server"),
                 DomMutationRecord.attribute("overlay", "title", "from server", false),
                 DomMutationRecord.text("score", "1")));
@@ -139,13 +154,14 @@ public class ServerOwnershipAndForwardingTest {
     void resyncRebuildsServerTreeAndKeepsClientOwnedIslands() {
         syncServerDocument("<p id=\"title\">old</p>"
                 + "<div id=\"slot\" data-owner=\"client\"><span id=\"note\">draft</span></div>");
-        HtmlNode documentHandle = ClientWebManager.getRootNode(SESSION);
+        SessionContext session = ClientWebManager.getOrCreateSession(SESSION);
+        HtmlNode documentHandle = session.rootNode();
         node("note").setTextContent("my edited note");
 
         syncServerDocument("<p id=\"title\">new</p><section id=\"wrapper\">"
                 + "<div id=\"slot\" data-owner=\"client\"><span id=\"note\">server draft</span></div></section>");
 
-        assertSame(documentHandle, ClientWebManager.getRootNode(SESSION), "文書のハンドルは変わらない");
+        assertSame(documentHandle, ClientWebManager.getOrCreateSession(SESSION).rootNode(), "文書のハンドルは変わらない");
         assertEquals("new", node("title").getTextContent());
         assertEquals("my edited note", node("note").getTextContent(), "島の中身はクライアントの書き込みのまま");
         assertEquals("wrapper", node("slot").parent.getId(), "島はサーバーが置いた位置へ移る");
@@ -160,7 +176,7 @@ public class ServerOwnershipAndForwardingTest {
         loadClientDocument("<button id=\"buy\" data-forward=\"click:target\" data-forward-action=\"buy:sword\">"
                 + "<span id=\"label\">Buy</span></button>");
 
-        node("label").dispatchEvent(DomEvent.click(3, 4, 0));
+        node("label").dispatchEvent(CoreEvent.click(3, 4, 0));
 
         assertEquals(1, sentPackets.size());
         WebActionC2SPacket packet = sentPackets.get(0);
@@ -178,7 +194,7 @@ public class ServerOwnershipAndForwardingTest {
         loadClientDocument("<button id=\"buy\" data-forward=\"click\" data-forward-action=\"buy\">Buy</button>");
         node("buy").addEventListener("click", Event::preventDefault);
 
-        node("buy").dispatchEvent(DomEvent.click(1, 1, 0));
+        node("buy").dispatchEvent(CoreEvent.click(1, 1, 0));
 
         assertTrue(sentPackets.isEmpty());
     }
@@ -188,7 +204,7 @@ public class ServerOwnershipAndForwardingTest {
     void undeclaredEventTypesAreNotForwarded() {
         loadClientDocument("<button id=\"buy\" data-forward=\"dblclick\" data-forward-action=\"buy\">Buy</button>");
 
-        node("buy").dispatchEvent(DomEvent.click(1, 1, 0));
+        node("buy").dispatchEvent(CoreEvent.click(1, 1, 0));
 
         assertTrue(sentPackets.isEmpty());
     }
@@ -200,9 +216,9 @@ public class ServerOwnershipAndForwardingTest {
                 + "<div data-owner=\"client\"><input id=\"search\" type=\"text\"></div>");
 
         node("name").attrs.put("value", "Alex");
-        node("name").dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
+        node("name").dispatchEvent(new CoreUIEvent("input", true, false, 0));
         node("search").attrs.put("value", "diamond");
-        node("search").dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
+        node("search").dispatchEvent(new CoreUIEvent("input", true, false, 0));
 
         assertEquals(1, sentPackets.size(), "クライアント所有の入力は送らない");
         WebActionC2SPacket packet = sentPackets.get(0);
@@ -217,7 +233,7 @@ public class ServerOwnershipAndForwardingTest {
     void serverPrefixedInlineActionIsSugarForDeclaration() {
         loadClientDocument("<button id=\"go\" onclick=\"server:teleport:spawn\">Go</button>");
 
-        node("go").dispatchEvent(DomEvent.click(1, 1, 0));
+        node("go").dispatchEvent(CoreEvent.click(1, 1, 0));
 
         assertEquals(1, sentPackets.size());
         assertEquals("server:teleport:spawn", field(sentPackets.get(0), "ActionName"));
@@ -233,7 +249,7 @@ public class ServerOwnershipAndForwardingTest {
         });
         loadClientDocument("<button id=\"go\" onclick=\"server:teleport\">Go</button>");
 
-        node("go").dispatchEvent(DomEvent.click(1, 1, 0));
+        node("go").dispatchEvent(CoreEvent.click(1, 1, 0));
 
         assertEquals(List.of("server:teleport"), localActions);
         assertTrue(sentPackets.isEmpty());
@@ -244,7 +260,7 @@ public class ServerOwnershipAndForwardingTest {
     void unhandledLocalActionsStayOnTheClient() {
         loadClientDocument("<button id=\"b\" onclick=\"open_inventory\">Go</button>");
 
-        node("b").dispatchEvent(DomEvent.click(1, 1, 0));
+        node("b").dispatchEvent(CoreEvent.click(1, 1, 0));
 
         assertTrue(sentPackets.isEmpty());
     }
@@ -257,7 +273,7 @@ public class ServerOwnershipAndForwardingTest {
         loadClientDocument("<div id=\"hud\"><span id=\"fps\">0</span><div id=\"bar\" style=\"width:10px;height:4px\"></div></div>");
         SessionContext session = ClientWebManager.getOrCreateSession(SESSION);
         session.setServerManaged(false);
-        Document document = ClientWebManager.getDomDocument(SESSION);
+        Document document = session.domDocument();
         assertNotNull(document);
 
         int[] frame = {0};
@@ -267,7 +283,7 @@ public class ServerOwnershipAndForwardingTest {
             document.getElementById("fps").setTextContent(String.valueOf(frame[0]));
             document.getElementById("bar").setAttribute("style", "width:" + (10 + frame[0]) + "px;height:4px");
             document.getElementById("hud").setAttribute("data-frame", String.valueOf(frame[0]));
-            ClientWebManager.requestRender(SESSION);
+            session.requestRender();
             ClientScreenInteractionManager.ensureSynced(SESSION);
             nextFrame[0].run();
         });

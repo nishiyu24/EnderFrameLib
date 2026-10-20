@@ -3,17 +3,31 @@ package com.nishiyu.enderframelib.client;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 入力経路のテスト用の足場。文書を解析・レイアウト・描画してセッションに載せ、
@@ -36,12 +50,12 @@ public final class UiEventFixture implements AutoCloseable {
                 log.add("action:" + eventName + "=" + actionName + "@" + elementId + "[" + value + "]");
                 return true;
             };
-    private UiDocumentCompiler.Document document;
+    private Document document;
     private List<DisplayItem> elements = List.of();
 
     public UiEventFixture(String sessionId) {
         this.sessionId = sessionId;
-        ClientScreenInteractionManager.setClientEventCallback(actionRecorder);
+        attachActionRecorder();
         // 効果音は Minecraft のサウンドマネージャを要るので、ヘッドレスのテストでは鳴らさない。
         ClientScreenInteractionManager.setEnableDefaultUiSounds(false);
     }
@@ -54,7 +68,12 @@ public final class UiEventFixture implements AutoCloseable {
         return log;
     }
 
-    public UiDocumentCompiler.Document document() {
+    /** 別のホスト（GUI など）がコールバックを差し替えた後に、この足場の記録役を戻す。 */
+    public void attachActionRecorder() {
+        ClientScreenInteractionManager.setClientEventCallback(actionRecorder);
+    }
+
+    public Document document() {
         return document;
     }
 
@@ -63,7 +82,7 @@ public final class UiEventFixture implements AutoCloseable {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         document = parser.parseDocument(html, "", WIDTH, HEIGHT);
         var rootBox = parser.layoutDocument(document, WIDTH, HEIGHT, Map.of(), new ScrollState(),
-                FontFace.FontResolver.FALLBACK, new InteractionState());
+                FontResolver.FALLBACK, new InteractionState());
         elements = new DisplayListBuilder(WIDTH, HEIGHT, document.sheet.keyframes, new ScrollState()).render(rootBox);
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         session.setDocument(document);

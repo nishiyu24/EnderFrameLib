@@ -1,8 +1,9 @@
 package com.nishiyu.enderframelib.core.event;
 
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.api.event.UIEvents;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -11,6 +12,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 public class EventDispatcherTest {
 
@@ -22,7 +37,7 @@ public class EventDispatcherTest {
         HtmlNode btn = container.children.get(0);
 
         List<String> actions = new ArrayList<>();
-        DomEvent clickEvent = DomEvent.click(10, 10, 0);
+        UIEvents.Mouse clickEvent = CoreEvent.click(10, 10, 0);
 
         EventDispatcher.dispatchEvent(btn, clickEvent, (node, action) -> {
             actions.add(node.getId() + ":" + action);
@@ -39,7 +54,7 @@ public class EventDispatcherTest {
         HtmlNode child = parent.children.get(0);
 
         List<String> actions = new ArrayList<>();
-        DomEvent clickEvent = DomEvent.click(10, 10, 0);
+        UIEvents.Mouse clickEvent = CoreEvent.click(10, 10, 0);
 
         EventDispatcher.dispatchEvent(child, clickEvent, (node, action) -> {
             actions.add(node.getId() + ":" + action);
@@ -60,11 +75,11 @@ public class EventDispatcherTest {
 
         assertFalse(details.attrs.containsKey("open"), "初期状態は閉じている");
 
-        DomEvent click1 = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click1 = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(summary, click1, null, ev -> StandardDefaultActions.execute(ev, null));
         assertTrue(details.attrs.containsKey("open"), "1 回目のクリックで開く");
 
-        DomEvent click2 = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click2 = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(summary, click2, null, ev -> StandardDefaultActions.execute(ev, null));
         assertFalse(details.attrs.containsKey("open"), "2 回目のクリックで閉じる");
     }
@@ -75,7 +90,7 @@ public class EventDispatcherTest {
         HtmlNode details = root.children.get(0);
         HtmlNode summary = details.children.get(0);
 
-        DomEvent click = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(summary, click, (node, act) -> {
             click.preventDefault();
         }, ev -> StandardDefaultActions.execute(ev, null));
@@ -91,11 +106,11 @@ public class EventDispatcherTest {
 
         assertFalse(cb.attrs.containsKey("checked"));
 
-        DomEvent click1 = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click1 = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(cb, click1, null, ev -> StandardDefaultActions.execute(ev, null));
         assertTrue(cb.attrs.containsKey("checked"));
 
-        DomEvent click2 = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click2 = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(cb, click2, null, ev -> StandardDefaultActions.execute(ev, null));
         assertFalse(cb.attrs.containsKey("checked"));
     }
@@ -113,7 +128,7 @@ public class EventDispatcherTest {
         assertTrue(r1.attrs.containsKey("checked"));
         assertFalse(r2.attrs.containsKey("checked"));
 
-        DomEvent clickR2 = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse clickR2 = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(r2, clickR2, null, ev -> StandardDefaultActions.execute(ev, null));
 
         assertFalse(r1.attrs.containsKey("checked"), "r1 は解除される");
@@ -134,7 +149,7 @@ public class EventDispatcherTest {
             @Override public void executeFormAction(HtmlNode form, String eventType) {}
         };
 
-        DomEvent click = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(label, click, null, ev -> StandardDefaultActions.execute(ev, ctx));
 
         assertSame(chk, forwardedNode.get(), "label のクリックが対象の input へ転送される");
@@ -158,7 +173,7 @@ public class EventDispatcherTest {
             }
         };
 
-        DomEvent click = DomEvent.click(5, 5, 0);
+        UIEvents.Mouse click = CoreEvent.click(5, 5, 0);
         EventDispatcher.dispatchEvent(btn, click, null, ev -> StandardDefaultActions.execute(ev, ctx));
 
         assertTrue(formSubmitted.get(), "フォームの onsubmit が実行される");

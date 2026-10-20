@@ -3,8 +3,8 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -19,6 +19,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 忠実度コーパスをエンジンに通して、ブラウザ側と同じ形式のジオメトリを出す。
@@ -66,7 +80,7 @@ final class FidelityDumper {
         // ケースは body の中身として書かれている。ブラウザ側（fidelity-dump.html）と同じく、
         // パーサが html / head / body を暗黙に補う（W7。W6 まではここで包んでいた）
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
+        Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
 

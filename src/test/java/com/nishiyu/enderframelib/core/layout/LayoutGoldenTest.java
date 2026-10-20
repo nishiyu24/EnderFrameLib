@@ -1,14 +1,14 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -16,6 +16,16 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 public class LayoutGoldenTest {
 
@@ -276,7 +286,7 @@ public class LayoutGoldenTest {
 
     @Test
     public void testTextWrapsWithinAvailableWidth() {
-        HtmlNode text = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("hello world hello world");
+        HtmlNode text = new com.nishiyu.enderframelib.core.dom.node.HtmlText("hello world hello world");
         LayoutBox box = new LayoutBox(text, style("font-size", "16px"));
 
         LayoutContext ctx = newContext();

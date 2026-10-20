@@ -1,8 +1,12 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
 import com.nishiyu.enderframelib.api.dom.DOMException;
 import com.nishiyu.enderframelib.api.dom.FormData;
 import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.core.event.CoreUIEvent;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -167,8 +171,8 @@ public final class FormController {
                     control.removeAttribute("value");
                 }
             }
-            control.dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
-            control.dispatchEvent(new CoreEvent.CoreUIEvent("change", true, false, 0));
+            control.dispatchEvent(new CoreUIEvent("input", true, false, 0));
+            control.dispatchEvent(new CoreUIEvent("change", true, false, 0));
         }
     }
 

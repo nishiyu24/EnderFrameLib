@@ -1,7 +1,9 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.StyleResolver.PseudoType;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -149,16 +151,6 @@ public class StyleSheet {
         rules.sort(StyleRule::compareSpecificity);
     }
 
-    /** {@code @keyframes} 1 つ。ブロックは出現順（進行度の昇順とは限らない）。 */
-    public record Keyframes(String name, List<KeyframeBlock> blocks) {}
-
-    /**
-     * キーフレームのブロック 1 つ。{@code percent} は 0〜100。{@code from} は 0、{@code to} は 100。
-     * {@code declarations} は宣言順を保つ。
-     */
-    public record KeyframeBlock(float percent, Map<String, String> declarations) {}
-
-    /** {@code @container <name>? <condition>}。{@code name} は無名なら空文字列。 */
     public record ContainerQuery(String name, String condition, boolean styleOnly) {
 
         public static ContainerQuery of(String name, String condition) {
@@ -253,7 +245,7 @@ public class StyleSheet {
             return SelectorMatcher.matches(parsed, node);
         }
 
-        public boolean matches(HtmlNode node, SelectorMatcher.StateLookup stateLookup) {
+        public boolean matches(HtmlNode node, StateLookup stateLookup) {
             return SelectorMatcher.matches(parsed, node, stateLookup);
         }
 

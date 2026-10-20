@@ -1,11 +1,14 @@
 package com.nishiyu.enderframelib.client.gui;
 
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
+import com.nishiyu.enderframelib.core.paint.model.*;
+
+import com.nishiyu.enderframelib.api.event.UIEvents;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.client.SessionInput;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -38,13 +41,14 @@ public class InvisibleInputScreen extends Screen {
         super.init();
         String baseId = ClientWebManager.getBaseNodeId(targetElement.id());
         String initialVal = targetElement.text() != null ? targetElement.text() : "";
-        HtmlNode vNode = ClientWebManager.findNode(sessionId, baseId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vNode = session != null ? session.findNode(baseId) : null;
         if (vNode != null && vNode.attrs.containsKey("value")) {
             initialVal = vNode.attrs.get("value");
         }
 
         this.inputHost = new WebTextInputHost(sessionId, this.font, newText ->
-                ClientScreenInteractionManager.updateInputLocally(sessionId, targetElement.id(), newText)
+                input().updateInputLocally(targetElement.id(), newText)
         );
         this.inputHost.setValue(initialVal);
         this.addWidget(this.inputHost.editBox());
@@ -74,6 +78,12 @@ public class InvisibleInputScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        SessionInput input = input();
+        UIEvents.Keyboard keyDown = dispatchKeyEvent("keydown", keyCode, modifiers);
+        if (keyDown != null && keyDown.isDefaultPrevented()) {
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             commitAndClose();
             return true;
@@ -81,20 +91,71 @@ public class InvisibleInputScreen extends Screen {
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             // textarea の場合は Enter で画面を閉じず、改行を挿入する
             if (targetElement.type() == ElementType.TEXTAREA) {
-                if (this.inputHost != null) this.inputHost.editBox().insertText("\n");
+                String data = "\n";
+                if (!input.beginTextEdit(targetElement.id(), data, "insertLineBreak")) return true;
+                if (this.inputHost != null) {
+                    this.inputHost.editBox().insertText(data);
+                    input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), data, "insertLineBreak");
+                }
                 return true;
             } else {
                 commitAndClose();
                 return true;
             }
         }
-        return (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) || super.keyPressed(keyCode, scanCode, modifiers);
+
+        String inputType = SessionInput.editingInputType(keyCode, modifiers, targetElement.type() == ElementType.TEXTAREA);
+        if (inputType != null && !input.beginTextEdit(targetElement.id(), null, inputType)) return true;
+        if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
+            if (inputType != null) {
+                input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), null, inputType);
+            }
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        UIEvents.Keyboard keyUp = dispatchKeyEvent("keyup", keyCode, modifiers);
+        if (keyUp != null && keyUp.isDefaultPrevented()) {
+            return true;
+        }
+        return super.keyReleased(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        SessionInput input = input();
+        String data = String.valueOf(codePoint);
+        if (!input.beginTextEdit(targetElement.id(), data, "insertText")) return true;
+        if (this.inputHost != null && this.inputHost.charTyped(codePoint, modifiers)) {
+            input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), data, "insertText");
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    private SessionInput input() {
+        return ClientWebManager.getOrCreateSession(sessionId).input();
+    }
+
+    private UIEvents.Keyboard dispatchKeyEvent(String type, int keyCode, int modifiers) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        String baseId = ClientWebManager.getBaseNodeId(targetElement.id());
+        HtmlNode target = session != null ? session.findNode(baseId) : null;
+        if (target == null && session != null) target = session.rootNode();
+        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+        boolean alt = (modifiers & GLFW.GLFW_MOD_ALT) != 0;
+        boolean meta = (modifiers & GLFW.GLFW_MOD_SUPER) != 0;
+        return input().keyEvent(type, target, keyCode, ctrl, shift, alt, meta);
     }
 
     private void commitAndClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.inputHost.getValue());
+            input().submitInput(targetElement.id(), this.inputHost.getValue());
         }
         this.onClose();
     }
@@ -103,155 +164,18 @@ public class InvisibleInputScreen extends Screen {
     public void onClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            ClientScreenInteractionManager.submitInput(sessionId, targetElement.id(), this.inputHost.getValue());
+            input().submitInput(targetElement.id(), this.inputHost.getValue());
         }
         if (this.inputHost != null) {
             this.inputHost.deactivate();
         }
-        ClientWebManager.setActiveInputId(sessionId, "");
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null) session.setActiveInputId("");
         super.onClose();
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    /**
-     * 画面外に配置される隠し EditBox の統合管理ホスト。
-     * GUI画面（2D）および InvisibleInputScreen（3D世界ブロック操作）の双方で
-     * テキスト入力・IME入力・キャレット管理を共通化する。
-     */
-    public static class WebTextInputHost {
-
-        public static final int HIDDEN_X = -2000;
-        public static final int HIDDEN_Y = -2000;
-        public static final int HIDDEN_W = 400;
-        public static final int HIDDEN_H = 20;
-        public static final int MAX_TEXT_LENGTH = 8192;
-
-        private final String sessionId;
-        private final EditBox editBox;
-        private final Consumer<String> responder;
-        private boolean suppressResponder = false;
-
-        public WebTextInputHost(String sessionId, Font font, Consumer<String> responder) {
-            this.sessionId = sessionId != null ? sessionId : "";
-            this.responder = responder;
-            this.editBox = new EditBox(font, HIDDEN_X, HIDDEN_Y, HIDDEN_W, HIDDEN_H, Component.empty());
-            this.editBox.setMaxLength(MAX_TEXT_LENGTH);
-            this.editBox.setResponder(text -> {
-                if (!suppressResponder && this.responder != null) {
-                    this.responder.accept(text);
-                }
-            });
-        }
-
-        /** いずれかのセッションでアクティブな入力ホスト。後方互換のための全体走査。 */
-        public static WebTextInputHost getActiveHost() {
-            for (SessionContext session : ClientWebManager.sessions()) {
-                WebTextInputHost host = session.activeTextInputHost();
-                if (host != null) return host;
-            }
-            return null;
-        }
-
-        public static WebTextInputHost getActiveHost(String sessionId) {
-            SessionContext session = ClientWebManager.getSession(sessionId);
-            return session != null ? session.activeTextInputHost() : null;
-        }
-
-        public static EditBox getActiveEditBox() {
-            WebTextInputHost host = getActiveHost();
-            return host != null ? host.editBox() : null;
-        }
-
-        public static EditBox getActiveEditBox(String sessionId) {
-            WebTextInputHost host = getActiveHost(sessionId);
-            return host != null ? host.editBox() : null;
-        }
-
-        public static String getActiveText() {
-            WebTextInputHost host = getActiveHost();
-            return host != null ? host.getValue() : null;
-        }
-
-        public static String getActiveText(String sessionId) {
-            WebTextInputHost host = getActiveHost(sessionId);
-            return host != null ? host.getValue() : null;
-        }
-
-        public static int getActiveCursorPosition() {
-            WebTextInputHost host = getActiveHost();
-            return host != null ? host.getCursorPosition() : -1;
-        }
-
-        public static int getActiveCursorPosition(String sessionId) {
-            WebTextInputHost host = getActiveHost(sessionId);
-            return host != null ? host.getCursorPosition() : -1;
-        }
-
-        public static void clearActiveHost(WebTextInputHost host) {
-            for (SessionContext session : ClientWebManager.sessions()) {
-                if (session.activeTextInputHost() == host) {
-                    session.setActiveTextInputHost(null);
-                }
-            }
-        }
-
-        public void activate() {
-            ClientWebManager.getOrCreateSession(this.sessionId).setActiveTextInputHost(this);
-            this.editBox.setFocused(true);
-        }
-
-        public void deactivate() {
-            this.editBox.setFocused(false);
-            SessionContext session = ClientWebManager.getSession(this.sessionId);
-            if (session != null && session.activeTextInputHost() == this) {
-                session.setActiveTextInputHost(null);
-            }
-        }
-
-        public EditBox editBox() {
-            return editBox;
-        }
-
-        public String getValue() {
-            return editBox.getValue();
-        }
-
-        public void setValue(String value) {
-            this.suppressResponder = true;
-            try {
-                this.editBox.setValue(value != null ? value : "");
-                this.editBox.moveCursorToEnd(false);
-            } finally {
-                this.suppressResponder = false;
-            }
-        }
-
-        public int getCursorPosition() {
-            return editBox.getCursorPosition();
-        }
-
-        public boolean isFocused() {
-            return editBox.isFocused();
-        }
-
-        public void setFocused(boolean focused) {
-            if (focused) {
-                activate();
-            } else {
-                deactivate();
-            }
-        }
-
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-            return editBox.keyPressed(keyCode, scanCode, modifiers);
-        }
-
-        public boolean charTyped(char codePoint, int modifiers) {
-            return editBox.charTyped(codePoint, modifiers);
-        }
     }
 }
