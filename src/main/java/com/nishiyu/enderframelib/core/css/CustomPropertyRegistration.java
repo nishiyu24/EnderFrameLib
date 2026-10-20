@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Type;

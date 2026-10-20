@@ -1,21 +1,30 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * テキストの正規化と行送りの解釈が 1 箇所に揃っていることを固定する。
@@ -77,7 +86,7 @@ public class LayoutMetricsTest {
     }
 
     private static LayoutBox textBox(String text, String... keyValues) {
-        return new LayoutBox(new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(text), style(keyValues));
+        return new LayoutBox(new com.nishiyu.enderframelib.core.dom.node.HtmlText(text), style(keyValues));
     }
 
     private static ComputedStyle style(String... keyValues) {

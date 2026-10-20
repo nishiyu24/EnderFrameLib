@@ -1,18 +1,21 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.dom.DomUtils;
-import com.nishiyu.enderframelib.core.dom.TemplateEngine;
-import com.nishiyu.enderframelib.core.dom.HtmlElement;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
+import com.nishiyu.enderframelib.core.dom.Bindings;
+import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 public class ClientPubSubManager {
     public static java.util.function.Consumer<String> subscriptionSender = null;
 
     private static final Map<String, Map<String, Object>> clientCache = new ConcurrentHashMap<>();
+    private static final Map<String, List<Consumer<Map<String, Object>>>> CHANNEL_LISTENERS = new ConcurrentHashMap<>();
 
     public static final int DEFAULT_CONTAINER_WIDTH = 400;
     public static final int DEFAULT_VISIBLE_ROWS = 15;
@@ -41,6 +44,29 @@ public class ClientPubSubManager {
         list.add(binding);
     }
 
+    /** チャンネルごとの更新リスナーを登録する（S11: ar_sync などの予約チャンネル処理向け）。 */
+    public static void addChannelListener(String channel, Consumer<Map<String, Object>> listener) {
+        if (channel == null || listener == null) return;
+        CHANNEL_LISTENERS.computeIfAbsent(channel, k -> new CopyOnWriteArrayList<>()).add(listener);
+    }
+
+    public static void removeChannelListener(String channel, Consumer<Map<String, Object>> listener) {
+        if (channel == null || listener == null) return;
+        List<Consumer<Map<String, Object>>> list = CHANNEL_LISTENERS.get(channel);
+        if (list != null) list.remove(listener);
+    }
+
+    public static Map<String, Object> getChannelData(String channel) {
+        if (channel == null) return Collections.emptyMap();
+        Map<String, Object> data = clientCache.get(channel);
+        return data != null ? Collections.unmodifiableMap(data) : Collections.emptyMap();
+    }
+
+    public static void clearAll() {
+        clientCache.clear();
+        CHANNEL_LISTENERS.clear();
+    }
+
     public static void onReceiveUpdate(String channel, boolean isFull, Map<String, Object> diffData) {
         Map<String, Object> current = clientCache.computeIfAbsent(channel, k -> new ConcurrentHashMap<>());
 
@@ -64,6 +90,13 @@ public class ClientPubSubManager {
             }
         }
 
+        List<Consumer<Map<String, Object>>> listeners = CHANNEL_LISTENERS.get(channel);
+        if (listeners != null && !listeners.isEmpty()) {
+            for (Consumer<Map<String, Object>> listener : listeners) {
+                listener.accept(diffData);
+            }
+        }
+
         if (!dataChanged) return;
 
         for (SessionContext session : ClientWebManager.sessions()) {
@@ -74,13 +107,12 @@ public class ClientPubSubManager {
     }
 
     private static void applyBindingsToDOM(String sessionId, String triggeredChannel) {
-        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return;
+        HtmlNode vRoot = session.rootNode();
         if (vRoot == null) return;
 
         boolean changedAny = false;
-
-        SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session == null) return;
 
         List<VirtualListBinding> vLists = session.virtualListBindings();
         if (!vLists.isEmpty()) {
@@ -91,86 +123,27 @@ public class ClientPubSubManager {
                 if (targetNode == null) continue;
 
                 List<Map<String, String>> dataList = getStorageListAsMap(vBind.channel);
-                targetNode.children.removeIf(node -> !node.tag.equals("template"));
-                changedAny = true;
-
-                if (dataList != null) {
-                    int scrollY = 0;
-                    try { scrollY = (int) Float.parseFloat(targetNode.attrs.getOrDefault("data-scroll-y", "0")); } catch (Exception ignored) {}
-
-                    int estimatedContainerW = DEFAULT_CONTAINER_WIDTH;
-                    if (targetNode.attrs.containsKey("data-container-width")) {
-                        try { estimatedContainerW = Integer.parseInt(targetNode.attrs.get("data-container-width")); } catch (Exception ignored) {}
-                    }
-                    int itemsPerRow = Math.max(1, estimatedContainerW / Math.max(1, vBind.itemW));
-                    int totalRows = (int) Math.ceil((double) dataList.size() / itemsPerRow);
-
-                    int visibleRows = DEFAULT_VISIBLE_ROWS;
-                    if (targetNode.attrs.containsKey("data-visible-rows")) {
-                        try { visibleRows = Integer.parseInt(targetNode.attrs.get("data-visible-rows")); } catch (Exception ignored) {}
-                    }
-                    int startRow = Math.max(0, scrollY / Math.max(1, vBind.itemH));
-                    int endRow = Math.min(totalRows, startRow + visibleRows);
-
-                    int topPadding = startRow * vBind.itemH;
-                    int bottomPadding = Math.max(0, totalRows - endRow) * vBind.itemH;
-
-                    HtmlNode topSpacer = new HtmlElement("div");
-                    topSpacer.attrs.put("style", "width: 100%; height: " + topPadding + "px; flex-shrink: 0;");
-                    topSpacer.parent = targetNode;
-                    targetNode.children.add(topSpacer);
-
-                    HtmlNode templateRoot = vBind.templateNode != null ? vBind.templateNode.cloneNode() : new HtmlNode("template");
-                    int startIndex = startRow * itemsPerRow;
-                    int endIndex = Math.min(dataList.size(), endRow * itemsPerRow);
-
-                    for (int i = startIndex; i < endIndex; i++) {
-                        for (HtmlNode tmpl : templateRoot.children) {
-                            HtmlNode itemNode = tmpl.cloneNode();
-                            // --- 修正箇所: localData に一度代入することで、事実上の final を保証する ---
-                            Map<String, String> localData = dataList.get(i);
-                            TemplateEngine.applyTemplate(itemNode, text -> TemplateEngine.resolve(text, localData, null));
-                            itemNode.parent = targetNode;
-                            targetNode.children.add(itemNode);
-                        }
-                    }
-
-                    HtmlNode botSpacer = new HtmlElement("div");
-                    botSpacer.attrs.put("style", "width: 100%; height: " + bottomPadding + "px; flex-shrink: 0;");
-                    botSpacer.parent = targetNode;
-                    targetNode.children.add(botSpacer);
-
-                    targetNode.attrs.put("data-scroll-h", String.valueOf(totalRows * vBind.itemH));
+                if (Bindings.renderVirtualList(targetNode, vBind.templateNode, dataList, vBind.itemW, vBind.itemH, DEFAULT_CONTAINER_WIDTH, DEFAULT_VISIBLE_ROWS)) {
+                    changedAny = true;
                 }
             }
         }
 
         List<DataBinding> dBindings = session.dataBindings();
         if (!dBindings.isEmpty()) {
-            for (DataBinding dBind : dBindings) {
-                if (!triggeredChannel.equals(dBind.channel)) continue;
+            for (DataBinding binding : dBindings) {
+                if (!triggeredChannel.equals(binding.channel)) continue;
 
-                HtmlNode targetNode = vRoot.getElementById(dBind.targetId);
+                HtmlNode targetNode = vRoot.getElementById(binding.targetId);
                 if (targetNode == null) continue;
 
-                String val = getValue(dBind.channel, dBind.path);
-
-                if ("text".equals(dBind.targetAttr)) {
-                    if (!Objects.equals(targetNode.getTextContent(), val)) {
+                String val = getStorageValue(binding.channel, binding.path);
+                if (val != null) {
+                    if ("text".equals(binding.targetAttr)) {
                         targetNode.setTextContent(val);
                         changedAny = true;
-                    }
-                } else if (dBind.targetAttr.startsWith("style.")) {
-                    String styleKey = dBind.targetAttr.substring(6);
-                    String prevStyle = targetNode.attrs.getOrDefault("style", "");
-                    targetNode.setStyleProperty(styleKey, val);
-                    if (!Objects.equals(prevStyle, targetNode.attrs.getOrDefault("style", ""))) {
-                        changedAny = true;
-                    }
-                } else {
-                    String prevVal = targetNode.attrs.get(dBind.targetAttr);
-                    if (!Objects.equals(prevVal, val)) {
-                        DomUtils.updateAttribute(targetNode, dBind.targetAttr, val, false);
+                    } else {
+                        targetNode.setAttribute(binding.targetAttr, val);
                         changedAny = true;
                     }
                 }
@@ -178,21 +151,20 @@ public class ClientPubSubManager {
         }
 
         if (changedAny) {
-            ClientWebManager.requestRender(sessionId);
+            session.requestRender();
         }
     }
 
-    public static String getValue(String channel, String path) {
-        Map<String, Object> data = clientCache.get(channel);
-        if (data != null && data.containsKey(path)) {
-            return String.valueOf(data.get(path));
-        }
-        return "";
-    }
-
-    public static List<Map<String, String>> getStorageListAsMap(String channel) {
+    private static String getStorageValue(String channel, String path) {
         Map<String, Object> data = clientCache.get(channel);
         if (data == null) return null;
+        Object v = data.get(path);
+        return v != null ? String.valueOf(v) : null;
+    }
+
+    private static List<Map<String, String>> getStorageListAsMap(String channel) {
+        Map<String, Object> data = clientCache.get(channel);
+        if (data == null) return Collections.emptyList();
 
         List<Map<String, String>> list = new ArrayList<>();
         for (Map.Entry<String, Object> entry : data.entrySet()) {

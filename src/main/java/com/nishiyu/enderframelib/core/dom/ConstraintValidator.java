@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
 import com.nishiyu.enderframelib.api.dom.ValidityState;
 import org.jetbrains.annotations.Nullable;
 

@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.*;
+
+import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.ValueComputer.CssWideKeyword;
 
 import java.util.ArrayList;
@@ -12,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * CSS プロパティの知識の唯一の出所（設計の軸 5）。
@@ -110,7 +115,7 @@ public final class PropertyRegistry {
         for (String side : SIDES) {
             layout("border-" + side + "-width", "medium", false, ValueType.LENGTH, true);
             // border-style が none なら幅は 0 になるので、スタイルの変化も寸法に効く
-            keyword("border-" + side + "-style", CssKeywords.BorderStyle.class, CssKeywords.BorderStyle.NONE, false, Invalidation.LAYOUT);
+            keyword("border-" + side + "-style", BorderStyle.class, BorderStyle.NONE, false, Invalidation.LAYOUT);
             paint("border-" + side + "-color", "currentcolor", false, ValueType.COLOR, true);
             shorthand("border-" + side, Invalidation.LAYOUT, ShorthandExpanders.borderSide(side),
                     "border-" + side + "-width", "border-" + side + "-style", "border-" + side + "-color");
@@ -132,15 +137,15 @@ public final class PropertyRegistry {
                 "border-top-left-radius", "border-top-right-radius",
                 "border-bottom-right-radius", "border-bottom-left-radius");
         paint("outline-color", "currentcolor", false, ValueType.COLOR, true);
-        keyword("outline-style", CssKeywords.BorderStyle.class, CssKeywords.BorderStyle.NONE, false, Invalidation.PAINT);
+        keyword("outline-style", BorderStyle.class, BorderStyle.NONE, false, Invalidation.PAINT);
         paint("outline-width", "medium", false, ValueType.LENGTH, true);
         paint("outline-offset", "0", false, ValueType.LENGTH, true);
         shorthand("outline", Invalidation.PAINT, ShorthandExpanders::outline,
                 "outline-width", "outline-style", "outline-color");
 
         // ---- overflow
-        keyword("overflow-x", CssKeywords.Overflow.class, CssKeywords.Overflow.VISIBLE, false, Invalidation.LAYOUT);
-        keyword("overflow-y", CssKeywords.Overflow.class, CssKeywords.Overflow.VISIBLE, false, Invalidation.LAYOUT);
+        keyword("overflow-x", Overflow.class, Overflow.VISIBLE, false, Invalidation.LAYOUT);
+        keyword("overflow-y", Overflow.class, Overflow.VISIBLE, false, Invalidation.LAYOUT);
         shorthand("overflow", Invalidation.LAYOUT, ShorthandExpanders::overflow, "overflow-x", "overflow-y");
         keyword("scrollbar-width", CssKeywords.ScrollbarWidth.class, CssKeywords.ScrollbarWidth.AUTO, false, Invalidation.LAYOUT);
 
@@ -212,7 +217,7 @@ public final class PropertyRegistry {
         layout("letter-spacing", "normal", true, ValueType.LENGTH, true);
         layout("word-spacing", "normal", true, ValueType.LENGTH, true);
         layout("text-indent", "0", true, ValueType.LENGTH_PERCENTAGE, true);
-        keyword("text-align", CssKeywords.TextAlign.class, CssKeywords.TextAlign.START, true, Invalidation.LAYOUT);
+        keyword("text-align", TextAlign.class, TextAlign.START, true, Invalidation.LAYOUT);
         keyword("text-transform", CssKeywords.TextTransform.class, CssKeywords.TextTransform.NONE, true, Invalidation.LAYOUT);
         layout("white-space", "normal", true, ValueType.KEYWORD, false);
         layout("word-break", "normal", true, ValueType.KEYWORD, false);

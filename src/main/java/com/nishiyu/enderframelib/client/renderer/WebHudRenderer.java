@@ -1,5 +1,9 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.text.model.*;
+
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -15,11 +19,11 @@ import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
-import com.nishiyu.enderframelib.core.dom.TemplateEngine;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.Bindings;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -217,9 +221,9 @@ public class WebHudRenderer {
         int virtualHeight = (int) VIRTUAL_HEIGHT;
         int virtualWidth = (int) (VIRTUAL_HEIGHT * ((float) screenWidth / screenHeight));
 
-        if (ClientWebManager.getLastRootW(screenKey) != virtualWidth ||
-                ClientWebManager.getLastRootH(screenKey) != virtualHeight) {
-            ClientWebManager.recomputeLayout(screenKey, virtualWidth, virtualHeight);
+        SessionContext session = ClientWebManager.getSession(screenKey);
+        if (session != null && (session.rootW() != virtualWidth || session.rootH() != virtualHeight)) {
+            session.recomputeLayout(virtualWidth, virtualHeight);
         }
 
         lastSentWidth = virtualWidth;
@@ -231,7 +235,7 @@ public class WebHudRenderer {
         HudTemplateConfig config = session != null ? session.hudConfig() : null;
         if (config == null || config.templateRoot == null) return;
 
-        HtmlNode vRoot = ClientWebManager.getRootNode(screenKey);
+        HtmlNode vRoot = session.rootNode();
         if (vRoot == null) return;
 
         HtmlNode containerNode = vRoot.getElementById(config.containerId);
@@ -258,11 +262,12 @@ public class WebHudRenderer {
                 containerNode.children.add(child);
             }
         }
-        ClientWebManager.requestRender(screenKey);
+        session.requestRender();
     }
 
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
-        List<DisplayItem> elements = ClientWebManager.getElements(screenKey);
+        SessionContext session = ClientWebManager.getSession(screenKey);
+        List<DisplayItem> elements = session != null ? session.elements() : List.of();
         if (elements.isEmpty()) return;
 
         List<DisplayItem> hudElements = new ArrayList<>(elements.size());
@@ -383,32 +388,18 @@ public class WebHudRenderer {
     }
 
     private static void buildTrackerLayout(HtmlNode instanceNode, String screenKey, TrackerCache cache) {
-        UiDocumentCompiler.Document doc = ClientWebManager.getDocument(screenKey);
+        SessionContext session = ClientWebManager.getSession(screenKey);
+        com.nishiyu.enderframelib.common.Document doc = session != null ? session.document() : null;
         if (doc == null) return;
 
-        com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
-        Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.Selector.ElementState.NONE);
-        com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
-
-        LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
-        buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
-        com.nishiyu.enderframelib.core.layout.BoxTreeBuilder.build(layoutBox);
-
-        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport viewport = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport(1000, 1000);
-        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState();
-        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext(
-                viewport, UiDocumentCompiler.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONTS);
-        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext("block", "stretch", false);
-
-        layoutBox.measure(1000, 1000, fmtCtx, ctx);
-        layoutBox.measure(1000, 1000, fmtCtx, ctx);
-        layoutBox.layout(0, 0, 1000, 1000, ctx);
+        com.nishiyu.enderframelib.core.layout.model.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.model.ScrollState();
+        LayoutBox layoutBox = com.nishiyu.enderframelib.common.RenderPipeline.layoutSubtree(
+                instanceNode, doc.sheet, 1000, 1000, null, scrollState, WebFontManager.McFontResolver.INSTANCE);
 
         cache.width = Math.round(layoutBox.w);
         cache.height = Math.round(layoutBox.h);
-
-        DisplayListBuilder renderer = new DisplayListBuilder(cache.width, cache.height, doc.sheet.keyframes, scrollState);
-        cache.elements = renderer.render(layoutBox);
+        cache.elements = com.nishiyu.enderframelib.common.RenderPipeline.renderBox(
+                layoutBox, cache.width, cache.height, doc.sheet.keyframes, scrollState);
     }
 
     private static boolean renderTrackerBillboard(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource, Camera camera, Minecraft mc, LivingEntity le, String screenKey, TrackerCache cache, TrackerTemplateConfig config) {
@@ -528,90 +519,10 @@ public class WebHudRenderer {
     }
 
     public static void applyTemplateData(HtmlNode node, Map<String, String> data) {
-        ClientLocalEnvProvider.applyI18nAttributes(node);
-        Map<String, String> localEnv = ClientLocalEnvProvider.captureCurrentEnv();
-
-        TemplateEngine.applyTemplate(node, text -> TemplateEngine.resolve(text, data, localEnv));
-
-        if (node.attrs.containsKey("data-show")) {
-            String showVal = node.attrs.get("data-show").trim();
-            Boolean condResult = ReactiveStateStore.evaluateCondition(showVal, data);
-            boolean hide = (condResult != null) ? !condResult
-                    : (showVal.isEmpty() || "false".equalsIgnoreCase(showVal) || "0".equals(showVal) || showVal.contains("{{"));
-            if (hide) node.setStyleProperty("display", "none");
-            node.attrs.remove("data-show");
-        }
-
-        if (node.attrs.containsKey("data-list")) {
-            String jsonStr = node.attrs.remove("data-list");
-            List<HtmlNode> templateChildren = ReactiveStateStore.extractTemplateChildren(node);
-            node.children.clear();
-
-            if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.contains("{{")) {
-                try {
-                    JsonElement parsedJson = JsonParser.parseString(jsonStr);
-                    if (parsedJson.isJsonObject()) {
-                        for (Map.Entry<String, JsonElement> entry : parsedJson.getAsJsonObject().entrySet()) {
-                            if (!entry.getValue().isJsonPrimitive()) continue;
-                            Map<String, String> localData = new HashMap<>(data);
-                            localData.put("_key", entry.getKey());
-                            localData.put("_value", entry.getValue().getAsString());
-                            appendClonedTemplateItems(node, templateChildren, localData);
-                        }
-                    } else if (parsedJson.isJsonArray()) {
-                        int idx = 0;
-                        for (JsonElement elem : parsedJson.getAsJsonArray()) {
-                            Map<String, String> localData = new HashMap<>(data);
-                            localData.put("_key", String.valueOf(idx++));
-                            if (elem.isJsonPrimitive()) {
-                                localData.put("_value", elem.getAsString());
-                            } else if (elem.isJsonObject()) {
-                                for (Map.Entry<String, JsonElement> objEntry : elem.getAsJsonObject().entrySet()) {
-                                    if (objEntry.getValue().isJsonPrimitive()) {
-                                        localData.put(objEntry.getKey(), objEntry.getValue().getAsString());
-                                    }
-                                }
-                                localData.put("_value", elem.toString());
-                            } else {
-                                continue;
-                            }
-                            appendClonedTemplateItems(node, templateChildren, localData);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            }
-            return;
-        }
-
-        for (HtmlNode child : node.children) {
-            applyTemplateData(child, data);
-        }
+        Bindings.applyHudTemplateData(node, data, ClientLocalEnvProvider.captureCurrentEnv());
     }
 
-    private static void appendClonedTemplateItems(HtmlNode parent, List<HtmlNode> templateChildren, Map<String, String> localData) {
-        for (HtmlNode tmplChild : templateChildren) {
-            HtmlNode clonedChild = tmplChild.cloneNode();
-            applyTemplateData(clonedChild, localData);
-            clonedChild.parent = parent;
-            parent.children.add(clonedChild);
-        }
-    }
 
-    private static void buildLayoutTreeRecursively(HtmlNode node, LayoutBox box, StyleSheet sheet) {
-        for (HtmlNode child : node.children) {
-            if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
-
-            com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
-            Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.Selector.ElementState.NONE);
-            com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
-                    rawStyle, sheet, null, box.style.asMap(), box.style.fontSizePx(),
-                    com.nishiyu.enderframelib.core.css.ComputedStyle.DEFAULT_FONT_SIZE, 1000, 1000);
-
-            LayoutBox childBox = new LayoutBox(child, computed);
-            box.addElementChild(childBox);
-            buildLayoutTreeRecursively(child, childBox, sheet);
-        }
-    }
 
     public static void handleBinaryTargetDataSync(Map<String, Object> data) {
         Minecraft mc = Minecraft.getInstance();

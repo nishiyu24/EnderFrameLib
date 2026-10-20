@@ -1,9 +1,8 @@
 package com.nishiyu.enderframelib.core.event;
 
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,10 +48,6 @@ public class StandardDefaultActions {
             case "wheel" -> handleWheel(event, ctx);
             case "keydown" -> handleKeyDown(event, target, ctx);
         }
-    }
-
-    public static void execute(DomEvent event, Context ctx) {
-        execute((Event) event, ctx);
     }
 
     private static void handleClick(HtmlNode target, Context ctx) {
@@ -113,8 +108,8 @@ public class StandardDefaultActions {
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
                 }
                 // input / change イベントの発火
-                target.dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
-                target.dispatchEvent(new CoreEvent.CoreUIEvent("change", true, false, 0));
+                target.dispatchEvent(new CoreUIEvent("input", true, false, 0));
+                target.dispatchEvent(new CoreUIEvent("change", true, false, 0));
                 return;
             } else if ("radio".equals(inputType)) {
                 if (!target.attrs.containsKey("checked")) {
@@ -133,8 +128,8 @@ public class StandardDefaultActions {
                     }
                     target.attrs.put("checked", "true");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
-                    target.dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
-                    target.dispatchEvent(new CoreEvent.CoreUIEvent("change", true, false, 0));
+                    target.dispatchEvent(new CoreUIEvent("input", true, false, 0));
+                    target.dispatchEvent(new CoreUIEvent("change", true, false, 0));
                 }
                 return;
             }
@@ -175,7 +170,7 @@ public class StandardDefaultActions {
             String href = anchorNode.attrs.get("href");
             // ページ内リンク（#id）は文書のフラグメント識別子を変える。:target の規則がこれを読む
             if (href != null && href.startsWith("#")
-                    && anchorNode.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.HtmlDocument document) {
+                    && anchorNode.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument document) {
                 document.setTargetFragment(href);
             }
             if (href != null && !href.isEmpty() && ctx != null) {

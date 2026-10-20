@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
+import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.Selector.DocumentPseudoClass;
 import com.nishiyu.enderframelib.core.css.Selector.RelativeSelector;
 import com.nishiyu.enderframelib.core.css.Selector.SelectorToken;

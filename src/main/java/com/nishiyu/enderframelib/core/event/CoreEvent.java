@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import com.nishiyu.enderframelib.api.dom.Node;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
 /**
  * WHATWG DOM Standard §2.2 Interface Event の具象実装。
@@ -171,20 +171,6 @@ public class CoreEvent implements Event {
     // ==========================================
     // UI Events 実装クラス群
     // ==========================================
-
-    public static class CoreUIEvent extends CoreEvent implements UIEvents.UI {
-        private final int detail;
-
-        public CoreUIEvent(String type, boolean bubbles, boolean cancelable, int detail) {
-            super(type, bubbles, cancelable);
-            this.detail = detail;
-        }
-
-        @Override
-        public int getDetail() {
-            return detail;
-        }
-    }
 
     public static class CoreMouseEvent extends CoreUIEvent implements UIEvents.Mouse {
         private final double screenX;
@@ -416,171 +402,134 @@ public class CoreEvent implements Event {
         }
     }
 
-    /**
-     * DOM イベントオブジェクト（W3C DOM Event 仕様準拠）。
-     *
-     * <p>下位互換性のため既存のレコード風アクセサ（type(), bubbles() 等）を維持しつつ、
-     * WHATWG DOM Standard {@link com.nishiyu.enderframelib.api.event.Event} および
-     * {@link MouseEvent} を実装する。</p>
-     */
-    public static class DomEvent extends CoreEvent implements UIEvents.Mouse {
+    // ==========================================
+    // イベント生成ファクトリ（旧 UiEvents / DomEvent の統合）
+    // ==========================================
 
-        private double screenX;
-        private double screenY;
-        private double clientX;
-        private double clientY;
-        private boolean ctrlKey;
-        private boolean shiftKey;
-        private boolean altKey;
-        private boolean metaKey;
-        private short button;
-        private short buttons;
-        private EventTarget relatedTarget;
-        private int detailInt;
-        private String detail = "";
+    public static UIEvents.Pointer pointer(String type, double clientX, double clientY, int button, int buttons,
+                                           boolean ctrlKey, boolean shiftKey, boolean altKey, boolean metaKey,
+                                           @Nullable EventTarget relatedTarget) {
+        boolean bubbles = !"pointerenter".equals(type) && !"pointerleave".equals(type);
+        boolean cancelable = !"pointerenter".equals(type) && !"pointerleave".equals(type) && !"pointercancel".equals(type);
+        CorePointerEvent ev = new CorePointerEvent(
+                type, bubbles, cancelable, 1,
+                clientX, clientY, clientX, clientY,
+                ctrlKey, shiftKey, altKey, metaKey,
+                (short) button, (short) buttons, relatedTarget,
+                1, 1.0, 1.0, 0.5f, "mouse", true
+        );
+        ev.markTrusted(bubbles);
+        return ev;
+    }
 
-        public DomEvent(String type, boolean bubbles, boolean cancelable) {
-            super(type, bubbles, cancelable);
-        }
+    public static UIEvents.Mouse mouse(String type, double clientX, double clientY, int button, int buttons,
+                                       boolean ctrlKey, boolean shiftKey, boolean altKey, boolean metaKey,
+                                       @Nullable EventTarget relatedTarget) {
+        boolean bubbles = !"mouseenter".equals(type) && !"mouseleave".equals(type);
+        boolean cancelable = !"mouseenter".equals(type) && !"mouseleave".equals(type);
+        CoreMouseEvent ev = new CoreMouseEvent(
+                type, bubbles, cancelable, 1,
+                clientX, clientY, clientX, clientY,
+                ctrlKey, shiftKey, altKey, metaKey,
+                (short) button, (short) buttons, relatedTarget
+        );
+        ev.markTrusted(bubbles);
+        return ev;
+    }
 
-        public DomEvent(String type, boolean bubbles, boolean cancelable, boolean composed) {
-            super(type, bubbles, cancelable, composed);
-        }
+    /** 2 回目のクリックの後に送る {@code dblclick}（{@code detail} は連続回数 2）。 */
+    public static UIEvents.Mouse doubleClick(double clientX, double clientY,
+                                             boolean ctrlKey, boolean shiftKey, boolean altKey, boolean metaKey) {
+        CoreMouseEvent ev = new CoreMouseEvent(
+                "dblclick", true, true, 2,
+                clientX, clientY, clientX, clientY,
+                ctrlKey, shiftKey, altKey, metaKey,
+                (short) 0, (short) 0, null
+        );
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public static DomEvent click(int button) {
-            return click(0, 0, button);
-        }
+    public static UIEvents.Wheel wheel(double clientX, double clientY, double deltaX, double deltaY,
+                                       boolean ctrlKey, boolean shiftKey, boolean altKey, boolean metaKey) {
+        CoreWheelEvent ev = new CoreWheelEvent(
+                "wheel", true, true, 0,
+                clientX, clientY, clientX, clientY,
+                ctrlKey, shiftKey, altKey, metaKey,
+                (short) 0, (short) 0, null,
+                deltaX, deltaY, 0.0, UIEvents.Wheel.DOM_DELTA_PIXEL
+        );
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public static DomEvent click(double clientX, double clientY, int button) {
-            DomEvent ev = new DomEvent("click", true, true);
-            ev.clientX = clientX;
-            ev.clientY = clientY;
-            ev.screenX = clientX;
-            ev.screenY = clientY;
-            ev.button = (short) button;
-            ev.detailInt = 1;
-            return ev;
-        }
+    public static UIEvents.Keyboard keyboard(String type, String key, String code, int location,
+                                             boolean ctrlKey, boolean shiftKey, boolean altKey, boolean metaKey,
+                                             boolean repeat, boolean composing) {
+        CoreKeyboardEvent ev = new CoreKeyboardEvent(
+                type, true, true,
+                key, code, location,
+                ctrlKey, shiftKey, altKey, metaKey,
+                repeat, composing
+        );
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public static DomEvent input(String value) {
-            DomEvent ev = new DomEvent("input", true, false);
-            ev.detail = value != null ? value : "";
-            return ev;
-        }
+    public static UIEvents.Focus focus(String type, @Nullable EventTarget relatedTarget) {
+        boolean bubbles = "focusin".equals(type) || "focusout".equals(type);
+        CoreFocusEvent ev = new CoreFocusEvent(type, bubbles, false, relatedTarget);
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public static DomEvent change(String value) {
-            DomEvent ev = new DomEvent("change", true, false);
-            ev.detail = value != null ? value : "";
-            return ev;
-        }
+    public static UIEvents.Input input(String type, @Nullable String data, boolean composing, String inputType) {
+        boolean cancelable = "beforeinput".equals(type);
+        CoreInputEvent ev = new CoreInputEvent(
+                type, true, cancelable, data, composing, inputType
+        );
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public static DomEvent submit() {
-            return new DomEvent("submit", true, true);
-        }
+    public static UIEvents.Mouse click(int button) {
+        return click(0, 0, button);
+    }
 
-        public static DomEvent reset() {
-            return new DomEvent("reset", true, true);
-        }
+    public static UIEvents.Mouse click(double clientX, double clientY, int button) {
+        CoreMouseEvent ev = new CoreMouseEvent(
+                "click", true, true, 1,
+                clientX, clientY, clientX, clientY,
+                false, false, false, false,
+                (short) button, (short) 0, null
+        );
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        // 既存アクセサ（レコード互換）
-        public String type() { return getType(); }
-        public boolean bubbles() { return isBubbles(); }
-        public boolean cancelable() { return isCancelable(); }
+    public static UIEvents.Input input(String value) {
+        return input("input", value, false, "insertText");
+    }
 
-        public HtmlNode target() {
-            EventTarget t = getTarget();
-            return t instanceof HtmlNode n ? n : null;
-        }
+    public static CoreEvent change() {
+        CoreEvent ev = new CoreEvent("change", true, false);
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public void setTarget(HtmlNode target) {
-            super.setTarget(target);
-        }
+    public static CoreSubmitEvent submit() {
+        return submit(null);
+    }
 
-        public HtmlNode currentTarget() {
-            EventTarget ct = getCurrentTarget();
-            return ct instanceof HtmlNode n ? n : null;
-        }
+    public static CoreSubmitEvent submit(@Nullable Element submitter) {
+        CoreSubmitEvent ev = new CoreSubmitEvent(submitter);
+        ev.markTrusted(true);
+        return ev;
+    }
 
-        public void setCurrentTarget(HtmlNode currentTarget) {
-            super.setCurrentTarget(currentTarget);
-        }
-
-        public EventPhase eventPhase() {
-            return switch (getEventPhase()) {
-                case CAPTURING_PHASE -> EventPhase.CAPTURING_PHASE;
-                case AT_TARGET -> EventPhase.AT_TARGET;
-                case BUBBLING_PHASE -> EventPhase.BUBBLING_PHASE;
-                default -> EventPhase.NONE;
-            };
-        }
-
-        public void setEventPhase(EventPhase phase) {
-            if (phase == null) {
-                super.setEventPhase(NONE);
-                return;
-            }
-            short p = switch (phase) {
-                case CAPTURING_PHASE -> CAPTURING_PHASE;
-                case AT_TARGET -> AT_TARGET;
-                case BUBBLING_PHASE -> BUBBLING_PHASE;
-                default -> NONE;
-            };
-            super.setEventPhase(p);
-        }
-
-        public double clientX() { return clientX; }
-        public double clientY() { return clientY; }
-        public int button() { return button; }
-        public String detail() { return detail; }
-        public void setDetail(String detail) { this.detail = detail != null ? detail : ""; }
-
-        // MouseEvent / UIEvent 実装
-        @Override public int getDetail() { return detailInt; }
-        public void setDetailInt(int detailInt) { this.detailInt = detailInt; }
-
-        @Override public double getScreenX() { return screenX; }
-        public void setScreenX(double screenX) { this.screenX = screenX; }
-
-        @Override public double getScreenY() { return screenY; }
-        public void setScreenY(double screenY) { this.screenY = screenY; }
-
-        @Override public double getClientX() { return clientX; }
-        public void setClientX(double clientX) { this.clientX = clientX; }
-
-        @Override public double getClientY() { return clientY; }
-        public void setClientY(double clientY) { this.clientY = clientY; }
-
-        @Override public boolean isCtrlKey() { return ctrlKey; }
-        public void setCtrlKey(boolean ctrlKey) { this.ctrlKey = ctrlKey; }
-
-        @Override public boolean isShiftKey() { return shiftKey; }
-        public void setShiftKey(boolean shiftKey) { this.shiftKey = shiftKey; }
-
-        @Override public boolean isAltKey() { return altKey; }
-        public void setAltKey(boolean altKey) { this.altKey = altKey; }
-
-        @Override public boolean isMetaKey() { return metaKey; }
-        public void setMetaKey(boolean metaKey) { this.metaKey = metaKey; }
-
-        @Override public short getButton() { return button; }
-        public void setButton(short button) { this.button = button; }
-
-        @Override public short getButtons() { return buttons; }
-        public void setButtons(short buttons) { this.buttons = buttons; }
-
-        @Nullable
-        @Override
-        public EventTarget getRelatedTarget() { return relatedTarget; }
-        public void setRelatedTarget(@Nullable EventTarget relatedTarget) { this.relatedTarget = relatedTarget; }
-
-        /**
-         * DOM イベントの伝播フェーズ（下位互換 enum）。
-         */
-        public enum EventPhase {
-            NONE,
-            CAPTURING_PHASE,
-            AT_TARGET,
-            BUBBLING_PHASE
-        }
+    public static CoreEvent reset() {
+        CoreEvent ev = new CoreEvent("reset", true, true);
+        ev.markTrusted(true);
+        return ev;
     }
 }

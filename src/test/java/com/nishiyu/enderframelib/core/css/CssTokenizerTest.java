@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssParser.CssTokenizer;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,20 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /** 旧 CSS_PATTERN 正規表現が扱えなかったケースを固定する。 */
 public class CssTokenizerTest {
@@ -63,7 +79,7 @@ public class CssTokenizerTest {
                 "@keyframes fade { from { opacity: 0; } to { opacity: 1; } } .x { color: red; }", 1920);
 
         assertEquals(1, sheet.rules.size(), "@keyframes 自体はルールにならない");
-        StyleSheet.Keyframes fade = sheet.keyframes.get("fade");
+        Keyframes fade = sheet.keyframes.get("fade");
         assertEquals(2, fade.blocks().size());
         assertEquals(0f, fade.blocks().get(0).percent());
         assertEquals("0", fade.blocks().get(0).declarations().get("opacity"));

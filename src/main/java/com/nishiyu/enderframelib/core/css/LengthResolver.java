@@ -1,14 +1,17 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.BitmapFontFace;
+import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
 
 /**
  * 長さの解決と、{@code calc()} などの数式（CSS Values 4 §10）の評価。

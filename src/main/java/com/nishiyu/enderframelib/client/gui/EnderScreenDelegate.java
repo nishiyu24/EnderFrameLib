@@ -1,23 +1,23 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.client.ClientDomEventDispatcher;
-import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen.WebTextInputHost;
+import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.client.SessionInput;
 import com.nishiyu.enderframelib.client.gui.TextareaEditor.TextEditState;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
-import com.nishiyu.enderframelib.core.event.EventDispatcher;
-import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
-import com.nishiyu.enderframelib.core.event.UiEvents;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.core.layout.TextSelection;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.text.model.TextSelection;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -32,13 +32,13 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebActionC2SPacket;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.nbt.CompoundTag;
 
-public class EnderScreenDelegate {
+public class EnderScreenDelegate implements SessionInput.Host {
 
     private final String sessionId;
     private final ReactiveStateStore state;
@@ -54,6 +54,12 @@ public class EnderScreenDelegate {
 
     private WebTextInputHost inputHost;
     private final ClientScreenInteractionManager.IClientEventCallback eventCallback;
+
+    /** 押下から解放まで有効な、GUI のコールバックをまとめたクリックの受け皿。 */
+    private SessionInput.ClickSink lastClickSink = SessionInput.ClickSink.NONE;
+    private Screen gestureScreen;
+    private Font gestureFont;
+    private BiConsumer<String, String> gestureInputChanged;
 
     public EnderScreenDelegate(String sessionId, ReactiveStateStore state) {
         this.sessionId = sessionId;
@@ -109,8 +115,9 @@ public class EnderScreenDelegate {
 
     public EditBox createHiddenEditBox(Font font, BiConsumer<String, String> onInputChanged) {
         this.inputHost = new WebTextInputHost(sessionId, font, newText -> {
-            if (!ClientWebManager.getActiveInputId(sessionId).isEmpty() && !textareaEditor.isEditing()) {
-                String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActiveInputId(sessionId));
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            if (session != null && !session.activeInputId().isEmpty() && !textareaEditor.isEditing()) {
+                String baseId = ClientWebManager.getBaseNodeId(session.activeInputId());
                 syncInputValueToDomNodes(baseId, newText);
                 if (this.state != null) this.state.notifyElementModelChanged(baseId, newText);
                 if (onInputChanged != null) onInputChanged.accept(baseId, newText);
@@ -121,9 +128,10 @@ public class EnderScreenDelegate {
 
     public void syncInputValueToDomNodes(String baseId, String safeVal) {
         String cleanVal = safeVal != null ? safeVal : "";
-        HtmlNode vNode = ClientWebManager.findNode(sessionId, baseId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode vNode = session != null ? session.findNode(baseId) : null;
         if (vNode != null) vNode.attrs.put("value", cleanVal);
-        ClientScreenInteractionManager.updateInputLocally(sessionId, baseId + "_input", cleanVal);
+        ClientWebManager.getOrCreateSession(sessionId).input().updateInputLocally(baseId + "_input", cleanVal);
     }
 
     public void focusWebInput(Screen screen, String inputElementId, String currentText) {
@@ -136,7 +144,7 @@ public class EnderScreenDelegate {
         String renderInputId = baseId + "_input";
         String safeVal = currentText != null ? currentText : "";
 
-        ClientWebManager.setActiveInputId(sessionId, renderInputId);
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderInputId);
         syncInputValueToDomNodes(baseId, safeVal);
         if (this.inputHost != null) {
             this.inputHost.setValue(safeVal);
@@ -146,18 +154,20 @@ public class EnderScreenDelegate {
     }
 
     public void unfocusWebInput() {
-        if (!ClientWebManager.getActiveInputId(sessionId).isEmpty()) {
-            String activeId = ClientWebManager.getActiveInputId(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null && !session.activeInputId().isEmpty()) {
+            String activeId = session.activeInputId();
             String baseId = ClientWebManager.getBaseNodeId(activeId);
+            SessionInput input = session.input();
             if (textareaEditor.isEditing()) {
                 String fullVal = textareaEditor.getValue(baseId);
-                ClientScreenInteractionManager.submitInput(sessionId, baseId, fullVal);
+                input.submitInput(baseId, fullVal);
                 textareaEditor.unfocus();
             } else {
                 String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
-                ClientScreenInteractionManager.submitInput(sessionId, baseId, val);
+                input.submitInput(baseId, val);
             }
-            ClientWebManager.setActiveInputId(sessionId, "");
+            session.setActiveInputId("");
         }
         if (this.inputHost != null) {
             this.inputHost.deactivate();
@@ -171,15 +181,19 @@ public class EnderScreenDelegate {
     public void setFocusedDomElement(String baseId, boolean focusVisible) {
         String safeNext = baseId != null ? baseId : "";
         focusNavigator.setFocused(safeNext);
-        ClientWebManager.setFocusedElement(sessionId, safeNext, focusVisible);
+        SessionContext session = safeNext.isEmpty()
+                ? ClientWebManager.getSession(sessionId)
+                : ClientWebManager.getOrCreateSession(sessionId);
+        if (session != null) session.setFocusedElement(safeNext, focusVisible);
     }
 
     public void renderOverlays(GuiGraphics guiGraphics, Font font, List<DisplayItem> elements,
                                int webX, int webY, int virtualWidth, int virtualHeight, boolean devToolsEnabled) {
         RenderSystem.disableDepthTest();
         try {
+            SessionContext session = ClientWebManager.getSession(sessionId);
             focusNavigator.renderFocusRing(guiGraphics, elements);
-            selectWidget.renderOverlay(guiGraphics, font, webX, webY, ClientWebManager.getRootNode(sessionId));
+            selectWidget.renderOverlay(guiGraphics, font, webX, webY, session != null ? session.rootNode() : null);
             dragDropController.renderGhost(guiGraphics, font, webX, webY);
             if (devToolsEnabled) {
                 WebDevTools.renderInspector(guiGraphics, font, elements, webX, webY, virtualWidth, virtualHeight, sessionId);
@@ -201,26 +215,56 @@ public class EnderScreenDelegate {
             if (handled) return true;
         }
 
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
-        DisplayItem clicked = hit != null ? hit.element() : null;
+        this.gestureScreen = screen;
+        this.gestureFont = font;
+        this.gestureInputChanged = onInputChanged;
+        this.lastClickSink = new GuiClickSink(onInputChanged, onWebAction);
 
-        if (button == 0 && clicked != null) {
-            String elId = clicked.id();
-            if (elId.endsWith("_sb_vt") || elId.endsWith("_sb_ht")) {
-                ClientWebManager.handleScrollbarClick(sessionId, clicked, webX, webY);
-                return true;
-            } else if (elId.endsWith("_sb_v") || elId.endsWith("_sb_h")) {
-                ClientScreenInteractionManager.setDraggingId(sessionId, elId);
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        SessionInput.PressResult result = session.input().press(webX, webY, button, this);
+        return result != null && shouldConsumePress(result);
+    }
+
+    /**
+     * 押下を GUI 画面が消費するか。以前の {@code handleMouseClicked} は「操作を起こしたときだけ true」を
+     * 返していたため、コンテナ画面では DOM の背景をクリックしたときにバニラのスロット操作へ抜けられた。
+     * クリック合成を解放時に移した後もこの境界を保つ。
+     */
+    private static boolean shouldConsumePress(SessionInput.PressResult result) {
+        if (result == null || result.element() == null) return false;
+        if (result.consumed()) return true;
+        return switch (result.element().type()) {
+            case SCENE, TEXTAREA, INPUT, SELECT, RANGE -> true;
+            default -> hasActionFor(result.pressedNode(), result.minecraftButton());
+        };
+    }
+
+    private static boolean hasActionFor(HtmlNode node, int minecraftButton) {
+        int domButton = SessionInput.domButton(minecraftButton);
+        String attribute = domButton == 0 ? "onclick" : (domButton == 2 ? "oncontextmenu" : "onauxclick");
+        String eventType = domButton == 0 ? "click" : (domButton == 2 ? "contextmenu" : "auxclick");
+        for (HtmlNode current = node; current != null; current = current.parent) {
+            String inlineAction = current.attrs.get(attribute);
+            if (inlineAction != null && !inlineAction.isEmpty()) return true;
+            if (current.getEventListenersSnapshot().stream().anyMatch(entry -> eventType.equalsIgnoreCase(entry.type()))) {
                 return true;
             }
         }
+        return false;
+    }
 
-        HtmlNode pressedNode = clicked != null ? ClientWebManager.findInteractiveNode(sessionId, clicked.baseId()) : null;
-        if (pressedNode != null) {
-            ClientDomEventDispatcher.dispatchPress(pressedNode, hit.localX(), hit.localY(), button);
-        }
+    @Override
+    public void pressed(SessionInput.PressResult result) {
+        if (result == null || result.consumed() || result.element() == null) return;
 
-        if (clicked != null && clicked.type() == ElementType.SCENE) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null || result.hit() == null) return;
+
+        DisplayItem clicked = result.element();
+        SessionContext.UIHitResult hit = result.hit();
+        int button = result.minecraftButton();
+
+        if (clicked.type() == ElementType.SCENE) {
             unfocusWebInput();
             String baseId = clicked.baseId();
             if (button == 2) {
@@ -229,109 +273,123 @@ public class EnderScreenDelegate {
                 activeSceneId = baseId;
                 activeSceneMouseButton = button;
             }
-            return true;
+            return;
         }
 
-        if (clicked != null && clicked.type() == ElementType.TEXTAREA && button == 0) {
+        if (clicked.type() == ElementType.TEXTAREA && button == 0) {
             unfocusWebInput();
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
-            ClientWebManager.setFocusedElement(sessionId, baseId, false);
-            textareaEditor.focus(font, clicked, hit.localX(), hit.localY());
-            return true;
+            session.setFocusedElement(baseId, false);
+            textareaEditor.focus(gestureFont, clicked, hit.localX(), hit.localY());
+            return;
         }
 
-        if (clicked != null && clicked.type() == ElementType.INPUT && button == 0) {
+        if (clicked.type() == ElementType.INPUT && button == 0) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
-            ClientWebManager.setFocusedElement(sessionId, baseId, false);
+            session.setFocusedElement(baseId, false);
             String curVal = getInputValue(baseId);
             if (curVal.isEmpty() && clicked.text() != null) curVal = clicked.text();
-            focusWebInput(screen, baseId, curVal);
-            return true;
-        } else {
-            unfocusWebInput();
+            focusWebInput(gestureScreen, baseId, curVal);
+            return;
         }
 
-        if (clicked != null && clicked.type() == ElementType.TEXT && button == 0) {
-            TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+        unfocusWebInput();
+
+        if (clicked.type() == ElementType.TEXT && button == 0) {
+            TextSelection sel = session.textSelection();
             if (sel != null && clicked.text() != null) {
-                int charOffset = estimateCharOffset(font, clicked.text(), hit.localX());
+                int charOffset = estimateCharOffset(gestureFont, clicked.text(), hit.localX());
                 sel.startSelection(clicked.baseId(), charOffset);
             }
         }
 
-        if (clicked != null) {
-            String baseId = clicked.baseId();
-            focusNavigator.setFocused(baseId);
-            ClientWebManager.setFocusedElement(sessionId, baseId, false);
-            ClientWebManager.setActivePressedId(sessionId, clicked.id());
+        String baseId = clicked.baseId();
+        focusNavigator.setFocused(baseId);
+        session.setFocusedElement(baseId, false);
 
-            HtmlNode domNode = ClientWebManager.findInteractiveNode(sessionId, baseId);
+        HtmlNode domNode = session.findInteractiveNode(baseId);
+        boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
+        if (isSelectElement && button == 0) {
+            selectWidget.open(baseId, clicked, session.rootNode());
+            return;
+        }
 
-            boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
-            if (isSelectElement && button == 0) {
-                ClientScreenInteractionManager.playElementSound(clicked);
-                selectWidget.open(baseId, clicked, ClientWebManager.getRootNode(sessionId));
-                return true;
+        if (clicked.type() == ElementType.RANGE && button == 0) {
+            // 値の確定は SessionInput が押下・ドラッグ・解放で行う。ここでは GUI の購読者へ
+            // 押下直後の値を知らせるだけにして、ワールド内と同じイベント順を保つ。
+            DisplayItem updated = session.elementById(baseId);
+            if (updated != null && updated.text() != null) {
+                String val = updated.text().split(":")[0];
+                if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
+                if (gestureInputChanged != null) gestureInputChanged.accept(baseId, val);
             }
+            return;
+        }
 
-            if (clicked.type() == ElementType.RANGE && button == 0) {
-                ClientScreenInteractionManager.beginDrag(sessionId, webX, webY);
-                DisplayItem updated = ClientWebManager.getElementById(sessionId, baseId);
-                if (updated != null && updated.text() != null) {
-                    String val = updated.text().split(":")[0];
-                    commitValue(baseId, val, onInputChanged);
-                }
-                return true;
-            }
+        if (button == 0 && clicked.events() != null && "true".equalsIgnoreCase(clicked.events().get("draggable"))) {
+            String label = (domNode != null && !domNode.getTextContent().isEmpty()) ? domNode.getTextContent().trim() : baseId;
+            dragDropController.startDrag(baseId, label);
+        }
+    }
 
-            if (button == 0 && clicked.events() != null && "true".equalsIgnoreCase(clicked.events().get("draggable"))) {
-                String label = (domNode != null && !domNode.getTextContent().isEmpty()) ? domNode.getTextContent().trim() : baseId;
-                dragDropController.startDrag(baseId, label);
-            }
-
-            ClientScreenInteractionManager.playElementSound(clicked);
-            boolean[] actionInvoked = new boolean[]{false};
-
-            if (domNode != null) {
-                if (button == 0) {
-                    DomEvent clickEvent = DomEvent.click(hit.localX(), hit.localY(), 0);
-                    StandardDefaultActions.Context defaults = ClientDomEventDispatcher.createClickDefaults(
-                            sessionId, hit.localX(), hit.localY(), clicked, button, onInputChanged, onWebAction,
-                            target -> handleMouseClicked(screen, font, hit.localX(), hit.localY(), 0, onInputChanged, onWebAction)
-                    );
-                    actionInvoked[0] = ClientDomEventDispatcher.dispatchWithActions(
-                            sessionId, domNode, clickEvent, clicked, button, onWebAction, eventCallback,
-                            evt -> StandardDefaultActions.execute(evt, defaults)
-                    );
-                    ClientDomEventDispatcher.dispatchDoubleClickIfRepeated(sessionId, domNode, hit.localX(), hit.localY());
-                } else {
-                    int domButton = ClientDomEventDispatcher.domButton(button);
-                    if (domButton == 2) {
-                        actionInvoked[0] = ClientDomEventDispatcher.dispatchWithActions(sessionId, domNode,
-                                UiEvents.mouse("contextmenu", hit.localX(), hit.localY(), domButton, 0, false, false, false, false, null),
-                                clicked, button, onWebAction, eventCallback, null);
-                    }
-                    actionInvoked[0] |= ClientDomEventDispatcher.dispatchWithActions(sessionId, domNode,
-                            UiEvents.mouse("auxclick", hit.localX(), hit.localY(), domButton, 0, false, false, false, false, null),
-                            clicked, button, onWebAction, eventCallback, null);
-                }
-            } else {
-                String action = clicked.events() != null ? clicked.events().get("onclick") : null;
-                if (action != null && onWebAction != null) {
-                    onWebAction.onAction(action, clicked, button);
-                    actionInvoked[0] = true;
-                }
-            }
-            if (actionInvoked[0]) return true;
+    @Override
+    public boolean scrollHandled(SessionContext.UIHitResult hit, double scrollY) {
+        if (hit == null || hit.element() == null) return false;
+        if (hit.element().type() == ElementType.SCENE) {
+            WebSceneContext.getOrCreate(sessionId, hit.element().baseId()).addZoom((float) (scrollY * 0.12));
+            return true;
+        }
+        if (hit.element().type() == ElementType.TEXTAREA) {
+            String taId = hit.element().id();
+            int curScroll = TextEditState.getTextareaScrollRow(sessionId, taId);
+            int nextScroll = Math.max(0, curScroll - (int) Math.signum(scrollY) * 3);
+            TextEditState.setTextareaScrollRow(sessionId, taId, nextScroll);
+            return true;
         }
         return false;
     }
 
+    /** 押下から解放まで GUI のコールバックを運ぶ。 */
+    private final class GuiClickSink implements SessionInput.ClickSink {
+        private final BiConsumer<String, String> onInputChanged;
+        private final ClientDomEventDispatcher.TriActionCallback onWebAction;
+        private boolean invoked;
+
+        private GuiClickSink(BiConsumer<String, String> onInputChanged,
+                             ClientDomEventDispatcher.TriActionCallback onWebAction) {
+            this.onInputChanged = onInputChanged;
+            this.onWebAction = onWebAction;
+        }
+
+        @Override
+        public void action(String action, DisplayItem clicked, int button) {
+            invoked = true;
+            if (onWebAction != null) onWebAction.onAction(action, clicked, button);
+        }
+
+        @Override
+        public void inputChanged(String elementId, String value) {
+            if (onInputChanged != null) onInputChanged.accept(elementId, value);
+        }
+
+        @Override
+        public void clickDelegate(SessionInput input, HtmlNode target, double x, double y, int minecraftButton) {
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            DisplayItem targetItem = session != null ? session.elementById(target.getId()) : null;
+            input.dispatchClick(target, x, y, minecraftButton, targetItem, this);
+        }
+
+        private boolean invoked() {
+            return invoked;
+        }
+    }
+
     private void commitValue(String baseId, String value, BiConsumer<String, String> onInputChanged) {
-        ClientScreenInteractionManager.submitInput(sessionId, baseId, value);
-        ClientWebManager.updateNodeAttributeLocally(sessionId, baseId, "value", value, false);
+        ClientWebManager.getOrCreateSession(sessionId).input().submitInput(baseId, value);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null) session.updateNodeAttributeLocally(baseId, "value", value, false);
         if (this.state != null) this.state.notifyElementModelChanged(baseId, value);
         if (onInputChanged != null) onInputChanged.accept(baseId, value);
     }
@@ -361,10 +419,12 @@ public class EnderScreenDelegate {
             return true;
         }
 
-        if (ClientScreenInteractionManager.handleDrag(sessionId, webX, webY)) {
-            if (!ClientWebManager.getActivePressedId(sessionId).isEmpty()) {
-                String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActivePressedId(sessionId));
-                DisplayItem updated = ClientWebManager.getElementById(sessionId, baseId);
+        SessionContext inputSession = ClientWebManager.getOrCreateSession(sessionId);
+        if (inputSession.input().drag(webX, webY)) {
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            if (session != null && !session.activePressedId().isEmpty()) {
+                String baseId = ClientWebManager.getBaseNodeId(session.activePressedId());
+                DisplayItem updated = session.elementById(baseId);
                 if (updated != null && updated.type() == ElementType.RANGE && updated.text() != null) {
                     String val = updated.text().split(":")[0];
                     if (this.state != null) this.state.notifyElementModelChanged(baseId, val);
@@ -374,9 +434,10 @@ public class EnderScreenDelegate {
             return true;
         }
 
-        TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        TextSelection sel = session != null ? session.textSelection() : null;
         if (sel != null && !sel.anchorNodeId().isEmpty()) {
-            ClientWebManager.UIHitResult dragHit = ClientWebManager.getHitElement(sessionId, webX, webY);
+            SessionContext.UIHitResult dragHit = session.hitTest(webX, webY);
             if (dragHit != null && dragHit.element() != null && dragHit.element().text() != null) {
                 if (sel.anchorNodeId().equals(dragHit.element().baseId())) {
                     Font font = Minecraft.getInstance().font;
@@ -391,56 +452,41 @@ public class EnderScreenDelegate {
 
     public void handleMouseReleased(double webX, double webY, int button, WebDragDropController.DropCallback onWebDrop) {
         activeSceneId = "";
-        ClientScreenInteractionManager.handleRelease(sessionId, webX, webY, button, false);
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        session.input().release(webX, webY, button, true, lastClickSink);
+        lastClickSink = SessionInput.ClickSink.NONE;
         dragDropController.handleRelease(sessionId, webX, webY, onWebDrop);
     }
 
     public boolean handleMouseScrolled(double webX, double webY, double scrollX, double scrollY) {
-        ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
-        if (hit != null && hit.element() != null) {
-            String baseId = hit.element().baseId();
-            HtmlNode domNode = ClientWebManager.findNode(sessionId, baseId);
-            if (domNode != null) {
-                var wheelEv = UiEvents.wheel(hit.localX(), hit.localY(), scrollX, scrollY, Screen.hasControlDown(), Screen.hasShiftDown(), Screen.hasAltDown(), false);
-                domNode.dispatchEvent(wheelEv);
-                if (wheelEv.isDefaultPrevented()) {
-                    return true;
-                }
-            }
-            if (hit.element().type() == ElementType.SCENE) {
-                String sceneBaseId = hit.element().baseId();
-                WebSceneContext.getOrCreate(sessionId, sceneBaseId).addZoom((float) (scrollY * 0.12));
-                return true;
-            }
-            if (hit.element().type() == ElementType.TEXTAREA) {
-                String taId = hit.element().id();
-                int curScroll = TextEditState.getTextareaScrollRow(sessionId, taId);
-                int nextScroll = Math.max(0, curScroll - (int) Math.signum(scrollY) * 3);
-                TextEditState.setTextareaScrollRow(sessionId, taId, nextScroll);
-                return true;
-            }
-        }
-        return ClientWebManager.handleScrollLocally(sessionId, webX, webY, scrollX, scrollY);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null) return false;
+        return session.input().scroll(webX, webY, scrollX, scrollY,
+                Screen.hasControlDown(), Screen.hasShiftDown(), Screen.hasAltDown(), this);
     }
 
     public boolean handleCharTyped(char codePoint, int modifiers, BiConsumer<String, String> onInputChanged) {
         String data = String.valueOf(codePoint);
+        SessionInput input = ClientWebManager.getOrCreateSession(sessionId).input();
         if (textareaEditor.isEditing()) {
             String baseId = textareaEditor.activeBaseId();
-            if (!ClientScreenInteractionManager.beginTextEdit(sessionId, baseId, data, "insertText")) return true;
+            if (!input.beginTextEdit(baseId, data, "insertText")) return true;
             boolean handled = textareaEditor.handleCharTyped(codePoint, onInputChanged, () -> {
                 if (this.state != null) this.state.notifyElementModelChanged(baseId, textareaEditor.getValue(baseId));
             });
             if (handled) {
-                ClientScreenInteractionManager.commitTextEdit(sessionId, baseId, textareaEditor.getValue(baseId), data, "insertText");
+                input.commitTextEdit(baseId, textareaEditor.getValue(baseId), data, "insertText");
             }
             return handled;
-        } else if (!ClientWebManager.getActiveInputId(sessionId).isEmpty() && this.inputHost != null) {
-            String baseId = ClientWebManager.getBaseNodeId(ClientWebManager.getActiveInputId(sessionId));
-            if (!ClientScreenInteractionManager.beginTextEdit(sessionId, baseId, data, "insertText")) return true;
-            if (this.inputHost.charTyped(codePoint, modifiers)) {
-                ClientScreenInteractionManager.commitTextEdit(sessionId, baseId, this.inputHost.getValue(), data, "insertText");
-                return true;
+        } else {
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            if (session != null && !session.activeInputId().isEmpty() && this.inputHost != null) {
+                String baseId = ClientWebManager.getBaseNodeId(session.activeInputId());
+                if (!input.beginTextEdit(baseId, data, "insertText")) return true;
+                if (this.inputHost.charTyped(codePoint, modifiers)) {
+                    input.commitTextEdit(baseId, this.inputHost.getValue(), data, "insertText");
+                    return true;
+                }
             }
         }
         return false;
@@ -451,15 +497,17 @@ public class EnderScreenDelegate {
     }
 
     private KeyboardMode keyboardMode() {
-        boolean hasActiveInput = !ClientWebManager.getActiveInputId(sessionId).isEmpty();
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        boolean hasActiveInput = session != null && !session.activeInputId().isEmpty();
         if (!hasActiveInput) return KeyboardMode.NAVIGATION;
         return textareaEditor.isEditing() ? KeyboardMode.TEXTAREA_EDITING : KeyboardMode.SINGLE_LINE_INPUT;
     }
 
     private HtmlNode keyboardEventTarget() {
+        SessionContext session = ClientWebManager.getSession(sessionId);
         String focusedId = focusNavigator.focusedId();
-        HtmlNode target = focusedId != null && !focusedId.isEmpty() ? ClientWebManager.findNode(sessionId, focusedId) : null;
-        return target != null ? target : ClientWebManager.getRootNode(sessionId);
+        HtmlNode target = session != null && focusedId != null && !focusedId.isEmpty() ? session.findNode(focusedId) : null;
+        return target != null ? target : (session != null ? session.rootNode() : null);
     }
 
     private UIEvents.Keyboard dispatchKeyEvent(String type, int keyCode, int modifiers) {
@@ -469,9 +517,8 @@ public class EnderScreenDelegate {
         boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || Screen.hasShiftDown();
         boolean alt = (modifiers & GLFW.GLFW_MOD_ALT) != 0 || Screen.hasAltDown();
         boolean meta = (modifiers & GLFW.GLFW_MOD_SUPER) != 0;
-        UIEvents.Keyboard event = UiEvents.keyboard(type, glfwKeyToDomKey(keyCode), glfwKeyToDomCode(keyCode), 0, ctrl, shift, alt, meta, false, false);
-        target.dispatchEvent(event);
-        return event;
+        return ClientWebManager.getOrCreateSession(sessionId).input()
+                .keyEvent(type, target, keyCode, ctrl, shift, alt, meta);
     }
 
     public boolean handleKeyReleased(int keyCode, int modifiers) {
@@ -479,21 +526,12 @@ public class EnderScreenDelegate {
         return keyUp != null && keyUp.isDefaultPrevented();
     }
 
-    private static String editingInputType(int keyCode, int modifiers, boolean multiLine) {
-        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) return ctrl ? "deleteWordBackward" : "deleteContentBackward";
-        if (keyCode == GLFW.GLFW_KEY_DELETE) return ctrl ? "deleteWordForward" : "deleteContentForward";
-        if (ctrl && keyCode == GLFW.GLFW_KEY_V) return "insertFromPaste";
-        if (ctrl && keyCode == GLFW.GLFW_KEY_X) return "deleteByCut";
-        if (multiLine && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) return "insertLineBreak";
-        return null;
-    }
-
     public boolean handleKeyPressed(Screen screen, Font font, int keyCode, int scanCode, int modifiers,
                                     boolean blockInventoryKey,
                                     BiConsumer<String, String> onInputChanged,
                                     BiConsumer<String, String> onInputSubmitted,
                                     ClientDomEventDispatcher.TriActionCallback onWebAction) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
         UIEvents.Keyboard keyDown = dispatchKeyEvent("keydown", keyCode, modifiers);
         if (keyDown != null && keyDown.isDefaultPrevented()) {
             return true;
@@ -509,34 +547,36 @@ public class EnderScreenDelegate {
         switch (keyboardMode()) {
             case TEXTAREA_EDITING -> {
                 String baseId = textareaEditor.activeBaseId();
-                String inputType = editingInputType(keyCode, modifiers, true);
-                if (inputType != null && !ClientScreenInteractionManager.beginTextEdit(sessionId, baseId, null, inputType)) return true;
+                String inputType = SessionInput.editingInputType(keyCode, modifiers, true);
+                SessionInput input = ClientWebManager.getOrCreateSession(sessionId).input();
+                if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
                 if (textareaEditor.handleKeyPressed(keyCode, onInputChanged, () -> {
                     if (this.state != null) this.state.notifyElementModelChanged(baseId, textareaEditor.getValue(baseId));
                 })) {
-                    ClientScreenInteractionManager.commitTextEdit(sessionId, baseId, textareaEditor.getValue(baseId), null, inputType != null ? inputType : "insertText");
+                    input.commitTextEdit(baseId, textareaEditor.getValue(baseId), null, inputType != null ? inputType : "insertText");
                     return true;
                 }
                 if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
             }
             case SINGLE_LINE_INPUT -> {
-                String activeId = ClientWebManager.getActiveInputId(sessionId);
+                String activeId = session != null ? session.activeInputId() : "";
                 String baseId = ClientWebManager.getBaseNodeId(activeId);
                 if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                     unfocusWebInput();
                     return true;
                 }
+                SessionInput input = ClientWebManager.getOrCreateSession(sessionId).input();
                 if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                     String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                     syncInputValueToDomNodes(baseId, val);
-                    ClientScreenInteractionManager.submitInput(sessionId, activeId, val);
+                    input.submitInput(activeId, val);
                     if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
                     return true;
                 }
-                String inputType = editingInputType(keyCode, modifiers, false);
-                if (inputType != null && !ClientScreenInteractionManager.beginTextEdit(sessionId, baseId, null, inputType)) return true;
+                String inputType = SessionInput.editingInputType(keyCode, modifiers, false);
+                if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
                 if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
-                    ClientScreenInteractionManager.commitTextEdit(sessionId, baseId, this.inputHost.getValue(), null, inputType != null ? inputType : "insertText");
+                    input.commitTextEdit(baseId, this.inputHost.getValue(), null, inputType != null ? inputType : "insertText");
                     return true;
                 }
                 if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
@@ -547,7 +587,7 @@ public class EnderScreenDelegate {
         if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN || keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
             String focusedId = focusNavigator.focusedId();
             if (!focusedId.isEmpty()) {
-                HtmlNode node = ClientWebManager.findNode(sessionId, focusedId);
+                HtmlNode node = session != null ? session.findNode(focusedId) : null;
                 if (node != null && "input".equalsIgnoreCase(node.tag) && "range".equalsIgnoreCase(node.attrs.getOrDefault("type", ""))) {
                     int dir = (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_RIGHT) ? 1 : -1;
                     return adjustFocusedRangeSlider(focusedId, dir, onInputChanged);
@@ -557,7 +597,7 @@ public class EnderScreenDelegate {
         }
 
         if (keyCode == GLFW.GLFW_KEY_C && (modifiers & GLFW.GLFW_MOD_CONTROL) != 0) {
-            TextSelection sel = ClientWebManager.getTextSelection(sessionId);
+            TextSelection sel = session != null ? session.textSelection() : null;
             if (sel != null && !sel.isEmpty()) {
                 Minecraft.getInstance().keyboardHandler.setClipboard(sel.selectedText());
                 return true;
@@ -567,9 +607,9 @@ public class EnderScreenDelegate {
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
             String focusedId = focusNavigator.focusedId();
             if (!focusedId.isEmpty()) {
-                HtmlNode node = ClientWebManager.findNode(sessionId, focusedId);
+                HtmlNode node = session != null ? session.findNode(focusedId) : null;
                 if (node != null) {
-                    return dispatchActivateToNode(screen, font, node, onInputChanged, onWebAction);
+                    return dispatchActivateToNode(node, onInputChanged, onWebAction);
                 }
             }
         }
@@ -577,22 +617,17 @@ public class EnderScreenDelegate {
         return false;
     }
 
-    private boolean dispatchActivateToNode(Screen screen, Font font, HtmlNode node,
+    private boolean dispatchActivateToNode(HtmlNode node,
                                            BiConsumer<String, String> onInputChanged,
                                            ClientDomEventDispatcher.TriActionCallback onWebAction) {
-        DisplayItem el = ClientWebManager.getElementById(sessionId, node.getId());
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        DisplayItem el = session != null ? session.elementById(node.getId()) : null;
         if (el != null) {
             ClientScreenInteractionManager.playElementSound(el);
         }
-        DomEvent clickEvent = DomEvent.click(0);
-        StandardDefaultActions.Context defaults = ClientDomEventDispatcher.createClickDefaults(
-                sessionId, 0, 0, el, 0, onInputChanged, onWebAction,
-                target -> dispatchActivateToNode(screen, font, target, onInputChanged, onWebAction)
-        );
-        return ClientDomEventDispatcher.dispatchWithActions(
-                sessionId, node, clickEvent, el, 0, onWebAction, eventCallback,
-                evt -> StandardDefaultActions.execute(evt, defaults)
-        );
+        GuiClickSink sink = new GuiClickSink(onInputChanged, onWebAction);
+        ClientWebManager.getOrCreateSession(sessionId).input().dispatchClick(node, 0, 0, 0, el, sink);
+        return sink.invoked();
     }
 
     private void applyFocusCandidate(Screen screen, WebFocusNavigator.FocusCandidate candidate) {
@@ -605,17 +640,19 @@ public class EnderScreenDelegate {
             String inputType = node.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
             if (!"checkbox".equals(inputType) && !"radio".equals(inputType) && !"range".equals(inputType) && !"color".equals(inputType)) {
                 if (screen != null) {
-                    HtmlNode vNode = ClientWebManager.findNode(sessionId, baseId);
+                    SessionContext session = ClientWebManager.getSession(sessionId);
+                    HtmlNode vNode = session != null ? session.findNode(baseId) : null;
                     String val = (vNode != null) ? vNode.attrs.getOrDefault("value", "") : "";
                     focusWebInput(screen, baseId, val);
-                    ClientWebManager.setFocusedElement(sessionId, baseId, true);
+                    ClientWebManager.getOrCreateSession(sessionId).setFocusedElement(baseId, true);
                 }
             }
         }
     }
 
     private boolean adjustFocusedRangeSlider(String focusedId, int dir, BiConsumer<String, String> onInputChanged) {
-        HtmlNode node = ClientWebManager.findNode(sessionId, focusedId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode node = session != null ? session.findNode(focusedId) : null;
         if (node == null || !"input".equalsIgnoreCase(node.tag)) return false;
 
         double min = 0, max = 100, step = 1, cur = 50;
@@ -630,17 +667,18 @@ public class EnderScreenDelegate {
                 ? String.valueOf(Math.round(next))
                 : String.format(Locale.ROOT, "%.2f", next);
 
-        ClientWebManager.updateNodeAttributeLocally(sessionId, focusedId, "value", formatted, false);
+        session.updateNodeAttributeLocally(focusedId, "value", formatted, false);
         if (this.state != null) this.state.notifyElementModelChanged(focusedId, formatted);
         if (onInputChanged != null) onInputChanged.accept(focusedId, formatted);
         return true;
     }
 
     public void setElementText(String id, String text) {
-        HtmlNode target = ClientWebManager.findNode(sessionId, id);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode target = session != null ? session.findNode(id) : null;
         if (target != null) {
             target.setTextContent(text);
-            ClientWebManager.requestRender(sessionId);
+            session.requestRender();
         }
     }
 
@@ -648,7 +686,8 @@ public class EnderScreenDelegate {
         String baseId = ClientWebManager.getBaseNodeId(id);
         String safeVal = value != null ? value : "";
         syncInputValueToDomNodes(baseId, safeVal);
-        if (!textareaEditor.isEditing() && ClientWebManager.isFocusedBase(sessionId, baseId)) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null && !textareaEditor.isEditing() && session.isFocusedBase(baseId)) {
             if (this.inputHost != null && !Objects.equals(this.inputHost.getValue(), safeVal)) {
                 this.inputHost.setValue(safeVal);
             }
@@ -667,26 +706,29 @@ public class EnderScreenDelegate {
 
     public String getInputValue(String id) {
         String baseId = ClientWebManager.getBaseNodeId(id);
-        if (!textareaEditor.isEditing() && ClientWebManager.isFocusedBase(sessionId, baseId)) {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null && !textareaEditor.isEditing() && session.isFocusedBase(baseId)) {
             if (this.inputHost != null) return this.inputHost.getValue();
         }
-        HtmlNode node = ClientWebManager.findNode(sessionId, baseId);
+        HtmlNode node = session != null ? session.findNode(baseId) : null;
         return node != null ? node.attrs.getOrDefault("value", "") : "";
     }
 
     public void addClass(String id, String cls) {
-        HtmlNode target = ClientWebManager.findNode(sessionId, id);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode target = session != null ? session.findNode(id) : null;
         if (target != null && !target.hasClass(cls)) {
             target.addClass(cls);
-            ClientWebManager.requestRender(sessionId);
+            session.requestRender();
         }
     }
 
     public void removeClass(String id, String cls) {
-        HtmlNode target = ClientWebManager.findNode(sessionId, id);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        HtmlNode target = session != null ? session.findNode(id) : null;
         if (target != null && target.hasClass(cls)) {
             target.removeClass(cls);
-            ClientWebManager.requestRender(sessionId);
+            session.requestRender();
         }
     }
 
@@ -702,7 +744,8 @@ public class EnderScreenDelegate {
         activeSceneId = "";
         selectWidget.close();
         dragDropController.clear();
-        ClientWebManager.setActivePressedId(sessionId, "");
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session != null) session.setActivePressedId("");
     }
 
     public static class WebDevTools {
@@ -733,7 +776,8 @@ public class EnderScreenDelegate {
             }
 
             if (targetAnchor != null) {
-                HtmlNode domNode = ClientWebManager.findNode(sessionId, targetAnchor.id());
+                SessionContext session = ClientWebManager.getSession(sessionId);
+                HtmlNode domNode = session != null ? session.findNode(targetAnchor.id()) : null;
                 int x = targetAnchor.x(), y = targetAnchor.y(), w = targetAnchor.width(), h = targetAnchor.height();
 
                 guiGraphics.renderOutline(x, y, w, h, 0xFF89B4FA);
@@ -899,8 +943,9 @@ public class EnderScreenDelegate {
                 targetH = Math.max(480, Math.round(targetW / aspect));
 
                 if (currentVirtualW != targetW || currentVirtualH != targetH) {
-                    if (sessionId != null && ClientWebManager.hasDocument(sessionId)) {
-                        ClientWebManager.recomputeLayout(sessionId, targetW, targetH);
+                    SessionContext session = ClientWebManager.getSession(sessionId);
+                    if (session != null && session.document() != null) {
+                        session.recomputeLayout(targetW, targetH);
                     }
                 }
             }
@@ -976,7 +1021,8 @@ public class EnderScreenDelegate {
 
         public void handleRelease(String sessionId, double webX, double webY, DropCallback onWebDrop) {
             if (!isDragging()) return;
-            ClientWebManager.UIHitResult hit = ClientWebManager.getHitElement(sessionId, webX, webY);
+            SessionContext session = ClientWebManager.getSession(sessionId);
+            SessionContext.UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
             if (hit != null && hit.element() != null) {
                 String targetBaseId = hit.element().baseId();
                 String dropAction = hit.element().events() != null ? hit.element().events().getOrDefault("ondrop", "") : "";

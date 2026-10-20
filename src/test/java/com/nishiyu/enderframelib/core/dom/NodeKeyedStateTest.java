@@ -1,6 +1,9 @@
 package com.nishiyu.enderframelib.core.dom;
 
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -8,6 +11,19 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /** R1: 対話状態とスクロール位置は節オブジェクトをキーにし、id の引き当ては索引だけで行う。 */
 public class NodeKeyedStateTest {
@@ -51,7 +67,7 @@ public class NodeKeyedStateTest {
     public void scrollStateKeepsSameIdNodesApart() {
         HtmlNode first = HtmlParser.parse("<div id=\"dup\"></div>").children.get(0);
         HtmlNode second = HtmlParser.parse("<div id=\"dup\"></div>").children.get(0);
-        LayoutContext.ScrollState scroll = new LayoutContext.ScrollState();
+        ScrollState scroll = new ScrollState();
 
         scroll.setScroll(first, 3, 7);
 

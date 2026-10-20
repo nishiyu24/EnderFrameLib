@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.wpt;
 
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
-import com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.wpt.WptHarness.WptCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,6 +11,20 @@ import static com.nishiyu.enderframelib.wpt.WptHarness.assertEqualsWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.assertFalseWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.assertTrueWpt;
 import static com.nishiyu.enderframelib.wpt.WptHarness.test;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * WPT の dom/ 領域から採用した testharness.js ケースの移植テスト。
@@ -202,8 +216,8 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "appendChild hierarchy validation, exceptions, and DocumentFragment expansion"
     )
     public void testNodeAppendChild() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement child = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement child = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
 
         test("appendChild throws HierarchyRequestError when inserting node into itself", () -> {
             WptHarness.assertThrowsDom("HierarchyRequestError", () -> parent.appendChild(parent),
@@ -217,27 +231,27 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("appendChild on Document allows only one element", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlDocument doc = new com.nishiyu.enderframelib.core.dom.HtmlDocument();
-            com.nishiyu.enderframelib.core.dom.HtmlElement html = new com.nishiyu.enderframelib.core.dom.HtmlElement("html");
-            com.nishiyu.enderframelib.core.dom.HtmlElement secondHtml = new com.nishiyu.enderframelib.core.dom.HtmlElement("html");
+            com.nishiyu.enderframelib.core.dom.node.HtmlDocument doc = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement html = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("html");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement secondHtml = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("html");
 
             doc.appendChild(html);
             assertEqualsWpt(html, doc.getDocumentElement(), "First element becomes documentElement");
 
             WptHarness.assertThrowsDom("HierarchyRequestError", () -> doc.appendChild(secondHtml),
                     "Inserting second element to Document must throw HierarchyRequestError");
-            WptHarness.assertThrowsDom("HierarchyRequestError", () -> doc.appendChild(new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("text")),
+            WptHarness.assertThrowsDom("HierarchyRequestError", () -> doc.appendChild(new HtmlText("text")),
                     "Inserting text node directly to Document must throw HierarchyRequestError");
         });
 
         test("appendChild with DocumentFragment unpacks all children", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlDocumentFragment frag = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlDocumentFragment();
-            com.nishiyu.enderframelib.core.dom.HtmlElement f1 = new com.nishiyu.enderframelib.core.dom.HtmlElement("b");
-            com.nishiyu.enderframelib.core.dom.HtmlElement f2 = new com.nishiyu.enderframelib.core.dom.HtmlElement("i");
+            com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment frag = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment();
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement f1 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement f2 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("i");
             frag.appendChild(f1);
             frag.appendChild(f2);
 
-            com.nishiyu.enderframelib.core.dom.HtmlElement container = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement container = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
             container.appendChild(frag);
 
             assertEqualsWpt(2, container.getChildNodes().getLength(), "Fragment children unpacked into container");
@@ -255,10 +269,10 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "insertBefore reference child validation and positioning"
     )
     public void testNodeInsertBefore() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement existing = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
-        com.nishiyu.enderframelib.core.dom.HtmlElement unrelated = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
-        com.nishiyu.enderframelib.core.dom.HtmlElement inserted = new com.nishiyu.enderframelib.core.dom.HtmlElement("b");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement existing = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement unrelated = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement inserted = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b");
 
         parent.appendChild(existing);
 
@@ -273,7 +287,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("insertBefore correctly places node before reference child", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement head = new com.nishiyu.enderframelib.core.dom.HtmlElement("h1");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement head = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("h1");
             parent.insertBefore(head, existing);
             assertEqualsWpt(head, parent.getFirstChild(), "Head inserted before existing");
             assertEqualsWpt(existing, head.getNextSibling(), "Head next sibling is existing");
@@ -288,9 +302,9 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "removeChild unlinking and NotFoundError"
     )
     public void testNodeRemoveChild() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement child = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
-        com.nishiyu.enderframelib.core.dom.HtmlElement stranger = new com.nishiyu.enderframelib.core.dom.HtmlElement("b");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement child = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement stranger = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b");
 
         parent.appendChild(child);
 
@@ -315,10 +329,10 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "replaceChild node replacement and hierarchy validation"
     )
     public void testNodeReplaceChild() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement oldChild = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
-        com.nishiyu.enderframelib.core.dom.HtmlElement newChild = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
-        com.nishiyu.enderframelib.core.dom.HtmlElement stranger = new com.nishiyu.enderframelib.core.dom.HtmlElement("b");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement oldChild = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement newChild = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement stranger = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b");
 
         parent.appendChild(oldChild);
 
@@ -343,11 +357,11 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "compareDocumentPosition bitmask flags"
     )
     public void testNodeCompareDocumentPosition() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement root = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement a = new com.nishiyu.enderframelib.core.dom.HtmlElement("a");
-        com.nishiyu.enderframelib.core.dom.HtmlElement b = new com.nishiyu.enderframelib.core.dom.HtmlElement("b");
-        com.nishiyu.enderframelib.core.dom.HtmlElement c = new com.nishiyu.enderframelib.core.dom.HtmlElement("c");
-        com.nishiyu.enderframelib.core.dom.HtmlElement disconnected = new com.nishiyu.enderframelib.core.dom.HtmlElement("x");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement root = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement a = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("a");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement b = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("b");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement c = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("c");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement disconnected = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("x");
 
         root.appendChild(a);
         a.appendChild(b);
@@ -393,16 +407,16 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "cloneNode shallow vs deep duplication and attribute/content copy"
     )
     public void testNodeCloneNode() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         parent.setAttribute("id", "main");
         parent.setAttribute("data-test", "val");
 
-        com.nishiyu.enderframelib.core.dom.HtmlElement child = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement child = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
         child.setTextContent("inner");
         parent.appendChild(child);
 
         test("Shallow clone copies attributes but not children", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlNode shallow = parent.cloneNode(false);
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode shallow = parent.cloneNode(false);
             assertEqualsWpt("div", shallow.tag, "Tag preserved");
             assertEqualsWpt("main", shallow.getId(), "Id attribute preserved");
             assertEqualsWpt("val", shallow.getAttribute("data-test"), "Data attribute preserved");
@@ -411,7 +425,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("Deep clone copies children recursively", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlNode deep = parent.cloneNode(true);
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode deep = parent.cloneNode(true);
             assertEqualsWpt(1, deep.getChildNodes().getLength(), "Child cloned in deep clone");
             com.nishiyu.enderframelib.api.dom.Node clonedChild = deep.getFirstChild();
             assertTrueWpt(clonedChild != child, "Child is a new object instance");
@@ -428,11 +442,11 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "textContent getter and setter on Elements, Text, and Comments"
     )
     public void testNodeTextContent() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement div = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement p = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
-        com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText t1 = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("Hello ");
-        com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText t2 = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("World");
-        com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlComment comment = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlComment("a comment");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement div = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement p = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
+        HtmlText t1 = new HtmlText("Hello ");
+        HtmlText t2 = new HtmlText("World");
+        com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlComment comment = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlComment("a comment");
 
         div.appendChild(p);
         p.appendChild(t1);
@@ -460,10 +474,10 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "ChildNode methods: remove, before, after, replaceWith"
     )
     public void testChildNode() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("ul");
-        com.nishiyu.enderframelib.core.dom.HtmlElement item1 = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
-        com.nishiyu.enderframelib.core.dom.HtmlElement item2 = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
-        com.nishiyu.enderframelib.core.dom.HtmlElement item3 = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("ul");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement item1 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement item2 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement item3 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
 
         parent.appendChild(item1);
         parent.appendChild(item2);
@@ -478,20 +492,20 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("before() inserts node before this node", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement itemNew = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement itemNew = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
             item3.before(itemNew);
             assertEqualsWpt(3, parent.getChildNodes().getLength(), "Length after before()");
             assertEqualsWpt(itemNew, item3.getPreviousSibling(), "itemNew is previous sibling of item3");
         });
 
         test("after() inserts node after this node", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement itemAfter = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement itemAfter = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
             item1.after(itemAfter);
             assertEqualsWpt(itemAfter, item1.getNextSibling(), "itemAfter is next sibling of item1");
         });
 
         test("replaceWith() replaces this node with target nodes", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement itemRepl = new com.nishiyu.enderframelib.core.dom.HtmlElement("li");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement itemRepl = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("li");
             item1.replaceWith(itemRepl);
             assertEqualsWpt(itemRepl, parent.getFirstChild(), "itemRepl replaced item1");
             assertEqualsWpt(null, item1.getParentNode(), "item1 is unlinked");
@@ -506,9 +520,9 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "ParentNode methods: append, prepend, replaceChildren, children collection"
     )
     public void testParentNode() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement container = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-        com.nishiyu.enderframelib.core.dom.HtmlElement el1 = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
-        com.nishiyu.enderframelib.core.dom.HtmlElement el2 = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement container = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement el1 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement el2 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
 
         test("append() adds multiple nodes at end", () -> {
             container.append(el1, el2);
@@ -518,7 +532,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("prepend() adds nodes at beginning", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement el0 = new com.nishiyu.enderframelib.core.dom.HtmlElement("h1");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement el0 = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("h1");
             container.prepend(el0);
             assertEqualsWpt(3, container.getChildElementCount(), "Three element children");
             assertEqualsWpt(el0, container.getFirstElementChild(), "el0 is now first element child");
@@ -527,13 +541,13 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         test("children HTMLCollection is live", () -> {
             com.nishiyu.enderframelib.api.dom.DOMCollections.HTMLCollection children = container.getChildren();
             assertEqualsWpt(3, children.getLength(), "Initial live collection count");
-            com.nishiyu.enderframelib.core.dom.HtmlElement extra = new com.nishiyu.enderframelib.core.dom.HtmlElement("footer");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement extra = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("footer");
             container.appendChild(extra);
             assertEqualsWpt(4, children.getLength(), "Live collection reflects appended element");
         });
 
         test("replaceChildren() replaces all children", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement only = new com.nishiyu.enderframelib.core.dom.HtmlElement("main");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement only = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("main");
             container.replaceChildren(only);
             assertEqualsWpt(1, container.getChildElementCount(), "One element child after replaceChildren");
             assertEqualsWpt(only, container.getFirstElementChild(), "Only child is 'only'");
@@ -548,7 +562,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "DOMTokenList operations and whitespace validation"
     )
     public void testElementClassList() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement el = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement el = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         com.nishiyu.enderframelib.api.dom.DOMCollections.DOMTokenList list = el.getClassList();
 
         test("classList reflects class attribute", () -> {
@@ -602,7 +616,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "CSSStyleDeclaration bidirectional sync with style attribute"
     )
     public void testElementStyle() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement el = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement el = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration style = el.getStyle();
 
         test("style reflects initial attribute", () -> {
@@ -638,11 +652,11 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "Element.matches, closest, and querySelector"
     )
     public void testElementMatches() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement container = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement container = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         container.setAttribute("class", "card active");
         container.setAttribute("id", "c1");
 
-        com.nishiyu.enderframelib.core.dom.HtmlElement btn = new com.nishiyu.enderframelib.core.dom.HtmlElement("button");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement btn = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("button");
         btn.setAttribute("class", "btn primary");
         container.appendChild(btn);
 
@@ -672,10 +686,10 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "Document.getElementById O(1) index, dynamic insertion/removal, and ID attribute mutation"
     )
     public void testDocumentGetElementById() {
-        com.nishiyu.enderframelib.core.dom.HtmlDocument doc = new com.nishiyu.enderframelib.core.dom.HtmlDocument();
-        com.nishiyu.enderframelib.core.dom.HtmlElement html = new com.nishiyu.enderframelib.core.dom.HtmlElement("html");
-        com.nishiyu.enderframelib.core.dom.HtmlElement body = new com.nishiyu.enderframelib.core.dom.HtmlElement("body");
-        com.nishiyu.enderframelib.core.dom.HtmlElement target = new com.nishiyu.enderframelib.core.dom.HtmlElement("section");
+        com.nishiyu.enderframelib.core.dom.node.HtmlDocument doc = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement html = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("html");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement body = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("body");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement target = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("section");
         target.setAttribute("id", "special");
 
         doc.appendChild(html);
@@ -710,7 +724,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
             description = "MutationObserver childList, attributes, characterData, and subtree observation"
     )
     public void testMutationObserver() {
-        com.nishiyu.enderframelib.core.dom.HtmlElement root = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+        com.nishiyu.enderframelib.core.dom.node.HtmlElement root = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> received = new java.util.ArrayList<>();
 
         com.nishiyu.enderframelib.api.dom.MutationObserver observer = com.nishiyu.enderframelib.api.dom.MutationObserver.create(
@@ -726,7 +740,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
                 .build());
 
         test("childList mutations recorded on append and remove", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement item = new com.nishiyu.enderframelib.core.dom.HtmlElement("p");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement item = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("p");
             root.appendChild(item);
 
             java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> records = observer.takeRecords();
@@ -753,7 +767,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("characterData mutation recorded on text modification", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText text = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("start");
+            HtmlText text = new HtmlText("start");
             root.appendChild(text);
             observer.takeRecords(); // clear childList
 
@@ -765,7 +779,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
 
         test("disconnect stops observation", () -> {
             observer.disconnect();
-            root.appendChild(new com.nishiyu.enderframelib.core.dom.HtmlElement("span"));
+            root.appendChild(new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span"));
             java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> postDisconnect = observer.takeRecords();
             assertEqualsWpt(0, postDisconnect.size(), "No records after disconnect");
         });
@@ -780,7 +794,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
     )
     public void testEventTargetAddEventListener() {
         test("addEventListener and removeEventListener basic lifecycle", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement target = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement target = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
             java.util.concurrent.atomic.AtomicInteger count = new java.util.concurrent.atomic.AtomicInteger(0);
             com.nishiyu.enderframelib.api.event.EventListener listener = ev -> count.incrementAndGet();
 
@@ -794,7 +808,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
         });
 
         test("duplicate listeners with same type, callback and capture are ignored", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement target = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement target = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
             java.util.concurrent.atomic.AtomicInteger count = new java.util.concurrent.atomic.AtomicInteger(0);
             com.nishiyu.enderframelib.api.event.EventListener listener = ev -> count.incrementAndGet();
 
@@ -815,8 +829,8 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
     )
     public void testEventDispatchOrder() {
         test("3-phase dispatch: CAPTURING -> AT_TARGET -> BUBBLING", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.HtmlElement("div");
-            com.nishiyu.enderframelib.core.dom.HtmlElement child = new com.nishiyu.enderframelib.core.dom.HtmlElement("span");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement parent = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement child = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("span");
             parent.appendChild(child);
 
             java.util.List<String> phases = new java.util.ArrayList<>();
@@ -842,7 +856,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
     )
     public void testEventStopImmediatePropagation() {
         test("stopImmediatePropagation prevents further listener invocations on same target", () -> {
-            com.nishiyu.enderframelib.core.dom.HtmlElement target = new com.nishiyu.enderframelib.core.dom.HtmlElement("button");
+            com.nishiyu.enderframelib.core.dom.node.HtmlElement target = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("button");
             java.util.List<String> called = new java.util.ArrayList<>();
 
             target.addEventListener("click", ev -> {

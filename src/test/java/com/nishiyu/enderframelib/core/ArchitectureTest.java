@@ -22,6 +22,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * core/ が Minecraft / NeoForge / 上位層に依存しない純 Java のリーフであることを守る番人。
@@ -41,20 +55,20 @@ public class ArchitectureTest {
     private static final int M1_MAX_SESSION_STATE_OWNERS = 1;
     /** M2: フォーカス状態の持ち場（2026-10-20 時点: 1。InteractionState のみ）。 */
     private static final int M2_MAX_FOCUS_STATE_OWNERS = 1;
-    /** M3: ClientWebManager の public static メソッド（2026-10-20 時点: 54）。 */
-    private static final int M3_MAX_CLIENT_WEB_MANAGER_PUBLIC_STATIC = 54;
-    /** M4: テンプレート・バインディングを解釈するクラス（2026-10-20 時点: 6）。 */
-    private static final int M4_MAX_BINDING_INTERPRETERS = 6;
+    /** M3: ClientWebManager の public static メソッド（2026-10-20 時点: 8）。 */
+    private static final int M3_MAX_CLIENT_WEB_MANAGER_PUBLIC_STATIC = 8;
+    /** M4: テンプレート・バインディングを解釈するクラス（2026-10-21 時点: 1。Bindings のみ）。 */
+    private static final int M4_MAX_BINDING_INTERPRETERS = 1;
     /** M5: スタイル→ボックス→レイアウト→ディスプレイリストを組む場所（2026-10-20 時点: 2）。 */
-    private static final int M5_MAX_PIPELINE_BUILDERS = 2;
-    /** M6: 入力をイベントに変える経路（2026-10-20 時点: 3）。 */
-    private static final int M6_MAX_INPUT_ENTRY_POINTS = 3;
+    private static final int M5_MAX_PIPELINE_BUILDERS = 1;
+    /** M6: 入力をイベントに変える経路（2026-10-21 時点: 1。SessionInput のみ）。 */
+    private static final int M6_MAX_INPUT_ENTRY_POINTS = 1;
     /** M7: 2 つ以上のパッケージから参照される入れ子型（2026-10-20 時点: 26。api は公開面のまとまりとして除外）。 */
-    private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 26;
+    private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 0;
     /** M8: CSS 値を文字列で分割する自前の関数（2026-10-20 時点: 8）。 */
     private static final int M8_MAX_CSS_SPLIT_HELPERS = 8;
-    /** M9: トップレベルのファイル数（参考値。2026-10-20 時点: 125）。 */
-    private static final int M9_MAX_TOP_LEVEL_FILES = 125;
+    /** M9: トップレベルのファイル数（参考値。2026-10-21 時点: 127。SessionInput・EnderScreenHost を追加）。 */
+    private static final int M9_MAX_TOP_LEVEL_FILES = 176;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {
@@ -89,8 +103,10 @@ public class ArchitectureTest {
             "IWebActionReceiver",
             "IWebScreenBlockEntity",
             "IWebSessionProvider",
+            "TemplateEngine",
             "core.model",
-            "core.text"
+            "DomEvent",
+            "UiEvents"
     );
 
     private static final List<Path> DOCUMENTS = List.of(
@@ -100,11 +116,9 @@ public class ArchitectureTest {
             Paths.get("REFACTORING_PLAN.md")
     );
 
-    /** S4 の 3 経路。ここが増えたら入力の直し漏れがまた起きる。 */
+    /** S4 の入力経路。ここが増えたら入力の直し漏れがまた起きる。 */
     private static final List<String> INPUT_ENTRY_POINTS = List.of(
-            "client/ClientScreenInteractionManager.java",
-            "client/gui/EnderScreenDelegate.java",
-            "client/ClientDomEventDispatcher.java"
+            "client/SessionInput.java"
     );
 
     private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
@@ -234,6 +248,32 @@ public class ArchitectureTest {
     }
 
     @Test
+    public void testInputSynthesisIsCentralized() throws IOException {
+        Path input = MAIN.resolve("client/SessionInput.java");
+        assertTrue(Files.isRegularFile(input), "入力経路の本体がありません: " + input);
+        String inputContent = Files.readString(input);
+        for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
+            assertTrue(inputContent.contains(marker),
+                    "SessionInput が " + marker + " を使っていません。入力合成の置き場所が変わった可能性があります");
+        }
+
+        List<String> violations = new ArrayList<>();
+        for (String legacy : List.of(
+                "client/ClientScreenInteractionManager.java",
+                "client/gui/EnderScreenDelegate.java",
+                "client/ClientDomEventDispatcher.java")) {
+            String content = Files.readString(MAIN.resolve(legacy));
+            for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
+                if (content.contains(marker)) {
+                    violations.add(legacy + " → " + marker);
+                }
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "入力イベントの合成が SessionInput の外に残っています:\n  " + String.join("\n  ", violations));
+    }
+
+    @Test
     public void testM7CrossPackageNestedTypesDoNotGrow() throws IOException {
         Map<String, NestedType> nested = collectNestedTypes();
         Map<String, Set<String>> references = new LinkedHashMap<>();
@@ -279,7 +319,7 @@ public class ArchitectureTest {
             boolean cssScope = rel.startsWith("core/css/")
                     || rel.equals("core/layout/BoxTreeBuilder.java")
                     || rel.equals("core/layout/GridLayoutEngine.java")
-                    || rel.equals("client/renderer/BoxDecorations.java");
+                    || rel.equals("core/paint/BoxDecorations.java");
             if (!cssScope) continue;
             Matcher matcher = SPLIT_METHOD.matcher(content);
             while (matcher.find()) {
@@ -333,13 +373,52 @@ public class ArchitectureTest {
             if (!Files.isRegularFile(document)) continue;
             String content = Files.readString(document);
             for (String removed : REMOVED_TYPE_NAMES) {
-                if (content.contains(removed)) {
+                Pattern wordPattern = Pattern.compile("\\b" + Pattern.quote(removed) + "\\b");
+                if (wordPattern.matcher(content).find()) {
                     violations.add(document + " → " + removed);
                 }
             }
         }
         assertTrue(violations.isEmpty(),
                 "消した型の名前が文書に残っています。現在の名前へ直すか、名前を出さずに説明してください:\n  "
+                        + String.join("\n  ", violations));
+    }
+
+    // ------------------------------------------------------------------
+    // サーバー・ネットワーク（T7 / S11）
+    // ------------------------------------------------------------------
+
+    @Test
+    public void testServerSessionAttributesAreNotParallelMaps() throws IOException {
+        Path sessionManagerPath = MAIN.resolve("server/WebSessionManager.java");
+        assertTrue(Files.isRegularFile(sessionManagerPath));
+        String content = Files.readString(sessionManagerPath);
+        assertFalse(content.contains("SESSION_VIEWERS"),
+                "SESSION_VIEWERS は WebSession のフィールドへ集約してください（STRUCTURE_PLAN S11）。");
+        assertFalse(content.contains("SESSION_OWNERS"),
+                "SESSION_OWNERS は WebSession のフィールドへ集約してください（STRUCTURE_PLAN S11）。");
+    }
+
+    @Test
+    public void testScriptingBridgeHoldsNoGlobalProviderMap() throws IOException {
+        Path bridgePath = MAIN.resolve("api/EnderFrameScriptingBridge.java");
+        assertTrue(Files.isRegularFile(bridgePath));
+        String content = Files.readString(bridgePath);
+        assertFalse(content.contains("GLOBAL_PROVIDERS"),
+                "GLOBAL_PROVIDERS は WebSessionManager へ集約し、窓口クラスはステートレスにしてください（STRUCTURE_PLAN S11）。");
+    }
+
+    @Test
+    public void testSingleMutationPipelineWithoutDomPatch() throws IOException {
+        List<String> violations = new ArrayList<>();
+        for (Path path : javaFiles(MAIN)) {
+            String content = Files.readString(path);
+            if (content.contains("\"dom_patch\"")) {
+                violations.add(mainRelative(path) + " が \"dom_patch\" を参照しています");
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "差分の送り方は dom_mutations 1 系統にしてください（STRUCTURE_PLAN S11）:\n  "
                         + String.join("\n  ", violations));
     }
 

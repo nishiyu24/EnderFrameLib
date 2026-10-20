@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
@@ -124,6 +124,16 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
     @Override
     public void unregisterProvider(WebSessionProvider provider) {
         WebSessionManager.unregisterProvider(provider);
+    }
+
+    @Override
+    public void registerPrefixProvider(String prefix, WebSessionProvider provider) {
+        WebSessionManager.registerPrefixProvider(prefix, provider);
+    }
+
+    @Override
+    public void unregisterPrefixProvider(String prefix) {
+        WebSessionManager.unregisterPrefixProvider(prefix);
     }
 
     private static boolean isBlank(@Nullable String sessionId) {

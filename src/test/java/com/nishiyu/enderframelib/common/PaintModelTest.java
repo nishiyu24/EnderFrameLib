@@ -1,12 +1,12 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.client.renderer.BoxDecorations;
-import com.nishiyu.enderframelib.client.renderer.Gradients;
+import com.nishiyu.enderframelib.core.paint.BoxDecorations;
+import com.nishiyu.enderframelib.core.paint.Gradients;
 import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,6 +15,20 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 描画モデル（W5）の検証。
@@ -166,7 +180,7 @@ public class PaintModelTest {
         LayoutBox a = find(r.root, "a");
         for (int i = 0; i < 4; i++) {
             assertEquals(Math.round(a.x + i * 10), tiles.get(i).x());
-            assertEquals(DisplayItem.ElementType.IMAGE, tiles.get(i).type());
+            assertEquals(ElementType.IMAGE, tiles.get(i).type());
             assertEquals("a.png", tiles.get(i).text());
         }
         // 描画領域（border-box）で切る
@@ -207,8 +221,8 @@ public class PaintModelTest {
                 "枠の色で塗りつぶす部品が残っている");
         DisplayItem ring = element(r, "a_b_round");
         assertNotNull(ring);
-        assertEquals(DisplayItem.ElementType.ROUNDED_BORDER, ring.type());
-        DisplayItem.RoundedBorderSpec spec = ring.meta().roundedBorder();
+        assertEquals(ElementType.ROUNDED_BORDER, ring.type());
+        RoundedBorderSpec spec = ring.meta().roundedBorder();
         assertEquals(2, spec.widthTop(), 0.01f);
         assertEquals(RED, spec.colorLeft());
         assertEquals(6, ring.meta().borderRadii().topLeft());
@@ -252,18 +266,18 @@ public class PaintModelTest {
                 <div id="e" style="width: 30px; height: 20px; overflow-x: clip;"><div id="f" style="width: 80px; height: 50px; background-color: rgb(0, 255, 0);"></div></div>
                 """);
         LayoutBox a = find(r.root, "a");
-        DisplayItem.ClipRect c = element(r, "c_bg").meta().clipRect();
+        ClipRect c = element(r, "c_bg").meta().clipRect();
         assertNotNull(c, "overflow-y: auto の中身が切られていない");
         assertEquals(a.y + a.h, c.maxY(), 0.01f);
 
         LayoutBox b = find(r.root, "b");
-        DisplayItem.ClipRect d = element(r, "d_bg").meta().clipRect();
+        ClipRect d = element(r, "d_bg").meta().clipRect();
         assertNotNull(d, "overflow: hidden の中身が切られていない");
         assertEquals(b.y + b.h, d.maxY(), 0.01f);
 
         // overflow-x: clip（もう片方は visible）は横だけを切る
         LayoutBox e = find(r.root, "e");
-        DisplayItem.ClipRect f = element(r, "f_bg").meta().clipRect();
+        ClipRect f = element(r, "f_bg").meta().clipRect();
         assertNotNull(f);
         assertEquals(e.x + e.w, f.maxX(), 0.01f);
         assertTrue(f.maxY() > e.y + 1000, "overflow-x: clip が縦も切っている: " + f);
@@ -291,7 +305,7 @@ public class PaintModelTest {
         assertEquals(null, element(r, "fix_bg").meta().clipRect(), "固定配置が祖先の overflow で切られている");
         // 包含ブロック自身の overflow は切る
         LayoutBox o2 = find(r.root, "o2");
-        DisplayItem.ClipRect inner = element(r, "inner_bg").meta().clipRect();
+        ClipRect inner = element(r, "inner_bg").meta().clipRect();
         assertNotNull(inner);
         assertEquals(o2.y + o2.h, inner.maxY(), 0.01f);
     }
@@ -303,7 +317,7 @@ public class PaintModelTest {
                   <div id="s" style="height: 60px; overflow-y: auto;"><div id="c" style="height: 100px; background-color: rgb(0, 255, 0);"></div></div>
                 </div>
                 """);
-        DisplayItem.ClipRect c = element(r, "c_bg").meta().clipRect();
+        ClipRect c = element(r, "c_bg").meta().clipRect();
         assertEquals(12, c.radiusTopLeft(), 0.01f, "角丸の親の中の角丸の無いスクロール領域で親の角が消えている");
         assertEquals(12, c.radiusBottomRight(), 0.01f);
 
@@ -322,7 +336,7 @@ public class PaintModelTest {
                 <div id="after" style="height: 10px;"></div>
                 """);
         assertTrue(r.elements.stream().noneMatch(e -> e.id().startsWith("h_")), "visibility: hidden の箱の部品が出ている");
-        assertTrue(r.elements.stream().noneMatch(e -> e.type() == DisplayItem.ElementType.TEXT && e.text().contains("hidden")),
+        assertTrue(r.elements.stream().noneMatch(e -> e.type() == ElementType.TEXT && e.text().contains("hidden")),
                 "visibility: hidden の文字が描かれている");
         assertNotNull(element(r, "v_bg"), "visible に戻した子孫が描かれていない");
         assertEquals(null, element(r, "i_bg"), "visibility を継いだ子が描かれている");
@@ -336,11 +350,11 @@ public class PaintModelTest {
         List<DisplayItem> parts = r.elements.stream().filter(e -> "a".equals(e.baseId()) || e.id().startsWith("a_")).toList();
         assertTrue(parts.size() > 2);
         for (DisplayItem e : parts) {
-            assertEquals("none", e.events().get(DisplayItem.RenderKeys.POINTER_EVENTS), "pointer-events が載っていない: " + e.id());
+            assertEquals("none", e.events().get(RenderKeys.POINTER_EVENTS), "pointer-events が載っていない: " + e.id());
         }
         // 子のテキストノードは継承した値を持つ
-        assertTrue(r.elements.stream().filter(e -> e.type() == DisplayItem.ElementType.TEXT)
-                .allMatch(e -> "none".equals(e.events().get(DisplayItem.RenderKeys.POINTER_EVENTS))));
+        assertTrue(r.elements.stream().filter(e -> e.type() == ElementType.TEXT)
+                .allMatch(e -> "none".equals(e.events().get(RenderKeys.POINTER_EVENTS))));
     }
 
     @Test
@@ -459,11 +473,11 @@ public class PaintModelTest {
     @Test
     public void testTransparentTextColorIsNotWhitened() {
         Rendered r = render("<p style=\"color: transparent\">ghost</p><p style=\"color: #ff000080\">half</p>");
-        DisplayItem ghost = r.elements.stream().filter(e -> e.type() == DisplayItem.ElementType.TEXT && e.text().contains("ghost"))
+        DisplayItem ghost = r.elements.stream().filter(e -> e.type() == ElementType.TEXT && e.text().contains("ghost"))
                 .findFirst().orElseThrow();
         // 以前は 0x00000000 をオフホワイト（0xFFF5F5F0）に書き換えていた
         assertEquals(0x00000000, ghost.color());
-        DisplayItem half = r.elements.stream().filter(e -> e.type() == DisplayItem.ElementType.TEXT && e.text().contains("half"))
+        DisplayItem half = r.elements.stream().filter(e -> e.type() == ElementType.TEXT && e.text().contains("half"))
                 .findFirst().orElseThrow();
         assertEquals(0x80FF0000, half.color());
     }
@@ -471,9 +485,9 @@ public class PaintModelTest {
     @Test
     public void testMinecraftPaletteIsAvailableAsVariables() {
         Rendered r = render("<p style=\"color: var(--mc-red)\">mc</p><p style=\"color: red\">css</p>");
-        DisplayItem mc = r.elements.stream().filter(e -> e.type() == DisplayItem.ElementType.TEXT && e.text().contains("mc"))
+        DisplayItem mc = r.elements.stream().filter(e -> e.type() == ElementType.TEXT && e.text().contains("mc"))
                 .findFirst().orElseThrow();
-        DisplayItem css = r.elements.stream().filter(e -> e.type() == DisplayItem.ElementType.TEXT && e.text().contains("css"))
+        DisplayItem css = r.elements.stream().filter(e -> e.type() == ElementType.TEXT && e.text().contains("css"))
                 .findFirst().orElseThrow();
         // 名前付き色は CSS の値、Minecraft の色は ua.css の --mc-* 変数
         assertEquals(0xFFFF5555, mc.color());
@@ -540,7 +554,7 @@ public class PaintModelTest {
 
     private static Rendered render(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument(
+        Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         DisplayListBuilder renderer = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState());

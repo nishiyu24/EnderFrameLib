@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
+import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Declaration;
 import com.nishiyu.enderframelib.core.css.LengthResolver.Metrics;
 import com.nishiyu.enderframelib.core.css.Selector.RelativeSelector;
@@ -9,7 +9,8 @@ import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.StyleSheet.ContainerQuery;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 import com.nishiyu.enderframelib.core.css.ValueComputer.CssWideKeyword;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -44,7 +45,7 @@ public class StyleResolver {
      *                       {@code all: inherit} の参照先にもなる
      */
     public static Map<String, String> resolveDeclarations(HtmlNode node, Map<String, String> inheritedStyle,
-                                                          StyleSheet sheet, SelectorMatcher.StateLookup stateLookup) {
+                                                          StyleSheet sheet, StateLookup stateLookup) {
         return resolveDeclarations(node, null, inheritedStyle, sheet, stateLookup);
     }
 
@@ -77,16 +78,16 @@ public class StyleResolver {
      *         規則が 1 つも掛からなければ null
      */
     public static ComputedStyle resolvePseudoStyle(HtmlNode node, PseudoType type, StyleSheet sheet,
-                                                   SelectorMatcher.StateLookup stateLookup,
+                                                   StateLookup stateLookup,
                                                    ComputedStyle parentComputedStyle, Map<String, String> env,
                                                    float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
         if (node == null || type == null || sheet == null || parentComputedStyle == null) return null;
-        if (node.nodeType != HtmlNode.NodeType.ELEMENT || node.isPseudoNode) return null;
+        if (node.nodeType != NodeType.ELEMENT || node.isPseudoNode) return null;
         Map<String, String> parent = parentComputedStyle.asMap();
         Map<String, String> raw = resolveDeclarations(node, type, parent, sheet, stateLookup);
-        SelectorMatcher.StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
+        StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
         // 疑似要素にとっては、持ち主の要素もコンテナになり得る（cqw などの基準）
-        SelectorMatcher.ContainerBox container = lookup.nearestSizeContainer(node);
+        ContainerBox container = lookup.nearestSizeContainer(node);
 
         if (type != PseudoType.BEFORE && type != PseudoType.AFTER) {
             if (!declaresAnything(raw, parent)) return null;
@@ -131,12 +132,12 @@ public class StyleResolver {
      * 要素から文書のルートへ祖先をたどり、色ごとに最初に見つかった宣言を使う。
      */
     public static SelectionStyle resolveSelectionStyle(HtmlNode node, StyleSheet sheet,
-                                                       SelectorMatcher.StateLookup stateLookup) {
+                                                       StateLookup stateLookup) {
         if (node == null || sheet == null) return SelectionStyle.NONE;
         Integer color = null;
         Integer background = null;
         for (HtmlNode cur = node; cur != null && (color == null || background == null); cur = cur.parent) {
-            if (cur.nodeType != HtmlNode.NodeType.ELEMENT) continue;
+            if (cur.nodeType != NodeType.ELEMENT) continue;
             Map<String, String> declared = resolveDeclarations(cur, PseudoType.SELECTION, Map.of(), sheet, stateLookup);
             expandSelectionColors(declared);
             String c = declared.get(CssProperty.COLOR);
@@ -167,7 +168,7 @@ public class StyleResolver {
 
     /** 規則がいま掛かり得るか: {@code @media} が真で、{@code @container} の条件がすべて満たされる。 */
     private static boolean isConditionMet(StyleRule rule, HtmlNode node, PseudoType pseudo,
-                                          SelectorMatcher.StateLookup lookup) {
+                                          StateLookup lookup) {
         if (!rule.mediaActive) return false;
         for (ContainerQuery query : rule.containerQueries) {
             if (!matchesContainerQuery(query, node, pseudo, lookup)) return false;
@@ -180,10 +181,10 @@ public class StyleResolver {
      * 疑似要素の持ち主の要素は、その疑似要素にとってのコンテナになり得る。
      */
     private static boolean matchesContainerQuery(ContainerQuery query, HtmlNode node, PseudoType pseudo,
-                                                 SelectorMatcher.StateLookup lookup) {
+                                                 StateLookup lookup) {
         HtmlNode start = pseudo != null ? node : node.parent;
         for (HtmlNode cur = start; cur != null; cur = cur.parent) {
-            SelectorMatcher.ContainerBox box = lookup.containerOf(cur);
+            ContainerBox box = lookup.containerOf(cur);
             if (box == null || !box.hasName(query.name())) continue;
             // 寸法の問い合わせは寸法を答えられるコンテナ、style() だけの問い合わせは名前が合う最も近い要素が相手
             if (query.styleOnly() || box.isSizeContainer()) {
@@ -195,8 +196,8 @@ public class StyleResolver {
 
     private static Map<String, String> resolveDeclarations(HtmlNode node, PseudoType pseudo,
                                                            Map<String, String> inheritedStyle, StyleSheet sheet,
-                                                           SelectorMatcher.StateLookup stateLookup) {
-        SelectorMatcher.StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
+                                                           StateLookup stateLookup) {
+        StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
         Map<String, String> parent = inheritedStyle != null ? inheritedStyle : Map.of();
         Map<String, String> result = new LinkedHashMap<>();
 
@@ -541,19 +542,19 @@ public class StyleResolver {
                                                       float parentFontSize, float rootFontSize,
                                                       int viewportW, int viewportH) {
         return finalizeComputedStyle(rawStyle, sheet, env, parentStyle, parentFontSize, rootFontSize,
-                viewportW, viewportH, SelectorMatcher.ContainerBox.NONE_SIZE);
+                viewportW, viewportH, ContainerBox.NONE_SIZE);
     }
 
     /**
      * 問い合わせコンテナの寸法を足した算出。{@code cqw} などのコンテナ単位は、この寸法で px に解く。
      *
-     * @param container 最も近い祖先の問い合わせコンテナ。無ければ {@link SelectorMatcher.ContainerBox#NONE_SIZE}
+     * @param container 最も近い祖先の問い合わせコンテナ。無ければ {@link ContainerBox#NONE_SIZE}
      */
     public static ComputedStyle finalizeComputedStyle(Map<String, String> rawStyle, StyleSheet sheet,
                                                       Map<String, String> env, Map<String, String> parentStyle,
                                                       float parentFontSize, float rootFontSize,
                                                       int viewportW, int viewportH,
-                                                      SelectorMatcher.ContainerBox container) {
+                                                      ContainerBox container) {
         return finalizeComputedStyle(rawStyle, sheet, env, parentStyle, parentFontSize, rootFontSize, Float.NaN,
                 viewportW, viewportH, container);
     }
@@ -567,7 +568,7 @@ public class StyleResolver {
                                                       Map<String, String> env, Map<String, String> parentStyle,
                                                       float parentFontSize, float rootFontSize, float rootLineHeight,
                                                       int viewportW, int viewportH,
-                                                      SelectorMatcher.ContainerBox container) {
+                                                      ContainerBox container) {
         Map<String, String> style = new LinkedHashMap<>(rawStyle);
         float ownFontSize = estimateFontSize(rawStyle, parentFontSize, rootFontSize, viewportW, viewportH);
         float rootLineHeightPx = Float.isNaN(rootLineHeight)
@@ -640,53 +641,8 @@ public class StyleResolver {
      *
      * 以前は {@code base / hover / active / focus} の 4 マップに分けて {@code putAll} で重ねていたため、
      * 詳細度や出現順に関わらず {@code :hover} が基底スタイルに勝ち、{@code :active} が {@code :focus} に勝っていた。
-     * 現在は状態をカスケードの入力（{@link SelectorMatcher.StateLookup}）として渡し、
+     * 現在は状態をカスケードの入力（{@link StateLookup}）として渡し、
      * 詳細度と出現順に従った単一のカスケードで解決する。
-     */
-    public static class StyleSet {
-
-        private final HtmlNode node;
-        private final Map<String, String> inheritedStyle;
-        private final StyleSheet sheet;
-        private final boolean hasInteractiveRules;
-
-        public StyleSet(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, boolean hasInteractiveRules) {
-            this.node = node;
-            this.inheritedStyle = inheritedStyle != null ? new LinkedHashMap<>(inheritedStyle) : Map.of();
-            this.sheet = sheet;
-            this.hasInteractiveRules = hasInteractiveRules;
-        }
-
-        /** 対象ノード自身の要素状態を指定して、適用すべき宣言をカスケード解決して返す。 */
-        public Map<String, String> resolve(ElementState state) {
-            ElementState effective = ElementState.fromNodeAttributes(node)
-                    .with(state != null ? state.flags() : 0);
-            return resolve(n -> n == node ? effective : ElementState.fromNodeAttributes(n));
-        }
-
-        /** 文書ツリーの要素状態参照先を指定して、適用すべき宣言をカスケード解決して返す。 */
-        public Map<String, String> resolve(SelectorMatcher.StateLookup stateLookup) {
-            return StyleResolver.resolveDeclarations(node, inheritedStyle, sheet, stateLookup);
-        }
-
-        /** このノードが :hover / :active / :focus* 規則の対象になり得るか。 */
-        public boolean hasInteractiveRules() {
-            return hasInteractiveRules;
-        }
-    }
-
-    /**
-     * {@code var()} の置換。
-     *
-     * 何が壊れていたか: 以前は {@code var\(\s*(--[\w-]+)(?:\s*,\s*([^)]+))?\s*\)} の正規表現で
-     * 置き換えを 10 回まで繰り返していた。フォールバックに括弧を含む値
-     * （{@code var(--c, rgb(0, 0, 0))}）や入れ子の {@code var()} が途中の {@code )} で切れ、
-     * 循環参照（{@code --a: var(--b); --b: var(--a)}）は 10 回回って未解決の文字列のまま残った。
-     * 未定義でフォールバックも無い参照は空文字列に置き換わり、宣言が黙って空になっていた。
-     *
-     * ここでは括弧の深さを数えて引数を切り出し、参照先のカスタムプロパティを再帰的に解く。
-     * 循環に入ったもの、未定義でフォールバックも無いものは「算出時に無効」として null を返す
-     * （呼び出し側はその宣言を {@code unset} として扱う。CSS の invalid at computed-value time）。
      */
     static final class VarResolver {
 

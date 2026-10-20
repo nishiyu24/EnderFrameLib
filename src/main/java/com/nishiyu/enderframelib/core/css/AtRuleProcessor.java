@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssParser.CssTokenizer;
 import com.nishiyu.enderframelib.core.css.CssParser.MediaEnvironment;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
@@ -87,7 +89,7 @@ public final class AtRuleProcessor {
      * {@code orientation}、{@code min-} / {@code max-} と範囲構文）と、{@code style(--name: value)} を書ける。
      * 寸法を測っていない・コンテナの種類が答えられない特性（{@code inline-size} のコンテナへの高さの問い合わせ）は偽。
      */
-    public static boolean evaluateContainerQuery(String condition, SelectorMatcher.ContainerBox box) {
+    public static boolean evaluateContainerQuery(String condition, ContainerBox box) {
         if (condition == null || condition.isBlank() || box == null) return false;
         return evaluateCondition(condition.trim(), feature -> evaluateContainerFeature(feature, box));
     }
@@ -307,15 +309,15 @@ public final class AtRuleProcessor {
 
     // ---- @container の特性
 
-    private static boolean evaluateContainerFeature(String feature, SelectorMatcher.ContainerBox box) {
+    private static boolean evaluateContainerFeature(String feature, ContainerBox box) {
         String f = feature.trim();
         if (f.regionMatches(true, 0, "style(", 0, 6) && f.endsWith(")")) {
             return evaluateStyleQuery(f.substring(6, f.length() - 1).trim(), box);
         }
         f = f.toLowerCase(Locale.ROOT);
-        boolean sizeContainer = box.type() != SelectorMatcher.ContainerType.NORMAL;
+        boolean sizeContainer = box.type() != ContainerType.NORMAL;
         if (!sizeContainer) return false;
-        boolean bothAxes = box.type() == SelectorMatcher.ContainerType.SIZE;
+        boolean bothAxes = box.type() == ContainerType.SIZE;
 
         int colon = f.indexOf(':');
         if (colon < 0) {
@@ -353,7 +355,7 @@ public final class AtRuleProcessor {
     }
 
     /** 範囲構文の名前を数にする。答えられない軸は NaN（比較は偽になる）。 */
-    private static double containerOperand(String name, SelectorMatcher.ContainerBox box, boolean bothAxes) {
+    private static double containerOperand(String name, ContainerBox box, boolean bothAxes) {
         return switch (name) {
             case "width", "inline-size" -> box.width();
             case "height", "block-size" -> bothAxes ? box.height() : Double.NaN;
@@ -366,7 +368,7 @@ public final class AtRuleProcessor {
      * {@code style(--name: value)}（コンテナのカスタムプロパティの算出値との一致）と
      * {@code style(--name)}（値が空でない）。値の比較は空白をそろえた文字列で行う。
      */
-    private static boolean evaluateStyleQuery(String body, SelectorMatcher.ContainerBox box) {
+    private static boolean evaluateStyleQuery(String body, ContainerBox box) {
         int colon = body.indexOf(':');
         String name = (colon < 0 ? body : body.substring(0, colon)).trim();
         if (!name.startsWith("--")) return false;

@@ -1,13 +1,12 @@
 package com.nishiyu.enderframelib.core.event;
 
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
 import com.nishiyu.enderframelib.api.dom.EventTarget;
 import com.nishiyu.enderframelib.api.event.AbortSignal;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.api.event.EventListener;
 import com.nishiyu.enderframelib.api.event.EventListenerOptions;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -204,13 +203,6 @@ public class EventDispatcher {
     private static void setPhase(Event event, short phase) {
         if (event instanceof CoreEvent ce) {
             ce.setEventPhase(phase);
-        } else if (event instanceof DomEvent de) {
-            de.setEventPhase(switch (phase) {
-                case Event.CAPTURING_PHASE -> DomEvent.EventPhase.CAPTURING_PHASE;
-                case Event.AT_TARGET -> DomEvent.EventPhase.AT_TARGET;
-                case Event.BUBBLING_PHASE -> DomEvent.EventPhase.BUBBLING_PHASE;
-                default -> DomEvent.EventPhase.NONE;
-            });
         }
     }
 

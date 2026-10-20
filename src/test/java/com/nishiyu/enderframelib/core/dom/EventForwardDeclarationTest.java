@@ -1,8 +1,11 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.event.CoreEvent;
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
+import com.nishiyu.enderframelib.core.event.CoreEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +14,20 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R3: サーバー転送の宣言（{@code data-forward}）と、所有権（{@code data-owner}）の解決、
@@ -187,7 +204,7 @@ public class EventForwardDeclarationTest {
         tree[1].addEventListener("click", (Event e) -> log.add("listener:child"));
         tree[0].addEventListener("click", (Event e) -> log.add("listener:parent"));
 
-        assertTrue(tree[1].dispatchEvent(DomEvent.click(1, 2, 0)));
+        assertTrue(tree[1].dispatchEvent(CoreEvent.click(1, 2, 0)));
 
         assertEquals(List.of(
                 "listener:child", "listener:parent",
@@ -203,7 +220,7 @@ public class EventForwardDeclarationTest {
         HtmlElement[] tree = buildTree(document);
         tree[0].addEventListener("click", (Event e) -> e.preventDefault());
 
-        assertFalse(tree[1].dispatchEvent(DomEvent.click(1, 2, 0)));
+        assertFalse(tree[1].dispatchEvent(CoreEvent.click(1, 2, 0)));
 
         assertEquals(List.of(), log);
     }
@@ -217,7 +234,7 @@ public class EventForwardDeclarationTest {
         HtmlElement[] tree = buildTree(document);
         tree[1].addEventListener("click", (Event e) -> e.stopPropagation());
 
-        tree[1].dispatchEvent(DomEvent.click(1, 2, 0));
+        tree[1].dispatchEvent(CoreEvent.click(1, 2, 0));
 
         assertEquals(List.of("action:child=childLocal", "forward:child=childAction"), log);
     }

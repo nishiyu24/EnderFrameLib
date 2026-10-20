@@ -4,8 +4,9 @@ import com.nishiyu.enderframelib.client.EnderFrameClientInit.EnderFrameClientAPI
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebActionC2SPacket;
-import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
+import com.nishiyu.enderframelib.core.event.CoreEvent;
+import com.nishiyu.enderframelib.api.event.UIEvents;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R3: クライアント駆動 API (EnderFrameClientAPI) およびスケジューラ (rAF, setTimeout, setInterval)、
@@ -41,13 +55,13 @@ public class ClientDrivenApiTest {
     @Test
     public void testClientDrivenDocumentCreationAndManipulation() {
         String html = "<div id='container'><h1 id='title'>Original Title</h1></div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        ClientWebManager.getOrCreateSession(SESSION_ID).loadLocalHtml(html, 800, 600);
         SessionContext session = ClientWebManager.getOrCreateSession(SESSION_ID);
         session.setServerManaged(false);
 
-        Document doc = ClientWebManager.getDomDocument(SESSION_ID);
+        Document doc = session.domDocument();
         assertNotNull(doc, "クライアント駆動の Document ハンドルが取得できること");
-        assertFalse(ClientWebManager.isServerManagedSession(SESSION_ID), "クライアント駆動セッションは serverManaged が false");
+        assertFalse(session.isServerManaged(), "クライアント駆動セッションは serverManaged が false");
 
         // DOM API による直接操作
         Element title = doc.getElementById("title");
@@ -144,9 +158,9 @@ public class ClientDrivenApiTest {
         ClientScreenInteractionManager.setServerActionSender(sentPackets::add);
         try {
             String html = "<div id='root'><button id='btn' onclick='server:doSomething'>Click</button></div>";
-            ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+            ClientWebManager.getOrCreateSession(SESSION_ID).loadLocalHtml(html, 800, 600);
 
-            Document doc = ClientWebManager.getDomDocument(SESSION_ID);
+            Document doc = ClientWebManager.getOrCreateSession(SESSION_ID).domDocument();
             Element btn = doc.getElementById("btn");
             assertNotNull(btn);
 
@@ -157,7 +171,7 @@ public class ClientDrivenApiTest {
                 evt.preventDefault();
             });
 
-            DomEvent cancelled = DomEvent.click(10, 10, 0);
+            UIEvents.Mouse cancelled = CoreEvent.click(10, 10, 0);
             btn.dispatchEvent(cancelled);
 
             assertTrue(clientListenerRan.get(), "クライアントの DOM リスナーが先に実行されること");
@@ -165,8 +179,8 @@ public class ClientDrivenApiTest {
             assertTrue(sentPackets.isEmpty(), "preventDefault されたためサーバアクションは転送されないこと");
 
             // 取り消すリスナーが無ければ、同じ要素のクリックはサーバーへ転送される
-            ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
-            ClientWebManager.getDomDocument(SESSION_ID).getElementById("btn").dispatchEvent(DomEvent.click(10, 10, 0));
+            ClientWebManager.getOrCreateSession(SESSION_ID).loadLocalHtml(html, 800, 600);
+            ClientWebManager.getOrCreateSession(SESSION_ID).domDocument().getElementById("btn").dispatchEvent(CoreEvent.click(10, 10, 0));
             assertEquals(1, sentPackets.size());
             assertEquals("server:doSomething", sentPackets.get(0).payload().getString("ActionName"));
         } finally {

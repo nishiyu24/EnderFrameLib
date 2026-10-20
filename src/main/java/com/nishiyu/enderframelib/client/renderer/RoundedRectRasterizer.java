@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.nishiyu.enderframelib.core.paint.BoxDecorations;
 import org.joml.Matrix4f;
 
 /**

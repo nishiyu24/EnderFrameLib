@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.MarkdownParser;
+import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;

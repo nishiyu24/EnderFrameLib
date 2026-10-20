@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.renderer.WebFontManager.McFontResolver;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.RenderKeys;
+import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -9,14 +9,15 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.TextareaEditor.TextEditState;
-import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen.WebTextInputHost;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.Corners;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ImageFitMode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.BitmapFontFace;
+import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.paint.model.Corners;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -52,6 +53,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.model.FontFace;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 public class DisplayItemDrawer {
 
@@ -186,11 +191,12 @@ public class DisplayItemDrawer {
 
         String baseId = ClientWebManager.getBaseNodeId(el.id());
         boolean isHovered = baseId.equals(hoveredId);
-        boolean isActive = ClientWebManager.isPressedBase(sessionId, baseId);
-        boolean isFocused = ClientWebManager.isFocusedBase(sessionId, baseId);
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        boolean isActive = session != null && session.isPressedBase(baseId);
+        boolean isFocused = session != null && session.isFocusedBase(baseId);
         CssAnimator.AnimatedValues anim = CssAnimator.getValues(sessionId, el, isHovered, isActive, isFocused);
 
-        DisplayItem.RenderMeta meta = el.meta();
+        RenderMeta meta = el.meta();
         float originX = meta != null ? meta.originX() : 0.5f;
         float originY = meta != null ? meta.originY() : 0.5f;
         float cx = el.x() + el.width() * originX;
@@ -259,6 +265,7 @@ public class DisplayItemDrawer {
         DisplayItem hoveredTooltipEl = null;
         String resolvedTooltipText = null;
         String animSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        SessionContext session = ClientWebManager.getSession(animSessionId);
 
         for (DisplayItem el : uiElements) {
             if (el.type() == ElementType.NODE) continue;
@@ -268,9 +275,8 @@ public class DisplayItemDrawer {
 
             String baseId = ClientWebManager.getBaseNodeId(el.id());
             boolean isHovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
-            boolean isActive = ClientWebManager.isPressedBase(animSessionId, baseId);
-            boolean isFocused = ClientWebManager.isActiveInput(animSessionId, el.id())
-                    || ClientWebManager.isFocusedBase(animSessionId, baseId);
+            boolean isActive = session != null && session.isPressedBase(baseId);
+            boolean isFocused = session != null && (session.isActiveInput(el.id()) || session.isFocusedBase(baseId));
 
             if (isHovered && resolvedTooltipText == null) {
                 resolvedTooltipText = extractTooltipText(el);
@@ -278,7 +284,7 @@ public class DisplayItemDrawer {
             }
 
             CssAnimator.AnimatedValues anim = CssAnimator.getValues(animSessionId, el, isHovered, isActive, isFocused);
-            DisplayItem.RenderMeta meta = el.meta();
+            RenderMeta meta = el.meta();
 
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
             float cRTL = 0, cRTR = 0, cRBR = 0, cRBL = 0;
@@ -419,9 +425,9 @@ public class DisplayItemDrawer {
         return null;
     }
 
-    private static boolean renderCircleBorderElement(DisplayItem el, DisplayItem.RenderMeta meta, CssAnimator.AnimatedValues anim,
+    private static boolean renderCircleBorderElement(DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim,
                                                      PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zPos) {
-        DisplayItem.CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
+        CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
         if (cb == null && anim.circleColors == null) return false;
 
         float outerRadius = Math.min(el.width(), el.height()) / 2.0f;
@@ -444,11 +450,11 @@ public class DisplayItemDrawer {
     }
 
     /** 角丸の枠線は枠の領域だけを塗る（内側は背景の要素が受け持つ）。 */
-    private static void renderRoundedBorderElement(DisplayItem el, DisplayItem.RenderMeta meta, PoseStack poseStack, MultiBufferSource buffer,
+    private static void renderRoundedBorderElement(DisplayItem el, RenderMeta meta, PoseStack poseStack, MultiBufferSource buffer,
                                                    float finalOpacity, float zOffset, float rTL, float rTR, float rBR, float rBL,
                                                    float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                                    float cRTL, float cRTR, float cRBR, float cRBL) {
-        DisplayItem.RoundedBorderSpec spec = meta != null ? meta.roundedBorder() : null;
+        RoundedBorderSpec spec = meta != null ? meta.roundedBorder() : null;
         if (spec == null) return;
         int[] colors = {spec.colorTop(), spec.colorRight(), spec.colorBottom(), spec.colorLeft()};
         VertexConsumer builder = buffer.getBuffer(RenderType.gui());
@@ -458,12 +464,12 @@ public class DisplayItemDrawer {
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, useSdfShader);
     }
 
-    private static void renderElementBackground(DisplayItem el, DisplayItem.RenderMeta meta, CssAnimator.AnimatedValues anim,
+    private static void renderElementBackground(DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim,
                                                 PoseStack poseStack, MultiBufferSource buffer,
                                                 float finalOpacity, float zOffset, float rTL, float rTR, float rBR, float rBL,
                                                 float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                                 float cRTL, float cRTR, float cRBR, float cRBL) {
-        DisplayItem.GradientSpec grad = meta != null ? meta.gradient() : null;
+        GradientSpec grad = meta != null ? meta.gradient() : null;
         // 何が壊れていたか: 以前は isHovered / isActive でグラデーションを無効にしていたため、
         // グラデーション背景の要素にカーソルを乗せると平坦な色に落ちていた。
         // 判定すべきは「状態が背景色を実際に差し替えたか」で、ホバー中かどうかではない。
@@ -586,7 +592,7 @@ public class DisplayItemDrawer {
     }
 
     private static void renderImageOrMediaElement(
-            DisplayItem el, DisplayItem.RenderMeta meta, PoseStack poseStack, MultiBufferSource buffer, Font font,
+            DisplayItem el, RenderMeta meta, PoseStack poseStack, MultiBufferSource buffer, Font font,
             Level level, String animSessionId, BlockPos audioPos, boolean playAudio, boolean is2DAudio,
             boolean renderItems, boolean renderText, float finalOpacity, float zPos, int packedLight, int packedOverlay,
             float rTL, float rTR, float rBR, float rBL,
@@ -697,7 +703,7 @@ public class DisplayItemDrawer {
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
     }
 
-    private static void renderItemElement(DisplayItem el, DisplayItem.RenderMeta meta, String rawSpec,
+    private static void renderItemElement(DisplayItem el, RenderMeta meta, String rawSpec,
                                           PoseStack poseStack, MultiBufferSource buffer, Font font,
                                           Level level, boolean renderText, float zPos, int packedLight, int packedOverlay) {
         int count = meta != null ? meta.itemCount() : 1;
@@ -734,16 +740,17 @@ public class DisplayItemDrawer {
 
     private static boolean shouldSkipPlaceholder(DisplayItem el, Map<String, DisplayItem> elementMap, String animSessionId) {
         if (!el.id().endsWith("_ph")) return false;
+        SessionContext session = ClientWebManager.getSession(animSessionId);
         String inputNodeId = el.id().substring(0, el.id().length() - 3);
         DisplayItem inputEl = elementMap.get(inputNodeId + "_input");
         if (inputEl != null && inputEl.text() != null && !inputEl.text().isEmpty()) {
             return true;
         }
-        if (ClientWebManager.isFocusedBase(animSessionId, inputNodeId)) {
+        if (session != null && session.isFocusedBase(inputNodeId)) {
             String activeVal = WebTextInputHost.getActiveText(animSessionId);
             if (activeVal != null && !activeVal.isEmpty()) return true;
         }
-        HtmlNode vRoot = ClientWebManager.getRootNode(animSessionId);
+        HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot != null) {
             HtmlNode domNode = vRoot.getNodeById(inputNodeId);
             return domNode != null && !domNode.attrs.getOrDefault("value", "").isEmpty();
@@ -752,7 +759,7 @@ public class DisplayItemDrawer {
     }
 
     private static void renderTextOrInputElement(
-            DisplayItem el, DisplayItem.RenderMeta meta, CssAnimator.AnimatedValues anim, boolean isFocused,
+            DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim, boolean isFocused,
             Map<String, DisplayItem> elementMap, String animSessionId,
             PoseStack poseStack, MultiBufferSource buffer, Font font, boolean renderText, boolean is2DAudio,
             float finalOpacity, float zPos, int packedLight,
@@ -858,7 +865,7 @@ public class DisplayItemDrawer {
                 // 以前はここで font.width を使って測り直し、「幅の 1.3 倍 + 4px」という
                 // 独自の基準で省略を判定し、中央寄せも自前でやっていたため、
                 // レイアウトが予約した行と実際に見える行が一致しなかった。
-                boolean isBold = el.events() != null && com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics.isBoldWeight(el.events().get("font-weight"));
+                boolean isBold = el.events() != null && com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isBoldWeight(el.events().get("font-weight"));
                 String visibleText = isBold && !textToDraw.startsWith("§l") ? "§l" + textToDraw : textToDraw;
                 float rawTextW = textScale > 0 ? el.width() / textScale : 0;
 
@@ -935,7 +942,7 @@ public class DisplayItemDrawer {
             VertexConsumer builder, Matrix4f matrix,
             float minX, float minY, float maxX, float maxY,
             float rTL, float rTR, float rBR, float rBL,
-            DisplayItem.GradientSpec grad, float opacity, float zOffset,
+            GradientSpec grad, float opacity, float zOffset,
             float cx0, float cy0, float cx1, float cy1,
             float cRTL, float cRTR, float cRBR, float cRBL
     ) {
@@ -1089,8 +1096,8 @@ public class DisplayItemDrawer {
         String fullText = el.text() != null ? el.text() : "";
         String[] lines = fullText.replace("\r\n", "\n").split("\n", -1);
 
-        DisplayItem.RenderMeta meta = el.meta();
-        DisplayItem.RenderMeta safeMeta = meta != null ? meta : DisplayItem.RenderMeta.EMPTY;
+        RenderMeta meta = el.meta();
+        RenderMeta safeMeta = meta != null ? meta : RenderMeta.EMPTY;
         float fontH = safeMeta.fontHeight();
         Matrix4f mat = poseStack.last().pose();
         float matScale = Math.abs(mat.m00());
@@ -1103,7 +1110,8 @@ public class DisplayItemDrawer {
         boolean showLineNums = showsLineNumbers(el);
         float gutterW = textareaGutterWidth(el, textScale);
 
-        boolean isFocused = ClientWebManager.isActiveInput(sessionId, el.id());
+        boolean isFocused = ClientWebManager.getSession(sessionId) != null
+                && ClientWebManager.getSession(sessionId).isActiveInput(el.id());
         int cursorIdx = Math.clamp(TextEditState.getTextareaCursor(sessionId, el.id(), fullText.length()), 0, fullText.length());
 
         int cursorRow = 0, cursorCol = 0, charAccum = 0;

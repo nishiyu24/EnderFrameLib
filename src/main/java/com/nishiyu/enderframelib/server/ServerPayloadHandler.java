@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.server;
 
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.SubscribeC2SPacket;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebActionC2SPacket;
+import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;

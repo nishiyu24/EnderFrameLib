@@ -1,9 +1,10 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.core.dom.HtmlElement;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlParser.NodeId;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.NodeId;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 
 import java.util.List;
 
@@ -162,7 +163,7 @@ public final class CustomTagExpander {
             HtmlNode span = element("span");
             span.attrs.put("style", "position:absolute;left:0;top:0;width:100%;height:100%;"
                     + "text-align:center;color:#ffffff;text-shadow:true;font-size:0.75rem;");
-            HtmlNode text = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(label);
+            HtmlNode text = new HtmlText(label);
             text.setId(NodeId.generateTextId());
             appendChild(span, text);
             appendChild(bar, span);

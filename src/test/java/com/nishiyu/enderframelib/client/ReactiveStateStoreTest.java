@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +11,20 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * R3: ReactiveStateStore の宣言的バインディング載せ替え（実 DOM 直接変更、
@@ -30,16 +44,20 @@ public class ReactiveStateStoreTest {
         ClientWebManager.clearSession(SESSION_ID);
     }
 
+    private static SessionContext session() {
+        return ClientWebManager.getOrCreateSession(SESSION_ID);
+    }
+
     @Test
     public void testTextPlaceholderMultipleUpdates() {
         String html = "<div id='root'><p id='msg'>Hello {{name}}, count is {{count}}</p></div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.set("name", "Alice").set("count", 1);
         store.syncToDom();
 
-        HtmlNode msg = ClientWebManager.getRootNode(SESSION_ID).getElementById("msg");
+        HtmlNode msg = session().rootNode().getElementById("msg");
         assertNotNull(msg);
         assertEquals("Hello Alice, count is 1", msg.getTextContent());
 
@@ -52,13 +70,13 @@ public class ReactiveStateStoreTest {
     @Test
     public void testAttributePlaceholderUpdates() {
         String html = "<div id='root'><a id='link' href='{{url}}' title='{{tooltip}}'>Click</a></div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.set("url", "https://example.com").set("tooltip", "Example Site");
         store.syncToDom();
 
-        HtmlNode link = ClientWebManager.getRootNode(SESSION_ID).getElementById("link");
+        HtmlNode link = session().rootNode().getElementById("link");
         assertNotNull(link);
         assertEquals("https://example.com", link.attrs.get("href"));
         assertEquals("Example Site", link.attrs.get("title"));
@@ -73,7 +91,7 @@ public class ReactiveStateStoreTest {
     @Test
     public void testDataModelTwoWayBinding() {
         String html = "<div id='root'><input id='username' type='text' data-model='user' value='initial' /></div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.syncToDom();
@@ -84,7 +102,7 @@ public class ReactiveStateStoreTest {
         // store の変更が DOM へ反映される
         store.set("user", "changedFromStore");
         store.syncToDom();
-        HtmlNode input = ClientWebManager.getRootNode(SESSION_ID).getElementById("username");
+        HtmlNode input = session().rootNode().getElementById("username");
         assertEquals("changedFromStore", input.attrs.get("value"));
 
         // UI 側の入力変更が store へ反映される
@@ -98,14 +116,14 @@ public class ReactiveStateStoreTest {
                 + "<div id='if_target' data-if='ready'>Ready</div>"
                 + "<div id='show_target' data-show='count > 0' style='display: block;'>Count</div>"
                 + "</div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.set("ready", false).set("count", 0);
         store.syncToDom();
 
-        HtmlNode ifTarget = ClientWebManager.getRootNode(SESSION_ID).getElementById("if_target");
-        HtmlNode showTarget = ClientWebManager.getRootNode(SESSION_ID).getElementById("show_target");
+        HtmlNode ifTarget = session().rootNode().getElementById("if_target");
+        HtmlNode showTarget = session().rootNode().getElementById("show_target");
 
         assertTrue(ifTarget.attrs.containsKey("hidden"), "data-if が false の場合 hidden 属性が付く");
         assertTrue(showTarget.attrs.get("style").contains("display: none"), "data-show が false の場合 display: none になる");
@@ -121,13 +139,13 @@ public class ReactiveStateStoreTest {
     @Test
     public void testDataClass() {
         String html = "<div id='root'><div id='box' data-class='active:isActive, alert:errorCount > 0'>Box</div></div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.set("isActive", true).set("errorCount", 0);
         store.syncToDom();
 
-        HtmlNode box = ClientWebManager.getRootNode(SESSION_ID).getElementById("box");
+        HtmlNode box = session().rootNode().getElementById("box");
         assertTrue(box.hasClass("active"));
         assertFalse(box.hasClass("alert"));
 
@@ -145,7 +163,7 @@ public class ReactiveStateStoreTest {
                 + "<li id='row' data-key='{{item.id}}'>{{item.title}}</li>"
                 + "</ul>"
                 + "</div>";
-        ClientWebManager.loadLocalHtml(SESSION_ID, html, 800, 600);
+        session().loadLocalHtml(html, 800, 600);
 
         ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
         store.setList("items", List.of(
@@ -154,7 +172,7 @@ public class ReactiveStateStoreTest {
         ));
         store.syncToDom();
 
-        HtmlNode list = ClientWebManager.getRootNode(SESSION_ID).getElementById("user_list");
+        HtmlNode list = session().rootNode().getElementById("user_list");
         assertNotNull(list);
         assertEquals(2, list.children.size());
 

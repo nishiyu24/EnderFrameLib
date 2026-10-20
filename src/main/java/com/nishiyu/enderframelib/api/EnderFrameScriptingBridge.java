@@ -5,7 +5,6 @@ import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 /**
@@ -17,8 +16,6 @@ import java.util.function.BiConsumer;
  */
 @ApiStatus.AvailableSince("1.0")
 public class EnderFrameScriptingBridge {
-
-    private static final Map<String, WebSessionProvider> GLOBAL_PROVIDERS = new ConcurrentHashMap<>();
 
     private EnderFrameScriptingBridge() {}
 
@@ -58,12 +55,6 @@ public class EnderFrameScriptingBridge {
         if (sessionIdPrefix == null || handler == null) return;
         EnderFrameAPI api = EnderFrameAPI.get();
 
-        // リロード等で重複して登録された場合は古いプロバイダを解除してメモリリークを防ぐ
-        WebSessionProvider existing = GLOBAL_PROVIDERS.get(sessionIdPrefix);
-        if (existing != null) {
-            api.unregisterProvider(existing);
-        }
-
         WebSessionProvider provider = new WebSessionProvider() {
             @Override
             public boolean matchesSession(String sessionId) {
@@ -88,22 +79,20 @@ public class EnderFrameScriptingBridge {
             }
         };
 
-        GLOBAL_PROVIDERS.put(sessionIdPrefix, provider);
-        api.registerProvider(provider);
+        api.registerPrefixProvider(sessionIdPrefix, provider);
     }
 
     /** Unregisters a listener installed with {@link #onGlobalServerAction}. */
     public static void removeGlobalServerAction(String sessionIdPrefix) {
-        WebSessionProvider provider = GLOBAL_PROVIDERS.remove(sessionIdPrefix);
-        if (provider != null && EnderFrameAPI.isAvailable()) {
-            EnderFrameAPI.get().unregisterProvider(provider);
+        if (sessionIdPrefix != null && EnderFrameAPI.isAvailable()) {
+            EnderFrameAPI.get().unregisterPrefixProvider(sessionIdPrefix);
         }
     }
 
     /** Drops every script-registered provider. Called when the server stops. */
     @ApiStatus.Internal
     public static void clearAll() {
-        GLOBAL_PROVIDERS.clear();
+        // State is managed centrally by WebSessionManager.
     }
 
     // ==========================================

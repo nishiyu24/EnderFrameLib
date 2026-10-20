@@ -1,20 +1,20 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.paint.model.*;
+
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
-import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
+import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.PaintRequest;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
-import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
@@ -28,7 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-public class AbstractEnderScreen extends Screen {
+public class AbstractEnderScreen extends Screen implements EnderScreenHost {
     public static final float DEFAULT_VIRTUAL_WIDTH = 854.0f;
     public static final float DEFAULT_VIRTUAL_HEIGHT = 480.0f;
 
@@ -119,6 +119,15 @@ public class AbstractEnderScreen extends Screen {
         return "<html><body><div style='padding:20px;color:#f38ba8;'>Failed to load HTML resource: " + loc + "</div></body></html>";
     }
 
+    /**
+     * 指定されたリソース位置（{@link ResourceLocation}）から HTML ファイルの内容を文字列として読み込む。
+     * <p>
+     * リソースが存在しない、または読み込みに失敗した場合は {@link #errorHtml(ResourceLocation)}
+     * によるエラー表示用 HTML を返す。画面の初期化やリロード時にアセットをロードするための差し込み口。
+     *
+     * @param loc 読み込む HTML リソースの位置
+     * @return 読み込んだ HTML 文字列、またはフォールバック用のエラー HTML
+     */
     public static String loadHtmlResource(ResourceLocation loc) {
         return findHtmlResource(loc).orElseGet(() -> errorHtml(loc));
     }
@@ -171,36 +180,19 @@ public class AbstractEnderScreen extends Screen {
         this.uiSupport.onActionPrefix(prefix, payloadHandler);
     }
 
+    @Override
     public String getWebSessionId() {
         return this.sessionId;
     }
 
+    @Override
     public EnderScreenDelegate getUiDelegate() {
         return this.uiSupport;
     }
 
-    public void sendServerAction(String actionName) {
-        sendServerAction(actionName, "");
-    }
-
-    public void sendServerAction(String actionName, Object value) {
-        this.uiSupport.sendServerAction(actionName, value);
-    }
-
-    public Rect2i toScreenRect(int webX, int webY, int webW, int webH) {
-        return this.uiSupport.toScreenRect(webX, webY, webW, webH);
-    }
-
-    public Rect2i getWebViewportBounds() {
-        return this.uiSupport.getViewportBounds();
-    }
-
-    public Canvas2DContext getCanvas(String canvasId) {
-        return Canvas2DContext.getOrCreate(this.sessionId, canvasId);
-    }
-
-    public WebSceneContext getScene(String sceneId) {
-        return WebSceneContext.getOrCreate(this.sessionId, sceneId);
+    @Override
+    public Screen getWebScreen() {
+        return this;
     }
 
     protected void onInputChanged(String elementId, String newText) {}
@@ -240,7 +232,9 @@ public class AbstractEnderScreen extends Screen {
         double webY = toWebY(mouseY);
         hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
 
-        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
+        List<DisplayItem> elements = ClientWebManager.getSession(sessionId) != null
+                ? ClientWebManager.getSession(sessionId).elements()
+                : java.util.Collections.emptyList();
         if (elements != null && !elements.isEmpty()) {
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
@@ -336,24 +330,11 @@ public class AbstractEnderScreen extends Screen {
         return super.charTyped(codePoint, modifiers);
     }
 
-    public void setTextareaValue(String id, String value) { this.uiSupport.setTextareaValue(id, value); }
-    public String getTextareaValue(String id) { return this.uiSupport.getTextareaValue(id); }
-    public void focusWebInput(String inputElementId, String currentText) { this.uiSupport.focusWebInput(this, inputElementId, currentText); }
-    public void unfocusWebInput() { this.uiSupport.unfocusWebInput(); }
-    public void setElementText(String id, String text) { this.uiSupport.setElementText(id, text); }
-    public void setInputValue(String id, String value) { this.uiSupport.setInputValue(id, value); }
-    public String getInputValue(String id) { return this.uiSupport.getInputValue(id); }
-    public void setInnerHtml(String id, String html) { ClientWebManager.updateNodeInnerHtmlLocally(sessionId, id, html); }
-    public void setStyle(String id, String prop, String val) { ClientWebManager.updateNodeStyleLocally(sessionId, id, prop, val); }
-    public void setAttribute(String id, String attr, String val) { ClientWebManager.updateNodeAttributeLocally(sessionId, id, attr, val, false); }
-    public void addClass(String id, String cls) { this.uiSupport.addClass(id, cls); }
-    public void removeClass(String id, String cls) { this.uiSupport.removeClass(id, cls); }
-    public void toggleClass(String id, String cls, boolean enable) { this.uiSupport.toggleClass(id, cls, enable); }
-
     @Override
     public void onClose() {
         this.uiSupport.onClose();
-        if (isLocalHtmlSession && !ClientWebManager.isServerManagedSession(this.sessionId)) {
+        SessionContext session = ClientWebManager.getSession(this.sessionId);
+        if (isLocalHtmlSession && (session == null || !session.isServerManaged())) {
             ClientWebManager.clearSession(this.sessionId);
         }
         super.onClose();

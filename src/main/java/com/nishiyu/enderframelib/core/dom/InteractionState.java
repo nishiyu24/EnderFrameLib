@@ -1,7 +1,13 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.parser.*;
+
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.Selector.ElementState;
+import com.nishiyu.enderframelib.core.css.model.ElementState;
+import com.nishiyu.enderframelib.core.css.model.StateLookup;
+import com.nishiyu.enderframelib.core.css.model.ContainerBox;
+import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 
 import java.util.ArrayList;
@@ -19,7 +25,7 @@ import java.util.WeakHashMap;
  * ノードへ解決してから渡す（解決は {@link HtmlNode#getNodeById} の索引が担う）。
  * 持ち主の節が文書から外れたら状態も一緒に回収されるよう、キーは弱参照で持つ。</p>
  */
-public class InteractionState implements SelectorMatcher.StateLookup {
+public class InteractionState implements StateLookup {
 
     private final Map<HtmlNode, StateFlags> flagsByNode = new WeakHashMap<>();
 
@@ -319,20 +325,20 @@ public class InteractionState implements SelectorMatcher.StateLookup {
     }
 
     @Override
-    public SelectorMatcher.ContainerBox containerOf(HtmlNode node) {
+    public ContainerBox containerOf(HtmlNode node) {
         StateFlags flags = get(node);
         if (flags == null || flags.computedStyle == null) return null;
         ComputedStyle style = flags.computedStyle;
-        SelectorMatcher.ContainerType type = switch (style.keyword("container-type", "normal")) {
-            case "size" -> SelectorMatcher.ContainerType.SIZE;
-            case "inline-size" -> SelectorMatcher.ContainerType.INLINE_SIZE;
-            default -> SelectorMatcher.ContainerType.NORMAL;
+        ContainerType type = switch (style.keyword("container-type", "normal")) {
+            case "size" -> ContainerType.SIZE;
+            case "inline-size" -> ContainerType.INLINE_SIZE;
+            default -> ContainerType.NORMAL;
         };
         List<String> names = new ArrayList<>();
         for (String name : style.keyword("container-name", "none").split("\s+")) {
             if (!name.isEmpty() && !name.equals("none")) names.add(name);
         }
-        return new SelectorMatcher.ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
+        return new ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
                 style.customProperties());
     }
 

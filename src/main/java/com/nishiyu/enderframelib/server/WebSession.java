@@ -2,17 +2,22 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+import net.minecraft.server.level.ServerPlayer;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.nishiyu.enderframelib.common.Document;
 
 /**
  * サーバー側セッションの実装。公開面は {@link WebSessionHandle}。
@@ -26,7 +31,7 @@ public class WebSession implements WebSessionHandle {
     private final UiDocumentCompiler uiParser = new UiDocumentCompiler();
     private int width = 3 * DEFAULT_BLOCK_RESOLUTION;
     private int height = 4 * DEFAULT_BLOCK_RESOLUTION;
-    private UiDocumentCompiler.Document currentDocument;
+    private Document currentDocument;
     private String currentCss = "";
     private RenderSource lastSource;
 
@@ -44,6 +49,14 @@ public class WebSession implements WebSessionHandle {
     private volatile boolean actionValidation = true;
     private volatile long lastAccessMillis = System.currentTimeMillis();
 
+    /** このセッションを現在閲覧・購読しているプレイヤーの追跡用セット（S11）。 */
+    private final Set<ServerPlayer> viewers = new CopyOnWriteArraySet<>();
+    /**
+     * プレイヤー専用に開いたセッションの所有者（S11）。
+     * 所有者が居るセッションは、その本人以外が同期要求もアクション送出もできない（I-2）。
+     */
+    private volatile UUID owner = null;
+
     public WebSession(String sessionId) {
         this(sessionId, WebSessionManager::broadcastDom);
     }
@@ -57,7 +70,7 @@ public class WebSession implements WebSessionHandle {
     @Override public int getWidth() { return width; }
     @Override public int getHeight() { return height; }
     public String getCurrentCss() { return currentCss; }
-    @Override public UiDocumentCompiler.Document getDocument() { return currentDocument; }
+    @Override public Document getDocument() { return currentDocument; }
 
     @Override
     public void updateSize(int newWidth, int newHeight) {
@@ -117,6 +130,8 @@ public class WebSession implements WebSessionHandle {
         this.currentCss = "";
         this.declaredActions = Set.of();
         this.valueTargets = Set.of();
+        this.viewers.clear();
+        this.owner = null;
     }
 
     @Override
@@ -172,6 +187,51 @@ public class WebSession implements WebSessionHandle {
 
     void markAccessed() {
         this.lastAccessMillis = System.currentTimeMillis();
+    }
+
+    // ==========================================
+    // 閲覧者・所有者 (S11)
+    // ==========================================
+
+    public Set<ServerPlayer> viewers() {
+        return viewers;
+    }
+
+    public void addViewer(@Nullable ServerPlayer player) {
+        if (player != null) {
+            viewers.add(player);
+        }
+    }
+
+    public void removeViewer(@Nullable ServerPlayer player) {
+        if (player != null) {
+            viewers.remove(player);
+        }
+    }
+
+    public boolean hasViewers() {
+        return !viewers.isEmpty();
+    }
+
+    public int viewerCount() {
+        return viewers.size();
+    }
+
+    @Nullable
+    public UUID getOwner() {
+        return owner;
+    }
+
+    public void setOwner(@Nullable UUID owner) {
+        this.owner = owner;
+    }
+
+    public void setOwner(@Nullable ServerPlayer owner) {
+        this.owner = owner != null ? owner.getUUID() : null;
+    }
+
+    public boolean isOwnedBy(@Nullable ServerPlayer player) {
+        return owner == null || (player != null && owner.equals(player.getUUID()));
     }
 
     /** 送出予定の DOM からアクション名と値の書き戻し先を収集する。 */
@@ -273,7 +333,6 @@ public class WebSession implements WebSessionHandle {
         if (mutations == null || mutations.isEmpty()) return;
         WebSessionManager.broadcastMutations(this.sessionId, mutations);
     }
-
 
     public enum SourceType {STRING, STRING_WITH_CSS, FILE, URL}
 

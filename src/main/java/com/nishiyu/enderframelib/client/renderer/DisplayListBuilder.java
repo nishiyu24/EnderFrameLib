@@ -1,26 +1,29 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
+import com.nishiyu.enderframelib.core.css.model.Keyframes;
+import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.css.CssParser.CssTokenizer;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec.EasingFunction;
+import com.nishiyu.enderframelib.core.css.CssSyntax;
+import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.AnimationSpec;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ClipRect;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.Corners;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.ImageFitMode;
-import com.nishiyu.enderframelib.core.layout.DisplayItem.RenderKeys;
-import com.nishiyu.enderframelib.core.layout.DisplayItem;
-import com.nishiyu.enderframelib.core.layout.TextShaper;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.paint.model.ClipRect;
+import com.nishiyu.enderframelib.core.paint.model.Corners;
+import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,6 +36,13 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.paint.model.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 public class DisplayListBuilder {
 
@@ -63,7 +73,7 @@ public class DisplayListBuilder {
 
     private final int rootW;
     private final int rootH;
-    private final Map<String, StyleSheet.Keyframes> keyframes;
+    private final Map<String, Keyframes> keyframes;
     private final ScrollState scrollState;
     private int fragIdCounter = 0;
     /** 背景をキャンバスに譲った要素（html か body）。自分の箱には背景色を描かない。 */
@@ -74,7 +84,7 @@ public class DisplayListBuilder {
      */
     private final Map<LayoutBox, float[]> contentClips = new IdentityHashMap<>();
 
-    public DisplayListBuilder(int rootW, int rootH, Map<String, StyleSheet.Keyframes> keyframes, ScrollState scrollState) {
+    public DisplayListBuilder(int rootW, int rootH, Map<String, Keyframes> keyframes, ScrollState scrollState) {
         this.rootW = rootW;
         this.rootH = rootH;
         this.keyframes = keyframes != null ? keyframes : Map.of();
@@ -96,7 +106,7 @@ public class DisplayListBuilder {
             }
             if (canvasBg != 0x00000000) {
                 addElement(elements, "bg_root", "bg_root", ElementType.RECT, box.x, box.y, Math.max(box.w, rootW), Math.max(box.h, rootH),
-                        "", 0, canvasBg, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.RenderMeta.EMPTY);
+                        "", 0, canvasBg, Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, RenderMeta.EMPTY);
             }
         }
 
@@ -429,7 +439,7 @@ public class DisplayListBuilder {
         Map<String, String> sbEvents = new HashMap<>(4);
         sbEvents.put(RenderKeys.MC_PARENT, box.node.getId());
         ClipRect sbClip = normalizeClipRect(clipRect);
-        DisplayItem.RenderMeta sbMeta = new DisplayItem.RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, null, 12.0f, 0.5f, 0.5f, 1, false);
+        RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, null, 12.0f, 0.5f, 0.5f, 1, false);
 
         int barThickness = 4;
         if (scrollH > box.h + 2 && box.h > 12) {
@@ -467,7 +477,7 @@ public class DisplayListBuilder {
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
-                            DisplayItem.RenderMeta meta) {
+                            RenderMeta meta) {
         int left = Math.round(x);
         int top = Math.round(y);
         int width = Math.round(x + w) - left;
@@ -479,7 +489,7 @@ public class DisplayListBuilder {
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, Map<String, String> events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
-                            DisplayItem.RenderMeta meta) {
+                            RenderMeta meta) {
         addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta);
     }
 
@@ -620,7 +630,7 @@ public class DisplayListBuilder {
         List<AnimationSpec.Keyframe> frames = new ArrayList<>();
         int animatedChannels = 0;
 
-        for (StyleSheet.KeyframeBlock block : keyframes.get(name).blocks()) {
+        for (KeyframeBlock block : keyframes.get(name).blocks()) {
             float pct = block.percent();
             Map<String, String> decls = block.declarations();
             int definedChannels = 0;
@@ -690,7 +700,7 @@ public class DisplayListBuilder {
                 property = "none";
             } else {
                 easing = EasingFunction.extractFromShorthand(tr);
-                List<String> entries = CssTokenizer.splitTopLevel(tr, ',');
+                List<String> entries = CssSyntax.parseCommaList(tr);
                 List<String> propNames = new ArrayList<>(entries.size());
 
                 for (int idx = 0; idx < entries.size(); idx++) {
@@ -844,7 +854,7 @@ public class DisplayListBuilder {
         if (pointerEventsNone) anchorEvents.put(RenderKeys.POINTER_EVENTS, "none");
 
         ClipRect normalizedClip = normalizeClipRect(clipRect);
-        DisplayItem.RenderMeta anchorMeta = new DisplayItem.RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+        RenderMeta anchorMeta = new RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta);
 
         // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
@@ -860,7 +870,7 @@ public class DisplayListBuilder {
             passiveBorderEvents.put(RenderKeys.POINTER_EVENTS, "none");
         }
 
-        DisplayItem.RenderMeta baseMeta = new DisplayItem.RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+        RenderMeta baseMeta = new RenderMeta(normalizedClip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
         if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
             drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
@@ -873,7 +883,7 @@ public class DisplayListBuilder {
         drawOuterShadows(elements, box, id, shadows, rawRadii, normalizedClip, fontHVal, ox, oy);
 
         BorderSpec border = parseBorderSpec(box, rawRadii, color);
-        DisplayItem.RenderMeta innerMeta = new DisplayItem.RenderMeta(normalizedClip, border.innerRadii(), null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+        RenderMeta innerMeta = new RenderMeta(normalizedClip, border.innerRadii(), null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
         switch (box.node.tag) {
             case "mc-scene" -> drawSceneElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
@@ -919,16 +929,16 @@ public class DisplayListBuilder {
                     frag.endEdge ? rawRadii[2] : 0, frag.startEdge ? rawRadii[3] : 0
             };
             Corners radii = Corners.fromArray(r);
-            DisplayItem.RenderMeta meta = new DisplayItem.RenderMeta(clip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
+            RenderMeta meta = new RenderMeta(clip, radii, null, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
             addElement(elements, id, id + "_frag_" + (fragIdCounter++), ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
                     "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
 
             float[] widths = {box.bT, frag.endEdge ? box.bR : 0, box.bB, frag.startEdge ? box.bL : 0};
             if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) continue;
             if (r[0] > 0 || r[1] > 0 || r[2] > 0 || r[3] > 0) {
-                DisplayItem.RoundedBorderSpec spec = new DisplayItem.RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
+                RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
                         colors[0], colors[1], colors[2], colors[3]);
-                DisplayItem.RenderMeta ringMeta = new DisplayItem.RenderMeta(clip, radii, null, null,
+                RenderMeta ringMeta = new RenderMeta(clip, radii, null, null,
                         fontHVal, 0f, 0f, ox, oy, 1, false, spec);
                 addElement(elements, id, id + "_b_round_" + (fragIdCounter++), ElementType.ROUNDED_BORDER, frag.x, frag.y, frag.w, frag.h,
                         "", 0, 0x00000000, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
@@ -947,8 +957,8 @@ public class DisplayListBuilder {
      * README の "Not supported" に対応。
      */
     private void drawOutline(List<DisplayItem> elements, LayoutBox box, String id, int color,
-                             Map<String, String> events, DisplayItem.RenderMeta meta, int transDur) {
-        String lineStyle = box.style.keywordOf("outline-style", CssKeywords.BorderStyle.class).cssName();
+                             Map<String, String> events, RenderMeta meta, int transDur) {
+        String lineStyle = box.style.keywordOf("outline-style", BorderStyle.class).cssName();
         if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
         float w = box.style.length("outline-width", box.w, rootW, rootH);
         if (w <= 0) return;
@@ -995,10 +1005,10 @@ public class DisplayListBuilder {
             }
         }
 
-        CssKeywords.Overflow overflowX = box.style.overflowX();
-        CssKeywords.Overflow overflowY = box.style.overflowY();
-        boolean isScrollable = overflowX == CssKeywords.Overflow.SCROLL || overflowX == CssKeywords.Overflow.AUTO
-                || overflowY == CssKeywords.Overflow.SCROLL || overflowY == CssKeywords.Overflow.AUTO
+        Overflow overflowX = box.style.overflowX();
+        Overflow overflowY = box.style.overflowY();
+        boolean isScrollable = overflowX == Overflow.SCROLL || overflowX == Overflow.AUTO
+                || overflowY == Overflow.SCROLL || overflowY == Overflow.AUTO
                 || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);
         if (isScrollable) {
             partsEvents.put(RenderKeys.MC_SCROLLABLE, box.scrollWidth + "," + box.scrollHeight);
@@ -1058,7 +1068,7 @@ public class DisplayListBuilder {
                 addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, layer.color(), events,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                        new DisplayItem.RenderMeta(clip, r, null, null, fontHVal, ox, oy, 1, false));
+                        new RenderMeta(clip, r, null, null, fontHVal, ox, oy, 1, false));
             }
         }
     }
@@ -1099,7 +1109,7 @@ public class DisplayListBuilder {
                     if (b[2] <= 0 || b[3] <= 0) continue;
                     addElement(elements, id, id + "_shadow_in" + (n++), ElementType.RECT, b[0], b[1], b[2], b[3], "", 0,
                             layer.color(), events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                            new DisplayItem.RenderMeta(padClip, null, null, null, fontHVal, ox, oy, 1, false));
+                            new RenderMeta(padClip, null, null, null, fontHVal, ox, oy, 1, false));
                 }
             }
         }
@@ -1111,7 +1121,7 @@ public class DisplayListBuilder {
 
     private void drawSceneElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                  BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         float innerX = box.x + border.bwLeft();
@@ -1131,7 +1141,7 @@ public class DisplayListBuilder {
     private void drawMediaElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                   Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                  BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         String src = box.style.getOrDefault(CssProperty.SRC, box.node.attrs.getOrDefault("src", ""));
         if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
@@ -1146,9 +1156,9 @@ public class DisplayListBuilder {
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
-            DisplayItem.CircleBorderSpec cbSpec = new DisplayItem.CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
+            CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                    new DisplayItem.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
+                    new RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
         } else {
             drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
@@ -1173,23 +1183,23 @@ public class DisplayListBuilder {
         if (!box.inlineFragments.isEmpty()) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (frag.text == null || frag.text.isBlank()) continue;
-                DisplayItem.RenderMeta fragMeta = new DisplayItem.RenderMeta(
+                RenderMeta fragMeta = new RenderMeta(
                         normalizedClip, null, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
                 addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, fragMeta);
             }
         } else if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
             // ここがするのは text-align の offset と丸めだけで、描画側は測り直さない。
-            CssKeywords.TextAlign align = box.style.keywordOf(CssProperty.TEXT_ALIGN, CssKeywords.TextAlign.class);
+            TextAlign align = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class);
             float contentX = box.x + box.pL + box.bL;
             float availableW = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
             float lineY = box.y + box.pT + box.bT;
 
-            for (TextShaper.ShapedLine line : box.shapedLines) {
+            for (ShapedLine line : box.shapedLines) {
                 if (!line.text().isBlank()) {
                     float lineW = line.width();
                     float lineX = contentX + alignOffset(align, availableW, lineW);
-                    DisplayItem.RenderMeta lineMeta = new DisplayItem.RenderMeta(
+                    RenderMeta lineMeta = new RenderMeta(
                             normalizedClip, null, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
                     addElement(elements, id, id + "_txt_" + (fragIdCounter++), ElementType.TEXT, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, lineMeta);
@@ -1200,7 +1210,7 @@ public class DisplayListBuilder {
     }
 
     /** text-align が行に与える水平方向のずれ。 */
-    private static float alignOffset(CssKeywords.TextAlign align, float availableW, float lineW) {
+    private static float alignOffset(TextAlign align, float availableW, float lineW) {
         return switch (align) {
             case CENTER -> Math.max(0, (availableW - lineW) / 2);
             case RIGHT, END -> Math.max(0, availableW - lineW);
@@ -1210,7 +1220,7 @@ public class DisplayListBuilder {
 
     private void drawCanvasElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                    Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                   BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         float innerX = box.x + border.bwLeft();
@@ -1222,7 +1232,7 @@ public class DisplayListBuilder {
 
     private void drawTextareaElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                      Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                     BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                     BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         String val = box.node.attrs.getOrDefault("value", box.node.getTextContent());
         float innerX = box.x + border.bwLeft();
@@ -1245,10 +1255,10 @@ public class DisplayListBuilder {
 
     private void drawSelectElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                    Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                   BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                    int transDur, AnimationSpec colorBgAnim) {
         String currentVal = box.node.attrs.getOrDefault("value", "");
-        String displayLabel = ClientWebManager.resolveSelectDisplayLabel(box.node, currentVal) + " \u25be";
+        String displayLabel = DomUtils.resolveSelectDisplayLabel(box.node, currentVal) + " \u25be";
         float innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
@@ -1266,7 +1276,7 @@ public class DisplayListBuilder {
 
     private void drawInputElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius, float fontHVal,
                                   Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                  BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                  BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
         String inputType = box.node.attrs.getOrDefault("type", "text");
         String val = resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""));
@@ -1318,7 +1328,7 @@ public class DisplayListBuilder {
     private void drawBorderedControl(List<DisplayItem> elements, String id, String suffix, ElementType type, LayoutBox box,
                                      float innerX, float innerY, float innerW, float innerH, String text, int color, int bgColor, int fallbackRadius,
                                      Map<String, String> partsEvents, Map<String, String> innerEvents, Map<String, String> passiveBorderEvents,
-                                     BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                     BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
         if (border.useRoundedBorder()) {
             drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
@@ -1332,7 +1342,7 @@ public class DisplayListBuilder {
     private void drawDefaultBlockElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
                                          Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
                                          Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
-                                         BorderSpec border, DisplayItem.RenderMeta baseMeta, DisplayItem.RenderMeta innerMeta, float rOff,
+                                         BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                          int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
         ElementType bgType = ElementType.RECT;
         if ("button".equalsIgnoreCase(box.node.tag)) {
@@ -1345,14 +1355,14 @@ public class DisplayListBuilder {
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
-            DisplayItem.CircleBorderSpec cbSpec = new DisplayItem.CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
+            CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
             if (bgColor != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
                 addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             }
             drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                    new DisplayItem.RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
+                    new RenderMeta(normalizedClip, radii, null, cbSpec, fontHVal, ox, oy, 1, false));
         } else {
             // background-clip が border-box でなければ、色は箱の内側だけに塗る。_bg はヒットテストと
             // 状態の受け口なので箱いっぱいのまま残し、色だけを切った矩形に移す
@@ -1364,7 +1374,7 @@ public class DisplayListBuilder {
                 Corners areaRadii = "padding-box".equals(colorClip) ? border.innerRadii() : null;
                 addElement(elements, id, id + "_bgl" + BoxDecorations.layers(box.style).size() + "_0", ElementType.RECT,
                         area.x(), area.y(), area.w(), area.h(), "", 0, bgColor, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                        new DisplayItem.RenderMeta(normalizedClip, areaRadii, null, null, fontHVal, ox, oy, 1, false));
+                        new RenderMeta(normalizedClip, areaRadii, null, null, fontHVal, ox, oy, 1, false));
             }
             // 角丸の箱でも背景は枠線ボックスいっぱい（枠線の下まで）に塗り、枠線をその上に重ねる（付録 E）
             if (bgFill != 0x00000000 || !partsEvents.isEmpty() || isInteractiveBox || colorBgAnim.animates(AnimationSpec.CH_BG_COLOR)) {
@@ -1412,7 +1422,7 @@ public class DisplayListBuilder {
             BoxDecorations.Rect paint = BoxDecorations.boxArea(box, layer.clip());
             Corners paintRadii = "border-box".equals(layer.clip()) ? radii : border.innerRadii();
             ClipRect layerClip = intersectClip(clip, paint, paintRadii);
-            DisplayItem.RenderMeta imageMeta = new DisplayItem.RenderMeta(layerClip, null, null, null, fontHVal, ox, oy, 1, false);
+            RenderMeta imageMeta = new RenderMeta(layerClip, null, null, null, fontHVal, ox, oy, 1, false);
 
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx());
@@ -1425,8 +1435,8 @@ public class DisplayListBuilder {
                 }
                 for (Gradients.GradientStrip strip : Gradients.strips(gradient, t, paint, rootW, rootH,
                         box.style.fontSizePx(), box.style.rootFontSizePx())) {
-                    DisplayItem.GradientSpec spec = new DisplayItem.GradientSpec(strip.topLeft(), strip.topRight(), strip.bottomRight(), strip.bottomLeft());
-                    DisplayItem.RenderMeta meta = new DisplayItem.RenderMeta(layerClip, null, spec, null, fontHVal, ox, oy, 1, false);
+                    GradientSpec spec = new GradientSpec(strip.topLeft(), strip.topRight(), strip.bottomRight(), strip.bottomLeft());
+                    RenderMeta meta = new RenderMeta(layerClip, null, spec, null, fontHVal, ox, oy, 1, false);
                     addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.RECT, strip.x(), strip.y(), strip.w(), strip.h(), "",
                             0, strip.topLeft(), events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
                 }
@@ -1448,7 +1458,7 @@ public class DisplayListBuilder {
 
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */
     private void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, Map<String, String> events,
-                            BorderSpec border, DisplayItem.RenderMeta meta, int transDur) {
+                            BorderSpec border, RenderMeta meta, int transDur) {
         if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur);
         else if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, events, border, meta, transDur);
     }
@@ -1462,16 +1472,16 @@ public class DisplayListBuilder {
      * 中身ごと枠の色で塗りつぶされ、半透明の背景は枠の色と混ざっていた。
      */
     private void drawRoundedBorder(List<DisplayItem> elements, String id, LayoutBox box, Map<String, String> events,
-                                   BorderSpec b, DisplayItem.RenderMeta meta, int transDur) {
-        DisplayItem.RoundedBorderSpec spec = new DisplayItem.RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
+                                   BorderSpec b, RenderMeta meta, int transDur) {
+        RoundedBorderSpec spec = new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
                 b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft());
-        DisplayItem.RenderMeta ringMeta = new DisplayItem.RenderMeta(meta.clipRect(), meta.borderRadii(), null, null,
+        RenderMeta ringMeta = new RenderMeta(meta.clipRect(), meta.borderRadii(), null, null,
                 meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
                 events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
     }
 
-    private void drawStraightBorders(List<DisplayItem> elements, String id, LayoutBox box, float rOff, Map<String, String> partsEvents, BorderSpec b, DisplayItem.RenderMeta meta, int transDur) {
+    private void drawStraightBorders(List<DisplayItem> elements, String id, LayoutBox box, float rOff, Map<String, String> partsEvents, BorderSpec b, RenderMeta meta, int transDur) {
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
         drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur);
@@ -1482,18 +1492,18 @@ public class DisplayListBuilder {
      * 上下の辺は幅いっぱい、左右の辺は高さいっぱいの帯で、角は重ねて塗る（従来どおり）。
      *
      * 片の id は {@code <id><prefix><辺>} と、2 つ目からは {@code _<番号>} を足したもの
-     * （{@code ClientWebManager.getBaseNodeId} がどちらも持ち主の id に戻す）。
+     * （{@code getBaseNodeId} がどちらも持ち主の id に戻す）。
      */
     private void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
-                           Map<String, String> events, DisplayItem.RenderMeta meta, int transDur) {
+                           Map<String, String> events, RenderMeta meta, int transDur) {
         drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, false);
     }
 
     /** {@code numbered} なら片の id をすべて番号付きにする（1 つの箱が複数の矩形に線を描くインラインの断片）。 */
     private void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
-                           Map<String, String> events, DisplayItem.RenderMeta meta, int transDur, boolean numbered) {
+                           Map<String, String> events, RenderMeta meta, int transDur, boolean numbered) {
         float[][] bands = {
                 {x + rOff, y, w - rOff * 2, widths[0]},
                 {x + w - widths[1], y + rOff, widths[1], h - rOff * 2},
@@ -1513,7 +1523,7 @@ public class DisplayListBuilder {
                 BoxDecorations.Segment seg = segments.get(k);
                 int radius = seg.round() ? Math.round(Math.min(seg.w(), seg.h()) / 2f) : 0;
                 Corners corners = radius > 0 ? new Corners(radius, radius, radius, radius) : null;
-                DisplayItem.RenderMeta segMeta = new DisplayItem.RenderMeta(meta.clipRect(), corners, null, null,
+                RenderMeta segMeta = new RenderMeta(meta.clipRect(), corners, null, null,
                         meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
                 String partId = numbered ? base + "_" + (fragIdCounter++) : k == 0 ? base : base + "_" + k;
                 addElement(elements, id, partId, ElementType.RECT, seg.x(), seg.y(), seg.w(), seg.h(),

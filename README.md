@@ -240,6 +240,10 @@ the engine against.
 `data-sound` `data-markdown` `data-syntax` `data-theme` `data-hud`
 `data-tracker` `data-dropzone` `data-slot` `data-zoom` `data-pan-zoom`
 
+- `data-if` (and alias `mc-if`): Toggles the HTML `hidden` boolean attribute on the element based on the condition expression.
+- `data-show`: Toggles inline `display: none` style on the element, restoring the original display property when condition is true.
+- `data-list`: Evaluates a list model or inline JSON array/object to expand children/templates.
+
 **Parsing** Documents are built with the HTML standard's tree-construction
 rules, as a browser's `DOMParser` would: `html`, `head` and `body` are implied
 when you write only a fragment (leading `<link>`, `<meta>` and `<title>` go
@@ -650,7 +654,9 @@ the LGPL grant.
 
 ### Migration notes (R3)
 
-- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `ClientWebManager.getRootNode(sessionId)` / `getDomDocument(sessionId)`.
+- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `SessionContext.rootNode()` / `domDocument()` from `ClientWebManager.getSession(sessionId)` (S3).
 - Inline actions (`on*` attributes) now run *after* propagation and only if the event was not cancelled. A `preventDefault()` in any listener suppresses both the local action and the server forward.
 - `ClientScreenInteractionManager.setForwardEventsToServer` is removed: use `data-forward` or the `server:` prefix.
 - A re-sync recreates server-owned nodes (hover/focus/scroll state tied to the old node objects is reset); fine-grained updates should use mutation records, which keep node identity.
+- Common screen helper operations (`setTextareaValue`, `setInputValue`, `toScreenRect`, etc.) on `AbstractEnderScreen` and `AbstractEnderContainerScreen` are extracted into the `EnderScreenHost` interface; downstream code keeps full binary and source compatibility (S5).
+- Input event synthesis (pointer, mouse, click synthesis, scroll, keys, and text editing) is centralized into `SessionInput` (`session.input()`); GUI screens and in-world screens (blocks, items, HUD) share the exact same event synthesis pipeline (S4).

@@ -1,19 +1,27 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
+import com.nishiyu.enderframelib.core.layout.model.*;
+
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * flex レイアウト（CSS Flexbox 1 §9 のアルゴリズム）。
@@ -588,8 +596,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static boolean scrollsAlong(LayoutBox box, boolean row) {
-        CssKeywords.Overflow v = row ? box.style.overflowX() : box.style.overflowY();
-        return v == CssKeywords.Overflow.SCROLL || v == CssKeywords.Overflow.AUTO;
+        Overflow v = row ? box.style.overflowX() : box.style.overflowY();
+        return v == Overflow.SCROLL || v == Overflow.AUTO;
     }
 
     /** アイテムのベースライン（border box の上端から）。行を持たなければ border box の下端から合成する。 */

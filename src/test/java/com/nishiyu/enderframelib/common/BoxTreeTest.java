@@ -4,8 +4,8 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -19,6 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.RenderPipeline;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.Viewport;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 軸 6「DOM と箱は別物」（W3）の検証。
@@ -175,7 +188,7 @@ public class BoxTreeTest {
     @Test
     public void testPaintOnlyRestyleUpdatesMarkerAndAnonymousBoxes() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <style>
                   body { margin: 0; }
                   li { color: #111111; }
@@ -193,7 +206,7 @@ public class BoxTreeTest {
         assertEquals("#111111", marker.children.getFirst().style.get(CssProperty.COLOR));
 
         state.setHoveredNode(doc.root.getElementById("li"));
-        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
         assertFalse(res.layoutRequired(), "色だけの変化なのでボックスツリーは組み直されない");
         assertEquals("#222222", marker.children.getFirst().style.get(CssProperty.COLOR));
         assertEquals("#222222", anonymous.style.get(CssProperty.COLOR));
@@ -202,7 +215,7 @@ public class BoxTreeTest {
     @Test
     public void testFragmentDocumentGetsImpliedBodyWithUaMargin() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
+        Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         // W7 まではパーサが body を補わず、断片だけの文書では ua.css の body { margin: 8px } が効かなかった
         LayoutBox a = findElement(root, "a");
@@ -259,7 +272,7 @@ public class BoxTreeTest {
     @Test
     public void testStyleInCommentsAndRawTextIsNotAuthorCss() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("""
+        Document doc = parser.parseDocument("""
                 <!-- <style>#a { height: 50px; }</style> -->
                 <textarea id="ta"><style>#a { height: 60px; }</style></textarea>
                 <pre id="pre">&lt;style&gt;#a { height: 70px; }&lt;/style&gt;</pre>
@@ -280,7 +293,7 @@ public class BoxTreeTest {
         UiDocumentCompiler.resourceTextResolver = href -> "/* " + href + " */";
         try {
             UiDocumentCompiler parser = new UiDocumentCompiler();
-            UiDocumentCompiler.Document doc = parser.parseDocument("""
+            Document doc = parser.parseDocument("""
                     <style>/* first */</style>
                     <link rel="stylesheet" href="second.css">
                     <link rel="icon" href="icon.png">
@@ -296,7 +309,7 @@ public class BoxTreeTest {
 
     private static LayoutBox layout(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
-        UiDocumentCompiler.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
+        Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 

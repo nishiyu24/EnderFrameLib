@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.model.*;
+
 import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Declaration;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Item;
@@ -7,8 +9,8 @@ import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.StyleSheet.ContainerQuery;
-import com.nishiyu.enderframelib.core.css.StyleSheet.KeyframeBlock;
-import com.nishiyu.enderframelib.core.css.StyleSheet.Keyframes;
+import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
+import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.StyleSheet.StyleRule;
 
 import java.util.ArrayList;

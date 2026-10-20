@@ -1,21 +1,29 @@
 package com.nishiyu.enderframelib.core.layout;
 
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
+import com.nishiyu.enderframelib.core.layout.model.*;
+
+import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 表の整形（{@code display: table} / {@code inline-table} と、その中の行グループ・行）。CSS 2.2 §17。
@@ -374,8 +382,8 @@ public class TableLayoutEngine extends LayoutEngine {
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
     private static float border(LayoutBox box, String widthProp, float rootW, float rootH) {
         String side = widthProp.substring("border-".length(), widthProp.length() - "-width".length());
-        CssKeywords.BorderStyle style = box.style.keywordOf("border-" + side + "-style", CssKeywords.BorderStyle.class);
-        if (style == CssKeywords.BorderStyle.NONE || style == CssKeywords.BorderStyle.HIDDEN) return 0;
+        BorderStyle style = box.style.keywordOf("border-" + side + "-style", BorderStyle.class);
+        if (style == BorderStyle.NONE || style == BorderStyle.HIDDEN) return 0;
         return box.style.length(widthProp, 0, rootW, rootH);
     }
 

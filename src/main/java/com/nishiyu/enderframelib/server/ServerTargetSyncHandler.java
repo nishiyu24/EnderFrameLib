@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.network.EnderFrameNetwork.PubSubUpdateS2CPacket;
+import com.nishiyu.enderframelib.network.PubSubUpdateS2CPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NumericTag;

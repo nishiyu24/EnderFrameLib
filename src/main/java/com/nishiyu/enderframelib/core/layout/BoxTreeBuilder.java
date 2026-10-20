@@ -1,11 +1,14 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.model.*;
+
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
-import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
+import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.PropertyRegistry;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
+import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 
 import java.util.ArrayList;
@@ -15,6 +18,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
+import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.text.*;
+import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.model.Overflow;
+import com.nishiyu.enderframelib.core.css.model.TextAlign;
+import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 /**
  * 要素ツリー（DOM と 1:1 の {@link LayoutBox}）からボックスツリーを組み立てる（軸 6）。
@@ -218,7 +227,7 @@ public final class BoxTreeBuilder {
 
     private static boolean isCollapsibleWhitespace(LayoutBox box) {
         if (box.node.nodeType != NodeType.TEXT) return false;
-        if (!TextShaper.WhiteSpace.of(box.style.get(CssProperty.WHITE_SPACE)).collapses()) return false;
+        if (!WhiteSpace.of(box.style.get(CssProperty.WHITE_SPACE)).collapses()) return false;
         return box.node.text == null || box.node.text.isBlank();
     }
 
@@ -307,7 +316,7 @@ public final class BoxTreeBuilder {
         node.isPseudoNode = true;
         node.parent = listItem.node;
         node.setId(listItem.node.getId() + "_marker");
-        HtmlNode textNode = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(text);
+        HtmlNode textNode = new HtmlText(text);
         textNode.parent = node;
         textNode.setId(node.getId() + "_txt");
 
