@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.server.ServerTargetSyncHandler.NbtPathFilter;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;

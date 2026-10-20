@@ -8,6 +8,7 @@ box-sizing
 margin-collapse
 block-gap
 percent-height
+percent-height-definite
 percent-margin
 percent-margin-narrow
 block-auto-margin
@@ -51,6 +52,10 @@ vertical-align-length
 line-height-strut
 inline-nowrap-overflow
 inline-flex
+inline-box-edges
+inline-box-wrap
+inline-box-vertical-align
+shrink-to-fit-line-breaks
 
 # --- flex
 flex-grow
@@ -75,6 +80,8 @@ flex-basis-percent
 flex-min-auto
 flex-column-justify
 flex-column-overflow
+flex-column-wrap
+flex-justify-physical
 
 # --- grid
 grid-minmax
@@ -115,6 +122,7 @@ position-abs-insets
 position-abs-percent
 position-abs-static
 position-abs-shrink
+position-abs-percent-height
 position-fixed
 position-sticky
 
@@ -134,3 +142,22 @@ z-flex-item
 z-opacity-context
 z-transform-context
 z-float-over-block
+
+# --- computed（R0: 計算値の列が比較に使われていることの確認）
+computed-values
+
+# --- modern-css（R4: @layer / ネスト / @container / :has() / 疑似クラス / 数学関数 / 新しい単位 / @property）
+layer-order
+layer-important
+layer-nested-anonymous
+nesting-basic
+nesting-specificity
+container-width
+container-named-units
+has-selector
+nth-child-of
+pseudo-form-state
+pseudo-lang-dir-defined
+math-level4
+units-modern
+property-registered

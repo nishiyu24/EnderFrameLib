@@ -1,2 +1,2 @@
-a 108 28 200 20 0
-b 8 8 300 20 0
+a 108 28 200 20 0 sw=200 sh=20 cw=200 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 8 8 300 20 0 sw=300 sh=20 cw=300 ch=20 display=block position=static box-sizing=content-box overflow=visible

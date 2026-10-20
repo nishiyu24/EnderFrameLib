@@ -1,0 +1,22 @@
+<!-- :lang()（継承・サブタグ。Chromium は Selectors 4 のカンマ区切りリストを未実装なので含めない）、:dir()、:defined（ハイフンを含む未登録の要素は未定義）。 -->
+<style>
+  div, my-card { display: block; height: 10px; }
+  #a:lang(en) { width: 100px; }
+  #b:lang(fr) { width: 110px; }
+  #c:lang(ja) { width: 120px; }
+  #d:lang(en) { width: 130px; }
+  #e:dir(rtl) { width: 140px; }
+  #f:dir(ltr) { width: 150px; }
+  #g:dir(rtl) { width: 160px; }
+  my-card:defined { width: 170px; }
+  my-card:not(:defined) { width: 180px; }
+  #h:defined { width: 190px; }
+</style>
+<div lang="en-US"><div id="a"></div></div>
+<div lang="ja"><div id="b" lang="fr-CA"></div><div id="c"></div></div>
+<div lang="fr"><div id="d"></div></div>
+<div dir="rtl"><div id="e"></div></div>
+<div id="f"></div>
+<div dir="rtl"><div dir="ltr"><div id="g"></div></div></div>
+<my-card id="m"></my-card>
+<div id="h"></div>

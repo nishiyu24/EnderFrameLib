@@ -4,8 +4,8 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -173,8 +174,8 @@ public class BoxTreeTest {
 
     @Test
     public void testPaintOnlyRestyleUpdatesMarkerAndAnonymousBoxes() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   body { margin: 0; }
                   li { color: #111111; }
@@ -191,8 +192,8 @@ public class BoxTreeTest {
         assertTrue(anonymous.isAnonymous);
         assertEquals("#111111", marker.children.getFirst().style.get(CssProperty.COLOR));
 
-        state.setHoveredNode(doc.root, "li");
-        UIParser.RestyleResult res = parser.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+        state.setHoveredNode(doc.root.getElementById("li"));
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
         assertFalse(res.layoutRequired(), "色だけの変化なのでボックスツリーは組み直されない");
         assertEquals("#222222", marker.children.getFirst().style.get(CssProperty.COLOR));
         assertEquals("#222222", anonymous.style.get(CssProperty.COLOR));
@@ -200,8 +201,8 @@ public class BoxTreeTest {
 
     @Test
     public void testFragmentDocumentGetsImpliedBodyWithUaMargin() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("<div id=\"a\" style=\"height: 10px;\"></div>", "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         // W7 まではパーサが body を補わず、断片だけの文書では ua.css の body { margin: 8px } が効かなかった
         LayoutBox a = findElement(root, "a");
@@ -211,11 +212,91 @@ public class BoxTreeTest {
         assertEquals(VIEWPORT_W - 16, a.w, 0.01f);
     }
 
+    @Test
+    public void testPseudoElementGoesThroughTheCascade() {
+        LayoutBox root = layout("""
+                <style>
+                  #t::before { content: "id"; color: #111111 !important; }
+                  .t::before { content: "class"; color: #222222; }
+                  div::before { content: "type"; padding-left: 4px; padding: 1px; }
+                  span { color: #333333; }
+                  .t { color: #444444; }
+                </style>
+                <div class="t" id="t">x</div><div class="u" id="u">y</div>
+                """);
+        LayoutBox t = findElement(root, "t");
+        // 以前は宣言を詳細度を見ずに重ねて style 属性に焼き込み、合成した span に span のルールも当たっていた
+        assertEquals("id", beforeText(t));
+        LayoutBox before = t.elementChildren.getFirst();
+        assertEquals("#111111", before.style.get(CssProperty.COLOR));
+        assertEquals(1f, before.pL, 0.01f, "後に書いたショートハンドが前のロングハンドに勝つ");
+
+        LayoutBox u = findElement(root, "u");
+        assertEquals("type", beforeText(u));
+        assertNotEquals("#333333", u.elementChildren.getFirst().style.get(CssProperty.COLOR),
+                "span のルールは擬似要素に当たらない");
+    }
+
+    @Test
+    public void testNoPseudoBoxWithoutContentOrWhenDisplayNone() {
+        LayoutBox root = layout("""
+                <style>
+                  #a::before { color: red; }
+                  #b::before { content: none; }
+                  #c::before { content: "x"; display: none; }
+                  #d::after { content: ""; display: block; height: 3px; }
+                </style>
+                <div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>
+                """);
+        for (String id : new String[]{"a", "b", "c"}) {
+            assertTrue(findElement(root, id).elementChildren.stream().noneMatch(c -> c.node.isPseudoNode), id);
+        }
+        LayoutBox d = findElement(root, "d");
+        assertEquals("d_after", d.elementChildren.getLast().node.getId(), "空文字列の content は箱を作る");
+        assertEquals(3f, d.h, 0.01f);
+    }
+
+    @Test
+    public void testStyleInCommentsAndRawTextIsNotAuthorCss() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <!-- <style>#a { height: 50px; }</style> -->
+                <textarea id="ta"><style>#a { height: 60px; }</style></textarea>
+                <pre id="pre">&lt;style&gt;#a { height: 70px; }&lt;/style&gt;</pre>
+                <template><style>#a { height: 80px; }</style></template>
+                <div id="a" style="height: 10px;"></div>
+                """, "", VIEWPORT_W, VIEWPORT_H);
+        // 以前は解析の前に正規表現で抜き出していたので、コメントや textarea の中まで作者 CSS になっていた
+        assertFalse(doc.authorCss.contains("px"), doc.authorCss);
+        assertEquals("<style>#a { height: 60px; }</style>", doc.root.getElementById("ta").getTextContent());
+        assertTrue(doc.root.getElementById("pre").getTextContent().contains("<style>"));
+        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        assertEquals(10f, findElement(root, "a").h, 0.01f);
+    }
+
+    @Test
+    public void testStyleAndLinkAreCollectedInDocumentOrder() {
+        var previous = UiDocumentCompiler.resourceTextResolver;
+        UiDocumentCompiler.resourceTextResolver = href -> "/* " + href + " */";
+        try {
+            UiDocumentCompiler parser = new UiDocumentCompiler();
+            UiDocumentCompiler.Document doc = parser.parseDocument("""
+                    <style>/* first */</style>
+                    <link rel="stylesheet" href="second.css">
+                    <link rel="icon" href="icon.png">
+                    <div><style>/* third */</style></div>
+                    """, "/* external */", VIEWPORT_W, VIEWPORT_H);
+            assertEquals("/* external */\n/* first */\n/* second.css */\n/* third */\n", doc.authorCss);
+        } finally {
+            UiDocumentCompiler.resourceTextResolver = previous;
+        }
+    }
+
     // ==========================================
 
     private static LayoutBox layout(String html) {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 

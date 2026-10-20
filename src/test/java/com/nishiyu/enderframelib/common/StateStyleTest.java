@@ -1,17 +1,22 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.client.renderer.UIRenderer;
-import com.nishiyu.enderframelib.client.renderer.WebAnimator;
+import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.client.renderer.CssAnimator;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.css.EasingFunction;
-import com.nishiyu.enderframelib.core.css.ElementState;
+import com.nishiyu.enderframelib.core.layout.AnimationSpec.EasingFunction;
+import com.nishiyu.enderframelib.core.css.Selector.ElementState;
 import com.nishiyu.enderframelib.core.css.StyleSheet.Specificity;
+import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.css.StyleResolver;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -21,6 +26,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -31,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       {@code :checked}/{@code :disabled}/{@code :indeterminate}/{@code :open}、UA {@code !important} 優先</li>
  *   <li>F3-2: {@link InteractionState} による部分木再スタイル（{@code forceDirty}）、
  *       ペイント変更とレイアウト変更の判別、{@code :hover { padding }} による再レイアウト</li>
- *   <li>F3-3: {@link WebAnimator} の前値→次値汎用トランジション、{@code transition-property}、
+ *   <li>F3-3: {@link CssAnimator} の前値→次値汎用トランジション、{@code transition-property}、
  *       {@link EasingFunction}（{@code cubic-bezier}・既定 {@code ease}）、
  *       {@code @keyframes} の色・再生方向・fill-mode・反復回数・他チャネル非破壊</li>
  * </ul>
@@ -44,8 +51,8 @@ public class StateStyleTest {
 
     @Test
     public void testHoverDeclarationsResolveThroughInteractionState() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   button { background-color: #111111; border: 1px solid #000000; }
                   button:hover { background-color: #222222; border-color: #333333; }
@@ -60,8 +67,8 @@ public class StateStyleTest {
         assertEquals("#111111", button.style.get(CssProperty.BACKGROUND_COLOR));
         assertTrue(button.hasInteractiveRules, "対話疑似クラスを持つ要素は hasInteractiveRules が true");
 
-        state.setHoveredNode(doc.root, "b");
-        UIParser.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        state.setHoveredNode(doc.root.getElementById("b"));
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "色のみの変化はレイアウト再計算を要求しない");
         assertEquals("#222222", button.style.get(CssProperty.BACKGROUND_COLOR));
@@ -72,8 +79,8 @@ public class StateStyleTest {
     public void testSinglePassCascadeSpecificityBeatsRuleType() {
         // #btn (ID=1) は .primary:hover (class+pseudo=2) より詳細度が高いため、
         // ホバー時でも #btn の指定が勝つことを確認する（旧4バケット putAll 方式では .primary:hover が不正に勝っていた）
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #btn { background-color: #112233; }
                   .primary:hover { background-color: #998877; }
@@ -81,7 +88,7 @@ public class StateStyleTest {
                 <button id="btn" class="primary">Click</button>
                 """, "", 320, 200);
         InteractionState state = new InteractionState();
-        state.setHoveredNode(doc.root, "btn");
+        state.setHoveredNode(doc.root.getElementById("btn"));
 
         LayoutBox root = parser.buildLayoutTree(doc.root, new HashMap<>(), doc.sheet, Map.of(), false, state);
         LayoutBox btn = findById(root, "btn");
@@ -104,8 +111,8 @@ public class StateStyleTest {
 
     @Test
     public void testFocusVisibleAndFocusWithinSeparation() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #wrap { background-color: #101010; }
                   #wrap:focus-within { background-color: #204060; }
@@ -118,7 +125,7 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         // 1. マウスクリック由来のフォーカス（focusVisible = false）
-        state.setFocusedNode(doc.root, "inp", false);
+        state.setFocusedNode(doc.root.getElementById("inp"), false);
         LayoutBox root = parser.buildLayoutTree(doc.root, new HashMap<>(), doc.sheet, Map.of(), false, state);
         LayoutBox wrap = findById(root, "wrap");
         LayoutBox inp = findById(root, "inp");
@@ -126,15 +133,15 @@ public class StateStyleTest {
         assertEquals("#888888", inp.style.get("border-top-color"), "マウスフォーカスでは :focus のみが当たり :focus-visible は当たらない");
 
         // 2. キーボード Tab 由来のフォーカス（focusVisible = true）
-        state.setFocusedNode(doc.root, "inp", true);
+        state.setFocusedNode(doc.root.getElementById("inp"), true);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#ffaa00", inp.style.get("border-top-color"), "キーボードフォーカスでは :focus-visible が当たる");
     }
 
     @Test
     public void testFormAndDisclosureRuntimeStates() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #cb { opacity: 0.4; }
                   #cb:checked { opacity: 1.0; }
@@ -158,16 +165,16 @@ public class StateStyleTest {
 
         assertEquals(0.4f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
 
-        state.setChecked("cb", true);
-        state.setDisabled("btn", true);
-        state.setOpen("det", true);
+        state.setChecked(doc.root.getElementById("cb"), true);
+        state.setDisabled(doc.root.getElementById("btn"), true);
+        state.setOpen(doc.root.getElementById("det"), true);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
 
         assertEquals(1.0f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
         assertEquals(0.25f, btn.style.number(CssProperty.OPACITY, 1f), 1e-4f);
         assertEquals("#333333", det.style.get(CssProperty.BACKGROUND_COLOR));
 
-        state.setIndeterminate("cb", true);
+        state.setIndeterminate(doc.root.getElementById("cb"), true);
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals(0.7f, cb.style.number(CssProperty.OPACITY, 1f), 1e-4f);
     }
@@ -178,8 +185,8 @@ public class StateStyleTest {
 
     @Test
     public void testHoverPaddingTriggersLayoutChange() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #box { width: 100px; padding: 4px; }
                   #box:hover { padding: 20px; }
@@ -194,8 +201,8 @@ public class StateStyleTest {
         assertEquals(4, box.pL);
         float initialHeight = box.h;
 
-        state.setHoveredNode(doc.root, "box");
-        UIParser.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        state.setHoveredNode(doc.root.getElementById("box"));
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertTrue(res.layoutRequired(), "padding の変化はレイアウト再計算を要求する");
 
@@ -207,8 +214,8 @@ public class StateStyleTest {
 
     @Test
     public void testParentHoverColorPropagatesToChildInheritedStyle() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #parent { color: #111111; }
                   #parent:hover { color: #ff0000; }
@@ -225,8 +232,8 @@ public class StateStyleTest {
         assertEquals("#111111", parent.style.get(CssProperty.COLOR));
         assertEquals("#111111", child.style.get(CssProperty.COLOR), "子は親の color を初期継承する");
 
-        state.setHoveredNode(doc.root, "parent");
-        UIParser.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        state.setHoveredNode(doc.root.getElementById("parent"));
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertTrue(res.styleChanged());
         assertFalse(res.layoutRequired(), "色のみの変更なので再レイアウトは不要");
 
@@ -237,8 +244,8 @@ public class StateStyleTest {
     @Test
     public void testAuthorNormalDeclarationBeatsUserAgentHoverDeclaration() {
         // CSS のカスケード仕様に従い、Author の通常宣言は UA の疑似クラス付き通常宣言（button:hover 等）に優先する
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #custom-btn { background-color: #123456; }
                   #styled-hover:hover { background-color: #abcdef; }
@@ -260,17 +267,17 @@ public class StateStyleTest {
         assertEquals("#123456", customBtn.style.get(CssProperty.BACKGROUND_COLOR), "Author の通常宣言による背景色");
 
         // 1. デフォルトボタンをホバー: UA の button:hover (#e5e5e5) が適用される
-        state.setHoveredNode(doc.root, "default-btn");
+        state.setHoveredNode(doc.root.getElementById("default-btn"));
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#e5e5e5", defBtn.style.get(CssProperty.BACKGROUND_COLOR), "UA の button:hover が効く");
 
         // 2. 作者が背景色を指定したボタンをホバー: UA の button:hover は Author の通常宣言に勝てないため #123456 のまま
-        state.setHoveredNode(doc.root, "custom-btn");
+        state.setHoveredNode(doc.root.getElementById("custom-btn"));
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#123456", customBtn.style.get(CssProperty.BACKGROUND_COLOR), "Author の通常宣言は UA の :hover に勝つ");
 
         // 3. 作者が :hover を指定したボタンをホバー: Author の :hover (#abcdef) が適用される
-        state.setHoveredNode(doc.root, "styled-hover");
+        state.setHoveredNode(doc.root.getElementById("styled-hover"));
         parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
         assertEquals("#abcdef", styledHover.style.get(CssProperty.BACKGROUND_COLOR), "Author の :hover が勝つ");
     }
@@ -296,10 +303,10 @@ public class StateStyleTest {
     @Test
     public void testGeneralizedTransitionAndTransitionPropertyFiltering() {
         String sessionId = "test_trans_session";
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
 
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   #card {
                     width: 80px;
@@ -320,39 +327,39 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         LayoutBox root1 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els1 = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root1);
-        UIElement node1 = findElementById(els1, "card");
+        List<DisplayItem> els1 = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root1);
+        DisplayItem node1 = findElementById(els1, "card");
         assertNotNull(node1);
 
         long t0 = 1_000_000L;
-        WebAnimator.AnimatedValues v0 = WebAnimator.getValuesAt(sessionId, node1, t0);
+        CssAnimator.AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, node1, t0);
         assertEquals(1.0f, v0.opacity(), 1e-4f);
         assertEquals(0.0f, v0.tx(), 1e-4f);
 
         // ホバー状態へ遷移
-        state.setHoveredNode(doc.root, "card");
+        state.setHoveredNode(doc.root.getElementById("card"));
         LayoutBox root2 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els2 = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root2);
-        UIElement node2 = findElementById(els2, "card");
+        List<DisplayItem> els2 = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root2);
+        DisplayItem node2 = findElementById(els2, "card");
         assertNotNull(node2);
 
         // t0 + 100ms（200ms の半分）で評価:
         // transition-property: opacity なので opacity は 0.6 に補間され、transform (tx) は即座に 40px にスナップする
-        WebAnimator.getValuesAt(sessionId, node2, t0);
-        WebAnimator.AnimatedValues vMid = WebAnimator.getValuesAt(sessionId, node2, t0 + 100L);
+        CssAnimator.getValuesAt(sessionId, node2, t0);
+        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, node2, t0 + 100L);
         assertEquals(0.6f, vMid.opacity(), 1e-3f, "transition-property に含まれる opacity は中間値に補間される");
         assertEquals(40.0f, vMid.tx(), 1e-3f, "transition-property に含まれない transform は即座に目標値へスナップする");
 
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
     }
 
     @Test
     public void testKeyframesColorDirectionFillModeAndNonOverwritingTransition() {
         String sessionId = "test_kf_session";
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
 
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   @keyframes slideX {
                     0% { transform: translateX(0px); }
@@ -374,40 +381,40 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         LayoutBox root1 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els1 = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root1);
-        UIElement actor1 = findElementById(els1, "actor");
+        List<DisplayItem> els1 = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root1);
+        DisplayItem actor1 = findElementById(els1, "actor");
         assertNotNull(actor1);
 
         long t0 = 2_000_000L;
-        WebAnimator.getValuesAt(sessionId, actor1, t0);
+        CssAnimator.getValuesAt(sessionId, actor1, t0);
 
         // ホバーを発生させ、opacity のトランジションと @keyframes slideX が同時に走る状態にする
-        state.setHoveredNode(doc.root, "actor");
+        state.setHoveredNode(doc.root.getElementById("actor"));
         LayoutBox root2 = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els2 = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root2);
-        UIElement actor2 = findElementById(els2, "actor");
+        List<DisplayItem> els2 = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root2);
+        DisplayItem actor2 = findElementById(els2, "actor");
         assertNotNull(actor2);
 
-        WebAnimator.getValuesAt(sessionId, actor2, t0);
-        WebAnimator.AnimatedValues vMid = WebAnimator.getValuesAt(sessionId, actor2, t0 + 100L);
+        CssAnimator.getValuesAt(sessionId, actor2, t0);
+        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, actor2, t0 + 100L);
         assertEquals(50.0f, vMid.tx(), 1e-2f, "@keyframes の translateX が 50% 進行している");
         assertEquals(0.5f, vMid.opacity(), 1e-2f, "@keyframes が触っていない opacity のトランジションが潰されない");
 
         // 200ms 経過後も forwards により tx=100px が保持される
-        WebAnimator.AnimatedValues vEnd = WebAnimator.getValuesAt(sessionId, actor2, t0 + 300L);
+        CssAnimator.AnimatedValues vEnd = CssAnimator.getValuesAt(sessionId, actor2, t0 + 300L);
         assertEquals(100.0f, vEnd.tx(), 1e-2f, "animation-fill-mode: forwards により終了後も最終フレームの値が維持される");
         assertEquals(0.0f, vEnd.opacity(), 1e-2f);
 
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
     }
 
     @Test
     public void testKeyframesBackgroundColorOnBlockElement() {
         String sessionId = "test_kf_bg_session";
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
 
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   @keyframes pulseBg {
                     from { background-color: #000000; }
@@ -428,31 +435,31 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root);
-        UIElement bgEl = findElementById(els, "panel_bg");
+        List<DisplayItem> els = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root);
+        DisplayItem bgEl = findElementById(els, "panel_bg");
         assertNotNull(bgEl, "背景アニメーションがある場合は背景要素が出力される");
 
         long t0 = 3_000_000L;
-        WebAnimator.getValuesAt(sessionId, bgEl, t0);
-        WebAnimator.AnimatedValues vHalf = WebAnimator.getValuesAt(sessionId, bgEl, t0 + 50L);
+        CssAnimator.getValuesAt(sessionId, bgEl, t0);
+        CssAnimator.AnimatedValues vHalf = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 50L);
         int rHalf = (vHalf.bgColor() >>> 16) & 0xFF;
         assertTrue(rHalf >= 120 && rHalf <= 135, "50ms 時点で背景色が中間グレー付近に補間される: " + rHalf);
 
         // alternate の 2 周目 (t0 + 175ms = 2周目の75% → 逆再生で 25%)
-        WebAnimator.AnimatedValues vAlt = WebAnimator.getValuesAt(sessionId, bgEl, t0 + 175L);
+        CssAnimator.AnimatedValues vAlt = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 175L);
         int rAlt = (vAlt.bgColor() >>> 16) & 0xFF;
         assertTrue(rAlt >= 55 && rAlt <= 75, "alternate の 2 周目後半は逆方向に補間される: " + rAlt);
 
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
     }
 
     @Test
     public void testAnimationDelayAndBackwardsFillMode() {
         String sessionId = "test_anim_delay_session";
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
 
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("""
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
                 <style>
                   @keyframes shiftX {
                     0% { transform: translateX(50px); }
@@ -477,37 +484,202 @@ public class StateStyleTest {
         InteractionState state = new InteractionState();
 
         LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
-        List<UIElement> els = new UIRenderer(320, 200, doc.sheet.keyframes, new ScrollState()).render(root);
-        UIElement elBackwards = findElementById(els, "delayedBackwards");
-        UIElement elNone = findElementById(els, "delayedNone");
+        List<DisplayItem> els = new DisplayListBuilder(320, 200, doc.sheet.keyframes, new ScrollState()).render(root);
+        DisplayItem elBackwards = findElementById(els, "delayedBackwards");
+        DisplayItem elNone = findElementById(els, "delayedNone");
         assertNotNull(elBackwards);
         assertNotNull(elNone);
 
         long t0 = 4_000_000L;
         // t0 でアニメーション開始時刻を確定
-        WebAnimator.getValuesAt(sessionId, elBackwards, t0);
-        WebAnimator.getValuesAt(sessionId, elNone, t0);
+        CssAnimator.getValuesAt(sessionId, elBackwards, t0);
+        CssAnimator.getValuesAt(sessionId, elNone, t0);
 
         // 遅延中 (t0 + 40ms) の評価
-        WebAnimator.AnimatedValues vBackwardsDelay = WebAnimator.getValuesAt(sessionId, elBackwards, t0 + 40L);
-        WebAnimator.AnimatedValues vNoneDelay = WebAnimator.getValuesAt(sessionId, elNone, t0 + 40L);
+        CssAnimator.AnimatedValues vBackwardsDelay = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 40L);
+        CssAnimator.AnimatedValues vNoneDelay = CssAnimator.getValuesAt(sessionId, elNone, t0 + 40L);
 
         assertEquals(50.0f, vBackwardsDelay.tx(), 1e-2f, "backwards は delay 中に 0% キーフレーム (50px) を適用する");
         assertEquals(0.0f, vNoneDelay.tx(), 1e-2f, "none は delay 中に基底スタイル (0px) を維持する");
 
         // アニメーション中 (t0 + 150ms: 遅延 100ms + 50ms 経過 = 50%) の評価
-        WebAnimator.AnimatedValues vMid = WebAnimator.getValuesAt(sessionId, elBackwards, t0 + 150L);
+        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 150L);
 
         assertEquals(100.0f, vMid.tx(), 1e-2f, "進行度 50% で 50px と 150px の中間値 100px になる");
 
         // アニメーション終了後 (t0 + 250ms)
         // backwards 単独では終了後に forwards が無いため、基底スタイル (0px) に戻る
-        WebAnimator.AnimatedValues vAfter = WebAnimator.getValuesAt(sessionId, elBackwards, t0 + 250L);
+        CssAnimator.AnimatedValues vAfter = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 250L);
         assertEquals(0.0f, vAfter.tx(), 1e-2f, "forwards 指定が無いため終了後は基底スタイル (0px) に戻る");
 
-        WebAnimator.clearSession(sessionId);
+        ClientWebManager.clearSession(sessionId);
     }
 
+
+    // =========================================================================
+    // W9: 結合子を跨ぐ再スタイルと擬似要素の動的な再スタイル
+    // =========================================================================
+
+    @Test
+    public void testCheckedRestylesAdjacentSibling() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <style>
+                  label { color: #111111; }
+                  input:checked + label { color: #ff0000; }
+                </style>
+                <div><input id="cb" type="checkbox"><label id="near">a</label><label id="far">b</label></div>
+                """, "", 320, 200);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        assertEquals("#111111", findById(root, "near").style.get(CssProperty.COLOR));
+
+        // 汚れるのは input だけ。以前は兄弟の label に再スタイルが届かなかった
+        state.setChecked(doc.root.getElementById("cb"), true);
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertTrue(res.styleChanged());
+        assertFalse(res.layoutRequired(), "色だけの変化");
+        assertEquals("#ff0000", findById(root, "near").style.get(CssProperty.COLOR));
+        assertEquals("#111111", findById(root, "far").style.get(CssProperty.COLOR), "+ は直後の兄弟だけ");
+
+        state.setChecked(doc.root.getElementById("cb"), false);
+        parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertEquals("#111111", findById(root, "near").style.get(CssProperty.COLOR));
+    }
+
+    @Test
+    public void testStateRestylesGeneralSiblingsAndTheirDescendants() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <style>
+                  .a:hover ~ .b { background-color: #00ff00; }
+                  input:disabled ~ .b span { color: #0000ff; }
+                </style>
+                <div><div class="a" id="a"></div><input id="in"><p id="mid"></p><div class="b" id="b"><span id="s">x</span></div></div>
+                """, "", 320, 200);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+
+        state.setHoveredNode(doc.root.getElementById("a"));
+        parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertEquals("#00ff00", findById(root, "b").style.get(CssProperty.BACKGROUND_COLOR));
+
+        state.setDisabled(doc.root.getElementById("in"), true);
+        parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertEquals("#0000ff", findById(root, "s").style.get(CssProperty.COLOR), "~ の後続の兄弟の子孫まで届く");
+    }
+
+    @Test
+    public void testHoverBeforeAppearsAndDisappears() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <style>.btn:hover::before { content: "→"; color: #123456; }</style>
+                <div class="btn" id="b">go</div>
+                """, "", 320, 200);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        assertNull(findById(root, "b_before"));
+
+        state.setHoveredNode(doc.root.getElementById("b"));
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertTrue(res.layoutRequired(), "擬似要素が現れるとボックスツリーが変わる");
+        LayoutBox b = findById(root, "b");
+        assertEquals("b_before", b.elementChildren.getFirst().node.getId(), "::before は先頭の子");
+
+        // 呼び出し側（ClientWebManager）と同じく、再レイアウトは木を組み直す
+        root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        LayoutBox before = findById(root, "b_before");
+        assertNotNull(before);
+        assertEquals("#123456", before.style.get(CssProperty.COLOR));
+        assertEquals("→", before.elementChildren.getFirst().displayText);
+
+        state.setHoveredNode(null);
+        res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertTrue(res.layoutRequired());
+        assertNull(findById(root, "b_before"));
+    }
+
+    @Test
+    public void testCheckedAfterOnSiblingRestylesPaintOnly() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <style>
+                  label::after { content: "!"; color: #111111; }
+                  input:checked + label::after { color: #222222; }
+                </style>
+                <div><input id="cb" type="checkbox"><label id="l">a</label></div>
+                """, "", 320, 200);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        LayoutBox after = findById(root, "l_after");
+        assertEquals("#111111", after.style.get(CssProperty.COLOR));
+
+        state.setChecked(doc.root.getElementById("cb"), true);
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertTrue(res.styleChanged());
+        assertFalse(res.layoutRequired(), "内容が変わらず色だけなら再描画で済む");
+        assertSame(after, findById(root, "l_after"), "同じ箱のスタイルを書き換える");
+        assertEquals("#222222", after.style.get(CssProperty.COLOR));
+        assertEquals("#222222", after.elementChildren.getFirst().style.get(CssProperty.COLOR), "中の文字も追従する");
+    }
+
+    @Test
+    public void testContentChangeOnStateRequiresLayout() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("""
+                <style>
+                  #t::after { content: "off"; }
+                  #t:focus::after { content: "on"; }
+                </style>
+                <button id="t">x</button>
+                """, "", 320, 200);
+        InteractionState state = new InteractionState();
+        LayoutBox root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        assertEquals("off", findById(root, "t_after").elementChildren.getFirst().displayText);
+
+        state.setFocusedNode(doc.root.getElementById("t"), false);
+        UiDocumentCompiler.RestyleResult res = parser.restyleLayoutTree(root, doc, 320, 200, Map.of(), state);
+        assertTrue(res.layoutRequired(), "content の変化は文字を評価し直すので再レイアウト");
+        root = parser.layoutDocument(doc, 320, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+        assertEquals("on", findById(root, "t_after").elementChildren.getFirst().displayText);
+    }
+
+    @Test
+    public void testHoveringGeneratedContentHoversItsOwner() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("<div id=\"p\"><div id=\"b\">x</div></div>", "", 320, 200);
+        String sessionId = "hover-generated-content";
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        session.setDocument(doc);
+        try {
+            // 擬似要素とその文字は DOM に無いので、ヒットテストが返す id から持ち主へ戻して祖先を辿る
+            ClientWebManager.setHoveredElement(sessionId, "b_before_txt");
+            assertTrue(session.interactionState().stateOf(doc.root.getElementById("b")).hover());
+            assertTrue(session.interactionState().stateOf(doc.root.getElementById("p")).hover());
+        } finally {
+            ClientWebManager.clearSession(sessionId);
+        }
+    }
+
+    @Test
+    public void testHasInteractiveRulesHonorsLeftCompounds() {
+        UiDocumentCompiler.Document doc = new UiDocumentCompiler().parseDocument("""
+                <div class="menu"><div class="item" id="in"></div></div>
+                <div class="item" id="out"></div>
+                <div class="parent" id="p"><div class="child" id="c"></div></div>
+                """, "", 320, 200);
+        // UA の :focus-visible はすべての要素に当たるので、作者の規則だけで判定する
+        StyleSheet sheet = CssParser.parse("""
+                .menu .item:hover { color: #ff0000; }
+                .parent:hover .child { color: #00ff00; }
+                """, 320);
+        assertTrue(StyleResolver.hasInteractiveRules(doc.root.getElementById("in"), sheet));
+        assertFalse(StyleResolver.hasInteractiveRules(doc.root.getElementById("out"), sheet),
+                ".menu の外の .item のホバーでは何も変わらない");
+        assertTrue(StyleResolver.hasInteractiveRules(doc.root.getElementById("p"), sheet),
+                "状態を持つ複合セレクタが先頭にあっても当たる");
+        assertFalse(StyleResolver.hasInteractiveRules(doc.root.getElementById("c"), sheet));
+    }
 
     private static LayoutBox findById(LayoutBox box, String id) {
         if (box == null) return null;
@@ -520,8 +692,8 @@ public class StateStyleTest {
         return null;
     }
 
-    private static UIElement findElementById(List<UIElement> elements, String id) {
-        for (UIElement el : elements) {
+    private static DisplayItem findElementById(List<DisplayItem> elements, String id) {
+        for (DisplayItem el : elements) {
             if (id.equals(el.id())) return el;
         }
         return null;

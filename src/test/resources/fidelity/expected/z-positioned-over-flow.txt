@@ -1,2 +1,2 @@
-pos 8 8 100 50 0
-flow 8 33 100 50 0
+pos 8 8 100 50 0 sw=100 sh=50 cw=100 ch=50 display=block position=relative box-sizing=content-box overflow=visible
+flow 8 33 100 50 0 sw=100 sh=50 cw=100 ch=50 display=block position=static box-sizing=content-box overflow=visible

@@ -1,13 +1,16 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
@@ -116,7 +119,7 @@ public class GridLayoutEngine extends LayoutEngine {
         if (h == null || "auto".equalsIgnoreCase(h.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
         if (h.contains("%") && parentH <= 0) return Float.NaN;
         float v = box.style.length(CssProperty.HEIGHT, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
-        boolean isBorderBox = "border-box".equals(box.style.get(CssProperty.BOX_SIZING));
+        boolean isBorderBox = box.style.isBorderBox();
         return Math.max(0, isBorderBox ? v - box.verticalDecoration() : v);
     }
 
@@ -479,8 +482,16 @@ public class GridLayoutEngine extends LayoutEngine {
             if ("stretch".equals(alignSelf) && !hasAutoMargin(b, false) && !hasSize(b.style, CssProperty.HEIGHT)) {
                 float target = areaH - b.mT - b.mB;
                 if (b.h < target) {
-                    b.h = Math.max(0, target);
-                    b.resolveFlexibleHeights(parentH, new FormattingContext("grid", alignSelf, false), ctx);
+                    // 伸ばした高さは確定した高さとして測り直す（CSS Grid §6.2: 子の % の高さの基準になる）。
+                    // 以前は高さだけを書き換えて解き直していて、中の height: 100% が 0 のままだった
+                    b.overrideWidth = b.w;
+                    b.overrideHeight = Math.max(0, target);
+                    try {
+                        b.measure(new ConstraintSpace(areaW, parentH, new FormattingContext("grid", alignSelf, false)), ctx);
+                    } finally {
+                        b.overrideWidth = Float.NaN;
+                        b.overrideHeight = Float.NaN;
+                    }
                 }
             }
             String justifySelf = selfAlignment(b, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
@@ -558,15 +569,14 @@ public class GridLayoutEngine extends LayoutEngine {
      * 置換要素でなければ stretch。
      */
     private static String selfAlignment(LayoutBox b, String selfProp, ComputedStyle container, String itemsProp) {
-        String v = b.style.keyword(selfProp, "auto");
-        if (v.equals("auto")) v = container.keyword(itemsProp, "normal");
-        int space = v.lastIndexOf(' ');
-        if (space >= 0) v = v.substring(space + 1);
-        if (v.equals("normal") || v.equals("legacy")) {
+        CssKeywords.Alignment v = b.style.keywordOf(selfProp, CssKeywords.Alignment.class);
+        if (v == CssKeywords.Alignment.AUTO) v = container.keywordOf(itemsProp, CssKeywords.Alignment.class);
+        if (v == CssKeywords.Alignment.NORMAL || v == CssKeywords.Alignment.LEGACY || v == CssKeywords.Alignment.AUTO) {
             boolean sized = hasSize(b.style, CssProperty.JUSTIFY_SELF.equals(selfProp) ? CssProperty.WIDTH : CssProperty.HEIGHT);
             return isReplaced(b) || sized ? "start" : "stretch";
         }
-        return v;
+        // first baseline / last baseline は baseline（safe / unsafe は読み取りで落とし済み）
+        return v == CssKeywords.Alignment.FIRST_BASELINE || v == CssKeywords.Alignment.LAST_BASELINE ? "baseline" : v.cssName();
     }
 
     private static boolean hasAutoMargin(LayoutBox b, boolean inline) {
@@ -585,9 +595,7 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static String contentDistribution(ComputedStyle style, String prop) {
-        String v = style.keyword(prop, "normal");
-        int space = v.lastIndexOf(' ');
-        return space >= 0 ? v.substring(space + 1) : v;
+        return style.keywordOf(prop, CssKeywords.Alignment.class).cssName();
     }
 
     // ==========================================

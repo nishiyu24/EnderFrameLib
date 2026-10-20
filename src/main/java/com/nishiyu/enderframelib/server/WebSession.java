@@ -1,8 +1,9 @@
 package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.WebSessionHandle;
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -22,10 +23,10 @@ public class WebSession implements WebSessionHandle {
 
     private final String sessionId;
     private final Consumer<WebSession> broadcastCallback;
-    private final UIParser uiParser = new UIParser();
+    private final UiDocumentCompiler uiParser = new UiDocumentCompiler();
     private int width = 3 * DEFAULT_BLOCK_RESOLUTION;
     private int height = 4 * DEFAULT_BLOCK_RESOLUTION;
-    private UIParser.Document currentDocument;
+    private UiDocumentCompiler.Document currentDocument;
     private String currentCss = "";
     private RenderSource lastSource;
 
@@ -56,7 +57,7 @@ public class WebSession implements WebSessionHandle {
     @Override public int getWidth() { return width; }
     @Override public int getHeight() { return height; }
     public String getCurrentCss() { return currentCss; }
-    @Override public UIParser.Document getDocument() { return currentDocument; }
+    @Override public UiDocumentCompiler.Document getDocument() { return currentDocument; }
 
     @Override
     public void updateSize(int newWidth, int newHeight) {
@@ -187,17 +188,7 @@ public class WebSession implements WebSessionHandle {
     private static final Set<String> VALUE_TAGS = Set.of("input", "textarea", "select", "option");
 
     private static void collectDeclarations(HtmlNode node, Set<String> actions, Set<String> inputs) {
-        for (Map.Entry<String, String> attr : node.attrs.entrySet()) {
-            String name = attr.getKey();
-            String value = attr.getValue();
-            if (value == null || value.isEmpty()) continue;
-            if (!name.regionMatches(true, 0, "on", 0, 2)) continue;
-            if (!value.startsWith("server:")) continue;
-            String rest = value.substring("server:".length());
-            int colon = rest.indexOf(':');
-            String head = colon >= 0 ? rest.substring(0, colon) : rest;
-            if (!head.isEmpty()) actions.add(head);
-        }
+        actions.addAll(EventForwardDeclaration.declaredActionNames(node));
         if (VALUE_TAGS.contains(node.tag.toLowerCase()) && !node.getId().isEmpty()) {
             inputs.add(node.getId());
         }
@@ -207,7 +198,7 @@ public class WebSession implements WebSessionHandle {
     }
 
     // ==========================================
-    // 軽量差分パッチ配信 API
+    // 軽量差分パッチ・DOM変異配信 API (R3)
     // ==========================================
 
     @Override
@@ -216,7 +207,7 @@ public class WebSession implements WebSessionHandle {
         HtmlNode target = currentDocument.root.getElementById(elementId);
         if (target != null) {
             target.setTextContent(newText);
-            sendSinglePatch(elementId, "text", "", newText != null ? newText : "", false);
+            sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord.text(elementId, newText != null ? newText : ""));
         }
     }
 
@@ -226,7 +217,7 @@ public class WebSession implements WebSessionHandle {
         HtmlNode target = currentDocument.root.getElementById(elementId);
         if (target != null) {
             DomUtils.updateAttribute(target, attrName, attrValue, remove);
-            sendSinglePatch(elementId, "attr", attrName, attrValue != null ? attrValue : "", remove);
+            sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord.attribute(elementId, attrName, attrValue, remove));
         }
     }
 
@@ -236,7 +227,7 @@ public class WebSession implements WebSessionHandle {
         HtmlNode target = currentDocument.root.getElementById(elementId);
         if (target != null) {
             target.setStyleProperty(property, value);
-            sendSinglePatch(elementId, "style", property, value != null ? value : "", false);
+            sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord.style(elementId, property, value != null ? value : ""));
         }
     }
 
@@ -245,12 +236,13 @@ public class WebSession implements WebSessionHandle {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
         if (target != null) {
-            String op = switch (mode != null ? mode.toLowerCase() : "add") {
-                case "remove" -> { target.removeClass(className); yield "remove_class"; }
-                case "toggle" -> { target.toggleClass(className); yield "toggle_class"; }
-                default -> { target.addClass(className); yield "add_class"; }
-            };
-            sendSinglePatch(elementId, op, "", className != null ? className : "", false);
+            String op = mode != null ? mode.toLowerCase() : "add";
+            switch (op) {
+                case "remove" -> target.removeClass(className);
+                case "toggle" -> target.toggleClass(className);
+                default -> target.addClass(className);
+            }
+            sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord.className(elementId, className != null ? className : "", op));
         }
     }
 
@@ -262,25 +254,26 @@ public class WebSession implements WebSessionHandle {
             target.setInnerHTML(htmlFragment);
             // 差し替えた部分木が新たなアクションや入力要素を持ち込むので索引を取り直す
             indexDocument();
-            sendSinglePatch(elementId, "inner_html", "", htmlFragment != null ? htmlFragment : "", false);
+            sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord.innerHtml(elementId, htmlFragment != null ? htmlFragment : ""));
         }
     }
 
-    private void sendSinglePatch(String targetId, String op, String key, String value, boolean remove) {
-        CompoundTag patch = new CompoundTag();
-        patch.putString("TargetId", targetId);
-        patch.putString("Op", op);
-        if (key != null && !key.isEmpty()) patch.putString("Key", key);
-        if (value != null) patch.putString("Value", value);
-        if (remove) patch.putBoolean("Remove", true);
-
-        ListTag list = new ListTag();
-        list.add(patch);
-        CompoundTag payload = new CompoundTag();
-        payload.put("Patches", list);
-
-        WebSessionManager.broadcastPatch(this.sessionId, payload);
+    /**
+     * 単一の DOM 変異レコードを全閲覧者へ配信する。
+     */
+    public void sendMutation(com.nishiyu.enderframelib.network.DomMutationRecord mutation) {
+        if (mutation == null) return;
+        WebSessionManager.broadcastMutation(this.sessionId, mutation);
     }
+
+    /**
+     * 複数の DOM 変異レコードをまとめて全閲覧者へ配信する。
+     */
+    public void sendMutations(java.util.List<com.nishiyu.enderframelib.network.DomMutationRecord> mutations) {
+        if (mutations == null || mutations.isEmpty()) return;
+        WebSessionManager.broadcastMutations(this.sessionId, mutations);
+    }
+
 
     public enum SourceType {STRING, STRING_WITH_CSS, FILE, URL}
 

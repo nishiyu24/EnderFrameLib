@@ -1,13 +1,14 @@
 package com.nishiyu.enderframelib.network;
 
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.network.DomMutationRecord.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.GoldenFiles;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -32,8 +33,8 @@ public class HtmlNodeSerializerTest {
     private static HtmlNode simulateNetworkRoundTrip(HtmlNode src, HtmlNode parent) {
         String tagName = src.tag != null ? src.tag : "";
         HtmlNode node = "#text".equals(tagName)
-                ? HtmlNode.createTextNode(src.text != null ? src.text : "")
-                : new HtmlNode(NodeType.ELEMENT, tagName);
+                ? new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(src.text != null ? src.text : "")
+                : new com.nishiyu.enderframelib.core.dom.HtmlElement(tagName);
         node.setId(src.getId() != null ? src.getId() : "");
         node.text = src.text != null ? src.text : "";
         node.parent = parent;
@@ -82,17 +83,17 @@ public class HtmlNodeSerializerTest {
     @Test
     public void testShowcaseHtmlProducesNonZeroTextBoxesAfterNetworkRoundTrip() {
         String showcaseHtml = GoldenFiles.readFixture("showcase.html");
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument(showcaseHtml, "", 800, 600);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument(showcaseHtml, "", 800, 600);
 
         // サーバー → クライアントの dom_sync 経路と同様に全ノードを再構築する
         doc.root = simulateNetworkRoundTrip(doc.root, null);
 
         AtomicReference<LayoutBox> capturedRootBox = new AtomicReference<>();
-        UIParser.ILayoutBoxRenderer prevRenderer = UIParser.clientBoxRenderer;
-        UIParser.clientBoxRenderer = (rootBox, w, h, kf, ss) -> {
+        UiDocumentCompiler.ILayoutBoxRenderer prevRenderer = UiDocumentCompiler.clientBoxRenderer;
+        UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) -> {
             capturedRootBox.set(rootBox);
-            return List.<UIElement>of();
+            return List.<DisplayItem>of();
         };
         try {
             parser.renderDocument(
@@ -104,7 +105,7 @@ public class HtmlNodeSerializerTest {
                     FontResolver.FALLBACK
             );
         } finally {
-            UIParser.clientBoxRenderer = prevRenderer;
+            UiDocumentCompiler.clientBoxRenderer = prevRenderer;
         }
 
         LayoutBox rootBox = capturedRootBox.get();

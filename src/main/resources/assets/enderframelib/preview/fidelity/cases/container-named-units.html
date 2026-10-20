@@ -1,0 +1,16 @@
+<!-- 名前付きコンテナと cqw: 単位は名前に関係なく最も近い（寸法を答える）コンテナが基準。 -->
+<style>
+  div { height: 10px; }
+  .outer { container: side / inline-size; width: 200px; }
+  .inner { container-type: inline-size; width: 100px; }
+  #i { width: 50cqw; }
+  @container side (min-width: 150px) { #j { height: 30px; } }
+  @container (min-width: 150px) { #k { height: 40px; } }
+</style>
+<div class="outer" id="o">
+  <div class="inner" id="n">
+    <div id="i"></div>
+    <div id="j"></div>
+    <div id="k"></div>
+  </div>
+</div>

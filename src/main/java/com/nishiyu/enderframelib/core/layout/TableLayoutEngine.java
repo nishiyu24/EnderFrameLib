@@ -1,14 +1,17 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.ScrollExtent;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
@@ -56,7 +59,8 @@ public class TableLayoutEngine extends LayoutEngine {
         collectStructure(box, state);
         buildGrid(state);
 
-        state.collapse = "collapse".equals(box.style.keyword(CssProperty.BORDER_COLLAPSE, "separate"));
+        state.collapse = box.style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
+                == CssKeywords.BorderCollapse.COLLAPSE;
         if (state.collapse) {
             collapseBorders(box, state, rootW, rootH);
         } else {
@@ -69,7 +73,8 @@ public class TableLayoutEngine extends LayoutEngine {
         int n = state.columnCount;
         float spacingW = n > 0 ? state.hSpacing * (n + 1) : 0;
         boolean definite = box.sizingMode == SizingMode.DEFINITE;
-        boolean fixed = definite && "fixed".equals(box.style.keyword(CssProperty.TABLE_LAYOUT, "auto"));
+        boolean fixed = definite
+                && box.style.keywordOf(CssProperty.TABLE_LAYOUT, CssKeywords.TableLayout.class) == CssKeywords.TableLayout.FIXED;
 
         float[] widths;
         if (fixed) {
@@ -165,7 +170,9 @@ public class TableLayoutEngine extends LayoutEngine {
         float captionTop = 0, captionBottom = 0;
         for (LayoutBox caption : state.captions) {
             float outer = caption.h + caption.mT + caption.mB;
-            if ("bottom".equals(caption.style.keyword(CssProperty.CAPTION_SIDE, "top"))) captionBottom += outer;
+            if (caption.style.keywordOf(CssProperty.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) {
+                captionBottom += outer;
+            }
             else captionTop += outer;
         }
         float gridH = rows > 0 ? sum(heights) + state.vSpacing * (rows + 1) : 0;
@@ -367,9 +374,8 @@ public class TableLayoutEngine extends LayoutEngine {
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
     private static float border(LayoutBox box, String widthProp, float rootW, float rootH) {
         String side = widthProp.substring("border-".length(), widthProp.length() - "-width".length());
-        String style = box.style.keyword("border-" + side + "-style", null);
-        if (style == null) style = box.style.keyword("border-style", null);
-        if ("none".equals(style) || "hidden".equals(style)) return 0;
+        CssKeywords.BorderStyle style = box.style.keywordOf("border-" + side + "-style", CssKeywords.BorderStyle.class);
+        if (style == CssKeywords.BorderStyle.NONE || style == CssKeywords.BorderStyle.HIDDEN) return 0;
         return box.style.length(widthProp, 0, rootW, rootH);
     }
 

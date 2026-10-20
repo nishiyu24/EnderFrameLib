@@ -15,16 +15,16 @@
  *       create sessions, publish pub/sub data, register providers.</li>
  *   <li>{@link com.nishiyu.enderframelib.api.WebSessionHandle} — a live session: load a
  *       document, patch single elements, resize.</li>
- *   <li>{@link com.nishiyu.enderframelib.api.IWebActionReceiver} — receive
+ *   <li>{@link com.nishiyu.enderframelib.api.WebActionReceiver} — receive
  *       {@code onclick="server:…"} actions on a menu or block entity.</li>
- *   <li>{@link com.nishiyu.enderframelib.api.IWebScreenBlockEntity} — expose a
+ *   <li>{@link com.nishiyu.enderframelib.api.WebScreenBlockEntity} — expose a
  *       multiblock in-world screen.</li>
  *   <li>{@link com.nishiyu.enderframelib.api.EnderFrameScriptingBridge} — the same
  *       operations as flat statics, for KubeJS and other script runtimes.</li>
  * </ul>
  *
  * <h2>Client side</h2>
- * {@code AbstractWebScreen} and {@code AbstractWebContainerScreen} (in
+ * {@code AbstractEnderScreen} and {@code AbstractEnderContainerScreen} (in
  * {@code com.nishiyu.enderframelib.client.gui}) are the intended base classes for
  * downstream screens and are treated as API for compatibility purposes even though
  * they live outside this package, because they must extend Minecraft's own

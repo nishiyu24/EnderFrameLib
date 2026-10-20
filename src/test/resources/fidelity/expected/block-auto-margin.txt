@@ -1,2 +1,2 @@
-center 110 8 100 20 0
-right 212 28 100 20 0
+center 110 8 100 20 0 sw=100 sh=20 cw=100 ch=20 display=block position=static box-sizing=content-box overflow=visible
+right 212 28 100 20 0 sw=100 sh=20 cw=100 ch=20 display=block position=static box-sizing=content-box overflow=visible

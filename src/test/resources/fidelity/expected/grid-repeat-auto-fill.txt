@@ -1,5 +1,5 @@
-a 8 8 75 20 0
-b 83 8 75 20 0
-c 158 8 75 20 0
-d 233 8 75 20 0
-e 8 28 75 20 0
+a 8 8 75 20 0 sw=75 sh=20 cw=75 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 83 8 75 20 0 sw=75 sh=20 cw=75 ch=20 display=block position=static box-sizing=content-box overflow=visible
+c 158 8 75 20 0 sw=75 sh=20 cw=75 ch=20 display=block position=static box-sizing=content-box overflow=visible
+d 233 8 75 20 0 sw=75 sh=20 cw=75 ch=20 display=block position=static box-sizing=content-box overflow=visible
+e 8 28 75 20 0 sw=75 sh=20 cw=75 ch=20 display=block position=static box-sizing=content-box overflow=visible

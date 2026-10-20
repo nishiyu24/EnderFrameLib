@@ -261,10 +261,129 @@ public class ValueModelTest {
 
         StyleSheet sheet = CssParser.parse("@import url(\"a.css\"); @import 'wide.css' (min-width: 1000px); "
                 + ".own { color: blue; } @import 'late.css';", env, CascadeOrigin.AUTHOR);
-        assertEquals(2, sheet.rules.size());
+        assertEquals(2, sheet.activeRuleCount());
         assertTrue(sheet.rules.stream().anyMatch(r -> r.selector.equals(".from-a")));
-        assertTrue(sheet.rules.stream().noneMatch(r -> r.selector.equals(".wide")), "メディアが合わない @import は読まない");
+        // メディアが合わない @import の規則はシートに残るが掛からない（ビューポートが変われば掛かる）
+        assertTrue(sheet.rules.stream().anyMatch(r -> r.selector.equals(".wide") && !r.mediaActive));
         assertTrue(sheet.rules.stream().noneMatch(r -> r.selector.equals(".late")), "規則の後の @import は無効");
+    }
+
+    // ---- W10: 色
+
+    @Test
+    public void testHexColorsWithAlphaAreRgba() {
+        // 以前は #RRGGBBAA を整数のまま ARGB にしていたので、半透明の赤が不透明の暗い青になっていた
+        assertEquals(0x80FF0000, ColorParser.parseColor("#ff000080"));
+        assertEquals(0x88FF0000, ColorParser.parseColor("#f008"));
+        assertEquals(0xFFAABBCC, ColorParser.parseColor("#abc"));
+        assertEquals(0xFF123456, ColorParser.parseColor("#123456"));
+        assertFalse(ColorParser.isColor("#12345"));
+        assertFalse(ColorParser.isColor("#ggg"));
+    }
+
+    @Test
+    public void testNamedColorsAreTheCssValues() {
+        // 以前は Minecraft のチャットの色（red = #FF5555、gray = #AAAAAA）で、orange なども足りなかった
+        assertEquals(0xFFFF0000, ColorParser.parseColor("red"));
+        assertEquals(0xFF008000, ColorParser.parseColor("green"));
+        assertEquals(0xFF0000FF, ColorParser.parseColor("blue"));
+        assertEquals(0xFF808080, ColorParser.parseColor("gray"));
+        assertEquals(0xFF800080, ColorParser.parseColor("purple"));
+        assertEquals(0xFFFFA500, ColorParser.parseColor("orange"));
+        assertEquals(0xFFFFD700, ColorParser.parseColor("Gold"));
+        assertEquals(0xFF663399, ColorParser.parseColor("rebeccapurple"));
+        assertEquals(148, ColorParser.namedColorCount());
+        assertEquals(0x00000000, ColorParser.parseColor("transparent"));
+        assertTrue(ColorParser.isColor("currentColor"));
+        assertFalse(ColorParser.isColor("dark_red"));
+    }
+
+    @Test
+    public void testRgbAndHslInBothSyntaxes() {
+        assertEquals(0x80FF0000, ColorParser.parseColor("rgb(255 0 0 / 50%)"));
+        assertEquals(0xFFFF0000, ColorParser.parseColor("rgb(100%, 0%, 0%)"));
+        assertEquals(0x4000FF00, ColorParser.parseColor("rgba(0, 255, 0, .25)"));
+        assertEquals(0xFF00FF00, ColorParser.parseColor("hsl(120deg 100% 50%)"));
+        assertEquals(0xFF00FFFF, ColorParser.parseColor("hsl(0.5turn, 100%, 50%)"));
+        assertEquals(0x80FF0000, ColorParser.parseColor("hsla(0, 100%, 50%, 0.5)"));
+        assertFalse(ColorParser.isColor("rgb(1, 2)"));
+        assertFalse(ColorParser.isColor("rgb(1 2 3, 4)"));
+    }
+
+    @Test
+    public void testInvalidColorDeclarationIsDroppedByTheCascade() {
+        ComputedStyle parent = computeRoot("color: blue");
+        // 以前は解けない色を不透明な白で描いていた。宣言が無効なら color は親から継承する
+        ComputedStyle child = computeChild(parent, "color: blue; color: notacolor; background-color: nope");
+        assertEquals(0xFF0000FF, child.color(CssProperty.COLOR, 0));
+        assertNull(child.get(CssProperty.BACKGROUND_COLOR));
+        // var() が色にならなければ算出時に無効（unset。color は継承、background-color は初期値）
+        ComputedStyle viaVar = computeChild(parent, "--c: 12px; color: var(--c); background-color: var(--c)");
+        assertEquals(0xFF0000FF, viaVar.color(CssProperty.COLOR, 0));
+        assertEquals("transparent", viaVar.get(CssProperty.BACKGROUND_COLOR));
+        // outline-color だけは invert を取る
+        assertEquals("invert", computeChild(parent, "outline-color: invert").get("outline-color"));
+    }
+
+    @Test
+    public void testTransparentColorIsKeptAsTransparent() {
+        ComputedStyle s = computeChild(computeRoot("color: blue"), "color: transparent");
+        assertEquals(0x00000000, s.color(CssProperty.COLOR, 0xFFFFFFFF));
+    }
+
+    // ---- W10: 単位と数式
+
+    @Test
+    public void testViewportMinMaxFontAndAbsoluteUnits() {
+        // ビューポートは 320 × 200
+        assertEquals(100f, LengthResolver.parseDim("50vmin", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(160f, LengthResolver.parseDim("50vmax", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(16f, LengthResolver.parseDim("12pt", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(96f, LengthResolver.parseDim("1in", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(16f, LengthResolver.parseDim("1pc", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(37.795f, LengthResolver.parseDim("1cm", 0, 320, 200, 16, 16), 0.01f);
+        assertEquals(20f, LengthResolver.parseDim("2ch", 0, 320, 200, 20, 16), 0.001f);
+        assertEquals(10f, LengthResolver.parseDim("1ex", 0, 320, 200, 20, 16), 0.001f);
+        // 以前は calc() の中で単位を落とし 50vmin が 50px になっていた
+        assertEquals(110f, LengthResolver.parseDim("calc(50vmin + 10px)", 0, 320, 200, 16, 16), 0.001f);
+        // 1 回だけ分解した長さも同じ値に解く
+        assertEquals(100f, LengthResolver.compile("50vmin").resolve(0, 320, 200, 16, 16), 0.001f);
+        assertEquals(16f, LengthResolver.compile("12pt").resolve(0, 320, 200, 16, 16), 0.001f);
+        assertEquals(20f, LengthResolver.compile("2ch").resolve(0, 320, 200, 20, 16), 0.001f);
+        assertEquals(0f, LengthResolver.compile("10foo").resolve(0, 320, 200, 16, 16), 0.001f);
+    }
+
+    @Test
+    public void testNewUnitsAreAbsolutizedInComputedValues() {
+        ComputedStyle s = computeRoot("font-size: 12pt; width: 2ch; height: 1in; margin-left: 1ex");
+        assertEquals(16f, s.fontSizePx(), 0.001f);
+        assertEquals("16px", s.get(CssProperty.WIDTH));
+        assertEquals("96px", s.get(CssProperty.HEIGHT));
+        assertEquals("8px", s.get(CssProperty.MARGIN_LEFT));
+    }
+
+    @Test
+    public void testNestedMathFunctionsInsideCalc() {
+        // var() の展開で生じる入れ子。以前は内側の関数を 0 にしていた
+        assertEquals(158f, LengthResolver.parseDim("calc(100% - calc(10px + 2em))", 200, 320, 200, 16, 16), 0.001f);
+        assertEquals(60f, LengthResolver.parseDim("calc(min(100px, 50%) + 10px)", 100, 320, 200, 16, 16), 0.001f);
+        assertEquals(26f, LengthResolver.parseDim("calc(max(10px, 1em) + clamp(5px, 50%, 14px))", 20, 320, 200, 16, 16), 0.001f);
+        assertEquals(8f, LengthResolver.parseDim("calc(2 * (3px + 1px))", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(40f, LengthResolver.parseDim("min(calc(50% - 10px), 100px)", 100, 320, 200, 16, 16), 0.001f);
+        assertEquals(10f, LengthResolver.parseDim("calc(1e1px)", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(0f, LengthResolver.parseDim("calc(10px + nonsense)", 0, 320, 200, 16, 16), 0.001f);
+    }
+
+    @Test
+    public void testDivisionByZeroDoesNotLeakInfinityOrNaN() {
+        // 以前は Infinity / NaN がそのままレイアウトの座標に入っていた
+        float inf = LengthResolver.parseDim("calc(10px / 0)", 0, 320, 200, 16, 16);
+        assertTrue(Float.isFinite(inf));
+        assertEquals(LengthResolver.LARGEST_LENGTH, inf, 0.001f);
+        assertEquals(-LengthResolver.LARGEST_LENGTH, LengthResolver.parseDim("calc(-10px / 0)", 0, 320, 200, 16, 16), 0.001f);
+        assertEquals(0f, LengthResolver.parseDim("calc(0px / 0)", 0, 320, 200, 16, 16), 0.001f);
+        // 無限大は min() の比較ではそのまま効く
+        assertEquals(10f, LengthResolver.parseDim("min(10px, 1px / 0)", 0, 320, 200, 16, 16), 0.001f);
     }
 
     // ---- 補助

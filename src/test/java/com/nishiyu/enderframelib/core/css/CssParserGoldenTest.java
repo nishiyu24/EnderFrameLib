@@ -49,7 +49,7 @@ public class CssParserGoldenTest {
         // ARGB形式での出力の固定
         assertEquals(0xFFFF0000, ColorParser.parseColor("#ff0000")); // 赤
         assertEquals(0xFFFFFFFF, ColorParser.parseColor("#fff"));    // 白 (短縮)
-        assertEquals(0x7F00FF00, ColorParser.parseColor("rgba(0, 255, 0, 0.5)")); // 半透明 (0.5 * 255 = 127)
+        assertEquals(0x8000FF00, ColorParser.parseColor("rgba(0, 255, 0, 0.5)")); // 半透明 (0.5 * 255 = 127.5 は 128。ブラウザと同じく丸める)
         assertEquals(0x00000000, ColorParser.parseColor("transparent"));
     }
 
@@ -175,12 +175,13 @@ public class CssParserGoldenTest {
     public void testMediaQueryIsAndNotOr() {
         String css = "@media (min-width: 500px) and (max-width: 1000px) { .x { color: red; } }";
 
-        // 範囲内なのでルールが生き残る
-        assertEquals(1, CssParser.parse(css, 800).rules.size());
+        // 範囲内なのでルールが掛かる
+        assertEquals(1, CssParser.parse(css, 800).activeRuleCount());
 
-        // 下限割れ・上限超えでは両方とも落ちる（OR ではなく AND で評価される）
-        assertEquals(0, CssParser.parse(css, 400).rules.size());
-        assertEquals(0, CssParser.parse(css, 1200).rules.size());
+        // 下限割れ・上限超えでは両方とも外れる（OR ではなく AND で評価される）。規則自体はシートに残る
+        assertEquals(0, CssParser.parse(css, 400).activeRuleCount());
+        assertEquals(0, CssParser.parse(css, 1200).activeRuleCount());
+        assertEquals(1, CssParser.parse(css, 400).rules.size());
     }
 
     @Test

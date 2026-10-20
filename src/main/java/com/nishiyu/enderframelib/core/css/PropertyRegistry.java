@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.ValueComputer.CssWideKeyword;
 
 import java.util.ArrayList;
@@ -50,10 +51,12 @@ public final class PropertyRegistry {
      * @param longhands ショートハンドなら直下のロングハンド（宣言順）。ロングハンドなら空
      * @param expander  ショートハンドの値をロングハンドの値に分ける関数。null のショートハンドは
      *                  読み手がショートハンドの文字列を直接読む（{@code transition} など）
+     * @param keywords  キーワードだけを値に取るプロパティの値の型（{@link CssKeywords} の enum）。そうでなければ null
      */
     public record Property(String name, String initial, boolean inherited, ValueType type,
                            boolean animatable, Invalidation invalidation,
-                           List<String> longhands, Function<String, Map<String, String>> expander) {
+                           List<String> longhands, Function<String, Map<String, String>> expander,
+                           Class<? extends Enum<?>> keywords) {
         public boolean isShorthand() {
             return !longhands.isEmpty();
         }
@@ -70,10 +73,10 @@ public final class PropertyRegistry {
             "margin", "padding",
             "grid-row-gap", "grid-column-gap", "gap", "grid-gap",
             "flex", "flex-flow", "overflow", "inset",
-            "place-content", "place-items", "place-self",
+            "place-content", "place-items", "place-self", "container",
             "font", "list-style", "outline", "background",
             "border", "border-color", "border-width", "border-style",
-            "border-top", "border-right", "border-bottom", "border-left"
+            "border-top", "border-right", "border-bottom", "border-left", "border-radius"
     );
 
     private static final String[] SIDES = {"top", "right", "bottom", "left"};
@@ -81,19 +84,19 @@ public final class PropertyRegistry {
     static {
         // ---- 表示と位置
         layout("display", "inline", false, ValueType.KEYWORD, false);
-        layout("position", "static", false, ValueType.KEYWORD, false);
+        keyword("position", CssKeywords.Position.class, CssKeywords.Position.STATIC, false, Invalidation.LAYOUT);
         for (String side : SIDES) layout(side, "auto", false, ValueType.LENGTH_PERCENTAGE, true);
         shorthand("inset", Invalidation.LAYOUT, ShorthandExpanders::inset, "top", "right", "bottom", "left");
-        layout("float", "none", false, ValueType.KEYWORD, false);
-        layout("clear", "none", false, ValueType.KEYWORD, false);
+        keyword("float", CssKeywords.FloatSide.class, CssKeywords.FloatSide.NONE, false, Invalidation.LAYOUT);
+        keyword("clear", CssKeywords.Clear.class, CssKeywords.Clear.NONE, false, Invalidation.LAYOUT);
         paint("z-index", "auto", false, ValueType.INTEGER, true);
-        paint("visibility", "visible", true, ValueType.KEYWORD, true);
+        keyword("visibility", CssKeywords.Visibility.class, CssKeywords.Visibility.VISIBLE, true, Invalidation.PAINT);
 
         // ---- 箱の寸法
         for (String p : List.of("width", "height")) layout(p, "auto", false, ValueType.LENGTH_PERCENTAGE, true);
         for (String p : List.of("min-width", "min-height")) layout(p, "auto", false, ValueType.LENGTH_PERCENTAGE, true);
         for (String p : List.of("max-width", "max-height")) layout(p, "none", false, ValueType.LENGTH_PERCENTAGE, true);
-        layout("box-sizing", "content-box", false, ValueType.KEYWORD, false);
+        keyword("box-sizing", CssKeywords.BoxSizing.class, CssKeywords.BoxSizing.CONTENT_BOX, false, Invalidation.LAYOUT);
         layout("aspect-ratio", "auto", false, ValueType.OTHER, true);
         for (String box : List.of("margin", "padding")) {
             for (String side : SIDES) layout(box + "-" + side, "0", false, ValueType.LENGTH_PERCENTAGE, true);
@@ -107,7 +110,7 @@ public final class PropertyRegistry {
         for (String side : SIDES) {
             layout("border-" + side + "-width", "medium", false, ValueType.LENGTH, true);
             // border-style が none なら幅は 0 になるので、スタイルの変化も寸法に効く
-            layout("border-" + side + "-style", "none", false, ValueType.KEYWORD, false);
+            keyword("border-" + side + "-style", CssKeywords.BorderStyle.class, CssKeywords.BorderStyle.NONE, false, Invalidation.LAYOUT);
             paint("border-" + side + "-color", "currentcolor", false, ValueType.COLOR, true);
             shorthand("border-" + side, Invalidation.LAYOUT, ShorthandExpanders.borderSide(side),
                     "border-" + side + "-width", "border-" + side + "-style", "border-" + side + "-color");
@@ -122,27 +125,28 @@ public final class PropertyRegistry {
         shorthand("border", Invalidation.LAYOUT, ShorthandExpanders::border,
                 "border-top", "border-right", "border-bottom", "border-left",
                 "border-width", "border-style", "border-color");
-        // border-radius は読み手（描画）がショートハンドの文字列を直接読むので、角ごとには展開しない
-        paint("border-radius", "0", false, ValueType.LENGTH_PERCENTAGE, true);
         for (String corner : List.of("top-left", "top-right", "bottom-right", "bottom-left")) {
             paint("border-" + corner + "-radius", "0", false, ValueType.LENGTH_PERCENTAGE, true);
         }
+        shorthand("border-radius", Invalidation.PAINT, ShorthandExpanders::borderRadius,
+                "border-top-left-radius", "border-top-right-radius",
+                "border-bottom-right-radius", "border-bottom-left-radius");
         paint("outline-color", "currentcolor", false, ValueType.COLOR, true);
-        paint("outline-style", "none", false, ValueType.KEYWORD, false);
+        keyword("outline-style", CssKeywords.BorderStyle.class, CssKeywords.BorderStyle.NONE, false, Invalidation.PAINT);
         paint("outline-width", "medium", false, ValueType.LENGTH, true);
         paint("outline-offset", "0", false, ValueType.LENGTH, true);
         shorthand("outline", Invalidation.PAINT, ShorthandExpanders::outline,
                 "outline-width", "outline-style", "outline-color");
 
         // ---- overflow
-        layout("overflow-x", "visible", false, ValueType.KEYWORD, false);
-        layout("overflow-y", "visible", false, ValueType.KEYWORD, false);
+        keyword("overflow-x", CssKeywords.Overflow.class, CssKeywords.Overflow.VISIBLE, false, Invalidation.LAYOUT);
+        keyword("overflow-y", CssKeywords.Overflow.class, CssKeywords.Overflow.VISIBLE, false, Invalidation.LAYOUT);
         shorthand("overflow", Invalidation.LAYOUT, ShorthandExpanders::overflow, "overflow-x", "overflow-y");
-        layout("scrollbar-width", "auto", false, ValueType.KEYWORD, false);
+        keyword("scrollbar-width", CssKeywords.ScrollbarWidth.class, CssKeywords.ScrollbarWidth.AUTO, false, Invalidation.LAYOUT);
 
         // ---- flex
-        layout("flex-direction", "row", false, ValueType.KEYWORD, false);
-        layout("flex-wrap", "nowrap", false, ValueType.KEYWORD, false);
+        keyword("flex-direction", CssKeywords.FlexDirection.class, CssKeywords.FlexDirection.ROW, false, Invalidation.LAYOUT);
+        keyword("flex-wrap", CssKeywords.FlexWrap.class, CssKeywords.FlexWrap.NOWRAP, false, Invalidation.LAYOUT);
         shorthand("flex-flow", Invalidation.LAYOUT, ShorthandExpanders::flexFlow, "flex-direction", "flex-wrap");
         layout("flex-grow", "0", false, ValueType.NUMBER, true);
         layout("flex-shrink", "1", false, ValueType.NUMBER, true);
@@ -151,12 +155,12 @@ public final class PropertyRegistry {
         layout("order", "0", false, ValueType.INTEGER, true);
 
         // ---- 揃え（box alignment）
-        layout("justify-content", "normal", false, ValueType.KEYWORD, false);
-        layout("align-content", "normal", false, ValueType.KEYWORD, false);
-        layout("justify-items", "legacy", false, ValueType.KEYWORD, false);
-        layout("align-items", "normal", false, ValueType.KEYWORD, false);
-        layout("justify-self", "auto", false, ValueType.KEYWORD, false);
-        layout("align-self", "auto", false, ValueType.KEYWORD, false);
+        keyword("justify-content", CssKeywords.Alignment.class, CssKeywords.Alignment.NORMAL, false, Invalidation.LAYOUT);
+        keyword("align-content", CssKeywords.Alignment.class, CssKeywords.Alignment.NORMAL, false, Invalidation.LAYOUT);
+        keyword("justify-items", CssKeywords.Alignment.class, CssKeywords.Alignment.LEGACY, false, Invalidation.LAYOUT);
+        keyword("align-items", CssKeywords.Alignment.class, CssKeywords.Alignment.NORMAL, false, Invalidation.LAYOUT);
+        keyword("justify-self", CssKeywords.Alignment.class, CssKeywords.Alignment.AUTO, false, Invalidation.LAYOUT);
+        keyword("align-self", CssKeywords.Alignment.class, CssKeywords.Alignment.AUTO, false, Invalidation.LAYOUT);
         shorthand("place-content", Invalidation.LAYOUT, v -> ShorthandExpanders.pair("align-content", "justify-content", v),
                 "align-content", "justify-content");
         shorthand("place-items", Invalidation.LAYOUT, v -> ShorthandExpanders.pair("align-items", "justify-items", v),
@@ -185,13 +189,13 @@ public final class PropertyRegistry {
         }
 
         // ---- 表・リスト
-        layout("table-layout", "auto", false, ValueType.KEYWORD, false);
-        layout("border-collapse", "separate", true, ValueType.KEYWORD, false);
+        keyword("table-layout", CssKeywords.TableLayout.class, CssKeywords.TableLayout.AUTO, false, Invalidation.LAYOUT);
+        keyword("border-collapse", CssKeywords.BorderCollapse.class, CssKeywords.BorderCollapse.SEPARATE, true, Invalidation.LAYOUT);
         layout("border-spacing", "0", true, ValueType.LENGTH, true);
-        layout("caption-side", "top", true, ValueType.KEYWORD, false);
+        keyword("caption-side", CssKeywords.CaptionSide.class, CssKeywords.CaptionSide.TOP, true, Invalidation.LAYOUT);
         paint("empty-cells", "show", true, ValueType.KEYWORD, false);
         layout("list-style-type", "disc", true, ValueType.OTHER, false);
-        layout("list-style-position", "outside", true, ValueType.KEYWORD, false);
+        keyword("list-style-position", CssKeywords.ListStylePosition.class, CssKeywords.ListStylePosition.OUTSIDE, true, Invalidation.LAYOUT);
         layout("list-style-image", "none", true, ValueType.OTHER, false);
         shorthand("list-style", Invalidation.LAYOUT, ShorthandExpanders::listStyle,
                 "list-style-type", "list-style-position", "list-style-image");
@@ -200,7 +204,7 @@ public final class PropertyRegistry {
         layout("font-family", null, true, ValueType.LIST, false);
         layout("font-size", "medium", true, ValueType.LENGTH_PERCENTAGE, true);
         layout("font-weight", "normal", true, ValueType.OTHER, true);
-        layout("font-style", "normal", true, ValueType.KEYWORD, false);
+        keyword("font-style", CssKeywords.FontStyle.class, CssKeywords.FontStyle.NORMAL, true, Invalidation.LAYOUT);
         layout("font-variant", "normal", true, ValueType.KEYWORD, false);
         layout("line-height", "normal", true, ValueType.OTHER, true);
         shorthand("font", Invalidation.LAYOUT, ShorthandExpanders::font,
@@ -208,19 +212,24 @@ public final class PropertyRegistry {
         layout("letter-spacing", "normal", true, ValueType.LENGTH, true);
         layout("word-spacing", "normal", true, ValueType.LENGTH, true);
         layout("text-indent", "0", true, ValueType.LENGTH_PERCENTAGE, true);
-        layout("text-align", "start", true, ValueType.KEYWORD, false);
-        layout("text-transform", "none", true, ValueType.KEYWORD, false);
+        keyword("text-align", CssKeywords.TextAlign.class, CssKeywords.TextAlign.START, true, Invalidation.LAYOUT);
+        keyword("text-transform", CssKeywords.TextTransform.class, CssKeywords.TextTransform.NONE, true, Invalidation.LAYOUT);
         layout("white-space", "normal", true, ValueType.KEYWORD, false);
         layout("word-break", "normal", true, ValueType.KEYWORD, false);
-        layout("overflow-wrap", "normal", true, ValueType.KEYWORD, false);
+        keyword("overflow-wrap", CssKeywords.OverflowWrap.class, CssKeywords.OverflowWrap.NORMAL, true, Invalidation.LAYOUT);
         layout("direction", "ltr", true, ValueType.KEYWORD, false);
         layout("vertical-align", "baseline", false, ValueType.LENGTH_PERCENTAGE, true);
-        layout("text-overflow", "clip", false, ValueType.KEYWORD, false);
+        keyword("text-overflow", CssKeywords.TextOverflow.class, CssKeywords.TextOverflow.CLIP, false, Invalidation.LAYOUT);
         paint("color", "black", true, ValueType.COLOR, true);
         // CSS では text-decoration は継承しないが、装飾は子孫のテキストに伝播して描かれる。
         // 伝播の仕組みが無いので、ここでは継承で代用している（描画が子のテキストノードで読む）。
         paint("text-decoration", "none", true, ValueType.OTHER, false);
         paint("text-shadow", "none", true, ValueType.LIST, true);
+
+        // ---- コンテナクエリ（container-type は寸法の算出に効く: size containment がある）
+        keyword("container-type", CssKeywords.ContainerType.class, CssKeywords.ContainerType.NORMAL, false, Invalidation.LAYOUT);
+        layout("container-name", "none", false, ValueType.LIST, false);
+        shorthand("container", Invalidation.LAYOUT, ShorthandExpanders::container, "container-name", "container-type");
 
         // ---- 生成内容・置換要素
         layout("content", "normal", false, ValueType.STRING, false);
@@ -248,9 +257,9 @@ public final class PropertyRegistry {
         paint("transform-origin", "50% 50%", false, ValueType.LIST, true);
         paint("filter", "none", false, ValueType.LIST, true);
         paint("mix-blend-mode", "normal", false, ValueType.KEYWORD, false);
-        paint("isolation", "auto", false, ValueType.KEYWORD, false);
+        keyword("isolation", CssKeywords.Isolation.class, CssKeywords.Isolation.AUTO, false, Invalidation.PAINT);
         paint("cursor", "auto", true, ValueType.OTHER, false);
-        paint("pointer-events", "auto", true, ValueType.KEYWORD, false);
+        keyword("pointer-events", CssKeywords.PointerEvents.class, CssKeywords.PointerEvents.AUTO, true, Invalidation.PAINT);
         paint("user-select", "auto", false, ValueType.KEYWORD, false);
 
         // ---- トランジション・アニメーション（読み手がショートハンドとロングハンドを両方読む）
@@ -275,18 +284,24 @@ public final class PropertyRegistry {
     private PropertyRegistry() {}
 
     private static void layout(String name, String initial, boolean inherited, ValueType type, boolean animatable) {
-        register(new Property(name, initial, inherited, type, animatable, Invalidation.LAYOUT, List.of(), null));
+        register(new Property(name, initial, inherited, type, animatable, Invalidation.LAYOUT, List.of(), null, null));
+    }
+
+    /** キーワードだけを値に取るプロパティ。値の型と初期値を enum で宣言する（アニメーションしない）。 */
+    private static <E extends Enum<E> & CssKeywords.Keyword> void keyword(String name, Class<E> type, E initial,
+                                                                       boolean inherited, Invalidation invalidation) {
+        register(new Property(name, initial.cssName(), inherited, ValueType.KEYWORD, false, invalidation, List.of(), null, type));
     }
 
     private static void paint(String name, String initial, boolean inherited, ValueType type, boolean animatable) {
-        register(new Property(name, initial, inherited, type, animatable, Invalidation.PAINT, List.of(), null));
+        register(new Property(name, initial, inherited, type, animatable, Invalidation.PAINT, List.of(), null, null));
     }
 
     private static void shorthand(String name, Invalidation invalidation,
                                   Function<String, Map<String, String>> expander, String... longhands) {
         boolean inherited = true;
         for (String l : longhands) inherited &= PROPERTIES.get(l).inherited();
-        register(new Property(name, null, inherited, ValueType.OTHER, false, invalidation, List.of(longhands), expander));
+        register(new Property(name, null, inherited, ValueType.OTHER, false, invalidation, List.of(longhands), expander, null));
     }
 
     private static void register(Property p) {
@@ -298,10 +313,6 @@ public final class PropertyRegistry {
     /** 登録済みのプロパティ。未登録なら null。 */
     public static Property get(String name) {
         return PROPERTIES.get(name);
-    }
-
-    public static boolean isKnown(String name) {
-        return PROPERTIES.containsKey(name);
     }
 
     public static Collection<Property> all() {
@@ -321,6 +332,15 @@ public final class PropertyRegistry {
     public static boolean isPaintOnly(String name) {
         Property p = PROPERTIES.get(name);
         return p != null && p.invalidation() == Invalidation.PAINT;
+    }
+
+    /** キーワードだけを値に取るプロパティの初期値（型つき）。そのプロパティが {@code type} で宣言されていなければ例外。 */
+    public static <E extends Enum<E> & CssKeywords.Keyword> E initialKeyword(String name, Class<E> type) {
+        Property p = PROPERTIES.get(name);
+        if (p == null || p.keywords() != type) {
+            throw new IllegalArgumentException(name + " は " + type.getSimpleName() + " のキーワードではありません");
+        }
+        return CssKeywords.parse(type, p.initial());
     }
 
     /** 初期値。未登録か UA 依存なら null。 */
@@ -372,6 +392,11 @@ public final class PropertyRegistry {
     /**
      * 算出スタイルのショートハンドをロングハンドへ展開する（{@code putIfAbsent} なので
      * 既にあるロングハンドが優先）。値が CSS 全域キーワードなら全ロングハンドに同じキーワードを配る。
+     * 値に書かれなかったロングハンドは初期値に戻す。{@code var()} を置き換えた結果が解釈できなければ
+     * ロングハンドはすべて {@code unset}（CSS Variables 1 §3.1 の「算出時に無効」）。
+     *
+     * 何が壊れていたか: 以前は書かれなかったロングハンドを入れなかったので、継承するロングハンドが
+     * 親の値のまま残り得た。{@code var()} が無効なショートハンドはロングハンドが 1 つも入らなかった。
      */
     public static void expandShorthands(Map<String, String> style) {
         for (String name : EXPANSION_ORDER) {
@@ -383,8 +408,18 @@ public final class PropertyRegistry {
                 continue;
             }
             Map<String, String> parts = p.expander().apply(value.trim());
+            if (parts.isEmpty()) {
+                for (String l : p.longhands()) style.putIfAbsent(l, "unset");
+                continue;
+            }
             for (Map.Entry<String, String> e : parts.entrySet()) {
                 if (e.getValue() != null) style.putIfAbsent(e.getKey(), e.getValue());
+            }
+            for (String l : p.longhands()) {
+                Property longhand = PROPERTIES.get(l);
+                if (parts.get(l) == null && !longhand.isShorthand() && longhand.initial() != null) {
+                    style.putIfAbsent(l, longhand.initial());
+                }
             }
         }
     }

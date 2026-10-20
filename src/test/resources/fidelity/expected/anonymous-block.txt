@@ -1,4 +1,4 @@
-parent 8 8 200 45 1
-inline 8 8 40 20 0
-block 8 28 200 10 0
-inline2 8 38 40 15 0
+parent 8 8 200 45 1 sw=200 sh=45 cw=200 ch=45 display=block position=static box-sizing=content-box overflow=visible
+inline 8 8 40 20 0 sw=40 sh=20 cw=40 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+block 8 28 200 10 0 sw=200 sh=10 cw=200 ch=10 display=block position=static box-sizing=content-box overflow=visible
+inline2 8 38 40 15 0 sw=40 sh=15 cw=40 ch=15 display=inline-block position=static box-sizing=content-box overflow=visible

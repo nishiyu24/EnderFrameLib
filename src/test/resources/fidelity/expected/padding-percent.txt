@@ -1,2 +1,2 @@
-outer 8 8 200 50 1
-inner 8 8 200 50 0
+outer 8 8 200 50 1 sw=200 sh=50 cw=200 ch=50 display=block position=static box-sizing=content-box overflow=visible
+inner 8 8 200 50 0 sw=200 sh=50 cw=200 ch=50 display=block position=static box-sizing=content-box overflow=visible

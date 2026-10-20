@@ -1,11 +1,14 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
 
 import java.util.ArrayList;
@@ -35,7 +38,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     @Override
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         float tentativeInnerW = space.availableInlineSize();
-        float parentH = space.percentageBlockSize();
+        float parentH = itemPercentageBase(box, space, ctx);
         Axes axes = Axes.of(box.style);
         String alignItems = alignItemsOf(box.style);
 
@@ -53,7 +56,20 @@ public class FlexLayoutEngine extends LayoutEngine {
             sumChildW += outerW;
             count++;
         }
-        if (!axes.row) return maxChildW;
+        if (!axes.row) {
+            if (!axes.wrap) return maxChildW;
+            // 列に折り返すなら、内容の幅は列（行）ごとの最大幅と column-gap の和。
+            // 何が壊れていたか: 以前は折り返しても 1 列分の最大幅を返していて、shrink-to-fit の
+            // コンテナ（float・inline-flex・絶対配置）で 2 列目以降がはみ出していた
+            List<List<LayoutBox>> lines = columnLines(box, columnBreakSize(box, space, ctx), ctx);
+            float w = box.columnGap * Math.max(0, lines.size() - 1);
+            for (List<LayoutBox> line : lines) {
+                float cross = 0;
+                for (LayoutBox b : line) cross = Math.max(cross, b.w + b.mL + b.mR);
+                w += cross;
+            }
+            return w;
+        }
         float sum = sumChildW + (count > 1 ? box.columnGap * (count - 1) : 0);
         // shrink-to-fit は利用できる幅で止まる（アイテムは伸縮長の解決で縮む）
         return tentativeInnerW > 0 ? Math.min(sum, tentativeInnerW) : sum;
@@ -79,11 +95,58 @@ public class FlexLayoutEngine extends LayoutEngine {
             return h;
         }
 
-        // 列方向: 高さが不定なら仮の寸法の和が内容の高さ（伸縮は高さが決まってから finishLayout で解く）
+        // 列方向: 高さが不定なら仮の寸法の和が内容の高さ（伸縮は高さが決まってから finishLayout で解く）。
+        // 折り返すなら最も長い列（max-height で折り返すとき、箱はその列の高さまで縮む）
         float h = 0;
-        for (FlexItem item : state.items) h += hypotheticalMain(item.box, false, Float.NaN, ctx) + mainMargins(item.box, false);
-        if (state.items.size() > 1) h += box.rowGap * (state.items.size() - 1);
+        float breakSize = axes.wrap ? columnBreakSize(box, space, ctx) : Float.NaN;
+        for (List<LayoutBox> line : columnLines(box, breakSize, ctx)) {
+            float lineH = box.rowGap * Math.max(0, line.size() - 1);
+            for (LayoutBox b : line) lineH += hypotheticalMain(b, false, Float.NaN, ctx) + mainMargins(b, false);
+            h = Math.max(h, lineH);
+        }
         return h;
+    }
+
+    /**
+     * 列方向のアイテムを、主軸の寸法 {@code breakSize}（内容ボックスの高さ）で列に分ける（{@code order} 順）。
+     * {@code breakSize} が NaN（高さが不定）なら 1 列。{@link #buildLines} と同じ折り返し方。
+     */
+    private static List<List<LayoutBox>> columnLines(LayoutBox box, float breakSize, LayoutContext ctx) {
+        List<List<LayoutBox>> lines = new ArrayList<>();
+        List<LayoutBox> line = new ArrayList<>();
+        float used = 0;
+        for (FlexItem item : orderedItems(box)) {
+            float outer = hypotheticalMain(item.box, false, Float.NaN, ctx) + mainMargins(item.box, false);
+            if (!Float.isNaN(breakSize) && !line.isEmpty() && used + box.rowGap + outer > breakSize + 0.01f) {
+                lines.add(line);
+                line = new ArrayList<>();
+                used = 0;
+            }
+            used += (line.isEmpty() ? 0 : box.rowGap) + outer;
+            line.add(item.box);
+        }
+        if (!line.isEmpty()) lines.add(line);
+        return lines;
+    }
+
+    /**
+     * 列方向のコンテナが列を折り返す高さ（内容ボックス）。高さが確定していればそれ、無ければ max-height
+     * （CSS Flexbox §9.2 の 2: 利用できる主軸の空間は max の制約で決まる）。どちらも不定なら NaN。
+     */
+    private static float columnBreakSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
+        float parentH = space.percentageBlockSize();
+        boolean isBorderBox = box.style.isBorderBox();
+        for (String prop : new String[]{CssProperty.HEIGHT, CssProperty.MAX_HEIGHT}) {
+            String v = box.style.get(prop);
+            if (v == null || "auto".equalsIgnoreCase(v.trim()) || "none".equalsIgnoreCase(v.trim())
+                    || LayoutMetrics.isIntrinsicSizeKeyword(v) || (v.contains("%") && parentH <= 0)) {
+                continue;
+            }
+            float size = box.style.length(prop, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
+            return Math.max(0, isBorderBox ? size - box.verticalDecoration() : size);
+        }
+        return Float.NaN;
     }
 
     /** 箱の高さが決まってから、列方向の伸縮・行の交差軸の寸法・stretch・位置を解く。 */
@@ -111,7 +174,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float crossGap = axes.row ? box.rowGap : box.columnGap;
         float mainGap = axes.row ? box.columnGap : box.rowGap;
-        String alignContent = box.style.keyword(CssProperty.ALIGN_CONTENT, "normal");
+        String alignContent = box.style.keywordOf(CssProperty.ALIGN_CONTENT, CssKeywords.Alignment.class).cssName();
         int lineCount = state.lines.size();
 
         // 1 行のコンテナでは行の交差軸の寸法はコンテナの寸法（CSS Flexbox §9.4 の 15）
@@ -272,11 +335,23 @@ public class FlexLayoutEngine extends LayoutEngine {
         child.overrideHeight = height;
         try {
             FormattingContext childCtx = new FormattingContext(axes.direction, "stretch", false);
-            child.measure(new ConstraintSpace(width, space.percentageBlockSize(), childCtx), ctx);
+            child.measure(new ConstraintSpace(width, itemPercentageBase(child.parent, space, ctx), childCtx), ctx);
         } finally {
             child.overrideWidth = Float.NaN;
             child.overrideHeight = Float.NaN;
         }
+    }
+
+    /**
+     * アイテムの高さの % を解く基準。コンテナの高さが確定していればその内容ボックスの高さ（stretch や
+     * 伸縮で親が決めた高さを含む）。
+     *
+     * LIMITATION(制約): 高さが不定のコンテナでは、% を auto として扱わず、コンテナ自身が受け取った基準で解く
+     * （以前の挙動）。README の "Not supported" に対応。
+     */
+    private static float itemPercentageBase(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float h = BlockLayoutEngine.definiteInnerHeight(box, space.percentageBlockSize(), ctx);
+        return Float.isNaN(h) ? space.percentageBlockSize() : h;
     }
 
     /** 行の交差軸の寸法。baseline で揃えるアイテムはベースラインの上と下を別々に数える。 */
@@ -297,7 +372,13 @@ public class FlexLayoutEngine extends LayoutEngine {
         line.baseline = above;
     }
 
-    /** align-self: stretch で交差軸の寸法が auto のアイテムを、行の交差軸の寸法まで伸ばす。 */
+    /**
+     * align-self: stretch で交差軸の寸法が auto のアイテムを、行の交差軸の寸法まで伸ばす。
+     * 伸ばした寸法は確定した寸法として測り直す（CSS Flexbox §9.4 の 11: 子の % の高さはこれを基準に解く）。
+     *
+     * 何が壊れていたか: 以前は行方向で高さだけを書き換えて解き直していたので、stretch されたアイテムの
+     * 中の {@code height: 100%} が 0 のままだった。
+     */
     private static void stretchItems(LayoutBox box, FlexLine line, Axes axes, String alignItems,
                                      ConstraintSpace space, LayoutContext ctx) {
         for (FlexItem item : line.items) {
@@ -306,10 +387,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             if (axes.row) {
                 if (hasSize(b.style, CssProperty.HEIGHT)) continue;
                 float target = line.cross - b.mT - b.mB;
-                if (b.h < target) {
-                    b.h = Math.max(0, target);
-                    b.resolveFlexibleHeights(space.percentageBlockSize(), new FormattingContext(axes.direction, "stretch", false), ctx);
-                }
+                if (b.h < target) remeasure(b, b.w, Math.max(0, target), axes, space, ctx);
             } else {
                 if (hasSize(b.style, CssProperty.WIDTH)) continue;
                 float target = line.cross - b.mL - b.mR;
@@ -338,8 +416,8 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (autoMargins > 0) {
             spacing = new MainAxisSpacing(0, mainGap);
         } else {
-            String justify = box.style.keyword(CssProperty.JUSTIFY_CONTENT, "flex-start");
-            spacing = distributeMainAxis(contentDistribution(justify), 0, innerMain, used - mainGap * Math.max(0, items.size() - 1),
+            String justify = box.style.keywordOf(CssProperty.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName();
+            spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, items.size() - 1),
                     mainGap, items.size());
         }
 
@@ -409,7 +487,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             if (!b.equals("auto") && !b.equals("content") && !percentOfIndefinite) {
                 float value = child.style.length(CssProperty.FLEX_BASIS, Float.isNaN(innerMain) ? 0 : innerMain,
                         ctx.viewport().rootW(), ctx.viewport().rootH());
-                boolean isBorderBox = "border-box".equals(child.style.get(CssProperty.BOX_SIZING));
+                boolean isBorderBox = child.style.isBorderBox();
                 return Math.max(decoration, isBorderBox ? value : value + decoration);
             }
         }
@@ -431,7 +509,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         String sizeProp = row ? CssProperty.WIDTH : CssProperty.HEIGHT;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
         String min = child.style.get(prop);
-        boolean isBorderBox = "border-box".equals(child.style.get(CssProperty.BOX_SIZING));
+        boolean isBorderBox = child.style.isBorderBox();
         if (min != null && !"auto".equalsIgnoreCase(min.trim()) && !LayoutMetrics.isIntrinsicSizeKeyword(min)) {
             float v = child.style.length(prop, row ? child.parentInnerWidth() : 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             return isBorderBox ? Math.max(v, decoration) : v + decoration;
@@ -460,7 +538,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (max.contains("%") && Float.isNaN(innerMain)) return Float.POSITIVE_INFINITY;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
         float v = child.style.length(prop, Float.isNaN(innerMain) ? 0 : innerMain, ctx.viewport().rootW(), ctx.viewport().rootH());
-        boolean isBorderBox = "border-box".equals(child.style.get(CssProperty.BOX_SIZING));
+        boolean isBorderBox = child.style.isBorderBox();
         return isBorderBox ? Math.max(v, decoration) : v + decoration;
     }
 
@@ -510,9 +588,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static boolean scrollsAlong(LayoutBox box, boolean row) {
-        String overflow = box.style.getOrDefault(CssProperty.OVERFLOW, "visible");
-        String v = box.style.getOrDefault(row ? CssProperty.OVERFLOW_X : CssProperty.OVERFLOW_Y, overflow).trim();
-        return v.equals("scroll") || v.equals("auto");
+        CssKeywords.Overflow v = row ? box.style.overflowX() : box.style.overflowY();
+        return v == CssKeywords.Overflow.SCROLL || v == CssKeywords.Overflow.AUTO;
     }
 
     /** アイテムのベースライン（border box の上端から）。行を持たなければ border box の下端から合成する。 */
@@ -523,37 +600,61 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     /** {@code align-items} の {@code normal} は flex では stretch。 */
     private static String alignItemsOf(ComputedStyle style) {
-        String v = style.keyword(CssProperty.ALIGN_ITEMS, "stretch");
-        return v.equals("normal") ? "stretch" : stripSafety(v);
+        return alignmentWord(style.keywordOf(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class));
     }
 
     static String alignSelfOf(LayoutBox child, String alignItems) {
-        String v = child.style.keyword(CssProperty.ALIGN_SELF, "auto");
-        return v.equals("auto") ? alignItems : (v.equals("normal") ? "stretch" : stripSafety(v));
+        CssKeywords.Alignment v = child.style.keywordOf(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
+        return v == CssKeywords.Alignment.AUTO ? alignItems : alignmentWord(v);
     }
 
-    /** {@code safe center} / {@code first baseline} などの前置きを落とす。 */
-    private static String stripSafety(String v) {
-        int space = v.lastIndexOf(' ');
-        return space >= 0 ? v.substring(space + 1) : v;
+    /**
+     * 揃えの値を配置の語にする。{@code normal} は flex では stretch、{@code first baseline} は baseline
+     * （{@code safe center} の safe は {@link CssKeywords#parse} が落とし済み）。
+     */
+    private static String alignmentWord(CssKeywords.Alignment v) {
+        return switch (v) {
+            case NORMAL, AUTO, LEGACY -> "stretch";
+            case FIRST_BASELINE, LAST_BASELINE -> "baseline";
+            default -> v.cssName();
+        };
+    }
+
+    /**
+     * {@code justify-content} を主軸の向きで {@link #distributeMainAxis} の語に寄せる。
+     * {@code start} / {@code end} は書字方向の、{@code left} / {@code right} は物理的な向きで、
+     * {@code *-reverse} でも反転しない（主軸が逆向きなら flex-end / flex-start になる）。列方向の主軸は
+     * インライン軸と平行でないので、{@code left} / {@code right} は {@code start} と同じ（CSS Box Alignment 3 §6.1）。
+     *
+     * 何が壊れていたか: 以前は {@code left} / {@code start} を flex-start に丸めてから反転していたので、
+     * {@code flex-direction: row-reverse; justify-content: left} が右に寄っていた。
+     */
+    private static String justifyDistribution(String v, Axes axes) {
+        String k = v;
+        if (!axes.row && (k.equals("left") || k.equals("right"))) k = "start";
+        return switch (k) {
+            case "start", "left" -> axes.reverse ? "flex-end" : "flex-start";
+            case "end", "right" -> axes.reverse ? "flex-start" : "flex-end";
+            default -> contentDistribution(k);
+        };
     }
 
     /** {@code justify-content} / {@code align-content} を {@link #distributeMainAxis} の語に寄せる。 */
     private static String contentDistribution(String v) {
-        return switch (stripSafety(v)) {
+        return switch (v) {
             case "normal", "stretch", "start", "left" -> "flex-start";
             case "end", "right" -> "flex-end";
-            default -> stripSafety(v);
+            default -> v;
         };
     }
 
     /** 主軸と交差軸の向き。 */
     private record Axes(String direction, boolean row, boolean reverse, boolean wrap, boolean wrapReverse) {
         static Axes of(ComputedStyle style) {
-            String dir = style.keyword(CssProperty.FLEX_DIRECTION, "row");
-            String wrap = style.keyword(CssProperty.FLEX_WRAP, "nowrap");
-            return new Axes(dir, dir.startsWith("row"), dir.endsWith("-reverse"),
-                    !wrap.equals("nowrap"), wrap.equals("wrap-reverse"));
+            CssKeywords.FlexDirection dir = style.keywordOf(CssProperty.FLEX_DIRECTION, CssKeywords.FlexDirection.class);
+            CssKeywords.FlexWrap wrap = style.keywordOf(CssProperty.FLEX_WRAP, CssKeywords.FlexWrap.class);
+            return new Axes(dir.cssName(), dir.isRow(), dir.isReverse(),
+                    wrap != CssKeywords.FlexWrap.NOWRAP, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
         }
     }
 

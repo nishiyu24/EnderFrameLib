@@ -4,6 +4,30 @@
 # ここに載っているのに一致した差異も落とす（台帳が古い）。
 # 各行は FIDELITY.md にも同じキーで書かれていること（WebFidelityTest が検査する）。
 #
-# W0 でコーパスを領域別に広げて起こした行。行が消えることが各フェーズの完了条件。
+# R0 で測定を拡張（スクロール量・計算値）して新しく観測された差。行が消えることが各フェーズの完了条件。
 
-
+margin-collapse-bottom#parent.scrollHeight R5: 相殺されたマージンが親の外へ出たときの scrollHeight の扱い
+forced-line-breaks#box.scrollHeight R7: 強制改行の末尾行送り・ベースラインの 2px の差
+pseudo-lang-dir-defined#e.x R7: direction: rtl のブロックは幅が余ると右に寄る（direction プロパティを未対応。:dir(rtl) の照合そのものは一致している）
+flex-column-overflow#scroller.scrollWidth R5: スクロールバー表示による clientWidth/scrollWidth の縮小
+flex-column-overflow#scroller.clientWidth R5: スクロールバー表示による clientWidth の縮小
+flex-column-overflow#content.w R5: スクロールバーの内側での子の % 幅縮小
+flex-column-overflow#content.scrollWidth R5: スクロールバーの内側での子の % 幅縮小
+flex-column-overflow#content.clientWidth R5: スクロールバーの内側での子の % 幅縮小
+table-border-collapse#t.scrollWidth R9: border-collapse: collapse での表の scrollWidth 算出
+table-border-collapse#t.scrollHeight R9: border-collapse: collapse での表の scrollHeight 算出
+table-border-collapse#t.clientWidth R9: border-collapse: collapse での表の clientWidth 算出
+table-border-collapse#t.clientHeight R9: border-collapse: collapse での表の clientHeight 算出
+list-basic#list.scrollHeight R4: ::marker の配置と行高によるリストの scrollHeight の差
+list-basic#a.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
+list-basic#b.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
+list-nested#outer.scrollHeight R4: ::marker の配置と行高によるリストの scrollHeight の差
+list-nested#a.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
+list-nested#inner.scrollHeight R4: ::marker の配置と行高によるリストの scrollHeight の差
+list-nested#b.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
+list-ordered#a.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
+overflow-size#scroller.scrollWidth R5: スクロールバー表示による clientWidth/scrollWidth の縮小
+overflow-size#scroller.clientWidth R5: スクロールバー表示による clientWidth の縮小
+overflow-size#content.w R5: スクロールバーの内側での子の % 幅縮小
+overflow-size#content.scrollWidth R5: スクロールバーの内側での子の % 幅縮小
+overflow-size#content.clientWidth R5: スクロールバーの内側での子の % 幅縮小

@@ -1,17 +1,18 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.InlineFragment;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
-import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
-import com.nishiyu.enderframelib.core.text.TextShaper;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +38,10 @@ public class BlockLayoutEngine extends LayoutEngine {
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         float tentativeInnerW = space.availableInlineSize();
         float maxChildW = 0;
-        float currentInlineW = 0;
+        // 行の内容の幅は強制改行（<br> と保持された改行）で区切って、最も広い行を取る。
+        // 何が壊れていたか: 以前は区切らずに足し続けていて、<br> を含む inline-block・float・flex アイテムが
+        // 全行を横に繋げた幅まで広がっていた
+        InlineWidth line = new InlineWidth();
 
         float childParentH = childPercentageBase(box, space.percentageBlockSize(), ctx);
         FormattingContext childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
@@ -50,26 +54,95 @@ public class BlockLayoutEngine extends LayoutEngine {
                 continue;
             }
             child.measure(new ConstraintSpace(tentativeInnerW, childParentH, childCtx), ctx);
-            float childOuterW = child.w + child.mL + child.mR;
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
-                currentInlineW += childOuterW;
-                maxChildW = Math.max(maxChildW, Math.min(tentativeInnerW > 0 ? tentativeInnerW : currentInlineW, currentInlineW));
+                addInlineWidth(child, line, ctx);
+                maxChildW = Math.max(maxChildW, tentativeInnerW > 0 ? Math.min(tentativeInnerW, line.max) : line.max);
             } else {
-                currentInlineW = 0;
-                maxChildW = Math.max(maxChildW, childOuterW);
+                line.clear();
+                maxChildW = Math.max(maxChildW, child.w + child.mL + child.mR);
             }
         }
         return maxChildW;
     }
 
-    /** 子の高さの % を解く基準。親の高さが指定されているときだけ確定している。 */
+    /** shrink-to-fit の測定で数える、強制改行で区切った行の幅。 */
+    private static final class InlineWidth {
+        float current, max;
+
+        void add(float w) {
+            current += w;
+            max = Math.max(max, current);
+        }
+
+        void breakLine() {
+            current = 0;
+        }
+
+        void clear() {
+            current = 0;
+            max = 0;
+        }
+    }
+
+    /**
+     * 測定済みのインラインレベルの箱を行の幅に足す。インラインボックスは中身を辿り、
+     * 開始端と終了端の装飾（margin + border + padding）を 1 回ずつ数える。
+     */
+    private static void addInlineWidth(LayoutBox b, InlineWidth line, LayoutContext ctx) {
+        if (b.isAbsolute || b.display.isNone() || b.isOutsideMarker) return;
+        if (b.node.nodeType == NodeType.TEXT) {
+            TextShaper.TextStyle textStyle = ctx.textStyleFor(b.style);
+            if (b.displayText == null || !textStyle.whiteSpace().preservesNewlines() || b.displayText.indexOf('\n') < 0) {
+                line.add(b.w + b.mL + b.mR);
+                return;
+            }
+            FontFace face = ctx.faceFor(b.style);
+            String[] paragraphs = b.displayText.split("\n", -1);
+            for (int i = 0; i < paragraphs.length; i++) {
+                if (i > 0) line.breakLine();
+                line.add(face.advance(paragraphs[i], textStyle.font()));
+            }
+        } else if (b.node.tag.equals("br")) {
+            line.breakLine();
+        } else if (isFloating(b) || isAtomicInline(b) || !isInlineBox(b)) {
+            line.add(b.w + b.mL + b.mR);
+        } else {
+            line.add(b.mL + b.bL + b.pL);
+            for (LayoutBox c : b.children) addInlineWidth(c, line, ctx);
+            line.add(b.pR + b.bR + b.mR);
+        }
+    }
+
+    /** 子の高さの % を解く基準。高さが不定なら 0。 */
     private static float childPercentageBase(LayoutBox box, float parentH, LayoutContext ctx) {
+        float h = definiteInnerHeight(box, parentH, ctx);
+        return Float.isNaN(h) ? 0 : h;
+    }
+
+    /**
+     * 内容ボックスの高さが確定していればその値、不定なら NaN（子の高さの % の基準。{@code parentH} は自分の % の基準）。
+     * 確定しているのは、高さの指定があるとき、親のエンジンが高さを決めたとき（flex の伸縮・stretch、
+     * grid の stretch。CSS Flexbox §9.8 の 11 と CSS Grid §6.2）、top と bottom で高さが決まる絶対配置。
+     *
+     * 何が壊れていたか: 以前は高さの指定しか見ておらず、stretch された flex / grid アイテムや
+     * {@code top: 0; bottom: 0} の絶対配置の中で、子の {@code height: 100%} が 0 になっていた。
+     */
+    static float definiteInnerHeight(LayoutBox box, float parentH, LayoutContext ctx) {
         if (box.parent == null) return Math.max(0, parentH - box.verticalDecoration());
-        if (!hasSpecifiedHeight(box.style)) return 0;
-        float resolvedH = box.style.length(CssProperty.HEIGHT, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
-        boolean isBorderBox = "border-box".equals(box.style.get(CssProperty.BOX_SIZING));
-        return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
+        if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
+        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        if (hasSpecifiedHeight(box.style)) {
+            float resolvedH = box.style.length(CssProperty.HEIGHT, parentH, rootW, rootH);
+            boolean isBorderBox = box.style.isBorderBox();
+            return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
+        }
+        if (box.isAbsolute && BoxMeasurer.hasBothInsets(box.style, CssProperty.TOP, CssProperty.BOTTOM)) {
+            float insets = box.style.length(CssProperty.TOP, parentH, rootW, rootH)
+                    + box.style.length(CssProperty.BOTTOM, parentH, rootW, rootH);
+            return Math.max(0, parentH - insets - box.mT - box.mB - box.verticalDecoration());
+        }
+        return Float.NaN;
     }
 
     private static boolean hasSpecifiedHeight(ComputedStyle style) {
@@ -97,7 +170,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             state = new FlowBuilder(box, ConstraintSpace.block(innerW, 0), ctx).build();
             box.engineState = state;
         }
-        String textAlign = box.style.getOrDefault(CssProperty.TEXT_ALIGN, "left");
+        CssKeywords.TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, CssKeywords.TextAlign.class);
 
         for (Object item : state.items) {
             switch (item) {
@@ -113,6 +186,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     for (InlineLine line : run.lines()) {
                         placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx);
                     }
+                    for (LayoutBox inlineBox : run.boxes()) fitToFragments(inlineBox);
                 }
                 default -> throw new IllegalStateException(String.valueOf(item));
             }
@@ -179,16 +253,10 @@ public class BlockLayoutEngine extends LayoutEngine {
                 && child.display.isBlockContainer();
     }
 
-    public static float collapseMargins(float m1, float m2) {
-        if (m1 >= 0 && m2 >= 0) return Math.max(m1, m2);
-        if (m1 <= 0 && m2 <= 0) return Math.min(m1, m2);
-        return m1 + m2;
-    }
-
     /** float かどうか。float はブロックフローの子のときだけ効く（flex / grid アイテムでは無視される）。 */
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
-        if ("none".equals(box.style.keyword(CssProperty.FLOAT, "none"))) return false;
+        if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) == CssKeywords.FloatSide.NONE) return false;
         return LayoutEngine.getEngine(box.parent.display) instanceof BlockLayoutEngine;
     }
 
@@ -358,20 +426,21 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         /** {@code clear} を持つ箱を、その側の float の下端まで下げた位置。 */
         private float clearedY(LayoutBox child, float y) {
-            String clear = child.style.keyword(CssProperty.CLEAR, "none");
-            if ("none".equals(clear) || floats.isEmpty()) return y;
+            CssKeywords.Clear clear = child.style.keywordOf(CssProperty.CLEAR, CssKeywords.Clear.class);
+            if (clear == CssKeywords.Clear.NONE || floats.isEmpty()) return y;
             return Math.max(y, floats.clearance(clear) - oy);
         }
 
         /** float を置き、領域に登録する。{@code minY} は置ける最も上の位置（内容ボックス相対）。 */
         void placeFloat(LayoutBox f, float minY) {
-            boolean left = !"right".equals(f.style.keyword(CssProperty.FLOAT, "left"));
+            CssKeywords.FloatSide side = f.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class);
+            boolean left = side != CssKeywords.FloatSide.RIGHT && side != CssKeywords.FloatSide.INLINE_END;
             float w = f.w + f.mL + f.mR;
             float h = f.h + f.mT + f.mB;
             // float の上端は先に置いた float より上にはならない（CSS 2.2 §9.5.1 の規則 5）
             float y = Math.max(oy + minY, floats.lastTop());
-            String clear = f.style.keyword(CssProperty.CLEAR, "none");
-            if (!"none".equals(clear)) y = Math.max(y, floats.clearance(clear));
+            CssKeywords.Clear clear = f.style.keywordOf(CssProperty.CLEAR, CssKeywords.Clear.class);
+            if (clear != CssKeywords.Clear.NONE) y = Math.max(y, floats.clearance(clear));
             float x;
             for (int guard = 0; ; guard++) {
                 float l = floats.leftEdge(y, h, ox);
@@ -492,10 +561,12 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         /** {@code clear} の値に対応する側の float の下端。 */
-        float clearance(String clear) {
+        float clearance(CssKeywords.Clear clear) {
+            boolean clearLeft = clear == CssKeywords.Clear.LEFT || clear == CssKeywords.Clear.INLINE_START;
+            boolean clearRight = clear == CssKeywords.Clear.RIGHT || clear == CssKeywords.Clear.INLINE_END;
             float b = Float.NEGATIVE_INFINITY;
-            if (!"right".equals(clear)) for (float[] f : lefts) b = Math.max(b, f[3]);
-            if (!"left".equals(clear)) for (float[] f : rights) b = Math.max(b, f[3]);
+            if (!clearRight) for (float[] f : lefts) b = Math.max(b, f[3]);
+            if (!clearLeft) for (float[] f : rights) b = Math.max(b, f[3]);
             return b;
         }
 
@@ -622,11 +693,47 @@ public class BlockLayoutEngine extends LayoutEngine {
     /** 行の中の 1 断片。{@code raise} はベースラインから持ち上げる量（px）。 */
     private record LineItem(InlineFragment frag, VAlign align, float raise) {}
 
-    /** 行分割の結果 1 行。座標は内容ボックス相対、{@code baseline} は行の上端から。 */
-    private record InlineLine(List<LineItem> items, float top, float left, float width, float height, float baseline) {}
+    /**
+     * 行分割の結果 1 行。座標は内容ボックス相対、{@code baseline} は行の上端から。
+     * {@code used} は行の内容の幅（行の左端から、行末の空白を除く）で、{@code text-align} が読む。
+     */
+    private record InlineLine(List<LineItem> items, List<BoxSpan> spans, float top, float left, float width,
+                              float height, float baseline, float used) {}
+
+    /**
+     * 行の上で開いている（開始タグを過ぎて終了タグに達していない）インラインボックス。
+     * 行をまたぐと、次の行の頭から続きの断片を始める。
+     */
+    private static final class OpenBox {
+        final LayoutBox box;
+        final Alignment alignment;
+        /** この行での断片の左端（border box）と、その手前の開始端の margin の位置。行の左端からの相対。 */
+        float start, marginStart;
+        /** この行の断片が開始端（左の margin / border / padding）を持つか。最初の断片だけが持つ。 */
+        boolean startEdge = true;
+        /** この行に中身を置いたか。中身を置く前に折り返したら、開始端ごと次の行へ移る。 */
+        boolean hasContent;
+        /** 次の行の頭で開始端を付け直す。 */
+        boolean reopen;
+
+        OpenBox(LayoutBox box, Alignment alignment) {
+            this.box = box;
+            this.alignment = alignment;
+        }
+    }
+
+    /** 1 行に載ったインラインボックスの断片（border box の左右端、行の左端からの相対）。 */
+    private record BoxSpan(OpenBox open, float left, float right, boolean startEdge, boolean endEdge) {}
 
     /**
      * インライン内容を行に分割する。float を避けて各行の左端と幅を決め、行の中の float を置く。
+     *
+     * インラインボックス（{@code <span>} など）は開始タグと終了タグで 1 回ずつ装飾を足す（CSS Inline 3 /
+     * {@code box-decoration-break: slice}）。開始端の margin + border + padding は最初の断片、終了端は最後の断片だけが
+     * 持ち、同じ行の中身は 1 つの断片にまとめる。
+     *
+     * 何が壊れていたか: 以前は祖先の装飾を断片（語）ごとに足していた。{@code <span style="padding: 4px">Hello world</span>}
+     * は語ごとに左右の padding が付いて背景が重なり、行を折り返すたびに開始端の装飾も足されていた。
      */
     private final class LineBuilder {
         final FlowBuilder flow;
@@ -634,10 +741,14 @@ public class BlockLayoutEngine extends LayoutEngine {
         final List<InlineLine> lines = new ArrayList<>();
         final float strutHeight, strutBaseline;
         List<LineItem> current = new ArrayList<>();
+        List<BoxSpan> spans = new ArrayList<>();
+        final List<OpenBox> open = new ArrayList<>();
         float lineTop;
         float lineLeft, lineWidth;
         /** 行の左端からの進み位置。float のまま持つ（断片ごとの切り上げで誤差が溜まっていた）。 */
         float lineX;
+        /** 最後に置いた語の行末の空白の幅。行を閉じるとき内容の幅から除く。 */
+        float trailingSpace;
         float indent;
         boolean lineStarted = false;
         final List<LayoutBox> deferredFloats = new ArrayList<>();
@@ -656,22 +767,35 @@ public class BlockLayoutEngine extends LayoutEngine {
         List<InlineLine> build(List<LayoutBox> inlines) {
             List<FlatRun> runs = new ArrayList<>();
             flattenInlines(inlines, runs, new ArrayList<>());
-            for (FlatRun run : runs) {
+            for (int i = 0; i < runs.size(); i++) {
+                FlatRun run = runs.get(i);
                 switch (run.kind) {
-                    case TEXT -> addText(run);
+                    case TEXT -> addText(run, closingEdges(runs, i));
                     case BREAK -> addBreak(run);
-                    case ATOMIC -> addAtomic(run);
+                    case ATOMIC -> addAtomic(run, closingEdges(runs, i));
                     case FLOAT -> addFloat(run.box);
                     case ABSOLUTE -> {
                         ensureLine();
                         flow.state.items.add(new StaticPosition(run.box, lineLeft + lineX, lineTop));
                     }
+                    case OPEN -> openBox(run);
+                    case CLOSE -> closeBox();
                 }
             }
-            if (!current.isEmpty()) newLine(0, 0);
+            if (!current.isEmpty() || spans.stream().anyMatch(s -> isDecorated(s.open().box))) newLine(0, 0, false);
             for (LayoutBox f : deferredFloats) flow.placeFloat(f, lineTop);
             deferredFloats.clear();
             return lines;
+        }
+
+        /** {@code runs[i]} の直後に閉じるインラインボックスの終了端の装飾。最後の語と一緒に行に入らないといけない。 */
+        private float closingEdges(List<FlatRun> runs, int i) {
+            float w = 0;
+            for (int j = i + 1; j < runs.size() && runs.get(j).kind == FlatRun.Kind.CLOSE; j++) {
+                LayoutBox b = runs.get(j).box;
+                w += b.pR + b.bR + b.mR;
+            }
+            return w;
         }
 
         private boolean constrained() {
@@ -685,7 +809,20 @@ public class BlockLayoutEngine extends LayoutEngine {
             computeBand();
             lineX = indent;
             indent = 0;
+            trailingSpace = 0;
             lineStarted = true;
+            // 前の行から続く箱は行の頭から断片を始める。中身を置く前に折り返した箱は開始端を付け直す
+            for (OpenBox ob : open) {
+                ob.marginStart = lineX;
+                if (ob.reopen) {
+                    lineX += ob.box.mL;
+                    ob.start = lineX;
+                    lineX += ob.box.bL + ob.box.pL;
+                    ob.reopen = false;
+                } else {
+                    ob.start = lineX;
+                }
+            }
         }
 
         /** 行の上端で float を避けた左端と幅。 */
@@ -715,25 +852,73 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
         }
 
-        private void newLine(float fallbackHeight, float fallbackBaseline) {
-            InlineLine line = finishLine(fallbackHeight, fallbackBaseline);
+        /**
+         * 行を閉じる。開いている箱はこの行の断片を閉じて次の行へ続ける。
+         * {@code wrapped}（自動の折り返し）なら、まだ中身を置いていない箱は開始端ごと次の行へ移す。
+         */
+        private void newLine(float fallbackHeight, float fallbackBaseline, boolean wrapped) {
+            int carried = open.size();
+            if (wrapped) {
+                // 中身の無い箱は開いている箱の末尾に並ぶ（中の箱に中身があれば外の箱にもある）
+                while (carried > 0 && open.get(carried - 1).startEdge && !open.get(carried - 1).hasContent) carried--;
+            }
+            float end = (carried < open.size() ? open.get(carried).marginStart : lineX) - trailingSpace;
+            for (int i = 0; i < open.size(); i++) {
+                OpenBox ob = open.get(i);
+                if (i < carried) {
+                    spans.add(new BoxSpan(ob, ob.start, Math.max(ob.start, end), ob.startEdge, false));
+                    ob.startEdge = false;
+                } else {
+                    ob.reopen = true;
+                }
+                ob.hasContent = false;
+            }
+            InlineLine line = finishLine(fallbackHeight, fallbackBaseline, end);
             lines.add(line);
             lineTop += line.height();
             current = new ArrayList<>();
+            spans = new ArrayList<>();
             lineStarted = false;
         }
 
-        private void addText(FlatRun run) {
-            Decoration deco = decorationOf(run.inlineParents);
+        /** 開いている箱に中身が置かれた。 */
+        private void markContent() {
+            for (OpenBox ob : open) ob.hasContent = true;
+        }
+
+        private void openBox(FlatRun run) {
+            ensureLine();
+            LayoutBox b = run.box;
+            FontFace face = ctx.faceFor(b.style);
+            FontStyle font = ctx.fontStyleFor(b.style);
+            float ascent = face.ascent(font);
+            OpenBox ob = new OpenBox(b, alignmentOf(chainOf(b, run.inlineParents), ascent + face.descent(font), ascent));
+            ob.marginStart = lineX;
+            lineX += b.mL;
+            ob.start = lineX;
+            lineX += b.bL + b.pL;
+            open.add(ob);
+        }
+
+        private void closeBox() {
+            ensureLine();
+            OpenBox ob = open.removeLast();
+            lineX += ob.box.pR + ob.box.bR;
+            spans.add(new BoxSpan(ob, ob.start, lineX, ob.startEdge, true));
+            lineX += ob.box.mR;
+            trailingSpace = 0;
+            markContent();
+        }
+
+        private void addText(FlatRun run, float closing) {
             TextShaper.TextStyle textStyle = ctx.textStyleFor(run.box.style);
             FontFace face = ctx.faceFor(run.box.style);
             FontStyle font = textStyle.font();
             float runH = textStyle.lineHeightPx();
             float baseline = baselineWithin(textStyle, face);
-            Alignment alignment = alignmentOf(run, runH, baseline, deco);
+            Alignment alignment = alignmentOf(chainOf(null, run.inlineParents), runH, baseline);
 
             ensureLine();
-            lineX += deco.left();
             // white-space が改行を残す（pre / pre-wrap / pre-line）なら原文の改行で行を割る。
             // 以前は改行が区切りとして扱われず、<pre> の中身が 1 行に潰れていた。
             String[] paragraphs = textStyle.whiteSpace().preservesNewlines()
@@ -742,63 +927,71 @@ public class BlockLayoutEngine extends LayoutEngine {
 
             for (int p = 0; p < paragraphs.length; p++) {
                 if (p > 0) {
-                    newLine(runH, baseline);
+                    markContent();
+                    newLine(runH, baseline, false);
                     ensureLine();
-                    lineX += deco.left();
                 }
-                for (String segment : TextShaper.segments(paragraphs[p], textStyle.wordBreak())) {
+                List<String> segments = TextShaper.segments(paragraphs[p], textStyle.wordBreak());
+                int lastSegment = segments.size() - 1;
+                while (lastSegment >= 0 && segments.get(lastSegment).isEmpty()) lastSegment--;
+                for (int s = 0; s < segments.size(); s++) {
+                    String segment = segments.get(s);
                     if (segment.isEmpty()) continue;
                     float advance = face.advance(segment, font);
                     // 行末の空白は幅に数えない（CSS と同じ）
                     float trimmedW = face.advance(segment.stripTrailing(), font);
+                    // 最後の語は、直後に閉じる箱の終了端の装飾と一緒に行に入らないといけない
+                    float edges = p == paragraphs.length - 1 && s == lastSegment ? closing : 0;
 
                     if (textStyle.whiteSpace().wraps() && !segment.isBlank()) {
-                        if (needsWrap(lineX + trimmedW + deco.right())) {
-                            newLine(runH, baseline);
+                        if (needsWrap(lineX + trimmedW + edges)) {
+                            newLine(runH, baseline, true);
                             ensureLine();
-                            lineX += deco.left();
                         }
-                        dropBelowFloats(lineX + trimmedW + deco.right());
+                        dropBelowFloats(lineX + trimmedW + edges);
                     }
-                    // 断片の座標も float のまま持つ。丸めるのは描画（UIRenderer）の 1 箇所だけ
-                    InlineFragment frag = new InlineFragment(run.box, lineX, deco.top(), advance, runH, segment);
+                    // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
+                    InlineFragment frag = new InlineFragment(run.box, lineX, 0, advance, runH, segment);
                     frag.baseline = baseline;
                     frag.parents = run.inlineParents;
                     current.add(new LineItem(frag, alignment.align, alignment.raise));
                     lineX += advance;
+                    trailingSpace = advance - trimmedW;
+                    markContent();
                 }
             }
-            lineX += deco.right();
         }
 
         private void addBreak(FlatRun run) {
             // <br>: 内容が無い行でもフォント 1 行分の高さを確保する
             TextShaper.TextStyle brStyle = ctx.textStyleFor(run.box.style);
             ensureLine();
-            newLine(brStyle.lineHeightPx(), baselineWithin(brStyle, ctx.faceFor(run.box.style)));
+            markContent();
+            newLine(brStyle.lineHeightPx(), baselineWithin(brStyle, ctx.faceFor(run.box.style)), false);
         }
 
-        private void addAtomic(FlatRun run) {
+        private void addAtomic(FlatRun run, float closing) {
             LayoutBox b = run.box;
-            Decoration deco = decorationOf(run.inlineParents);
             float boxOuterW = b.w + b.mL + b.mR;
             float baseline = atomicBaseline(b);
-            Alignment alignment = alignmentOf(run, b.h, baseline, deco);
+            Alignment alignment = alignmentOf(chainOf(b, run.inlineParents), b.mT + b.mB + b.h, b.mT + baseline);
 
             ensureLine();
             // 折り返せるかは不可分なインラインを含む側（親）の white-space で決まる。
             // 以前は見ておらず、nowrap の行でもインラインブロックが折り返していた
             ComputedStyle around = run.inlineParents.isEmpty() ? flow.box.style : run.inlineParents.getLast().style;
-            if (TextShaper.WhiteSpace.of(around.get(CssProperty.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW)) {
-                newLine(0, 0);
+            if (TextShaper.WhiteSpace.of(around.get(CssProperty.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
+                newLine(0, 0, true);
                 ensureLine();
             }
-            dropBelowFloats(lineX + boxOuterW);
+            dropBelowFloats(lineX + boxOuterW + closing);
             InlineFragment frag = new InlineFragment(b, lineX + b.mL, 0, b.w, b.h, null);
             frag.baseline = baseline;
             frag.parents = run.inlineParents;
             current.add(new LineItem(frag, alignment.align, alignment.raise));
             lineX += boxOuterW;
+            trailingSpace = 0;
+            markContent();
         }
 
         /** 行の中の float。今の行に入るなら行の上端に置き、入らなければ次の行の上端に置く。 */
@@ -827,20 +1020,24 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         /**
          * 行を確定する。高さとベースラインは断片の実寸と strut から求め、
-         * 断片が無い行は渡された fallback を使う。
+         * 断片が無い行は渡された fallback を使う（装飾を持つインラインボックスだけの行は strut の高さ）。
+         *
+         * インラインボックスの上下の padding・border・margin は行の高さに入らない（CSS 2.2 §10.8.1）。
+         * 何が壊れていたか: 以前は祖先の上下の装飾を断片ごとに足していて、{@code <code>} の padding が行を押し広げていた。
          */
-        private InlineLine finishLine(float fallbackHeight, float fallbackBaseline) {
+        private InlineLine finishLine(float fallbackHeight, float fallbackBaseline, float used) {
             if (current.isEmpty()) {
-                return new InlineLine(current, lineTop, lineLeft, lineWidth, fallbackHeight, fallbackBaseline);
+                boolean decorated = fallbackHeight == 0 && spans.stream().anyMatch(s -> isDecorated(s.open().box));
+                return new InlineLine(current, spans, lineTop, lineLeft, lineWidth,
+                        decorated ? strutHeight : fallbackHeight, decorated ? strutBaseline : fallbackBaseline, used);
             }
             float baseline = strutBaseline;
             float belowBaseline = strutHeight - strutBaseline;
             for (LineItem item : current) {
                 if (item.align() != VAlign.BASELINE) continue;
                 InlineFragment f = item.frag();
-                Decoration deco = decorationOf(f.parents);
-                baseline = Math.max(baseline, deco.top() + f.box.mT + f.baseline + item.raise());
-                belowBaseline = Math.max(belowBaseline, f.h - f.baseline + f.box.mB + deco.bottom() - item.raise());
+                baseline = Math.max(baseline, f.box.mT + f.baseline + item.raise());
+                belowBaseline = Math.max(belowBaseline, f.h - f.baseline + f.box.mB - item.raise());
             }
             float height = baseline + belowBaseline;
             // top / bottom は行ボックスの端に揃える。ベースラインで揃えた内容より高ければ行を広げる
@@ -848,22 +1045,17 @@ public class BlockLayoutEngine extends LayoutEngine {
                 if (item.align() == VAlign.BASELINE) continue;
                 height = Math.max(height, outerHeight(item.frag()));
             }
-            return new InlineLine(current, lineTop, lineLeft, lineWidth, height, baseline);
+            return new InlineLine(current, spans, lineTop, lineLeft, lineWidth, height, baseline, used);
         }
 
         /**
-         * 断片の {@code vertical-align}。不可分なインラインは自分の、テキストはインラインの祖先の値を
-         * 外側まで足し合わせる（入れ子の span の持ち上げは累積する）。
+         * {@code vertical-align} の揃え方と持ち上げる量。{@code chain} は内側から外側へ、自分の値と
+         * インラインの祖先の値を足し合わせる（入れ子の span の持ち上げは累積する）。
+         * {@code height} と {@code above} は揃える箱の高さとその上端からベースラインまで。
          */
-        private Alignment alignmentOf(FlatRun run, float height, float baseline, Decoration deco) {
+        private Alignment alignmentOf(List<LayoutBox> chain, float height, float above) {
             float raise = 0;
             VAlign align = VAlign.BASELINE;
-            List<LayoutBox> chain = new ArrayList<>();
-            if (run.kind == FlatRun.Kind.ATOMIC) chain.add(run.box);
-            for (int i = run.inlineParents.size() - 1; i >= 0; i--) chain.add(run.inlineParents.get(i));
-
-            float boxHeight = deco.top() + deco.bottom() + run.box.mT + run.box.mB + height;
-            float above = deco.top() + run.box.mT + baseline;
             for (LayoutBox el : chain) {
                 String v = el.style.keyword(CssProperty.VERTICAL_ALIGN, "baseline");
                 LayoutBox parentBox = el.parent != null ? el.parent : flow.box;
@@ -876,12 +1068,12 @@ public class BlockLayoutEngine extends LayoutEngine {
                     case "top" -> align = VAlign.TOP;
                     case "bottom" -> align = VAlign.BOTTOM;
                     // 中央を親のベースライン + x ハイトの半分に置く
-                    case "middle" -> raise += boxHeight / 2 + face.xHeight(font) / 2 - above;
+                    case "middle" -> raise += height / 2 + face.xHeight(font) / 2 - above;
                     // Chromium と同じ近似（下付き: 1/5 em + 1、上付き: 1/3 em + 1）
                     case "sub" -> raise -= parentFont / 5 + 1;
                     case "super" -> raise += parentFont / 3 + 1;
                     case "text-top" -> raise += face.ascent(font) - above;
-                    case "text-bottom" -> raise += (boxHeight - above) - face.descent(font);
+                    case "text-bottom" -> raise += (height - above) - face.descent(font);
                     default -> raise += el.style.length(CssProperty.VERTICAL_ALIGN, el.lineHeightPx,
                             ctx.viewport().rootW(), ctx.viewport().rootH());
                 }
@@ -890,12 +1082,24 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
     }
 
+    /** {@code vertical-align} を足し合わせる箱の並び（{@code self} とインラインの祖先、内側から外側へ）。 */
+    private static List<LayoutBox> chainOf(LayoutBox self, List<LayoutBox> inlineParents) {
+        List<LayoutBox> chain = new ArrayList<>(inlineParents.size() + 1);
+        if (self != null) chain.add(self);
+        for (int i = inlineParents.size() - 1; i >= 0; i--) chain.add(inlineParents.get(i));
+        return chain;
+    }
+
     private record Alignment(VAlign align, float raise) {}
 
-    /** 断片のマージン・祖先の装飾を含む高さ。 */
+    /** 行を空にしない装飾（margin・border・padding）を持つインラインボックスか（CSS 2.2 §9.4.2）。 */
+    private static boolean isDecorated(LayoutBox b) {
+        return b.mL != 0 || b.mR != 0 || b.horizontalDecoration() != 0 || b.verticalDecoration() != 0;
+    }
+
+    /** 断片のマージンを含む高さ。 */
     private static float outerHeight(InlineFragment f) {
-        Decoration deco = decorationOf(f.parents);
-        return deco.top() + f.box.mT + f.h + f.box.mB + deco.bottom();
+        return f.box.mT + f.h + f.box.mB;
     }
 
     /**
@@ -907,60 +1111,100 @@ public class BlockLayoutEngine extends LayoutEngine {
      * CSS はベースラインを揃える。また不可分なインラインの左マージンを断片の位置と
      * {@link LayoutBox#layout} の両方で足していて、二重にずれていた。
      */
-    private void placeLine(InlineLine line, float startX, float drawY, float maxW, String textAlign, LayoutContext ctx) {
+    private void placeLine(InlineLine line, float startX, float drawY, float maxW, CssKeywords.TextAlign textAlign,
+                           LayoutContext ctx) {
         List<LineItem> items = line.items();
-        if (items.isEmpty()) return;
+        if (items.isEmpty() && line.spans().isEmpty()) return;
 
-        InlineFragment firstFrag = items.getFirst().frag();
-        InlineFragment lastFrag = items.getLast().frag();
-        float actualLineW = lastFrag.x + lastFrag.w - firstFrag.x;
+        // 揃えの幅は行の左端から内容の終わりまで（text-indent と開始端の装飾を含み、行末の空白を除く）
         float offsetX = startX;
-        if (textAlign.equals("center")) offsetX += Math.max(0, (maxW - actualLineW) / 2);
-        else if (textAlign.equals("right")) offsetX += Math.max(0, maxW - actualLineW);
+        if (textAlign == CssKeywords.TextAlign.CENTER) offsetX += Math.max(0, (maxW - line.used()) / 2);
+        else if (textAlign == CssKeywords.TextAlign.RIGHT || textAlign == CssKeywords.TextAlign.END) {
+            offsetX += Math.max(0, maxW - line.used());
+        }
 
         for (LineItem item : items) {
             InlineFragment src = item.frag();
-            Decoration deco = decorationOf(src.parents);
-            // 装飾箱の上端
+            // マージンボックスの上端
             float top = switch (item.align()) {
                 case TOP -> drawY;
                 case BOTTOM -> drawY + line.height() - outerHeight(src);
-                default -> drawY + line.baseline() - (deco.top() + src.box.mT + src.baseline + item.raise());
+                default -> drawY + line.baseline() - (src.box.mT + src.baseline + item.raise());
             };
 
-            InlineFragment f = new InlineFragment(src.box, src.x + offsetX, top + deco.top() + src.box.mT, src.w, src.h, src.text);
+            InlineFragment f = new InlineFragment(src.box, src.x + offsetX, top + src.box.mT, src.w, src.h, src.text);
             f.baseline = src.baseline;
             f.parents = src.parents;
             f.box.inlineFragments.add(f);
-
-            if (f.parents != null) {
-                for (LayoutBox p : f.parents) {
-                    InlineFragment decoFrag = new InlineFragment(
-                            p, f.x - deco.left(), top, f.w + deco.left() + deco.right(),
-                            f.h + deco.top() + deco.bottom(), null);
-                    decoFrag.baseline = deco.top() + f.baseline;
-                    p.inlineFragments.add(decoFrag);
-                }
-            }
             if (!f.isText()) f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
         }
+        for (BoxSpan span : line.spans()) placeSpan(span, offsetX, drawY, line, ctx);
     }
 
-    /** インラインの祖先が足す padding + border の合計。 */
-    private static Decoration decorationOf(List<LayoutBox> parents) {
-        float t = 0, r = 0, b = 0, l = 0;
-        if (parents != null) {
-            for (LayoutBox p : parents) {
-                t += p.pT + p.bT;
-                r += p.pR + p.bR;
-                b += p.pB + p.bB;
-                l += p.pL + p.bL;
+    /**
+     * インラインボックスの 1 行分の断片を置く。縦は行の高さではなく自分の内容領域（書体の ascent + descent を
+     * 自分のベースラインに置いたもの）に上下の padding と border を足した範囲（CSS 2.2 §10.6.1）。
+     */
+    private static void placeSpan(BoxSpan span, float offsetX, float drawY, InlineLine line, LayoutContext ctx) {
+        LayoutBox b = span.open().box;
+        FontFace face = ctx.faceFor(b.style);
+        FontStyle font = ctx.fontStyleFor(b.style);
+        float ascent = face.ascent(font);
+        float descent = face.descent(font);
+        float halfLeading = (b.lineHeightPx - (ascent + descent)) / 2f;
+        Alignment alignment = span.open().alignment;
+        float baselineY = switch (alignment.align()) {
+            case TOP -> drawY + halfLeading + ascent;
+            case BOTTOM -> drawY + line.height() - halfLeading - descent;
+            default -> drawY + line.baseline() - alignment.raise();
+        };
+        float top = baselineY - ascent - b.pT - b.bT;
+        InlineFragment f = new InlineFragment(b, offsetX + span.left(), top, span.right() - span.left(),
+                b.bT + b.pT + ascent + descent + b.pB + b.bB, null);
+        f.baseline = baselineY - top;
+        f.startEdge = span.startEdge();
+        f.endEdge = span.endEdge();
+        b.inlineFragments.add(f);
+    }
+
+    /**
+     * インラインボックスの矩形（{@code x / y / w / h}）を、置いた断片を囲む矩形にする。
+     * ブラウザの {@code getBoundingClientRect} と同じく大きさ 0 の断片は除き、全部が 0 なら最初の断片。
+     * ヒットテストの錨と忠実度のダンプがこの矩形を読む。
+     *
+     * 何が壊れていたか: 以前はインラインボックスに位置を入れておらず、矩形は測定の幅のまま原点にあった。
+     */
+    private static void fitToFragments(LayoutBox box) {
+        if (box.isAbsolute || box.display.isNone() || isFloating(box) || isAtomicInline(box)
+                || box.node.nodeType == NodeType.TEXT || !isInlineBox(box)) {
+            return;
+        }
+        float minX = Float.POSITIVE_INFINITY, minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY;
+        for (InlineFragment f : box.inlineFragments) {
+            if (f.isText() || f.w <= 0 || f.h <= 0) continue;
+            minX = Math.min(minX, f.x);
+            minY = Math.min(minY, f.y);
+            maxX = Math.max(maxX, f.x + f.w);
+            maxY = Math.max(maxY, f.y + f.h);
+        }
+        if (minX <= maxX) {
+            box.x = minX;
+            box.y = minY;
+            box.w = maxX - minX;
+            box.h = maxY - minY;
+        } else {
+            for (InlineFragment f : box.inlineFragments) {
+                if (f.isText()) continue;
+                box.x = f.x;
+                box.y = f.y;
+                box.w = f.w;
+                box.h = f.h;
+                break;
             }
         }
-        return new Decoration(t, r, b, l);
+        for (LayoutBox child : box.children) fitToFragments(child);
     }
-
-    private record Decoration(float top, float right, float bottom, float left) {}
 
     /** 断片の上端からベースラインまでの距離。整形器と同じ half-leading の分け方を使う。 */
     private static float baselineWithin(TextShaper.TextStyle textStyle, FontFace face) {
@@ -975,6 +1219,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         return box.display.isInlineLevel();
     }
 
+    /** インラインボックスは開始タグと終了タグ（{@code OPEN} / {@code CLOSE}）で中身を挟む。 */
     private void flattenInlines(List<LayoutBox> boxes, List<FlatRun> runs, List<LayoutBox> parents) {
         for (LayoutBox b : boxes) {
             if (b.display.isNone()) continue;
@@ -991,15 +1236,17 @@ public class BlockLayoutEngine extends LayoutEngine {
             } else if (isAtomicInline(b)) {
                 runs.add(new FlatRun(FlatRun.Kind.ATOMIC, b, null, new ArrayList<>(parents)));
             } else {
+                runs.add(new FlatRun(FlatRun.Kind.OPEN, b, null, new ArrayList<>(parents)));
                 parents.add(b);
                 flattenInlines(b.children, runs, parents);
                 parents.removeLast();
+                runs.add(new FlatRun(FlatRun.Kind.CLOSE, b, null, new ArrayList<>(parents)));
             }
         }
     }
 
     /** 中身を分割せず 1 つの塊として置くインライン要素。 */
-    private static boolean isAtomicInline(LayoutBox b) {
+    public static boolean isAtomicInline(LayoutBox b) {
         // inline-block / inline-flex / inline-grid / inline-table は中身を自分の整形コンテキストで組む。
         // 以前は inline-block だけを見ていて、inline-flex の子がインライン内容として平坦化されていた
         if (b.display.isInlineLevel() && b.display.inner() != Inner.FLOW) return true;
@@ -1016,6 +1263,6 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     /** 入れ子のインライン要素を平坦化した 1 要素。 */
     private record FlatRun(Kind kind, LayoutBox box, String text, List<LayoutBox> inlineParents) {
-        enum Kind { TEXT, BREAK, ATOMIC, FLOAT, ABSOLUTE }
+        enum Kind { TEXT, BREAK, ATOMIC, FLOAT, ABSOLUTE, OPEN, CLOSE }
     }
 }

@@ -1,17 +1,17 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.text.TextShaper;
-
-import java.util.List;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.IntrinsicSizeResolver;
 
 /**
  * ボックスモデル（マージン・パディング・ボーダー・幅・高さ）の決定。
@@ -99,7 +99,8 @@ public final class BoxMeasurer {
         ConstraintSpace contentSpace = new ConstraintSpace(engineInnerW, parentH, fmtCtx);
         float contentW = engine.measureContent(box, contentSpace, ctx);
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
-            box.w = contentW + box.horizontalDecoration();
+            // 横の size containment がある箱（コンテナ）は、中身で幅が決まらない
+            box.w = (box.containsInlineSize() ? 0 : contentW) + box.horizontalDecoration();
         }
 
         if (intrinsicWidth != null && !overridden) {
@@ -160,7 +161,8 @@ public final class BoxMeasurer {
             box.bL = box.collapsedBorders[3];
         }
         // 枠線を重ねる表は padding を持たない（CSS 2.2 §17.6.2）
-        if (box.display.inner() == Inner.TABLE && "collapse".equals(style.keyword(CssProperty.BORDER_COLLAPSE, "separate"))) {
+        if (box.display.inner() == Inner.TABLE
+                && style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE) {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 
@@ -339,7 +341,7 @@ public final class BoxMeasurer {
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う
-        float contentH = engine.contentBlockSize(box, space, ctx);
+        float contentH = box.containsBlockSize() ? 0 : engine.contentBlockSize(box, space, ctx);
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
         engine.finishLayout(box, space, ctx);
         if (overridden) return;
@@ -478,19 +480,11 @@ public final class BoxMeasurer {
             }
         }
         if (box.isAbsolute) return true;
-        if (!"none".equals(box.style.getOrDefault(CssProperty.FLOAT, "none"))) return true;
+        if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;
-        return isScrollContainerOrClip(box.style.getOrDefault(CssProperty.OVERFLOW_X,
-                        box.style.getOrDefault(CssProperty.OVERFLOW, "visible")))
-                || isScrollContainerOrClip(box.style.getOrDefault(CssProperty.OVERFLOW_Y,
-                        box.style.getOrDefault(CssProperty.OVERFLOW, "visible")));
-    }
-
-    /** {@code visible} と {@code clip} 以外の overflow は BFC を作る（clip はスクロールコンテナにならない）。 */
-    private static boolean isScrollContainerOrClip(String overflow) {
-        String v = overflow.trim();
-        return !v.equals("visible") && !v.equals("clip");
+        // visible と clip 以外の overflow は BFC を作る（clip はスクロールコンテナにならない）
+        return box.style.overflowX().scrolls() || box.style.overflowY().scrolls();
     }
 
     /** 両側の inset が auto でないか（絶対配置の寸法を inset から決められるか）。 */
@@ -504,7 +498,7 @@ public final class BoxMeasurer {
     }
 
     private static boolean isBorderBox(ComputedStyle style) {
-        return "border-box".equals(style.get(CssProperty.BOX_SIZING));
+        return style.isBorderBox();
     }
 
 

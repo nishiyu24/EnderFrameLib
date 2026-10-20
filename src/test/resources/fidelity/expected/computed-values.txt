@@ -1,0 +1,4 @@
+opacity 8 8 40 20 0 sw=40 sh=20 cw=40 ch=20 display=block position=static box-sizing=content-box overflow=visible opacity=0.5
+transform 8 28 30 10 0 sw=30 sh=10 cw=30 ch=10 display=block position=static box-sizing=content-box overflow=visible transform="matrix(1, 0, 0, 1, 0, 0)"
+color-parent 8 38 304 10 1 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible color="rgb(10, 20, 30)"
+color-child 8 38 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible color="rgb(10, 20, 30)"

@@ -2,9 +2,9 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.font.GlyphProvider;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.BitmapFontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.BitmapFontFace;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.font.FontOption;
@@ -302,8 +302,8 @@ public class WebFontManager {
          * 1em = 素のサイズなので倍率 1.0 になる。
          */
         private static final class FontStyleHolder {
-            static final com.nishiyu.enderframelib.core.text.FontFace.FontStyle NATURAL =
-                    new com.nishiyu.enderframelib.core.text.FontFace.FontStyle(BitmapFontFace.MC_UNITS_PER_EM, false, false, 0f);
+            static final FontFace.FontStyle NATURAL =
+                    new FontFace.FontStyle(BitmapFontFace.MC_UNITS_PER_EM, false, false, 0f);
         }
     }
 }

@@ -3,8 +3,8 @@ package com.nishiyu.enderframelib.client.gui;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
@@ -17,32 +17,28 @@ import java.util.function.Consumer;
  */
 public class WebFocusNavigator {
 
-    public record FocusCandidate(HtmlNode node, UIElement element, int tabIndex, int domOrder) {}
+    public record FocusCandidate(HtmlNode node, DisplayItem element, int tabIndex, int domOrder) {}
 
     private final String sessionId;
-    private String focusedElementBaseId = "";
 
     public WebFocusNavigator(String sessionId) {
         this.sessionId = sessionId;
     }
 
     public String focusedId() {
-        String sessionFocused = ClientWebManager.getFocusedElementBaseId(sessionId);
-        if (!sessionFocused.isEmpty()) return sessionFocused;
-        return focusedElementBaseId;
+        return ClientWebManager.getFocusedElementBaseId(sessionId);
     }
 
     public void setFocused(String baseId) {
-        this.focusedElementBaseId = (baseId != null) ? baseId : "";
-        ClientWebManager.setFocusedElement(sessionId, this.focusedElementBaseId, false);
+        ClientWebManager.setFocusedElement(sessionId, (baseId != null) ? baseId : "", false);
     }
 
-    public void renderFocusRing(GuiGraphics guiGraphics, List<UIElement> elements) {
+    public void renderFocusRing(GuiGraphics guiGraphics, List<DisplayItem> elements) {
         String currentFocusedId = focusedId();
         if (currentFocusedId.isEmpty() || elements == null) return;
 
-        UIElement focusedEl = null;
-        for (UIElement el : elements) {
+        DisplayItem focusedEl = null;
+        for (DisplayItem el : elements) {
             if (el.type() == ElementType.NODE && currentFocusedId.equals(el.id())) {
                 focusedEl = el;
                 break;
@@ -54,7 +50,7 @@ public class WebFocusNavigator {
         if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
-            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.WebRenderCore.ZLayers.FOCUS_INDICATOR_OVERLAY_Z);
+            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.FOCUS_INDICATOR_OVERLAY_Z);
             guiGraphics.renderOutline(
                     focusedEl.x() - 2,
                     focusedEl.y() - 2,
@@ -67,12 +63,12 @@ public class WebFocusNavigator {
     }
 
     public List<FocusCandidate> collectFocusableCandidates() {
-        HtmlNode vRoot = ClientWebManager.getVirtualRoot(sessionId);
-        List<UIElement> elements = ClientWebManager.getElements(sessionId);
+        HtmlNode vRoot = ClientWebManager.getRootNode(sessionId);
+        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
         if (vRoot == null || elements == null || elements.isEmpty()) return Collections.emptyList();
 
-        Map<String, UIElement> boxByNodeId = new HashMap<>();
-        for (UIElement el : elements) {
+        Map<String, DisplayItem> boxByNodeId = new HashMap<>();
+        for (DisplayItem el : elements) {
             String baseId = el.baseId();
             if (el.type() == ElementType.NODE) {
                 boxByNodeId.put(el.id(), el);
@@ -99,7 +95,7 @@ public class WebFocusNavigator {
         return list;
     }
 
-    private void collectFocusablesRecursive(HtmlNode node, Map<String, UIElement> boxByNodeId, List<FocusCandidate> out, int[] orderCounter) {
+    private void collectFocusablesRecursive(HtmlNode node, Map<String, DisplayItem> boxByNodeId, List<FocusCandidate> out, int[] orderCounter) {
         if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")) return;
 
         String styleAttr = node.attrs.getOrDefault("style", "").replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
@@ -121,7 +117,7 @@ public class WebFocusNavigator {
                 || node.attrs.containsKey("onclick");
 
         if (tabIndex >= 0 && (hasExplicitTabIndex || naturallyFocusable)) {
-            UIElement el = boxByNodeId.get(node.getId());
+            DisplayItem el = boxByNodeId.get(node.getId());
             if (el != null && el.width() > 0 && el.height() > 0) {
                 out.add(new FocusCandidate(node, el, tabIndex, orderCounter[0]++));
             }
@@ -140,7 +136,7 @@ public class WebFocusNavigator {
 
         int curIdx = -1;
         for (int i = 0; i < candidates.size(); i++) {
-            if (candidates.get(i).node().getId().equals(focusedElementBaseId)) {
+            if (candidates.get(i).node().getId().equals(focusedId())) {
                 curIdx = i;
                 break;
             }
@@ -165,7 +161,7 @@ public class WebFocusNavigator {
 
         FocusCandidate current = null;
         for (FocusCandidate c : candidates) {
-            if (c.node().getId().equals(focusedElementBaseId)) {
+            if (c.node().getId().equals(focusedId())) {
                 current = c;
                 break;
             }

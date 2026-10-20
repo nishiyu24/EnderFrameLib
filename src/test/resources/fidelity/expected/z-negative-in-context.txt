@@ -1,2 +1,2 @@
-ctx 8 8 100 100 1
-neg 33 33 50 50 0
+ctx 8 8 100 100 1 sw=100 sh=100 cw=100 ch=100 display=block position=relative box-sizing=content-box overflow=visible
+neg 33 33 50 50 0 sw=50 sh=50 cw=50 ch=50 display=block position=absolute box-sizing=content-box overflow=visible

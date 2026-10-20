@@ -1,2 +1,2 @@
-host 8 20 200 100 0
-abs 10 10 30 30 0
+host 8 20 200 100 0 sw=200 sh=100 cw=200 ch=100 display=block position=static box-sizing=content-box overflow=visible
+abs 10 10 30 30 0 sw=30 sh=30 cw=30 ch=30 display=block position=absolute box-sizing=content-box overflow=visible

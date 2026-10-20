@@ -81,6 +81,17 @@ public final class AtRuleProcessor {
         return negated != result;
     }
 
+    /**
+     * {@code @container} の条件部を、問い合わせコンテナの寸法で評価する。
+     * 寸法の特性（{@code width} / {@code height} / {@code inline-size} / {@code block-size} / {@code aspect-ratio} /
+     * {@code orientation}、{@code min-} / {@code max-} と範囲構文）と、{@code style(--name: value)} を書ける。
+     * 寸法を測っていない・コンテナの種類が答えられない特性（{@code inline-size} のコンテナへの高さの問い合わせ）は偽。
+     */
+    public static boolean evaluateContainerQuery(String condition, SelectorMatcher.ContainerBox box) {
+        if (condition == null || condition.isBlank() || box == null) return false;
+        return evaluateCondition(condition.trim(), feature -> evaluateContainerFeature(feature, box));
+    }
+
     /** {@code @supports} の条件部を評価する。 */
     public static boolean evaluateSupports(String condition) {
         if (condition == null || condition.isBlank()) return false;
@@ -217,6 +228,15 @@ public final class AtRuleProcessor {
 
     /** 範囲構文 {@code (width >= 600px)} / {@code (400px < width <= 700px)}。 */
     private static boolean evaluateRange(String f, MediaEnvironment env) {
+        return evaluateRange(f, name -> switch (name) {
+            case "width" -> env.width();
+            case "height" -> env.height();
+            default -> parseLength(name);
+        });
+    }
+
+    /** 範囲構文の本体。名前（{@code width} など）は {@code operand} が数にし、長さはそのまま解く。 */
+    private static boolean evaluateRange(String f, java.util.function.ToDoubleFunction<String> operand) {
         List<String> parts = new ArrayList<>();
         List<String> ops = new ArrayList<>();
         int i = 0;
@@ -238,8 +258,8 @@ public final class AtRuleProcessor {
 
         boolean result = true;
         for (int k = 0; k < ops.size(); k++) {
-            double left = rangeOperand(parts.get(k), env);
-            double right = rangeOperand(parts.get(k + 1), env);
+            double left = operand.applyAsDouble(parts.get(k));
+            double right = operand.applyAsDouble(parts.get(k + 1));
             if (Double.isNaN(left) || Double.isNaN(right)) return false;
             result &= switch (ops.get(k)) {
                 case "<" -> left < right;
@@ -251,14 +271,6 @@ public final class AtRuleProcessor {
             };
         }
         return result;
-    }
-
-    private static double rangeOperand(String s, MediaEnvironment env) {
-        return switch (s) {
-            case "width" -> env.width();
-            case "height" -> env.height();
-            default -> parseLength(s);
-        };
     }
 
     private static boolean compare(String name, double actual, double limit) {
@@ -293,6 +305,82 @@ public final class AtRuleProcessor {
         }
     }
 
+    // ---- @container の特性
+
+    private static boolean evaluateContainerFeature(String feature, SelectorMatcher.ContainerBox box) {
+        String f = feature.trim();
+        if (f.regionMatches(true, 0, "style(", 0, 6) && f.endsWith(")")) {
+            return evaluateStyleQuery(f.substring(6, f.length() - 1).trim(), box);
+        }
+        f = f.toLowerCase(Locale.ROOT);
+        boolean sizeContainer = box.type() != SelectorMatcher.ContainerType.NORMAL;
+        if (!sizeContainer) return false;
+        boolean bothAxes = box.type() == SelectorMatcher.ContainerType.SIZE;
+
+        int colon = f.indexOf(':');
+        if (colon < 0) {
+            if (f.contains("<") || f.contains(">") || f.contains("=")) {
+                return evaluateRange(f, name -> containerOperand(name, box, bothAxes));
+            }
+            return switch (f) {
+                case "width", "inline-size" -> !Double.isNaN(box.width());
+                case "height", "block-size" -> bothAxes && !Double.isNaN(box.height());
+                case "orientation", "aspect-ratio" -> bothAxes && !Double.isNaN(box.height());
+                default -> false;
+            };
+        }
+        String name = f.substring(0, colon).trim();
+        String value = f.substring(colon + 1).trim();
+        switch (name) {
+            case "width", "min-width", "max-width", "inline-size", "min-inline-size", "max-inline-size": {
+                return !Double.isNaN(box.width()) && compare(name, box.width(), parseLength(value));
+            }
+            case "height", "min-height", "max-height", "block-size", "min-block-size", "max-block-size": {
+                return bothAxes && !Double.isNaN(box.height()) && compare(name, box.height(), parseLength(value));
+            }
+            case "aspect-ratio", "min-aspect-ratio", "max-aspect-ratio": {
+                double ratio = parseRatio(value);
+                return bothAxes && box.height() > 0 && !Double.isNaN(ratio) && compare(name, box.width() / box.height(), ratio);
+            }
+            case "orientation": {
+                if (!bothAxes || Double.isNaN(box.height())) return false;
+                boolean portrait = box.height() >= box.width();
+                return "portrait".equals(value) ? portrait : "landscape".equals(value) && !portrait;
+            }
+            default:
+                return false; // 未知の特性は偽（CSS の規定）
+        }
+    }
+
+    /** 範囲構文の名前を数にする。答えられない軸は NaN（比較は偽になる）。 */
+    private static double containerOperand(String name, SelectorMatcher.ContainerBox box, boolean bothAxes) {
+        return switch (name) {
+            case "width", "inline-size" -> box.width();
+            case "height", "block-size" -> bothAxes ? box.height() : Double.NaN;
+            case "aspect-ratio" -> bothAxes && box.height() > 0 ? box.width() / box.height() : Double.NaN;
+            default -> name.contains("/") ? parseRatio(name) : parseLength(name);
+        };
+    }
+
+    /**
+     * {@code style(--name: value)}（コンテナのカスタムプロパティの算出値との一致）と
+     * {@code style(--name)}（値が空でない）。値の比較は空白をそろえた文字列で行う。
+     */
+    private static boolean evaluateStyleQuery(String body, SelectorMatcher.ContainerBox box) {
+        int colon = body.indexOf(':');
+        String name = (colon < 0 ? body : body.substring(0, colon)).trim();
+        if (!name.startsWith("--")) return false;
+        String actual = box.customProperties().get(name);
+        if (colon < 0) return actual != null && !actual.isBlank();
+        String expected = body.substring(colon + 1).trim();
+        if (actual == null) return false;
+        return normalizeSpaces(actual).equalsIgnoreCase(normalizeSpaces(expected));
+    }
+
+    private static String normalizeSpaces(String s) {
+        return s.trim().replaceAll("\\s+", " ");
+    }
+
     // ---- @supports の特性
 
     /**
@@ -304,8 +392,7 @@ public final class AtRuleProcessor {
         String lower = f.toLowerCase(Locale.ROOT);
         if (lower.startsWith("selector(") && f.endsWith(")")) {
             try {
-                SelectorParser.parse(f.substring(9, f.length() - 1).trim(), CascadeOrigin.AUTHOR, false);
-                return true;
+                return SelectorParser.parse(f.substring(9, f.length() - 1).trim(), CascadeOrigin.AUTHOR, false).isValid();
             } catch (RuntimeException e) {
                 return false;
             }

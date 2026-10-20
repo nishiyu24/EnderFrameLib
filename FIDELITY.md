@@ -18,18 +18,29 @@
 | コーパス | `src/main/resources/assets/enderframelib/preview/fidelity/cases/*.html`（索引は `cases.txt`） |
 | ブラウザ側の期待値 | `src/test/resources/fidelity/expected/*.txt` |
 | 台帳（機械可読） | `src/test/resources/fidelity/known-divergences.txt` |
-| 比較 | `WebFidelityTest`（幾何は許容誤差 ±0.5px、描画順は完全一致） |
+| 比較 | `WebFidelityTest`（幾何は許容誤差 ±0.5px、描画順は完全一致、計算値は文字列の完全一致） |
 | ブラウザ側の採取 | `/enderframe devkit` が出す `fidelity-dump.html` |
 
-ダンプ形式は 1 行 1 要素の `<id> <x> <y> <w> <h> <z>`。著者が `id` 属性を書いた要素だけを
-文書順に並べる。ビューポートは全ケース 320×200。ブラウザ側は各値を `Math.round` した整数、
-エンジン側は丸める前の float（整数なら小数点なし）を出す。幾何が同じなら差は 0.5px 以内に収まる。
+ダンプ形式は 1 行 1 要素の `<id> <x> <y> <w> <h> <z> sw=… sh=… cw=… ch=… <計算値>…`。
+著者が `id` 属性を書いた要素だけを文書順に並べる。ビューポートは全ケース 320×200。
+ブラウザ側は各値を `Math.round` した整数、エンジン側は丸める前の float（整数なら小数点なし）を出す。
+幾何が同じなら差は 0.5px 以内に収まる。
+
+計算値の列は、ケース全体の `<meta name="fidelity-properties">` / コメントか、要素ごとの
+`data-fidelity-properties` で宣言する。`display` / `position` / `box-sizing` / `overflow` は常に出る。
+`opacity` / `transform` / `color` のような値は空白を含む（`rgb(10, 20, 30)` /
+`matrix(1, 0, 0, 1, 0, 0)`）ため、空白・引用符・バックスラッシュを含む値は二重引用符で包む。
+ブラウザ側（`fidelity-dump.html` の `formatValue`）とエンジン側（`FidelityDumper.quoteValue`）は
+同じ規則で、`FidelityDumper.splitFields` が引用符の内側の空白を保ったまま列に分ける。
+宣言した列が期待値に 1 つも無い場合は、比較が空回りするので `WebFidelityTest` が落とす。
 
 `z` は描画順の列で、要素の矩形の**中心**で、その要素より上に描かれている id 付き要素の数
 （0 = 最前面）。中心が自分に当たらない（大きさ 0・ビューポート外・祖先の `overflow` で
 切られている）ときは -1。ブラウザ側は同じ点の `elementsFromPoint`、エンジン側は
-`UIRenderer.paintOrder`（描画と同じ並べ替え）から数える。大域的な順位にしないのは、
+`DisplayListBuilder.paintOrder`（描画と同じ並べ替え）から数える。大域的な順位にしないのは、
 重ならない要素どうしの前後がブラウザから観測できないため。
+行に分かれたインラインボックスは、矩形が断片を囲む矩形（`getBoundingClientRect` と同じ）で、点には断片で
+当たる（断片の間の隙間には当たらない）。
 
 台帳に無い差異が出ればテストは**回帰**として落ち、台帳にあるのに一致した差異も
 **台帳が古い**として落ちる。後者が各フェーズの完了条件になる。
@@ -59,6 +70,11 @@ W6 で ua.css を HTML 標準の既定値に置き換えたときに全ケース
   W6 以降は HTML 標準の既定値と同じなので、ブラウザ自身の UA と食い違わない。
 - **表の行に id を付けない。** Chromium は `table-row` をヒットテストしないので、行の `z` が
   常に -1 になる（行の幾何はセルから分かる）。
+- **インラインボックスには縦の padding か border を付ける。** `font-size: 0` の行では内容領域の高さが 0 で、断片が
+  すべて高さ 0 だと `getBoundingClientRect` は断片の和ではなく最初の断片を返す（CSSOM View）。
+- **インラインボックスの装飾を次のブロックにはみ出させない。** Chromium の `elementsFromPoint` は、後のブロックの
+  背景を前のブロックのインライン内容より上として返す（描画の順とは逆）ので、重なると `z` が描画順と食い違う。
+  行の間に余白を入れる。中心が行ボックスの境目にちょうど乗るケースも避ける。
 
 ## 測れていること / 測れていないもの
 
@@ -97,14 +113,70 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（0 件）
+## 既知の差異（25 件）
 
-W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 ですべて消えた。
-新しく測れた差はフェーズを振ってここと `known-divergences.txt` に足す。
-値は「ブラウザ / エンジン」。`z` は描画順の列（矩形の中心で上に重なっている id 付き要素の数）。
+R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
+ケースが宣言した `opacity` / `transform` / `color` など）と
+スクロール量（`scrollWidth` / `scrollHeight` / `clientWidth` / `clientHeight`）を
+ブラウザ実測と突き合わせるようにしたことで、新たに観測された差異。
+計算値はいずれも完全一致しており（`computed-values` が `opacity` / `transform` / `color` を固定する）、
+差はスクロールバーの有無によるクライアント幅やリストマーカーの行高、
+相殺されたマージンの scrollHeight への算入に由来する。
+
+### R5（CSSOM / CSSOM View・スクロール）
+- `margin-collapse-bottom#parent.scrollHeight`: ブラウザ 20 / エンジン 50（相殺されたマージンが親の外へ出たときの scrollHeight の扱い）
+- `flex-column-overflow#scroller.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth/scrollWidth の縮小）
+- `flex-column-overflow#scroller.clientWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth の縮小）
+- `flex-column-overflow#content.w`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+- `flex-column-overflow#content.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+- `flex-column-overflow#content.clientWidth`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+- `overflow-size#scroller.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth/scrollWidth の縮小）
+- `overflow-size#scroller.clientWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth の縮小）
+- `overflow-size#content.w`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+- `overflow-size#content.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+- `overflow-size#content.clientWidth`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）
+
+### R4（セレクタ・リストマーカー）
+- `list-basic#list.scrollHeight`: ブラウザ 44 / エンジン 40（::marker の配置と行高によるリストの scrollHeight の差）
+- `list-basic#a.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高による項目の scrollHeight の差）
+- `list-basic#b.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高による項目の scrollHeight の差）
+- `list-nested#outer.scrollHeight`: ブラウザ 44 / エンジン 40（::marker の配置と行高によるリストの scrollHeight の差）
+- `list-nested#a.scrollHeight`: ブラウザ 44 / エンジン 40（::marker の配置と行高による項目の scrollHeight の差）
+- `list-nested#inner.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高によるリストの scrollHeight の差）
+- `list-nested#b.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高による項目の scrollHeight の差）
+- `list-ordered#a.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高による項目の scrollHeight の差）
+
+### R7（テキストと国際化）
+- `forced-line-breaks#box.scrollHeight`: ブラウザ 62 / エンジン 60（強制改行の末尾行送り・ベースラインの 2px の差）
+- `pseudo-lang-dir-defined#e.x`: ブラウザ 172 / エンジン 8（`direction: rtl` のブロックは幅が余ると右に寄る。`direction` を未対応。`:dir(rtl)` の照合そのものは一致している）
+
+### R9（レイアウトとパーサの残り）
+- `table-border-collapse#t.scrollWidth`: ブラウザ 90 / エンジン 88（border-collapse: collapse での表の scrollWidth 算出）
+- `table-border-collapse#t.scrollHeight`: ブラウザ 26 / エンジン 24（border-collapse: collapse での表の scrollHeight 算出）
+- `table-border-collapse#t.clientWidth`: ブラウザ 92 / エンジン 88（border-collapse: collapse での表の clientWidth 算出）
+- `table-border-collapse#t.clientHeight`: ブラウザ 28 / エンジン 24（border-collapse: collapse での表の clientHeight 算出）
 
 ## 解消済みの差異
 
+- **W11（0 行）**: 台帳の行は無かった（装飾を持つインラインボックスの矩形・確定した高さの %・強制改行の
+  shrink-to-fit・column wrap・`justify-content` の物理的な向きを測るケースが無かった）。8 ケース
+  （`inline-box-edges` / `inline-box-wrap` / `inline-box-vertical-align` / `shrink-to-fit-line-breaks` /
+  `percent-height-definite` / `position-abs-percent-height` / `flex-column-wrap` / `flex-justify-physical`）を
+  Edge 155 ヘッドレスで採って足し、直す前は 8 ケースとも差が出ることを確かめてから直した。123 ケースが一致する。
+  断片ごとの枠線と角丸は矩形に出ないので `PaintModelTest` が固定する。
+- **W10（0 行）**: 台帳の行は無かった。直したのは色（`#RRGGBBAA` の並び・`#RGBA`・CSS の名前付き色・`color: transparent`）、
+  セレクタ（未知の擬似クラスと読めない `An+B` が全要素に一致していたこと、`*-of-type`・`:is()` / `:where()`、
+  同じ属性への複数の条件）、角のロングハンド、単位（`vmin` / `vmax` / `ch` / `ex` / `pt` など）と入れ子の数式、
+  ショートハンドが書かれなかったロングハンドを初期値に戻すこと。矩形のダンプには出ないので `ValueModelTest`・
+  `SelectorMatchingTest`・`ShorthandExpansionTest`・`PaintModelTest` が固定する。115 ケースは変わらず一致する。
+- **W9（0 行）**: 台帳の行は無かった。直したのは状態変化の後の再スタイル（兄弟結合子を跨ぐ無効化、
+  `::before` / `::after` の正規のカスケードと出現・消滅）と、`<style>` / `<link>` を DOM から文書順に集めること。
+  矩形の静的なダンプには出ないので `StateStyleTest` と `BoxTreeTest` が固定する。`<style>` の要素が DOM に残るように
+  なっても 115 ケースは変わらず一致する。
+- **W8（0 行）**: 台帳の行は無かった。直したのは矩形のダンプに出ない描画とヒットテストの不具合
+  （角丸の枠線の塗りつぶし、overflow のロングハンドと包含ブロックに沿ったクリップ、visibility、pointer-events、
+  box-shadow、linear-gradient）で、`PaintModelTest` と `HitTestAndOcclusionTest` が固定する。115 ケースは
+  変わらず一致する。
 - **W7（0 行）**: 台帳の行は無かった。パーサが html / head / body を暗黙に補うようにし、`FidelityDumper` が
   ケースを包むのをやめても全ケースが一致することを確かめた。ツリー構築そのものは `HtmlTreeConstructionTest` が
   ブラウザの木と突き合わせる（上の「測れていること」）。
@@ -152,7 +224,7 @@ W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 で�
   CSS 全域キーワードを解くようにした。
 - **F4（15 行）**: F1 で起こした 15 行は F4 ですべて解消した（`box-sizing` の既定・隣接と親子のマージン相殺・
   ブロックフローの `row-gap`・`flex-basis`・縦方向の % 余白・% height・絶対配置の包含ブロック・
-  `minmax()`）。詳細は git の履歴と REFACTORING_PLAN.md の F4 を参照。
+  `minmax()`）。詳細は git の履歴（旧計画 第 2 期の F4）を参照。
 
 ## 一致しているもの（回帰の番人）
 
@@ -164,16 +236,18 @@ W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 で�
   `overflow: hidden`）が子のマージン貫通を止めること、インラインとブロックが混ざったときの
   匿名ブロック、負のマージン、
   `margin: auto` の水平中央寄せ、`min-*` / `max-*`、% height・% 余白・% padding、
+  stretch された flex / grid アイテムの中の % height、
   `calc()`、`rem`、`vw` / `vh`、`em` の継承（算出値の px を継承する）、`font-size` の `vw`、
   `inherit` / `initial`
 - **inline**: インラインブロックの横並びと折り返し・ベースライン揃え、`text-align`、
   長さ指定の `line-height`、`<br>` の強制改行、`white-space: pre`、`inline-flex` が
   前のインライン内容と同じ行に並ぶこと、インラインブロックのマージン、`text-indent`、
-  `vertical-align`（top / bottom / middle / 長さ）、行の strut、`nowrap`
+  `vertical-align`（top / bottom / middle / 長さ）、行の strut、`nowrap`、インラインボックスの
+  開始端・終了端の装飾と行をまたぐ断片、上下の装飾が行を広げないこと、`<br>` で区切る shrink-to-fit の幅
 - **flex**: `flex: 1` の等分と `flex-grow` の比、`flex-basis`（固定・%）、
   `justify-content`（5 種）、`align-items` / `align-self`（`baseline` を含む）、`flex-wrap` /
   `wrap-reverse`、`align-content`、`gap`、縦 flex の stretch と `justify-content`、`order`、
-  `*-reverse`、auto マージン、縮小と `max-width` での停止、`min-width: auto`、スクロールコンテナの
+  `*-reverse`、`*-reverse` でも反転しない `left` / `right` / `start` / `end`、`column` + `wrap` の列と幅、auto マージン、縮小と `max-width` での停止、`min-width: auto`、スクロールコンテナの
   最小高さ 0、`display: contents` の子が祖父の flex アイテムになること
 - **grid**: `fr`、`minmax()`、`gap`、自動配置と暗黙の行・列、`span`、負の線番号、名前付きの線、
   `grid-template-areas`、`repeat(auto-fill)`、`grid-auto-flow: column` / `dense`、`auto` トラック、
@@ -183,7 +257,7 @@ W0 でコーパスを領域別に広げて起こした 269 行は、W1〜W6 で�
   `colspan` / `rowspan`、`border-collapse`
 - **list**: `ul` / `ol` の字下げと `li` の積み方、入れ子、`dl` / `dt` / `dd`（ua.css の HTML 標準の既定値）
 - **position / overflow**: 絶対配置の包含ブロックと shrink-to-fit、静的位置、両側の inset による
-  寸法、padding box 基準の %、`position: relative` が後続を動かさないこと、`position: sticky`、`position: fixed`、
+  寸法と、それが子の % height の基準になること、padding box 基準の %、`position: relative` が後続を動かさないこと、`position: sticky`、`position: fixed`、
   `overflow: hidden` のクリップ、スクロールコンテナの寸法
 - **z-order**: 文書順、位置指定要素どうしの `z-index`、flex アイテムの `z-index`、
   通常フローのブロックより下に描かれる負の `z-index`、後続の通常フローのブロックより上に描かれる位置指定要素、

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.server.ServerPayloadHandler.PlayerRateLimiter;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.EnderFrameScriptingBridge;

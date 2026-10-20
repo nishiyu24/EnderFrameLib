@@ -1,5 +1,5 @@
-t 8 8 150 50 1
-a 8 8 50 20 0
-b 58 8 100 20 0
-c 8 28 50 30 0
-d 58 28 100 30 0
+t 8 8 150 50 1 sw=150 sh=50 cw=150 ch=50 display=table position=static box-sizing=content-box overflow=visible
+a 8 8 50 20 0 sw=50 sh=20 cw=50 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible
+b 58 8 100 20 0 sw=100 sh=20 cw=100 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible
+c 8 28 50 30 0 sw=50 sh=30 cw=50 ch=30 display=table-cell position=static box-sizing=content-box overflow=visible
+d 58 28 100 30 0 sw=100 sh=30 cw=100 ch=30 display=table-cell position=static box-sizing=content-box overflow=visible

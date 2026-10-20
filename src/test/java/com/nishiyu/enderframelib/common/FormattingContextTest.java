@@ -2,8 +2,10 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -16,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * 矩形に出る差は忠実度コーパスがブラウザと突き合わせている。ここでは、コーパスの約束
  * （ua.css を上書きする・字幅に依存させない）の外にある振る舞いを固定する:
  * ua.css 経由の HTML の表、float の横を流れる行、セルの縦揃え、インラインの中の絶対配置。
+ * W11 の分: 確定高さの伝搬の装飾の扱い、文字を含む強制改行の shrink-to-fit、column wrap と order。
  */
 public class FormattingContextTest {
 
@@ -84,9 +87,65 @@ public class FormattingContextTest {
         assertEquals(3, abs.w, 0.01f);
     }
 
+    // ==========================================
+    // W11: 確定高さの伝搬・強制改行の shrink-to-fit・column wrap
+    // ==========================================
+
+    @Test
+    public void testPercentHeightInsideStretchedBorderBoxItemUsesItsContentBox() {
+        LayoutBox root = layout("""
+                <div style="display: flex; height: 100px;">
+                  <div id="item" style="box-sizing: border-box; padding: 10px 0; border-top: 5px solid;"><div id="c" style="height: 50%;"></div></div>
+                </div>
+                """);
+        assertEquals(100, find(root, "item").h, 0.01f);
+        // 基準は stretch した高さから上下の装飾を引いた内容ボックス（100 - 10 - 10 - 5）
+        assertEquals(37.5f, find(root, "c").h, 0.01f);
+    }
+
+    @Test
+    public void testPercentHeightUnderIndefiniteBlockStaysUnresolved() {
+        // 高さが auto のブロックの中の % は基準を持たない（以前と同じ。stretch や inset だけが基準を足す）
+        LayoutBox root = layout("""
+                <div style="height: 100px;"><div><div id="c" style="height: 50%;"></div></div></div>
+                """);
+        assertEquals(0, find(root, "c").h, 0.01f);
+    }
+
+    @Test
+    public void testShrinkToFitWidthBreaksAtLineBreaksInText() {
+        LayoutBox root = layout("""
+                <div style="font-size: 16px;">
+                  <span id="br" style="display: inline-block;">aaaaaaaa<br>bb</span>
+                  <pre id="pre" style="display: inline-block; margin: 0;">bb
+                aaaaaa</pre>
+                </div>
+                """);
+        FontStyle font = new FontStyle(16f, false, false, 0f);
+        // 以前は改行を区切らず、全行を横に繋げた幅になっていた
+        assertEquals(FontFace.FALLBACK.advance("aaaaaaaa", font), find(root, "br").w, 0.01f);
+        assertEquals(FontFace.FALLBACK.advance("aaaaaa", font), find(root, "pre").w, 0.01f);
+    }
+
+    @Test
+    public void testColumnWrapBreaksInOrderAndSumsColumnWidths() {
+        LayoutBox root = layout("""
+                <div id="c" style="display: inline-flex; flex-direction: column; flex-wrap: wrap; height: 30px;">
+                  <div id="a" style="width: 10px; height: 20px; order: 2;"></div>
+                  <div id="b" style="width: 15px; height: 20px; order: 1;"></div>
+                </div>
+                """);
+        LayoutBox c = find(root, "c"), a = find(root, "a"), b = find(root, "b");
+        assertEquals(25, c.w, 0.01f);
+        // order の順に列を作る: b が 1 列目、a が 2 列目
+        assertEquals(c.x, b.x, 0.01f);
+        assertEquals(c.x + 15, a.x, 0.01f);
+        assertEquals(c.y, a.y, 0.01f);
+    }
+
     private static LayoutBox layout(String html) {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 

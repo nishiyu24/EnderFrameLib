@@ -1,4 +1,4 @@
-outer 8 8 160 20 1
-mid 8 8 160 10 1
-inner 8 8 160 10 0
-own 8 18 160 10 0
+outer 8 8 160 20 1 sw=160 sh=20 cw=160 ch=20 display=block position=static box-sizing=content-box overflow=visible
+mid 8 8 160 10 1 sw=160 sh=10 cw=160 ch=10 display=block position=static box-sizing=content-box overflow=visible
+inner 8 8 160 10 0 sw=160 sh=10 cw=160 ch=10 display=block position=static box-sizing=content-box overflow=visible
+own 8 18 160 10 0 sw=160 sh=10 cw=160 ch=10 display=block position=static box-sizing=content-box overflow=visible

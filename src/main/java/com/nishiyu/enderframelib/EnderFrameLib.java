@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib;
 import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.EnderFrameClientInit;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.network.EnderFrameNetwork;
 import com.nishiyu.enderframelib.server.EnderFrameCommands;
 import com.nishiyu.enderframelib.server.EnderFrameDataPackManager;
@@ -32,7 +32,7 @@ public class EnderFrameLib {
     public EnderFrameLib(IEventBus modEventBus) {
         // 0. 設定画面のテンプレート解決を注入（api/config から common への依存を持たせないため）
         EnderConfigManager.resourceResolver = path -> {
-            Function<String, String> resolver = UIParser.resourceTextResolver;
+            Function<String, String> resolver = UiDocumentCompiler.resourceTextResolver;
             return resolver != null ? resolver.apply(path) : "";
         };
 

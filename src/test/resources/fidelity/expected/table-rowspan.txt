@@ -1,4 +1,4 @@
-t 8 8 100 40 1
-tall 8 8 50 40 0
-a 58 8 50 20 0
-b 58 28 50 20 0
+t 8 8 100 40 1 sw=100 sh=40 cw=100 ch=40 display=table position=static box-sizing=border-box overflow=visible
+tall 8 8 50 40 0 sw=50 sh=40 cw=50 ch=40 display=table-cell position=static box-sizing=content-box overflow=visible
+a 58 8 50 20 0 sw=50 sh=20 cw=50 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible
+b 58 28 50 20 0 sw=50 sh=20 cw=50 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 旧 CSS_PATTERN 正規表現が扱えなかったケースを固定する。 */
@@ -62,9 +63,12 @@ public class CssTokenizerTest {
                 "@keyframes fade { from { opacity: 0; } to { opacity: 1; } } .x { color: red; }", 1920);
 
         assertEquals(1, sheet.rules.size(), "@keyframes 自体はルールにならない");
-        String encoded = sheet.keyframes.get("fade");
-        assertTrue(encoded.contains("0`opacity: 0;|"), encoded);
-        assertTrue(encoded.contains("100`opacity: 1;|"), encoded);
+        StyleSheet.Keyframes fade = sheet.keyframes.get("fade");
+        assertEquals(2, fade.blocks().size());
+        assertEquals(0f, fade.blocks().get(0).percent());
+        assertEquals("0", fade.blocks().get(0).declarations().get("opacity"));
+        assertEquals(100f, fade.blocks().get(1).percent());
+        assertEquals("1", fade.blocks().get(1).declarations().get("opacity"));
     }
 
     @Test
@@ -81,8 +85,17 @@ public class CssTokenizerTest {
     @Test
     public void testMediaQueryListIsOr() {
         String css = "@media (max-width: 400px), (min-width: 1000px) { .x { color: red; } }";
-        assertEquals(1, CssParser.parse(css, 300).rules.size());
-        assertEquals(1, CssParser.parse(css, 1200).rules.size());
-        assertEquals(0, CssParser.parse(css, 700).rules.size(), "どちらの条件も満たさない幅では落ちる");
+        assertEquals(1, CssParser.parse(css, 300).activeRuleCount());
+        assertEquals(1, CssParser.parse(css, 1200).activeRuleCount());
+        assertEquals(0, CssParser.parse(css, 700).activeRuleCount(), "どちらの条件も満たさない幅では外れる");
+
+        // CSS を読み直さず、ビューポートが変わったときに条件だけ評価し直す
+        StyleSheet sheet = CssParser.parse(css, 300);
+        assertEquals(1, sheet.activeRuleCount());
+        assertTrue(sheet.updateMediaEnvironment(CssParser.MediaEnvironment.of(700, 0)), "有効な規則が変われば true");
+        assertEquals(0, sheet.activeRuleCount());
+        assertFalse(sheet.updateMediaEnvironment(CssParser.MediaEnvironment.of(710, 0)), "変わらなければ false");
+        assertTrue(sheet.updateMediaEnvironment(CssParser.MediaEnvironment.of(1200, 0)));
+        assertEquals(1, sheet.activeRuleCount());
     }
 }

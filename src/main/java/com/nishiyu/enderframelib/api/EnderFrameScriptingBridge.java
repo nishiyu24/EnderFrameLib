@@ -18,7 +18,7 @@ import java.util.function.BiConsumer;
 @ApiStatus.AvailableSince("1.0")
 public class EnderFrameScriptingBridge {
 
-    private static final Map<String, IWebSessionProvider> GLOBAL_PROVIDERS = new ConcurrentHashMap<>();
+    private static final Map<String, WebSessionProvider> GLOBAL_PROVIDERS = new ConcurrentHashMap<>();
 
     private EnderFrameScriptingBridge() {}
 
@@ -59,12 +59,12 @@ public class EnderFrameScriptingBridge {
         EnderFrameAPI api = EnderFrameAPI.get();
 
         // リロード等で重複して登録された場合は古いプロバイダを解除してメモリリークを防ぐ
-        IWebSessionProvider existing = GLOBAL_PROVIDERS.get(sessionIdPrefix);
+        WebSessionProvider existing = GLOBAL_PROVIDERS.get(sessionIdPrefix);
         if (existing != null) {
             api.unregisterProvider(existing);
         }
 
-        IWebSessionProvider provider = new IWebSessionProvider() {
+        WebSessionProvider provider = new WebSessionProvider() {
             @Override
             public boolean matchesSession(String sessionId) {
                 return sessionId != null && sessionId.startsWith(sessionIdPrefix);
@@ -94,7 +94,7 @@ public class EnderFrameScriptingBridge {
 
     /** Unregisters a listener installed with {@link #onGlobalServerAction}. */
     public static void removeGlobalServerAction(String sessionIdPrefix) {
-        IWebSessionProvider provider = GLOBAL_PROVIDERS.remove(sessionIdPrefix);
+        WebSessionProvider provider = GLOBAL_PROVIDERS.remove(sessionIdPrefix);
         if (provider != null && EnderFrameAPI.isAvailable()) {
             EnderFrameAPI.get().unregisterProvider(provider);
         }
@@ -104,5 +104,79 @@ public class EnderFrameScriptingBridge {
     @ApiStatus.Internal
     public static void clearAll() {
         GLOBAL_PROVIDERS.clear();
+    }
+
+    // ==========================================
+    // Client-side scripting API (R3)
+    // ==========================================
+
+    /**
+     * Opens a local screen on the client and returns its DOM {@link com.nishiyu.enderframelib.api.dom.Document}.
+     */
+    public static com.nishiyu.enderframelib.api.dom.Document openClientHtmlScreen(String sessionId, String html, int width, int height) {
+        return EnderFrameClientAPI.get().openScreen(sessionId, html, width, height);
+    }
+
+    /**
+     * Installs a persistent HUD overlay on the client and returns its DOM {@link com.nishiyu.enderframelib.api.dom.Document}.
+     */
+    public static com.nishiyu.enderframelib.api.dom.Document setClientCustomHud(String sessionId, String html) {
+        return EnderFrameClientAPI.get().setHud(sessionId, html);
+    }
+
+    /**
+     * Returns the DOM {@link com.nishiyu.enderframelib.api.dom.Document} for a client-side session.
+     */
+    public static com.nishiyu.enderframelib.api.dom.Document getClientDocument(String sessionId) {
+        return EnderFrameClientAPI.get().getDocument(sessionId);
+    }
+
+    /**
+     * Closes a client-side session.
+     */
+    public static void closeClientSession(String sessionId) {
+        EnderFrameClientAPI.get().closeSession(sessionId);
+    }
+
+    /**
+     * Schedules an animation frame callback before the next paint frame (equivalent to {@code window.requestAnimationFrame}).
+     */
+    public static int requestAnimationFrame(String sessionId, java.util.function.Consumer<Double> callback) {
+        return EnderFrameClientAPI.get().requestAnimationFrame(sessionId, callback);
+    }
+
+    /**
+     * Cancels an animation frame callback.
+     */
+    public static boolean cancelAnimationFrame(int id) {
+        return EnderFrameClientAPI.get().cancelAnimationFrame(id);
+    }
+
+    /**
+     * Schedules a one-off task to execute after the specified delay in milliseconds (equivalent to {@code setTimeout}).
+     */
+    public static int setTimeout(String sessionId, Runnable task, long delayMs) {
+        return EnderFrameClientAPI.get().setTimeout(sessionId, task, delayMs);
+    }
+
+    /**
+     * Cancels a timeout task.
+     */
+    public static boolean clearTimeout(int id) {
+        return EnderFrameClientAPI.get().clearTimeout(id);
+    }
+
+    /**
+     * Schedules a repeating task to execute at the specified interval in milliseconds (equivalent to {@code setInterval}).
+     */
+    public static int setInterval(String sessionId, Runnable task, long intervalMs) {
+        return EnderFrameClientAPI.get().setInterval(sessionId, task, intervalMs);
+    }
+
+    /**
+     * Cancels an interval task.
+     */
+    public static boolean clearInterval(int id) {
+        return EnderFrameClientAPI.get().clearInterval(id);
     }
 }

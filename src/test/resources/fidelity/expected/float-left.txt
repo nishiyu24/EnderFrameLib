@@ -1,4 +1,4 @@
-wrap 8 8 300 10 2
-a 8 8 100 30 0
-b 108 8 100 20 0
-after 8 8 300 10 1
+wrap 8 8 300 10 2 sw=300 sh=30 cw=300 ch=10 display=block position=static box-sizing=content-box overflow=visible
+a 8 8 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+b 108 8 100 20 0 sw=100 sh=20 cw=100 ch=20 display=block position=static box-sizing=content-box overflow=visible
+after 8 8 300 10 1 sw=300 sh=10 cw=300 ch=10 display=block position=static box-sizing=content-box overflow=visible

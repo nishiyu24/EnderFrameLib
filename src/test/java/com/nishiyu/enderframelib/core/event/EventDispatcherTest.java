@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.event;
 
+import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
 import org.junit.jupiter.api.Test;

@@ -46,6 +46,14 @@ function stackDepth(doc, el, r) {
   return stack.indexOf(el);
 }
 
+// 計算値は空白を含む（rgb(10, 20, 30) / matrix(1, 0, 0, 1, 0, 0)）。
+// 列の区切りと衝突しないよう、空白・引用符・バックスラッシュを含む値は二重引用符で包む。
+// エンジン側（FidelityDumper.quoteValue）と同じ規則。
+function formatValue(v) {
+  if (/[\s"\\]/.test(v)) return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  return v;
+}
+
 function measure(name, html) {
   return new Promise(resolve => {
     const frame = document.createElement('iframe');
@@ -54,10 +62,55 @@ function measure(name, html) {
     frame.onload = () => {
       const lines = [];
       const doc = frame.contentDocument;
+      const win = frame.contentWindow;
+
+      let declaredProps = [];
+      const meta = doc.querySelector('meta[name="fidelity-properties"]');
+      if (meta && meta.content) {
+        declaredProps = meta.content.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      }
+      const iterator = doc.createNodeIterator(doc, NodeFilter.SHOW_COMMENT);
+      let commentNode;
+      while ((commentNode = iterator.nextNode())) {
+        const m = commentNode.nodeValue.match(/fidelity-properties:\s*([^\r\n>]+)/);
+        if (m) {
+          declaredProps = declaredProps.concat(m[1].split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+        }
+      }
+
       doc.querySelectorAll('[id]').forEach(el => {
         const r = el.getBoundingClientRect();
-        lines.push([el.id, Math.round(r.left), Math.round(r.top),
-                    Math.round(r.width), Math.round(r.height), stackDepth(doc, el, r)].join(' '));
+        const cs = win.getComputedStyle(el);
+        const z = stackDepth(doc, el, r);
+        const sw = Math.round(el.scrollWidth);
+        const sh = Math.round(el.scrollHeight);
+        const cw = Math.round(el.clientWidth);
+        const ch = Math.round(el.clientHeight);
+        const display = cs.display;
+        const position = cs.position;
+        const boxSizing = cs.boxSizing;
+        const overflow = (cs.overflow && cs.overflow.length > 0)
+          ? cs.overflow
+          : (cs.overflowX === cs.overflowY ? cs.overflowX : cs.overflowX + ' ' + cs.overflowY);
+
+        const parts = [
+          el.id,
+          Math.round(r.left), Math.round(r.top),
+          Math.round(r.width), Math.round(r.height),
+          z,
+          'sw=' + sw, 'sh=' + sh, 'cw=' + cw, 'ch=' + ch,
+          'display=' + display, 'position=' + position,
+          'box-sizing=' + boxSizing, 'overflow=' + overflow
+        ];
+
+        const elDecl = el.getAttribute('data-fidelity-properties');
+        const customProps = [...new Set([...declaredProps, ...(elDecl ? elDecl.split(',').map(s => s.trim().toLowerCase()) : [])])];
+        for (const p of customProps) {
+          if (!['display', 'position', 'box-sizing', 'overflow'].includes(p)) {
+            parts.push(p + '=' + formatValue(cs.getPropertyValue(p)));
+          }
+        }
+        lines.push(parts.join(' '));
       });
       frame.remove();
       resolve(lines);

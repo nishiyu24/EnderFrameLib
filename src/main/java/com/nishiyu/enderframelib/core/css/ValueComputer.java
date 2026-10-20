@@ -1,5 +1,10 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
+import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
+import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
+import com.nishiyu.enderframelib.core.css.LengthResolver.Metrics;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,7 +19,8 @@ import java.util.Set;
  * <ul>
  *   <li>CSS 全域キーワード（{@code inherit} / {@code initial} / {@code unset}）を親の算出値か初期値に置き換える</li>
  *   <li>{@code font-size} を親のフォントサイズとビューポートで px に解く</li>
- *   <li>それ以外の値の {@code em} / {@code rem} を px に解く（{@code %} と {@code vw} / {@code vh} は使用値の段で解く）</li>
+ *   <li>それ以外の値の {@code em} / {@code rem} / {@code lh} / {@code rlh} / {@code cap} / コンテナ単位（{@code cqw} など）と
+ *       絶対長さを px に解く（{@code %} とビューポート単位は使用値の段で解く）</li>
  *   <li>{@code line-height} の {@code %} を px に解く（単位の無い数値はそのまま継承する）</li>
  *   <li>{@code currentcolor} を {@code color} の算出値に置き換える</li>
  * </ul>
@@ -23,6 +29,8 @@ import java.util.Set;
  * {@code font-size: 2em} を指定した要素の子孫が 2em を自分の親（既に 32px）に掛け直して
  * 複利で大きくなり、{@code width: inherit} は 0 になっていた。{@code font-size} の
  * {@code vw} はビューポート 0 で解かれて無効扱いになり、既定のサイズのままだった。
+ * 単位の換算は値の文字を 1 つずつ走査していたので、{@code #} や識別子の途中の数字を取り違えかねなかった。
+ * いまはトークンの上で、寸法のトークンだけを換算する。
  */
 final class ValueComputer {
 
@@ -30,9 +38,29 @@ final class ValueComputer {
      * @param parent         親の算出スタイル（ルートでは空）
      * @param parentFontSize 親のフォントサイズ（px）
      * @param rootFontSize   ルート要素のフォントサイズ（px、{@code rem} の基準）
+     * @param containerW     最も近い問い合わせコンテナの幅（px）。コンテナが無い・測っていなければ NaN
+     * @param containerH     同じく高さ
+     * @param rootLineHeight ルート要素の行の高さ（px、{@code rlh} の基準）。分からなければ NaN（{@code normal} の高さ）
      */
     record Context(Map<String, String> parent, float parentFontSize, float rootFontSize,
-                   int viewportW, int viewportH) {}
+                   int viewportW, int viewportH, float containerW, float containerH, float rootLineHeight) {
+
+        /** コンテナとルートの行の高さを知らない文脈。 */
+        Context(Map<String, String> parent, float parentFontSize, float rootFontSize, int viewportW, int viewportH) {
+            this(parent, parentFontSize, rootFontSize, viewportW, viewportH, Float.NaN, Float.NaN, Float.NaN);
+        }
+
+        /** ルートの行の高さを知らない文脈。 */
+        Context(Map<String, String> parent, float parentFontSize, float rootFontSize, int viewportW, int viewportH,
+                float containerW, float containerH) {
+            this(parent, parentFontSize, rootFontSize, viewportW, viewportH, containerW, containerH, Float.NaN);
+        }
+
+        /** {@code rlh} の基準。ルートの行の高さが分からなければ、ルートの {@code normal}。 */
+        float rootLineHeightPx() {
+            return Float.isNaN(rootLineHeight) ? rootFontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM : rootLineHeight;
+        }
+    }
 
     /** 絶対サイズのキーワード（CSS Fonts の medium = 16px からの比率表）。 */
     private static final Map<String, Float> ABSOLUTE_SIZES = Map.of(
@@ -66,6 +94,8 @@ final class ValueComputer {
         if (color == null) color = ctx.parent().get(CssProperty.COLOR);
         if (color == null) color = PropertyRegistry.initialValue(CssProperty.COLOR);
 
+        Metrics metrics = unitMetrics(style, ctx, ownFontSize);
+
         List<String> keys = new ArrayList<>(style.keySet());
         for (String key : keys) {
             if (key.startsWith("--") || CssProperty.FONT_SIZE.equals(key)) continue;
@@ -77,7 +107,7 @@ final class ValueComputer {
                 if (pct != null) value = px(ownFontSize * pct / 100f);
             }
             if (!OPAQUE_PROPERTIES.contains(key)) {
-                value = absolutizeFontRelative(value, ownFontSize, ctx.rootFontSize());
+                value = absolutizeUnits(value, metrics);
             }
             if (!CssProperty.COLOR.equals(key)) {
                 value = replaceCurrentColor(value, color);
@@ -85,6 +115,37 @@ final class ValueComputer {
             style.put(key, value);
         }
         computeLineWidths(style);
+    }
+
+    /**
+     * 値の中の単位を px にするときの基準。{@code lh} はこの要素の行の高さ（数値なら font-size 倍、{@code normal} は
+     * ビットマップフォントの行間込みの高さ）、{@code rlh} はルートの {@code normal}。
+     */
+    private static Metrics unitMetrics(Map<String, String> style, Context ctx, float ownFontSize) {
+        String declared = trimmed(style.get(CssProperty.LINE_HEIGHT));
+        if (declared == null) declared = trimmed(ctx.parent().get(CssProperty.LINE_HEIGHT));
+        float lineHeight = lineHeightPx(declared, ownFontSize, ctx.rootFontSize(), ctx.viewportW(), ctx.viewportH());
+        return new Metrics(0, ctx.viewportW(), ctx.viewportH(), ownFontSize, ctx.rootFontSize(), lineHeight,
+                ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH());
+    }
+
+    /**
+     * {@code line-height} の宣言を px にする。数値は {@code font-size} 倍、長さはその長さ、{@code normal}（と読めない値）は
+     * ビットマップフォントの行間込みの高さ。
+     */
+    static float lineHeightPx(String declared, float fontSize, float rootFontSize, int viewportW, int viewportH) {
+        float lineHeight = fontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM;
+        if (declared == null || declared.equalsIgnoreCase("normal")) return lineHeight;
+        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(declared));
+        Token t = values.size() == 1 ? CssSyntax.tokenOf(values.getFirst()) : null;
+        if (t != null && t.type() == Type.NUMBER) {
+            lineHeight = (float) (t.number() * fontSize);
+        } else if (t != null && t.type() == Type.DIMENSION) {
+            float px = LengthResolver.toPixels((float) t.number(), t.unit(),
+                    Metrics.of(0, viewportW, viewportH, fontSize, rootFontSize));
+            if (!Float.isNaN(px)) lineHeight = px;
+        }
+        return lineHeight;
     }
 
     private static final String[] SIDES = {"top", "right", "bottom", "left"};
@@ -130,8 +191,8 @@ final class ValueComputer {
             switch (kw) {
                 case INHERIT -> putInheritedOrInitial(style, key, ctx);
                 case INITIAL -> putInitial(style, key);
-                // カスケードで解けなかった revert（UA 自身の revert や var() 経由）は unset と同じ
-                case UNSET, REVERT -> {
+                // カスケードで解けなかった revert / revert-layer（UA 自身の revert や var() 経由）は unset と同じ
+                case UNSET, REVERT, REVERT_LAYER -> {
                     if (PropertyRegistry.isInherited(key) || key.startsWith("--")) putInheritedOrInitial(style, key, ctx);
                     else putInitial(style, key);
                 }
@@ -159,106 +220,107 @@ final class ValueComputer {
         if (absolute != null) return absolute;
         if ("smaller".equals(v)) return parent / RELATIVE_SIZE_RATIO;
         if ("larger".equals(v)) return parent * RELATIVE_SIZE_RATIO;
-        if (v.indexOf('(') >= 0) {
-            float resolved = LengthResolver.parseDim(v, parent, ctx.viewportW(), ctx.viewportH(),
-                    parent, ctx.rootFontSize());
-            return resolved >= 0 ? resolved : parent;
+
+        // font-size の中では、em / lh などの基準は親のフォントサイズ（自身のサイズを決めている最中なので）
+        Metrics metrics = new Metrics(parent, ctx.viewportW(), ctx.viewportH(), parent, ctx.rootFontSize(),
+                parent * LengthResolver.NORMAL_LINE_HEIGHT_EM, ctx.rootFontSize() * LengthResolver.NORMAL_LINE_HEIGHT_EM,
+                ctx.containerW(), ctx.containerH());
+        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(value));
+        if (values.size() != 1) return parent;
+        float result;
+        if (values.getFirst() instanceof CssSyntax.Function f) {
+            LengthResolver.Quantity q = LengthResolver.evaluateMath(CssSyntax.serialize(f), metrics);
+            result = q == null || (q.dimension() != LengthResolver.Dimension.LENGTH
+                    && q.dimension() != LengthResolver.Dimension.NUMBER) ? Float.NaN : (float) q.value();
+        } else {
+            Token t = CssSyntax.tokenOf(values.getFirst());
+            result = t == null ? Float.NaN : switch (t.type()) {
+                // 単位の無い数値は px とみなす（エンジンの従来の扱い）
+                case NUMBER -> (float) t.number();
+                case PERCENTAGE -> parent * (float) t.number() / 100f;
+                case DIMENSION -> LengthResolver.toPixels((float) t.number(), t.unit(), metrics);
+                default -> Float.NaN;
+            };
         }
-
-        Float result = null;
-        if (v.endsWith("rem")) result = scaled(v, 3, ctx.rootFontSize());
-        else if (v.endsWith("em")) result = scaled(v, 2, parent);
-        else if (v.endsWith("px")) result = scaled(v, 2, 1f);
-        else if (v.endsWith("%")) result = scaled(v, 1, parent / 100f);
-        else if (v.endsWith("vw")) result = scaled(v, 2, ctx.viewportW() / 100f);
-        else if (v.endsWith("vh")) result = scaled(v, 2, ctx.viewportH() / 100f);
-        else if (v.endsWith("vmin")) result = scaled(v, 4, Math.min(ctx.viewportW(), ctx.viewportH()) / 100f);
-        else if (v.endsWith("vmax")) result = scaled(v, 4, Math.max(ctx.viewportW(), ctx.viewportH()) / 100f);
-        else result = parseNumber(v); // 単位の無い数値は px とみなす（エンジンの従来の扱い）
-
         // 負のサイズと解けない値は宣言ごと無効なので、親の値を継承したのと同じになる
-        return result != null && result >= 0 ? result : parent;
-    }
-
-    private static Float scaled(String v, int unitLength, float factor) {
-        Float n = parseNumber(v.substring(0, v.length() - unitLength));
-        return n != null ? n * factor : null;
+        return !Float.isNaN(result) && result >= 0 ? result : parent;
     }
 
     /**
-     * 値の中の {@code <number>em} / {@code <number>rem} を px に置き換える。
-     * 文字列リテラルと {@code url()} の中、識別子の一部（{@code h1em} など）は触らない。
+     * 値の中のフォント相対の長さ（{@code em} / {@code rem} / {@code lh} / {@code rlh} / {@code cap} / {@code ch} / {@code ex}）・
+     * コンテナ単位と絶対長さ（{@code pt} / {@code pc} / {@code in} / {@code cm} / {@code mm} / {@code q}）を px に置き換える。
+     * 置き換えるのは寸法のトークンだけで、文字列・{@code url()}・識別子・16 進の色の中は触らない。
+     * コンテナを知らない文脈の {@code cq*} は、仕様どおり小ビューポート単位（{@code vw} / {@code vh} …）に直す。
      */
-    static String absolutizeFontRelative(String value, float fontSize, float rootFontSize) {
-        if (value.indexOf("em") < 0 && value.indexOf("EM") < 0) return value;
-        StringBuilder out = null;
-        int len = value.length();
-        int i = 0;
-        int copied = 0;
-        while (i < len) {
-            char c = value.charAt(i);
-            if (c == '"' || c == '\'') {
-                int end = value.indexOf(c, i + 1);
-                i = end < 0 ? len : end + 1;
-                continue;
-            }
-            if (regionStartsWithIgnoreCase(value, i, "url(")) {
-                int end = value.indexOf(')', i);
-                i = end < 0 ? len : end + 1;
-                continue;
-            }
-            boolean numberStart = Character.isDigit(c)
-                    || (c == '.' && i + 1 < len && Character.isDigit(value.charAt(i + 1)));
-            boolean signed = (c == '-' || c == '+') && i + 1 < len
-                    && (Character.isDigit(value.charAt(i + 1)) || value.charAt(i + 1) == '.');
-            if ((numberStart || signed) && !isIdentChar(i > 0 ? value.charAt(i - 1) : ' ')) {
-                int numEnd = i + 1;
-                while (numEnd < len && (Character.isDigit(value.charAt(numEnd)) || value.charAt(numEnd) == '.')) numEnd++;
-                int unitEnd = numEnd;
-                while (unitEnd < len && Character.isLetter(value.charAt(unitEnd))) unitEnd++;
-                String unit = value.substring(numEnd, unitEnd).toLowerCase(Locale.ROOT);
-                float base = "em".equals(unit) ? fontSize : "rem".equals(unit) ? rootFontSize : -1f;
-                Float number = base >= 0 ? parseNumber(value.substring(i, numEnd)) : null;
-                if (number != null) {
-                    if (out == null) out = new StringBuilder(len + 8);
-                    out.append(value, copied, i).append(px(number * base));
-                    copied = unitEnd;
+    static String absolutizeUnits(String value, Metrics metrics) {
+        boolean[] changed = {false};
+        List<ComponentValue> values = CssSyntax.parseComponentValues(value);
+        String result = CssSyntax.serialize(values, token -> {
+            if (token.type() != Type.DIMENSION) return token.raw();
+            String unit = token.unit().toLowerCase(Locale.ROOT);
+            String replacement = replaceUnit(token, unit, metrics);
+            if (replacement == null) return token.raw();
+            changed[0] = true;
+            return replacement;
+        });
+        return changed[0] ? result : value;
+    }
+
+    /** 換算して置き換える文字列。換算しない単位（px・ビューポート単位・時間・角度など）は null。 */
+    private static String replaceUnit(Token token, String unit, Metrics metrics) {
+        float n = (float) token.number();
+        switch (unit) {
+            case "px", "vw", "vh", "vmin", "vmax", "vi", "vb", "svw", "svh", "svmin", "svmax", "svi", "svb",
+                 "lvw", "lvh", "lvmin", "lvmax", "lvi", "lvb", "dvw", "dvh", "dvmin", "dvmax", "dvi", "dvb":
+                return null;
+            case "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax":
+                if (!containerKnows(unit, metrics)) {
+                    // コンテナが無い: 小ビューポート単位にする（レイアウトがビューポートで解く）
+                    String viewportUnit = switch (unit) {
+                        case "cqw", "cqi" -> "vw";
+                        case "cqh", "cqb" -> "vh";
+                        case "cqmin" -> "vmin";
+                        default -> "vmax";
+                    };
+                    return numberText(token.number()) + viewportUnit;
                 }
-                i = unitEnd;
-                continue;
+                return px(n * LengthResolver.lengthUnitInPixels(unit, metrics));
+            case "em", "rem", "lh", "rlh", "cap", "ic", "ch", "ex":
+                return px(n * LengthResolver.lengthUnitInPixels(unit, metrics));
+            default: {
+                float absolute = LengthResolver.absoluteToPixels(1f, unit);
+                return Float.isNaN(absolute) ? null : px(n * absolute);
             }
-            i++;
         }
-        if (out == null) return value;
-        out.append(value, copied, len);
-        return out.toString();
     }
 
+    /** そのコンテナ単位が使う軸（幅・高さ）の寸法を、問い合わせコンテナが答えられるか。 */
+    private static boolean containerKnows(String unit, Metrics metrics) {
+        boolean width = !Float.isNaN(metrics.containerW());
+        boolean height = !Float.isNaN(metrics.containerH());
+        return switch (unit) {
+            case "cqw", "cqi" -> width;
+            case "cqh", "cqb" -> height;
+            default -> width && height;
+        };
+    }
+
+    private static String numberText(double number) {
+        return number == Math.rint(number) ? Long.toString((long) number) : Double.toString(number);
+    }
+
+    /** {@code currentcolor} を色の値で置き換える。識別子の一部（{@code mycurrentcolor}）は触らない。 */
     private static String replaceCurrentColor(String value, String color) {
-        String lower = value.toLowerCase(Locale.ROOT);
-        int idx = lower.indexOf("currentcolor");
-        if (idx < 0 || color == null) return value;
-        StringBuilder out = new StringBuilder();
-        int copied = 0;
-        while (idx >= 0) {
-            boolean boundary = (idx == 0 || !isIdentChar(lower.charAt(idx - 1)))
-                    && (idx + 12 >= lower.length() || !isIdentChar(lower.charAt(idx + 12)));
-            if (boundary) {
-                out.append(value, copied, idx).append(color);
-                copied = idx + 12;
+        if (color == null || !value.toLowerCase(Locale.ROOT).contains("currentcolor")) return value;
+        boolean[] changed = {false};
+        String result = CssSyntax.serialize(CssSyntax.parseComponentValues(value), token -> {
+            if (token.type() == Type.IDENT && token.value().equalsIgnoreCase("currentcolor")) {
+                changed[0] = true;
+                return color;
             }
-            idx = lower.indexOf("currentcolor", idx + 12);
-        }
-        out.append(value, copied, value.length());
-        return out.toString();
-    }
-
-    private static boolean isIdentChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '#';
-    }
-
-    private static boolean regionStartsWithIgnoreCase(String s, int at, String prefix) {
-        return s.regionMatches(true, at, prefix, 0, prefix.length());
+            return token.raw();
+        });
+        return changed[0] ? result : value;
     }
 
     private static String trimmed(String s) {
@@ -286,11 +348,11 @@ final class ValueComputer {
     /**
      * どのプロパティにも書ける CSS 全域キーワード。
      *
-     * {@code revert} はカスケードの中で（UA オリジンの値に巻き戻すので、オリジンが分かる場所で）、
+     * {@code revert} / {@code revert-layer} はカスケードの中で（巻き戻し先のオリジン・レイヤーが分かる場所で）、
      * それ以外は算出値を決める段（{@link ValueComputer}）で解く。
      */
     public enum CssWideKeyword {
-        INHERIT, INITIAL, UNSET, REVERT;
+        INHERIT, INITIAL, UNSET, REVERT, REVERT_LAYER;
 
         /** 値が CSS 全域キーワードならそれを、そうでなければ null を返す。 */
         public static CssWideKeyword of(String value) {
@@ -299,8 +361,8 @@ final class ValueComputer {
                 case "inherit" -> INHERIT;
                 case "initial" -> INITIAL;
                 case "unset" -> UNSET;
-                // revert-layer はカスケードレイヤーを持たないので revert と同じになる
-                case "revert", "revert-layer" -> REVERT;
+                case "revert" -> REVERT;
+                case "revert-layer" -> REVERT_LAYER;
                 default -> null;
             };
         }

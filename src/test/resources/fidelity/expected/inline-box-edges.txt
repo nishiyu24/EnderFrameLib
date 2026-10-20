@@ -1,0 +1,12 @@
+row 8 8 300 20 0 sw=300 sh=26 cw=300 ch=20 display=block position=static box-sizing=content-box overflow=visible
+s 14 22 104 12 0 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+a 26 8 40 20 0 sw=40 sh=20 cw=40 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+b 66 8 40 20 0 sw=40 sh=20 cw=40 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+c 124 18 30 10 0 sw=30 sh=10 cw=30 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+row2 8 38 300 10 0 sw=300 sh=15 cw=300 ch=10 display=block position=static box-sizing=content-box overflow=visible
+o 8 43 68 10 1 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+n 17 47 30 2 0 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+d 22 38 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+e 50 38 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+empty 76 46 16 4 0 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+f 92 38 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

@@ -7,19 +7,54 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * core/ が Minecraft / NeoForge / 上位層に依存しない純 Java のリーフであることを守る番人。
  * これが無いと、次に追加されたコードで MC への import がすぐ戻ってくる。
+ *
+ * <p>あわせて STRUCTURE_PLAN.md の T0 で決めた管理指標（M1〜M9）を上限値として持つ。
+ * ここに書いた数は「今の作業ツリーの実測値」で、フェーズを進めて数を減らしたら
+ * 同じコミットで上限も下げる。増えた場合は CI で落ちる。</p>
  */
 public class ArchitectureTest {
 
-    private static final Path CORE = Paths.get("src/main/java/com/nishiyu/enderframelib/core");
+    private static final Path MAIN = Paths.get("src/main/java/com/nishiyu/enderframelib");
+    private static final Path CORE = MAIN.resolve("core");
+    private static final Path TEST = Paths.get("src/test/java/com/nishiyu/enderframelib");
+
+    /** M1: セッション ID をキーにした static な状態を持つクラス（2026-10-20 時点: 1。ClientWebManager の登録簿のみ）。 */
+    private static final int M1_MAX_SESSION_STATE_OWNERS = 1;
+    /** M2: フォーカス状態の持ち場（2026-10-20 時点: 1。InteractionState のみ）。 */
+    private static final int M2_MAX_FOCUS_STATE_OWNERS = 1;
+    /** M3: ClientWebManager の public static メソッド（2026-10-20 時点: 54）。 */
+    private static final int M3_MAX_CLIENT_WEB_MANAGER_PUBLIC_STATIC = 54;
+    /** M4: テンプレート・バインディングを解釈するクラス（2026-10-20 時点: 6）。 */
+    private static final int M4_MAX_BINDING_INTERPRETERS = 6;
+    /** M5: スタイル→ボックス→レイアウト→ディスプレイリストを組む場所（2026-10-20 時点: 2）。 */
+    private static final int M5_MAX_PIPELINE_BUILDERS = 2;
+    /** M6: 入力をイベントに変える経路（2026-10-20 時点: 3）。 */
+    private static final int M6_MAX_INPUT_ENTRY_POINTS = 3;
+    /** M7: 2 つ以上のパッケージから参照される入れ子型（2026-10-20 時点: 26。api は公開面のまとまりとして除外）。 */
+    private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 26;
+    /** M8: CSS 値を文字列で分割する自前の関数（2026-10-20 時点: 8）。 */
+    private static final int M8_MAX_CSS_SPLIT_HELPERS = 8;
+    /** M9: トップレベルのファイル数（参考値。2026-10-20 時点: 125）。 */
+    private static final int M9_MAX_TOP_LEVEL_FILES = 125;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {
@@ -32,6 +67,59 @@ public class ArchitectureTest {
             "com.nishiyu.enderframelib.network.",
     };
 
+    /**
+     * 消した型の名前。文書に残ると、利用者が存在しないクラスを探すことになる。
+     * STRUCTURE_PLAN.md は「これから消すもの」を書く計画なので対象外。
+     */
+    private static final List<String> REMOVED_TYPE_NAMES = List.of(
+            "UIRenderer",
+            "UIElement",
+            "WebStateStore",
+            "DomDiffEngine",
+            "InteractionHandler",
+            "DeclarativeBindingManager",
+            "WebViewport",
+            "WebActionRouter",
+            "DragDropController",
+            "SelectDropdownWidget",
+            "WebRenderCore",
+            "WebAnimator",
+            "WebCanvasContext",
+            "WebTextareaEditor",
+            "IWebActionReceiver",
+            "IWebScreenBlockEntity",
+            "IWebSessionProvider",
+            "core.model",
+            "core.text"
+    );
+
+    private static final List<Path> DOCUMENTS = List.of(
+            Paths.get("README.md"),
+            Paths.get("CONTRIBUTING.md"),
+            Paths.get("FIDELITY.md"),
+            Paths.get("REFACTORING_PLAN.md")
+    );
+
+    /** S4 の 3 経路。ここが増えたら入力の直し漏れがまた起きる。 */
+    private static final List<String> INPUT_ENTRY_POINTS = List.of(
+            "client/ClientScreenInteractionManager.java",
+            "client/gui/EnderScreenDelegate.java",
+            "client/ClientDomEventDispatcher.java"
+    );
+
+    private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
+    private static final Pattern CLEAR_SESSION = Pattern.compile("\\bstatic\\s+void\\s+clearSession(?:State)?\\s*\\(");
+    private static final Pattern FOCUS_STATE_FIELD =
+            Pattern.compile("\\b(?:String|Element|HtmlNode)\\s+(?:focusedElementBaseId|activeElement|focusedNode)\\b");
+    private static final Pattern NESTED_TYPE = Pattern.compile(
+            "(?m)^\\s+(?:@[\\w.]+\\s+)*(?:public|protected|private)?\\s*(?:static\\s+)?(?:final\\s+)?"
+                    + "(?:abstract\\s+)?(?:sealed\\s+)?(?:non-sealed\\s+)?(?:class|interface|record|enum)\\s+"
+                    + "([A-Za-z_$][\\w$]*)");
+    private static final Pattern SPLIT_METHOD = Pattern.compile(
+            "\\bstatic\\s+(?:final\\s+)?[\\w.$<>\\[\\],? ]+?\\s+(split\\w*)\\s*\\(\\s*(?:final\\s+)?String\\b");
+    private static final Pattern NEW_LAYOUT_BOX = Pattern.compile("\\bnew\\s+LayoutBox\\s*\\(");
+    private static final Pattern MEASURE_CALL = Pattern.compile("\\.measure\\s*\\(");
+
     @Test
     public void testCorePackageIsPureJava() throws IOException {
         // パスが見つからない＝実行ディレクトリが想定外。黙ってスキップすると番人が無力化するので失敗させる
@@ -41,15 +129,11 @@ public class ArchitectureTest {
 
         List<String> violations = new ArrayList<>();
 
-        try (Stream<Path> paths = Files.walk(CORE)) {
-            for (Path path : paths.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".java"))
-                    .toList()) {
-                String content = Files.readString(path);
-                for (String forbidden : FORBIDDEN) {
-                    if (content.contains(forbidden)) {
-                        violations.add(CORE.relativize(path) + " → " + forbidden);
-                    }
+        for (Path path : javaFiles(CORE)) {
+            String content = Files.readString(path);
+            for (String forbidden : FORBIDDEN) {
+                if (content.contains(forbidden)) {
+                    violations.add(CORE.relativize(path) + " → " + forbidden);
                 }
             }
         }
@@ -59,5 +143,298 @@ public class ArchitectureTest {
                     + String.join("\n  ", violations)
                     + "\n依存が必要な場合は core/ 側にインターフェース（フック）を定義し、上位層から注入してください。");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // T0 のラチェット（M1〜M9）
+    // ------------------------------------------------------------------
+
+    @Test
+    public void testM1SessionStateOwnersDoNotGrow() throws IOException {
+        List<String> owners = new ArrayList<>();
+        for (Path path : javaFiles(MAIN.resolve("client"))) {
+            if (CLEAR_SESSION.matcher(Files.readString(path)).find()) {
+                owners.add(relative(path));
+            }
+        }
+        assertAtMost("M1 セッション状態の static な持ち主", M1_MAX_SESSION_STATE_OWNERS, owners,
+                "セッションごとの状態は SessionContext のフィールドにしてください（STRUCTURE_PLAN S1）。");
+    }
+
+    @Test
+    public void testM2FocusStateOwnersDoNotGrow() throws IOException {
+        List<String> owners = new ArrayList<>();
+        for (Path path : javaFiles(MAIN)) {
+            if (FOCUS_STATE_FIELD.matcher(Files.readString(path)).find()) {
+                owners.add(relative(path));
+            }
+        }
+        assertAtMost("M2 フォーカス状態の持ち場", M2_MAX_FOCUS_STATE_OWNERS, owners,
+                "ノードをキーにした対話状態は InteractionState に集めてください（STRUCTURE_PLAN S2）。");
+    }
+
+    @Test
+    public void testM3ClientWebManagerPublicStaticDoesNotGrow() throws IOException {
+        Path file = MAIN.resolve("client/ClientWebManager.java");
+        int count = countMatches(Files.readString(file), "\\bpublic\\s+static\\b");
+        assertMetricAtMost("M3 ClientWebManager の public static", M3_MAX_CLIENT_WEB_MANAGER_PUBLIC_STATIC,
+                count, "セッションを 1 回引いたら、そのオブジェクトのメソッドにしてください（STRUCTURE_PLAN S3）。");
+    }
+
+    @Test
+    public void testM4BindingInterpretersDoNotGrow() throws IOException {
+        List<String> interpreters = new ArrayList<>();
+        for (Path path : mainFilesUnderClientOrCoreDom()) {
+            String rel = mainRelative(path);
+            String content = Files.readString(path);
+            boolean hasTemplate = content.contains("\"{{\"");
+            boolean hasI18n = content.contains("data-i18n");
+            boolean hasVirtualList = content.contains("data-scroll-y")
+                    || content.contains("data-container-width")
+                    || content.contains("data-visible-rows");
+            if (hasTemplate || hasI18n || hasVirtualList || bindingAttributeCount(content) >= 2) {
+                interpreters.add(rel);
+            }
+        }
+        assertAtMost("M4 テンプレート・バインディングの解釈", M4_MAX_BINDING_INTERPRETERS, interpreters,
+                "解釈は core/dom の 1 クラスに寄せてください（STRUCTURE_PLAN S6）。");
+    }
+
+    @Test
+    public void testM5PipelineBuildersDoNotGrow() throws IOException {
+        List<String> builders = new ArrayList<>();
+        List<Path> roots = List.of(MAIN.resolve("client"), MAIN.resolve("common"));
+        for (Path root : roots) {
+            for (Path path : javaFiles(root)) {
+                String content = Files.readString(path);
+                if (NEW_LAYOUT_BOX.matcher(content).find() && MEASURE_CALL.matcher(content).find()) {
+                    builders.add(relative(path));
+                }
+            }
+        }
+        assertAtMost("M5 スタイル→レイアウト→ディスプレイリストの組み立て", M5_MAX_PIPELINE_BUILDERS, builders,
+                "入口は UiDocumentCompiler の 1 つにしてください（STRUCTURE_PLAN S7）。");
+    }
+
+    @Test
+    public void testM6InputEntryPointsDoNotGrow() throws IOException {
+        List<String> missing = new ArrayList<>();
+        List<String> found = new ArrayList<>();
+        for (String entry : INPUT_ENTRY_POINTS) {
+            Path path = MAIN.resolve(entry);
+            if (Files.isRegularFile(path)) {
+                found.add(entry);
+            } else {
+                missing.add(entry);
+            }
+        }
+        assertTrue(missing.isEmpty(), "入力経路の番人が見ているファイルがありません: " + missing);
+        assertAtMost("M6 入力をイベントに変える経路", M6_MAX_INPUT_ENTRY_POINTS, found,
+                "ホストごとの座標変換だけを残し、入力処理は 1 本にしてください（STRUCTURE_PLAN S4）。");
+    }
+
+    @Test
+    public void testM7CrossPackageNestedTypesDoNotGrow() throws IOException {
+        Map<String, NestedType> nested = collectNestedTypes();
+        Map<String, Set<String>> references = new LinkedHashMap<>();
+        nested.keySet().forEach(key -> references.put(key, new LinkedHashSet<>()));
+
+        for (Path path : javaFiles(MAIN)) {
+            String content = Files.readString(path);
+            String pkg = packageOf(content, path);
+            for (Map.Entry<String, NestedType> entry : nested.entrySet()) {
+                NestedType type = entry.getValue();
+                if (pkg.equals(type.ownerPackage)) continue;
+                Pattern qualified = Pattern.compile("\\b" + Pattern.quote(type.owner) + "\\."
+                        + Pattern.quote(type.name) + "\\b");
+                if (qualified.matcher(content).find()) {
+                    references.get(entry.getKey()).add(pkg);
+                }
+            }
+        }
+
+        List<String> leaked = new ArrayList<>();
+        for (Map.Entry<String, Set<String>> entry : references.entrySet()) {
+            if (entry.getValue().size() >= 2) {
+                NestedType type = nested.get(entry.getKey());
+                leaked.add(entry.getKey() + " [" + type.ownerPackage + "] ← "
+                        + String.join(", ", entry.getValue()));
+            }
+        }
+        assertAtMost("M7 2 つ以上のパッケージから参照される入れ子型", M7_MAX_CROSS_PACKAGE_NESTED_TYPES, leaked,
+                "複数の層から使う型はトップレベルへ出してください（STRUCTURE_PLAN S8・CONTRIBUTING）。");
+    }
+
+    @Test
+    public void testM8CssSplitHelpersDoNotGrow() throws IOException {
+        List<String> helpers = new ArrayList<>();
+        for (Path path : javaFiles(MAIN)) {
+            String rel = mainRelative(path);
+            String content = Files.readString(path);
+            if (rel.equals("core/css/CssParser.java")) {
+                // CssTokenizer は互換のための薄い窓口。中の split* は数えず、窓口自体を 1 つと数える。
+                if (content.contains("class CssTokenizer")) helpers.add(rel + "#CssTokenizer");
+                continue;
+            }
+            boolean cssScope = rel.startsWith("core/css/")
+                    || rel.equals("core/layout/BoxTreeBuilder.java")
+                    || rel.equals("core/layout/GridLayoutEngine.java")
+                    || rel.equals("client/renderer/BoxDecorations.java");
+            if (!cssScope) continue;
+            Matcher matcher = SPLIT_METHOD.matcher(content);
+            while (matcher.find()) {
+                helpers.add(rel + "#" + matcher.group(1));
+            }
+        }
+        assertAtMost("M8 CSS 値を文字列で分割する関数", M8_MAX_CSS_SPLIT_HELPERS, helpers,
+                "CssSyntax のコンポーネント値に寄せてください（STRUCTURE_PLAN S10）。");
+    }
+
+    @Test
+    public void testM9TopLevelFileCountDoesNotGrow() throws IOException {
+        int count = javaFiles(MAIN).size();
+        assertMetricAtMost("M9 トップレベルのファイル数", M9_MAX_TOP_LEVEL_FILES, count,
+                "ファイルを増やす前に、責務を統合できないか検討してください（STRUCTURE_PLAN S8）。");
+    }
+
+    // ------------------------------------------------------------------
+    // 文書・テストの置き場所（S8）
+    // ------------------------------------------------------------------
+
+    @Test
+    public void testTestPackagesFollowMainPackages() throws IOException {
+        Set<String> mainPackages = new HashSet<>();
+        for (Path path : javaFiles(MAIN)) {
+            mainPackages.add(packageOf(Files.readString(path), path));
+        }
+
+        List<String> violations = new ArrayList<>();
+        for (Path path : javaFiles(TEST)) {
+            String pkg = packageOf(Files.readString(path), path);
+            if (pkg.equals("com.nishiyu.enderframelib.wpt") || pkg.startsWith("com.nishiyu.enderframelib.wpt.")) {
+                continue; // WPT の移植ハーネスはテスト専用のパッケージ
+            }
+            boolean covered = mainPackages.contains(pkg)
+                    || mainPackages.stream().anyMatch(main -> main.startsWith(pkg + "."));
+            if (!covered) {
+                violations.add(relative(TEST.getParent().getParent().getParent()) + "/"
+                        + relative(path) + " → " + pkg);
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "本体に対応するパッケージが無いテストがあります。テストのパッケージを本体に合わせてください:\n  "
+                        + String.join("\n  ", violations));
+    }
+
+    @Test
+    public void testDocumentsDoNotMentionRemovedTypes() throws IOException {
+        List<String> violations = new ArrayList<>();
+        for (Path document : DOCUMENTS) {
+            if (!Files.isRegularFile(document)) continue;
+            String content = Files.readString(document);
+            for (String removed : REMOVED_TYPE_NAMES) {
+                if (content.contains(removed)) {
+                    violations.add(document + " → " + removed);
+                }
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "消した型の名前が文書に残っています。現在の名前へ直すか、名前を出さずに説明してください:\n  "
+                        + String.join("\n  ", violations));
+    }
+
+    // ------------------------------------------------------------------
+    // helpers
+    // ------------------------------------------------------------------
+
+    private static List<Path> javaFiles(Path root) throws IOException {
+        assertTrue(Files.isDirectory(root),
+                "ソースディレクトリが見つかりません: " + root.toAbsolutePath()
+                        + " (テストはプロジェクトルートを作業ディレクトリとして実行してください)");
+        try (Stream<Path> paths = Files.walk(root)) {
+            return paths.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static List<Path> mainFilesUnderClientOrCoreDom() throws IOException {
+        List<Path> files = new ArrayList<>();
+        for (Path path : javaFiles(MAIN)) {
+            String rel = mainRelative(path);
+            boolean clientRoot = rel.startsWith("client/") && !rel.startsWith("client/gui/");
+            boolean coreDom = rel.startsWith("core/dom/");
+            if (clientRoot || coreDom) files.add(path);
+        }
+        return files;
+    }
+
+    private static int bindingAttributeCount(String content) {
+        int count = 0;
+        for (String attribute : List.of(
+                "\"data-model\"", "\"data-bind\"", "\"data-if\"", "\"data-show\"",
+                "\"data-for\"", "\"data-list\"", "\"data-class\"", "\"data-channel\"",
+                "\"data-hud-\"", "\"data-tracker-\"")) {
+            if (content.contains(attribute)) count++;
+        }
+        return count;
+    }
+
+    private static Map<String, NestedType> collectNestedTypes() throws IOException {
+        Map<String, NestedType> nested = new LinkedHashMap<>();
+        for (Path path : javaFiles(MAIN)) {
+            String content = Files.readString(path);
+            String pkg = packageOf(content, path);
+            if (pkg.startsWith("com.nishiyu.enderframelib.api")) continue;
+            String owner = path.getFileName().toString().replace(".java", "");
+            Matcher matcher = NESTED_TYPE.matcher(content);
+            while (matcher.find()) {
+                String name = matcher.group(1);
+                if (name.equals(owner)) continue;
+                nested.putIfAbsent(owner + "." + name, new NestedType(owner, name, pkg));
+            }
+        }
+        return nested;
+    }
+
+    private static String packageOf(String content, Path path) {
+        Matcher matcher = PACKAGE.matcher(content);
+        if (!matcher.find()) {
+            fail("package 宣言がありません: " + path);
+        }
+        return matcher.group(1);
+    }
+
+    private static int countMatches(String content, String regex) {
+        Matcher matcher = Pattern.compile(regex).matcher(content);
+        int count = 0;
+        while (matcher.find()) count++;
+        return count;
+    }
+
+    private static String relative(Path path) {
+        return path.toString().replace('\\', '/');
+    }
+
+    /** MAIN からの相対パス（`client/...` のような層判定に使う）。 */
+    private static String mainRelative(Path path) {
+        return relative(MAIN.relativize(path));
+    }
+
+    private static void assertAtMost(String metric, int limit, Collection<String> found, String advice) {
+        if (found.size() > limit) {
+            fail("【ラチェット違反】 " + metric + " が上限 " + limit + " を超えました（実測 " + found.size() + "）:\n  "
+                    + String.join("\n  ", found)
+                    + "\n" + advice);
+        }
+    }
+
+    private static void assertMetricAtMost(String metric, int limit, int actual, String advice) {
+        assertTrue(actual <= limit,
+                "【ラチェット違反】 " + metric + " が上限 " + limit + " を超えました（実測 " + actual + "）。\n" + advice);
+    }
+
+    private record NestedType(String owner, String name, String ownerPackage) {
     }
 }

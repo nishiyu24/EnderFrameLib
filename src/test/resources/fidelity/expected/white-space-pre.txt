@@ -1,1 +1,1 @@
-box 8 8 200 60 0
+box 8 8 200 60 0 sw=200 sh=60 cw=200 ch=60 display=block position=static box-sizing=content-box overflow=visible

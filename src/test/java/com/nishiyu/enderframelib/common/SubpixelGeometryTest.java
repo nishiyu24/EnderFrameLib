@@ -1,10 +1,10 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.client.renderer.UIRenderer;
+import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -57,16 +57,16 @@ public class SubpixelGeometryTest {
 
     @Test
     public void testRoundedElementsTileWithoutGaps() {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument(THIRDS, "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument(THIRDS, "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
-        List<UIElement> elements = new UIRenderer(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
+        List<DisplayItem> elements = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
                 .render(root);
 
-        UIElement a = findElement(elements, "a_bg");
-        UIElement b = findElement(elements, "b_bg");
-        UIElement c = findElement(elements, "c_bg");
+        DisplayItem a = findElement(elements, "a_bg");
+        DisplayItem b = findElement(elements, "b_bg");
+        DisplayItem c = findElement(elements, "c_bg");
         // 幅をそれぞれ丸めると 33 + 33 + 33 で 1px 足りなくなる。辺を丸めれば隣と接し、合計は親の幅に一致する
         assertEquals(a.x() + a.width(), b.x(), "a と b の間に隙間か重なりがある");
         assertEquals(b.x() + b.width(), c.x(), "b と c の間に隙間か重なりがある");
@@ -74,8 +74,8 @@ public class SubpixelGeometryTest {
     }
 
     private static LayoutBox layout(String html) {
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument(html, "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument(html, "", VIEWPORT_W, VIEWPORT_H);
         return parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
     }
 
@@ -89,8 +89,8 @@ public class SubpixelGeometryTest {
         return null;
     }
 
-    private static UIElement findElement(List<UIElement> elements, String id) {
-        for (UIElement el : elements) {
+    private static DisplayItem findElement(List<DisplayItem> elements, String id) {
+        for (DisplayItem el : elements) {
             if (id.equals(el.id())) return el;
         }
         assertNotNull(null, id + " の描画要素が無い");

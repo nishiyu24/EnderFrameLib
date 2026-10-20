@@ -1,15 +1,17 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ConstraintSpace;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ConstraintSpace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutEngineState;
-import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
-import com.nishiyu.enderframelib.core.text.TextShaper;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -104,11 +106,12 @@ public class LayoutBox {
         }
     }
 
-    public LayoutBox findByNodeId(String id) {
-        if (id == null || id.isEmpty()) return null;
-        if (node != null && id.equals(node.getId())) return this;
+    /** {@code target} の節に対応する箱を、この部分木から探す。 */
+    public LayoutBox findByNode(HtmlNode target) {
+        if (target == null) return null;
+        if (node == target) return this;
         for (LayoutBox child : children) {
-            LayoutBox found = child.findByNodeId(id);
+            LayoutBox found = child.findByNode(target);
             if (found != null) return found;
         }
         return null;
@@ -148,8 +151,8 @@ public class LayoutBox {
         if (cb == null) {
             return new ContainingBlock(0, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
         }
-        float cbScrollX = ctx.scrollState().getScrollX(cb.node.getId());
-        float cbScrollY = ctx.scrollState().getScrollY(cb.node.getId());
+        float cbScrollX = ctx.scrollState().getScrollX(cb.node);
+        float cbScrollY = ctx.scrollState().getScrollY(cb.node);
         float cbX = cb.x + cb.bL - cbScrollX;
         float cbY = cb.y + cb.bT - cbScrollY;
         float cbW = Math.max(0, cb.w - cb.bL - cb.bR);
@@ -159,6 +162,15 @@ public class LayoutBox {
 
     /** この要素に対話状態（:hover / :active / :focus 等）のセレクタが関与するか。 */
     public boolean hasInteractiveRules = false;
+
+    /**
+     * {@code ::marker} の規則をカスケードして得た算出スタイル（リスト項目だけ）。規則が 1 つも掛からなければ null で、
+     * マーカーはリスト項目の継承値で描く。{@link BoxTreeBuilder} がマーカーの箱を作るときに読む。
+     */
+    public ComputedStyle markerStyle = null;
+
+    /** 入力欄（input / textarea）の {@code ::placeholder} の算出スタイル。規則が掛からなければ null。描画側が文字色を読む。 */
+    public ComputedStyle placeholderStyle = null;
 
     public float x, y, w, h;
     public String displayText = "";
@@ -196,6 +208,12 @@ public class LayoutBox {
 
     public float scrollWidth = 0;
     public float scrollHeight = 0;
+    /**
+     * 子孫の境界ボックスの右端・下端（この箱の左上からの距離）。クリップされない子孫のはみ出しを含み、
+     * マージンと内側の padding は含まない。親の {@link #scrollWidth} / {@link #scrollHeight} が読む。
+     */
+    private float descendantOverflowRight = 0;
+    private float descendantOverflowBottom = 0;
 
     /** min-content 幅のメモ化。flex の shrink ループから何度も問われるため。 */
     private float cachedMinContentWidth = -1;
@@ -269,6 +287,7 @@ public class LayoutBox {
     }
 
     private float computeMinContentWidth(LayoutContext ctx) {
+        if (containsInlineSize()) return horizontalDecoration();
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
@@ -392,8 +411,8 @@ public class LayoutBox {
             this.y = refY + mT;
         }
 
-        float scrollX = ctx.scrollState().getScrollX(node.getId());
-        float scrollY = ctx.scrollState().getScrollY(node.getId());
+        float scrollX = ctx.scrollState().getScrollX(node);
+        float scrollY = ctx.scrollState().getScrollY(node);
 
         float innerX = this.x + pL + bL - scrollX;
         float innerY = this.y + pT + bT - scrollY + contentOffsetY;
@@ -462,16 +481,22 @@ public class LayoutBox {
         if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
     }
 
-    /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
-    public boolean isScrollContainer() {
-        String overflow = style.getOrDefault(CssProperty.OVERFLOW, "visible");
-        return scrolls(style.getOrDefault(CssProperty.OVERFLOW_X, overflow))
-                || scrolls(style.getOrDefault(CssProperty.OVERFLOW_Y, overflow));
+    /**
+     * 横方向の size containment（{@code container-type: size | inline-size}）。この箱の横の寸法は中身で決まらない:
+     * shrink-to-fit の幅や min-content の幅に中身は寄与しない（CSS Containment 3 §3）。
+     */
+    public boolean containsInlineSize() {
+        return style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize();
     }
 
-    private static boolean scrolls(String overflow) {
-        String v = overflow.trim();
-        return !v.equals("visible") && !v.equals("clip");
+    /** 縦方向の size containment（{@code container-type: size}）。高さが {@code auto} でも中身の高さは寄与しない。 */
+    public boolean containsBlockSize() {
+        return style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize();
+    }
+
+    /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
+    public boolean isScrollContainer() {
+        return style.overflowX().scrolls() || style.overflowY().scrolls();
     }
 
     private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
@@ -492,17 +517,31 @@ public class LayoutBox {
      */
     private void updateScrollExtent(float scrollX, float scrollY) {
         ScrollExtent extent = new ScrollExtent(this.x + pL + bL, this.y + pT + bT);
+        // 子孫の境界ボックスの和。クリップしない子は、その子孫のはみ出しも親のはみ出しになる（CSS Overflow 3 §2.2）
+        ScrollExtent descendants = new ScrollExtent(this.x + this.w, this.y + this.h);
         for (LayoutBox child : children) {
             if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) || child.isAbsolute) continue;
             extent.include(child, scrollX, scrollY);
+            descendants.include(child.x + child.w + scrollX, child.y + child.h + scrollY);
+            if (!child.clipsOverflow()) {
+                descendants.include(child.x + child.descendantOverflowRight + scrollX,
+                        child.y + child.descendantOverflowBottom + scrollY);
+            }
         }
         if (engineState != null) engineState.contributeScrollExtent(extent, scrollX, scrollY);
 
-        this.scrollWidth = Math.max(this.w, extent.right() - this.x + pR + bR);
-        this.scrollHeight = Math.max(this.h, extent.bottom() - this.y + pB + bB);
+        this.descendantOverflowRight = descendants.right() - this.x;
+        this.descendantOverflowBottom = descendants.bottom() - this.y;
+        this.scrollWidth = Math.max(Math.max(this.w, extent.right() - this.x + pR + bR), descendantOverflowRight);
+        this.scrollHeight = Math.max(Math.max(this.h, extent.bottom() - this.y + pB + bB), descendantOverflowBottom);
     }
 
-    /** インライン整形で 1 行に置かれた断片（テキスト 1 語、またはインラインブロック 1 つ）。 */
+    /** はみ出しを切る・スクロールさせる（{@code overflow} が {@code visible} 以外）か。切られた中身は親のはみ出しにならない。 */
+    private boolean clipsOverflow() {
+        return style.overflowX().clips() || style.overflowY().clips();
+    }
+
+    /** インライン整形で 1 行に置かれた断片（テキスト 1 語、インラインブロック 1 つ、またはインラインボックスの 1 行分）。 */
     public static class InlineFragment {
         public LayoutBox box;
         public float x, y, w, h;
@@ -514,6 +553,11 @@ public class LayoutBox {
         public float baseline;
         public String text;
         public List<LayoutBox> parents;
+        /**
+         * インラインボックスの断片が、箱の開始端（左の border・padding・角丸）と終了端（右）を持つか。
+         * 行をまたぐ箱は最初の断片だけが開始端を、最後の断片だけが終了端を持つ（{@code box-decoration-break: slice}）。
+         */
+        public boolean startEdge = true, endEdge = true;
 
         public InlineFragment(LayoutBox box, float x, float y, float w, float h, String text) {
             this.box = box;
@@ -621,9 +665,9 @@ public class LayoutBox {
          */
         public Display blockified(ComputedStyle style) {
             if (outer != Outer.INLINE) return this;
-            String position = style.getOrDefault(CssProperty.POSITION, "static");
-            boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position)
-                    || !"none".equals(style.getOrDefault(CssProperty.FLOAT, "none"));
+            CssKeywords.Position position = style.keywordOf(CssProperty.POSITION, CssKeywords.Position.class);
+            boolean outOfFlow = position == CssKeywords.Position.ABSOLUTE || position == CssKeywords.Position.FIXED
+                    || style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE;
             return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;
         }
 

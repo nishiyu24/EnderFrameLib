@@ -1,2 +1,2 @@
-box 8 8 100 50 0
-tight 8 58 20 20 0
+box 8 8 100 50 0 sw=90 sh=40 cw=90 ch=40 display=block position=static box-sizing=border-box overflow=visible
+tight 8 58 20 20 0 sw=20 sh=20 cw=20 ch=20 display=block position=static box-sizing=border-box overflow=visible

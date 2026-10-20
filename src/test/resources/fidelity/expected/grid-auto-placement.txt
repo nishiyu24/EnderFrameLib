@@ -1,6 +1,6 @@
-grid 8 8 300 60 1
-a 8 8 100 30 0
-b 108 8 100 30 0
-c 208 8 100 30 0
-d 8 38 100 30 0
-e 108 38 100 30 0
+grid 8 8 300 60 1 sw=300 sh=60 cw=300 ch=60 display=grid position=static box-sizing=content-box overflow=visible
+a 8 8 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+b 108 8 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+c 208 8 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+d 8 38 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+e 108 38 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible

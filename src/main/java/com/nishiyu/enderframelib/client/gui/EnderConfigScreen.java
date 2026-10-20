@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client.gui;
 
 import com.nishiyu.enderframelib.api.config.EnderConfigManager;
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -15,7 +15,7 @@ import java.util.Objects;
  * {@link EnderConfigManager} に登録された設定モデルを、Web標準HTML5フォームとして描画・編集するConfig画面。
  * NeoForgeの {@code IConfigScreenFactory} に1行で登録でき、カスタムHTMLテンプレートやリアルタイム検索にも対応する。
  */
-public class EnderConfigScreen extends AbstractWebScreen {
+public class EnderConfigScreen extends AbstractEnderScreen {
 
     private final Screen parentScreen;
     private final String modId;
@@ -61,8 +61,8 @@ public class EnderConfigScreen extends AbstractWebScreen {
             this.state.set(spec.key(), spec.getCurrentValueAsString());
         }
         if (this.config.configMeta != null && !this.config.configMeta.customTemplate().isEmpty()) {
-            String customHtml = UIParser.resourceTextResolver != null
-                    ? UIParser.resourceTextResolver.apply(this.config.configMeta.customTemplate())
+            String customHtml = UiDocumentCompiler.resourceTextResolver != null
+                    ? UiDocumentCompiler.resourceTextResolver.apply(this.config.configMeta.customTemplate())
                     : null;
             if (customHtml != null && !customHtml.isEmpty()) {
                 return customHtml;

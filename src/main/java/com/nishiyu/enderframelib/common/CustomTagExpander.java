@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.dom.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser.NodeId;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
@@ -161,7 +162,7 @@ public final class CustomTagExpander {
             HtmlNode span = element("span");
             span.attrs.put("style", "position:absolute;left:0;top:0;width:100%;height:100%;"
                     + "text-align:center;color:#ffffff;text-shadow:true;font-size:0.75rem;");
-            HtmlNode text = HtmlNode.createTextNode(label);
+            HtmlNode text = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(label);
             text.setId(NodeId.generateTextId());
             appendChild(span, text);
             appendChild(bar, span);
@@ -193,7 +194,7 @@ public final class CustomTagExpander {
      * ID は同じ文書を再パースすれば同じ順で振られるため、DOM 差分の照合に使える。
      */
     private static HtmlNode element(String tag) {
-        HtmlNode node = new HtmlNode(tag);
+        HtmlNode node = new HtmlElement(tag);
         node.setId(NodeId.generateId());
         return node;
     }

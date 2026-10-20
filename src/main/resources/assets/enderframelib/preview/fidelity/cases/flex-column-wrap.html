@@ -1,0 +1,12 @@
+<!-- column + wrap は高さで列に折り返す。shrink-to-fit の幅は列の幅（と column-gap）の和、max-height で折り返すときの高さは最も高い列。 -->
+<div id="cw" style="display: flex; flex-direction: column; flex-wrap: wrap; height: 50px; width: 200px;">
+  <div id="a" style="height: 20px; width: 30px;"></div><div id="b" style="height: 20px; width: 40px;"></div><div id="c" style="height: 20px; width: 20px;"></div>
+</div>
+<div id="cm" style="display: flex; flex-direction: column; flex-wrap: wrap; max-height: 50px; width: 200px;">
+  <div id="d" style="height: 20px; width: 30px;"></div><div id="e" style="height: 20px; width: 40px;"></div><div id="f" style="height: 20px; width: 20px;"></div>
+</div>
+<div id="fl" style="float: left;">
+  <div id="cg" style="display: flex; flex-direction: column; flex-wrap: wrap; height: 50px; column-gap: 5px;">
+    <div id="g" style="height: 20px; width: 30px;"></div><div id="h" style="height: 20px; width: 40px;"></div><div id="i" style="height: 20px; width: 20px; margin-left: 4px;"></div>
+  </div>
+</div>

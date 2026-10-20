@@ -75,6 +75,8 @@ neoForge {
 
 configurations {
     runtimeClasspath.extendsFrom localRuntime
+    testCompileClasspath.extendsFrom compileClasspath
+    testRuntimeClasspath.extendsFrom runtimeClasspath
 }
 
 dependencies {
@@ -82,7 +84,7 @@ dependencies {
     implementation 'net.java.dev.jna:jna-platform:5.14.0'
 
     // core/ は slf4j でログを出すため、ヘッドレステストの実行にも必要
-    testImplementation 'org.slf4j:slf4j-api:2.0.18'
+    testImplementation 'org.slf4j:slf4j-api:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -136,10 +138,13 @@ idea {
 tasks.named('test', Test) {
     useJUnitPlatform()
 
+    testLogging {
+        showStandardStreams = true
+    }
     // -D で渡したフラグは Gradle デーモンのプロパティになるだけで、テスト JVM には伝わらない。
     // CONTRIBUTING に書いてある -Dgolden.update=true が黙って無効になっていたため明示的に渡す。
     // inputs.property があるのは、フラグを変えただけでは UP-TO-DATE で素通りしてしまうため。
-    ['golden.update', 'fidelity.dump'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
         def value = System.getProperty(key)
         if (value != null) systemProperty key, value
         inputs.property key, value ?: ''
