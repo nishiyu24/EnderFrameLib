@@ -1,0 +1,4 @@
+a 8 8 100 10 0 sw=100 sh=10 cw=100 ch=10 display=block position=static box-sizing=content-box overflow=visible
+b 8 18 50 10 0 sw=50 sh=10 cw=50 ch=10 display=block position=static box-sizing=content-box overflow=visible
+c 8 28 70 10 0 sw=70 sh=10 cw=70 ch=10 display=block position=static box-sizing=content-box overflow=visible
+d 8 38 150 10 0 sw=150 sh=10 cw=150 ch=10 display=block position=static box-sizing=content-box overflow=visible

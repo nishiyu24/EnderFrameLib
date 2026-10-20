@@ -1,3 +1,3 @@
-col 8 8 100 100 0
-a 8 8 100 20 0
-b 8 88 100 20 0
+col 8 8 100 100 0 sw=100 sh=100 cw=100 ch=100 display=flex position=static box-sizing=content-box overflow=visible
+a 8 8 100 20 0 sw=100 sh=20 cw=100 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 8 88 100 20 0 sw=100 sh=20 cw=100 ch=20 display=block position=static box-sizing=content-box overflow=visible

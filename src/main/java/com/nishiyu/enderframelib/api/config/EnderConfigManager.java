@@ -5,8 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.nishiyu.enderframelib.EnderFrameLib;
 import net.neoforged.fml.loading.FMLPaths;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Reader;
 import java.io.Writer;
@@ -46,6 +47,7 @@ import java.util.function.Function;
  */
 public class EnderConfigManager {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("enderframelib-config");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Map<String, RegisteredConfig> CONFIGS = new ConcurrentHashMap<>();
     /** 登録・ロード・保存の read-modify-write を直列化する。 */
@@ -144,7 +146,7 @@ public class EnderConfigManager {
                     }
                 }
             } catch (Exception e) {
-                EnderFrameLib.LOGGER.warn("設定値 {} に \"{}\" を設定できませんでした: {}",
+                LOGGER.warn("設定値 {} に \"{}\" を設定できませんでした: {}",
                         key, rawValue, e.toString());
             }
             return false;
@@ -155,7 +157,7 @@ public class EnderConfigManager {
                 try {
                     field.set(targetInstance, defaultValue);
                 } catch (Exception e) {
-                    EnderFrameLib.LOGGER.warn("設定値 {} を既定値に戻せませんでした: {}", key, e.toString());
+                    LOGGER.warn("設定値 {} を既定値に戻せませんでした: {}", key, e.toString());
                 }
             }
         }
@@ -311,7 +313,7 @@ public class EnderConfigManager {
                     // 型が合わない値を黙って捨てると、設定ファイルを直接編集した利用者が
                     // 「保存したのに反映されない」状態に気づけない
                     if (!spec.setFromString(valEl.getAsString())) {
-                        EnderFrameLib.LOGGER.warn(
+                        LOGGER.warn(
                                 "設定 {} の値 \"{}\" を {} として解釈できなかったため、既定値 {} を使います ({})",
                                 spec.key(), valEl.getAsString(), spec.field().getType().getSimpleName(),
                                 spec.defaultValue(), reg.filePath.getFileName());
@@ -320,7 +322,7 @@ public class EnderConfigManager {
             }
             if (notify) reg.notifyListeners();
         } catch (Exception e) {
-            EnderFrameLib.LOGGER.warn("Failed to load config for {}: {}", modId, e.getMessage());
+            LOGGER.warn("Failed to load config for {}: {}", modId, e.getMessage());
         }
     }
 
@@ -363,7 +365,7 @@ public class EnderConfigManager {
 
             if (notify) reg.notifyListeners();
         } catch (Exception e) {
-            EnderFrameLib.LOGGER.error("Failed to save config for {}: {}", modId, e.getMessage());
+            LOGGER.error("Failed to save config for {}: {}", modId, e.getMessage());
         }
     }
 

@@ -1,14 +1,15 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
-import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
-import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -76,7 +77,7 @@ public class LayoutMetricsTest {
     }
 
     private static LayoutBox textBox(String text, String... keyValues) {
-        return new LayoutBox(HtmlNode.createTextNode(text), style(keyValues));
+        return new LayoutBox(new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(text), style(keyValues));
     }
 
     private static ComputedStyle style(String... keyValues) {

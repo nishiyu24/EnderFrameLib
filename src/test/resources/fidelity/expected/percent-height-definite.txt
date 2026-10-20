@@ -1,0 +1,8 @@
+fx 8 8 300 100 0 sw=300 sh=100 cw=300 ch=100 display=flex position=static box-sizing=content-box overflow=visible
+item 8 8 20 100 0 sw=20 sh=100 cw=20 ch=100 display=block position=static box-sizing=content-box overflow=visible
+ic 8 8 20 50 0 sw=20 sh=50 cw=20 ch=50 display=block position=static box-sizing=content-box overflow=visible
+item2 28 8 20 100 0 sw=20 sh=100 cw=20 ch=100 display=flex position=static box-sizing=content-box overflow=visible
+ic2 28 8 20 40 0 sw=20 sh=40 cw=20 ch=40 display=block position=static box-sizing=content-box overflow=visible
+gr 8 108 300 60 1 sw=300 sh=60 cw=300 ch=60 display=grid position=static box-sizing=content-box overflow=visible
+gi 8 108 300 60 0 sw=300 sh=60 cw=300 ch=60 display=block position=static box-sizing=content-box overflow=visible
+gc 8 108 20 60 0 sw=20 sh=60 cw=20 ch=60 display=block position=static box-sizing=content-box overflow=visible

@@ -1,0 +1,11 @@
+ib 8 8 60 20 1 sw=60 sh=20 cw=60 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+a 8 8 60 10 0 sw=60 sh=10 cw=60 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+b 8 18 30 10 0 sw=30 sh=10 cw=30 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+c 38 18 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+fl 8 28 70 20 1 sw=70 sh=20 cw=70 ch=20 display=block position=static box-sizing=content-box overflow=visible
+d 8 28 40 10 0 sw=40 sh=10 cw=40 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+e 8 38 70 10 0 sw=70 sh=10 cw=70 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+fx 8 48 304 20 0 sw=304 sh=20 cw=304 ch=20 display=flex position=static box-sizing=content-box overflow=visible
+it 8 48 50 20 0 sw=50 sh=20 cw=50 ch=20 display=block position=static box-sizing=content-box overflow=visible
+g 8 48 50 10 0 sw=50 sh=10 cw=50 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+h 8 58 25 10 0 sw=25 sh=10 cw=25 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

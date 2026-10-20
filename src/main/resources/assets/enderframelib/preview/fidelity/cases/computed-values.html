@@ -1,0 +1,7 @@
+<!-- 計算値の列（opacity / transform / color）が期待値と比較されていることの確認。
+     transform は幾何を動かさない恒等行列にして、矩形の比較と混ざらないようにする。 -->
+<div id="opacity" data-fidelity-properties="opacity" style="width: 40px; height: 20px; opacity: 0.5;"></div>
+<div id="transform" data-fidelity-properties="transform" style="width: 30px; height: 10px; transform: matrix(1, 0, 0, 1, 0, 0);"></div>
+<div id="color-parent" data-fidelity-properties="color" style="color: rgb(10, 20, 30);">
+  <div id="color-child" data-fidelity-properties="color" style="height: 10px;"></div>
+</div>

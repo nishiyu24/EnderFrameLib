@@ -1,0 +1,18 @@
+# EnderFrameLib R0 performance baseline
+#
+# 形式: <document>\t<restyleMs>\t<relayoutMs>\t<displayListMs>\t<scrollStepMs>
+# 単位はミリ秒。PerformanceBenchmarkTest が同じ文書を測り、この値と比べる。
+# 一致判定は「実測 <= 基準値 * factor + slackMs」。既定は factor=2.0 / slackMs=3.0。
+#
+# 基準値は 2026-10-20 に Windows / JDK 21 で 3 回測った中央値。
+# マシンが変わって恒久的に遅い/速い場合は、次のコマンドで更新して差分を確認する:
+#   ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true
+# 一時的な環境差は -Dbenchmark.factor=... / -Dbenchmark.slackMs=... で緩められる。
+#
+# ベンチは「R1 / R5 の前後で同じ文書がどう変わったか」を見るためのもの。
+# 500ms のゆるい上限だけでは、2 倍遅くなっても通ってしまうためこのファイルを持つ。
+baseline.factor=2.0
+baseline.slackMs=3.0
+showcase.html	9.1	10.6	3.3	12.4
+guidebook.md	6.7	3.6	2.7	5.0
+large-list (500 items)	17.6	7.8	9.2	12.8

@@ -1,4 +1,4 @@
-line 8 8 300 40 0
-tall 8 8 20 40 0
-top 28 8 20 10 0
-bottom 48 38 20 10 0
+line 8 8 300 40 0 sw=300 sh=40 cw=300 ch=40 display=block position=static box-sizing=content-box overflow=visible
+tall 8 8 20 40 0 sw=20 sh=40 cw=20 ch=40 display=inline-block position=static box-sizing=content-box overflow=visible
+top 28 8 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+bottom 48 38 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

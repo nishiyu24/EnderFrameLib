@@ -1,18 +1,19 @@
 package com.nishiyu.enderframelib.core.event;
 
+import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
+import com.nishiyu.enderframelib.api.event.UIEvents;
+import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 /**
  * HTML 標準の既定動作（Default Actions）。
  *
- * a (href), label (for / 包含), summary / details, checkbox / radio, button[type=submit/reset]
- * などの標準ブラウザ動作を一箇所に集約する。
+ * a (href), label (for / 包含), summary / details, checkbox / radio,
+ * button[type=submit/reset], フォーカス移動, スクロール, テキスト入力などの標準ブラウザ動作を一箇所に集約する。
  */
 public class StandardDefaultActions {
 
@@ -28,21 +29,38 @@ public class StandardDefaultActions {
 
         /** フォームのアクション実行 (onsubmit, onreset 等)。 */
         void executeFormAction(HtmlNode form, String eventType);
+
+        /** フォーカス移動。 */
+        default void setFocus(HtmlNode node) {}
+
+        /** ホイールスクロール。 */
+        default void scroll(double deltaX, double deltaY) {}
     }
 
-    public static void execute(DomEvent event, Context ctx) {
+    public static void execute(Event event, Context ctx) {
         if (event == null || event.isDefaultPrevented()) return;
-        HtmlNode target = event.target();
-        if (target == null) return;
+        Object targetObj = event.getTarget();
+        if (!(targetObj instanceof HtmlNode target)) return;
 
-        String type = event.type().toLowerCase(Locale.ROOT);
+        String type = event.getType().toLowerCase(Locale.ROOT);
 
-        if ("click".equals(type)) {
-            handleClick(target, ctx);
+        switch (type) {
+            case "click" -> handleClick(target, ctx);
+            case "wheel" -> handleWheel(event, ctx);
+            case "keydown" -> handleKeyDown(event, target, ctx);
         }
     }
 
+    public static void execute(DomEvent event, Context ctx) {
+        execute((Event) event, ctx);
+    }
+
     private static void handleClick(HtmlNode target, Context ctx) {
+        // フォーカス移動（クリックされたフォーカス可能要素へフォーカス）
+        if (isNaturallyFocusable(target) && ctx != null) {
+            ctx.setFocus(target);
+        }
+
         // 1. summary / details
         HtmlNode summaryNode = findSelfOrAncestor(target, "summary");
         if (summaryNode != null && summaryNode.parent != null && "details".equalsIgnoreCase(summaryNode.parent.tag)) {
@@ -66,7 +84,7 @@ public class StandardDefaultActions {
                 if (labelNode.attrs.containsKey("for")) {
                     String targetId = labelNode.attrs.get("for");
                     HtmlNode root = getRoot(labelNode);
-                    HtmlNode control = findNodeById(root, targetId);
+                    HtmlNode control = root.getElementById(targetId);
                     if (control != null && ctx != null) {
                         ctx.dispatchClickTo(control);
                         return;
@@ -82,7 +100,7 @@ public class StandardDefaultActions {
             }
         }
 
-        // 3. input[type=checkbox]
+        // 3. input[type=checkbox] / input[type=radio]
         if ("input".equalsIgnoreCase(target.tag)) {
             String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
             if ("checkbox".equals(inputType)) {
@@ -94,6 +112,9 @@ public class StandardDefaultActions {
                     target.attrs.put("checked", "true");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
                 }
+                // input / change イベントの発火
+                target.dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
+                target.dispatchEvent(new CoreEvent.CoreUIEvent("change", true, false, 0));
                 return;
             } else if ("radio".equals(inputType)) {
                 if (!target.attrs.containsKey("checked")) {
@@ -112,12 +133,14 @@ public class StandardDefaultActions {
                     }
                     target.attrs.put("checked", "true");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
+                    target.dispatchEvent(new CoreEvent.CoreUIEvent("input", true, false, 0));
+                    target.dispatchEvent(new CoreEvent.CoreUIEvent("change", true, false, 0));
                 }
                 return;
             }
         }
 
-        // 4. button[type=submit] / button[type=reset] / input[type=submit]
+        // 4. button[type=submit] / button[type=reset] / input[type=submit] / input[type=reset]
         boolean isButton = "button".equalsIgnoreCase(target.tag);
         boolean isInputBtn = "input".equalsIgnoreCase(target.tag)
                 && ("submit".equalsIgnoreCase(target.attrs.get("type")) || "reset".equalsIgnoreCase(target.attrs.get("type")));
@@ -125,12 +148,22 @@ public class StandardDefaultActions {
         if (isButton || isInputBtn) {
             String btnType = target.attrs.getOrDefault("type", isButton ? "submit" : "button").toLowerCase(Locale.ROOT);
             HtmlNode form = findSelfOrAncestor(target, "form");
-            if (form != null && ctx != null) {
+            if (form != null) {
                 if ("submit".equals(btnType)) {
-                    ctx.executeFormAction(form, "onsubmit");
+                    if (target instanceof com.nishiyu.enderframelib.api.dom.Element el) {
+                        el.requestSubmit(el);
+                    }
+                    if (ctx != null) {
+                        ctx.executeFormAction(form, "onsubmit");
+                    }
                     return;
                 } else if ("reset".equals(btnType)) {
-                    ctx.executeFormAction(form, "onreset");
+                    if (form instanceof com.nishiyu.enderframelib.api.dom.Element formEl) {
+                        formEl.reset();
+                    }
+                    if (ctx != null) {
+                        ctx.executeFormAction(form, "onreset");
+                    }
                     return;
                 }
             }
@@ -140,15 +173,52 @@ public class StandardDefaultActions {
         HtmlNode anchorNode = findSelfOrAncestor(target, "a");
         if (anchorNode != null && anchorNode.attrs.containsKey("href")) {
             String href = anchorNode.attrs.get("href");
+            // ページ内リンク（#id）は文書のフラグメント識別子を変える。:target の規則がこれを読む
+            if (href != null && href.startsWith("#")
+                    && anchorNode.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.HtmlDocument document) {
+                document.setTargetFragment(href);
+            }
             if (href != null && !href.isEmpty() && ctx != null) {
                 ctx.navigateTo(href);
             }
         }
     }
 
+    private static void handleWheel(Event event, Context ctx) {
+        if (event instanceof UIEvents.Wheel we && ctx != null) {
+            ctx.scroll(we.getDeltaX(), we.getDeltaY());
+        }
+    }
+
+    private static void handleKeyDown(Event event, HtmlNode target, Context ctx) {
+        if (event instanceof UIEvents.Keyboard ke) {
+            String key = ke.getKey();
+            if ("Enter".equals(key)) {
+                // 入力欄での Enter キーによる暗黙の送信 (Implicit submission)
+                if ("input".equalsIgnoreCase(target.tag)) {
+                    String inputType = target.attrs.getOrDefault("type", "text").toLowerCase(Locale.ROOT);
+                    if ("text".equals(inputType) || "search".equals(inputType) || "url".equals(inputType)
+                            || "email".equals(inputType) || "password".equals(inputType)) {
+                        HtmlNode form = findSelfOrAncestor(target, "form");
+                        if (form instanceof com.nishiyu.enderframelib.api.dom.Element formEl) {
+                            formEl.requestSubmit(null);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isNaturallyFocusable(HtmlNode node) {
+        if (node == null) return false;
+        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
+        if ("a".equals(tag) && node.attrs.containsKey("href")) return true;
+        return isFormControl(node);
+    }
+
     private static boolean isFormControl(HtmlNode node) {
         if (node == null) return false;
-        String tag = node.tag.toLowerCase(Locale.ROOT);
+        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
         return tag.equals("input") || tag.equals("button") || tag.equals("select") || tag.equals("textarea");
     }
 
@@ -165,16 +235,6 @@ public class StandardDefaultActions {
         HtmlNode cur = node;
         while (cur.parent != null) cur = cur.parent;
         return cur;
-    }
-
-    private static HtmlNode findNodeById(HtmlNode root, String id) {
-        if (root == null || id == null) return null;
-        if (id.equals(root.getId())) return root;
-        for (HtmlNode child : root.children) {
-            HtmlNode found = findNodeById(child, id);
-            if (found != null) return found;
-        }
-        return null;
     }
 
     private static HtmlNode findFirstFormControl(HtmlNode root) {

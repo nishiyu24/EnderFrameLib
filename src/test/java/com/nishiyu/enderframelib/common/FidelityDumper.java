@@ -1,10 +1,10 @@
 package com.nishiyu.enderframelib.common;
 
-import com.nishiyu.enderframelib.client.renderer.UIRenderer;
+import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -12,7 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -59,17 +61,17 @@ final class FidelityDumper {
         return readResource(CASE_DIR + caseName + ".html");
     }
 
-    /** ケースをレイアウトして、id 付き要素の矩形を文書順に返す。 */
-    static Map<String, Rect> dump(String caseName) {
+    /** ケースをレイアウトして、id 付き要素の幾何・スクロール量・計算値を文書順に返す。 */
+    static Map<String, Snapshot> dump(String caseName) {
         // ケースは body の中身として書かれている。ブラウザ側（fidelity-dump.html）と同じく、
         // パーサが html / head / body を暗黙に補う（W7。W6 まではここで包んでいた）
-        UIParser parser = new UIParser();
-        UIParser.Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        UiDocumentCompiler.Document doc = parser.parseDocument(caseHtml(caseName), "", VIEWPORT_W, VIEWPORT_H);
         LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(),
                 new ScrollState(), FontResolver.FALLBACK);
 
         // 描画順は本番の描画と同じ並べ替えから取る（W5 で描画モデルを替えてもこの経路のまま）
-        List<LayoutBox> painted = new UIRenderer(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
+        List<LayoutBox> painted = new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState())
                 .paintOrder(root);
 
         // ルート箱はパーサが作る合成ノード（html_root）なので、著者が書いた要素だけを拾う。
@@ -84,10 +86,72 @@ final class FidelityDumper {
             if (boxes.containsValue(box)) paintedWithId.add(box);
         }
 
-        Map<String, Rect> rects = new LinkedHashMap<>();
-        boxes.forEach((id, box) -> rects.put(id,
-                new Rect(box.x, box.y, box.w, box.h, stackDepthAtCenter(box, paintedWithId))));
-        return rects;
+        List<String> caseProps = declaredProperties(caseHtml(caseName));
+
+        Map<String, Snapshot> snapshots = new LinkedHashMap<>();
+        boxes.forEach((id, box) -> snapshots.put(id, createSnapshot(box, paintedWithId, caseProps)));
+        return snapshots;
+    }
+
+    private static Snapshot createSnapshot(LayoutBox box, List<LayoutBox> paintedWithId, List<String> caseProps) {
+        float x = box.x;
+        float y = box.y;
+        float w = box.w;
+        float h = box.h;
+        int z = stackDepthAtCenter(box, paintedWithId);
+
+        boolean isInlineNonBfc = box.display != null && box.display.isInlineLevel() && !box.establishesBfc;
+        float cw = isInlineNonBfc ? 0 : Math.max(0, w - box.bL - box.bR);
+        float ch = isInlineNonBfc ? 0 : Math.max(0, h - box.bT - box.bB);
+
+        float sw = isInlineNonBfc ? 0 : Math.max(cw, (box.scrollWidth > 0 ? box.scrollWidth : w) - box.bL - box.bR);
+        float sh = isInlineNonBfc ? 0 : Math.max(ch, (box.scrollHeight > 0 ? box.scrollHeight : h) - box.bT - box.bB);
+
+        Map<String, String> computed = new LinkedHashMap<>();
+        computed.put("display", computeDisplay(box));
+        computed.put("position", box.style.getOrDefault(CssProperty.POSITION, "static"));
+        computed.put("box-sizing", box.style.getOrDefault(CssProperty.BOX_SIZING, "content-box"));
+        computed.put("overflow", computeOverflow(box));
+
+        Set<String> allProps = new LinkedHashSet<>(caseProps);
+        String elProps = box.node.attrs.get("data-fidelity-properties");
+        if (elProps != null) {
+            for (String p : elProps.split(",")) {
+                String trimmed = p.trim().toLowerCase(java.util.Locale.ROOT);
+                if (!trimmed.isEmpty()) allProps.add(trimmed);
+            }
+        }
+        for (String p : allProps) {
+            if (!computed.containsKey(p)) {
+                String val = box.style.get(p);
+                if (val != null) computed.put(p, val.trim());
+            }
+        }
+
+        return new Snapshot(x, y, w, h, z, sw, sh, cw, ch, computed);
+    }
+
+    private static String computeDisplay(LayoutBox box) {
+        String disp = box.style.get(CssProperty.DISPLAY);
+        if (disp != null) return disp.trim().toLowerCase(java.util.Locale.ROOT);
+        if (box.display != null) {
+            if (box.display.isInlineLevel()) return "inline";
+            return "block";
+        }
+        return "block";
+    }
+
+    private static String computeOverflow(LayoutBox box) {
+        String ox = box.style.get(CssProperty.OVERFLOW_X);
+        String oy = box.style.get(CssProperty.OVERFLOW_Y);
+        String o = box.style.get(CssProperty.OVERFLOW);
+        if (ox != null && oy != null) {
+            return ox.equals(oy) ? ox : ox + " " + oy;
+        }
+        if (o != null) return o;
+        if (ox != null) return ox;
+        if (oy != null) return oy;
+        return "visible";
     }
 
     private static void collect(LayoutBox box, Set<String> authored, Map<String, LayoutBox> out) {
@@ -111,6 +175,34 @@ final class FidelityDumper {
     }
 
     private static final Pattern AUTHORED_ID = Pattern.compile("\\bid\\s*=\\s*\"([^\"]+)\"");
+    private static final Pattern CASE_PROPERTIES = Pattern.compile(
+            "(?:<meta\\s+name=[\"']fidelity-properties[\"']\\s+content=[\"']([^\"']+)[\"']|<!--\\s*fidelity-properties:\\s*([^>]+)-->)");
+
+    /**
+     * ケースの HTML から宣言された追加プロパティのリストを抽出する。
+     * ケース全体の meta / コメントに加え、要素ごとの {@code data-fidelity-properties} も読む
+     * （ブラウザ側の fidelity-dump.html と同じ 2 経路）。
+     */
+    static List<String> declaredProperties(String html) {
+        List<String> props = new ArrayList<>();
+        Matcher m = CASE_PROPERTIES.matcher(html);
+        while (m.find()) addProperties(props, m.group(1) != null ? m.group(1) : m.group(2));
+
+        Matcher element = ELEMENT_PROPERTIES.matcher(html);
+        while (element.find()) addProperties(props, element.group(1));
+        return props;
+    }
+
+    private static void addProperties(List<String> props, String raw) {
+        if (raw == null) return;
+        for (String p : raw.split(",")) {
+            String trimmed = p.trim().toLowerCase(Locale.ROOT);
+            if (!trimmed.isEmpty() && !props.contains(trimmed)) props.add(trimmed);
+        }
+    }
+
+    private static final Pattern ELEMENT_PROPERTIES = Pattern.compile(
+            "data-fidelity-properties\\s*=\\s*[\"']([^\"']+)[\"']");
 
     /** 中心点で自分より後に描かれる（= 上に重なる）id 付き要素の数。当たらなければ -1。 */
     private static int stackDepthAtCenter(LayoutBox box, List<LayoutBox> paintOrder) {
@@ -125,10 +217,17 @@ final class FidelityDumper {
         return above;
     }
 
-    /** 矩形が点を含み、かつビューポート内で、祖先の overflow クリップで切られていないこと。 */
+    /**
+     * 矩形が点を含み、かつビューポート内で、祖先の overflow クリップで切られていないこと。
+     * 行に分かれたインラインボックスは断片で当たる（断片の間の隙間には当たらない。ブラウザと同じ）。
+     */
     private static boolean hits(LayoutBox box, float px, float py) {
         if (px < 0 || py < 0 || px >= VIEWPORT_W || py >= VIEWPORT_H) return false;
         if (!contains(box.x, box.y, box.w, box.h, px, py)) return false;
+        if (!box.inlineFragments.isEmpty()
+                && box.inlineFragments.stream().noneMatch(f -> contains(f.x, f.y, f.w, f.h, px, py))) {
+            return false;
+        }
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             String tag = a.node.tag;
             if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) continue;
@@ -143,33 +242,107 @@ final class FidelityDumper {
         return w > 0 && h > 0 && px >= x && px < x + w && py >= y && py < y + h;
     }
 
-    /** 期待値ファイル（と、ブラウザ側の出力）の読み取り。 */
-    static Map<String, Rect> parseDump(String text) {
-        Map<String, Rect> rects = new LinkedHashMap<>();
+    /** 期待値ファイル（と、ブラウザ側の出力）の読み取り。旧 6 列形式と拡張形式の両方を解釈する。 */
+    static Map<String, Snapshot> parseDump(String text) {
+        Map<String, Snapshot> snapshots = new LinkedHashMap<>();
         for (String line : text.split("\\R")) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-            String[] parts = trimmed.split("\\s+");
-            if (parts.length != 6) throw new IllegalArgumentException("ダンプ行の列数が 6 でない: " + trimmed);
-            rects.put(parts[0], new Rect(
-                    Float.parseFloat(parts[1]), Float.parseFloat(parts[2]),
-                    Float.parseFloat(parts[3]), Float.parseFloat(parts[4]),
-                    Integer.parseInt(parts[5])));
+            List<String> parts = splitFields(trimmed);
+            if (parts.size() < 6) throw new IllegalArgumentException("ダンプ行の列数が 6 未満: " + trimmed);
+            String id = parts.get(0);
+            float x = Float.parseFloat(parts.get(1));
+            float y = Float.parseFloat(parts.get(2));
+            float w = Float.parseFloat(parts.get(3));
+            float h = Float.parseFloat(parts.get(4));
+            int z = Integer.parseInt(parts.get(5));
+            float sw = w, sh = h, cw = w, ch = h;
+            Map<String, String> computed = new LinkedHashMap<>();
+            for (int i = 6; i < parts.size(); i++) {
+                int eq = parts.get(i).indexOf('=');
+                if (eq > 0) {
+                    String k = parts.get(i).substring(0, eq);
+                    String v = parts.get(i).substring(eq + 1);
+                    switch (k) {
+                        case "sw", "scrollWidth" -> sw = Float.parseFloat(v);
+                        case "sh", "scrollHeight" -> sh = Float.parseFloat(v);
+                        case "cw", "clientWidth" -> cw = Float.parseFloat(v);
+                        case "ch", "clientHeight" -> ch = Float.parseFloat(v);
+                        default -> computed.put(k, v);
+                    }
+                }
+            }
+            snapshots.put(id, new Snapshot(x, y, w, h, z, sw, sh, cw, ch, computed));
         }
-        return rects;
+        return snapshots;
     }
 
-    static String format(Map<String, Rect> rects) {
+    static String format(Map<String, Snapshot> snapshots) {
         StringBuilder sb = new StringBuilder();
-        rects.forEach((id, r) -> sb.append(id).append(' ').append(number(r.x)).append(' ').append(number(r.y))
-                .append(' ').append(number(r.w)).append(' ').append(number(r.h)).append(' ').append(r.z).append('\n'));
+        snapshots.forEach((id, s) -> {
+            sb.append(id).append(' ')
+                    .append(number(s.x)).append(' ')
+                    .append(number(s.y)).append(' ')
+                    .append(number(s.w)).append(' ')
+                    .append(number(s.h)).append(' ')
+                    .append(s.z).append(' ')
+                    .append("sw=").append(number(s.scrollWidth)).append(' ')
+                    .append("sh=").append(number(s.scrollHeight)).append(' ')
+                    .append("cw=").append(number(s.clientWidth)).append(' ')
+                    .append("ch=").append(number(s.clientHeight));
+            s.computed.forEach((k, v) -> sb.append(' ').append(k).append('=').append(quoteValue(v)));
+            sb.append('\n');
+        });
         return sb.toString();
+    }
+
+    /**
+     * 計算値は空白を含む（{@code rgb(10, 20, 30)}・{@code matrix(1, 0, 0, 1, 0, 0)}）。
+     * 列の区切りと衝突しないよう、空白・引用符・バックスラッシュを含む値は二重引用符で包む。
+     * ブラウザ側（fidelity-dump.html）の {@code formatValue} と同じ規則。
+     */
+    static String quoteValue(String value) {
+        boolean needsQuotes = value.chars().anyMatch(Character::isWhitespace)
+                || value.indexOf('"') >= 0 || value.indexOf('\\') >= 0;
+        if (!needsQuotes) return value;
+        return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    }
+
+    /** 1 行を、二重引用符の内側の空白を保ったままフィールドに分ける。 */
+    static List<String> splitFields(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+            } else if (inQuotes && c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (!inQuotes && Character.isWhitespace(c)) {
+                if (!current.isEmpty()) {
+                    fields.add(current.toString());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        if (inQuotes) throw new IllegalArgumentException("閉じていない引用符がある: " + line);
+        if (escaped) current.append('\\');
+        if (!current.isEmpty()) fields.add(current.toString());
+        return fields;
     }
 
     /** 整数なら小数点を付けずに書く（ブラウザ側の出力と並べて読めるように）。 */
     static String number(float v) {
         if (v == Math.rint(v)) return Integer.toString((int) v);
-        return String.format(java.util.Locale.ROOT, "%.2f", v);
+        return String.format(Locale.ROOT, "%.2f", v);
     }
 
     private static String readResource(String path) {
@@ -181,8 +354,17 @@ final class FidelityDumper {
         }
     }
 
-    /** 幾何は float のまま持つ（W2）。丸めた値で比べると ±0.5px の誤差が 2 回乗る。 */
-    record Rect(float x, float y, float w, float h, int z) {
+    /** 幾何・描画順・スクロール量・計算値をすべて保持するスナップショット。 */
+    record Snapshot(
+            float x, float y, float w, float h, int z,
+            float scrollWidth, float scrollHeight, float clientWidth, float clientHeight,
+            Map<String, String> computed
+    ) {
+        /** 互換用コンストラクタ（幾何と描画順のみ）。 */
+        Snapshot(float x, float y, float w, float h, int z) {
+            this(x, y, w, h, z, w, h, w, h, Map.of());
+        }
+
         float field(String name) {
             return switch (name) {
                 case "x" -> x;
@@ -190,21 +372,32 @@ final class FidelityDumper {
                 case "w" -> w;
                 case "h" -> h;
                 case "z" -> z;
-                default -> throw new IllegalArgumentException("未知のフィールド: " + name);
+                case "scrollWidth", "sw" -> scrollWidth;
+                case "scrollHeight", "sh" -> scrollHeight;
+                case "clientWidth", "cw" -> clientWidth;
+                case "clientHeight", "ch" -> clientHeight;
+                default -> throw new IllegalArgumentException("未知の数値フィールド: " + name);
             };
+        }
+
+        String computedValue(String property) {
+            return computed.get(property);
         }
     }
 
-    static final String[] FIELDS = {"x", "y", "w", "h", "z"};
+    static final String[] NUMERIC_FIELDS = {"x", "y", "w", "h", "z", "scrollWidth", "scrollHeight", "clientWidth", "clientHeight"};
+    static final String[] GEOMETRY_FIELDS = {"x", "y", "w", "h", "z"};
+    static final String[] FIELDS = NUMERIC_FIELDS;
 
     /**
-     * 幾何は ±0.5px、描画順は完全一致。
-     *
-     * ブラウザ側は各値を Math.round した整数を出し、エンジン側は丸める前の float を出すので、
-     * 両者の幾何が同じなら差は 0.5px 以内に収まる。W2 以前はエンジンの幾何が int で、
-     * 途中の切り捨てが溜まるぶんを ±1px で吸収していた。
+     * 幾何は ±0.5px、スクロール量は ±1.0px、描画順は完全一致。
      */
     static float tolerance(String field) {
-        return "z".equals(field) ? 0f : 0.5f;
+        return switch (field) {
+            case "z" -> 0f;
+            case "x", "y", "w", "h" -> 0.5f;
+            case "scrollWidth", "scrollHeight", "clientWidth", "clientHeight", "sw", "sh", "cw", "ch" -> 1.0f;
+            default -> 0f;
+        };
     }
 }

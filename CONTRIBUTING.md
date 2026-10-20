@@ -82,7 +82,8 @@ flex / grid の簡略化した部分（列方向の自動最小高さ・トラ�
 角丸の枠線は実線・輪郭線は角丸に沿わない、背景の未対応部分（インラインの断片の画像・グラデーションの色の途中経過・
 `background-attachment`）、フォームコントロールは OS の部品でなく legend は枠に重ねない、
 `@media` の `prefers-*` は固定値（light / 動きの抑制なし）、
-`::before` / `::after` 以外の疑似要素は照合しない、動画は Windows 専用。
+`::before` / `::after` 以外の疑似要素は照合しない、未対応の擬似クラス（`:has()` など）はセレクタごと無効、
+`ch` / `ex` は 0.5em で近似し楕円の角は小さい方の半径の円弧、動画は Windows 専用。
 忠実度コーパスで測れる差は FIDELITY.md の「既知の差異」がフェーズ別に持つ。
 
 ---
@@ -98,7 +99,7 @@ common/, server/, client/, network/  →  core/, api/ とその層
 **`core/` は純 Java のリーフである。** `net.minecraft` / `net.neoforged` /
 `com.mojang` / 上位パッケージを import してはならない（完全修飾名での参照も禁止）。
 これは `ArchitectureTest` が CI で強制する。逃げ道を作るのではなく、
-依存を反転させるか、値型を `core/model` に置いて境界で変換する。
+依存を反転させるか、値型を `core/layout` などの純 Java パッケージに置いて境界で変換する。
 
 `api/` パッケージは公開面である。ここに内部型を漏らさない。
 `api/` 以外の public 型には `@ApiStatus.Internal` を付ける。
@@ -106,15 +107,28 @@ common/, server/, client/, network/  →  core/, api/ とその層
 
 ### ファイルの分け方
 
-**1 つのクラスからしか使われない小さな型は、新しいファイルにせずそのクラスの入れ子にする。**
-record・enum・コールバック用インターフェース・数十行の補助クラスは、持ち主の末尾に
-`public static` の入れ子型として置く（例: `LayoutContext.Viewport`、`StyleSheet.StyleRule`、
-`UIElement.ElementType`、`HtmlParser.HtmlTokenizer`）。参照側は入れ子型を直接 import する。
-新しいトップレベルのファイルを作るのは、複数の層から使われる中心的な型か、
-数百行規模で独立した責務を持つものに限る。
+以前の規約は「ファイルを増やさない」ことを優先したため、複数のパッケージから使う型まで
+入れ子にし、ファイル数は減ったが読みやすさは下がった。以後は次の 6 つを守る。
+`ArchitectureTest` が M1〜M9 の上限値を持ち、増えたら CI で落とす。
 
-ただし `AbstractWebScreen` / `AbstractWebContainerScreen`（と、それらが継承する
-`WebScreenDelegate`）の public シグネチャに現れる型は下流 Mod から参照されるので、
+1. **入れ子にしてよいのは、持ち主のパッケージの外から参照されない型だけ。**
+   2 つ以上のパッケージから参照されたらトップレベルに出す（M7）。
+   record・enum・コールバック用インターフェース・数十行の補助クラスで、持ち主の外に出ないものは
+   これまでどおり入れ子でよい（例: `StyleSheet.StyleRule`、`HtmlParser.HtmlTokenizer`）。
+2. **クライアントのセッションごとの状態は `SessionContext` のフィールドにする。**
+   セッション ID をキーにした static マップを新しく作らない（M1）。
+   破棄は `SessionContext.close()` の 1 箇所に集める。
+3. **ノードを指すのはノードの参照で。** 文字列 ID は描画とネットワークの境界でだけ使い、
+   境界でノードに解決する。文字列 ID をキーにした新しい状態を作らない。
+4. **`{{…}}` と `data-*` のバインディングを解釈するのは `core/dom/Bindings` だけ。**
+   T4 で作る。それまでは既存の解釈クラスを増やさない（M4）。
+5. **CSS の値は `CssSyntax` のコンポーネント値として読む。**
+   文字列を自前で分割する関数を新しく書かない（M8）。
+6. **同じ処理の 2 つめの入口を作らない。** 既存の入口が使いにくいなら、入口のほうを直す
+   （入力経路 S4・描画パイプライン S7 の再発防止）。
+
+`AbstractEnderScreen` / `AbstractEnderContainerScreen`（と、それらが継承する
+`EnderScreenDelegate`）の public シグネチャに現れる型は下流 Mod から参照されるので、
 入れ子に移したりパッケージを変えたりしないこと。
 
 ---
@@ -130,6 +144,11 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 
 - `core/` に手を入れる変更には、素の JUnit テストを付ける。
   Minecraft の起動が要らないので、ここが唯一安く速く検証できる層。
+- **テストのパッケージは本体に合わせる。** `src/test/java` に本体の無いパッケージを作らない
+  （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。
+- **管理指標の上限は下げる方向にだけ動かす。** `ArchitectureTest` の M1〜M9 は
+  STRUCTURE_PLAN.md の T0 で記録した実測値で、フェーズの作業で数を減らしたら
+  同じコミットで上限も下げる。上げる変更は、なぜ増やしたかをレビューで説明する。
 - パーサ・レイアウトの挙動はゴールデンファイルで固定している。
   意図して出力を変えたときは:
 
@@ -146,6 +165,10 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   （`src/test/resources/fidelity/expected/`）と突き合わせる。
   幾何（x / y / w / h）は ±0.5px、描画順の列（z）は完全一致。列の定義と
   コーパスを書くときの約束は [FIDELITY.md](FIDELITY.md) の「仕組み」にある。
+  計算値の列（`opacity` / `transform` / `color` など）はケースの
+  `data-fidelity-properties` か `<meta name="fidelity-properties" content="...">` で宣言する。
+  空白を含む値はダンプで二重引用符に包む（`color="rgb(10, 20, 30)"`）。
+  宣言した列が期待値に 1 つも無いと `WebFidelityTest` が「比較されていない」として落とす。
 
   ```bash
   ./gradlew test --tests '*WebFidelityTest'
@@ -172,14 +195,36 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   **台帳に無い差異は回帰として落ち、台帳にあるのに一致した差異も「台帳が古い」として
   落ちる。** 差異を 1 つ埋めたら、同じコミットで台帳の行・コードの `LIMITATION`・
   README の "Not supported" を揃えて消す。
+- **WPT の採用ケースは manifest と台帳の両方で管理する。**
+  `src/test/resources/wpt/manifest.json` の各ケースには、固定 SHA の上流 testharness を
+  ブラウザで実行した結果を `browserExpectation`（`pass` / `fail`）として書く。
+  ブラウザと一致しないサブテストは `src/test/resources/wpt/known-divergences.txt` に
+  `<WPT のパス>#<サブテスト名> <フェーズ>: <理由>` の形で載せる
+  （例: `dom/nodes/Node-nodeType.html#Element nodeType must be 1 R2: …`）。
+  移植クラスは `WptBehaviorTest` を継承し、サブテストを `WptHarness.test(...)` で書く。
+  `WptHarness.test` は `@WptCase` のパスとサブテスト名で台帳を引き、
+  **台帳に無い失敗は回帰、台帳にあるのに通ったものは古い台帳**として落とす。
+  manifest にだけ残ったケース、台帳にだけ残ったキーも `WptManifestTest` が落とす。
+- **性能ベンチの基準値はリポジトリに固定する。**
+  `src/test/resources/benchmark/baseline.txt` が showcase.html・guidebook.md・500 項目リストの
+  再スタイル / 再レイアウト / ディスプレイリスト / スクロール 1 段の基準値を持つ。
+  `PerformanceBenchmarkTest` は「実測 <= 基準値 × factor（既定 2.0） + slack（既定 3ms）」を
+  超えたら回帰として落ちる。マシンが変わって恒久的に遅い/速い場合は
+
+  ```bash
+  ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true
+  ```
+
+  で更新し、**必ず `git diff` で数値の変化を確認してからコミットする。**
+  一時的な環境差は `-Dbenchmark.factor=2.5` / `-Dbenchmark.slackMs=10` で緩める。
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
-- **テキストの測定は `core/text` が唯一の出所。** 文字幅・ascent・descent・行間は
-  `FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
+- **テキストの測定は `core/layout` の `TextShaper` が唯一の出所。** 文字幅・ascent・descent・行間は
+  `TextShaper.FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
   折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
-  **描画側（`WebRenderCore`）でテキストを測り直さないこと。**
+  **描画側（`DisplayItemDrawer`）でテキストを測り直さないこと。**
   `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、
   予約した行数と見える行数が食い違う（F2 以前がその状態だった）。
   フォントの倍率は `fontSizePx / FontFace.BitmapFontFace.MC_UNITS_PER_EM` で、

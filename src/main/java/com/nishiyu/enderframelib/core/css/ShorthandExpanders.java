@@ -6,7 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.regex.Pattern;
+
+import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
+import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
+import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
 
 /**
  * ショートハンドの値をロングハンドの値に分ける関数群。{@link PropertyRegistry} が
@@ -36,9 +39,6 @@ final class ShorthandExpanders {
             "smaller", "larger");
     private static final Set<String> LIST_POSITIONS = Set.of("inside", "outside");
 
-    /** 単位の無い数値（flex ショートハンドで grow / shrink と basis を見分けるため）。 */
-    private static final Pattern UNITLESS_NUMBER = Pattern.compile("\\d*\\.?\\d+");
-    private static final Pattern NUMERIC_START = Pattern.compile("^[+-]?(\\d|\\.\\d).*");
 
     private ShorthandExpanders() {}
 
@@ -86,11 +86,13 @@ final class ShorthandExpanders {
     }
 
     /**
-     * {@code flex: <grow> <shrink> <basis>}。
+     * {@code flex: none | [<grow> <shrink>? || <basis>]}。grow と shrink は続けて書き、basis はその前後に置ける。
      *
      * 何が壊れていたか: この展開が無かったため {@code flex: 1} が
      * {@code flex-grow} の読み手（{@link com.nishiyu.enderframelib.core.layout.FlexLayoutEngine}）に
      * 一切届かず、ua.css の {@code th, td { flex: 1 }} が no-op で表の列幅が決まらなかった。
+     * その後も知らない語を basis に入れていた（全域キーワードの経路を通らない {@code flex: initial} が
+     * {@code 1 1 initial}、{@code flex: foo} が {@code 1 1 foo}）。
      */
     static Map<String, String> flex(String value) {
         String v = value.trim().toLowerCase();
@@ -98,14 +100,26 @@ final class ShorthandExpanders {
         switch (v) {
             case "none" -> { grow = "0"; shrink = "0"; basis = "auto"; }
             case "auto" -> { grow = "1"; shrink = "1"; basis = "auto"; }
+            case "initial" -> { grow = "0"; shrink = "1"; basis = "auto"; }
             default -> {
-                for (String part : splitTopLevelTokens(v)) {
-                    if (UNITLESS_NUMBER.matcher(part).matches()) {
-                        if (grow == null) grow = part;
-                        else if (shrink == null) shrink = part;
-                    } else if (basis == null) {
-                        basis = part;
+                List<String> parts = splitTopLevelTokens(v);
+                if (parts.isEmpty() || parts.size() > 3) return Map.of();
+                boolean previousWasGrow = false;
+                for (String part : parts) {
+                    boolean number = isUnitlessNumber(part);
+                    if (number && grow == null) {
+                        grow = part;
+                        previousWasGrow = true;
+                        continue;
                     }
+                    if (number && shrink == null && previousWasGrow) {
+                        shrink = part;
+                    } else if (basis == null && (isFlexBasis(part) || (number && Float.parseFloat(part) == 0f))) {
+                        basis = part;
+                    } else {
+                        return Map.of();
+                    }
+                    previousWasGrow = false;
                 }
                 // 単一の数値 (flex: 1) は 1 1 0%、単一の長さ (flex: 30px) は 1 1 30px
                 if (grow == null) grow = "1";
@@ -118,6 +132,61 @@ final class ShorthandExpanders {
         out.put("flex-shrink", shrink);
         out.put("flex-basis", basis);
         return out;
+    }
+
+    private static final Set<String> FLEX_BASIS_KEYWORDS = Set.of(
+            "auto", "content", "min-content", "max-content", "fit-content");
+
+    private static boolean isFlexBasis(String part) {
+        return FLEX_BASIS_KEYWORDS.contains(part) || isLengthLike(part);
+    }
+
+    /** 長さか数式（{@code 10px} / {@code 50%} / {@code calc(...)}）。単位の無い数値は含まない。 */
+    private static boolean isLengthLike(String part) {
+        String lower = part.toLowerCase();
+        if (lower.startsWith("calc(") || lower.startsWith("min(") || lower.startsWith("max(")
+                || lower.startsWith("clamp(")) {
+            return true;
+        }
+        return startsNumeric(lower) && !isUnitlessNumber(lower);
+    }
+
+    /**
+     * {@code border-radius: <横の半径>{1,4} [ / <縦の半径>{1,4} ]?} を角ごとのロングハンドへ。
+     * 縦が横と同じ角は 1 値、違う角は横と縦の 2 値にする（CSS Backgrounds 3 §5.1）。
+     *
+     * 何が壊れていたか: 以前は展開せず、描画がショートハンドの文字列だけを読んでいたので、
+     * 角ごとのロングハンドが効かなかった。
+     */
+    static Map<String, String> borderRadius(String value) {
+        List<String> tokens = splitTopLevelTokens(spaceOutSlash(value.trim()));
+        int slash = tokens.indexOf("/");
+        if (slash >= 0 && tokens.lastIndexOf("/") != slash) return Map.of();
+        List<String> horizontal = slash < 0 ? tokens : tokens.subList(0, slash);
+        List<String> vertical = slash < 0 ? horizontal : tokens.subList(slash + 1, tokens.size());
+        String[] h = radiusCorners(horizontal);
+        String[] v = radiusCorners(vertical);
+        if (h == null || v == null) return Map.of();
+        String[] corners = {"top-left", "top-right", "bottom-right", "bottom-left"};
+        Map<String, String> out = new LinkedHashMap<>();
+        for (int i = 0; i < 4; i++) {
+            out.put("border-" + corners[i] + "-radius", h[i].equals(v[i]) ? h[i] : h[i] + " " + v[i]);
+        }
+        return out;
+    }
+
+    /** 1〜4 個の半径を左上・右上・右下・左下に配る。負の値や長さでないものがあれば null。 */
+    private static String[] radiusCorners(List<String> parts) {
+        if (parts.isEmpty() || parts.size() > 4) return null;
+        for (String p : parts) {
+            if (p.startsWith("-") || !(isLengthLike(p) || isUnitlessNumber(p))) return null;
+        }
+        return switch (parts.size()) {
+            case 1 -> new String[]{parts.get(0), parts.get(0), parts.get(0), parts.get(0)};
+            case 2 -> new String[]{parts.get(0), parts.get(1), parts.get(0), parts.get(1)};
+            case 3 -> new String[]{parts.get(0), parts.get(1), parts.get(2), parts.get(1)};
+            default -> new String[]{parts.get(0), parts.get(1), parts.get(2), parts.get(3)};
+        };
     }
 
     static Map<String, String> flexFlow(String value) {
@@ -188,7 +257,7 @@ final class ShorthandExpanders {
             if (BORDER_STYLES.contains(lower) || ("auto".equals(lower) && "outline".equals(prefix))) {
                 if (out.containsKey(prefix + "-style")) return Map.of();
                 out.put(prefix + "-style", lower);
-            } else if (BORDER_WIDTH_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches()
+            } else if (BORDER_WIDTH_KEYWORDS.contains(lower) || startsNumeric(lower)
                     || lower.startsWith("calc(") || lower.startsWith("min(") || lower.startsWith("max(")
                     || lower.startsWith("clamp(")) {
                 if (out.containsKey(prefix + "-width")) return Map.of();
@@ -250,7 +319,7 @@ final class ShorthandExpanders {
                 } else if (BG_BOXES.contains(lower)) {
                     if (boxes.size() >= 2) return Map.of();
                     boxes.add(lower);
-                } else if (BG_POSITION_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches()
+                } else if (BG_POSITION_KEYWORDS.contains(lower) || startsNumeric(lower)
                         || lower.startsWith("calc(")) {
                     if (position.size() >= 4) return Map.of();
                     position.add(t);
@@ -283,7 +352,7 @@ final class ShorthandExpanders {
 
     private static boolean isBackgroundSize(String token) {
         String lower = token.toLowerCase();
-        return BG_SIZE_KEYWORDS.contains(lower) || NUMERIC_START.matcher(lower).matches() || lower.startsWith("calc(");
+        return BG_SIZE_KEYWORDS.contains(lower) || startsNumeric(lower) || lower.startsWith("calc(");
     }
 
     /** 括弧の外の {@code /} を前後の空白で区切る（{@code center/cover} を 3 語に分けるため）。 */
@@ -335,7 +404,7 @@ final class ShorthandExpanders {
             if ("normal".equals(lower)) continue;
             if (FONT_STYLES.contains(lower)) style = lower;
             else if (FONT_VARIANTS.contains(lower)) variant = lower;
-            else if (FONT_WEIGHTS.contains(lower) || lower.matches("[1-9]00")) weight = lower;
+            else if (FONT_WEIGHTS.contains(lower) || isFontWeightNumber(lower)) weight = lower;
             else if (FONT_STRETCHES.contains(lower)) continue;
             else break;
         }
@@ -354,7 +423,7 @@ final class ShorthandExpanders {
             if (lineHeight.isEmpty() && i < parts.size()) lineHeight = parts.get(i++);
         }
         String sizeLower = sizeToken.toLowerCase();
-        if (!FONT_SIZE_KEYWORDS.contains(sizeLower) && !NUMERIC_START.matcher(sizeLower).matches()
+        if (!FONT_SIZE_KEYWORDS.contains(sizeLower) && !startsNumeric(sizeLower)
                 && !sizeLower.startsWith("calc(")) {
             return Map.of();
         }
@@ -371,35 +440,63 @@ final class ShorthandExpanders {
         return out;
     }
 
-    /** 括弧内と文字列リテラル内の空白では分割しない。 */
+    /** 括弧内と文字列リテラル内の空白では分割しない（トークンの上で空白区切りにする）。 */
     static List<String> splitTopLevelTokens(String s) {
         List<String> out = new ArrayList<>(4);
-        int depth = 0;
-        int start = -1;
-        char quote = 0;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (quote != 0) {
-                if (c == quote) quote = 0;
-                continue;
-            }
-            if (c == '"' || c == '\'') {
-                quote = c;
-                if (start < 0) start = i;
-                continue;
-            }
-            if (c == '(') depth++;
-            else if (c == ')' && depth > 0) depth--;
-            if (depth == 0 && Character.isWhitespace(c)) {
-                if (start >= 0) {
-                    out.add(s.substring(start, i));
-                    start = -1;
-                }
-            } else if (start < 0) {
-                start = i;
+        for (List<ComponentValue> part : CssSyntax.splitOnWhitespace(CssSyntax.parseComponentValues(s))) {
+            out.add(CssSyntax.serialize(part));
+        }
+        return out;
+    }
+
+    /** 先頭が数値（符号付きでもよい）・寸法・割合のトークンか。 */
+    static boolean startsNumeric(String part) {
+        Token first = firstToken(part);
+        return first != null && (first.type() == Type.NUMBER || first.type() == Type.DIMENSION
+                || first.type() == Type.PERCENTAGE);
+    }
+
+    /** 符号の無い、単位も無い数値だけか（flex の grow / shrink の見分けに使う）。 */
+    static boolean isUnitlessNumber(String part) {
+        List<Token> tokens = CssSyntax.tokenize(part);
+        return tokens.size() == 1 && tokens.getFirst().type() == Type.NUMBER && !part.startsWith("+") && !part.startsWith("-");
+    }
+
+    /** {@code font-weight} の数値（1〜1000）。 */
+    static boolean isFontWeightNumber(String part) {
+        List<Token> tokens = CssSyntax.tokenize(part);
+        return tokens.size() == 1 && tokens.getFirst().type() == Type.NUMBER
+                && tokens.getFirst().number() >= 1 && tokens.getFirst().number() <= 1000;
+    }
+
+    private static Token firstToken(String part) {
+        for (Token t : CssSyntax.tokenize(part)) {
+            if (t.type() != Type.WHITESPACE) return t;
+        }
+        return null;
+    }
+
+    /**
+     * {@code container: <name>+ [ / <type> ]?}。名前は空白区切りの識別子（{@code none} は名前なし）、
+     * 種類は {@code normal} / {@code size} / {@code inline-size}。種類を省けば {@code normal}。
+     */
+    static Map<String, String> container(String value) {
+        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(value));
+        int slash = -1;
+        for (int i = 0; i < values.size(); i++) {
+            Token t = CssSyntax.tokenOf(values.get(i));
+            if (t != null && t.isDelim('/')) {
+                if (slash >= 0) return Map.of();
+                slash = i;
             }
         }
-        if (start >= 0) out.add(s.substring(start));
+        List<ComponentValue> names = slash < 0 ? values : values.subList(0, slash);
+        List<ComponentValue> type = slash < 0 ? List.of() : CssSyntax.trim(values.subList(slash + 1, values.size()));
+        if (CssSyntax.trim(names).isEmpty() || (slash >= 0 && type.size() != 1)) return Map.of();
+
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("container-name", CssSyntax.serialize(CssSyntax.trim(names)));
+        out.put("container-type", slash < 0 ? "normal" : CssSyntax.serialize(type));
         return out;
     }
 }

@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 /**
  * api/ が実装（server・common・network・client）に依存しないことを守る番人。
  *
- * <p>以前は {@code IWebSessionProvider} が具象 {@code server.WebSession} を返し、
+ * <p>以前は {@code WebSessionProvider} が具象 {@code server.WebSession} を返し、
  * {@code EnderFrameScriptingBridge} が server を 5 本・network を 1 本 import していた。
  * 下流 Mod は api だけを見てビルドするので、ここが漏れると内部変更が全て破壊的変更になる。</p>
  */

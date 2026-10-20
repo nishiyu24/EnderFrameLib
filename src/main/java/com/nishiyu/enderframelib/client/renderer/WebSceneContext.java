@@ -4,8 +4,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
-import com.nishiyu.enderframelib.client.renderer.WebRenderCore.ZLayers;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
@@ -29,26 +31,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class WebSceneContext {
 
-    private static final Map<String, Map<String, WebSceneContext>> SESSION_SCENES = new ConcurrentHashMap<>();
-
     public static WebSceneContext getOrCreate(String sessionId, String sceneId) {
-        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        String baseId = stripSceneSuffix(sceneId);
-        return SESSION_SCENES
-                .computeIfAbsent(safeSessionId, k -> new ConcurrentHashMap<>())
-                .computeIfAbsent(baseId, k -> new WebSceneContext());
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        return session.scenes().computeIfAbsent(stripSceneSuffix(sceneId), k -> new WebSceneContext());
     }
 
     public static WebSceneContext get(String sessionId, String sceneId) {
         if (sessionId == null || sceneId == null) return null;
-        Map<String, WebSceneContext> map = SESSION_SCENES.get(sessionId);
-        return map != null ? map.get(stripSceneSuffix(sceneId)) : null;
-    }
-
-    public static void clearSession(String sessionId) {
-        if (sessionId != null) {
-            SESSION_SCENES.remove(sessionId);
-        }
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        return session != null ? session.scenes().get(stripSceneSuffix(sceneId)) : null;
     }
 
     private static String stripSceneSuffix(String id) {
@@ -216,7 +207,7 @@ public class WebSceneContext {
         }
     }
 
-    public void renderScene(UIElement el, PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zOffset) {
+    public void renderScene(DisplayItem el, PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zOffset) {
         syncFromHtmlAttributes(el.events());
         if (blocks.isEmpty() || finalOpacity <= 0.01f) return;
 
@@ -260,8 +251,8 @@ public class WebSceneContext {
         BlockRenderDispatcher blockRenderer = mc.getBlockRenderer();
         Font font = mc.font;
 
-        // WebRenderCore.enableScissorRect でこれまでのバッチをフラッシュし、<mc-scene> の矩形で OpenGL Scissor を有効化
-        boolean scissorEnabled = WebRenderCore.enableScissorRect(
+        // DisplayItemDrawer.enableScissorRect でこれまでのバッチをフラッシュし、<mc-scene> の矩形で OpenGL Scissor を有効化
+        boolean scissorEnabled = DisplayItemDrawer.enableScissorRect(
                 poseStack.last().pose(), buffer,
                 el.x(), el.y(), el.x() + el.width(), el.y() + el.height()
         );

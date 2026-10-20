@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.TemplateEngine;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
@@ -24,23 +24,15 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * サーバー通信を介さず、クライアント自身のローカル状態（プレイヤー情報、FPS、座標、時刻など）および
- * 多言語翻訳（{{@i18n:key}} / {{i18n:key}} / data-i18n="key"）を仮想DOMに自動バインドするプロバイダ
- */
 public class ClientLocalEnvProvider {
 
     private static final Pattern LOCAL_PLACEHOLDER = Pattern.compile("\\{\\{@([a-zA-Z0-9_.:-]+)}}");
-    private static final Pattern I18N_PLACEHOLDER = Pattern.compile("\\{\\{@?i18n:([a-zA-Z0-9_.:-]+)}}");
     private static final Map<String, Supplier<String>> CUSTOM_PROVIDERS = new ConcurrentHashMap<>();
     private static volatile Map<String, String> CACHED_SNAPSHOT = Collections.emptyMap();
-    private static final Map<String, Long> SESSION_LAST_UPDATE = new ConcurrentHashMap<>();
-    private static final Map<String, Set<String>> SESSION_USED_KEYS = new ConcurrentHashMap<>();
-    private static final Map<String, Map<String, String>> SESSION_APPLIED_ENV = new ConcurrentHashMap<>();
     private static volatile long lastSnapshotTime = 0;
 
     static {
-        DomUtils.i18nResolver = ClientLocalEnvProvider::translateKey;
+        TemplateEngine.i18nResolver = ClientLocalEnvProvider::translateKey;
     }
 
     public static String translateKey(String key) {
@@ -58,14 +50,6 @@ public class ClientLocalEnvProvider {
         CUSTOM_PROVIDERS.put(cleanKey, supplier);
     }
 
-    public static void clearSession(String sessionId) {
-        if (sessionId != null) {
-            SESSION_LAST_UPDATE.remove(sessionId);
-            SESSION_USED_KEYS.remove(sessionId);
-            SESSION_APPLIED_ENV.remove(sessionId);
-        }
-    }
-
     public static Map<String, String> captureCurrentEnv() {
         long now = System.currentTimeMillis();
         Map<String, String> cached = CACHED_SNAPSHOT;
@@ -73,9 +57,24 @@ public class ClientLocalEnvProvider {
             return cached;
         }
 
-        Minecraft mc = Minecraft.getInstance();
+        Minecraft mc = null;
+        try {
+            mc = Minecraft.getInstance();
+        } catch (Throwable ignored) {
+        }
+
         Map<String, String> env = new HashMap<>();
-        env.put("@lang", mc.getLanguageManager().getSelected());
+        if (mc == null) {
+            env.put("@lang", "en_us");
+            env.put("@fps", "60");
+            CACHED_SNAPSHOT = env;
+            lastSnapshotTime = now;
+            return env;
+        }
+
+        String lang = (mc.getLanguageManager() != null && mc.getLanguageManager().getSelected() != null)
+                ? mc.getLanguageManager().getSelected() : "en_us";
+        env.put("@lang", lang);
         env.put("@fps", String.valueOf(mc.getFps()));
 
         if (mc.player != null && mc.level != null) {
@@ -166,19 +165,21 @@ public class ClientLocalEnvProvider {
 
     public static void tickSessionLocalVariables(String sessionId, HtmlNode templateRoot, HtmlNode virtualRoot) {
         if (templateRoot == null || virtualRoot == null) return;
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         long now = System.currentTimeMillis();
-        long lastSessionTick = SESSION_LAST_UPDATE.getOrDefault(sessionId, 0L);
-        if (now - lastSessionTick < 100) return;
-        SESSION_LAST_UPDATE.put(sessionId, now);
+        if (now - session.envLastUpdate() < 100) return;
+        session.setEnvLastUpdate(now);
 
         Map<String, String> currentEnv = captureCurrentEnv();
-        Set<String> usedKeys = SESSION_USED_KEYS.computeIfAbsent(sessionId, k -> {
+        Set<String> usedKeys = session.envUsedKeys();
+        if (usedKeys == null) {
             Set<String> keys = new java.util.HashSet<>();
             collectUsedKeys(templateRoot, keys);
-            return Collections.unmodifiableSet(keys);
-        });
+            usedKeys = Collections.unmodifiableSet(keys);
+            session.setEnvUsedKeys(usedKeys);
+        }
 
-        Map<String, String> lastApplied = SESSION_APPLIED_ENV.get(sessionId);
+        Map<String, String> lastApplied = session.envApplied();
         if (lastApplied != null) {
             boolean anyChanged = false;
             for (String key : usedKeys) {
@@ -192,7 +193,7 @@ public class ClientLocalEnvProvider {
             }
         }
 
-        SESSION_APPLIED_ENV.put(sessionId, currentEnv);
+        session.setEnvApplied(currentEnv);
         if (applyLocalVarsRecursive(templateRoot, virtualRoot, currentEnv)) {
             ClientWebManager.requestRender(sessionId);
         }
@@ -231,7 +232,7 @@ public class ClientLocalEnvProvider {
         boolean changed = applyI18nAttributes(vNode);
 
         if (origNode.text != null && (origNode.text.contains("{{@") || origNode.text.contains("{{i18n:"))) {
-            String resolved = replaceLocalPlaceholders(origNode.text, env);
+            String resolved = TemplateEngine.resolve(origNode.text, null, env);
             if (!resolved.equals(vNode.text)) {
                 vNode.text = resolved;
                 changed = true;
@@ -241,7 +242,7 @@ public class ClientLocalEnvProvider {
         for (String key : new ArrayList<>(origNode.attrs.keySet())) {
             String origVal = origNode.attrs.get(key);
             if (origVal != null && (origVal.contains("{{@") || origVal.contains("{{i18n:"))) {
-                String resolved = replaceLocalPlaceholders(origVal, env);
+                String resolved = TemplateEngine.resolve(origVal, null, env);
                 if (!resolved.equals(vNode.attrs.get(key))) {
                     vNode.attrs.put(key, resolved);
                     changed = true;
@@ -256,40 +257,5 @@ public class ClientLocalEnvProvider {
             }
         }
         return changed;
-    }
-
-    public static String replaceLocalPlaceholders(String text, Map<String, String> env) {
-        if (text == null || !text.contains("{{")) return text != null ? text : "";
-        String result = text;
-
-        if (result.contains("i18n:")) {
-            Matcher im = I18N_PLACEHOLDER.matcher(result);
-            StringBuilder sb = new StringBuilder();
-            while (im.find()) {
-                String tr = translateKey(im.group(1));
-                im.appendReplacement(sb, Matcher.quoteReplacement(tr));
-            }
-            im.appendTail(sb);
-            result = sb.toString();
-        }
-
-        if (result.contains("{{@") && env != null && !env.isEmpty()) {
-            Matcher m = LOCAL_PLACEHOLDER.matcher(result);
-            StringBuilder sb = new StringBuilder();
-            while (m.find()) {
-                String rawKey = m.group(1);
-                if (rawKey.startsWith("i18n:")) {
-                    m.appendReplacement(sb, Matcher.quoteReplacement(translateKey(rawKey.substring(5))));
-                    continue;
-                }
-                String key = "@" + rawKey;
-                String replacement = env.getOrDefault(key, m.group(0));
-                m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
-            }
-            m.appendTail(sb);
-            result = sb.toString();
-        }
-
-        return result;
     }
 }

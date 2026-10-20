@@ -1,0 +1,314 @@
+{
+  "pinnedRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+  "policy": {
+    "fontPolicy": "width-independent",
+    "scope": "in-engine-scope",
+    "browserExpectation": "Each case records whether the upstream testharness passes in a browser at pinnedRevision. Subtest-level divergences are listed with a phase in src/test/resources/wpt/known-divergences.txt."
+  },
+  "cases": [
+    {
+      "id": "dom/nodes/Node-nodeType.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies nodeType numeric values and node classification"
+    },
+    {
+      "id": "dom/nodes/Node-nodeName.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies nodeName for element and text nodes"
+    },
+    {
+      "id": "dom/nodes/Node-contains.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies Node.contains for self, descendants, and non-inclusive nodes"
+    },
+    {
+      "id": "dom/nodes/Element-hasAttribute.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies Element.hasAttribute and getAttribute lifecycle"
+    },
+    {
+      "id": "dom/nodes/Node-childNodes.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies child node ordering, insertion and removal"
+    },
+    {
+      "id": "dom/nodes/Node-appendChild.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies appendChild validation, hierarchy errors, and DocumentFragment expansion"
+    },
+    {
+      "id": "dom/nodes/Node-insertBefore.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies insertBefore positioning and reference child validation"
+    },
+    {
+      "id": "dom/nodes/Node-removeChild.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies removeChild parent unlinking and NotFoundError"
+    },
+    {
+      "id": "dom/nodes/Node-replaceChild.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies replaceChild node replacement and hierarchy validation"
+    },
+    {
+      "id": "dom/nodes/Node-compareDocumentPosition.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies compareDocumentPosition flags: contains, contained-by, preceding, following, disconnected"
+    },
+    {
+      "id": "dom/nodes/Node-cloneNode.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies cloneNode shallow vs deep copying, attribute and content preservation"
+    },
+    {
+      "id": "dom/nodes/Node-textContent.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies textContent getter and setter across Elements, Text, Comments, and Document"
+    },
+    {
+      "id": "dom/nodes/ChildNode-remove.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies ChildNode methods: remove, before, after, replaceWith"
+    },
+    {
+      "id": "dom/nodes/ParentNode-append.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies ParentNode methods: append, prepend, replaceChildren, children, firstElementChild"
+    },
+    {
+      "id": "dom/nodes/Element-classList.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies DOMTokenList operations: add, remove, toggle, contains, replace, and whitespace validation"
+    },
+    {
+      "id": "dom/nodes/Element-style.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies CSSStyleDeclaration get/setProperty, removeProperty, and style attribute bidirectional sync"
+    },
+    {
+      "id": "dom/nodes/Element-matches.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies Element.matches, closest, querySelector, and querySelectorAll"
+    },
+    {
+      "id": "dom/nodes/Document-getElementById.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies Document.getElementById O(1) index, live dynamic insertion, removal, and ID attribute mutation"
+    },
+    {
+      "id": "dom/nodes/MutationObserver-childList.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies MutationObserver childList, attributes, characterData, and subtree observation"
+    },
+    {
+      "id": "dom/events/EventTarget-addEventListener.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies EventTarget addEventListener, deduplication, and removal lifecycle"
+    },
+    {
+      "id": "dom/events/Event-dispatch-order.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies 3-phase event dispatch order: capture, target, and bubble"
+    },
+    {
+      "id": "dom/events/Event-stopImmediatePropagation.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "dom",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies stopImmediatePropagation halts subsequent listeners on current target"
+    },
+    {
+      "id": "uievents/mouse/attributes.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "uievents",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies mouse events are trusted MouseEvents and the bubbles/cancelable/composed flags (false for mouseenter and mouseleave)"
+    },
+    {
+      "id": "uievents/order-of-events/mouse-events/click-order.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "uievents",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies mousedown, mouseup, click, dblclick order for a double click"
+    },
+    {
+      "id": "uievents/order-of-events/mouse-events/mouseover-out.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "uievents",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies mouseover and mouseout order while moving between an element, its child and a sibling"
+    },
+    {
+      "id": "uievents/order-of-events/mouse-events/click-cancel.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "uievents",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Verifies the default action is canceled when the click event is canceled"
+    },
+    {
+      "id": "css/css-syntax/cdc-vs-ident-tokens.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "A CDC token before an ident-like selector is dropped, not swallowed into the ident"
+    },
+    {
+      "id": "css/css-syntax/charset-is-not-a-rule.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "@charset is not a rule and is dropped"
+    },
+    {
+      "id": "css/css-syntax/custom-property-rule-ambiguity.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "A top-level construct that looks like a custom property declaration is dropped; nested, a malformed one is skipped"
+    },
+    {
+      "id": "css/css-syntax/invalid-nested-rules.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Parsing continues after the block of an invalid nested rule"
+    },
+    {
+      "id": "css/css-syntax/trailing-braces.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "A declaration followed by a brace block is invalid"
+    },
+    {
+      "id": "css/css-syntax/at-rule-in-declaration-list.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "An unknown at-rule inside a style rule is skipped and the declarations around it survive"
+    },
+    {
+      "id": "css/css-syntax/declarations-trim-whitespace.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Custom property values are trimmed of leading and trailing whitespace and !important"
+    },
+    {
+      "id": "css/css-syntax/ident-three-code-points.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Whether a hash token is an id selector depends on the first three code points"
+    },
+    {
+      "id": "css/css-syntax/unclosed-constructs.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "Unclosed blocks at EOF are valid in selector grammars"
+    },
+    {
+      "id": "css/css-syntax/whitespace.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "CSS whitespace is exactly U+0009, U+000A, U+000C, U+000D and U+0020"
+    },
+    {
+      "id": "css/css-syntax/escaped-eof.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "A backslash at EOF becomes U+FFFD in ident, dimension and url tokens and is ignored in a string"
+    },
+    {
+      "id": "css/css-syntax/input-preprocessing.html",
+      "wptRevision": "a6f29b0bedaf3f1edba7b6739127fe8e713bfcb3",
+      "kind": "css-syntax",
+      "status": "supported",
+      "browserExpectation": "pass",
+      "description": "NULL and surrogate code points become U+FFFD before tokenization"
+    }
+  ]
+}

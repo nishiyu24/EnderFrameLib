@@ -1,3 +1,3 @@
-t 8 8 300 20 1
-a 8 8 200 20 0
-b 208 8 100 20 0
+t 8 8 300 20 1 sw=300 sh=20 cw=300 ch=20 display=table position=static box-sizing=content-box overflow=visible
+a 8 8 200 20 0 sw=200 sh=20 cw=200 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible
+b 208 8 100 20 0 sw=100 sh=20 cw=100 ch=20 display=table-cell position=static box-sizing=content-box overflow=visible

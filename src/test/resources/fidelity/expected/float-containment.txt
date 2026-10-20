@@ -1,2 +1,2 @@
-plain 8 8 300 0 -1
-bfc 8 48 300 40 0
+plain 8 8 300 0 -1 sw=300 sh=40 cw=300 ch=0 display=block position=static box-sizing=content-box overflow=visible
+bfc 8 48 300 40 0 sw=300 sh=40 cw=300 ch=40 display=block position=static box-sizing=content-box overflow=hidden

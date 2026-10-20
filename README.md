@@ -7,11 +7,14 @@ flex / grid layout, and a Minecraft renderer — so a mod can describe its scree
 and HUDs as HTML and CSS instead of hand-placing widgets and pixel offsets.
 
 - **Screens, HUDs and in-world panels** are all the same document, driven from the
-  server or from a datapack.
-- **The server owns the DOM.** Clients receive the tree and diff patches; they
-  never evaluate scripts.
-- **No browser is embedded.** The engine is ~4,400 lines of plain Java in
-  `core/`, with no dependency on Minecraft, so it is unit-testable headlessly.
+  server, from a datapack, or entirely on the client.
+- **Hybrid execution model.** Clients can drive UI independently without network
+  overhead via `EnderFrameClientAPI`. Server-driven sessions synchronize via
+  fine-grained DOM mutation records directly to the live DOM tree.
+- **Single DOM, no diff copies.** The 3-DOM-copy and virtual diff engine are
+  retired; client scripting and server packets mutate the same live DOM directly.
+- **No browser is embedded.** The engine is plain Java in `core/`, with no
+  dependency on Minecraft, so it is unit-testable headlessly.
 
 > Status: usable, pre-1.0 in practice. The supported surface is `api/`;
 > everything else is `@ApiStatus.Internal` and will move.
@@ -103,6 +106,72 @@ EnderFrameAPI.get().publish("mymod:stats", Map.of("kills", 12, "coins", 300));
 EnderFrameAPI.get().addSubscriptionCheck((player, channel) -> player.hasPermissions(2));
 ```
 
+---
+
+## Client-driven UI & Hybrid Execution Model (R3)
+
+EnderFrameLib 1.0+ supports a **hybrid execution model** where documents can be opened
+and mutated entirely on the client side without network communication, while seamlessly
+interoperating with server-driven sessions.
+
+### Client-driven screens & HUDs
+
+```java
+import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
+import com.nishiyu.enderframelib.api.dom.Document;
+import com.nishiyu.enderframelib.api.dom.Element;
+
+// Open a client-only screen and get its live Document handle
+Document doc = EnderFrameClientAPI.get().openScreen("mymod:client_menu", """
+    <div id="container">
+      <h1 id="title">Client Panel</h1>
+      <button id="actionBtn">Click</button>
+    </div>
+    """, 400, 300);
+
+// Mutate the live DOM directly via standard DOM API
+Element title = doc.getElementById("title");
+title.setTextContent("Updated by Client!");
+
+// Client listeners run first; calling preventDefault() prevents server transfer
+Element btn = doc.getElementById("actionBtn");
+btn.addEventListener("click", evt -> {
+    System.out.println("Handled on client!");
+    evt.preventDefault(); // Do not transfer to server even if onclick/data-action is present
+});
+```
+
+### Client scheduler
+
+Client-driven documents can schedule rendering and game-tick tasks. All tasks are
+automatically cancelled when the document session is closed.
+
+```java
+// Run on next render frame (equivalent to requestAnimationFrame)
+long frameTaskId = EnderFrameClientAPI.get().requestAnimationFrame(sessionId, () -> {
+    // High-frequency animation or rendering update
+});
+
+// Run with millisecond delay based on client ticks
+long timerId = EnderFrameClientAPI.get().setTimeout(sessionId, () -> {
+    doc.getElementById("title").setTextContent("Delayed update");
+}, 1000);
+```
+
+### Ownership model & Mutation sync
+
+- **Single DOM**: The previous 3-copy virtual DOM (`templateDom`, `virtualDom`, `realDom`) and the old diff-apply engine have been removed. Both client scripts and server packets operate on the single live DOM tree.
+- **Subtree Ownership**: every subtree is either server-owned or client-owned. Declare it with `data-owner="server|client"` (inherited by descendants); without it the document default applies — **server-owned** for a document synced from the server, **client-owned** for one opened on the client only (`openScreen` / `setHud` / `loadLocalHtml`).
+  - Client code *can* write into a server-owned subtree, but the next server mutation (or a full re-sync) wins and overwrites it. This is the contract, not a limitation.
+  - Server mutation records aimed at a client-owned subtree are dropped, and a re-sync keeps client-owned islands (moved to the same `id` in the new tree; they vanish only if the server removed their host).
+  - A client-opened document that the server also patches must mark those subtrees `data-owner="server"`.
+- **Server Sync**: `WebSession.patchText / patchAttribute / patchStyle / patchClass / patchInnerHtml` generate fine-grained `DomMutationRecord` packets that apply directly to target nodes without tree-wide diffing.
+- **Declared event forwarding**: an element forwards events to the server with `data-forward="<event>[:<payload>] …"` and `data-forward-action="<name[:arg]>"`; payload is one of `value`, `key`, `point`, `target`, `none` (default depends on the event). Client listeners run first; the event is sent only if nothing called `preventDefault()` and it actually reached the declaring element (bubbling and `stopPropagation()` apply).
+  `onclick="server:name"` is sugar for the same declaration, and inputs/textareas/selects inside server-owned subtrees implicitly forward `input`/`change` values for write-back. The server only accepts action names its own DOM declared (`data-forward-action` or `server:`), and the usual `canAccess` / rate-limit checks still apply.
+  The old `setForwardEventsToServer(...)` switch is gone; an unhandled action name without `server:` stays on the client.
+- **List Reuse**: `data-for` reuses existing node instances by key (`data-row-key` or index) to preserve node identity and internal state.
+
+
 ### Commands
 
 Useful without writing any Java:
@@ -191,15 +260,23 @@ horizontal rules.
 ## Supported CSS
 
 **Selectors** type, `.class`, `#id`, `*`, descendant, `>`, `+`, `~`, attribute
-(`[a]` `[a=v]` `[a^=v]` `[a$=v]` `[a*=v]` `[a~=v]` `[a|=v]`), selector lists.
-Specificity and cascade origin are tracked properly, and `!important` wins.
+(`[a]` `[a=v]` `[a^=v]` `[a$=v]` `[a*=v]` `[a~=v]` `[a|=v]`, with the `i` / `s`
+flags), selector lists, CSS escapes in names (`.sm\:hidden`). Specificity and
+cascade origin are tracked properly, and `!important` wins. A selector the
+engine does not understand is invalid, as in a browser: it matches nothing and
+drops the whole rule it is listed in.
 
 **Pseudo-classes** `:hover` `:active` `:focus` `:focus-visible` `:focus-within`
-`:checked` `:disabled` `:first-child` `:last-child` `:nth-child()` (`odd`,
-`even`, integer) `:empty` `:root` `:not()`
+`:checked` `:disabled` `:enabled` `:indeterminate` `:open` `:required`
+`:optional` `:link` `:any-link` `:visited` (never matches) `:first-child`
+`:last-child` `:only-child` `:first-of-type` `:last-of-type` `:only-of-type`
+`:nth-child()` `:nth-last-child()` `:nth-of-type()` `:nth-last-of-type()` (any
+`An+B`, `odd`, `even`) `:empty` `:root` `:scope` `:not()` `:is()` `:where()`
+(selector lists, including complex selectors)
 
 **Pseudo-elements** `::before` `::after` (`content` with strings, `attr()`,
-`counter()` and `counters()`); list items get a `::marker` box
+`counter()` and `counters()`; they follow the cascade like elements and update
+on state changes such as `:hover::after`); list items get a `::marker` box
 
 **Lists and counters** `list-style-type` (`disc` `circle` `square` `decimal`
 `decimal-leading-zero` `lower-` / `upper-alpha` / `latin` / `roman`
@@ -213,7 +290,8 @@ Specificity and cascade origin are tracked properly, and `!important` wins.
 `position` (`static` `relative` `absolute` `fixed` `sticky`) `top` `right`
 `bottom` `left` `z-index` `float` `clear` `width` `height` `min-*` `max-*` `margin` `padding` `border`
 `border-*-width` `border-style` (`solid` `dashed` `dotted` `double` `groove`
-`ridge` `inset` `outset` `none` `hidden`) `border-radius` `outline`
+`ridge` `inset` `outset` `none` `hidden`) `border-radius` and its per-corner
+longhands (`border-top-left-radius` …) `outline`
 `outline-offset` `box-sizing` `aspect-ratio` `overflow`
 `overflow-x` `overflow-y` `scrollbar-width` `visibility` `opacity`
 
@@ -251,10 +329,14 @@ CSS 2.2 Appendix E order; `background` with multiple layers,
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
 `object-fit` `cursor` `content` `src`
 
-**Units & functions** `px` `%` `em` `rem` `vw` `vh` `fr`, `calc()`, `min()`
-`max()` `clamp()`, `var()` with custom properties (nested, with fallbacks;
-cycles make the declaration invalid), `rgb()` `rgba()` `hsl()` `hsla()`, `#rgb`
-`#rrggbb` `#rrggbbaa`, named colors, `currentcolor`
+**Units & functions** `px` `%` `em` `rem` `ch` `ex` `vw` `vh` `vmin` `vmax`
+`pt` `pc` `in` `cm` `mm` `Q` `fr`, `calc()` `min()` `max()` `clamp()` (nested in
+any combination; division by zero is clamped instead of reaching layout),
+`var()` with custom properties (nested, with fallbacks; cycles make the
+declaration invalid), `rgb()` `rgba()` `hsl()` `hsla()` (comma and space
+syntax, `/ alpha`), `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`, the 148 CSS named
+colors, `transparent`, `currentcolor`. Minecraft's 16 chat colours are
+`var(--mc-red)`, `var(--mc-gold)`, `var(--mc-dark-aqua)` and so on.
 
 **Cascade** `inherit` `initial` `unset` `revert` and `all`. Children inherit
 computed values, so `font-size: 2em` does not compound down the tree.
@@ -342,6 +424,72 @@ on); themes are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 > numeric references follow the standard (`&#65` without `;` is `A`), and when
 > an attribute is repeated the first one wins.
 
+> **Breaking change — clipping, visibility and decorations.** `overflow: hidden`
+> and the `overflow-x` / `overflow-y` longhands now clip children (only the
+> shorthand's literal value used to be read, so most clipping silently did
+> nothing), and a scroll container now cuts off its content. An absolutely
+> positioned descendant is clipped only by boxes that contain it, so a
+> dropdown inside a non-positioned `overflow: hidden` box is no longer cut off,
+> and `position: fixed` is not clipped by ancestors. `visibility: hidden` hides
+> a box (keeping its space) and stops it from receiving clicks, while a
+> `visibility: visible` descendant still shows. `pointer-events: none` now lets
+> clicks through. A rounded border paints only the border area, so a
+> transparent box with `border-radius` and a border is no longer filled with the
+> border colour. `box-shadow` follows its offsets, blur, spread, `inset` and
+> lists of shadows (it used to be a fixed small drop shadow), and
+> `linear-gradient()` uses its angle and every colour stop.
+
+> **Breaking change — dynamic restyling and pseudo-elements.** `::before` and
+> `::after` now go through the normal cascade (a later shorthand overrides an
+> earlier longhand, `!important` and CSS-wide keywords behave as on elements),
+> and element rules such as `span { ... }` no longer leak into them. They follow
+> state changes, so `:hover::before { content: "→" }` appears and disappears
+> and `:checked::after` changes colour; hovering a pseudo-element hovers its
+> element. A state change on one element now restyles its following siblings
+> when a rule needs it (`input:checked + label`, `.tab:hover ~ .panel`).
+> `<style>` and `<link rel="stylesheet">` are read from the parsed document in
+> document order (links used to come before every `<style>`), so markup inside
+> comments, `<textarea>` and `<template>` is no longer treated as CSS, and the
+> `<style>` / `<script>` elements stay in the DOM (hidden by the user-agent
+> sheet), which counts them for `:first-child`, `+` and the like as a browser
+> does.
+
+> **Breaking change — colours, selectors and values.** Named colours are the CSS
+> ones: `red` is `#ff0000` (it was Minecraft's `#ff5555`), `green` is `#008000`,
+> `gray` is `#808080`, `yellow` is `#ffff00`; use `var(--mc-red)` and friends for
+> Minecraft's palette. `#rrggbbaa` is read as red, green, blue, alpha (it used
+> to be taken as ARGB, so `#ff000080` came out dark blue), `#rgba` works, an
+> alpha of `0.5` rounds to 128 rather than 127, and `color: transparent` text is
+> invisible instead of off-white. A colour the engine cannot read makes the
+> declaration invalid (it used to paint white). An unknown pseudo-class
+> (`:has()`, a typo) or an `An+B` it cannot read now makes the selector match
+> nothing and drops the rule's whole selector list; previously the condition
+> was skipped and the rule applied to every element (`li:nth-child(3n)` styled
+> all items). `::placeholder`, `::marker` and other unrendered pseudo-elements
+> no longer style the element itself. Two conditions on the same attribute both
+> apply. `border-radius` is a shorthand for the four corner longhands, which
+> now take effect. A shorthand resets the longhands it does not mention (for
+> example `flex-flow: wrap` resets `flex-direction` to `row`), and `flex`
+> rejects values it cannot read instead of using them as `flex-basis`.
+
+> **Breaking change — inline boxes and layout edge cases.** An inline box such
+> as `<span>`, `<code>` or `<kbd>` now gets its left padding, border and margin
+> once, at its start, and its right ones once, at its end, with one background
+> per line: a multi-word `<span style="padding: 0 4px">` is no longer padded
+> around every word, and a box that wraps has its left edge only on the first
+> line and its right edge only on the last. Inline boxes now draw their borders
+> and rounded corners. Their vertical padding and borders no longer make the
+> line taller (they overlap the lines above and below, as in a browser); add
+> `line-height` or use `inline-block` if you relied on the extra space. Centred
+> and right-aligned lines ignore their trailing space. A percentage height now
+> resolves inside a stretched flex or grid item and inside an absolutely
+> positioned box sized by `top` and `bottom`. A shrink-to-fit box (inline-block,
+> float, flex item) containing `<br>` is as wide as its widest line rather than
+> all lines put together. In `flex-direction: column; flex-wrap: wrap` the
+> container is as wide as all its columns, and `justify-content: left / right /
+> start / end` keep their direction in `row-reverse` and `column-reverse`
+> (`row-reverse; justify-content: left` packs items to the left).
+
 > **Breaking change — sub-pixel geometry.** Lengths are no longer truncated to
 > whole pixels during layout: `33.33%`, `1.5em` and `line-height: normal`
 > (18.4px at 16px) keep their fractions, and positions are rounded once, when
@@ -359,9 +507,11 @@ Known gaps, listed so you do not have to discover them by debugging.
 Layout differences from a real browser are measured, case by case, in
 [FIDELITY.md](FIDELITY.md).
 
-- **Scripting.** No JavaScript, anywhere. Behaviour is server-side; the
-  reactive `data-*` attributes above are the substitute. `onclick` is read only
-  as an action name, never evaluated.
+- **Scripting & MutationObserver timing.** No JavaScript, anywhere. Behaviour is
+  server-side; the reactive `data-*` attributes above are the substitute. `onclick` is read only
+  as an action name, never evaluated. A Java-side `MutationObserver` API is available, but
+  notifications are batched and dispatched at client tick (before restyle) or manual flush rather
+  than via JavaScript microtasks.
 - **HTML parsing in full.** Formatting elements are not reconstructed and the
   adoption agency algorithm is not run: in `<p><b>x<p>y` the second paragraph
   is not bold, and misnested formatting tags such as `<b><i></b></i>` close by
@@ -373,7 +523,8 @@ Layout differences from a real browser are measured, case by case, in
 - **Tables in full.** Percentage column widths are treated as `auto`.
   `border-collapse: collapse` merges cell and table borders by width only
   (not by `border-style` precedence) and ignores row, row-group and column
-  borders. No `empty-cells` and no `visibility: collapse`.
+  borders. No `empty-cells`, and `visibility: collapse` hides a row or column
+  like `hidden` instead of removing its space.
 - **Floats in full; multi-column layout, writing modes.** A line next to a
   float takes its width from the float area at the top of the line, and a
   float inside an inline box that does not fit is moved to the next line
@@ -388,7 +539,9 @@ Layout differences from a real browser are measured, case by case, in
 - **Flexbox in full.** `align-items: baseline` uses the first baseline of row
   items only. In a column, an item's automatic minimum height is its specified
   height if it has one, otherwise its content height. Lines are broken by the
-  items' hypothetical sizes.
+  items' hypothetical sizes. In a flex container whose height is not definite,
+  an item's percentage height resolves against the container's own percentage
+  basis instead of behaving as `auto`.
 - **Grid in full.** Track sizing is a simplified version of the spec's: an
   item spanning several content-sized tracks spreads its size evenly over
   them. No subgrid, no `grid-template` / `grid` shorthands, no implicit tracks
@@ -402,16 +555,25 @@ Layout differences from a real browser are measured, case by case, in
   by a transformed copy of the clip rather than the ancestor's rectangle.
   Flex and grid items paint in document order, not `order`-modified order.
 - **Borders and outlines in full.** On a box with `border-radius` the border is
-  drawn solid in a single colour, whatever its `border-style`. Outlines do not
+  drawn solid whatever its `border-style`, and where two sides of different
+  colours meet in a rounded corner the colour changes at the side's width
+  rather than along the diagonal. Outlines do not
   follow `border-radius` and are not drawn per line fragment on inline boxes.
   The shading of `inset` / `outset` / `groove` / `ridge` is an approximation
   (the spec leaves it to the user agent).
 - **Backgrounds in full.** Multiple layers, `url()` images and
   `background-size / position / repeat / clip / origin` work on block-level
-  boxes; inline boxes paint only their background colour. Gradients are
-  `linear-gradient` with the first and last colour stop and eight directions.
-  `background-attachment` is always `scroll`. On a rounded box, tiles smaller
-  than the painting area are clipped to its rectangle, not its rounded corners.
+  boxes; inline boxes paint their background colour and borders on each line
+  but no background images. Gradients are
+  `linear-gradient` only (no `radial-gradient` or `repeating-*`), colour hints
+  between stops are ignored, and a diagonal gradient with more than two stops
+  is drawn in thin bands (colours between band edges are interpolated
+  linearly). `background-attachment` is always `scroll`.
+- **Box shadows in full.** `box-shadow` blur is approximated by a few stacked
+  layers rather than a Gaussian. An outer shadow is painted under the whole box,
+  so it shows through a transparent or translucent background (a browser draws
+  it only outside the border box), and the unshadowed area of an `inset` shadow
+  has square corners.
 - **Native form controls and `legend`.** `ua.css` follows the HTML standard's
   rendering defaults, but form controls are drawn by EnderFrameLib (sized after
   Chromium's light theme) rather than by the operating system, and a `legend`
@@ -431,6 +593,14 @@ Layout differences from a real browser are measured, case by case, in
 - **Pseudo-elements beyond `::before` / `::after`.** `::marker`,
   `::placeholder`, `::selection` and friends parse (and count toward
   specificity) but never match.
+- **Selectors in full.** Pseudo-classes not listed under *Supported CSS*
+  (`:has()`, `:read-only`, `:placeholder-shown`, `:target`, `:valid`,
+  `:nth-child(An+B of S)` and so on) make the selector invalid, as an unknown
+  pseudo-class does in a browser. There are no namespaces (`svg|rect`).
+- **Glyph-relative units and elliptical corners.** `ch` and `ex` are taken as
+  0.5em instead of being measured from the font. Corners are drawn as circular
+  arcs, so an elliptical radius (`10px / 20px`, or a percentage on a box that is
+  not square) uses the smaller of its two radii.
 - **Custom fonts.** Rendering uses Minecraft's font system; `font-family`
   selects among the fonts Minecraft has and the TrueType / OpenType fonts
   registered with `@font-face`.
@@ -477,3 +647,10 @@ Third-party components — the bundled `lunex_video` native decoder, the
 runtime-downloaded `yt-dlp`, JNA, and the NeoForge MDK template files — are
 attributed in [NOTICE](NOTICE). The bundled native binary is **not** covered by
 the LGPL grant.
+
+### Migration notes (R3)
+
+- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `ClientWebManager.getRootNode(sessionId)` / `getDomDocument(sessionId)`.
+- Inline actions (`on*` attributes) now run *after* propagation and only if the event was not cancelled. A `preventDefault()` in any listener suppresses both the local action and the server forward.
+- `ClientScreenInteractionManager.setForwardEventsToServer` is removed: use `data-forward` or the `server:` prefix.
+- A re-sync recreates server-owned nodes (hover/focus/scroll state tied to the old node objects is reset); fine-grained updates should use mutation records, which keep node identity.

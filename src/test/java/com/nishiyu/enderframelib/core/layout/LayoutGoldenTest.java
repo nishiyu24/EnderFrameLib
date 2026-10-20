@@ -1,13 +1,14 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -71,7 +72,7 @@ public class LayoutGoldenTest {
 
     @Test
     public void testShorthandMarginAndPaddingReachTheLayout() {
-        // UIParser と同じ経路（StyleResolver 経由）で算出スタイルを作り、
+        // UiDocumentCompiler と同じ経路（StyleResolver 経由）で算出スタイルを作り、
         // "margin: 10px" / "padding: 5px" がレイアウトに効くことを確認する
         Map<String, String> raw = new LinkedHashMap<>();
         raw.put("display", "block");
@@ -275,7 +276,7 @@ public class LayoutGoldenTest {
 
     @Test
     public void testTextWrapsWithinAvailableWidth() {
-        HtmlNode text = HtmlNode.createTextNode("hello world hello world");
+        HtmlNode text = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText("hello world hello world");
         LayoutBox box = new LayoutBox(text, style("font-size", "16px"));
 
         LayoutContext ctx = newContext();
@@ -294,7 +295,7 @@ public class LayoutGoldenTest {
         parent.children.add(child);
 
         LayoutContext ctx = new LayoutContext(VIEWPORT, src -> new int[]{32, 32}, new ScrollState(), FontResolver.FALLBACK);
-        ctx.scrollState().setScroll("scroller", 0, 30);
+        ctx.scrollState().setScroll(parentNode, 0, 30);
 
         parent.measure(800, 600, blockRoot(), ctx);
         parent.layout(0, 0, 800, 600, ctx);

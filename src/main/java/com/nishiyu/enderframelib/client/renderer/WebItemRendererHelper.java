@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.util.Mth;
@@ -67,7 +67,7 @@ public class WebItemRendererHelper {
             ClientWebManager.recomputeLayout(sessionId, virtualWidth, virtualHeight);
         }
 
-        List<UIElement> elements = ClientWebManager.getElements(sessionId);
+        List<DisplayItem> elements = ClientWebManager.getElements(sessionId);
         if (elements == null || elements.isEmpty()) return;
 
         poseStack.pushPose();
@@ -84,10 +84,10 @@ public class WebItemRendererHelper {
                 displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND ||
                 displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND);
 
-        int logicWidthBlocks = (int) Math.ceil(virtualWidth / WebRenderCore.RESOLUTION);
-        int logicHeightBlocks = (int) Math.ceil(virtualHeight / WebRenderCore.RESOLUTION);
+        int logicWidthBlocks = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
+        int logicHeightBlocks = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-        WebPaintPass.builder(elements, logicWidthBlocks, logicHeightBlocks, poseStack, buffer, sessionId, mc.level)
+        PaintRequest.builder(elements, logicWidthBlocks, logicHeightBlocks, poseStack, buffer, sessionId, mc.level)
                 .light(packedLight, packedOverlay)
                 .renderFlags(true, true, true)
                 .zOffsets(0.02f, 0.01f)

@@ -1,16 +1,18 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.api.IWebActionReceiver;
-import com.nishiyu.enderframelib.api.IWebSessionProvider;
+import com.nishiyu.enderframelib.api.WebActionReceiver;
+import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.DomUtils;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
-import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
-import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.DomMutationRecord.HtmlNodeSerializer;
+import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.ApiStatus;
@@ -54,7 +56,7 @@ public class WebSessionManager {
     private static final int MAX_ELEMENT_ID_LENGTH = 64;
     private static final int MAX_VALUE_LENGTH = 4096;
 
-    private static final Set<IWebSessionProvider> PROVIDERS = new CopyOnWriteArraySet<>();
+    private static final Set<WebSessionProvider> PROVIDERS = new CopyOnWriteArraySet<>();
     private static final Map<String, WebSession> STANDALONE_SESSIONS = new ConcurrentHashMap<>();
 
     /** 特定のセッションを現在閲覧・購読しているプレイヤーの追跡用マップ */
@@ -74,15 +76,15 @@ public class WebSessionManager {
      */
     public static synchronized void init() {
         if (initialized) return;
-        DomUtils.innerHtmlParser = UIParser.INNER_HTML_PARSER;
+        DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
         initialized = true;
     }
 
-    public static void registerProvider(IWebSessionProvider provider) {
+    public static void registerProvider(WebSessionProvider provider) {
         if (provider != null) PROVIDERS.add(provider);
     }
 
-    public static void unregisterProvider(IWebSessionProvider provider) {
+    public static void unregisterProvider(WebSessionProvider provider) {
         PROVIDERS.remove(provider);
     }
 
@@ -291,11 +293,24 @@ public class WebSessionManager {
         }
     }
 
-    public static void broadcastPatch(String sessionId, CompoundTag patchPayload) {
+    public static void broadcastMutations(String sessionId, java.util.List<com.nishiyu.enderframelib.network.DomMutationRecord> mutations) {
+        if (mutations == null || mutations.isEmpty()) return;
+        ListTag list = new ListTag();
+        for (com.nishiyu.enderframelib.network.DomMutationRecord mut : mutations) {
+            list.add(mut.toTag());
+        }
+        CompoundTag payload = new CompoundTag();
+        payload.put("Mutations", list);
         for (ServerPlayer player : viewersOf(sessionId)) {
-            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_patch", patchPayload));
+            ServerPacketSender.send(player, new WebSyncS2CPacket(sessionId, "dom_mutations", payload));
         }
     }
+
+    public static void broadcastMutation(String sessionId, com.nishiyu.enderframelib.network.DomMutationRecord mutation) {
+        if (mutation == null) return;
+        broadcastMutations(sessionId, java.util.List.of(mutation));
+    }
+
 
     /**
      * 送信対象の閲覧者。切断済みのプレイヤーはここで取り除く
@@ -341,7 +356,7 @@ public class WebSessionManager {
     /** プロバイダ経由の解決。プロバイダは信頼するが、本人への可視性だけは聞く。 */
     @Nullable
     private static WebSession resolveFromProviders(ServerPlayer player, String sessionId) {
-        for (IWebSessionProvider provider : PROVIDERS) {
+        for (WebSessionProvider provider : PROVIDERS) {
             if (!provider.matchesSession(sessionId)) continue;
             if (!provider.allowsPlayer(player, sessionId)) continue;
             WebSessionHandle handle = provider.getSessionForClient(sessionId);
@@ -350,7 +365,7 @@ public class WebSessionManager {
             }
             if (handle != null) {
                 EnderFrameLib.LOGGER.warn(
-                        "IWebSessionProvider が未知の WebSessionHandle 実装を返しました（同期できません）: {}",
+                        "WebSessionProvider が未知の WebSessionHandle 実装を返しました（同期できません）: {}",
                         handle.getClass().getName());
             }
             return null;
@@ -360,7 +375,7 @@ public class WebSessionManager {
 
     public static void handleFetchRequest(ServerPlayer player, String sessionId, String requestId, String endpoint, String jsonPayload) {
         if (!canAccess(player, sessionId, true)) return;
-        for (IWebSessionProvider provider : PROVIDERS) {
+        for (WebSessionProvider provider : PROVIDERS) {
             if (provider.matchesSession(sessionId)) {
                 if (!provider.allowsPlayer(player, sessionId)) return;
                 addViewer(sessionId, player);
@@ -403,7 +418,7 @@ public class WebSessionManager {
         WebSession standalone = STANDALONE_SESSIONS.get(sessionId);
 
         // サーバーが DOM を持っているセッションだけは「その画面が実際に出していたアクションか」を検証できる。
-        // 画面 HTML がクライアント側にしか無いセッション（AbstractWebContainerScreen など）は
+        // 画面 HTML がクライアント側にしか無いセッション（AbstractEnderContainerScreen など）は
         // 検証材料が無いので、レシーバ側で自前に確認する必要がある。
         if (standalone != null && standalone.getDocument() != null
                 && !action.declared().isEmpty()
@@ -423,7 +438,7 @@ public class WebSessionManager {
         dispatchToMenu(player, sessionId, elementId, eventName, action);
         dispatchToBlockEntity(player, sessionId, elementId, eventName, action);
 
-        for (IWebSessionProvider provider : PROVIDERS) {
+        for (WebSessionProvider provider : PROVIDERS) {
             if (provider.matchesSession(sessionId)) {
                 if (!provider.allowsPlayer(player, sessionId)) return;
                 provider.onClientEvent(player, sessionId, elementId, eventName, actionName, value);
@@ -468,7 +483,7 @@ public class WebSessionManager {
     }
 
     private static void dispatchToMenu(ServerPlayer player, String sessionId, String elementId, String eventName, ParsedAction action) {
-        if (!(player.containerMenu instanceof IWebActionReceiver menuReceiver)) return;
+        if (!(player.containerMenu instanceof WebActionReceiver menuReceiver)) return;
         if (!player.containerMenu.stillValid(player)) return;
         try {
             menuReceiver.onWebServerAction(player, action.name(), action.param(),
@@ -492,7 +507,7 @@ public class WebSessionManager {
             EnderFrameLib.LOGGER.debug("入力要素でない対象への値の書き戻しを拒否しました: {}", elementId);
             return;
         }
-        UIParser.Document doc = session.getDocument();
+        UiDocumentCompiler.Document doc = session.getDocument();
         if (doc == null || doc.root == null) return;
         HtmlNode target = doc.root.getElementById(elementId);
         if (target == null) return;
@@ -520,7 +535,7 @@ public class WebSessionManager {
         BlockPos pos = parseBlockSessionPos(sessionId);
         if (pos == null || player.level() == null) return;
         BlockEntity be = player.level().getBlockEntity(pos);
-        if (!(be instanceof IWebActionReceiver beReceiver)) return;
+        if (!(be instanceof WebActionReceiver beReceiver)) return;
 
         // セッション ID が指す座標と BlockEntity の実座標が一致していることを確かめる
         if (!be.getBlockPos().equals(pos)) return;

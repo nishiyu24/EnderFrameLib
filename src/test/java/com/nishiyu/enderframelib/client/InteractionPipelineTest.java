@@ -1,15 +1,18 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.SessionContext.HitTestIndex;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
+import com.nishiyu.enderframelib.core.dom.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
-import com.nishiyu.enderframelib.core.event.DomEvent;
+import com.nishiyu.enderframelib.core.event.CoreEvent.DomEvent;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.model.AnimationSpec;
-import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
-import com.nishiyu.enderframelib.core.model.TextSelection;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.AnimationSpec;
+import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
+import com.nishiyu.enderframelib.core.layout.TextSelection;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -52,19 +55,19 @@ public class InteractionPipelineTest {
     @DisplayName("F5-2: 不透明な前面要素がヒットテストで背後要素を遮蔽し貫通しない")
     void testOpaqueElementOccludesUnderlyingButton() {
         // 背後にあるボタン (z=1, x=10, y=10, w=100, h=50)
-        UIElement button = new UIElement(
+        DisplayItem button = new DisplayItem(
                 "btn", "btn", ElementType.BUTTON,
                 10, 10, 100, 50,
                 "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY
         );
 
         // 前面にある不透明なモーダル背景 (z=2, x=0, y=0, w=200, h=100, 不透明色 0xFFFFFFFF)
-        UIElement modal = new UIElement(
+        DisplayItem modal = new DisplayItem(
                 "modal", "modal", ElementType.RECT,
                 0, 0, 200, 100,
                 "", 0, 0xFFFFFFFF, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY
         );
 
         HitTestIndex index = new HitTestIndex(List.of(button, modal));
@@ -82,19 +85,19 @@ public class InteractionPipelineTest {
     @DisplayName("F5-2: pointer-events: none が指定された前面要素はヒットテストを透過して背後要素に届く")
     void testPointerEventsNoneAllowsPassThrough() {
         // 背後にあるボタン
-        UIElement button = new UIElement(
+        DisplayItem button = new DisplayItem(
                 "btn", "btn", ElementType.BUTTON,
                 10, 10, 100, 50,
                 "Button", 0, 0xFF444444, Map.of("onclick", "btnAction"),
-                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                1, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY
         );
 
         // 前面にあるが pointer-events: none のオーバーレイ
-        UIElement overlay = new UIElement(
+        DisplayItem overlay = new DisplayItem(
                 "overlay", "overlay", ElementType.RECT,
                 0, 0, 200, 100,
                 "", 0, 0xFFFFFFFF, Map.of("pointer-events", "none"),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY
         );
 
         HitTestIndex index = new HitTestIndex(List.of(button, overlay));
@@ -117,14 +120,11 @@ public class InteractionPipelineTest {
         targetBtn.parent = root;
         root.children.add(targetBtn);
 
-        session.setVirtualDom(root);
-
         // targetBtn にキーボードフォーカスを当てる
-        session.setFocusedElementBaseId("targetBtn");
-        session.interactionState().setFocusedNode(root, "targetBtn", true);
+        session.interactionState().setFocusedNode(targetBtn, true);
 
         // 1. SessionContext のフォーカス基底 ID
-        assertEquals("targetBtn", session.focusedElementBaseId());
+        assertEquals("targetBtn", session.focusedId());
 
         // 2. InteractionState のフラグ整合
         var state = session.interactionState().stateOf(targetBtn);
@@ -132,10 +132,9 @@ public class InteractionPipelineTest {
         assertTrue(state.focusVisible(), ":focus-visible フラグが有効であること");
 
         // フォーカスを解除
-        session.setFocusedElementBaseId("");
-        session.interactionState().setFocusedNode(root, "", false);
+        session.interactionState().setFocusedNode(null, false);
 
-        assertEquals("", session.focusedElementBaseId());
+        assertEquals("", session.focusedId());
         var stateCleared = session.interactionState().stateOf(targetBtn);
         assertFalse(stateCleared.focus(), ":focus フラグが解除されていること");
         assertFalse(stateCleared.focusVisible(), ":focus-visible フラグが解除されていること");
@@ -146,8 +145,9 @@ public class InteractionPipelineTest {
     void testScrollbarInteraction() {
         SessionContext session = ClientWebManager.getOrCreateSession("testScrollSession");
 
-        HtmlNode containerNode = new HtmlNode("div");
-        containerNode.attrs.put("id", "scrollBox");
+        UiDocumentCompiler.Document doc = new UiDocumentCompiler().parseDocument("<div id=\"scrollBox\"></div>", "", 100, 100);
+        session.setDocument(doc);
+        HtmlNode containerNode = doc.root.getElementById("scrollBox");
 
         com.nishiyu.enderframelib.core.layout.LayoutBox box =
                 new com.nishiyu.enderframelib.core.layout.LayoutBox(containerNode, new com.nishiyu.enderframelib.core.css.ComputedStyle(Map.of()));
@@ -157,25 +157,25 @@ public class InteractionPipelineTest {
 
         session.setLayoutRoot(box);
 
-        UIElement trackEl = new UIElement(
+        DisplayItem trackEl = new DisplayItem(
                 "scrollBox_sb_vt", "scrollBox", ElementType.RECT,
                 94, 2, 4, 96,
                 "", 0, 0x33000000, Map.of(),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, com.nishiyu.enderframelib.core.model.UIElement.ImageFitMode.FILL, UIElement.RenderMeta.EMPTY
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, DisplayItem.ImageFitMode.FILL, DisplayItem.RenderMeta.EMPTY
         );
 
         // トラックの中央 (y = 50) をクリック -> 約 50% のスクロール位置 (約 100px) にジャンプ
         boolean clickHandled = ClientWebManager.handleScrollbarClick("testScrollSession", trackEl, 94, 50);
         assertTrue(clickHandled, "トラッククリックが処理されること");
 
-        float scrollY = session.scrollState().getScrollY("scrollBox");
+        float scrollY = session.scrollState().getScrollY(containerNode);
         assertTrue(scrollY >= 80 && scrollY <= 120, "スクロール位置が中央付近にジャンプすること: " + scrollY);
 
         // サムのドラッグで最下部 (y = 100) へドラッグ
         boolean dragHandled = ClientWebManager.handleScrollbarDrag("testScrollSession", "scrollBox_sb_v", 94, 100);
         assertTrue(dragHandled, "サムドラッグが処理されること");
 
-        float scrollYMax = session.scrollState().getScrollY("scrollBox");
+        float scrollYMax = session.scrollState().getScrollY(containerNode);
         assertEquals(200f, scrollYMax, 1.0f, "最下部ドラッグで最大スクロール量 (200px) になること");
     }
 
@@ -183,23 +183,24 @@ public class InteractionPipelineTest {
     @DisplayName("F5-3: スクロール状態（ScrollState）の更新とクランプの検証")
     void testScrollStateUpdate() {
         ScrollState state = new ScrollState();
-        assertEquals(0f, state.getScrollX("container"));
-        assertEquals(0f, state.getScrollY("container"));
+        HtmlNode container = new HtmlElement("div");
+        assertEquals(0f, state.getScrollX(container));
+        assertEquals(0f, state.getScrollY(container));
 
         // Y スクロールを 150 に設定
-        state.setScroll("container", 0, 150);
-        assertEquals(150f, state.getScrollY("container"));
-        assertEquals(0f, state.getScrollX("container"));
+        state.setScroll(container, 0, 150);
+        assertEquals(150f, state.getScrollY(container));
+        assertEquals(0f, state.getScrollX(container));
 
         // X スクロールを 80 に設定
-        state.setScroll("container", 80, 150);
-        assertEquals(80f, state.getScrollX("container"));
-        assertEquals(150f, state.getScrollY("container"));
+        state.setScroll(container, 80, 150);
+        assertEquals(80f, state.getScrollX(container));
+        assertEquals(150f, state.getScrollY(container));
 
         // リセット
         state.clear();
-        assertEquals(0f, state.getScrollX("container"));
-        assertEquals(0f, state.getScrollY("container"));
+        assertEquals(0f, state.getScrollX(container));
+        assertEquals(0f, state.getScrollY(container));
     }
 
     @Test
@@ -245,21 +246,21 @@ public class InteractionPipelineTest {
         java.nio.file.Path showcasePath = java.nio.file.Path.of("src/main/resources/data/enderframelib/enderframe_ui/showcase.html");
         String html = java.nio.file.Files.readString(showcasePath, java.nio.charset.StandardCharsets.UTF_8);
 
-        com.nishiyu.enderframelib.common.UIParser parser = new com.nishiyu.enderframelib.common.UIParser();
-        com.nishiyu.enderframelib.common.UIParser.Document doc = parser.parseDocument(html, "", 854, 480);
+        com.nishiyu.enderframelib.common.UiDocumentCompiler parser = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
+        com.nishiyu.enderframelib.common.UiDocumentCompiler.Document doc = parser.parseDocument(html, "", 854, 480);
         assertNotNull(doc);
         assertNotNull(doc.root);
 
         com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
-                doc, 854, 480, Map.of(), new ScrollState(), com.nishiyu.enderframelib.core.text.FontFace.FontResolver.FALLBACK, new InteractionState());
+                doc, 854, 480, Map.of(), new ScrollState(), FontFace.FontResolver.FALLBACK, new InteractionState());
         assertNotNull(rootBox);
-        com.nishiyu.enderframelib.client.renderer.UIRenderer renderer =
-                new com.nishiyu.enderframelib.client.renderer.UIRenderer(854, 480, doc.sheet.keyframes, new ScrollState());
-        List<UIElement> elements = renderer.render(rootBox);
+        com.nishiyu.enderframelib.client.renderer.DisplayListBuilder renderer =
+                new com.nishiyu.enderframelib.client.renderer.DisplayListBuilder(854, 480, doc.sheet.keyframes, new ScrollState());
+        List<DisplayItem> elements = renderer.render(rootBox);
         assertNotNull(elements);
 
         // ルート直下の要素が height: 100% の場合に高さが 0 にならず、子要素群が正しくレンダリングされること
-        assertTrue(elements.size() >= 50, "showcase.html の UIElement 群（200個以上）が正常に生成されること: 実際=" + elements.size());
+        assertTrue(elements.size() >= 50, "showcase.html の DisplayItem 群（200個以上）が正常に生成されること: 実際=" + elements.size());
         assertTrue(elements.stream().anyMatch(e -> e.id() != null && e.id().contains("header_panel")), "ヘッダーパネルが生成されていること");
         assertTrue(elements.stream().anyMatch(e -> e.text() != null && e.text().contains("EnderFrameLib")), "タイトルテキストが生成されていること");
         assertTrue(elements.stream().anyMatch(e -> "test_input".equals(e.id()) || e.type() == ElementType.INPUT), "入力フィールドが生成されていること");
@@ -272,4 +273,3 @@ public class InteractionPipelineTest {
         assertFalse(html.contains("<mc-"), "Web と 1:1 比較できるように独自の <mc-> タグを含まないこと");
     }
 }
-

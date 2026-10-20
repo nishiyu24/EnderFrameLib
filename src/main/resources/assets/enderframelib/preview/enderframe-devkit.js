@@ -1,7 +1,7 @@
 /**
  * EnderFrameLib Browser Preview & Verification Runtime
  * Emulates W3C Custom Elements (<mc-slot>, <mc-slot-grid>, <mc-inventory>, <mc-bar>),
- * Reactive WebStateStore (data-model, data-bind, data-if, data-for),
+ * Reactive ReactiveStateStore (data-model, data-bind, data-if, data-for),
  * CommonMark/GFM <article data-markdown>, and F12 DevTools Inspector.
  */
 (function () {

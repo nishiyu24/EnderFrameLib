@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,6 +37,8 @@ public final class ComputedStyle {
     private final Map<String, Integer> colorCache = new ConcurrentHashMap<>();
     /** プロパティ名 -> 数値。同上。 */
     private final Map<String, Float> numberCache = new ConcurrentHashMap<>();
+    /** プロパティ名 -> キーワードの enum。同上。 */
+    private final Map<String, Enum<?>> keywordCache = new ConcurrentHashMap<>();
 
     public ComputedStyle(Map<String, String> properties, float elementFontSize, float rootFontSize) {
         this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
@@ -74,6 +77,11 @@ public final class ComputedStyle {
         return rootFontSize;
     }
 
+    /** この要素の行の高さ（px）。{@code rlh} の基準になるルート要素の値を取るのに使う。 */
+    public float lineHeightPx() {
+        return ValueComputer.lineHeightPx(properties.get(CssProperty.LINE_HEIGHT), elementFontSize, rootFontSize, 0, 0);
+    }
+
     public String get(String propertyName) {
         return properties.get(propertyName);
     }
@@ -85,6 +93,22 @@ public final class ComputedStyle {
 
     public boolean containsKey(String propertyName) {
         return properties.containsKey(propertyName);
+    }
+
+    private volatile Map<String, String> customProperties;
+
+    /** カスタムプロパティ（{@code --x}）だけの読み取り専用ビュー。{@code style()} コンテナクエリが読む。 */
+    public Map<String, String> customProperties() {
+        Map<String, String> cached = customProperties;
+        if (cached == null) {
+            Map<String, String> custom = new LinkedHashMap<>();
+            for (Map.Entry<String, String> e : properties.entrySet()) {
+                if (e.getKey().startsWith("--")) custom.put(e.getKey(), e.getValue());
+            }
+            cached = Collections.unmodifiableMap(custom);
+            customProperties = cached;
+        }
+        return cached;
     }
 
     /** 宣言マップの読み取り専用ビュー。走査が必要な場所だけで使う。 */
@@ -141,6 +165,44 @@ public final class ComputedStyle {
         }
         numberCache.put(propertyName, parsed);
         return parsed;
+    }
+
+    /**
+     * キーワードだけを値に取るプロパティの算出値を、{@link PropertyRegistry} が宣言した enum で返す。
+     * 書かれていない値・知らない値はそのプロパティの初期値。
+     */
+    public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
+        Enum<?> cached = keywordCache.get(propertyName);
+        if (cached != null && type.isInstance(cached)) return type.cast(cached);
+        E parsed = CssKeywords.parse(type, properties.get(propertyName));
+        if (parsed == null) parsed = PropertyRegistry.initialKeyword(propertyName, type);
+        keywordCache.put(propertyName, parsed);
+        return parsed;
+    }
+
+    /** {@code box-sizing: border-box} か。 */
+    public boolean isBorderBox() {
+        return keywordOf(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
+    }
+
+    /** 横方向の {@code overflow}。{@code overflow-x} が無ければショートハンド {@code overflow} の最初の値。 */
+    public CssKeywords.Overflow overflowX() {
+        return overflowAxis(CssProperty.OVERFLOW_X, 0);
+    }
+
+    /** 縦方向の {@code overflow}。{@code overflow-y} が無ければショートハンドの 2 つ目（1 つなら同じ値）。 */
+    public CssKeywords.Overflow overflowY() {
+        return overflowAxis(CssProperty.OVERFLOW_Y, 1);
+    }
+
+    private CssKeywords.Overflow overflowAxis(String property, int shorthandIndex) {
+        if (properties.containsKey(property)) return keywordOf(property, CssKeywords.Overflow.class);
+        String shorthand = properties.get(CssProperty.OVERFLOW);
+        if (shorthand == null) return CssKeywords.Overflow.VISIBLE;
+        String[] parts = shorthand.trim().split("\\s+");
+        String part = parts[Math.min(shorthandIndex, parts.length - 1)];
+        CssKeywords.Overflow parsed = CssKeywords.parse(CssKeywords.Overflow.class, part);
+        return parsed != null ? parsed : CssKeywords.Overflow.VISIBLE;
     }
 
     /** キーワード値（小文字・前後空白なしに正規化）。 */

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -7,9 +8,9 @@ import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import com.nishiyu.enderframelib.common.UIParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.common.WebDevKitExporter;
-import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -253,8 +254,8 @@ public class EnderFrameCommands {
 
     private static String resolveServerHtml(ResourceLocation uiId) {
         String html = EnderFrameDataPackManager.getHtml(uiId);
-        if ((html == null || html.isEmpty()) && UIParser.resourceTextResolver != null) {
-            html = UIParser.resourceTextResolver.apply(uiId.toString());
+        if ((html == null || html.isEmpty()) && UiDocumentCompiler.resourceTextResolver != null) {
+            html = UiDocumentCompiler.resourceTextResolver.apply(uiId.toString());
         }
         return (html != null && !html.isEmpty()) ? html : null;
     }

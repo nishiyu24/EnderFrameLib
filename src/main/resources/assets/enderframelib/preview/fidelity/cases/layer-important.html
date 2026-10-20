@@ -1,0 +1,16 @@
+<!-- @layer と !important: 重要な宣言では層の順が反転し、層の無い規則が最も弱い。revert-layer は前の層へ戻す。 -->
+<style>
+  @layer first, second;
+  @layer first { #a { width: 100px !important; } }
+  @layer second { #a { width: 200px !important; } }
+  #a { width: 300px !important; }
+  #b { width: 100px; }
+  @layer first { #b { width: 200px !important; } }
+  @layer lower, upper;
+  @layer lower { #c { width: 120px; } }
+  @layer upper { #c { width: revert-layer; } }
+  div { height: 10px; }
+</style>
+<div id="a"></div>
+<div id="b"></div>
+<div id="c"></div>

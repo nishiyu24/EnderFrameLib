@@ -1,3 +1,3 @@
-a 8 8 304 10 0
-empty 8 38 304 0 -1
-b 8 38 304 10 0
+a 8 8 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible
+empty 8 38 304 0 -1 sw=304 sh=0 cw=304 ch=0 display=block position=static box-sizing=content-box overflow=visible
+b 8 38 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible

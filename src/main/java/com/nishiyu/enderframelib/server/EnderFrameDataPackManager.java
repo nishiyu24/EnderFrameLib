@@ -1,7 +1,8 @@
 package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.core.markdown.MarkdownParser;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
+import com.nishiyu.enderframelib.core.dom.MarkdownParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -81,8 +82,8 @@ public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Ma
     protected void apply(@NotNull Map<ResourceLocation, String> prepared, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profiler) {
         LOADED_UIS.clear();
         LOADED_UIS.putAll(prepared);
-        // 1 ファイルにつき生 ID と短縮 ID の 2 キーを張るので、size()/2 は短縮 ID が
-        // 衝突した場合に件数を取り違える。生 ID だけを数える
+        // common層のUiDocumentCompilerにデータパックリソースの解決処理を注入する
+        UiDocumentCompiler.datapackResourceFallback = EnderFrameDataPackManager::getHtml;
         EnderFrameLib.LOGGER.info("Loaded {} EnderFrame UI entries from datapacks.", entryCount());
     }
 

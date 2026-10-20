@@ -1,12 +1,12 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.nishiyu.enderframelib.core.layout.LayoutContext.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.model.UIElement.ElementType;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.layout.DisplayItem.ElementType;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
@@ -327,9 +327,9 @@ public class WebMediaManager {
         }
 
         for (String sessionKey : activeIps) {
-            List<UIElement> els = ClientWebManager.getElements(sessionKey);
+            List<DisplayItem> els = ClientWebManager.getElements(sessionKey);
             if (els != null) {
-                for (UIElement el : els) {
+                for (DisplayItem el : els) {
                     if (el.type() == ElementType.VIDEO && el.text() != null) {
                         VideoTexture videoTex = ACTIVE_VIDEOS.get(el.text());
                         if (videoTex != null) {
@@ -349,9 +349,9 @@ public class WebMediaManager {
             }
 
             tex.activeIps.removeIf(sessionKey -> {
-                List<UIElement> els = ClientWebManager.getElements(sessionKey);
+                List<DisplayItem> els = ClientWebManager.getElements(sessionKey);
                 if (els == null || els.isEmpty()) return true;
-                for (UIElement el : els) {
+                for (DisplayItem el : els) {
                     if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) return false;
                 }
                 return true;
@@ -362,9 +362,9 @@ public class WebMediaManager {
                 BlockPos pos = e.getKey();
                 if (!mc.level.isLoaded(pos)) return false;
                 if (externalContext != null && externalContext.isScreenOrSpeaker(pos)) {
-                    List<UIElement> els = ClientWebManager.getElements("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
+                    List<DisplayItem> els = ClientWebManager.getElements("block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
                     if (els != null) {
-                        for (UIElement el : els) {
+                        for (DisplayItem el : els) {
                             if (el.type() == ElementType.VIDEO && tex.url.equals(el.text())) {
                                 tex.activeAudioPositions.put(pos, now);
                                 return false;

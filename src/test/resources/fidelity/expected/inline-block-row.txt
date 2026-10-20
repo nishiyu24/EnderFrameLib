@@ -1,4 +1,4 @@
-line 8 8 300 30 0
-a 8 18 40 20 0
-b 48 8 40 30 0
-c 88 28 40 10 0
+line 8 8 300 30 0 sw=300 sh=30 cw=300 ch=30 display=block position=static box-sizing=content-box overflow=visible
+a 8 18 40 20 0 sw=40 sh=20 cw=40 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+b 48 8 40 30 0 sw=40 sh=30 cw=40 ch=30 display=inline-block position=static box-sizing=content-box overflow=visible
+c 88 28 40 10 0 sw=40 sh=10 cw=40 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

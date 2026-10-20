@@ -1,4 +1,4 @@
-c 8 8 304 10 1
-ci 110 8 100 10 0
-r 8 18 304 10 0
-ri 212 18 100 10 0
+c 8 8 304 10 1 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible
+ci 110 8 100 10 0 sw=100 sh=10 cw=100 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+r 8 18 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible
+ri 212 18 100 10 0 sw=100 sh=10 cw=100 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

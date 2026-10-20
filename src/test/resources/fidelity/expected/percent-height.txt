@@ -1,2 +1,2 @@
-parent 8 8 200 100 0
-child 8 8 200 50 0
+parent 8 8 200 100 0 sw=200 sh=100 cw=200 ch=100 display=block position=static box-sizing=content-box overflow=visible
+child 8 8 200 50 0 sw=200 sh=50 cw=200 ch=50 display=block position=static box-sizing=content-box overflow=visible

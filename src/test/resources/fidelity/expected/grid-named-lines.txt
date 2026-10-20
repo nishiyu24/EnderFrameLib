@@ -1,1 +1,1 @@
-a 108 8 200 20 0
+a 108 8 200 20 0 sw=200 sh=20 cw=200 ch=20 display=block position=static box-sizing=content-box overflow=visible

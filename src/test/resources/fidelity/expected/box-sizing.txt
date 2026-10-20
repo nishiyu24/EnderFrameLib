@@ -1,1 +1,1 @@
-outer 8 8 124 24 0
+outer 8 8 124 24 0 sw=120 sh=20 cw=120 ch=20 display=block position=static box-sizing=content-box overflow=visible

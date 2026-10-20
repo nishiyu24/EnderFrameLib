@@ -45,31 +45,43 @@ public class WebFidelityTest {
         List<String> staleLedgerRows = new ArrayList<>();
 
         for (String caseName : FidelityDumper.caseNames()) {
-            Map<String, FidelityDumper.Rect> actual = FidelityDumper.dump(caseName);
-            Map<String, FidelityDumper.Rect> expected = FidelityDumper.parseDump(readExpected(caseName));
+            Map<String, FidelityDumper.Snapshot> actual = FidelityDumper.dump(caseName);
+            Map<String, FidelityDumper.Snapshot> expected = FidelityDumper.parseDump(readExpected(caseName));
 
             for (var entry : expected.entrySet()) {
                 String id = entry.getKey();
-                FidelityDumper.Rect want = entry.getValue();
-                FidelityDumper.Rect got = actual.get(id);
+                FidelityDumper.Snapshot want = entry.getValue();
+                FidelityDumper.Snapshot got = actual.get(id);
                 if (got == null) {
                     regressions.add(caseName + "#" + id + ": 要素がレイアウト結果に無い");
                     continue;
                 }
-                for (String field : FidelityDumper.FIELDS) {
-                    String key = caseName + "#" + id + "." + field;
-                    float diff = Math.abs(got.field(field) - want.field(field));
-                    boolean known = ledger.containsKey(key);
-                    String browser = FidelityDumper.number(want.field(field));
-                    String engine = FidelityDumper.number(got.field(field));
-                    // float の演算誤差でちょうど 0.5px の差が落ちないよう、わずかに余裕を持たせる
-                    if (diff > FidelityDumper.tolerance(field) + 1e-3f) {
-                        if (known) unused.remove(key);
-                        else regressions.add(key + ": ブラウザ " + browser + " / エンジン " + engine);
-                    } else if (known) {
-                        unused.remove(key);
-                        staleLedgerRows.add(key + ": 一致するようになった（ブラウザ "
-                                + browser + " / エンジン " + engine + "）");
+                // 幾何と描画順の比較 (x, y, w, h, z)
+                for (String field : FidelityDumper.GEOMETRY_FIELDS) {
+                    checkNumericField(caseName, id, field, want.field(field), got.field(field),
+                            ledger, unused, regressions, staleLedgerRows);
+                }
+                // 期待値が拡張形式（計算値やスクロール情報を持つ）の場合、スクロール量と計算値も比較
+                if (!want.computed().isEmpty()) {
+                    for (String field : new String[]{"scrollWidth", "scrollHeight", "clientWidth", "clientHeight"}) {
+                        checkNumericField(caseName, id, field, want.field(field), got.field(field),
+                                ledger, unused, regressions, staleLedgerRows);
+                    }
+                    for (var compEntry : want.computed().entrySet()) {
+                        String prop = compEntry.getKey();
+                        String wantVal = compEntry.getValue();
+                        String gotVal = got.computedValue(prop);
+                        String key = caseName + "#" + id + "." + prop;
+                        boolean known = ledger.containsKey(key);
+                        boolean matches = (gotVal != null && gotVal.equals(wantVal));
+                        if (!matches) {
+                            if (known) unused.remove(key);
+                            else regressions.add(key + ": ブラウザ " + wantVal + " / エンジン " + gotVal);
+                        } else if (known) {
+                            unused.remove(key);
+                            staleLedgerRows.add(key + ": 一致するようになった（ブラウザ "
+                                    + wantVal + " / エンジン " + gotVal + "）");
+                        }
                     }
                 }
             }
@@ -95,6 +107,25 @@ public class WebFidelityTest {
         }
     }
 
+    private static void checkNumericField(String caseName, String id, String field,
+                                          float wantVal, float gotVal,
+                                          Map<String, String> ledger, Set<String> unused,
+                                          List<String> regressions, List<String> staleLedgerRows) {
+        String key = caseName + "#" + id + "." + field;
+        float diff = Math.abs(gotVal - wantVal);
+        boolean known = ledger.containsKey(key);
+        String browser = FidelityDumper.number(wantVal);
+        String engine = FidelityDumper.number(gotVal);
+        if (diff > FidelityDumper.tolerance(field) + 1e-3f) {
+            if (known) unused.remove(key);
+            else regressions.add(key + ": ブラウザ " + browser + " / エンジン " + engine);
+        } else if (known) {
+            unused.remove(key);
+            staleLedgerRows.add(key + ": 一致するようになった（ブラウザ "
+                    + browser + " / エンジン " + engine + "）");
+        }
+    }
+
     /** 台帳の各項目が FIDELITY.md にも書かれていること（軸 4 の 3 点セットのうち 2 点）。 */
     @Test
     public void testEveryLedgerRowIsDocumented() throws IOException {
@@ -114,6 +145,31 @@ public class WebFidelityTest {
     }
 
     /**
+     * ケースが宣言した計算値の列が、期待値にも入っていて実際に比較されることを確かめる。
+     *
+     * <p>宣言しただけで両側に列が無いと、比較ループが空回りして「測っているつもり」になる。
+     * R0 で opacity / transform / color の列が使われているかを確認したときの番人。
+     */
+    @Test
+    public void testDeclaredComputedPropertiesAreCompared() {
+        int compared = 0;
+        for (String caseName : FidelityDumper.caseNames()) {
+            List<String> declared = FidelityDumper.declaredProperties(FidelityDumper.caseHtml(caseName));
+            if (declared.isEmpty()) continue;
+
+            Map<String, FidelityDumper.Snapshot> expected = FidelityDumper.parseDump(readExpected(caseName));
+            for (String property : declared) {
+                boolean present = expected.values().stream()
+                        .anyMatch(snapshot -> snapshot.computed().containsKey(property));
+                assertTrue(present, caseName + ": 宣言した計算値 " + property
+                        + " が期待値に 1 つも無い（列が比較されない）");
+                compared++;
+            }
+        }
+        assertTrue(compared > 0, "計算値の列を宣言したケースがコーパスに 1 つも無い");
+    }
+
+    /**
      * 現状のエンジン出力を build/fidelity に書き出す補助。
      * {@code ./gradlew test --tests '*WebFidelityTest' -Dfidelity.dump=true} で動かす。
      * 期待値の代わりに使ってはいけない（期待値はブラウザ側が出所）。
@@ -126,8 +182,16 @@ public class WebFidelityTest {
         for (String caseName : FidelityDumper.caseNames()) {
             String text = FidelityDumper.format(FidelityDumper.dump(caseName));
             Files.writeString(outDir.resolve(caseName + ".txt"), text, StandardCharsets.UTF_8);
-            System.out.println("[fidelity] " + caseName + "\n" + text);
         }
+    }
+
+    @Test
+    public void exportFidelityDumpHtml() throws IOException {
+        if (!Boolean.getBoolean("fidelity.export")) return;
+        Path out = Path.of("build/fidelity-dump.html");
+        Files.createDirectories(out.getParent());
+        Files.writeString(out, WebDevKitExporter.buildFidelityDumpHtml(), StandardCharsets.UTF_8);
+        System.out.println("Exported fidelity-dump.html to: " + out.toAbsolutePath());
     }
 
     /** 台帳: {@code case#id.field} → 理由。 */

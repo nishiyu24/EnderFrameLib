@@ -2,10 +2,10 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
-import com.nishiyu.enderframelib.api.IWebScreenBlockEntity;
+import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.core.model.UIElement;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -18,7 +18,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-public class WebBlockRenderer<T extends BlockEntity & IWebScreenBlockEntity> implements BlockEntityRenderer<T> {
+public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> implements BlockEntityRenderer<T> {
 
     public WebBlockRenderer(BlockEntityRendererProvider.Context context) {
     }
@@ -43,7 +43,7 @@ public class WebBlockRenderer<T extends BlockEntity & IWebScreenBlockEntity> imp
         String sessionId = be.getSessionId();
         ClientScreenInteractionManager.ensureSynced(sessionId);
 
-        List<UIElement> elementsToRender = ClientWebManager.getElements(sessionId);
+        List<DisplayItem> elementsToRender = ClientWebManager.getElements(sessionId);
         int lodColor = be.getLodColor();
 
         if ((elementsToRender == null || elementsToRender.isEmpty()) && lodColor == 0x00000000) return;
@@ -71,11 +71,11 @@ public class WebBlockRenderer<T extends BlockEntity & IWebScreenBlockEntity> imp
         poseStack.mulPose(Axis.YP.rotationDegrees(-facing.toYRot()));
         poseStack.translate(-0.5, -0.5, 0.501);
 
-        float scale = 1.0f / WebRenderCore.RESOLUTION;
+        float scale = 1.0f / DisplayItemDrawer.RESOLUTION;
         poseStack.scale(scale, -scale, scale);
-        poseStack.translate(0, -WebRenderCore.RESOLUTION * be.getScreenHeight(), 0);
+        poseStack.translate(0, -DisplayItemDrawer.RESOLUTION * be.getScreenHeight(), 0);
 
-        WebPaintPass.builder(elementsToRender, be.getScreenWidth(), be.getScreenHeight(), poseStack, buffer, sessionId, be.getLevel())
+        PaintRequest.builder(elementsToRender, be.getScreenWidth(), be.getScreenHeight(), poseStack, buffer, sessionId, be.getLevel())
                 .light(packedLight, packedOverlay)
                 .renderFlags(renderItems, renderText, renderRounded)
                 .zOffsets(zStep, subZOffset)

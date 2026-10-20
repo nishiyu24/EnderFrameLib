@@ -1,4 +1,4 @@
-c 8 23 20 10 0
-e 8 78 20 10 0
-s 8 88 20 40 0
-fixed 28 88 20 10 0
+c 8 23 20 10 0 sw=20 sh=10 cw=20 ch=10 display=block position=static box-sizing=content-box overflow=visible
+e 8 78 20 10 0 sw=20 sh=10 cw=20 ch=10 display=block position=static box-sizing=content-box overflow=visible
+s 8 88 20 40 0 sw=20 sh=40 cw=20 ch=40 display=block position=static box-sizing=content-box overflow=visible
+fixed 28 88 20 10 0 sw=20 sh=10 cw=20 ch=10 display=block position=static box-sizing=content-box overflow=visible

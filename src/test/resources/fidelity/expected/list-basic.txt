@@ -1,3 +1,3 @@
-list 8 16 304 40 1
-a 48 16 264 20 0
-b 48 36 264 20 0
+list 8 16 304 40 1 sw=304 sh=44 cw=304 ch=40 display=block position=static box-sizing=content-box overflow=visible
+a 48 16 264 20 0 sw=264 sh=24 cw=264 ch=20 display=list-item position=static box-sizing=content-box overflow=visible
+b 48 36 264 20 0 sw=264 sh=24 cw=264 ch=20 display=list-item position=static box-sizing=content-box overflow=visible

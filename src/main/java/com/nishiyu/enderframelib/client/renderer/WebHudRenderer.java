@@ -11,15 +11,15 @@ import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientLocalEnvProvider;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.binding.WebStateStore;
-import com.nishiyu.enderframelib.common.UIParser;
-import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.client.ReactiveStateStore;
+import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
-import com.nishiyu.enderframelib.core.dom.DomUtils;
+import com.nishiyu.enderframelib.core.dom.TemplateEngine;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.model.UIElement;
-import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.core.layout.DisplayItem;
+import com.nishiyu.enderframelib.network.EnderFrameNetwork.SubscribeC2SPacket;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -88,10 +88,6 @@ public class WebHudRenderer {
         }
     }
 
-    private static final Map<String, HudTemplateConfig> hudConfigs = new ConcurrentHashMap<>();
-    private static final Map<String, Map<String, String>> lastHudDataCache = new ConcurrentHashMap<>();
-    private static final Map<String, TrackerEntry> trackerConfigs = new ConcurrentHashMap<>();
-
     private static final Map<UUID, TrackerCache> trackerCaches = new ConcurrentHashMap<>();
     private static final Map<Integer, JsonObject> serverSyncedTrackerData = new ConcurrentHashMap<>();
     private static JsonObject latestTargetData = null;
@@ -105,7 +101,6 @@ public class WebHudRenderer {
             NeoForge.EVENT_BUS.addListener(WebHudRenderer::onRenderGui);
             NeoForge.EVENT_BUS.addListener(WebHudRenderer::onRenderLevelStage);
         } catch (Throwable t) {
-            // 握り潰すと HUD とトラッカーが無言で一切描かれなくなる。
             EnderFrameLib.LOGGER.error("Failed to register WebHudRenderer render listeners; "
                     + "HUD templates and entity trackers will not be drawn", t);
         }
@@ -134,8 +129,9 @@ public class WebHudRenderer {
         config.origDisplay = origDisplay;
         config.templateRoot = templateRoot;
         config.requireNbt.addAll(requireNbt);
-        hudConfigs.put(sessionId, config);
-        lastHudDataCache.remove(sessionId);
+        SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+        session.setHudConfig(config);
+        session.setLastHudData(null);
         requestSubscriptionSync();
     }
 
@@ -146,38 +142,46 @@ public class WebHudRenderer {
         config.targetType = targetType;
         config.requireNbt.addAll(requireNbt);
 
-        trackerConfigs.put(sessionId, new TrackerEntry(config, templateNode));
+        ClientWebManager.getOrCreateSession(sessionId).setTrackerEntry(new TrackerEntry(config, templateNode));
         requestSubscriptionSync();
     }
 
-    public static void clearSession(String sessionId) {
-        boolean changed = hudConfigs.remove(sessionId) != null;
-        lastHudDataCache.remove(sessionId);
-        if (trackerConfigs.remove(sessionId) != null) {
-            changed = true;
+    /** セッションの HUD 設定が消えたことを {@link SessionContext#close()} から知らされる。 */
+    public static void onSessionStateCleared() {
+        boolean anyTracker = false;
+        for (SessionContext session : ClientWebManager.sessions()) {
+            if (session.trackerEntry() != null) {
+                anyTracker = true;
+                break;
+            }
         }
-        if (trackerConfigs.isEmpty()) {
+        if (!anyTracker) {
             trackerCaches.clear();
         }
-        if (changed) requestSubscriptionSync();
+        requestSubscriptionSync();
     }
 
     private static void executeSubscriptionSync() {
-        boolean needsHud = !hudConfigs.isEmpty();
-        boolean needsTracker = !trackerConfigs.isEmpty();
+        boolean needsHud = false;
+        boolean needsTracker = false;
         double radius = 24.0;
         String type = "living";
 
         List<String> trackerNbtPaths = new ArrayList<>();
-        for (TrackerEntry te : trackerConfigs.values()) {
-            radius = Math.max(radius, te.config.radius);
-            type = te.config.targetType;
-            trackerNbtPaths.addAll(te.config.requireNbt);
-        }
-
         List<String> hudNbtPaths = new ArrayList<>();
-        for (HudTemplateConfig cfg : hudConfigs.values()) {
-            hudNbtPaths.addAll(cfg.requireNbt);
+        for (SessionContext session : ClientWebManager.sessions()) {
+            TrackerEntry te = session.trackerEntry();
+            if (te != null) {
+                needsTracker = true;
+                radius = Math.max(radius, te.config.radius);
+                type = te.config.targetType;
+                trackerNbtPaths.addAll(te.config.requireNbt);
+            }
+            HudTemplateConfig cfg = session.hudConfig();
+            if (cfg != null) {
+                needsHud = true;
+                hudNbtPaths.addAll(cfg.requireNbt);
+            }
         }
 
         SubscribeC2SPacket packet = new SubscribeC2SPacket("", false, needsHud, needsTracker, radius, type, hudNbtPaths, trackerNbtPaths);
@@ -223,22 +227,23 @@ public class WebHudRenderer {
     }
 
     private static void processHudTemplates(Minecraft mc, String screenKey) {
-        HudTemplateConfig config = hudConfigs.get(screenKey);
+        SessionContext session = ClientWebManager.getSession(screenKey);
+        HudTemplateConfig config = session != null ? session.hudConfig() : null;
         if (config == null || config.templateRoot == null) return;
 
-        HtmlNode vRoot = ClientWebManager.getVirtualRoot(screenKey);
+        HtmlNode vRoot = ClientWebManager.getRootNode(screenKey);
         if (vRoot == null) return;
 
         HtmlNode containerNode = vRoot.getElementById(config.containerId);
         if (containerNode == null) return;
 
         Map<String, String> dataMap = extractHudData(mc.hitResult);
-        Map<String, String> prevData = lastHudDataCache.get(screenKey);
+        Map<String, String> prevData = session.lastHudData();
 
         if (prevData != null && prevData.equals(dataMap)) {
             return;
         }
-        lastHudDataCache.put(screenKey, new HashMap<>(dataMap));
+        session.setLastHudData(new HashMap<>(dataMap));
 
         if (dataMap.isEmpty()) {
             containerNode.setStyleProperty("display", "none");
@@ -257,11 +262,11 @@ public class WebHudRenderer {
     }
 
     private static void renderHudElements(PoseStack poseStack, Minecraft mc, String screenKey) {
-        List<UIElement> elements = ClientWebManager.getElements(screenKey);
+        List<DisplayItem> elements = ClientWebManager.getElements(screenKey);
         if (elements.isEmpty()) return;
 
-        List<UIElement> hudElements = new ArrayList<>(elements.size());
-        for (UIElement el : elements) {
+        List<DisplayItem> hudElements = new ArrayList<>(elements.size());
+        for (DisplayItem el : elements) {
             if (el.events() != null && el.events().containsKey("data-mount-entity")) continue;
             hudElements.add(el);
         }
@@ -273,10 +278,10 @@ public class WebHudRenderer {
         poseStack.scale(screenScale, screenScale, 1.0f);
 
         var bufferSource = mc.renderBuffers().bufferSource();
-        int logicWidth = (int) Math.ceil((float) lastSentWidth / WebRenderCore.RESOLUTION);
-        int logicHeight = (int) Math.ceil((float) lastSentHeight / WebRenderCore.RESOLUTION);
+        int logicWidth = (int) Math.ceil((float) lastSentWidth / DisplayItemDrawer.RESOLUTION);
+        int logicHeight = (int) Math.ceil((float) lastSentHeight / DisplayItemDrawer.RESOLUTION);
 
-        WebPaintPass.builder(hudElements, logicWidth, logicHeight, poseStack, bufferSource, screenKey, mc.level)
+        PaintRequest.builder(hudElements, logicWidth, logicHeight, poseStack, bufferSource, screenKey, mc.level)
                 .light(0xF000F0, OverlayTexture.NO_OVERLAY)
                 .zOffsets(0.0f, 0.0f)
                 .hoveredId(ClientScreenInteractionManager.getHoveredId(screenKey))
@@ -294,7 +299,8 @@ public class WebHudRenderer {
         String screenKey = activeHudSessionResolver != null ? activeHudSessionResolver.apply(mc) : null;
         if (screenKey == null || screenKey.isEmpty()) return;
 
-        TrackerEntry entry = trackerConfigs.get(screenKey);
+        SessionContext session = ClientWebManager.getSession(screenKey);
+        TrackerEntry entry = session != null ? session.trackerEntry() : null;
         if (entry != null) {
             renderTrackersInWorld(event.getPoseStack(), mc, screenKey, entry);
         }
@@ -377,22 +383,22 @@ public class WebHudRenderer {
     }
 
     private static void buildTrackerLayout(HtmlNode instanceNode, String screenKey, TrackerCache cache) {
-        UIParser.Document doc = ClientWebManager.getDocument(screenKey);
+        UiDocumentCompiler.Document doc = ClientWebManager.getDocument(screenKey);
         if (doc == null) return;
 
         com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(instanceNode, Map.of("display", "inline-block"), doc.sheet);
-        Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
+        Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.Selector.ElementState.NONE);
         com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(rawStyle, doc.sheet, null);
 
         LayoutBox layoutBox = new LayoutBox(instanceNode, computed);
         buildLayoutTreeRecursively(instanceNode, layoutBox, doc.sheet);
         com.nishiyu.enderframelib.core.layout.BoxTreeBuilder.build(layoutBox);
 
-        com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport viewport = new com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport(1000, 1000);
-        com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState();
-        com.nishiyu.enderframelib.core.layout.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutContext(
-                viewport, UIParser.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONTS);
-        com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext("block", "stretch", false);
+        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport viewport = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport(1000, 1000);
+        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState scrollState = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState();
+        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext ctx = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext(
+                viewport, UiDocumentCompiler.intrinsicSizeResolver, scrollState, ClientWebManager.CLIENT_FONTS);
+        com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext fmtCtx = new com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext("block", "stretch", false);
 
         layoutBox.measure(1000, 1000, fmtCtx, ctx);
         layoutBox.measure(1000, 1000, fmtCtx, ctx);
@@ -401,7 +407,7 @@ public class WebHudRenderer {
         cache.width = Math.round(layoutBox.w);
         cache.height = Math.round(layoutBox.h);
 
-        UIRenderer renderer = new UIRenderer(cache.width, cache.height, doc.sheet.keyframes, scrollState);
+        DisplayListBuilder renderer = new DisplayListBuilder(cache.width, cache.height, doc.sheet.keyframes, scrollState);
         cache.elements = renderer.render(layoutBox);
     }
 
@@ -426,7 +432,7 @@ public class WebHudRenderer {
         poseStack.scale(-scale, -scale, scale);
         poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
 
-        WebPaintPass.forBillboard(
+        PaintRequest.forBillboard(
                 cache.elements, cache.width, cache.height,
                 poseStack, bufferSource,
                 screenKey, ClientScreenInteractionManager.getHoveredId(screenKey),
@@ -525,11 +531,11 @@ public class WebHudRenderer {
         ClientLocalEnvProvider.applyI18nAttributes(node);
         Map<String, String> localEnv = ClientLocalEnvProvider.captureCurrentEnv();
 
-        DomUtils.applyTemplate(node, text -> resolveAllPlaceholders(text, data, localEnv));
+        TemplateEngine.applyTemplate(node, text -> TemplateEngine.resolve(text, data, localEnv));
 
         if (node.attrs.containsKey("data-show")) {
             String showVal = node.attrs.get("data-show").trim();
-            Boolean condResult = WebStateStore.evaluateCondition(showVal, data);
+            Boolean condResult = ReactiveStateStore.evaluateCondition(showVal, data);
             boolean hide = (condResult != null) ? !condResult
                     : (showVal.isEmpty() || "false".equalsIgnoreCase(showVal) || "0".equals(showVal) || showVal.contains("{{"));
             if (hide) node.setStyleProperty("display", "none");
@@ -538,7 +544,7 @@ public class WebHudRenderer {
 
         if (node.attrs.containsKey("data-list")) {
             String jsonStr = node.attrs.remove("data-list");
-            List<HtmlNode> templateChildren = WebStateStore.extractTemplateChildren(node);
+            List<HtmlNode> templateChildren = ReactiveStateStore.extractTemplateChildren(node);
             node.children.clear();
 
             if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.contains("{{")) {
@@ -591,18 +597,12 @@ public class WebHudRenderer {
         }
     }
 
-    private static String resolveAllPlaceholders(String text, Map<String, String> data, Map<String, String> localEnv) {
-        String step1 = WebStateStore.replacePlaceholdersWithData(text, data);
-        return ClientLocalEnvProvider.replaceLocalPlaceholders(step1, localEnv);
-    }
-
     private static void buildLayoutTreeRecursively(HtmlNode node, LayoutBox box, StyleSheet sheet) {
         for (HtmlNode child : node.children) {
             if ("#text".equals(child.tag) && (child.text == null || child.text.trim().isEmpty())) continue;
 
             com.nishiyu.enderframelib.core.css.StyleResolver.StyleSet styleSet = com.nishiyu.enderframelib.core.css.StyleResolver.resolveStyleSet(child, box.style.asMap(), sheet);
-            Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.ElementState.NONE);
-            // 親の算出スタイルを渡さないと inherit が初期値になり、子の em が 16px 基準になる
+            Map<String, String> rawStyle = styleSet.resolve(com.nishiyu.enderframelib.core.css.Selector.ElementState.NONE);
             com.nishiyu.enderframelib.core.css.ComputedStyle computed = com.nishiyu.enderframelib.core.css.StyleResolver.finalizeComputedStyle(
                     rawStyle, sheet, null, box.style.asMap(), box.style.fontSizePx(),
                     com.nishiyu.enderframelib.core.css.ComputedStyle.DEFAULT_FONT_SIZE, 1000, 1000);
@@ -706,7 +706,7 @@ public class WebHudRenderer {
 
     private static class TrackerCache {
         final Map<String, String> data = new HashMap<>();
-        List<UIElement> elements;
+        List<DisplayItem> elements;
         int width, height;
         public boolean isChanged(Map<String, String> newData) { return !data.equals(newData); }
     }

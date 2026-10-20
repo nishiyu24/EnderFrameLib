@@ -1,2 +1,2 @@
-host 8 8 304 150 0
-sticky 8 10 304 20 0
+host 8 8 304 150 0 sw=304 sh=150 cw=304 ch=150 display=block position=static box-sizing=content-box overflow=visible
+sticky 8 10 304 20 0 sw=304 sh=20 cw=304 ch=20 display=block position=sticky box-sizing=content-box overflow=visible

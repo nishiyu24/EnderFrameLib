@@ -1,0 +1,7 @@
+a 8 8 30 10 0 sw=30 sh=10 cw=30 ch=10 display=block position=static box-sizing=content-box overflow=visible
+p 8 18 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible
+b 8 18 30 10 0 sw=30 sh=10 cw=30 ch=10 display=block position=static box-sizing=content-box overflow=visible
+q 8 28 304 20 1 sw=304 sh=20 cw=304 ch=20 display=block position=static box-sizing=content-box overflow=visible
+c 8 28 304 20 0 sw=304 sh=20 cw=304 ch=20 display=block position=static box-sizing=content-box overflow=visible
+d 8 48 50 10 0 sw=50 sh=10 cw=50 ch=10 display=block position=static box-sizing=content-box overflow=visible
+e 8 58 30 10 0 sw=30 sh=10 cw=30 ch=10 display=block position=static box-sizing=content-box overflow=visible

@@ -1,0 +1,26 @@
+000: [bg_root] RECT rect=[0,0,320,300] bg=#FF1A1A24
+001: [gen_1] NODE rect=[0,0,320,286] color=#FF000000
+002: [gen_1_bg] RECT rect=[0,0,320,286] color=#FF000000
+003: [gen_5] NODE rect=[10,10,300,266] color=#FFFFFFFF
+004: [gen_5_bg] RECT rect=[10,10,300,266] color=#FFFFFFFF
+005: [c1] NODE rect=[20,10,204,124] color=#FFFFFFFF bg=#1AFFFFFF radii=[8,8,8,8]
+006: [c1_shadow_0] RECT rect=[16,6,220,140] bg=#29000000 r=16 radii=[16,16,16,16]
+007: [c1_shadow_1] RECT rect=[21,11,210,130] bg=#29000000 r=11 radii=[11,11,11,11]
+008: [c1_shadow_2] RECT rect=[27,17,198,118] bg=#29000000 r=5 radii=[5,5,5,5]
+009: [c1_shadow_3] RECT rect=[32,22,188,108] bg=#29000000
+010: [c1_bg] RECT rect=[20,10,204,124] color=#FFFFFFFF bg=#1AFFFFFF r=8 radii=[8,8,8,8]
+011: [c1_b_round] ROUNDED_BORDER rect=[20,10,204,124] radii=[8,8,8,8] roundedBorder=[w=2.0,2.0,2.0,2.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
+012: [g1] NODE rect=[20,144,150,40] color=#FFFFFFFF radii=[4,4,4,4]
+013: [g1_bg] RECT rect=[20,144,150,40] color=#FFFFFFFF r=4 radii=[4,4,4,4]
+014: [g1_bgl0_0] RECT rect=[20,144,150,40] bg=#FFF38BA8 clip=[20.0,144.0,170.0,184.0] gradient=[#FFF38BA8,#FFA6E3A1,#FFA6E3A1,#FFF38BA8]
+015: [s1] NODE rect=[10,194,162,82] color=#FFFFFFFF radii=[6,6,6,6]
+016: [s1_bg] RECT rect=[10,194,162,82] color=#FFFFFFFF r=6 radii=[6,6,6,6]
+017: [s1_b_round] ROUNDED_BORDER rect=[10,194,162,82] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF9E2AF,#FFF9E2AF,#FFF9E2AF,#FFF9E2AF]
+018: [inner] NODE rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+019: [inner_bg] RECT rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+020: [txt_6] NODE rect=[0,0,144,18] color=#FFFFFFFF
+021: [txt_6_txt_0] TEXT rect=[22,12,57,18] color=#FFFFFFFF text="Card "
+022: [txt_6_txt_1] TEXT rect=[79,12,87,18] color=#FFFFFFFF text="content"
+023: [txt_7] NODE rect=[0,0,130,18] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+024: [txt_7_txt_2] TEXT rect=[11,195,43,18] color=#FFFFFFFF text="Tall " clip=[11.0,195.0,171.0,275.0]
+025: [txt_7_txt_3] TEXT rect=[54,195,87,18] color=#FFFFFFFF text="content" clip=[11.0,195.0,171.0,275.0]

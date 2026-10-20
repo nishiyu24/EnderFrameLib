@@ -1,8 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.nishiyu.enderframelib.core.model.UIElement.ClipRect;
-import com.nishiyu.enderframelib.core.model.UIElement.Corners;
 import org.joml.Matrix4f;
 
 /**
@@ -44,87 +42,87 @@ public final class RoundedRectRasterizer {
         builder.addVertex(matrix, minX, minY, zOffset).setColor(r, g, b, a).setUv(u0, v0).setOverlay(packedOverlay).setLight(packedLight).setNormal(0, 0, 1);
     }
 
+    /** 4 隅の色（左上・右上・右下・左下）を双線形に補間する矩形。 */
     public static void addGradientQuadRaw(VertexConsumer builder, Matrix4f matrix,
                                           float minX, float minY, float maxX, float maxY,
-                                          String dir, int c1, int c2, float opacity, float zOffset) {
-        float a1 = ((c1 >>> 24) & 0xFF) / 255.0f * opacity, r1 = ((c1 >>> 16) & 0xFF) / 255.0f, g1 = ((c1 >>> 8) & 0xFF) / 255.0f, b1 = (c1 & 0xFF) / 255.0f;
-        float a2 = ((c2 >>> 24) & 0xFF) / 255.0f * opacity, r2 = ((c2 >>> 16) & 0xFF) / 255.0f, g2 = ((c2 >>> 8) & 0xFF) / 255.0f, b2 = (c2 & 0xFF) / 255.0f;
+                                          int cTL, int cTR, int cBR, int cBL, float opacity, float zOffset) {
+        vertex(builder, matrix, minX, maxY, zOffset, cBL, opacity);
+        vertex(builder, matrix, maxX, maxY, zOffset, cBR, opacity);
+        vertex(builder, matrix, maxX, minY, zOffset, cTR, opacity);
+        vertex(builder, matrix, minX, minY, zOffset, cTL, opacity);
+    }
 
-        switch (dir != null ? dir : "bottom") {
-            case "right" -> {
-                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
-            }
-            case "left" -> {
-                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, minX, minY, zOffset).setColor(r2, g2, b2, a2);
-            }
-            case "top" -> {
-                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, minX, minY, zOffset).setColor(r2, g2, b2, a2);
-            }
-            case "diag" -> {
-                float rm = (r1 + r2) * 0.5f, gm = (g1 + g2) * 0.5f, bm = (b1 + b2) * 0.5f, am = (a1 + a2) * 0.5f;
-                builder.addVertex(matrix, minX, maxY, zOffset).setColor(rm, gm, bm, am);
-                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(rm, gm, bm, am);
-                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
-            }
-            default -> {
-                builder.addVertex(matrix, minX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r2, g2, b2, a2);
-                builder.addVertex(matrix, maxX, minY, zOffset).setColor(r1, g1, b1, a1);
-                builder.addVertex(matrix, minX, minY, zOffset).setColor(r1, g1, b1, a1);
-            }
-        }
+    private static void vertex(VertexConsumer builder, Matrix4f matrix, float x, float y, float z, int argb, float opacity) {
+        builder.addVertex(matrix, x, y, z).setColor(((argb >>> 16) & 0xFF) / 255.0f, ((argb >>> 8) & 0xFF) / 255.0f,
+                (argb & 0xFF) / 255.0f, ((argb >>> 24) & 0xFF) / 255.0f * opacity);
     }
 
     public static void drawGradientRoundedRect(
             VertexConsumer builder, Matrix4f matrix,
             float minX, float minY, float maxX, float maxY,
             float rTL, float rTR, float rBR, float rBL,
-            String dir, int c1, int c2, float opacity, float zOffset,
+            int cTL, int cTR, int cBR, int cBL, float opacity, float zOffset,
             float cx0, float cy0, float cx1, float cy1,
             float cRTL, float cRTR, float cRBR, float cRBL,
             boolean useSdfShader
     ) {
-        float a1 = ((c1 >>> 24) & 0xFF) / 255.0f * opacity, r1 = ((c1 >>> 16) & 0xFF) / 255.0f, g1 = ((c1 >>> 8) & 0xFF) / 255.0f, b1 = (c1 & 0xFF) / 255.0f;
-        float a2 = ((c2 >>> 24) & 0xFF) / 255.0f * opacity, r2 = ((c2 >>> 16) & 0xFF) / 255.0f, g2 = ((c2 >>> 8) & 0xFF) / 255.0f, b2 = (c2 & 0xFF) / 255.0f;
-
         if (useSdfShader) {
-            boolean drawn = switch (dir != null ? dir : "bottom") {
-                case "right" -> WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                        r1, g1, b1, a1, r2, g2, b2, a2, r2, g2, b2, a2, r1, g1, b1, a1,
-                        zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
-                case "left" -> WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                        r2, g2, b2, a2, r1, g1, b1, a1, r1, g1, b1, a1, r2, g2, b2, a2,
-                        zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
-                case "top" -> WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                        r2, g2, b2, a2, r2, g2, b2, a2, r1, g1, b1, a1, r1, g1, b1, a1,
-                        zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
-                case "diag" -> {
-                    float rm = (r1 + r2) * 0.5f, gm = (g1 + g2) * 0.5f, bm = (b1 + b2) * 0.5f, am = (a1 + a2) * 0.5f;
-                    yield WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                            r1, g1, b1, a1, rm, gm, bm, am, r2, g2, b2, a2, rm, gm, bm, am,
-                            zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
-                }
-                default -> WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                        r1, g1, b1, a1, r1, g1, b1, a1, r2, g2, b2, a2, r2, g2, b2, a2,
-                        zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
-            };
-            if (drawn) return;
+            float[] tl = rgba(cTL, opacity), tr = rgba(cTR, opacity), br = rgba(cBR, opacity), bl = rgba(cBL, opacity);
+            if (WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
+                    tl[0], tl[1], tl[2], tl[3], tr[0], tr[1], tr[2], tr[3], br[0], br[1], br[2], br[3], bl[0], bl[1], bl[2], bl[3],
+                    zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL)) {
+                return;
+            }
         }
 
+        // シェーダが無いときは矩形で切るだけ（隅の色は切った矩形の隅で求め直す）
         float x0 = Math.max(minX, cx0), y0 = Math.max(minY, cy0);
         float x1 = Math.min(maxX, cx1), y1 = Math.min(maxY, cy1);
         if (x0 < x1 && y0 < y1) {
-            addGradientQuadRaw(builder, matrix, x0, y0, x1, y1, dir, c1, c2, opacity, zOffset);
+            float w = maxX - minX, h = maxY - minY;
+            float u0 = (x0 - minX) / w, u1 = (x1 - minX) / w, v0 = (y0 - minY) / h, v1 = (y1 - minY) / h;
+            addGradientQuadRaw(builder, matrix, x0, y0, x1, y1,
+                    bilinear(cTL, cTR, cBR, cBL, u0, v0), bilinear(cTL, cTR, cBR, cBL, u1, v0),
+                    bilinear(cTL, cTR, cBR, cBL, u1, v1), bilinear(cTL, cTR, cBR, cBL, u0, v1), opacity, zOffset);
+        }
+    }
+
+    private static float[] rgba(int argb, float opacity) {
+        return new float[]{((argb >>> 16) & 0xFF) / 255.0f, ((argb >>> 8) & 0xFF) / 255.0f, (argb & 0xFF) / 255.0f,
+                ((argb >>> 24) & 0xFF) / 255.0f * opacity};
+    }
+
+    private static int bilinear(int tl, int tr, int br, int bl, float u, float v) {
+        int out = 0;
+        for (int shift = 0; shift < 32; shift += 8) {
+            float top = ((tl >>> shift) & 0xFF) * (1 - u) + ((tr >>> shift) & 0xFF) * u;
+            float bottom = ((bl >>> shift) & 0xFF) * (1 - u) + ((br >>> shift) & 0xFF) * u;
+            out |= Math.clamp(Math.round(top * (1 - v) + bottom * v), 0, 255) << shift;
+        }
+        return out;
+    }
+
+    /**
+     * 角丸の枠線。枠の領域（外側の角丸矩形 − パディングボックス）だけを、辺ごとの色の矩形の片で塗る
+     * （{@link BoxDecorations#roundedBorderSpans}）。片は親のクリップで切る。
+     */
+    public static void drawRoundedBorder(
+            VertexConsumer builder, Matrix4f matrix,
+            float minX, float minY, float maxX, float maxY,
+            float rTL, float rTR, float rBR, float rBL,
+            float[] widths, int[] colors, float opacity, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL,
+            boolean useSdfShader
+    ) {
+        for (BoxDecorations.Span span : BoxDecorations.roundedBorderSpans(minX, minY, maxX - minX, maxY - minY,
+                new float[]{rTL, rTR, rBR, rBL}, widths)) {
+            int c = colors[span.side().ordinal()];
+            float a = ((c >>> 24) & 0xFF) / 255.0f * opacity;
+            if (a <= 0) continue;
+            drawClippedQuad(builder, matrix, span.x(), span.y(), span.x() + span.w(), span.y() + span.h(),
+                    ((c >>> 16) & 0xFF) / 255.0f, ((c >>> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f, a, zOffset,
+                    cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL, useSdfShader);
         }
     }
 

@@ -1,3 +1,3 @@
-row 8 8 200 40 1
-a 8 8 60 40 0
-b 68 8 140 40 0
+row 8 8 200 40 1 sw=200 sh=40 cw=200 ch=40 display=flex position=static box-sizing=content-box overflow=visible
+a 8 8 60 40 0 sw=60 sh=40 cw=60 ch=40 display=block position=static box-sizing=content-box overflow=visible
+b 68 8 140 40 0 sw=140 sh=40 cw=140 ch=40 display=block position=static box-sizing=content-box overflow=visible

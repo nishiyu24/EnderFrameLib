@@ -6,69 +6,71 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 設定フィールドに付与し、HTML5標準フォーム要素（{@code <input>}, {@code <select>}, {@code <fieldset>} 等）
- * およびバリデーション属性（{@code min}, {@code max}, {@code step}, {@code pattern}, {@code placeholder}）へマッピングするアノテーション。
+ * Marks a configuration field to map it to HTML5 standard form elements
+ * ({@code <input>}, {@code <select>}, {@code <fieldset>}, etc.) and validation attributes
+ * ({@code min}, {@code max}, {@code step}, {@code pattern}, {@code placeholder}).
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
 public @interface ConfigEntry {
+
     /**
-     * カテゴリ（HTMLの {@code <details><summary>} またはタブとしてグループ化される）
+     * Category name for grouping (rendered as HTML {@code <details><summary>} or tabs).
      */
     String category() default "General";
 
     /**
-     * 表示ラベル（空の場合はフィールド名から自動整形、または翻訳キー）
+     * Display label (auto-generated from field name if empty, or a translation key).
      */
     String label() default "";
 
     /**
-     * 説明コメント（HTMLの {@code title} ツールチップおよび説明テキストとして出力）
+     * Description comment (emitted as HTML {@code title} tooltip and explanatory text).
      */
     String description() default "";
 
     /**
-     * 数値型の最小値（HTML5 {@code min} 属性）
+     * Minimum value for numeric types (HTML5 {@code min} attribute).
      */
     double min() default -Double.MAX_VALUE;
 
     /**
-     * 数値型の最大値（HTML5 {@code max} 属性）
+     * Maximum value for numeric types (HTML5 {@code max} attribute).
      */
     double max() default Double.MAX_VALUE;
 
     /**
-     * 数値型の刻み幅（HTML5 {@code step} 属性）
+     * Step value for numeric types (HTML5 {@code step} attribute).
      */
     double step() default 1.0;
 
     /**
-     * true の場合、数値フィールドを {@code <input type="range">} スライダーとして描画する
+     * When {@code true}, numeric fields are rendered as an {@code <input type="range">} slider.
      */
     boolean slider() default false;
 
     /**
-     * true の場合、文字列や整数カラーを {@code <input type="color">} カラーピッカーとして描画する
+     * When {@code true}, string or integer color fields are rendered as an {@code <input type="color">} color picker.
      */
     boolean colorPicker() default false;
 
     /**
-     * テキスト入力時の {@code placeholder} 属性
+     * Placeholder text for text inputs (HTML5 {@code placeholder} attribute).
      */
     String placeholder() default "";
 
     /**
-     * 正規表現による入力検証（HTML5 {@code pattern} 属性）
+     * Regular expression pattern for input validation (HTML5 {@code pattern} attribute).
      */
     String pattern() default "";
 
     /**
-     * Stringフィールドに対して選択肢を制限する場合のオプション一覧（{@code <select><option>} を生成）
+     * Allowed options for String fields (generates a {@code <select>} dropdown with {@code <option>} entries).
      */
     String[] options() default {};
 
     /**
-     * 変更時にMinecraft再起動が必要かどうかを表示するフラグ
+     * Flag indicating whether changing this value requires restarting Minecraft.
      */
     boolean requiresRestart() default false;
 }

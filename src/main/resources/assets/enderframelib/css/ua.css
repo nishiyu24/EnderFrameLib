@@ -4,10 +4,11 @@
  * WHATWG HTML の Rendering 節（§15.3 / §15.4）の既定値を、このエンジンが読める形で書いたもの。
  * 論理プロパティは横書き・左から右の物理プロパティに、:is() は子孫セレクタの列挙に、
  * :link / :visited は a[href] に置き換えてある。色・角丸・背景などの装飾は持たず、
- * 組み込みテーマ（dark / vanilla / brass）が持つ。標準に無いものは次の 3 つだけ:
+ * 組み込みテーマ（dark / vanilla / brass）が持つ。標準に無いものは次の 4 つだけ:
  *   - インライン要素の display: inline（エンジンは display の宣言が無い要素の多くをブロックと推測するため）
  *   - フォームコントロールの見た目（appearance: auto 相当。ブラウザは OS の部品で描くので CSS に現れない）
  *   - EnderFrameLib のカスタムタグ（mc-*）とそれが展開するクラス（ブラウザに無い要素の既定値）
+ *   - Minecraft のチャットの 16 色の変数（--mc-*。CSS の名前付き色は CSS の値なので、Minecraft の色はこちら）
  *
  * 何が壊れていたか: 以前は UA がテーマ的な装飾（暗い pre・リンク色 #89b4fa・h6 の色・表の枠と幅 100%・
  * 白い body）を持ち、dl / dd などの既定値が欠け、body の margin が 0 だったため、素の HTML が
@@ -102,6 +103,9 @@ input[type="reset"], input[type="button"], input[type="submit"], button { text-a
 input, button, select, textarea { display: inline-block; }
 input[type="radio"], input[type="checkbox"], input[type="reset"], input[type="button"], input[type="submit"], input[type="color"], input[type="search"], select, button { box-sizing: border-box; }
 textarea { white-space: pre-wrap; }
+/* フォームコントロールは中身を枠で切る（Chromium の実測。チェックボックス・ラジオ・レンジの印は枠の外にも描く） */
+input, select { overflow: clip; }
+input[type="checkbox"], input[type="radio"], input[type="range"] { overflow: visible; }
 
 /* §15.3.11 hr */
 hr { color: gray; border-style: inset; border-width: 1px; margin: 0.5em auto; overflow: hidden; }
@@ -143,3 +147,11 @@ button[disabled], input[disabled], select[disabled], textarea[disabled] { opacit
 .mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
 .mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
 .mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; overflow: hidden; }
+
+/* Minecraft のチャットの色（§ の書式コード 0〜f）。以前は CSS の名前付き色（red / gray など）がこの値になっていた */
+:root {
+  --mc-black: #000000; --mc-dark-blue: #0000aa; --mc-dark-green: #00aa00; --mc-dark-aqua: #00aaaa;
+  --mc-dark-red: #aa0000; --mc-dark-purple: #aa00aa; --mc-gold: #ffaa00; --mc-gray: #aaaaaa;
+  --mc-dark-gray: #555555; --mc-blue: #5555ff; --mc-green: #55ff55; --mc-aqua: #55ffff;
+  --mc-red: #ff5555; --mc-light-purple: #ff55ff; --mc-yellow: #ffff55; --mc-white: #ffffff;
+}

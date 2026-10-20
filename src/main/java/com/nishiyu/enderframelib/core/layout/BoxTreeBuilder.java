@@ -1,12 +1,12 @@
 package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
+import com.nishiyu.enderframelib.core.css.CssProperty.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.PropertyRegistry;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
-import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -244,13 +244,26 @@ public final class BoxTreeBuilder {
             Map<String, String> overrides = child.node.isPseudoNode
                     ? MARKER_OVERRIDES
                     : Map.of(CssProperty.DISPLAY, child.style.getOrDefault(CssProperty.DISPLAY, "block"));
-            child.updateStyle(generatedStyle(owner, overrides));
+            child.updateStyle(child.node.isPseudoNode ? markerStyleOf(owner) : generatedStyle(owner, overrides));
             if (child.node.isPseudoNode) {
                 for (LayoutBox text : child.children) text.updateStyle(child.style);
             } else {
                 restyleGeneratedBoxes(child);
             }
         }
+    }
+
+    /**
+     * マーカーの算出スタイル。{@code ::marker} の規則が掛かっていればそれ（親はリスト項目）、
+     * 無ければリスト項目の継承値。どちらも UA の ::marker と同じ上書き（空白を畳まない・text-transform なし）を掛ける。
+     */
+    private static ComputedStyle markerStyleOf(LayoutBox listItem) {
+        ComputedStyle declared = listItem.markerStyle;
+        if (declared == null) return generatedStyle(listItem, MARKER_OVERRIDES);
+        Map<String, String> props = new LinkedHashMap<>(declared.asMap());
+        props.remove(CssProperty.CONTENT);
+        props.putAll(MARKER_OVERRIDES);
+        return new ComputedStyle(props, declared.fontSizePx(), declared.rootFontSizePx());
     }
 
     private static ComputedStyle generatedStyle(LayoutBox owner, Map<String, String> overrides) {
@@ -275,29 +288,44 @@ public final class BoxTreeBuilder {
      * リスト項目の {@code ::marker}。{@code list-style-position: outside} なら通常フローの外に置かれ、
      * {@link BlockLayoutEngine} が最初の行の左に並べる。{@code inside} なら先頭のインライン内容になる。
      *
-     * LIMITATION(制約): {@code ::marker} のセレクタは照合せず、マーカーはリスト項目の継承値で描く。
-     * {@code list-style-image} は読まない。README の "Not supported" に対応。
+     * {@code ::marker} の規則（色・フォント・{@code content} など）は {@link LayoutBox#markerStyle} から読む。
+     * {@code content} があればリストの種類より優先する（{@code li::marker { content: "→ " }}）。
+     *
+     * LIMITATION(制約): {@code list-style-image} は読まない。README の "Not supported" に対応。
      */
     private static LayoutBox createMarker(LayoutBox listItem, Counters counters) {
-        String text = markerText(listItem.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc"),
-                counters.value(LIST_ITEM));
+        String text = markerContent(listItem, counters);
+        if (text == null) {
+            text = markerText(listItem.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc"),
+                    counters.value(LIST_ITEM));
+        }
         if (text == null || text.isEmpty()) return null;
 
-        ComputedStyle style = generatedStyle(listItem, MARKER_OVERRIDES);
+        ComputedStyle style = markerStyleOf(listItem);
 
         HtmlNode node = new HtmlNode("span");
         node.isPseudoNode = true;
         node.parent = listItem.node;
         node.setId(listItem.node.getId() + "_marker");
-        HtmlNode textNode = HtmlNode.createTextNode(text);
+        HtmlNode textNode = new com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText(text);
         textNode.parent = node;
         textNode.setId(node.getId() + "_txt");
 
         // DOM に無い箱なので匿名ボックスとして持つ（描画は中のテキストだけ）
         LayoutBox marker = LayoutBox.anonymous(node, style);
-        marker.isOutsideMarker = !"inside".equals(listItem.style.getOrDefault(CssProperty.LIST_STYLE_POSITION, "outside"));
+        marker.isOutsideMarker = listItem.style.keywordOf(CssProperty.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+                != CssKeywords.ListStylePosition.INSIDE;
         marker.addChild(new LayoutBox(textNode, style));
         return marker;
+    }
+
+    /** {@code ::marker} の {@code content}。無い・{@code normal} は null（リストの種類で決める）、{@code none} は空文字列。 */
+    private static String markerContent(LayoutBox listItem, Counters counters) {
+        if (listItem.markerStyle == null) return null;
+        String content = listItem.markerStyle.get(CssProperty.CONTENT);
+        if (content == null || content.isBlank() || content.trim().equalsIgnoreCase("normal")) return null;
+        if (content.trim().equalsIgnoreCase("none")) return "";
+        return evaluateContent(content, listItem.node, counters);
     }
 
     /** UA の ::marker と同じ（空白を畳まず、text-transform を掛けない）。 */

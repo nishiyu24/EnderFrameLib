@@ -1,9 +1,10 @@
 package com.nishiyu.enderframelib.server;
 
+import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
-import com.nishiyu.enderframelib.api.IWebSessionProvider;
+import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
-import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.EnderFrameNetwork.WebSyncS2CPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
@@ -116,12 +117,12 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
     }
 
     @Override
-    public void registerProvider(IWebSessionProvider provider) {
+    public void registerProvider(WebSessionProvider provider) {
         WebSessionManager.registerProvider(provider);
     }
 
     @Override
-    public void unregisterProvider(IWebSessionProvider provider) {
+    public void unregisterProvider(WebSessionProvider provider) {
         WebSessionManager.unregisterProvider(provider);
     }
 

@@ -1,4 +1,4 @@
-row 8 8 300 20 1
-a 138 8 50 20 0
-b 78 8 60 20 0
-c 8 8 70 20 0
+row 8 8 300 20 1 sw=300 sh=20 cw=300 ch=20 display=flex position=static box-sizing=content-box overflow=visible
+a 138 8 50 20 0 sw=50 sh=20 cw=50 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 78 8 60 20 0 sw=60 sh=20 cw=60 ch=20 display=block position=static box-sizing=content-box overflow=visible
+c 8 8 70 20 0 sw=70 sh=20 cw=70 ch=20 display=block position=static box-sizing=content-box overflow=visible

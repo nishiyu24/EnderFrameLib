@@ -1,4 +1,4 @@
-outer 8 16 304 40 3
-a 48 16 264 40 2
-inner 48 36 264 20 1
-b 88 36 224 20 0
+outer 8 16 304 40 3 sw=304 sh=44 cw=304 ch=40 display=block position=static box-sizing=content-box overflow=visible
+a 48 16 264 40 2 sw=264 sh=44 cw=264 ch=40 display=list-item position=static box-sizing=content-box overflow=visible
+inner 48 36 264 20 1 sw=264 sh=24 cw=264 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 88 36 224 20 0 sw=224 sh=24 cw=224 ch=20 display=list-item position=static box-sizing=content-box overflow=visible

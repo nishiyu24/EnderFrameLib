@@ -1,0 +1,7 @@
+<!-- インラインボックスの左右の margin / border / padding は箱の両端に 1 回だけ付く。縦の padding と border は行の高さに効かない。 -->
+<div id="row" style="margin-bottom: 10px; width: 300px; font-size: 0;">
+  <span id="s" style="padding: 4px 10px; border: 2px solid; margin: 0 6px;"><i id="a" style="display: inline-block; width: 40px; height: 20px;"></i><i id="b" style="display: inline-block; width: 40px; height: 20px;"></i></span><i id="c" style="display: inline-block; width: 30px; height: 10px;"></i>
+</div>
+<div id="row2" style="margin-bottom: 10px; width: 300px; font-size: 0;">
+  <span id="o" style="padding: 3px 4px; border: 2px solid;"><span id="n" style="padding: 1px 5px; margin: 0 3px;"><i id="d" style="display: inline-block; width: 20px; height: 10px;"></i></span><i id="e" style="display: inline-block; width: 20px; height: 10px;"></i></span><span id="empty" style="padding: 1px 7px; border: 1px solid;"></span><i id="f" style="display: inline-block; width: 20px; height: 10px;"></i>
+</div>

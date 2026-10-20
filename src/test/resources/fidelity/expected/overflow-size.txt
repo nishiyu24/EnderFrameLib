@@ -1,3 +1,3 @@
-scroller 8 8 100 50 1
-content 8 8 100 200 -1
-after 8 58 304 10 0
+scroller 8 8 100 50 1 sw=85 sh=200 cw=85 ch=50 display=block position=static box-sizing=content-box overflow=auto
+content 8 8 85 200 -1 sw=85 sh=200 cw=85 ch=200 display=block position=static box-sizing=content-box overflow=visible
+after 8 58 304 10 0 sw=304 sh=10 cw=304 ch=10 display=block position=static box-sizing=content-box overflow=visible

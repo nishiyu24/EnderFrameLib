@@ -1,2 +1,2 @@
-a 0 0 100 100 1
-b 50 50 100 100 0
+a 0 0 100 100 1 sw=100 sh=100 cw=100 ch=100 display=block position=absolute box-sizing=content-box overflow=visible
+b 50 50 100 100 0 sw=100 sh=100 cw=100 ch=100 display=block position=absolute box-sizing=content-box overflow=visible

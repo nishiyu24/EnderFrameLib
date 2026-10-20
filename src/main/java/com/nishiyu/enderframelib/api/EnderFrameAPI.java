@@ -20,7 +20,7 @@ import java.util.Map;
  * a sync of them or dispatch actions into them. Sessions created with
  * {@link #getOrCreateSession} have no owner and are reachable by anyone who can
  * legitimately see them (a world screen, or a session a registered
- * {@link IWebSessionProvider} vouches for).</p>
+ * {@link WebSessionProvider} vouches for).</p>
  */
 @ApiStatus.AvailableSince("1.0")
 public interface EnderFrameAPI {
@@ -103,10 +103,11 @@ public interface EnderFrameAPI {
     // --------------------------------------------------------------- providers
 
     /** Registers a host that owns sessions (a block entity, a script runtime, …). */
-    void registerProvider(IWebSessionProvider provider);
+    void registerProvider(WebSessionProvider provider);
 
-    /** Unregisters a host registered with {@link #registerProvider}. */
-    void unregisterProvider(IWebSessionProvider provider);
+    /** Unregisters a host registered with {@link #registerProvider(WebSessionProvider)}. */
+    void unregisterProvider(WebSessionProvider provider);
+
 
     /** Decides whether a player may subscribe to a pub/sub channel. */
     @FunctionalInterface

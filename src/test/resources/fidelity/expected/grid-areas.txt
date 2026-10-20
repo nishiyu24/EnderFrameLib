@@ -1,3 +1,3 @@
-main 108 28 200 40 0
-head 8 8 300 20 0
-side 8 28 100 40 0
+main 108 28 200 40 0 sw=200 sh=40 cw=200 ch=40 display=block position=static box-sizing=content-box overflow=visible
+head 8 8 300 20 0 sw=300 sh=20 cw=300 ch=20 display=block position=static box-sizing=content-box overflow=visible
+side 8 28 100 40 0 sw=100 sh=40 cw=100 ch=40 display=block position=static box-sizing=content-box overflow=visible

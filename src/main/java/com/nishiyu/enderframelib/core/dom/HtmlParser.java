@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.dom.HtmlDocument.HtmlText;
 import com.nishiyu.enderframelib.core.dom.HtmlNode.NodeType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,7 +130,7 @@ public class HtmlParser {
     private enum Scope { DEFAULT, LIST_ITEM, BUTTON, TABLE }
 
     private static final class TreeBuilder {
-        final HtmlNode root = new HtmlNode(NodeType.ROOT, "root");
+        final HtmlNode root;
         final List<HtmlNode> stack = new ArrayList<>();
         final boolean fragment;
         final String context;
@@ -144,6 +145,7 @@ public class HtmlParser {
         TreeBuilder(boolean fragment, String context) {
             this.fragment = fragment;
             this.context = context;
+            this.root = fragment ? new HtmlNode(NodeType.ROOT, "root") : new HtmlDocument();
             // パーサ呼び出しの度にIDカウンタをリセットし、安定したIDを生成する
             NodeId.resetCounter();
             root.setId("html_root");
@@ -704,7 +706,7 @@ public class HtmlParser {
         // ---------- 挿入 ----------
 
         HtmlNode createElement(String tag, Map<String, String> attrs) {
-            HtmlNode node = new HtmlNode(NodeType.ELEMENT, tag);
+            HtmlNode node = new HtmlElement(tag);
             for (var entry : attrs.entrySet()) {
                 String val = entry.getValue();
                 if (val != null && val.length() > 4096) val = val.substring(0, 4096);
@@ -776,7 +778,7 @@ public class HtmlParser {
             if (previous != null && previous.nodeType == NodeType.TEXT) {
                 previous.text = previous.text + text;
             } else {
-                HtmlNode textNode = HtmlNode.createTextNode(text);
+                HtmlNode textNode = new HtmlText(text);
                 textNode.setId(NodeId.generateTextId());
                 textNode.parent = parent;
                 parent.children.add(at, textNode);

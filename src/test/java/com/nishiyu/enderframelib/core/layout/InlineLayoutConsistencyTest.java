@@ -1,14 +1,15 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.dom.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.FormattingContext;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.ScrollState;
-import com.nishiyu.enderframelib.core.layout.LayoutContext.Viewport;
-import com.nishiyu.enderframelib.core.text.FontFace;
-import com.nishiyu.enderframelib.core.text.FontFace.FontResolver;
-import com.nishiyu.enderframelib.core.text.FontFace.FontStyle;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.FormattingContext;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.ScrollState;
+import com.nishiyu.enderframelib.core.layout.LayoutEngine.LayoutContext.Viewport;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontResolver;
+import com.nishiyu.enderframelib.core.layout.TextShaper.FontFace.FontStyle;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -209,8 +210,8 @@ public class InlineLayoutConsistencyTest {
 
     @Test
     public void testWhitespaceBetweenInlineSpansIsPreserved() {
-        com.nishiyu.enderframelib.common.UIParser parser = new com.nishiyu.enderframelib.common.UIParser();
-        com.nishiyu.enderframelib.common.UIParser.Document doc =
+        com.nishiyu.enderframelib.common.UiDocumentCompiler parser = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
+        com.nishiyu.enderframelib.common.UiDocumentCompiler.Document doc =
                 parser.parseDocument("<div><span>a</span> <span>b</span></div>", "", 400, 200);
         LayoutBox root = parser.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
 
@@ -221,6 +222,103 @@ public class InlineLayoutConsistencyTest {
         LayoutBox.InlineFragment fragA = frags.stream().filter(f -> "a".equals(f.text)).findFirst().orElseThrow();
         LayoutBox.InlineFragment fragB = frags.stream().filter(f -> "b".equals(f.text)).findFirst().orElseThrow();
         assertTrue(fragB.x > fragA.x + fragA.w, "a と b の間に空白の幅が確保されていない: fragA=" + fragA + ", fragB=" + fragB);
+    }
+
+    /**
+     * 複数語のインラインボックスは 1 行に 1 つの断片で、左右の装飾は両端に 1 回だけ付く（W11）。
+     * 以前は語ごとに装飾つきの断片ができ、左右の padding が語の数だけ足されていた。
+     */
+    @Test
+    public void testMultiWordInlineBoxIsOneFragmentWithEdgesOnce() {
+        LayoutBox root = layoutDocument("<div style=\"width: 400px;\">x<span id=\"s\" style=\"padding: 0 4px; border-left: 2px solid; margin-left: 3px;\">alpha beta gamma</span>y</div>");
+        LayoutBox span = findById(root, "s");
+        List<LayoutBox.InlineFragment> own = ownFragments(span);
+        assertEquals(1, own.size(), "1 行のインラインボックスが語ごとに分かれている");
+
+        List<LayoutBox.InlineFragment> words = new ArrayList<>();
+        collectTextFragments(span, words);
+        words.sort(Comparator.comparingDouble(f -> f.x));
+        LayoutBox.InlineFragment box = own.getFirst();
+        // 開始端: margin の後ろに border box が始まり、最初の語は border + padding の後ろ
+        assertEquals(box.x + 2 + 4, words.getFirst().x, EPS);
+        // 終了端: 最後の語の後ろに padding が 1 回
+        LayoutBox.InlineFragment last = words.getLast();
+        assertEquals(last.x + last.w + 4, box.x + box.w, EPS);
+        // 語の間に装飾が挟まっていない
+        for (int i = 1; i < words.size(); i++) {
+            assertEquals(words.get(i - 1).x + words.get(i - 1).w, words.get(i).x, EPS);
+        }
+        // 箱の矩形は断片そのもの
+        assertEquals(box.x, span.x, EPS);
+        assertEquals(box.w, span.w, EPS);
+    }
+
+    /** 行をまたぐインラインボックスは、最初の断片だけが開始端を、最後の断片だけが終了端を持つ。 */
+    @Test
+    public void testWrappedInlineBoxSlicesItsEdges() {
+        LayoutBox root = layoutDocument("<div style=\"width: 60px;\"><span id=\"s\" style=\"padding: 0 5px; border: 1px solid;\">alpha beta gamma delta</span></div>");
+        LayoutBox span = findById(root, "s");
+        List<LayoutBox.InlineFragment> own = ownFragments(span);
+        assertTrue(own.size() > 1, "折り返しが起きていない");
+        own.sort(Comparator.comparingDouble(f -> f.y));
+        for (int i = 0; i < own.size(); i++) {
+            assertEquals(i == 0, own.get(i).startEdge, "開始端を持つ断片が違う: " + i);
+            assertEquals(i == own.size() - 1, own.get(i).endEdge, "終了端を持つ断片が違う: " + i);
+        }
+        // 2 行目以降は行の左端から始まり、開始端の装飾を持たない
+        LayoutBox.InlineFragment second = own.get(1);
+        List<LayoutBox.InlineFragment> words = new ArrayList<>();
+        collectTextFragments(span, words);
+        float secondLineFirstWord = words.stream().filter(f -> Math.abs(f.y - words.getFirst().y) > EPS)
+                .map(f -> f.x).min(Float::compare).orElseThrow();
+        assertEquals(second.x, secondLineFirstWord, EPS);
+        assertEquals(own.getFirst().x + 1 + 5, words.getFirst().x, EPS);
+    }
+
+    /** インラインボックスの上下の padding と border は行の高さに入らない（CSS 2.2 §10.8.1）。 */
+    @Test
+    public void testInlineBoxVerticalDecorationDoesNotGrowTheLine() {
+        LayoutBox root = layoutDocument("<div id=\"d\" style=\"width: 400px;\">a <span id=\"c\" style=\"padding: 6px 2px; border: 3px solid;\">b</span> c</div>");
+        LayoutBox div = findById(root, "d");
+        assertEquals(LINE_H, div.h, EPS, "インラインの上下の装飾が行を押し広げている");
+        // 断片は内容領域の上下に padding と border を足した高さ
+        LayoutBox.InlineFragment code = ownFragments(findById(root, "c")).getFirst();
+        FontStyle font = new FontStyle(16.0f, false, false, 0f);
+        float content = FontFace.FALLBACK.ascent(font) + FontFace.FALLBACK.descent(font);
+        assertEquals(content + 2 * (6 + 3), code.h, EPS);
+    }
+
+    /** 中身を置く前に折り返したインラインボックスは、開始端ごと次の行へ移る。 */
+    @Test
+    public void testInlineBoxStartingAtTheWrapPointMovesItsStartEdge() {
+        float word = FontFace.FALLBACK.advance("aaaa", new FontStyle(16.0f, false, false, 0f));
+        float width = word + 10;
+        LayoutBox root = layoutDocument("<div style=\"width: " + width + "px;\">aaaa <span id=\"s\" style=\"padding-left: 20px;\">bbbb</span></div>");
+        List<LayoutBox.InlineFragment> own = ownFragments(findById(root, "s"));
+        assertEquals(1, own.size(), "開始端だけの空の断片が前の行に残っている");
+        assertTrue(own.getFirst().startEdge);
+        assertEquals(0, own.getFirst().x, EPS);
+    }
+
+    private static LayoutBox layoutDocument(String html) {
+        com.nishiyu.enderframelib.common.UiDocumentCompiler parser = new com.nishiyu.enderframelib.common.UiDocumentCompiler();
+        com.nishiyu.enderframelib.common.UiDocumentCompiler.Document doc =
+                parser.parseDocument("<style>body { margin: 0; }</style>" + html, "", 400, 200);
+        return parser.layoutDocument(doc, 400, 200, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+    }
+
+    private static LayoutBox findById(LayoutBox box, String id) {
+        if (id.equals(box.node.attrs.get("id"))) return box;
+        for (LayoutBox child : box.elementChildren) {
+            LayoutBox hit = findById(child, id);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    /** インラインボックス自身の断片（中の文字の断片を除く）。 */
+    private static List<LayoutBox.InlineFragment> ownFragments(LayoutBox box) {
+        return new ArrayList<>(box.inlineFragments.stream().filter(f -> !f.isText() && f.box == box).toList());
     }
 
     private static void collectTextFragments(LayoutBox box, List<LayoutBox.InlineFragment> out) {

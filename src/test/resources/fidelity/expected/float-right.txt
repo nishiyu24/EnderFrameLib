@@ -1,3 +1,3 @@
-wrap 8 8 300 40 0
-a 208 8 100 30 0
-b 158 8 50 20 0
+wrap 8 8 300 40 0 sw=300 sh=40 cw=300 ch=40 display=block position=static box-sizing=content-box overflow=visible
+a 208 8 100 30 0 sw=100 sh=30 cw=100 ch=30 display=block position=static box-sizing=content-box overflow=visible
+b 158 8 50 20 0 sw=50 sh=20 cw=50 ch=20 display=block position=static box-sizing=content-box overflow=visible
