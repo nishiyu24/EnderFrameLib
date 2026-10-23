@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>EnderFrame Animation Lab - CSS Motion Suite</title>
+</head>
+<style>
+    /* =========================================================================
+       EnderFrame CSS Animation Lab - Modern Motion & Parity Test Suite
+       Targeting EnderFrameLib CSS Animations 1 & Generalized Transitions
+       ========================================================================= */
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    html, body {
+        height: 100%;
+        width: 100%;
+        background-color: #0b0f19;
+        color: #f1f5f9;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    /* Container Layout */
+    .lab-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        padding: 12px;
+        gap: 12px;
+        background-color: #0b0f19;
+        min-height: 0;
+    }
+
+    /* 1. Top Header Bar */
+    .lab-header {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #1e1e38, #0f172a);
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 10px 16px;
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        flex-shrink: 0;
+    }
+
+    .brand-group {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .brand-icon-box {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #6366f1, #a855f7);
+        border: 1px solid #c084fc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        font-weight: bold;
+        font-size: 1.05rem;
+    }
+
+    .brand-title-box {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .brand-heading {
+        display: flex;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    .brand-name {
+        font-size: 1.15rem;
+        font-weight: bold;
+        color: #f8fafc;
+        letter-spacing: 0.3px;
+    }
+
+    .brand-tag {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #a855f7;
+        letter-spacing: 0.5px;
+    }
+
+    .brand-subline {
+        font-size: 0.72rem;
+        color: #64748b;
+    }
+
+    .header-badges {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .badge-pill {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        color: #cbd5e1;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background-color: #10b981;
+    }
+
+    /* 2. Main Multi-Column Grid */
+    .lab-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .lab-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    /* Panel Card */
+    .lab-card {
+        background-color: #131d31;
+        border: 1px solid #24324f;
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #24324f;
+        padding-bottom: 6px;
+    }
+
+    .card-title {
+        color: #38bdf8;
+        font-weight: 700;
+        font-size: 0.92rem;
+    }
+
+    .card-chip {
+        font-size: 0.68rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background-color: rgba(56, 189, 248, 0.15);
+        color: #38bdf8;
+        font-weight: 600;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .test-box-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .test-box-single {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .test-unit {
+        background-color: #0b1120;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 95px;
+        gap: 8px;
+        position: relative;
+    }
+
+    .unit-label {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        font-weight: 600;
+        text-align: center;
+    }
+
+    .unit-spec {
+        font-size: 0.65rem;
+        color: #64748b;
+        font-family: monospace;
+        text-align: center;
+    }
+
+    /* Track Layout for Timing Functions */
+    .track-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        width: 100%;
+    }
+
+    .track-info {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    }
+
+    .track-lane {
+        width: 100%;
+        height: 24px;
+        background-color: #0b1120;
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 3px;
+        position: relative;
+    }
+
+    .track-runner {
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: linear-gradient(135deg, #38bdf8, #6366f1);
+    }
+
+    /* Form Controls & Buttons */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.82rem;
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-align: center;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: #ffffff;
+        border-color: #818cf8;
+    }
+
+    .btn-emerald {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: #ffffff;
+        border-color: #34d399;
+    }
+
+    .btn-rose {
+        background: linear-gradient(135deg, #f43f5e, #e11d48);
+        color: #ffffff;
+        border-color: #fb7185;
+    }
+
+    /* Footer Bar */
+    .lab-footer {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 8px 14px;
+        font-size: 0.75rem;
+        color: #64748b;
+        flex-shrink: 0;
+    }
+
+    .channel-badges {
+        display: flex;
+        flex-direction: row;
+        gap: 6px;
+    }
+
+    .channel-tag {
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.68rem;
+        font-weight: 600;
+        background-color: #1e293b;
+        color: #38bdf8;
+        border: 1px solid #334155;
+    }
+
+
+    /* =========================================================================
+       CSS KEYFRAME DEFINITIONS
+       ========================================================================= */
+
+    /* 1. Spin & Rotation */
+    @keyframes kfSpin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    @keyframes kfSpinReverse {
+        0% {
+            transform: rotate(360deg);
+        }
+        100% {
+            transform: rotate(0deg);
+        }
+    }
+
+    /* 2. Vertical Bobbing / Floating */
+    @keyframes kfBob {
+        0% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-12px);
+        }
+        100% {
+            transform: translateY(0px);
+        }
+    }
+
+    /* 3. Scale Pulse / Breathing */
+    @keyframes kfPulse {
+        0% {
+            transform: scale(0.95);
+        }
+        50% {
+            transform: scale(1.22);
+        }
+        100% {
+            transform: scale(0.95);
+        }
+    }
+
+    /* 4. Pendulum / Swing */
+    @keyframes kfSwing {
+        0% {
+            transform: rotate(-30deg);
+        }
+        50% {
+            transform: rotate(30deg);
+        }
+        100% {
+            transform: rotate(-30deg);
+        }
+    }
+
+    /* 5. Bounce Hop (TranslateY + Asymmetric Scale) */
+    @keyframes kfBounceHop {
+        0% {
+            transform: translateY(0px) scale(1.15, 0.85);
+        }
+        40% {
+            transform: translateY(-16px) scale(0.9, 1.15);
+        }
+        70% {
+            transform: translateY(0px) scale(1.1, 0.9);
+        }
+        100% {
+            transform: translateY(0px) scale(1.0, 1.0);
+        }
+    }
+
+    /* 6. Opacity Beacon */
+    @keyframes kfBeacon {
+        0% {
+            opacity: 1.0;
+        }
+        50% {
+            opacity: 0.15;
+        }
+        100% {
+            opacity: 1.0;
+        }
+    }
+
+    /* 7. Color Cycling */
+    @keyframes kfColorCycle {
+        0% {
+            background-color: #4f46e5;
+        }
+        33% {
+            background-color: #06b6d4;
+        }
+        66% {
+            background-color: #ec4899;
+        }
+        100% {
+            background-color: #10b981;
+        }
+    }
+
+    /* 8. Text Color Flash */
+    @keyframes kfTextFlash {
+        0% {
+            color: #38bdf8;
+        }
+        50% {
+            color: #f43f5e;
+        }
+        100% {
+            color: #38bdf8;
+        }
+    }
+
+    /* 9. Horizontal Slide for Timing Function Lanes */
+    @keyframes kfSlideLane {
+        0% {
+            transform: translateX(0px);
+        }
+        100% {
+            transform: translateX(120px);
+        }
+    }
+
+    /* 10. Direction Test: Ping-Pong Alternate */
+    @keyframes kfPingPong {
+        0% {
+            transform: translateX(-24px);
+        }
+        100% {
+            transform: translateX(24px);
+        }
+    }
+
+    /* 11. Staggered Fade & Slide In */
+    @keyframes kfStaggerIn {
+        0% {
+            transform: translateY(14px);
+            opacity: 0.0;
+        }
+        100% {
+            transform: translateY(0px);
+            opacity: 1.0;
+        }
+    }
+
+    /* 12. Fill Mode Step Slide */
+    @keyframes kfFillStep {
+        0% {
+            transform: translateX(-20px);
+            background-color: #334155;
+        }
+        100% {
+            transform: translateX(20px);
+            background-color: #10b981;
+        }
+    }
+
+    /* 13. Skeleton Shimmer (Opacity sweep) */
+    @keyframes kfShimmer {
+        0% {
+            opacity: 0.3;
+        }
+        50% {
+            opacity: 0.85;
+        }
+        100% {
+            opacity: 0.3;
+        }
+    }
+
+    /* 14. Floating Item Tilt */
+    @keyframes kfItemHover {
+        0% {
+            transform: translateY(0px) rotate(0deg);
+        }
+        50% {
+            transform: translateY(-6px) rotate(10deg);
+        }
+        100% {
+            transform: translateY(0px) rotate(0deg);
+        }
+    }
+
+
+    /* =========================================================================
+       ANIMATED ELEMENT CLASSES
+       ========================================================================= */
+
+    /* Spinner */
+    .anim-spinner {
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        border: 4px solid #334155;
+        border-top-color: #38bdf8;
+        animation: kfSpin 1.2s linear infinite;
+    }
+
+    .anim-spinner-reverse {
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        border: 4px solid #334155;
+        border-top-color: #a855f7;
+        animation: kfSpinReverse 1.5s ease-in-out infinite;
+    }
+
+    /* Bobbing Cube */
+    .anim-bob-box {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+        border: 1px solid #7dd3fc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: #0b1120;
+        animation: kfBob 1.6s ease-in-out infinite;
+    }
+
+    /* Pulse Ball */
+    .anim-pulse-ball {
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #f43f5e, #fb7185);
+        border: 1px solid #fda4af;
+        animation: kfPulse 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* Pendulum */
+    .anim-pendulum {
+        width: 14px;
+        height: 38px;
+        background: linear-gradient(180deg, #6366f1, #4338ca);
+        border-radius: 7px;
+        border: 1px solid #818cf8;
+        transform-origin: 50% 0%;
+        animation: kfSwing 1.8s ease-in-out infinite;
+    }
+
+    /* Bounce Hop Unit */
+    .anim-bounce-hop {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #10b981, #059669);
+        border: 1px solid #6ee7b7;
+        animation: kfBounceHop 1.2s ease-in-out infinite;
+    }
+
+    /* Opacity Beacon */
+    .anim-beacon {
+        width: 24px;
+        height: 24px;
+        border-radius: 12px;
+        background-color: #38bdf8;
+        border: 2px solid #7dd3fc;
+        animation: kfBeacon 1.2s ease infinite;
+    }
+
+    /* Color Morphing Block */
+    .anim-color-morph {
+        width: 48px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid #ffffff;
+        animation: kfColorCycle 3.5s linear infinite;
+    }
+
+    /* Text Flash */
+    .anim-text-flash {
+        font-size: 1.05rem;
+        font-weight: 800;
+        animation: kfTextFlash 1.5s ease-in-out infinite;
+    }
+
+    /* Skeleton Bar */
+    .skeleton-bar {
+        width: 100%;
+        height: 12px;
+        border-radius: 4px;
+        background-color: #334155;
+        animation: kfShimmer 1.4s ease-in-out infinite;
+    }
+
+    /* Timing Function Runners */
+    .lane-linear {
+        animation: kfSlideLane 2s linear infinite alternate;
+    }
+
+    .lane-ease {
+        animation: kfSlideLane 2s ease infinite alternate;
+    }
+
+    .lane-ease-in {
+        animation: kfSlideLane 2s ease-in infinite alternate;
+    }
+
+    .lane-ease-out {
+        animation: kfSlideLane 2s ease-out infinite alternate;
+    }
+
+    .lane-ease-in-out {
+        animation: kfSlideLane 2s ease-in-out infinite alternate;
+    }
+
+    .lane-cubic {
+        animation: kfSlideLane 2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite alternate;
+    }
+
+    /* Direction Tests */
+    .dir-normal {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        background-color: #38bdf8;
+        animation: kfPingPong 1.5s linear infinite normal;
+    }
+
+    .dir-reverse {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        background-color: #f43f5e;
+        animation: kfPingPong 1.5s linear infinite reverse;
+    }
+
+    .dir-alternate {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        background-color: #10b981;
+        animation: kfPingPong 1.5s ease-in-out infinite alternate;
+    }
+
+    .dir-alt-reverse {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        background-color: #a855f7;
+        animation: kfPingPong 1.5s ease-in-out infinite alternate-reverse;
+    }
+
+    /* Fill Mode Demos (Configured with animation properties) */
+    .fill-none {
+        width: 32px;
+        height: 24px;
+        border-radius: 4px;
+        animation-name: kfFillStep;
+        animation-duration: 2s;
+        animation-iteration-count: 1;
+        animation-fill-mode: none;
+        animation-timing-function: ease-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: bold;
+    }
+
+    .fill-forwards {
+        width: 32px;
+        height: 24px;
+        border-radius: 4px;
+        animation-name: kfFillStep;
+        animation-duration: 2s;
+        animation-iteration-count: 1;
+        animation-fill-mode: forwards;
+        animation-timing-function: ease-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: bold;
+    }
+
+    /* Stagger Chips */
+    .stagger-chip {
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        color: #cbd5e1;
+        animation-name: kfStaggerIn;
+        animation-duration: 0.6s;
+        animation-fill-mode: both;
+        animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .stagger-1 { animation-delay: 0.1s; }
+    .stagger-2 { animation-delay: 0.25s; }
+    .stagger-3 { animation-delay: 0.4s; }
+    .stagger-4 { animation-delay: 0.55s; }
+
+
+    /* =========================================================================
+       INTERACTIVE CSS TRANSITIONS (:hover, :active, :focus)
+       ========================================================================= */
+
+    /* Morphing Button */
+    .trans-button {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        background-color: #1e293b;
+        color: #f8fafc;
+        border: 1px solid #334155;
+        font-weight: 700;
+        font-size: 0.82rem;
+        cursor: pointer;
+        text-align: center;
+        transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .trans-button:hover {
+        transform: scale(1.04) translateY(-2px);
+        background-color: #4f46e5;
+        border-color: #818cf8;
+        color: #ffffff;
+    }
+
+    .trans-button:active {
+        transform: scale(0.96) translateY(1px);
+        background-color: #4338ca;
+    }
+
+    /* Hover Lift Card */
+    .trans-lift-card {
+        background-color: #0b1120;
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        cursor: pointer;
+        transition: transform 0.2s ease-out, background-color 0.2s ease-out, border-color 0.2s ease-out;
+    }
+
+    .trans-lift-card:hover {
+        transform: translateY(-5px);
+        background-color: #1a2234;
+        border-color: #38bdf8;
+    }
+
+    /* Transition-Property Isolation Test */
+    .trans-isolated {
+        width: 100%;
+        padding: 8px;
+        border-radius: 6px;
+        background-color: #334155;
+        color: #ffffff;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-align: center;
+        opacity: 1.0;
+        transform: translateX(0px);
+        /* Opacity fades smoothly over 350ms, while transform snaps instantly */
+        transition-property: opacity;
+        transition-duration: 350ms;
+        transition-timing-function: linear;
+    }
+
+    .trans-isolated:hover {
+        opacity: 0.25;
+        transform: translateX(20px);
+    }
+
+    /* Minecraft HUD Rare Item Card */
+    .mc-item-card {
+        background: linear-gradient(135deg, #1e1b4b, #0f172a);
+        border: 1px solid #6366f1;
+        border-radius: 8px;
+        padding: 10px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .mc-item-box {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background-color: #090d16;
+        border: 2px solid #818cf8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: kfItemHover 2.2s ease-in-out infinite;
+    }
+
+    .mc-item-icon {
+        font-size: 1.25rem;
+        color: #38bdf8;
+    }
+
+    .mc-item-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+    }
+
+    .mc-item-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #a855f7;
+    }
+
+    .mc-item-tier {
+        font-size: 0.7rem;
+        color: #38bdf8;
+        font-weight: 600;
+    }
+
+    /* Live Toast */
+    .toast-pill {
+        background-color: #064e3b;
+        border: 1px solid #10b981;
+        border-radius: 6px;
+        padding: 6px 12px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        color: #d1fae5;
+        font-size: 0.75rem;
+        font-weight: 600;
+        animation: kfBob 2.5s ease-in-out infinite;
+    }
+
+</style>
+<body>
+
+<div class="lab-container">
+
+    <!-- 1. HEADER BAR -->
+    <div class="lab-header">
+        <div class="brand-group">
+            <div class="brand-icon-box">&#9650;</div>
+            <div class="brand-title-box">
+                <div class="brand-heading">
+                    <span class="brand-name">EnderFrame Lab</span>
+                    <span class="brand-tag">MOTION &middot; CSS PARITY</span>
+                </div>
+                <span class="brand-subline">CSS Animation Specs, Generalized Transitions &amp; Channel Testing</span>
+            </div>
+        </div>
+
+        <div class="header-badges">
+            <div class="badge-pill">
+                <div class="status-dot"></div>
+                <span>RAF 60Hz Engine Active</span>
+            </div>
+            <div class="badge-pill" style="border-color:#6366f1; color:#a5b4fc;">
+                <span>Spec: CSS Animations 1</span>
+            </div>
+            <button class="btn btn-primary" onclick="client:eval:location.reload()">Reload Lab</button>
+        </div>
+    </div>
+
+    <!-- 2. THREE-COLUMN TEST MATRIX GRID -->
+    <div class="lab-grid">
+
+        <!-- COLUMN 1: Keyframe Transforms & Easings -->
+        <div class="lab-col">
+
+            <!-- Card 1: Transform Primitives -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Transform Primitives</span>
+                    <span class="card-chip">CH_TRANSFORM</span>
+                </div>
+
+                <div class="test-box-grid">
+                    <!-- Unit A: Continuous Spinner -->
+                    <div class="test-unit">
+                        <div class="anim-spinner"></div>
+                        <span class="unit-label">Continuous Spin</span>
+                        <span class="unit-spec">rotate(360deg) linear inf</span>
+                    </div>
+
+                    <!-- Unit B: Reverse Spin -->
+                    <div class="test-unit">
+                        <div class="anim-spinner-reverse"></div>
+                        <span class="unit-label">Reverse Spin</span>
+                        <span class="unit-spec">rotate(0deg) ease-in-out</span>
+                    </div>
+
+                    <!-- Unit C: Bobbing Levitator -->
+                    <div class="test-unit">
+                        <div class="anim-bob-box">&#9830;</div>
+                        <span class="unit-label">Vertical Bob</span>
+                        <span class="unit-spec">translateY(-12px) alt</span>
+                    </div>
+
+                    <!-- Unit D: Scale Breathing -->
+                    <div class="test-unit">
+                        <div class="anim-pulse-ball"></div>
+                        <span class="unit-label">Breathing Pulse</span>
+                        <span class="unit-spec">scale(1.22) cubic-bezier</span>
+                    </div>
+
+                    <!-- Unit E: Pendulum Swing -->
+                    <div class="test-unit">
+                        <div class="anim-pendulum"></div>
+                        <span class="unit-label">Pendulum Swing</span>
+                        <span class="unit-spec">origin: 50% 0% / &plusmn;30deg</span>
+                    </div>
+
+                    <!-- Unit F: Bounce Hop -->
+                    <div class="test-unit">
+                        <div class="anim-bounce-hop"></div>
+                        <span class="unit-label">Bounce Hop</span>
+                        <span class="unit-spec">translateY + scale squash</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Timing Functions Visualizer -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Easing Curves Parity</span>
+                    <span class="card-chip">Newton-Raphson Bezier</span>
+                </div>
+
+                <div class="test-box-single">
+                    <!-- Linear -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>linear</span>
+                            <span class="unit-spec">t &rarr; t</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-linear"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ease -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>ease (CSS Default)</span>
+                            <span class="unit-spec">cubic-bezier(0.25, 0.1, 0.25, 1.0)</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-ease" style="background: linear-gradient(135deg, #10b981, #06b6d4);"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ease-In -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>ease-in</span>
+                            <span class="unit-spec">cubic-bezier(0.42, 0, 1.0, 1.0)</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-ease-in" style="background: linear-gradient(135deg, #f59e0b, #ef4444);"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ease-Out -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>ease-out</span>
+                            <span class="unit-spec">cubic-bezier(0, 0, 0.58, 1.0)</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-ease-out" style="background: linear-gradient(135deg, #a855f7, #6366f1);"></div>
+                        </div>
+                    </div>
+
+                    <!-- Ease-In-Out -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>ease-in-out</span>
+                            <span class="unit-spec">cubic-bezier(0.42, 0, 0.58, 1.0)</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-ease-in-out" style="background: linear-gradient(135deg, #ec4899, #f43f5e);"></div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Overshoot / Elastic Cubic Bezier -->
+                    <div class="track-row">
+                        <div class="track-info">
+                            <span>cubic-bezier(overshoot)</span>
+                            <span class="unit-spec">(0.68, -0.55, 0.27, 1.55)</span>
+                        </div>
+                        <div class="track-lane">
+                            <div class="track-runner lane-cubic" style="background: linear-gradient(135deg, #eab308, #10b981);"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- COLUMN 2: Opacity, Color & Direction / Fill Mode -->
+        <div class="lab-col">
+
+            <!-- Card 3: Opacity & Color Modulation -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Opacity &amp; Color Channels</span>
+                    <span class="card-chip">CH_OPACITY | CH_COLOR | CH_BG</span>
+                </div>
+
+                <div class="test-box-grid">
+                    <!-- Opacity Beacon -->
+                    <div class="test-unit">
+                        <div class="anim-beacon"></div>
+                        <span class="unit-label">Beacon Blink</span>
+                        <span class="unit-spec">opacity: 1.0 &harr; 0.15</span>
+                    </div>
+
+                    <!-- Color Cycle -->
+                    <div class="test-unit">
+                        <div class="anim-color-morph"></div>
+                        <span class="unit-label">ARGB Cycle</span>
+                        <span class="unit-spec">Indigo &rarr; Cyan &rarr; Pink</span>
+                    </div>
+
+                    <!-- Text Flash -->
+                    <div class="test-unit" style="grid-column: span 2;">
+                        <span class="anim-text-flash">&starf; DYNAMIC COLOR &starf;</span>
+                        <span class="unit-label">Text Color Interpolation</span>
+                        <span class="unit-spec">#38bdf8 &harr; #f43f5e linear</span>
+                    </div>
+                </div>
+
+                <!-- Skeleton UI Shimmer -->
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+                    <span class="unit-label" style="text-align:left;">Skeleton Placeholder Shimmer</span>
+                    <div class="skeleton-bar" style="width: 80%;"></div>
+                    <div class="skeleton-bar" style="width: 100%;"></div>
+                    <div class="skeleton-bar" style="width: 60%;"></div>
+                </div>
+            </div>
+
+            <!-- Card 4: Direction & Iterations -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Direction &amp; Iteration</span>
+                    <span class="card-chip">Specs §4.4 - §4.5</span>
+                </div>
+
+                <div class="test-box-single">
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">normal</span>
+                            <span class="unit-spec">0% &rarr; 100% loop</span>
+                        </div>
+                        <div class="dir-normal"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">reverse</span>
+                            <span class="unit-spec">100% &rarr; 0% loop</span>
+                        </div>
+                        <div class="dir-reverse"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">alternate</span>
+                            <span class="unit-spec">ping-pong oscillation</span>
+                        </div>
+                        <div class="dir-alternate"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">alternate-reverse</span>
+                            <span class="unit-spec">reverse-start ping-pong</span>
+                        </div>
+                        <div class="dir-alt-reverse"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 5: Fill Mode & Delayed Stagger -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Fill Modes &amp; Stagger</span>
+                    <span class="card-chip">fill-mode / delay</span>
+                </div>
+
+                <div class="test-box-single">
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">fill-mode: none</span>
+                            <span class="unit-spec">Reverts to 0% at end</span>
+                        </div>
+                        <div class="fill-none">NONE</div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:8px 10px; border-radius:6px; border:1px solid #1e293b;">
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-size:0.75rem; font-weight:600; color:#cbd5e1;">fill-mode: forwards</span>
+                            <span class="unit-spec">Holds 100% final value</span>
+                        </div>
+                        <div class="fill-forwards">FWD</div>
+                    </div>
+
+                    <span class="unit-label" style="text-align:left; margin-top:4px;">Stagger Entrance Cascade (0.1s - 0.55s)</span>
+                    <div style="display:flex; flex-direction:row; gap:6px; flex-wrap:wrap;">
+                        <div class="stagger-chip stagger-1">&bull; Step 1</div>
+                        <div class="stagger-chip stagger-2">&bull; Step 2</div>
+                        <div class="stagger-chip stagger-3">&bull; Step 3</div>
+                        <div class="stagger-chip stagger-4">&bull; Step 4</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- COLUMN 3: Interactive Transitions & Realistic Components -->
+        <div class="lab-col">
+
+            <!-- Card 6: Interactive Transitions (:hover, :active) -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Generalized Transitions</span>
+                    <span class="card-chip">:hover / :active</span>
+                </div>
+
+                <div class="test-box-single">
+                    <!-- Morphing Button -->
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span class="unit-label" style="text-align:left;">Transform &amp; Background Transition</span>
+                        <button class="trans-button">Hover &amp; Press Me</button>
+                    </div>
+
+                    <!-- Hover Lift Card -->
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span class="unit-label" style="text-align:left;">Card Levitation (translateY(-5px))</span>
+                        <div class="trans-lift-card">
+                            <span style="font-weight:700; color:#38bdf8; font-size:0.8rem;">Interactive Module Card</span>
+                            <span style="font-size:0.72rem; color:#94a3b8;">Moves smoothly upward on hover with cubic ease-out easing.</span>
+                        </div>
+                    </div>
+
+                    <!-- Channel Isolation -->
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span class="unit-label" style="text-align:left;">transition-property: opacity</span>
+                            <span class="unit-spec">transform snaps</span>
+                        </div>
+                        <div class="trans-isolated">
+                            Hover to test channel isolation (Opacity smoothly fades; X snaps instantly)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 7: Realistic Game & HUD Elements -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Minecraft HUD Elements</span>
+                    <span class="card-chip">Composed Effects</span>
+                </div>
+
+                <div class="test-box-single">
+                    <!-- Minecraft Rare Item Showcase -->
+                    <div class="mc-item-card">
+                        <div class="mc-item-box">
+                            <span class="mc-item-icon">&#9876;</span>
+                        </div>
+                        <div class="mc-item-meta">
+                            <span class="mc-item-title">Ender Claymore +5</span>
+                            <span class="mc-item-tier">&starf; Legendary Mythic Item &starf;</span>
+                            <span style="font-size:0.68rem; color:#64748b;">Animated Bob &amp; Tilt</span>
+                        </div>
+                    </div>
+
+                    <!-- Toast Notification -->
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span class="unit-label" style="text-align:left;">Live Bobbing Alert Banner</span>
+                        <div class="toast-pill">
+                            <span style="font-size:0.9rem;">&#10003;</span>
+                            <span>Engine Parity Test: All Keyframes Active</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Test Palette -->
+                    <div style="display:flex; flex-direction:row; gap:6px; margin-top:2px;">
+                        <button class="btn btn-emerald" style="flex:1;" onclick="client:eval:console.log('PASS')">&#10003; Pass Test</button>
+                        <button class="btn btn-rose" style="flex:1;" onclick="client:eval:console.log('RESET')">&#8635; Reset All</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 8: Technical Specs Card -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Engine Features Verified</span>
+                    <span class="card-chip">v1.21.1 Core</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:6px; font-size:0.75rem; color:#94a3b8;">
+                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:3px;">
+                        <span>Keyframes Channel Splitting:</span>
+                        <span style="color:#10b981; font-weight:bold;">Supported</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:3px;">
+                        <span>Non-Destructive Overwrites:</span>
+                        <span style="color:#10b981; font-weight:bold;">Active</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:3px;">
+                        <span>Cubic-Bezier Inversion:</span>
+                        <span style="color:#10b981; font-weight:bold;">Newton 8-Iter</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1e293b; padding-bottom:3px;">
+                        <span>Direction (alternate/reverse):</span>
+                        <span style="color:#10b981; font-weight:bold;">Verified</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;">
+                        <span>Fill Modes (forwards/backwards):</span>
+                        <span style="color:#10b981; font-weight:bold;">Compliant</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- 3. FOOTER STATUS BAR -->
+    <div class="lab-footer">
+        <div class="channel-badges">
+            <span class="channel-tag">CH_TRANSFORM (tx, ty, sx, sy, rot)</span>
+            <span class="channel-tag">CH_OPACITY</span>
+            <span class="channel-tag">CH_COLOR</span>
+            <span class="channel-tag">CH_BG_COLOR</span>
+        </div>
+        <span>EnderFrameLib UI Engine &middot; Tested with Chrome Parity Standards</span>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>EnderFrame Linux Desktop</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #11111b;
+      color: #cdd6f4;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      user-select: none;
+    }
+
+    /* デスクトップ全体 */
+    #desktop {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #181825 0%, #1e1e2e 50%, #11111b 100%);
+      overflow: hidden;
+    }
+
+    /* 1. トップパネル (GNOME風ステータスバー) */
+    #top-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 28px;
+      background: rgba(17, 17, 27, 0.92);
+      border-bottom: 1px solid #313244;
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 12px;
+      z-index: 1000;
+    }
+    .top-left {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+    .app-menu-btn {
+      background: #313244;
+      color: #cdd6f4;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid #45475a;
+      border-radius: 4px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    .app-menu-btn:hover {
+      background: #45475a;
+      color: #ffffff;
+    }
+    .active-app-name {
+      font-size: 11px;
+      font-weight: bold;
+      color: #89b4fa;
+    }
+    .top-center {
+      position: absolute;
+      left: 50%;
+      transform: translate(-50%, 0);
+      font-size: 12px;
+      font-weight: 600;
+      color: #cdd6f4;
+      letter-spacing: 0.5px;
+    }
+    .top-right {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: #a6adc8;
+    }
+    .status-badge {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 2. デスクトップアイコン領域 */
+    .desktop-icons {
+      position: absolute;
+      top: 40px;
+      left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 2;
+    }
+    .desktop-icon {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 68px;
+      padding: 8px 4px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #cdd6f4;
+      text-align: center;
+      font-size: 11px;
+    }
+    .desktop-icon:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+    .icon-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 16px;
+      color: #ffffff;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 3. アプリケーションメニュー (ポップアップ) */
+    #app-menu {
+      position: absolute;
+      top: 32px;
+      left: 8px;
+      width: 280px;
+      background: #1e1e2e;
+      border: 1px solid #45475a;
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1005;
+    }
+    .menu-header {
+      font-size: 12px;
+      font-weight: bold;
+      color: #89b4fa;
+      border-bottom: 1px solid #313244;
+      padding-bottom: 6px;
+    }
+    .menu-item {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #cdd6f4;
+    }
+    .menu-item:hover {
+      background-color: #313244;
+      color: #ffffff;
+    }
+    .menu-item-text {
+      display: flex;
+      flex-direction: column;
+    }
+    .menu-item-title {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .menu-item-desc {
+      font-size: 10px;
+      color: #a6adc8;
+    }
+
+    /* 4. ウィンドウ共通コンポーネント */
+    .window {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      background-color: #181825;
+      border: 1px solid #45475a;
+      border-radius: 8px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+      overflow: hidden;
+    }
+    .window.active {
+      border-color: #89b4fa;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.85);
+    }
+    .window.maximized {
+      border-radius: 0;
+    }
+
+    /* 画面端スナップのプレビュー枠 */
+    #snap-preview {
+      position: absolute;
+      display: none;
+      background-color: rgba(137, 180, 250, 0.16);
+      border: 2px solid rgba(137, 180, 250, 0.75);
+      border-radius: 10px;
+      pointer-events: none;
+    }
+
+    /* ウィンドウタイトルバー */
+    .window-header {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      background: linear-gradient(to bottom, #313244, #1e1e2e);
+      border-bottom: 1px solid #313244;
+      cursor: move;
+      height: 32px;
+      flex-shrink: 0;
+    }
+    .window.active .window-header {
+      background: linear-gradient(to bottom, #3b3e5b, #25283c);
+    }
+    .window-title {
+      font-weight: 600;
+      color: #cdd6f4;
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .window-controls {
+      display: flex;
+      flex-direction: row;
+      gap: 6px;
+    }
+    .win-btn {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: #11111b;
+      font-weight: bold;
+      line-height: 1;
+    }
+    .win-btn.close { background-color: #f38ba8; }
+    .win-btn.min { background-color: #f9e2af; }
+    .win-btn.max { background-color: #a6e3a1; }
+    .win-btn:hover { opacity: 0.8; }
+
+    /* ウィンドウ本文領域 */
+    .window-content {
+      flex: 1;
+      overflow: hidden;
+      background-color: #181825;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ターミナル固有スタイル */
+    .terminal-body {
+      background-color: #11111b;
+      color: #a6e3a1;
+      font-family: Consolas, monospace;
+      padding: 10px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .terminal-history {
+      flex: 1;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #a6e3a1;
+      font-size: 12px;
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+    .terminal-prompt-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .prompt-label {
+      color: #89b4fa;
+      font-weight: bold;
+      font-size: 12px;
+    }
+    .terminal-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #cdd6f4;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    /* テキストエディタ固有スタイル */
+    .editor-body {
+      flex: 1;
+      background-color: #181825;
+      display: flex;
+      flex-direction: column;
+      padding: 6px;
+    }
+    .editor-textarea {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+      background-color: #11111b;
+      color: #cdd6f4;
+      border: 1px solid #313244;
+      border-radius: 4px;
+      padding: 8px;
+      outline: none;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      resize: none;
+    }
+
+    /* システムモニター固有スタイル */
+    .sysmon-body {
+      flex: 1;
+      padding: 14px;
+      background-color: #181825;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+    .sysmon-card {
+      background-color: #1e1e2e;
+      border: 1px solid #313244;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sysmon-card-title {
+      font-size: 11px;
+      font-weight: bold;
+      color: #89b4fa;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .sysmon-value {
+      font-size: 13px;
+      color: #cdd6f4;
+      font-family: Consolas, monospace;
+    }
+
+    /* 5. ドキュメントビューア固有スタイル */
+    .docs-container {
+      display: flex;
+      flex-direction: row;
+      flex: 1;
+      height: 100%;
+      overflow: hidden;
+    }
+    .docs-sidebar {
+      width: 170px;
+      background-color: #181825;
+      border-right: 1px solid #313244;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 8px;
+      flex-shrink: 0;
+    }
+    .docs-nav-btn {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #a6adc8;
+      font-size: 11px;
+      font-weight: 500;
+      border: none;
+      background: transparent;
+      text-align: left;
+      width: 100%;
+    }
+    .docs-nav-btn:hover {
+      background-color: #313244;
+      color: #cdd6f4;
+    }
+    .docs-nav-btn.active {
+      background-color: #313244;
+      color: #89b4fa;
+      font-weight: 600;
+    }
+    .docs-content {
+      flex: 1;
+      padding: 16px 20px;
+      overflow-y: auto;
+      background-color: #11111b;
+      color: #cdd6f4;
+      font-size: 12px;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    /* タブの各ページは縦積み（data-show が表示時にスタイルシートの display へ戻す） */
+    .docs-page {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .docs-content h2 {
+      color: #89b4fa;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      border-bottom: 1px solid #313244;
+      padding-bottom: 6px;
+    }
+    .docs-content h3 {
+      color: #a6e3a1;
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    .docs-content p {
+      color: #cdd6f4;
+      font-size: 11.5px;
+    }
+    .docs-content kbd {
+      background-color: #313244;
+      border: 1px solid #45475a;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: Consolas, monospace;
+      font-size: 10px;
+      color: #f9e2af;
+    }
+    .docs-content code {
+      background-color: #181825;
+      border: 1px solid #313244;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      color: #f38ba8;
+    }
+    .docs-content pre {
+      background-color: #181825;
+      border: 1px solid #313244;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      color: #a6e3a1;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .docs-card {
+      background-color: #181825;
+      border: 1px solid #313244;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .docs-card-title {
+      font-weight: bold;
+      color: #89b4fa;
+      font-size: 12px;
+    }
+    .docs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    .docs-table th {
+      background-color: #1e1e2e;
+      color: #89b4fa;
+      text-align: left;
+      padding: 6px 10px;
+      border: 1px solid #313244;
+    }
+    .docs-table td {
+      padding: 6px 10px;
+      border: 1px solid #313244;
+      color: #cdd6f4;
+    }
+
+    /* 6. ボトムドック (Dock / Taskbar) */
+    #dock {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translate(-50%, 0);
+      background: rgba(17, 17, 27, 0.9);
+      border: 1px solid #45475a;
+      border-radius: 12px;
+      padding: 6px 12px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+    .dock-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 8px;
+      position: relative;
+    }
+    .dock-item:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+    .dock-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      color: #ffffff;
+    }
+    .dock-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background-color: transparent;
+      margin-top: 3px;
+    }
+    .dock-item.active .dock-dot {
+      background-color: #89b4fa;
+    }
+  </style>
+</head>
+<body>
+  <div id="desktop">
+
+    <!-- 1. トップパネル -->
+    <div id="top-bar">
+      <div class="top-left">
+        <button id="app-menu-btn" class="app-menu-btn" onclick="menu:toggle">Applications</button>
+        <span class="active-app-name" data-bind="text:active_app_title">Desktop</span>
+      </div>
+      <div class="top-center" data-bind="text:clock_time">12:00</div>
+      <div class="top-right">
+        <div class="status-badge">
+          <span>Wi-Fi: Connected</span>
+        </div>
+        <div class="status-badge">
+          <span>User: <strong data-bind="text:user_name">Player</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. アプリケーションメニュー (ポップアップ) -->
+    <div id="app-menu" data-show="app_menu_open">
+      <div class="menu-header">Applications</div>
+      <div class="menu-item" onclick="app:launch:docs">
+        <div class="icon-badge" style="background-color: #cba6f7; width:30px; height:30px; font-size:12px; color:#11111b;">📖</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title">How-To &amp; Guide</span>
+          <span class="menu-item-desc">Interactive in-game documentation</span>
+        </div>
+      </div>
+      <div class="menu-item" onclick="app:launch:terminal">
+        <div class="icon-badge" style="background-color: #313244; width:30px; height:30px; font-size:12px;">&gt;_</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title">Terminal</span>
+          <span class="menu-item-desc">Command line interface</span>
+        </div>
+      </div>
+      <div class="menu-item" onclick="app:launch:editor">
+        <div class="icon-badge" style="background-color: #89b4fa; width:30px; height:30px; font-size:12px;">Note</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title">Text Editor</span>
+          <span class="menu-item-desc">Scratchpad and notes</span>
+        </div>
+      </div>
+      <div class="menu-item" onclick="app:launch:sysmon">
+        <div class="icon-badge" style="background-color: #a6e3a1; width:30px; height:30px; font-size:12px; color:#11111b;">CPU</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title">System Monitor</span>
+          <span class="menu-item-desc">View resources and FPS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. デスクトップアプリアイコン -->
+    <div class="desktop-icons">
+      <div class="desktop-icon" onclick="app:launch:docs">
+        <div class="icon-badge" style="background-color: #cba6f7; color:#11111b;">📖</div>
+        <span>How-To</span>
+      </div>
+      <div class="desktop-icon" onclick="app:launch:terminal">
+        <div class="icon-badge" style="background-color: #313244;">&gt;_</div>
+        <span>Terminal</span>
+      </div>
+      <div class="desktop-icon" onclick="app:launch:editor">
+        <div class="icon-badge" style="background-color: #89b4fa;">Note</div>
+        <span>Notes</span>
+      </div>
+      <div class="desktop-icon" onclick="app:launch:sysmon">
+        <div class="icon-badge" style="background-color: #a6e3a1; color:#11111b;">CPU</div>
+        <span>SysMon</span>
+      </div>
+    </div>
+
+    <!-- 画面端スナップのプレビュー枠 (ドラッグ中のウィンドウと同じ z-index。ウィンドウより前に置き、その真下に描く) -->
+    <div id="snap-preview"
+         data-show="snap_preview_visible" data-orig-display="block"
+         data-bind="style.left:snap_x,style.top:snap_y,style.width:snap_w,style.height:snap_h,style.z-index:snap_z"></div>
+
+    <!-- 4. ウィンドウ0: ドキュメント / How-To -->
+    <div id="win-docs" class="window"
+         data-show="docs_open"
+         data-bind="style.left:docs_x,style.top:docs_y,style.width:docs_w,style.height:docs_h,style.z-index:docs_z"
+         data-class="active:docs_active,maximized:docs_max">
+      <div id="win-docs-header" class="window-header">
+        <div class="window-title">How-To &amp; In-Game Documentation</div>
+        <div class="window-controls">
+          <button class="win-btn min" onclick="win:min:docs">−</button>
+          <button class="win-btn max" onclick="win:max:docs">□</button>
+          <button class="win-btn close" onclick="win:close:docs">✕</button>
+        </div>
+      </div>
+      <div class="window-content">
+        <div class="docs-container">
+          <div class="docs-sidebar">
+            <button class="docs-nav-btn" data-class="active:doc_tab_overview" onclick="doc:tab:overview">📖 概要 (Overview)</button>
+            <button class="docs-nav-btn" data-class="active:doc_tab_desktop" onclick="doc:tab:desktop">🖥️ デスクトップ操作</button>
+            <button class="docs-nav-btn" data-class="active:doc_tab_terminal" onclick="doc:tab:terminal">⌨️ ターミナル</button>
+            <button class="docs-nav-btn" data-class="active:doc_tab_web" onclick="doc:tab:web">🌐 Web 開発仕様</button>
+            <button class="docs-nav-btn" data-class="active:doc_tab_commands" onclick="doc:tab:commands">⚙️ コマンド一覧</button>
+          </div>
+          <div class="docs-content">
+            <!-- ページ 1: 概要 -->
+            <div class="docs-page" data-show="doc_tab_overview">
+              <h2>EnderFrameLib へようこそ</h2>
+              <p>EnderFrameLib は、Minecraft 1.21.1 (NeoForge) 内で本格的な <strong>HTML5 / CSS3 / Markdown</strong> による UI をネイティブレンダリングする次世代フレームワークです。</p>
+              <div class="docs-card">
+                <span class="docs-card-title">✨ 主な特徴</span>
+                <p>• <strong>完全ゼロ依存:</strong> 外部ブラウザ（Chromium / CEF）を使用せず、純粋な Java 実装で数MBの超軽量・高速動作。</p>
+                <p>• <strong>Web標準準拠:</strong> Flexbox、Grid、角丸、影、アニメーション、グラデーション対応。</p>
+                <p>• <strong>リアクティブ同期:</strong> データパックやサーバー側 NBT 変更に即座に反応する宣言的 DOM バインディング。</p>
+              </div>
+              <h3>クイックショートカット</h3>
+              <p>• <kbd>ESC</kbd>: 画面を閉じる</p>
+              <p>• <kbd>F12</kbd>: <strong>DevTools インスペクタ</strong>（ボックスモデル・スタイルのリアルタイム調査）</p>
+              <p>• <kbd>F5</kbd>: UI ホットリロード（HTML/CSS 変更の即時反映）</p>
+            </div>
+
+            <!-- ページ 2: デスクトップ操作 -->
+            <div class="docs-page" data-show="doc_tab_desktop">
+              <h2>デスクトップ &amp; ウィンドウ操作</h2>
+              <p>Linux 風デスクトップ環境では、直感的なマルチウィンドウ操作が可能です。</p>
+              <div class="docs-card">
+                <span class="docs-card-title">🪟 ウィンドウ操作</span>
+                <p>• <strong>ドラッグ移動:</strong> ウィンドウ上部のタイトルバーを左クリックしたままドラッグすると、画面内を自由に配置できます。</p>
+                <p>• <strong>画面端スナップ:</strong> ドラッグ中にカーソルを画面の左端・右端に当てると半分の幅に、上端（トップパネル）に当てると最大化します。離す前に青い枠で配置先を表示します。</p>
+                <p>• <strong>引き出して復元:</strong> 最大化・スナップ中のウィンドウはタイトルバーを掴んで引き出すと、元の大きさに戻ってカーソルに付いてきます。</p>
+                <p>• <strong>最大化 / 復元:</strong> タイトルバーをダブルクリック、または右上の <kbd>□</kbd> ボタンをクリックすると全画面最大化 / 元のサイズ復元を切り替えられます。</p>
+                <p>• <strong>最小化:</strong> 右上の <kbd>−</kbd> ボタンをクリックすると最小化され、ドックに収納されます。</p>
+                <p>• <strong>閉じる:</strong> 右上の <kbd>✕</kbd> ボタンでウィンドウを閉じます。</p>
+                <p>• <strong>最前面切り替え:</strong> ウィンドウの任意の場所をクリックすると自動的に最前面へ移動します。</p>
+              </div>
+              <div class="docs-card">
+                <span class="docs-card-title">⚓ ボトムドック (Dock)</span>
+                <p>画面下のアイコンをクリックすると、対応するアプリの表示 / 最小化を即座にトグルできます。起動中のアプリには下部にインジケータードットが表示されます。</p>
+              </div>
+            </div>
+
+            <!-- ページ 3: ターミナル -->
+            <div class="docs-page" data-show="doc_tab_terminal">
+              <h2>bash ターミナル &amp; コマンド</h2>
+              <p>ターミナル（Terminal）ウィンドウでは、対話型のコマンドライン操作が可能です。</p>
+              <table class="docs-table">
+                <thead>
+                  <tr><th>コマンド</th><th>機能説明</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>help</code></td><td>利用可能なコマンド一覧を表示</td></tr>
+                  <tr><td><code>howto</code> / <code>docs</code></td><td>この How-To ドキュメントウィンドウを開く</td></tr>
+                  <tr><td><code>neofetch</code></td><td>システム概要、稼働時間、メモリ、ASCII アートを表示</td></tr>
+                  <tr><td><code>date</code></td><td>現在の日時を表示</td></tr>
+                  <tr><td><code>uname -a</code></td><td>カーネルおよびシステムアーキテクチャ情報</td></tr>
+                  <tr><td><code>free</code></td><td>JVM メモリ使用量の統計（MB単位）</td></tr>
+                  <tr><td><code>echo &lt;msg&gt;</code></td><td>指定したメッセージをターミナルに出力</td></tr>
+                  <tr><td><code>ls</code></td><td>仮想ファイルシステム内のファイル一覧を表示</td></tr>
+                  <tr><td><code>cat &lt;file&gt;</code></td><td>ファイルの内容を表示（例: <code>cat notes.txt</code>）</td></tr>
+                  <tr><td><code>notes</code></td><td>テキストエディタ（Notes）を起動</td></tr>
+                  <tr><td><code>sysmon</code></td><td>システムモニター（SysMon）を起動</td></tr>
+                  <tr><td><code>clear</code></td><td>ターミナルの出力履歴を消去</td></tr>
+                  <tr><td><code>exit</code></td><td>ターミナルウィンドウを閉じる</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- ページ 4: Web 開発 -->
+            <div class="docs-page" data-show="doc_tab_web">
+              <h2>Web 開発仕様 &amp; データパック UI</h2>
+              <p>データパックを追加するだけで、誰でも簡単に独自のゲーム内 Web UI を作成できます。</p>
+              <div class="docs-card">
+                <span class="docs-card-title">📁 データパックの配置場所</span>
+                <code>data/&lt;namespace&gt;/enderframe_ui/&lt;name&gt;.html</code>
+              </div>
+              <div class="docs-card">
+                <span class="docs-card-title">⚡ 宣言的バインディング構文</span>
+                <p>• <code>data-bind="text:my_val,style.color:my_color"</code>: 状態をテキストやCSSにバインド</p>
+                <p>• <code>data-model="input_key"</code>: 入力欄の値を双方向バインド</p>
+                <p>• <code>data-show="is_visible"</code>: 条件に応じた要素の表示/非表示</p>
+                <p>• <code>onclick="action_name"</code>: クリック時に Java 側の <code>onWebAction</code> へ通知</p>
+              </div>
+              <div class="docs-card">
+                <span class="docs-card-title">🛠️ ブラウザ開発キット (DevKit)</span>
+                <p><code>/enderframe devkit</code> を実行すると、通常の Chrome / Firefox でレイアウトを確認できる HTML プレビューキットがゲームディレクトリに出力されます。</p>
+              </div>
+            </div>
+
+            <!-- ページ 5: コマンド -->
+            <div class="docs-page" data-show="doc_tab_commands">
+              <h2>コマンドリファレンス</h2>
+              <p>EnderFrameLib で提供されているコマンドの一覧です。</p>
+              <table class="docs-table">
+                <thead>
+                  <tr><th>コマンド</th><th>権限</th><th>説明</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>/enderframe desktop</code></td><td>全員 (0)</td><td>ゲーム内ドキュメント・デスクトップ環境を開く</td></tr>
+                  <tr><td><code>/enderframe open &lt;player&gt; &lt;ui_id&gt;</code></td><td>管理者 (2)</td><td>データパックの UI を指定プレイヤーに開く</td></tr>
+                  <tr><td><code>/enderframe open_inline &lt;player&gt; &lt;html&gt;</code></td><td>管理者 (2)</td><td>インライン HTML を直接開く</td></tr>
+                  <tr><td><code>/enderframe hud set &lt;player&gt; &lt;ui_id&gt;</code></td><td>管理者 (2)</td><td>プレイヤーの画面に常駐 HUD を表示</td></tr>
+                  <tr><td><code>/enderframe hud clear &lt;player&gt;</code></td><td>管理者 (2)</td><td>常駐 HUD を非表示にする</td></tr>
+                  <tr><td><code>/enderframe devkit</code></td><td>管理者 (2)</td><td>ブラウザ向けスタンドアロンプレビューを出力</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. ウィンドウ1: ターミナル -->
+    <div id="win-terminal" class="window"
+         data-show="terminal_open"
+         data-bind="style.left:terminal_x,style.top:terminal_y,style.width:terminal_w,style.height:terminal_h,style.z-index:terminal_z"
+         data-class="active:terminal_active,maximized:terminal_max">
+      <div id="win-terminal-header" class="window-header">
+        <div class="window-title">bash - user@enderframe:~</div>
+        <div class="window-controls">
+          <button class="win-btn min" onclick="win:min:terminal">−</button>
+          <button class="win-btn max" onclick="win:max:terminal">□</button>
+          <button class="win-btn close" onclick="win:close:terminal">✕</button>
+        </div>
+      </div>
+      <div class="window-content">
+        <div class="terminal-body">
+          <div class="terminal-history" data-bind="text:terminal_output"></div>
+          <div class="terminal-prompt-row">
+            <span class="prompt-label">user@enderframe:~$</span>
+            <input id="term-input" class="terminal-input" type="text" placeholder="type 'help' or 'neofetch'...">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. ウィンドウ2: テキストエディタ -->
+    <div id="win-editor" class="window"
+         data-show="editor_open"
+         data-bind="style.left:editor_x,style.top:editor_y,style.width:editor_w,style.height:editor_h,style.z-index:editor_z"
+         data-class="active:editor_active,maximized:editor_max">
+      <div id="win-editor-header" class="window-header">
+        <div class="window-title">Text Editor - notes.txt</div>
+        <div class="window-controls">
+          <button class="win-btn min" onclick="win:min:editor">−</button>
+          <button class="win-btn max" onclick="win:max:editor">□</button>
+          <button class="win-btn close" onclick="win:close:editor">✕</button>
+        </div>
+      </div>
+      <div class="window-content editor-body">
+        <textarea id="editor-textarea" class="editor-textarea" placeholder="Type notes here...">
+Welcome to EnderFrame Linux Notes!
+- Move windows by dragging the titlebar.
+- Minimize, maximize, and close with top-right buttons.
+- Click windows to bring them to front.
+        </textarea>
+      </div>
+    </div>
+
+    <!-- 6. ウィンドウ3: システムモニター -->
+    <div id="win-sysmon" class="window"
+         data-show="sysmon_open"
+         data-bind="style.left:sysmon_x,style.top:sysmon_y,style.width:sysmon_w,style.height:sysmon_h,style.z-index:sysmon_z"
+         data-class="active:sysmon_active,maximized:sysmon_max">
+      <div id="win-sysmon-header" class="window-header">
+        <div class="window-title">System Monitor</div>
+        <div class="window-controls">
+          <button class="win-btn min" onclick="win:min:sysmon">−</button>
+          <button class="win-btn max" onclick="win:max:sysmon">□</button>
+          <button class="win-btn close" onclick="win:close:sysmon">✕</button>
+        </div>
+      </div>
+      <div class="window-content">
+        <div class="sysmon-body">
+          <div class="sysmon-card">
+            <span class="sysmon-card-title">Operating System</span>
+            <span class="sysmon-value">EnderFrame Linux 6.8.0-generic (x86_64)</span>
+            <span class="sysmon-value" style="color:#89b4fa;">Minecraft 1.21.1 / NeoForge</span>
+          </div>
+          <div class="sysmon-card">
+            <span class="sysmon-card-title">Memory Allocation</span>
+            <span class="sysmon-value" data-bind="text:sys_mem">Checking memory...</span>
+          </div>
+          <div class="sysmon-card">
+            <span class="sysmon-card-title">Graphics &amp; Performance</span>
+            <span class="sysmon-value" data-bind="text:sys_fps">60 FPS</span>
+          </div>
+          <div class="sysmon-card">
+            <span class="sysmon-card-title">Java Runtime</span>
+            <span class="sysmon-value" data-bind="text:sys_java">Java 21</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. ボトムドック (Dock) -->
+    <div id="dock">
+      <div class="dock-item" data-class="active:docs_dock_active" onclick="win:toggle:docs">
+        <div class="dock-icon" style="background-color: #cba6f7; color:#11111b;">📖</div>
+        <div class="dock-dot"></div>
+      </div>
+      <div class="dock-item" data-class="active:terminal_dock_active" onclick="win:toggle:terminal">
+        <div class="dock-icon" style="background-color: #313244;">&gt;_</div>
+        <div class="dock-dot"></div>
+      </div>
+      <div class="dock-item" data-class="active:editor_dock_active" onclick="win:toggle:editor">
+        <div class="dock-icon" style="background-color: #89b4fa;">Note</div>
+        <div class="dock-dot"></div>
+      </div>
+      <div class="dock-item" data-class="active:sysmon_dock_active" onclick="win:toggle:sysmon">
+        <div class="dock-icon" style="background-color: #a6e3a1; color:#11111b;">CPU</div>
+        <div class="dock-dot"></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

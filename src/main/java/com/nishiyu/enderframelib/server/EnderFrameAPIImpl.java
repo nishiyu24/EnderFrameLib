@@ -7,7 +7,6 @@ import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.api.state.UIState;
 import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
 import com.nishiyu.enderframelib.server.state.UIStateManager;
-import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -116,9 +115,7 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
     public @NotNull UIState createBlockEntityState(@NotNull BlockEntity be, @NotNull String templateId) {
         Objects.requireNonNull(be, "be cannot be null");
         Objects.requireNonNull(templateId, "templateId cannot be null");
-        BlockPos pos = be.getBlockPos();
-        String instanceId = "block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
-        return UIStateManager.getOrCreateState(templateId, instanceId);
+        return UIStateManager.getOrCreateBlockEntityState(templateId, be);
     }
 
     @Override

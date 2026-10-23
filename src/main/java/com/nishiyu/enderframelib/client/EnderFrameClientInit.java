@@ -85,6 +85,7 @@ public class EnderFrameClientInit {
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
             DisplayItemDrawer.clearEntityPreviewCache();
             ClientScheduler.clearAll();
+            StateNbtConverter.clearReceivedKeyTables();
         });
 
         EnderFrameClientAPI.setInstance(EnderFrameClientAPIImpl.INSTANCE);
@@ -172,6 +173,7 @@ public class EnderFrameClientInit {
         WebSyncS2CPacket.clientHandler = EnderFrameClientInit::handleWebSyncPacket;
         OpenUiS2CPacket.clientHandler = EnderFrameClientInit::handleOpenUiPacket;
         StateDeltaS2CPacket.clientHandler = EnderFrameClientInit::handleStateDeltaPacket;
+        StateDeltaS2CPacket.clientCloseHandler = EnderFrameClientInit::handleStateClosed;
     }
 
     private static void handleWebSyncPacket(String sessionId, String action, CompoundTag data) {
@@ -294,6 +296,23 @@ public class EnderFrameClientInit {
         ReactiveStateStore store = session.stateStore();
         applyCompoundTagToStore(store, deltas);
         store.syncToDom();
+    }
+
+    /**
+     * サーバーで状態が破棄された（ブロックの破壊など）。その画面を開いていれば閉じ、セッションを捨てる。
+     */
+    public static void handleStateClosed(String instanceId) {
+        if (instanceId == null || instanceId.isEmpty()) return;
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.screen instanceof com.nishiyu.enderframelib.client.gui.EnderScreenHost host
+                    && instanceId.equals(host.getWebSessionId())) {
+                mc.setScreen(null);
+            }
+        } catch (Throwable ignored) {
+            // ヘッドレス環境・テスト環境での Minecraft 未初期化に対応
+        }
+        ClientWebManager.clearSession(instanceId);
     }
 
     public static void applyCompoundTagToStore(ReactiveStateStore store, CompoundTag tag) {

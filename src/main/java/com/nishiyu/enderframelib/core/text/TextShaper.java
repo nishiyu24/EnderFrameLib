@@ -149,6 +149,17 @@ public final class TextShaper {
         return shaping.lines;
     }
 
+    /**
+     * {@code before} の末尾と {@code after} の先頭が並んだときの詰め（カーニング）。続けて測った幅と
+     * 別々に測った幅の和の差で、詰めるなら負。境目の 2 文字だけを測るので、行の長さによらず一定の手間で済む。
+     */
+    public static float kerningBetween(FontFace face, FontStyle font, CharSequence before, CharSequence after) {
+        if (before.isEmpty() || after.isEmpty()) return 0;
+        String last = new StringBuilder().appendCodePoint(Character.codePointBefore(before, before.length())).toString();
+        String first = new StringBuilder().appendCodePoint(Character.codePointAt(after, 0)).toString();
+        return face.advance(last + first, font) - face.advance(last, font) - face.advance(first, font);
+    }
+
     /** 1 行に収まるよう末尾を省略記号で切る。 */
     public static String ellipsize(String text, FontFace face, FontStyle font, float maxWidth) {
         if (text == null || text.isEmpty()) return "";
@@ -199,10 +210,19 @@ public final class TextShaper {
             flush(to, true);
         }
 
-        /** 断片を現在行に足す。入らなければ行を確定してから足す。 */
+        /**
+         * 断片を現在行に足す。入らなければ行を確定してから足す。
+         *
+         * 入るかどうかは、断片の幅の和に境目の詰め（{@link #kerningBetween}）を足した幅、つまり行を 1 回で
+         * 測った幅（= max-content の測り方）で判定する。
+         * 何が壊れていたか: 断片ごとの幅の和だけで判定していたため、境目に詰め（{@code -} と {@code v} など）が
+         * あると和の方が max-content より広くなり、内容幅ちょうどの flex アイテムで
+         * {@code two-viewers} が {@code two-} の後で折り返していた（実機で確認）。
+         */
         void append(String segment, int offset) {
             float trimmedWidth = widthOf(stripTrailingBlanks(segment));
-            if (bounded && lineWidth + trimmedWidth > available + WRAP_TOLERANCE) {
+            float join = line.isEmpty() ? 0 : kerningBetween(face, style.font(), line, segment);
+            if (bounded && lineWidth + join + trimmedWidth > available + WRAP_TOLERANCE) {
                 boolean breakAll = style.wordBreak() == WordBreak.BREAK_ALL;
                 boolean tooLongAlone = trimmedWidth > available + WRAP_TOLERANCE;
                 boolean canSplit = breakAll || style.breakLongWords();
@@ -212,10 +232,13 @@ public final class TextShaper {
                     splitInside(segment, offset);
                     return;
                 }
-                if (lineWidth > 0) flush(offset, false);
+                if (lineWidth > 0) {
+                    flush(offset, false);
+                    join = 0;
+                }
             }
             line.append(segment);
-            lineWidth += widthOf(segment);
+            lineWidth += join + widthOf(segment);
         }
 
         /** 1 行に収まらない語を文字単位で割る。 */

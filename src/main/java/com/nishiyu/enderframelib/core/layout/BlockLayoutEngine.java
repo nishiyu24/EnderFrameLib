@@ -974,6 +974,12 @@ public class BlockLayoutEngine extends LayoutEngine {
                     ensureLine();
                 }
                 List<String> segments = TextShaper.segments(paragraphs[p], textStyle.wordBreak());
+                // 入るかどうかは語の幅の和に境目の詰め（TextShaper.kerningBetween）を足した幅、つまり続けて測った幅で
+                // 見る（TextShaper と同じ。max-content もこの測り方）。kerned はこの run が今の行で詰めた量の合計。
+                // 何が壊れていたか: 和だけで見ていたため、語の境目に詰め（- と v など）があると max-content ちょうどの
+                // flex アイテムで "two-viewers" が "two-" の後で折り返していた（実機で確認）。
+                String previousOnLine = null;
+                float kerned = 0;
                 int lastSegment = segments.size() - 1;
                 while (lastSegment >= 0 && segments.get(lastSegment).isEmpty()) lastSegment--;
                 for (int s = 0; s < segments.size(); s++) {
@@ -985,13 +991,18 @@ public class BlockLayoutEngine extends LayoutEngine {
                     // 最後の語は、直後に閉じる箱の終了端の装飾と一緒に行に入らないといけない
                     float edges = p == paragraphs.length - 1 && s == lastSegment ? closing : 0;
 
+                    float join = previousOnLine == null ? 0 : TextShaper.kerningBetween(face, font, previousOnLine, segment);
                     if (textStyle.whiteSpace().wraps() && !segment.isBlank()) {
-                        if (needsWrap(lineX + trimmedW + edges)) {
+                        if (needsWrap(lineX + kerned + join + trimmedW + edges)) {
                             newLine(runH, baseline, true);
                             ensureLine();
+                            kerned = 0;
+                            join = 0;
                         }
-                        dropBelowFloats(lineX + trimmedW + edges);
+                        dropBelowFloats(lineX + kerned + join + trimmedW + edges);
                     }
+                    kerned += join;
+                    previousOnLine = segment;
                     // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
                     InlineFragment frag = new InlineFragment(run.box, lineX, 0, advance, runH, segment);
                     frag.baseline = baseline;
