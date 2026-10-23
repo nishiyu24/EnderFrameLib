@@ -1,0 +1,21 @@
+# EnderFrameLib H0 Server & Packet Baseline (Dual DOM)
+#
+# このファイルは Headless Server State（REFACTORING_PLAN.md の H0〜H4、仕組みは ARCHITECTURE.md §2）
+# におけるフェーズ H0 の基準値で、サーバーが DOM を持つ互換モード（WebSession / Dual DOM）の測定値。
+# PacketBandwidthTest / StateMemoryBenchmarkTest が完全一致で確かめ、HeadlessStateBandwidthAndMemoryTest が
+# Headless State（UIState / OpenUiS2CPacket / StateDeltaS2CPacket）との削減率の比較元に使う
+# （初回 90% 以上・更新 60% 以上。実測は BENCHMARK.md §6）。
+
+# [Packet Bandwidth]
+# 典型的な機械 UI（Electric Crusher）での測定値（単位: バイト）
+initial_open_bytes=4548
+single_update_bytes=166
+updates_100_cumulative_bytes=16584
+
+# [Server Heap Memory & Retained DOM]
+# 100 個の機械セッションをサーバー上に常駐させた際の測定値
+session_count=100
+total_heap_memory_bytes=35660040
+memory_per_session_bytes=356600
+total_dom_nodes_retained=3000
+dom_nodes_per_session=30

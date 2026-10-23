@@ -100,6 +100,10 @@ public interface EnderFrameAPI {
      * Returns the {@link UIState} of a block entity, creating it on first use.
      * Its instance id is {@code "block:x,y,z"}, from the block entity's position.
      *
+     * <p>The state is closed automatically on the server tick after the block entity is
+     * removed (broken or unloaded), which also closes the screen of every viewer. A block
+     * placed again at the same position gets a fresh state.</p>
+     *
      * @param be         the block entity that owns the UI
      * @param templateId the client-side template, e.g. {@code "mymod:crusher"} for
      *                   {@code assets/mymod/enderframe_ui/crusher.html}
@@ -127,13 +131,14 @@ public interface EnderFrameAPI {
      * @param player     the player
      * @param be         the block entity that owns the UI
      * @param templateId the client-side template
-     * @param state      the state, or {@code null} to look it up (or create it)
+     * @param state      the state, or {@code null} to look it up (or create it) with
+     *                   {@link #createBlockEntityState}
      */
     default void openBlockEntityUi(@NotNull ServerPlayer player, @NotNull BlockEntity be, @NotNull String templateId, @Nullable UIState state) {
         if (player == null || be == null || templateId == null) return;
         BlockPos pos = be.getBlockPos();
         String instanceId = "block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
-        openUi(player, templateId, instanceId, state);
+        openUi(player, templateId, instanceId, state != null ? state : createBlockEntityState(be, templateId));
     }
 
     // ------------------------------------------------------------------ pubsub

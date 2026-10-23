@@ -28,10 +28,10 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 |---|---|---|
 | R0 | 測定の拡張（計算値・DOM の振る舞い・ディスプレイリスト・性能） | 完了 |
 | R1 | ライブ DOM | 完了 |
-| R2 | イベントとフォーム | 完了（残: IME の composition、`runClient` での観測） |
-| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 完了（残: `runClient` / `WebScreenGameTest` での観測） |
+| R2 | イベントとフォーム | 完了（残: IME の composition。実機での観測は H の残と一緒に 2026-10-24 に済） |
+| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 完了（実機・`WebScreenGameTest` での観測は 2026-10-24 に済） |
 | T0〜T7 | 構造整理（セッション集約・入力一本化・M1〜M9 ラチェット） | 完了（[ARCHITECTURE.md](ARCHITECTURE.md) §7） |
-| H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（残: 更新パケットの縮小・`runClient` での観測） |
+| H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化と実機での観測も 2026-10-24 に済） |
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5） |
 | R5 | インクリメンタル・パイプラインと CSSOM | 一部（差分レイアウトと近道は完了。dirty ビット・CSSOM View は未着手） |
 | R6 | 描画の合成化 | 一部（SDF の角丸・グラデーション・角丸クリップ。transform・レイヤー合成は未着手） |
@@ -62,9 +62,24 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
   `BackwardCompatibilityAdapterTest`・`HeadlessStateBandwidthAndMemoryTest`・`HeadlessStatePacketTest`・`HeadlessClientStateSyncTest`・
   `ClientTemplateManagerTest`。`client/` が `server/` を参照しないことは `ArchitectureTest` が検査する。
 
-**残**:
-- 単一更新は目標の 30 bytes に届かない（インスタンス ID とキー名を毎回文字列で送る）。番号化を検討する。
-- `runClient` での観測（テンプレートの読み込み、複数閲覧者、ブロックの破壊での後始末）。
+**残項目の解消（2026-10-24）**:
+- 番号化: インスタンスは `wireId`、キーは状態ごとの辞書（`StateNbtConverter.KeyTable`）の番号で送る。単一更新 59 → 20 bytes、
+  100 回の累計 5,892 → 1,992 bytes（[BENCHMARK.md](BENCHMARK.md) §6）。2 人目の閲覧者が開いたときに辞書へ入ったキーも、
+  次の差分で 1 人目に名前が届く（`HeadlessStatePacketTest`）。
+- ブロックの破壊での後始末: `createBlockEntityState` の状態は持ち主のブロックエンティティを弱参照で覚え、破壊・アンロードの次の tick で閉じる。
+  `close()` は画面を開いている閲覧者に破棄を知らせ（差分パケットの closed フラグ）、クライアントは画面を閉じる。以前は古い値の画面が残り、操作も届かなかった。
+  同じ座標に置き直したブロックは前の状態を使い回さない。
+- `gametest/WebScreenGameTest` に `headlessStateFollowsBlockEntityLifecycle`（かまどを置いて開く → tick の差分 → 2 人目 → アクションの検査 →
+  ログアウト → 破壊で後始末。パケットは本物のコーデックで往復）と `headlessStateIsNotReusedByReplacedBlock` を足した。`runGameTestServer` で 4 件とも通る。
+- 実機（専用サーバー + クライアント 2 つ。番号化したパケットが実際にエンコードされる経路）での観測: テンプレートの読み込みと初期値、差分の反映、
+  クリック・キー入力・ホイールが DOM のイベントとしてサーバーのアクションまで届くこと、2 人の閲覧者への同時反映、ブロックの破壊で両方の画面が閉じて状態が消えること、
+  クライアントだけの HUD を 600 フレーム更新して C2S パケットが 0 件であること。確認用のテンプレートは `assets/enderframelib/enderframe_ui/state_test.html`、
+  コマンドは開発用の run でだけ有効な `WebScreenGameTest.DevHarness`（`/efl_dev state|count|hud`）。
+- 観測で見つけて直したもの: 画面を開いているとき `server:` アクションが画面のルータに取られ、イベント名と値を捨てて `rpc` / 空で送っていた
+  （`oninput="server:…"` でサーバーが入力値を受け取れない。`ClientActionRoutingTest`）。語の境目に詰め（`-` と `v` など）がある文字列が、
+  max-content ちょうどの flex アイテムで折り返していた（折り返しの判定が語の幅の和を見ていた。`TextShaperTest`・`HeadlessClientStateSyncTest`）。
+- 未確認: 下向きのホイールは、ウィンドウへ送ったメッセージでは Minecraft に 0 として届き、実機で確かめられなかった（上向きはスクロールまで確認。
+  下向きはヘッドレスで確認）。IME は従来どおり対象外。
 
 ### R4〜R10 の進捗
 
@@ -150,7 +165,7 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
 - GUI とワールド内の入力は `SessionInput` の 1 本に統合し、`click` はどちらも解放時に `pointerup`/`mouseup` の後で配送する
   （`SessionInputPipelineTest` が GUI とワールド内の DOM イベント順を比較。T3）。
 - IME の `composition*` は Minecraft の `EditBox` が preedit を渡さないため配送できない（型と `CoreEvent` 以外の経路は無い）。
-- `runClient` での観測と `gametest/WebScreenGameTest` の確認は未実施。
+- `runClient` での観測と `gametest/WebScreenGameTest` の確認は 2026-10-24 に済（専用サーバー + クライアントでクリック・キー入力・ホイールが DOM のイベントとして発火。H0〜H4 の節）。
 
 **R3 — 達成**: クライアント駆動 API（`openClientHtmlScreen` / `setClientCustomHud` / `getClientDocument`）、
 `requestAnimationFrame` / `setTimeout` / `setInterval`、`DomMutationRecord` と `WebSession.patch*`、README の所有権の節。
@@ -165,7 +180,8 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
   `forwardEventsToServer` を撤去。サーバーは `data-forward-action` も送出アクション名として検証する（`WebSession`）。
 - 検証: `EventForwardDeclarationTest`・`ServerOwnershipAndForwardingTest`（同期・変異・再同期・転送・クライアントだけの HUD を 240 フレーム更新して送出パケット 0）・`WebSessionForwardDeclarationTest`。テスト 478 件・失敗 0。
 **R3 — 残**:
-- `runClient` での観測（HUD を毎フレーム更新してパケットが出ないこと、サーバー駆動画面が従来どおり動くこと）と `gametest/WebScreenGameTest` の確認は未実施（ヘッドレスのテストまで）。
+- HUD を毎フレーム更新してパケットが出ないこと（600 フレームで C2S 0 件）と `gametest/WebScreenGameTest` は 2026-10-24 に実機で確認。
+  サーバー駆動画面（互換モードの `WebSession`）を実機で開き直す確認はまだ（ゲームテストでのサーバー側の文書と寿命まで）。
 - 再同期はサーバー所有のノードを作り直すため、ホバー・フォーカス・スクロールなどノードに紐づく状態は戻る（細かい更新は変異レコードで、ノードの同一性を保つ）。
 
 R3 を「完了」とする条件は `runClient` での観測としていた。実際には観測を残したまま、ヘッドレスのテストを完了条件に R4〜R7 と H0〜H4 を先に進めた（`runClient` での観測は各フェーズの残に持ち越している）。

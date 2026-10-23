@@ -153,8 +153,10 @@ state.set("progress", 0.42).set("status", "Crushing");
 ```
 
 Inside a headless session every action that client code did not handle is sent
-to the server, and only players who are viewing the state can trigger it. Call
-`state.close()` when the block entity is removed. Code written against
+to the server, and only players who are viewing the state can trigger it. A state
+from `createBlockEntityState` is closed on the tick after its block entity is
+removed (broken or unloaded), and the viewers' screens close with it; call
+`state.close()` yourself for any other owner. Code written against
 `WebSessionHandle` can move over gradually: `WebSessionHandle.asUIState()` and
 `UIState.asSessionHandle()` adapt one to the other.
 

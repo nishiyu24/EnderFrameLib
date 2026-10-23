@@ -80,7 +80,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
         this.eventCallback = (sid, elementId, eventName, actionName, value) -> {
             if (!this.sessionId.equals(sid)) return false;
-            return router.dispatch(actionName);
+            return router.dispatch(actionName, elementId, eventName, value);
         };
         ClientScreenInteractionManager.setClientEventCallback(this.eventCallback);
     }
@@ -1015,9 +1015,18 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         public void sendServerAction(String actionName, Object value) {
+            sendServerAction(actionName, value, "", "rpc");
+        }
+
+        /**
+         * DOM のイベントから来たアクションは、要素 ID・イベント名・値（入力欄の値など）を付けて送る。
+         * 以前は文脈を捨てて {@code rpc} と空の値で送っていたため、{@code oninput="server:…"} で
+         * サーバーが入力値を受け取れなかった（実機で確認）。
+         */
+        public void sendServerAction(String actionName, Object value, String elementId, String eventName) {
             CompoundTag tag = new CompoundTag();
-            tag.putString("ElementId", "");
-            tag.putString("EventName", "rpc");
+            tag.putString("ElementId", elementId != null ? elementId : "");
+            tag.putString("EventName", eventName != null && !eventName.isEmpty() ? eventName : "rpc");
             tag.putString("ActionName", actionName != null ? actionName : "");
             tag.putString("Value", value != null ? String.valueOf(value) : "");
 
@@ -1033,15 +1042,23 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         public boolean dispatch(String action) {
+            return dispatch(action, "", "rpc", "");
+        }
+
+        /**
+         * アクションを振り分ける。{@code server:name:payload} は書かれた payload を、{@code server:name} は
+         * イベントの値（{@code eventValue}）を値として送る。
+         */
+        public boolean dispatch(String action, String elementId, String eventName, String eventValue) {
             if (action == null || action.isEmpty()) return false;
 
             if (action.startsWith("server:")) {
                 String rest = action.substring(7);
                 if (rest.contains(":")) {
                     String[] sp = rest.split(":", 2);
-                    sendServerAction(sp[0], sp[1]);
+                    sendServerAction(sp[0], sp[1], elementId, eventName);
                 } else {
-                    sendServerAction(rest, "");
+                    sendServerAction(rest, eventValue != null ? eventValue : "", elementId, eventName);
                 }
                 return true;
             }
