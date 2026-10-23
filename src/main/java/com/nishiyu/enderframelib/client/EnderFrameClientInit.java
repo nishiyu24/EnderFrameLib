@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.client.renderer.OutlineTextRenderer;
 import com.nishiyu.enderframelib.core.text.model.*;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -28,7 +30,13 @@ import java.util.List;
 import java.util.Map;
 import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
 import com.nishiyu.enderframelib.network.PubSubUpdateS2CPacket;
+import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
+import com.nishiyu.enderframelib.network.OpenUiS2CPacket;
+import com.nishiyu.enderframelib.network.StateDeltaS2CPacket;
 import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.network.StateNbtConverter;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -54,9 +62,21 @@ public class EnderFrameClientInit {
         modEventBus.addListener((RegisterClientReloadListenersEvent event) -> {
             event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
                 WebFontManager.clearCache();
+                OutlineTextRenderer.clear();
                 WebSdfShader.reload();
+                ClientTemplateManager.clearCache();
             });
         });
+        // システムの書体の一覧は最初の画面を開くときに要る。読み込み（数十〜百数十ミリ秒）を起動中に裏で済ませておく
+        Thread fontScan = new Thread(() -> {
+            try {
+                SystemFonts.system().resolve(null);
+            } catch (Throwable t) {
+                EnderFrameLib.LOGGER.warn("Could not scan system fonts: {}", t.toString());
+            }
+        }, "EnderFrame-FontScan");
+        fontScan.setDaemon(true);
+        fontScan.start();
         NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
             if (event.getLevel() != null && event.getLevel().isClientSide()) {
                 DisplayItemDrawer.clearEntityPreviewCache();
@@ -150,6 +170,8 @@ public class EnderFrameClientInit {
         PubSubUpdateS2CPacket.clientHandler = ClientPubSubManager::onReceiveUpdate;
 
         WebSyncS2CPacket.clientHandler = EnderFrameClientInit::handleWebSyncPacket;
+        OpenUiS2CPacket.clientHandler = EnderFrameClientInit::handleOpenUiPacket;
+        StateDeltaS2CPacket.clientHandler = EnderFrameClientInit::handleStateDeltaPacket;
     }
 
     private static void handleWebSyncPacket(String sessionId, String action, CompoundTag data) {
@@ -192,6 +214,15 @@ public class EnderFrameClientInit {
                     Minecraft.getInstance().setScreen(screen);
                 });
             }
+            case "open_desktop" -> Minecraft.getInstance().execute(() -> {
+                String initialWindow = data.getString("InitialWindow");
+                com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen screen =
+                        new com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen();
+                if (!initialWindow.isEmpty()) {
+                    screen.openAndFocusWindow(initialWindow);
+                }
+                Minecraft.getInstance().setScreen(screen);
+            });
             case "set_hud" -> {
                 String inlineHtml = data.getString("Html");
                 String resLocStr = data.getString("ResourceLocation");
@@ -207,6 +238,99 @@ public class EnderFrameClientInit {
                     WebHudRenderer.customActiveHudSessionId = "";
                 }
             });
+        }
+    }
+
+    public static void handleOpenUiPacket(String templateId, String instanceId, CompoundTag initialState) {
+        if (templateId == null || instanceId == null) return;
+        com.nishiyu.enderframelib.client.template.ParsedTemplate template = ClientTemplateManager.getTemplate(templateId);
+        if (template == null) {
+            EnderFrameLib.LOGGER.error("UI template not found for templateId: {}", templateId);
+            return;
+        }
+
+        SessionContext session = ClientWebManager.getOrCreateSession(instanceId);
+        session.setServerManaged(false);
+        session.setHeadlessState(true);
+
+        com.nishiyu.enderframelib.common.Document doc = template.instantiate(session.rootW(), session.rootH());
+        session.loadTemplateDocument(doc);
+
+        ReactiveStateStore store = session.stateStore();
+        if (initialState != null && !initialState.isEmpty()) {
+            applyCompoundTagToStore(store, initialState);
+        } else {
+            store.syncToDom();
+        }
+
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null) {
+                mc.execute(() -> {
+                    if (mc.screen instanceof com.nishiyu.enderframelib.client.gui.EnderScreenHost host
+                            && instanceId.equals(host.getWebSessionId())) {
+                        return;
+                    }
+                    AbstractEnderScreen newScreen = new AbstractEnderScreen(
+                            Component.literal("EnderFrame UI"), instanceId, session.rootW(), session.rootH()) {
+                        @Override
+                        protected String buildInitialHtml() {
+                            return null;
+                        }
+                    };
+                    mc.setScreen(newScreen);
+                });
+            }
+        } catch (Throwable ignored) {
+            // ヘッドレス環境・テスト環境での Minecraft 未初期化に対応
+        }
+    }
+
+    public static void handleStateDeltaPacket(String instanceId, CompoundTag deltas) {
+        if (instanceId == null || deltas == null) return;
+        SessionContext session = ClientWebManager.getSession(instanceId);
+        if (session == null) return;
+
+        ReactiveStateStore store = session.stateStore();
+        applyCompoundTagToStore(store, deltas);
+        store.syncToDom();
+    }
+
+    public static void applyCompoundTagToStore(ReactiveStateStore store, CompoundTag tag) {
+        if (tag == null || store == null) return;
+
+        if (tag.contains("__removed")) {
+            ListTag removedList = tag.getList("__removed", Tag.TAG_STRING);
+            for (int i = 0; i < removedList.size(); i++) {
+                store.set(removedList.getString(i), "");
+            }
+        }
+
+        for (String key : tag.getAllKeys()) {
+            if ("__removed".equals(key)) continue;
+            Tag rawTag = tag.get(key);
+            Object obj = StateNbtConverter.fromTag(rawTag);
+            if (obj instanceof List<?> rawList) {
+                List<Map<String, String>> items = new ArrayList<>();
+                for (Object item : rawList) {
+                    if (item instanceof Map<?, ?> m) {
+                        Map<String, String> strMap = new HashMap<>();
+                        for (Map.Entry<?, ?> e : m.entrySet()) {
+                            if (e.getKey() != null) {
+                                strMap.put(String.valueOf(e.getKey()), e.getValue() != null ? String.valueOf(e.getValue()) : "");
+                            }
+                        }
+                        items.add(strMap);
+                    } else if (item != null) {
+                        Map<String, String> strMap = new HashMap<>();
+                        strMap.put("_value", String.valueOf(item));
+                        items.add(strMap);
+                    }
+                }
+                store.setList(key, items);
+            } else {
+                store.set(key, obj);
+            }
         }
     }
 

@@ -8,13 +8,17 @@ and HUDs as HTML and CSS instead of hand-placing widgets and pixel offsets.
 
 - **Screens, HUDs and in-world panels** are all the same document, driven from the
   server, from a datapack, or entirely on the client.
+- **Headless server state for machine UIs.** The server keeps only a key/value
+  `UIState` — no HTML, no DOM — and sends just the keys that changed. The
+  template lives on the client (`assets/<namespace>/enderframe_ui/`).
 - **Hybrid execution model.** Clients can drive UI independently without network
-  overhead via `EnderFrameClientAPI`. Server-driven sessions synchronize via
-  fine-grained DOM mutation records directly to the live DOM tree.
-- **Single DOM, no diff copies.** The 3-DOM-copy and virtual diff engine are
-  retired; client scripting and server packets mutate the same live DOM directly.
+  overhead via `EnderFrameClientAPI`. Server-driven HTML sessions synchronize via
+  fine-grained DOM mutation records applied directly to the live DOM tree.
+- **Single DOM, no diff copies.** Client code, bindings and server packets all
+  mutate the same live DOM through the standard DOM API.
 - **No browser is embedded.** The engine is plain Java in `core/`, with no
-  dependency on Minecraft, so it is unit-testable headlessly.
+  dependency on Minecraft, so it is unit-testable headlessly. Text is laid out
+  with the fonts installed on the system, as a browser does.
 
 > Status: usable, pre-1.0 in practice. The supported surface is `api/`;
 > everything else is `@ApiStatus.Internal` and will move.
@@ -66,18 +70,19 @@ EnderFrameAPI.get().openScreen(player, null, """
         </style>
         <h2>Hello</h2>
         <p>Diamonds: <span id="count">0</span></p>
-        <button data-action="mymod:collect">Collect</button>
+        <button onclick="server:collect">Collect</button>
         """, 320, 200);
 ```
 
 Reacting to a click, and patching the open document without resending it:
 
 ```java
-// The button's data-action arrives here on the block entity or provider that
-// owns the session.
+// onclick="server:<name>[:<value>]" arrives here on the menu or block entity
+// (a WebActionReceiver) that owns the session. The server only accepts action
+// names that the document it sent declared.
 @Override
 public void onWebServerAction(ServerPlayer player, String action, String value, CompoundTag payload) {
-    if (action.equals("mymod:collect")) {
+    if (action.equals("collect")) {
         EnderFrameAPI.get().findSession(sessionId).patchText("count", "42");
     }
 }
@@ -108,7 +113,54 @@ EnderFrameAPI.get().addSubscriptionCheck((player, channel) -> player.hasPermissi
 
 ---
 
-## Client-driven UI & Hybrid Execution Model (R3)
+## Machine UIs with headless state (recommended)
+
+For block entities and other fixed screens, ship the HTML with the client and keep
+only the values on the server. The server never parses HTML or holds a DOM; it
+tracks which keys changed and sends just those to the viewers at the end of each
+server tick.
+
+The template is a client resource, `assets/mymod/enderframe_ui/crusher.html`:
+
+```html
+<div class="machine">
+  <span data-bind="status">{{status}}</span>
+  <progress max="1" data-bind="value:progress"></progress>
+  <div data-if="running">Running</div>
+  <button onclick="server:toggle_power">Power</button>
+</div>
+```
+
+`data-bind="key"` sets the text, `data-bind="attr:key"` an attribute and
+`data-bind="style.width:key"` one style property; `{{key}}` works in text and
+attribute values.
+
+On the server:
+
+```java
+import com.nishiyu.enderframelib.api.state.UIState;
+
+// One state per block entity; its instance id is "block:x,y,z".
+UIState state = EnderFrameAPI.get().createBlockEntityState(blockEntity, "mymod:crusher");
+state.onAction("toggle_power", (player, payload) ->
+        state.set("running", !state.getBoolean("running", false)));
+
+// Opening adds the player as a viewer and sends the template id plus the current state.
+EnderFrameAPI.get().openBlockEntityUi(player, blockEntity, "mymod:crusher", state);
+
+// From the block entity's tick: unchanged values are not sent.
+state.set("progress", 0.42).set("status", "Crushing");
+```
+
+Inside a headless session every action that client code did not handle is sent
+to the server, and only players who are viewing the state can trigger it. Call
+`state.close()` when the block entity is removed. Code written against
+`WebSessionHandle` can move over gradually: `WebSessionHandle.asUIState()` and
+`UIState.asSessionHandle()` adapt one to the other.
+
+---
+
+## Client-driven UI & Hybrid Execution Model
 
 EnderFrameLib 1.0+ supports a **hybrid execution model** where documents can be opened
 and mutated entirely on the client side without network communication, while seamlessly
@@ -121,7 +173,7 @@ import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 
-// Open a client-only screen and get its live Document handle
+// Open a client-only screen (the first argument is its session id) and get its live Document handle
 Document doc = EnderFrameClientAPI.get().openScreen("mymod:client_menu", """
     <div id="container">
       <h1 id="title">Client Panel</h1>
@@ -137,7 +189,7 @@ title.setTextContent("Updated by Client!");
 Element btn = doc.getElementById("actionBtn");
 btn.addEventListener("click", evt -> {
     System.out.println("Handled on client!");
-    evt.preventDefault(); // Do not transfer to server even if onclick/data-action is present
+    evt.preventDefault(); // Do not transfer to server even if onclick="server:..." or data-forward is present
 });
 ```
 
@@ -147,20 +199,26 @@ Client-driven documents can schedule rendering and game-tick tasks. All tasks ar
 automatically cancelled when the document session is closed.
 
 ```java
-// Run on next render frame (equivalent to requestAnimationFrame)
-long frameTaskId = EnderFrameClientAPI.get().requestAnimationFrame(sessionId, () -> {
+// Run on the next render frame (equivalent to requestAnimationFrame)
+int frameTaskId = EnderFrameClientAPI.get().requestAnimationFrame(sessionId, timestamp -> {
     // High-frequency animation or rendering update
 });
 
-// Run with millisecond delay based on client ticks
-long timerId = EnderFrameClientAPI.get().setTimeout(sessionId, () -> {
+// Run after a delay in milliseconds, measured in client ticks
+int timerId = EnderFrameClientAPI.get().setTimeout(sessionId, () -> {
     doc.getElementById("title").setTextContent("Delayed update");
 }, 1000);
+
+// setInterval / clearInterval, cancelAnimationFrame and clearTimeout work the same way.
 ```
 
-### Ownership model & Mutation sync
+### Server-sent HTML: ownership model & mutation sync
 
-- **Single DOM**: The previous 3-copy virtual DOM (`templateDom`, `virtualDom`, `realDom`) and the old diff-apply engine have been removed. Both client scripts and server packets operate on the single live DOM tree.
+This applies to documents sent from the server as HTML (`openScreen`,
+`openDatapackScreen`, `setHud`, `WebSessionHandle`). Headless-state UIs above
+are client-owned templates and need none of it.
+
+- **Single DOM**: Both client scripts and server packets operate on the single live DOM tree; there are no template/virtual copies and no diff engine.
 - **Subtree Ownership**: every subtree is either server-owned or client-owned. Declare it with `data-owner="server|client"` (inherited by descendants); without it the document default applies — **server-owned** for a document synced from the server, **client-owned** for one opened on the client only (`openScreen` / `setHud` / `loadLocalHtml`).
   - Client code *can* write into a server-owned subtree, but the next server mutation (or a full re-sync) wins and overwrites it. This is the contract, not a limitation.
   - Server mutation records aimed at a client-owned subtree are dropped, and a re-sync keeps client-owned islands (moved to the same `id` in the new tree; they vanish only if the server removed their host).
@@ -183,9 +241,16 @@ Useful without writing any Java:
 /enderframe hud clear <players>
 /enderframe session load <session_id> <ui_id> [<width> <height>]
 /enderframe session clear <session_id>
+/enderframe patch text|html <session_id> <element_id> <value…>
+/enderframe patch style <session_id> <element_id> <property> <value…>
+/enderframe patch attr <session_id> <element_id> <name> <value…>
+/enderframe patch class <session_id> <element_id> add|remove|toggle <class>
 /enderframe publish <channel> <snbt>
+/enderframe desktop [<players>]    # open the bundled desktop demo
 /enderframe devkit                 # export the browser preview kit
 ```
+
+Everything except `desktop` without a target needs permission level 2.
 
 ### Browser preview
 
@@ -233,12 +298,14 @@ the engine against.
 | `<mc-fluid>` | a fluid texture |
 | `<img src="item:minecraft:diamond">` | an item stack as an image |
 
-**Reactive attributes** (server-driven, no scripting)
+**Reactive attributes** (no scripting)
 
 `data-model` `data-bind` `data-if` `data-show` `data-for` `data-key`
-`data-class` `data-channel` `data-list` `data-item` `data-tooltip`
-`data-sound` `data-markdown` `data-syntax` `data-theme` `data-hud`
-`data-tracker` `data-dropzone` `data-slot` `data-zoom` `data-pan-zoom`
+`data-row-key` `data-class` `data-channel` `data-list` `data-i18n`
+`data-item` `data-tooltip` `data-sound` `data-markdown` `data-syntax`
+`data-hud` `data-tracker` `data-dropzone` `data-slot` `data-zoom`
+`data-pan-zoom`, and for server-sent HTML `data-owner` `data-forward`
+`data-forward-action`
 
 - `data-if` (and alias `mc-if`): Toggles the HTML `hidden` boolean attribute on the element based on the condition expression.
 - `data-show`: Toggles inline `display: none` style on the element, restoring the original display property when condition is true.
@@ -265,22 +332,26 @@ horizontal rules.
 
 **Selectors** type, `.class`, `#id`, `*`, descendant, `>`, `+`, `~`, attribute
 (`[a]` `[a=v]` `[a^=v]` `[a$=v]` `[a*=v]` `[a~=v]` `[a|=v]`, with the `i` / `s`
-flags), selector lists, CSS escapes in names (`.sm\:hidden`). Specificity and
-cascade origin are tracked properly, and `!important` wins. A selector the
-engine does not understand is invalid, as in a browser: it matches nothing and
-drops the whole rule it is listed in.
+flags), selector lists, CSS escapes in names (`.sm\:hidden`), and CSS nesting
+(`&`, nested rules and their specificity). Specificity and cascade origin are
+tracked properly, and `!important` wins. A selector the engine does not
+understand is invalid, as in a browser: it matches nothing and drops the whole
+rule it is listed in.
 
 **Pseudo-classes** `:hover` `:active` `:focus` `:focus-visible` `:focus-within`
 `:checked` `:disabled` `:enabled` `:indeterminate` `:open` `:required`
-`:optional` `:link` `:any-link` `:visited` (never matches) `:first-child`
-`:last-child` `:only-child` `:first-of-type` `:last-of-type` `:only-of-type`
-`:nth-child()` `:nth-last-child()` `:nth-of-type()` `:nth-last-of-type()` (any
-`An+B`, `odd`, `even`) `:empty` `:root` `:scope` `:not()` `:is()` `:where()`
-(selector lists, including complex selectors)
+`:optional` `:read-only` `:read-write` `:placeholder-shown` `:valid` `:invalid`
+`:in-range` `:out-of-range` `:link` `:any-link` `:visited` (never matches)
+`:target` `:defined` `:lang()` `:dir()` `:first-child` `:last-child`
+`:only-child` `:first-of-type` `:last-of-type` `:only-of-type` `:nth-child()`
+`:nth-last-child()` `:nth-of-type()` `:nth-last-of-type()` (any `An+B`, `odd`,
+`even`, and `of S`) `:empty` `:root` `:scope` `:not()` `:is()` `:where()`
+`:has()` (selector lists, including complex and relative selectors)
 
 **Pseudo-elements** `::before` `::after` (`content` with strings, `attr()`,
 `counter()` and `counters()`; they follow the cascade like elements and update
-on state changes such as `:hover::after`); list items get a `::marker` box
+on state changes such as `:hover::after`); `::marker` on list items,
+`::placeholder` on text inputs, `::selection`
 
 **Lists and counters** `list-style-type` (`disc` `circle` `square` `decimal`
 `decimal-leading-zero` `lower-` / `upper-alpha` / `latin` / `roman`
@@ -315,7 +386,9 @@ negative numbers, names, `span`) `justify-items` `align-items` `justify-self`
 **Tables** `table-layout` `border-collapse` `border-spacing` `caption-side`,
 `vertical-align` on cells
 
-**Text** `color` `font-size` `font-family` `font-weight` `font-style`
+**Text** `color` `font-size` `font-family` (fonts installed on the system,
+matched as in a browser, plus Minecraft's fonts and `@font-face`) `font-weight`
+`font-style` `font-kerning`
 `line-height` `letter-spacing` `text-align` `text-indent` `vertical-align`
 (`baseline` `top` `bottom` `middle` `sub` `super` `text-top` `text-bottom`,
 lengths, `%`) `text-decoration` `text-shadow`
@@ -326,36 +399,59 @@ lengths, `%`) `text-decoration` `text-shadow`
 flex and grid items with a `z-index`, `opacity` below 1, `transform`, `filter`,
 `isolation: isolate`, `mix-blend-mode`, and fixed / sticky boxes) painted in
 CSS 2.2 Appendix E order; `background` with multiple layers,
-`background-color` `background-image` (`url()`, `linear-gradient()`)
+`background-color` `background-image` (`url()`, `linear-gradient()`,
+`radial-gradient()`, `conic-gradient()` and their `repeating-` forms, with
+colour hints and `in <colorspace>`)
 `background-size` `background-position` `background-repeat` (including
 `space` and `round`) `background-clip` `background-origin`; `box-shadow` `transform`
 (`translate` `scale` `rotate`) `transform-origin` `transition`
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
 `object-fit` `cursor` `content` `src`
 
-**Units & functions** `px` `%` `em` `rem` `ch` `ex` `vw` `vh` `vmin` `vmax`
-`pt` `pc` `in` `cm` `mm` `Q` `fr`, `calc()` `min()` `max()` `clamp()` (nested in
-any combination; division by zero is clamped instead of reaching layout),
-`var()` with custom properties (nested, with fallbacks; cycles make the
-declaration invalid), `rgb()` `rgba()` `hsl()` `hsla()` (comma and space
-syntax, `/ alpha`), `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`, the 148 CSS named
-colors, `transparent`, `currentcolor`. Minecraft's 16 chat colours are
+**Units & functions** `px` `%` `em` `rem` `ch` `ex` `cap` `ic` `lh` `rlh`
+`vw` `vh` `vmin` `vmax` `vi` `vb` and their `sv*` / `lv*` / `dv*` forms,
+container units (`cqw` `cqh` `cqi` `cqb` `cqmin` `cqmax`), `pt` `pc` `in` `cm`
+`mm` `Q` `fr`; `calc()` `min()` `max()` `clamp()` `round()` `mod()` `rem()`
+`abs()` `sign()` `pow()` `sqrt()` `hypot()` `log()` `exp()` and the
+trigonometric functions (nested in any combination, typed: an expression whose
+units do not fit is invalid); `var()` with custom properties (nested, with
+fallbacks; cycles make the declaration invalid).
+
+**Colours** `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`, the 148 CSS named colors,
+`transparent`, `currentcolor`, `rgb()` `hsl()` `hwb()` `lab()` `lch()`
+`oklab()` `oklch()` `color()` (comma and space syntax, `/ alpha`, `none`),
+`color-mix()` and relative colours (`rgb(from red r g b)`). Colours outside sRGB
+are gamut-mapped as CSS Color 4 describes. Minecraft's 16 chat colours are
 `var(--mc-red)`, `var(--mc-gold)`, `var(--mc-dark-aqua)` and so on.
 
-**Cascade** `inherit` `initial` `unset` `revert` and `all`. Children inherit
-computed values, so `font-size: 2em` does not compound down the tree.
+**Cascade** origins, `!important`, cascade layers (`@layer`, nested and
+anonymous layers, `@import … layer()`), `inherit` `initial` `unset` `revert`
+`revert-layer` and `all`. Children inherit computed values, so
+`font-size: 2em` does not compound down the tree.
 
 **At-rules** `@media` with media types (`all`, `screen`, `print`), `width` /
 `height` / `aspect-ratio` (with `min-` / `max-` and the range syntax),
-`orientation`, `prefers-color-scheme`, `prefers-reduced-motion`, `hover`,
-`pointer`; `@supports` (declarations, `selector()`, `and` / `or` / `not`);
-`@import` (with a media list); `@keyframes`; `@font-face`
+`orientation`, `resolution`, `prefers-color-scheme`, `prefers-reduced-motion`,
+`hover` / `any-hover`, `pointer` / `any-pointer`; `@supports` (declarations,
+`selector()`, `and` / `or` / `not`); `@container` (`container-type`,
+`container-name`, size and `style()` queries); `@layer`; `@property`
+(registered custom properties are typed and animatable); `@import` (with
+`layer()`, `supports()` and a media list); `@keyframes`; `@font-face`
 
 **Built-in stylesheets** `enderframelib:ua.css` is the user-agent sheet, with
 the HTML standard's rendering defaults (`body { margin: 8px }`, `em`-based
 headings, `dl` / `dd`, `border-spacing: 2px` tables, `#0000ee` links, and so
 on); themes are `enderframelib:dark.css`, `enderframelib:vanilla.css`,
 `enderframelib:brass.css`, and carry all the decoration.
+
+> **Breaking change — system fonts.** Text is now laid out and drawn with the
+> fonts installed on the system, chosen from `font-family` the way a browser
+> chooses them (an unstyled document gets the standard font Chrome on Windows
+> would use, form controls Arial, `code` / `pre` a monospace font), and rasterised at the
+> device pixel size. Line breaks, widths and line heights therefore follow
+> Chrome rather than Minecraft's font. To keep Minecraft's look, set
+> `font-family: minecraft:default` (or `minecraft:uniform` / `minecraft:alt`);
+> the metrics note below then applies.
 
 > **Breaking change — text metrics.** `font-size` and `line-height` now mean what
 > they mean in a browser. A given `font-size` renders about 1.3× larger than
@@ -536,8 +632,8 @@ Layout differences from a real browser are measured, case by case, in
 - **Box-tree generation in full.** A block inside an inline box does not split
   the inline box, and text directly inside a flex or grid container is not
   wrapped in an anonymous item. `<ol reversed>` does not count down.
-- **`::marker` styling.** Markers are drawn with the list item's inherited
-  style: `::marker` rules never match and `list-style-image` is ignored.
+- **List marker images.** `list-style-image` is ignored; markers are always
+  text (styled by `::marker`).
 - **Intrinsic sizing keywords as heights.** `min-content`, `max-content` and
   `fit-content` work as widths and grid track sizes, but not as a `height`.
 - **Flexbox in full.** `align-items: baseline` uses the first baseline of row
@@ -568,46 +664,49 @@ Layout differences from a real browser are measured, case by case, in
 - **Backgrounds in full.** Multiple layers, `url()` images and
   `background-size / position / repeat / clip / origin` work on block-level
   boxes; inline boxes paint their background colour and borders on each line
-  but no background images. Gradients are
-  `linear-gradient` only (no `radial-gradient` or `repeating-*`), colour hints
-  between stops are ignored, and a diagonal gradient with more than two stops
-  is drawn in thin bands (colours between band edges are interpolated
-  linearly). `background-attachment` is always `scroll`.
+  but no background images. Radial, conic and diagonal multi-stop gradients
+  are drawn as a mesh of rectangles whose corner colours are interpolated
+  linearly, so a hard colour edge is only as sharp as the mesh.
+  `background-attachment` is always `scroll`.
 - **Box shadows in full.** `box-shadow` blur is approximated by a few stacked
   layers rather than a Gaussian. An outer shadow is painted under the whole box,
   so it shows through a transparent or translucent background (a browser draws
   it only outside the border box), and the unshadowed area of an `inset` shadow
   has square corners.
-- **Native form controls and `legend`.** `ua.css` follows the HTML standard's
-  rendering defaults, but form controls are drawn by EnderFrameLib (sized after
-  Chromium's light theme) rather than by the operating system, and a `legend`
-  is laid out as an ordinary block instead of sitting on its `fieldset`'s
-  border.
-- **Glyph-level fidelity.** `font-size: Npx` scales Minecraft's bitmap font so
-  that its cap height and x-height land where a browser's UI font would
-  (1em = the font's natural 9px line box), and `line-height: normal` reserves
-  1.15em. Individual glyph widths still differ from any OS font, so wrap
-  positions, ellipsis positions and centring offsets cannot match a browser
-  exactly. See [FIDELITY.md](FIDELITY.md) for what is measured instead.
-- **Media features that need a display.** `resolution` and `color-gamut` are
-  unknown (and therefore false). `prefers-color-scheme` is always `light` and
+- **Native form controls.** `ua.css` follows the HTML standard's rendering
+  defaults, but form controls are drawn by EnderFrameLib (sized after
+  Chromium's light theme) rather than by the operating system.
+- **Glyph-level fidelity.** Text uses the fonts installed on the system
+  (matched as CSS Fonts 4 §5.2 describes), but there are no ligatures,
+  `line-height: normal` ignores the metrics of fallback fonts, and
+  `font-weight: 500` on a family without a 500 face picks Regular as the
+  standard says (Chrome on Windows picks Semibold). Generic families
+  (`sans-serif` and so on) map to the fonts Chrome uses on Windows; on other
+  systems the installed fallbacks are used, so text can measure differently.
+  Fonts registered with `@font-face` and the `minecraft:*` families are drawn
+  with Minecraft's bitmap font system instead. See [FIDELITY.md](FIDELITY.md)
+  for what is measured.
+- **Media features that need a display.** `color-gamut` is unknown (and
+  therefore false). `prefers-color-scheme` is always `light` and
   `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
-  a mouse. `@import` with `layer()` or `supports()` is ignored, as there are no
-  cascade layers.
-- **Pseudo-elements beyond `::before` / `::after`.** `::marker`,
-  `::placeholder`, `::selection` and friends parse (and count toward
-  specificity) but never match.
+  a mouse, and `prefers-contrast` / `forced-colors` report no preference.
+- **Pseudo-elements beyond the supported ones.** `::first-line`,
+  `::first-letter`, `::backdrop`, `::file-selector-button` and friends parse
+  (and count toward specificity) but never match.
 - **Selectors in full.** Pseudo-classes not listed under *Supported CSS*
-  (`:has()`, `:read-only`, `:placeholder-shown`, `:target`, `:valid`,
-  `:nth-child(An+B of S)` and so on) make the selector invalid, as an unknown
-  pseudo-class does in a browser. There are no namespaces (`svg|rect`).
+  (`:user-valid`, `:autofill`, `:fullscreen` and so on) make the selector
+  invalid, as an unknown pseudo-class does in a browser. There are no
+  namespaces (`svg|rect`).
 - **Glyph-relative units and elliptical corners.** `ch` and `ex` are taken as
-  0.5em instead of being measured from the font. Corners are drawn as circular
-  arcs, so an elliptical radius (`10px / 20px`, or a percentage on a box that is
-  not square) uses the smaller of its two radii.
-- **Custom fonts.** Rendering uses Minecraft's font system; `font-family`
-  selects among the fonts Minecraft has and the TrueType / OpenType fonts
-  registered with `@font-face`.
+  0.5em instead of being measured from the font, `ic` as 1em and `cap` as a
+  fixed fraction of the font size. Corners are drawn as circular arcs, so an
+  elliptical radius (`10px / 20px`, or a percentage on a box that is not
+  square) uses the smaller of its two radii.
+- **Transforms in full.** `transform` reads `translate()` / `translateX()` /
+  `translateY()`, `scale()` and `rotate()` only, and applies them in a fixed
+  order (translate, rotate, scale) whatever order they are written in.
+  `matrix()`, `skew*()`, 3D functions and the individual `translate` /
+  `rotate` / `scale` properties are not applied.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
   YouTube sources download `yt-dlp` at first use (see [NOTICE](NOTICE)).
 
@@ -617,15 +716,21 @@ Layout differences from a real browser are measured, case by case, in
 
 ```
 core/     HTML, CSS, layout, markdown, text — plain Java, no Minecraft. Headlessly testable.
-api/      The supported surface: EnderFrameAPI, WebSessionHandle, config annotations.
-common/   Shared between sides: resource loading, custom-element expansion, DevKit export.
-server/   Sessions, viewers, pub/sub, commands, datapack loading, access control.
-client/   Rendering, input, screens, media, reactivity.
-network/  The four payloads (DOM sync, pub/sub update, action, subscribe).
+api/      The supported surface: EnderFrameAPI, EnderFrameClientAPI, WebSessionHandle,
+          UIState (api/state), the DOM and event interfaces (api/dom, api/event), config.
+common/   Shared between sides: resource loading, custom-element expansion, the render
+          pipeline, DevKit export.
+server/   Headless UI state, HTML sessions, viewers, pub/sub, commands, datapack loading,
+          access control.
+client/   Rendering, input, screens, templates, media, reactivity.
+network/  The payloads: headless open / state delta / action, DOM sync and mutations,
+          HTML-session action, pub/sub update and subscribe.
 ```
 
-`core/` must not import Minecraft, NeoForge, or the other packages. This is
-enforced by `ArchitectureTest`, which runs in CI.
+`core/` must not import Minecraft, NeoForge, or the packages above it, and
+`api/` must not import the implementation packages. This is enforced by
+`ArchitectureTest` and `ApiBoundaryTest`, which run in CI. The internal
+structure is described in [ARCHITECTURE.md](ARCHITECTURE.md) (Japanese).
 
 ## Building
 
@@ -652,11 +757,23 @@ runtime-downloaded `yt-dlp`, JNA, and the NeoForge MDK template files — are
 attributed in [NOTICE](NOTICE). The bundled native binary is **not** covered by
 the LGPL grant.
 
-### Migration notes (R3)
+### Migration notes
 
-- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `SessionContext.rootNode()` / `domDocument()` from `ClientWebManager.getSession(sessionId)` (S3).
+**Headless state**
+
+- Machine UIs that sent their HTML from the server with `openScreen` and
+  updated it with `WebSessionHandle.patch*` can move to `UIState`: ship the
+  HTML as `assets/<namespace>/enderframe_ui/<name>.html`, replace each patched
+  element with a `data-bind` / `{{key}}` binding, and call `UIState.set`
+  instead of `patch*`. `WebSessionHandle.asUIState()` and
+  `UIState.asSessionHandle()` bridge the two while you migrate. `openScreen`
+  and `WebSessionHandle` remain supported for ad-hoc HTML.
+
+**Live DOM and hybrid execution**
+
+- The old diff-apply engine, `SessionContext.virtualDom()/templateDom()` and `ClientWebManager.getVirtualRoot()/getTemplateRoot()` are removed; use `SessionContext.rootNode()` / `domDocument()` from `ClientWebManager.getSession(sessionId)`.
 - Inline actions (`on*` attributes) now run *after* propagation and only if the event was not cancelled. A `preventDefault()` in any listener suppresses both the local action and the server forward.
 - `ClientScreenInteractionManager.setForwardEventsToServer` is removed: use `data-forward` or the `server:` prefix.
 - A re-sync recreates server-owned nodes (hover/focus/scroll state tied to the old node objects is reset); fine-grained updates should use mutation records, which keep node identity.
-- Common screen helper operations (`setTextareaValue`, `setInputValue`, `toScreenRect`, etc.) on `AbstractEnderScreen` and `AbstractEnderContainerScreen` are extracted into the `EnderScreenHost` interface; downstream code keeps full binary and source compatibility (S5).
-- Input event synthesis (pointer, mouse, click synthesis, scroll, keys, and text editing) is centralized into `SessionInput` (`session.input()`); GUI screens and in-world screens (blocks, items, HUD) share the exact same event synthesis pipeline (S4).
+- Common screen helper operations (`setTextareaValue`, `setInputValue`, `toScreenRect`, etc.) on `AbstractEnderScreen` and `AbstractEnderContainerScreen` are extracted into the `EnderScreenHost` interface; downstream code keeps full binary and source compatibility.
+- Input event synthesis (pointer, mouse, click synthesis, scroll, keys, and text editing) is centralized into `SessionInput` (`session.input()`); GUI screens and in-world screens (blocks, items, HUD) share the exact same event synthesis pipeline.

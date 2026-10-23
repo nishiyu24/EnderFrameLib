@@ -136,6 +136,80 @@ public class ReactiveStateStoreTest {
         assertFalse(showTarget.attrs.get("style").contains("display: none"), "data-show が true の場合 display: none が解除される");
     }
 
+    /**
+     * バインディングで書き換えた style・class・表示が、他の操作（クリックによるフォーカス移動など）無しで
+     * 次のレイアウトに反映されること。以前は書き換えた要素の算出スタイルのキャッシュが捨てられず、
+     * 古いスタイルのまま描かれていた。
+     */
+    @Test
+    public void testBoundStyleChangesReachLayoutWithoutOtherInvalidation() {
+        com.nishiyu.enderframelib.common.RenderPipeline.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer;
+        com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) ->
+                new com.nishiyu.enderframelib.client.renderer.DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        try {
+            String html = "<style>#mover{position:absolute;width:10px;height:10px;background:red}"
+                    + "#overlay{display:none;position:absolute;width:20px;height:20px;background:blue}"
+                    + "#mover.wide{width:40px}</style>"
+                    + "<div id='mover' data-bind='style.left:x' data-class='wide:isWide'></div>"
+                    + "<div id='overlay' data-show='shown' data-orig-display='block'></div>";
+            session().loadLocalHtml(html, 200, 200);
+            ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
+            store.set("x", "5px").set("isWide", false).set("shown", false);
+            store.syncToDom();
+            assertEquals(5, itemById("mover").x(), "初回のバインディングが反映される");
+            assertNull(itemById("overlay"));
+
+            store.set("x", "50px").set("isWide", true).set("shown", true);
+            store.syncToDom();
+            assertEquals(50, itemById("mover").x(), "style.left の変更が反映される");
+            assertEquals(40, itemById("mover").width(), "data-class の変更が反映される");
+            assertNotNull(itemById("overlay"), "スタイルシートで display:none の要素を data-show で表示できる");
+        } finally {
+            com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = prev;
+        }
+    }
+
+    private static com.nishiyu.enderframelib.core.paint.model.DisplayItem itemById(String id) {
+        return session().elements().stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
+    }
+
+    @Test
+    public void testDataShowRestoresOriginalDisplayInsteadOfForcingFlex() {
+        // id の無い要素が複数あっても、それぞれ元の display を保つこと
+        String html = "<div id='root'>"
+                + "<div class='page' data-show='a'><h2>A</h2><p>a</p></div>"
+                + "<div class='page' data-show='b' style='display: grid; color: red;'><h2>B</h2></div>"
+                + "<div class='page' data-show='c' data-orig-display='inline-block'>C</div>"
+                + "</div>";
+        session().loadLocalHtml(html, 800, 600);
+        HtmlNode root = session().rootNode().getElementById("root");
+        HtmlNode a = root.children.get(0);
+        HtmlNode b = root.children.get(1);
+        HtmlNode c = root.children.get(2);
+
+        ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
+        store.set("a", false).set("b", false).set("c", false);
+        store.syncToDom();
+        assertEquals("none", a.getStyleProperty("display"));
+        assertEquals("none", b.getStyleProperty("display"));
+        assertEquals("none", c.getStyleProperty("display"));
+
+        store.set("a", true).set("b", true).set("c", true);
+        store.syncToDom();
+        assertNull(a.getStyleProperty("display"),
+                "インライン display が無い要素は display を外してスタイルシート（div なら block）に委ねる。flex を付けない");
+        assertEquals("grid", b.getStyleProperty("display"), "元のインライン display を復元する");
+        assertEquals("red", b.getStyleProperty("color"), "他のインライン宣言は残す");
+        assertEquals("inline-block", c.getStyleProperty("display"), "data-orig-display の指定を優先する");
+
+        store.set("a", false).set("b", false);
+        store.syncToDom();
+        store.set("a", true).set("b", true);
+        store.syncToDom();
+        assertNull(a.getStyleProperty("display"), "切り替えを繰り返しても元に戻る");
+        assertEquals("grid", b.getStyleProperty("display"));
+    }
+
     @Test
     public void testDataClass() {
         String html = "<div id='root'><div id='box' data-class='active:isActive, alert:errorCount > 0'>Box</div></div>";

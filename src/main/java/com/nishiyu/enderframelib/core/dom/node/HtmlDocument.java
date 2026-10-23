@@ -146,6 +146,29 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.interactionState = interactionState != null ? interactionState : new InteractionState();
     }
 
+    /** DOM の操作で文書の中身が変わったときの知らせ先（持ち主のセッション）。 */
+    @FunctionalInterface
+    public interface DomChangeListener {
+        /**
+         * @param node          変わった節（子の並びの変化なら親）
+         * @param attributeName 属性の変化ならその名前、子の並び・文字の変化なら null
+         */
+        void onDomChanged(HtmlNode node, @Nullable String attributeName);
+    }
+
+    private DomChangeListener domChangeListener;
+
+    public void setDomChangeListener(@Nullable DomChangeListener listener) {
+        this.domChangeListener = listener;
+    }
+
+    /** {@link HtmlNode#notifyDomChanged} から呼ばれる。汚れの印を付け（算出スタイルを使い回させない）、持ち主に知らせる。 */
+    void nodeChanged(HtmlNode node, @Nullable String attributeName) {
+        interactionState.markDirty(node);
+        DomChangeListener listener = domChangeListener;
+        if (listener != null) listener.onDomChanged(node, attributeName);
+    }
+
     @Nullable
     @Override
     public Element getActiveElement() {
@@ -391,6 +414,7 @@ public class HtmlDocument extends HtmlNode implements Document {
             String oldVal = this.text;
             this.text = data != null ? data : "";
             MutationObserverManager.queueCharacterData(this, oldVal);
+            notifyDomChanged(null);
         }
 
         @Override

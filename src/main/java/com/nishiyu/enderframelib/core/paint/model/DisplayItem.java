@@ -48,4 +48,8 @@ public record DisplayItem(
     public DisplayItem withText(String newText) {
         return new DisplayItem(id, baseNodeId, type, x, y, width, height, newText, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta);
     }
+
+    public DisplayItem withTranslation(float newTranslateX, float newTranslateY) {
+        return new DisplayItem(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity, newTranslateX, newTranslateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta);
+    }
 }

@@ -14,8 +14,8 @@
  * 白い body）を持ち、dl / dd などの既定値が欠け、body の margin が 0 だったため、素の HTML が
  * ブラウザと違って見えた。
  *
- * LIMITATION(制約): legend は fieldset の枠の上に重ねず、普通のブロックとして置く。
- * README の "Not supported" に対応。 */
+ * fieldset の legend を枠線に重ねて置くのは CSS ではなくレイアウト（BoxTreeBuilder / BoxMeasurer）と
+ * 描画（DisplayListBuilder）が行う（§15.3.13 も CSS で書けない振る舞いとして定めている）。 */
 
 /* §15.3.1 隠す要素 */
 area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none; }
@@ -98,6 +98,10 @@ thead, tbody, tfoot, tr { border-color: inherit; }
 
 /* §15.3.10 フォームコントロール（標準） */
 input, select, button, textarea { letter-spacing: initial; word-spacing: initial; line-height: initial; text-transform: initial; text-indent: initial; text-shadow: initial; }
+/* Chrome（Windows）のフォームコントロールの文字（-webkit-small-control）: 13.333px、input / select / button は Arial、textarea は monospace */
+input, select, button, textarea { font-size: 13.333333px; font-weight: normal; font-style: normal; }
+input, select, button { font-family: Arial, sans-serif; }
+textarea { font-family: monospace; }
 input, select, textarea { text-align: initial; }
 input[type="reset"], input[type="button"], input[type="submit"], button { text-align: center; }
 input, button, select, textarea { display: inline-block; }
@@ -128,15 +132,37 @@ details[open] > summary { list-style-type: disclosure-open; }
  * ブラウザは OS の部品で描き、寸法は Chromium の既定値（ライトテーマ）に合わせる。
  * option はエンジンが select の中で描くので箱を作らない。 */
 option { display: none; }
+/* §15.5 フォームコントロールは UA の部品の見た目で描く。チェックボックスとラジオボタンでは作者の枠線・背景・padding が
+ * 効かない（StyleResolver の調整）。appearance: none にすると作者の CSS だけで描く */
+button, input, meter, progress, select, textarea { appearance: auto; }
 button, input[type="button"], input[type="submit"], input[type="reset"] { background-color: #efefef; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 6px; }
 button:hover, input[type="button"]:hover, input[type="submit"]:hover, input[type="reset"]:hover { background-color: #e5e5e5; border-color: #4f4f4f; }
 button:active, input[type="button"]:active, input[type="submit"]:active, input[type="reset"]:active { background-color: #f5f5f5; border-color: #8d8d8d; }
 input, textarea { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 2px; }
 select { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 0 4px; }
 textarea { padding: 2px; width: 100%; height: 120px; overflow: auto; }
-input[type="checkbox"], input[type="radio"] { width: 13px; height: 13px; padding: 0; margin: 3px 3px 3px 4px; }
-input[type="radio"] { margin: 3px 3px 0 5px; border-radius: 50%; }
-input[type="range"] { width: 129px; height: 16px; margin: 2px; padding: 0; border: none; background-color: #efefef; color: #0075ff; border-radius: 8px; }
+/* チェックボックスとラジオボタンは枠線・背景・角丸を持たない（Chromium の html.css と同じ。appearance: none で素の箱になる）。
+ * border-color は部品の未選択の輪の色（下の状態ごとの色の基準） */
+input[type="checkbox"], input[type="radio"] { width: 13px; height: 13px; padding: 0; margin: 3px 3px 3px 4px;
+    border: none; border-color: #767676; border-radius: 0; background-color: transparent; }
+input[type="radio"] { margin: 3px 3px 0 5px; }
+/* ラジオボタンとチェックボックスの部品の色（Chromium のライトテーマ）。枠の色として書くが、描画側は部品の輪・強調色として読み、
+ * 作者の border-color では変わらない（UA のスタイルシートだけでカスケードした値を使う）。accent-color があれば選択時はその色 */
+input[type="radio"]:hover { border-color: #4f4f4f; }
+input[type="radio"]:active { border-color: #8d8d8d; }
+input[type="radio"]:checked { border-color: #0075ff; }
+input[type="radio"]:checked:hover { border-color: #005cc8; }
+input[type="radio"]:checked:active { border-color: #3793ff; }
+/* チェックボックスも同じ色。選択・未確定のときの枠の色は、箱を塗る強調色として使う（枠は描かない） */
+input[type="checkbox"]:hover { border-color: #4f4f4f; }
+input[type="checkbox"]:active { border-color: #8d8d8d; }
+input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { border-color: #0075ff; }
+input[type="checkbox"]:checked:hover, input[type="checkbox"]:indeterminate:hover { border-color: #005cc8; }
+input[type="checkbox"]:checked:active, input[type="checkbox"]:indeterminate:active { border-color: #3793ff; }
+/* レンジは部品の溝とつまみで描く（作者の背景・枠線は描かないが、大きさには効く）。border-color はつまみと値の側の強調色 */
+input[type="range"] { width: 129px; height: 16px; margin: 2px; padding: 0; border: none; border-color: #0075ff; }
+input[type="range"]:hover { border-color: #005cc8; }
+input[type="range"]:active { border-color: #3793ff; }
 input[type="color"] { width: 50px; height: 27px; padding: 1px 2px; background-color: #efefef; }
 progress { width: 160px; height: 16px; background-color: #efefef; color: #0075ff; border: none; padding: 0; border-radius: 8px; }
 meter { width: 80px; height: 16px; background-color: #efefef; color: #107c10; border: none; padding: 0; border-radius: 8px; }

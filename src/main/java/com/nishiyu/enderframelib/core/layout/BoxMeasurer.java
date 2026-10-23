@@ -56,6 +56,7 @@ public final class BoxMeasurer {
         // 測り直しは前回の高さから始めない。高さは「今の値と内容の高さの大きい方」で決まるので、
         // 以前は親が伸ばした高さ（表の行・stretch）が次の測定に残り、内容の高さが分からなくなっていた
         box.h = 0;
+        box.legendSpill = 0;
 
         float parentW = tentativeInnerW;
         if (box.isFixed) {
@@ -106,6 +107,11 @@ public final class BoxMeasurer {
         // 箱自身の幅はここで決める。エンジンは子を測って内容の幅を返すだけ
         ConstraintSpace contentSpace = new ConstraintSpace(engineInnerW, parentH, fmtCtx);
         float contentW = engine.measureContent(box, contentSpace, ctx);
+        LayoutBox legend = box.renderedLegend();
+        if (legend != null) {
+            measureLegend(legend, engineInnerW, ctx);
+            contentW = Math.max(contentW, legend.w + legend.ownInlineMargins(ctx));
+        }
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             // 横の size containment がある箱（コンテナ）は、中身で幅が決まらない
             box.w = (box.containsInlineSize() ? 0 : contentW) + box.horizontalDecoration();
@@ -129,7 +135,29 @@ public final class BoxMeasurer {
             }
         }
 
+        if (legend != null) {
+            float innerW = Math.max(0, box.w - box.horizontalDecoration());
+            if (innerW != engineInnerW) measureLegend(legend, innerW, ctx);
+            box.legendSpill = legendSpill(box, legend);
+        }
+
         resolveHeights(box, contentSpace, ctx, isBorderBox, engine);
+    }
+
+    /** fieldset の legend の幅は fit-content（HTML §15.3.13）。auto マージンは置くときに解く。 */
+    private static final FormattingContext LEGEND_CONTEXT = new FormattingContext("legend", "stretch", false);
+
+    private static void measureLegend(LayoutBox legend, float fieldsetInnerW, LayoutContext ctx) {
+        legend.measure(new ConstraintSpace(fieldsetInnerW, Float.NaN, LEGEND_CONTEXT), ctx);
+    }
+
+    /**
+     * legend が上の枠線からはみ出す分。legend の border box は枠線の中央に置かれ（枠線より高ければ上端に揃う）、
+     * その下マージンまでが枠線の下へ出る分だけ内容が下がる。上マージンは数えない（Chrome の実測）。
+     */
+    private static float legendSpill(LayoutBox fieldset, LayoutBox legend) {
+        float top = Math.max(0, (fieldset.bT - legend.h) / 2);
+        return Math.max(0, top + legend.h + legend.mB - fieldset.bT);
     }
 
     /**
@@ -138,6 +166,8 @@ public final class BoxMeasurer {
      * エンジンから呼ばれる。
      */
     public static void resolveFlexibleHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        // measure を通らずに中身を組み直す（float を避けた行・伸ばした高さ）。前回の measure の結果はもう当てはまらない
+        box.invalidateMeasurement();
         LayoutEngine engine = LayoutEngine.getEngine(box.display);
         resolveHeights(box, space, ctx, isBorderBox(box.style), engine);
     }
@@ -213,9 +243,9 @@ public final class BoxMeasurer {
                     + style.length(CssProperty.RIGHT, parentW, rootW, rootH);
             box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (box.isAbsolute || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
+        } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
                 || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE) {
-            // インラインレベルの箱・float・表は shrink-to-fit（表の幅は列幅の合計）
+            // インラインレベルの箱・float・表・fieldset の legend は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else if (fmtCtx.isFlexColumn() && !"stretch".equals(fmtCtx.alignItems())) {
@@ -327,7 +357,9 @@ public final class BoxMeasurer {
         float rootH = ctx.viewport().rootH();
 
         String heightStr = style.getOrDefault(CssProperty.HEIGHT, "auto").trim();
-        boolean hasHeight = style.containsKey(CssProperty.HEIGHT) && !"auto".equals(heightStr);
+        // 基準の高さが不定（NaN）なら % の高さは auto（CSS 2.2 §10.5）。グリッドの行の大きさを決める段階がこれを使う
+        boolean hasHeight = style.containsKey(CssProperty.HEIGHT) && !"auto".equals(heightStr)
+                && !(Float.isNaN(parentH) && heightStr.contains("%"));
         boolean overridden = !Float.isNaN(box.overrideHeight);
 
         if (overridden) {
@@ -335,7 +367,7 @@ public final class BoxMeasurer {
             hasHeight = true;
         } else if (hasHeight) {
             box.h = toBorderBox(style.length(CssProperty.HEIGHT, parentH, rootW, rootH),
-                    box.verticalDecoration(), isBorderBox);
+                    specifiedDecoration(box, isBorderBox), isBorderBox);
         } else if (box.isAbsolute && hasBothInsets(style, CssProperty.TOP, CssProperty.BOTTOM)) {
             // top と bottom の両方があれば height: auto は間の高さ（CSS 2.2 §10.6.4）
             float insets = style.length(CssProperty.TOP, parentH, rootW, rootH)
@@ -359,7 +391,7 @@ public final class BoxMeasurer {
             if (!"none".equals(maxHStr) && !maxHStr.isEmpty()) {
                 float maxH = style.length(CssProperty.MAX_HEIGHT, parentH, rootW, rootH);
                 if (maxH > 0) {
-                    maxH = toBorderBox(maxH, box.verticalDecoration(), isBorderBox);
+                    maxH = toBorderBox(maxH, specifiedDecoration(box, isBorderBox), isBorderBox);
                     box.h = Math.min(box.h, maxH);
                 }
             }
@@ -367,9 +399,17 @@ public final class BoxMeasurer {
         if (style.containsKey(CssProperty.MIN_HEIGHT)) {
             // B-5 修正済み: ここは縦方向なので verticalDecoration（以前は横を足していた）
             float minH = toBorderBox(style.length(CssProperty.MIN_HEIGHT, parentH, rootW, rootH),
-                    box.verticalDecoration(), isBorderBox);
+                    specifiedDecoration(box, isBorderBox), isBorderBox);
             box.h = Math.max(box.h, minH);
         }
+    }
+
+    /**
+     * 指定した高さに足す縦の装飾。fieldset の legend が枠線からはみ出す分は、content-box の指定の高さでは
+     * 内容の高さから差し引く（HTML §15.3.13）ので足さない。border-box では装飾の下限にだけ効く。
+     */
+    private static float specifiedDecoration(LayoutBox box, boolean isBorderBox) {
+        return isBorderBox ? box.verticalDecoration() : box.verticalDecoration() - box.legendSpill;
     }
 
     private static void applyAspectRatio(LayoutBox box) {
@@ -436,8 +476,17 @@ public final class BoxMeasurer {
             box.h = LayoutMetrics.FALLBACK_REPLACED_SIZE + box.verticalDecoration();
             String type = box.node.attrs.getOrDefault("type", "text");
             boolean compact = type.equals("checkbox") || type.equals("radio") || type.equals("range");
+            // 内容の高さは Chrome（Windows）の実測に合わせる。以前は「行の高さ + 8px」という独自の値で、
+            // padding を指定した入力欄が Chrome より 8px 高くなっていた。
+            // - テキストの入力欄: line-height と書体の normal の行の高さの大きい方（字が欠けない）
+            // - select: line-height によらず ascent + descent + 2px
             if (tag.equals("select") || !compact) {
-                box.h = box.lineHeightPx + 8 + box.verticalDecoration();
+                FontFace face = ctx.faceFor(box.style);
+                FontStyle font = ctx.fontStyleFor(box.style);
+                float content = tag.equals("select")
+                        ? face.ascent(font) + face.descent(font) + 2
+                        : Math.max(box.lineHeightPx, face.normalLineHeight(font));
+                box.h = content + box.verticalDecoration();
             }
             return;
         }
@@ -487,7 +536,8 @@ public final class BoxMeasurer {
             default -> {
             }
         }
-        if (box.isAbsolute) return true;
+        // fieldset と、その描画される legend は独立した整形コンテキストを作る（HTML §15.3.13）
+        if (box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
         if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;

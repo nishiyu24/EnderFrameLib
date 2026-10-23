@@ -78,6 +78,13 @@ public class UiDocumentCompiler {
         return RenderPipeline.layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState);
     }
 
+    /** 前回の結果 {@code previousRoot} から差分レイアウトする（{@link RenderPipeline#layoutDocument} を参照）。 */
+    public LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+                                    ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
+                                    LayoutBox previousRoot) {
+        return RenderPipeline.layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState, previousRoot);
+    }
+
     public void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
         RenderPipeline.runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
     }

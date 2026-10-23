@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.WebRecipeViewerBridge;
 import com.nishiyu.enderframelib.client.renderer.PaintRequest;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
+import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
@@ -29,6 +30,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
@@ -36,6 +38,7 @@ import java.util.function.Consumer;
 
 public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMenu> extends AbstractContainerScreen<T> implements EnderScreenHost {
 
+    protected final String templateId;
     protected final String sessionId;
     public final ReactiveStateStore state;
     protected final EnderScreenDelegate uiSupport;
@@ -89,10 +92,39 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
     }
 
     public AbstractEnderContainerScreen(T menu, Inventory playerInventory, Component title, String sessionId, int virtualWidth, int virtualHeight) {
+        this(menu, playerInventory, title, null, sessionId, virtualWidth, virtualHeight);
+    }
+
+    /**
+     * Headless State / テンプレートベースの機械 UI 用コンストラクタ。
+     *
+     * @param menu            コンテナメニュー
+     * @param playerInventory プレイヤーインベントリ
+     * @param title           画面タイトル
+     * @param templateId      テンプレート識別子（例: `"mymod:crusher"`）
+     * @param instanceId      UI インスタンス識別子（例: `"block:100,64,200"`）
+     */
+    public AbstractEnderContainerScreen(T menu, Inventory playerInventory, Component title, String templateId, String instanceId) {
+        this(menu, playerInventory, title, templateId, instanceId, 0, 0);
+    }
+
+    /**
+     * Headless State / テンプレートベースの機械 UI 用コンストラクタ（仮想キャンバス寸法指定）。
+     *
+     * @param menu            コンテナメニュー
+     * @param playerInventory プレイヤーインベントリ
+     * @param title           画面タイトル
+     * @param templateId      テンプレート識別子（例: `"mymod:crusher"`）
+     * @param instanceId      UI インスタンス識別子（例: `"block:100,64,200"`）
+     * @param virtualWidth    仮想キャンバス幅
+     * @param virtualHeight   仮想キャンバス高さ
+     */
+    public AbstractEnderContainerScreen(T menu, Inventory playerInventory, Component title, @Nullable String templateId, String instanceId, int virtualWidth, int virtualHeight) {
         super(menu, playerInventory, title);
-        this.sessionId = sessionId;
-        this.state = new ReactiveStateStore(sessionId);
-        this.uiSupport = new EnderScreenDelegate(sessionId, state);
+        this.templateId = templateId;
+        this.sessionId = instanceId;
+        this.state = ClientWebManager.getOrCreateSession(instanceId).stateStore();
+        this.uiSupport = new EnderScreenDelegate(instanceId, state);
         if (virtualWidth <= 0 || virtualHeight <= 0) {
             this.fullscreenResponsive = true;
             this.virtualWidth = 854;
@@ -106,6 +138,11 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             this.imageWidth = virtualWidth;
             this.imageHeight = virtualHeight;
         }
+    }
+
+    @Nullable
+    public String getTemplateId() {
+        return this.templateId;
     }
 
     @Override
@@ -136,7 +173,36 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         this.hiddenEditBox = this.uiSupport.createHiddenEditBox(this.font, this::notifyInputChanged);
         this.addWidget(this.hiddenEditBox);
 
+        if (resizing && resizeWebUI()) return;
         reloadWebUI(false);
+    }
+
+    /** {@link #resize} から呼ばれた {@link #init()} の間だけ true。 */
+    private boolean resizing = false;
+
+    /**
+     * ウィンドウの大きさが変わると Minecraft は {@link #init()} を呼び直す。そのたびに文書を読み直すと、
+     * つかんで広げている間は毎フレーム HTML の解析からやり直すうえ、スクロール・入力中の値・アニメーションも消える。
+     * ここでは文書を保ったまま、ビューポートの大きさだけを変える。
+     */
+    @Override
+    public void resize(@NotNull Minecraft minecraft, int width, int height) {
+        resizing = true;
+        try {
+            super.resize(minecraft, width, height);
+        } finally {
+            resizing = false;
+        }
+    }
+
+    /** 読み込み済みの文書があれば大きさだけを変えて true。無ければ false（通常の読み込みに任せる）。 */
+    private boolean resizeWebUI() {
+        SessionContext session = ClientWebManager.getSession(this.sessionId);
+        if (session == null || session.document() == null) return false;
+        updateViewportTransform();
+        session.requestResize(this.virtualWidth, this.virtualHeight);
+        syncVanillaSlotsToDom();
+        return true;
     }
 
     public void reloadWebUI() {
@@ -149,19 +215,38 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         registerWebActions();
         updateViewportTransform();
 
-        this.isLocalHtmlSession = ClientWebManager.initOrBindSession(
-                this.sessionId,
-                buildInitialHtml(),
-                this.htmlResourceLocation,
-                this.virtualWidth,
-                this.virtualHeight,
-                forceReload
-        );
+        if (this.templateId != null && !this.templateId.isEmpty()) {
+            this.isLocalHtmlSession = true;
+            SessionContext session = ClientWebManager.getOrCreateSession(this.sessionId);
+            session.setServerManaged(false);
+            session.setHeadlessState(true);
+
+            if (forceReload || session.document() == null) {
+                com.nishiyu.enderframelib.client.template.ParsedTemplate template = ClientTemplateManager.getTemplate(this.templateId);
+                if (template != null) {
+                    com.nishiyu.enderframelib.common.Document doc = template.instantiate(this.virtualWidth, this.virtualHeight);
+                    session.loadTemplateDocument(doc, this.virtualWidth, this.virtualHeight);
+                } else {
+                    EnderFrameLib.LOGGER.warn("Template not found for templateId: {}", this.templateId);
+                }
+            }
+        } else {
+            this.isLocalHtmlSession = ClientWebManager.initOrBindSession(
+                    this.sessionId,
+                    buildInitialHtml(),
+                    this.htmlResourceLocation,
+                    this.virtualWidth,
+                    this.virtualHeight,
+                    forceReload
+            );
+        }
         this.state.forceSync();
         syncVanillaSlotsToDom();
     }
 
-    protected abstract String buildInitialHtml();
+    protected String buildInitialHtml() {
+        return null;
+    }
 
     protected void registerWebActions() {}
 
@@ -332,7 +417,11 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
         double webX = toWebX(mouseX);
         double webY = toWebY(mouseY);
 
-        hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
+        if (this.uiSupport.isSelectDropdownHovered(webX, webY)) {
+            hoveredId = this.uiSupport.selectWidget().openSelectBaseId();
+        } else {
+            hoveredId = ClientScreenInteractionManager.handleHover(sessionId, webX, webY);
+        }
 
         List<DisplayItem> elements = ClientWebManager.getSession(sessionId) != null
                 ? ClientWebManager.getSession(sessionId).elements()
@@ -474,5 +563,12 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             ClientWebManager.clearSession(this.sessionId);
         }
         super.onClose();
+    }
+
+    @Override
+    public void removed() {
+        // サーバー側からのコンテナクローズ（ブロック破壊など）でも onClose は通らずここに来る
+        this.uiSupport.onScreenRemoved();
+        super.removed();
     }
 }

@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.PropertyRegistry;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
 import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
@@ -30,8 +31,12 @@ import org.jetbrains.annotations.ApiStatus;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 描画パイプラインの一元管理（スタイル解決・ボックスツリー・レイアウト計算・ディスプレイリスト生成）。
@@ -47,6 +52,8 @@ public class RenderPipeline {
     }
 
     private static final int LAYOUT_PASSES = 2;
+    /** レイアウトの通し番号（{@link LayoutContext#layoutRun()}）。 */
+    private static final java.util.concurrent.atomic.AtomicLong LAYOUT_RUNS = new java.util.concurrent.atomic.AtomicLong();
     private static final int MAX_CONTAINER_PASSES = 4;
 
     public static ILayoutBoxRenderer clientBoxRenderer = null;
@@ -86,6 +93,24 @@ public class RenderPipeline {
 
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState) {
+        return layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState, null);
+    }
+
+    /**
+     * 差分レイアウトを有効にするか。false なら {@code previousRoot} を渡されても全部を作り直して測り直す
+     * （差分レイアウトを疑うときの切り分け用）。
+     */
+    public static volatile boolean incrementalLayout = true;
+
+    /**
+     * 文書をレイアウトする。{@code previousRoot}（同じ文書の前回の結果）があれば差分レイアウトにする:
+     * 箱は DOM の節ごとに使い回し、中身も入力も前回と同じ部分木は measure を飛ばす。
+     * 結果は全部を作り直したときと同じ（{@code IncrementalLayoutTest} が確かめる）。
+     */
+    public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
+                                           ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
+                                           LayoutBox previousRoot) {
+        boolean incremental = incrementalLayout && previousRoot != null;
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
@@ -94,13 +119,15 @@ public class RenderPipeline {
         }
         boolean hasContainers = doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries();
 
-        LayoutBox rootBox = null;
+        LayoutBox rootBox = incremental ? previousRoot : null;
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
+            Map<HtmlNode, LayoutBox> reusable = incremental ? LayoutBox.reusableBoxes(rootBox) : null;
             rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, false,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
-                    effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet));
+                    effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
             BoxTreeBuilder.build(rootBox);
-            runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
+            if (incremental) LayoutBox.markLayoutChanges(rootBox);
+            runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts, incremental);
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
         return rootBox;
@@ -136,15 +163,87 @@ public class RenderPipeline {
     }
 
     public static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
+        runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts, false);
+    }
+
+    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts,
+                                        boolean reuseMeasurements) {
         rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH);
-        LayoutContext ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts);
+        long run = LAYOUT_RUNS.incrementAndGet();
+        LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
 
         for (int pass = 0; pass < LAYOUT_PASSES; pass++) {
+            ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, reuseMeasurements, run, pass == 0);
             rootBox.measure(rootW, rootH, fmtCtx, ctx);
         }
+        LayoutBox.resetPlacements(rootBox);
         rootBox.layout(0, 0, rootW, rootH, ctx);
+    }
+
+    /**
+     * 測った寸法はそのままに、位置だけを決め直す（measure を飛ばして layout だけ走らせる）。
+     *
+     * <p>スクロール量や配置済みの箱の {@code top} / {@code left} は寸法に響かず、{@link LayoutBox#layout} の中でしか読まれない。
+     * スクロールバーやウィンドウのドラッグのように毎フレーム変わる値で、木の作り直しと 2 回の measure を省く。</p>
+     */
+    public static void repositionLayout(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
+        LayoutContext ctx = new LayoutContext(new Viewport(rootW, rootH), effectiveIntrinsicResolver(), scrollState, fonts);
+        LayoutBox.resetPlacements(rootBox);
+        rootBox.layout(0, 0, rootW, rootH, ctx);
+    }
+
+    /**
+     * 変わったのが配置済みの箱の inset（{@code top} / {@code left} / {@code right} / {@code bottom}）だけで、
+     * 寸法に響かないか。響かなければ {@link #repositionLayout} で足りる。
+     *
+     * <p>相対配置・sticky の inset は layout で足すずれにしか使わない。絶対配置の inset は、両側とも指定された軸だけが
+     * 寸法を決める（CSS 2.2 §10.3.7 / §10.6.4）ので、その軸が動いたときは measure からやり直す。</p>
+     */
+    static boolean isPositionOnlyChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
+        if (oldStyle == null || newStyle == null) return false;
+        if (Float.compare(oldStyle.fontSizePx(), newStyle.fontSizePx()) != 0
+                || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
+            return false;
+        }
+        String position = newStyle.get(CssProperty.POSITION);
+        if (!Objects.equals(position, oldStyle.get(CssProperty.POSITION))) return false;
+        boolean offsetOnly = "relative".equals(position) || "sticky".equals(position);
+        boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position);
+        if (!offsetOnly && !outOfFlow) return false;
+
+        Map<String, String> before = oldStyle.asMap();
+        Map<String, String> after = newStyle.asMap();
+        boolean horizontal = false;
+        boolean vertical = false;
+        Set<String> keys = new HashSet<>(before.keySet());
+        keys.addAll(after.keySet());
+        for (String key : keys) {
+            if (Objects.equals(before.get(key), after.get(key)) || PropertyRegistry.isPaintOnly(key)) continue;
+            switch (key) {
+                case CssProperty.LEFT, CssProperty.RIGHT -> horizontal = true;
+                case CssProperty.TOP, CssProperty.BOTTOM -> vertical = true;
+                default -> {
+                    return false;
+                }
+            }
+        }
+        if (offsetOnly) return true;
+        if (horizontal && (bothInsets(oldStyle, CssProperty.LEFT, CssProperty.RIGHT)
+                || bothInsets(newStyle, CssProperty.LEFT, CssProperty.RIGHT))) {
+            return false;
+        }
+        return !vertical || !(bothInsets(oldStyle, CssProperty.TOP, CssProperty.BOTTOM)
+                || bothInsets(newStyle, CssProperty.TOP, CssProperty.BOTTOM));
+    }
+
+    private static boolean bothInsets(ComputedStyle style, String start, String end) {
+        return !isAutoInset(style.get(start)) && !isAutoInset(style.get(end));
+    }
+
+    private static boolean isAutoInset(String value) {
+        return value == null || value.isBlank() || "auto".equalsIgnoreCase(value.trim());
     }
 
     public static Map<String, String> rootViewportStyle(int rootW, int rootH) {
@@ -155,7 +254,15 @@ public class RenderPipeline {
         return rootStyleRaw;
     }
 
-    public record RestyleResult(boolean styleChanged, boolean layoutRequired) {}
+    /**
+     * 再スタイルの結果。{@code layoutRequired} は寸法から測り直す（measure + layout）、
+     * {@code repositionRequired} は寸法は変わらず位置だけ決め直せば足りる（layout のみ）ことを表す。
+     */
+    public record RestyleResult(boolean styleChanged, boolean layoutRequired, boolean repositionRequired) {
+        public RestyleResult(boolean styleChanged, boolean layoutRequired) {
+            this(styleChanged, layoutRequired, false);
+        }
+    }
 
     private record StyleScope(int viewportW, int viewportH, float rootFontSize, float rootLineHeight) {
         static StyleScope initial(int viewportW, int viewportH) {
@@ -169,18 +276,53 @@ public class RenderPipeline {
         }
     }
 
-    private static boolean isStyleCacheValid(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
-        return flags != null
-                && !flags.isStyleDirty
-                && flags.computedStyle != null
-                && Float.compare(flags.cachedParentFontSize, parentFontSize) == 0
-                && Float.compare(flags.cachedRootFontSize, scope.rootFontSize()) == 0
-                && Float.compare(flags.cachedRootLineHeight, scope.rootLineHeight()) == 0
-                && flags.cachedViewportW == scope.viewportW()
-                && flags.cachedViewportH == scope.viewportH();
+    /**
+     * 算出スタイルのキャッシュの状態。
+     * <ul>
+     *   <li>{@link #VALID}: そのまま使える</li>
+     *   <li>{@link #VIEWPORT_STALE}: ビューポートだけが変わり、宣言値がビューポートに依存する。算出し直すが、
+     *       結果が前と同じなら子孫へ再スタイルを強いない（React の bailout と同じ考え方）</li>
+     *   <li>{@link #INVALID}: 状態・DOM・継承元が変わった。子孫もまとめて算出し直す</li>
+     * </ul>
+     */
+    private enum StyleCache { VALID, VIEWPORT_STALE, INVALID }
+
+    /** 宣言値がビューポートの大きさで変わり得るか（{@code vw} / {@code svh} / {@code cqw} など、または参照先の分からない {@code var()}）。 */
+    private static final Pattern VIEWPORT_DEPENDENT_VALUE = Pattern.compile(
+            "\\d(?:[sld]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max))(?![a-z])|var\\(|env\\(",
+            Pattern.CASE_INSENSITIVE);
+
+    private static StyleCache styleCacheState(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
+        if (flags == null
+                || flags.isStyleDirty
+                || flags.computedStyle == null
+                || Float.compare(flags.cachedParentFontSize, parentFontSize) != 0
+                || Float.compare(flags.cachedRootFontSize, scope.rootFontSize()) != 0
+                || Float.compare(flags.cachedRootLineHeight, scope.rootLineHeight()) != 0) {
+            return StyleCache.INVALID;
+        }
+        boolean sameViewport = flags.cachedViewportW == scope.viewportW() && flags.cachedViewportH == scope.viewportH();
+        return sameViewport || !flags.viewportDependent ? StyleCache.VALID : StyleCache.VIEWPORT_STALE;
     }
 
-    private static void cacheStyle(InteractionState.StateFlags flags, Map<String, String> rawStyle,
+    /**
+     * 算出し直した要素の子孫も強制的に算出し直すか。ビューポートだけが理由で、算出値が前と変わらなければ
+     * 子孫は継承元が同じなので、それぞれのキャッシュの状態で判断させる。
+     */
+    private static boolean forcesDescendants(StyleCache cache, ComputedStyle previous, ComputedStyle computed) {
+        return cache != StyleCache.VIEWPORT_STALE || previous == null || !previous.asMap().equals(computed.asMap());
+    }
+
+    private static boolean dependsOnViewport(HtmlNode node, Map<String, String> rawStyle) {
+        // ルートはビューポートの寸法を継承元の表として受け取る
+        if (node.parent == null) return true;
+        for (String value : rawStyle.values()) {
+            if (value != null && VIEWPORT_DEPENDENT_VALUE.matcher(value).find()) return true;
+        }
+        return false;
+    }
+
+    private static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, Map<String, String> rawStyle,
                                    ComputedStyle computed, float parentFontSize, StyleScope scope,
                                    boolean hasInteractive) {
         flags.computedStyleCache = rawStyle;
@@ -190,6 +332,7 @@ public class RenderPipeline {
         flags.cachedRootLineHeight = scope.rootLineHeight();
         flags.cachedViewportW = scope.viewportW();
         flags.cachedViewportH = scope.viewportH();
+        flags.viewportDependent = dependsOnViewport(node, rawStyle);
         flags.hasInteractiveRules = hasInteractive;
         flags.isStyleDirty = false;
     }
@@ -227,10 +370,13 @@ public class RenderPipeline {
                                                      InteractionState interactionState, boolean siblingInvalidation) {
         HtmlNode node = box.node;
         InteractionState.StateFlags flags = interactionState.getOrCreate(node);
-        boolean isDirty = forceDirty || !isStyleCacheValid(flags, parentFontSize, scope);
+        StyleCache cache = forceDirty ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
+        boolean isDirty = cache != StyleCache.VALID;
 
         boolean styleChanged = false;
         boolean layoutRequired = false;
+        boolean repositionRequired = false;
+        boolean childForceDirty = false;
         ComputedStyle computed;
 
         if (isDirty) {
@@ -247,7 +393,11 @@ public class RenderPipeline {
             if (prevStyle == null || !prevStyle.asMap().equals(computed.asMap())) {
                 styleChanged = true;
                 if (StyleResolver.isLayoutAffectingChange(prevStyle, computed)) {
-                    layoutRequired = true;
+                    if (isPositionOnlyChange(prevStyle, computed)) {
+                        repositionRequired = true;
+                    } else {
+                        layoutRequired = true;
+                    }
                 }
             }
 
@@ -260,16 +410,16 @@ public class RenderPipeline {
                 }
             }
 
+            childForceDirty = forcesDescendants(cache, prevStyle, computed);
             box.updateStyle(computed);
             resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState);
             BoxTreeBuilder.restyleGeneratedBoxes(box);
             box.hasInteractiveRules = hasInteractive;
-            cacheStyle(flags, rawStyle, computed, parentFontSize, scope, hasInteractive);
+            cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
             computed = flags.computedStyle;
         }
 
-        boolean childForceDirty = isDirty;
         float nextParentFontSize = computed.fontSizePx();
         StyleScope childScope = scope.enter(node, computed);
 
@@ -291,10 +441,11 @@ public class RenderPipeline {
                     siblingInvalidation);
             styleChanged |= childRes.styleChanged();
             layoutRequired |= childRes.layoutRequired();
+            repositionRequired |= childRes.repositionRequired();
             siblingForceDirty |= stateChanged;
         }
 
-        return new RestyleResult(styleChanged, layoutRequired);
+        return new RestyleResult(styleChanged, layoutRequired, repositionRequired);
     }
 
     private static boolean isStateDirty(InteractionState interactionState, HtmlNode node) {
@@ -368,11 +519,27 @@ public class RenderPipeline {
                                             Map<String, String> env, boolean forceDirty,
                                             float parentFontSize, StyleScope scope, InteractionState interactionState,
                                             boolean siblingInvalidation) {
+        return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty, parentFontSize, scope, interactionState,
+                siblingInvalidation, null);
+    }
+
+    /**
+     * 箱の木を組む。{@code reusable} があれば、同じ DOM の節の前回の箱を作り直さずに使い回す（React の差分適用と同じく、
+     * 変わらない部分の実体を保つ）。使い回した箱は前回の measure の結果を持っているので、中身も入力も変わっていなければ
+     * {@link LayoutBox#measure} がそれを使う。表の中は使い回さない（{@link LayoutBox#reusableBoxes} を参照）。
+     */
+    private static LayoutBox buildLayoutTree(HtmlNode node, Map<String, String> inheritedStyle,
+                                             StyleSheet sheet,
+                                             Map<String, String> env, boolean forceDirty,
+                                             float parentFontSize, StyleScope scope, InteractionState interactionState,
+                                             boolean siblingInvalidation, Map<HtmlNode, LayoutBox> reusable) {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
-        boolean needsRestyle = forceDirty || !isStyleCacheValid(flags, parentFontSize, scope);
+        StyleCache cache = forceDirty ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
+        boolean needsRestyle = cache != StyleCache.VALID;
 
         ComputedStyle computed;
         boolean hasInteractive;
+        boolean childForceDirty = false;
 
         if (needsRestyle) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
@@ -387,7 +554,8 @@ public class RenderPipeline {
                     containerFor(node, interactionState));
             hasInteractive = styleSet.hasInteractiveRules();
 
-            if (flags != null) cacheStyle(flags, rawStyle, computed, parentFontSize, scope, hasInteractive);
+            childForceDirty = forcesDescendants(cache, flags != null ? flags.computedStyle : null, computed);
+            if (flags != null) cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
             computed = flags.computedStyle;
             hasInteractive = flags.hasInteractiveRules;
@@ -395,16 +563,43 @@ public class RenderPipeline {
         Map<String, String> childInherited = computed.asMap();
         StyleScope childScope = scope.enter(node, computed);
 
-        LayoutBox box = new LayoutBox(node, computed);
+        LayoutBox box = reusable != null ? reusable.remove(node) : null;
+        List<LayoutBox> previousChildren = List.of();
+        boolean reusedBox = false;
+        if (box != null) {
+            previousChildren = new ArrayList<>(box.elementChildren);
+            box.elementChildren.clear();
+            box.refreshStyle(computed);
+            if (LayoutBox.isTableBox(box) || box.display.isNone()) box = null;
+            else reusedBox = true;
+        }
+        if (box == null) {
+            box = new LayoutBox(node, computed);
+            previousChildren = List.of();
+        }
+        // 表のエンジンは中の箱へ直接書き込むので、表の中は作り直す。display: none の部分木は測られないので、
+        // 使い回すと前回の寸法が残る（新しく作った箱は 0）。コンテナクエリの寸法などが読むので作り直す
+        Map<HtmlNode, LayoutBox> childReusable = LayoutBox.isTableBox(box) || box.display.isNone() ? null : reusable;
         box.hasInteractiveRules = hasInteractive;
-        resolveHighlightPseudos(box, computed, sheet, env, childScope, interactionState);
+        // 持ち主のスタイルのキャッシュが有効なら、状態も祖先・兄弟も前回のままなので疑似要素の規則の当たり方も前回のまま。
+        // 疑似要素だけがビューポート単位を使うこともあるので、ビューポートが同じときに限って前回の疑似要素をそのまま使う
+        // （再スタイルの経路 restyleBoxRecursive も、汚れていない要素の疑似要素は解き直さない）
+        long viewportKey = ((long) scope.viewportW() << 32) | (scope.viewportH() & 0xffffffffL);
+        boolean reusePseudos = reusedBox && !needsRestyle && box.pseudoStylesViewport == viewportKey;
+        if (!reusePseudos) {
+            resolveHighlightPseudos(box, computed, sheet, env, childScope, interactionState);
+            box.pseudoStylesViewport = viewportKey;
+        }
 
-        boolean childForceDirty = needsRestyle;
-
-        ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState);
-        if (beforeStyle != null) {
-            box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
-                    childScope, interactionState, siblingInvalidation));
+        if (reusePseudos) {
+            LayoutBox before = previousPseudo(previousChildren, pseudoElementId(node, PseudoType.BEFORE));
+            if (before != null) box.addElementChild(before);
+        } else {
+            ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState);
+            if (beforeStyle != null) {
+                box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
+                        childScope, interactionState, siblingInvalidation, childReusable, previousChildren));
+            }
         }
 
         if (!"textarea".equalsIgnoreCase(node.tag)) {
@@ -418,18 +613,31 @@ public class RenderPipeline {
                 if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
                 boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child);
                 box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, childForceDirty || siblingForceDirty,
-                        computed.fontSizePx(), childScope, interactionState, siblingInvalidation));
+                        computed.fontSizePx(), childScope, interactionState, siblingInvalidation, childReusable));
                 siblingForceDirty |= stateChanged;
             }
         }
 
-        ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState);
-        if (afterStyle != null) {
-            box.addElementChild(buildPseudoBox(node, PseudoType.AFTER, afterStyle, hasInteractive, sheet, env,
-                    childScope, interactionState, siblingInvalidation));
+        if (reusePseudos) {
+            LayoutBox after = previousPseudo(previousChildren, pseudoElementId(node, PseudoType.AFTER));
+            if (after != null) box.addElementChild(after);
+        } else {
+            ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState);
+            if (afterStyle != null) {
+                box.addElementChild(buildPseudoBox(node, PseudoType.AFTER, afterStyle, hasInteractive, sheet, env,
+                        childScope, interactionState, siblingInvalidation, childReusable, previousChildren));
+            }
         }
 
         return box;
+    }
+
+    /** 持ち主の前回の子から、id が {@code pseudoId} の疑似要素の箱を探す。無ければ null。 */
+    private static LayoutBox previousPseudo(List<LayoutBox> previousChildren, String pseudoId) {
+        for (LayoutBox previous : previousChildren) {
+            if (previous.node.isPseudoNode && pseudoId.equals(previous.node.getId())) return previous;
+        }
+        return null;
     }
 
     private static void resolveHighlightPseudos(LayoutBox box, ComputedStyle computed,
@@ -464,20 +672,52 @@ public class RenderPipeline {
                                            StyleSheet sheet,
                                            Map<String, String> env, StyleScope scope,
                                            InteractionState interactionState, boolean siblingInvalidation) {
-        HtmlNode pseudo = new HtmlNode("span");
-        pseudo.isPseudoNode = true;
-        pseudo.parent = owner;
-        pseudo.setId(pseudoElementId(owner, type));
+        return buildPseudoBox(owner, type, style, ownerInteractive, sheet, env, scope, interactionState,
+                siblingInvalidation, null, List.of());
+    }
 
-        HtmlNode textNode = new HtmlText("");
-        textNode.parent = pseudo;
-        textNode.setId(pseudo.getId() + "_txt");
-        pseudo.children.add(textNode);
+    /**
+     * {@code ::before} / {@code ::after} の箱を作る。持ち主の前回の子に同じ id の疑似要素があれば、
+     * その合成ノードと箱を使い回す（中の文字は {@link BoxTreeBuilder} が組むたびに入れ直す）。
+     */
+    private static LayoutBox buildPseudoBox(HtmlNode owner, PseudoType type, ComputedStyle style, boolean ownerInteractive,
+                                           StyleSheet sheet,
+                                           Map<String, String> env, StyleScope scope,
+                                           InteractionState interactionState, boolean siblingInvalidation,
+                                           Map<HtmlNode, LayoutBox> reusable, List<LayoutBox> ownerPreviousChildren) {
+        String pseudoId = pseudoElementId(owner, type);
+        LayoutBox box = null;
+        if (reusable != null) {
+            for (LayoutBox previous : ownerPreviousChildren) {
+                if (previous.node.isPseudoNode && pseudoId.equals(previous.node.getId())
+                        && previous.node.children.size() == 1) {
+                    box = previous;
+                    break;
+                }
+            }
+        }
 
-        LayoutBox box = new LayoutBox(pseudo, style);
+        HtmlNode textNode;
+        if (box != null) {
+            box.node.parent = owner;
+            box.elementChildren.clear();
+            box.updateStyle(style);
+            textNode = box.node.children.getFirst();
+        } else {
+            HtmlNode pseudo = new HtmlNode("span");
+            pseudo.isPseudoNode = true;
+            pseudo.parent = owner;
+            pseudo.setId(pseudoId);
+
+            textNode = new HtmlText("");
+            textNode.parent = pseudo;
+            textNode.setId(pseudo.getId() + "_txt");
+            pseudo.children.add(textNode);
+            box = new LayoutBox(pseudo, style);
+        }
         box.hasInteractiveRules = ownerInteractive;
         box.addElementChild(buildLayoutTree(textNode, style.asMap(), sheet, env, true, style.fontSizePx(), scope,
-                interactionState, siblingInvalidation));
+                interactionState, siblingInvalidation, reusable));
         return box;
     }
 }

@@ -90,7 +90,11 @@ public class GridLayoutEngine extends LayoutEngine {
         gs.colSizes = sizeTracks(colDefs, gs.items, true, definiteWidth ? innerW : Float.NaN, box.columnGap,
                 contentDistribution(box.style, CssProperty.JUSTIFY_CONTENT));
 
-        for (GridItem item : gs.items) measureInArea(box, gs, item, parentH, ctx);
+        for (GridItem item : gs.items) {
+            // グリッドの高さが指定で決まっていればそれを、決まっていなければ auto として（NaN）% の高さを測る
+            float base = isPercentage(item.box.style.get(CssProperty.HEIGHT)) ? innerHForPercent : parentH;
+            measureInArea(box, gs, item, base, ctx);
+        }
         return sum(gs.colSizes) + box.columnGap * Math.max(0, gs.colSizes.length - 1);
     }
 
@@ -99,7 +103,7 @@ public class GridLayoutEngine extends LayoutEngine {
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         if (!(box.engineState instanceof GridState gs)) return 0;
         float innerH = definiteHeight(box, space.percentageBlockSize(), ctx);
-        sizeRows(box, gs, innerH);
+        sizeRows(box, gs, innerH, ctx);
         return sum(gs.rowSizes) + box.rowGap * Math.max(0, gs.rowSizes.length - 1);
     }
 
@@ -107,7 +111,14 @@ public class GridLayoutEngine extends LayoutEngine {
     public void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         if (box.engineState instanceof GridState gs) {
             float innerH = Math.max(0, box.h - box.verticalDecoration());
-            sizeRows(box, gs, innerH);
+            // グリッドの高さが確定したので、% の高さの子をその高さを基準に測り直してから行を決める
+            // （Chrome と同じ。高さが不定のときは measureContent で auto として測った寄与のまま）
+            for (GridItem item : gs.items) {
+                if (isPercentage(item.box.style.get(CssProperty.HEIGHT)) && !(Math.abs(item.percentBase - innerH) < 0.01f)) {
+                    measureInArea(box, gs, item, innerH, ctx);
+                }
+            }
+            sizeRows(box, gs, innerH, ctx);
             alignItems(box, gs, space.percentageBlockSize(), ctx);
         }
         measureAbsoluteChildren(box, ctx);
@@ -131,13 +142,34 @@ public class GridLayoutEngine extends LayoutEngine {
         return Math.max(0, isBorderBox ? v - box.verticalDecoration() : v);
     }
 
-    private void sizeRows(LayoutBox box, GridState gs, float innerH) {
+    private void sizeRows(LayoutBox box, GridState gs, float innerH, LayoutContext ctx) {
         for (GridItem item : gs.items) {
-            item.minContribution = item.box.h + item.box.mT + item.box.mB;
-            item.maxContribution = item.minContribution;
+            item.maxContribution = item.box.h + item.box.mT + item.box.mB;
+            item.minContribution = rowMinContribution(item.box, ctx) + item.box.mT + item.box.mB;
         }
         gs.rowSizes = sizeTracks(gs.trackDefs(false), gs.items, false, innerH, box.rowGap,
                 contentDistribution(box.style, CssProperty.ALIGN_CONTENT));
+    }
+
+    /**
+     * 行方向の最小寄与（CSS Grid §6.6 / §11.5）。{@code min-height} が長さならその値、auto なら自動の最小寸法
+     * （内容の高さ。スクロールコンテナは 0）。
+     *
+     * 何が壊れていたか: 常に内容の高さを最小寄与にしていたので、{@code min-height: 0; overflow-y: auto} の
+     * 列が確定した高さのグリッドの auto 行を内容の高さまで押し広げ、グリッドの外へ突き抜けていた。
+     * Chrome では行は「上限まで伸ばす」段階でグリッドの高さに収まり、列の中身はスクロールする。
+     */
+    private static float rowMinContribution(LayoutBox b, LayoutContext ctx) {
+        float decoration = b.verticalDecoration();
+        String min = b.style.get(CssProperty.MIN_HEIGHT);
+        if (min != null && !"auto".equalsIgnoreCase(min.trim()) && !min.contains("%")
+                && !LayoutMetrics.isIntrinsicSizeKeyword(min)) {
+            float v = b.style.length(CssProperty.MIN_HEIGHT, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            float specified = b.style.isBorderBox() ? Math.max(v, decoration) : v + decoration;
+            return Math.min(b.h, specified);
+        }
+        if (b.isScrollContainer()) return Math.min(b.h, decoration);
+        return b.h;
     }
 
     // ==========================================
@@ -465,7 +497,10 @@ public class GridLayoutEngine extends LayoutEngine {
         String justify = selfAlignment(item.box, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
         boolean stretch = "stretch".equals(justify) && !hasAutoMargin(item.box, true);
         FormattingContext childCtx = new FormattingContext("grid", stretch ? "stretch" : justify, !stretch);
+        // % の高さの子は、行の大きさがまだ決まっていない段階では auto として測る（呼び出し側が NaN を渡す）。
+        // 行が決まった後に alignItems が領域の高さで測り直す
         item.box.measure(new ConstraintSpace(areaW, parentH, childCtx), ctx);
+        item.percentBase = parentH;
     }
 
     /** 行が確定してから、アイテムを領域の中で揃える（stretch・start / end / center・auto マージン）。 */
@@ -489,7 +524,8 @@ public class GridLayoutEngine extends LayoutEngine {
             String alignSelf = selfAlignment(b, CssProperty.ALIGN_SELF, box.style, CssProperty.ALIGN_ITEMS);
             if ("stretch".equals(alignSelf) && !hasAutoMargin(b, false) && !hasSize(b.style, CssProperty.HEIGHT)) {
                 float target = areaH - b.mT - b.mB;
-                if (b.h < target) {
+                // 行が内容より低いとき（min-height: 0 やスクロールコンテナ）は縮めて領域に合わせる
+                if (Math.abs(b.h - target) > 0.01f) {
                     // 伸ばした高さは確定した高さとして測り直す（CSS Grid §6.2: 子の % の高さの基準になる）。
                     // 以前は高さだけを書き換えて解き直していて、中の height: 100% が 0 のままだった
                     b.overrideWidth = b.w;
@@ -501,6 +537,12 @@ public class GridLayoutEngine extends LayoutEngine {
                         b.overrideHeight = Float.NaN;
                     }
                 }
+            } else if (isPercentage(b.style.get(CssProperty.HEIGHT)) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
+                // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。
+                // 以前はグリッドコンテナの基準で解いていたので、height: 100% の子が領域を越えて伸びていた。
+                // 同じ基準で測り済み（行が 1 つで領域 = グリッドの高さ）なら測り直さない
+                b.measure(new ConstraintSpace(areaW, areaH, new FormattingContext("grid", alignSelf, false)), ctx);
+                item.percentBase = areaH;
             }
             String justifySelf = selfAlignment(b, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
             item.x = areaX + alignWithin(b, true, areaW, justifySelf);
@@ -595,6 +637,11 @@ public class GridLayoutEngine extends LayoutEngine {
 
     private static boolean isAuto(ComputedStyle style, String prop) {
         return "auto".equalsIgnoreCase(style.getOrDefault(prop, "0").trim());
+    }
+
+    /** 割合（{@code 100%}、{@code calc(100% - 8px)} など）を含む長さか。 */
+    private static boolean isPercentage(String value) {
+        return value != null && value.contains("%");
     }
 
     private static boolean hasSize(ComputedStyle style, String prop) {
@@ -963,6 +1010,8 @@ public class GridLayoutEngine extends LayoutEngine {
         public int colStart, colSpan, rowStart, rowSpan;
         public final LayoutBox box;
         float minContribution, maxContribution;
+        /** 最後に測ったときの % の高さの基準（測り直しを省くため。NaN は auto として測った）。 */
+        float percentBase = Float.NaN;
         /** 位置（マージンボックスの左上、内容ボックス相対）。 */
         float x, y;
 

@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.Display.Inner;
 import com.nishiyu.enderframelib.core.layout.LayoutBox.InlineFragment;
@@ -55,7 +56,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         FormattingContext childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
 
         for (LayoutBox child : box.children) {
-            if (child.isAbsolute || isDisplayNone(child.style)) continue;
+            if (child.isAbsolute || child.isRenderedLegend || isDisplayNone(child.style)) continue;
             if (child.isOutsideMarker) {
                 // 外側のマーカーは通常フローの外にあり、リスト項目の幅に寄与しない
                 child.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, childParentH, MARKER_CONTEXT), ctx);
@@ -102,7 +103,11 @@ public class BlockLayoutEngine extends LayoutEngine {
         if (b.node.nodeType == NodeType.TEXT) {
             TextStyle textStyle = ctx.textStyleFor(b.style);
             if (b.displayText == null || !textStyle.whiteSpace().preservesNewlines() || b.displayText.indexOf('\n') < 0) {
-                line.add(b.w + b.mL + b.mR);
+                // 折り返した文字は、折り返さずに並べた幅（max-content）で数える。shrink-to-fit の幅は
+                // min(max-content, 利用可能幅) なので、最も長い行の幅では利用可能幅より狭くなる
+                boolean wrapped = b.shapedLines != null && b.shapedLines.size() > 1 && b.displayText != null;
+                float w = wrapped ? ctx.faceFor(b.style).advance(b.displayText.strip(), textStyle.font()) : b.w;
+                line.add(w + b.mL + b.mR);
                 return;
             }
             FontFace face = ctx.faceFor(b.style);
@@ -159,6 +164,7 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     @Override
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        if (box.sizingMode == SizingMode.SHRINK_TO_FIT) stretchBlockChildren(box, space, ctx);
         FlowState state = new FlowBuilder(box, space, ctx).build();
         box.engineState = state;
         return state.height;
@@ -167,6 +173,25 @@ public class BlockLayoutEngine extends LayoutEngine {
     @Override
     public void finishLayout(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         measureAbsoluteChildren(box, ctx);
+    }
+
+    /**
+     * shrink-to-fit の箱（inline-block・float・絶対配置など）の幅が決まったら、幅が auto のブロックレベルの子を
+     * その幅いっぱいに測り直す（CSS 2.2 §10.3.3: ブロックの幅は包含ブロックの幅を満たす）。
+     *
+     * 何が壊れていたか: 内容の幅を測る段階では子も縮めて測るので、いちばん広い子より狭い子は
+     * 自分の内容の幅のままだった（inline-block の中の短い段落の背景や枠線が、箱の幅まで広がらなかった）。
+     */
+    private void stretchBlockChildren(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        float innerW = Math.max(0, box.w - box.horizontalDecoration());
+        float base = childPercentageBase(box, space.percentageBlockSize(), ctx);
+        for (LayoutBox child : box.children) {
+            if (child.isAbsolute || child.isOutsideMarker || child.isRenderedLegend || child.display.isNone()
+                    || isInlineBox(child) || isFloating(child) || child.node.nodeType == NodeType.TEXT) continue;
+            if (!"auto".equals(child.style.getOrDefault(CssProperty.WIDTH, "auto").trim())) continue;
+            if (Math.abs(child.w + child.mL + child.mR - innerW) <= 0.01f) continue;
+            child.measure(new ConstraintSpace(innerW, base, FormattingContext.BLOCK), ctx);
+        }
     }
 
     @Override
@@ -230,7 +255,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             return first.y + first.baseline;
         }
         for (LayoutBox child : box.children) {
-            if (child.isOutsideMarker || child.isAbsolute || child.display.isNone()) continue;
+            if (child.isOutsideMarker || child.isRenderedLegend || child.isAbsolute || child.display.isNone()) continue;
             Float found = placedFirstBaseline(child);
             if (found != null) return found;
         }
@@ -271,7 +296,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     /** 子孫（同じ BFC の中）に float があるか。あれば親の float 領域の中で高さを解き直す。 */
     private static boolean containsFloats(LayoutBox box) {
         for (LayoutBox c : box.children) {
-            if (c.isAbsolute || c.display.isNone()) continue;
+            if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
             if (isFloating(c)) return true;
             if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && containsFloats(c)) {
                 return true;
@@ -332,7 +357,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             state.innerW = innerW;
             List<LayoutBox> run = new ArrayList<>();
             for (LayoutBox child : box.children) {
-                if (isDisplayNone(child.style) || child.isOutsideMarker) continue;
+                if (isDisplayNone(child.style) || child.isOutsideMarker || child.isRenderedLegend) continue;
                 if (child.isAbsolute) {
                     // 行の中の絶対配置は、行を組むときにその位置を静的位置として記録する
                     if (!run.isEmpty()) run.add(child);
@@ -497,7 +522,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     private static boolean isFirstFlowChild(LayoutBox box) {
         if (box.parent == null) return true;
         for (LayoutBox c : box.parent.children) {
-            if (c.isAbsolute || c.isOutsideMarker || c.display.isNone()) continue;
+            if (c.isAbsolute || c.isOutsideMarker || c.isRenderedLegend || c.display.isNone()) continue;
             return c == box;
         }
         return false;
@@ -680,8 +705,13 @@ public class BlockLayoutEngine extends LayoutEngine {
      *
      * 何が壊れていたか: 以前は常に border box の下端で近似していて、下マージンを持つ
      * インラインブロックが行のベースラインより下にはみ出していた。
+     *
+     * ただし UA の部品で描くチェックボックス・ラジオボタンと、レンジ（appearance によらない。Chrome の LayoutSlider）は
+     * border box の下端（下マージンはベースラインの下に出る）。Chrome の実測。以前は下マージンの端にしていて、
+     * チェックボックスだけの行が Chrome より 2.5px 高かった。
      */
     private static float atomicBaseline(LayoutBox box) {
+        if (StyleResolver.isNativeToggle(box.node, box.style.asMap()) || isRangeInput(box)) return box.h;
         Float b = null;
         if (box.display.inner() == Inner.FLOW_ROOT && !box.isScrollContainer()) {
             b = lastBaseline(box);
@@ -689,6 +719,10 @@ public class BlockLayoutEngine extends LayoutEngine {
             b = firstBaseline(box);
         }
         return b != null ? b : box.h + box.mB;
+    }
+
+    private static boolean isRangeInput(LayoutBox box) {
+        return "input".equals(box.node.tag) && "range".equalsIgnoreCase(box.node.attrs.getOrDefault("type", "").trim());
     }
 
     // ==========================================
@@ -1023,7 +1057,7 @@ public class BlockLayoutEngine extends LayoutEngine {
          * 代わりに「ブラウザなら折り返す幅で折り返さない」差を生むだけになっていた。
          */
         private boolean needsWrap(float lineEnd) {
-            return constrained() && !current.isEmpty() && lineEnd > lineWidth;
+            return constrained() && !current.isEmpty() && lineEnd > lineWidth + TextShaper.WRAP_TOLERANCE;
         }
 
         /**
@@ -1159,11 +1193,12 @@ public class BlockLayoutEngine extends LayoutEngine {
         FontStyle font = ctx.fontStyleFor(b.style);
         float ascent = face.ascent(font);
         float descent = face.descent(font);
-        float halfLeading = (b.lineHeightPx - (ascent + descent)) / 2f;
+        float leadingAbove = TextShaper.leadingAbove(b.lineHeightPx, ascent, descent);
+        float leadingBelow = b.lineHeightPx - (ascent + descent) - leadingAbove;
         Alignment alignment = span.open().alignment;
         float baselineY = switch (alignment.align()) {
-            case TOP -> drawY + halfLeading + ascent;
-            case BOTTOM -> drawY + line.height() - halfLeading - descent;
+            case TOP -> drawY + leadingAbove + ascent;
+            case BOTTOM -> drawY + line.height() - leadingBelow - descent;
             default -> drawY + line.baseline() - alignment.raise();
         };
         float top = baselineY - ascent - b.pT - b.bT;
@@ -1219,7 +1254,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         FontStyle font = textStyle.font();
         float ascent = face.ascent(font);
         float descent = face.descent(font);
-        return (textStyle.lineHeightPx() - (ascent + descent)) / 2f + ascent;
+        return TextShaper.leadingAbove(textStyle.lineHeightPx(), ascent, descent) + ascent;
     }
 
     public static boolean isInlineBox(LayoutBox box) {
@@ -1266,6 +1301,12 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     private static void clearFragmentsRecursively(LayoutBox box) {
         box.inlineFragments.clear();
+        // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
+        // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
+        if (box.node.nodeType == NodeType.TEXT) {
+            box.x = 0;
+            box.y = 0;
+        }
         for (LayoutBox child : box.children) clearFragmentsRecursively(child);
     }
 

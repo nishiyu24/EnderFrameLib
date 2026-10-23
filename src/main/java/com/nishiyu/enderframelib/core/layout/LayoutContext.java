@@ -14,13 +14,28 @@ import com.nishiyu.enderframelib.core.text.model.WordBreak;
 
 /**
  * レイアウト 1 回分の外部依存。
+ *
+ * @param reuseMeasurements 前回の measure の結果を、入力と中身が変わっていない箱で使い回してよいか
+ *                          （差分レイアウト。{@link LayoutBox#measure(ConstraintSpace, LayoutContext)} を参照）
+ * @param layoutRun         このレイアウト（measure の全パスと layout）の通し番号
+ * @param firstPass         measure の 1 回目のパスか。2 回目以降は、同じレイアウトの中で記録した結果を使い回さない
+ *                          （表の枠線の分担のように、1 回目の結果を読んで 2 回目が変わる箱があるため）
  */
 public record LayoutContext(
         Viewport viewport,
         IntrinsicSizeResolver intrinsicResolver,
         ScrollState scrollState,
-        FontResolver fonts
+        FontResolver fonts,
+        boolean reuseMeasurements,
+        long layoutRun,
+        boolean firstPass
 ) {
+
+    /** measure の結果を使い回さない（何もかも測り直す）文脈。 */
+    public LayoutContext(Viewport viewport, IntrinsicSizeResolver intrinsicResolver,
+                         ScrollState scrollState, FontResolver fonts) {
+        this(viewport, intrinsicResolver, scrollState, fonts, false, 0L, true);
+    }
 
     /** 算出スタイルの {@code font-family} に対応する書体。 */
     public FontFace faceFor(ComputedStyle style) {
@@ -29,11 +44,14 @@ public record LayoutContext(
 
     /** 算出スタイルから測定に必要な指定だけを取り出す。 */
     public FontStyle fontStyleFor(ComputedStyle style) {
+        int weight = LayoutMetrics.numericWeight(style);
         return new FontStyle(
                 style.fontSizePx(),
-                LayoutMetrics.isBold(style),
+                weight >= 600,
                 style.keywordOf(CssProperty.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                style.length(CssProperty.LETTER_SPACING, 0, 0, 0));
+                style.length(CssProperty.LETTER_SPACING, 0, 0, 0),
+                weight,
+                !"none".equalsIgnoreCase(style.getOrDefault(CssProperty.FONT_KERNING, "auto").trim()));
     }
 
     /** 整形（折り返し・空白・省略）に必要なスタイルをまとめる。 */

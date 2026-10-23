@@ -535,15 +535,44 @@ public final class Bindings {
     public static final class ReactiveDomBinder {
         private final Map<HtmlNode, String> originalNodeTexts = new IdentityHashMap<>();
         private final Map<HtmlNode, Map<String, String>> originalNodeAttrs = new IdentityHashMap<>();
-        private final Map<String, String> originalShowDisplay = new ConcurrentHashMap<>();
+        private final Map<HtmlNode, String> originalShowDisplay = new IdentityHashMap<>();
         private final Map<String, List<HtmlNode>> listTemplates = new ConcurrentHashMap<>();
         private final Map<String, List<Map<String, String>>> lastRenderedLists = new ConcurrentHashMap<>();
         private final TemplateDeps templateDeps = new TemplateDeps();
+        private final List<HtmlNode> changedNodes = new ArrayList<>();
+        /**
+         * 直前までの {@link #sync} で、見た目（style / class / hidden）以外を書き換えたか。文字・子の並び・その他の属性は
+         * 箱の木の作り直しが要る。見た目だけなら呼び出し側は再スタイルで済ませられる。
+         */
+        private boolean layoutTreeChanged = false;
+
+        /** {@link #layoutTreeChanged} を返して倒す。 */
+        public boolean drainLayoutTreeChanged() {
+            boolean out = layoutTreeChanged;
+            layoutTreeChanged = false;
+            return out;
+        }
+
+        /**
+         * 直前までの {@link #sync} で属性・文字を書き換えた要素を返して空にする。
+         *
+         * <p>算出スタイルは要素ごとにキャッシュされ、汚れた印が無いと使い回される。バインディングで
+         * style や class を書き換えても印を付けなければ古いスタイルのまま描かれる（以前はクリックで
+         * フォーカスが動いて祖先ごと再スタイルされたときにだけ反映されていた）ので、呼び出し側はここで
+         * 返した要素を汚してから再レイアウトを要求する。</p>
+         */
+        public List<HtmlNode> drainChangedNodes() {
+            List<HtmlNode> out = List.copyOf(changedNodes);
+            changedNodes.clear();
+            return out;
+        }
 
         public void clear() {
             originalNodeTexts.clear();
             originalNodeAttrs.clear();
             originalShowDisplay.clear();
+            changedNodes.clear();
+            layoutTreeChanged = false;
             listTemplates.clear();
             lastRenderedLists.clear();
             templateDeps.clear();
@@ -557,6 +586,7 @@ public final class Bindings {
                             Map<String, List<Map<String, String>>> lists,
                             Set<String> changedKeys) {
             if (root == null) return false;
+            templateDeps.index(root);
 
             Set<String> scopeKeys = null;
             if (!changedKeys.contains(TemplateDeps.ALWAYS)) {
@@ -574,13 +604,21 @@ public final class Bindings {
             if (changedKeys != null && TemplateDeps.canSkip(templateDeps.lookup(vNode), changedKeys)) return false;
 
             boolean changed = applyI18nAttributes(vNode);
+            if (changed) layoutTreeChanged = true;
 
-            if (applyTextPlaceholders(vNode, scopeData)) changed = true;
+            if (applyTextPlaceholders(vNode, scopeData)) {
+                changed = true;
+                layoutTreeChanged = true;
+            }
             if (applyAttributePlaceholders(vNode, scopeData)) changed = true;
-            if (applyDataModel(vNode, scopeData)) changed = true;
+            if (applyDataModel(vNode, scopeData)) {
+                changed = true;
+                layoutTreeChanged = true;
+            }
             if (applyDataBind(vNode, scopeData)) changed = true;
             if (applyConditionalVisibility(vNode, scopeData)) changed = true;
             if (applyDataClass(vNode, scopeData)) changed = true;
+            if (changed) changedNodes.add(vNode);
 
             return handleListIterationOrChildren(vNode, scopeData, lists, changed, changedKeys);
         }
@@ -610,6 +648,7 @@ public final class Bindings {
                     if (!Objects.equals(resolved, vNode.attrs.get(k))) {
                         DomUtils.updateAttribute(vNode, k, resolved, false);
                         changed = true;
+                        if (!isPresentationalAttribute(k)) layoutTreeChanged = true;
                     }
                 }
             }
@@ -663,6 +702,7 @@ public final class Bindings {
                         if (!Objects.equals(vNode.getTextContent(), val)) {
                             vNode.setTextContent(val);
                             changed = true;
+                            layoutTreeChanged = true;
                         }
                     } else if (target.startsWith("style.")) {
                         String prop = target.substring(6).trim();
@@ -674,6 +714,7 @@ public final class Bindings {
                     } else if (!Objects.equals(vNode.attrs.get(target), val)) {
                         DomUtils.updateAttribute(vNode, target, val, false);
                         changed = true;
+                        if (!isPresentationalAttribute(target)) layoutTreeChanged = true;
                     }
                 }
             }
@@ -697,16 +738,28 @@ public final class Bindings {
             if (vNode.attrs.containsKey("data-show")) {
                 Boolean visibleObj = evaluateCondition(vNode.attrs.get("data-show").trim(), scopeData);
                 if (visibleObj != null) {
-                    String origDisp = originalShowDisplay.computeIfAbsent(vNode.getId(), id -> vNode.attrs.getOrDefault("data-orig-display", "flex"));
+                    // 表示時は元のインライン display を復元する。インライン指定が無ければ
+                    // display を外してスタイルシートの値（例: block / flex）に委ねる。
+                    String origDisp = originalShowDisplay.computeIfAbsent(vNode, n -> {
+                        String explicit = n.attrs.get("data-orig-display");
+                        if (explicit != null && !explicit.isBlank()) return explicit.trim();
+                        String inline = n.getStyleProperty("display");
+                        return inline == null || "none".equalsIgnoreCase(inline) ? "" : inline;
+                    });
                     String targetDisp = visibleObj ? origDisp : "none";
-                    String curStyle = vNode.attrs.getOrDefault("style", "");
-                    if (!curStyle.contains("display: " + targetDisp)) {
+                    String curDisp = vNode.getStyleProperty("display");
+                    if (!Objects.equals(targetDisp.isEmpty() ? null : targetDisp, curDisp)) {
                         vNode.setStyleProperty("display", targetDisp);
                         changed = true;
                     }
                 }
             }
             return changed;
+        }
+
+        /** 書き換えても再スタイルだけで済む属性か（カスケードの入力にしかならない）。 */
+        private static boolean isPresentationalAttribute(String name) {
+            return "style".equalsIgnoreCase(name) || "class".equalsIgnoreCase(name) || "hidden".equalsIgnoreCase(name);
         }
 
         private boolean applyDataClass(HtmlNode vNode, Map<String, String> scopeData) {
@@ -822,6 +875,7 @@ public final class Bindings {
                         vNode.children.clear();
                         vNode.children.addAll(newChildren);
                         lastRenderedLists.put(vNode.getId(), new ArrayList<>(itemDataList));
+                        layoutTreeChanged = true;
                         return true;
                     }
                 }

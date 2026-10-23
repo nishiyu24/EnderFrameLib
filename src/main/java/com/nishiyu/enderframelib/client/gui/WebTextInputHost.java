@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
 import java.util.function.Consumer;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * 画面外に配置される隠し EditBox の統合管理ホスト。
@@ -145,7 +146,41 @@ public class WebTextInputHost {
     }
 
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        return editBox.keyPressed(keyCode, scanCode, modifiers);
+        try {
+            return editBox.keyPressed(keyCode, scanCode, modifiers);
+        } catch (NullPointerException e) {
+            return handleFallbackKeyPressed(keyCode, scanCode, modifiers);
+        }
+    }
+
+    private boolean handleFallbackKeyPressed(int keyCode, int scanCode, int modifiers) {
+        if (!editBox.isFocused()) return false;
+        String text = editBox.getValue();
+        int cursor = editBox.getCursorPosition();
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+            if (cursor > 0 && !text.isEmpty()) {
+                String next = text.substring(0, cursor - 1) + text.substring(cursor);
+                editBox.setValue(next);
+                editBox.setCursorPosition(cursor - 1);
+                return true;
+            }
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_DELETE) {
+            if (cursor < text.length()) {
+                String next = text.substring(0, cursor) + text.substring(cursor + 1);
+                editBox.setValue(next);
+                editBox.setCursorPosition(cursor);
+                return true;
+            }
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_LEFT) {
+            if (cursor > 0) editBox.setCursorPosition(cursor - 1);
+            return true;
+        } else if (keyCode == GLFW.GLFW_KEY_RIGHT) {
+            if (cursor < text.length()) editBox.setCursorPosition(cursor + 1);
+            return true;
+        }
+        return false;
     }
 
     public boolean charTyped(char codePoint, int modifiers) {

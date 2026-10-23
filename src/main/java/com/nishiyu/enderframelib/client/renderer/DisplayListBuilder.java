@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
+import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -32,6 +33,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -46,9 +48,10 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 
 public class DisplayListBuilder {
 
-    private static final Pattern TRANSLATE_X_PATTERN = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)");
-    private static final Pattern TRANSLATE_Y_PATTERN = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)\\s*\\)");
-    private static final Pattern TRANSLATE_PATTERN = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)(?:\\s*,\\s*(-?[0-9.]+)(px|%))?\\s*\\)");
+    // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
+    private static final Pattern TRANSLATE_X_PATTERN = Pattern.compile("translateX\\(\\s*(-?[0-9.]+)(px|%)?\\s*\\)");
+    private static final Pattern TRANSLATE_Y_PATTERN = Pattern.compile("translateY\\(\\s*(-?[0-9.]+)(px|%)?\\s*\\)");
+    private static final Pattern TRANSLATE_PATTERN = Pattern.compile("translate\\(\\s*(-?[0-9.]+)(px|%)?(?:\\s*,\\s*(-?[0-9.]+)(px|%)?)?\\s*\\)");
     private static final Pattern SCALE_PATTERN = Pattern.compile("scale\\(\\s*(-?[0-9.]+)(?:\\s*,\\s*(-?[0-9.]+))?\\s*\\)");
     private static final Pattern ROTATE_PATTERN = Pattern.compile("rotate\\(\\s*(-?[0-9.]+)(deg|rad)?\\s*\\)");
     private static final Pattern TIME_UNIT_PATTERN = Pattern.compile("([0-9]*\\.?[0-9]+)(ms|s)");
@@ -497,7 +500,7 @@ public class DisplayListBuilder {
         return attrValue != null ? attrValue : "";
     }
 
-    private static float[] parseTransformProps(String t, float boxW, float boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
+    static float[] parseTransformProps(String t, float boxW, float boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
         float tx = defTx, ty = defTy, sx = defSx, sy = defSy, rot = defRot;
         if (t == null || t.isEmpty()) return new float[]{tx, ty, sx, sy, rot};
 
@@ -888,7 +891,7 @@ public class DisplayListBuilder {
         switch (box.node.tag) {
             case "mc-scene" -> drawSceneElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "img", "video", "mc-fluid", "mc-entity" -> drawMediaElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "#text" -> drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, animDef.withChannels(AnimationSpec.CH_COLOR));
+            case "#text" -> drawTextNodeElement(elements, box, id, color, bgColor, normalizedClip, fontHVal, ox, oy, partsEvents, transDur, textColorAnimation(box, animDef));
             case "progress", "meter" -> {
                 String val = box.node.attrs.getOrDefault("value", "0");
                 String min = box.node.attrs.getOrDefault("min", "0");
@@ -901,7 +904,20 @@ public class DisplayListBuilder {
             case "canvas" -> drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "textarea" -> drawTextareaElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "select" -> drawSelectElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            case "input" -> drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+            case "input" -> {
+                if (isPlainRange(box)) {
+                    // appearance: none のレンジは作者の CSS で描いた箱に、つまみ（::-webkit-slider-thumb は部品のまま）だけを重ねる
+                    drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
+                    drawNativeRange(elements, box, id, rangeData(box, resolveLiveInputValue(id, box.node.attrs.getOrDefault("value", ""))),
+                            color, false, partsEvents, border, baseMeta, transDur, colorBgAnim);
+                } else if (isPlainToggle(box)) {
+                    // appearance: none のチェックボックス・ラジオボタンは普通の箱（作者の枠線・背景だけで描き、印は無い）
+                    drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
+                } else {
+                    drawInputElement(elements, box, id, color, bgColor, fallbackRadius, fontHVal, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
+                }
+            }
+            case "fieldset" -> drawFieldsetElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
             default -> drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
         }
         drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
@@ -996,6 +1012,7 @@ public class DisplayListBuilder {
         if (box.style.containsKey(CssProperty.FONT_FAMILY)) {
             partsEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
         }
+        putFontEvents(box, partsEvents);
         if (box.node.attrs.containsKey("title")) partsEvents.put(RenderKeys.MC_TITLE, box.node.attrs.get("title"));
         else if (box.node.attrs.containsKey("data-tooltip")) partsEvents.put(RenderKeys.MC_TITLE, box.node.attrs.get("data-tooltip"));
 
@@ -1171,6 +1188,37 @@ public class DisplayListBuilder {
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 
+    /**
+     * 文字の色のアニメーション。{@code animation} は継承されないが、祖先の {@code color} を補間すると
+     * 継承した文字の色も一緒に変わる（CSS Animations 1 §3: アニメーションした値も算出値として継承される）。
+     * 途中の要素が自分の色を持っていれば、そこから先には届かない。
+     *
+     * 何が壊れていたか: 文字の DisplayItem には文字ノード自身のアニメーション（常に none）しか載せていなかったので、
+     * {@code <span style="animation: kfTextFlash ...">} の文字色が変わらなかった。
+     */
+    private AnimationSpec textColorAnimation(LayoutBox text, AnimationSpec own) {
+        AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
+        if (!colorAnim.isEmpty()) return colorAnim;
+        String inherited = text.style.get(CssProperty.COLOR);
+        for (LayoutBox a = text.parent; a != null && a.style != null; a = a.parent) {
+            if (!Objects.equals(inherited, a.style.get(CssProperty.COLOR))) break;
+            if (a.style.get(CssProperty.ANIMATION) != null || a.style.get(CssProperty.ANIMATION_NAME) != null) {
+                int color = a.style.color(CssProperty.COLOR, 0xFF000000);
+                AnimationSpec anim = parseAnimationDef(a.style, a.w, a.h, color, 0).withChannels(AnimationSpec.CH_COLOR);
+                if (!anim.isEmpty()) return anim;
+            }
+            // 祖先の要素が自分の色を宣言していれば、その上の祖先の色は継承されない
+            if (declaresOwnColor(a)) break;
+        }
+        return AnimationSpec.NONE;
+    }
+
+    /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
+    private static boolean declaresOwnColor(LayoutBox box) {
+        return box.parent != null && box.parent.style != null
+                && !Objects.equals(box.style.get(CssProperty.COLOR), box.parent.style.get(CssProperty.COLOR));
+    }
+
     private void drawTextNodeElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, Map<String, String> partsEvents,
                                      int transDur, AnimationSpec colorAnim) {
@@ -1179,6 +1227,7 @@ public class DisplayListBuilder {
         if (box.style.containsKey(CssProperty.FONT_FAMILY)) baseTextEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
         if (box.style.containsKey(CssProperty.TEXT_DECORATION)) baseTextEvents.put("text-decoration", box.style.get(CssProperty.TEXT_DECORATION));
         if (box.style.containsKey(CssProperty.TEXT_SHADOW) && !"none".equals(box.style.get(CssProperty.TEXT_SHADOW))) baseTextEvents.put("text-shadow", "true");
+        putFontEvents(box, baseTextEvents);
 
         if (!box.inlineFragments.isEmpty()) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
@@ -1206,6 +1255,26 @@ public class DisplayListBuilder {
                 }
                 lineY += line.height();
             }
+        }
+    }
+
+    /**
+     * 描画側が測定と同じ書体・字の位置を引けるように、書体の照合と字の送りに効く指定を載せる
+     * （太さ・斜体・カーニング・字間）。
+     */
+    private static void putFontEvents(LayoutBox box, Map<String, String> events) {
+        // 既定値（400 / normal / auto）は載せない。描画側は無ければ既定値として読む
+        String weight = box.style.get(CssProperty.FONT_WEIGHT);
+        if (weight != null && !weight.equals("normal") && !weight.equals("400")) events.put("font-weight", weight);
+        String fontStyle = box.style.get(CssProperty.FONT_STYLE);
+        if (fontStyle != null && !fontStyle.equals("normal")) events.put("font-style", fontStyle);
+        String kerning = box.style.get(CssProperty.FONT_KERNING);
+        if (kerning != null && !kerning.equals("auto")) events.put("font-kerning", kerning);
+        // 長さの解決は要素ごとには重いので、指定があるときだけ（初期値は normal = 0）
+        String spacing = box.style.get(CssProperty.LETTER_SPACING);
+        if (spacing != null && !spacing.equals("normal") && !spacing.equals("0")) {
+            float letterSpacing = box.style.length(CssProperty.LETTER_SPACING, 0, 0, 0);
+            if (letterSpacing != 0) events.put("letter-spacing", String.valueOf(letterSpacing));
         }
     }
 
@@ -1289,20 +1358,9 @@ public class DisplayListBuilder {
         Map<String, String> innerEvents = new HashMap<>(partsEvents);
 
         switch (inputType) {
-            case "checkbox", "radio" -> {
-                ElementType toggleType = "radio".equalsIgnoreCase(inputType) ? ElementType.RADIO : ElementType.CHECKBOX;
-                String checkedVal = Boolean.toString(box.node.attrs.containsKey("checked"));
-                drawBorderedControl(elements, id, "_input", toggleType, box, innerX, innerY, innerW, innerH, checkedVal, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            }
-            case "range" -> {
-                String min = box.node.attrs.getOrDefault("min", "0");
-                String max = box.node.attrs.getOrDefault("max", "100");
-                if (val.isEmpty()) val = "50";
-                int colonIdx = val.indexOf(':');
-                if (colonIdx > 0) val = val.substring(0, colonIdx);
-                String rangeData = val + ":" + min + ":" + max;
-                drawBorderedControl(elements, id, "_input", ElementType.RANGE, box, innerX, innerY, innerW, innerH, rangeData, color, bgColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
-            }
+            case "radio", "checkbox" -> drawNativeToggle(elements, box, id, "radio".equals(inputType), color,
+                    partsEvents, passiveBorderEvents, border, baseMeta, transDur, colorBgAnim);
+            case "range" -> drawNativeRange(elements, box, id, rangeData(box, val), color, true, partsEvents, border, baseMeta, transDur, colorBgAnim);
             case "color" -> {
                 int swatchColor = ColorParser.parseColor(val.isEmpty() ? "#89b4fa" : val);
                 drawBorderedControl(elements, id, "_input", ElementType.INPUT, box, innerX, innerY, innerW, innerH, val, color, swatchColor, fallbackRadius, partsEvents, innerEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
@@ -1315,6 +1373,7 @@ public class DisplayListBuilder {
                     // ascent / descent を知っている描画側が 1 箇所で行う
                     float phX = box.x + border.bwLeft() + 4;
                     Map<String, String> phEvents = new HashMap<>(passiveBorderEvents);
+                    phEvents.put(RenderKeys.POINTER_EVENTS, "none");
                     // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
                     int placeholderColor = box.placeholderStyle != null
                             ? box.placeholderStyle.color(CssProperty.COLOR, DEFAULT_PLACEHOLDER_COLOR)
@@ -1323,6 +1382,187 @@ public class DisplayListBuilder {
                 }
             }
         }
+    }
+
+    /**
+     * UA の部品で描くラジオボタン・チェックボックス（appearance: auto）。Chromium の描き方
+     * （NativeThemeBase::PaintRadio / PaintCheckbox）に合わせ、箱に収まる最大の正方形を中央に置いて描く:
+     * <ul>
+     *   <li>ラジオボタン: 白い円と 1px の輪。選択時は輪と点（直径の 60%）を強調色で</li>
+     *   <li>チェックボックス: 未選択は白い角丸（2px）の四角と 1px の枠。選択・未確定（indeterminate 属性）は
+     *       四角全体を強調色で塗って枠を描かず、白い印（チェックの折れ線・横棒）を重ねる</li>
+     * </ul>
+     * 作者の枠線・背景・padding は使わない（{@code StyleResolver#adjustForAppearance} が枠線と padding を 0 にし、
+     * 枠の色を UA の状態ごとの色（ua.css の :hover / :active / :checked）に置き換えてある）。
+     * {@code accent-color} があれば選択時の強調色はその色。その色が白と見分けにくい（コントラスト比 3 未満）なら、
+     * Chrome と同じく選択時だけ暗い配色にする（チェックの印・ラジオの輪と点の間が #3b3b3b）。
+     *
+     * 何が壊れていたか: 以前は選択の印を文字色（黒）の四角で描き、作者の枠線・背景がそのまま部品に効いていた。
+     */
+    private void drawNativeToggle(List<DisplayItem> elements, LayoutBox box, String id, boolean radio, int color,
+                                  Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
+                                  BorderSpec border, RenderMeta baseMeta, int transDur, AnimationSpec colorBgAnim) {
+        boolean mixed = !radio && box.node.attrs.containsKey("indeterminate");
+        boolean checked = box.node.attrs.containsKey("checked");
+        int stateColor = border.bcTop();
+        Integer accent = accentColor(box, color);
+        // accent-color が白と見分けにくければ暗い配色（Chrome の実測。濃淡の向きもこれで決まる）
+        boolean darkAccent = accent != null && contrastRatio(accent, NATIVE_WHITE) < 3f;
+        int strong = (checked || mixed) && accent != null ? shadeAccent(accent, stateColor, darkAccent) : stateColor;
+
+        float size = Math.min(box.w, box.h);
+        float x = box.x + (box.w - size) / 2, y = box.y + (box.h - size) / 2;
+        int radius = radio ? Math.round(size / 2) : Math.min(NATIVE_CHECKBOX_RADIUS, Math.round(size / 2));
+        Corners corners = Corners.all(radius);
+        RenderMeta meta = new RenderMeta(baseMeta.clipRect(), corners, null, null,
+                baseMeta.fontHeight(), baseMeta.originX(), baseMeta.originY(), 1, false);
+
+        String state = mixed ? "mixed" : Boolean.toString(checked);
+        boolean filled = !radio && (checked || mixed);
+        // 暗い配色ではチェックの印と、ラジオの輪と点の間が #3b3b3b になる（未確定の横棒は白のまま、未選択の部品は変わらない）
+        boolean dark = checked && darkAccent;
+        int mark = radio ? strong : dark && !mixed ? NATIVE_DARK : NATIVE_WHITE;
+        int fill = filled ? strong : radio && dark ? NATIVE_DARK : NATIVE_WHITE;
+        // 印の部品が背景を塗り、印（点・チェック）を中身として描く。輪はその上に重ねる
+        addElement(elements, id, id + "_input", radio ? ElementType.RADIO : ElementType.CHECKBOX, x, y, size, size, state,
+                mark, fill, partsEvents, radius,
+                1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+        if (filled) return;
+        int ring = radio ? strong : stateColor;
+        RoundedBorderSpec spec = new RoundedBorderSpec(1f, 1f, 1f, 1f, ring, ring, ring, ring);
+        RenderMeta ringMeta = new RenderMeta(baseMeta.clipRect(), corners, null, null,
+                baseMeta.fontHeight(), 0f, 0f, baseMeta.originX(), baseMeta.originY(), 1, false, spec);
+        addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, x, y, size, size, "", 0, 0x00000000,
+                passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+    }
+
+    /**
+     * {@code accent-color} の状態ごとの濃淡（Chrome の実測。12 色・24 個の値がすべて一致）。HSL の明度を 0.11 ずらし、
+     * 明るい配色ではマウスを乗せると暗く・押すと明るく、暗い配色では逆にする。配色は部品の背景との
+     * コントラストで決まるので、同じ色でもチェックボックスとレンジで向きが違うことがある（マゼンタなど）。
+     * 状態は ua.css が状態ごとに置いた部品の色（StyleResolver が枠の色に置いたもの。作者の CSS では変わらない）から読む。
+     *
+     * 何が壊れていたか: 以前は accent-color を指定するとマウスを乗せても押しても色が変わらなかった。
+     */
+    static int shadeAccent(int accent, int stateColor, boolean dark) {
+        int direction = stateColor == NATIVE_ACCENT_HOVER ? -1 : stateColor == NATIVE_ACCENT_ACTIVE ? 1 : 0;
+        if (direction == 0) return accent;
+        return shiftLightness(accent, (dark ? -direction : direction) * ACCENT_LIGHTNESS_STEP);
+    }
+
+    /** ua.css の状態ごとの部品の色（マウスを乗せたとき・押したとき）。 */
+    private static final int NATIVE_ACCENT_HOVER = 0xFF005CC8, NATIVE_ACCENT_ACTIVE = 0xFF3793FF;
+    private static final float ACCENT_LIGHTNESS_STEP = 0.11f;
+
+    /** HSL の明度を {@code delta} だけずらす（0〜1 に収める）。色相・彩度と不透明度はそのまま。 */
+    private static int shiftLightness(int argb, float delta) {
+        float r = ((argb >>> 16) & 0xFF) / 255f, g = ((argb >>> 8) & 0xFF) / 255f, b = (argb & 0xFF) / 255f;
+        float max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+        float l = (max + min) / 2f, chroma = max - min;
+        float s = chroma == 0f ? 0f : chroma / (1f - Math.abs(2f * l - 1f));
+        float h;
+        if (chroma == 0f) h = 0f;
+        else if (max == r) h = ((g - b) / chroma + 6f) % 6f;
+        else if (max == g) h = (b - r) / chroma + 2f;
+        else h = (r - g) / chroma + 4f;
+
+        l = Math.clamp(l + delta, 0f, 1f);
+        float c = (1f - Math.abs(2f * l - 1f)) * s;
+        float x = c * (1f - Math.abs(h % 2f - 1f));
+        float m = l - c / 2f;
+        float[] rgb = switch ((int) h) {
+            case 0 -> new float[]{c, x, 0};
+            case 1 -> new float[]{x, c, 0};
+            case 2 -> new float[]{0, c, x};
+            case 3 -> new float[]{0, x, c};
+            case 4 -> new float[]{x, 0, c};
+            default -> new float[]{c, 0, x};
+        };
+        return (argb & 0xFF000000) | Math.round((rgb[0] + m) * 255f) << 16 | Math.round((rgb[1] + m) * 255f) << 8 | Math.round((rgb[2] + m) * 255f);
+    }
+
+    /** 部品の背景と印の色（Chromium のライトテーマ）。 */
+    private static final int NATIVE_WHITE = 0xFFFFFFFF;
+    /** 暗い配色の部品の色（Chromium のダークテーマ）。 */
+    private static final int NATIVE_DARK = 0xFF3B3B3B;
+    /** チェックボックスの角の半径（Chromium の既定、CSS px）。 */
+    private static final int NATIVE_CHECKBOX_RADIUS = 2;
+
+    /**
+     * レンジ（Chromium の NativeThemeBase::PaintSliderTrack / PaintSliderThumb と同じ形）。border box いっぱいを使い、
+     * 縦の中央に高さ 8px・角丸の溝（#efefef）を置き、値までを強調色で塗り、溝全体に 1px の半透明の枠（#767676 の 50%）を重ね、
+     * 直径 16px の強調色の円をつまみにする。つまみの中心は両端から 8px の間を動く。
+     * 強調色は ua.css の状態ごとの色（StyleResolver が枠の色に置いたもの）か {@code accent-color}。
+     * {@code accent-color} が溝の色と見分けにくい（コントラスト比 3 未満）なら、Chrome と同じく溝を暗い配色（#3b3b3b、枠 #cfcfcf の 50%）にする。
+     * {@code track} が偽ならつまみだけ（appearance: none）。
+     *
+     * 何が壊れていたか: 以前は溝の太さを箱の高さの 30%、つまみの直径を 80% にしていて、溝が細く、つまみの位置も
+     * 端から半径の分だけ内側を動く Chrome とずれていた。作者の背景と枠線もそのまま描いていた。
+     */
+    private void drawNativeRange(List<DisplayItem> elements, LayoutBox box, String id, String rangeData, int color, boolean track,
+                                 Map<String, String> partsEvents, BorderSpec border, RenderMeta baseMeta,
+                                 int transDur, AnimationSpec colorBgAnim) {
+        Integer accent = accentColor(box, color);
+        boolean dark = accent != null && contrastRatio(accent, RANGE_TRACK_LIGHT) < 3f;
+        int strong = accent != null ? shadeAccent(accent, border.bcTop(), dark) : border.bcTop();
+        int fill = !track ? 0x00000000 : dark ? RANGE_TRACK_DARK : RANGE_TRACK_LIGHT;
+        int edge = dark ? RANGE_TRACK_BORDER_DARK : RANGE_TRACK_BORDER_LIGHT;
+        RoundedBorderSpec trackBorder = track ? new RoundedBorderSpec(1f, 1f, 1f, 1f, edge, edge, edge, edge) : null;
+        RenderMeta meta = new RenderMeta(baseMeta.clipRect(), null, null, null, baseMeta.fontHeight(), 0f, 0f,
+                baseMeta.originX(), baseMeta.originY(), 1, false, trackBorder);
+        addElement(elements, id, id + "_input", ElementType.RANGE, box.x, box.y, box.w, box.h, rangeData, strong, fill,
+                partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+    }
+
+    /** 溝の色と枠の色（Chrome の実測: 枠は溝の上で #b2b2b2・値の上で #3b75ba になる 50% の #767676。暗い配色は溝の上で #858585）。 */
+    private static final int RANGE_TRACK_LIGHT = 0xFFEFEFEF, RANGE_TRACK_BORDER_LIGHT = 0x80767676;
+    private static final int RANGE_TRACK_DARK = 0xFF3B3B3B, RANGE_TRACK_BORDER_DARK = 0x80CFCFCF;
+
+    /** レンジの値の文字列（{@code 値:最小:最大}）。 */
+    private static String rangeData(LayoutBox box, String val) {
+        String min = box.node.attrs.getOrDefault("min", "0");
+        String max = box.node.attrs.getOrDefault("max", "100");
+        if (val.isEmpty()) val = "50";
+        int colonIdx = val.indexOf(':');
+        if (colonIdx > 0) val = val.substring(0, colonIdx);
+        return val + ":" + min + ":" + max;
+    }
+
+    /** WCAG 2 のコントラスト比（1〜21）。 */
+    private static float contrastRatio(int a, int b) {
+        double la = relativeLuminance(a), lb = relativeLuminance(b);
+        return (float) ((Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05));
+    }
+
+    private static double relativeLuminance(int argb) {
+        double[] c = new double[3];
+        for (int i = 0; i < 3; i++) {
+            double v = ((argb >>> (16 - 8 * i)) & 0xFF) / 255.0;
+            c[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    }
+
+    /** {@code appearance: none} のレンジ。 */
+    private static boolean isPlainRange(LayoutBox box) {
+        return "range".equalsIgnoreCase(box.node.attrs.getOrDefault("type", "").trim())
+                && !StyleResolver.isNativeRange(box.node, box.style.asMap());
+    }
+
+    /** {@code appearance: none} のチェックボックス・ラジオボタン。 */
+    private static boolean isPlainToggle(LayoutBox box) {
+        String type = box.node.attrs.getOrDefault("type", "").trim().toLowerCase(Locale.ROOT);
+        return (type.equals("checkbox") || type.equals("radio")) && !StyleResolver.isNativeToggle(box.node, box.style.asMap());
+    }
+
+    /** {@code accent-color}。auto（UA の既定）なら null。 */
+    private static Integer accentColor(LayoutBox box, int textColor) {
+        String v = box.style.get(CssProperty.ACCENT_COLOR);
+        if (v == null) return null;
+        v = v.trim();
+        if (v.isEmpty() || "auto".equalsIgnoreCase(v)) return null;
+        if ("currentcolor".equalsIgnoreCase(v)) return textColor;
+        return ColorParser.isColor(v) ? ColorParser.parseColor(v) : null;
     }
 
     private void drawBorderedControl(List<DisplayItem> elements, String id, String suffix, ElementType type, LayoutBox box,
@@ -1336,6 +1576,32 @@ public class DisplayListBuilder {
         } else {
             addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
+        }
+    }
+
+    /**
+     * fieldset の背景と枠線（HTML §15.3.13）。legend が上の枠線より高ければ、枠線を legend の中央の高さへ下げ、
+     * 背景もそこから塗る。枠線は legend の後ろ（legend の border box の横幅）を描かない。
+     *
+     * 下げた矩形で描くために、描く間だけ箱の y と高さを差し替える（背景・画像・内側の影・枠線の描き方は
+     * どれも箱の矩形を読むので、普通の箱と同じ道を通す）。
+     */
+    private void drawFieldsetElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
+                                     Corners radii, ClipRect normalizedClip, float fontHVal, float ox, float oy,
+                                     Map<String, String> partsEvents, Map<String, String> passiveBorderEvents,
+                                     BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
+                                     int transDur, AnimationSpec colorBgAnim, List<BoxDecorations.Shadow> shadows) {
+        LayoutBox legend = box.renderedLegend();
+        float shift = legend == null ? 0 : Math.max(0, (legend.h - box.bT) / 2);
+        float y = box.y, h = box.h;
+        box.y += shift;
+        box.h = Math.max(0, h - shift);
+        try {
+            drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy,
+                    partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
+        } finally {
+            box.y = y;
+            box.h = h;
         }
     }
 
@@ -1459,8 +1725,46 @@ public class DisplayListBuilder {
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */
     private void drawBorder(List<DisplayItem> elements, String id, LayoutBox box, float rOff, Map<String, String> events,
                             BorderSpec border, RenderMeta meta, int transDur) {
+        LayoutBox legend = "fieldset".equals(box.node.tag) ? box.renderedLegend() : null;
+        if (legend != null && border.hasBorder()) {
+            drawBorderAroundLegend(elements, id, box, legend, rOff, events, border, meta, transDur);
+            return;
+        }
         if (border.useRoundedBorder()) drawRoundedBorder(elements, id, box, events, border, meta, transDur);
         else if (border.hasBorder()) drawStraightBorders(elements, id, box, rOff, events, border, meta, transDur);
+    }
+
+    /**
+     * legend の後ろを空けた fieldset の枠線。空ける矩形は、横が legend の border box、縦が枠線の上端から
+     * legend の下マージンの端と枠線の下端の低い方まで（HTML §15.3.13）。描画は矩形の切り抜きを持たないので、
+     * 空ける矩形の左・右・下の 3 つのクリップで同じ枠線を描く（クリップは重ならないので半透明の色も二重にならない）。
+     */
+    private void drawBorderAroundLegend(List<DisplayItem> elements, String id, LayoutBox box, LayoutBox legend, float rOff,
+                                        Map<String, String> events, BorderSpec b, RenderMeta meta, int transDur) {
+        float left = legend.x, right = legend.x + legend.w;
+        float bottom = Math.max(legend.y + legend.h + legend.mB, box.y + b.bwTop());
+        float x0 = box.x - 1, y0 = box.y - 1, x1 = box.x + box.w + 1, y1 = box.y + box.h + 1;
+        float[][] regions = {{x0, y0, left, y1}, {right, y0, x1, y1}, {left, bottom, right, y1}};
+        float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
+        int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
+        for (int i = 0; i < regions.length; i++) {
+            if (regions[i][2] <= regions[i][0] || regions[i][3] <= regions[i][1]) continue;
+            ClipRect clip = ClipRect.fromArray(BoxDecorations.intersectClip(
+                    meta.clipRect() == null ? null : meta.clipRect().toArray(), regions[i]));
+            if (b.useRoundedBorder()) {
+                RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
+                        colors[0], colors[1], colors[2], colors[3]);
+                RenderMeta ringMeta = new RenderMeta(clip, meta.borderRadii(), null, null,
+                        meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
+                addElement(elements, id, id + "_b_round_" + i, ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
+                        events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+            } else {
+                RenderMeta clipped = new RenderMeta(clip, meta.borderRadii(), null, null,
+                        meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
+                drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff,
+                        events, clipped, transDur, true);
+            }
+        }
     }
 
     /**

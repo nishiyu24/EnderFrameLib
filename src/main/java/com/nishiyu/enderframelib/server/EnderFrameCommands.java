@@ -53,19 +53,30 @@ public class EnderFrameCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("enderframe")
-                .requires(src -> src.hasPermission(2))
+                .then(buildDesktop())
                 .then(buildOpen())
                 .then(buildOpenInline())
                 .then(buildHud())
                 .then(buildSession())
                 .then(buildPatch())
                 .then(buildPublish())
-                .then(Commands.literal("devkit").executes(ctx -> exportBrowserDevKit(ctx.getSource())))
+                .then(Commands.literal("devkit")
+                        .requires(src -> src.hasPermission(2))
+                        .executes(ctx -> exportBrowserDevKit(ctx.getSource())))
         );
+    }
+
+    private static ArgumentBuilder<CommandSourceStack, ?> buildDesktop() {
+        return Commands.literal("desktop")
+                .executes(ctx -> openDesktopScreen(ctx.getSource(), List.of(ctx.getSource().getPlayerOrException()), "docs"))
+                .then(Commands.argument("targets", EntityArgument.players())
+                        .requires(src -> src.hasPermission(2))
+                        .executes(ctx -> openDesktopScreen(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets"), "docs")));
     }
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildOpen() {
         return Commands.literal("open")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .then(Commands.argument("ui_id", ResourceLocationArgument.id())
                                 .suggests(SUGGEST_DATAPACK_UIS)
@@ -85,6 +96,7 @@ public class EnderFrameCommands {
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildOpenInline() {
         return Commands.literal("open_inline")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .then(Commands.argument("html", StringArgumentType.greedyString())
                                 .executes(ctx -> openInlineUi(ctx.getSource(), targets(ctx), str(ctx, "html")))
@@ -94,6 +106,7 @@ public class EnderFrameCommands {
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildHud() {
         return Commands.literal("hud")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("set")
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .then(Commands.argument("ui_id", ResourceLocationArgument.id())
@@ -111,6 +124,7 @@ public class EnderFrameCommands {
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildSession() {
         return Commands.literal("session")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("load")
                         .then(Commands.argument("session_id", StringArgumentType.string())
                                 .then(Commands.argument("ui_id", ResourceLocationArgument.id())
@@ -135,6 +149,7 @@ public class EnderFrameCommands {
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildPatch() {
         return Commands.literal("patch")
+                .requires(src -> src.hasPermission(2))
                 .then(buildSingleArgPatch("text", (s, el, arg) -> s.patchText(el, arg)))
                 .then(buildSingleArgPatch("html", (s, el, arg) -> s.patchInnerHtml(el, arg)))
                 .then(buildKeyedPatch("style", "property", "value",
@@ -147,6 +162,7 @@ public class EnderFrameCommands {
 
     private static ArgumentBuilder<CommandSourceStack, ?> buildPublish() {
         return Commands.literal("publish")
+                .requires(src -> src.hasPermission(2))
                 .then(Commands.argument("channel", StringArgumentType.word())
                         .then(Commands.argument("snbt", StringArgumentType.greedyString())
                                 .executes(ctx -> publishChannelData(ctx.getSource(), str(ctx, "channel"), str(ctx, "snbt")))
@@ -394,5 +410,17 @@ public class EnderFrameCommands {
             return map;
         }
         return t != null ? t.getAsString() : null;
+    }
+
+    private static int openDesktopScreen(CommandSourceStack source, Collection<ServerPlayer> targets, String initialWindow) {
+        CompoundTag payload = new CompoundTag();
+        if (initialWindow != null && !initialWindow.isEmpty()) {
+            payload.putString("InitialWindow", initialWindow);
+        }
+        for (ServerPlayer player : targets) {
+            ServerPacketSender.send(player, new WebSyncS2CPacket("", "open_desktop", payload));
+        }
+        source.sendSuccess(() -> Component.literal("Opened EnderFrame UI (" + (initialWindow != null ? initialWindow : "default") + ") for " + targets.size() + " player(s)."), false);
+        return targets.size();
     }
 }

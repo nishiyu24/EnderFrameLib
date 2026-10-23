@@ -1,5 +1,9 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
+import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
+import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
+import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
@@ -33,6 +37,7 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
+import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,6 +62,8 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
     /** 押下から解放まで有効な、GUI のコールバックをまとめたクリックの受け皿。 */
     private SessionInput.ClickSink lastClickSink = SessionInput.ClickSink.NONE;
+    private boolean suppressNextRelease = false;
+    private boolean suppressNextClick = false;
     private Screen gestureScreen;
     private Font gestureFont;
     private BiConsumer<String, String> gestureInputChanged;
@@ -81,6 +88,9 @@ public class EnderScreenDelegate implements SessionInput.Host {
     public WebViewport viewport() { return viewport; }
     public WebActionRouter router() { return router; }
     public WebSelectDropdownWidget selectWidget() { return selectWidget; }
+    public boolean isSelectDropdownHovered(double webX, double webY) {
+        return selectWidget.isOpen() && selectWidget.isWithinPopup(webX, webY);
+    }
     public WebDragDropController dragDropController() { return dragDropController; }
     public WebFocusNavigator focusNavigator() { return focusNavigator; }
     public TextareaEditor textareaEditor() { return textareaEditor; }
@@ -145,6 +155,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         String safeVal = currentText != null ? currentText : "";
 
         ClientWebManager.getOrCreateSession(sessionId).activateInput(renderInputId);
+        ClientWebManager.getOrCreateSession(sessionId).input().setLastCommittedValue(baseId, safeVal);
         syncInputValueToDomNodes(baseId, safeVal);
         if (this.inputHost != null) {
             this.inputHost.setValue(safeVal);
@@ -209,10 +220,25 @@ public class EnderScreenDelegate implements SessionInput.Host {
             ClientDomEventDispatcher.TriActionCallback onWebAction
     ) {
         if (selectWidget.isOpen() && button == 0) {
-            boolean handled = selectWidget.handleClick(webX, webY, (baseId, chosenVal) -> {
-                commitValue(baseId, chosenVal, onInputChanged);
-            });
-            if (handled) return true;
+            if (selectWidget.isWithinPopup(webX, webY)) {
+                boolean handled = selectWidget.handleClick(webX, webY, (baseId, chosenVal) -> {
+                    commitValue(baseId, chosenVal, onInputChanged);
+                });
+                if (handled) {
+                    this.suppressNextRelease = true;
+                    return true;
+                }
+            } else {
+                SessionContext session = ClientWebManager.getSession(sessionId);
+                SessionContext.UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
+                String hitBaseId = hit != null && hit.element() != null ? hit.element().baseId() : "";
+                if (selectWidget.openSelectBaseId().equals(hitBaseId)) {
+                    selectWidget.close();
+                    this.suppressNextRelease = true;
+                    return true;
+                }
+                selectWidget.close();
+            }
         }
 
         this.gestureScreen = screen;
@@ -285,12 +311,14 @@ public class EnderScreenDelegate implements SessionInput.Host {
             return;
         }
 
-        if (clicked.type() == ElementType.INPUT && button == 0) {
+        boolean isInputOrPlaceholder = clicked.type() == ElementType.INPUT
+                || (clicked.type() == ElementType.TEXT && clicked.id().endsWith("_ph"));
+        if (isInputOrPlaceholder && button == 0) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
             session.setFocusedElement(baseId, false);
             String curVal = getInputValue(baseId);
-            if (curVal.isEmpty() && clicked.text() != null) curVal = clicked.text();
+            if (curVal.isEmpty() && clicked.text() != null && !clicked.id().endsWith("_ph")) curVal = clicked.text();
             focusWebInput(gestureScreen, baseId, curVal);
             return;
         }
@@ -300,7 +328,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         if (clicked.type() == ElementType.TEXT && button == 0) {
             TextSelection sel = session.textSelection();
             if (sel != null && clicked.text() != null) {
-                int charOffset = estimateCharOffset(gestureFont, clicked.text(), hit.localX());
+                int charOffset = estimateCharOffset(clicked, gestureFont, hit.localX());
                 sel.startSelection(clicked.baseId(), charOffset);
             }
         }
@@ -394,6 +422,18 @@ public class EnderScreenDelegate implements SessionInput.Host {
         if (onInputChanged != null) onInputChanged.accept(baseId, value);
     }
 
+    /**
+     * 要素の書体で測った、{@code localX}（要素の左端からの CSS px）に最も近い字の境目。
+     * システムの書体なら描画と同じ字の位置（詰めを含む）で決める。
+     */
+    public static int estimateCharOffset(DisplayItem el, Font fallback, double localX) {
+        String text = el.text();
+        OutlineFontFace face = WebFontManager.outlineFaceFor(el);
+        if (face == null || text == null) return estimateCharOffset(fallback, text, localX);
+        float fontH = el.meta() != null ? el.meta().fontHeight() : el.height();
+        return OutlineFontFace.nearestBoundary(text, face.positions(text, WebFontManager.fontStyleFor(el, fontH)), localX);
+    }
+
     public static int estimateCharOffset(Font font, String text, double localX) {
         if (text == null || text.isEmpty() || font == null || localX <= 0) return 0;
         int len = text.length();
@@ -441,7 +481,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (dragHit != null && dragHit.element() != null && dragHit.element().text() != null) {
                 if (sel.anchorNodeId().equals(dragHit.element().baseId())) {
                     Font font = Minecraft.getInstance().font;
-                    int offset = estimateCharOffset(font, dragHit.element().text(), dragHit.localX());
+                    int offset = estimateCharOffset(dragHit.element(), font, dragHit.localX());
                     sel.updateWithinNode(sel.anchorNodeId(), offset, dragHit.element().text());
                     return true;
                 }
@@ -450,10 +490,26 @@ public class EnderScreenDelegate implements SessionInput.Host {
         return false;
     }
 
+    /**
+     * 次の解放でクリックを合成しない（押下状態の解除は通常どおり行う）。
+     * 画面側が押下をドラッグ操作として扱った場合、解放位置の要素へクリックが届かないようにする。
+     */
+    public void suppressNextClick() {
+        this.suppressNextClick = true;
+    }
+
     public void handleMouseReleased(double webX, double webY, int button, WebDragDropController.DropCallback onWebDrop) {
+        boolean synthesizeClick = !suppressNextClick;
+        suppressNextClick = false;
+        if (suppressNextRelease) {
+            suppressNextRelease = false;
+            activeSceneId = "";
+            lastClickSink = SessionInput.ClickSink.NONE;
+            return;
+        }
         activeSceneId = "";
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
-        session.input().release(webX, webY, button, true, lastClickSink);
+        session.input().release(webX, webY, button, synthesizeClick, lastClickSink);
         lastClickSink = SessionInput.ClickSink.NONE;
         dragDropController.handleRelease(sessionId, webX, webY, onWebDrop);
     }
@@ -462,7 +518,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session == null) return false;
         return session.input().scroll(webX, webY, scrollX, scrollY,
-                Screen.hasControlDown(), Screen.hasShiftDown(), Screen.hasAltDown(), this);
+                safeHasControlDown(), safeHasShiftDown(), safeHasAltDown(), this);
     }
 
     public boolean handleCharTyped(char codePoint, int modifiers, BiConsumer<String, String> onInputChanged) {
@@ -503,6 +559,31 @@ public class EnderScreenDelegate implements SessionInput.Host {
         return textareaEditor.isEditing() ? KeyboardMode.TEXTAREA_EDITING : KeyboardMode.SINGLE_LINE_INPUT;
     }
 
+
+    private static boolean safeHasControlDown() {
+        try {
+            return Screen.hasControlDown();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean safeHasShiftDown() {
+        try {
+            return Screen.hasShiftDown();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean safeHasAltDown() {
+        try {
+            return Screen.hasAltDown();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private HtmlNode keyboardEventTarget() {
         SessionContext session = ClientWebManager.getSession(sessionId);
         String focusedId = focusNavigator.focusedId();
@@ -513,9 +594,9 @@ public class EnderScreenDelegate implements SessionInput.Host {
     private UIEvents.Keyboard dispatchKeyEvent(String type, int keyCode, int modifiers) {
         HtmlNode target = keyboardEventTarget();
         if (target == null) return null;
-        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0 || Screen.hasControlDown();
-        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || Screen.hasShiftDown();
-        boolean alt = (modifiers & GLFW.GLFW_MOD_ALT) != 0 || Screen.hasAltDown();
+        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0 || safeHasControlDown();
+        boolean shift = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || safeHasShiftDown();
+        boolean alt = (modifiers & GLFW.GLFW_MOD_ALT) != 0 || safeHasAltDown();
         boolean meta = (modifiers & GLFW.GLFW_MOD_SUPER) != 0;
         return ClientWebManager.getOrCreateSession(sessionId).input()
                 .keyEvent(type, target, keyCode, ctrl, shift, alt, meta);
@@ -531,6 +612,30 @@ public class EnderScreenDelegate implements SessionInput.Host {
                                     BiConsumer<String, String> onInputChanged,
                                     BiConsumer<String, String> onInputSubmitted,
                                     ClientDomEventDispatcher.TriActionCallback onWebAction) {
+        if (selectWidget.isOpen()) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                selectWidget.close();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_UP) {
+                selectWidget.moveHighlight(-1);
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DOWN) {
+                selectWidget.moveHighlight(1);
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
+                selectWidget.confirmHighlight((baseId, chosenVal) -> {
+                    commitValue(baseId, chosenVal, onInputChanged);
+                });
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_TAB) {
+                selectWidget.close();
+            }
+        }
+
         SessionContext session = ClientWebManager.getSession(sessionId);
         UIEvents.Keyboard keyDown = dispatchKeyEvent("keydown", keyCode, modifiers);
         if (keyDown != null && keyDown.isDefaultPrevented()) {
@@ -538,7 +643,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         if (keyCode == GLFW.GLFW_KEY_TAB && !textareaEditor.isEditing()) {
-            boolean reverse = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || Screen.hasShiftDown();
+            boolean reverse = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 || safeHasShiftDown();
             return focusNavigator.cycleSequentialFocus(screen, reverse, candidate -> {
                 applyFocusCandidate(screen, candidate);
             });
@@ -547,6 +652,9 @@ public class EnderScreenDelegate implements SessionInput.Host {
         switch (keyboardMode()) {
             case TEXTAREA_EDITING -> {
                 String baseId = textareaEditor.activeBaseId();
+                if (keyCode == GLFW.GLFW_KEY_SPACE) {
+                    return true;
+                }
                 String inputType = SessionInput.editingInputType(keyCode, modifiers, true);
                 SessionInput input = ClientWebManager.getOrCreateSession(sessionId).input();
                 if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
@@ -556,7 +664,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                     input.commitTextEdit(baseId, textareaEditor.getValue(baseId), null, inputType != null ? inputType : "insertText");
                     return true;
                 }
-                if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
+                if (isInventoryKey(keyCode, scanCode)) return true;
             }
             case SINGLE_LINE_INPUT -> {
                 String activeId = session != null ? session.activeInputId() : "";
@@ -573,13 +681,16 @@ public class EnderScreenDelegate implements SessionInput.Host {
                     if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
                     return true;
                 }
+                if (keyCode == GLFW.GLFW_KEY_SPACE) {
+                    return true;
+                }
                 String inputType = SessionInput.editingInputType(keyCode, modifiers, false);
                 if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
                 if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
                     input.commitTextEdit(baseId, this.inputHost.getValue(), null, inputType != null ? inputType : "insertText");
                     return true;
                 }
-                if (blockInventoryKey && Minecraft.getInstance().options.keyInventory.matches(keyCode, scanCode)) return true;
+                if (isInventoryKey(keyCode, scanCode)) return true;
             }
             case NAVIGATION -> { }
         }
@@ -615,6 +726,15 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         return false;
+    }
+
+    private static boolean isInventoryKey(int keyCode, int scanCode) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            return mc != null && mc.options != null && mc.options.keyInventory != null && mc.options.keyInventory.matches(keyCode, scanCode);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private boolean dispatchActivateToNode(HtmlNode node,
@@ -746,6 +866,22 @@ public class EnderScreenDelegate implements SessionInput.Host {
         dragDropController.clear();
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session != null) session.setActivePressedId("");
+    }
+
+    /**
+     * 画面が表示から外れたとき（{@code Screen#removed()}）に呼ぶ。
+     *
+     * <p>ESC による {@code onClose} だけでなく、サーバー側からのコンテナクローズや
+     * 別画面への差し替えでも呼ばれるため、Headless State の閲覧者解除はここで行う。</p>
+     */
+    public void onScreenRemoved() {
+        SessionContext session = ClientWebManager.getSession(sessionId);
+        if (session == null || !session.isHeadlessState()) return;
+        try {
+            ClientScreenInteractionManager.sendToServer(UiActionC2SPacket.close(sessionId));
+        } catch (Exception ignored) {
+            // 切断処理中で接続が無い場合。サーバー側はログアウトで閲覧者を外す
+        }
     }
 
     public static class WebDevTools {
@@ -884,7 +1020,16 @@ public class EnderScreenDelegate implements SessionInput.Host {
             tag.putString("EventName", "rpc");
             tag.putString("ActionName", actionName != null ? actionName : "");
             tag.putString("Value", value != null ? String.valueOf(value) : "");
-            ClientScreenInteractionManager.sendToServer(new WebActionC2SPacket(this.sessionId, "ui_event", tag));
+
+            SessionContext session = ClientWebManager.getSession(this.sessionId);
+            if (session != null && session.isHeadlessState()) {
+                String cleanAction = actionName != null && actionName.startsWith("server:")
+                        ? actionName.substring(7)
+                        : (actionName != null ? actionName : "");
+                ClientScreenInteractionManager.sendToServer(new UiActionC2SPacket(this.sessionId, cleanAction, tag));
+            } else {
+                ClientScreenInteractionManager.sendToServer(new WebActionC2SPacket(this.sessionId, "ui_event", tag));
+            }
         }
 
         public boolean dispatch(String action) {
@@ -937,26 +1082,59 @@ public class EnderScreenDelegate implements SessionInput.Host {
             int targetW = currentVirtualW;
             int targetH = currentVirtualH;
 
+            double guiScale = guiScale();
+            SessionContext session = ClientWebManager.getSession(sessionId);
             if (fullscreenResponsive) {
-                float aspect = (screenH > 0) ? ((float) screenW / (float) screenH) : (16.0f / 9.0f);
-                targetW = Math.max(854, Math.round(480 * aspect));
-                targetH = Math.max(480, Math.round(targetW / aspect));
+                // ブラウザと同じく、ビューポート（CSS px）= 実ピクセル ÷ デバイスピクセル比（OS の拡大率 × ズーム）。
+                // 以前は 854×480 を下限にした固定の大きさを画面いっぱいに引き伸ばしていた
+                var viewport = LayoutMetrics.DeviceViewport.of(
+                        (int) Math.round(screenW * marginRatio * guiScale), (int) Math.round(screenH * marginRatio * guiScale),
+                        LayoutMetrics.DeviceViewport.devicePixelRatio(osContentScale(), EnderFrameBuiltInConfig.uiZoomPercent));
+                targetW = viewport.cssWidth();
+                targetH = viewport.cssHeight();
+            }
 
-                if (currentVirtualW != targetW || currentVirtualH != targetH) {
-                    SessionContext session = ClientWebManager.getSession(sessionId);
-                    if (session != null && session.document() != null) {
-                        session.recomputeLayout(targetW, targetH);
-                    }
+            float scaleX = (screenW * marginRatio) / Math.max(1, targetW);
+            float scaleY = (screenH * marginRatio) / Math.max(1, targetH);
+            float scale = Math.min(scaleX, scaleY);
+            if (session != null && session.document() != null) {
+                // 1 CSS px が実際に何ピクセルで描かれるか（@media (resolution) の値）
+                session.setDevicePixelRatio((float) (scale * guiScale));
+                if (fullscreenResponsive && (currentVirtualW != targetW || currentVirtualH != targetH)) {
+                    // その場で作り直さず予約だけする。ウィンドウをつかんで広げている間は毎フレーム大きさが変わるので、
+                    // 描画キューが 1 フレーム 1 回にまとめ、重い文書では間引いて反映する
+                    session.requestResize(targetW, targetH);
                 }
             }
 
             this.virtualWidth = targetW;
             this.virtualHeight = targetH;
-            float scaleX = (screenW * marginRatio) / Math.max(1, targetW);
-            float scaleY = (screenH * marginRatio) / Math.max(1, targetH);
-            this.guiScaleFactor = Math.min(scaleX, scaleY);
+            this.guiScaleFactor = scale;
             this.offsetX = Math.round((screenW - targetW * this.guiScaleFactor) / 2.0f);
             this.offsetY = Math.round((screenH - targetH * this.guiScaleFactor) / 2.0f);
+        }
+
+        /**
+         * OS の画面の拡大率（Windows の「拡大/縮小」、macOS の Retina など）。ブラウザの devicePixelRatio の元になる値。
+         * GLFW はウィンドウのある画面ごとの値を返す。取れないときは 1。
+         */
+        private static float osContentScale() {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return 1.0f;
+            try (org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush()) {
+                java.nio.FloatBuffer x = stack.mallocFloat(1);
+                java.nio.FloatBuffer y = stack.mallocFloat(1);
+                org.lwjgl.glfw.GLFW.glfwGetWindowContentScale(mc.getWindow().getWindow(), x, y);
+                float scale = x.get(0);
+                return Float.isFinite(scale) && scale > 0 ? scale : 1.0f;
+            } catch (RuntimeException | LinkageError e) {
+                return 1.0f;
+            }
+        }
+
+        private static double guiScale() {
+            Minecraft mc = Minecraft.getInstance();
+            return mc != null && mc.getWindow() != null ? mc.getWindow().getGuiScale() : 1.0;
         }
 
         public int virtualWidth() { return virtualWidth; }
@@ -1038,10 +1216,40 @@ public class EnderScreenDelegate implements SessionInput.Host {
         public record SelectOption(String value, String label) {}
         private String openSelectBaseId = "";
         private int popupX, popupY, popupW;
+        private int highlightedIndex = -1;
         private final List<SelectOption> options = new ArrayList<>();
 
         public boolean isOpen() { return !openSelectBaseId.isEmpty() && !options.isEmpty(); }
         public String openSelectBaseId() { return openSelectBaseId; }
+        public int highlightedIndex() { return highlightedIndex; }
+
+        public void setHighlightedIndex(int index) {
+            if (index >= 0 && index < options.size()) {
+                this.highlightedIndex = index;
+            }
+        }
+
+        public void moveHighlight(int delta) {
+            if (options.isEmpty()) return;
+            if (highlightedIndex < 0) highlightedIndex = 0;
+            else highlightedIndex = Math.floorMod(highlightedIndex + delta, options.size());
+        }
+
+        public boolean confirmHighlight(BiConsumer<String, String> onSelected) {
+            if (!isOpen() || highlightedIndex < 0 || highlightedIndex >= options.size()) return false;
+            String chosenVal = options.get(highlightedIndex).value();
+            String baseId = openSelectBaseId;
+            close();
+            if (onSelected != null) onSelected.accept(baseId, chosenVal);
+            return true;
+        }
+
+        public boolean isWithinPopup(double webX, double webY) {
+            if (!isOpen()) return false;
+            int itemH = 18;
+            int totalH = options.size() * itemH + 2;
+            return webX >= popupX && webX <= popupX + popupW && webY >= popupY && webY <= popupY + totalH;
+        }
 
         public void open(String baseId, DisplayItem selectEl, HtmlNode virtualRoot) {
             if (baseId.equals(openSelectBaseId)) {
@@ -1065,12 +1273,24 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 this.popupX = selectEl.x();
                 this.popupY = selectEl.y() + selectEl.height() + 2;
                 this.popupW = Math.max(selectEl.width(), 90);
+                this.highlightedIndex = -1;
+                String currentVal = getCurrentValue(virtualRoot);
+                for (int i = 0; i < options.size(); i++) {
+                    if (options.get(i).value().equals(currentVal)) {
+                        this.highlightedIndex = i;
+                        break;
+                    }
+                }
+                if (this.highlightedIndex == -1) {
+                    this.highlightedIndex = 0;
+                }
             }
         }
 
         public void close() {
             this.openSelectBaseId = "";
             this.options.clear();
+            this.highlightedIndex = -1;
         }
 
         public boolean handleClick(double webX, double webY, BiConsumer<String, String> onSelected) {
@@ -1109,10 +1329,11 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 SelectOption opt = options.get(i);
                 int iy = popupY + 1 + i * itemH;
                 boolean hov = webX >= popupX && webX <= popupX + popupW && webY >= iy && webY < iy + itemH;
+                boolean isHighlighted = (i == highlightedIndex) || hov;
                 boolean sel = opt.value().equals(currentVal);
-                if (hov) guiGraphics.fill(popupX + 1, iy, popupX + popupW - 1, iy + itemH, 0xFF45475A);
+                if (isHighlighted) guiGraphics.fill(popupX + 1, iy, popupX + popupW - 1, iy + itemH, 0xFF45475A);
                 else if (sel) guiGraphics.fill(popupX + 1, iy, popupX + popupW - 1, iy + itemH, 0xFF313244);
-                guiGraphics.drawString(font, opt.label(), popupX + 6, iy + 5, sel ? 0xFF89B4FA : 0xFFCDD6F4, false);
+                guiGraphics.drawString(font, opt.label(), popupX + 6, iy + 5, (isHighlighted || sel) ? 0xFF89B4FA : 0xFFCDD6F4, false);
             }
             pose.popPose();
         }

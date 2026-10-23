@@ -3,18 +3,18 @@
 <div class="markdown-alert-title">Note</div>
 <p>このページは <code>data/enderframelib/enderframe_ui/guidebook.md</code> に配置された <strong>標準Markdown (CommonMark / GFM)</strong> ファイルから自動的にセマンティックHTML5へ変換・描画されています。</p>
 </blockquote>
-<h2 id="1-web標準-html5-css3-準拠機能一覧">1. Web標準 (HTML5 / CSS3) 準拠機能一覧</h2>
+<h2 id="1-web標準-html-css-dom-準拠機能一覧">1. Web標準 (HTML / CSS / DOM) 準拠機能一覧</h2>
 <table>
 <thead>
 <tr><th style="text-align:left;">フェーズ</th><th style="text-align:left;">カテゴリ</th><th style="text-align:center;">準拠するWeb標準仕様</th><th style="text-align:left;">主な要素・属性・構文</th></tr>
 </thead>
 <tbody>
-<tr><td style="text-align:left;"><strong>Phase 1</strong></td><td style="text-align:left;">セマンティックフォーム</td><td style="text-align:center;">W3C HTML5 Forms</td><td style="text-align:left;"><code>&lt;form&gt;</code>, <code>&lt;fieldset&gt;</code>, <code>&lt;legend&gt;</code>, <code>&lt;details&gt;</code>, <code>&lt;summary&gt;</code>, <code>&lt;label for&gt;</code>, <code>&lt;output&gt;</code></td></tr>
-<tr><td style="text-align:left;"><strong>Phase 1</strong></td><td style="text-align:left;">レシピビューア連携</td><td style="text-align:center;">W3C Landmarks / <code>data-*</code></td><td style="text-align:left;"><code>&lt;aside&gt;</code>, <code>&lt;dialog open&gt;</code>, <code>data-dropzone="item"</code>, <code>data-item</code></td></tr>
-<tr><td style="text-align:left;"><strong>Phase 2</strong></td><td style="text-align:left;">カスタムフォント</td><td style="text-align:center;">CSS Fonts Level 3</td><td style="text-align:left;"><code>@font-face</code>, <code>font-family: 'minecraft:alt', 'minecraft:uniform'</code></td></tr>
-<tr><td style="text-align:left;"><strong>Phase 2</strong></td><td style="text-align:left;">拡張セレクタ＆色空間</td><td style="text-align:center;">Selectors Level 3 / Color 3</td><td style="text-align:left;"><code>hsl()</code>, <code>hsla()</code>, <code>:nth-child(even)</code>, <code>[attr^="val"]</code>, <code>@media</code></td></tr>
-<tr><td style="text-align:left;"><strong>Phase 2</strong></td><td style="text-align:left;">宣言的リアクティブDOM</td><td style="text-align:center;">HTML5 Custom <code>data-*</code></td><td style="text-align:left;"><code>data-model</code>, <code>data-bind</code>, <code>data-if</code>, <code>data-for</code>, <code>data-i18n</code></td></tr>
-<tr><td style="text-align:left;"><strong>Phase 3</strong></td><td style="text-align:left;">Markdown & 空間ナビ</td><td style="text-align:center;">GFM / W3C <code>tabindex</code></td><td style="text-align:left;"><code>&lt;table&gt;</code>, <code>&lt;blockquote&gt;</code>, <code>tabindex</code>, <code>Tab</code> / 矢印キー移動</td></tr>
+<tr><td style="text-align:left;"><strong>R1 / R2</strong></td><td style="text-align:left;">ライブDOM＆イベント</td><td style="text-align:center;">DOM Standard / UI Events</td><td style="text-align:left;"><code>appendChild</code>, <code>classList</code>, <code>addEventListener</code>, <code>click</code>, <code>beforeinput</code></td></tr>
+<tr><td style="text-align:left;"><strong>R2</strong></td><td style="text-align:left;">セマンティックフォーム</td><td style="text-align:center;">HTML Forms</td><td style="text-align:left;"><code>&lt;form&gt;</code>, <code>&lt;fieldset&gt;</code>, <code>&lt;legend&gt;</code>, <code>&lt;details&gt;</code>, <code>&lt;summary&gt;</code>, <code>&lt;label for&gt;</code>, <code>&lt;output&gt;</code></td></tr>
+<tr><td style="text-align:left;"><strong>R3 / H1</strong></td><td style="text-align:left;">宣言的リアクティブDOM</td><td style="text-align:center;">HTML <code>data-*</code></td><td style="text-align:left;"><code>data-model</code>, <code>data-bind</code>, <code>data-if</code>, <code>data-for</code>, <code>data-i18n</code>, <code>{{key}}</code></td></tr>
+<tr><td style="text-align:left;"><strong>R4</strong></td><td style="text-align:left;">モダンCSS</td><td style="text-align:center;">Cascade 5 / Selectors 4 / Color 4</td><td style="text-align:left;"><code>@layer</code>, <code>@container</code>, <code>:has()</code>, <code>oklch()</code>, <code>color-mix()</code>, CSS ネスト</td></tr>
+<tr><td style="text-align:left;"><strong>R5</strong></td><td style="text-align:left;">差分レイアウト</td><td style="text-align:center;">CSS Box Model / Overflow</td><td style="text-align:left;">スクロール・ドラッグ・リサイズの近道、<code>overflow-y: auto</code></td></tr>
+<tr><td style="text-align:left;"><strong>R7</strong></td><td style="text-align:left;">システムフォント</td><td style="text-align:center;">CSS Fonts 4</td><td style="text-align:left;"><code>font-family: sans-serif</code>, <code>font-weight</code>, <code>font-kerning</code>, <code>@font-face</code></td></tr>
 </tbody>
 </table>
 <hr />
@@ -24,11 +24,11 @@
 <li class="task-list-item"><input type="checkbox" disabled checked /> <span><img src="item:minecraft:diamond" alt="Diamond" data-item="minecraft:diamond" style="width:16px;height:16px;vertical-align:middle;" /> <strong>ダイヤモンド (<code>item:minecraft:diamond</code>)</strong> のインライン描画とJEI連携</span></li>
 <li class="task-list-item"><input type="checkbox" disabled checked /> <span><img src="item:minecraft:netherite_ingot" alt="Netherite Ingot" data-item="minecraft:netherite_ingot" style="width:16px;height:16px;vertical-align:middle;" /> <strong>ネザライトインゴット (<code>item:minecraft:netherite_ingot</code>)</strong> の表示</span></li>
 <li class="task-list-item"><input type="checkbox" disabled checked /> <span><img src="item:minecraft:golden_apple" alt="Golden Apple" data-item="minecraft:golden_apple" style="width:16px;height:16px;vertical-align:middle;" /> <strong>金のリンゴ (<code>item:minecraft:golden_apple</code>)</strong> の表示</span></li>
-<li class="task-list-item"><input type="checkbox" disabled /> <span>カスタムTTFフォント (<code>@font-face</code>) のリソースパック追加テスト</span></li>
+<li class="task-list-item"><input type="checkbox" disabled /> <span>SVG・Canvas 2D の置換要素 (R8)</span></li>
 </ul>
 <blockquote class="markdown-alert markdown-alert-tip" role="note">
 <div class="markdown-alert-title">Tip</div>
-<p>ゲーム内で <kbd>F12</kbd> キーを押すと <strong>DevTools インスペクタ</strong> が起動し、マージン・パディング・計算済みスタイルをリアルタイムに確認できます。<kbd>F5</kbd> キーでホットリロード、<kbd>Tab</kbd> キーまたは矢印キーでフォーカス移動が可能です。</p>
+<p>GUI画面で <kbd>F12</kbd> キーを押すと <strong>簡易インスペクタ</strong> が開き、ポインタの下の要素のタグ・id・class・矩形・バインディング属性を確認できます。<kbd>F5</kbd> キーで文書の再読み込み、<kbd>Tab</kbd> キーまたは矢印キーでフォーカス移動が可能です。</p>
 </blockquote>
 <h2 id="3-サンプルhtml5コード">3. サンプルHTML5コード</h2>
 <pre class="md-pre"><code class="language-html" data-syntax="html">&lt;form class="mc-panel"&gt;

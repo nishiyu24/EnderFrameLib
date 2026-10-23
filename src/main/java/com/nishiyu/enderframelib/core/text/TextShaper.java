@@ -37,6 +37,15 @@ public final class TextShaper {
     /** 行末に置けない文字（行末禁則）。 */
     private static final String NO_BREAK_AFTER = "「『（［｛〈《([{<$¥";
 
+    /**
+     * 折り返し判定で「入る」とみなす誤差（Chrome の LayoutUnit の 1 単位 = 1/64px）。
+     *
+     * 何が壊れていたか: 語ごとの送り幅を float で足した値が、全文を 1 回で測った max-content を
+     * 1e-5px ほど上回り、内容幅ちょうどの箱（flex アイテムなど）で最後の語が次の行へ落ちていた。
+     * Chrome は幅を 1/64px 単位で持つのでこの差は生じない。
+     */
+    public static final float WRAP_TOLERANCE = 1f / 64f;
+
     private TextShaper() {}
 
     // ==========================================
@@ -193,9 +202,9 @@ public final class TextShaper {
         /** 断片を現在行に足す。入らなければ行を確定してから足す。 */
         void append(String segment, int offset) {
             float trimmedWidth = widthOf(stripTrailingBlanks(segment));
-            if (bounded && lineWidth + trimmedWidth > available) {
+            if (bounded && lineWidth + trimmedWidth > available + WRAP_TOLERANCE) {
                 boolean breakAll = style.wordBreak() == WordBreak.BREAK_ALL;
-                boolean tooLongAlone = trimmedWidth > available;
+                boolean tooLongAlone = trimmedWidth > available + WRAP_TOLERANCE;
                 boolean canSplit = breakAll || style.breakLongWords();
 
                 if (canSplit && (breakAll || tooLongAlone)) {
@@ -246,14 +255,24 @@ public final class TextShaper {
             float ascent = face.ascent(style.font());
             float descent = face.descent(style.font());
             float height = Math.max(style.lineHeightPx(), 0);
-            // CSS の half-leading: 行高と文字の高さの差を上下に等分する
-            float halfLeading = (height - (ascent + descent)) / 2f;
-            lines.add(new ShapedLine(text, widthOf(text), halfLeading + ascent, height, start, end, ellipsized));
+            lines.add(new ShapedLine(text, widthOf(text), leadingAbove(height, ascent, descent) + ascent, height, start, end, ellipsized));
         }
 
         float widthOf(String text) {
             return text.isEmpty() ? 0 : face.advance(text, style.font());
         }
+    }
+
+    /**
+     * 行の高さと文字の高さの差（leading）のうち、文字の上に置く分（CSS 2.2 §10.8.1 の half-leading）。
+     * 半分を整数のピクセルに切り捨て、残りを下に置く（Chrome の CalculateLeadingSpace と同じ。Arial 16px の
+     * 行の高さ 18px なら上 0px・下 1px で、行の上端からベースラインまでは 14px）。
+     *
+     * 何が壊れていたか: 以前は上下に 0.5px ずつ分けていたので、文字とチェックボックスなどのベースラインが
+     * Chrome より 0.5px 下にあり、行の高さも 0.5px ずれることがあった。
+     */
+    public static float leadingAbove(float lineHeight, float ascent, float descent) {
+        return (float) Math.floor((lineHeight - (ascent + descent)) / 2f);
     }
 
     private static String stripTrailingBlanks(String text) {

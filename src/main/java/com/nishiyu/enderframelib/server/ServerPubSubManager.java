@@ -258,7 +258,7 @@ public class ServerPubSubManager {
      * 失敗が呼び出し元の処理を壊してよい操作ではない。</p>
      */
     @ApiStatus.Internal
-    static final class ServerPacketSender {
+    public static final class ServerPacketSender {
 
         private ServerPacketSender() {}
 
@@ -268,7 +268,7 @@ public class ServerPubSubManager {
          *
          * @return 実際に送ったら true
          */
-        static boolean send(@Nullable ServerPlayer player, @Nullable CustomPacketPayload payload) {
+        public static boolean send(@Nullable ServerPlayer player, @Nullable CustomPacketPayload payload) {
             if (player == null || payload == null) return false;
             if (player.hasDisconnected()) return false;
 

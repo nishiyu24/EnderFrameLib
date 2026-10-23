@@ -15,7 +15,7 @@
 
 | | |
 |---|---|
-| コーパス | `src/main/resources/assets/enderframelib/preview/fidelity/cases/*.html`（索引は `cases.txt`） |
+| コーパス | `src/main/resources/assets/enderframelib/preview/fidelity/cases/*.html`（索引は `cases.txt`。138 ケース） |
 | ブラウザ側の期待値 | `src/test/resources/fidelity/expected/*.txt` |
 | 台帳（機械可読） | `src/test/resources/fidelity/known-divergences.txt` |
 | 比較 | `WebFidelityTest`（幾何は許容誤差 ±0.5px、描画順は完全一致、計算値は文字列の完全一致） |
@@ -81,6 +81,22 @@ W6 で ua.css を HTML 標準の既定値に置き換えたときに全ケース
 F2 で**フォント指標に依存しないテキストの幾何**が入った。
 行送り（`line-height` が長さ指定のとき）・強制改行の行数・`white-space: pre` の
 行分割は、グリフの送り幅に左右されないのでブラウザと直接突き合わせられる。
+コーパスはいまも字幅に依存しない書き方を守る（下の「コーパスを書くときの約束」）。
+
+### コーパスの外でブラウザと突き合わせているもの
+
+コーパス（id 付き要素の矩形・描画順・計算値）とは別に、次のテストが Chrome（Windows）の実測を期待値に持つ。
+システムの書体で組むものは Windows でだけ走り、Chrome が使った書体が無い環境では該当の行を飛ばす。
+
+| テスト | 期待値 | 比べるもの |
+|---|---|---|
+| `ChromeTextMetricsParityTest` | `src/test/resources/fonts/chrome-win-ja-text-metrics*.txt` | システムの書体での文字列の幅と縦の寸法（書体・太さ 100〜900・斜体・16 / 13px・総称ファミリ・字単位の代替、詰めの有無） |
+| `ShowcaseChromeParityTest` | `src/test/resources/showcase-chrome/showcase-*.txt` | `showcase.html` の要素の矩形（854×480・1366×768・1920×1080・2560×1440） |
+| `ShowcaseWebComparisonTest` | テスト内の実測値 | 854×480 の字幅に依存しない幾何と、字幅の違う書体での重なり・はみ出しの無さ |
+| `ToggleBaselineTest` | `src/test/resources/inline-chrome/` | チェックボックス・ラジオ・range を含む行の高さと位置 |
+| `FieldsetLegendTest` | `src/test/resources/fieldset-chrome/` | `legend` を枠線に重ねる配置 |
+| `HtmlTreeConstructionTest` | テスト内の木 | HTML のツリー構築（下記） |
+| WPT の採用ケース | `src/test/resources/wpt/manifest.json` | DOM・UI Events・CSS の振る舞い（38 ケース。dom 22・uievents 4・css 12、台帳 0 行） |
 
 矩形のコーパスの外で、**HTML のツリー構築**もブラウザと突き合わせている（W7）。
 `HtmlTreeConstructionTest` の各ケースは、入力を Edge 155 の `DOMParser`（文書）と innerHTML（断片。文脈は
@@ -92,14 +108,17 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 
 測れていないのは次の 2 つ。
 
-- **グリフの送り幅に依存する幾何。** 折り返し位置・省略位置・中央寄せの offset・
-  `line-height: normal` の値は、エンジンが Minecraft のビットマップフォント、
-  ブラウザが OS のフォントで測るため原理的に一致しない。
-  同じ土台に乗せる手段が無いので、コーパスには入れない
-  （`font-size` の換算根拠は下の「意図的に違うもの」を参照）。
-- **操作感。** 状態・入力・アニメーションは別の軸で、ここでは測っていない。
+- **コーパスでのグリフの送り幅に依存する幾何。** テキストは既定でシステムの書体（`SystemFonts`）で組むので、
+  Windows では上の表のテストが Chrome と同じ書体で比べている。ただしコーパスは OS をまたいで回すため
+  字幅に依存させず、Minecraft の書体（`minecraft:*` と `@font-face`）で組む文字はブラウザと原理的に一致しない
+  （下の「意図的に違うもの」）。
+- **操作感。** 状態・入力・アニメーションは別の軸で、ここでは測っていない（`AnimationTestSiteParityTest` は
+  幾何・スタイルの読み込み・アニメーションの指定の解決までを見る）。
 
 ## 意図的に違うもの（台帳に載せない差）
+
+以下は `font-family` が Minecraft の書体に解決されたとき（`minecraft:default` などを指定したときと、
+`@font-face` で登録した書体）だけの話。システムの書体で組む既定の文字には当てはまらない。
 
 - **`font-size` の意味。** Minecraft のフォントは素のサイズで ascent 7px /
   descent 2px（行高 9px）。これを **1em = 9px** と見なしている
@@ -115,13 +134,14 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 
 ## 既知の差異（25 件）
 
-R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
+ほとんどは R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
 ケースが宣言した `opacity` / `transform` / `color` など）と
 スクロール量（`scrollWidth` / `scrollHeight` / `clientWidth` / `clientHeight`）を
 ブラウザ実測と突き合わせるようにしたことで、新たに観測された差異。
 計算値はいずれも完全一致しており（`computed-values` が `opacity` / `transform` / `color` を固定する）、
 差はスクロールバーの有無によるクライアント幅やリストマーカーの行高、
 相殺されたマージンの scrollHeight への算入に由来する。
+`pseudo-lang-dir-defined#e.x` だけは R4 で足したケースで見えた差（`direction` が未対応）。
 
 ### R5（CSSOM / CSSOM View・スクロール）
 - `margin-collapse-bottom#parent.scrollHeight`: ブラウザ 20 / エンジン 50（相殺されたマージンが親の外へ出たときの scrollHeight の扱い）
@@ -158,6 +178,13 @@ R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizin
 
 ## 解消済みの差異
 
+- **R0 / R4（追加 15 ケース、台帳 1 行）**: 計算値の列を比べる `computed-values`（R0）と、現代の CSS の 14 ケース（R4）
+  （`layer-order` / `layer-important` / `layer-nested-anonymous` / `nesting-basic` / `nesting-specificity` /
+  `container-width` / `container-named-units` / `has-selector` / `nth-child-of` / `pseudo-form-state` /
+  `pseudo-lang-dir-defined` / `math-level4` / `units-modern` / `property-registered`）を足した。
+  `@layer`・CSS ネスト・`@container`・`:has()`・フォームの状態の擬似クラス・`:lang()` / `:dir()` / `:defined`・
+  数学関数 Level 4・新しい単位・`@property` はブラウザと一致し、残ったのは `direction: rtl` の配置の 1 行
+  （上の R7）だけ。コーパスは 123 → 138 ケース。
 - **W11（0 行）**: 台帳の行は無かった（装飾を持つインラインボックスの矩形・確定した高さの %・強制改行の
   shrink-to-fit・column wrap・`justify-content` の物理的な向きを測るケースが無かった）。8 ケース
   （`inline-box-edges` / `inline-box-wrap` / `inline-box-vertical-align` / `shrink-to-fit-line-breaks` /
@@ -264,3 +291,8 @@ R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizin
   スタッキングコンテキストが中の `z-index` を閉じ込めること、コンテキストの中の負の `z-index` が親の背景より
   上に描かれること、位置指定されていないブロックの `z-index` が効かないこと、`opacity` / `transform` が
   コンテキストを作ること、`transform` を持つ箱が絶対配置の包含ブロックになること
+- **computed / modern-css**: 計算値の `opacity` / `transform` / `color`、`@layer` の順序と `!important` の反転・
+  入れ子と無名の層、CSS ネストとその詳細度、`@container` の幅の問い合わせと名前付きコンテナ・コンテナ単位、
+  `:has()`、`:nth-child(An+B of S)`、フォームの状態の擬似クラス、`:lang()` / `:dir()` / `:defined` の照合、
+  `round()` / `mod()` / 三角関数、`lh` / `rlh` / `cap` / `svh` などの単位、`@property` で登録した型付きの
+  カスタムプロパティ

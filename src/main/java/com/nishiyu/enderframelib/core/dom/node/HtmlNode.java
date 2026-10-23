@@ -204,6 +204,7 @@ public class HtmlNode implements Node {
             String oldVal = this.text;
             this.text = textContent != null ? textContent : "";
             MutationObserverManager.queueCharacterData(this, oldVal);
+            notifyDomChanged(null);
             return;
         }
         // 要素やフラグメントの場合: 既存の子を全削除し、非空なら Text ノードを1つ追加
@@ -213,6 +214,9 @@ public class HtmlNode implements Node {
         }
         if (textContent != null && !textContent.isEmpty()) {
             HtmlText txtNode = new HtmlText(textContent);
+            // 描画要素の id と親子の連鎖（mc-parent）は節の id で引くので、空の id を作らない。
+            // 空のままだと同じく空の id の節どうしが取り違えられ、祖先の transform などが掛からない
+            if (!getId().isEmpty()) txtNode.setId(getId() + "_txt");
             appendChild(txtNode);
         }
     }
@@ -262,6 +266,7 @@ public class HtmlNode implements Node {
 
         // MutationObserver 通知
         MutationObserverManager.queueChildList(this, List.of(newChild), Collections.emptyList(), prevSibling, nextSibling);
+        notifyDomChanged(null);
 
         return newChild;
     }
@@ -283,6 +288,7 @@ public class HtmlNode implements Node {
 
         // MutationObserver 通知
         MutationObserverManager.queueChildList(this, Collections.emptyList(), List.of(targetChild), prevSibling, nextSibling);
+        notifyDomChanged(null);
 
         return targetChild;
     }
@@ -385,6 +391,18 @@ public class HtmlNode implements Node {
     }
 
     /** この節が属する木の根が {@link HtmlDocument} ならそれ。切り離された木では null。 */
+    /**
+     * DOM の操作（{@code setAttribute}・{@code appendChild}・{@code textContent} など）で、この節が変わったことを
+     * つながっている文書に知らせる。文書は対話状態に汚れの印を付け、持ち主のセッションに再描画を求める。
+     * サーバーの変異もクライアントのスクリプトも同じ入口を通るので、どちらから変えても同じ無効化になる。
+     *
+     * @param attributeName 属性の変化ならその名前、子の並び・文字の変化なら null
+     */
+    void notifyDomChanged(@Nullable String attributeName) {
+        HtmlDocument doc = connectedDocument();
+        if (doc != null) doc.nodeChanged(this, attributeName);
+    }
+
     private HtmlDocument connectedDocument() {
         HtmlNode top = this;
         while (top.parent != null) top = top.parent;
@@ -837,6 +855,7 @@ public class HtmlNode implements Node {
         }
 
         MutationObserverManager.queueAttributes(this, name, oldVal);
+        notifyDomChanged(name);
     }
 
     public void removeAttribute(String name) {
@@ -848,6 +867,7 @@ public class HtmlNode implements Node {
         }
 
         MutationObserverManager.queueAttributes(this, name, oldVal);
+        notifyDomChanged(name);
     }
 
     public boolean toggleAttribute(String name) {
@@ -900,6 +920,12 @@ public class HtmlNode implements Node {
 
     public void removeStyleProperty(String property) {
         setStyleProperty(property, null);
+    }
+
+    /** インライン {@code style} 属性に宣言された値を返す。未宣言なら {@code null}。 */
+    public @Nullable String getStyleProperty(String property) {
+        if (property == null || property.trim().isEmpty()) return null;
+        return parseInlineStyleMap().get(property.trim().toLowerCase());
     }
 
     private Map<String, String> parseInlineStyleMap() {
@@ -982,6 +1008,7 @@ public class HtmlNode implements Node {
 
     public void setInnerHTML(String html) {
         DomUtils.setInnerHTML(this, html);
+        notifyDomChanged(null);
     }
 
     public String getInnerHTML() {

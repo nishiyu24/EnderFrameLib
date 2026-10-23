@@ -180,6 +180,13 @@ public final class AtRuleProcessor {
             case "height", "min-height", "max-height" -> {
                 return compare(name, env.height(), parseLength(value));
             }
+            // Media Queries 4 §6.3: 1 CSS px あたりのデバイスピクセル（dppx / x / dpi / dpcm）
+            case "resolution", "min-resolution", "max-resolution" -> {
+                return compare(name, env.resolution(), parseResolution(value));
+            }
+            case "-webkit-device-pixel-ratio", "-webkit-min-device-pixel-ratio", "-webkit-max-device-pixel-ratio" -> {
+                return compare(name.substring("-webkit-".length()), env.resolution(), parseNumber(value));
+            }
             case "aspect-ratio", "min-aspect-ratio", "max-aspect-ratio" -> {
                 double ratio = parseRatio(value);
                 double actual = env.height() > 0 ? (double) env.width() / env.height() : Double.NaN;
@@ -222,6 +229,7 @@ public final class AtRuleProcessor {
         return switch (name) {
             case "width" -> env.width() > 0;
             case "height" -> env.height() > 0;
+            case "resolution", "-webkit-device-pixel-ratio" -> env.resolution() > 0;
             case "color", "hover", "any-hover", "pointer", "any-pointer" -> true;
             case "prefers-reduced-motion" -> env.prefersReducedMotion();
             default -> false;
@@ -233,7 +241,8 @@ public final class AtRuleProcessor {
         return evaluateRange(f, name -> switch (name) {
             case "width" -> env.width();
             case "height" -> env.height();
-            default -> parseLength(name);
+            case "resolution" -> env.resolution();
+            default -> isResolution(name) ? parseResolution(name) : parseLength(name);
         });
     }
 
@@ -280,6 +289,31 @@ public final class AtRuleProcessor {
         if (name.startsWith("min-")) return actual >= limit;
         if (name.startsWith("max-")) return actual <= limit;
         return actual == limit;
+    }
+
+    private static boolean isResolution(String v) {
+        String s = v.trim().toLowerCase(java.util.Locale.ROOT);
+        return s.endsWith("dppx") || s.endsWith("dpi") || s.endsWith("dpcm") || s.matches("[+-]?[0-9.]+x");
+    }
+
+    /** 解像度（dppx に直す）。1dppx = 96dpi、1dpcm = 96 / 2.54 dpi。 */
+    private static double parseResolution(String v) {
+        String s = v.trim().toLowerCase(java.util.Locale.ROOT);
+        double scale = 1;
+        if (s.endsWith("dppx")) s = s.substring(0, s.length() - 4);
+        else if (s.endsWith("dpcm")) { s = s.substring(0, s.length() - 4); scale = 2.54 / 96.0; }
+        else if (s.endsWith("dpi")) { s = s.substring(0, s.length() - 3); scale = 1 / 96.0; }
+        else if (s.endsWith("x")) s = s.substring(0, s.length() - 1);
+        else return Double.NaN;
+        return parseNumber(s) * scale;
+    }
+
+    private static double parseNumber(String v) {
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            return Double.NaN;
+        }
     }
 
     /** メディアクエリの長さ。em / rem は初期値の 16px（CSS の規定でルートの font-size ではない）。 */

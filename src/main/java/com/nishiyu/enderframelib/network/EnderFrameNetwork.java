@@ -6,18 +6,6 @@ import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.jetbrains.annotations.ApiStatus;
-import io.netty.handler.codec.DecoderException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.NotNull;
 
 @ApiStatus.Internal
 public class EnderFrameNetwork {
@@ -48,6 +36,16 @@ public class EnderFrameNetwork {
                 PubSubUpdateS2CPacket.STREAM_CODEC,
                 PubSubUpdateS2CPacket::handle
         );
+        registrar.playToClient(
+                OpenUiS2CPacket.TYPE,
+                OpenUiS2CPacket.STREAM_CODEC,
+                OpenUiS2CPacket::handle
+        );
+        registrar.playToClient(
+                StateDeltaS2CPacket.TYPE,
+                StateDeltaS2CPacket.STREAM_CODEC,
+                StateDeltaS2CPacket::handle
+        );
 
         registrar.playToServer(
                 WebActionC2SPacket.TYPE,
@@ -59,6 +57,10 @@ public class EnderFrameNetwork {
                 SubscribeC2SPacket.STREAM_CODEC,
                 ServerPayloadHandler::handleSubscribe
         );
+        registrar.playToServer(
+                UiActionC2SPacket.TYPE,
+                UiActionC2SPacket.STREAM_CODEC,
+                ServerPayloadHandler::handleUiAction
+        );
     }
-
-    }
+}

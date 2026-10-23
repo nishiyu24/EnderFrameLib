@@ -63,6 +63,11 @@ public class LayoutBox {
      */
     public boolean isOutsideMarker = false;
     /**
+     * fieldset の描画される legend（HTML §15.3.13 の rendered legend）。通常フローに入らず、
+     * fieldset の上の枠線に重ねて置かれる。{@link BoxTreeBuilder} が決める。
+     */
+    public boolean isRenderedLegend = false;
+    /**
      * この箱がブロック整形コンテキスト（BFC）を作るか。測定のたびに {@link BoxMeasurer} が決める。
      * BFC を作る箱は子のマージンを自分の外へ貫通させない。
      */
@@ -89,6 +94,11 @@ public class LayoutBox {
     public float[] collapsedBorders;
     /** 内容を縦にずらす量（px）。表のセルの {@code vertical-align} を表のエンジンが入れる。 */
     float contentOffsetY = 0;
+    /**
+     * fieldset の legend が上の枠線よりはみ出す分（px）。内容はこの分だけ下がり、上の装飾の一部として
+     * {@link #verticalDecoration()} に入る。{@link BoxMeasurer} が legend を測ったあとに入れる。
+     */
+    float legendSpill = 0;
     /** 相殺する前の上下マージン（px）。親子のマージン相殺は解き直すたびにここから始める。 */
     public float ownMarginTop, ownMarginBottom;
 
@@ -180,6 +190,15 @@ public class LayoutBox {
     /** 入力欄（input / textarea）の {@code ::placeholder} の算出スタイル。規則が掛からなければ null。描画側が文字色を読む。 */
     public ComputedStyle placeholderStyle = null;
 
+    /**
+     * 疑似要素（{@code ::before} / {@code ::after} / {@code ::marker} / {@code ::placeholder}）のスタイルを解いたときの
+     * ビューポート（幅と高さを 1 つにまとめた値）。差分レイアウトは、持ち主のスタイルのキャッシュが有効でこの値も同じなら
+     * 疑似要素を解き直さない（疑似要素だけがビューポート単位を使っている場合に備えて持つ）。
+     */
+    public long pseudoStylesViewport = Long.MIN_VALUE;
+    /** {@link #displayText} を作ったときの節の文字（同じなら {@link #refreshStyle} は作り直さない）。 */
+    private String displaySource;
+
     public float x, y, w, h;
     public String displayText = "";
 
@@ -247,6 +266,7 @@ public class LayoutBox {
      */
     public void updateStyle(ComputedStyle newStyle) {
         this.style = newStyle;
+        this.displaySource = node.text;
         this.display = Display.of(node, newStyle).blockified(newStyle);
 
         // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
@@ -261,17 +281,32 @@ public class LayoutBox {
         this.zIndex = (int) newStyle.number(CssProperty.Z_INDEX, 0f);
     }
 
+    /** 算出スタイルも節の文字も前回と同じなら何もしない {@link #updateStyle}（差分レイアウトで箱を使い回すとき用）。 */
+    public void refreshStyle(ComputedStyle newStyle) {
+        if (newStyle == style && java.util.Objects.equals(node.text, displaySource)) return;
+        updateStyle(newStyle);
+    }
+
     public float horizontalDecoration() { return pL + pR + bL + bR; }
 
     /** 親の内容ボックスの幅（% の基準）。親が無ければ 0。 */
     float parentInnerWidth() { return parent == null ? 0 : Math.max(0, parent.w - parent.horizontalDecoration()); }
-    public float verticalDecoration() { return pT + pB + bT + bB; }
+    public float verticalDecoration() { return pT + pB + bT + bB + legendSpill; }
 
-    /** 通常フローに参加する子（絶対配置・display:none・外側のマーカーを除く）。 */
+    /** fieldset の描画される legend（{@link #isRenderedLegend}）。無ければ null。 */
+    public LayoutBox renderedLegend() {
+        for (LayoutBox c : children) {
+            if (c.isRenderedLegend) return c.display.isNone() ? null : c;
+        }
+        return null;
+    }
+
+    /** 通常フローに参加する子（絶対配置・display:none・外側のマーカー・fieldset の legend を除く）。 */
     public List<LayoutBox> getFlowChildren() {
         List<LayoutBox> list = new ArrayList<>();
         for (LayoutBox c : children) {
-            if (!c.isAbsolute && !c.isOutsideMarker && !"none".equals(c.style.getOrDefault(CssProperty.DISPLAY, "block"))) {
+            if (!c.isAbsolute && !c.isOutsideMarker && !c.isRenderedLegend
+                    && !"none".equals(c.style.getOrDefault(CssProperty.DISPLAY, "block"))) {
                 list.add(c);
             }
         }
@@ -302,11 +337,18 @@ public class LayoutBox {
         // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
         String minWidthDecl = style.get(CssProperty.MIN_WIDTH);
         if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)) {
-            return style.length(CssProperty.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            // 枠線ボックスは padding と border より細くならない（min-width: 0 でも装飾の分は残る）
+            float min = style.length(CssProperty.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            return style.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
         }
 
         String tag = node.tag;
-        if (tag.equals("input") || tag.equals("select") || tag.equals("button") || tag.equals("progress")) {
+        if (tag.equals("select")) {
+            // 閉じた select の幅は最も長い選択肢と開閉の印（描画は「ラベル ▾」）。
+            // 何が壊れていたか: 以前は選択肢によらず 90px で、指定幅のある select が flex で縮みすぎていた
+            return selectLabelWidth(ctx) + horizontalDecoration();
+        }
+        if (tag.equals("input") || tag.equals("progress")) {
             float inputW = 90;
             String type = node.attrs.getOrDefault("type", "text");
             if (tag.equals("input") && (type.equals("checkbox") || type.equals("radio"))) {
@@ -326,6 +368,14 @@ public class LayoutBox {
             FontFace face = ctx.faceFor(style);
             FontStyle font = textStyle.font();
             float maxWordW = 0;
+            if (!textStyle.whiteSpace().wraps()) {
+                // nowrap / pre は行の中で折り返さないので、行全体が 1 つの塊
+                for (String line : this.displayText.split("\n", -1)) {
+                    String l = textStyle.whiteSpace().collapses() ? line.strip() : line;
+                    if (!l.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(l, font));
+                }
+                return maxWordW;
+            }
             for (String segment : TextShaper.segments(this.displayText, textStyle.wordBreak())) {
                 String word = segment.strip();
                 if (!word.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(word, font));
@@ -337,11 +387,66 @@ public class LayoutBox {
             return this.w > 0 ? this.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
         }
 
-        float max = 0;
+        // 折り返さない行方向の flex コンテナは、アイテムの寄与の和と間隔（CSS Flexbox §9.9.1）。
+        // 何が壊れていたか: 以前は常に最大値を返していたので、flex アイテムになった flex コンテナ
+        // （検索欄のような横並び）が自動の最小寸法を下回って潰れ、中身が箱の外へはみ出していた
+        boolean sumItems = display != null && display.inner() == Display.Inner.FLEX && isSingleLineRowFlex();
+        float max = 0, sum = 0;
+        int count = 0;
         for (LayoutBox c : getFlowChildren()) {
-            max = Math.max(max, c.getMinContentWidth(ctx) + c.mL + c.mR);
+            float contribution = c.minContentContribution(ctx) + c.mL + c.mR;
+            max = Math.max(max, contribution);
+            sum += contribution;
+            count++;
         }
-        return max + horizontalDecoration();
+        // fieldset の legend は内容と別に置かれるが、fieldset の幅は legend より細くならない
+        LayoutBox legend = renderedLegend();
+        float legendW = legend == null ? 0 : legend.minContentContribution(ctx) + legend.ownInlineMargins(ctx);
+        if (sumItems) return Math.max(legendW, sum + columnGap * Math.max(0, count - 1)) + horizontalDecoration();
+        return Math.max(legendW, max) + horizontalDecoration();
+    }
+
+    /**
+     * 親の min-content に足し込む幅（CSS Sizing 3 §5.1）。{@code width} が確定した長さならその幅、
+     * そうでなければ min-content。百分率は親の幅に依存して循環するので auto と同じに扱う。
+     */
+    private float minContentContribution(LayoutContext ctx) {
+        String width = style.get(CssProperty.WIDTH);
+        if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
+            return getMinContentWidth(ctx);
+        }
+        float v = style.length(CssProperty.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        float borderBox = style.isBorderBox() ? Math.max(v, horizontalDecoration()) : v + horizontalDecoration();
+        String minWidth = style.get(CssProperty.MIN_WIDTH);
+        if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
+            float min = style.length(CssProperty.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            borderBox = Math.max(borderBox, style.isBorderBox() ? min : min + horizontalDecoration());
+        }
+        return borderBox;
+    }
+
+    private boolean isSingleLineRowFlex() {
+        String direction = style.getOrDefault(CssProperty.FLEX_DIRECTION, "row").trim();
+        String wrap = style.getOrDefault(CssProperty.FLEX_WRAP, "nowrap").trim();
+        return direction.startsWith("row") && "nowrap".equals(wrap);
+    }
+
+    /** 閉じた select に描くラベル（選択肢の文字列と「 ▾」）の最大幅。 */
+    private float selectLabelWidth(LayoutContext ctx) {
+        FontFace face = ctx.faceFor(style);
+        FontStyle font = ctx.fontStyleFor(style);
+        float max = face.advance(" ▾", font);
+        for (HtmlNode option : node.children) {
+            if (!"option".equals(option.tag) && !"optgroup".equals(option.tag)) continue;
+            List<HtmlNode> options = "optgroup".equals(option.tag) ? option.children : List.of(option);
+            for (HtmlNode o : options) {
+                if (!"option".equals(o.tag)) continue;
+                String label = o.attrs.containsKey("label") ? o.attrs.get("label") : o.getTextContent();
+                label = label == null ? "" : label.strip().replaceAll("\\s+", " ");
+                max = Math.max(max, face.advance(label + " ▾", font));
+            }
+        }
+        return max;
     }
 
     /** 寸法が変わるため、測定パスの先頭でメモ化を捨てる。 */
@@ -366,7 +471,231 @@ public class LayoutBox {
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
         for (LayoutBox child : children) child.parent = this;
+        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) return;
+        MEASUREMENTS_COMPUTED.increment();
         BoxMeasurer.measure(this, space, ctx);
+        recordMeasurement(space, ctx);
+    }
+
+    private static final java.util.concurrent.atomic.LongAdder MEASUREMENTS_COMPUTED =
+            new java.util.concurrent.atomic.LongAdder();
+
+    /** これまでに使い回さずに計算した measure の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
+    public static long measurementsComputed() {
+        return MEASUREMENTS_COMPUTED.sum();
+    }
+
+    // ==========================================
+    // 差分レイアウト（measure の結果の再利用）
+    // ==========================================
+    //
+    // Chromium の LayoutNG の「レイアウト結果のキャッシュ」と同じ考え方。箱の measure は、
+    //   入力: 制約（ConstraintSpace）・親が決めた寸法（override*）・ビューポート・書体
+    //   中身: 自分の算出スタイル・表示する文字・属性・子の並び（とその子孫）
+    // だけで決まる。前回の measure から入力も中身も変わっていなければ、箱と子孫の状態は前回の measure の
+    // 直後のまま使える。汚れの判定は「誰が変えたか」（サーバーの変異・クライアントの操作）ではなく、
+    // 前回測ったときの署名と今の状態を比べて決めるので、どの経路で DOM が変わっても同じ結果になる。
+
+    /** 外から測り直しを強いる世代（画像の読み込み・書体の登録など、箱の外の資源が変わったとき）。 */
+    private static final java.util.concurrent.atomic.AtomicInteger MEASUREMENT_EPOCH =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** 全ての箱の measure の結果を捨てさせる（次の差分レイアウトは全部測り直す）。 */
+    public static void invalidateAllMeasurements() {
+        MEASUREMENT_EPOCH.incrementAndGet();
+    }
+
+    /** 前回の measure の結果が今の状態に当てはまるか。子孫の measure や外からの書き換えで false になる。 */
+    private boolean measurementValid = false;
+    /** 前回の measure の後に、自分か子孫の中身が変わった（{@link #markLayoutChanges} が決める）。 */
+    private boolean layoutChanged = true;
+    private ConstraintSpace measuredSpace;
+    private float measuredOverrideW = Float.NaN, measuredOverrideH = Float.NaN;
+    private Viewport measuredViewport;
+    private FontResolver measuredFonts;
+    private IntrinsicSizeResolver measuredIntrinsics;
+    private int measuredEpoch;
+    private long measuredRun = -1;
+    /** measure を終えたときの自分の寸法。親が後から書き換えた（stretch・表の行の高さ）なら使い回さない。 */
+    private float measuredW, measuredH, measuredMT, measuredMR, measuredMB, measuredML;
+    /** measure を終えたときの中身の署名。 */
+    private ComputedStyle measuredStyle;
+    private ComputedStyle measuredPlaceholderStyle;
+    private String measuredText;
+    private int measuredContentHash;
+    private boolean measuredOutsideMarker, measuredRenderedLegend;
+    /**
+     * 表（か表の中の箱）として測ったことがあるか。表のエンジンは中の箱へ枠線の分担・縦の揃えを直接書き込むので、
+     * 一度でも表として測った箱は使い回さない。再スタイルが前回の木の算出スタイルをその場で書き換えるため、
+     * 今の display だけでは前回表だったかが分からない（クライアントの class 変更がこの経路を通る）。
+     */
+    private boolean everLaidOutAsTable;
+    private LayoutBox[] measuredChildren;
+
+    private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx) {
+        return measurementValid
+                && !layoutChanged
+                && (ctx.firstPass() || measuredRun != ctx.layoutRun())
+                && measuredEpoch == MEASUREMENT_EPOCH.get()
+                && floatSpace == null
+                && collapsedBorders == null
+                && space.equals(measuredSpace)
+                && sameLength(overrideWidth, measuredOverrideW)
+                && sameLength(overrideHeight, measuredOverrideH)
+                && ctx.viewport().equals(measuredViewport)
+                && ctx.fonts() == measuredFonts
+                && ctx.intrinsicResolver() == measuredIntrinsics
+                && w == measuredW && h == measuredH
+                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML;
+    }
+
+    private static boolean sameLength(float a, float b) {
+        return Float.isNaN(a) ? Float.isNaN(b) : a == b;
+    }
+
+    /**
+     * measure を通らずに箱の中身を組み直した（{@link BoxMeasurer#resolveFlexibleHeights}）。この箱と祖先の
+     * 前回の measure の結果は使わせない。
+     */
+    void invalidateMeasurement() {
+        for (LayoutBox b = this; b != null; b = b.parent) b.measurementValid = false;
+    }
+
+    private void recordMeasurement(ConstraintSpace space, LayoutContext ctx) {
+        measuredSpace = space;
+        measuredOverrideW = overrideWidth;
+        measuredOverrideH = overrideHeight;
+        measuredViewport = ctx.viewport();
+        measuredFonts = ctx.fonts();
+        measuredIntrinsics = ctx.intrinsicResolver();
+        measuredEpoch = MEASUREMENT_EPOCH.get();
+        measuredRun = ctx.layoutRun();
+        measuredW = w;
+        measuredH = h;
+        measuredMT = mT;
+        measuredMR = mR;
+        measuredMB = mB;
+        measuredML = mL;
+        measuredStyle = style;
+        measuredPlaceholderStyle = placeholderStyle;
+        measuredText = displayText;
+        measuredContentHash = contentHash();
+        measuredOutsideMarker = isOutsideMarker;
+        measuredRenderedLegend = isRenderedLegend;
+        everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
+        measuredChildren = children.toArray(new LayoutBox[0]);
+        layoutChanged = false;
+        measurementValid = true;
+        // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
+        // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す
+        for (LayoutBox p = parent; p != null; p = p.parent) p.measurementValid = false;
+    }
+
+    /**
+     * measure が読む、スタイルと子の箱以外の中身（属性・フォーム部品の中身）。
+     * style / class はカスケードを通して算出スタイルに出るので数えない（描画だけの変化で測り直さないため）。
+     */
+    private int contentHash() {
+        if (node == null) return 0;
+        int hash = 1;
+        for (java.util.Map.Entry<String, String> attr : node.attrs.entrySet()) {
+            String key = attr.getKey();
+            if ("style".equals(key) || "class".equals(key)) continue;
+            hash = 31 * hash + key.hashCode();
+            hash = 31 * hash + java.util.Objects.hashCode(attr.getValue());
+        }
+        // 文字を子の箱に持たないフォーム部品は、DOM の中身から測る
+        String tag = node.tag;
+        if ("textarea".equals(tag) || "select".equals(tag) || "option".equals(tag)) {
+            hash = 31 * hash + node.getTextContent().hashCode();
+        }
+        return hash;
+    }
+
+    /**
+     * layout（位置決め）の前に、前回の layout が残した配置の結果を新しく作った箱と同じ状態に戻す。
+     * layout がたどらない箱（行に入らなくなった箱・インラインの中のブロックなど）には前回の位置・行の断片・
+     * スクロール範囲が残り、描画がそれを読んでしまう（新しく作った箱なら初期値）。measure はこれらを読まないので、
+     * 差分レイアウトが使い回す measure の結果には影響しない。
+     */
+    public static void resetPlacements(LayoutBox box) {
+        box.inlineFragments.clear();
+        box.x = 0;
+        box.y = 0;
+        box.staticX = Float.NaN;
+        box.staticY = Float.NaN;
+        box.scrollWidth = 0;
+        box.scrollHeight = 0;
+        box.descendantOverflowRight = 0;
+        box.descendantOverflowBottom = 0;
+        for (LayoutBox child : box.children) resetPlacements(child);
+    }
+
+    /**
+     * 前回の箱の木から、DOM の節ごとの箱を集める（差分レイアウトで使い回す候補）。
+     * 表とその中は集めない: 表のエンジンが中の箱へ枠線の分担・縦の揃え・行の高さを直接書き込むので、作り直す方が確か。
+     */
+    public static java.util.Map<HtmlNode, LayoutBox> reusableBoxes(LayoutBox root) {
+        java.util.Map<HtmlNode, LayoutBox> out = new java.util.IdentityHashMap<>();
+        if (root != null) collectReusableBoxes(root, out);
+        return out;
+    }
+
+    private static void collectReusableBoxes(LayoutBox box, java.util.Map<HtmlNode, LayoutBox> out) {
+        if (box.isAnonymous || !isReusableShape(box)) return;
+        out.putIfAbsent(box.node, box);
+        for (LayoutBox child : box.elementChildren) collectReusableBoxes(child, out);
+    }
+
+    /** 前回も今も表と関わりの無い箱か（使い回してよい形か）。 */
+    static boolean isReusableShape(LayoutBox box) {
+        return !isTableBox(box) && !box.everLaidOutAsTable && box.collapsedBorders == null;
+    }
+
+    /** 表か、表の中の箱（行・列・セル・行グループ・キャプション）か。 */
+    public static boolean isTableBox(LayoutBox box) {
+        return box.display.inner() == Display.Inner.TABLE || box.display.isTableInternal()
+                || box.display.inner() == Display.Inner.TABLE_CAPTION;
+    }
+
+    /** 描画だけに効くプロパティ（色など）以外が変わったか。片方だけ null なら変わった。 */
+    private static boolean affectsLayout(ComputedStyle before, ComputedStyle after) {
+        return com.nishiyu.enderframelib.core.css.StyleResolver.isLayoutAffectingChange(before, after);
+    }
+
+    /** 測ったときから中身（署名）が変わったか。一度も測っていない箱は変わったとみなす。 */
+    private boolean contentChangedSinceMeasurement() {
+        if (measuredStyle == null) return true;
+        if (style != measuredStyle && affectsLayout(measuredStyle, style)) return true;
+        if (placeholderStyle != measuredPlaceholderStyle
+                && affectsLayout(measuredPlaceholderStyle, placeholderStyle)) return true;
+        if (!java.util.Objects.equals(displayText, measuredText)) return true;
+        if (isOutsideMarker != measuredOutsideMarker || isRenderedLegend != measuredRenderedLegend) return true;
+        if (measuredChildren.length != children.size()) return true;
+        for (int i = 0; i < measuredChildren.length; i++) {
+            if (measuredChildren[i] != children.get(i)) return true;
+        }
+        return contentHash() != measuredContentHash;
+    }
+
+    /**
+     * 箱の木を組み直した後、measure の前に呼ぶ。前回の measure から中身が変わった箱と、その祖先に印を付ける。
+     * 中身の変わった箱の子にも印を付ける（子の measure は親の display・揃え・兄弟の並びを読むため）。
+     *
+     * @return この部分木のどこかが変わったか
+     */
+    public static boolean markLayoutChanges(LayoutBox root) {
+        return markLayoutChanges(root, false);
+    }
+
+    private static boolean markLayoutChanges(LayoutBox box, boolean parentChanged) {
+        boolean ownChange = box.contentChangedSinceMeasurement();
+        boolean changed = ownChange || parentChanged || !box.measurementValid;
+        for (LayoutBox child : box.children) {
+            changed |= markLayoutChanges(child, ownChange);
+        }
+        box.layoutChanged = changed;
+        return changed;
     }
 
     /** {@link #measure(ConstraintSpace, LayoutContext)} の制約を個別に渡す形（テストと HUD の入口）。 */
@@ -423,7 +752,7 @@ public class LayoutBox {
         float scrollY = ctx.scrollState().getScrollY(node);
 
         float innerX = this.x + pL + bL - scrollX;
-        float innerY = this.y + pT + bT - scrollY + contentOffsetY;
+        float innerY = this.y + pT + bT - scrollY + contentOffsetY + legendSpill;
 
         // 静的位置の既定は内容ボックスの原点。ブロックフローは通常フローの位置で上書きする
         for (LayoutBox child : children) {
@@ -440,10 +769,44 @@ public class LayoutBox {
             if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block"))) continue;
             if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
         }
+        LayoutBox legend = renderedLegend();
+        if (legend != null) placeRenderedLegend(legend, ctx);
 
         applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
         if (this.isSticky) applyStickyOffset(ctx);
         updateScrollExtent(scrollX, scrollY);
+    }
+
+    /**
+     * fieldset の legend を上の枠線に重ねて置く（HTML §15.3.13）。
+     *
+     * <ul>
+     *   <li>縦: border box を上の枠線の中央に置く。legend の方が高ければ fieldset の上端に揃え、
+     *       枠線は描画側が legend の中央へ下げる。上マージンは数えない（Chrome の実測）</li>
+     *   <li>横: 内容ボックスの左端から。{@code margin-left / margin-right: auto} で中央・右へ寄せる</li>
+     * </ul>
+     * スクロールしても動かない（スクロールするのは内容だけ）。
+     */
+    private void placeRenderedLegend(LayoutBox legend, LayoutContext ctx) {
+        float contentW = Math.max(0, w - horizontalDecoration());
+        boolean autoLeft = "auto".equals(legend.style.get(CssProperty.MARGIN_LEFT));
+        boolean autoRight = "auto".equals(legend.style.get(CssProperty.MARGIN_RIGHT));
+        float free = contentW - legend.w - (autoLeft ? 0 : legend.mL) - (autoRight ? 0 : legend.mR);
+        if (autoLeft && autoRight) {
+            legend.mL = Math.max(0, free / 2);
+        } else if (autoLeft) {
+            legend.mL = Math.max(0, free);
+        }
+        float top = this.y + Math.max(0, (bT - legend.h) / 2);
+        legend.layout(this.x + bL + pL, top - legend.mT, contentW, Math.max(0, h - verticalDecoration()), ctx);
+    }
+
+    /** auto を 0 とした左右のマージン（px）。 */
+    float ownInlineMargins(LayoutContext ctx) {
+        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        float l = "auto".equals(style.get(CssProperty.MARGIN_LEFT)) ? 0 : style.length(CssProperty.MARGIN_LEFT, 0, rootW, rootH);
+        float r = "auto".equals(style.get(CssProperty.MARGIN_RIGHT)) ? 0 : style.length(CssProperty.MARGIN_RIGHT, 0, rootW, rootH);
+        return l + r;
     }
 
     /**

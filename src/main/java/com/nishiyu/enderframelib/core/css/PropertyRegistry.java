@@ -211,6 +211,7 @@ public final class PropertyRegistry {
         layout("font-weight", "normal", true, ValueType.OTHER, true);
         keyword("font-style", CssKeywords.FontStyle.class, CssKeywords.FontStyle.NORMAL, true, Invalidation.LAYOUT);
         layout("font-variant", "normal", true, ValueType.KEYWORD, false);
+        layout("font-kerning", "auto", true, ValueType.KEYWORD, false);
         layout("line-height", "normal", true, ValueType.OTHER, true);
         shorthand("font", Invalidation.LAYOUT, ShorthandExpanders::font,
                 "font-style", "font-variant", "font-weight", "font-size", "line-height", "font-family");
@@ -226,6 +227,11 @@ public final class PropertyRegistry {
         layout("vertical-align", "baseline", false, ValueType.LENGTH_PERCENTAGE, true);
         keyword("text-overflow", CssKeywords.TextOverflow.class, CssKeywords.TextOverflow.CLIP, false, Invalidation.LAYOUT);
         paint("color", "black", true, ValueType.COLOR, true);
+        // フォームコントロールの強調色（CSS UI 4 §6.1）。auto は UA の既定の色
+        paint("accent-color", "auto", true, ValueType.OTHER, false);
+        // フォームコントロールの見た目（CSS UI 4 §7.1）。none 以外なら UA の部品の見た目で描く。-webkit- 付きは別名
+        layout("appearance", "none", false, ValueType.KEYWORD, false);
+        shorthand("-webkit-appearance", Invalidation.LAYOUT, v -> Map.of("appearance", v), "appearance");
         // CSS では text-decoration は継承しないが、装飾は子孫のテキストに伝播して描かれる。
         // 伝播の仕組みが無いので、ここでは継承で代用している（描画が子のテキストノードで読む）。
         paint("text-decoration", "none", true, ValueType.OTHER, false);

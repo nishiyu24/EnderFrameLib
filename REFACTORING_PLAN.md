@@ -6,34 +6,105 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 レイアウト → ディスプレイリスト → Minecraft 描画という本物のブラウザに近い
 パイプラインを自前実装したゲーム内 UI フレームワーク。
 
-この文書は**これから何をどの順でやるか**を書く。
+この文書は**これから何をどの順でやるか**と、その**現在地**を書く。
 旧計画（第 1 期〜第 4 期・フェーズ 1〜7 / F0〜F5 / W0〜W12）はここで閉じ、
-同じ領域の先行 MOD である **ApricityUI**（`AUI-snow/`）との比較から 1 から練り直した。
+同じ領域の先行 MOD である **ApricityUI**（外部リファレンス）との比較から 1 から練り直した。
 旧計画の各フェーズで何をしたかは git の履歴に残っている。この文書では「出発点」として要約するだけにする。
 
-- 差異の台帳は [FIDELITY.md](FIDELITY.md)
-- 規約（コメントの種類、ゴールデン更新、3 点セット）は [CONTRIBUTING.md](CONTRIBUTING.md)
-- 利用者から見える制約は [README.md](README.md) の "Not supported"
+- システムの全体像・層の規約・管理指標（M1〜M9）: [ARCHITECTURE.md](ARCHITECTURE.md)
+- 性能の基準値と実測: [BENCHMARK.md](BENCHMARK.md)
+- ブラウザとの差異の台帳: [FIDELITY.md](FIDELITY.md)
+- 規約（コメントの種類、ゴールデン更新、3 点セット）: [CONTRIBUTING.md](CONTRIBUTING.md)
+- 利用者から見える制約: [README.md](README.md) の "Not supported"
 
 ---
 
-## 現在地
+## 現在地（2026-10-24 時点）
+
+`./gradlew test` は 783 件・失敗 0。忠実度コーパス 138 ケース（台帳 25 行）、WPT 採用 38 ケース（台帳 0 行）。
+直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7 の実装と本文書群の整理が未コミットで載っている。
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
 | R0 | 測定の拡張（計算値・DOM の振る舞い・ディスプレイリスト・性能） | 完了 |
 | R1 | ライブ DOM | 完了 |
-| R2 | イベントとフォーム | 実装済み（残: `runClient` / `WebScreenGameTest` での実機観測・IME composition） |
-| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 実装済み（残: `runClient` / `WebScreenGameTest` での実機観測） |
-| R4 | CSS の構文・カスケード・値の現代化 | 未着手 |
-| R5 | インクリメンタル・パイプラインと CSSOM | 未着手 |
-| R6 | 描画の合成化（ディスプレイリスト・レイヤー・transform） | 未着手 |
-| R7 | テキストと国際化 | 未着手 |
+| R2 | イベントとフォーム | 完了（残: IME の composition、`runClient` での観測） |
+| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 完了（残: `runClient` / `WebScreenGameTest` での観測） |
+| T0〜T7 | 構造整理（セッション集約・入力一本化・M1〜M9 ラチェット） | 完了（[ARCHITECTURE.md](ARCHITECTURE.md) §7） |
+| H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（残: 更新パケットの縮小・`runClient` での観測） |
+| R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5） |
+| R5 | インクリメンタル・パイプラインと CSSOM | 一部（差分レイアウトと近道は完了。dirty ビット・CSSOM View は未着手） |
+| R6 | 描画の合成化 | 一部（SDF の角丸・グラデーション・角丸クリップ。transform・レイヤー合成は未着手） |
+| R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰め。改行・bidi・編集は未着手） |
 | R8 | 置換要素（SVG・Canvas 2D） | 未着手 |
-| R9 | レイアウトとパーサの残り | 未着手 |
-| R10 | 開発者ツール | 未着手 |
+| R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行） |
+| R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit） |
 
-### R0 の調査結果（2026-10-19 時点）
+### H0〜H4 — Headless State（2026-10-23〜24）
+
+**目的**: 機械 UI のような定型画面で、サーバーが HTML を解析して DOM を常駐させ、全木と変異を送るのをやめる。
+**達成**:
+- **H0**: 互換モード（サーバーが DOM を持つ `WebSession`）のパケット量とヒープを `server_baseline.txt` に固定した
+  （`PacketBandwidthTest`・`StateMemoryBenchmarkTest`）。
+- **H1**: `api/state/UIState`（Key-Value・dirty 追跡・閲覧者・アクション）とサーバー側の `server/state`
+  （`UIStateImpl` / `UIStateManager` が tick で flush し、ログアウト・ディメンション移動・停止で `EnderFrameServerState` から片付く）。
+  パケットは `OpenUiS2CPacket`（テンプレート ID + 初期状態）・`StateDeltaS2CPacket`（変わったキーだけ）・
+  `UiActionC2SPacket`（閲覧者の検査とレート制限）。値と NBT の変換は両側で使う `network/StateNbtConverter`。
+- **H2**: クライアントのテンプレート。`client/template/ClientTemplateManager` が `assets/<ns>/enderframe_ui/*.html` を読んで
+  キャッシュし、状態は `ReactiveStateStore` → `Bindings` で DOM に反映する。
+- **H3**: 機械向けの高水準 API。`EnderFrameAPI.createBlockEntityState` / `openUi` / `openBlockEntityUi`（インスタンス ID は
+  `block:x,y,z`）と、テンプレートの切り出し（`ParsedTemplate`）。
+- **H4**: 既存コードの移行用アダプタ `UIState.asSessionHandle()` / `WebSessionHandle.asUIState()`
+  （`UIStateSessionAdapter` / `WebSessionUIStateAdapter`）。
+- 測定（[BENCHMARK.md](BENCHMARK.md) §6）: 初回 4,548 → 100 bytes、単一更新 166 → 59 bytes、100 セッションのヒープ
+  約 35.6MB → 約 0.1MB、保持 DOM ノード 3,000 → 0。
+- 検証: `UIStateTest`・`UIStateManagerTest`・`MachineStateApiTest`・`MultiViewerStateSyncTest`・`MachineInstanceIsolationTest`・
+  `BackwardCompatibilityAdapterTest`・`HeadlessStateBandwidthAndMemoryTest`・`HeadlessStatePacketTest`・`HeadlessClientStateSyncTest`・
+  `ClientTemplateManagerTest`。`client/` が `server/` を参照しないことは `ArchitectureTest` が検査する。
+
+**残**:
+- 単一更新は目標の 30 bytes に届かない（インスタンス ID とキー名を毎回文字列で送る）。番号化を検討する。
+- `runClient` での観測（テンプレートの読み込み、複数閲覧者、ブロックの破壊での後始末）。
+
+### R4〜R10 の進捗
+
+**R4 — 達成**: CSS Syntax 3 のトークンとコンポーネント値（`CssSyntax`。値の正規表現での再パースを撤去）、CSS ネスト、
+`@layer`（入れ子・無名・`@import layer()`・`revert-layer`）、`@import supports()`、`@container`（`container-type` / `container-name`・
+`style()`・コンテナ単位）、`@property`（`CustomPropertyRegistration`）、セレクタ（`:has()`・`:nth-child(An+B of S)`・
+フォームの状態・`:lang()` / `:dir()` / `:defined` / `:target`・`::marker` / `::placeholder` / `::selection` の照合）、
+規則の id / class / tag での振り分け、キーワードの enum（`CssKeywords`）、型付きの `@keyframes`、色 Level 4 / 5
+（`ColorParser`）、radial / conic / repeating のグラデーションと補間のヒント（`Gradients`）、数学関数 Level 4・
+`lh` / `rlh` / `cap` / `sv*` などの単位、`@media (resolution)`。コーパスに modern-css の 14 ケースを足して一致
+（台帳は `direction` の 1 行だけ）。
+**R4 — 残**: `ch` / `ex` を書体の指標から決める（R7 の指標を読む。いまは 0.5em の `LIMITATION`）。
+`InvalidationSets` は組めるが再スタイルに使っていない（R5）。
+
+**R5 — 達成**: 差分レイアウト（`LayoutBox.measure` の再利用）、スクロール・ドラッグ・リサイズの近道
+（[BENCHMARK.md](BENCHMARK.md) §4・§5）。正しさは `IncrementalLayoutTest`・`IncrementalPipelineTest`・`ServerClientLayoutParityTest`。
+**R5 — 残**: 要素ごとの dirty ビットと `InvalidationSets` の接続、レイアウト境界と `contain`、transform / opacity の速い経路、
+`CssAnimator` の `PropertyRegistry` 駆動、CSSOM / CSSOM View（`getComputedStyle`・`getBoundingClientRect`・`scrollTo`・
+`ResizeObserver` など）、台帳の R5 の 11 行（スクロールバーの幅と相殺したマージンの scrollHeight）。
+
+**R6 — 達成**: 角丸・グラデーション・角丸の祖先クリップを 1 枚の四角形で描く SDF シェーダー（`WebSdfShader`・
+`RoundedRectRasterizer`）。GUI・ブロック面・手持ちアイテムで同じ経路。
+**R6 — 残**: `DisplayItem` の `RenderKeys`（文字列キーの描画メタ）の撤去、transform の関数と宣言順（いまは
+`DisplayListBuilder` の正規表現で translate / scale / rotate だけ）、FBO のレイヤー合成（opacity のグループ・`filter`・
+`mix-blend-mode`・`clip-path`・`mask`）、ガウスの `box-shadow`、楕円の角、旧 W12。
+
+**R7 — 達成**: システムの書体（`core/text/font`。OS の書体フォルダの一覧、CSS Fonts 4 §5.2 の照合、Chrome（Windows）の
+総称ファミリ、字単位の代替、GPOS / `kern` の詰め、Chrome と同じ縦の寸法）、デバイスピクセルでのラスタライズ
+（`OutlineTextRenderer`）、選択範囲のモデル（`TextSelection`）。`ChromeTextMetricsParityTest`・`ShowcaseChromeParityTest`・
+`GlyphRasterizationTest` が Chrome の実測と比べる。
+**R7 — 残**: 合字、`line-height: normal` での代替書体の指標、UAX #14 の改行、bidi と `direction`（台帳の 1 行）、
+`writing-mode`、Selection / Range API と `contenteditable`、IME の composition、台帳の R7 の 2 行。
+
+**R10 — 達成**: GUI 画面の F12 で、ホバーした要素のタグ・id・class・矩形・バインディング属性を重ねて出す簡易インスペクタ、
+F5 で文書の再読み込み。
+**R10 — 残**: DOM ツリーと計算値・マッチした規則の表示とライブ編集、リモートデバッグプロトコル、ファイル監視のホットリロード。
+
+### R0〜R3 の記録
+
+#### R0 の調査結果（2026-10-19 時点）
 
 **達成**: `FidelityDumper` / `WebFidelityTest` が `display` / `position` / `box-sizing` / `overflow` とスクロール量（`sw` / `sh` / `cw` / `ch`）を比較（期待値 138 件）。
 台帳 `known-divergences.txt` は 25 行で、すべて R4 / R5 / R7 / R9 のフェーズ付き。
@@ -54,7 +125,7 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
 - ディスプレイリストのゴールデンは R6 で効果ごとに増やす前提（変更なし）。
 - 検証: `./gradlew test` は 553 件・失敗 0（2026-10-20）。
 
-### R1〜R3 の調査結果（2026-10-19 時点）
+#### R1〜R3 の調査結果（2026-10-19 時点）
 
 `./gradlew test` は 437 件・失敗 0。R1〜R3 の変更は未コミット（作業ツリー差分 238 ファイル、直近コミットは W7）。
 
@@ -97,7 +168,7 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
 - `runClient` での観測（HUD を毎フレーム更新してパケットが出ないこと、サーバー駆動画面が従来どおり動くこと）と `gametest/WebScreenGameTest` の確認は未実施（ヘッドレスのテストまで）。
 - 再同期はサーバー所有のノードを作り直すため、ホバー・フォーカス・スクロールなどノードに紐づく状態は戻る（細かい更新は変異レコードで、ノードの同一性を保つ）。
 
-R3 を「完了」とする条件は `runClient` での観測。R4 以降には、R1〜R3 の残が片付くまで入らない。
+R3 を「完了」とする条件は `runClient` での観測としていた。実際には観測を残したまま、ヘッドレスのテストを完了条件に R4〜R7 と H0〜H4 を先に進めた（`runClient` での観測は各フェーズの残に持ち越している）。
 
 ---
 
@@ -126,6 +197,8 @@ R3 を「完了」とする条件は `runClient` での観測。R4 以降には�
 ---
 
 ## ApricityUI との比較
+
+この節は計画を練り直した時点（2026-10-19）の比較で、「EnderFrameLib の現状」の列は当時のもの（いまの到達点は上の「現在地」）。
 
 ApricityUI（以下 AUI）は Forge / NeoForge / Fabric の 8 ターゲットに対応する HTML / CSS / JS の UI MOD。
 `common/` 約 8.3 万行、テスト 1,049 件。以下のパスは
@@ -498,6 +571,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - **R6 は R4 の後**（型付きの値をディスプレイリストが読む）。R5 の速い経路（transform / opacity）は R6 の合成と合わせて完成する。
 - **R7 の TTF 描画は R6 と独立。** bidi と `writing-mode` は R9 のレイアウト変更とぶつかるので、同時に進めない。
 - **R8 は R6 の後**（Canvas と SVG はレイヤーとして合成する）。R9・R10 は R2 以降いつでも。
+- **H（Headless State）は R1〜R3 の上に独立して載る。** サーバーの状態とテンプレートの分離はパイプラインに触れないので、R4 以降と並行できる。互換モード（`WebSession`）は残し、両方を同じクライアントのパイプラインで描く。
 - **性能**: R1 の DOM 化で一時的に遅くなりうる。R0 のベンチで各段の前後を比べ、R5 までに今より速くする。
 - **破壊的変更の通知**: フェーズごとに README に移行メモを書き、`showcase.html`・`guidebook.md`・`config-form.css`・テーマを同じコミットで追従させる。
 
@@ -525,7 +599,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 
 - **JS エンジンと `<script>`**（方針 1）。DOM API は Java と KubeJS から使う。
 - **Shadow DOM とカスタム要素。** 部品化は `mc-*` の宣言的な要素（`CustomTagExpander`）と Java 側のコンポーネントで行う。
-- **Minecraft の既定フォントのグリフ形状に由来する差**（折り返し位置・省略位置・中央寄せの offset）。
-  TTF を使う文書は R7 で測れるようになるが、既定フォントは原理的に一致しないので台帳に載せない。根拠は FIDELITY.md の「意図的に違うもの」。
+- **Minecraft の書体（`minecraft:*` と `@font-face`）のグリフ形状に由来する差**（折り返し位置・省略位置・中央寄せの offset）。
+  既定のシステムの書体は R7 で Chrome と測れるようになったが、Minecraft の書体は原理的に一致しないので台帳に載せない。根拠は FIDELITY.md の「意図的に違うもの」。
 - **印刷・ページ分割**（`@page`・ページの断片化）。multicol に要る断片化だけ R9 で入れる。
 - **ネットワーク上の文書読み込み**（ナビゲーション・`history`・`fetch`）。文書はリソースパック・データパック・サーバのセッションから来る。

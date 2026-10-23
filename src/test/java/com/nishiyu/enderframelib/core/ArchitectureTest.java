@@ -67,8 +67,22 @@ public class ArchitectureTest {
     private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 0;
     /** M8: CSS 値を文字列で分割する自前の関数（2026-10-20 時点: 8）。 */
     private static final int M8_MAX_CSS_SPLIT_HELPERS = 8;
-    /** M9: トップレベルのファイル数（参考値。2026-10-21 時点: 127。SessionInput・EnderScreenHost を追加）。 */
-    private static final int M9_MAX_TOP_LEVEL_FILES = 176;
+    /**
+     * M9: トップレベルのファイル数（参考値。2026-10-21 時点: 127。SessionInput・EnderScreenHost を追加）。
+     * 2026-10-22: システムの書体で文字を測り描く仕組みとして +5（core/text/font の SystemFonts・LoadedFace・
+     * OutlineFontFace・KerningTable と client/renderer の OutlineTextRenderer）。一覧・照合・総称ファミリ・解決は
+     * SystemFonts に、FreeType の扱いは LoadedFace にまとめ、パッケージをまたいで使う型だけをトップレベルにした。
+     */
+    // 2026-10-23: Headless State フェーズ H1（Headless Server State）の導入に伴い +7。
+    // api/state/UIState, server/state/UIStateImpl, server/state/UIStateManager, StateNbtConverter（2026-10-24 に network/ へ移動）,
+    // network/OpenUiS2CPacket, network/StateDeltaS2CPacket, network/UiActionC2SPacket を追加。
+    // 2026-10-24: Headless State フェーズ H2（Headless State Client Template）の導入に伴い +1。
+    // client/template/ClientTemplateManager を追加。
+    // 2026-10-24: Headless State フェーズ H3（機械向け高水準 API とコンテナ連携）の導入に伴い +1。
+    // client/template/ParsedTemplate を追加（M7 準拠のためトップレベルへ切り出し）。
+    // 2026-10-24: Headless State フェーズ H4（後方互換性アダプタと古い二重経路の整理）の導入に伴い +2。
+    // server/state/UIStateSessionAdapter, server/state/WebSessionUIStateAdapter を追加。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 193;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {
@@ -113,7 +127,9 @@ public class ArchitectureTest {
             Paths.get("README.md"),
             Paths.get("CONTRIBUTING.md"),
             Paths.get("FIDELITY.md"),
-            Paths.get("REFACTORING_PLAN.md")
+            Paths.get("REFACTORING_PLAN.md"),
+            Paths.get("ARCHITECTURE.md"),
+            Paths.get("BENCHMARK.md")
     );
 
     /** S4 の入力経路。ここが増えたら入力の直し漏れがまた起きる。 */
@@ -157,6 +173,28 @@ public class ArchitectureTest {
                     + String.join("\n  ", violations)
                     + "\n依存が必要な場合は core/ 側にインターフェース（フック）を定義し、上位層から注入してください。");
         }
+    }
+
+    /**
+     * client/ は server/ を参照しない（import でも完全修飾名でも）。両側で使う型は network/ か common/ に置く。
+     *
+     * 何が壊れていたか: Headless State の NBT 変換（StateNbtConverter）が server/state にあり、
+     * クライアントのパケット処理が完全修飾名で server を参照していた。core の番人だけでは見えなかった。
+     */
+    @Test
+    public void testClientDoesNotDependOnServer() throws IOException {
+        Path client = MAIN.resolve("client");
+        assertTrue(Files.isDirectory(client), "client パッケージが見つかりません: " + client.toAbsolutePath());
+
+        List<String> violations = new ArrayList<>();
+        for (Path path : javaFiles(client)) {
+            if (Files.readString(path).contains("com.nishiyu.enderframelib.server.")) {
+                violations.add(mainRelative(path));
+            }
+        }
+        assertTrue(violations.isEmpty(),
+                "【アーキテクチャ違反】 client/ が server/ に依存しています。両側で使う型は network/ か common/ へ移してください:\n  "
+                        + String.join("\n  ", violations));
     }
 
     // ------------------------------------------------------------------

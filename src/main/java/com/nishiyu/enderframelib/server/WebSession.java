@@ -1,6 +1,9 @@
 package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.WebSessionHandle;
+import com.nishiyu.enderframelib.api.state.UIState;
+import com.nishiyu.enderframelib.server.state.WebSessionUIStateAdapter;
+import org.jetbrains.annotations.NotNull;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
@@ -20,7 +23,12 @@ import java.util.function.Consumer;
 import com.nishiyu.enderframelib.common.Document;
 
 /**
- * サーバー側セッションの実装。公開面は {@link WebSessionHandle}。
+ * サーバー側セッションの実装（Dual DOM / Ad-hoc Session 互換モード）。公開面は {@link WebSessionHandle}。
+ *
+ * <p>動的インライン HTML 画面（スクリプト実行 UI や HUD）向けの後方互換モードとして内部維持されます。
+ * 定型的な機械 UI などの状態同期には、サーバー側ヒープを圧迫しない
+ * {@link com.nishiyu.enderframelib.api.state.UIState} への移行が推奨されます。
+ * 本セッションに対しても {@link #asUIState()} を通じて Key-Value 状態操作を行うことができます。</p>
  */
 @ApiStatus.Internal
 public class WebSession implements WebSessionHandle {
@@ -28,7 +36,8 @@ public class WebSession implements WebSessionHandle {
 
     private final String sessionId;
     private final Consumer<WebSession> broadcastCallback;
-    private final UiDocumentCompiler uiParser = new UiDocumentCompiler();
+    private static final UiDocumentCompiler UI_PARSER = new UiDocumentCompiler();
+    private volatile UIState uiStateAdapter;
     private int width = 3 * DEFAULT_BLOCK_RESOLUTION;
     private int height = 4 * DEFAULT_BLOCK_RESOLUTION;
     private Document currentDocument;
@@ -87,7 +96,7 @@ public class WebSession implements WebSessionHandle {
     public void loadHtml(String html) {
         this.lastSource = new RenderSource(SourceType.STRING, html, "");
         this.currentCss = "";
-        this.currentDocument = uiParser.parseDocument(html, "", width, height);
+        this.currentDocument = UI_PARSER.parseDocument(html, "", width, height);
         indexDocument();
         requestReRender();
     }
@@ -96,7 +105,7 @@ public class WebSession implements WebSessionHandle {
     public void loadWithCss(String html, String css) {
         this.lastSource = new RenderSource(SourceType.STRING_WITH_CSS, html, css);
         this.currentCss = css != null ? css : "";
-        this.currentDocument = uiParser.parseDocument(html, css, width, height);
+        this.currentDocument = UI_PARSER.parseDocument(html, css, width, height);
         indexDocument();
         requestReRender();
     }
@@ -140,6 +149,10 @@ public class WebSession implements WebSessionHandle {
         if (broadcastCallback != null) broadcastCallback.accept(this);
     }
 
+    /**
+     * @deprecated Use {@link com.nishiyu.enderframelib.api.state.UIState#set(String, Object)} for reactive state updates.
+     */
+    @Deprecated
     public void patchElement(String elementId, Consumer<HtmlNode> domPatcher) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -262,6 +275,7 @@ public class WebSession implements WebSessionHandle {
     // ==========================================
 
     @Override
+    @Deprecated
     public void patchText(String elementId, String newText) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -272,6 +286,7 @@ public class WebSession implements WebSessionHandle {
     }
 
     @Override
+    @Deprecated
     public void patchAttribute(String elementId, String attrName, String attrValue, boolean remove) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -282,6 +297,7 @@ public class WebSession implements WebSessionHandle {
     }
 
     @Override
+    @Deprecated
     public void patchStyle(String elementId, String property, String value) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -292,6 +308,7 @@ public class WebSession implements WebSessionHandle {
     }
 
     @Override
+    @Deprecated
     public void patchClass(String elementId, String className, String mode) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -307,6 +324,7 @@ public class WebSession implements WebSessionHandle {
     }
 
     @Override
+    @Deprecated
     public void patchInnerHtml(String elementId, String htmlFragment) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -332,6 +350,18 @@ public class WebSession implements WebSessionHandle {
     public void sendMutations(java.util.List<com.nishiyu.enderframelib.network.DomMutationRecord> mutations) {
         if (mutations == null || mutations.isEmpty()) return;
         WebSessionManager.broadcastMutations(this.sessionId, mutations);
+    }
+
+    @Override
+    public @NotNull UIState asUIState() {
+        if (uiStateAdapter == null) {
+            synchronized (this) {
+                if (uiStateAdapter == null) {
+                    uiStateAdapter = new WebSessionUIStateAdapter(this);
+                }
+            }
+        }
+        return uiStateAdapter;
     }
 
     public enum SourceType {STRING, STRING_WITH_CSS, FILE, URL}

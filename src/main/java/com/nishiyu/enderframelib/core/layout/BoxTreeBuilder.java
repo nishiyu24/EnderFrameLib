@@ -53,14 +53,40 @@ public final class BoxTreeBuilder {
     /** 匿名ボックスの id の通し番号（持ち主ごと）。再レイアウトしても同じ id になるよう決定的に振る。 */
     private final Map<LayoutBox, Integer> anonymousCounts = new IdentityHashMap<>();
 
+    /**
+     * 前回の組み立てで作った匿名ボックスとマーカー（id ごと）。同じ id・同じ種類の箱を作るときは新しく作らずに使い回す。
+     * 箱が同じなら親の子の並びも前回と同じになり、差分レイアウトが前回の measure の結果を使い回せる。
+     * 同じ id が 2 つ以上あった（DOM の id の重複）ものは取り違えないよう使い回さない。
+     */
+    private final Map<String, LayoutBox> reusableGenerated = new java.util.HashMap<>();
+    private final java.util.Set<String> ambiguousGeneratedIds = new java.util.HashSet<>();
+
     private BoxTreeBuilder() {}
 
     /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。 */
     public static void build(LayoutBox root) {
         BoxTreeBuilder builder = new BoxTreeBuilder();
+        builder.collectReusableGenerated(root);
         builder.counters.apply(root);
         builder.buildBox(root);
         root.linkParents();
+    }
+
+    /** 前回の箱の木（{@link LayoutBox#children}）にある匿名ボックスとマーカーを集める。新しく作った木なら何も無い。 */
+    private void collectReusableGenerated(LayoutBox box) {
+        for (LayoutBox child : box.children) {
+            if (child.isAnonymous) {
+                String id = child.node.getId();
+                if (reusableGenerated.putIfAbsent(id, child) != null) ambiguousGeneratedIds.add(id);
+            }
+            collectReusableGenerated(child);
+        }
+    }
+
+    /** 同じ id の前回の箱。無い・取り違えのおそれがあれば null。一度渡した箱は二度渡さない。 */
+    private LayoutBox takeReusableGenerated(String id) {
+        if (ambiguousGeneratedIds.contains(id)) return null;
+        return reusableGenerated.remove(id);
     }
 
     private void buildBox(LayoutBox box) {
@@ -68,8 +94,33 @@ public final class BoxTreeBuilder {
         LayoutBox marker = box.display.listItem() ? createMarker(box, counters) : null;
         if (marker != null) items.add(marker);
         collectItems(box, items);
+        LayoutBox legend = takeRenderedLegend(box, items);
         box.children.clear();
+        if (legend != null) box.addChild(legend);
         for (LayoutBox child : fixup(box, items)) box.addChild(child);
+    }
+
+    /**
+     * fieldset の描画される legend（HTML §15.3.13）を子の並びから外して返す。最初の legend 要素の子で、
+     * float でも絶対配置でもないもの。通常フローに入らないので、インラインの並びを包む判断にも加わらない。
+     */
+    private static LayoutBox takeRenderedLegend(LayoutBox box, List<LayoutBox> items) {
+        for (LayoutBox item : items) item.isRenderedLegend = false;
+        if (!"fieldset".equals(box.node.tag)) return null;
+        LayoutBox found = null;
+        for (LayoutBox item : items) {
+            if ("legend".equals(item.node.tag) && !item.node.isPseudoNode) {
+                found = item;
+                break;
+            }
+        }
+        if (found == null || found.isAbsolute || found.display.isNone()
+                || found.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+            return null;
+        }
+        found.isRenderedLegend = true;
+        items.remove(found);
+        return found;
     }
 
     /**
@@ -234,10 +285,21 @@ public final class BoxTreeBuilder {
     /** 匿名ボックスは親の継承プロパティだけを受け継ぎ、それ以外は初期値になる（CSS 2.2 §9.2.1.1）。 */
     private LayoutBox createAnonymous(LayoutBox parent, String display) {
         int index = anonymousCounts.merge(parent, 1, Integer::sum);
+        String id = parent.node.getId() + "_anon" + index;
+        ComputedStyle style = generatedStyle(parent, Map.of(CssProperty.DISPLAY, display));
+        LayoutBox reused = takeReusableGenerated(id);
+        // 匿名の表・行・セルは表のエンジンが直接書き込むので作り直す（LayoutBox.reusableBoxes と同じ）
+        if (reused != null && !reused.node.isPseudoNode && !display.contains("table")
+                && LayoutBox.isReusableShape(reused)) {
+            reused.node.parent = parent.node;
+            reused.children.clear();
+            reused.updateStyle(style);
+            return reused;
+        }
         HtmlNode node = new HtmlNode("div");
         node.parent = parent.node;
-        node.setId(parent.node.getId() + "_anon" + index);
-        return LayoutBox.anonymous(node, generatedStyle(parent, Map.of(CssProperty.DISPLAY, display)));
+        node.setId(id);
+        return LayoutBox.anonymous(node, style);
     }
 
     /**
@@ -302,7 +364,7 @@ public final class BoxTreeBuilder {
      *
      * LIMITATION(制約): {@code list-style-image} は読まない。README の "Not supported" に対応。
      */
-    private static LayoutBox createMarker(LayoutBox listItem, Counters counters) {
+    private LayoutBox createMarker(LayoutBox listItem, Counters counters) {
         String text = markerContent(listItem, counters);
         if (text == null) {
             text = markerText(listItem.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc"),
@@ -311,6 +373,19 @@ public final class BoxTreeBuilder {
         if (text == null || text.isEmpty()) return null;
 
         ComputedStyle style = markerStyleOf(listItem);
+        boolean outside = listItem.style.keywordOf(CssProperty.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+                != CssKeywords.ListStylePosition.INSIDE;
+
+        // 前回と同じ文字のマーカーは箱ごと使い回す（番号が変わったら作り直す）
+        LayoutBox reused = takeReusableGenerated(listItem.node.getId() + "_marker");
+        if (reused != null && reused.node.isPseudoNode && reused.children.size() == 1
+                && text.equals(reused.children.getFirst().node.text)) {
+            reused.node.parent = listItem.node;
+            reused.updateStyle(style);
+            reused.isOutsideMarker = outside;
+            reused.children.getFirst().updateStyle(style);
+            return reused;
+        }
 
         HtmlNode node = new HtmlNode("span");
         node.isPseudoNode = true;
@@ -322,8 +397,7 @@ public final class BoxTreeBuilder {
 
         // DOM に無い箱なので匿名ボックスとして持つ（描画は中のテキストだけ）
         LayoutBox marker = LayoutBox.anonymous(node, style);
-        marker.isOutsideMarker = listItem.style.keywordOf(CssProperty.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
-                != CssKeywords.ListStylePosition.INSIDE;
+        marker.isOutsideMarker = outside;
         marker.addChild(new LayoutBox(textNode, style));
         return marker;
     }
