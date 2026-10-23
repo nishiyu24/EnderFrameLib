@@ -34,6 +34,17 @@ public class EnderFrameBuiltInConfig {
     public static volatile int accentColor = 0x89B4FA;
 
     @ConfigEntry(
+            category = "Rendering",
+            label = "Web UI Zoom (%)",
+            description = "Page zoom for full-screen Web UIs, like a browser's zoom. The CSS viewport is the window size divided by (OS display scale x zoom), so larger windows show more content.",
+            min = 25,
+            max = 300,
+            step = 5,
+            slider = true
+    )
+    public static volatile int uiZoomPercent = 100;
+
+    @ConfigEntry(
             category = "Interaction",
             label = "Enable Default UI Sounds",
             description = "Play standard click sounds when interacting with buttons, selects, and toggles."

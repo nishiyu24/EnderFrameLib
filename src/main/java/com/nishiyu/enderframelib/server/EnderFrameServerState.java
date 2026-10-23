@@ -4,13 +4,14 @@ import com.nishiyu.enderframelib.server.ServerPayloadHandler.PlayerRateLimiter;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.EnderFrameScriptingBridge;
+import com.nishiyu.enderframelib.server.state.UIStateManager;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
  * サーバー側の static 状態の初期化と一括破棄。
  *
- * <p>セッション・閲覧者・購読・レート制限・データパック・プロバイダ登録は全て static マップで、
+ * <p>セッション・閲覧者・購読・レート制限・データパック・プロバイダ登録・UIState は全て static マップで、
  * 以前はどこからも破棄されていなかった。統合サーバーでワールドを読み直すと、
  * 前のワールドのセッションとプレイヤー参照がそのまま残っていた（I-6）。
  * 破棄の経路はここ 1 箇所にまとめる。</p>
@@ -32,8 +33,11 @@ public final class EnderFrameServerState {
         EnderFrameAPI.setInstance(new EnderFrameAPIImpl());
     }
 
-    /** サーバーの tick から呼ばれる定期掃除。 */
+    /** サーバーの tick から呼ばれる定期処理。 */
     public static void onServerTick() {
+        // Headless State の変更差分を一括配信
+        UIStateManager.tickAll();
+
         if (++tickCounter < CLEANUP_INTERVAL_TICKS) return;
         tickCounter = 0;
         WebSessionManager.evictIdleSessions();
@@ -46,6 +50,7 @@ public final class EnderFrameServerState {
         ServerPubSubManager.removePlayerAll(player);
         ServerTargetSyncHandler.removePlayer(player.getUUID());
         PlayerRateLimiter.clearPlayer(player.getUUID());
+        UIStateManager.removePlayerAll(player);
     }
 
     /**
@@ -56,6 +61,7 @@ public final class EnderFrameServerState {
         if (player == null) return;
         WebSessionManager.removePlayerAll(player);
         ServerTargetSyncHandler.removePlayer(player.getUUID());
+        UIStateManager.removePlayerAll(player);
     }
 
     /** サーバー停止。全ての static 状態を捨てる。 */
@@ -66,6 +72,7 @@ public final class EnderFrameServerState {
         PlayerRateLimiter.clearAll();
         EnderFrameDataPackManager.clearAll();
         EnderFrameScriptingBridge.clearAll();
+        UIStateManager.clearAll();
         tickCounter = 0;
         EnderFrameLib.LOGGER.debug("EnderFrameLib のサーバー側 static 状態を破棄しました。");
     }
@@ -79,7 +86,9 @@ public final class EnderFrameServerState {
                 + " subscribers=" + ServerPubSubManager.subscriberMapSize()
                 + " arSubscriptions=" + ServerTargetSyncHandler.subscriptionCount()
                 + " rateLimited=" + PlayerRateLimiter.trackedPlayerCount()
-                + " datapackUis=" + EnderFrameDataPackManager.entryCount();
+                + " datapackUis=" + EnderFrameDataPackManager.entryCount()
+                + " uiStates=" + UIStateManager.stateCount()
+                + " uiViewers=" + UIStateManager.viewerCount();
     }
 
     /** 全ての static 状態が空かどうか。 */
@@ -90,6 +99,8 @@ public final class EnderFrameServerState {
                 && ServerPubSubManager.channelCount() == 0
                 && ServerPubSubManager.subscriberMapSize() == 0
                 && ServerTargetSyncHandler.subscriptionCount() == 0
-                && PlayerRateLimiter.trackedPlayerCount() == 0;
+                && PlayerRateLimiter.trackedPlayerCount() == 0
+                && UIStateManager.stateCount() == 0
+                && UIStateManager.viewerCount() == 0;
     }
 }

@@ -1,7 +1,11 @@
 package com.nishiyu.enderframelib.api;
 
+import com.nishiyu.enderframelib.api.state.UIState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
@@ -65,8 +69,11 @@ public interface EnderFrameAPI {
     // ----------------------------------------------------------------- screens
 
     /**
-     * Opens a full-screen UI for one player from an HTML string.
+     * Opens a full-screen UI for one player from an HTML string (Ad-hoc / Compatibility Mode).
      * The session is created if needed and is owned by {@code player}.
+     *
+     * <p>For standard machine UIs and reusable interfaces, prefer using {@link #openUi} or
+     * {@link #openBlockEntityUi} with client templates and {@link com.nishiyu.enderframelib.api.state.UIState}.</p>
      *
      * @param sessionId session id, or {@code null}/empty to derive one from the player
      */
@@ -79,11 +86,55 @@ public interface EnderFrameAPI {
      */
     void openDatapackScreen(ServerPlayer player, String uiId, int width, int height);
 
-    /** Installs a persistent HUD overlay for one player. The session is owned by {@code player}. */
+    /**
+     * Installs a persistent HUD overlay for one player (Ad-hoc Session). The session is owned by {@code player}.
+     */
     void setHud(ServerPlayer player, @Nullable String sessionId, String html);
 
     /** Removes the HUD overlay previously installed with {@link #setHud}. */
     void clearHud(ServerPlayer player);
+
+    // ----------------------------------------------------------- headless state
+
+    /**
+     * Returns the {@link UIState} of a block entity, creating it on first use.
+     * Its instance id is {@code "block:x,y,z"}, from the block entity's position.
+     *
+     * @param be         the block entity that owns the UI
+     * @param templateId the client-side template, e.g. {@code "mymod:crusher"} for
+     *                   {@code assets/mymod/enderframe_ui/crusher.html}
+     * @return the state
+     */
+    @NotNull
+    UIState createBlockEntityState(@NotNull BlockEntity be, @NotNull String templateId);
+
+    /**
+     * Opens a headless-state UI for a player: adds the player as a viewer of the
+     * {@link UIState} and sends the template id with the current state to the client.
+     *
+     * @param player     the player
+     * @param templateId the client-side template
+     * @param instanceId the id of this UI instance
+     * @param state      the state, or {@code null} to look it up (or create it) by
+     *                   {@code templateId} and {@code instanceId}
+     */
+    void openUi(@NotNull ServerPlayer player, @NotNull String templateId, @NotNull String instanceId, @Nullable UIState state);
+
+    /**
+     * Opens the headless-state UI of a block entity for a player. The instance id is
+     * derived from the block entity's position, as in {@link #createBlockEntityState}.
+     *
+     * @param player     the player
+     * @param be         the block entity that owns the UI
+     * @param templateId the client-side template
+     * @param state      the state, or {@code null} to look it up (or create it)
+     */
+    default void openBlockEntityUi(@NotNull ServerPlayer player, @NotNull BlockEntity be, @NotNull String templateId, @Nullable UIState state) {
+        if (player == null || be == null || templateId == null) return;
+        BlockPos pos = be.getBlockPos();
+        String instanceId = "block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+        openUi(player, templateId, instanceId, state);
+    }
 
     // ------------------------------------------------------------------ pubsub
 

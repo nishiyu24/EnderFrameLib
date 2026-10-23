@@ -322,6 +322,31 @@ public final class RoundedRectRasterizer {
         }
     }
 
+    /**
+     * 太さ {@code width} の線分（両端は直角）。シェーダーが使えればアンチエイリアスとクリップ付きで、
+     * 使えなければ回転した四角形 1 枚で描く（クリップしない）。
+     */
+    public static void drawSegment(
+            VertexConsumer builder, Matrix4f matrix,
+            float ax, float ay, float bx, float by, float width,
+            float r, float g, float b, float a, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL,
+            boolean useSdfShader
+    ) {
+        if (useSdfShader && WebSdfShader.drawSdfSegment(matrix, ax, ay, bx, by, width, r, g, b, a, zOffset,
+                cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL)) {
+            return;
+        }
+        float len = (float) Math.hypot(bx - ax, by - ay);
+        if (len <= 0) return;
+        float nx = -(by - ay) / len * width / 2, ny = (bx - ax) / len * width / 2;
+        builder.addVertex(matrix, ax + nx, ay + ny, zOffset).setColor(r, g, b, a);
+        builder.addVertex(matrix, bx + nx, by + ny, zOffset).setColor(r, g, b, a);
+        builder.addVertex(matrix, bx - nx, by - ny, zOffset).setColor(r, g, b, a);
+        builder.addVertex(matrix, ax - nx, ay - ny, zOffset).setColor(r, g, b, a);
+    }
+
     public static void drawRingSegment(
             VertexConsumer builder, Matrix4f matrix,
             float cx, float cy, float radius, float thickness,

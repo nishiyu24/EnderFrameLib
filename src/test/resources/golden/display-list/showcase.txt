@@ -1,557 +1,715 @@
-000: [bg_root] RECT rect=[0,0,800,600] bg=#FF181825
-001: [gen_1] NODE rect=[0,0,800,600] color=#FFCDD6F4
-002: [gen_1_bg] RECT rect=[0,0,800,600] color=#FFCDD6F4
-003: [gen_6] NODE rect=[0,0,800,600] color=#FFCDD6F4 bg=#FF181825
-004: [gen_6_bg] RECT rect=[0,0,800,600] color=#FFCDD6F4 bg=#FF181825
-005: [gen_7] NODE rect=[0,0,800,600] color=#FFCDD6F4 bg=#FF181825
-006: [gen_7_bg] RECT rect=[0,0,800,600] color=#FFCDD6F4 bg=#FF181825
-007: [header_panel] NODE rect=[10,10,780,87] color=#FFCDD6F4 radii=[8,8,8,8]
-008: [header_panel_bg] RECT rect=[10,10,780,87] color=#FFCDD6F4 r=8 radii=[8,8,8,8]
-009: [header_panel_bgl0_0] RECT rect=[-767,-74,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-010: [header_panel_bgl0_1] RECT rect=[11,-74,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-011: [header_panel_bgl0_2] RECT rect=[789,-74,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-012: [header_panel_bgl0_3] RECT rect=[-767,11,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-013: [header_panel_bgl0_4] RECT rect=[11,11,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-014: [header_panel_bgl0_5] RECT rect=[789,11,778,85] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-015: [header_panel_bgl0_6] RECT rect=[-767,96,778,84] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-016: [header_panel_bgl0_7] RECT rect=[11,96,778,84] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-017: [header_panel_bgl0_8] RECT rect=[789,96,778,84] bg=#FF1E1E2E clip=[10.0,10.0,790.0,96.6] gradient=[#FF1E1E2E,#FF313244,#FF313244,#FF1E1E2E]
-018: [header_panel_b_round] ROUNDED_BORDER rect=[10,10,780,87] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
-019: [gen_8] NODE rect=[25,31,314,44] color=#FFCDD6F4
-020: [gen_8_bg] RECT rect=[25,31,314,44] color=#FFCDD6F4
-021: [gen_9] NODE rect=[25,43,20,20] color=#FFCDD6F4 radii=[10,10,10,10]
-022: [gen_9_bg] RECT rect=[25,43,20,20] color=#FFCDD6F4 r=10 radii=[10,10,10,10]
-023: [gen_9_bgl0_0] RECT rect=[22,40,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF1E1E2E,#FF343D59]
-024: [gen_9_bgl0_1] RECT rect=[26,40,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF343D59,#FF1E1E2E]
-025: [gen_9_bgl0_2] RECT rect=[31,40,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF637FB2,#FF3D4A6A,#FF343D59]
-026: [gen_9_bgl0_3] RECT rect=[35,40,5,4] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF546994,#FF343D59,#FF3D4A6A]
-027: [gen_9_bgl0_4] RECT rect=[40,40,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF1E1E2E,#FF343D59]
-028: [gen_9_bgl0_5] RECT rect=[44,40,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF343D59,#FF1E1E2E]
-029: [gen_9_bgl0_6] RECT rect=[22,44,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF1E1E2E,#FF343D59,#FF546994]
-030: [gen_9_bgl0_7] RECT rect=[22,49,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF3D4A6A,#FF637FB2]
-031: [gen_9_bgl0_8] RECT rect=[22,53,4,5] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF3D4A6A,#FF343D59,#FF546994]
-032: [gen_9_bgl0_9] RECT rect=[22,58,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF1E1E2E,#FF343D59]
-033: [gen_9_bgl0_10] RECT rect=[26,44,5,5] bg=#FF1E1E2E clip=[25.0,43.3,45.0,63.3] gradient=[#FF1E1E2E,#FF343D59,#FF546994,#FF343D59]
-034: [gen_9_bgl0_11] RECT rect=[31,44,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF3D4A6A,#FF637FB2,#FF546994]
-035: [gen_9_bgl0_12] RECT rect=[26,49,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF637FB2,#FF3D4A6A]
-036: [gen_9_bgl0_13] RECT rect=[31,49,2,2] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF5F79A9,#FF6E8FC7,#FF5F79A9]
-037: [gen_9_bgl0_14] RECT rect=[33,49,2,2] bg=#FF5F79A9 clip=[25.0,43.3,45.0,63.3] gradient=[#FF5F79A9,#FF637FB2,#FF7699D6,#FF6E8FC7]
-038: [gen_9_bgl0_15] RECT rect=[31,51,2,2] bg=#FF5F79A9 clip=[25.0,43.3,45.0,63.3] gradient=[#FF5F79A9,#FF6E8FC7,#FF7699D6,#FF637FB2]
-039: [gen_9_bgl0_16] RECT rect=[33,51,2,2] bg=#FF6E8FC7 clip=[25.0,43.3,45.0,63.3] gradient=[#FF6E8FC7,#FF7699D6,#FF89B4FA,#FF7699D6]
-040: [gen_9_bgl0_17] RECT rect=[35,44,5,5] bg=#FF3D4A6A clip=[25.0,43.3,45.0,63.3] gradient=[#FF3D4A6A,#FF343D59,#FF546994,#FF637FB2]
-041: [gen_9_bgl0_18] RECT rect=[40,44,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF1E1E2E,#FF343D59,#FF546994]
-042: [gen_9_bgl0_19] RECT rect=[35,49,2,2] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF5F79A9,#FF6E8FC7,#FF7699D6]
-043: [gen_9_bgl0_20] RECT rect=[37,49,3,2] bg=#FF5F79A9 clip=[25.0,43.3,45.0,63.3] gradient=[#FF5F79A9,#FF546994,#FF5F79A9,#FF6E8FC7]
-044: [gen_9_bgl0_21] RECT rect=[35,51,2,2] bg=#FF7699D6 clip=[25.0,43.3,45.0,63.3] gradient=[#FF7699D6,#FF6E8FC7,#FF7699D6,#FF89B4FA]
-045: [gen_9_bgl0_22] RECT rect=[37,51,3,2] bg=#FF6E8FC7 clip=[25.0,43.3,45.0,63.3] gradient=[#FF6E8FC7,#FF5F79A9,#FF637FB2,#FF7699D6]
-046: [gen_9_bgl0_23] RECT rect=[40,49,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF3D4A6A,#FF637FB2]
-047: [gen_9_bgl0_24] RECT rect=[26,53,5,5] bg=#FF3D4A6A clip=[25.0,43.3,45.0,63.3] gradient=[#FF3D4A6A,#FF637FB2,#FF546994,#FF343D59]
-048: [gen_9_bgl0_25] RECT rect=[31,53,2,3] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF7699D6,#FF6E8FC7,#FF5F79A9]
-049: [gen_9_bgl0_26] RECT rect=[33,53,2,3] bg=#FF7699D6 clip=[25.0,43.3,45.0,63.3] gradient=[#FF7699D6,#FF89B4FA,#FF7699D6,#FF6E8FC7]
-050: [gen_9_bgl0_27] RECT rect=[31,56,2,2] bg=#FF5F79A9 clip=[25.0,43.3,45.0,63.3] gradient=[#FF5F79A9,#FF6E8FC7,#FF5F79A9,#FF546994]
-051: [gen_9_bgl0_28] RECT rect=[33,56,2,2] bg=#FF6E8FC7 clip=[25.0,43.3,45.0,63.3] gradient=[#FF6E8FC7,#FF7699D6,#FF637FB2,#FF5F79A9]
-052: [gen_9_bgl0_29] RECT rect=[26,58,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF343D59,#FF1E1E2E]
-053: [gen_9_bgl0_30] RECT rect=[31,58,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF637FB2,#FF3D4A6A,#FF343D59]
-054: [gen_9_bgl0_31] RECT rect=[35,53,2,3] bg=#FF89B4FA clip=[25.0,43.3,45.0,63.3] gradient=[#FF89B4FA,#FF7699D6,#FF6E8FC7,#FF7699D6]
-055: [gen_9_bgl0_32] RECT rect=[37,53,3,3] bg=#FF7699D6 clip=[25.0,43.3,45.0,63.3] gradient=[#FF7699D6,#FF637FB2,#FF5F79A9,#FF6E8FC7]
-056: [gen_9_bgl0_33] RECT rect=[35,56,2,2] bg=#FF7699D6 clip=[25.0,43.3,45.0,63.3] gradient=[#FF7699D6,#FF6E8FC7,#FF5F79A9,#FF637FB2]
-057: [gen_9_bgl0_34] RECT rect=[37,56,3,2] bg=#FF6E8FC7 clip=[25.0,43.3,45.0,63.3] gradient=[#FF6E8FC7,#FF5F79A9,#FF546994,#FF5F79A9]
-058: [gen_9_bgl0_35] RECT rect=[40,53,4,5] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF3D4A6A,#FF343D59,#FF546994]
-059: [gen_9_bgl0_36] RECT rect=[35,58,5,4] bg=#FF637FB2 clip=[25.0,43.3,45.0,63.3] gradient=[#FF637FB2,#FF546994,#FF343D59,#FF3D4A6A]
-060: [gen_9_bgl0_37] RECT rect=[40,58,4,4] bg=#FF546994 clip=[25.0,43.3,45.0,63.3] gradient=[#FF546994,#FF343D59,#FF1E1E2E,#FF343D59]
-061: [gen_9_bgl0_38] RECT rect=[44,44,5,5] bg=#FF1E1E2E clip=[25.0,43.3,45.0,63.3] gradient=[#FF1E1E2E,#FF343D59,#FF546994,#FF343D59]
-062: [gen_9_bgl0_39] RECT rect=[44,49,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF637FB2,#FF3D4A6A]
-063: [gen_9_bgl0_40] RECT rect=[44,53,5,5] bg=#FF3D4A6A clip=[25.0,43.3,45.0,63.3] gradient=[#FF3D4A6A,#FF637FB2,#FF546994,#FF343D59]
-064: [gen_9_bgl0_41] RECT rect=[44,58,5,4] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF546994,#FF343D59,#FF1E1E2E]
-065: [gen_9_bgl0_42] RECT rect=[22,62,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF1E1E2E,#FF343D59,#FF546994]
-066: [gen_9_bgl0_43] RECT rect=[26,62,5,5] bg=#FF1E1E2E clip=[25.0,43.3,45.0,63.3] gradient=[#FF1E1E2E,#FF343D59,#FF546994,#FF343D59]
-067: [gen_9_bgl0_44] RECT rect=[31,62,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF3D4A6A,#FF637FB2,#FF546994]
-068: [gen_9_bgl0_45] RECT rect=[35,62,5,5] bg=#FF3D4A6A clip=[25.0,43.3,45.0,63.3] gradient=[#FF3D4A6A,#FF343D59,#FF546994,#FF637FB2]
-069: [gen_9_bgl0_46] RECT rect=[40,62,4,5] bg=#FF343D59 clip=[25.0,43.3,45.0,63.3] gradient=[#FF343D59,#FF1E1E2E,#FF343D59,#FF546994]
-070: [gen_9_bgl0_47] RECT rect=[44,62,5,5] bg=#FF1E1E2E clip=[25.0,43.3,45.0,63.3] gradient=[#FF1E1E2E,#FF343D59,#FF546994,#FF343D59]
-071: [gen_9_cb] CIRCLE_BORDER rect=[25,43,20,20] text="1:-7752454,-7752454,-7752454,-7752454" radii=[10,10,10,10]
-072: [gen_10] NODE rect=[31,49,8,8] color=#FFCDD6F4 bg=#FFA6E3A1 radii=[4,4,4,4]
-073: [gen_10_bg] RECT rect=[31,49,8,8] color=#FFCDD6F4 bg=#FFA6E3A1 r=4 radii=[4,4,4,4]
-074: [page_title] NODE rect=[53,31,275,44] color=#FF89B4FA
-075: [page_title_bg] RECT rect=[53,31,275,44] color=#FF89B4FA
-076: [txt_11] NODE rect=[0,0,275,44] color=#FF89B4FA
-077: [txt_11_txt_0] TEXT rect=[53,31,224,22] color=#FF89B4FA text="EnderFrameLib "
-078: [txt_11_txt_1] TEXT rect=[277,31,62,22] color=#FF89B4FA text="Web "
-079: [txt_11_txt_2] TEXT rect=[53,53,164,22] color=#FF89B4FA text="Standards "
-080: [txt_11_txt_3] TEXT rect=[217,53,77,22] color=#FF89B4FA text="Suite"
-081: [gen_12] NODE rect=[351,19,424,69] color=#FFCDD6F4
-082: [gen_12_bg] RECT rect=[351,19,424,69] color=#FFCDD6F4
-083: [gen_13] NODE rect=[351,19,68,69] color=#FF89B4FA bg=#3389B4FA radii=[6,6,6,6]
-084: [gen_13_bg] RECT rect=[351,19,68,69] color=#FF89B4FA bg=#3389B4FA r=6 radii=[6,6,6,6]
-085: [gen_13_b_round] ROUNDED_BORDER rect=[351,19,68,69] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
-086: [txt_14] NODE rect=[0,0,36,63] color=#FF89B4FA
-087: [txt_14_txt_4] TEXT rect=[360,22,38,16] color=#FF89B4FA text="W3C "
-088: [txt_14_txt_5] TEXT rect=[360,38,42,15] color=#FF89B4FA text="Grid "
-089: [txt_14_txt_6] TEXT rect=[360,53,16,16] color=#FF89B4FA text="& "
-090: [txt_14_txt_7] TEXT rect=[360,69,36,16] color=#FF89B4FA text="Flex"
-091: [gen_15] NODE rect=[427,36,100,35] color=#FFA6E3A1 bg=#FF45475A radii=[6,6,6,6]
-092: [gen_15_bg] RECT rect=[427,36,100,35] color=#FFA6E3A1 bg=#FF45475A r=6 radii=[6,6,6,6]
-093: [txt_16] NODE rect=[0,0,85,31] color=#FFA6E3A1
-094: [txt_16_txt_8] TEXT rect=[435,38,42,15] color=#FFA6E3A1 text="FPS: "
-095: [txt_16_txt_9] TEXT rect=[435,53,84,16] color=#FFA6E3A1 text="{{@fps}}"
-096: [gen_17] NODE rect=[535,20,127,67] color=#FFA6E3A1 bg=#FF45475A radii=[6,6,6,6]
-097: [gen_17_bg] RECT rect=[535,20,127,67] color=#FFA6E3A1 bg=#FF45475A r=6 radii=[6,6,6,6]
-098: [txt_18] NODE rect=[0,0,74,63] color=#FFA6E3A1
-099: [txt_18_txt_10] TEXT rect=[543,22,43,16] color=#FFA6E3A1 text="Pos: "
-100: [txt_18_txt_11] TEXT rect=[543,38,80,15] color=#FFA6E3A1 text="{{@x}}, "
-101: [txt_18_txt_12] TEXT rect=[543,53,80,16] color=#FFA6E3A1 text="{{@y}}, "
-102: [txt_18_txt_13] TEXT rect=[543,69,64,16] color=#FFA6E3A1 text="{{@z}}"
-103: [gen_19] NODE rect=[670,36,105,35] color=#FFA6E3A1 bg=#FF45475A radii=[6,6,6,6]
-104: [gen_19_bg] RECT rect=[670,36,105,35] color=#FFA6E3A1 bg=#FF45475A r=6 radii=[6,6,6,6]
-105: [txt_20] NODE rect=[0,0,89,31] color=#FFA6E3A1
-106: [txt_20_txt_14] TEXT rect=[678,38,47,15] color=#FFA6E3A1 text="Time: "
-107: [txt_20_txt_15] TEXT rect=[678,53,89,16] color=#FFA6E3A1 text="{{@time}}"
-108: [gen_21] NODE rect=[10,107,780,483] color=#FFCDD6F4
-109: [gen_21_bg] RECT rect=[10,107,780,483] color=#FFCDD6F4
-110: [gen_22] NODE rect=[10,107,246,580] color=#FFCDD6F4
-111: [gen_22_bg] RECT rect=[10,107,246,580] color=#FFCDD6F4
-112: [gen_23] NODE rect=[10,107,246,580] color=#FFCDD6F4 bg=#FF1E1E2E radii=[6,6,6,6]
-113: [gen_23_bg] RECT rect=[10,107,246,580] color=#FFCDD6F4 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-114: [gen_23_b_round] ROUNDED_BORDER rect=[10,107,246,580] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-115: [gen_24] NODE rect=[23,120,220,38] color=#FF89B4FA
-116: [gen_24_bg] RECT rect=[23,120,220,38] color=#FF89B4FA
-117: [txt_25] NODE rect=[0,0,166,39] color=#FF89B4FA
-118: [txt_25_txt_16] TEXT rect=[23,120,32,19] color=#FF89B4FA text="1. "
-119: [txt_25_txt_17] TEXT rect=[55,120,99,19] color=#FF89B4FA text="Layout "
-120: [txt_25_txt_18] TEXT rect=[154,120,24,19] color=#FF89B4FA text="& "
-121: [txt_25_txt_19] TEXT rect=[23,139,121,19] color=#FF89B4FA text="Semantic "
-122: [txt_25_txt_20] TEXT rect=[144,139,45,19] color=#FF89B4FA text="DOM"
-123: [gen_26] NODE rect=[23,166,220,103] color=#FFCDD6F4 bg=#FF313244 radii=[4,4,4,4]
-124: [gen_26_bg] RECT rect=[23,166,220,103] color=#FFCDD6F4 bg=#FF313244 r=4 radii=[4,4,4,4]
-125: [gen_26_b_round] ROUNDED_BORDER rect=[23,166,220,103] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-126: [gen_27] NODE rect=[32,175,202,37] color=#FF89B4FA
-127: [gen_27_bg] RECT rect=[32,175,202,37] color=#FF89B4FA
-128: [gen_29] NODE rect=[32,216,202,44] color=#FFA6ADC8
-129: [gen_29_bg] RECT rect=[32,216,202,44] color=#FFA6ADC8
-130: [gen_27_marker_txt] NODE rect=[0,0,32,18] color=#FF89B4FA
-131: [gen_27_marker_txt_txt_21] TEXT rect=[32,175,32,19] color=#FF89B4FA text="▾ "
-132: [txt_28] NODE rect=[0,0,199,37] color=#FF89B4FA
-133: [txt_28_txt_22] TEXT rect=[64,175,116,19] color=#FF89B4FA text="Semantic "
-134: [txt_28_txt_23] TEXT rect=[32,194,199,18] color=#FF89B4FA text="Details/Summary"
-135: [txt_30] NODE rect=[0,0,199,44] color=#FFA6ADC8
-136: [txt_30_txt_24] TEXT rect=[32,216,110,15] color=#FFA6ADC8 text="Interactive "
-137: [txt_30_txt_25] TEXT rect=[142,216,59,15] color=#FFA6ADC8 text="toggle "
-138: [txt_30_txt_26] TEXT rect=[32,231,70,14] color=#FFA6ADC8 text="element "
-139: [txt_30_txt_27] TEXT rect=[102,231,74,14] color=#FFA6ADC8 text="verified "
-140: [txt_30_txt_28] TEXT rect=[176,231,25,14] color=#FFA6ADC8 text="by "
-141: [txt_30_txt_29] TEXT rect=[201,231,36,14] color=#FFA6ADC8 text="W3C "
-142: [txt_30_txt_30] TEXT rect=[32,245,36,15] color=#FFA6ADC8 text="DOM "
-143: [txt_30_txt_31] TEXT rect=[68,245,99,15] color=#FFA6ADC8 text="standards. "
-144: [gen_31] NODE rect=[23,277,220,96] color=#FFCDD6F4
-145: [gen_31_bg] RECT rect=[23,277,220,96] color=#FFCDD6F4
-146: [gen_32] NODE rect=[23,293,34,64] color=#FFCDD6F4 radii=[6,6,6,6]
-147: [gen_32_bg] RECT rect=[23,293,34,64] color=#FFCDD6F4 r=6 radii=[6,6,6,6]
-148: [gen_32_bgl0_0] RECT rect=[-8,232,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-149: [gen_32_bgl0_1] RECT rect=[24,232,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-150: [gen_32_bgl0_2] RECT rect=[56,232,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-151: [gen_32_bgl0_3] RECT rect=[-8,294,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-152: [gen_32_bgl0_4] RECT rect=[24,294,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-153: [gen_32_bgl0_5] RECT rect=[56,294,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-154: [gen_32_bgl0_6] RECT rect=[-8,356,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-155: [gen_32_bgl0_7] RECT rect=[24,356,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-156: [gen_32_bgl0_8] RECT rect=[56,356,32,62] bg=#FF313244 clip=[23.0,293.0,57.0,357.0] gradient=[#FF313244,#FF313244,#FF181825,#FF181825]
-157: [gen_32_b_round] ROUNDED_BORDER rect=[23,293,34,64] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-158: [gen_33] NODE rect=[28,302,24,24] color=#FFCDD6F4 bg=#FF89B4FA radii=[12,12,12,12]
-159: [gen_33_bg] RECT rect=[28,302,24,24] color=#FFCDD6F4 bg=#FF89B4FA r=12 radii=[12,12,12,12]
-160: [gen_34] NODE rect=[24,330,32,18] color=#FFCDD6F4 bg=#FF45475A radii=[4,4,4,4]
-161: [gen_34_bg] RECT rect=[24,330,32,18] color=#FFCDD6F4 bg=#FF45475A r=4 radii=[4,4,4,4]
-162: [gen_35] NODE rect=[67,277,220,96] color=#FFCDD6F4
-163: [gen_35_bg] RECT rect=[67,277,220,96] color=#FFCDD6F4
-164: [gen_36] NODE rect=[67,277,220,37] color=#FFCDD6F4
-165: [gen_36_bg] RECT rect=[67,277,220,37] color=#FFCDD6F4
-166: [txt_37] NODE rect=[0,0,73,18] color=#FFCDD6F4
-167: [txt_37_txt_32] TEXT rect=[67,277,80,19] color=#FFCDD6F4 text="Player: "
-168: [gen_38] NODE rect=[67,297,220,16] color=#FFCDD6F4
-169: [gen_38_frag_33] RECT rect=[67,297,220,16] color=#FFCDD6F4
-170: [txt_39] NODE rect=[0,0,220,18] color=#FFCDD6F4
-171: [txt_39_txt_34] TEXT rect=[67,296,220,18] color=#FFCDD6F4 text="{{@player_name}}"
-172: [gen_40] NODE rect=[67,318,220,14] color=#FFCDD6F4 bg=#FF11111B radii=[4,4,4,4]
-173: [gen_40_bg] RECT rect=[67,318,220,14] color=#FFCDD6F4 bg=#FF11111B r=4 radii=[4,4,4,4]
-174: [gen_40_b_round] ROUNDED_BORDER rect=[67,318,220,14] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-175: [gen_41] NODE rect=[68,319,175,12] color=#FF11111B clip=[68.0,319.0,286.4,331.0]
-176: [gen_41_bg] RECT rect=[68,319,175,12] color=#FF11111B clip=[68.0,319.0,286.4,331.0]
-177: [gen_41_bgl0_0] RECT rect=[68,319,175,12] bg=#FFF38BA8 clip=[68.0,319.0,242.8,331.0] gradient=[#FFF38BA8,#FFEBA0AC,#FFEBA0AC,#FFF38BA8]
-178: [txt_42] NODE rect=[93,311,125,28] color=#FF11111B clip=[68.0,319.0,286.4,331.0]
-179: [txt_42_txt_35] TEXT rect=[93,311,125,14] color=#FF11111B text="HP: {{@hp}} /" clip=[68.0,319.0,286.4,331.0]
-180: [txt_42_txt_36] TEXT rect=[93,325,117,14] color=#FF11111B text="{{@max_hp}}" clip=[68.0,319.0,286.4,331.0]
-181: [gen_43] NODE rect=[67,336,220,37] color=#FFCDD6F4
-182: [gen_43_bg] RECT rect=[67,336,220,37] color=#FFCDD6F4
-183: [txt_44] NODE rect=[0,0,60,18] color=#FFCDD6F4
-184: [txt_44_txt_37] TEXT rect=[67,336,68,18] color=#FFCDD6F4 text="Biome: "
-185: [gen_45] NODE rect=[135,337,135,16] color=#FFF9E2AF
-186: [gen_45_frag_38] RECT rect=[135,337,135,16] color=#FFF9E2AF
-187: [txt_46] NODE rect=[0,0,135,18] color=#FFF9E2AF
-188: [txt_46_txt_39] TEXT rect=[135,336,135,18] color=#FFF9E2AF text="{{@biome}}"
-189: [gen_47] NODE rect=[23,381,220,136] color=#FFCDD6F4 bg=#FF313244 radii=[4,4,4,4]
-190: [gen_47_bg] RECT rect=[23,381,220,136] color=#FFCDD6F4 bg=#FF313244 r=4 radii=[4,4,4,4]
-191: [gen_47_b_round] ROUNDED_BORDER rect=[23,381,220,136] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-192: [gen_48] NODE rect=[32,390,202,37] color=#FFCDD6F4
-193: [gen_48_bg] RECT rect=[32,390,202,37] color=#FFCDD6F4
-194: [gen_49] NODE rect=[32,390,96,37] color=#FFCDD6F4
-195: [gen_49_bg] RECT rect=[32,390,96,37] color=#FFCDD6F4
-196: [txt_50] NODE rect=[0,0,75,37] color=#FFCDD6F4
-197: [txt_50_txt_40] TEXT rect=[32,390,82,18] color=#FFCDD6F4 text="PubSub "
-198: [txt_50_txt_41] TEXT rect=[32,408,43,19] color=#FFCDD6F4 text="Msg:"
-199: [pubsub_msg] NODE rect=[128,399,106,18] color=#FFA6E3A1
-200: [pubsub_msg_bg] RECT rect=[128,399,106,18] color=#FFA6E3A1
-201: [txt_51] NODE rect=[0,0,107,18] color=#FFA6E3A1
-202: [txt_51_txt_42] TEXT rect=[128,399,106,18] color=#FFA6E3A1 text="Waiting..."
-203: [gen_52] NODE rect=[32,431,202,36] color=#FFCDD6F4
-204: [gen_52_bg] RECT rect=[32,431,202,36] color=#FFCDD6F4
-205: [gen_53] NODE rect=[32,431,149,36] color=#FFCDD6F4
-206: [gen_53_bg] RECT rect=[32,431,149,36] color=#FFCDD6F4
-207: [txt_54] NODE rect=[0,0,75,37] color=#FFCDD6F4
-208: [txt_54_txt_43] TEXT rect=[32,431,82,18] color=#FFCDD6F4 text="Server "
-209: [txt_54_txt_44] TEXT rect=[32,449,68,18] color=#FFCDD6F4 text="Power:"
-210: [gen_55] NODE rect=[220,440,14,18] color=#FF89B4FA
-211: [gen_55_bg] RECT rect=[220,440,14,18] color=#FF89B4FA
-212: [txt_56] NODE rect=[0,0,14,18] color=#FF89B4FA
-213: [txt_56_txt_45] TEXT rect=[220,440,14,18] color=#FF89B4FA text="0"
-214: [gen_57] NODE rect=[32,471,202,37] color=#FFCDD6F4
-215: [gen_57_bg] RECT rect=[32,471,202,37] color=#FFCDD6F4
-216: [gen_58] NODE rect=[32,471,98,37] color=#FFCDD6F4
-217: [gen_58_bg] RECT rect=[32,471,98,37] color=#FFCDD6F4
-218: [txt_59] NODE rect=[0,0,80,37] color=#FFCDD6F4
-219: [txt_59_txt_46] TEXT rect=[32,471,69,19] color=#FFCDD6F4 text="Patch "
-220: [txt_59_txt_47] TEXT rect=[32,490,80,18] color=#FFCDD6F4 text="Target:"
-221: [patch_target] NODE rect=[130,471,104,37] color=#FFF9E2AF
-222: [patch_target_bg] RECT rect=[130,471,104,37] color=#FFF9E2AF
-223: [txt_60] NODE rect=[0,0,92,37] color=#FFF9E2AF
-224: [txt_60_txt_48] TEXT rect=[130,471,102,19] color=#FFF9E2AF text="Default "
-225: [txt_60_txt_49] TEXT rect=[130,490,57,18] color=#FFF9E2AF text="Text"
-226: [gen_61] NODE rect=[23,525,220,35] color=#FF89B4FA
-227: [gen_61_bg] RECT rect=[23,525,220,35] color=#FF89B4FA
-228: [txt_62] NODE rect=[0,0,214,35] color=#FF89B4FA
-229: [txt_62_txt_50] TEXT rect=[23,525,49,18] color=#FF89B4FA text="SDF "
-230: [txt_62_txt_51] TEXT rect=[72,525,103,18] color=#FF89B4FA text="Rounded "
-231: [txt_62_txt_52] TEXT rect=[175,525,49,18] color=#FF89B4FA text="Clip "
-232: [txt_62_txt_53] TEXT rect=[224,525,22,18] color=#FF89B4FA text="& "
-233: [txt_62_txt_54] TEXT rect=[23,543,68,17] color=#FF89B4FA text="Scroll"
-234: [gen_63] NODE rect=[23,568,220,72] color=#FFCDD6F4 bg=#FF181825 radii=[8,8,8,8]
-235: [gen_63_bg] RECT rect=[23,568,220,72] color=#FFCDD6F4 bg=#FF181825 r=8 radii=[8,8,8,8]
-236: [gen_63_b_round] ROUNDED_BORDER rect=[23,568,220,72] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF585B70,#FF585B70,#FF585B70,#FF585B70]
-237: [gen_64] NODE rect=[30,575,206,45] color=#FF11111B clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-238: [gen_64_bg] RECT rect=[30,575,206,45] color=#FF11111B r=6 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-239: [gen_64_bgl0_0] RECT rect=[30,575,206,45] bg=#FFF38BA8 clip=[30.0,575.1,236.4,619.9] gradient=[#FFF38BA8,#FF89B4FA,#FF89B4FA,#FFF38BA8]
-240: [txt_65] NODE rect=[0,0,130,37] color=#FF11111B clip=[24.0,569.1,242.4,639.1]
-241: [txt_65_txt_55] TEXT rect=[36,579,52,19] color=#FF11111B text="CSS " clip=[24.0,569.1,242.4,639.1]
-242: [txt_65_txt_56] TEXT rect=[88,579,87,19] color=#FF11111B text="Linear " clip=[24.0,569.1,242.4,639.1]
-243: [txt_65_txt_57] TEXT rect=[36,598,116,18] color=#FF11111B text="Gradient " clip=[24.0,569.1,242.4,639.1]
-244: [gen_66] NODE rect=[30,624,206,45] color=#FFCDD6F4 bg=#FF313244 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-245: [gen_66_bg] RECT rect=[30,624,206,45] color=#FFCDD6F4 bg=#FF313244 r=6 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-246: [txt_67] NODE rect=[0,0,192,37] color=#FFCDD6F4 clip=[24.0,569.1,242.4,639.1]
-247: [txt_67_txt_58] TEXT rect=[36,628,68,18] color=#FFCDD6F4 text="Scroll " clip=[24.0,569.1,242.4,639.1]
-248: [txt_67_txt_59] TEXT rect=[104,628,49,18] color=#FFCDD6F4 text="item " clip=[24.0,569.1,242.4,639.1]
-249: [txt_67_txt_60] TEXT rect=[153,628,20,18] color=#FFCDD6F4 text="2 " clip=[24.0,569.1,242.4,639.1]
-250: [txt_67_txt_61] TEXT rect=[173,628,62,18] color=#FFCDD6F4 text="(Flex " clip=[24.0,569.1,242.4,639.1]
-251: [txt_67_txt_62] TEXT rect=[36,646,62,19] color=#FFCDD6F4 text="item) " clip=[24.0,569.1,242.4,639.1]
-252: [gen_68] NODE rect=[30,673,206,45] color=#FFCDD6F4 bg=#FF313244 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-253: [gen_68_bg] RECT rect=[30,673,206,45] color=#FFCDD6F4 bg=#FF313244 r=6 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-254: [txt_69] NODE rect=[0,0,192,37] color=#FFCDD6F4 clip=[24.0,569.1,242.4,639.1]
-255: [txt_69_txt_63] TEXT rect=[36,677,68,18] color=#FFCDD6F4 text="Scroll " clip=[24.0,569.1,242.4,639.1]
-256: [txt_69_txt_64] TEXT rect=[104,677,49,18] color=#FFCDD6F4 text="item " clip=[24.0,569.1,242.4,639.1]
-257: [txt_69_txt_65] TEXT rect=[153,677,20,18] color=#FFCDD6F4 text="3 " clip=[24.0,569.1,242.4,639.1]
-258: [txt_69_txt_66] TEXT rect=[173,677,62,18] color=#FFCDD6F4 text="(Flex " clip=[24.0,569.1,242.4,639.1]
-259: [txt_69_txt_67] TEXT rect=[36,695,62,19] color=#FFCDD6F4 text="item) " clip=[24.0,569.1,242.4,639.1]
-260: [gen_70] NODE rect=[30,722,206,44] color=#FFCDD6F4 bg=#FF45475A clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-261: [gen_70_bg] RECT rect=[30,722,206,44] color=#FFCDD6F4 bg=#FF45475A r=6 clip=[24.0,569.1,242.4,639.1] radii=[6,6,6,6]
-262: [txt_71] NODE rect=[0,0,169,37] color=#FFCDD6F4 clip=[24.0,569.1,242.4,639.1]
-263: [txt_71_txt_68] TEXT rect=[36,726,44,18] color=#FFCDD6F4 text="End " clip=[24.0,569.1,242.4,639.1]
-264: [txt_71_txt_69] TEXT rect=[80,726,32,18] color=#FFCDD6F4 text="of " clip=[24.0,569.1,242.4,639.1]
-265: [txt_71_txt_70] TEXT rect=[112,726,100,18] color=#FFCDD6F4 text="overflow " clip=[24.0,569.1,242.4,639.1]
-266: [txt_71_txt_71] TEXT rect=[36,744,94,18] color=#FFCDD6F4 text="content " clip=[24.0,569.1,242.4,639.1]
-267: [gen_63_sb_vt] RECT rect=[236,571,4,66] bg=#33000000 r=2 radii=[2,2,2,2]
-268: [gen_63_sb_v] RECT rect=[236,571,4,23] bg=#88CCCCCC r=2 radii=[2,2,2,2]
-269: [gen_72] NODE rect=[268,107,176,580] color=#FFCDD6F4
-270: [gen_72_bg] RECT rect=[268,107,176,580] color=#FFCDD6F4
-271: [gen_73] NODE rect=[268,107,176,580] color=#FFCDD6F4 bg=#FF1E1E2E radii=[6,6,6,6]
-272: [gen_73_bg] RECT rect=[268,107,176,580] color=#FFCDD6F4 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-273: [gen_73_b_round] ROUNDED_BORDER rect=[268,107,176,580] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-274: [gen_74] NODE rect=[281,120,150,38] color=#FF89B4FA
-275: [gen_74_bg] RECT rect=[281,120,150,38] color=#FF89B4FA
-276: [txt_75] NODE rect=[0,0,149,39] color=#FF89B4FA
-277: [txt_75_txt_72] TEXT rect=[281,120,32,19] color=#FF89B4FA text="2. "
-278: [txt_75_txt_73] TEXT rect=[313,120,99,19] color=#FF89B4FA text="Canvas "
-279: [txt_75_txt_74] TEXT rect=[412,120,24,19] color=#FF89B4FA text="& "
-280: [txt_75_txt_75] TEXT rect=[281,139,150,19] color=#FF89B4FA text="Typography"
-281: [demo_scene] NODE rect=[281,166,150,135] color=#FFCDD6F4 radii=[8,8,8,8]
-282: [demo_scene_bg] RECT rect=[281,166,150,135] color=#FFCDD6F4 r=8 radii=[8,8,8,8]
-283: [demo_scene_bgl0_0] RECT rect=[253,141,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF11111B,#FF171723]
-284: [demo_scene_bgl0_1] RECT rect=[282,141,30,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF171723,#FF11111B]
-285: [demo_scene_bgl0_2] RECT rect=[312,141,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF232432,#FF1B1B28,#FF171723]
-286: [demo_scene_bgl0_3] RECT rect=[341,141,30,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF232432,#FF1B1B28,#FF1B1B28]
-287: [demo_scene_bgl0_4] RECT rect=[371,141,29,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF1E1E2B,#FF171723,#FF1B1B28]
-288: [demo_scene_bgl0_5] RECT rect=[400,141,30,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF11111B,#FF171723]
-289: [demo_scene_bgl0_6] RECT rect=[430,141,29,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF171723,#FF11111B]
-290: [demo_scene_bgl0_7] RECT rect=[253,167,29,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF11111B,#FF161621,#FF1E1E2B]
-291: [demo_scene_bgl0_8] RECT rect=[253,194,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF191925,#FF222331]
-292: [demo_scene_bgl0_9] RECT rect=[253,220,29,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF191925,#FF191925,#FF222331]
-293: [demo_scene_bgl0_10] RECT rect=[253,247,29,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF191925,#FF161621,#FF1E1E2B]
-294: [demo_scene_bgl0_11] RECT rect=[253,274,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF11111B,#FF171723]
-295: [demo_scene_bgl0_12] RECT rect=[282,167,30,27] bg=#FF11111B clip=[281.4,166.2,430.9,301.2] gradient=[#FF11111B,#FF171723,#FF1E1E2B,#FF161621]
-296: [demo_scene_bgl0_13] RECT rect=[312,167,29,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF1B1B28,#FF232432,#FF1E1E2B]
-297: [demo_scene_bgl0_14] RECT rect=[341,167,30,27] bg=#FF1B1B28 clip=[281.4,166.2,430.9,301.2] gradient=[#FF1B1B28,#FF1B1B28,#FF232432,#FF232432]
-298: [demo_scene_bgl0_15] RECT rect=[371,167,29,27] bg=#FF1B1B28 clip=[281.4,166.2,430.9,301.2] gradient=[#FF1B1B28,#FF171723,#FF1E1E2B,#FF232432]
-299: [demo_scene_bgl0_16] RECT rect=[400,167,30,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF11111B,#FF161621,#FF1E1E2B]
-300: [demo_scene_bgl0_17] RECT rect=[282,194,30,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF222331,#FF191925]
-301: [demo_scene_bgl0_18] RECT rect=[312,194,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF232432,#FF2B2B3C,#FF222331]
-302: [demo_scene_bgl0_19] RECT rect=[341,194,30,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF232432,#FF2B2B3C,#FF2B2B3C]
-303: [demo_scene_bgl0_20] RECT rect=[371,194,29,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF1E1E2B,#FF222331,#FF2B2B3C]
-304: [demo_scene_bgl0_21] RECT rect=[400,194,30,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF191925,#FF222331]
-305: [demo_scene_bgl0_22] RECT rect=[282,220,30,27] bg=#FF191925 clip=[281.4,166.2,430.9,301.2] gradient=[#FF191925,#FF222331,#FF222331,#FF191925]
-306: [demo_scene_bgl0_23] RECT rect=[312,220,29,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF2B2B3C,#FF2B2B3C,#FF222331]
-307: [demo_scene_bgl0_24] RECT rect=[341,220,15,14] bg=#FF2B2B3C clip=[281.4,166.2,430.9,301.2] gradient=[#FF2B2B3C,#FF2D2E3F,#FF313244,#FF2C2D3E]
-308: [demo_scene_bgl0_25] RECT rect=[356,220,15,14] bg=#FF2D2E3F clip=[281.4,166.2,430.9,301.2] gradient=[#FF2D2E3F,#FF2B2B3C,#FF2C2D3E,#FF313244]
-309: [demo_scene_bgl0_26] RECT rect=[341,234,15,13] bg=#FF2C2D3E clip=[281.4,166.2,430.9,301.2] gradient=[#FF2C2D3E,#FF313244,#FF2D2E3F,#FF2B2B3C]
-310: [demo_scene_bgl0_27] RECT rect=[356,234,15,13] bg=#FF313244 clip=[281.4,166.2,430.9,301.2] gradient=[#FF313244,#FF2C2D3E,#FF2B2B3C,#FF2D2E3F]
-311: [demo_scene_bgl0_28] RECT rect=[371,220,29,27] bg=#FF2B2B3C clip=[281.4,166.2,430.9,301.2] gradient=[#FF2B2B3C,#FF222331,#FF222331,#FF2B2B3C]
-312: [demo_scene_bgl0_29] RECT rect=[400,220,30,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF191925,#FF191925,#FF222331]
-313: [demo_scene_bgl0_30] RECT rect=[282,247,30,27] bg=#FF191925 clip=[281.4,166.2,430.9,301.2] gradient=[#FF191925,#FF222331,#FF1E1E2B,#FF161621]
-314: [demo_scene_bgl0_31] RECT rect=[312,247,29,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF2B2B3C,#FF232432,#FF1E1E2B]
-315: [demo_scene_bgl0_32] RECT rect=[341,247,30,27] bg=#FF2B2B3C clip=[281.4,166.2,430.9,301.2] gradient=[#FF2B2B3C,#FF2B2B3C,#FF232432,#FF232432]
-316: [demo_scene_bgl0_33] RECT rect=[371,247,29,27] bg=#FF2B2B3C clip=[281.4,166.2,430.9,301.2] gradient=[#FF2B2B3C,#FF222331,#FF1E1E2B,#FF232432]
-317: [demo_scene_bgl0_34] RECT rect=[400,247,30,27] bg=#FF222331 clip=[281.4,166.2,430.9,301.2] gradient=[#FF222331,#FF191925,#FF161621,#FF1E1E2B]
-318: [demo_scene_bgl0_35] RECT rect=[282,274,30,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF171723,#FF11111B]
-319: [demo_scene_bgl0_36] RECT rect=[312,274,29,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF232432,#FF1B1B28,#FF171723]
-320: [demo_scene_bgl0_37] RECT rect=[341,274,30,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF232432,#FF1B1B28,#FF1B1B28]
-321: [demo_scene_bgl0_38] RECT rect=[371,274,29,26] bg=#FF232432 clip=[281.4,166.2,430.9,301.2] gradient=[#FF232432,#FF1E1E2B,#FF171723,#FF1B1B28]
-322: [demo_scene_bgl0_39] RECT rect=[400,274,30,26] bg=#FF1E1E2B clip=[281.4,166.2,430.9,301.2] gradient=[#FF1E1E2B,#FF161621,#FF11111B,#FF171723]
-323: [demo_scene_bgl0_40] RECT rect=[430,167,29,27] bg=#FF11111B clip=[281.4,166.2,430.9,301.2] gradient=[#FF11111B,#FF171723,#FF1E1E2B,#FF161621]
-324: [demo_scene_bgl0_41] RECT rect=[430,194,29,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF222331,#FF191925]
-325: [demo_scene_bgl0_42] RECT rect=[430,220,29,27] bg=#FF191925 clip=[281.4,166.2,430.9,301.2] gradient=[#FF191925,#FF222331,#FF222331,#FF191925]
-326: [demo_scene_bgl0_43] RECT rect=[430,247,29,27] bg=#FF191925 clip=[281.4,166.2,430.9,301.2] gradient=[#FF191925,#FF222331,#FF1E1E2B,#FF161621]
-327: [demo_scene_bgl0_44] RECT rect=[430,274,29,26] bg=#FF161621 clip=[281.4,166.2,430.9,301.2] gradient=[#FF161621,#FF1E1E2B,#FF171723,#FF11111B]
-328: [demo_scene_bgl0_45] RECT rect=[253,300,29,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF11111B,#FF161621,#FF1E1E2B]
-329: [demo_scene_bgl0_46] RECT rect=[282,300,30,27] bg=#FF11111B clip=[281.4,166.2,430.9,301.2] gradient=[#FF11111B,#FF171723,#FF1E1E2B,#FF161621]
-330: [demo_scene_bgl0_47] RECT rect=[312,300,29,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF1B1B28,#FF232432,#FF1E1E2B]
-331: [demo_scene_bgl0_48] RECT rect=[341,300,30,27] bg=#FF1B1B28 clip=[281.4,166.2,430.9,301.2] gradient=[#FF1B1B28,#FF1B1B28,#FF232432,#FF232432]
-332: [demo_scene_bgl0_49] RECT rect=[371,300,29,27] bg=#FF1B1B28 clip=[281.4,166.2,430.9,301.2] gradient=[#FF1B1B28,#FF171723,#FF1E1E2B,#FF232432]
-333: [demo_scene_bgl0_50] RECT rect=[400,300,30,27] bg=#FF171723 clip=[281.4,166.2,430.9,301.2] gradient=[#FF171723,#FF11111B,#FF161621,#FF1E1E2B]
-334: [demo_scene_bgl0_51] RECT rect=[430,300,29,27] bg=#FF11111B clip=[281.4,166.2,430.9,301.2] gradient=[#FF11111B,#FF171723,#FF1E1E2B,#FF161621]
-335: [demo_scene_b_round] ROUNDED_BORDER rect=[281,166,150,135] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF585B70,#FF585B70,#FF585B70,#FF585B70]
-336: [gen_76] NODE rect=[305,167,103,53] color=#FF89B4FA
-337: [gen_76_bg] RECT rect=[305,167,103,53] color=#FF89B4FA
-338: [txt_77] NODE rect=[0,0,103,52] color=#FF89B4FA
-339: [txt_77_txt_76] TEXT rect=[305,167,89,18] color=#FF89B4FA text="Canvas "
-340: [txt_77_txt_77] TEXT rect=[394,167,22,18] color=#FF89B4FA text="/ "
-341: [txt_77_txt_78] TEXT rect=[305,185,109,17] color=#FF89B4FA text="Viewport "
-342: [txt_77_txt_79] TEXT rect=[305,202,54,18] color=#FF89B4FA text="Area"
-343: [gen_78] NODE rect=[311,226,90,44] color=#FFA6ADC8
-344: [gen_78_bg] RECT rect=[311,226,90,44] color=#FFA6ADC8
-345: [txt_79] NODE rect=[0,0,90,44] color=#FFA6ADC8
-346: [txt_79_txt_80] TEXT rect=[311,226,86,14] color=#FFA6ADC8 text="Standard "
-347: [txt_79_txt_81] TEXT rect=[311,240,70,15] color=#FFA6ADC8 text="Element "
-348: [txt_79_txt_82] TEXT rect=[311,255,90,15] color=#FFA6ADC8 text="Benchmark"
-349: [gen_80] NODE rect=[282,276,148,37] color=#FFCDD6F4
-350: [gen_80_bg] RECT rect=[282,276,148,37] color=#FFCDD6F4
-351: [gen_81] NODE rect=[282,276,46,37] color=#FFA6E3A1 bg=#FF1E1E2E radii=[6,6,6,6]
-352: [gen_81_bg] RECT rect=[282,276,46,37] color=#FFA6E3A1 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-353: [gen_81_b_round] ROUNDED_BORDER rect=[282,276,46,37] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
-354: [txt_82] NODE rect=[0,0,15,31] color=#FFA6E3A1
-355: [txt_82_txt_83] TEXT rect=[291,279,22,15] color=#FFA6E3A1 text="X: "
-356: [txt_82_txt_84] TEXT rect=[291,294,11,16] color=#FFA6E3A1 text="0"
-357: [gen_83] NODE rect=[334,276,45,37] color=#FFA6E3A1 bg=#FF1E1E2E radii=[6,6,6,6]
-358: [gen_83_bg] RECT rect=[334,276,45,37] color=#FFA6E3A1 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-359: [gen_83_b_round] ROUNDED_BORDER rect=[334,276,45,37] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFA6E3A1,#FFA6E3A1,#FFA6E3A1,#FFA6E3A1]
-360: [txt_84] NODE rect=[0,0,15,31] color=#FFA6E3A1
-361: [txt_84_txt_85] TEXT rect=[343,279,21,15] color=#FFA6E3A1 text="Y: "
-362: [txt_84_txt_86] TEXT rect=[343,294,10,16] color=#FFA6E3A1 text="0"
-363: [gen_85] NODE rect=[385,276,45,37] color=#FFA6E3A1 bg=#FF1E1E2E radii=[6,6,6,6]
-364: [gen_85_bg] RECT rect=[385,276,45,37] color=#FFA6E3A1 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-365: [gen_85_b_round] ROUNDED_BORDER rect=[385,276,45,37] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF9E2AF,#FFF9E2AF,#FFF9E2AF,#FFF9E2AF]
-366: [txt_86] NODE rect=[0,0,15,31] color=#FFA6E3A1
-367: [txt_86_txt_87] TEXT rect=[394,279,21,15] color=#FFA6E3A1 text="Z: "
-368: [txt_86_txt_88] TEXT rect=[394,294,10,16] color=#FFA6E3A1 text="0"
-369: [gen_87] NODE rect=[281,309,150,53] color=#FF89B4FA
-370: [gen_87_bg] RECT rect=[281,309,150,53] color=#FF89B4FA
-371: [txt_88] NODE rect=[0,0,130,52] color=#FF89B4FA
-372: [txt_88_txt_89] TEXT rect=[281,309,70,18] color=#FF89B4FA text="Color "
-373: [txt_88_txt_90] TEXT rect=[281,327,117,17] color=#FF89B4FA text="Swatches "
-374: [txt_88_txt_91] TEXT rect=[398,327,22,17] color=#FF89B4FA text="& "
-375: [txt_88_txt_92] TEXT rect=[281,344,102,18] color=#FF89B4FA text="Palettes"
-376: [gen_89] NODE rect=[281,370,150,44] color=#FFCDD6F4 bg=#FF181825 radii=[6,6,6,6]
-377: [gen_89_bg] RECT rect=[281,370,150,44] color=#FFCDD6F4 bg=#FF181825 r=6 radii=[6,6,6,6]
-378: [gen_89_b_round] ROUNDED_BORDER rect=[281,370,150,44] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-379: [gen_90] NODE rect=[292,377,23,30] color=#FFCDD6F4 radii=[4,4,4,4]
-380: [gen_90_bg] RECT rect=[292,377,23,30] color=#FFCDD6F4 r=4 radii=[4,4,4,4]
-381: [gen_90_bgl0_0] RECT rect=[273,350,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-382: [gen_90_bgl0_1] RECT rect=[293,350,21,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-383: [gen_90_bgl0_2] RECT rect=[314,350,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-384: [gen_90_bgl0_3] RECT rect=[273,378,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-385: [gen_90_bgl0_4] RECT rect=[293,378,21,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-386: [gen_90_bgl0_5] RECT rect=[314,378,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-387: [gen_90_bgl0_6] RECT rect=[273,406,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-388: [gen_90_bgl0_7] RECT rect=[293,406,21,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-389: [gen_90_bgl0_8] RECT rect=[314,406,20,28] bg=#FF3B82F6 clip=[292.4,376.6,314.7,406.6] gradient=[#FF3B82F6,#FF2E6CE9,#FF1D4ED8,#FF2A64E5]
-390: [gen_90_b_round] ROUNDED_BORDER rect=[292,377,23,30] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
-391: [gen_91] NODE rect=[319,377,22,30] color=#FFCDD6F4 radii=[4,4,4,4]
-392: [gen_91_bg] RECT rect=[319,377,22,30] color=#FFCDD6F4 r=4 radii=[4,4,4,4]
-393: [gen_91_bgl0_0] RECT rect=[299,350,21,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-394: [gen_91_bgl0_1] RECT rect=[320,350,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-395: [gen_91_bgl0_2] RECT rect=[340,350,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-396: [gen_91_bgl0_3] RECT rect=[299,378,21,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-397: [gen_91_bgl0_4] RECT rect=[320,378,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-398: [gen_91_bgl0_5] RECT rect=[340,378,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-399: [gen_91_bgl0_6] RECT rect=[299,406,21,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-400: [gen_91_bgl0_7] RECT rect=[320,406,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-401: [gen_91_bgl0_8] RECT rect=[340,406,20,28] bg=#FFF97316 clip=[318.7,376.6,341.0,406.6] gradient=[#FFF97316,#FFE25E12,#FFC2410C,#FFD95610]
-402: [gen_91_b_round] ROUNDED_BORDER rect=[319,377,22,30] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFFAB387,#FFFAB387,#FFFAB387,#FFFAB387]
-403: [gen_92] NODE rect=[345,377,22,30] color=#FFCDD6F4 radii=[4,4,4,4]
-404: [gen_92_bg] RECT rect=[345,377,22,30] color=#FFCDD6F4 r=4 radii=[4,4,4,4]
-405: [gen_92_bgl0_0] RECT rect=[326,350,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-406: [gen_92_bgl0_1] RECT rect=[346,350,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-407: [gen_92_bgl0_2] RECT rect=[366,350,21,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-408: [gen_92_bgl0_3] RECT rect=[326,378,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-409: [gen_92_bgl0_4] RECT rect=[346,378,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-410: [gen_92_bgl0_5] RECT rect=[366,378,21,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-411: [gen_92_bgl0_6] RECT rect=[326,406,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-412: [gen_92_bgl0_7] RECT rect=[346,406,20,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-413: [gen_92_bgl0_8] RECT rect=[366,406,21,28] bg=#FF22C55E clip=[345.0,376.6,367.3,406.6] gradient=[#FF22C55E,#FF1DA850,#FF15803D,#FF1A9D4B]
-414: [gen_92_b_round] ROUNDED_BORDER rect=[345,377,22,30] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFA6E3A1,#FFA6E3A1,#FFA6E3A1,#FFA6E3A1]
-415: [gen_93] NODE rect=[371,377,23,30] color=#FFCDD6F4 radii=[4,4,4,4]
-416: [gen_93_bg] RECT rect=[371,377,23,30] color=#FFCDD6F4 r=4 radii=[4,4,4,4]
-417: [gen_93_bgl0_0] RECT rect=[352,350,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-418: [gen_93_bgl0_1] RECT rect=[372,350,21,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-419: [gen_93_bgl0_2] RECT rect=[393,350,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-420: [gen_93_bgl0_3] RECT rect=[352,378,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-421: [gen_93_bgl0_4] RECT rect=[372,378,21,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-422: [gen_93_bgl0_5] RECT rect=[393,378,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-423: [gen_93_bgl0_6] RECT rect=[352,406,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-424: [gen_93_bgl0_7] RECT rect=[372,406,21,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-425: [gen_93_bgl0_8] RECT rect=[393,406,20,28] bg=#FFA855F7 clip=[371.3,376.6,393.6,406.6] gradient=[#FFA855F7,#FF9640E6,#FF7E22CE,#FF9037DF]
-426: [gen_93_b_round] ROUNDED_BORDER rect=[371,377,23,30] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFCBA6F7,#FFCBA6F7,#FFCBA6F7,#FFCBA6F7]
-427: [gen_94] NODE rect=[398,377,22,30] color=#FFCDD6F4 radii=[4,4,4,4]
-428: [gen_94_bg] RECT rect=[398,377,22,30] color=#FFCDD6F4 r=4 radii=[4,4,4,4]
-429: [gen_94_bgl0_0] RECT rect=[378,350,21,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-430: [gen_94_bgl0_1] RECT rect=[399,350,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-431: [gen_94_bgl0_2] RECT rect=[419,350,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-432: [gen_94_bgl0_3] RECT rect=[378,378,21,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-433: [gen_94_bgl0_4] RECT rect=[399,378,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-434: [gen_94_bgl0_5] RECT rect=[419,378,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-435: [gen_94_bgl0_6] RECT rect=[378,406,21,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-436: [gen_94_bgl0_7] RECT rect=[399,406,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-437: [gen_94_bgl0_8] RECT rect=[419,406,20,28] bg=#FFF43F5E clip=[397.6,376.6,419.9,406.6] gradient=[#FFF43F5E,#FFDD2C50,#FFBE123C,#FFD5254A]
-438: [gen_94_b_round] ROUNDED_BORDER rect=[398,377,22,30] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF38BA8,#FFF38BA8,#FFF38BA8,#FFF38BA8]
-439: [gen_95] NODE rect=[281,422,150,52] color=#FF89B4FA
-440: [gen_95_bg] RECT rect=[281,422,150,52] color=#FF89B4FA
-441: [txt_96] NODE rect=[0,0,122,52] color=#FF89B4FA
-442: [txt_96_txt_93] TEXT rect=[281,422,76,17] color=#FF89B4FA text="Inline "
-443: [txt_96_txt_94] TEXT rect=[357,422,22,17] color=#FF89B4FA text="& "
-444: [txt_96_txt_95] TEXT rect=[281,439,63,18] color=#FF89B4FA text="Text "
-445: [txt_96_txt_96] TEXT rect=[281,457,122,17] color=#FF89B4FA text="Standards"
-446: [gen_97] NODE rect=[281,482,150,85] color=#FFCDD6F4 bg=#FF313244 radii=[4,4,4,4]
-447: [gen_97_bg] RECT rect=[281,482,150,85] color=#FFCDD6F4 bg=#FF313244 r=4 radii=[4,4,4,4]
-448: [gen_97_b_round] ROUNDED_BORDER rect=[281,482,150,85] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-449: [gen_98] NODE rect=[290,491,132,47] color=#FFCDD6F4
-450: [gen_98_bg] RECT rect=[290,491,132,47] color=#FFCDD6F4
-451: [txt_99] NODE rect=[0,0,51,16] color=#FFCDD6F4
-452: [txt_99_txt_97] TEXT rect=[290,491,58,16] color=#FFCDD6F4 text="Style: "
-453: [gen_100] NODE rect=[348,492,42,14] color=#FFCDD6F4
-454: [gen_100_frag_98] RECT rect=[348,492,42,14] color=#FFCDD6F4
-455: [txt_101] NODE rect=[0,0,42,16] color=#FFCDD6F4
-456: [txt_101_txt_99] TEXT rect=[348,491,42,16] color=#FFCDD6F4 text="Bold"
-457: [txt_102] NODE rect=[0,0,11,16] color=#FFCDD6F4
-458: [txt_102_txt_100] TEXT rect=[390,491,17,16] color=#FFCDD6F4 text=", "
-459: [gen_103] NODE rect=[290,508,52,13] color=#FFCDD6F4
-460: [gen_103_frag_101] RECT rect=[290,508,52,13] color=#FFCDD6F4
-461: [txt_104] NODE rect=[0,0,51,16] color=#FFCDD6F4
-462: [txt_104_txt_102] TEXT rect=[290,507,52,15] color=#FFCDD6F4 text="Italic"
-463: [txt_105] NODE rect=[0,0,11,16] color=#FFCDD6F4
-464: [txt_105_txt_103] TEXT rect=[342,507,16,15] color=#FFCDD6F4 text=", "
-465: [gen_106] NODE rect=[290,507,104,31] color=#FFF9E2AF bg=#2489B4FA radii=[3,3,3,3]
-466: [gen_106_frag_104] RECT rect=[358,507,36,15] color=#FFF9E2AF bg=#2489B4FA r=3 radii=[3,0,0,3]
-467: [gen_106_frag_105] RECT rect=[290,522,41,16] color=#FFF9E2AF bg=#2489B4FA radii=[0,3,3,0]
-468: [txt_107] NODE rect=[0,0,74,16] color=#FFF9E2AF
-469: [txt_107_txt_106] TEXT rect=[362,507,38,15] color=#FFF9E2AF text="CSS "
-470: [txt_107_txt_107] TEXT rect=[290,522,37,16] color=#FFF9E2AF text="Grid"
-471: [gen_108] NODE rect=[290,542,132,16] color=#FFA6ADC8
-472: [gen_108_bg] RECT rect=[290,542,132,16] color=#FFA6ADC8
-473: [txt_109] NODE rect=[0,0,786,16] color=#FFA6ADC8 clip=[290.4,542.0,421.9,557.6]
-474: [txt_109_txt_108] TEXT rect=[290,542,71,16] color=#FFA6ADC8 text="Ellipsis: " clip=[290.4,542.0,421.9,557.6]
-475: [txt_109_txt_109] TEXT rect=[361,542,138,16] color=#FFA6ADC8 text="Demonstrating " clip=[290.4,542.0,421.9,557.6]
-476: [txt_109_txt_110] TEXT rect=[499,542,91,16] color=#FFA6ADC8 text="standard " clip=[290.4,542.0,421.9,557.6]
-477: [txt_109_txt_111] TEXT rect=[590,542,53,16] color=#FFA6ADC8 text="text-" clip=[290.4,542.0,421.9,557.6]
-478: [txt_109_txt_112] TEXT rect=[643,542,84,16] color=#FFA6ADC8 text="overflow " clip=[290.4,542.0,421.9,557.6]
-479: [txt_109_txt_113] TEXT rect=[727,542,106,16] color=#FFA6ADC8 text="truncation " clip=[290.4,542.0,421.9,557.6]
-480: [txt_109_txt_114] TEXT rect=[833,542,85,16] color=#FFA6ADC8 text="behavior " clip=[290.4,542.0,421.9,557.6]
-481: [txt_109_txt_115] TEXT rect=[918,542,21,16] color=#FFA6ADC8 text="in " clip=[290.4,542.0,421.9,557.6]
-482: [txt_109_txt_116] TEXT rect=[939,542,137,16] color=#FFA6ADC8 text="EnderFrameLib " clip=[290.4,542.0,421.9,557.6]
-483: [gen_110] NODE rect=[456,107,379,580] color=#FFCDD6F4
-484: [gen_110_bg] RECT rect=[456,107,379,580] color=#FFCDD6F4
-485: [gen_111] NODE rect=[456,107,379,580] color=#FFCDD6F4 bg=#FF1E1E2E radii=[6,6,6,6]
-486: [gen_111_bg] RECT rect=[456,107,379,580] color=#FFCDD6F4 bg=#FF1E1E2E r=6 radii=[6,6,6,6]
-487: [gen_111_b_round] ROUNDED_BORDER rect=[456,107,379,580] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-488: [gen_112] NODE rect=[469,120,353,19] color=#FF89B4FA
-489: [gen_112_bg] RECT rect=[469,120,353,19] color=#FF89B4FA
-490: [txt_113] NODE rect=[0,0,284,19] color=#FF89B4FA
-491: [txt_113_txt_117] TEXT rect=[469,120,32,19] color=#FF89B4FA text="3. "
-492: [txt_113_txt_118] TEXT rect=[501,120,84,19] color=#FF89B4FA text="Forms "
-493: [txt_113_txt_119] TEXT rect=[585,120,24,19] color=#FF89B4FA text="& "
-494: [txt_113_txt_120] TEXT rect=[609,120,54,19] color=#FF89B4FA text="DOM "
-495: [txt_113_txt_121] TEXT rect=[663,120,90,19] color=#FF89B4FA text="Events"
-496: [gen_114] NODE rect=[469,147,353,30] color=#FFCDD6F4
-497: [gen_114_bg] RECT rect=[469,147,353,30] color=#FFCDD6F4
-498: [test_input] NODE rect=[469,147,216,30] color=#FF000000 bg=#FFFFFFFF radii=[2,2,2,2]
-499: [test_input_b_round] ROUNDED_BORDER rect=[469,147,216,30] radii=[2,2,2,2] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
-500: [test_input_input] INPUT rect=[470,148,214,28] color=#FF000000 bg=#FFFFFFFF r=2 radii=[1,1,1,1]
-501: [test_input_ph] TEXT rect=[474,148,214,28] color=#FFAAAAAA text="Type text here..." radii=[1,1,1,1]
-502: [gen_115] NODE rect=[691,148,131,28] color=#FF11111B bg=#FF89B4FA radii=[4,4,4,4]
-503: [gen_115_bg] BUTTON rect=[691,148,131,28] color=#FF11111B bg=#FF89B4FA r=4 radii=[4,4,4,4]
-504: [gen_115_b_round] ROUNDED_BORDER rect=[691,148,131,28] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFB4BEFE,#FFB4BEFE,#FFB4BEFE,#FFB4BEFE]
-505: [txt_116] NODE rect=[0,0,108,18] color=#FF11111B
-506: [txt_116_txt_122] TEXT rect=[702,153,66,18] color=#FF11111B text="Send "
-507: [txt_116_txt_123] TEXT rect=[768,153,43,18] color=#FF11111B text="RPC"
-508: [gen_117] NODE rect=[469,185,353,29] color=#FFCDD6F4
-509: [gen_117_bg] RECT rect=[469,185,353,29] color=#FFCDD6F4
-510: [mode_select] NODE rect=[469,185,95,29] color=#FF000000 bg=#FFFFFFFF radii=[2,2,2,2]
-511: [mode_select_b_round] ROUNDED_BORDER rect=[469,185,95,29] radii=[2,2,2,2] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
-512: [mode_select_select] SELECT rect=[470,186,93,27] color=#FF000000 bg=#FFFFFFFF text="Mode: Normal ▾" r=2 radii=[1,1,1,1]
-513: [gen_124] NODE rect=[633,190,66,19] color=#FFCDD6F4
-514: [gen_124_bg] RECT rect=[633,190,66,19] color=#FFCDD6F4
-515: [test_check] NODE rect=[637,193,13,13] color=#FF000000 bg=#FFFFFFFF radii=[2,2,2,2]
-516: [test_check_b_round] ROUNDED_BORDER rect=[637,193,13,13] radii=[2,2,2,2] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
-517: [test_check_input] CHECKBOX rect=[638,194,11,11] color=#FF000000 bg=#FFFFFFFF text="true" r=2 radii=[1,1,1,1]
-518: [gen_125] NODE rect=[657,192,42,15] color=#FFCDD6F4
-519: [gen_125_bg] RECT rect=[657,192,42,15] color=#FFCDD6F4
-520: [txt_126] NODE rect=[0,0,42,16] color=#FFCDD6F4
-521: [txt_126_txt_124] TEXT rect=[657,192,42,15] color=#FFCDD6F4 text="Sync"
-522: [test_range] NODE rect=[770,191,50,16] color=#FF0075FF bg=#FFEFEFEF radii=[8,8,8,8]
-523: [test_range_input] RANGE rect=[770,191,50,16] color=#FF0075FF bg=#FFEFEFEF text="75:0:100" r=8 radii=[8,8,8,8]
-524: [gen_127] NODE rect=[469,226,353,26] color=#FFCDD6F4 radii=[6,6,6,6]
-525: [gen_127_bg] RECT rect=[469,226,353,26] color=#FFCDD6F4 r=6 radii=[6,6,6,6]
-526: [gen_127_b_round] ROUNDED_BORDER rect=[469,226,353,26] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF45475A,#FF45475A,#FF45475A,#FF45475A]
-527: [gen_128] NODE rect=[478,232,148,14] color=#FF89B4FA
-528: [gen_128_bg] RECT rect=[478,232,148,14] color=#FF89B4FA
-529: [txt_129] NODE rect=[0,0,140,14] color=#FF89B4FA
-530: [txt_129_txt_125] TEXT rect=[482,232,92,14] color=#FF89B4FA text="Exclusive "
-531: [txt_129_txt_126] TEXT rect=[574,232,48,14] color=#FF89B4FA text="Radio"
-532: [gen_130] NODE rect=[626,231,107,16] color=#FFCDD6F4
-533: [gen_130_bg] RECT rect=[626,231,107,16] color=#FFCDD6F4
-534: [gen_131] NODE rect=[631,234,13,13] color=#FF000000 bg=#FFFFFFFF radii=[7,7,7,7]
-535: [gen_131_input] RADIO rect=[631,234,13,13] color=#FF000000 bg=#FFFFFFFF text="true" r=7 radii=[7,7,7,7]
-536: [gen_132] NODE rect=[651,231,82,15] color=#FFCDD6F4
-537: [gen_132_bg] RECT rect=[651,231,82,15] color=#FFCDD6F4
-538: [txt_133] NODE rect=[0,0,82,15] color=#FFCDD6F4
-539: [txt_133_txt_127] TEXT rect=[651,231,82,15] color=#FFCDD6F4 text="Standard"
-540: [gen_134] NODE rect=[733,231,80,16] color=#FFCDD6F4
-541: [gen_134_bg] RECT rect=[733,231,80,16] color=#FFCDD6F4
-542: [gen_135] NODE rect=[738,234,13,13] color=#FF000000 bg=#FFFFFFFF radii=[7,7,7,7]
-543: [gen_135_input] RADIO rect=[738,234,13,13] color=#FF000000 bg=#FFFFFFFF text="false" r=7 radii=[7,7,7,7]
-544: [gen_136] NODE rect=[758,231,55,15] color=#FFCDD6F4
-545: [gen_136_bg] RECT rect=[758,231,55,15] color=#FFCDD6F4
-546: [txt_137] NODE rect=[0,0,55,15] color=#FFCDD6F4
-547: [txt_137_txt_128] TEXT rect=[758,231,55,15] color=#FFCDD6F4 text="Strict"
-548: [gen_138] NODE rect=[469,264,353,17] color=#FF89B4FA
-549: [gen_138_bg] RECT rect=[469,264,353,17] color=#FF89B4FA
-550: [txt_139] NODE rect=[0,0,186,17] color=#FF89B4FA
-551: [txt_139_txt_129] TEXT rect=[469,264,49,17] color=#FF89B4FA text="Lua "
-552: [txt_139_txt_130] TEXT rect=[518,264,62,17] color=#FF89B4FA text="Code "
-553: [txt_139_txt_131] TEXT rect=[580,264,75,17] color=#FF89B4FA text="Editor"
-554: [code_editor] NODE rect=[469,289,353,90] color=#FFCDD6F4 bg=#FF11111B radii=[6,6,6,6]
-555: [code_editor_b_round] ROUNDED_BORDER rect=[469,289,353,90] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
-556: [code_editor_textarea] TEXTAREA rect=[470,290,351,88] color=#FFCDD6F4 bg=#FF11111B text="-- Click to edit!\nlocal power = 100\nif power < 200 then\n  print(\"System Online\")\nend" r=6 radii=[5,5,5,5]
+000: [bg_root] RECT rect=[0,0,800,600] bg=#FF0F172A
+001: [gen_1] NODE rect=[0,0,800,600] color=#FFF8FAFC
+002: [gen_1_bg] RECT rect=[0,0,800,600] color=#FFF8FAFC
+003: [gen_8] NODE rect=[0,0,800,600] color=#FFF8FAFC bg=#FF0F172A
+004: [gen_8_bg] RECT rect=[0,0,800,600] color=#FFF8FAFC bg=#FF0F172A
+005: [gen_9] NODE rect=[0,0,800,600] color=#FFF8FAFC bg=#FF0F172A
+006: [gen_9_bg] RECT rect=[0,0,800,600] color=#FFF8FAFC bg=#FF0F172A
+007: [header_panel] NODE rect=[12,12,776,86] color=#FFF8FAFC radii=[8,8,8,8]
+008: [header_panel_bg] RECT rect=[12,12,776,86] color=#FFF8FAFC r=8 radii=[8,8,8,8]
+009: [header_panel_bgl0_0] RECT rect=[-761,-71,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+010: [header_panel_bgl0_1] RECT rect=[13,-71,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+011: [header_panel_bgl0_2] RECT rect=[787,-71,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+012: [header_panel_bgl0_3] RECT rect=[-761,13,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+013: [header_panel_bgl0_4] RECT rect=[13,13,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+014: [header_panel_bgl0_5] RECT rect=[787,13,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+015: [header_panel_bgl0_6] RECT rect=[-761,97,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+016: [header_panel_bgl0_7] RECT rect=[13,97,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+017: [header_panel_bgl0_8] RECT rect=[787,97,774,84] bg=#FF1E293B clip=[12.0,12.0,788.0,98.2] gradient=[#FF1E293B,#FF10192C,#FF0F172A,#FF1D2739]
+018: [header_panel_b_round] ROUNDED_BORDER rect=[12,12,776,86] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+019: [gen_10] NODE rect=[29,23,252,34] color=#FFF8FAFC
+020: [gen_10_bg] RECT rect=[29,23,252,34] color=#FFF8FAFC
+021: [gen_11] NODE rect=[29,27,26,26] color=#FFFFFFFF radii=[6,6,6,6]
+022: [gen_11_bg] RECT rect=[29,27,26,26] color=#FFFFFFFF r=6 radii=[6,6,6,6]
+023: [gen_11_bgl0_0] RECT rect=[6,4,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+024: [gen_11_bgl0_1] RECT rect=[30,4,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+025: [gen_11_bgl0_2] RECT rect=[54,4,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+026: [gen_11_bgl0_3] RECT rect=[6,28,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+027: [gen_11_bgl0_4] RECT rect=[30,28,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+028: [gen_11_bgl0_5] RECT rect=[54,28,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+029: [gen_11_bgl0_6] RECT rect=[6,52,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+030: [gen_11_bgl0_7] RECT rect=[30,52,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+031: [gen_11_bgl0_8] RECT rect=[54,52,24,24] bg=#FF6366F1 clip=[29.0,26.8,55.0,52.8] gradient=[#FF6366F1,#FF4F74F4,#FF3B82F6,#FF4F74F4]
+032: [gen_11_b_round] ROUNDED_BORDER rect=[29,27,26,26] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF818CF8,#FF818CF8,#FF818CF8,#FF818CF8]
+033: [txt_12] NODE rect=[37,31,10,17] color=#FFFFFFFF
+034: [txt_12_txt_0] TEXT rect=[37,31,10,17] color=#FFFFFFFF text="E"
+035: [gen_13] NODE rect=[65,23,216,34] color=#FFF8FAFC
+036: [gen_13_bg] RECT rect=[65,23,216,34] color=#FFF8FAFC
+037: [gen_14] NODE rect=[65,23,216,21] color=#FFF8FAFC
+038: [gen_14_bg] RECT rect=[65,23,216,21] color=#FFF8FAFC
+039: [gen_15] NODE rect=[65,23,136,21] color=#FFF8FAFC
+040: [gen_15_bg] RECT rect=[65,23,136,21] color=#FFF8FAFC
+041: [txt_16] NODE rect=[0,0,136,21] color=#FFF8FAFC
+042: [txt_16_txt_1] TEXT rect=[65,23,136,21] color=#FFF8FAFC text="EnderFrame"
+043: [gen_17] NODE rect=[205,28,43,14] color=#FF818CF8
+044: [gen_17_bg] RECT rect=[205,28,43,14] color=#FF818CF8
+045: [txt_18] NODE rect=[0,0,43,14] color=#FF818CF8
+046: [txt_18_txt_2] TEXT rect=[205,28,43,14] color=#FF818CF8 text="STORE"
+047: [gen_19] NODE rect=[65,44,216,13] color=#FF64748B
+048: [gen_19_bg] RECT rect=[65,44,216,13] color=#FF64748B
+049: [txt_20] NODE rect=[0,0,216,13] color=#FF64748B
+050: [txt_20_txt_3] TEXT rect=[65,44,92,13] color=#FF64748B text="EnderFrameLib "
+051: [txt_20_txt_4] TEXT rect=[157,44,25,13] color=#FF64748B text="Web "
+052: [txt_20_txt_5] TEXT rect=[182,44,68,13] color=#FF64748B text="Standards "
+053: [txt_20_txt_6] TEXT rect=[250,44,31,13] color=#FF64748B text="Suite"
+054: [gen_21] NODE rect=[293,27,478,25] color=#FFF8FAFC
+055: [gen_21_bg] RECT rect=[293,27,478,25] color=#FFF8FAFC
+056: [mode_select] NODE rect=[293,27,128,25] color=#FFF8FAFC bg=#FF0F172A radii=[6,6,6,6]
+057: [mode_select_b_round] ROUNDED_BORDER rect=[293,27,128,25] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF475569,#FF475569,#FF475569,#FF475569]
+058: [mode_select_select] SELECT rect=[294,28,126,23] color=#FFF8FAFC bg=#FF0F172A text="All Departments ▾" r=6 radii=[5,5,5,5]
+059: [test_input] NODE rect=[427,27,255,25] color=#FFF8FAFC bg=#FF0F172A radii=[6,6,6,6]
+060: [test_input_b_round] ROUNDED_BORDER rect=[427,27,255,25] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF475569,#FF475569,#FF475569,#FF475569]
+061: [test_input_input] INPUT rect=[428,28,253,23] color=#FFF8FAFC bg=#FF0F172A r=6 radii=[5,5,5,5]
+062: [test_input_ph] TEXT rect=[432,28,253,23] color=#FFAAAAAA text="Search headphones, keyboards, laptops..." radii=[5,5,5,5] pointer-events=none
+063: [gen_32] NODE rect=[688,28,83,24] color=#FFFFFFFF bg=#FF3B82F6 radii=[6,6,6,6]
+064: [gen_32_bg] BUTTON rect=[688,28,83,24] color=#FFFFFFFF bg=#FF3B82F6 r=6 radii=[6,6,6,6]
+065: [gen_32_b_round] ROUNDED_BORDER rect=[688,28,83,24] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF60A5FA,#FF60A5FA,#FF60A5FA,#FF60A5FA]
+066: [txt_33] NODE rect=[0,0,57,12] color=#FFFFFFFF
+067: [txt_33_txt_7] TEXT rect=[701,34,57,12] color=#FFFFFFFF text="Search"
+068: [gen_34] NODE rect=[29,65,384,22] color=#FFF8FAFC
+069: [gen_34_bg] RECT rect=[29,65,384,22] color=#FFF8FAFC
+070: [gen_35] NODE rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 radii=[12,12,12,12]
+071: [gen_35_bg] RECT rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 r=12 radii=[12,12,12,12]
+072: [gen_35_b_round] ROUNDED_BORDER rect=[29,65,120,22] radii=[12,12,12,12] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF6366F1,#FF6366F1,#FF6366F1,#FF6366F1]
+073: [txt_36] NODE rect=[0,0,98,15] color=#FF818CF8
+074: [txt_36_txt_8] TEXT rect=[40,69,18,14] color=#FF818CF8 text="♥ "
+075: [txt_36_txt_9] TEXT rect=[58,69,56,14] color=#FF818CF8 text="Wishlist "
+076: [txt_36_txt_10] TEXT rect=[114,69,24,14] color=#FF818CF8 text="(4)"
+077: [gen_37] NODE rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 radii=[12,12,12,12]
+078: [gen_37_bg] RECT rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 r=12 radii=[12,12,12,12]
+079: [gen_37_b_round] ROUNDED_BORDER rect=[157,65,153,22] radii=[12,12,12,12] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF38BDF8,#FF38BDF8,#FF38BDF8,#FF38BDF8]
+080: [txt_38] NODE rect=[0,0,131,15] color=#FF38BDF8
+081: [txt_38_txt_11] TEXT rect=[168,69,37,14] color=#FF38BDF8 text="Cart "
+082: [txt_38_txt_12] TEXT rect=[205,69,29,14] color=#FF38BDF8 text="(3) "
+083: [txt_38_txt_13] TEXT rect=[234,69,13,14] color=#FF38BDF8 text="· "
+084: [txt_38_txt_14] TEXT rect=[247,69,52,14] color=#FF38BDF8 text="$419.97"
+085: [gen_39] NODE rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 radii=[12,12,12,12]
+086: [gen_39_bg] RECT rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 r=12 radii=[12,12,12,12]
+087: [txt_40] NODE rect=[0,0,75,15] color=#FFCBD5E1
+088: [txt_40_txt_15] TEXT rect=[328,69,18,14] color=#FFCBD5E1 text="☺ "
+089: [txt_40_txt_16] TEXT rect=[346,69,57,14] color=#FFCBD5E1 text="Account"
+090: [gen_41] NODE rect=[12,110,776,478] color=#FFF8FAFC
+091: [gen_41_bg] RECT rect=[12,110,776,478] color=#FFF8FAFC
+092: [gen_42] NODE rect=[12,110,190,478] color=#FFF8FAFC
+093: [gen_42_bg] RECT rect=[12,110,190,478] color=#FFF8FAFC
+094: [gen_43] NODE rect=[12,110,190,478] color=#FFF8FAFC bg=#FF1E293B radii=[8,8,8,8]
+095: [gen_43_bg] RECT rect=[12,110,190,478] color=#FFF8FAFC bg=#FF1E293B r=8 radii=[8,8,8,8]
+096: [gen_43_b_round] ROUNDED_BORDER rect=[12,110,190,478] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+097: [gen_44] NODE rect=[25,123,164,25] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+098: [gen_44_bg] RECT rect=[25,123,164,25] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+099: [gen_44_b_bottom] RECT rect=[25,147,164,1] bg=#FF334155 clip=[13.0,111.2,201.0,587.0]
+100: [txt_45] NODE rect=[0,0,150,17] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+101: [txt_45_txt_17] TEXT rect=[25,123,84,18] color=#FF38BDF8 text="Product " clip=[13.0,111.2,201.0,587.0]
+102: [txt_45_txt_18] TEXT rect=[109,123,66,18] color=#FF38BDF8 text="Filters" clip=[13.0,111.2,201.0,587.0]
+103: [gen_46] NODE rect=[25,158,164,178] color=#FFF8FAFC bg=#FF0F172A clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+104: [gen_46_bg] RECT rect=[25,158,164,178] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+105: [gen_46_b_round] ROUNDED_BORDER rect=[25,158,164,178] clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+106: [gen_47] NODE rect=[36,167,142,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+107: [gen_47_bg] RECT rect=[36,167,142,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+108: [gen_49] NODE rect=[36,190,142,137] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+109: [gen_49_bg] RECT rect=[36,190,142,137] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+110: [gen_47_marker_txt] NODE rect=[0,0,22,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+111: [gen_47_marker_txt_txt_19] TEXT rect=[36,167,22,15] color=#FFCBD5E1 text="▾ " clip=[13.0,111.2,201.0,587.0]
+112: [txt_48] NODE rect=[0,0,98,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+113: [txt_48_txt_20] TEXT rect=[58,167,98,15] color=#FFCBD5E1 text="Department" clip=[13.0,111.2,201.0,587.0]
+114: [gen_50] NODE rect=[36,190,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+115: [gen_50_bg] RECT rect=[36,190,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+116: [gen_51] NODE rect=[36,198,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+117: [gen_51_input] CHECKBOX rect=[36,198,13,13] color=#FFFFFFFF bg=#FF0075FF text="true" r=2 clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+118: [gen_52] NODE rect=[55,190,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+119: [gen_52_bg] RECT rect=[55,190,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+120: [txt_53] NODE rect=[0,0,121,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+121: [txt_53_txt_21] TEXT rect=[55,190,41,15] color=#FF94A3B8 text="Audio " clip=[13.0,111.2,201.0,587.0]
+122: [txt_53_txt_22] TEXT rect=[96,190,13,15] color=#FF94A3B8 text="& " clip=[13.0,111.2,201.0,587.0]
+123: [txt_53_txt_23] TEXT rect=[55,205,88,15] color=#FF94A3B8 text="Headphones " clip=[13.0,111.2,201.0,587.0]
+124: [txt_53_txt_24] TEXT rect=[143,205,33,15] color=#FF94A3B8 text="(34)" clip=[13.0,111.2,201.0,587.0]
+125: [gen_54] NODE rect=[36,226,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+126: [gen_54_bg] RECT rect=[36,226,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+127: [gen_55] NODE rect=[36,234,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+128: [gen_55_input] CHECKBOX rect=[36,234,13,13] color=#FFFFFFFF bg=#FF0075FF text="true" r=2 clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+129: [gen_56] NODE rect=[55,226,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+130: [gen_56_bg] RECT rect=[55,226,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+131: [txt_57] NODE rect=[0,0,95,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+132: [txt_57_txt_25] TEXT rect=[55,226,63,15] color=#FF94A3B8 text="Laptops " clip=[13.0,111.2,201.0,587.0]
+133: [txt_57_txt_26] TEXT rect=[118,226,13,15] color=#FF94A3B8 text="& " clip=[13.0,111.2,201.0,587.0]
+134: [txt_57_txt_27] TEXT rect=[55,241,62,15] color=#FF94A3B8 text="Displays " clip=[13.0,111.2,201.0,587.0]
+135: [txt_57_txt_28] TEXT rect=[117,241,33,15] color=#FF94A3B8 text="(18)" clip=[13.0,111.2,201.0,587.0]
+136: [gen_58] NODE rect=[36,262,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+137: [gen_58_bg] RECT rect=[36,262,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+138: [gen_59] NODE rect=[36,270,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+139: [gen_59_input] CHECKBOX rect=[36,270,13,13] color=#FFFFFFFF bg=#FFFFFFFF text="false" r=2 clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+140: [gen_59_b_round] ROUNDED_BORDER rect=[36,270,13,13] clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
+141: [gen_60] NODE rect=[55,262,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+142: [gen_60_bg] RECT rect=[55,262,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+143: [txt_61] NODE rect=[0,0,113,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+144: [txt_61_txt_29] TEXT rect=[55,262,50,15] color=#FF94A3B8 text="Gaming " clip=[13.0,111.2,201.0,587.0]
+145: [txt_61_txt_30] TEXT rect=[55,277,79,15] color=#FF94A3B8 text="Keyboards " clip=[13.0,111.2,201.0,587.0]
+146: [txt_61_txt_31] TEXT rect=[134,277,34,15] color=#FF94A3B8 text="(22)" clip=[13.0,111.2,201.0,587.0]
+147: [gen_62] NODE rect=[36,298,142,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+148: [gen_62_bg] RECT rect=[36,298,142,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+149: [gen_63] NODE rect=[36,306,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+150: [gen_63_input] CHECKBOX rect=[36,306,13,13] color=#FFFFFFFF bg=#FFFFFFFF text="false" r=2 clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+151: [gen_63_b_round] ROUNDED_BORDER rect=[36,306,13,13] clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
+152: [gen_64] NODE rect=[55,298,123,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+153: [gen_64_bg] RECT rect=[55,298,123,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+154: [txt_65] NODE rect=[0,0,104,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+155: [txt_65_txt_32] TEXT rect=[55,298,46,14] color=#FF94A3B8 text="Smart " clip=[13.0,111.2,201.0,587.0]
+156: [txt_65_txt_33] TEXT rect=[101,298,63,14] color=#FF94A3B8 text="Watches " clip=[13.0,111.2,201.0,587.0]
+157: [txt_65_txt_34] TEXT rect=[55,312,33,15] color=#FF94A3B8 text="(15)" clip=[13.0,111.2,201.0,587.0]
+158: [gen_66] NODE rect=[25,346,164,93] color=#FFF8FAFC bg=#FF0F172A clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+159: [gen_66_bg] RECT rect=[25,346,164,93] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+160: [gen_66_b_round] ROUNDED_BORDER rect=[25,346,164,93] clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+161: [gen_67] NODE rect=[36,355,142,31] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+162: [gen_67_bg] RECT rect=[36,355,142,31] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+163: [gen_69] NODE rect=[36,394,142,36] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+164: [gen_69_bg] RECT rect=[36,394,142,36] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+165: [gen_67_marker_txt] NODE rect=[0,0,22,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+166: [gen_67_marker_txt_txt_35] TEXT rect=[36,355,22,16] color=#FFCBD5E1 text="▾ " clip=[13.0,111.2,201.0,587.0]
+167: [txt_68] NODE rect=[0,0,130,15] color=#FFCBD5E1 clip=[13.0,111.2,201.0,587.0]
+168: [txt_68_txt_36] TEXT rect=[58,355,36,16] color=#FFCBD5E1 text="Max " clip=[13.0,111.2,201.0,587.0]
+169: [txt_68_txt_37] TEXT rect=[94,355,55,16] color=#FFCBD5E1 text="Price: " clip=[13.0,111.2,201.0,587.0]
+170: [txt_68_txt_38] TEXT rect=[36,371,39,15] color=#FFCBD5E1 text="$450" clip=[13.0,111.2,201.0,587.0]
+171: [test_range] NODE rect=[36,394,142,16] color=#FF000000 bg=#FFFFFFFF clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+172: [test_range_input] RANGE rect=[36,394,142,16] color=#FF0075FF bg=#FFEFEFEF text="450:50:1000" clip=[13.0,111.2,201.0,587.0] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#80767676,#80767676,#80767676,#80767676]
+173: [gen_70] NODE rect=[36,416,142,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+174: [gen_70_bg] RECT rect=[36,416,142,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+175: [gen_71] NODE rect=[36,416,23,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+176: [gen_71_bg] RECT rect=[36,416,23,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+177: [txt_72] NODE rect=[0,0,23,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+178: [txt_72_txt_39] TEXT rect=[36,416,23,14] color=#FF64748B text="$50" clip=[13.0,111.2,201.0,587.0]
+179: [gen_73] NODE rect=[77,416,30,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+180: [gen_73_bg] RECT rect=[77,416,30,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+181: [txt_74] NODE rect=[0,0,30,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+182: [txt_74_txt_40] TEXT rect=[77,416,30,14] color=#FF64748B text="$500" clip=[13.0,111.2,201.0,587.0]
+183: [gen_75] NODE rect=[125,416,53,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+184: [gen_75_bg] RECT rect=[125,416,53,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+185: [txt_76] NODE rect=[0,0,53,14] color=#FF64748B clip=[13.0,111.2,201.0,587.0]
+186: [txt_76_txt_41] TEXT rect=[125,416,53,14] color=#FF64748B text="$1,000+" clip=[13.0,111.2,201.0,587.0]
+187: [gen_77] NODE rect=[25,449,164,96] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+188: [gen_77_bg] RECT rect=[25,455,164,90] color=#FFF8FAFC r=6 clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+189: [gen_77_b_round_0] ROUNDED_BORDER rect=[25,455,164,90] clip=[24.0,454.3,36.0,546.3] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+190: [gen_77_b_round_1] ROUNDED_BORDER rect=[25,455,164,90] clip=[162.1,454.3,190.0,546.3] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+191: [gen_77_b_round_2] ROUNDED_BORDER rect=[25,455,164,90] clip=[36.0,462.6,162.1,546.3] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+192: [gen_78] NODE rect=[36,449,126,14] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+193: [gen_78_bg] RECT rect=[36,449,126,14] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+194: [txt_79] NODE rect=[0,0,118,14] color=#FF38BDF8 clip=[13.0,111.2,201.0,587.0]
+195: [txt_79_txt_42] TEXT rect=[40,449,66,14] color=#FF38BDF8 text="Delivery " clip=[13.0,111.2,201.0,587.0]
+196: [txt_79_txt_43] TEXT rect=[106,449,52,14] color=#FF38BDF8 text="Method" clip=[13.0,111.2,201.0,587.0]
+197: [gen_80] NODE rect=[36,471,142,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+198: [gen_80_bg] RECT rect=[36,471,142,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+199: [gen_81] NODE rect=[36,479,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+200: [gen_81_input] RADIO rect=[36,479,13,13] color=#FF0075FF bg=#FFFFFFFF text="true" r=7 clip=[13.0,111.2,201.0,587.0] radii=[7,7,7,7]
+201: [gen_81_b_round] ROUNDED_BORDER rect=[36,479,13,13] clip=[13.0,111.2,201.0,587.0] radii=[7,7,7,7] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF0075FF,#FF0075FF,#FF0075FF,#FF0075FF]
+202: [gen_82] NODE rect=[55,471,123,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+203: [gen_82_bg] RECT rect=[55,471,123,29] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+204: [txt_83] NODE rect=[0,0,83,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+205: [txt_83_txt_44] TEXT rect=[55,471,41,15] color=#FF94A3B8 text="Prime " clip=[13.0,111.2,201.0,587.0]
+206: [txt_83_txt_45] TEXT rect=[96,471,17,15] color=#FF94A3B8 text="1-" clip=[13.0,111.2,201.0,587.0]
+207: [txt_83_txt_46] TEXT rect=[113,471,30,15] color=#FF94A3B8 text="Day " clip=[13.0,111.2,201.0,587.0]
+208: [txt_83_txt_47] TEXT rect=[55,486,50,14] color=#FF94A3B8 text="(Free)" clip=[13.0,111.2,201.0,587.0]
+209: [gen_84] NODE rect=[36,506,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+210: [gen_84_bg] RECT rect=[36,506,142,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+211: [gen_85] NODE rect=[36,515,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+212: [gen_85_input] RADIO rect=[36,515,13,13] color=#FF767676 bg=#FFFFFFFF text="false" r=7 clip=[13.0,111.2,201.0,587.0] radii=[7,7,7,7]
+213: [gen_85_b_round] ROUNDED_BORDER rect=[36,515,13,13] clip=[13.0,111.2,201.0,587.0] radii=[7,7,7,7] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF767676,#FF767676,#FF767676,#FF767676]
+214: [gen_86] NODE rect=[55,506,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+215: [gen_86_bg] RECT rect=[55,506,123,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+216: [txt_87] NODE rect=[0,0,104,30] color=#FF94A3B8 clip=[13.0,111.2,201.0,587.0]
+217: [txt_87_txt_48] TEXT rect=[55,506,71,15] color=#FF94A3B8 text="Standard " clip=[13.0,111.2,201.0,587.0]
+218: [txt_87_txt_49] TEXT rect=[126,506,25,15] color=#FF94A3B8 text="(3-" clip=[13.0,111.2,201.0,587.0]
+219: [txt_87_txt_50] TEXT rect=[151,506,13,15] color=#FF94A3B8 text="5 " clip=[13.0,111.2,201.0,587.0]
+220: [txt_87_txt_51] TEXT rect=[55,521,41,15] color=#FF94A3B8 text="days)" clip=[13.0,111.2,201.0,587.0]
+221: [gen_88] NODE rect=[25,555,164,55] color=#FFF8FAFC bg=#FF0F172A clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+222: [gen_88_bg] RECT rect=[25,555,164,55] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6]
+223: [gen_88_b_round] ROUNDED_BORDER rect=[25,555,164,55] clip=[13.0,111.2,201.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+224: [gen_89] NODE rect=[36,564,142,37] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0]
+225: [gen_89_bg] RECT rect=[36,564,142,37] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0]
+226: [test_check] NODE rect=[36,576,13,13] color=#FF000000 clip=[13.0,111.2,201.0,587.0]
+227: [test_check_input] CHECKBOX rect=[36,576,13,13] color=#FFFFFFFF bg=#FF0075FF text="true" r=2 clip=[13.0,111.2,201.0,587.0] radii=[2,2,2,2]
+228: [gen_90] NODE rect=[55,564,123,37] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0]
+229: [gen_90_bg] RECT rect=[55,564,123,37] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0]
+230: [txt_91] NODE rect=[0,0,91,36] color=#FFF8FAFC clip=[13.0,111.2,201.0,587.0]
+231: [txt_91_txt_52] TEXT rect=[55,564,26,19] color=#FFF8FAFC text="In " clip=[13.0,111.2,201.0,587.0]
+232: [txt_91_txt_53] TEXT rect=[81,564,56,19] color=#FFF8FAFC text="Stock " clip=[13.0,111.2,201.0,587.0]
+233: [txt_91_txt_54] TEXT rect=[55,583,56,18] color=#FFF8FAFC text="Items " clip=[13.0,111.2,201.0,587.0]
+234: [txt_91_txt_55] TEXT rect=[111,583,35,18] color=#FFF8FAFC text="Only" clip=[13.0,111.2,201.0,587.0]
+235: [gen_43_sb_vt] RECT rect=[195,113,4,472] bg=#33000000 r=2 radii=[2,2,2,2]
+236: [gen_43_sb_v] RECT rect=[195,113,4,440] bg=#88CCCCCC r=2 radii=[2,2,2,2]
+237: [gen_92] NODE rect=[214,110,342,478] color=#FFF8FAFC
+238: [gen_92_bg] RECT rect=[214,110,342,478] color=#FFF8FAFC
+239: [gen_93] NODE rect=[214,110,342,478] color=#FFF8FAFC bg=#FF1E293B radii=[8,8,8,8]
+240: [gen_93_bg] RECT rect=[214,110,342,478] color=#FFF8FAFC bg=#FF1E293B r=8 radii=[8,8,8,8]
+241: [gen_93_b_round] ROUNDED_BORDER rect=[214,110,342,478] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+242: [gen_94] NODE rect=[227,123,316,42] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+243: [gen_94_bg] RECT rect=[227,123,316,42] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+244: [gen_94_b_bottom] RECT rect=[227,164,316,1] bg=#FF334155 clip=[215.0,111.2,555.0,587.0]
+245: [gen_95] NODE rect=[227,123,179,35] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+246: [gen_95_bg] RECT rect=[227,123,179,35] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+247: [txt_96] NODE rect=[0,0,139,35] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+248: [txt_96_txt_56] TEXT rect=[227,123,95,18] color=#FF38BDF8 text="Featured " clip=[215.0,111.2,555.0,587.0]
+249: [txt_96_txt_57] TEXT rect=[322,123,50,18] color=#FF38BDF8 text="Tech " clip=[215.0,111.2,555.0,587.0]
+250: [txt_96_txt_58] TEXT rect=[227,141,88,17] color=#FF38BDF8 text="Products" clip=[215.0,111.2,555.0,587.0]
+251: [gen_97] NODE rect=[406,126,137,29] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+252: [gen_97_bg] RECT rect=[406,126,137,29] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+253: [txt_98] NODE rect=[0,0,122,29] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+254: [txt_98_txt_59] TEXT rect=[406,126,56,15] color=#FF94A3B8 text="Showing " clip=[215.0,111.2,555.0,587.0]
+255: [txt_98_txt_60] TEXT rect=[462,126,17,15] color=#FF94A3B8 text="1-" clip=[215.0,111.2,555.0,587.0]
+256: [txt_98_txt_61] TEXT rect=[479,126,12,15] color=#FF94A3B8 text="4 " clip=[215.0,111.2,555.0,587.0]
+257: [txt_98_txt_62] TEXT rect=[491,126,21,15] color=#FF94A3B8 text="of " clip=[215.0,111.2,555.0,587.0]
+258: [txt_98_txt_63] TEXT rect=[512,126,21,15] color=#FF94A3B8 text="24 " clip=[215.0,111.2,555.0,587.0]
+259: [txt_98_txt_64] TEXT rect=[406,141,52,14] color=#FF94A3B8 text="results" clip=[215.0,111.2,555.0,587.0]
+260: [gen_99] NODE rect=[227,175,316,449] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+261: [gen_99_bg] RECT rect=[227,175,316,449] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+262: [gen_100] NODE rect=[227,175,153,226] color=#FFF8FAFC bg=#FF0F172A clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+263: [gen_100_bg] RECT rect=[227,175,153,226] color=#FFF8FAFC bg=#FF0F172A r=8 clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+264: [gen_100_b_round] ROUNDED_BORDER rect=[227,175,153,226] clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+265: [gen_101] NODE rect=[238,186,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+266: [gen_101_bg] RECT rect=[238,186,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+267: [gen_102] NODE rect=[238,186,95,19] color=#FFF43F5E bg=#33F43F5E clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+268: [gen_102_bg] RECT rect=[238,186,95,19] color=#FFF43F5E bg=#33F43F5E r=4 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+269: [gen_102_b_round] ROUNDED_BORDER rect=[238,186,95,19] clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF43F5E,#FFF43F5E,#FFF43F5E,#FFF43F5E]
+270: [txt_103] NODE rect=[0,0,81,13] color=#FFF43F5E clip=[215.0,111.2,555.0,587.0]
+271: [txt_103_txt_65] TEXT rect=[245,189,81,13] color=#FFF43F5E text="BESTSELLER" clip=[215.0,111.2,555.0,587.0]
+272: [gen_104] NODE rect=[339,188,30,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+273: [gen_104_bg] RECT rect=[339,188,30,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+274: [txt_105] NODE rect=[0,0,52,14] color=#FF94A3B8 clip=[338.9,188.4,369.0,202.0]
+275: [txt_105_txt_66] TEXT rect=[339,188,52,14] color=#FF94A3B8 text="Wireless" clip=[338.9,188.4,369.0,202.0]
+276: [gen_106] NODE rect=[238,213,131,60] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+277: [gen_106_bg] RECT rect=[238,213,131,60] color=#FFFFFFFF r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+278: [gen_106_bgl0_0] RECT rect=[110,156,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+279: [gen_106_bgl0_1] RECT rect=[239,156,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+280: [gen_106_bgl0_2] RECT rect=[368,156,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+281: [gen_106_bgl0_3] RECT rect=[110,214,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+282: [gen_106_bgl0_4] RECT rect=[239,214,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+283: [gen_106_bgl0_5] RECT rect=[368,214,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+284: [gen_106_bgl0_6] RECT rect=[110,272,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+285: [gen_106_bgl0_7] RECT rect=[239,272,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+286: [gen_106_bgl0_8] RECT rect=[368,272,129,58] bg=#FF1E1B4B clip=[238.0,212.6,369.0,272.5] gradient=[#FF1E1B4B,#FF2B2870,#FF312E81,#FF24215C]
+287: [gen_106_b_round] ROUNDED_BORDER rect=[238,213,131,60] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF4338CA,#FF4338CA,#FF4338CA,#FF4338CA]
+288: [txt_107] NODE rect=[254,219,99,47] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+289: [txt_107_txt_67] TEXT rect=[254,219,30,16] color=#FFFFFFFF text="ANC" clip=[215.0,111.2,555.0,587.0]
+290: [txt_107_txt_68] TEXT rect=[254,235,99,15] color=#FFFFFFFF text="Headphones" clip=[215.0,111.2,555.0,587.0]
+291: [txt_107_txt_69] TEXT rect=[254,250,30,16] color=#FFFFFFFF text="Pro" clip=[215.0,111.2,555.0,587.0]
+292: [gen_108] NODE rect=[238,281,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+293: [gen_108_bg] RECT rect=[238,281,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+294: [txt_109] NODE rect=[0,0,222,16] color=#FFF8FAFC clip=[238.0,280.5,369.0,296.6]
+295: [txt_109_txt_70] TEXT rect=[238,281,47,16] color=#FFF8FAFC text="Apex " clip=[238.0,280.5,369.0,296.6]
+296: [txt_109_txt_71] TEXT rect=[285,281,37,16] color=#FFF8FAFC text="ANC " clip=[238.0,280.5,369.0,296.6]
+297: [txt_109_txt_72] TEXT rect=[322,281,108,16] color=#FFF8FAFC text="Headphones " clip=[238.0,280.5,369.0,296.6]
+298: [txt_109_txt_73] TEXT rect=[430,281,30,16] color=#FFF8FAFC text="Pro" clip=[238.0,280.5,369.0,296.6]
+299: [gen_110] NODE rect=[238,305,131,27] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+300: [gen_110_bg] RECT rect=[238,305,131,27] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+301: [gen_111] NODE rect=[238,311,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+302: [gen_111_bg] RECT rect=[238,311,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+303: [txt_112] NODE rect=[0,0,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+304: [txt_112_txt_74] TEXT rect=[238,311,65,14] color=#FFFBBF24 text="★★★★★" clip=[215.0,111.2,555.0,587.0]
+305: [gen_113] NODE rect=[307,305,62,27] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+306: [gen_113_bg] RECT rect=[307,305,62,27] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+307: [txt_114] NODE rect=[0,0,53,27] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+308: [txt_114_txt_75] TEXT rect=[307,305,23,13] color=#FF94A3B8 text="4.9 " clip=[215.0,111.2,555.0,587.0]
+309: [txt_114_txt_76] TEXT rect=[307,318,53,14] color=#FF94A3B8 text="(1,842)" clip=[215.0,111.2,555.0,587.0]
+310: [gen_115] NODE rect=[238,340,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+311: [gen_115_bg] RECT rect=[238,340,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+312: [gen_116] NODE rect=[238,342,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+313: [gen_116_bg] RECT rect=[238,342,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+314: [txt_117] NODE rect=[0,0,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+315: [txt_117_txt_77] TEXT rect=[238,342,52,14] color=#FF64748B text="$299.99" clip=[215.0,111.2,555.0,587.0]
+316: [gen_118] NODE rect=[296,340,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+317: [gen_118_bg] RECT rect=[296,340,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+318: [txt_119] NODE rect=[0,0,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+319: [txt_119_txt_78] TEXT rect=[296,340,75,18] color=#FF38BDF8 text="$229.99" clip=[215.0,111.2,555.0,587.0]
+320: [gen_120] NODE rect=[238,366,131,24] color=#FFFFFFFF bg=#FF3B82F6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+321: [gen_120_bg] BUTTON rect=[238,366,131,24] color=#FFFFFFFF bg=#FF3B82F6 r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+322: [gen_120_b_round] ROUNDED_BORDER rect=[238,366,131,24] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF60A5FA,#FF60A5FA,#FF60A5FA,#FF60A5FA]
+323: [txt_121] NODE rect=[0,0,97,12] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+324: [txt_121_txt_79] TEXT rect=[255,372,34,12] color=#FFFFFFFF text="Add " clip=[215.0,111.2,555.0,587.0]
+325: [txt_121_txt_80] TEXT rect=[289,372,25,12] color=#FFFFFFFF text="to " clip=[215.0,111.2,555.0,587.0]
+326: [txt_121_txt_81] TEXT rect=[314,372,38,12] color=#FFFFFFFF text="Cart" clip=[215.0,111.2,555.0,587.0]
+327: [gen_122] NODE rect=[390,175,153,226] color=#FFF8FAFC bg=#FF0F172A clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+328: [gen_122_bg] RECT rect=[390,175,153,226] color=#FFF8FAFC bg=#FF0F172A r=8 clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+329: [gen_122_b_round] ROUNDED_BORDER rect=[390,175,153,226] clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+330: [gen_123] NODE rect=[401,186,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+331: [gen_123_bg] RECT rect=[401,186,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+332: [gen_124] NODE rect=[401,186,100,19] color=#FF10B981 bg=#3310B981 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+333: [gen_124_bg] RECT rect=[401,186,100,19] color=#FF10B981 bg=#3310B981 r=4 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+334: [gen_124_b_round] ROUNDED_BORDER rect=[401,186,100,19] clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF10B981,#FF10B981,#FF10B981,#FF10B981]
+335: [txt_125] NODE rect=[0,0,86,13] color=#FF10B981 clip=[215.0,111.2,555.0,587.0]
+336: [txt_125_txt_82] TEXT rect=[408,189,29,13] color=#FF10B981 text="NEW " clip=[215.0,111.2,555.0,587.0]
+337: [txt_125_txt_83] TEXT rect=[437,189,57,13] color=#FF10B981 text="ARRIVAL" clip=[215.0,111.2,555.0,587.0]
+338: [gen_126] NODE rect=[507,188,25,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+339: [gen_126_bg] RECT rect=[507,188,25,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+340: [txt_127] NODE rect=[0,0,88,14] color=#FF94A3B8 clip=[506.9,188.4,532.0,202.0]
+341: [txt_127_txt_84] TEXT rect=[507,188,27,14] color=#FF94A3B8 text="RGB " clip=[506.9,188.4,532.0,202.0]
+342: [txt_127_txt_85] TEXT rect=[534,188,30,14] color=#FF94A3B8 text="Hot-" clip=[506.9,188.4,532.0,202.0]
+343: [txt_127_txt_86] TEXT rect=[564,188,31,14] color=#FF94A3B8 text="Swap" clip=[506.9,188.4,532.0,202.0]
+344: [gen_128] NODE rect=[401,213,131,60] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+345: [gen_128_bg] RECT rect=[401,213,131,60] color=#FFFFFFFF r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+346: [gen_128_bgl0_0] RECT rect=[273,156,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+347: [gen_128_bgl0_1] RECT rect=[402,156,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+348: [gen_128_bgl0_2] RECT rect=[531,156,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+349: [gen_128_bgl0_3] RECT rect=[273,214,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+350: [gen_128_bgl0_4] RECT rect=[402,214,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+351: [gen_128_bgl0_5] RECT rect=[531,214,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+352: [gen_128_bgl0_6] RECT rect=[273,272,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+353: [gen_128_bgl0_7] RECT rect=[402,272,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+354: [gen_128_bgl0_8] RECT rect=[531,272,129,58] bg=#FF064E3B clip=[401.0,212.6,532.0,272.5] gradient=[#FF064E3B,#FF056B4E,#FF047857,#FF055B44]
+355: [gen_128_b_round] ROUNDED_BORDER rect=[401,213,131,60] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF059669,#FF059669,#FF059669,#FF059669]
+356: [txt_129] NODE rect=[422,227,89,31] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+357: [txt_129_txt_87] TEXT rect=[422,227,89,16] color=#FFFFFFFF text="Mechanical" clip=[215.0,111.2,555.0,587.0]
+358: [txt_129_txt_88] TEXT rect=[422,243,79,15] color=#FFFFFFFF text="Keyboard" clip=[215.0,111.2,555.0,587.0]
+359: [gen_130] NODE rect=[401,281,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+360: [gen_130_bg] RECT rect=[401,281,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+361: [txt_131] NODE rect=[0,0,202,16] color=#FFF8FAFC clip=[401.0,280.5,532.0,296.6]
+362: [txt_131_txt_89] TEXT rect=[401,281,47,16] color=#FFF8FAFC text="Nova " clip=[401.0,280.5,532.0,296.6]
+363: [txt_131_txt_90] TEXT rect=[448,281,37,16] color=#FFF8FAFC text="Pro " clip=[401.0,280.5,532.0,296.6]
+364: [txt_131_txt_91] TEXT rect=[485,281,37,16] color=#FFF8FAFC text="75% " clip=[401.0,280.5,532.0,296.6]
+365: [txt_131_txt_92] TEXT rect=[522,281,81,16] color=#FFF8FAFC text="Keyboard" clip=[401.0,280.5,532.0,296.6]
+366: [gen_132] NODE rect=[401,305,131,13] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+367: [gen_132_bg] RECT rect=[401,305,131,13] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+368: [gen_133] NODE rect=[401,305,65,13] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+369: [gen_133_bg] RECT rect=[401,305,65,13] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+370: [txt_134] NODE rect=[0,0,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+371: [txt_134_txt_93] TEXT rect=[401,305,65,13] color=#FFFBBF24 text="★★★★☆" clip=[215.0,111.2,555.0,587.0]
+372: [gen_135] NODE rect=[470,305,61,13] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+373: [gen_135_bg] RECT rect=[470,305,61,13] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+374: [txt_136] NODE rect=[0,0,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+375: [txt_136_txt_94] TEXT rect=[470,305,23,13] color=#FF94A3B8 text="4.8 " clip=[215.0,111.2,555.0,587.0]
+376: [txt_136_txt_95] TEXT rect=[493,305,38,13] color=#FF94A3B8 text="(620)" clip=[215.0,111.2,555.0,587.0]
+377: [gen_137] NODE rect=[401,326,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+378: [gen_137_bg] RECT rect=[401,326,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+379: [gen_138] NODE rect=[401,328,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+380: [gen_138_bg] RECT rect=[401,328,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+381: [txt_139] NODE rect=[0,0,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+382: [txt_139_txt_96] TEXT rect=[401,328,52,15] color=#FF64748B text="$159.99" clip=[215.0,111.2,555.0,587.0]
+383: [gen_140] NODE rect=[459,326,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+384: [gen_140_bg] RECT rect=[459,326,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+385: [txt_141] NODE rect=[0,0,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+386: [txt_141_txt_97] TEXT rect=[459,326,75,18] color=#FF38BDF8 text="$129.99" clip=[215.0,111.2,555.0,587.0]
+387: [gen_142] NODE rect=[401,352,131,25] color=#FFFFFFFF bg=#FF3B82F6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+388: [gen_142_bg] BUTTON rect=[401,352,131,25] color=#FFFFFFFF bg=#FF3B82F6 r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+389: [gen_142_b_round] ROUNDED_BORDER rect=[401,352,131,25] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF60A5FA,#FF60A5FA,#FF60A5FA,#FF60A5FA]
+390: [txt_143] NODE rect=[0,0,97,12] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+391: [txt_143_txt_98] TEXT rect=[418,358,34,13] color=#FFFFFFFF text="Add " clip=[215.0,111.2,555.0,587.0]
+392: [txt_143_txt_99] TEXT rect=[452,358,25,13] color=#FFFFFFFF text="to " clip=[215.0,111.2,555.0,587.0]
+393: [txt_143_txt_100] TEXT rect=[477,358,38,13] color=#FFFFFFFF text="Cart" clip=[215.0,111.2,555.0,587.0]
+394: [gen_144] NODE rect=[227,411,153,213] color=#FFF8FAFC bg=#FF0F172A clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+395: [gen_144_bg] RECT rect=[227,411,153,213] color=#FFF8FAFC bg=#FF0F172A r=8 clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+396: [gen_144_b_round] ROUNDED_BORDER rect=[227,411,153,213] clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+397: [gen_145] NODE rect=[238,422,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+398: [gen_145_bg] RECT rect=[238,422,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+399: [gen_146] NODE rect=[238,422,84,19] color=#FF38BDF8 bg=#3338BDF8 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+400: [gen_146_bg] RECT rect=[238,422,84,19] color=#FF38BDF8 bg=#3338BDF8 r=4 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+401: [gen_146_b_round] ROUNDED_BORDER rect=[238,422,84,19] clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF38BDF8,#FF38BDF8,#FF38BDF8,#FF38BDF8]
+402: [txt_147] NODE rect=[0,0,70,13] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+403: [txt_147_txt_101] TEXT rect=[245,425,29,13] color=#FF38BDF8 text="TOP " clip=[215.0,111.2,555.0,587.0]
+404: [txt_147_txt_102] TEXT rect=[274,425,41,13] color=#FF38BDF8 text="RATED" clip=[215.0,111.2,555.0,587.0]
+405: [gen_148] NODE rect=[328,425,41,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+406: [gen_148_bg] RECT rect=[328,425,41,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+407: [txt_149] NODE rect=[0,0,88,14] color=#FF94A3B8 clip=[327.8,424.9,369.0,438.5]
+408: [txt_149_txt_103] TEXT rect=[328,425,53,14] color=#FF94A3B8 text="Fitness " clip=[327.8,424.9,369.0,438.5]
+409: [txt_149_txt_104] TEXT rect=[381,425,12,14] color=#FF94A3B8 text="& " clip=[327.8,424.9,369.0,438.5]
+410: [txt_149_txt_105] TEXT rect=[393,425,23,14] color=#FF94A3B8 text="GPS" clip=[327.8,424.9,369.0,438.5]
+411: [gen_150] NODE rect=[238,449,131,60] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+412: [gen_150_bg] RECT rect=[238,449,131,60] color=#FFFFFFFF r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+413: [gen_150_bgl0_0] RECT rect=[110,392,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+414: [gen_150_bgl0_1] RECT rect=[239,392,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+415: [gen_150_bgl0_2] RECT rect=[368,392,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+416: [gen_150_bgl0_3] RECT rect=[110,450,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+417: [gen_150_bgl0_4] RECT rect=[239,450,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+418: [gen_150_bgl0_5] RECT rect=[368,450,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+419: [gen_150_bgl0_6] RECT rect=[110,508,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+420: [gen_150_bgl0_7] RECT rect=[239,508,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+421: [gen_150_bgl0_8] RECT rect=[368,508,129,58] bg=#FF0C4A6E clip=[238.0,449.1,369.0,509.1] gradient=[#FF0C4A6E,#FF0572AB,#FF0284C7,#FF095C8A]
+422: [gen_150_b_round] ROUNDED_BORDER rect=[238,449,131,60] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF0369A1,#FF0369A1,#FF0369A1,#FF0369A1]
+423: [txt_151] NODE rect=[251,464,105,31] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+424: [txt_151_txt_106] TEXT rect=[251,464,105,15] color=#FFFFFFFF text="Smart Watch" clip=[215.0,111.2,555.0,587.0]
+425: [txt_151_txt_107] TEXT rect=[251,479,45,16] color=#FFFFFFFF text="Ultra" clip=[215.0,111.2,555.0,587.0]
+426: [gen_152] NODE rect=[238,517,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+427: [gen_152_bg] RECT rect=[238,517,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+428: [txt_153] NODE rect=[0,0,233,16] color=#FFF8FAFC clip=[238.0,517.1,369.0,533.1]
+429: [txt_153_txt_108] TEXT rect=[238,517,52,16] color=#FFF8FAFC text="Pulse " clip=[238.0,517.1,369.0,533.1]
+430: [txt_153_txt_109] TEXT rect=[290,517,57,16] color=#FFF8FAFC text="Watch " clip=[238.0,517.1,369.0,533.1]
+431: [txt_153_txt_110] TEXT rect=[347,517,52,16] color=#FFF8FAFC text="Ultra " clip=[238.0,517.1,369.0,533.1]
+432: [txt_153_txt_111] TEXT rect=[399,517,72,16] color=#FFF8FAFC text="Titanium" clip=[238.0,517.1,369.0,533.1]
+433: [gen_154] NODE rect=[238,541,131,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+434: [gen_154_bg] RECT rect=[238,541,131,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+435: [gen_155] NODE rect=[238,541,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+436: [gen_155_bg] RECT rect=[238,541,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+437: [txt_156] NODE rect=[0,0,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+438: [txt_156_txt_112] TEXT rect=[238,541,65,14] color=#FFFBBF24 text="★★★★★" clip=[215.0,111.2,555.0,587.0]
+439: [gen_157] NODE rect=[307,541,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+440: [gen_157_bg] RECT rect=[307,541,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+441: [txt_158] NODE rect=[0,0,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+442: [txt_158_txt_113] TEXT rect=[307,541,23,14] color=#FF94A3B8 text="5.0 " clip=[215.0,111.2,555.0,587.0]
+443: [txt_158_txt_114] TEXT rect=[330,541,38,14] color=#FF94A3B8 text="(940)" clip=[215.0,111.2,555.0,587.0]
+444: [gen_159] NODE rect=[238,563,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+445: [gen_159_bg] RECT rect=[238,563,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+446: [gen_160] NODE rect=[238,565,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+447: [gen_160_bg] RECT rect=[238,565,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+448: [txt_161] NODE rect=[0,0,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+449: [txt_161_txt_115] TEXT rect=[238,565,52,14] color=#FF64748B text="$199.99" clip=[215.0,111.2,555.0,587.0]
+450: [gen_162] NODE rect=[296,563,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+451: [gen_162_bg] RECT rect=[296,563,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+452: [txt_163] NODE rect=[0,0,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+453: [txt_163_txt_116] TEXT rect=[296,563,75,18] color=#FF38BDF8 text="$139.99" clip=[215.0,111.2,555.0,587.0]
+454: [gen_164] NODE rect=[238,589,131,24] color=#FFFFFFFF bg=#FF3B82F6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+455: [gen_164_bg] BUTTON rect=[238,589,131,24] color=#FFFFFFFF bg=#FF3B82F6 r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+456: [gen_164_b_round] ROUNDED_BORDER rect=[238,589,131,24] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF60A5FA,#FF60A5FA,#FF60A5FA,#FF60A5FA]
+457: [txt_165] NODE rect=[0,0,97,12] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+458: [txt_165_txt_117] TEXT rect=[255,595,34,12] color=#FFFFFFFF text="Add " clip=[215.0,111.2,555.0,587.0]
+459: [txt_165_txt_118] TEXT rect=[289,595,25,12] color=#FFFFFFFF text="to " clip=[215.0,111.2,555.0,587.0]
+460: [txt_165_txt_119] TEXT rect=[314,595,38,12] color=#FFFFFFFF text="Cart" clip=[215.0,111.2,555.0,587.0]
+461: [gen_166] NODE rect=[390,411,153,213] color=#FFF8FAFC bg=#FF0F172A clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+462: [gen_166_bg] RECT rect=[390,411,153,213] color=#FFF8FAFC bg=#FF0F172A r=8 clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8]
+463: [gen_166_b_round] ROUNDED_BORDER rect=[390,411,153,213] clip=[215.0,111.2,555.0,587.0] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+464: [gen_167] NODE rect=[401,422,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+465: [gen_167_bg] RECT rect=[401,422,131,19] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+466: [gen_168] NODE rect=[401,422,76,19] color=#FFF43F5E bg=#33F43F5E clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+467: [gen_168_bg] RECT rect=[401,422,76,19] color=#FFF43F5E bg=#33F43F5E r=4 clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4]
+468: [gen_168_b_round] ROUNDED_BORDER rect=[401,422,76,19] clip=[215.0,111.2,555.0,587.0] radii=[4,4,4,4] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF43F5E,#FFF43F5E,#FFF43F5E,#FFF43F5E]
+469: [txt_169] NODE rect=[0,0,62,13] color=#FFF43F5E clip=[215.0,111.2,555.0,587.0]
+470: [txt_169_txt_120] TEXT rect=[408,425,37,13] color=#FFF43F5E text="SAVE " clip=[215.0,111.2,555.0,587.0]
+471: [txt_169_txt_121] TEXT rect=[445,425,25,13] color=#FFF43F5E text="25%" clip=[215.0,111.2,555.0,587.0]
+472: [gen_170] NODE rect=[483,425,49,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+473: [gen_170_bg] RECT rect=[483,425,49,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+474: [txt_171] NODE rect=[0,0,57,14] color=#FF94A3B8 clip=[482.7,424.9,532.0,438.5]
+475: [txt_171_txt_122] TEXT rect=[483,425,19,14] color=#FF94A3B8 text="4K " clip=[482.7,424.9,532.0,438.5]
+476: [txt_171_txt_123] TEXT rect=[502,425,38,14] color=#FF94A3B8 text="144Hz" clip=[482.7,424.9,532.0,438.5]
+477: [gen_172] NODE rect=[401,449,131,60] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+478: [gen_172_bg] RECT rect=[401,449,131,60] color=#FFFFFFFF r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+479: [gen_172_bgl0_0] RECT rect=[273,392,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+480: [gen_172_bgl0_1] RECT rect=[402,392,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+481: [gen_172_bgl0_2] RECT rect=[531,392,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+482: [gen_172_bgl0_3] RECT rect=[273,450,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+483: [gen_172_bgl0_4] RECT rect=[402,450,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+484: [gen_172_bgl0_5] RECT rect=[531,450,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+485: [gen_172_bgl0_6] RECT rect=[273,508,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+486: [gen_172_bgl0_7] RECT rect=[402,508,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+487: [gen_172_bgl0_8] RECT rect=[531,508,129,58] bg=#FF4C1D95 clip=[401.0,449.1,532.0,509.1] gradient=[#FF4C1D95,#FF6325C4,#FF6D28D9,#FF5620AA]
+488: [gen_172_b_round] ROUNDED_BORDER rect=[401,449,131,60] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF7C3AED,#FF7C3AED,#FF7C3AED,#FF7C3AED]
+489: [txt_173] NODE rect=[419,464,95,31] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+490: [txt_173_txt_124] TEXT rect=[419,464,95,15] color=#FFFFFFFF text="34\" Curved" clip=[215.0,111.2,555.0,587.0]
+491: [txt_173_txt_125] TEXT rect=[419,479,59,16] color=#FFFFFFFF text="Display" clip=[215.0,111.2,555.0,587.0]
+492: [gen_174] NODE rect=[401,517,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+493: [gen_174_bg] RECT rect=[401,517,131,16] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+494: [txt_175] NODE rect=[0,0,228,16] color=#FFF8FAFC clip=[401.0,517.1,532.0,533.1]
+495: [txt_175_txt_126] TEXT rect=[401,517,72,16] color=#FFF8FAFC text="Horizon " clip=[401.0,517.1,532.0,533.1]
+496: [txt_175_txt_127] TEXT rect=[473,517,27,16] color=#FFF8FAFC text="34 " clip=[401.0,517.1,532.0,533.1]
+497: [txt_175_txt_128] TEXT rect=[500,517,68,16] color=#FFF8FAFC text="Curved " clip=[401.0,517.1,532.0,533.1]
+498: [txt_175_txt_129] TEXT rect=[568,517,61,16] color=#FFF8FAFC text="Display" clip=[401.0,517.1,532.0,533.1]
+499: [gen_176] NODE rect=[401,541,131,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+500: [gen_176_bg] RECT rect=[401,541,131,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+501: [gen_177] NODE rect=[401,541,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+502: [gen_177_bg] RECT rect=[401,541,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+503: [txt_178] NODE rect=[0,0,65,14] color=#FFFBBF24 clip=[215.0,111.2,555.0,587.0]
+504: [txt_178_txt_130] TEXT rect=[401,541,65,14] color=#FFFBBF24 text="★★★★☆" clip=[215.0,111.2,555.0,587.0]
+505: [gen_179] NODE rect=[470,541,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+506: [gen_179_bg] RECT rect=[470,541,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+507: [txt_180] NODE rect=[0,0,61,14] color=#FF94A3B8 clip=[215.0,111.2,555.0,587.0]
+508: [txt_180_txt_131] TEXT rect=[470,541,23,14] color=#FF94A3B8 text="4.7 " clip=[215.0,111.2,555.0,587.0]
+509: [txt_180_txt_132] TEXT rect=[493,541,38,14] color=#FF94A3B8 text="(430)" clip=[215.0,111.2,555.0,587.0]
+510: [gen_181] NODE rect=[401,563,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+511: [gen_181_bg] RECT rect=[401,563,131,18] color=#FFF8FAFC clip=[215.0,111.2,555.0,587.0]
+512: [gen_182] NODE rect=[401,565,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+513: [gen_182_bg] RECT rect=[401,565,52,14] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+514: [txt_183] NODE rect=[0,0,52,15] color=#FF64748B clip=[215.0,111.2,555.0,587.0]
+515: [txt_183_txt_133] TEXT rect=[401,565,52,14] color=#FF64748B text="$499.00" clip=[215.0,111.2,555.0,587.0]
+516: [gen_184] NODE rect=[459,563,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+517: [gen_184_bg] RECT rect=[459,563,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+518: [txt_185] NODE rect=[0,0,75,18] color=#FF38BDF8 clip=[215.0,111.2,555.0,587.0]
+519: [txt_185_txt_134] TEXT rect=[459,563,75,18] color=#FF38BDF8 text="$379.00" clip=[215.0,111.2,555.0,587.0]
+520: [gen_186] NODE rect=[401,589,131,24] color=#FFFFFFFF bg=#FF3B82F6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+521: [gen_186_bg] BUTTON rect=[401,589,131,24] color=#FFFFFFFF bg=#FF3B82F6 r=6 clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6]
+522: [gen_186_b_round] ROUNDED_BORDER rect=[401,589,131,24] clip=[215.0,111.2,555.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF60A5FA,#FF60A5FA,#FF60A5FA,#FF60A5FA]
+523: [txt_187] NODE rect=[0,0,97,12] color=#FFFFFFFF clip=[215.0,111.2,555.0,587.0]
+524: [txt_187_txt_135] TEXT rect=[418,595,34,12] color=#FFFFFFFF text="Add " clip=[215.0,111.2,555.0,587.0]
+525: [txt_187_txt_136] TEXT rect=[452,595,25,12] color=#FFFFFFFF text="to " clip=[215.0,111.2,555.0,587.0]
+526: [txt_187_txt_137] TEXT rect=[477,595,38,12] color=#FFFFFFFF text="Cart" clip=[215.0,111.2,555.0,587.0]
+527: [gen_93_sb_vt] RECT rect=[549,113,4,472] bg=#33000000 r=2 radii=[2,2,2,2]
+528: [gen_93_sb_v] RECT rect=[549,113,4,428] bg=#88CCCCCC r=2 radii=[2,2,2,2]
+529: [gen_188] NODE rect=[568,110,220,478] color=#FFF8FAFC
+530: [gen_188_bg] RECT rect=[568,110,220,478] color=#FFF8FAFC
+531: [gen_189] NODE rect=[568,110,220,478] color=#FFF8FAFC bg=#FF1E293B radii=[8,8,8,8]
+532: [gen_189_bg] RECT rect=[568,110,220,478] color=#FFF8FAFC bg=#FF1E293B r=8 radii=[8,8,8,8]
+533: [gen_189_b_round] ROUNDED_BORDER rect=[568,110,220,478] radii=[8,8,8,8] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+534: [gen_190] NODE rect=[581,123,194,42] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+535: [gen_190_bg] RECT rect=[581,123,194,42] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+536: [gen_190_b_bottom] RECT rect=[581,164,194,1] bg=#FF334155 clip=[569.0,111.2,787.0,587.0]
+537: [txt_191] NODE rect=[0,0,167,35] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+538: [txt_191_txt_138] TEXT rect=[581,123,62,18] color=#FF38BDF8 text="Order " clip=[569.0,111.2,787.0,587.0]
+539: [txt_191_txt_139] TEXT rect=[643,123,83,18] color=#FF38BDF8 text="Summary " clip=[569.0,111.2,787.0,587.0]
+540: [txt_191_txt_140] TEXT rect=[726,123,29,18] color=#FF38BDF8 text="(3 " clip=[569.0,111.2,787.0,587.0]
+541: [txt_191_txt_141] TEXT rect=[581,141,60,17] color=#FF38BDF8 text="items)" clip=[569.0,111.2,787.0,587.0]
+542: [gen_192] NODE rect=[581,175,194,189] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+543: [gen_192_bg] RECT rect=[581,175,194,189] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+544: [gen_193] NODE rect=[581,175,194,59] color=#FFF8FAFC bg=#FF0F172A clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+545: [gen_193_bg] RECT rect=[581,175,194,59] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+546: [gen_193_b_round] ROUNDED_BORDER rect=[581,175,194,59] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+547: [gen_194] NODE rect=[590,184,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+548: [gen_194_bg] RECT rect=[590,184,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+549: [gen_195] NODE rect=[590,184,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+550: [gen_195_bg] RECT rect=[590,184,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+551: [txt_196] NODE rect=[0,0,173,15] color=#FFF8FAFC clip=[590.0,183.8,694.2,198.7]
+552: [txt_196_txt_142] TEXT rect=[590,184,44,15] color=#FFF8FAFC text="Apex " clip=[590.0,183.8,694.2,198.7]
+553: [txt_196_txt_143] TEXT rect=[634,184,34,15] color=#FFF8FAFC text="ANC " clip=[590.0,183.8,694.2,198.7]
+554: [txt_196_txt_144] TEXT rect=[668,184,95,15] color=#FFF8FAFC text="Headphones" clip=[590.0,183.8,694.2,198.7]
+555: [gen_197] NODE rect=[590,199,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+556: [gen_197_bg] RECT rect=[590,199,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+557: [txt_198] NODE rect=[0,0,98,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+558: [txt_198_txt_145] TEXT rect=[590,199,29,13] color=#FF64748B text="Qty: " clip=[569.0,111.2,787.0,587.0]
+559: [txt_198_txt_146] TEXT rect=[619,199,12,13] color=#FF64748B text="1 " clip=[569.0,111.2,787.0,587.0]
+560: [txt_198_txt_147] TEXT rect=[631,199,7,13] color=#FF64748B text="| " clip=[569.0,111.2,787.0,587.0]
+561: [txt_198_txt_148] TEXT rect=[638,199,54,13] color=#FF64748B text="Midnight " clip=[569.0,111.2,787.0,587.0]
+562: [txt_198_txt_149] TEXT rect=[590,212,32,13] color=#FF64748B text="Black" clip=[569.0,111.2,787.0,587.0]
+563: [gen_199] NODE rect=[702,197,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+564: [gen_199_bg] RECT rect=[702,197,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+565: [txt_200] NODE rect=[0,0,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+566: [txt_200_txt_150] TEXT rect=[702,197,64,15] color=#FF38BDF8 text="$229.99" clip=[569.0,111.2,787.0,587.0]
+567: [gen_201] NODE rect=[581,240,194,59] color=#FFF8FAFC bg=#FF0F172A clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+568: [gen_201_bg] RECT rect=[581,240,194,59] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+569: [gen_201_b_round] ROUNDED_BORDER rect=[581,240,194,59] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+570: [gen_202] NODE rect=[590,249,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+571: [gen_202_bg] RECT rect=[590,249,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+572: [gen_203] NODE rect=[590,249,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+573: [gen_203_bg] RECT rect=[590,249,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+574: [txt_204] NODE rect=[0,0,188,15] color=#FFF8FAFC clip=[590.0,248.9,694.2,263.9]
+575: [txt_204_txt_151] TEXT rect=[590,249,44,15] color=#FFF8FAFC text="Nova " clip=[590.0,248.9,694.2,263.9]
+576: [txt_204_txt_152] TEXT rect=[634,249,34,15] color=#FFF8FAFC text="Pro " clip=[590.0,248.9,694.2,263.9]
+577: [txt_204_txt_153] TEXT rect=[668,249,35,15] color=#FFF8FAFC text="75% " clip=[590.0,248.9,694.2,263.9]
+578: [txt_204_txt_154] TEXT rect=[703,249,75,15] color=#FFF8FAFC text="Keyboard" clip=[590.0,248.9,694.2,263.9]
+579: [gen_205] NODE rect=[590,264,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+580: [gen_205_bg] RECT rect=[590,264,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+581: [txt_206] NODE rect=[0,0,87,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+582: [txt_206_txt_155] TEXT rect=[590,264,29,13] color=#FF64748B text="Qty: " clip=[569.0,111.2,787.0,587.0]
+583: [txt_206_txt_156] TEXT rect=[619,264,12,13] color=#FF64748B text="1 " clip=[569.0,111.2,787.0,587.0]
+584: [txt_206_txt_157] TEXT rect=[631,264,7,13] color=#FF64748B text="| " clip=[569.0,111.2,787.0,587.0]
+585: [txt_206_txt_158] TEXT rect=[638,264,44,13] color=#FF64748B text="Linear " clip=[569.0,111.2,787.0,587.0]
+586: [txt_206_txt_159] TEXT rect=[590,277,54,13] color=#FF64748B text="Switches" clip=[569.0,111.2,787.0,587.0]
+587: [gen_207] NODE rect=[702,262,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+588: [gen_207_bg] RECT rect=[702,262,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+589: [txt_208] NODE rect=[0,0,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+590: [txt_208_txt_160] TEXT rect=[702,262,64,15] color=#FF38BDF8 text="$129.99" clip=[569.0,111.2,787.0,587.0]
+591: [gen_209] NODE rect=[581,305,194,59] color=#FFF8FAFC bg=#FF0F172A clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+592: [gen_209_bg] RECT rect=[581,305,194,59] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+593: [gen_209_b_round] ROUNDED_BORDER rect=[581,305,194,59] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+594: [gen_210] NODE rect=[590,314,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+595: [gen_210_bg] RECT rect=[590,314,104,41] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+596: [gen_211] NODE rect=[590,314,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+597: [gen_211_bg] RECT rect=[590,314,104,15] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+598: [txt_212] NODE rect=[0,0,145,15] color=#FFF8FAFC clip=[590.0,314.1,694.2,329.0]
+599: [txt_212_txt_161] TEXT rect=[590,314,49,15] color=#FFF8FAFC text="Pulse " clip=[590.0,314.1,694.2,329.0]
+600: [txt_212_txt_162] TEXT rect=[639,314,53,15] color=#FFF8FAFC text="Watch " clip=[590.0,314.1,694.2,329.0]
+601: [txt_212_txt_163] TEXT rect=[692,314,43,15] color=#FFF8FAFC text="Ultra" clip=[590.0,314.1,694.2,329.0]
+602: [gen_213] NODE rect=[590,329,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+603: [gen_213_bg] RECT rect=[590,329,104,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+604: [txt_214] NODE rect=[0,0,98,26] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+605: [txt_214_txt_164] TEXT rect=[590,329,29,13] color=#FF64748B text="Qty: " clip=[569.0,111.2,787.0,587.0]
+606: [txt_214_txt_165] TEXT rect=[619,329,12,13] color=#FF64748B text="1 " clip=[569.0,111.2,787.0,587.0]
+607: [txt_214_txt_166] TEXT rect=[631,329,7,13] color=#FF64748B text="| " clip=[569.0,111.2,787.0,587.0]
+608: [txt_214_txt_167] TEXT rect=[638,329,54,13] color=#FF64748B text="Titanium " clip=[569.0,111.2,787.0,587.0]
+609: [txt_214_txt_168] TEXT rect=[590,342,29,13] color=#FF64748B text="Gray" clip=[569.0,111.2,787.0,587.0]
+610: [gen_215] NODE rect=[702,327,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+611: [gen_215_bg] RECT rect=[702,327,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+612: [txt_216] NODE rect=[0,0,64,15] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+613: [txt_216_txt_169] TEXT rect=[702,327,64,15] color=#FF38BDF8 text="$139.99" clip=[569.0,111.2,787.0,587.0]
+614: [gen_217] NODE rect=[581,374,194,25] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+615: [gen_217_bg] RECT rect=[581,374,194,25] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+616: [gen_218] NODE rect=[581,374,119,25] color=#FFF8FAFC bg=#FF0F172A clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+617: [gen_218_b_round] ROUNDED_BORDER rect=[581,374,119,25] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF475569,#FF475569,#FF475569,#FF475569]
+618: [gen_218_input] INPUT rect=[582,375,117,23] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[569.0,111.2,787.0,587.0] radii=[5,5,5,5]
+619: [gen_218_ph] TEXT rect=[586,375,117,23] color=#FFAAAAAA text="Promo code (ENDER20)" clip=[569.0,111.2,787.0,587.0] radii=[5,5,5,5] pointer-events=none
+620: [gen_219] NODE rect=[706,374,69,25] color=#FFF8FAFC bg=#FF334155 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+621: [gen_219_bg] BUTTON rect=[706,374,69,25] color=#FFF8FAFC bg=#FF334155 r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+622: [gen_219_b_round] ROUNDED_BORDER rect=[706,374,69,25] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF475569,#FF475569,#FF475569,#FF475569]
+623: [txt_220] NODE rect=[0,0,43,12] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+624: [txt_220_txt_170] TEXT rect=[719,380,43,12] color=#FFF8FAFC text="Apply" clip=[569.0,111.2,787.0,587.0]
+625: [gen_221] NODE rect=[581,409,194,164] color=#FFF8FAFC bg=#FF0F172A clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+626: [gen_221_bg] RECT rect=[581,409,194,164] color=#FFF8FAFC bg=#FF0F172A r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+627: [gen_221_b_round] ROUNDED_BORDER rect=[581,409,194,164] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF334155,#FF334155,#FF334155,#FF334155]
+628: [gen_222] NODE rect=[592,420,172,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+629: [gen_222_bg] RECT rect=[592,420,172,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+630: [gen_223] NODE rect=[592,420,115,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+631: [gen_223_bg] RECT rect=[592,420,115,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+632: [txt_224] NODE rect=[0,0,115,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+633: [txt_224_txt_171] TEXT rect=[592,420,48,15] color=#FF94A3B8 text="Items " clip=[569.0,111.2,787.0,587.0]
+634: [txt_224_txt_172] TEXT rect=[640,420,67,15] color=#FF94A3B8 text="Subtotal:" clip=[569.0,111.2,787.0,587.0]
+635: [gen_225] NODE rect=[709,420,55,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+636: [gen_225_bg] RECT rect=[709,420,55,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+637: [txt_226] NODE rect=[0,0,55,15] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+638: [txt_226_txt_173] TEXT rect=[709,420,55,15] color=#FF94A3B8 text="$499.97" clip=[569.0,111.2,787.0,587.0]
+639: [gen_227] NODE rect=[592,441,172,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+640: [gen_227_bg] RECT rect=[592,441,172,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+641: [gen_228] NODE rect=[592,441,133,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+642: [gen_228_bg] RECT rect=[592,441,133,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+643: [txt_229] NODE rect=[0,0,72,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+644: [txt_229_txt_174] TEXT rect=[592,441,64,16] color=#FF94A3B8 text="Shipping " clip=[569.0,111.2,787.0,587.0]
+645: [txt_229_txt_175] TEXT rect=[656,441,13,16] color=#FF94A3B8 text="& " clip=[569.0,111.2,787.0,587.0]
+646: [txt_229_txt_176] TEXT rect=[592,457,63,15] color=#FF94A3B8 text="Handling:" clip=[569.0,111.2,787.0,587.0]
+647: [gen_230] NODE rect=[725,449,39,16] color=#FF10B981 clip=[569.0,111.2,787.0,587.0]
+648: [gen_230_bg] RECT rect=[725,449,39,16] color=#FF10B981 clip=[569.0,111.2,787.0,587.0]
+649: [txt_231] NODE rect=[0,0,39,15] color=#FF10B981 clip=[569.0,111.2,787.0,587.0]
+650: [txt_231_txt_177] TEXT rect=[725,449,39,16] color=#FF10B981 text="FREE" clip=[569.0,111.2,787.0,587.0]
+651: [gen_232] NODE rect=[592,478,172,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+652: [gen_232_bg] RECT rect=[592,478,172,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+653: [gen_233] NODE rect=[592,478,118,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+654: [gen_233_bg] RECT rect=[592,478,118,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+655: [txt_234] NODE rect=[0,0,115,31] color=#FF94A3B8 clip=[569.0,111.2,787.0,587.0]
+656: [txt_234_txt_178] TEXT rect=[592,478,55,16] color=#FF94A3B8 text="Special " clip=[569.0,111.2,787.0,587.0]
+657: [txt_234_txt_179] TEXT rect=[592,494,69,15] color=#FF94A3B8 text="Discount " clip=[569.0,111.2,787.0,587.0]
+658: [txt_234_txt_180] TEXT rect=[661,494,46,15] color=#FF94A3B8 text="(20%):" clip=[569.0,111.2,787.0,587.0]
+659: [gen_235] NODE rect=[710,478,54,31] color=#FFF43F5E clip=[569.0,111.2,787.0,587.0]
+660: [gen_235_bg] RECT rect=[710,478,54,31] color=#FFF43F5E clip=[569.0,111.2,787.0,587.0]
+661: [txt_236] NODE rect=[0,0,54,31] color=#FFF43F5E clip=[569.0,111.2,787.0,587.0]
+662: [txt_236_txt_181] TEXT rect=[710,478,10,16] color=#FFF43F5E text="-" clip=[569.0,111.2,787.0,587.0]
+663: [txt_236_txt_182] TEXT rect=[710,494,54,15] color=#FFF43F5E text="$80.00" clip=[569.0,111.2,787.0,587.0]
+664: [gen_237] NODE rect=[592,517,172,45] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+665: [gen_237_bg] RECT rect=[592,517,172,45] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+666: [gen_237_b_top] RECT rect=[592,517,172,1] bg=#FF334155 clip=[569.0,111.2,787.0,587.0]
+667: [gen_238] NODE rect=[592,524,86,38] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+668: [gen_238_bg] RECT rect=[592,524,86,38] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+669: [txt_239] NODE rect=[0,0,61,38] color=#FFF8FAFC clip=[569.0,111.2,787.0,587.0]
+670: [txt_239_txt_183] TEXT rect=[592,524,68,19] color=#FFF8FAFC text="Order " clip=[569.0,111.2,787.0,587.0]
+671: [txt_239_txt_184] TEXT rect=[592,543,61,19] color=#FFF8FAFC text="Total:" clip=[569.0,111.2,787.0,587.0]
+672: [gen_240] NODE rect=[678,533,86,21] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+673: [gen_240_bg] RECT rect=[678,533,86,21] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+674: [txt_241] NODE rect=[0,0,86,21] color=#FF38BDF8 clip=[569.0,111.2,787.0,587.0]
+675: [txt_241_txt_185] TEXT rect=[678,533,86,21] color=#FF38BDF8 text="$419.97" clip=[569.0,111.2,787.0,587.0]
+676: [gen_242] NODE rect=[581,583,194,45] color=#FFFFFFFF clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+677: [gen_242_bg] BUTTON rect=[581,583,194,45] color=#FFFFFFFF r=6 clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6]
+678: [gen_242_bgl0_0] RECT rect=[390,542,192,42] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+679: [gen_242_bgl0_1] RECT rect=[582,542,192,42] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+680: [gen_242_bgl0_2] RECT rect=[774,542,192,42] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+681: [gen_242_bgl0_3] RECT rect=[390,584,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+682: [gen_242_bgl0_4] RECT rect=[582,584,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+683: [gen_242_bgl0_5] RECT rect=[774,584,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+684: [gen_242_bgl0_6] RECT rect=[390,627,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+685: [gen_242_bgl0_7] RECT rect=[582,627,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+686: [gen_242_bgl0_8] RECT rect=[774,627,192,43] bg=#FF10B981 clip=[581.0,583.5,775.0,587.0] gradient=[#FF10B981,#FF079C6D,#FF059669,#FF0EB37D]
+687: [gen_242_b_round] ROUNDED_BORDER rect=[581,583,194,45] clip=[569.0,111.2,787.0,587.0] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF34D399,#FF34D399,#FF34D399,#FF34D399]
+688: [txt_243] NODE rect=[0,0,107,27] color=#FFFFFFFF clip=[569.0,111.2,787.0,587.0]
+689: [txt_243_txt_186] TEXT rect=[628,592,79,14] color=#FFFFFFFF text="Proceed " clip=[569.0,111.2,787.0,587.0]
+690: [txt_243_txt_187] TEXT rect=[707,592,28,14] color=#FFFFFFFF text="to " clip=[569.0,111.2,787.0,587.0]
+691: [txt_243_txt_188] TEXT rect=[625,606,89,13] color=#FFFFFFFF text="Checkout " clip=[569.0,111.2,787.0,587.0]
+692: [txt_243_txt_189] TEXT rect=[714,606,24,13] color=#FFFFFFFF text="→ " clip=[569.0,111.2,787.0,587.0]
+693: [gen_244] NODE rect=[581,640,194,59] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+694: [gen_244_bg] RECT rect=[581,640,194,59] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+695: [gen_245] NODE rect=[581,640,194,28] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+696: [gen_245_bg] RECT rect=[581,640,194,28] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+697: [txt_246] NODE rect=[0,0,166,27] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+698: [txt_246_txt_190] TEXT rect=[595,640,17,14] color=#FF64748B text="⚿ " clip=[569.0,111.2,787.0,587.0]
+699: [txt_246_txt_191] TEXT rect=[612,640,31,14] color=#FF64748B text="256-" clip=[569.0,111.2,787.0,587.0]
+700: [txt_246_txt_192] TEXT rect=[643,640,23,14] color=#FF64748B text="Bit " clip=[569.0,111.2,787.0,587.0]
+701: [txt_246_txt_193] TEXT rect=[666,640,27,14] color=#FF64748B text="SSL " clip=[569.0,111.2,787.0,587.0]
+702: [txt_246_txt_194] TEXT rect=[693,640,72,14] color=#FF64748B text="Encrypted " clip=[569.0,111.2,787.0,587.0]
+703: [txt_246_txt_195] TEXT rect=[648,654,60,14] color=#FF64748B text="Checkout" clip=[569.0,111.2,787.0,587.0]
+704: [gen_247] NODE rect=[581,672,194,27] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+705: [gen_247_bg] RECT rect=[581,672,194,27] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+706: [txt_248] NODE rect=[0,0,143,27] color=#FF64748B clip=[569.0,111.2,787.0,587.0]
+707: [txt_248_txt_196] TEXT rect=[607,672,17,13] color=#FF64748B text="✓ " clip=[569.0,111.2,787.0,587.0]
+708: [txt_248_txt_197] TEXT rect=[624,672,23,13] color=#FF64748B text="30-" clip=[569.0,111.2,787.0,587.0]
+709: [txt_248_txt_198] TEXT rect=[647,672,27,13] color=#FF64748B text="Day " clip=[569.0,111.2,787.0,587.0]
+710: [txt_248_txt_199] TEXT rect=[674,672,45,13] color=#FF64748B text="Money-" clip=[569.0,111.2,787.0,587.0]
+711: [txt_248_txt_200] TEXT rect=[719,672,35,13] color=#FF64748B text="Back " clip=[569.0,111.2,787.0,587.0]
+712: [txt_248_txt_201] TEXT rect=[644,685,68,14] color=#FF64748B text="Guarantee" clip=[569.0,111.2,787.0,587.0]
+713: [gen_189_sb_vt] RECT rect=[781,113,4,472] bg=#33000000 r=2 radii=[2,2,2,2]
+714: [gen_189_sb_v] RECT rect=[781,113,4,375] bg=#88CCCCCC r=2 radii=[2,2,2,2]

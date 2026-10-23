@@ -4,11 +4,18 @@ import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.WebSessionProvider;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
+import com.nishiyu.enderframelib.api.state.UIState;
 import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.server.state.UIStateManager;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Objects;
 
 import java.util.Map;
 
@@ -103,6 +110,22 @@ final class EnderFrameAPIImpl implements EnderFrameAPI {
     public void clearHud(ServerPlayer player) {
         if (player == null) return;
         ServerPacketSender.send(player, new WebSyncS2CPacket("", "clear_hud", new CompoundTag()));
+    }
+
+    @Override
+    public @NotNull UIState createBlockEntityState(@NotNull BlockEntity be, @NotNull String templateId) {
+        Objects.requireNonNull(be, "be cannot be null");
+        Objects.requireNonNull(templateId, "templateId cannot be null");
+        BlockPos pos = be.getBlockPos();
+        String instanceId = "block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+        return UIStateManager.getOrCreateState(templateId, instanceId);
+    }
+
+    @Override
+    public void openUi(@NotNull ServerPlayer player, @NotNull String templateId, @NotNull String instanceId, @Nullable UIState state) {
+        if (player == null || templateId == null || instanceId == null) return;
+        UIState targetState = state != null ? state : UIStateManager.getOrCreateState(templateId, instanceId);
+        targetState.addViewer(player);
     }
 
     @Override

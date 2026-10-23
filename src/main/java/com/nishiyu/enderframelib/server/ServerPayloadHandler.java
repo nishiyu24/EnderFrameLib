@@ -1,7 +1,9 @@
 package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
+import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
+import com.nishiyu.enderframelib.server.state.UIStateManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -83,6 +85,17 @@ public class ServerPayloadHandler {
                 }
                 default -> { /* 未知のアクションは黙って捨てる */ }
             }
+        });
+    }
+
+    public static void handleUiAction(UiActionC2SPacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer serverPlayer)) return;
+            if (packet == null || packet.instanceId() == null || packet.actionName() == null) return;
+            // クローズ通知は自分を閲覧者から外すだけなので、直前のクリックと同 tick でも落とさない
+            if (!UiActionC2SPacket.CLOSE_ACTION.equals(packet.actionName())
+                    && !PlayerRateLimiter.allow(serverPlayer, "act_" + packet.instanceId(), EVENT_COOLDOWN_MS)) return;
+            UIStateManager.handleAction(packet.instanceId(), packet.actionName(), serverPlayer, packet.payload());
         });
     }
 

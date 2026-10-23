@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
+import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
@@ -62,8 +64,16 @@ public class TextareaEditor {
         int clickedRow = Math.clamp(scrollRow + (int) ((localY - 4.0) / lineHeight), 0, Math.max(0, lines.length - 1));
 
         String lineStr = lines[clickedRow];
-        int clickedCol = font.plainSubstrByWidth(lineStr,
-                Math.max(0, (int) ((localX - gutterW) / textScale))).length();
+        OutlineFontFace outline = WebFontManager.outlineFaceFor(taEl);
+        int clickedCol;
+        if (outline != null) {
+            // 描画（DisplayItemDrawer）は行を左端 + ガター + 2px から置く
+            float[] pos = outline.positions(lineStr, WebFontManager.fontStyleFor(taEl, meta.fontHeight()));
+            clickedCol = OutlineFontFace.nearestBoundary(lineStr, pos, localX - gutterW - 2.0);
+        } else {
+            clickedCol = font.plainSubstrByWidth(lineStr,
+                    Math.max(0, (int) ((localX - gutterW) / textScale))).length();
+        }
 
         int index = 0;
         for (int i = 0; i < clickedRow; i++) index += lines[i].length() + 1;
@@ -192,13 +202,15 @@ public class TextareaEditor {
                 return true;
             }
             case GLFW.GLFW_KEY_V -> {
-                if (Screen.hasControlDown()) {
+                try {
+                    if (Screen.hasControlDown()) {
                     String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
                     if (clip != null && !clip.isEmpty()) {
                         insert(clip.replace("\r\n", "\n"), onInputChanged, onModelChanged);
                     }
                     return true;
                 }
+                } catch (Throwable ignored) {}
             }
         }
         return false;

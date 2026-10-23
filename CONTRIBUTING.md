@@ -25,7 +25,7 @@
 | 公開 API（`api/` パッケージ）の Javadoc | **英語** |
 | 内部実装のコメント・Javadoc | **日本語**（既存コードに合わせる） |
 | `README.md`・`NOTICE`・公開されるドキュメント | **英語** |
-| `CONTRIBUTING.md`・`REFACTORING_PLAN.md` などの開発ドキュメント | **日本語** |
+| `CONTRIBUTING.md`・`ARCHITECTURE.md`・`REFACTORING_PLAN.md`・`BENCHMARK.md`・`FIDELITY.md` などの開発ドキュメント | **日本語** |
 | コミットメッセージ | 件名は英語（Conventional Commits）、本文は日本語でよい |
 
 `api/` を英語にしているのは、このライブラリに対してコンパイルする他 Mod の
@@ -72,18 +72,20 @@
 - `TODO` / `FIXME` には必ず内容を書く。裸の `// TODO` は置かない。
 - 制約を解消したら、コードのマーカーと README の記述を同じコミットで消す。
 
-現在 README に記録されている主な制約（コード側と対応させること）:
-JavaScript 非対応、HTML のツリー構築の未対応部分（書式要素の再構築と adoption agency・SVG / MathML・
-`<template>` の中身を別の断片にしない）、Markdown のネストリスト非対応、表の未対応部分（列幅の %・枠線の重ね方の簡略化）、
-float の横の行幅は行の上端で決める・段組みと書字方向は非対応、ボックスツリーの未対応部分（インライン中のブロックで分割しない・
-flex / grid 内のテキストを匿名アイテムで包まない）、`::marker` を照合しない、
-flex / grid の簡略化した部分（列方向の自動最小高さ・トラックの寸法・subgrid など）、
-高さの内容サイズのキーワード非対応、opacity をグループで合成しない・変形した子孫を祖先の空間で切らない、
-角丸の枠線は実線・輪郭線は角丸に沿わない、背景の未対応部分（インラインの断片の画像・グラデーションの色の途中経過・
-`background-attachment`）、フォームコントロールは OS の部品でなく legend は枠に重ねない、
-`@media` の `prefers-*` は固定値（light / 動きの抑制なし）、
-`::before` / `::after` 以外の疑似要素は照合しない、未対応の擬似クラス（`:has()` など）はセレクタごと無効、
-`ch` / `ex` は 0.5em で近似し楕円の角は小さい方の半径の円弧、動画は Windows 専用。
+現在 README に記録されている主な制約（コード側の `LIMITATION` と対応させること）:
+JavaScript 非対応と `MutationObserver` の通知時点、HTML のツリー構築の未対応部分（書式要素の再構築と adoption agency・
+SVG / MathML・`<template>` の中身を別の断片にしない）、Markdown のネストリスト非対応、表の未対応部分（列幅の %・
+枠線の重ね方の簡略化・`visibility: collapse`）、float の横の行幅は行の上端で決める・段組みと書字方向は非対応、
+ボックスツリーの未対応部分（インライン中のブロックで分割しない・flex / grid 内のテキストを匿名アイテムで包まない・
+`<ol reversed>`）、`list-style-image` 非対応、flex / grid の簡略化した部分（列方向の自動最小高さ・トラックの寸法・
+subgrid・`auto-fit` など）、高さの内容サイズのキーワード非対応、opacity をグループで合成しない・変形した子孫を
+祖先の空間で切らない、角丸の枠線は実線・輪郭線は角丸に沿わない、背景の未対応部分（インラインの断片の画像・
+放射 / 円錐 / 斜めのグラデーションは矩形の網で近似・`background-attachment`）、`box-shadow` のぼかしは段の近似で
+外側の影が箱の内側にも出る、フォームコントロールは OS の部品でない、書体の差（合字なし・総称ファミリは Windows の
+Chrome に合わせる・Minecraft の書体）、`@media` の `prefers-*` は固定値（light / 動きの抑制なし）、
+`::first-line` などの疑似要素は照合しない、未対応の擬似クラス（`:user-valid` など）はセレクタごと無効、
+`ch` / `ex` / `cap` / `ic` の近似と楕円の角は小さい方の半径の円弧、transform は translate / scale / rotate だけを
+固定の順で、動画は Windows 専用。
 忠実度コーパスで測れる差は FIDELITY.md の「既知の差異」がフェーズ別に持つ。
 
 ---
@@ -91,13 +93,18 @@ flex / grid の簡略化した部分（列方向の自動最小高さ・トラ�
 ## 層の規約
 
 ```
-core/  →  （何にも依存しない）
-api/   →  Minecraft のみ
-common/, server/, client/, network/  →  core/, api/ とその層
+core/     →  api/dom・api/event（純 Java の DOM / イベントのインターフェース）だけ
+api/      →  Minecraft のみ（api/dom・api/event は Minecraft にも依存しない）
+common/   →  core/, api/
+client/, server/  →  core/, api/, common/, network/
+network/  →  core/, api/（ペイロードの登録で server のハンドラを参照する）
 ```
+
+図と各層の責務は [ARCHITECTURE.md](ARCHITECTURE.md) §1。
 
 **`core/` は純 Java のリーフである。** `net.minecraft` / `net.neoforged` /
 `com.mojang` / 上位パッケージを import してはならない（完全修飾名での参照も禁止）。
+`api/dom` と `api/event` は `core/dom` が実装する Web IDL の形のインターフェースなので、ここに Minecraft の型を入れない。
 これは `ArchitectureTest` が CI で強制する。逃げ道を作るのではなく、
 依存を反転させるか、値型を `core/layout` などの純 Java パッケージに置いて境界で変換する。
 
@@ -146,7 +153,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 - **テストのパッケージは本体に合わせる。** `src/test/java` に本体の無いパッケージを作らない
   （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。
 - **管理指標の上限は下げる方向にだけ動かす。** `ArchitectureTest` の M1〜M9 は
-  STRUCTURE_PLAN.md の T0 で記録した実測値で、フェーズの作業で数を減らしたら
+  構造整理（T0）で記録した実測値から始めたもので（現在の上限は [ARCHITECTURE.md](ARCHITECTURE.md) §7）、フェーズの作業で数を減らしたら
   同じコミットで上限も下げる。上げる変更は、なぜ増やしたかをレビューで説明する。
 - パーサ・レイアウトの挙動はゴールデンファイルで固定している。
   意図して出力を変えたときは:
@@ -216,24 +223,33 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 
   で更新し、**必ず `git diff` で数値の変化を確認してからコミットする。**
   一時的な環境差は `-Dbenchmark.factor=2.5` / `-Dbenchmark.slackMs=10` で緩める。
+  サーバー側の基準値（互換モードのパケット量とヒープ）は `src/test/resources/benchmark/server_baseline.txt` にあり、
+  `PacketBandwidthTest` / `StateMemoryBenchmarkTest` が完全一致で、`HeadlessStateBandwidthAndMemoryTest` が
+  Headless State との削減率で使う。実測と経緯は [BENCHMARK.md](BENCHMARK.md)。
 - **UA の既定値は `ua.css` が唯一の出所。** ブラウザプレビューは
   `ua.css` と組み込みテーマをそのまま同梱して読む。
   `enderframe-devkit.css` に要素セレクタを書かないこと（`CssResourcesTest` が検査する）。
 - **テキストの測定は `core/text` の `TextShaper` が唯一の出所。** 文字幅・ascent・descent・行間は
-  `FontFace`（`font-family` の引き当ては `FontFace.FontResolver` / `WebFontManager.McFontResolver`）、
+  `FontFace`（`font-family` の引き当ては `FontResolver`。ゲーム内は `WebFontManager.McFontResolver` が
+  システムの書体 `SystemFonts` と Minecraft の書体を振り分ける）、
   折り返し・空白の畳み方・省略は `TextShaper` だけが決める。
   行送りは `LayoutMetrics.lineHeightPx`、`line-height` の解析はそこだけ。
-  **描画側（`DisplayItemDrawer`）でテキストを測り直さないこと。**
+  **描画側（`DisplayItemDrawer` / `OutlineTextRenderer`）でテキストを測り直さないこと。**
   `font.width` / `plainSubstrByWidth` でレイアウトの決定をやり直すと、
   予約した行数と見える行数が食い違う（F2 以前がその状態だった）。
-  フォントの倍率は `fontSizePx / FontFace.BitmapFontFace.MC_UNITS_PER_EM` で、
+  システムの書体の字の位置は `OutlineFontFace.positions`（測定と同じ値）を使う。
+  Minecraft の書体の倍率は `fontSizePx / BitmapFontFace.MC_UNITS_PER_EM` で、
   描画時に丸めてはいけない（送り幅が変わって測定と合わなくなる）。
+- **Chrome の実測と比べるテスト**（`ChromeTextMetricsParityTest`・`ShowcaseChromeParityTest`・`ToggleBaselineTest`・
+  `FieldsetLegendTest`）はシステムの書体で組むので Windows でだけ走る。期待値は Chrome（Windows）で採った値で、
+  エンジンの出力を期待値にしない。一覧は [FIDELITY.md](FIDELITY.md) の「コーパスの外でブラウザと突き合わせているもの」。
 - サーバー側のライフサイクル（ログアウト・ディメンション移動・サーバー停止で
   static マップが空に戻るか）は `gametest/WebScreenGameTest` が
   `./gradlew runGameTestServer` で検証する。
   サーバー側に状態を持つマップを追加したら、`EnderFrameServerState.isEmpty()`
   と `describeState()` にも足すこと。破棄の経路は
-  `EnderFrameServerState` の 1 箇所に集める。
+  `EnderFrameServerState` の 1 箇所に集める（Headless State の `UIStateManager` もここから
+  tick の flush・閲覧者の除去・全消去を呼ばれる）。
 
 ---
 
@@ -247,6 +263,10 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   `WebSessionManager` の正規表現で検証している。検証を迂回する経路を作らない。
 - **セッションのアクセス制御は `WebSessionManager.canAccess` に集約されている。**
   新しいパケットやコマンドを足すときは必ずここを通す。
+- **Headless State のアクションは閲覧者だけが起こせる。** `UiActionC2SPacket` は
+  `ServerPayloadHandler` のレート制限の後、`UIStateManager.handleAction` が送り主が
+  その `UIState` の閲覧者かを確かめてから `onAction` のハンドラへ渡す。この検査を迂回する入口を作らない。
+  ペイロード（`CompoundTag`）の中身はクライアントの値なので、ハンドラ側で信用しない。
 - **PubSub のチャンネルは ACL を通る。** `EnderFrameAPI.addSubscriptionCheck`
   で登録された検査はすべて通過しなければならない。
 - 外部プロセスの起動とダウンロード（`yt-dlp`）は `WebMediaManager` の 1 箇所だけ。
@@ -258,7 +278,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 
 - 件名は Conventional Commits（`fix:` / `feat:` / `refactor:` / `docs:` /
   `chore:`）。リファクタリング計画の項目に対応するものは
-  `refactor(phase5-1): …` のようにフェーズ番号を入れる。
+  `refactor(r5): …` / `feat(h1): …` のようにフェーズ番号を入れる。
 - 1 コミット 1 関心事。整形だけの変更を実装の変更と混ぜない。
 - `./gradlew build test` が通らないものは出さない。CI も同じコマンドを走らせる。
 - ライセンスは LGPL-3.0-only。貢献はこのライセンスで配布されることに

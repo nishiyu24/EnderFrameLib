@@ -13,6 +13,7 @@ import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
@@ -56,6 +57,7 @@ public class ClientScreenInteractionManager {
 
     private static volatile IClientEventCallback clientEventCallback = null;
     private static volatile Consumer<WebActionC2SPacket> serverActionSender = PacketDistributor::sendToServer;
+    private static volatile Consumer<UiActionC2SPacket> uiActionSender = PacketDistributor::sendToServer;
     private static volatile boolean enableDefaultUiSounds = true;
     private static volatile boolean mutateDomOnHover = false;
     private static volatile Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
@@ -66,6 +68,8 @@ public class ClientScreenInteractionManager {
     public static void removeClientEventCallback(IClientEventCallback callback) { if (clientEventCallback == callback) clientEventCallback = null; }
     public static void setServerActionSender(Consumer<WebActionC2SPacket> sender) { serverActionSender = sender != null ? sender : PacketDistributor::sendToServer; }
     public static void sendToServer(WebActionC2SPacket packet) { serverActionSender.accept(packet); }
+    public static void setUiActionSender(Consumer<UiActionC2SPacket> sender) { uiActionSender = sender != null ? sender : PacketDistributor::sendToServer; }
+    public static void sendToServer(UiActionC2SPacket packet) { uiActionSender.accept(packet); }
     /**
      * ボタンクリックなどの対話時に Minecraft の既定 UI 効果音（クリック音など）を再生するかどうかを設定する。
      *

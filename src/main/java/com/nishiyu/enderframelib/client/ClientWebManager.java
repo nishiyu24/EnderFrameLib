@@ -76,6 +76,8 @@ public class ClientWebManager {
     }
 
     public static void recomputeAllLayouts() {
+        // 画像の読み込みなど箱の外の資源が変わったので、前回の measure の結果は使わずに測り直す
+        com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
         for (SessionContext ctx : SESSIONS.values()) {
             if (ctx.document() != null) {
                 ctx.recomputeLayout(ctx.rootW(), ctx.rootH());

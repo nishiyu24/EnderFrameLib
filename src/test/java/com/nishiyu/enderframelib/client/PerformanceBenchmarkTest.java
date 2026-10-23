@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
+import com.nishiyu.enderframelib.server.StateMemoryBenchmarkTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -332,5 +333,40 @@ public class PerformanceBenchmarkTest {
         }
         sb.append("========================================================================================\n");
         return sb.toString();
+    }
+
+    /**
+     * H0 ベンチマーク: サーバー側セッション 100 個を保持した際のヒープメモリ消費量計測。
+     *
+     * <p>Dual DOM モデル（現行）での基準値を測定し、DOM ノード常駐量とヒープ消費量を検証する。
+     */
+    @Test
+    @DisplayName("Server Session Heap Memory Benchmark: 100 machine sessions (Dual DOM baseline)")
+    public void testServerSessionMemoryBenchmark() {
+        StateMemoryBenchmarkTest.MemoryBenchmarkResult result = StateMemoryBenchmarkTest.measureDualDomMemory();
+        System.out.printf(Locale.ROOT,
+                """
+                ========================================================================================
+                           EnderFrameLib Server Session Memory Benchmark (100 Sessions)
+                ========================================================================================
+                Session Count:              %d
+                Total Heap Memory Retained: %d bytes (%.2f KB, %.2f MB)
+                Memory Per Session:         %d bytes (%.2f KB)
+                Total Retained DOM Nodes:   %d nodes (%d nodes/session)
+                ========================================================================================
+                """,
+                result.sessionCount(),
+                result.usedMemoryBytes(),
+                result.usedMemoryBytes() / 1024.0,
+                result.usedMemoryBytes() / (1024.0 * 1024.0),
+                result.bytesPerSession(),
+                result.bytesPerSession() / 1024.0,
+                result.totalDomNodes(),
+                result.nodesPerSession()
+        );
+
+        assertTrue(result.totalDomNodes() >= 1000, "100 セッションで 1000 ノード以上がヒープに保持されていること");
+        assertTrue(result.nodesPerSession() >= 10, "1 セッションあたり 10 ノード以上保持されていること");
+        assertTrue(result.usedMemoryBytes() > 1_000_000, "100 セッション生成によりヒープ消費が増加すること");
     }
 }

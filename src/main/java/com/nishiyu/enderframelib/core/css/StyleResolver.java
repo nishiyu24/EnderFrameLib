@@ -247,7 +247,58 @@ public class StyleResolver {
         if (!inlineNormalDone) state.applyInline(inlineNormal);
         if (!inlineImportantDone) state.applyInline(inlineImportant);
 
+        if (pseudo == null && node != null) adjustForAppearance(node, result, uaValues);
         return result;
+    }
+
+    private static final String[] SIDES = {"top", "right", "bottom", "left"};
+    private static final String[] CORNERS = {"top-left", "top-right", "bottom-right", "bottom-left"};
+
+    /**
+     * UA の部品で描くチェックボックス・ラジオボタン（{@code appearance} が none 以外）の算出値の調整。
+     * Chrome（LayoutTheme::AdjustStyle）と同じく、作者の枠線・padding・角丸は効かない（0 に戻す）。
+     * 枠の色は UA のスタイルシートだけでカスケードした値（状態ごとの部品の色。ua.css の :hover / :checked など）に
+     * 置き換え、描画側はこれを部品の輪・強調色として読む。背景色は算出値に残るが描画に使わない。
+     *
+     * 何が壊れていたか: 以前は作者の border / background / padding がそのまま部品の見た目と大きさに効き、
+     * Chrome と違って見えた。
+     */
+    private static void adjustForAppearance(HtmlNode node, Map<String, String> result, Map<String, String> uaValues) {
+        boolean toggle = isNativeToggle(node, result);
+        if (!toggle && !isNativeRange(node, result)) return;
+        // UA の宣言はショートハンド（border など）のまま入っているので、展開してから辺ごとの色を読む
+        Map<String, String> ua = new LinkedHashMap<>(uaValues);
+        PropertyRegistry.expandShorthands(ua);
+        for (int i = 0; i < 4; i++) {
+            String side = SIDES[i];
+            if (toggle) {
+                result.put("border-" + side + "-width", "0px");
+                result.put("padding-" + side, "0px");
+                result.put("border-" + CORNERS[i] + "-radius", "0px");
+            }
+            String uaColor = ua.get("border-" + side + "-color");
+            if (uaColor != null) result.put("border-" + side + "-color", uaColor);
+        }
+    }
+
+    /**
+     * {@code appearance} が none でないレンジ。チェックボックスと違い、作者の枠線と padding は大きさに効く（Chrome の実測）が、
+     * 描画は部品の溝とつまみだけなので、枠の色だけを UA の状態ごとの強調色に置き換える。
+     */
+    public static boolean isNativeRange(HtmlNode node, Map<String, String> style) {
+        if (!"input".equals(node.tag)) return false;
+        if (!"range".equalsIgnoreCase(node.attrs.getOrDefault("type", "").trim())) return false;
+        String appearance = style.get(CssProperty.APPEARANCE);
+        return appearance != null && !"none".equalsIgnoreCase(appearance.trim());
+    }
+
+    /** {@code appearance} が none でないチェックボックス・ラジオボタン。 */
+    public static boolean isNativeToggle(HtmlNode node, Map<String, String> style) {
+        if (!"input".equals(node.tag)) return false;
+        String type = node.attrs.getOrDefault("type", "").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!type.equals("checkbox") && !type.equals("radio")) return false;
+        String appearance = style.get(CssProperty.APPEARANCE);
+        return appearance != null && !"none".equalsIgnoreCase(appearance.trim());
     }
 
     /**

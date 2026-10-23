@@ -82,6 +82,11 @@ public class InteractionState implements StateLookup {
         /** 算出時のビューポート。font-size の vw / vh が算出値に入るので、変わったら再スタイルする。 */
         public int cachedViewportW = -1;
         public int cachedViewportH = -1;
+        /**
+         * 宣言値がビューポートの大きさに依存し得るか（{@code vw} / {@code cqw} などの単位、{@code var()}）。
+         * 依存しない要素は、ビューポートが変わっても算出スタイルのキャッシュをそのまま使う。
+         */
+        public boolean viewportDependent = true;
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */

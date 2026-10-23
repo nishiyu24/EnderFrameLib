@@ -44,6 +44,8 @@ public class HtmlParser {
 
     private static final int MAX_NODES = 5000;
     private static final int MAX_DEPTH = 100;
+    private static final int MAX_TEXT = 16384;
+    private static final int MAX_RAW_TEXT = 1 << 20;
 
     private static final Set<String> PRESERVE_WHITESPACE_TAGS = Set.of("textarea", "pre", "code", "script", "style");
 
@@ -767,7 +769,9 @@ public class HtmlParser {
                 if (table != null && table.parent != null) parent = table.parent;
             }
             String text = normalizeText(token, parent);
-            if (text.length() > 16384) text = text.substring(0, 16384);
+            // <style> / <script> の中身はシート全体が意味を持つので、通常テキストより大きい上限にする
+            int maxText = token.isRawText ? MAX_RAW_TEXT : MAX_TEXT;
+            if (text.length() > maxText) text = text.substring(0, maxText);
             if (text.isEmpty()) return;
 
             int at = parent.children.size();

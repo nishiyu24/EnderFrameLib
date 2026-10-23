@@ -56,35 +56,62 @@ public class SessionContext implements AutoCloseable {
      * <ul>
      *   <li>{@link #NONE}: 再計算不要</li>
      *   <li>{@link #REPAINT}: 既存の {@link LayoutBox} から描画要素リストのみ再生成（measure/layout を省略）</li>
-     *   <li>{@link #RESTYLE}: 状態変化した部分木のみ再スタイルし、レイアウト影響があれば {@link #RELAYOUT}、無ければ {@link #REPAINT} に分岐</li>
+     *   <li>{@link #REPOSITION}: 寸法はそのままに位置だけ決め直す（スクロール・{@code top} / {@code left} の変化。measure を省略）</li>
+     *   <li>{@link #RESTYLE}: 状態変化した部分木のみ再スタイルし、レイアウト影響があれば {@link #RELAYOUT}、
+     *       位置だけなら {@link #REPOSITION}、無ければ {@link #REPAINT} に分岐</li>
      *   <li>{@link #RELAYOUT}: スタイル解決・measure・layout・描画要素生成の全パスを実行</li>
      * </ul>
      */
     public enum InvalidationLevel {
         NONE,
         REPAINT,
+        REPOSITION,
         RESTYLE,
         RELAYOUT
     }
 
+    /**
+     * 連続したリサイズ中は、直前のレイアウトにかかった時間のこの倍数だけ次のレイアウトを待つ。
+     * 1 フレームの大半をレイアウトに取られないよう、待つ間は古いレイアウトのまま描く（大きさが落ち着けば必ず追いつく）。
+     */
+    private static final long RESIZE_THROTTLE_FACTOR = 2;
+
     private final String sessionId;
     private volatile List<DisplayItem> renderCache = Collections.emptyList();
+    /** レイアウトから作った描画要素（描画上の平行移動 {@link #paintOffsets} を掛ける前）。 */
+    private volatile List<DisplayItem> baseRenderCache = Collections.emptyList();
+    private final Map<String, float[]> paintOffsets = new ConcurrentHashMap<>();
+    private volatile boolean paintOffsetsDirty = false;
     private Document document;
     private LayoutBox layoutRoot;
     private boolean serverManaged = false;
+    private boolean headlessState = false;
+    private final ReactiveStateStore stateStore;
     private boolean requested = false;
     private long lastSyncRequestTime = 0L;
     private int domHash = 0;
     private int rootW = 854;
     private int rootH = 480;
+    /** 1 CSS px あたりのデバイスピクセル（{@code @media (resolution)} が見る値）。 */
+    private float devicePixelRatio = 1.0f;
     private final Map<String, String> env = new ConcurrentHashMap<>();
     private final ScrollState scrollState = new ScrollState();
     private final InteractionState interactionState = new InteractionState();
     private volatile InvalidationLevel invalidationLevel = InvalidationLevel.NONE;
+    /** 位置の決め直しが要求されている（同じフレームの再スタイルがレイアウト不要でも、スクロールは反映する）。 */
+    private volatile boolean repositionPending = false;
+    /** まだ反映していないビューポートの大きさ。無ければ -1。 */
+    private volatile int pendingResizeW = -1;
+    private volatile int pendingResizeH = -1;
+    /** 直前の全レイアウト（描画要素の生成まで）にかかった時間と、それを終えた時刻（ナノ秒）。 */
+    private long lastLayoutCostNanos = 0L;
+    private long lastLayoutFinishedNanos = 0L;
 
     private String activeInputId = "";
     private final TextSelection textSelection = new TextSelection();
     private volatile HitTestIndex hitTestIndex;
+    /** {@link #hitTestIndex} を作った描画要素リスト（同じ物を指す間だけ使い回す）。 */
+    private volatile List<DisplayItem> hitTestIndexSource;
 
     // --- セッションに属する入力・描画・バインディング状態（S1） ---
     private final InputSessionState inputState = new InputSessionState();
@@ -114,6 +141,7 @@ public class SessionContext implements AutoCloseable {
 
     public SessionContext(String sessionId) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
+        this.stateStore = new ReactiveStateStore(sessionId);
     }
 
     public String sessionId() {
@@ -121,20 +149,66 @@ public class SessionContext implements AutoCloseable {
     }
 
     public List<DisplayItem> renderCache() {
+        applyPendingPaintOffsets();
         return renderCache;
     }
 
     public void setRenderCache(List<DisplayItem> renderCache) {
-        this.renderCache = (renderCache != null && !renderCache.isEmpty())
+        this.baseRenderCache = (renderCache != null && !renderCache.isEmpty())
                 ? List.copyOf(renderCache)
                 : Collections.emptyList();
-        this.hitTestIndex = new HitTestIndex(this.renderCache);
+        publishRenderCache();
+    }
+
+    /**
+     * 要素を描画の上だけで平行移動する（レイアウトも DOM も変えない）。
+     *
+     * <p>要素本体の描画要素（id が一致する NODE）の translate に足すので、子孫・クリップ・ヒットテストも
+     * 親の連鎖を通して一緒に動く。ウィンドウのドラッグのように毎フレーム位置が変わる操作で、
+     * 1 フレームごとの再レイアウトを避けるために使う。再レイアウトで描画要素が作り直されても掛け続け、
+     * {@link #clearPaintOffset(String)} で外す。反映は次に描画要素を読んだとき（1 フレームに 1 回）。</p>
+     */
+    public void setPaintOffset(String elementId, float dx, float dy) {
+        if (elementId == null || elementId.isEmpty()) return;
+        float[] prev = paintOffsets.put(elementId, new float[]{dx, dy});
+        if (prev == null || prev[0] != dx || prev[1] != dy) paintOffsetsDirty = true;
+    }
+
+    public void clearPaintOffset(String elementId) {
+        if (elementId != null && paintOffsets.remove(elementId) != null) paintOffsetsDirty = true;
+    }
+
+    private void applyPendingPaintOffsets() {
+        if (paintOffsetsDirty) publishRenderCache();
+    }
+
+    private void publishRenderCache() {
+        paintOffsetsDirty = false;
+        List<DisplayItem> base = this.baseRenderCache;
+        List<DisplayItem> shown = base;
+        if (!paintOffsets.isEmpty() && !base.isEmpty()) {
+            List<DisplayItem> moved = new ArrayList<>(base);
+            for (int i = 0; i < moved.size(); i++) {
+                DisplayItem el = moved.get(i);
+                float[] off = paintOffsets.get(el.id());
+                if (off != null && el.type() == ElementType.NODE) {
+                    moved.set(i, el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]));
+                }
+            }
+            shown = List.copyOf(moved);
+        }
+        this.renderCache = shown;
+        // 索引は引かれたときに作る。ドラッグ中は描画要素が毎フレーム変わるが、ヒットテストは入力が来たときしか要らない
+        this.hitTestIndex = null;
     }
 
     public HitTestIndex hitTestIndex() {
+        applyPendingPaintOffsets();
+        List<DisplayItem> current = this.renderCache;
         HitTestIndex idx = this.hitTestIndex;
-        if (idx == null) {
-            idx = new HitTestIndex(this.renderCache);
+        if (idx == null || hitTestIndexSource != current) {
+            idx = new HitTestIndex(current);
+            this.hitTestIndexSource = current;
             this.hitTestIndex = idx;
         }
         return idx;
@@ -166,6 +240,19 @@ public class SessionContext implements AutoCloseable {
         if (document == null || !(document.root instanceof HtmlDocument liveDocument)) return;
         liveDocument.setDefaultOwnership(serverManaged ? Ownership.SERVER : Ownership.CLIENT);
         liveDocument.setInteractionState(interactionState);
+        // DOM の操作（クライアントのスクリプト・サーバーの変異・バインディング）は、文書が汚れの印を付けて知らせてくる。
+        // どの経路から変えても同じ無効化になるよう、属性なら対話状態（checked / open など）もここで合わせる。
+        // 見た目の属性（style / class / hidden）だけなら再スタイルから、文字・子の並び・その他の属性なら再レイアウトから始める
+        liveDocument.setDomChangeListener((node, attributeName) -> {
+            if (attributeName != null) {
+                syncAttributeToInteractionState(node, attributeName, node.attrs.containsKey(attributeName));
+            }
+            if (attributeName != null && isPresentationalAttribute(attributeName)) {
+                requestRestyle();
+            } else {
+                requestRender();
+            }
+        });
         // :target の規則が掛かる要素は、ターゲットが変わると見た目が変わる（子孫・兄弟の規則にも及ぶので全体を解き直す）
         liveDocument.setTargetChangeListener((before, after) -> {
             interactionState().markAllDirty();
@@ -256,6 +343,30 @@ public class SessionContext implements AutoCloseable {
 
     public int rootH() {
         return rootH;
+    }
+
+    public float devicePixelRatio() {
+        return devicePixelRatio;
+    }
+
+    /**
+     * デバイスピクセル比を変える。{@code @media (resolution)} の結果が変わったときだけレイアウトし直す
+     * （大きさの変更と同時なら、続く {@link #recomputeLayout} がまとめて評価する）。
+     */
+    public void setDevicePixelRatio(float dppx) {
+        if (dppx <= 0 || Math.abs(dppx - devicePixelRatio) < 0.001f) return;
+        this.devicePixelRatio = dppx;
+        Document doc = document;
+        if (doc != null && doc.sheet != null && doc.root != null
+                && doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withResolution(dppx))) {
+            interactionState.markAllDirty();
+            // リサイズ中は毎フレーム呼ばれ得るので、作り直しは描画キューで 1 回にまとめる
+            requestRender();
+        }
+    }
+
+    private void applyResolution(StyleSheet sheet) {
+        if (sheet != null) sheet.updateMediaEnvironment(sheet.mediaEnvironment().withResolution(devicePixelRatio));
     }
 
     public void setRootH(int rootH) {
@@ -424,12 +535,32 @@ public class SessionContext implements AutoCloseable {
         if (ClientWebManager.hasPendingRenders()) {
             ClientWebManager.processRenderQueue();
         }
+        applyPendingPaintOffsets();
         return renderCache;
     }
 
     /** 状態変化に伴う部分木の再スタイル（必要に応じて再レイアウトまたは再描画へ分岐）を要求する。 */
     public void requestRestyle() {
         markInvalidation(InvalidationLevel.RESTYLE);
+        ClientWebManager.markDirty(sessionId);
+    }
+
+    /** スクロールなど、寸法を変えずに位置だけが変わる更新を要求する（measure を省いて layout だけやり直す）。 */
+    public void requestReposition() {
+        repositionPending = true;
+        markInvalidation(InvalidationLevel.REPOSITION);
+        ClientWebManager.markDirty(sessionId);
+    }
+
+    /**
+     * ビューポートの大きさの変更を予約する。同じフレームに何度呼ばれても反映は描画キューで 1 回にまとめ、
+     * 連続したリサイズ中はレイアウトの重さに応じて間引く（{@link #recomputeLayout} は即座に作り直す）。
+     */
+    public void requestResize(int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        if (width == rootW && height == rootH && pendingResizeW < 0) return;
+        pendingResizeW = width;
+        pendingResizeH = height;
         ClientWebManager.markDirty(sessionId);
     }
 
@@ -552,44 +683,79 @@ public class SessionContext implements AutoCloseable {
         ClientWebManager.applyOverrides(sessionId);
     }
 
+    /** 寸法はそのままに位置だけを決め直し、描画要素リストを作り直す（measure と箱の木の作り直しを省く）。 */
+    private void repositionFromLayout() {
+        if (layoutRoot == null || document == null) return;
+        RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, WebFontManager.McFontResolver.INSTANCE);
+        repaintFromLayout();
+    }
+
+    /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
+    private void restyleAndUpdate(boolean repositionRequested) {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
+                layoutRoot, document,
+                rootW, rootH,
+                env, interactionState);
+        if (res.layoutRequired()) {
+            recomputeLayout(rootW, rootH);
+        } else if (repositionRequested || res.repositionRequired()) {
+            repositionFromLayout();
+        } else if (res.styleChanged()) {
+            repaintFromLayout();
+        }
+    }
+
+    /**
+     * 予約されたリサイズを今のフレームで反映するか。連続したリサイズ中は、直前のレイアウトにかかった時間の
+     * {@link #RESIZE_THROTTLE_FACTOR} 倍が過ぎるまで待つ（React のスケジューラが重い更新を後回しにするのと同じ考え方）。
+     * 待つときは次のフレームでまた見るよう描画キューに残す。
+     */
+    private boolean resizeDue() {
+        if (pendingResizeW < 0) return false;
+        if (pendingResizeW == rootW && pendingResizeH == rootH) {
+            pendingResizeW = -1;
+            pendingResizeH = -1;
+            return false;
+        }
+        long sinceLastLayout = System.nanoTime() - lastLayoutFinishedNanos;
+        if (layoutRoot != null && sinceLastLayout < lastLayoutCostNanos * RESIZE_THROTTLE_FACTOR) {
+            ClientWebManager.markDirty(sessionId);
+            return false;
+        }
+        return true;
+    }
+
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     void flushInvalidation() {
         if (document == null || document.root == null) return;
 
+        boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
+        boolean repositionRequested = repositionPending;
+        repositionPending = false;
         if (layoutRoot == null) {
             level = InvalidationLevel.RELAYOUT;
             interactionState.markAllDirty();
         }
+        if (resize) {
+            recomputeLayout(pendingResizeW, pendingResizeH);
+            return;
+        }
 
         switch (level) {
             case RELAYOUT -> recomputeLayout(rootW, rootH);
-            case RESTYLE -> {
-                UiDocumentCompiler parser = new UiDocumentCompiler();
-                RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
-                        layoutRoot, document,
-                        rootW, rootH,
-                        env, interactionState);
-                if (res.layoutRequired()) {
-                    recomputeLayout(rootW, rootH);
-                } else if (res.styleChanged()) {
-                    repaintFromLayout();
+            case RESTYLE -> restyleAndUpdate(repositionRequested);
+            case REPOSITION -> {
+                if (interactionState.hasDirtyNodes()) {
+                    restyleAndUpdate(true);
+                } else {
+                    repositionFromLayout();
                 }
             }
             case REPAINT -> repaintFromLayout();
             case NONE -> {
-                if (interactionState.hasDirtyNodes()) {
-                    UiDocumentCompiler parser = new UiDocumentCompiler();
-                    RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
-                            layoutRoot, document,
-                            rootW, rootH,
-                            env, interactionState);
-                    if (res.layoutRequired()) {
-                        recomputeLayout(rootW, rootH);
-                    } else if (res.styleChanged()) {
-                        repaintFromLayout();
-                    }
-                }
+                if (interactionState.hasDirtyNodes()) restyleAndUpdate(repositionRequested);
             }
         }
     }
@@ -666,6 +832,11 @@ public class SessionContext implements AutoCloseable {
         }
     }
 
+    /** 書き換えても再スタイルだけで済む属性か（カスケードの入力にしかならない）。 */
+    private static boolean isPresentationalAttribute(String name) {
+        return "style".equalsIgnoreCase(name) || "class".equalsIgnoreCase(name) || "hidden".equalsIgnoreCase(name);
+    }
+
     private void syncAttributeToInteractionState(HtmlNode node, String attrName, boolean present) {
         if (node == null || attrName == null) return;
         String lower = attrName.toLowerCase(Locale.ROOT);
@@ -682,6 +853,39 @@ public class SessionContext implements AutoCloseable {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document parsedDoc = parser.parseDocument(html, "", width, height);
         installDocument(parsedDoc.root, parsedDoc.authorCss, width, height, false);
+    }
+
+    /**
+     * Headless Server State: パース済みテンプレートから生成された {@link Document} をセッションにインストールする。
+     */
+    public void loadTemplateDocument(Document parsedDoc) {
+        loadTemplateDocument(parsedDoc, rootW, rootH);
+    }
+
+    /**
+     * Headless Server State: パース済みテンプレートから生成された {@link Document} を指定サイズでセッションにインストールする。
+     */
+    public void loadTemplateDocument(Document parsedDoc, int width, int height) {
+        if (parsedDoc == null) return;
+        setHeadlessState(true);
+        int targetW = width > 0 ? width : (rootW > 0 ? rootW : 854);
+        int targetH = height > 0 ? height : (rootH > 0 ? rootH : 480);
+        installDocument(parsedDoc.root, parsedDoc.authorCss, targetW, targetH, false);
+        if (document != null && document.root instanceof HtmlDocument liveDoc) {
+            liveDoc.setDefaultOwnership(Ownership.CLIENT);
+        }
+    }
+
+    public ReactiveStateStore stateStore() {
+        return stateStore;
+    }
+
+    public boolean isHeadlessState() {
+        return headlessState;
+    }
+
+    public void setHeadlessState(boolean headlessState) {
+        this.headlessState = headlessState;
     }
 
     private void installDocument(HtmlNode rootNode, String authorCss, int width, int height, boolean fromServer) {
@@ -703,11 +907,13 @@ public class SessionContext implements AutoCloseable {
         Document doc = document;
         if (doc == null || !existingServerDoc) {
             StyleSheet sheet = parser.buildStyleSheet(authorCss, width, height);
+            applyResolution(sheet);
             doc = new Document(rootNode, sheet, authorCss);
             setDocument(doc);
         } else {
             if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null) {
                 doc.sheet = parser.buildStyleSheet(authorCss, width, height);
+                applyResolution(doc.sheet);
                 doc.authorCss = authorCss;
             } else if (oldRootW != width || oldRootH != height) {
                 // ビューポートだけが変わったときは CSS を読み直さず、@media の条件だけ評価し直す
@@ -721,8 +927,10 @@ public class SessionContext implements AutoCloseable {
         ClientWebManager.applyOverrides(sessionId);
 
         interactionState.markAllDirty();
+        // 再同期で同じ文書を差し替えたときは、使い回せる箱（クライアント所有の島など）を前回の木から拾う
         LayoutBox rootBox = parser.layoutDocument(
-                doc, width, height, env, scrollState, WebFontManager.McFontResolver.INSTANCE, interactionState);
+                doc, width, height, env, scrollState, WebFontManager.McFontResolver.INSTANCE, interactionState,
+                existingServerDoc ? layoutRoot : null);
         setLayoutRoot(rootBox);
         List<DisplayItem> elements = UiDocumentCompiler.clientBoxRenderer != null
                 ? UiDocumentCompiler.clientBoxRenderer.render(rootBox, width, height, doc.sheet.keyframes, scrollState)
@@ -776,16 +984,22 @@ public class SessionContext implements AutoCloseable {
         int oldRootH = rootH;
         setRootW(newRootW);
         setRootH(newRootH);
+        if (pendingResizeW == newRootW && pendingResizeH == newRootH) {
+            pendingResizeW = -1;
+            pendingResizeH = -1;
+        }
 
         ClientWebManager.applyOverrides(sessionId);
 
         Document doc = document;
         if (doc != null && doc.root != null) {
+            long startedAt = System.nanoTime();
             UiDocumentCompiler parser = new UiDocumentCompiler();
 
             // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す
             if (doc.sheet == null) {
                 doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW, newRootH);
+                applyResolution(doc.sheet);
                 interactionState.markAllDirty();
             } else if (oldRootW != newRootW || oldRootH != newRootH) {
                 boolean mediaChanged = doc.sheet.updateMediaEnvironment(
@@ -793,14 +1007,18 @@ public class SessionContext implements AutoCloseable {
                 if (mediaChanged) interactionState.markAllDirty();
             }
 
+            // 前回の箱の木から差分レイアウトする（変わっていない部分木は measure を飛ばす）
             LayoutBox rootBox = parser.layoutDocument(
-                    doc, newRootW, newRootH, env, scrollState, WebFontManager.McFontResolver.INSTANCE, interactionState);
+                    doc, newRootW, newRootH, env, scrollState, WebFontManager.McFontResolver.INSTANCE, interactionState,
+                    layoutRoot);
             setLayoutRoot(rootBox);
             List<DisplayItem> elements = UiDocumentCompiler.clientBoxRenderer != null
                     ? UiDocumentCompiler.clientBoxRenderer.render(rootBox, newRootW, newRootH, doc.sheet.keyframes, scrollState)
                     : new ArrayList<>();
             setRenderCache(elements);
             ClientWebManager.applyOverrides(sessionId);
+            lastLayoutFinishedNanos = System.nanoTime();
+            lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
         }
     }
 
@@ -809,7 +1027,7 @@ public class SessionContext implements AutoCloseable {
         if (id == null) return null;
         String targetBase = ClientWebManager.getBaseNodeId(id);
         DisplayItem fallback = null;
-        List<DisplayItem> elements = renderCache;
+        List<DisplayItem> elements = renderCache();
         for (DisplayItem el : elements) {
             if (el.id().equals(id) && el.type() != ElementType.NODE) {
                 return el;
@@ -855,7 +1073,8 @@ public class SessionContext implements AutoCloseable {
 
         target.setStyleProperty(prop, val);
         interactionState.markDirty(target);
-        requestRender();
+        // インライン style だけの変化なので再スタイルから始める（left / top だけなら位置の決め直しで済む）
+        requestRestyle();
     }
 
     public boolean handleScrollLocally(double pixelX, double pixelY, double scrollX, double scrollY) {
@@ -890,7 +1109,7 @@ public class SessionContext implements AutoCloseable {
 
                         if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
                             state.setScroll(scrollNode, (int) nextX, (int) nextY);
-                            requestRender();
+                            requestReposition();
                             return true;
                         }
                     }
@@ -926,7 +1145,7 @@ public class SessionContext implements AutoCloseable {
             float maxScrollY = Math.max(0, box.scrollHeight - box.h);
             float curX = state.getScrollX(scrollNode);
             state.setScroll(scrollNode, (int) curX, (int) (ratio * maxScrollY));
-            requestRender();
+            requestReposition();
             return true;
         } else if (isHTrack) {
             float trackX = box.x + box.bL + 2;
@@ -937,7 +1156,7 @@ public class SessionContext implements AutoCloseable {
             float maxScrollX = Math.max(0, box.scrollWidth - box.w);
             float curY = state.getScrollY(scrollNode);
             state.setScroll(scrollNode, (int) (ratio * maxScrollX), (int) curY);
-            requestRender();
+            requestReposition();
             return true;
         }
         return false;
@@ -966,7 +1185,7 @@ public class SessionContext implements AutoCloseable {
             float maxScrollY = Math.max(0, box.scrollHeight - box.h);
             float curX = state.getScrollX(scrollNode);
             state.setScroll(scrollNode, (int) curX, (int) (ratio * maxScrollY));
-            requestRender();
+            requestReposition();
             return true;
         } else if (isHThumb) {
             float trackX = box.x + box.bL + 2;
@@ -977,7 +1196,7 @@ public class SessionContext implements AutoCloseable {
             float maxScrollX = Math.max(0, box.scrollWidth - box.w);
             float curY = state.getScrollY(scrollNode);
             state.setScroll(scrollNode, (int) (ratio * maxScrollX), (int) curY);
-            requestRender();
+            requestReposition();
             return true;
         }
         return false;
@@ -1034,7 +1253,8 @@ public class SessionContext implements AutoCloseable {
         if (target != null && !Objects.equals(target.attrs.get("value"), domValue)) {
             DomUtils.updateAttribute(target, "value", domValue, false);
         }
-        List<DisplayItem> elements = renderCache;
+        // 書き戻し先は平行移動を掛ける前の一覧（掛けた後を戻すと二重に掛かる）
+        List<DisplayItem> elements = baseRenderCache;
         if (elements != null && !elements.isEmpty()) {
             String phId = baseId + "_ph";
             String inputRenderId = baseId + "_input";
@@ -1112,12 +1332,21 @@ public class SessionContext implements AutoCloseable {
         boolean hadHudState = hudConfig != null || trackerEntry != null;
 
         renderCache = Collections.emptyList();
+        baseRenderCache = Collections.emptyList();
+        paintOffsets.clear();
+        paintOffsetsDirty = false;
         hitTestIndex = null;
+        if (document != null && document.root instanceof HtmlDocument liveDocument) {
+            liveDocument.setDomChangeListener(null);
+        }
         document = null;
         layoutRoot = null;
         env.clear();
         interactionState.clear();
         invalidationLevel = InvalidationLevel.NONE;
+        repositionPending = false;
+        pendingResizeW = -1;
+        pendingResizeH = -1;
         activeInputId = "";
         textSelection.clear();
 
@@ -1144,6 +1373,7 @@ public class SessionContext implements AutoCloseable {
 
         rafCallbacks.clear();
         timers.clear();
+        stateStore.clearBindings();
 
         if (hadHudState) {
             WebHudRenderer.onSessionStateCleared();
@@ -1168,6 +1398,7 @@ public class SessionContext implements AutoCloseable {
         String lastSubmittedText = "";
         long lastSubmitTime = 0;
         final Map<String, String> localInputCache = new ConcurrentHashMap<>();
+        final Map<String, String> lastCommittedValues = new ConcurrentHashMap<>();
 
         /** ダブルクリック判定（旧 ClientDomEventDispatcher.ClickState）。 */
         HtmlNode lastClickNode = null;
@@ -1188,6 +1419,7 @@ public class SessionContext implements AutoCloseable {
             lastSubmittedText = "";
             lastSubmitTime = 0;
             localInputCache.clear();
+            lastCommittedValues.clear();
             lastClickNode = null;
             lastClickTime = 0;
         }

@@ -617,24 +617,34 @@ public final class CssParser {
      * @param prefersDark        {@code prefers-color-scheme: dark} を真にするか
      * @param prefersReducedMotion {@code prefers-reduced-motion: reduce} を真にするか
      * @param importResolver     {@code @import} の URL → CSS テキスト。null なら {@code @import} を無視する
+     * @param resolution         デバイスピクセル比（1 CSS px あたりのデバイスピクセル、{@code resolution} の dppx）
      */
     public record MediaEnvironment(int width, int height, boolean prefersDark, boolean prefersReducedMotion,
-                                   Function<String, String> importResolver) {
+                                   Function<String, String> importResolver, float resolution) {
+
+        public MediaEnvironment(int width, int height, boolean prefersDark, boolean prefersReducedMotion,
+                                Function<String, String> importResolver) {
+            this(width, height, prefersDark, prefersReducedMotion, importResolver, 1.0f);
+        }
 
         /**
-         * 幅と高さだけが分かっている環境。色の好みは light、動きの抑制は無し
-         * （どちらも CSS で「好みを示していない」ときの値）。
+         * 幅と高さだけが分かっている環境。色の好みは light、動きの抑制は無し、デバイスピクセル比は 1
+         * （どれも CSS で「好みを示していない」ときの値）。
          */
         public static MediaEnvironment of(int width, int height) {
-            return new MediaEnvironment(width, height, false, false, null);
+            return new MediaEnvironment(width, height, false, false, null, 1.0f);
         }
 
         public MediaEnvironment withImportResolver(Function<String, String> resolver) {
-            return new MediaEnvironment(width, height, prefersDark, prefersReducedMotion, resolver);
+            return new MediaEnvironment(width, height, prefersDark, prefersReducedMotion, resolver, resolution);
         }
 
         public MediaEnvironment withSize(int newWidth, int newHeight) {
-            return new MediaEnvironment(newWidth, newHeight, prefersDark, prefersReducedMotion, importResolver);
+            return new MediaEnvironment(newWidth, newHeight, prefersDark, prefersReducedMotion, importResolver, resolution);
+        }
+
+        public MediaEnvironment withResolution(float dppx) {
+            return new MediaEnvironment(width, height, prefersDark, prefersReducedMotion, importResolver, dppx);
         }
     }
 }

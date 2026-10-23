@@ -35,6 +35,8 @@ public class WebSdfShader {
     private static int uRadii = -1;
     private static int uClipRect = -1;
     private static int uClipRadii = -1;
+    private static int uSegment = -1;
+    private static int uSegWidth = -1;
 
     private static final String VERTEX_GLSL = """
             #version 150
@@ -65,8 +67,20 @@ public class WebSdfShader {
             uniform vec4 uRadii;     // (rTL, rTR, rBR, rBL)
             uniform vec4 uClipRect;  // (cx0, cy0, cx1, cy1)
             uniform vec4 uClipRadii; // (cRTL, cRTR, cRBR, cRBL)
+            uniform vec4 uSegment;   // 線分の両端 (ax, ay, bx, by)。uSegWidth > 0 のときだけ使う
+            uniform float uSegWidth; // 線分の太さ。0 なら角丸矩形
 
             out vec4 fragColor;
+
+            // 両端で直角に切った太い線分（向きのある矩形）までの距離
+            float sdOrientedBox(vec2 p, vec2 a, vec2 b, float th) {
+                float l = max(length(b - a), 0.001);
+                vec2 d = (b - a) / l;
+                vec2 q = p - (a + b) * 0.5;
+                q = mat2(d.x, -d.y, d.y, d.x) * q;
+                q = abs(q) - vec2(l, th) * 0.5;
+                return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+            }
 
             float sdRoundBox(vec2 p, vec2 b, vec4 r) {
                 vec2 rSel = (p.x > 0.0) ? vec2(r.y, r.z) : vec2(r.x, r.w);
@@ -79,7 +93,9 @@ public class WebSdfShader {
             void main() {
                 vec2 center = (uRect.xy + uRect.zw) * 0.5;
                 vec2 halfSize = max(vec2(0.001), (uRect.zw - uRect.xy) * 0.5);
-                float distBox = sdRoundBox(vLocalPos - center, halfSize, uRadii);
+                float distBox = uSegWidth > 0.0
+                        ? sdOrientedBox(vLocalPos, uSegment.xy, uSegment.zw, uSegWidth)
+                        : sdRoundBox(vLocalPos - center, halfSize, uRadii);
 
                 vec2 clipCenter = (uClipRect.xy + uClipRect.zw) * 0.5;
                 vec2 clipHalf = max(vec2(0.001), (uClipRect.zw - uClipRect.xy) * 0.5);
@@ -202,6 +218,8 @@ public class WebSdfShader {
             uRadii = GL20.glGetUniformLocation(programId, "uRadii");
             uClipRect = GL20.glGetUniformLocation(programId, "uClipRect");
             uClipRadii = GL20.glGetUniformLocation(programId, "uClipRadii");
+            uSegment = GL20.glGetUniformLocation(programId, "uSegment");
+            uSegWidth = GL20.glGetUniformLocation(programId, "uSegWidth");
 
             available = true;
         } catch (Throwable t) {
@@ -243,6 +261,50 @@ public class WebSdfShader {
     }
 
     /**
+     * 太さ {@code width} の線分（両端は直角に切る）を、アンチエイリアスと親の角丸クリップ付きで描く。
+     * チェックボックスの印のような斜めの線に使う。シェーダーが使えなければ false。
+     */
+    public static boolean drawSdfSegment(
+            Matrix4f poseMatrix, float ax, float ay, float bx, float by, float width,
+            float r, float g, float b, float a, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL
+    ) {
+        if (!isAvailable()) return false;
+        float pad = width + 1f;
+        float minX = Math.min(ax, bx) - pad, maxX = Math.max(ax, bx) + pad;
+        float minY = Math.min(ay, by) - pad, maxY = Math.max(ay, by) + pad;
+        if (Math.max(minX, cx0) >= Math.min(maxX, cx1) || Math.max(minY, cy0) >= Math.min(maxY, cy1)) return true;
+
+        boolean localPass = !passActive;
+        if (localPass || (currentPoseMatrix != poseMatrix && !java.util.Objects.equals(currentPoseMatrix, poseMatrix))) {
+            beginPass(poseMatrix);
+        }
+        try {
+            GL20.glUniform4f(uRect, minX, minY, maxX, maxY);
+            GL20.glUniform4f(uRadii, 0f, 0f, 0f, 0f);
+            GL20.glUniform4f(uClipRect, cx0, cy0, cx1, cy1);
+            GL20.glUniform4f(uClipRadii, cRTL, cRTR, cRBR, cRBL);
+            GL20.glUniform4f(uSegment, ax, ay, bx, by);
+            GL20.glUniform1f(uSegWidth, width);
+
+            BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+            builder.addVertex(minX, maxY, zOffset).setUv(0f, 1f).setColor(r, g, b, a);
+            builder.addVertex(maxX, maxY, zOffset).setUv(1f, 1f).setColor(r, g, b, a);
+            builder.addVertex(maxX, minY, zOffset).setUv(1f, 0f).setColor(r, g, b, a);
+            builder.addVertex(minX, minY, zOffset).setUv(0f, 0f).setColor(r, g, b, a);
+            MeshData mesh = builder.build();
+            if (mesh != null) BufferUploader.draw(mesh);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            GL20.glUniform1f(uSegWidth, 0f);
+            if (localPass) endPass();
+        }
+    }
+
+    /**
      * 4頂点それぞれの色（グラデーション対応）と4隅角丸・親角丸クリップを 1-Quad で描画する
      */
     public static boolean drawSdfGradientRect(
@@ -274,6 +336,7 @@ public class WebSdfShader {
             GL20.glUniform4f(uRadii, rTL, rTR, rBR, rBL);
             GL20.glUniform4f(uClipRect, cx0, cy0, cx1, cy1);
             GL20.glUniform4f(uClipRadii, cRTL, cRTR, cRBR, cRBL);
+            GL20.glUniform1f(uSegWidth, 0f);
 
             BufferBuilder builder = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
             builder.addVertex(minX, maxY, zOffset).setUv(0f, 1f).setColor(rBLCol, gBLCol, bBLCol, aBLCol);

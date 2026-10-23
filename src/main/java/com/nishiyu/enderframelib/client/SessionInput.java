@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
@@ -10,6 +11,7 @@ import com.nishiyu.enderframelib.core.event.CoreUIEvent;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.Mth;
@@ -191,7 +193,7 @@ public final class SessionInput {
             state.lastSentY = dragHit.localY();
 
             if (draggedEl.type() == ElementType.RANGE) {
-                float ratio = Mth.clamp((float) (dragHit.localX() / Math.max(1.0, draggedEl.width())), 0.0f, 1.0f);
+                float ratio = DisplayItemDrawer.rangeRatio(dragHit.localX(), draggedEl.width());
                 if (Math.abs(state.lastRatio - ratio) > 0.002f) {
                     state.lastRatio = ratio;
                     state.lastRangeText = generateRangeText(draggedEl.text(), ratio);
@@ -321,7 +323,8 @@ public final class SessionInput {
     }
 
     public boolean beginTextEdit(String elementId, String data, String inputType) {
-        HtmlNode control = session.findNode(ClientWebManager.getBaseNodeId(elementId));
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        HtmlNode control = session.findNode(baseId);
         if (control == null) return true;
         var beforeInput = CoreEvent.input("beforeinput", data, false, inputType);
         control.dispatchEvent(beforeInput);
@@ -329,9 +332,16 @@ public final class SessionInput {
     }
 
     public void commitTextEdit(String elementId, String newValue, String data, String inputType) {
-        HtmlNode control = session.findNode(ClientWebManager.getBaseNodeId(elementId));
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        HtmlNode control = session.findNode(baseId);
         String safeValue = newValue != null ? newValue : "";
-        if (control == null || safeValue.equals(control.attrs.getOrDefault("value", ""))) return;
+        if (control == null) return;
+        String prev = state().lastCommittedValues.get(baseId);
+        if (prev == null) {
+            prev = control.attrs.getOrDefault("value", "");
+        }
+        if (safeValue.equals(prev)) return;
+        state().lastCommittedValues.put(baseId, safeValue);
         control.attrs.put("value", safeValue);
         control.dispatchEvent(CoreEvent.input("input", data, false, inputType));
     }
@@ -340,11 +350,16 @@ public final class SessionInput {
         if (elementId == null || elementId.isEmpty()) return;
         String baseId = ClientWebManager.getBaseNodeId(elementId);
         String safeText = text != null ? text : "";
+        HtmlNode control = session.findNode(baseId);
+        String prev = state().lastCommittedValues.get(baseId);
+        if (prev == null && control != null) {
+            prev = control.attrs.getOrDefault("value", "");
+        }
+        boolean valueChanged = prev != null ? !safeText.equals(prev) : !safeText.isEmpty();
         updateInputLocally(baseId, safeText);
 
-        HtmlNode control = session.findNode(baseId);
         if (control != null) {
-            boolean valueChanged = !safeText.equals(control.attrs.getOrDefault("value", ""));
+            state().lastCommittedValues.put(baseId, safeText);
             control.attrs.put("value", safeText);
             if (!isCheckable(control)) {
                 if (valueChanged) {
@@ -357,6 +372,11 @@ public final class SessionInput {
         state.lastSubmittedId = baseId;
         state.lastSubmittedText = safeText;
         state.lastSubmitTime = System.currentTimeMillis();
+    }
+
+    public void setLastCommittedValue(String elementId, String value) {
+        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        state().lastCommittedValues.put(baseId, value != null ? value : "");
     }
 
     public void updateInputLocally(String elementId, String text) {
@@ -427,7 +447,7 @@ public final class SessionInput {
         if (!handledLocally && global != null && global != local) {
             handledLocally = global.onEvent(session.sessionId(), elementId, eventName, actionName, value);
         }
-        if (!handledLocally && actionName.startsWith("server:")) {
+        if (!handledLocally && (actionName.startsWith("server:") || session.isHeadlessState())) {
             sendUiEvent(elementId, eventName, actionName, value);
         }
     }
@@ -438,7 +458,15 @@ public final class SessionInput {
         tag.putString("EventName", eventName != null ? eventName : "");
         tag.putString("ActionName", actionName != null ? actionName : "");
         tag.putString("Value", value != null ? value : "");
-        ClientScreenInteractionManager.sendToServer(new WebActionC2SPacket(session.sessionId(), "ui_event", tag));
+
+        if (session.isHeadlessState()) {
+            String cleanAction = actionName != null && actionName.startsWith("server:")
+                    ? actionName.substring(7)
+                    : (actionName != null ? actionName : "");
+            ClientScreenInteractionManager.sendToServer(new UiActionC2SPacket(session.sessionId(), cleanAction, tag));
+        } else {
+            ClientScreenInteractionManager.sendToServer(new WebActionC2SPacket(session.sessionId(), "ui_event", tag));
+        }
     }
 
     private String declaredPayload(HtmlNode declaringNode, Event event, EventForwardDeclaration.Payload payload) {
@@ -604,7 +632,7 @@ public final class SessionInput {
         state.lastSentY = hit.localY();
 
         if (element.type() == ElementType.RANGE) {
-            state.lastRatio = Mth.clamp((float) (hit.localX() / Math.max(1.0, element.width())), 0.0f, 1.0f);
+            state.lastRatio = DisplayItemDrawer.rangeRatio(hit.localX(), element.width());
             state.lastRangeText = generateRangeText(element.text(), state.lastRatio);
             updateInputLocally(state.draggingId, state.lastRangeText);
             dispatchRangeInput(session, state.draggingId, rangeValue(state.lastRangeText));

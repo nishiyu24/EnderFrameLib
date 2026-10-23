@@ -1,39 +1,120 @@
-<link rel="stylesheet" href="enderframelib:theme/dark.css">
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>EnderFrame Store - Modern Tech &amp; Gear</title>
+</head>
 <style>
-    /* Web Standards Suite Stylesheet */
+    /* Modern E-Commerce Web Standards Stylesheet */
     * {
         box-sizing: border-box;
+        margin: 0;
+        padding: 0;
     }
-    /* html / body are implied by the parser; chain the height so .dashboard's 100% reaches the viewport (as in a browser) */
     html, body {
         height: 100%;
+        width: 100%;
+        background-color: #0f172a;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
     }
-    .dashboard {
+    .store-container {
         display: flex;
         flex-direction: column;
-        padding: 10px;
         width: 100%;
         height: 100%;
-        gap: 10px;
-        background-color: #181825;
-        color: #cdd6f4;
-        font-family: sans-serif;
+        padding: 12px;
+        gap: 12px;
+        background-color: #0f172a;
+        min-height: 0;
     }
+
+    /* 1. Header Bar */
     .header-bar {
         display: flex;
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
-        background: linear-gradient(to right, #1e1e2e, #313244);
-        border: 1px solid #89b4fa;
+        background: linear-gradient(135deg, #1e293b, #0f172a);
+        border: 1px solid #334155;
         border-radius: 8px;
-        padding: 8px 14px;
+        padding: 10px 16px;
         width: 100%;
-        gap: 12px;
+        flex-wrap: wrap;
+        gap: 8px 12px;
     }
+    .brand-logo {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex-shrink: 0;
+        gap: 10px;
+    }
+    .logo-badge {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #6366f1, #3b82f6);
+        border: 1px solid #818cf8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: #ffffff;
+        font-size: 0.95rem;
+    }
+    .brand-title {
+        font-size: 1.15rem;
+        font-weight: bold;
+        color: #f8fafc;
+        letter-spacing: 0.3px;
+    }
+    .brand-sub {
+        font-size: 0.75rem;
+        color: #818cf8;
+        font-weight: 600;
+        margin-left: 4px;
+    }
+    .brand-tagline {
+        font-size: 0.7rem;
+        color: #64748b;
+        white-space: nowrap;
+    }
+    .search-wrapper {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex: 1 1 0;
+        min-width: 240px;
+        max-width: 480px;
+        gap: 6px;
+    }
+    .search-select {
+        width: 128px;
+        flex-shrink: 0;
+    }
+    .search-input {
+        flex: 1;
+        min-width: 0;
+    }
+    .search-wrapper .btn {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+    .header-actions {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex-shrink: 0;
+        gap: 8px;
+    }
+
+    /* 2. Three-Column Grid */
     .web-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: 190px minmax(0, 1fr) 220px;
         gap: 12px;
         width: 100%;
         flex: 1;
@@ -46,270 +127,532 @@
         gap: 10px;
         min-height: 0;
     }
-    .panel, .mc-panel {
-        background-color: #1e1e2e;
-        border: 1px solid #45475a;
-        border-radius: 6px;
+
+    /* Panels & Cards */
+    .panel {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 8px;
         padding: 12px;
-        width: 100%;
         display: flex;
         flex-direction: column;
         flex: 1;
-        gap: 8px;
+        gap: 10px;
         min-height: 0;
-    }
-    .card, .mc-card {
-        background-color: #313244;
-        border: 1px solid #45475a;
-        border-radius: 4px;
-        padding: 8px;
-    }
-    .title, .mc-title {
-        color: #89b4fa;
-        font-weight: bold;
-        font-size: 1.05rem;
-    }
-    .btn, .mc-btn {
-        background-color: #313244;
-        color: #cdd6f4;
-        border: 1px solid #585b70;
-        border-radius: 4px;
-        padding: 4px 10px;
-        cursor: pointer;
-        transition: 0.12s;
-    }
-    .btn:hover, .mc-btn:hover {
-        background-color: #45475a;
-        color: #ffffff;
-    }
-    .btn-primary, .mc-btn-primary {
-        background-color: #89b4fa;
-        color: #11111b;
-        border: 1px solid #b4befe;
-        font-weight: bold;
-    }
-    .badge {
-        background-color: #45475a;
-        color: #a6e3a1;
-        border-radius: 6px;
-        padding: 2px 8px;
-        font-size: 0.85rem;
-    }
-    .badge-std {
-        background-color: rgba(137, 180, 250, 0.2);
-        color: #89b4fa;
-        border: 1px solid #89b4fa;
-    }
-    .sdf-clip-box {
-        height: 72px;
-        border-radius: 8px;
-        border: 1px solid #585b70;
-        background-color: #181825;
         overflow: auto;
-        padding: 6px;
+    }
+    .section-title {
+        color: #38bdf8;
+        font-weight: bold;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 6px;
+    }
+
+    /* Filter Widgets */
+    .filter-details {
+        background-color: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 8px 10px;
+    }
+    .filter-summary {
+        color: #cbd5e1;
+        font-weight: 600;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .filter-content {
+        margin-top: 8px;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 6px;
+        font-size: 0.82rem;
+        color: #94a3b8;
     }
-    .row-between {
+    .filter-label {
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .filter-label:hover {
+        color: #f8fafc;
+    }
+
+    /* Product Cards */
+    .product-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        width: 100%;
+    }
+    .product-card {
+        background-color: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+    }
+    .card-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+    }
+    .card-tag {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+    .product-badge {
+        font-size: 0.7rem;
+        font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 4px;
+        width: fit-content;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .badge-hot {
+        background-color: rgba(244, 63, 94, 0.2);
+        color: #f43f5e;
+        border: 1px solid #f43f5e;
+    }
+    .badge-new {
+        background-color: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+        border: 1px solid #10b981;
+    }
+    .badge-top {
+        background-color: rgba(56, 189, 248, 0.2);
+        color: #38bdf8;
+        border: 1px solid #38bdf8;
+    }
+    .product-thumb {
+        width: 100%;
+        height: 60px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: #ffffff;
+        font-size: 0.85rem;
+    }
+    .product-title {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #f8fafc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .rating-row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.75rem;
+        color: #fbbf24;
+    }
+    .price-row {
+        display: flex;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+    }
+    .price-original {
+        font-size: 0.8rem;
+        color: #64748b;
+        text-decoration: line-through;
+    }
+    .price-current {
+        font-size: 1rem;
+        font-weight: bold;
+        color: #38bdf8;
+    }
+
+    /* Cart & Checkout */
+    .cart-item {
+        background-color: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 8px;
         display: flex;
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
-        width: 100%;
+        gap: 8px;
     }
-    .avatar-card {
-        width: 48px;
-        height: 64px;
-        background: linear-gradient(180deg, #313244, #181825);
+    .cart-summary-box {
+        background-color: #0f172a;
+        border: 1px solid #334155;
         border-radius: 6px;
-        border: 1px solid #45475a;
+        padding: 10px;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-    }
-    .canvas-viewport {
-        width: 100%;
-        height: 135px;
-        background: radial-gradient(circle at center, #313244, #11111b);
-        border: 1px solid #585b70;
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
         gap: 6px;
+        font-size: 0.85rem;
+    }
+    .summary-row {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        color: #94a3b8;
+    }
+    .summary-total {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 1.05rem;
+        font-weight: bold;
+        color: #f8fafc;
+        border-top: 1px solid #334155;
+        padding-top: 6px;
+        margin-top: 2px;
+    }
+
+    /* Form Controls & Buttons */
+    .input-field {
+        background-color: #0f172a;
+        color: #f8fafc;
+        border: 1px solid #475569;
+        border-radius: 6px;
+        padding: 5px 10px;
+        font-size: 0.85rem;
+        outline: none;
+    }
+    .input-field:focus {
+        border-color: #38bdf8;
+    }
+    .btn {
+        background-color: #334155;
+        color: #f8fafc;
+        border: 1px solid #475569;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: 0.15s;
+    }
+    .btn:hover {
+        background-color: #475569;
+    }
+    .btn-primary {
+        background-color: #3b82f6;
+        color: #ffffff;
+        border: 1px solid #60a5fa;
+    }
+    .btn-primary:hover {
+        background-color: #2563eb;
+    }
+    .btn-checkout {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: #ffffff;
+        border: 1px solid #34d399;
+        padding: 8px 14px;
+        font-size: 0.9rem;
+        font-weight: bold;
+        text-align: center;
+    }
+    .btn-checkout:hover {
+        background: linear-gradient(135deg, #059669, #047857);
+    }
+    .badge-pill {
+        background-color: #334155;
+        color: #cbd5e1;
+        border-radius: 12px;
+        padding: 3px 10px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .badge-pill-accent {
+        background-color: rgba(99, 102, 241, 0.2);
+        color: #818cf8;
+        border: 1px solid #6366f1;
     }
 </style>
 
-<div class="dashboard" data-channel="test_channel">
-    <!-- 1. ヘッダー (Flexbox gap & W3C Standards Badge) -->
+<div class="store-container">
+    <!-- 1. Header Bar -->
     <div class="header-bar" id="header_panel">
-        <div style="display:flex; flex-direction:row; align-items:center; gap:8px;">
-            <div style="width:20px; height:20px; border-radius:50%; background:radial-gradient(circle at center, #89b4fa, #1e1e2e); border:1px solid #89b4fa; display:flex; align-items:center; justify-content:center;">
-                <div style="width:8px; height:8px; border-radius:50%; background-color:#a6e3a1;"></div>
+        <div class="brand-logo">
+            <div class="logo-badge">E</div>
+            <div style="display:flex; flex-direction:column;">
+                <div style="display:flex; flex-direction:row; align-items:baseline;">
+                    <span class="brand-title">EnderFrame</span>
+                    <span class="brand-sub">STORE</span>
+                </div>
+                <span class="brand-tagline">EnderFrameLib Web Standards Suite</span>
             </div>
-            <span id="page_title" style="font-size:1.2rem; font-weight:bold; color:#89b4fa;">EnderFrameLib Web Standards Suite</span>
         </div>
-        <div style="display:flex; flex-direction:row; align-items:center; gap:8px;">
-            <span class="badge badge-std">W3C Grid &amp; Flex</span>
-            <span class="badge">FPS: {{@fps}}</span>
-            <span class="badge">Pos: {{@x}}, {{@y}}, {{@z}}</span>
-            <span class="badge">Time: {{@time}}</span>
+
+        <div class="search-wrapper">
+            <select id="mode_select" class="input-field search-select">
+                <option value="all">All Departments</option>
+                <option value="audio">Audio &amp; Sound</option>
+                <option value="computers">Computers &amp; Laptops</option>
+                <option value="wearables">Smart Wearables</option>
+                <option value="gear">Gaming Gear</option>
+            </select>
+            <input id="test_input" type="text" class="input-field search-input" placeholder="Search headphones, keyboards, laptops..." />
+            <button class="btn btn-primary" onclick="server:store:search">Search</button>
+        </div>
+
+        <div class="header-actions">
+            <span class="badge-pill badge-pill-accent">&#9829; Wishlist (4)</span>
+            <span class="badge-pill" style="color:#38bdf8; border:1px solid #38bdf8;">Cart (3) &middot; $419.97</span>
+            <span class="badge-pill">&#9786; Account</span>
         </div>
     </div>
 
-    <!-- 2. CSS Grid メイン 3 カラム -->
+    <!-- 2. Main E-Commerce Grid -->
     <div class="web-grid">
 
-        <!-- 左カラム: W3C Layout & DOM Standards -->
+        <!-- Left Column: Filter & Facets -->
         <div class="col">
             <div class="panel">
-                <div class="title">1. Layout &amp; Semantic DOM</div>
+                <div class="section-title">Product Filters</div>
 
-                <!-- W3C Semantic <details> & <summary> -->
-                <details open class="card">
-                    <summary style="color:#89b4fa; cursor:pointer;">Semantic Details/Summary</summary>
-                    <div style="font-size:0.8rem; color:#a6adc8; margin-top:4px;">
-                        Interactive toggle element verified by W3C DOM standards.
+                <!-- Category Accordion -->
+                <details open class="filter-details">
+                    <summary class="filter-summary">Department</summary>
+                    <div class="filter-content">
+                        <label class="filter-label">
+                            <input type="checkbox" checked="true" />
+                            <span>Audio &amp; Headphones (34)</span>
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" checked="true" />
+                            <span>Laptops &amp; Displays (18)</span>
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" />
+                            <span>Gaming Keyboards (22)</span>
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" />
+                            <span>Smart Watches (15)</span>
+                        </label>
                     </div>
                 </details>
 
-                <!-- Profile Avatar & Progress Bar (Web Standard HTML) -->
-                <div style="display:flex; flex-direction:row; align-items:center; gap:10px;">
-                    <div class="avatar-card">
-                        <div style="width:24px; height:24px; border-radius:50%; background-color:#89b4fa;"></div>
-                        <div style="width:32px; height:18px; border-radius:4px; background-color:#45475a;"></div>
-                    </div>
-                    <div style="display:flex; flex-direction:column; width:100%; gap:4px;">
-                        <span>Player: <b>{{@player_name}}</b></span>
-                        <div style="width:100%; height:14px; background-color:#11111b; border:1px solid #45475a; border-radius:4px; overflow:hidden;">
-                            <div style="width:80%; height:100%; background:linear-gradient(to right, #f38ba8, #eba0ac); display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#11111b; font-weight:bold;">
-                                HP: {{@hp}} / {{@max_hp}}
-                            </div>
+                <!-- Price Range Filter -->
+                <details open class="filter-details">
+                    <summary class="filter-summary">Max Price: $450</summary>
+                    <div class="filter-content">
+                        <input id="test_range" type="range" min="50" max="1000" value="450" style="width:100%;" />
+                        <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#64748b;">
+                            <span>$50</span>
+                            <span>$500</span>
+                            <span>$1,000+</span>
                         </div>
-                        <span>Biome: <b style="color:#f9e2af;">{{@biome}}</b></span>
                     </div>
-                </div>
+                </details>
 
-                <!-- PubSub & Data Binding Sync Card -->
-                <div class="card" style="display:flex; flex-direction:column; gap:4px;">
-                    <div class="row-between">
-                        <span>PubSub Msg:</span>
-                        <b id="pubsub_msg" data-bind="text:msg" style="color:#a6e3a1;">Waiting...</b>
-                    </div>
-                    <div class="row-between">
-                        <span>Server Power:</span>
-                        <b data-bind="text:power" style="color:#89b4fa;">0</b>
-                    </div>
-                    <div class="row-between">
-                        <span>Patch Target:</span>
-                        <b id="patch_target" style="color:#f9e2af;">Default Text</b>
-                    </div>
-                </div>
-
-                <!-- CSS Overflow & SDF Rounded Clip -->
-                <div class="title" style="font-size:0.95rem;">SDF Rounded Clip &amp; Scroll</div>
-                <div class="sdf-clip-box" style="width:100%;">
-                    <div style="background:linear-gradient(to right, #f38ba8, #89b4fa); padding:4px 6px; border-radius:6px; color:#11111b; font-weight:bold;">
-                        CSS Linear Gradient
-                    </div>
-                    <div style="background-color:#313244; padding:4px 6px; border-radius:6px;">
-                        Scroll item 2 (Flex item)
-                    </div>
-                    <div style="background-color:#313244; padding:4px 6px; border-radius:6px;">
-                        Scroll item 3 (Flex item)
-                    </div>
-                    <div style="background-color:#45475a; padding:4px 6px; border-radius:6px;">
-                        End of overflow content
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 中央カラム: Visual Canvas, Swatches & Typography -->
-        <div class="col">
-            <div class="panel">
-                <div class="title">2. Canvas &amp; Typography</div>
-
-                <div id="demo_scene" class="canvas-viewport">
-                    <div style="font-size:0.95rem; font-weight:bold; color:#89b4fa;">Canvas / Viewport Area</div>
-                    <div style="font-size:0.8rem; color:#a6adc8;">Standard Element Benchmark</div>
-                    <div style="display:flex; gap:6px;">
-                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #89b4fa;">X: 0</span>
-                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #a6e3a1;">Y: 0</span>
-                        <span class="badge" style="background-color:#1e1e2e; border:1px solid #f9e2af;">Z: 0</span>
-                    </div>
-                </div>
-
-                <div class="title" style="font-size:0.95rem;">Color Swatches &amp; Palettes</div>
-                <div style="display:flex; flex-direction:row; justify-content:space-evenly; align-items:center; background-color:#181825; padding:6px; border-radius:6px; border:1px solid #45475a; width:100%; gap:6px;">
-                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #89b4fa; background:linear-gradient(135deg, #3b82f6, #1d4ed8);" title="Ocean Blue"></div>
-                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #fab387; background:linear-gradient(135deg, #f97316, #c2410c);" title="Magma Orange"></div>
-                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #a6e3a1; background:linear-gradient(135deg, #22c55e, #15803d);" title="Forest Green"></div>
-                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #cba6f7; background:linear-gradient(135deg, #a855f7, #7e22ce);" title="Violet Purple"></div>
-                    <div style="width:30px; height:30px; border-radius:4px; border:1px solid #f38ba8; background:linear-gradient(135deg, #f43f5e, #be123c);" title="Rose Red"></div>
-                </div>
-
-                <!-- Typography & Text Overflow Ellipsis -->
-                <div class="title" style="font-size:0.95rem;">Inline &amp; Text Standards</div>
-                <div class="card" style="display:flex; flex-direction:column; gap:4px; font-size:0.85rem;">
-                    <div>Style: <b>Bold</b>, <i>Italic</i>, <code>CSS Grid</code></div>
-                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; color:#a6adc8;" title="CSS text-overflow ellipsis verification">
-                        Ellipsis: Demonstrating standard text-overflow truncation behavior in EnderFrameLib
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 右カラム: W3C Form Controls & Interaction -->
-        <div class="col">
-            <div class="panel">
-                <div class="title">3. Forms &amp; DOM Events</div>
-
-                <!-- Text Input & RPC Action -->
-                <div style="display:flex; flex-direction:row; align-items:center; gap:6px; width:100%;">
-                    <input id="test_input" type="text" placeholder="Type text here..." style="flex:1; min-width:0;" />
-                    <button class="btn btn-primary" onclick="server:test_click:hello">Send RPC</button>
-                </div>
-
-                <!-- Select, Checkbox with <label>, Range Slider -->
-                <div style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; gap:6px; width:100%;">
-                    <select id="mode_select" style="width:95px;">
-                        <option value="normal">Mode: Normal</option>
-                        <option value="turbo">Mode: Turbo</option>
-                        <option value="eco">Mode: Eco</option>
-                    </select>
-                    <label for="test_check" style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.85rem;">
-                        <input id="test_check" type="checkbox" checked="true" />
-                        <span>Sync</span>
+                <!-- Shipping & Availability Options -->
+                <fieldset style="border:1px solid #334155; border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:6px;">
+                    <legend style="font-size:0.75rem; color:#38bdf8; padding:0 4px; font-weight:600;">Delivery Method</legend>
+                    <label class="filter-label" style="font-size:0.82rem; color:#94a3b8;">
+                        <input type="radio" name="shipping" value="prime" checked="true" />
+                        <span>Prime 1-Day (Free)</span>
                     </label>
-                    <input id="test_range" type="range" min="0" max="100" value="75" style="width:50px;" />
-                </div>
-
-                <!-- Exclusive Radio Button Group (W3C Standard) -->
-                <fieldset style="border:1px solid #45475a; border-radius:6px; padding:4px 8px; display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
-                    <legend style="font-size:0.75rem; color:#89b4fa; padding:0 4px;">Exclusive Radio</legend>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.82rem;">
-                        <input type="radio" name="profile" value="standard" checked="true" />
-                        <span>Standard</span>
-                    </label>
-                    <label style="cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.82rem;">
-                        <input type="radio" name="profile" value="strict" />
-                        <span>Strict</span>
+                    <label class="filter-label" style="font-size:0.82rem; color:#94a3b8;">
+                        <input type="radio" name="shipping" value="standard" />
+                        <span>Standard (3-5 days)</span>
                     </label>
                 </fieldset>
 
-                <div class="title" style="font-size:0.95rem;">Lua Code Editor</div>
-                <textarea id="code_editor" data-syntax="lua" data-line-numbers="true" style="width:100%; height:90px; background-color:#11111b; color:#cdd6f4; border-radius:6px;">-- Click to edit!
-local power = 100
-if power < 200 then
-  print("System Online")
-end</textarea>
+                <div class="filter-details">
+                    <label class="filter-label" for="test_check" style="color:#f8fafc; font-weight:500;">
+                        <input id="test_check" type="checkbox" checked="true" />
+                        <span>In Stock Items Only</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Column: Products Showcase Grid -->
+        <div class="col">
+            <div class="panel">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:6px;">
+                    <div class="section-title" style="border-bottom:none; padding-bottom:0;">Featured Tech Products</div>
+                    <span style="font-size:0.8rem; color:#94a3b8;">Showing 1-4 of 24 results</span>
+                </div>
+
+                <!-- 2x2 Product Grid -->
+                <div class="product-grid">
+
+                    <!-- Product 1 -->
+                    <div class="product-card">
+                        <div class="card-meta">
+                            <span class="product-badge badge-hot">BESTSELLER</span>
+                            <span class="card-tag">Wireless</span>
+                        </div>
+                        <div class="product-thumb" style="background:linear-gradient(135deg, #1e1b4b, #312e81); border:1px solid #4338ca;">
+                            ANC Headphones Pro
+                        </div>
+                        <div class="product-title" title="Apex Wireless Noise-Cancelling Headphones Pro">Apex ANC Headphones Pro</div>
+                        <div class="rating-row">
+                            <span>&#9733;&#9733;&#9733;&#9733;&#9733;</span>
+                            <span style="color:#94a3b8;">4.9 (1,842)</span>
+                        </div>
+                        <div class="price-row">
+                            <span class="price-original">$299.99</span>
+                            <span class="price-current">$229.99</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="server:cart:add:apex_anc">Add to Cart</button>
+                    </div>
+
+                    <!-- Product 2 -->
+                    <div class="product-card">
+                        <div class="card-meta">
+                            <span class="product-badge badge-new">NEW ARRIVAL</span>
+                            <span class="card-tag">RGB Hot-Swap</span>
+                        </div>
+                        <div class="product-thumb" style="background:linear-gradient(135deg, #064e3b, #047857); border:1px solid #059669;">
+                            Mechanical Keyboard
+                        </div>
+                        <div class="product-title" title="Nova Pro 75% Wireless Mechanical Keyboard">Nova Pro 75% Keyboard</div>
+                        <div class="rating-row">
+                            <span>&#9733;&#9733;&#9733;&#9733;&#9734;</span>
+                            <span style="color:#94a3b8;">4.8 (620)</span>
+                        </div>
+                        <div class="price-row">
+                            <span class="price-original">$159.99</span>
+                            <span class="price-current">$129.99</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="server:cart:add:nova_kbd">Add to Cart</button>
+                    </div>
+
+                    <!-- Product 3 -->
+                    <div class="product-card">
+                        <div class="card-meta">
+                            <span class="product-badge badge-top">TOP RATED</span>
+                            <span class="card-tag">Fitness &amp; GPS</span>
+                        </div>
+                        <div class="product-thumb" style="background:linear-gradient(135deg, #0c4a6e, #0284c7); border:1px solid #0369a1;">
+                            Smart Watch Ultra
+                        </div>
+                        <div class="product-title" title="Pulse Watch Ultra Titanium Edition">Pulse Watch Ultra Titanium</div>
+                        <div class="rating-row">
+                            <span>&#9733;&#9733;&#9733;&#9733;&#9733;</span>
+                            <span style="color:#94a3b8;">5.0 (940)</span>
+                        </div>
+                        <div class="price-row">
+                            <span class="price-original">$199.99</span>
+                            <span class="price-current">$139.99</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="server:cart:add:pulse_watch">Add to Cart</button>
+                    </div>
+
+                    <!-- Product 4 -->
+                    <div class="product-card">
+                        <div class="card-meta">
+                            <span class="product-badge badge-hot">SAVE 25%</span>
+                            <span class="card-tag">4K 144Hz</span>
+                        </div>
+                        <div class="product-thumb" style="background:linear-gradient(135deg, #4c1d95, #6d28d9); border:1px solid #7c3aed;">
+                            34" Curved Display
+                        </div>
+                        <div class="product-title" title="Horizon 34 Curved Ultrawide Gaming Monitor">Horizon 34 Curved Display</div>
+                        <div class="rating-row">
+                            <span>&#9733;&#9733;&#9733;&#9733;&#9734;</span>
+                            <span style="color:#94a3b8;">4.7 (430)</span>
+                        </div>
+                        <div class="price-row">
+                            <span class="price-original">$499.00</span>
+                            <span class="price-current">$379.00</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="server:cart:add:horizon_mon">Add to Cart</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Shopping Cart & Order Summary -->
+        <div class="col">
+            <div class="panel">
+                <div class="section-title">Order Summary (3 items)</div>
+
+                <!-- Cart Items List -->
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div class="cart-item">
+                        <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                            <span style="font-weight:600; font-size:0.82rem; color:#f8fafc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Apex ANC Headphones</span>
+                            <span style="font-size:0.72rem; color:#64748b;">Qty: 1 | Midnight Black</span>
+                        </div>
+                        <b style="color:#38bdf8; font-size:0.85rem;">$229.99</b>
+                    </div>
+
+                    <div class="cart-item">
+                        <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                            <span style="font-weight:600; font-size:0.82rem; color:#f8fafc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Nova Pro 75% Keyboard</span>
+                            <span style="font-size:0.72rem; color:#64748b;">Qty: 1 | Linear Switches</span>
+                        </div>
+                        <b style="color:#38bdf8; font-size:0.85rem;">$129.99</b>
+                    </div>
+
+                    <div class="cart-item">
+                        <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                            <span style="font-weight:600; font-size:0.82rem; color:#f8fafc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Pulse Watch Ultra</span>
+                            <span style="font-size:0.72rem; color:#64748b;">Qty: 1 | Titanium Gray</span>
+                        </div>
+                        <b style="color:#38bdf8; font-size:0.85rem;">$139.99</b>
+                    </div>
+                </div>
+
+                <!-- Promo Code -->
+                <div style="display:flex; flex-direction:row; gap:6px;">
+                    <input type="text" class="input-field" placeholder="Promo code (ENDER20)" style="flex:1; min-width:0;" />
+                    <button class="btn">Apply</button>
+                </div>
+
+                <!-- Price Calculations -->
+                <div class="cart-summary-box">
+                    <div class="summary-row">
+                        <span>Items Subtotal:</span>
+                        <span>$499.97</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Shipping &amp; Handling:</span>
+                        <span style="color:#10b981; font-weight:600;">FREE</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Special Discount (20%):</span>
+                        <span style="color:#f43f5e; font-weight:600;">-$80.00</span>
+                    </div>
+                    <div class="summary-total">
+                        <span>Order Total:</span>
+                        <span style="color:#38bdf8; font-size:1.15rem;">$419.97</span>
+                    </div>
+                </div>
+
+                <!-- Checkout Button -->
+                <button class="btn btn-checkout" onclick="server:checkout:proceed">
+                    Proceed to Checkout &#8594;
+                </button>
+
+                <!-- Trust Badges -->
+                <div style="display:flex; flex-direction:column; gap:4px; font-size:0.75rem; color:#64748b; text-align:center; margin-top:2px;">
+                    <span>&#9919; 256-Bit SSL Encrypted Checkout</span>
+                    <span>&#10003; 30-Day Money-Back Guarantee</span>
+                </div>
             </div>
         </div>
 
     </div>
 </div>
+</html>

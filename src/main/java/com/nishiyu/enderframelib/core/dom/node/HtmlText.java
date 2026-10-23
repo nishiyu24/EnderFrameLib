@@ -28,6 +28,7 @@ public class HtmlText extends HtmlNode implements Text {
         String oldVal = this.text;
         this.text = data != null ? data : "";
         MutationObserverManager.queueCharacterData(this, oldVal);
+        notifyDomChanged(null);
     }
 
     @Override
@@ -44,6 +45,7 @@ public class HtmlText extends HtmlNode implements Text {
         String oldVal = this.text;
         this.text = text.substring(0, offset);
         MutationObserverManager.queueCharacterData(this, oldVal);
+        notifyDomChanged(null);
 
         HtmlText newText = new HtmlText(secondHalf);
         newText.ownerDocument = this.ownerDocument;

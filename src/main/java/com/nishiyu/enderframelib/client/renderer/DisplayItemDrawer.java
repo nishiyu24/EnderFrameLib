@@ -17,6 +17,7 @@ import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import com.nishiyu.enderframelib.core.text.TextShaper;
 import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -42,6 +43,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
@@ -57,6 +59,7 @@ import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
+import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 
 public class DisplayItemDrawer {
 
@@ -182,13 +185,45 @@ public class DisplayItemDrawer {
         return codePart + commentPart;
     }
 
-    private static void applyTransforms(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, Map<String, DisplayItem> elementMap, float[] cumulativeOpacity) {
-        if (el == null) return;
-        if (el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT)) {
-            String parentId = el.events().get(RenderKeys.MC_PARENT);
-            applyTransforms(poseStack, elementMap.get(parentId), hoveredId, sessionId, elementMap, cumulativeOpacity);
-        }
+    /** 祖先の変形を掛け終えた姿勢と、祖先の不透明度の積（1 フレームの間だけ使い回す）。 */
+    private record AncestorTransform(Matrix4f pose, Matrix3f normal, float opacity) {}
 
+    /**
+     * {@code id} の要素まで（その要素を含む）祖先の変形を掛けた姿勢を返す。結果は {@code memo} に覚え、
+     * 同じ祖先を持つ兄弟・子孫では掛け直さない（以前は描画要素ごとに祖先の連鎖を根から辿り直していた）。
+     * 呼ぶときの {@code poseStack} の先頭はフレームの基準の姿勢であること。要素が無ければ null。
+     */
+    private static AncestorTransform resolveAncestorTransform(PoseStack poseStack, String id, String hoveredId, String sessionId,
+                                                              Map<String, DisplayItem> elementMap,
+                                                              Map<String, AncestorTransform> memo) {
+        AncestorTransform cached = memo.get(id);
+        if (cached != null) return cached;
+        DisplayItem el = elementMap.get(id);
+        if (el == null) return null;
+
+        poseStack.pushPose();
+        try {
+            float[] cumulativeOpacity = {1.0f};
+            String parentId = el.events() != null ? el.events().get(RenderKeys.MC_PARENT) : null;
+            if (parentId != null) {
+                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo);
+                if (parent != null) {
+                    poseStack.last().pose().set(parent.pose());
+                    poseStack.last().normal().set(parent.normal());
+                    cumulativeOpacity[0] = parent.opacity();
+                }
+            }
+            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity);
+            AncestorTransform result = new AncestorTransform(new Matrix4f(poseStack.last().pose()),
+                    new Matrix3f(poseStack.last().normal()), cumulativeOpacity[0]);
+            memo.put(id, result);
+            return result;
+        } finally {
+            poseStack.popPose();
+        }
+    }
+
+    private static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity) {
         String baseId = ClientWebManager.getBaseNodeId(el.id());
         boolean isHovered = baseId.equals(hoveredId);
         SessionContext session = ClientWebManager.getSession(sessionId);
@@ -237,7 +272,8 @@ public class DisplayItemDrawer {
 
         float maxAllowedX = screenWidth * RESOLUTION;
         float maxAllowedY = screenHeight * RESOLUTION;
-        Font defaultFont = Minecraft.getInstance().font;
+        Font defaultFont = WebFontManager.getDefaultFont();
+        if (defaultFont == null) defaultFont = Minecraft.getInstance().font;
         float zOffset = 0.0f;
 
         float effectiveZStep = (zStep == 0.0f) ? ZLayers.ELEMENT_Z_STEP : zStep;
@@ -261,6 +297,7 @@ public class DisplayItemDrawer {
 
         Map<String, DisplayItem> elementMap = new HashMap<>(uiElements.size());
         for (DisplayItem el : uiElements) elementMap.put(el.id(), el);
+        Map<String, AncestorTransform> ancestorTransforms = new HashMap<>();
 
         DisplayItem hoveredTooltipEl = null;
         String resolvedTooltipText = null;
@@ -317,8 +354,15 @@ public class DisplayItemDrawer {
             poseStack.pushPose();
             try {
                 float[] cumulativeOpacity = {1.0f};
-                if (el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT)) {
-                    applyTransforms(poseStack, elementMap.get(el.events().get(RenderKeys.MC_PARENT)), hoveredId, animSessionId, elementMap, cumulativeOpacity);
+                String parentId = el.events() != null ? el.events().get(RenderKeys.MC_PARENT) : null;
+                if (parentId != null) {
+                    AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, animSessionId,
+                            elementMap, ancestorTransforms);
+                    if (parent != null) {
+                        poseStack.last().pose().set(parent.pose());
+                        poseStack.last().normal().set(parent.normal());
+                        cumulativeOpacity[0] = parent.opacity();
+                    }
                 }
 
                 float originX = meta != null ? meta.originX() : 0.5f;
@@ -539,46 +583,88 @@ public class DisplayItemDrawer {
         VertexConsumer builder = buffer.getBuffer(RenderType.gui());
         Matrix4f mat = poseStack.last().pose();
 
-        float trackH = Math.max(4.0f, el.height() * 0.3f);
-        float trackY = el.y() + (el.height() - trackH) / 2.0f;
-        float trackRad = trackH / 2.0f;
-        float thumbRad = Math.max(10.0f, el.height() * 0.8f) / 2.0f;
-        float thumbCY = el.y() + el.height() / 2.0f;
-        float tMinX = el.x() + thumbRad;
-        float tMaxX = el.x() + el.width() - thumbRad;
-        float tCX = tMinX + ratio * (tMaxX - tMinX);
+        // Chromium の NativeThemeBase::PaintSliderTrack / PaintSliderThumb と同じ形（DisplayListBuilder#drawNativeRange）。
+        // 溝は箱の幅いっぱい・高さ 8px で縦の中央、つまみは直径 16px で中心が両端から 8px の間を動く
+        float cy = el.y() + el.height() / 2.0f;
+        float trackTop = cy - RANGE_TRACK_HEIGHT / 2, trackBottom = cy + RANGE_TRACK_HEIGHT / 2;
+        float trackRad = RANGE_TRACK_HEIGHT / 2;
+        float thumbRad = RANGE_THUMB_SIZE / 2;
+        float left = el.x(), right = el.x() + el.width();
+        float tCX = left + thumbRad + ratio * Math.max(0, el.width() - RANGE_THUMB_SIZE);
 
-        int pC = anim.color() != 0 ? anim.color() : 0xFF007BFF;
+        int pC = anim.color();
         float prA = ((pC >>> 24) & 0xFF) / 255.0f * finalOpacity;
         float prR = ((pC >>> 16) & 0xFF) / 255.0f;
         float prG = ((pC >>> 8) & 0xFF) / 255.0f;
         float prB = (pC & 0xFF) / 255.0f;
 
-        if (tCX > el.x()) {
-            drawRoundedRect(builder, mat, el.x(), trackY, tCX, trackY + trackH, trackRad, 0, 0, trackRad,
-                    prR, prG, prB, prA, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+        int fill = anim.bgColor();
+        if (((fill >>> 24) & 0xFF) != 0) {
+            // Chromium は溝を塗り、値までを強調色で塗り、半透明の 1px の枠を溝全体に重ねる。枠を重ねた色を先に合成し、
+            // 「枠を重ねた色の角丸」と「1px 内側の地の色の角丸」の 2 枚ずつで描く（どれも SDF で描き、四角形の一括描画と
+            // 深度で競合しない。以前は枠を一括描画の四角形で描いて、暗い溝で枠が消えていた）
+            RenderMeta meta = el.meta();
+            int edge = meta != null && meta.roundedBorder() != null ? meta.roundedBorder().colorTop() : 0;
+            int accent = anim.color() | 0xFF000000;
+            fillRoundedRect(builder, mat, left, trackTop, right, trackBottom, trackRad, trackRad, over(edge, fill), finalOpacity, zPos,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            fillRoundedRect(builder, mat, left + 1, trackTop + 1, right - 1, trackBottom - 1, trackRad - 1, trackRad - 1, fill, finalOpacity, zPos,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            if (tCX > left) {
+                float r = Math.min(trackRad, (tCX - left) / 2);
+                fillRoundedRect(builder, mat, left, trackTop, tCX, trackBottom, r, 0, over(edge, accent), finalOpacity, zPos,
+                        clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                if (tCX > left + 1) {
+                    float ri = Math.max(0, Math.min(trackRad - 1, (tCX - left - 1) / 2));
+                    fillRoundedRect(builder, mat, left + 1, trackTop + 1, tCX, trackBottom - 1, ri, 0, accent, finalOpacity, zPos,
+                            clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                }
+            }
         }
-
-        int rC = anim.bgColor() != 0 ? anim.bgColor() : 0xFFFFFFFF;
-        float reA = ((rC >>> 24) & 0xFF) / 255.0f * finalOpacity;
-        float reR = ((rC >>> 16) & 0xFF) / 255.0f;
-        float reG = ((rC >>> 8) & 0xFF) / 255.0f;
-        float reB = (rC & 0xFF) / 255.0f;
-
-        if (tCX < el.x() + el.width()) {
-            drawRoundedRect(builder, mat, tCX, trackY, el.x() + el.width(), trackY + trackH, 0, trackRad, trackRad, 0,
-                    reR, reG, reB, reA, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-        }
-        drawRoundedRect(builder, mat, tCX - thumbRad, thumbCY - thumbRad, tCX + thumbRad, thumbCY + thumbRad,
+        drawRoundedRect(builder, mat, tCX - thumbRad, cy - thumbRad, tCX + thumbRad, cy + thumbRad,
                 thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zPos + ZLayers.SUB_Z_OFFSET,
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+    }
+
+    /** 左の角（左上・左下）を {@code rLeft}、右の角を {@code rRight} にした角丸矩形を {@code argb} で塗る。 */
+    private static void fillRoundedRect(VertexConsumer builder, Matrix4f mat, float x0, float y0, float x1, float y1,
+                                        float rLeft, float rRight, int argb, float opacity, float zPos,
+                                        float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                        float cRTL, float cRTR, float cRBR, float cRBL) {
+        drawRoundedRect(builder, mat, x0, y0, x1, y1, rLeft, rRight, rRight, rLeft,
+                ((argb >>> 16) & 0xFF) / 255.0f, ((argb >>> 8) & 0xFF) / 255.0f, (argb & 0xFF) / 255.0f,
+                ((argb >>> 24) & 0xFF) / 255.0f * opacity, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+    }
+
+    /** 半透明の {@code top} を不透明な {@code bottom} に重ねた色（sRGB のまま合成する。ブラウザの合成と同じ）。 */
+    static int over(int top, int bottom) {
+        float a = ((top >>> 24) & 0xFF) / 255f;
+        int out = bottom & 0xFF000000;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            float t = (top >>> shift) & 0xFF, b = (bottom >>> shift) & 0xFF;
+            out |= Math.round(t * a + b * (1 - a)) << shift;
+        }
+        return out;
+    }
+
+    /** レンジの溝の高さとつまみの直径（Chromium の既定、CSS px）。 */
+    public static final float RANGE_TRACK_HEIGHT = 8f, RANGE_THUMB_SIZE = 16f;
+
+    /**
+     * レンジの横の位置（要素の左端から）を値の割合（0〜1）に直す。つまみの中心が指す位置になるよう、
+     * 両端のつまみの半径の分を除いた幅で割る（Chrome と同じく、押した所につまみの中心が来る）。
+     */
+    public static float rangeRatio(double localX, float width) {
+        float travel = Math.max(1f, width - RANGE_THUMB_SIZE);
+        return Math.clamp((float) ((localX - RANGE_THUMB_SIZE / 2) / travel), 0f, 1f);
     }
 
     private static void renderToggleElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
                                             float finalOpacity, float zPos,
                                             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                             float cRTL, float cRTR, float cRBR, float cRBL) {
-        if (!"true".equals(el.text())) return;
+        boolean mixed = el.type() == ElementType.CHECKBOX && "mixed".equals(el.text());
+        if (!"true".equals(el.text()) && !mixed) return;
         float a = ((anim.color() >>> 24) & 0xFF) / 255.0f * finalOpacity;
         if (a <= 0.0f) return;
 
@@ -586,9 +672,55 @@ public class DisplayItemDrawer {
         float r = ((anim.color() >>> 16) & 0xFF) / 255.0f;
         float g = ((anim.color() >>> 8) & 0xFF) / 255.0f;
         float b = (anim.color() & 0xFF) / 255.0f;
+        if (el.type() == ElementType.RADIO) {
+            // 点は箱の直径の 60% の円（Chromium は箱の矩形を 20% ずつ内側に縮めた楕円を塗る。26px の Chrome を撮った実測）
+            pad = el.width() * 0.2f;
+            float dot = (el.width() - 2 * pad) / 2f;
+            drawRoundedRect(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(),
+                    el.x() + pad, el.y() + el.height() / 2f - dot, el.x() + el.width() - pad, el.y() + el.height() / 2f + dot,
+                    dot, dot, dot, dot, r, g, b, a, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            return;
+        }
+        if (el.type() == ElementType.CHECKBOX) {
+            renderCheckboxMark(el, mixed, r, g, b, a, poseStack, buffer, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            return;
+        }
         drawClippedQuad(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(),
                 el.x() + pad, el.y() + pad, el.x() + el.width() - pad, el.y() + el.height() - pad,
                 r, g, b, a, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+    }
+
+    /**
+     * チェックボックスの印（Chromium の NativeThemeBase::PaintCheckbox と同じ形）。
+     * <ul>
+     *   <li>選択: (0.2w, 0.5h) から右下へ (0.2w, 0.2h) 進み、(0.8w, 0.2h) へ上がる折れ線。太さ 0.16h</li>
+     *   <li>未確定（indeterminate）: 左右 20%・上下 40% 内側の横棒</li>
+     * </ul>
+     * 折れ目は 2 本の線分をそれぞれ太さの半分だけ延ばして重ね、角が欠けないようにする。
+     */
+    private static void renderCheckboxMark(DisplayItem el, boolean mixed, float r, float g, float b, float a,
+                                           PoseStack poseStack, MultiBufferSource buffer, float zPos,
+                                           float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                           float cRTL, float cRTR, float cRBR, float cRBL) {
+        float x = el.x(), y = el.y(), w = el.width(), h = el.height();
+        VertexConsumer builder = buffer.getBuffer(RenderType.gui());
+        Matrix4f mat = poseStack.last().pose();
+        if (mixed) {
+            float radius = Math.min(2f, h * 0.1f);
+            drawRoundedRect(builder, mat, x + w * 0.2f, y + h * 0.4f, x + w * 0.8f, y + h * 0.6f,
+                    radius, radius, radius, radius, r, g, b, a, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            return;
+        }
+        float stroke = h * 0.16f;
+        float x0 = x + w * 0.2f, y0 = y + h * 0.5f;
+        float x1 = x0 + w * 0.2f, y1 = y0 + h * 0.2f;
+        float x2 = x + w * 0.8f, y2 = y + h * 0.2f;
+        float lenA = (float) Math.hypot(x1 - x0, y1 - y0), lenB = (float) Math.hypot(x2 - x1, y2 - y1);
+        float ext = stroke / 2;
+        RoundedRectRasterizer.drawSegment(builder, mat, x0, y0, x1 + (x1 - x0) / lenA * ext, y1 + (y1 - y0) / lenA * ext, stroke,
+                r, g, b, a, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, useSdfShader);
+        RoundedRectRasterizer.drawSegment(builder, mat, x1 - (x2 - x1) / lenB * ext, y1 - (y2 - y1) / lenB * ext, x2, y2, stroke,
+                r, g, b, a, zPos, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, useSdfShader);
     }
 
     private static void renderImageOrMediaElement(
@@ -783,6 +915,13 @@ public class DisplayItemDrawer {
         if (textY >= clipMaxY || textY + el.height() <= clipMinY) return;
 
         float fontH = meta != null ? meta.fontHeight() : el.height();
+        OutlineFontFace outline = WebFontManager.outlineFaceFor(el);
+        if (outline != null) {
+            renderOutlineTextOrInput(el, meta, anim, outline, textToDraw, safeCursorPos, fontH, animSessionId,
+                    poseStack, buffer, renderText, is2DAudio, finalOpacity, zPos, packedLight,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
+            return;
+        }
         // 書体の em（素のサイズ 9px）からの倍率。測定側（BitmapFontFace）と同じ式を使う。
         // 以前は測定が 16/12、描画が /12 という別々の換算で、しかも
         // 要素の高さを font-size の代わりに使っていた。
@@ -1095,6 +1234,7 @@ public class DisplayItemDrawer {
     ) {
         String fullText = el.text() != null ? el.text() : "";
         String[] lines = fullText.replace("\r\n", "\n").split("\n", -1);
+        OutlineFontFace outline = WebFontManager.outlineFaceFor(el);
 
         RenderMeta meta = el.meta();
         RenderMeta safeMeta = meta != null ? meta : RenderMeta.EMPTY;
@@ -1156,6 +1296,15 @@ public class DisplayItemDrawer {
             if (newA <= 0) return;
             int textColor = (newA << 24) | (anim.color() & 0x00FFFFFF);
             int gutterColor = (newA << 24) | 0x585B70;
+            if (outline != null) {
+                drawOutlineTextareaRows(el, outline, lines, syntax, showLineNums, gutterW, lineHeight, scrollRow, maxVisibleRows,
+                        isFocused, cursorRow, cursorCol, textColor, gutterColor, finalOpacity, poseStack, buffer, zPos,
+                        taClipMinY, taClipMaxY, is2D, packedLight);
+                if (taScissor && buffer instanceof MultiBufferSource.BufferSource bs) {
+                    bs.endBatch();
+                }
+                return;
+            }
             float availW = Math.max(10.0f, (el.width() - gutterW - 6.0f) / textScale);
 
             for (int i = 0; i < maxVisibleRows; i++) {
@@ -1202,6 +1351,158 @@ public class DisplayItemDrawer {
             if (taScissor) {
                 RenderSystem.disableScissor();
             }
+        }
+    }
+
+    /** ワールド内（ブロックの画面）の文字をラスタライズする倍率。見る距離が決まらないので固定の値にする。 */
+    private static final float WORLD_TEXT_SCALE = 3.0f;
+
+    /** 1 CSS px が何デバイスピクセルか。GUI では変換行列の倍率 × 画面の倍率、ワールド内では固定。 */
+    private static float deviceScaleFor(Matrix4f pose, boolean is2D) {
+        if (!is2D) return WORLD_TEXT_SCALE;
+        return (float) (Math.abs(pose.m00()) * Minecraft.getInstance().getWindow().getGuiScale());
+    }
+
+    /**
+     * システムの書体で文字・入力欄・プレースホルダーを描く。位置と幅は測定（{@link OutlineFontFace}）と同じ値で決める。
+     * ベースラインはレイアウトが決めた値、持たない要素（入力欄など）は内容領域の中央に置く。
+     */
+    private static void renderOutlineTextOrInput(
+            DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim, OutlineFontFace face,
+            String textToDraw, int cursorPos, float fontH, String animSessionId,
+            PoseStack poseStack, MultiBufferSource buffer, boolean renderText, boolean is2D,
+            float finalOpacity, float zPos, int packedLight,
+            float clipMinX, float clipMinY, float clipMaxX, float clipMaxY, float maxAllowedX, float maxAllowedY
+    ) {
+        FontStyle style = WebFontManager.fontStyleFor(el, fontH);
+        float ascent = face.ascent(style);
+        float descent = face.descent(style);
+        boolean isField = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
+        boolean centersInBox = isField || el.id().endsWith("_ph") || meta == null || meta.baseline() <= 0;
+        float baseline = el.y() + (centersInBox ? (el.height() + ascent - descent) / 2.0f : meta.baseline());
+        float textX = el.x() + (isField ? 4.0f : 0.0f);
+
+        if (el.type() != ElementType.INPUT && textToDraw.isEmpty()) return;
+        if (!renderText || textX >= maxAllowedX || baseline - ascent >= maxAllowedY) return;
+
+        int newA = (int) (((anim.color() >>> 24) & 0xFF) * finalOpacity);
+        if (newA < 4) return;
+        boolean useShadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
+        String textDeco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
+        int argb = (newA << 24) | (anim.color() & 0x00FFFFFF);
+        float r = ((anim.color() >>> 16) & 0xFF) / 255.0f;
+        float g = ((anim.color() >>> 8) & 0xFF) / 255.0f;
+        float b = (anim.color() & 0xFF) / 255.0f;
+
+        Matrix4f outer = poseStack.last().pose();
+        float deviceScale = deviceScaleFor(outer, is2D);
+        boolean textScissor = enableClipScissorFor2D(outer, buffer, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2D);
+        poseStack.pushPose();
+        try {
+            poseStack.translate(0, 0, zPos);
+            Matrix4f pose = poseStack.last().pose();
+            if (isField) {
+                int scrollOffset = TextEditState.getInputScrollOffset(animSessionId, el.id());
+                float available = Math.max(0, Math.min(el.width() - 8.0f, clipMaxX - textX));
+                if (cursorPos >= 0) {
+                    cursorPos = Math.min(textToDraw.length(), cursorPos);
+                    if (cursorPos < scrollOffset) scrollOffset = cursorPos;
+                    while (scrollOffset < cursorPos && face.advance(textToDraw.substring(scrollOffset, cursorPos), style) > available) {
+                        scrollOffset++;
+                    }
+                    TextEditState.setInputScrollOffset(animSessionId, el.id(), scrollOffset);
+                } else if (scrollOffset > textToDraw.length()) {
+                    scrollOffset = textToDraw.length();
+                }
+                String rest = textToDraw.substring(Math.min(scrollOffset, textToDraw.length()));
+                String visible = rest.substring(0, face.fitChars(rest, style, available));
+                OutlineTextRenderer.draw(visible, face, style, textX, baseline, argb, useShadow, pose, buffer, deviceScale, is2D, packedLight);
+                if (cursorPos >= scrollOffset && cursorPos - scrollOffset <= visible.length()
+                        && (System.currentTimeMillis() / 500) % 2 == 0) {
+                    float cx = textX + face.advance(visible.substring(0, cursorPos - scrollOffset), style);
+                    addQuadRaw(buffer.getBuffer(RenderType.gui()), pose, cx, baseline - ascent, cx + 1.0f, baseline + descent,
+                            r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
+                }
+            } else if (el.id().endsWith("_ph")) {
+                float available = Math.max(0, Math.min(el.width() - 8.0f, clipMaxX - textX));
+                String visible = textToDraw.substring(0, face.fitChars(textToDraw, style, available));
+                OutlineTextRenderer.draw(visible, face, style, textX, baseline, argb, useShadow, pose, buffer, deviceScale, is2D, packedLight);
+            } else {
+                // 折り返し・省略・text-align はすべてレイアウト側で確定済み（描画は測り直さない）
+                OutlineTextRenderer.draw(textToDraw, face, style, textX, baseline, argb, useShadow, pose, buffer, deviceScale, is2D, packedLight);
+                if (textDeco.contains("underline") || textDeco.contains("line-through")) {
+                    var primary = face.primaryFace(style);
+                    float size = style.fontSizePx();
+                    VertexConsumer lineBuilder = buffer.getBuffer(RenderType.gui());
+                    if (textDeco.contains("underline")) {
+                        float top = snapCoordFor2D(baseline + primary.underlineOffset(size), Math.abs(outer.m00()), is2D);
+                        addQuadRaw(lineBuilder, pose, textX, top, textX + el.width(), top + primary.underlineThickness(size),
+                                r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
+                    }
+                    if (textDeco.contains("line-through")) {
+                        float thick = primary.strikeoutThickness(size);
+                        float top = snapCoordFor2D(baseline - primary.strikeoutPosition(size) - thick / 2, Math.abs(outer.m00()), is2D);
+                        addQuadRaw(lineBuilder, pose, textX, top, textX + el.width(), top + thick,
+                                r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
+                    }
+                }
+            }
+            if (textScissor && buffer instanceof MultiBufferSource.BufferSource bs) {
+                bs.endBatch();
+            }
+        } finally {
+            poseStack.popPose();
+            if (textScissor) {
+                RenderSystem.disableScissor();
+            }
+        }
+    }
+
+    /** テキストエリアの行をシステムの書体で描く。行の中の文字の位置は half-leading の分け方（{@link TextShaper#leadingAbove}）で決める。 */
+    private static void drawOutlineTextareaRows(
+            DisplayItem el, OutlineFontFace face, String[] lines, String syntax, boolean showLineNums, float gutterW,
+            float lineHeight, int scrollRow, int maxVisibleRows, boolean isFocused, int cursorRow, int cursorCol,
+            int textColor, int gutterColor, float finalOpacity, PoseStack poseStack, MultiBufferSource buffer, float zPos,
+            float taClipMinY, float taClipMaxY, boolean is2D, int packedLight
+    ) {
+        RenderMeta meta = el.meta() != null ? el.meta() : RenderMeta.EMPTY;
+        FontStyle style = WebFontManager.fontStyleFor(el, meta.fontHeight());
+        float ascent = face.ascent(style);
+        float descent = face.descent(style);
+        float halfLeading = TextShaper.leadingAbove(lineHeight, ascent, descent);
+        float availW = Math.max(10.0f, el.width() - gutterW - 6.0f);
+
+        poseStack.pushPose();
+        try {
+            poseStack.translate(0, 0, zPos + 0.0004f);
+            Matrix4f pose = poseStack.last().pose();
+            float deviceScale = deviceScaleFor(pose, is2D);
+            for (int i = 0; i < maxVisibleRows; i++) {
+                int rowIdx = scrollRow + i;
+                if (rowIdx >= lines.length) break;
+                float rowY = el.y() + 4.0f + i * lineHeight;
+                if (rowY + lineHeight < taClipMinY || rowY > taClipMaxY) continue;
+                float baseline = rowY + halfLeading + ascent;
+
+                if (showLineNums) {
+                    OutlineTextRenderer.draw(String.valueOf(rowIdx + 1), face, style, el.x() + 4.0f, baseline, gutterColor,
+                            false, pose, buffer, deviceScale, is2D, packedLight);
+                }
+                String rawLine = lines[rowIdx];
+                String visibleRaw = rawLine.substring(0, face.fitChars(rawLine, style, availW));
+                float textX = el.x() + gutterW + 2.0f;
+                OutlineTextRenderer.drawFormatted(highlightCodeLine(visibleRaw, syntax), face, style, textX, baseline, textColor,
+                        pose, buffer, deviceScale, is2D, packedLight);
+
+                if (isFocused && rowIdx == cursorRow && (System.currentTimeMillis() / 500) % 2 == 0) {
+                    int safeCol = Math.clamp(cursorCol, 0, visibleRaw.length());
+                    float curX = textX + face.advance(visibleRaw.substring(0, safeCol), style);
+                    addQuadRaw(buffer.getBuffer(RenderType.gui()), pose, curX, baseline - ascent, curX + 1.0f, baseline + descent,
+                            0.54f, 0.71f, 0.98f, finalOpacity, 0.0002f);
+                }
+            }
+        } finally {
+            poseStack.popPose();
         }
     }
 

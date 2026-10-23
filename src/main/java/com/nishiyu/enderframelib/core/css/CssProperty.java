@@ -67,6 +67,8 @@ public final class CssProperty {
     public static final String FLEX = "flex";
     public static final String FLEX_BASIS = "flex-basis";
     public static final String FLEX_DIRECTION = "flex-direction";
+    public static final String ACCENT_COLOR = "accent-color";
+    public static final String APPEARANCE = "appearance";
     public static final String FLEX_GROW = "flex-grow";
     public static final String FLEX_SHRINK = "flex-shrink";
     public static final String FLEX_WRAP = "flex-wrap";
@@ -74,6 +76,7 @@ public final class CssProperty {
     public static final String FONT_FAMILY = "font-family";
     public static final String FONT_SIZE = "font-size";
     public static final String FONT_STYLE = "font-style";
+    public static final String FONT_KERNING = "font-kerning";
     public static final String FONT_WEIGHT = "font-weight";
     public static final String GAP = "gap";
     public static final String GRID_AREA = "grid-area";

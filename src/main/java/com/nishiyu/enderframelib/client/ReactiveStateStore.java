@@ -211,8 +211,20 @@ public class ReactiveStateStore {
         dirty = false;
         dirtyKeys.clear();
 
-        if (binder.sync(root, values, lists, changedKeys)) {
-            session.requestRender();
+        boolean changed = binder.sync(root, values, lists, changedKeys);
+        // 書き換えた要素はキャッシュ済みの算出スタイルを捨てさせる（印が無いと古いスタイルが使い回される）
+        for (HtmlNode node : binder.drainChangedNodes()) {
+            session.interactionState().markDirty(node);
+        }
+        boolean layoutTreeChanged = binder.drainLayoutTreeChanged();
+        if (changed) {
+            // 見た目（style / class）だけの書き換えは、箱の木を作り直さず再スタイルから必要な段だけ走らせる。
+            // ドラッグで left / top を束ねている場合は位置の決め直しだけで済む
+            if (layoutTreeChanged) {
+                session.requestRender();
+            } else {
+                session.requestRestyle();
+            }
         }
     }
 
