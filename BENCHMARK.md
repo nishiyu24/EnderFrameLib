@@ -27,7 +27,7 @@
 
 ## 2. 回帰の基準値（固定）
 
-- **ファイル**: `src/test/resources/benchmark/baseline.txt`（2026-10-20、3 回測った中央値）
+- **ファイル**: `src/test/resources/benchmark/baseline.txt`（2026-10-24 に更新、3 回測った中央値。初回は 2026-10-20）
 - **テスト**: `PerformanceBenchmarkTest`（ウォームアップ 5 回、測定 15 回の平均）
 - **判定**: 「実測 ≤ 基準値 × 2.0 + 3ms」を超えたら回帰として落ちる。レポートは `build/reports/benchmark-results.txt`。
 
@@ -38,9 +38,12 @@
 
 | Document | Restyle | Relayout | DisplayList | ScrollStep |
 | :--- | :---: | :---: | :---: | :---: |
-| `showcase.html` | 9.1 ms | 10.6 ms | 3.3 ms | 12.4 ms |
-| `guidebook.md` | 6.7 ms | 3.6 ms | 2.7 ms | 5.0 ms |
-| `large-list (500 items)` | 17.6 ms | 7.8 ms | 9.2 ms | 12.8 ms |
+| `showcase.html` | 16.3 ms | 15.2 ms | 4.8 ms | 17.5 ms |
+| `guidebook.md` | 6.7 ms | 3.5 ms | 2.7 ms | 4.9 ms |
+| `large-list (500 items)` | 19.9 ms | 8.9 ms | 10.1 ms | 13.7 ms |
+
+2026-10-20 の値は showcase.html が 9.1 / 10.6 / 3.3 / 12.4 ms で、他の 2 つは今とほぼ同じだった。
+変わったのが showcase.html だけなので、マシンの差ではなくその間に showcase.html の処理が重くなったもの（原因は未調査）。
 
 ### 最新の実測（2026-10-24）
 
