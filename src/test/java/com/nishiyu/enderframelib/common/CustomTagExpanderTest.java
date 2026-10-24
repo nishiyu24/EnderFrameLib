@@ -141,4 +141,23 @@ public class CustomTagExpanderTest {
         assertEquals(expanded(html).getOuterHTML(), expanded(html).getOuterHTML(),
                 "同じ入力から同じ DOM（ID を含む）が得られない");
     }
+
+    @Test
+    public void testEnergyBarKeepsBindingsAndDefaultsLabel() {
+        HtmlNode root = expanded("<mc-energy value=\"{{energy}}\" max=\"{{cap}}\"></mc-energy>");
+        HtmlNode bar = root.children.get(0);
+        assertTrue(bar.hasClass("mc-bar"));
+        HtmlNode progress = SelectorEngine.querySelectorAll(root, "progress").get(0);
+        assertEquals("{{energy}}", progress.attrs.get("value"));
+        assertTrue(progress.attrs.get("style").contains("#d62828"));
+        assertEquals("{{energy}} / {{cap}} FE", SelectorEngine.querySelectorAll(root, "span").get(0).children.get(0).getTextContent());
+    }
+
+    @Test
+    public void testFluidBarColorFollowsFluidAndLabelCanBeHidden() {
+        HtmlNode root = expanded("<mc-tank value=\"5\" max=\"10\" fluid=\"minecraft:lava\" label=\"none\"></mc-tank>");
+        HtmlNode progress = SelectorEngine.querySelectorAll(root, "progress").get(0);
+        assertTrue(progress.attrs.get("style").contains("#ff7a00"));
+        assertTrue(SelectorEngine.querySelectorAll(root, "span").isEmpty());
+    }
 }

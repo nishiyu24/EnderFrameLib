@@ -8,7 +8,8 @@ import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.client.renderer.PaintRequest;
+import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
+import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
@@ -284,13 +285,8 @@ public class AbstractEnderScreen extends Screen implements EnderScreenHost {
             int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-            PaintRequest.forGui(
-                    elements, logicW, logicH,
-                    poseStack, bufferSource,
-                    sessionId, hoveredId,
-                    Minecraft.getInstance().level,
-                    true
-            ).render();
+            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
+                    SurfaceStyle.gui(true).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
             this.uiSupport.renderOverlays(guiGraphics, this.font, elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);

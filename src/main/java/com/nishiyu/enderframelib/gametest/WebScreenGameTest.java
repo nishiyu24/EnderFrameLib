@@ -6,7 +6,9 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
+import com.nishiyu.enderframelib.api.ClientSession;
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
+import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.WebDocument;
 import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.api.dom.Document;
@@ -87,9 +89,8 @@ import net.minecraft.client.Minecraft;
 import com.nishiyu.enderframelib.api.template.EnderScreenBlock;
 import com.nishiyu.enderframelib.api.template.EnderScreenBlockEntity;
 import com.nishiyu.enderframelib.api.template.EnderScreenItem;
-import com.nishiyu.enderframelib.client.EnderScreenClient;
-import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
-import com.nishiyu.enderframelib.client.EnderScreenItemClient;
+import com.nishiyu.enderframelib.client.Hologram;
+import com.nishiyu.enderframelib.client.Surfaces;
 import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
 import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -155,11 +156,11 @@ public final class WebScreenGameTest {
         String hudId = "custom_hud_" + player.getStringUUID();
 
         EnderFrameAPI api = EnderFrameAPI.get();
-        api.openScreen(player, null, "<div id='root'>hello</div>", 320, 200);
-        api.setHud(player, null, "<div id='hud'>hud</div>");
+        api.open(player, Ui.html("<div id='root'>hello</div>").size(320, 200));
+        api.hud(player, Ui.html("<div id='hud'>hud</div>"));
 
         if (api.findSession(screenId) == null) {
-            helper.fail("openScreen 後にセッションが見つかりません: " + screenId);
+            helper.fail("open 後にセッションが見つかりません: " + screenId);
         }
         if (api.findSession(hudId) == null) {
             helper.fail("setHud 後に HUD セッションが見つかりません: " + hudId);
@@ -195,14 +196,14 @@ public final class WebScreenGameTest {
 
         ServerPlayer player = mockPlayer(helper);
         EnderFrameAPI api = EnderFrameAPI.get();
-        api.openScreen(player, null, """
+        api.open(player, Ui.html("""
                 <style>#count { color: #ff0000; }</style>
                 <p>Diamonds: <span id="count" class="value">0</span></p>
-                """, 320, 200);
+                """).size(320, 200));
 
         WebSessionHandle session = api.findSession("script_" + player.getStringUUID());
         if (session == null) {
-            helper.fail("openScreen 後にセッションが見つかりません");
+            helper.fail("open 後にセッションが見つかりません");
             return;
         }
 
@@ -221,8 +222,9 @@ public final class WebScreenGameTest {
         }
 
         // 文書が差分更新できること。ここで落ちると patch 経路が壊れている。
-        session.patchText("count", "42");
-        session.patchAttribute("count", "data-ready", "1", false);
+        com.nishiyu.enderframelib.server.WebSession internal = (com.nishiyu.enderframelib.server.WebSession) session;
+        internal.patchText("count", "42");
+        internal.patchAttribute("count", "data-ready", "1", false);
         if (!"1".equals(session.getDocument().attributeOf("count", "data-ready"))) {
             helper.fail("patchAttribute が文書に反映されていません");
         }
@@ -248,7 +250,7 @@ public final class WebScreenGameTest {
         BlockEntity be = helper.getBlockEntity(pos);
         EnderFrameAPI api = EnderFrameAPI.get();
 
-        UIStateImpl state = (UIStateImpl) api.createBlockEntityState(be, STATE_TEMPLATE);
+        UIStateImpl state = (UIStateImpl) api.stateOf(be, STATE_TEMPLATE);
         Map<UUID, List<CustomPacketPayload>> sent = new ConcurrentHashMap<>();
         state.setPacketSender((player, packet) ->
                 sent.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).add(packet));
@@ -261,8 +263,8 @@ public final class WebScreenGameTest {
         String instanceId = state.instanceId();
 
         state.set("progress", 0.0).set("status", "idle");
-        api.openBlockEntityUi(alice, be, STATE_TEMPLATE, null);
-        if (api.createBlockEntityState(be, STATE_TEMPLATE) != state) {
+        api.open(alice, Ui.template(STATE_TEMPLATE).at(be));
+        if (api.stateOf(be, STATE_TEMPLATE) != state) {
             helper.fail("同じブロックエンティティで別の状態が返りました");
         }
         OpenUiS2CPacket aliceOpen = roundTrip(helper, sent, alice, 0, OpenUiS2CPacket.class);
@@ -282,7 +284,7 @@ public final class WebScreenGameTest {
                     if (!instanceId.equals(delta.instanceId()) || delta.deltas().getDouble("progress") != 0.5) {
                         helper.fail("tick の差分が往復で崩れました: " + delta.deltas());
                     }
-                    api.openBlockEntityUi(bob, be, STATE_TEMPLATE, state);
+                    api.open(bob, Ui.template(STATE_TEMPLATE).at(be).state(state));
                     state.set("energy", 1200); // Bob が開いた後に増えたキー
                 })
                 .thenIdle(2)
@@ -339,13 +341,13 @@ public final class WebScreenGameTest {
         BlockPos pos = new BlockPos(1, 1, 1);
         helper.setBlock(pos, Blocks.FURNACE);
         EnderFrameAPI api = EnderFrameAPI.get();
-        UIState first = api.createBlockEntityState(helper.getBlockEntity(pos), STATE_TEMPLATE);
+        UIState first = api.stateOf(helper.getBlockEntity(pos), STATE_TEMPLATE);
         first.set("progress", 0.9);
 
         // 同じ tick のうちに壊して置き直す（tick の後始末より先に新しいブロックが状態を取りに来る）
         helper.destroyBlock(pos);
         helper.setBlock(pos, Blocks.FURNACE);
-        UIState second = api.createBlockEntityState(helper.getBlockEntity(pos), STATE_TEMPLATE);
+        UIState second = api.stateOf(helper.getBlockEntity(pos), STATE_TEMPLATE);
         if (second == first || second.get("progress") != null) {
             helper.fail("置き直したブロックが前の状態を使い回しました");
         }
@@ -364,8 +366,8 @@ public final class WebScreenGameTest {
     }
 
     /**
-     * 並べたスクリーンブロックは欠けのない長方形で 1 枚の画面になり、壊して欠けると 1×1 に分かれ、
-     * 長方形に戻ると再びまとまる（左下が master）。
+     * 並べたスクリーンブロックは欠けのない長方形で 1 枚の画面になり、壊すと画面は破棄されて残りが初期化され、
+     * draw の命令で再びまとまる（左下が master）。
      */
     @GameTest(template = TEMPLATE, batch = BATCH_SURFACE, timeoutTicks = 100)
     public static void screenBlocksFormRectangleAndSplitOnBreak(GameTestHelper helper) {
@@ -382,7 +384,7 @@ public final class WebScreenGameTest {
                 screenAt(helper, p).setFacing(facing);
             }
         }
-        EnderScreenBlockEntity.rebuild(helper.getLevel(), helper.absolutePos(origin));
+        EnderScreenBlockEntity.draw(helper.getLevel(), helper.absolutePos(origin));
 
         BlockPos absoluteOrigin = helper.absolutePos(origin);
         for (int x = 0; x < 3; x++) {
@@ -396,25 +398,28 @@ public final class WebScreenGameTest {
             }
         }
 
-        // 上の段の真ん中を壊す → L 字になり、残りは 1×1 の画面
-        helper.destroyBlock(origin.relative(right, 1).above(1));
+        // 上の段の真ん中を壊す → 画面は破棄され、残りのブロックは全て初期化される（組み直されない）
+        BlockPos gap = origin.relative(right, 1).above(1);
+        helper.destroyBlock(gap);
         for (int x = 0; x < 3; x++) {
             for (int y = 0; y < 2; y++) {
-                if (x == 1 && y == 1) continue;
-                EnderScreenBlockEntity be = screenAt(helper, origin.relative(right, x).above(y));
-                if (!be.isMaster() || be.getScreenWidth() != 1 || be.getScreenHeight() != 1) {
-                    helper.fail("欠けた後に 1×1 へ分かれていません (" + x + "," + y + ")");
+                BlockPos p = origin.relative(right, x).above(y);
+                if (p.equals(gap)) continue;
+                EnderScreenBlockEntity be = screenAt(helper, p);
+                if (be.isActive() || be.isMaster() || be.getScreenWidth() != 1 || be.getScreenHeight() != 1) {
+                    helper.fail("残りのブロックが初期化されていません (" + x + "," + y + ")");
                 }
             }
         }
 
-        // 上の段を全部壊す → 下の段が 3×1 でまとまり直す
+        // 描く命令（draw）が来ると、初期化されたブロックも普通に画面になる。上の段を全部壊した下の段は 3×1
         helper.destroyBlock(origin.above(1));
         helper.destroyBlock(origin.relative(right, 2).above(1));
+        EnderScreenBlockEntity.draw(helper.getLevel(), absoluteOrigin);
         for (int x = 0; x < 3; x++) {
             EnderScreenBlockEntity be = screenAt(helper, origin.relative(right, x));
-            if (be.getScreenWidth() != 3 || be.getScreenHeight() != 1 || !be.getScreenMasterPos().equals(absoluteOrigin)) {
-                helper.fail("下の段が 3×1 でまとまり直していません (" + x + ")");
+            if (!be.isActive() || be.getScreenWidth() != 3 || be.getScreenHeight() != 1 || !be.getScreenMasterPos().equals(absoluteOrigin)) {
+                helper.fail("draw で下の段が 3×1 になっていません (" + x + ")");
             }
         }
 
@@ -554,33 +559,38 @@ public final class WebScreenGameTest {
             }
             BlockEntity be = level.getBlockEntity(pos);
             EnderFrameAPI api = EnderFrameAPI.get();
-            UIState state = api.createBlockEntityState(be, STATE_TEMPLATE);
-            if (state.get("label") == null) {
-                state.set("label", state.instanceId()).set("status", "idle").set("running", false)
-                        .set("progress", 0.0).set("progress_css", "0%")
-                        .set("clicks", 0).set("wheels", 0).set("typed", "");
-                state.onAction("toggle", (player, payload) -> {
-                    log(state, player, "toggle", payload);
-                    boolean running = !state.getBoolean("running", false);
-                    state.set("running", running)
-                            .set("status", running ? "running" : "idle")
-                            .set("clicks", state.getInt("clicks", 0) + 1);
-                });
-                state.onAction("typed", (player, payload) -> {
-                    log(state, player, "typed", payload);
-                    state.set("typed", payload.getString("Value"));
-                });
-                state.onAction("wheel", (player, payload) -> {
-                    log(state, player, "wheel", payload);
-                    state.set("wheels", state.getInt("wheels", 0) + 1);
-                });
-            }
+            UIState state = api.stateOf(be, STATE_TEMPLATE);
+            initState(state);
             for (ServerPlayer player : targets) {
-                api.openBlockEntityUi(player, be, STATE_TEMPLATE, state);
+                api.open(player, Ui.template(STATE_TEMPLATE).at(be).state(state));
             }
             source.sendSuccess(() -> Component.literal("[efl_dev] opened " + state.instanceId()
                     + " for " + targets.size() + " player(s)"), false);
             return targets.size();
+        }
+
+        /** 状態の初期値とアクションを一度だけ入れる（{@code label} が無ければ未初期化とみなす）。 */
+        static void initState(UIState state) {
+            if (state.get("label") == null) {
+            state.set("label", state.instanceId()).set("status", "idle").set("running", false)
+                    .set("progress", 0.0).set("progress_css", "0%")
+                    .set("clicks", 0).set("wheels", 0).set("typed", "");
+            state.onAction("toggle", (player, payload) -> {
+                log(state, player, "toggle", payload);
+                boolean running = !state.getBoolean("running", false);
+                state.set("running", running)
+                        .set("status", running ? "running" : "idle")
+                        .set("clicks", state.getInt("clicks", 0) + 1);
+            });
+            state.onAction("typed", (player, payload) -> {
+                log(state, player, "typed", payload);
+                state.set("typed", payload.getString("Value"));
+            });
+            state.onAction("wheel", (player, payload) -> {
+                log(state, player, "wheel", payload);
+                state.set("wheels", state.getInt("wheels", 0) + 1);
+            });
+        }
         }
 
         private static void log(UIState state, ServerPlayer player, String action, CompoundTag payload) {
@@ -670,12 +680,13 @@ public final class WebScreenGameTest {
             if (text.startsWith(SurfaceDevHarness.HOLOGRAM_TRIGGER)) {
                 String[] parts = text.substring(SurfaceDevHarness.HOLOGRAM_TRIGGER.length()).trim().split(" ");
                 if (parts[0].equals("clear")) {
-                    HologramRenderer.clear();
+                    Surfaces.clearHolograms();
                 } else {
                     Vec3 base = new Vec3(Integer.parseInt(parts[0]) + 0.5, Integer.parseInt(parts[1]) + 0.5, Integer.parseInt(parts[2]) + 0.5);
                     boolean billboard = Boolean.parseBoolean(parts[3]);
-                    HologramRenderer.show("efl_dev_" + parts[0] + "_" + parts[1] + "_" + parts[2], new HologramRenderer.Spec(
-                            SurfaceDevHarness.HOLOGRAM_SESSION, base, 2f, 1.5f, 0f, billboard, 32.0));
+                    Hologram holo = Hologram.at(parts[4], base, 2f, 1.5f).asInteractive();
+                    Surfaces.hologram("efl_dev_" + parts[0] + "_" + parts[1] + "_" + parts[2],
+                            billboard ? holo.asBillboard() : holo);
                 }
                 return;
             }
@@ -683,14 +694,15 @@ public final class WebScreenGameTest {
             int frames = Integer.parseInt(text.substring(DevHarness.HUD_TRIGGER.length()).trim());
 
             EnderFrameClientAPI api = EnderFrameClientAPI.get();
-            Document doc = api.setHud(HUD_ID, """
+            ClientSession hud = api.hud(Ui.html("""
                     <div style="position:absolute; left:8px; top:8px; padding:6px; background:#000a; color:#fff; font-size:16px;">
                       client HUD frame <span id="frame">0</span>
                     </div>
-                    """);
+                    """).session(HUD_ID));
+            Document doc = hud.document();
             AtomicInteger count = new AtomicInteger();
             Runnable[] loop = new Runnable[1];
-            loop[0] = () -> api.requestAnimationFrame(HUD_ID, time -> {
+            loop[0] = () -> hud.requestAnimationFrame(time -> {
                 Element frame = doc.getElementById("frame");
                 if (frame != null) frame.setTextContent(Integer.toString(count.incrementAndGet()));
                 if (count.get() < frames) {
@@ -721,6 +733,8 @@ public final class WebScreenGameTest {
     public static final class SurfaceDevHarness {
 
         public static final String BLOCK_SESSION = "efl_surface_block";
+        /** 真なら、ブロックの面をセッションではなくテンプレート + UIState で動かす（開発用のスイッチ）。 */
+        static volatile boolean TEMPLATE_MODE;
         public static final String ITEM_SESSION = "efl_surface_item";
         public static final String HOLOGRAM_SESSION = "efl_surface_hologram";
         /** どの面もページの設計どおりの解像度（512x384）で読み込む。面の大きさ（ブロック数）は、それを収める物理的な大きさ。 */
@@ -778,6 +792,11 @@ public final class WebScreenGameTest {
                                     .executes(ctx -> hologram(ctx.getSource(),
                                             BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
                                             BoolArgumentType.getBool(ctx, "billboard"))))))
+                    .then(Commands.literal("template").then(Commands.argument("on", BoolArgumentType.bool())
+                            .executes(ctx -> {
+                                TEMPLATE_MODE = BoolArgumentType.getBool(ctx, "on");
+                                return 1;
+                            })))
                     .then(Commands.literal("give").then(Commands.argument("targets", EntityArgument.players())
                             .executes(ctx -> give(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets")))))
                     .then(Commands.literal("clear").executes(ctx -> clear(ctx.getSource())));
@@ -799,7 +818,7 @@ public final class WebScreenGameTest {
                     if (level.getBlockEntity(p) instanceof SurfaceBlockEntity be) be.setFacing(facing);
                 }
             }
-            EnderScreenBlockEntity.rebuild(level, pos);
+            EnderScreenBlockEntity.draw(level, pos);
             source.sendSuccess(() -> Component.literal("[efl_dev] surface block at " + pos.toShortString()
                     + " facing=" + facing.getName() + " " + w + "x" + h + " blocks (layout " + UI_WIDTH + "x" + UI_HEIGHT + " px)"), false);
             return 1;
@@ -809,17 +828,38 @@ public final class WebScreenGameTest {
         static final String HOLOGRAM_TRIGGER = "[efl_dev] hologram ";
 
         private static int hologram(CommandSourceStack source, BlockPos pos, boolean billboard) {
-            loadSession(source, HOLOGRAM_SESSION, UI_WIDTH, UI_HEIGHT);
+            String sessionId = HOLOGRAM_SESSION;
+            if (TEMPLATE_MODE) {
+                // テンプレート + UIState で動かす。状態はホログラムごとに分け、見せる相手は全員
+                sessionId = "efl_hologram_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
+                Ui.Template ui = Ui.template(STATE_TEMPLATE).instance(sessionId);
+                DevHarness.initState(EnderFrameAPI.get().stateOf(STATE_TEMPLATE, sessionId));
+                for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+                    EnderFrameAPI.get().showSurface(player, ui, UI_WIDTH, UI_HEIGHT);
+                }
+            } else {
+                loadSession(source, HOLOGRAM_SESSION, UI_WIDTH, UI_HEIGHT);
+            }
             for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + pos.getX() + " " + pos.getY() + " " + pos.getZ() + " " + billboard));
+                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+                        + " " + billboard + " " + sessionId));
             }
             return 1;
         }
 
         private static int give(CommandSourceStack source, Collection<ServerPlayer> targets) {
-            loadSession(source, ITEM_SESSION, UI_WIDTH, UI_HEIGHT);
+            String sessionId = ITEM_SESSION;
+            if (TEMPLATE_MODE) {
+                // テンプレート + UIState で動かす。持ち主に面を見せる
+                sessionId = "efl_item_state";
+                Ui.Template ui = Ui.template(STATE_TEMPLATE).instance(sessionId);
+                DevHarness.initState(EnderFrameAPI.get().stateOf(STATE_TEMPLATE, sessionId));
+                for (ServerPlayer player : targets) EnderFrameAPI.get().showSurface(player, ui, UI_WIDTH, UI_HEIGHT);
+            } else {
+                loadSession(source, ITEM_SESSION, UI_WIDTH, UI_HEIGHT);
+            }
             for (ServerPlayer player : targets) {
-                ItemStack stack = ITEM.createStack(ITEM_SESSION);
+                ItemStack stack = ITEM.createStack(sessionId);
                 stack.set(DataComponents.CUSTOM_NAME, Component.literal("EnderFrame Surface Tablet"));
                 if (!player.getInventory().add(stack)) player.drop(stack, false);
             }
@@ -851,13 +891,17 @@ public final class WebScreenGameTest {
                 super(BLOCK_ENTITY, pos, state);
             }
 
-            @Override public String getSessionId() { return BLOCK_SESSION; }
+            @Override public String getSessionId() { return getTemplateId() != null ? super.getSessionId() : BLOCK_SESSION; }
+            /** {@code /efl_dev surface template true} のとき、セッションではなくテンプレートの状態で動かす。 */
+            @Override public String getTemplateId() { return TEMPLATE_MODE ? STATE_TEMPLATE : null; }
             /** 遠距離 LOD の確認用に、はっきり分かる色を返す。 */
             @Override public int getLodColor() { return 0xFF00E5FF; }
 
             @Override
             protected void onScreenFormed(int width, int height) {
-                if (level instanceof ServerLevel serverLevel) {
+                if (getTemplateId() != null) {
+                    DevHarness.initState(screenState());
+                } else if (level instanceof ServerLevel serverLevel) {
                     loadSession(serverLevel.getServer().createCommandSourceStack(), BLOCK_SESSION, UI_WIDTH, UI_HEIGHT);
                 }
             }
@@ -875,8 +919,14 @@ public final class WebScreenGameTest {
 
         public static void init(IEventBus modEventBus) {
             if (!DevHarness.enabled()) return;
-            EnderScreenClient.register(modEventBus, () -> SurfaceDevHarness.BLOCK_ENTITY);
-            EnderScreenItemClient.register(modEventBus, () -> SurfaceDevHarness.ITEM, ITEM_SURFACE);
+            Surfaces.block(modEventBus, () -> SurfaceDevHarness.BLOCK_ENTITY);
+            Surfaces.item(modEventBus, () -> SurfaceDevHarness.ITEM, ITEM_SURFACE,
+                    ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "item/surface_test_paper"));
+            // 開いた地図: 128x128 の地図の (8, 16) から幅 112 の矩形（320x240 の比）
+            Surfaces.map(
+                    stack -> stack.is(net.minecraft.world.item.Items.FILLED_MAP)
+                            && com.nishiyu.enderframelib.client.ClientScreenInteractionManager.getSessionIdFromItem(stack) != null,
+                    ItemSurfaceSpec.onTexture(SurfaceDevHarness.UI_WIDTH, SurfaceDevHarness.UI_HEIGHT, 128, 128, 8, 16, 112));
         }
     }
 }

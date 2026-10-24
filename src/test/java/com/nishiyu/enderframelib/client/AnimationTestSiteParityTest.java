@@ -115,7 +115,8 @@ public class AnimationTestSiteParityTest {
             int styleStart = html.indexOf("<style>");
             int styleEnd = html.indexOf("</style>");
             assertTrue(styleStart >= 0 && styleEnd > styleStart);
-            int expectedCssLength = styleEnd - (styleStart + 7);
+            // パーサーは改行を LF にそろえるので、CRLF のチェックアウトでも同じ長さで比べる
+            int expectedCssLength = html.substring(styleStart + 7, styleEnd).replace("\r\n", "\n").length();
 
             // Webサイト上では約20KBのCSS全体が評価される。
             // HtmlParser がテキストノードを 16384 文字で切り捨てる場合、このアサーションで差異が検出される。

@@ -13,7 +13,9 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import com.nishiyu.enderframelib.network.WebActionC2SPacket;
+import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -130,7 +132,9 @@ public class ClientScreenInteractionManager {
         if (!isLeft && !isRight) return;
         if (event.getAction() == GLFW.GLFW_PRESS) {
             if (isLeft) leftHeld = true; else rightHeld = true;
-            pendingPressButton.compareAndSet(NO_PENDING_PRESS, isLeft ? 0 : 1);
+            // ワールド内の面では「使う操作（右クリック）」もクリック（DOM のボタン 0）として扱う。
+            // 画面内では SessionInput が DOM に忠実なまま（右 = contextmenu）。
+            pendingPressButton.compareAndSet(NO_PENDING_PRESS, 0);
         } else if (event.getAction() == GLFW.GLFW_RELEASE) {
             if (isLeft) leftHeld = false; else rightHeld = false;
             pendingRelease = true;
@@ -170,7 +174,14 @@ public class ClientScreenInteractionManager {
             handleRelease(lastHoveredSession);
         }
 
-        SurfaceHitResolver.SurfaceHit hit = SurfaceHitResolver.fromCrosshair(mc);
+        SurfaceHit hit = SurfaceHitResolver.fromCrosshair(mc);
+        // 空中のホログラムは、照準の先のブロックより手前にあるときだけ当たる
+        SurfaceHit holoHit = HologramRenderer.pick(mc);
+        if (holoHit != null) {
+            double blockDistance = mc.hitResult != null && mc.hitResult.getType() == HitResult.Type.BLOCK
+                    ? mc.player.getEyePosition().distanceTo(mc.hitResult.getLocation()) : Double.MAX_VALUE;
+            if (holoHit.distance() < blockDistance) hit = holoHit;
+        }
         if (hit != null) {
             String sessionId = hit.sessionId();
             lastHoveredSession = sessionId;

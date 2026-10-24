@@ -61,9 +61,10 @@ later — never from a static initializer.
 
 ```java
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
+import com.nishiyu.enderframelib.api.Ui;
 
 // Open a screen for one player from an HTML string.
-EnderFrameAPI.get().openScreen(player, null, """
+EnderFrameAPI.get().open(player, Ui.html("""
         <style>
           body { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
           button:hover { background-color: #e5e5e5; }
@@ -71,10 +72,10 @@ EnderFrameAPI.get().openScreen(player, null, """
         <h2>Hello</h2>
         <p>Diamonds: <span id="count">0</span></p>
         <button onclick="server:collect">Collect</button>
-        """, 320, 200);
+        """).size(320, 200));
 ```
 
-Reacting to a click, and patching the open document without resending it:
+Reacting to a click, and updating the open document (the state-driven form below sends only what changed):
 
 ```java
 // onclick="server:<name>[:<value>]" arrives here on the menu or block entity
@@ -83,7 +84,7 @@ Reacting to a click, and patching the open document without resending it:
 @Override
 public void onWebServerAction(ServerPlayer player, String action, String value, CompoundTag payload) {
     if (action.equals("collect")) {
-        EnderFrameAPI.get().findSession(sessionId).patchText("count", "42");
+        EnderFrameAPI.get().findSession(sessionId).loadHtml(updatedHtml);
     }
 }
 ```
@@ -91,13 +92,13 @@ public void onWebServerAction(ServerPlayer player, String action, String value, 
 A UI shipped in a datapack at `data/mymod/enderframe_ui/menu.html`:
 
 ```java
-EnderFrameAPI.get().openDatapackScreen(player, "mymod:menu", 320, 200);
+EnderFrameAPI.get().open(player, Ui.datapack("mymod:menu").size(320, 200));
 ```
 
 A persistent HUD overlay:
 
 ```java
-EnderFrameAPI.get().setHud(player, null, hudHtml);
+EnderFrameAPI.get().hud(player, Ui.html(hudHtml));
 EnderFrameAPI.get().clearHud(player);
 ```
 
@@ -141,12 +142,12 @@ On the server:
 import com.nishiyu.enderframelib.api.state.UIState;
 
 // One state per block entity; its instance id is "block:x,y,z".
-UIState state = EnderFrameAPI.get().createBlockEntityState(blockEntity, "mymod:crusher");
+UIState state = EnderFrameAPI.get().stateOf(blockEntity, "mymod:crusher");
 state.onAction("toggle_power", (player, payload) ->
         state.set("running", !state.getBoolean("running", false)));
 
 // Opening adds the player as a viewer and sends the template id plus the current state.
-EnderFrameAPI.get().openBlockEntityUi(player, blockEntity, "mymod:crusher", state);
+EnderFrameAPI.get().open(player, Ui.template("mymod:crusher").at(blockEntity));
 
 // From the block entity's tick: unchanged values are not sent.
 state.set("progress", 0.42).set("status", "Crushing");
@@ -154,13 +155,53 @@ state.set("progress", 0.42).set("status", "Crushing");
 
 Inside a headless session every action that client code did not handle is sent
 to the server, and only players who are viewing the state can trigger it. A state
-from `createBlockEntityState` is closed on the tick after its block entity is
+from `stateOf` is closed on the tick after its block entity is
 removed (broken or unloaded), and the viewers' screens close with it; call
-`state.close()` yourself for any other owner. Code written against
-`WebSessionHandle` can move over gradually: `WebSessionHandle.asUIState()` and
-`UIState.asSessionHandle()` adapt one to the other.
+`state.close()` yourself for any other owner.
 
 ---
+
+### In-world screens driven by state
+
+A block screen can be fed by the same template and `UIState` instead of a server-held HTML session. Extend
+`EnderScreenBlockEntity` (see `api/template`) and return the template id; register the renderer on the client with
+`Surfaces.block(modEventBus, () -> TYPE)`.
+
+```java
+public class PanelEntity extends EnderScreenBlockEntity {
+    public PanelEntity(BlockPos pos, BlockState state) { super(TYPE.get(), pos, state); }
+
+    @Override public String getTemplateId() { return "mymod:panel"; }   // assets/mymod/enderframe_ui/panel.html
+
+    @Override protected void onScreenFormed(int width, int height) {
+        UIState state = screenState();                    // shared by every block of the screen
+        state.set("status", "idle");
+        state.onAction("toggle", (player, payload) -> state.set("status", "running"));
+    }
+}
+```
+
+A block shows nothing until it is told to draw: `EnderScreenBlockEntity.draw(level, pos)` turns the connected blocks
+into a screen. When any block of a multiblock screen is broken, the whole screen is discarded (its session is dropped,
+the state's values are forgotten, viewers drop their session) and the remaining blocks go back to showing nothing until
+`draw` is called again.
+
+Players who track the chunk see the screen; there is no "open" call. `state.set(...)` sends only the changed keys, and a
+click on the surface reaches `onAction` like it does in a screen. The layout resolution is `getPixelsPerBlock()` (64) times
+the screen size in blocks. On an in-world surface, both the attack (left) and use (right) buttons produce `click`, so
+players can press buttons without breaking the block. Inside a screen the mouse follows the browser: only the left button
+produces `click`, the right button produces `contextmenu`.
+
+The state of a template screen is saved in the master block entity's NBT and restored when the chunk loads. Override
+`onScreenState(UIState)` to set defaults for missing keys and to register `onAction` handlers; it runs every time the
+state is created, after the saved values are back:
+
+```java
+@Override protected void onScreenState(UIState state) {
+    if (state.get("status") == null) state.set("status", "idle");
+    state.onAction("toggle", (p, payload) -> state.set("status", "running"));
+}
+```
 
 ## Client-driven UI & Hybrid Execution Model
 
@@ -171,17 +212,20 @@ interoperating with server-driven sessions.
 ### Client-driven screens & HUDs
 
 ```java
+import com.nishiyu.enderframelib.api.ClientSession;
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
+import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 
-// Open a client-only screen (the first argument is its session id) and get its live Document handle
-Document doc = EnderFrameClientAPI.get().openScreen("mymod:client_menu", """
+// Open a client-only screen; the session gives the live Document and its timers
+ClientSession session = EnderFrameClientAPI.get().open(Ui.html("""
     <div id="container">
       <h1 id="title">Client Panel</h1>
       <button id="actionBtn">Click</button>
     </div>
-    """, 400, 300);
+    """).size(400, 300).session("mymod:client_menu"));
+Document doc = session.document();
 
 // Mutate the live DOM directly via standard DOM API
 Element title = doc.getElementById("title");
@@ -202,30 +246,30 @@ automatically cancelled when the document session is closed.
 
 ```java
 // Run on the next render frame (equivalent to requestAnimationFrame)
-int frameTaskId = EnderFrameClientAPI.get().requestAnimationFrame(sessionId, timestamp -> {
+int frameTaskId = session.requestAnimationFrame(timestamp -> {
     // High-frequency animation or rendering update
 });
 
 // Run after a delay in milliseconds, measured in client ticks
-int timerId = EnderFrameClientAPI.get().setTimeout(sessionId, () -> {
+int timerId = session.setTimeout(() -> {
     doc.getElementById("title").setTextContent("Delayed update");
 }, 1000);
 
-// setInterval / clearInterval, cancelAnimationFrame and clearTimeout work the same way.
+// setInterval works the same way; session.cancel(handle) cancels any of the three.
 ```
 
 ### Server-sent HTML: ownership model & mutation sync
 
-This applies to documents sent from the server as HTML (`openScreen`,
-`openDatapackScreen`, `setHud`, `WebSessionHandle`). Headless-state UIs above
+This applies to documents sent from the server as HTML (`Ui.html`,
+`Ui.datapack`, `hud`, `WebSessionHandle`). Headless-state UIs above
 are client-owned templates and need none of it.
 
 - **Single DOM**: Both client scripts and server packets operate on the single live DOM tree; there are no template/virtual copies and no diff engine.
-- **Subtree Ownership**: every subtree is either server-owned or client-owned. Declare it with `data-owner="server|client"` (inherited by descendants); without it the document default applies — **server-owned** for a document synced from the server, **client-owned** for one opened on the client only (`openScreen` / `setHud` / `loadLocalHtml`).
+- **Subtree Ownership**: every subtree is either server-owned or client-owned. Declare it with `data-owner="server|client"` (inherited by descendants); without it the document default applies — **server-owned** for a document synced from the server, **client-owned** for one opened on the client only (`EnderFrameClientAPI.open` / `hud` / `loadLocalHtml`).
   - Client code *can* write into a server-owned subtree, but the next server mutation (or a full re-sync) wins and overwrites it. This is the contract, not a limitation.
   - Server mutation records aimed at a client-owned subtree are dropped, and a re-sync keeps client-owned islands (moved to the same `id` in the new tree; they vanish only if the server removed their host).
   - A client-opened document that the server also patches must mark those subtrees `data-owner="server"`.
-- **Server Sync**: `WebSession.patchText / patchAttribute / patchStyle / patchClass / patchInnerHtml` generate fine-grained `DomMutationRecord` packets that apply directly to target nodes without tree-wide diffing.
+- **Server Sync** (internal, also behind `/enderframe patch`): `WebSession.patchText / patchAttribute / patchStyle / patchClass / patchInnerHtml` generate fine-grained `DomMutationRecord` packets that apply directly to target nodes without tree-wide diffing.
 - **Declared event forwarding**: an element forwards events to the server with `data-forward="<event>[:<payload>] …"` and `data-forward-action="<name[:arg]>"`; payload is one of `value`, `key`, `point`, `target`, `none` (default depends on the event). Client listeners run first; the event is sent only if nothing called `preventDefault()` and it actually reached the declaring element (bubbling and `stopPropagation()` apply).
   `onclick="server:name"` is sugar for the same declaration, and inputs/textareas/selects inside server-owned subtrees implicitly forward `input`/`change` values for write-back. The server only accepts action names its own DOM declared (`data-forward-action` or `server:`), and the usual `canAccess` / rate-limit checks still apply.
   The old `setForwardEventsToServer(...)` switch is gone; an unhandled action name without `server:` stays on the client.
@@ -296,9 +340,15 @@ the engine against.
 | `<mc-slot-grid cols rows gap start>` | a slot grid |
 | `<mc-inventory>` | the 3×9 main inventory plus a 9-slot hotbar |
 | `<mc-bar value min max color bg label>` | a labelled progress bar |
+| `<mc-energy value max label>` | an energy bar; the label defaults to `value / max FE` (`label="none"` hides it) |
+| `<mc-tank value max fluid label>` | a fluid tank bar tinted by `fluid` (`water`, `lava`, `milk`, `honey`); the label defaults to `value / max mB` |
 | `<mc-entity>` / `<mc-scene>` | a live entity / block scene |
 | `<mc-fluid>` | a fluid texture |
 | `<img src="item:minecraft:diamond">` | an item stack as an image |
+
+**Translations.** `{{i18n:key}}` and `data-i18n="key"` use the game's language files (`assets/<modid>/lang/*.json`).
+Arguments fill `%s` in the translation: `{{i18n:mymod.progress, percent, 'Furnace'}}` takes `percent` from the state
+(a quoted argument is a literal) and updates when it changes. `{{statusKey|i18n}}` translates a state value.
 
 **Reactive attributes** (no scripting)
 
@@ -763,13 +813,11 @@ the LGPL grant.
 
 **Headless state**
 
-- Machine UIs that sent their HTML from the server with `openScreen` and
+- Machine UIs that sent their HTML from the server with `Ui.html` and
   updated it with `WebSessionHandle.patch*` can move to `UIState`: ship the
   HTML as `assets/<namespace>/enderframe_ui/<name>.html`, replace each patched
   element with a `data-bind` / `{{key}}` binding, and call `UIState.set`
-  instead of `patch*`. `WebSessionHandle.asUIState()` and
-  `UIState.asSessionHandle()` bridge the two while you migrate. `openScreen`
-  and `WebSessionHandle` remain supported for ad-hoc HTML.
+  instead of `patch*`. `Ui.html` and `WebSessionHandle` remain for ad-hoc HTML.
 
 **Live DOM and hybrid execution**
 
@@ -779,3 +827,24 @@ the LGPL grant.
 - A re-sync recreates server-owned nodes (hover/focus/scroll state tied to the old node objects is reset); fine-grained updates should use mutation records, which keep node identity.
 - Common screen helper operations (`setTextareaValue`, `setInputValue`, `toScreenRect`, etc.) on `AbstractEnderScreen` and `AbstractEnderContainerScreen` are extracted into the `EnderScreenHost` interface; downstream code keeps full binary and source compatibility.
 - Input event synthesis (pointer, mouse, click synthesis, scroll, keys, and text editing) is centralized into `SessionInput` (`session.input()`); GUI screens and in-world screens (blocks, items, HUD) share the exact same event synthesis pipeline.
+### Holograms and items driven by state
+
+Holograms and items show a template the same way a block does: the server keeps a `UIState` and the client renders.
+
+```java
+// server: a state without a block entity, shown to a player on a 640x360 surface
+UIState board = EnderFrameAPI.get().stateOf("mymod:board", "lobby");
+board.set("title", "Welcome");
+EnderFrameAPI.get().showSurface(player, Ui.template("mymod:board").instance("lobby"), 640, 360);
+// EnderFrameAPI.get().hideSurface(player, ...) stops it
+
+// client: the session is named by the instance id
+Surfaces.hologram("lobby", Hologram.at("lobby", new Vec3(x, y, z), 2f, 1.125f).asBillboard());
+// an item: ((EnderScreenItem) TABLET.get()).createStack("lobby")
+
+// make the hologram a menu you aim at and click (hover, buttons, drags; a text field opens the same invisible input as on a block screen)
+Surfaces.hologram("lobby", Hologram.at("lobby", pos, 2f, 1.125f).asBillboard().asInteractive());
+```
+
+`showSurface` is for players you choose (who is near, who holds the item). Chunk-tracking players are handled
+automatically only for block screens.

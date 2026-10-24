@@ -18,6 +18,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,8 @@ public class EnderFrameLib {
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogout);
         NeoForge.EVENT_BUS.addListener(this::onPlayerChangedDimension);
         NeoForge.EVENT_BUS.addListener(this::onServerTick);
+        NeoForge.EVENT_BUS.addListener(this::onChunkSent);
+        NeoForge.EVENT_BUS.addListener(this::onChunkUnwatched);
         // 統合サーバーでワールドを読み直すと static 状態が丸ごと残っていた（I-6）
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onServerStopped);
@@ -83,6 +86,15 @@ public class EnderFrameLib {
         if (event.getEntity() instanceof ServerPlayer sp) {
             EnderFrameServerState.onPlayerChangedDimension(sp);
         }
+    }
+
+    /** テンプレートで動く世界内の面は、チャンクを追跡しているプレイヤーに見せる。 */
+    private void onChunkSent(ChunkWatchEvent.Sent event) {
+        EnderFrameServerState.onChunkSent(event.getPlayer(), event.getChunk());
+    }
+
+    private void onChunkUnwatched(ChunkWatchEvent.UnWatch event) {
+        EnderFrameServerState.onChunkUnwatched(event.getPlayer(), event.getLevel(), event.getPos());
     }
 
     private void onServerTick(ServerTickEvent.Post event) {

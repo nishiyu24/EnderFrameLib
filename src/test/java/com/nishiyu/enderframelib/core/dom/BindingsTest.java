@@ -47,6 +47,7 @@ public class BindingsTest {
     @AfterEach
     public void teardown() {
         Bindings.i18nResolver = key -> key;
+        Bindings.i18nFormatter = (key, args) -> key;
         Bindings.jsonListParser = null;
     }
 
@@ -66,6 +67,11 @@ public class BindingsTest {
         assertEquals("TR:gui.no", Bindings.resolve("{{@i18n:gui.no}}", data, env));
         assertEquals("TR:gui.done", Bindings.resolve("{{i18nKey|i18n}}", data, env));
         assertEquals("TR:literal.key", Bindings.resolve("{{'literal.key'|i18n}}", data, env));
+
+        // 引数つき: 状態のキーはその値、引用符つきは中身（カンマも可）
+        Bindings.i18nFormatter = (key, args) -> key + java.util.Arrays.toString(args);
+        assertEquals("m.hello[Steve, 100, a, b]", Bindings.resolve("{{i18n:m.hello, name, score, 'a, b'}}", data, env));
+        assertEquals("TR:m.plain", Bindings.resolve("{{i18n:m.plain}}", data, env));
 
         // 未知のキーはそのまま残る
         assertEquals("{{unknown}}", Bindings.resolve("{{unknown}}", data, env));

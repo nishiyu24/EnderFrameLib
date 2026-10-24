@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.server.state;
 
 import com.nishiyu.enderframelib.api.EnderFrameAPI;
+import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.state.UIState;
 import com.nishiyu.enderframelib.network.OpenUiS2CPacket;
 import com.nishiyu.enderframelib.network.StateDeltaS2CPacket;
@@ -24,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * フェーズ H3: 機械向け高水準 API のテスト。
- * EnderFrameAPI.createBlockEntityState / openUi / openBlockEntityUi の動作を検証。
+ * EnderFrameAPI.stateOf / open(Ui.template()) / open(Ui.template().at()) の動作を検証。
  */
 public class MachineStateApiTest {
 
@@ -48,14 +49,14 @@ public class MachineStateApiTest {
     }
 
     @Test
-    @DisplayName("createBlockEntityState: BlockEntity の座標から block:x,y,z 形式の instanceId で UIState が取得・作成されること")
+    @DisplayName("stateOf: BlockEntity の座標から block:x,y,z 形式の instanceId で UIState が取得・作成されること")
     void testCreateBlockEntityState() {
         EnderFrameAPI api = EnderFrameAPI.get();
         BlockPos posA = new BlockPos(100, 64, 200);
         BlockEntity beA = TestBlockEntityHelper.createMockBlockEntity(posA);
 
         String templateId = "mymod:crusher";
-        UIState stateA = api.createBlockEntityState(beA, templateId);
+        UIState stateA = api.stateOf(beA, templateId);
 
         assertNotNull(stateA, "UIState が生成されること");
         assertEquals(templateId, stateA.templateId(), "templateId が一致すること");
@@ -66,14 +67,14 @@ public class MachineStateApiTest {
         assertEquals(10000, stateA.getInt("energy", 0));
 
         // 同一 BlockEntity で再度取得した場合、既存の UIState インスタンスおよび値が保持されること
-        UIState stateA2 = api.createBlockEntityState(beA, templateId);
+        UIState stateA2 = api.stateOf(beA, templateId);
         assertSame(stateA, stateA2, "同一 BlockEntity の場合は同じ UIState が返ること");
         assertEquals(10000, stateA2.getInt("energy", 0), "設定済みの状態値が維持されていること");
 
         // 異なる座標の BlockEntity の場合は別インスタンスとなり干渉しないこと
         BlockPos posB = new BlockPos(105, 64, 200);
         BlockEntity beB = TestBlockEntityHelper.createMockBlockEntity(posB);
-        UIState stateB = api.createBlockEntityState(beB, templateId);
+        UIState stateB = api.stateOf(beB, templateId);
 
         assertNotSame(stateA, stateB, "別座標の BlockEntity は別インスタンスとなること");
         assertEquals("block:105,64,200", stateB.instanceId());
@@ -81,17 +82,17 @@ public class MachineStateApiTest {
     }
 
     @Test
-    @DisplayName("createBlockEntityState: 引数が null の場合に例外を送出すること")
+    @DisplayName("stateOf: 引数が null の場合に例外を送出すること")
     void testCreateBlockEntityStateNullChecks() {
         EnderFrameAPI api = EnderFrameAPI.get();
         BlockEntity be = TestBlockEntityHelper.createMockBlockEntity(new BlockPos(0, 0, 0));
 
-        assertThrows(RuntimeException.class, () -> api.createBlockEntityState(null, "mymod:crusher"));
-        assertThrows(RuntimeException.class, () -> api.createBlockEntityState(be, null));
+        assertThrows(RuntimeException.class, () -> api.stateOf((net.minecraft.world.level.block.entity.BlockEntity) null, "mymod:crusher"));
+        assertThrows(RuntimeException.class, () -> api.stateOf(be, null));
     }
 
     @Test
-    @DisplayName("openUi: プレイヤーが viewer に追加され初期状態パケットが送信されること")
+    @DisplayName("open(Ui.template()): プレイヤーが viewer に追加され初期状態パケットが送信されること")
     void testOpenUi() {
         EnderFrameAPI api = EnderFrameAPI.get();
         String templateId = "mymod:generator";
@@ -103,7 +104,7 @@ public class MachineStateApiTest {
 
         ServerPlayer player = TestServerPlayerHelper.createMockPlayer("Alice");
 
-        api.openUi(player, templateId, instanceId, state);
+        api.open(player, Ui.template(templateId).instance(instanceId).state(state));
 
         assertTrue(state.viewers().contains(player), "プレイヤーが viewer に追加されていること");
 
@@ -118,21 +119,21 @@ public class MachineStateApiTest {
     }
 
     @Test
-    @DisplayName("openBlockEntityUi: BlockEntity 経由で openUi が実行されパケット配信と差分同期が行われること")
+    @DisplayName("open(Ui.template().at()): BlockEntity 経由で open(Ui.template()) が実行されパケット配信と差分同期が行われること")
     void testOpenBlockEntityUiAndFlush() {
         EnderFrameAPI api = EnderFrameAPI.get();
         BlockPos pos = new BlockPos(12, 64, 48);
         BlockEntity be = TestBlockEntityHelper.createMockBlockEntity(pos);
         String templateId = "mymod:smelter";
 
-        UIState state = api.createBlockEntityState(be, templateId);
+        UIState state = api.stateOf(be, templateId);
         ((UIStateImpl) state).setPacketSender((player, packet) -> getPackets(player).add(packet));
         state.set("temperature", 200);
 
         ServerPlayer player = TestServerPlayerHelper.createMockPlayer("Bob");
 
-        // openBlockEntityUi の呼び出し
-        api.openBlockEntityUi(player, be, templateId, state);
+        // open(Ui.template().at()) の呼び出し
+        api.open(player, Ui.template(templateId).at(be).state(state));
 
         assertTrue(state.viewers().contains(player));
         assertEquals(1, getPackets(player).size());

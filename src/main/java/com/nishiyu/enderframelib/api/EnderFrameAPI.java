@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.api;
 
 import com.nishiyu.enderframelib.api.state.UIState;
-import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.ApiStatus;
@@ -19,7 +18,7 @@ import java.util.Map;
  * downstream code that compiles against {@code api} keeps compiling when those
  * change.</p>
  *
- * <p>Sessions opened through {@link #openScreen} and {@link #setHud} are
+ * <p>Sessions opened through {@link #open} and {@link #hud} without a session id are
  * <em>owned</em> by the player they were opened for: no other player can request
  * a sync of them or dispatch actions into them. Sessions created with
  * {@link #getOrCreateSession} have no owner and are reachable by anyone who can
@@ -66,35 +65,26 @@ public interface EnderFrameAPI {
     /** Drops a session, its viewer list and its owner. */
     void closeSession(String sessionId);
 
-    // ----------------------------------------------------------------- screens
+    // --------------------------------------------------------------------- ui
 
     /**
-     * Opens a full-screen UI for one player from an HTML string (Ad-hoc / Compatibility Mode).
-     * The session is created if needed and is owned by {@code player}.
+     * Opens a UI for one player. {@link Ui} says what to show: a client template driven by a
+     * {@link UIState} ({@link Ui#template}), a datapack UI ({@link Ui#datapack}) or an HTML
+     * string ({@link Ui#html}).
      *
-     * <p>For standard machine UIs and reusable interfaces, prefer using {@link #openUi} or
-     * {@link #openBlockEntityUi} with client templates and {@link com.nishiyu.enderframelib.api.state.UIState}.</p>
-     *
-     * @param sessionId session id, or {@code null}/empty to derive one from the player
+     * <p>HTML and datapack UIs create a session if needed. When no session id is given the session
+     * is owned by {@code player}: no other player can request a sync of it or dispatch actions into it.</p>
      */
-    void openScreen(ServerPlayer player, @Nullable String sessionId, String html, int width, int height);
+    void open(@NotNull ServerPlayer player, @NotNull Ui ui);
 
     /**
-     * Opens a UI declared in a datapack ({@code data/<namespace>/enderframe_ui/<path>.html}).
-     *
-     * @param uiId resource id in {@code "namespace:path"} form
+     * Installs a persistent HUD overlay for one player from an HTML UI. Without a session id the
+     * session is owned by {@code player}. Replaces the previous HUD.
      */
-    void openDatapackScreen(ServerPlayer player, String uiId, int width, int height);
+    void hud(@NotNull ServerPlayer player, @NotNull Ui.Html ui);
 
-    /**
-     * Installs a persistent HUD overlay for one player (Ad-hoc Session). The session is owned by {@code player}.
-     */
-    void setHud(ServerPlayer player, @Nullable String sessionId, String html);
-
-    /** Removes the HUD overlay previously installed with {@link #setHud}. */
-    void clearHud(ServerPlayer player);
-
-    // ----------------------------------------------------------- headless state
+    /** Removes the HUD overlay installed with {@link #hud}. */
+    void clearHud(@NotNull ServerPlayer player);
 
     /**
      * Returns the {@link UIState} of a block entity, creating it on first use.
@@ -107,39 +97,42 @@ public interface EnderFrameAPI {
      * @param be         the block entity that owns the UI
      * @param templateId the client-side template, e.g. {@code "mymod:crusher"} for
      *                   {@code assets/mymod/enderframe_ui/crusher.html}
-     * @return the state
      */
     @NotNull
-    UIState createBlockEntityState(@NotNull BlockEntity be, @NotNull String templateId);
+    UIState stateOf(@NotNull BlockEntity be, @NotNull String templateId);
 
     /**
-     * Opens a headless-state UI for a player: adds the player as a viewer of the
-     * {@link UIState} and sends the template id with the current state to the client.
-     *
-     * @param player     the player
-     * @param templateId the client-side template
-     * @param instanceId the id of this UI instance
-     * @param state      the state, or {@code null} to look it up (or create it) by
-     *                   {@code templateId} and {@code instanceId}
+     * Returns the state of a template instance that has no block entity (a hologram, an item, a shared menu),
+     * creating it when missing. It lives until {@link UIState#close()} or the server stops.
      */
-    void openUi(@NotNull ServerPlayer player, @NotNull String templateId, @NotNull String instanceId, @Nullable UIState state);
+    @NotNull
+    UIState stateOf(@NotNull String templateId, @NotNull String instanceId);
 
     /**
-     * Opens the headless-state UI of a block entity for a player. The instance id is
-     * derived from the block entity's position, as in {@link #createBlockEntityState}.
-     *
-     * @param player     the player
-     * @param be         the block entity that owns the UI
-     * @param templateId the client-side template
-     * @param state      the state, or {@code null} to look it up (or create it) with
-     *                   {@link #createBlockEntityState}
+     * Shows a template on an in-world surface that is not a block: a hologram
+     * ({@code Surfaces.hologram}) or an item ({@code EnderScreenItem}). The client builds a session of
+     * {@code width} x {@code height} pixels named by the instance id and opens no screen; point the hologram
+     * or the item's {@code SessionId} at that id. The state is the one {@link Ui.Template#state}, or the one
+     * for the instance id (created if missing). Values you {@code set} reach every player shown the surface.
      */
-    default void openBlockEntityUi(@NotNull ServerPlayer player, @NotNull BlockEntity be, @NotNull String templateId, @Nullable UIState state) {
-        if (player == null || be == null || templateId == null) return;
-        BlockPos pos = be.getBlockPos();
-        String instanceId = "block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
-        openUi(player, templateId, instanceId, state != null ? state : createBlockEntityState(be, templateId));
-    }
+    void showSurface(@NotNull ServerPlayer player, @NotNull Ui.Template ui, int width, int height);
+
+    /** Stops showing a surface started with {@link #showSurface}; the client drops its session. */
+    void hideSurface(@NotNull ServerPlayer player, @NotNull Ui.Template ui);
+
+    /**
+     * Discards the state of a block entity's template screen: viewers are told to drop their session and the
+     * values are forgotten. The next {@code stateOf} starts empty.
+     */
+    void discardSurface(@NotNull BlockEntity be);
+
+    /**
+     * Shows the template screen of a {@link WebScreenBlockEntity} (one whose
+     * {@link WebScreenBlockEntity#getTemplateId()} is not {@code null}) to every player tracking its
+     * chunk. Players who start tracking the chunk later see it without another call, so you only need
+     * this when the screen's shape changes. Does nothing for other block entities.
+     */
+    void refreshSurface(@NotNull BlockEntity be);
 
     // ------------------------------------------------------------------ pubsub
 

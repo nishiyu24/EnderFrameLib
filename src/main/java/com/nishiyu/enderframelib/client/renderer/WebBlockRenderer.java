@@ -1,16 +1,12 @@
 package com.nishiyu.enderframelib.client.renderer;
 
-import com.nishiyu.enderframelib.core.paint.model.*;
-
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
-import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
-import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceFit;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
-import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -19,9 +15,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.List;
 
 public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> implements BlockEntityRenderer<T> {
 
@@ -52,35 +47,21 @@ public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> impl
         WebMediaManager.linkScreenToSpeakers(be.getBlockPos(), be.getLinkedSpeakers());
 
         String sessionId = be.getSessionId();
-        ClientScreenInteractionManager.ensureSynced(sessionId);
-
-        SessionContext session = ClientWebManager.getSession(sessionId);
+        SessionContext session = SurfaceRenderer.open(sessionId);
         // レイアウトの画面サイズはセッションを読み込んだときの解像度。ブロックの縦×横は、それを貼る面の大きさ
         SurfaceFit fit = SurfaceGeometry.fit(session, be.getScreenWidth(), be.getScreenHeight());
         SurfaceGeometry geometry = fit.content();
-        List<DisplayItem> elementsToRender = session != null ? session.elements() : List.of();
         int lodColor = be.getLodColor();
+        if ((session == null || session.elements().isEmpty()) && lodColor == 0x00000000) return;
 
-        if ((elementsToRender == null || elementsToRender.isEmpty()) && lodColor == 0x00000000) return;
-
-        Minecraft mc = Minecraft.getInstance();
-        double camX = mc.gameRenderer.getMainCamera().getPosition().x;
-        double camY = mc.gameRenderer.getMainCamera().getPosition().y;
-        double camZ = mc.gameRenderer.getMainCamera().getPosition().z;
-        double dx = be.getBlockPos().getX() + 0.5 - camX;
-        double dy = be.getBlockPos().getY() + 0.5 - camY;
-        double dz = be.getBlockPos().getZ() + 0.5 - camZ;
-        double distSqr = dx * dx + dy * dy + dz * dz;
-
-        boolean isLodMode = distSqr > 4096.0;
-        boolean renderItems = distSqr < 1024.0, renderText = distSqr < 256.0, renderRounded = distSqr < 256.0;
-        float nearZStep = geometry.zStep();
-        float zStep = distSqr > 1024.0 ? nearZStep * 12.5f : (distSqr > 256.0 ? nearZStep * 5f : nearZStep);
-        float subZOffset = zStep * 0.5f;
+        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        double distSqr = Vec3.atCenterOf(be.getBlockPos()).distanceToSqr(camera.getPosition());
+        SurfaceStyle style = SurfaceStyle.world(packedLight, packedOverlay, distSqr)
+                .withAudio(SurfaceStyle.Audio.at(be.getBlockPos()))
+                .withLod(lodColor, distSqr);
 
         Direction facing = be.getFacing();
         if (facing == null) facing = Direction.NORTH;
-        String hoveredId = ClientScreenInteractionManager.getHoveredId(sessionId);
 
         poseStack.pushPose();
         poseStack.translate(0.5, 0.5, 0.5);
@@ -92,15 +73,7 @@ public class WebBlockRenderer<T extends BlockEntity & WebScreenBlockEntity> impl
         float scale = geometry.scale();
         poseStack.scale(scale, -scale, scale);
 
-        PaintRequest.builder(elementsToRender, geometry.paintBlocksW(), geometry.paintBlocksH(), poseStack, buffer, sessionId, be.getLevel())
-                .light(packedLight, packedOverlay)
-                .renderFlags(renderItems, renderText, renderRounded)
-                .zOffsets(zStep, subZOffset)
-                .flatLayers(true)
-                .hoveredId(hoveredId)
-                .lod(lodColor, isLodMode)
-                .audio(true, false, be.getBlockPos())
-                .render();
+        SurfaceRenderer.draw(sessionId, geometry, style, poseStack, buffer);
 
         poseStack.popPose();
     }

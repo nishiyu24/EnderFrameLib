@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,6 +25,8 @@ public final class Bindings {
     private static final Pattern COMPARE_EXPR_PATTERN = Pattern.compile("^([a-zA-Z0-9_.-]+)\\s*(==|!=|>=|<=|>|<)\\s*(.+)$");
 
     public static Function<String, String> i18nResolver = key -> key;
+    /** 引数つきの翻訳（{@code {{i18n:key, arg…}}}）。クライアントでは {@code I18n.get(key, args)} に差し替わる。 */
+    public static BiFunction<String, Object[], String> i18nFormatter = (key, args) -> key;
     public static Function<String, List<Map<String, String>>> jsonListParser = null;
 
     private Bindings() {}
@@ -58,6 +61,37 @@ public final class Bindings {
         }
     }
 
+    /** {@code key, arg1, arg2} を分ける。引用符で囲んだ引数の中のカンマは区切りにしない。 */
+    static List<String> splitI18n(String body) {
+        List<String> parts = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        char quote = 0;
+        for (char c : body.toCharArray()) {
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+                cur.append(c);
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+                cur.append(c);
+            } else if (c == ',') {
+                parts.add(cur.toString().trim());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        parts.add(cur.toString().trim());
+        return parts;
+    }
+
+    /** 引数。状態にあるキーならその値、引用符つきなら中身、それ以外は書かれたまま。 */
+    private static String i18nArg(String arg, Map<String, String> data) {
+        if (arg.length() >= 2 && (arg.charAt(0) == '\'' || arg.charAt(0) == '"') && arg.charAt(arg.length() - 1) == arg.charAt(0)) {
+            return arg.substring(1, arg.length() - 1);
+        }
+        return data != null && data.containsKey(arg) ? data.get(arg) : arg;
+    }
+
     /**
      * i18n、ローカル環境変数（@key）、およびスコープデータ（key）の展開を一元的に処理します。
      */
@@ -71,8 +105,14 @@ public final class Bindings {
             String replacement = null;
 
             if (expr.startsWith("i18n:") || expr.startsWith("@i18n:")) {
-                String i18nKey = expr.substring(expr.indexOf(':') + 1).trim();
-                replacement = i18nResolver.apply(i18nKey);
+                List<String> parts = splitI18n(expr.substring(expr.indexOf(':') + 1));
+                if (parts.size() == 1) {
+                    replacement = i18nResolver.apply(parts.get(0));
+                } else {
+                    Object[] args = new Object[parts.size() - 1];
+                    for (int i = 1; i < parts.size(); i++) args[i - 1] = i18nArg(parts.get(i), data);
+                    replacement = i18nFormatter.apply(parts.get(0), args);
+                }
             } else if (expr.contains("|") && expr.toLowerCase(Locale.ROOT).endsWith("i18n")) {
                 String rawKey = expr.substring(0, expr.indexOf('|')).trim().replaceAll("^['\"]+|['\"]+$", "");
                 String resolvedKey = data != null ? data.getOrDefault(rawKey, rawKey) : rawKey;
@@ -990,7 +1030,17 @@ public final class Bindings {
             if (text.contains("{{@")) out.add(ALWAYS);
             Matcher m = DEP_PLACEHOLDER_PATTERN.matcher(text);
             while (m.find()) {
-                addKey(m.group(1).trim(), out);
+                String expr = m.group(1).trim();
+                if (expr.startsWith("i18n:")) {
+                    // 翻訳キーは依存ではなく、引数が依存。言語が変わったときの作り直しは @lang に任せる
+                    List<String> parts = splitI18n(expr.substring(5));
+                    for (int i = 1; i < parts.size(); i++) {
+                        String arg = parts.get(i);
+                        if (!arg.startsWith("'") && !arg.startsWith("\"")) addKey(arg, out);
+                    }
+                    continue;
+                }
+                addKey(expr, out);
             }
         }
 

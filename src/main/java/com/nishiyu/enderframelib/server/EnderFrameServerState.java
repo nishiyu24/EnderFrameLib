@@ -43,6 +43,17 @@ public final class EnderFrameServerState {
         WebSessionManager.evictIdleSessions();
     }
 
+    /** チャンクがプレイヤーに送られた。中のテンプレート面を見せる。 */
+    public static void onChunkSent(ServerPlayer player, net.minecraft.world.level.chunk.LevelChunk chunk) {
+        SurfaceViewers.onChunkSent(player, chunk);
+    }
+
+    /** プレイヤーがチャンクの追跡をやめた。中のテンプレート面のセッションを捨てさせる。 */
+    public static void onChunkUnwatched(ServerPlayer player, net.minecraft.server.level.ServerLevel level,
+                                        net.minecraft.world.level.ChunkPos pos) {
+        SurfaceViewers.onChunkUnwatched(player, level, pos);
+    }
+
     /** プレイヤーのログアウト。本人に紐づく状態を全て落とす。 */
     public static void onPlayerLogout(ServerPlayer player) {
         if (player == null) return;

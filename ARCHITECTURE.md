@@ -46,9 +46,9 @@ UI は 3 つの駆動方式で開ける。どれもクライアントの**同じ
 
 | 方式 | 入口 | サーバーが持つもの | 通信 |
 |:---|:---|:---|:---|
-| **Headless State**（推奨。機械 UI など定型画面） | `EnderFrameAPI.openUi` / `openBlockEntityUi` + `UIState` | Key-Value の状態だけ（DOM ノード 0） | 初回 `OpenUiS2CPacket`（テンプレート ID + 初期状態 + キー辞書）、以後 `StateDeltaS2CPacket`（変わったキーだけを番号で。状態の破棄も知らせる）。操作は `UiActionC2SPacket` |
-| **互換モード**（Ad-hoc。HTML をサーバーから送る） | `EnderFrameAPI.openScreen` / `openDatapackScreen` / `setHud`、`WebSessionHandle.patch*` | 文書の DOM（`WebSession`） | 初回 `WebSyncS2CPacket`（DOM の直列化）、以後 `dom_mutations`（`DomMutationRecord` の列）。操作は `WebActionC2SPacket` |
-| **クライアント駆動** | `EnderFrameClientAPI.openScreen` / `setHud` | なし | 0 |
+| **Headless State**（推奨。機械 UI など定型画面） | `EnderFrameAPI.open(player, Ui.template(..))` + `UIState` | Key-Value の状態だけ（DOM ノード 0） | 初回 `OpenUiS2CPacket`（テンプレート ID + 初期状態 + キー辞書）、以後 `StateDeltaS2CPacket`（変わったキーだけを番号で。状態の破棄も知らせる）。操作は `UiActionC2SPacket` |
+| **互換モード**（Ad-hoc。HTML をサーバーから送る） | `EnderFrameAPI.open(player, Ui.html/datapack)` / `hud`、`WebSessionHandle.patch*` | 文書の DOM（`WebSession`） | 初回 `WebSyncS2CPacket`（DOM の直列化）、以後 `dom_mutations`（`DomMutationRecord` の列）。操作は `WebActionC2SPacket` |
+| **クライアント駆動** | `EnderFrameClientAPI.open` / `hud`（`ClientSession`） | なし | 0 |
 
 これに加えて、Pub/Sub（`PubSubUpdateS2CPacket` / `SubscribeC2SPacket`）がチャンネル単位の値を購読者に配る。
 
@@ -72,7 +72,6 @@ flowchart LR
 - テンプレートはクライアントのリソース（`assets/<namespace>/enderframe_ui/<path>.html`）から読む。
   テンプレート文書の既定の所有権はクライアント。
 - アクションは閲覧者であることを `UIStateManager.handleAction` が確かめ、`ServerPayloadHandler` のレート制限を通る。
-- 既存の `WebSessionHandle` 依存コードは `UIState.asSessionHandle()` / `WebSessionHandle.asUIState()` のアダプタで移行できる。
 
 ### 互換モードの同期と所有権
 
@@ -220,3 +219,11 @@ flowchart TD
 - README・CONTRIBUTING・FIDELITY・REFACTORING_PLAN・ARCHITECTURE・BENCHMARK に、消した型の名前が残っていない。
 - サーバーのセッション属性を並行マップで持たない（`WebSession` のフィールドに集約）、`EnderFrameScriptingBridge` が
   グローバルな登録簿を持たない、差分の送り方が `dom_mutations` の 1 系統である。
+
+## 面（Surface）の描画経路
+
+セッションを面に描くホスト（画面・コンテナ画面・HUD・ビルボード・ブロック・ホログラム・アイテム・地図）は、
+姿勢（`PoseStack`）だけを作って `SurfaceRenderer.draw` を呼ぶ。同期の確認・空の判定・ホバーの取得・描画パスの
+組み立ては `SurfaceRenderer` の 1 か所にあり、`PaintRequest` はその内部の値になった。描き方（ライト・描く部品・
+奥行き・音・遠距離の塗り）は `SurfaceStyle` に集まり、場所ごとの既定（`gui` / `hud` / `billboard` / `world` / `item` / `overlay`）
+から `with*` で 1 項目ずつ変える。世界に出す登録口は `client/Surfaces`（`block` / `item` / `map` / `hologram`）の 1 つ。
