@@ -128,6 +128,14 @@ public class TemplateDepsTest {
     }
 
     @Test
+    public void i18nArgumentsAreDependenciesButTheKeyIsNot() {
+        Set<String> deps = new TemplateDeps().index(parse("<div><span>{{i18n:m.progress, count, 'x'}}</span></div>"));
+        assertTrue(deps.contains("count"));
+        assertFalse(deps.contains("i18n:m.progress"));
+        assertFalse(deps.contains("m.progress"));
+    }
+
+    @Test
     public void depsPropagateToAncestorsButAlwaysDoesNotEraseSiblingPruning() {
         HtmlNode root = parse(
                 "<div>"

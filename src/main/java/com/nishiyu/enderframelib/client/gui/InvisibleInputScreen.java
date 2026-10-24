@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.client.Hologram;
+import com.nishiyu.enderframelib.client.SurfaceHit;
+import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
@@ -30,6 +33,7 @@ public class InvisibleInputScreen extends Screen {
 
     private final String sessionId;
     private final DisplayItem targetElement;
+    /** 入力欄のある面のブロック（master）。ブロックの無いホログラムでは {@code null}。 */
     private final BlockPos blockPos;
     private WebTextInputHost inputHost;
     private boolean submitted = false;
@@ -75,8 +79,8 @@ public class InvisibleInputScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        // ブロック上のUIを操作している場合、プレイヤーが画面から離れすぎたら自動で閉じる
-        if (this.blockPos != null && this.minecraft != null && this.minecraft.player != null) {
+        // 世界内のUIを操作している場合、プレイヤーが画面から離れすぎたら自動で閉じる
+        if (this.minecraft != null && this.minecraft.player != null && this.minecraft.level != null) {
             if (distanceSqrToScreen() > MAX_INTERACTION_DIST_SQR) {
                 commitAndClose();
             }
@@ -86,6 +90,11 @@ public class InvisibleInputScreen extends Screen {
     /** 目から画面全体（master から右へ幅、上へ高さ分のブロック）の箱までの距離の 2 乗。大きな画面でも、端の近くに立てば届く。 */
     private double distanceSqrToScreen() {
         Vec3 eye = this.minecraft.player.getEyePosition();
+        if (blockPos == null) {
+            Hologram hologram = HologramRenderer.find(sessionId);
+            // ホログラムが外された／置き換えられたら、離れたのと同じに扱って閉じる
+            return hologram != null ? eye.distanceToSqr(hologram.center()) : Double.MAX_VALUE;
+        }
         if (!(this.minecraft.level.getBlockEntity(blockPos) instanceof WebScreenBlockEntity screen) || screen.getFacing() == null
                 || screen.getFacing().getAxis().isVertical()) {
             return eye.distanceToSqr(Vec3.atCenterOf(blockPos));
@@ -106,13 +115,15 @@ public class InvisibleInputScreen extends Screen {
     // マウス。カーソルが自由になっているので、カーソル位置から画面上の点を求めてセッションへ転送する
     // ------------------------------------------------------------------
 
-    private SurfaceHitResolver.SurfaceHit cursorHit(double mouseX, double mouseY) {
-        return this.minecraft != null ? SurfaceHitResolver.fromCursor(this.minecraft, blockPos, mouseX, mouseY) : null;
+    private SurfaceHit cursorHit(double mouseX, double mouseY) {
+        if (this.minecraft == null) return null;
+        return blockPos != null ? SurfaceHitResolver.fromCursor(this.minecraft, blockPos, mouseX, mouseY)
+                : HologramRenderer.pickAtCursor(this.minecraft, sessionId, mouseX, mouseY);
     }
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
-        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        SurfaceHit hit = cursorHit(mouseX, mouseY);
         if (hit != null) {
             ClientScreenInteractionManager.handleHover(sessionId, hit.pixelX(), hit.pixelY());
         } else {
@@ -123,7 +134,7 @@ public class InvisibleInputScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT && button != GLFW.GLFW_MOUSE_BUTTON_RIGHT) return false;
-        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        SurfaceHit hit = cursorHit(mouseX, mouseY);
         closeOnRelease = true;
         if (hit == null) return true;
 
@@ -141,7 +152,7 @@ public class InvisibleInputScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        SurfaceHit hit = cursorHit(mouseX, mouseY);
         if (hit != null) ClientScreenInteractionManager.handleDrag(sessionId, hit.pixelX(), hit.pixelY());
         return true;
     }
@@ -149,7 +160,7 @@ public class InvisibleInputScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT && button != GLFW.GLFW_MOUSE_BUTTON_RIGHT) return false;
-        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        SurfaceHit hit = cursorHit(mouseX, mouseY);
         if (hit != null) {
             ClientScreenInteractionManager.handleRelease(sessionId, hit.pixelX(), hit.pixelY(), button, true);
         } else {

@@ -33,6 +33,16 @@ public class ClientLocalEnvProvider {
 
     static {
         Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
+        Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
+    }
+
+    public static String translateKey(String key, Object[] args) {
+        if (key == null || key.isEmpty()) return "";
+        try {
+            return I18n.get(key, args);
+        } catch (Throwable t) {
+            return key;
+        }
     }
 
     public static String translateKey(String key) {

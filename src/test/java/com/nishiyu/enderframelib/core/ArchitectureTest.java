@@ -84,7 +84,11 @@ public class ArchitectureTest {
     // server/state/UIStateSessionAdapter, server/state/WebSessionUIStateAdapter を追加。
     // 2026-10-24: 表面描画の整理（SurfaceGeometry / SurfaceHitResolver）と、外部 MOD 向けひな形 API
     // （api/template の基底クラス、ホログラム、アイテム面の設定）の追加に伴い +12。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 205;
+    // 2026-10-25: API の整理（Ui / ClientSession / Surfaces / SurfaceStyle / SurfaceRenderer / Hologram の追加、
+    // EnderScreenClient / EnderScreenItemClient / 互換アダプタ 2 つの削除）で差し引き +1。
+    // 2026-10-25: テンプレートで動く世界内の面（server/SurfaceViewers）の追加で +1。
+    // 2026-10-25: ホログラムの入力対応で SurfaceHit を client/ のトップレベルに出した（M7 準拠）ので +1。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 208;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {

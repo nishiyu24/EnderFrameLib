@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnderFrameLib - Block & Item Surface Rendering Test</title>
+    <style>
+        /* =========================================================================
+           EnderFrameLib Surface Rendering Test Suite (CSS)
+           Designed for in-world block entity screens and handheld items
+           ========================================================================= */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-base: #0a0d14;
+            --bg-card: #121824;
+            --bg-card-hover: #182234;
+            --border-color: #2a364f;
+            --accent-cyan: #00e5ff;
+            --accent-magenta: #ff007f;
+            --accent-amber: #ffb700;
+            --accent-green: #00e676;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b9bb4;
+            --text-muted: #57657e;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 12px;
+            user-select: none;
+        }
+
+        /* Root Container representing the screen surface */
+        .surface-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-base);
+            border: 2px solid var(--accent-cyan);
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        /* Calibration Corner Markers (Align / Crop / Orientation Verification) */
+        .corner-marker {
+            position: absolute;
+            font-size: 9px;
+            font-weight: 800;
+            font-family: monospace;
+            padding: 2px 4px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid currentColor;
+            z-index: 1000;
+            pointer-events: none;
+            line-height: 1;
+        }
+        .marker-tl { top: 2px; left: 2px; color: var(--accent-cyan); border-color: var(--accent-cyan); }
+        .marker-tr { top: 2px; right: 2px; color: var(--accent-magenta); border-color: var(--accent-magenta); }
+        .marker-bl { bottom: 2px; left: 2px; color: var(--accent-amber); border-color: var(--accent-amber); }
+        .marker-br { bottom: 2px; right: 2px; color: var(--accent-green); border-color: var(--accent-green); }
+
+        /* HandShift Checkbars for handheld item verification */
+        .handshift-bar {
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+            z-index: 900;
+        }
+        .handshift-top {
+            background: linear-gradient(90deg, #ff007f, #7928ca);
+            color: #ffffff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .handshift-bottom {
+            background: linear-gradient(90deg, #7928ca, #00e5ff);
+            color: #ffffff;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Header Bar */
+        .surface-header {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: #0f1523;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            gap: 8px;
+        }
+
+        .header-title-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .header-badge {
+            background: var(--accent-cyan);
+            color: #000;
+            font-weight: 900;
+            font-size: 9px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            letter-spacing: 0.5px;
+        }
+
+        .header-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: 0.5px;
+        }
+
+        .header-info-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        .clock-display {
+            background: #1a2336;
+            color: var(--accent-green);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #2a3a5a;
+        }
+
+        /* Main Workspace Grid */
+        .surface-workspace {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 6px;
+            padding: 6px;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* Test Section Card */
+        .test-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            padding: 6px 8px;
+            gap: 4px;
+            min-height: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 3px;
+            margin-bottom: 2px;
+            flex-shrink: 0;
+        }
+
+        .card-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .card-badge {
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-weight: 700;
+            font-family: monospace;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+        }
+
+        /* -------------------------------------------------------------
+           PANEL 1: DISTANCE LOD PIPELINE TEST
+           ------------------------------------------------------------- */
+        .lod-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .lod-stage {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid #1f2b40;
+            border-radius: 4px;
+            padding: 3px 6px;
+            gap: 6px;
+        }
+
+        .lod-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4a5568;
+            flex-shrink: 0;
+        }
+        .lod-stage-1 .lod-indicator { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+        .lod-stage-2 .lod-indicator { background: var(--accent-cyan); }
+        .lod-stage-3 .lod-indicator { background: var(--accent-amber); }
+        .lod-stage-4 .lod-indicator { background: var(--accent-magenta); }
+
+        .lod-info {
+            display: flex;
+            flex-direction: column;
+            width: 70px;
+            flex-shrink: 0;
+        }
+        .lod-range { font-size: 9px; font-weight: 700; font-family: monospace; color: #fff; }
+        .lod-target { font-size: 8px; color: var(--text-muted); }
+
+        .lod-content-box {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow: hidden;
+        }
+
+        /* Sub-tests inside LOD */
+        .font-sample-1 { font-size: 8px; color: #cbd5e1; }
+        .font-sample-2 { font-size: 11px; font-weight: bold; color: #fff; }
+        .rounded-sample {
+            padding: 2px 6px;
+            background: #3b82f6;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 9px;
+            font-weight: bold;
+        }
+
+        .item-icon-sample {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .checker-box {
+            width: 100%;
+            height: 14px;
+            background: repeating-linear-gradient(45deg, #1e293b, #1e293b 6px, #0f172a 6px, #0f172a 12px);
+            border: 1px solid #334155;
+            border-radius: 2px;
+        }
+
+        /* -------------------------------------------------------------
+           PANEL 2: RAYCAST HOVER & SURFACE INTERACTION
+           ------------------------------------------------------------- */
+        .interaction-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+        }
+
+        .btn-surface {
+            flex: 1;
+            background: #1e293b;
+            color: var(--text-primary);
+            border: 1px solid #3b4d6e;
+            border-radius: 4px;
+            padding: 4px 6px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+
+        /* Hover effect triggered by in-world crosshair raycast or mouse */
+        .btn-surface:hover, .btn-surface.hovered {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #60a5fa;
+            box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
+            transform: scale(1.02);
+        }
+
+        .btn-surface:active {
+            background: #1d4ed8;
+            transform: scale(0.98);
+        }
+
+        .btn-toggle.active {
+            background: #059669;
+            border-color: #34d399;
+            color: #ffffff;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+        }
+
+        .input-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .input-label {
+            font-size: 9px;
+            color: var(--text-secondary);
+        }
+
+        .text-input-surface {
+            width: 100%;
+            background: #0b101b;
+            border: 1px solid #2a3a56;
+            border-radius: 4px;
+            color: #fff;
+            padding: 3px 6px;
+            font-size: 10px;
+            font-family: inherit;
+        }
+
+        .text-input-surface:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-surface {
+            flex: 1;
+            accent-color: var(--accent-cyan);
+            cursor: pointer;
+        }
+
+        .slider-val {
+            width: 28px;
+            font-family: monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            text-align: right;
+        }
+
+        /* -------------------------------------------------------------
+           PANEL 3: HELD ITEM & ERGONOMICS
+           ------------------------------------------------------------- */
+        .ergonomics-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .dual-hand-box {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #26334a;
+            border-radius: 4px;
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .hand-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 2px;
+            background: #141d2d;
+            border-radius: 3px;
+            border: 1px solid #2b3d5b;
+            text-align: center;
+        }
+
+        .hand-card.right-hand {
+            border-color: var(--accent-cyan);
+        }
+
+        .hand-card.left-hand {
+            border-color: var(--accent-magenta);
+        }
+
+        .hand-name {
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        .right-hand .hand-name { color: var(--accent-cyan); }
+        .left-hand .hand-name { color: var(--accent-magenta); }
+
+        .hand-offset {
+            font-size: 8px;
+            font-family: monospace;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        .handshift-demo-box {
+            background: #111726;
+            border: 1px dashed #3a4a68;
+            border-radius: 4px;
+            padding: 4px 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .handshift-desc {
+            font-size: 9px;
+            color: var(--text-secondary);
+            line-height: 1.25;
+        }
+
+        .handshift-value {
+            font-family: monospace;
+            font-size: 9px;
+            font-weight: bold;
+            color: var(--accent-amber);
+        }
+
+        /* -------------------------------------------------------------
+           PANEL 4: MOTION & 3D SPATIAL AUDIO
+           ------------------------------------------------------------- */
+        .motion-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .motion-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Radar scan spinner */
+        .radar-box {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid var(--accent-cyan);
+            position: relative;
+            background: radial-gradient(circle, rgba(0, 229, 255, 0.1) 0%, transparent 70%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .radar-sweep {
+            position: absolute;
+            width: 50%;
+            height: 50%;
+            top: 0;
+            right: 0;
+            background: linear-gradient(45deg, rgba(0, 229, 255, 0.8), transparent 70%);
+            transform-origin: 0% 100%;
+            animation: radar-spin 2s linear infinite;
+        }
+
+        @keyframes radar-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .radar-blip {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 4px #fff;
+        }
+
+        .progress-box {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .progress-bar-bg {
+            height: 8px;
+            background: #1a2336;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #2d3b54;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 45%;
+            background: linear-gradient(90deg, #3b82f6, #00e5ff);
+            border-radius: 3px;
+            animation: progress-pulse 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes progress-pulse {
+            0% { width: 15%; }
+            100% { width: 95%; }
+        }
+
+        .audio-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        .btn-audio {
+            flex: 1;
+            background: #1c273a;
+            border: 1px solid #334460;
+            border-radius: 4px;
+            color: #cbd5e1;
+            padding: 3px 4px;
+            font-size: 9px;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .btn-audio:hover {
+            background: #2a3a56;
+            color: #fff;
+            border-color: var(--accent-cyan);
+        }
+
+        /* Footer Bar */
+        .surface-footer {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 10px;
+            background: #0d121c;
+            border-top: 1px solid var(--border-color);
+            flex-shrink: 0;
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+
+        .preset-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        .btn-preset {
+            background: #182234;
+            border: 1px solid #28374f;
+            color: var(--text-secondary);
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-size: 8.5px;
+            cursor: pointer;
+        }
+
+        .btn-preset.active {
+            background: var(--accent-cyan);
+            color: #000;
+            font-weight: 700;
+            border-color: var(--accent-cyan);
+        }
+
+        /* Simulated Presets for Browser Testing */
+        body.preset-block-1x1 .surface-container { width: 512px; height: 512px; margin: auto; }
+        body.preset-block-2x1 .surface-container { width: 1024px; height: 512px; margin: auto; }
+        body.preset-tablet .surface-container { width: 640px; height: 480px; margin: auto; }
+        body.preset-phone .surface-container { width: 380px; height: 640px; margin: auto; }
+    </style>
+</head>
+<body class="preset-block-1x1">
+
+<div class="surface-container" id="surfaceRoot">
+    <!-- 1. Corner Calibration Markers (Orientation, UV Boundary & Aspect Ratio) -->
+    <div class="corner-marker marker-tl">[TL 0,0]</div>
+    <div class="corner-marker marker-tr">[TR W,0]</div>
+    <div class="corner-marker marker-bl">[BL 0,H]</div>
+    <div class="corner-marker marker-br">[BR W,H]</div>
+
+    <!-- 2. HandShift Top Margin Indicator -->
+    <div class="handshift-bar handshift-top">
+        ▲ TOP MARGIN GAUGE (HandShift Inspection Bar) ▲
+    </div>
+
+    <!-- 3. Header Bar -->
+    <div class="surface-header">
+        <div class="header-title-group">
+            <span class="header-badge">SURFACE</span>
+            <span class="header-title">EnderFrame Surface Lab</span>
+        </div>
+        <div class="header-info-group">
+            <span class="clock-display" id="clockDisplay">12:00:00.000</span>
+            <span id="sessionDisplay" style="color:var(--text-secondary);">ID: surface_test</span>
+        </div>
+    </div>
+
+    <!-- 4. Main 2x2 Grid Workspace -->
+    <div class="surface-workspace">
+
+        <!-- PANEL 1: Distance LOD Pipeline -->
+        <div class="test-card">
+            <div class="card-header">
+                <span class="card-title">📡 1. Distance LOD Pipeline</span>
+                <span class="card-badge">B-03〜B-05</span>
+            </div>
+            <div class="lod-container">
+                <!-- Stage 1 (<16m): Text & Rounded Corners -->
+                <div class="lod-stage lod-stage-1">
+                    <div class="lod-indicator"></div>
+                    <div class="lod-info">
+                        <span class="lod-range">&lt; 16m</span>
+                        <span class="lod-target">Text &amp; Radius</span>
+                    </div>
+                    <div class="lod-content-box">
+                        <span class="font-sample-1">8px text</span>
+                        <span class="font-sample-2">11px bold</span>
+                        <span class="rounded-sample">radius: 8px</span>
+                    </div>
+                </div>
+
+                <!-- Stage 2 (16m-32m): Item Sprites -->
+                <div class="lod-stage lod-stage-2">
+                    <div class="lod-indicator"></div>
+                    <div class="lod-info">
+                        <span class="lod-range">16m-32m</span>
+                        <span class="lod-target">Items &amp; Icons</span>
+                    </div>
+                    <div class="lod-content-box">
+                        <img class="item-icon-sample" src="item:minecraft:nether_star" alt="star" onerror="this.style.background='#38bdf8';">
+                        <img class="item-icon-sample" src="item:minecraft:diamond_sword" alt="sword" onerror="this.style.background='#00e5ff';">
+                        <img class="item-icon-sample" src="item:minecraft:enchanted_golden_apple" alt="apple" onerror="this.style.background='#facc15';">
+                        <span style="font-size:9px; color:#94a3b8;">Items persist up to 32m</span>
+                    </div>
+                </div>
+
+                <!-- Stage 3 (32m-64m): High-Contrast Geometry & zStep -->
+                <div class="lod-stage lod-stage-3">
+                    <div class="lod-indicator"></div>
+                    <div class="lod-info">
+                        <span class="lod-range">32m-64m</span>
+                        <span class="lod-target">zStep 0.25f</span>
+                    </div>
+                    <div class="lod-content-box">
+                        <div class="checker-box" title="Check for z-fighting artifacts"></div>
+                    </div>
+                </div>
+
+                <!-- Stage 4 (>64m): lodColor Tint -->
+                <div class="lod-stage lod-stage-4">
+                    <div class="lod-indicator"></div>
+                    <div class="lod-info">
+                        <span class="lod-range">&gt; 64m</span>
+                        <span class="lod-target">lodColor</span>
+                    </div>
+                    <div class="lod-content-box">
+                        <span style="font-size:9px; color:#f43f5e; font-weight:bold;">Fallback Solid ARGB Color</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 2: Raycast Hover & Touch Interaction -->
+        <div class="test-card">
+            <div class="card-header">
+                <span class="card-title">🎯 2. Raycast &amp; Interaction</span>
+                <span class="card-badge">B-06, B-07</span>
+            </div>
+            <div class="interaction-container">
+                <div class="button-row">
+                    <button class="btn-surface" id="btnHoverTarget" data-sound="minecraft:ui.button.click">
+                        <span>👁️ HOVER</span>
+                    </button>
+                    <button class="btn-surface btn-toggle" id="btnToggle" data-sound="minecraft:block.lever.click">
+                        <span>⚡ TOGGLE: <b id="toggleStateText">OFF</b></span>
+                    </button>
+                    <button class="btn-surface" id="btnClickCount" data-sound="minecraft:ui.button.click">
+                        <span>👆 <b id="clickCountNum">0</b></span>
+                    </button>
+                </div>
+
+                <div class="input-row">
+                    <span class="input-label">Raycast Virtual Text Input (Right-Click in-world):</span>
+                    <input class="text-input-surface" id="surfaceTextInput" type="text" value="Surface Input Test" placeholder="Look & Click to Type...">
+                </div>
+
+                <div class="slider-row">
+                    <span class="input-label" style="width:42px;">Gauge:</span>
+                    <input class="slider-surface" id="surfaceSlider" type="range" min="0" max="100" value="65">
+                    <span class="slider-val" id="sliderValDisplay">65%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 3: Handheld Ergonomics & Dual-Wield -->
+        <div class="test-card">
+            <div class="card-header">
+                <span class="card-title">📱 3. Handheld Ergonomics</span>
+                <span class="card-badge">H-01〜H-04</span>
+            </div>
+            <div class="ergonomics-container">
+                <div class="dual-hand-box">
+                    <div class="hand-card right-hand">
+                        <span class="hand-name">Main Hand</span>
+                        <span class="hand-offset">Z-Shift: +0.08f (Front)</span>
+                    </div>
+                    <div class="hand-card left-hand">
+                        <span class="hand-name">Off Hand</span>
+                        <span class="hand-offset">Z-Shift: -0.08f (Back)</span>
+                    </div>
+                </div>
+                <div class="handshift-demo-box">
+                    <span class="handshift-desc">
+                        <b>applyFirstPersonHandShift:</b> When looking downwards (pitch 0°→90°), the screen shifts up (Y+0.3f) so bottom gauges remain fully visible.
+                    </span>
+                    <span class="handshift-value" id="pitchSimDisplay">Pitch: 0.0° | Y-Shift: 0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 4: Motion & 3D Spatial Audio -->
+        <div class="test-card">
+            <div class="card-header">
+                <span class="card-title">🔊 4. Motion &amp; Spatial Audio</span>
+                <span class="card-badge">B-08, H-05</span>
+            </div>
+            <div class="motion-container">
+                <div class="motion-row">
+                    <div class="radar-box">
+                        <div class="radar-sweep"></div>
+                        <div class="radar-blip"></div>
+                    </div>
+                    <div class="progress-box">
+                        <div style="display:flex; justify-content:space-between; font-size:9px; color:var(--text-secondary);">
+                            <span>CSS Keyframe 60fps</span>
+                            <span id="motionFpsText">Active</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="audio-buttons">
+                    <button class="btn-audio" id="btnAudioBlock" data-sound="minecraft:block.note_block.bell" data-sound-pitch="1.0">
+                        🔔 Play 3D Audio (Block)
+                    </button>
+                    <button class="btn-audio" id="btnAudioItem" data-sound="minecraft:ui.toast.challenge_complete" data-sound-pitch="1.2">
+                        🎧 Play 2D Audio (Item)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 5. HandShift Bottom Margin Indicator -->
+    <div class="handshift-bar handshift-bottom">
+        ▼ BOTTOM MARGIN GAUGE (HandShift Inspection Bar) ▼
+    </div>
+
+    <!-- 6. Footer & Presets (Useful for standalone browser testing) -->
+    <div class="surface-footer">
+        <span>Aspect Grid: 1x1 / 2x1 / 16:9</span>
+        <div class="preset-buttons">
+            <button class="btn-preset active" onclick="setPreset('preset-block-1x1', this)">1x1 Block</button>
+            <button class="btn-preset" onclick="setPreset('preset-block-2x1', this)">2x1 Screen</button>
+            <button class="btn-preset" onclick="setPreset('preset-tablet', this)">Tablet</button>
+            <button class="btn-preset" onclick="setPreset('preset-phone', this)">Phone</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* =========================================================================
+       EnderFrame Surface Lab Client Logic
+       Supports both in-game interaction and standalone browser simulation
+       ========================================================================= */
+
+    // 1. Digital Clock & Sub-second timer
+    function updateClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        const ms = String(now.getMilliseconds()).padStart(3, '0');
+        const el = document.getElementById('clockDisplay');
+        if (el) el.textContent = `${h}:${m}:${s}.${ms}`;
+    }
+    setInterval(updateClock, 33);
+    updateClock();
+
+    // 2. Interactive Toggle Switch
+    let isToggled = false;
+    const btnToggle = document.getElementById('btnToggle');
+    const toggleStateText = document.getElementById('toggleStateText');
+    if (btnToggle && toggleStateText) {
+        btnToggle.addEventListener('click', () => {
+            isToggled = !isToggled;
+            if (isToggled) {
+                btnToggle.classList.add('active');
+                toggleStateText.textContent = 'ON';
+            } else {
+                btnToggle.classList.remove('active');
+                toggleStateText.textContent = 'OFF';
+            }
+        });
+    }
+
+    // 3. Click Counter
+    let clickCount = 0;
+    const btnClickCount = document.getElementById('btnClickCount');
+    const clickCountNum = document.getElementById('clickCountNum');
+    if (btnClickCount && clickCountNum) {
+        btnClickCount.addEventListener('click', () => {
+            clickCount++;
+            clickCountNum.textContent = clickCount;
+        });
+    }
+
+    // 4. Slider Gauge
+    const surfaceSlider = document.getElementById('surfaceSlider');
+    const sliderValDisplay = document.getElementById('sliderValDisplay');
+    if (surfaceSlider && sliderValDisplay) {
+        surfaceSlider.addEventListener('input', (e) => {
+            sliderValDisplay.textContent = e.target.value + '%';
+        });
+    }
+
+    // 5. Standalone Web Audio Synth for Browser Preview
+    function playTone(freq, duration, isStereo) {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        } catch(e) {}
+    }
+
+    const btnAudioBlock = document.getElementById('btnAudioBlock');
+    if (btnAudioBlock) {
+        btnAudioBlock.addEventListener('click', () => playTone(440, 0.4, false));
+    }
+    const btnAudioItem = document.getElementById('btnAudioItem');
+    if (btnAudioItem) {
+        btnAudioItem.addEventListener('click', () => playTone(880, 0.25, true));
+    }
+
+    // 6. Viewport Presets for Browser Preview
+    function setPreset(className, btn) {
+        document.body.className = className;
+        document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+    }
+</script>
+
+</body>
+</html>

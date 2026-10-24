@@ -21,7 +21,7 @@ import java.util.function.BiConsumer;
  * {@link #flush()}. In the template, values are read with {@code {{key}}},
  * {@code data-bind}, {@code data-if} and the other binding attributes.</p>
  *
- * <p>Obtain one through {@code EnderFrameAPI.createBlockEntityState} and show it with
+ * <p>Obtain one through {@code EnderFrameAPI.stateOf} and show it with
  * {@code EnderFrameAPI.openUi} / {@code openBlockEntityUi}. All methods are expected
  * to be called from the server thread.</p>
  */
@@ -114,6 +114,15 @@ public interface UIState extends AutoCloseable {
     CompoundTag toCompoundTag();
 
     /**
+     * Sets every entry of {@code tag} (the counterpart of {@link #toCompoundTag()}), so a state saved to NBT
+     * can be restored. Entries are changes like any {@link #set}: viewers receive them.
+     *
+     * @return this state, for chaining
+     */
+    @NotNull
+    UIState load(@NotNull CompoundTag tag);
+
+    /**
      * Adds a viewer. The player immediately receives the template id and the current
      * state, and from then on every change.
      *
@@ -128,6 +137,17 @@ public interface UIState extends AutoCloseable {
      * @param player the player to remove
      */
     void removeViewer(@NotNull ServerPlayer player);
+
+    /**
+     * Adds a viewer that sees this state on an in-world surface (a block screen, for example) instead of
+     * in a screen: the client builds the template into a session of {@code width} x {@code height} pixels
+     * and opens nothing. The viewer is a viewer for every other purpose too, so it can trigger actions.
+     * Calling it again for the same player re-sends the state, which resizes the session.
+     */
+    void addSurfaceViewer(@NotNull ServerPlayer player, int width, int height);
+
+    /** Removes a viewer added with {@link #addSurfaceViewer} and tells its client to drop the session. */
+    void removeSurfaceViewer(@NotNull ServerPlayer player);
 
     /**
      * Returns the current viewers.
@@ -170,20 +190,9 @@ public interface UIState extends AutoCloseable {
     /**
      * Discards this state and removes it from the registry. Viewers that still have the
      * screen open are told to close it. A state from
-     * {@code EnderFrameAPI.createBlockEntityState} is closed automatically once its block
+     * {@code EnderFrameAPI.stateOf} is closed automatically once its block
      * entity is removed; call this for other owners when they go away.
      */
     @Override
     void close();
-
-    /**
-     * Returns an adapter for code written against {@link WebSessionHandle}: calls such
-     * as {@code patchText} on it are routed to {@link #set}.
-     *
-     * @return the adapter, or {@code null} when this implementation has none
-     */
-    @Nullable
-    default WebSessionHandle asSessionHandle() {
-        return null;
-    }
 }

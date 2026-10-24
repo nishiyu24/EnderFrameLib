@@ -7,7 +7,9 @@ import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.api.ClientSession;
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
+import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
@@ -122,6 +124,7 @@ public class EnderFrameClientInit {
         };
 
         Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
+        Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
         Bindings.jsonListParser = jsonStr -> {
             try {
                 com.google.gson.JsonElement parsedJson = com.google.gson.JsonParser.parseString(jsonStr);
@@ -247,6 +250,15 @@ public class EnderFrameClientInit {
     }
 
     public static void handleOpenUiPacket(String templateId, String instanceId, CompoundTag initialState) {
+        handleOpenUiPacket(templateId, instanceId, initialState, 0, 0);
+    }
+
+    /**
+     * @param surfaceWidth  0 より大きければ世界内の面への展開。画面は開かず、セッションをこの解像度（px）で作る
+     * @param surfaceHeight 面の高さ（px）
+     */
+    public static void handleOpenUiPacket(String templateId, String instanceId, CompoundTag initialState,
+                                          int surfaceWidth, int surfaceHeight) {
         if (templateId == null || instanceId == null) return;
         com.nishiyu.enderframelib.client.template.ParsedTemplate template = ClientTemplateManager.getTemplate(templateId);
         if (template == null) {
@@ -257,16 +269,21 @@ public class EnderFrameClientInit {
         SessionContext session = ClientWebManager.getOrCreateSession(instanceId);
         session.setServerManaged(false);
         session.setHeadlessState(true);
+        boolean surface = surfaceWidth > 0 && surfaceHeight > 0;
+        if (surface) {
+            session.setRootW(surfaceWidth);
+            session.setRootH(surfaceHeight);
+        }
 
         com.nishiyu.enderframelib.common.Document doc = template.instantiate(session.rootW(), session.rootH());
         session.loadTemplateDocument(doc);
 
         ReactiveStateStore store = session.stateStore();
-        if (initialState != null && !initialState.isEmpty()) {
-            applyCompoundTagToStore(store, initialState);
-        } else {
-            store.syncToDom();
-        }
+        // 同じインスタンスを開き直すと、ストアは前の値を覚えたまま。値が同じでも、新しい文書に当て直す
+        store.markAllDirty();
+        if (initialState != null && !initialState.isEmpty()) applyCompoundTagToStore(store, initialState);
+        store.syncToDom();
+        if (surface) return;
 
         try {
             Minecraft mc = Minecraft.getInstance();
@@ -371,10 +388,11 @@ public class EnderFrameClientInit {
         }
 
         @Override
-        public Document openScreen(@Nullable String sessionId, String html, int width, int height) {
-            String id = sanitizeSessionId(sessionId, "client_screen");
-            int targetW = width > 0 ? width : 854;
-            int targetH = height > 0 ? height : 480;
+        public ClientSession open(Ui.Html ui) {
+            String id = sanitizeSessionId(ui.sessionId(), "client_screen");
+            int targetW = ui.width() > 0 ? ui.width() : 854;
+            int targetH = ui.height() > 0 ? ui.height() : 480;
+            String html = ui.html();
 
             SessionContext session = ClientWebManager.getOrCreateSession(id);
             session.loadLocalHtml(html, targetW, targetH);
@@ -392,62 +410,62 @@ public class EnderFrameClientInit {
                     mc.setScreen(screen);
                 });
             }
-
-            return session.domDocument();
+            return new Handle(id);
         }
 
         @Override
-        public Document setHud(@Nullable String sessionId, String html) {
-            String id = sanitizeSessionId(sessionId, "client_hud");
+        public ClientSession hud(Ui.Html ui) {
+            String id = sanitizeSessionId(ui.sessionId(), "client_hud");
             SessionContext session = ClientWebManager.getOrCreateSession(id);
-            session.loadLocalHtml(html, 1280, 720);
+            session.loadLocalHtml(ui.html(), ui.width() > 0 ? ui.width() : 1280, ui.height() > 0 ? ui.height() : 720);
             session.setServerManaged(false);
             WebHudRenderer.customActiveHudSessionId = id;
-            return session.domDocument();
+            return new Handle(id);
         }
 
         @Nullable
         @Override
-        public Document getDocument(String sessionId) {
-            if (sessionId == null || sessionId.isEmpty()) return null;
-            SessionContext session = ClientWebManager.getSession(sessionId);
-            return session != null ? session.domDocument() : null;
+        public ClientSession find(String sessionId) {
+            if (sessionId == null || sessionId.isEmpty() || ClientWebManager.getSession(sessionId) == null) return null;
+            return new Handle(sessionId);
         }
 
-        @Override
-        public void closeSession(String sessionId) {
-            if (sessionId == null || sessionId.isEmpty()) return;
-            ClientWebManager.clearSession(sessionId);
-        }
+        /** セッション ID に結びついた操作の束。DOM は呼ぶたびにセッションから引く（再読み込みで差し替わるため）。 */
+        private record Handle(String id) implements ClientSession {
 
-        @Override
-        public int requestAnimationFrame(String sessionId, Consumer<Double> callback) {
-            return ClientScheduler.requestAnimationFrame(sessionId, callback);
-        }
+            @Override
+            public Document document() {
+                SessionContext session = ClientWebManager.getSession(id);
+                if (session == null) throw new IllegalStateException("client session is closed: " + id);
+                return session.domDocument();
+            }
 
-        @Override
-        public boolean cancelAnimationFrame(int id) {
-            return ClientScheduler.cancelAnimationFrame(id);
-        }
+            @Override
+            public int requestAnimationFrame(Consumer<Double> callback) {
+                return ClientScheduler.requestAnimationFrame(id, callback);
+            }
 
-        @Override
-        public int setTimeout(String sessionId, Runnable task, long delayMs) {
-            return ClientScheduler.setTimeout(sessionId, task, delayMs);
-        }
+            @Override
+            public int setTimeout(Runnable task, long delayMs) {
+                return ClientScheduler.setTimeout(id, task, delayMs);
+            }
 
-        @Override
-        public boolean clearTimeout(int id) {
-            return ClientScheduler.clearTimeout(id);
-        }
+            @Override
+            public int setInterval(Runnable task, long intervalMs) {
+                return ClientScheduler.setInterval(id, task, intervalMs);
+            }
 
-        @Override
-        public int setInterval(String sessionId, Runnable task, long intervalMs) {
-            return ClientScheduler.setInterval(sessionId, task, intervalMs);
-        }
+            @Override
+            public boolean cancel(int handle) {
+                return ClientScheduler.cancelAnimationFrame(handle)
+                        || ClientScheduler.clearTimeout(handle)
+                        || ClientScheduler.clearInterval(handle);
+            }
 
-        @Override
-        public boolean clearInterval(int id) {
-            return ClientScheduler.clearInterval(id);
+            @Override
+            public void close() {
+                ClientWebManager.clearSession(id);
+            }
         }
     }
 }

@@ -200,6 +200,12 @@ public class ReactiveStateStore {
         }
     }
 
+    /** 文書を作り直したとき用。値が変わっていなくても、次の {@link #syncToDom()} で全体を当て直させる。 */
+    public void markAllDirty() {
+        dirty = true;
+        dirtyKeys.add(DEP_ALWAYS);
+    }
+
     public void syncToDom() {
         pollBoundSuppliers();
         if (!dirty) return;

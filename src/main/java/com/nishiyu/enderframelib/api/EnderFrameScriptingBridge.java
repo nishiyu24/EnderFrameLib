@@ -21,17 +21,17 @@ public class EnderFrameScriptingBridge {
 
     /** Opens a screen for one player from an HTML string. The session is owned by that player. */
     public static void openHtmlScreen(ServerPlayer player, String sessionId, String html, int width, int height) {
-        EnderFrameAPI.get().openScreen(player, sessionId, html, width, height);
+        EnderFrameAPI.get().open(player, Ui.html(html).size(width, height).session(sessionId));
     }
 
     /** Opens a datapack UI ({@code "namespace:path"}) for one player. */
     public static void openDatapackScreen(ServerPlayer player, String uiId, int width, int height) {
-        EnderFrameAPI.get().openDatapackScreen(player, uiId, width, height);
+        EnderFrameAPI.get().open(player, Ui.datapack(uiId).size(width, height));
     }
 
     /** Installs a persistent HUD overlay for one player (no helmet required). */
     public static void setCustomHud(ServerPlayer player, String sessionId, String html) {
-        EnderFrameAPI.get().setHud(player, sessionId, html);
+        EnderFrameAPI.get().hud(player, Ui.html(html).session(sessionId));
     }
 
     /** Removes the HUD overlay installed with {@link #setCustomHud}. */
@@ -99,73 +99,18 @@ public class EnderFrameScriptingBridge {
     // Client-side scripting API (R3)
     // ==========================================
 
-    /**
-     * Opens a local screen on the client and returns its DOM {@link com.nishiyu.enderframelib.api.dom.Document}.
-     */
-    public static com.nishiyu.enderframelib.api.dom.Document openClientHtmlScreen(String sessionId, String html, int width, int height) {
-        return EnderFrameClientAPI.get().openScreen(sessionId, html, width, height);
+    /** Opens a local screen on the client. The returned session gives the DOM and its timers. */
+    public static ClientSession openClientHtmlScreen(String sessionId, String html, int width, int height) {
+        return EnderFrameClientAPI.get().open(Ui.html(html).size(width, height).session(sessionId));
     }
 
-    /**
-     * Installs a persistent HUD overlay on the client and returns its DOM {@link com.nishiyu.enderframelib.api.dom.Document}.
-     */
-    public static com.nishiyu.enderframelib.api.dom.Document setClientCustomHud(String sessionId, String html) {
-        return EnderFrameClientAPI.get().setHud(sessionId, html);
+    /** Installs a persistent HUD overlay on the client. */
+    public static ClientSession setClientCustomHud(String sessionId, String html) {
+        return EnderFrameClientAPI.get().hud(Ui.html(html).session(sessionId));
     }
 
-    /**
-     * Returns the DOM {@link com.nishiyu.enderframelib.api.dom.Document} for a client-side session.
-     */
-    public static com.nishiyu.enderframelib.api.dom.Document getClientDocument(String sessionId) {
-        return EnderFrameClientAPI.get().getDocument(sessionId);
-    }
-
-    /**
-     * Closes a client-side session.
-     */
-    public static void closeClientSession(String sessionId) {
-        EnderFrameClientAPI.get().closeSession(sessionId);
-    }
-
-    /**
-     * Schedules an animation frame callback before the next paint frame (equivalent to {@code window.requestAnimationFrame}).
-     */
-    public static int requestAnimationFrame(String sessionId, java.util.function.Consumer<Double> callback) {
-        return EnderFrameClientAPI.get().requestAnimationFrame(sessionId, callback);
-    }
-
-    /**
-     * Cancels an animation frame callback.
-     */
-    public static boolean cancelAnimationFrame(int id) {
-        return EnderFrameClientAPI.get().cancelAnimationFrame(id);
-    }
-
-    /**
-     * Schedules a one-off task to execute after the specified delay in milliseconds (equivalent to {@code setTimeout}).
-     */
-    public static int setTimeout(String sessionId, Runnable task, long delayMs) {
-        return EnderFrameClientAPI.get().setTimeout(sessionId, task, delayMs);
-    }
-
-    /**
-     * Cancels a timeout task.
-     */
-    public static boolean clearTimeout(int id) {
-        return EnderFrameClientAPI.get().clearTimeout(id);
-    }
-
-    /**
-     * Schedules a repeating task to execute at the specified interval in milliseconds (equivalent to {@code setInterval}).
-     */
-    public static int setInterval(String sessionId, Runnable task, long intervalMs) {
-        return EnderFrameClientAPI.get().setInterval(sessionId, task, intervalMs);
-    }
-
-    /**
-     * Cancels an interval task.
-     */
-    public static boolean clearInterval(int id) {
-        return EnderFrameClientAPI.get().clearInterval(id);
+    /** Returns a client-side session, or {@code null} when there is none. */
+    public static ClientSession getClientSession(String sessionId) {
+        return EnderFrameClientAPI.get().find(sessionId);
     }
 }

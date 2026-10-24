@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>EnderFrame Media Lab - Video & Media Test Suite</title>
+</head>
+<style>
+    /* =========================================================================
+       EnderFrame Media Lab - Video & Media Test Suite Stylesheet
+       ========================================================================= */
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    html, body {
+        height: 100%;
+        width: 100%;
+        background-color: #0b0f19;
+        color: #f1f5f9;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+
+    /* Container Layout */
+    .lab-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        padding: 14px;
+        gap: 14px;
+        background-color: #0b0f19;
+        min-height: 0;
+    }
+
+    /* 1. Header Bar */
+    .lab-header {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #1e1e38, #0f172a);
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 10px 16px;
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        flex-shrink: 0;
+    }
+
+    .brand-group {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .brand-icon-box {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        border: 1px solid #38bdf8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        font-weight: bold;
+        font-size: 1.15rem;
+    }
+
+    .brand-title-box {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .brand-heading {
+        display: flex;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    .brand-name {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #f8fafc;
+        letter-spacing: 0.3px;
+    }
+
+    .brand-tag {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #38bdf8;
+        background: rgba(14, 165, 233, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        padding: 1px 6px;
+        border-radius: 4px;
+    }
+
+    .brand-subline {
+        font-size: 0.78rem;
+        color: #94a3b8;
+    }
+
+    .header-badges {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .badge-pill {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        background: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 16px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        color: #cbd5e1;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #10b981;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 5px 12px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid transparent;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #0284c7, #2563eb);
+        color: #ffffff;
+        border-color: #38bdf8;
+    }
+
+    /* 2. Main Scrollable Workspace */
+    .lab-workspace {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 16px;
+        overflow-y: scroll;
+        padding-right: 6px;
+        min-height: 0;
+    }
+
+    /* Section Header */
+    .section-title-bar {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: #111827;
+        border-left: 4px solid #0284c7;
+        border-radius: 0 6px 6px 0;
+        margin-top: 4px;
+    }
+
+    .section-title-bar.highlight {
+        border-left-color: #f59e0b;
+        background: linear-gradient(90deg, #1c1917, #111827);
+    }
+
+    .section-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #f8fafc;
+    }
+
+    .section-desc {
+        font-size: 0.78rem;
+        color: #94a3b8;
+    }
+
+    /* Grid Layouts */
+    .test-grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+    }
+
+    .test-grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    .test-grid-4 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+        gap: 12px;
+    }
+
+    .test-grid-5 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+        gap: 10px;
+    }
+
+    /* Test Card */
+    .lab-card {
+        display: flex;
+        flex-direction: column;
+        background: #161f30;
+        border: 1px solid #2d3b55;
+        border-radius: 8px;
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .lab-card.featured {
+        border: 1px solid #f59e0b;
+        background: #181c26;
+        box-shadow: 0 0 10px rgba(245, 158, 11, 0.15);
+    }
+
+    .card-head {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .card-title {
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: #e2e8f0;
+    }
+
+    .card-chip {
+        font-size: 0.68rem;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #1e293b;
+        color: #94a3b8;
+        border: 1px solid #334155;
+    }
+
+    .chip-video {
+        background: rgba(14, 165, 233, 0.15);
+        color: #38bdf8;
+        border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .chip-youtube {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .chip-image {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border-color: rgba(52, 211, 153, 0.4);
+    }
+
+    .chip-audio {
+        background: rgba(168, 85, 247, 0.15);
+        color: #c084fc;
+        border-color: rgba(192, 132, 252, 0.4);
+    }
+
+    .chip-sec {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border-color: rgba(248, 113, 113, 0.4);
+    }
+
+    .card-desc {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        line-height: 1.35;
+    }
+
+    /* Media Frame Containers */
+    .media-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #090d16;
+        border: 1px solid #243047;
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .media-box-large {
+        width: 100%;
+        height: 200px;
+    }
+
+    .media-box-16-9 {
+        width: 100%;
+        height: 160px;
+    }
+
+    .media-box-square {
+        width: 100%;
+        height: 140px;
+    }
+
+    .media-box-compact {
+        width: 100%;
+        height: 90px;
+    }
+
+    /* Elements */
+    video {
+        width: 100%;
+        height: 100%;
+        background-color: #000000;
+    }
+
+    img {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Object Fit Variants */
+    .fit-fill { object-fit: fill; }
+    .fit-contain { object-fit: contain; }
+    .fit-cover { object-fit: cover; }
+
+    /* CSS Styling Variants */
+    .style-rounded {
+        border-radius: 16px;
+    }
+
+    .style-circle {
+        border-radius: 50%;
+        width: 110px;
+        height: 110px;
+    }
+
+    .style-glow {
+        border: 2px solid #818cf8;
+        box-shadow: 0 0 12px rgba(129, 140, 248, 0.6);
+    }
+
+    .style-opacity {
+        opacity: 0.55;
+    }
+
+    /* MC Scheme Items */
+    .mc-unit {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #111827;
+        border: 1px solid #2d3b55;
+        border-radius: 6px;
+        padding: 10px;
+        gap: 6px;
+    }
+
+    .mc-icon-box {
+        width: 54px;
+        height: 54px;
+        background: #090d16;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .mc-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #cbd5e1;
+        text-align: center;
+    }
+
+    .mc-subtext {
+        font-size: 0.68rem;
+        color: #64748b;
+        text-align: center;
+    }
+
+    /* Test Checklist / Status */
+    .checklist-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 4px;
+        padding: 6px 8px;
+    }
+
+    .checklist-item {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.72rem;
+        color: #94a3b8;
+    }
+
+    .badge-pass {
+        color: #34d399;
+        font-weight: bold;
+    }
+
+    .badge-block {
+        color: #f87171;
+        font-weight: bold;
+    }
+
+    .badge-warn {
+        color: #fbbf24;
+        font-weight: bold;
+    }
+
+    .url-tag {
+        font-family: monospace;
+        font-size: 0.7rem;
+        color: #38bdf8;
+        background: #090d16;
+        padding: 2px 6px;
+        border-radius: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border: 1px solid #1e293b;
+    }
+</style>
+<body>
+
+<div class="lab-container">
+
+    <!-- 1. Header Bar -->
+    <div class="lab-header">
+        <div class="brand-group">
+            <div class="brand-icon-box">&#9654;</div>
+            <div class="brand-title-box">
+                <div class="brand-heading">
+                    <span class="brand-name">EnderFrame Media Lab</span>
+                    <span class="brand-tag">VIDEO &middot; YOUTUBE &middot; GDRIVE</span>
+                </div>
+                <span class="brand-subline">Comprehensive Verification Suite for Native Media Engine</span>
+            </div>
+        </div>
+
+        <div class="header-badges">
+            <div class="badge-pill">
+                <div class="status-dot"></div>
+                <span>lunex_video.dll (x86_64)</span>
+            </div>
+            <div class="badge-pill">
+                <div class="status-dot"></div>
+                <span>OpenAL Spatial Engine</span>
+            </div>
+            <div class="badge-pill" style="border-color:#f59e0b; color:#fbbf24;">
+                <span>User Media Test Active</span>
+            </div>
+            <button class="btn btn-primary" onclick="client:eval:location.reload()">Reload Suite</button>
+        </div>
+    </div>
+
+    <!-- 2. Main Scrollable Workspace -->
+    <div class="lab-workspace">
+
+        <!-- ================================================================= -->
+        <!-- FEATURED SECTION: USER SPECIFIED TEST MEDIA                       -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar highlight">
+            <span class="section-title" style="color:#fbbf24;">&#9733; User Specified Media Test (指定メディアテスト)</span>
+            <span class="section-desc">Google Drive Direct Video, YouTube Streaming, and Google Drive Web Image</span>
+        </div>
+
+        <div class="test-grid-3">
+
+            <!-- Featured Card 1: User Google Drive Video -->
+            <div class="lab-card featured">
+                <div class="card-head">
+                    <span class="card-title">User Video (Google Drive)</span>
+                    <span class="card-chip chip-video">GDRIVE_VIDEO</span>
+                </div>
+                <div class="url-tag" title="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link">
+                    drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/...
+                </div>
+                <div class="media-box media-box-large">
+                    <!-- Google Drive 共有リンク形式の動画。convertToDirectLink で直リンク化され、リダイレクト追跡後にデコードされます -->
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-contain"></video>
+                </div>
+                <span class="card-desc">
+                    Google Drive共有リンクを <code>convertToDirectLink</code> で直リンクに自動変換し、
+                    リダイレクト追跡後に <code>lunex_video.dll</code> で再生します。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> GDrive 共有URL &rarr; 直リンク変換 (uc?export=download)</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 302 リダイレクト追跡とストリーム解決</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> JNA デコード &amp; OpenAL オーディオ再生</div>
+                </div>
+            </div>
+
+            <!-- Featured Card 2: YouTube Video -->
+            <div class="lab-card featured">
+                <div class="card-head">
+                    <span class="card-title">YouTube Video (yt-dlp)</span>
+                    <span class="card-chip chip-youtube">YOUTUBE_STREAM</span>
+                </div>
+                <div class="url-tag" title="https://www.youtube.com/watch?v=aqz-KE-bpKQ">
+                    youtube.com/watch?v=aqz-KE-bpKQ (Big Buck Bunny 4K)
+                </div>
+                <div class="media-box media-box-large">
+                    <!-- YouTube URL。allowYtDlp = true 時に yt-dlp 経由で直接ストリームを抽出して再生 -->
+                    <video src="https://www.youtube.com/watch?v=aqz-KE-bpKQ" class="fit-contain"></video>
+                </div>
+                <span class="card-desc">
+                    YouTube URLの指定テスト。<code>allowYtDlp = true</code>（設定画面で有効化）時に
+                    yt-dlp を用いてストリームURLを抽出し、ネイティブデコーダで再生します。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-warn">&#9888;</span> <code>allowYtDlp = true</code> が必要（同意ゲート）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> yt-dlp キャッシュ機構（YT_DLP_CACHE 1時間保持）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> googlevideo.com 直ストリーム再生</div>
+                </div>
+            </div>
+
+            <!-- Featured Card 3: User Google Drive Image -->
+            <div class="lab-card featured">
+                <div class="card-head">
+                    <span class="card-title">User Image (Google Drive)</span>
+                    <span class="card-chip chip-image">GDRIVE_IMAGE</span>
+                </div>
+                <div class="url-tag" title="https://drive.google.com/file/d/1pOYknV2o1R5pPi7MH0BnGxNijzWwn6O1/view?usp=sharing">
+                    drive.google.com/file/d/1pOYknV2o1R5pPi7MH0BnGxNijzWwn6O1/...
+                </div>
+                <div class="media-box media-box-large">
+                    <!-- Google Drive 共有リンク形式の画像。自動変換後、非同期ダウンロードされてキャッシュされます -->
+                    <img src="https://drive.google.com/file/d/1pOYknV2o1R5pPi7MH0BnGxNijzWwn6O1/view?usp=sharing" class="fit-contain" alt="User Specified Drive Image" />
+                </div>
+                <span class="card-desc">
+                    指定された Google Drive 画像のテスト。非同期ダウンロード後、
+                    NativeImage で読み込まれ DynamicTexture としてレンダリングされます。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 非同期 I/O スレッドプール（MEDIA_IO_EXECUTOR）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> Intrinsic Size（元画像寸法）の自動解決</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> LRU キャッシュ（IMG_CACHE）登録</div>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- ================================================================= -->
+        <!-- SECTION 1: VIDEO OBJECT-FIT & STYLING VARIATIONS                 -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar">
+            <span class="section-title">1. User Video Object-Fit &amp; CSS Styling Matrix</span>
+            <span class="section-desc">Testing the user specified Google Drive video under different CSS transforms and object-fit modes</span>
+        </div>
+
+        <div class="test-grid-4">
+
+            <!-- Variant 1: Cover -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">object-fit: cover</span>
+                    <span class="card-chip chip-video">COVER</span>
+                </div>
+                <div class="media-box media-box-square">
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                </div>
+                <span class="card-desc">比率を保ち正方形枠を隙間なく満たします。</span>
+            </div>
+
+            <!-- Variant 2: Rounded Corners -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Border Radius (16px)</span>
+                    <span class="card-chip chip-video">ROUNDED</span>
+                </div>
+                <div class="media-box media-box-square style-rounded">
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-rounded"></video>
+                </div>
+                <span class="card-desc">四隅 16px の角丸シェーダークリッピング。</span>
+            </div>
+
+            <!-- Variant 3: Circular Mask -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Circular Mask (50%)</span>
+                    <span class="card-chip chip-video">CIRCLE</span>
+                </div>
+                <div style="display:flex; justify-content:center; align-items:center; width:100%; height:140px;">
+                    <div class="media-box style-circle" style="background:#000;">
+                        <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-circle"></video>
+                    </div>
+                </div>
+                <span class="card-desc">正円形マスクによる動画切り抜き。</span>
+            </div>
+
+            <!-- Variant 4: Opacity & Glow -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Opacity &amp; Glow</span>
+                    <span class="card-chip chip-video">EFFECTS</span>
+                </div>
+                <div class="media-box media-box-square style-glow">
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-opacity"></video>
+                </div>
+                <span class="card-desc">55%透過ブレンド ＋ 外枠グロー発光。</span>
+            </div>
+
+        </div>
+
+
+        <!-- ================================================================= -->
+        <!-- SECTION 2: AUDIO & ACOUSTIC MODES                                -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar">
+            <span class="section-title">2. Audio Decoding &amp; Spatial Acoustics (OpenAL)</span>
+            <span class="section-desc">Testing 2D direct audio, 3D world positional attenuation, and multi-speaker linking</span>
+        </div>
+
+        <div class="test-grid-2">
+
+            <!-- Card: 2D Audio -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">2D Screen Audio Mode (HUD / Menu)</span>
+                    <span class="card-chip chip-audio">OPENAL_2D</span>
+                </div>
+                <div class="media-box media-box-compact">
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                </div>
+                <span class="card-desc">
+                    GUI / HUD 画面表示時は <code>AL_SOURCE_RELATIVE = 1</code> として再生され、
+                    プレイヤーの位置や向きに左右されず、左右均等かつクリアに音声が出力されます。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> サンプリングレート自動取得（44.1kHz / 48kHz）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> モノラル / ステレオ（AL_FORMAT_STEREO16）自動判別</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> バッファキューイング（alSourceQueueBuffers）同期</div>
+                </div>
+            </div>
+
+            <!-- Card: 3D Audio -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">3D World Positional Audio (Block Screen)</span>
+                    <span class="card-chip chip-audio">OPENAL_3D</span>
+                </div>
+                <div class="media-box media-box-compact">
+                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                </div>
+                <span class="card-desc">
+                    ブロック画面（WebScreenBlockEntity）設置時は <code>AL_SOURCE_RELATIVE = 0</code> となり、
+                    ブロック座標に応じた立体音響（距離減衰・左右パンニング）が計算されます。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 距離減衰（LINEAR_DISTANCE_CLAMPED）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 外部スピーカー連動（WebScreenBlockEntity.getLinkedSpeakers）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 視界外・遠距離時のミュート・省電力化</div>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- ================================================================= -->
+        <!-- SECTION 3: MINECRAFT NATIVE SCHEMES                               -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar">
+            <span class="section-title">3. Minecraft Native Media Schemes</span>
+            <span class="section-desc">Testing in-engine renderers for items, fluids, entities, player skins, and potion effects</span>
+        </div>
+
+        <div class="test-grid-5">
+
+            <!-- MC Unit 1: Item Scheme -->
+            <div class="mc-unit">
+                <div class="mc-icon-box">
+                    <img src="item:minecraft:netherite_sword" style="width:40px; height:40px;" alt="Item" />
+                </div>
+                <span class="mc-label">Item Scheme</span>
+                <span class="mc-subtext">item:netherite_sword</span>
+            </div>
+
+            <!-- MC Unit 2: Fluid Scheme -->
+            <div class="mc-unit">
+                <div class="mc-icon-box">
+                    <img src="fluid:minecraft:lava" style="width:48px; height:48px;" alt="Fluid" />
+                </div>
+                <span class="mc-label">Fluid Scheme</span>
+                <span class="mc-subtext">fluid:minecraft:lava</span>
+            </div>
+
+            <!-- MC Unit 3: Player Skin -->
+            <div class="mc-unit">
+                <div class="mc-icon-box">
+                    <img src="player:@self" style="width:44px; height:44px;" alt="Player" />
+                </div>
+                <span class="mc-label">Player Skin</span>
+                <span class="mc-subtext">player:@self (Face+Hat)</span>
+            </div>
+
+            <!-- MC Unit 4: Entity Scheme -->
+            <div class="mc-unit">
+                <div class="mc-icon-box">
+                    <img src="entity:minecraft:creeper" style="width:48px; height:48px;" alt="Entity" />
+                </div>
+                <span class="mc-label">Entity Model</span>
+                <span class="mc-subtext">entity:minecraft:creeper</span>
+            </div>
+
+            <!-- MC Unit 5: Effect Scheme -->
+            <div class="mc-unit">
+                <div class="mc-icon-box">
+                    <img src="effect:minecraft:speed" style="width:36px; height:36px;" alt="Effect" />
+                </div>
+                <span class="mc-label">Status Effect</span>
+                <span class="mc-subtext">effect:minecraft:speed</span>
+            </div>
+
+        </div>
+
+
+        <!-- ================================================================= -->
+        <!-- SECTION 4: SECURITY & GUARDRAILS                                  -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar">
+            <span class="section-title">4. Security Guardrails &amp; Network Protection</span>
+            <span class="section-desc">Verifying private IP blocking, 10MB payload thresholds, and yt-dlp consent gate</span>
+        </div>
+
+        <div class="test-grid-3">
+
+            <!-- Security 1: Private Network Access Block -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Private IP Access Block</span>
+                    <span class="card-chip chip-sec">BLOCKED</span>
+                </div>
+                <div class="media-box media-box-compact" style="background:#1e1418; border-color:#5c1d24;">
+                    <img src="http://127.0.0.1:8080/test.png" class="fit-contain" alt="Localhost blocked" />
+                </div>
+                <span class="card-desc">
+                    <code>localhost</code>, <code>127.0.0.1</code>, <code>192.168.x.x</code> などの
+                    ローカルIPへのアクセスが <code>isUrlSafe()</code> により確実に遮断されることをテスト。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-block">&#10007;</span> 127.0.0.1 / localhost 遮断</div>
+                    <div class="checklist-item"><span class="badge-block">&#10007;</span> RFC1918 プライベートIP 遮断</div>
+                </div>
+            </div>
+
+            <!-- Security 2: 10MB File Size Limit -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">10MB File Size Guard</span>
+                    <span class="card-chip chip-sec">SIZE_LIMIT</span>
+                </div>
+                <div class="media-box media-box-compact" style="background:#1e1418; border-color:#5c1d24;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/e/ee/Sample_abc_oversized_dummy.jpg" class="fit-contain" alt="Oversized blocked" />
+                </div>
+                <span class="card-desc">
+                    <code>maxImageDownloadBytes (10MB)</code> を超える巨大ファイルは
+                    ストリーム読み込み中に中断され、メモリ枯渇攻撃を防止します。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-block">&#10007;</span> Content-Length &gt; 10MB 即時拒否</div>
+                    <div class="checklist-item"><span class="badge-block">&#10007;</span> チャンク読み込み上限到達時 中断</div>
+                </div>
+            </div>
+
+            <!-- Security 3: Fallback Public MP4 -->
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Public CDN Stream (Fallback)</span>
+                    <span class="card-chip chip-video">CDN_STREAM</span>
+                </div>
+                <div class="media-box media-box-compact">
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover"></video>
+                </div>
+                <span class="card-desc">
+                    安定したパブリックCDNの動画ストリームによる比較ベースライン。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> H.264 / AAC 60fps 追従</div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -9,7 +9,8 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import java.util.List;
 
 /**
- * {@code <mc-slot>} / {@code <mc-slot-grid>} / {@code <mc-inventory>} / {@code <mc-bar>} を
+ * {@code <mc-slot>} / {@code <mc-slot-grid>} / {@code <mc-inventory>} / {@code <mc-bar>} /
+ * {@code <mc-energy>} / {@code <mc-tank>} を
  * 素の HTML 要素に展開するマクロ。
  *
  * 以前は HTML 文字列に対する 4 つの正規表現置換（約 114 行）で、パースより前に行われていた。
@@ -43,7 +44,9 @@ public final class CustomTagExpander {
                 case "mc-slot" -> List.of(buildSlot(child));
                 case "mc-slot-grid" -> List.of(buildSlotGrid(child));
                 case "mc-inventory" -> List.of(buildInventory(child));
-                case "mc-bar" -> List.of(buildBar(child));
+                case "mc-bar" -> List.of(buildBar(child, "#89b4fa", "#181825", ""));
+                case "mc-energy" -> List.of(buildBar(child, "#d62828", "#2b0a0a", unitLabel(child, "FE")));
+                case "mc-tank" -> List.of(buildBar(child, fluidColor(attr(child, "fluid", "")), "#10151f", unitLabel(child, "mB")));
                 default -> null;
             };
 
@@ -139,13 +142,14 @@ public final class CustomTagExpander {
     }
 
     /** {@code <mc-bar value min max color bg label>} → progress ＋ 中央ラベル。 */
-    private static HtmlNode buildBar(HtmlNode source) {
+    private static HtmlNode buildBar(HtmlNode source, String defaultColor, String defaultBg, String defaultLabel) {
         String value = attr(source, "value", "0");
         String min = attr(source, "min", "0");
         String max = attr(source, "max", "100");
-        String color = attr(source, "color", "#89b4fa");
-        String bg = attr(source, "bg", "#181825");
-        String label = attr(source, "label", "");
+        String color = attr(source, "color", defaultColor);
+        String bg = attr(source, "bg", defaultBg);
+        String label = attr(source, "label", defaultLabel);
+        if ("none".equalsIgnoreCase(label)) label = "";
 
         HtmlNode bar = element("div");
         bar.attrs.put("class", "mc-bar");
@@ -169,6 +173,29 @@ public final class CustomTagExpander {
             appendChild(bar, span);
         }
         return bar;
+    }
+
+    /**
+     * {@code <mc-energy>} / {@code <mc-tank>} の既定ラベル「value / max 単位」。値が {@code {{key}}} なら、
+     * ラベルの文字列補間でそのまま状態に結び付く。{@code label="none"} でラベルを消す。
+     */
+    private static String unitLabel(HtmlNode source, String unit) {
+        String label = attr(source, "label", "");
+        if ("none".equalsIgnoreCase(label)) return "";
+        if (!label.isEmpty()) return label;
+        return attr(source, "value", "0") + " / " + attr(source, "max", "100") + " " + unit;
+    }
+
+    /** 流体の ID（{@code minecraft:water} や {@code water}）から色。分からなければ水色がかった既定色。 */
+    private static String fluidColor(String fluid) {
+        String name = fluid.contains(":") ? fluid.substring(fluid.indexOf(':') + 1) : fluid;
+        return switch (name.toLowerCase()) {
+            case "water" -> "#3f76e4";
+            case "lava" -> "#ff7a00";
+            case "milk" -> "#f2f2f2";
+            case "honey" -> "#e8a317";
+            default -> "#6aa9c9";
+        };
     }
 
     // ==========================================

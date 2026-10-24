@@ -120,7 +120,7 @@ public class UIStateImpl implements UIState {
         if (closed.get()) return this;
 
         Object previous = values.get(key);
-        if (Objects.equals(previous, value)) {
+        if (Objects.deepEquals(previous, value)) {
             // 値が変わっていない場合は dirty にしない
             return this;
         }
@@ -129,10 +129,28 @@ public class UIStateImpl implements UIState {
             values.remove(key);
             removedKeys.add(key);
         } else {
-            values.put(key, value);
+            // 配列は呼び出し側が中身を書き換えて同じ参照を set し直すことがあるので、複製して持つ
+            values.put(key, value instanceof byte[] a ? a.clone() : value instanceof int[] a ? a.clone()
+                    : value instanceof long[] a ? a.clone() : value);
             removedKeys.remove(key);
         }
         dirtyKeys.add(key);
+        return this;
+    }
+
+    /** 持ち主のブロックエンティティに、保存が要ることを伝える（状態は NBT に保存されるため）。 */
+    private void markOwnerChanged() {
+        WeakReference<BlockEntity> ref = owner;
+        BlockEntity be = ref != null ? ref.get() : null;
+        if (be != null && !be.isRemoved()) be.setChanged();
+    }
+
+    @Override
+    public @NotNull UIState load(@NotNull CompoundTag tag) {
+        Objects.requireNonNull(tag, "tag cannot be null");
+        for (String key : tag.getAllKeys()) {
+            set(key, StateNbtConverter.fromTag(tag.get(key)));
+        }
         return this;
     }
 
@@ -230,6 +248,25 @@ public class UIStateImpl implements UIState {
 
     @Override
     public void addViewer(@NotNull ServerPlayer player) {
+        open(player, 0, 0);
+    }
+
+    @Override
+    public void addSurfaceViewer(@NotNull ServerPlayer player, int width, int height) {
+        open(player, Math.max(1, width), Math.max(1, height));
+    }
+
+    @Override
+    public void removeSurfaceViewer(@NotNull ServerPlayer player) {
+        if (player == null) return;
+        boolean wasViewer = isViewer(player);
+        removeViewer(player);
+        if (wasViewer && !closed.get() && !player.hasDisconnected()) {
+            sendPacket(player, StateDeltaS2CPacket.closed(wireId, instanceId));
+        }
+    }
+
+    private void open(@NotNull ServerPlayer player, int surfaceWidth, int surfaceHeight) {
         Objects.requireNonNull(player, "player cannot be null");
         if (closed.get()) return;
 
@@ -242,7 +279,7 @@ public class UIStateImpl implements UIState {
             for (String key : snapshot.getAllKeys()) {
                 keyTable = keyTable.with(key);
             }
-            packet = new OpenUiS2CPacket(templateId, instanceId, wireId, keyTable, snapshot);
+            packet = new OpenUiS2CPacket(templateId, instanceId, wireId, keyTable, snapshot, surfaceWidth, surfaceHeight);
             // 他に閲覧者がいなければ、辞書の全体を知っているのはこの閲覧者だけで、差分で名前を添え直す必要はない
             if (firstViewer) announcedKeys = keyTable.size();
         }
@@ -298,6 +335,9 @@ public class UIStateImpl implements UIState {
             announcedKeys = keyTable.size();
             return;
         }
+
+        // 保存が要ることは tick に 1 度だけ伝える（set のたびに setChanged しない）
+        markOwnerChanged();
 
         CompoundTag deltas = new CompoundTag();
         for (String key : dirtyKeys) {
@@ -373,19 +413,5 @@ public class UIStateImpl implements UIState {
             owner = null;
             UIStateManager.unregister(this);
         }
-    }
-
-    private volatile WebSessionHandle sessionHandleAdapter;
-
-    @Override
-    public @NotNull WebSessionHandle asSessionHandle() {
-        if (sessionHandleAdapter == null) {
-            synchronized (this) {
-                if (sessionHandleAdapter == null) {
-                    sessionHandleAdapter = new UIStateSessionAdapter(this);
-                }
-            }
-        }
-        return sessionHandleAdapter;
     }
 }

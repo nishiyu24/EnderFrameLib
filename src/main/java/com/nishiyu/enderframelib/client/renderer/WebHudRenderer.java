@@ -286,12 +286,7 @@ public class WebHudRenderer {
         int logicWidth = (int) Math.ceil((float) lastSentWidth / DisplayItemDrawer.RESOLUTION);
         int logicHeight = (int) Math.ceil((float) lastSentHeight / DisplayItemDrawer.RESOLUTION);
 
-        PaintRequest.builder(hudElements, logicWidth, logicHeight, poseStack, bufferSource, screenKey, mc.level)
-                .light(0xF000F0, OverlayTexture.NO_OVERLAY)
-                .zOffsets(0.0f, 0.0f)
-                .hoveredId(ClientScreenInteractionManager.getHoveredId(screenKey))
-                .audio(false, true, null)
-                .render();
+        SurfaceRenderer.draw(screenKey, hudElements, logicWidth, logicHeight, SurfaceStyle.hud(), poseStack, bufferSource);
 
         bufferSource.endBatch();
         poseStack.popPose();
@@ -423,12 +418,7 @@ public class WebHudRenderer {
         poseStack.scale(-scale, -scale, scale);
         poseStack.translate(-cache.width / 2.0f, -cache.height, 0);
 
-        PaintRequest.forBillboard(
-                cache.elements, cache.width, cache.height,
-                poseStack, bufferSource,
-                screenKey, ClientScreenInteractionManager.getHoveredId(screenKey),
-                mc.level
-        ).render();
+        SurfaceRenderer.draw(screenKey, cache.elements, cache.width, cache.height, SurfaceStyle.billboard(), poseStack, bufferSource);
         poseStack.popPose();
         return true;
     }

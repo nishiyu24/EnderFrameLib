@@ -27,8 +27,20 @@ public record OpenUiS2CPacket(
         String instanceId,
         int wireId,
         KeyTable keys,
-        CompoundTag initialState
+        CompoundTag initialState,
+        int surfaceWidth,
+        int surfaceHeight
 ) implements CustomPacketPayload {
+
+    /** 画面として開く（面ではない）パケット。 */
+    public OpenUiS2CPacket(String templateId, String instanceId, int wireId, KeyTable keys, CompoundTag initialState) {
+        this(templateId, instanceId, wireId, keys, initialState, 0, 0);
+    }
+
+    /** 世界内の面（ブロックなど）に映すための展開か。真なら画面は開かず、セッションだけ幅 × 高さ（px）で作る。 */
+    public boolean isSurface() {
+        return surfaceWidth > 0 && surfaceHeight > 0;
+    }
 
     public static final Type<OpenUiS2CPacket> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath("enderframelib", "open_ui")
@@ -36,7 +48,7 @@ public record OpenUiS2CPacket(
 
     @FunctionalInterface
     public interface IClientOpenUiHandler {
-        void onOpenUi(String templateId, String instanceId, CompoundTag initialState);
+        void onOpenUi(String templateId, String instanceId, CompoundTag initialState, int surfaceWidth, int surfaceHeight);
     }
 
     /**
@@ -57,7 +69,9 @@ public record OpenUiS2CPacket(
         CompoundTag initialState = new CompoundTag();
         StateNbtConverter.readEntries(buf, keys, initialState);
         ReceivedKeyTables.open(wireId, instanceId, keys);
-        return new OpenUiS2CPacket(templateId, instanceId, wireId, keys, initialState);
+        int surfaceWidth = buf.readVarInt();
+        int surfaceHeight = surfaceWidth > 0 ? buf.readVarInt() : 0;
+        return new OpenUiS2CPacket(templateId, instanceId, wireId, keys, initialState, surfaceWidth, surfaceHeight);
     }
 
     public void write(FriendlyByteBuf buf) {
@@ -67,6 +81,9 @@ public record OpenUiS2CPacket(
         buf.writeVarInt(wireId);
         StateNbtConverter.writeNames(buf, table.names());
         StateNbtConverter.writeEntries(buf, table, initialState != null ? initialState : new CompoundTag());
+        // 画面として開くときは 0 の 1 バイトだけ。面のときだけ大きさを続ける
+        buf.writeVarInt(isSurface() ? surfaceWidth : 0);
+        if (isSurface()) buf.writeVarInt(surfaceHeight);
     }
 
     @Override
@@ -77,7 +94,8 @@ public record OpenUiS2CPacket(
     public void handle(IPayloadContext context) {
         context.enqueueWork(() -> {
             if (clientHandler != null) {
-                clientHandler.onOpenUi(templateId, instanceId, initialState != null ? initialState : new CompoundTag());
+                clientHandler.onOpenUi(templateId, instanceId, initialState != null ? initialState : new CompoundTag(),
+                        surfaceWidth, surfaceHeight);
             }
         });
     }

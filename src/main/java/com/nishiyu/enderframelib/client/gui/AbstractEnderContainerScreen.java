@@ -10,7 +10,8 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.ReactiveStateStore; // ★これが必須です
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.WebRecipeViewerBridge;
-import com.nishiyu.enderframelib.client.renderer.PaintRequest;
+import com.nishiyu.enderframelib.client.renderer.SurfaceRenderer;
+import com.nishiyu.enderframelib.client.renderer.SurfaceStyle;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -435,13 +436,8 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
             int logicW = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
             int logicH = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
 
-            PaintRequest.forGui(
-                    elements, logicW, logicH,
-                    poseStack, bufferSource,
-                    sessionId, hoveredId,
-                    Minecraft.getInstance().level,
-                    false
-            ).render();
+            SurfaceRenderer.draw(sessionId, elements, logicW, logicH,
+                    SurfaceStyle.gui(false).withHovered(hoveredId), poseStack, bufferSource);
             bufferSource.endBatch();
 
             this.uiSupport.renderOverlays(guiGraphics, this.font, elements, (int) webX, (int) webY, virtualWidth, virtualHeight, devToolsEnabled);

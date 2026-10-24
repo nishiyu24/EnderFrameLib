@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.api.state.UIState;
-import com.nishiyu.enderframelib.server.state.WebSessionUIStateAdapter;
 import org.jetbrains.annotations.NotNull;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
@@ -274,8 +273,6 @@ public class WebSession implements WebSessionHandle {
     // 軽量差分パッチ・DOM変異配信 API (R3)
     // ==========================================
 
-    @Override
-    @Deprecated
     public void patchText(String elementId, String newText) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -285,8 +282,6 @@ public class WebSession implements WebSessionHandle {
         }
     }
 
-    @Override
-    @Deprecated
     public void patchAttribute(String elementId, String attrName, String attrValue, boolean remove) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -296,8 +291,6 @@ public class WebSession implements WebSessionHandle {
         }
     }
 
-    @Override
-    @Deprecated
     public void patchStyle(String elementId, String property, String value) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -307,8 +300,6 @@ public class WebSession implements WebSessionHandle {
         }
     }
 
-    @Override
-    @Deprecated
     public void patchClass(String elementId, String className, String mode) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -323,8 +314,6 @@ public class WebSession implements WebSessionHandle {
         }
     }
 
-    @Override
-    @Deprecated
     public void patchInnerHtml(String elementId, String htmlFragment) {
         if (currentDocument == null || currentDocument.root == null) return;
         HtmlNode target = currentDocument.root.getElementById(elementId);
@@ -350,18 +339,6 @@ public class WebSession implements WebSessionHandle {
     public void sendMutations(java.util.List<com.nishiyu.enderframelib.network.DomMutationRecord> mutations) {
         if (mutations == null || mutations.isEmpty()) return;
         WebSessionManager.broadcastMutations(this.sessionId, mutations);
-    }
-
-    @Override
-    public @NotNull UIState asUIState() {
-        if (uiStateAdapter == null) {
-            synchronized (this) {
-                if (uiStateAdapter == null) {
-                    uiStateAdapter = new WebSessionUIStateAdapter(this);
-                }
-            }
-        }
-        return uiStateAdapter;
     }
 
     public enum SourceType {STRING, STRING_WITH_CSS, FILE, URL}

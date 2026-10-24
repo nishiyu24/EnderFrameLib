@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.server.state;
 
+import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.api.state.UIState;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import net.minecraft.core.BlockPos;
@@ -81,6 +82,7 @@ public final class UIStateManager {
         UIStateImpl created = new UIStateImpl(templateId, instanceId);
         created.setOwner(be);
         STATES.put(instanceId, created);
+        if (be instanceof WebScreenBlockEntity screen) screen.onStateCreated(created);
         return created;
     }
 
