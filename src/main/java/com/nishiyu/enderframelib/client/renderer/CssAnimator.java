@@ -79,10 +79,17 @@ public class CssAnimator {
         return def;
     }
 
+    private static final Map<String, Long> LAST_CLEANUP = new java.util.concurrent.ConcurrentHashMap<>();
+
     public static void cleanup(String sessionId, List<DisplayItem> currentElements) {
         if (sessionId == null) return;
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session == null || session.cssAnimations().isEmpty()) return;
+        // 毎フレームやると要素数分の集合を作り直すので、掃除は 1 秒に 1 回でよい（消えた要素の状態が少し残るだけ）
+        long now = System.nanoTime();
+        Long last = LAST_CLEANUP.get(sessionId);
+        if (last != null && now - last < 1_000_000_000L) return;
+        LAST_CLEANUP.put(sessionId, now);
         Map<String, AnimState> sessionMap = session.cssAnimations();
 
         Set<String> activeIds = new HashSet<>(currentElements.size());

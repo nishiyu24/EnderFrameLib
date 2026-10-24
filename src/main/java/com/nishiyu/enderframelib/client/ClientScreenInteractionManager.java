@@ -6,9 +6,7 @@ import net.neoforged.neoforge.client.event.InputEvent;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.client.gui.InvisibleInputScreen;
-import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.core.dom.EventForwardDeclaration;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -18,7 +16,6 @@ import com.nishiyu.enderframelib.network.WebActionC2SPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -27,8 +24,6 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -116,7 +111,17 @@ public class ClientScreenInteractionManager {
         }
     }
 
+    /** 直前のマウス操作で GUI を閉じたとき、同じ操作がワールド側の入力として二重に数えられないようにする。 */
+    private static volatile boolean swallowNextMouseEvent = false;
+
+    public static void swallowNextMouseEvent() { swallowNextMouseEvent = true; }
+
     public static void onMouseButton(InputEvent.MouseButton.Post event) {
+        if (swallowNextMouseEvent) {
+            swallowNextMouseEvent = false;
+            resetMouseLatches();
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen != null) return;
         int button = event.getButton();
@@ -165,64 +170,26 @@ public class ClientScreenInteractionManager {
             handleRelease(lastHoveredSession);
         }
 
-        if (mc.hitResult != null && mc.hitResult.getType() == HitResult.Type.BLOCK) {
-            BlockHitResult hitResult = (BlockHitResult) mc.hitResult;
-            BlockPos pos = hitResult.getBlockPos();
+        SurfaceHitResolver.SurfaceHit hit = SurfaceHitResolver.fromCrosshair(mc);
+        if (hit != null) {
+            String sessionId = hit.sessionId();
+            lastHoveredSession = sessionId;
 
-            if (mc.level.getBlockEntity(pos) instanceof WebScreenBlockEntity screen) {
-                Direction facing = screen.getFacing();
-
-                if (facing != null && hitResult.getDirection() == facing) {
-                    double hitX = hitResult.getLocation().x - pos.getX();
-                    double hitY = hitResult.getLocation().y - pos.getY();
-                    double hitZ = hitResult.getLocation().z - pos.getZ();
-
-                    double blockU = switch (facing) {
-                        case NORTH -> 1.0 - hitX;
-                        case SOUTH -> hitX;
-                        case WEST -> hitZ;
-                        case EAST -> 1.0 - hitZ;
-                        default -> 0.0;
-                    };
-                    double blockV = 1.0 - hitY;
-
-                    WebScreenBlockEntity master = screen.isMaster() ? screen :
-                            (screen.getScreenMasterPos() != null && mc.level.getBlockEntity(screen.getScreenMasterPos()) instanceof WebScreenBlockEntity m ? m : screen);
-
-                    String sessionId = master.getSessionId();
-                    lastHoveredSession = sessionId;
-                    BlockPos masterPos = master.getScreenMasterPos() != null ? master.getScreenMasterPos() : pos;
-
-                    Direction screenRight = facing.getCounterClockWise();
-                    int logicalX = switch (screenRight) {
-                        case WEST -> masterPos.getX() - pos.getX();
-                        case EAST -> pos.getX() - masterPos.getX();
-                        case NORTH -> masterPos.getZ() - pos.getZ();
-                        case SOUTH -> pos.getZ() - masterPos.getZ();
-                        default -> 0;
-                    };
-                    int logicalY = pos.getY() - masterPos.getY();
-
-                    double pixelX = (logicalX + blockU) * DisplayItemDrawer.RESOLUTION;
-                    double pixelY = ((master.getScreenHeight() - 1 - logicalY) + blockV) * DisplayItemDrawer.RESOLUTION;
-
-                    if (isMouseJustPressed) {
-                        DisplayItem clickedEl = handleClick(sessionId, pixelX, pixelY, pressedButton);
-                        if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
-                            SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
-                            session.activateInput(clickedEl.id());
-                            openInputScreen(sessionId, clickedEl, masterPos);
-                        } else {
-                            SessionContext session = ClientWebManager.getSession(sessionId);
-                            if (session != null) session.setActiveInputId("");
-                        }
-                    } else if (isMouseDown) {
-                        handleDrag(sessionId, pixelX, pixelY);
-                    }
-                    handleHover(sessionId, pixelX, pixelY);
-                    return;
+            if (isMouseJustPressed) {
+                DisplayItem clickedEl = handleClick(sessionId, hit.pixelX(), hit.pixelY(), pressedButton);
+                if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
+                    SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
+                    session.activateInput(clickedEl.id());
+                    openInputScreen(sessionId, clickedEl, hit.masterPos());
+                } else {
+                    SessionContext session = ClientWebManager.getSession(sessionId);
+                    if (session != null) session.setActiveInputId("");
                 }
+            } else if (isMouseDown) {
+                handleDrag(sessionId, hit.pixelX(), hit.pixelY());
             }
+            handleHover(sessionId, hit.pixelX(), hit.pixelY());
+            return;
         }
 
         if (!lastHoveredSession.isEmpty()) {

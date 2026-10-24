@@ -26,6 +26,13 @@ public final class RoundedRectRasterizer {
     public static void addQuadRaw(VertexConsumer builder, Matrix4f matrix,
                                   float minX, float minY, float maxX, float maxY,
                                   float r, float g, float b, float a, float zOffset) {
+        // SDF のバッチ中は、通常の頂点バッファ（あとでまとめて描かれる）ではなく、同じバッチに積む。
+        // 別々に描くと、SDF の Quad と矩形の描く順が要素の順から外れ、半透明の重なりが崩れる。
+        // クリップは矩形の外側に広げて、縁を切らない（縁の柔らかさはシェーダー側の AA に任せる）
+        if (WebSdfShader.isBatching() && WebSdfShader.drawSdfRect(matrix, minX, minY, maxX, maxY, 0f, 0f, 0f, 0f,
+                r, g, b, a, zOffset, minX - 1f, minY - 1f, maxX + 1f, maxY + 1f, 0f, 0f, 0f, 0f)) {
+            return;
+        }
         builder.addVertex(matrix, minX, maxY, zOffset).setColor(r, g, b, a);
         builder.addVertex(matrix, maxX, maxY, zOffset).setColor(r, g, b, a);
         builder.addVertex(matrix, maxX, minY, zOffset).setColor(r, g, b, a);
@@ -116,6 +123,28 @@ public final class RoundedRectRasterizer {
             float cRTL, float cRTR, float cRBR, float cRBL,
             boolean useSdfShader
     ) {
+        // 4 辺が同じ色なら、シェーダーで輪として 1 枚に描く（アンチエイリアスがかかる）。辺ごとに色が違うときだけ、下の帯で描く
+        if (useSdfShader) {
+            Integer single = null;
+            boolean uniform = true;
+            for (int side = 0; side < 4 && uniform; side++) {
+                if (widths[side] <= 0) continue;
+                if (single == null) single = colors[side];
+                else if (single != colors[side]) uniform = false;
+            }
+            if (single == null) return;
+            if (uniform) {
+                int c = single;
+                float a = ((c >>> 24) & 0xFF) / 255.0f * opacity;
+                if (a <= 0) return;
+                if (WebSdfShader.drawSdfBorder(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
+                        widths[0], widths[1], widths[2], widths[3],
+                        ((c >>> 16) & 0xFF) / 255.0f, ((c >>> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f, a, zOffset,
+                        cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL)) {
+                    return;
+                }
+            }
+        }
         for (BoxDecorations.Span span : BoxDecorations.roundedBorderSpans(minX, minY, maxX - minX, maxY - minY,
                 new float[]{rTL, rTR, rBR, rBL}, widths)) {
             int c = colors[span.side().ordinal()];

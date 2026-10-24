@@ -7,6 +7,8 @@ import com.mojang.math.Axis;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
+import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -48,6 +50,31 @@ public class WebItemRendererHelper {
     }
 
     /**
+     * {@link ItemSurfaceSpec} どおりに面を置いて描画する（一人称の見やすさ補正を含む）。
+     * BEWLR の {@code renderByItem} からはこれを呼ぶだけでよい。
+     */
+    public static void renderSurface(
+            ItemStack stack, ItemDisplayContext displayContext,
+            PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay,
+            ItemSurfaceSpec spec
+    ) {
+        // ホットバーやインベントリの 1 マスにまで Web 画面を毎フレーム描くと重い。スロットには描かない
+        if (displayContext == ItemDisplayContext.GUI) return;
+        applyFirstPersonHandShift(stack, displayContext, poseStack);
+        // 画面の大きさはセッションを読み込んだときの解像度。仕様の解像度は、セッションがまだ無いときの代わり
+        String sessionId = ClientScreenInteractionManager.getSessionIdFromItem(stack);
+        SessionContext session = sessionId != null ? ClientWebManager.getSession(sessionId) : null;
+        float aspect = session != null && session.rootW() > 0
+                ? (float) session.rootH() / session.rootW()
+                : (float) spec.virtualHeight() / spec.virtualWidth();
+        float[] origin = spec.origin(displayContext, aspect);
+        renderWebOnItem(stack, displayContext, poseStack, buffer, packedLight, packedOverlay,
+                spec.virtualWidth(), spec.virtualHeight(),
+                origin[0], origin[1], origin[2],
+                spec.yRotDegrees(), spec.physicalWidth(displayContext));
+    }
+
+    /**
      * アイテムの指定位置・サイズにWebセッションのUIを描画する
      */
     public static void renderWebOnItem(
@@ -66,9 +93,9 @@ public class WebItemRendererHelper {
         ClientScreenInteractionManager.ensureSynced(sessionId);
 
         SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session != null && (session.rootW() != virtualWidth || session.rootH() != virtualHeight)) {
-            session.recomputeLayout(virtualWidth, virtualHeight);
-        }
+        // レイアウトの画面サイズはセッションを読み込んだときの解像度。渡された解像度は、セッションがまだ無いときだけ使う
+        int layoutW = session != null ? session.rootW() : virtualWidth;
+        int layoutH = session != null ? session.rootH() : virtualHeight;
 
         List<DisplayItem> elements = session != null ? session.elements() : List.of();
         if (elements == null || elements.isEmpty()) return;
@@ -79,7 +106,7 @@ public class WebItemRendererHelper {
             poseStack.mulPose(Axis.YP.rotationDegrees(yRotDegrees));
         }
 
-        float scale = physicalWidthInBlocks / (float) virtualWidth;
+        float scale = physicalWidthInBlocks / (float) layoutW;
         poseStack.scale(scale, -scale, scale);
 
         boolean playAudio = (displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND ||
@@ -87,15 +114,16 @@ public class WebItemRendererHelper {
                 displayContext == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND ||
                 displayContext == ItemDisplayContext.THIRD_PERSON_LEFT_HAND);
 
-        int logicWidthBlocks = (int) Math.ceil(virtualWidth / DisplayItemDrawer.RESOLUTION);
-        int logicHeightBlocks = (int) Math.ceil(virtualHeight / DisplayItemDrawer.RESOLUTION);
+        SurfaceGeometry geometry = SurfaceGeometry.ofVirtual(layoutW, layoutH, physicalWidthInBlocks);
 
-        PaintRequest.builder(elements, logicWidthBlocks, logicHeightBlocks, poseStack, buffer, sessionId, mc.level)
+        PaintRequest.builder(elements, geometry.paintBlocksW(), geometry.paintBlocksH(), poseStack, buffer, sessionId, mc.level)
                 .light(packedLight, packedOverlay)
                 .renderFlags(true, true, true)
-                .zOffsets(0.02f, 0.01f)
+                .zOffsets(geometry.zStep(), geometry.zStep() * 0.5f)
+                .flatLayers(true)
                 .hoveredId(ClientScreenInteractionManager.getHoveredId(sessionId))
                 .audio(playAudio, true, null)
+                .screenSpaceText(false)
                 .render();
 
         poseStack.popPose();

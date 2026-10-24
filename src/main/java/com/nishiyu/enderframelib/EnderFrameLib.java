@@ -58,7 +58,9 @@ public class EnderFrameLib {
         // 5. クライアント環境のみクライアントコールバックとシェーダーを初期化 (Dedicated Serverでクラッシュしない)
         if (FMLEnvironment.dist.isClient()) {
             EnderFrameClientInit.init(modEventBus);
+            com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarnessClient.init(modEventBus);
         }
+        com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarness.init(modEventBus);
 
         LOGGER.info("EnderFrameLib Initialized.");
     }

@@ -387,7 +387,13 @@ public class PaintModelTest {
         assertTrue(r.elements.indexOf(shadow) < r.elements.indexOf(element(r, "a_bg")));
 
         Rendered blurred = render("<div id=\"a\" style=\"width: 40px; height: 20px; box-shadow: 0 0 8px rgb(0, 0, 0);\"></div>");
-        assertTrue(parts(blurred, "a_shadow").size() >= 2, "ぼかしが層に分かれていない");
+        List<DisplayItem> blurParts = parts(blurred, "a_shadow");
+        assertEquals(1, blurParts.size(), "ぼかしは 1 枚の板（減衰はシェーダーが辺からの距離で計算する）");
+        DisplayItem blurShadow = blurParts.getFirst();
+        assertEquals("8.0", blurShadow.events().get(RenderKeys.SHADOW_BLUR));
+        // 板は影の形から、ぼかしが消える所（ぼかし半径の 1.5 倍）まで外側へ広い
+        assertEquals(40 + 2 * 12, blurShadow.width());
+        assertEquals(20 + 2 * 12, blurShadow.height());
     }
 
     @Test

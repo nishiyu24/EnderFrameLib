@@ -82,7 +82,9 @@ public class ArchitectureTest {
     // client/template/ParsedTemplate を追加（M7 準拠のためトップレベルへ切り出し）。
     // 2026-10-24: Headless State フェーズ H4（後方互換性アダプタと古い二重経路の整理）の導入に伴い +2。
     // server/state/UIStateSessionAdapter, server/state/WebSessionUIStateAdapter を追加。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 193;
+    // 2026-10-24: 表面描画の整理（SurfaceGeometry / SurfaceHitResolver）と、外部 MOD 向けひな形 API
+    // （api/template の基底クラス、ホログラム、アイテム面の設定）の追加に伴い +12。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 205;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {

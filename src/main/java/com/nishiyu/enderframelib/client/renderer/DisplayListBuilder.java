@@ -1075,6 +1075,23 @@ public class DisplayListBuilder {
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow s = shadows.get(i);
             if (s.inset()) continue;
+            if (s.blur() > 0) {
+                // ぼかしは 1 枚の板に任せ、シェーダーが辺からの距離で滑らかに減衰させる（層の重ね塗りは段が見えた）。
+                // 板は影の形から「ぼかしが消える所まで」広げた矩形で、形の角丸は広がりの分だけ変える
+                float reach = DisplayItemDrawer.SHADOW_REACH * s.blur();
+                float grow = s.spread() + reach;
+                float w = box.w + 2 * grow, h = box.h + 2 * grow;
+                if (w <= 0 || h <= 0) continue;
+                Corners r = new Corners(growRadius(radii[0], s.spread()), growRadius(radii[1], s.spread()),
+                        growRadius(radii[2], s.spread()), growRadius(radii[3], s.spread()));
+                Map<String, String> blurEvents = new HashMap<>(events);
+                blurEvents.put(RenderKeys.SHADOW_BLUR, Float.toString(s.blur()));
+                addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
+                        box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, s.color(), blurEvents,
+                        r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
+                        new RenderMeta(clip, r, null, null, fontHVal, ox, oy, 1, false));
+                continue;
+            }
             for (BoxDecorations.ShadowLayer layer : BoxDecorations.shadowLayers(s)) {
                 float grow = s.spread() + layer.grow();
                 float w = box.w + 2 * grow, h = box.h + 2 * grow;
@@ -1694,6 +1711,21 @@ public class DisplayListBuilder {
                     box.style.fontSizePx(), box.style.rootFontSizePx());
             int part = 0;
             for (BoxDecorations.Rect t : tiles) {
+                if (url == null) {
+                    // 2 色だけの線形・放射は、シェーダーが画素ごとに計算して 1 枚で描く（帯・格子の継ぎ目や段が出ない）
+                    String shaderGradient = Gradients.shaderGradient(gradient, t, rootW, rootH,
+                            box.style.fontSizePx(), box.style.rootFontSizePx());
+                    if (shaderGradient != null) {
+                        float gx0 = Math.max(t.x(), paint.x()), gy0 = Math.max(t.y(), paint.y());
+                        float gx1 = Math.min(t.x() + t.w(), paint.x() + paint.w()), gy1 = Math.min(t.y() + t.h(), paint.y() + paint.h());
+                        if (gx1 <= gx0 || gy1 <= gy0) continue;
+                        Map<String, String> gradientEvents = new HashMap<>(events);
+                        gradientEvents.put(RenderKeys.SHADER_GRADIENT, shaderGradient);
+                        addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
+                                0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
+                        continue;
+                    }
+                }
                 if (url != null) {
                     addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), url,
                             0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
@@ -1703,8 +1735,17 @@ public class DisplayListBuilder {
                         box.style.fontSizePx(), box.style.rootFontSizePx())) {
                     GradientSpec spec = new GradientSpec(strip.topLeft(), strip.topRight(), strip.bottomRight(), strip.bottomLeft());
                     RenderMeta meta = new RenderMeta(layerClip, null, spec, null, fontHVal, ox, oy, 1, false);
+                    // タイルの外縁にあたる辺だけアンチエイリアスをかける（隣の帯と接する辺にかけると継ぎ目に線が出る）
+                    int edges = (strip.x() <= t.x() + 0.01f ? 1 : 0) | (strip.y() <= t.y() + 0.01f ? 2 : 0)
+                            | (strip.x() + strip.w() >= t.x() + t.w() - 0.01f ? 4 : 0)
+                            | (strip.y() + strip.h() >= t.y() + t.h() - 0.01f ? 8 : 0);
+                    Map<String, String> stripEvents = events;
+                    if (edges != 15) {
+                        stripEvents = new HashMap<>(events);
+                        stripEvents.put(RenderKeys.EDGE_MASK, Integer.toString(edges));
+                    }
                     addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.RECT, strip.x(), strip.y(), strip.w(), strip.h(), "",
-                            0, strip.topLeft(), events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                            0, strip.topLeft(), stripEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
                 }
             }
         }

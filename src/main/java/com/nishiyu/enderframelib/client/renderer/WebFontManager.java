@@ -299,9 +299,18 @@ public class WebFontManager {
         CREATED_FONT_SETS.clear();
     }
 
+    private static final Pattern FAMILY_QUOTES = Pattern.compile("^[\"']+|[\"']+$");
+    /** 要素ごと・フレームごとに引かれるので、結果を覚える（書体名の種類は少ない）。 */
+    private static final Map<String, String> CLEAN_FAMILY_CACHE = new ConcurrentHashMap<>();
+
     private static String cleanFamilyName(String raw) {
         if (raw == null) return "";
-        return raw.trim().replaceAll("^[\"']+|[\"']+$", "").trim().toLowerCase(Locale.ROOT);
+        String cached = CLEAN_FAMILY_CACHE.get(raw);
+        if (cached != null) return cached;
+        String cleaned = FAMILY_QUOTES.matcher(raw.trim()).replaceAll("").trim().toLowerCase(Locale.ROOT);
+        if (CLEAN_FAMILY_CACHE.size() > 1024) CLEAN_FAMILY_CACHE.clear();
+        CLEAN_FAMILY_CACHE.put(raw, cleaned);
+        return cleaned;
     }
 
     /** Minecraft の書体を表す {@code font-family} の名前（小文字）。これらはビットマップの書体で描く。 */
