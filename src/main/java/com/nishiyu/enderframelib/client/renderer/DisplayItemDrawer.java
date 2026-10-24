@@ -49,6 +49,7 @@ import org.joml.Vector4f;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -267,6 +268,7 @@ public class DisplayItemDrawer {
         Level level = pass.level();
         boolean playAudio = pass.playAudio();
         boolean is2DAudio = pass.is2DAudio();
+        boolean is2DText = pass.screenSpaceText();
         String sessionId = pass.sessionId();
         BlockPos audioPos = pass.audioPos();
 
@@ -275,6 +277,7 @@ public class DisplayItemDrawer {
         Font defaultFont = WebFontManager.getDefaultFont();
         if (defaultFont == null) defaultFont = Minecraft.getInstance().font;
         float zOffset = 0.0f;
+        float topZ = 0.0f;
 
         float effectiveZStep = (zStep == 0.0f) ? ZLayers.ELEMENT_Z_STEP : zStep;
         float effectiveSubZ = (subZOffset == 0.0f) ? ZLayers.SUB_Z_OFFSET : subZOffset;
@@ -304,11 +307,18 @@ public class DisplayItemDrawer {
         String animSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         SessionContext session = ClientWebManager.getSession(animSessionId);
 
+        // 世界内の面は、SDF の Quad を画面を描き終える（endPass）まで積んで、まとめて描く。
+        // GUI などは従来どおり、Quad ごとに描く（バッファの吐き出しも Quad ごと。描く順が要素の順のまま保たれる）
+        if (pass.flatLayers()) WebSdfShader.beginPass(poseStack.last().pose());
+        int[] zLevels = pass.flatLayers() ? zLevelsFor(uiElements, screenWidth, screenHeight) : null;
+        int elementIndex = -1;
         for (DisplayItem el : uiElements) {
+            elementIndex++;
             if (el.type() == ElementType.NODE) continue;
 
             Font font = resolveElementFont(el, defaultFont);
-            zOffset += effectiveZStep;
+            zOffset = zLevels != null ? zLevels[elementIndex] * effectiveZStep : zOffset + effectiveZStep;
+            topZ = Math.max(topZ, zOffset);
 
             String baseId = ClientWebManager.getBaseNodeId(el.id());
             boolean isHovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
@@ -330,7 +340,9 @@ public class DisplayItemDrawer {
             // 祖先の空間で切るにはステンシルが要る。README の "Not supported" に対応。
             float[] clipArr = (meta != null && meta.clipRect() != null) ? meta.clipRect().toArray() : anim.clipData;
             if (clipArr != null && clipArr.length >= 8) {
-                clipMinX = clipArr[0]; clipMinY = clipArr[1]; clipMaxX = clipArr[2]; clipMaxY = clipArr[3];
+                // 祖先のクリップが画面より大きいとき（overflow が画面からはみ出すレイアウト）も、画面の外へは描かない
+                clipMinX = Math.max(clipArr[0], 0); clipMinY = Math.max(clipArr[1], 0);
+                clipMaxX = Math.min(clipArr[2], maxAllowedX); clipMaxY = Math.min(clipArr[3], maxAllowedY);
                 cRTL = clipArr[4]; cRTR = clipArr[5]; cRBR = clipArr[6]; cRBL = clipArr[7];
             }
 
@@ -350,6 +362,12 @@ public class DisplayItemDrawer {
                     rBR = Math.min(anim.radiusData[2], limit); rBL = Math.min(anim.radiusData[3], limit);
                 }
             }
+
+            // 祖先や要素自身の変形があると、描く座標（要素の空間）とクリップの座標（レイアウトの空間）がずれる。
+            // 変形の前の姿勢を覚えておき、変形の後でクリップを要素の空間へ直す
+            boolean ownTransform = anim.tx() != 0 || anim.ty() != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
+            boolean hasParentPose = el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT);
+            Matrix4f basePose = (ownTransform || hasParentPose) ? new Matrix4f(poseStack.last().pose()) : null;
 
             poseStack.pushPose();
             try {
@@ -375,11 +393,21 @@ public class DisplayItemDrawer {
                 if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
                 poseStack.translate(-cx, -cy, 0);
 
+                if (basePose != null) {
+                    float[] fixed = clipIntoLocalSpace(basePose, poseStack.last().pose(),
+                            clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    if (fixed != null) {
+                        clipMinX = fixed[0]; clipMinY = fixed[1]; clipMaxX = fixed[2]; clipMaxY = fixed[3];
+                        cRTL = fixed[4]; cRTR = fixed[5]; cRBR = fixed[6]; cRBL = fixed[7];
+                    }
+                }
+
                 float finalOpacity = cumulativeOpacity[0] * anim.opacity();
                 if (finalOpacity <= 0.005f) continue;
 
                 if (el.type() == ElementType.CIRCLE_BORDER) {
-                    if (renderCircleBorderElement(el, meta, anim, poseStack, buffer, finalOpacity, zOffset + effectiveSubZ)) {
+                    if (renderCircleBorderElement(el, meta, anim, poseStack, buffer, finalOpacity, zOffset + effectiveSubZ,
+                            clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL)) {
                         continue;
                     }
                 }
@@ -406,10 +434,10 @@ public class DisplayItemDrawer {
                     WebSceneContext.getOrCreate(animSessionId, baseId).renderScene(el, poseStack, buffer, finalOpacity, contentZ);
                 } else if (type == ElementType.TEXTAREA) {
                     if (renderText) {
-                        renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DAudio, packedLight);
+                        renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DText, packedLight);
                     }
                 } else if (type == ElementType.RANGE) {
-                    renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, effectiveZStep * 0.08f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if (type == ElementType.PROGRESS) {
                     renderProgressElement(el, anim, poseStack, buffer, finalOpacity, contentZ, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if (type == ElementType.TOGGLE || type == ElementType.CHECKBOX || type == ElementType.RADIO) {
@@ -418,7 +446,7 @@ public class DisplayItemDrawer {
                     renderImageOrMediaElement(el, meta, poseStack, buffer, font, level, animSessionId, audioPos, playAudio, is2DAudio, renderItems, renderText,
                             finalOpacity, contentZ, packedLight, packedOverlay, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
-                    renderTextOrInputElement(el, meta, anim, isFocused, elementMap, animSessionId, poseStack, buffer, font, renderText, is2DAudio,
+                    renderTextOrInputElement(el, meta, anim, isFocused, elementMap, animSessionId, poseStack, buffer, font, renderText, is2DText,
                             finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
                 }
             } finally {
@@ -427,10 +455,55 @@ public class DisplayItemDrawer {
         }
 
         if (renderText && hoveredTooltipEl != null && resolvedTooltipText != null && !resolvedTooltipText.isEmpty()) {
-            renderTooltipOverlay(poseStack, buffer, defaultFont, hoveredTooltipEl, resolvedTooltipText, maxAllowedX, maxAllowedY, zOffset + effectiveZStep * 4 + 0.05f, packedLight);
+            renderTooltipOverlay(poseStack, buffer, defaultFont, hoveredTooltipEl, resolvedTooltipText, maxAllowedX, maxAllowedY, topZ + effectiveZStep * 4 + 0.05f, packedLight);
         }
 
         WebSdfShader.endPass();
+    }
+
+    private static final int Z_LEVEL_CELL = 4;
+    private static final int Z_LEVEL_CACHE_MAX = 16;
+    private static final Map<List<DisplayItem>, int[]> Z_LEVEL_CACHE = new IdentityHashMap<>();
+
+    /**
+     * 要素ごとの奥行きの段（0 始まり）。前に描いた要素と重なるなら、その最上段の 1 つ上に置く。重ならない要素は
+     * 同じ段になるので、要素が千を超えても段は入れ子の深さ程度に収まる（奥行きを要素ごとに積むと、
+     * 斜めから見た面が立体に見える）。格子で近似するので、重なりが無くても段が上がることはあるが、下がることはない。
+     * 要素のリストは再描画まで同じインスタンスなので、そのインスタンスで結果を覚えておく。
+     */
+    private static int[] zLevelsFor(List<DisplayItem> elements, int screenWidth, int screenHeight) {
+        int[] cached = Z_LEVEL_CACHE.get(elements);
+        if (cached != null && cached.length == elements.size()) return cached;
+
+        int cols = Math.max(1, (int) Math.ceil(screenWidth * RESOLUTION / Z_LEVEL_CELL));
+        int rows = Math.max(1, (int) Math.ceil(screenHeight * RESOLUTION / Z_LEVEL_CELL));
+        int[] cellTop = new int[cols * rows];
+        int[] levels = new int[elements.size()];
+        for (int i = 0; i < levels.length; i++) {
+            DisplayItem el = elements.get(i);
+            if (el.type() == ElementType.NODE) continue;
+            int c0 = clamp(Math.floorDiv(el.x(), Z_LEVEL_CELL), cols);
+            // 端は含めない（隣り合うだけの要素を重なりとみなすと、段が横へ連鎖して積み上がり、奥行きが厚くなる）
+            int c1 = Math.max(c0, clamp(Math.floorDiv(el.x() + Math.max(1, el.width()) - 1, Z_LEVEL_CELL), cols));
+            int r0 = clamp(Math.floorDiv(el.y(), Z_LEVEL_CELL), rows);
+            int r1 = Math.max(r0, clamp(Math.floorDiv(el.y() + Math.max(1, el.height()) - 1, Z_LEVEL_CELL), rows));
+            int level = 0;
+            for (int r = r0; r <= r1; r++) {
+                for (int c = c0; c <= c1; c++) level = Math.max(level, cellTop[r * cols + c]);
+            }
+            level++;
+            levels[i] = level;
+            for (int r = r0; r <= r1; r++) {
+                for (int c = c0; c <= c1; c++) cellTop[r * cols + c] = level;
+            }
+        }
+        if (Z_LEVEL_CACHE.size() >= Z_LEVEL_CACHE_MAX) Z_LEVEL_CACHE.clear();
+        Z_LEVEL_CACHE.put(elements, levels);
+        return levels;
+    }
+
+    private static int clamp(int v, int count) {
+        return Math.max(0, Math.min(count - 1, v));
     }
 
     /** 測定に使った書体と同じものを引く（引き当ては McFontResolver が唯一の出所）。 */
@@ -470,7 +543,9 @@ public class DisplayItemDrawer {
     }
 
     private static boolean renderCircleBorderElement(DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim,
-                                                     PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zPos) {
+                                                     PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zPos,
+                                                     float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                                     float cRTL, float cRTR, float cRBR, float cRBL) {
         CircleBorderSpec cb = meta != null ? meta.circleBorder() : null;
         if (cb == null && anim.circleColors == null) return false;
 
@@ -483,6 +558,16 @@ public class DisplayItemDrawer {
 
         VertexConsumer builder = buffer.getBuffer(RenderType.gui());
         Matrix4f matrix = poseStack.last().pose();
+        // 4 辺が同じ色なら、角丸の枠線（半径 = 外半径）として SDF の輪で描く。段のない滑らかな円になる
+        if (useSdfShader && cTop == cRight && cRight == cBottom && cBottom == cLeft) {
+            if (cTop == 0) return true;
+            RoundedRectRasterizer.drawRoundedBorder(builder, matrix,
+                    el.x(), el.y(), el.x() + el.width(), el.y() + el.height(),
+                    outerRadius, outerRadius, outerRadius, outerRadius,
+                    new float[]{thick, thick, thick, thick}, new int[]{cTop, cRight, cBottom, cLeft}, finalOpacity, zPos,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, true);
+            return true;
+        }
         float cX = el.x() + el.width() / 2.0f;
         float cY = el.y() + el.height() / 2.0f;
 
@@ -513,6 +598,18 @@ public class DisplayItemDrawer {
                                                 float finalOpacity, float zOffset, float rTL, float rTR, float rBR, float rBL,
                                                 float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                                 float cRTL, float cRTR, float cRBR, float cRBL) {
+        String shadowBlur = el.events() != null ? el.events().get(RenderKeys.SHADOW_BLUR) : null;
+        if (shadowBlur != null) {
+            renderBlurredShadow(el, anim, poseStack, finalOpacity, zOffset, Float.parseFloat(shadowBlur), rTL, rTR, rBR, rBL,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            return;
+        }
+        String shaderGradient = el.events() != null ? el.events().get(RenderKeys.SHADER_GRADIENT) : null;
+        if (shaderGradient != null) {
+            renderShaderGradient(el, shaderGradient, poseStack, finalOpacity, zOffset,
+                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            return;
+        }
         GradientSpec grad = meta != null ? meta.gradient() : null;
         // 何が壊れていたか: 以前は isHovered / isActive でグラデーションを無効にしていたため、
         // グラデーション背景の要素にカーソルを乗せると平坦な色に落ちていた。
@@ -520,13 +617,19 @@ public class DisplayItemDrawer {
         boolean backgroundOverriddenByState = anim.bgColor() != el.bgColor();
         if (grad != null && !backgroundOverriddenByState) {
             VertexConsumer builder = buffer.getBuffer(RenderType.gui());
-            drawGradientRoundedRect(
-                    builder, poseStack.last().pose(),
-                    el.x(), el.y(), el.x() + el.width(), el.y() + el.height(),
-                    rTL, rTR, rBR, rBL,
-                    grad, finalOpacity, zOffset,
-                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL
-            );
+            String edgeMask = el.events() != null ? el.events().get(RenderKeys.EDGE_MASK) : null;
+            if (edgeMask != null) WebSdfShader.setEdgeMask(Integer.parseInt(edgeMask));
+            try {
+                drawGradientRoundedRect(
+                        builder, poseStack.last().pose(),
+                        el.x(), el.y(), el.x() + el.width(), el.y() + el.height(),
+                        rTL, rTR, rBR, rBL,
+                        grad, finalOpacity, zOffset,
+                        clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL
+                );
+            } finally {
+                if (edgeMask != null) WebSdfShader.setEdgeMask(15);
+            }
         } else {
             float bgA = ((anim.bgColor() >>> 24) & 0xFF) / 255.0f * finalOpacity;
             if (bgA > 0) {
@@ -543,6 +646,98 @@ public class DisplayItemDrawer {
                 }
             }
         }
+    }
+
+    /** {@code Gradients#shaderGradient} の記述を読んで、2 色のグラデーションを 1 枚で描く。 */
+    private static void renderShaderGradient(DisplayItem el, String encoded, PoseStack poseStack, float finalOpacity, float zOffset,
+                                             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                             float cRTL, float cRTR, float cRBR, float cRBL) {
+        String[] p = encoded.split(",");
+        float[] gradA = new float[4], gradB = new float[4];
+        int c0, c1;
+        if (p[0].equals("L")) {
+            gradA[0] = Float.parseFloat(p[1]);
+            gradA[1] = Float.parseFloat(p[2]);
+            gradA[2] = Float.parseFloat(p[3]);
+            gradA[3] = 1f;
+            c0 = Integer.parseInt(p[4]);
+            c1 = Integer.parseInt(p[5]);
+        } else {
+            gradA[0] = Float.parseFloat(p[1]);
+            gradA[1] = Float.parseFloat(p[2]);
+            gradA[2] = Float.parseFloat(p[3]);
+            gradA[3] = 2f;
+            gradB[0] = Float.parseFloat(p[4]);
+            gradB[1] = Float.parseFloat(p[5]);
+            gradB[2] = Float.parseFloat(p[6]);
+            c0 = Integer.parseInt(p[7]);
+            c1 = Integer.parseInt(p[8]);
+        }
+        float a0 = ((c0 >>> 24) & 0xFF) / 255.0f * finalOpacity, a1 = ((c1 >>> 24) & 0xFF) / 255.0f * finalOpacity;
+        if (a0 <= 0 && a1 <= 0) return;
+        WebSdfShader.drawSdfShaderGradient(poseStack.last().pose(),
+                el.x(), el.y(), el.x() + el.width(), el.y() + el.height(),
+                ((c0 >>> 16) & 0xFF) / 255.0f, ((c0 >>> 8) & 0xFF) / 255.0f, (c0 & 0xFF) / 255.0f, a0,
+                ((c1 >>> 16) & 0xFF) / 255.0f, ((c1 >>> 8) & 0xFF) / 255.0f, (c1 & 0xFF) / 255.0f, a1,
+                gradA, gradB, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+    }
+
+    /**
+     * ぼかした影を 1 枚で描く。要素の矩形は「ぼかしが消える所まで」の広さ（{@link #SHADOW_REACH} × ぼかし半径だけ形の外側）で、
+     * 影の形はそこから同じだけ内側。減衰はシェーダーがガウスぼかしに近い形で計算する（以前は層の重ね塗りで、段が見えた）。
+     */
+    private static void renderBlurredShadow(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack,
+                                            float finalOpacity, float zOffset, float blur,
+                                            float rTL, float rTR, float rBR, float rBL,
+                                            float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                            float cRTL, float cRTR, float cRBR, float cRBL) {
+        float a = ((anim.bgColor() >>> 24) & 0xFF) / 255.0f * finalOpacity;
+        if (a <= 0) return;
+        float r = ((anim.bgColor() >>> 16) & 0xFF) / 255.0f;
+        float g = ((anim.bgColor() >>> 8) & 0xFF) / 255.0f;
+        float b = (anim.bgColor() & 0xFF) / 255.0f;
+        float reach = SHADOW_REACH * blur;
+        float qx0 = el.x(), qy0 = el.y(), qx1 = el.x() + el.width(), qy1 = el.y() + el.height();
+        float sx0 = qx0 + reach, sy0 = qy0 + reach, sx1 = qx1 - reach, sy1 = qy1 - reach;
+        if (sx1 <= sx0 || sy1 <= sy0) return;
+        // 形の角丸は、要素の矩形に合わせて切り詰められた半径ではなく、形そのものの大きさで切り詰める
+        float limit = Math.min(sx1 - sx0, sy1 - sy0) / 2.0f;
+        WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1,
+                Math.min(rTL, limit), Math.min(rTR, limit), Math.min(rBR, limit), Math.min(rBL, limit),
+                r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur);
+    }
+
+    /** 影のぼかしが消える所までの広さ（ぼかし半径の倍数。標準偏差 = 半径 / 2 の 3 倍）。 */
+    public static final float SHADOW_REACH = 1.5f;
+
+    /**
+     * レイアウトの空間のクリップ矩形を、要素を描く空間（変形の後の姿勢の局所座標）へ直す。{@code base} は変形の前、
+     * {@code eff} は変形の後の姿勢。平行移動だけなら矩形をずらす（角丸もそのまま）。回転・拡縮があるときは、
+     * 円（正方形で角丸が半分以上）のクリップだけ、中心を移して半径を拡縮する（円は回しても円）。
+     * それ以外（回した角丸矩形など）は、直せないのでそのまま（{@code null}）。
+     */
+    private static float[] clipIntoLocalSpace(Matrix4f base, Matrix4f eff,
+                                              float x0, float y0, float x1, float y1,
+                                              float r0, float r1, float r2, float r3) {
+        Matrix4f toLocal = new Matrix4f(eff).invert().mul(base);
+        float a = toLocal.m00(), b = toLocal.m10(), c = toLocal.m01(), d = toLocal.m11();
+        float tx = toLocal.m30(), ty = toLocal.m31();
+        if (!Float.isFinite(a) || !Float.isFinite(d) || !Float.isFinite(tx) || !Float.isFinite(ty)) return null;
+        boolean identityLinear = Math.abs(a - 1) < 1e-4f && Math.abs(d - 1) < 1e-4f && Math.abs(b) < 1e-4f && Math.abs(c) < 1e-4f;
+        if (identityLinear) {
+            if (Math.abs(tx) < 1e-4f && Math.abs(ty) < 1e-4f) return null;
+            return new float[]{x0 + tx, y0 + ty, x1 + tx, y1 + ty, r0, r1, r2, r3};
+        }
+        float w = x1 - x0, h = y1 - y0;
+        float half = Math.min(w, h) / 2.0f;
+        boolean circle = Math.abs(w - h) < 0.5f && half > 0
+                && r0 >= half - 0.5f && r1 >= half - 0.5f && r2 >= half - 0.5f && r3 >= half - 0.5f;
+        float scaleX = (float) Math.sqrt(a * a + c * c), scaleY = (float) Math.sqrt(b * b + d * d);
+        if (!circle || Math.abs(scaleX - scaleY) > 1e-3f * Math.max(1f, scaleX)) return null;
+        float qx = (x0 + x1) / 2.0f, qy = (y0 + y1) / 2.0f;
+        float px = a * qx + b * qy + tx, py = c * qx + d * qy + ty;
+        float rad = half * scaleX;
+        return new float[]{px - rad, py - rad, px + rad, py + rad, rad, rad, rad, rad};
     }
 
     private static void renderProgressElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
@@ -565,7 +760,7 @@ public class DisplayItemDrawer {
     }
 
     private static void renderRangeElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
-                                           float finalOpacity, float zPos,
+                                           float finalOpacity, float zPos, float zUnit,
                                            float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                            float cRTL, float cRTR, float cRBR, float cRBL) {
         float rVal = anim.rangeVal, rMin = anim.rangeMin, rMax = anim.rangeMax;
@@ -606,23 +801,24 @@ public class DisplayItemDrawer {
             RenderMeta meta = el.meta();
             int edge = meta != null && meta.roundedBorder() != null ? meta.roundedBorder().colorTop() : 0;
             int accent = anim.color() | 0xFF000000;
+            // 同じ深さに重ねるとちらつく（Z ファイティング）ので、描く順に少しずつ手前へ置く
             fillRoundedRect(builder, mat, left, trackTop, right, trackBottom, trackRad, trackRad, over(edge, fill), finalOpacity, zPos,
                     clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
-            fillRoundedRect(builder, mat, left + 1, trackTop + 1, right - 1, trackBottom - 1, trackRad - 1, trackRad - 1, fill, finalOpacity, zPos,
+            fillRoundedRect(builder, mat, left + 1, trackTop + 1, right - 1, trackBottom - 1, trackRad - 1, trackRad - 1, fill, finalOpacity, zPos + zUnit,
                     clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
             if (tCX > left) {
                 float r = Math.min(trackRad, (tCX - left) / 2);
-                fillRoundedRect(builder, mat, left, trackTop, tCX, trackBottom, r, 0, over(edge, accent), finalOpacity, zPos,
+                fillRoundedRect(builder, mat, left, trackTop, tCX, trackBottom, r, 0, over(edge, accent), finalOpacity, zPos + 2 * zUnit,
                         clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 if (tCX > left + 1) {
                     float ri = Math.max(0, Math.min(trackRad - 1, (tCX - left - 1) / 2));
-                    fillRoundedRect(builder, mat, left + 1, trackTop + 1, tCX, trackBottom - 1, ri, 0, accent, finalOpacity, zPos,
+                    fillRoundedRect(builder, mat, left + 1, trackTop + 1, tCX, trackBottom - 1, ri, 0, accent, finalOpacity, zPos + 3 * zUnit,
                             clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 }
             }
         }
         drawRoundedRect(builder, mat, tCX - thumbRad, cy - thumbRad, tCX + thumbRad, cy + thumbRad,
-                thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zPos + ZLayers.SUB_Z_OFFSET,
+                thumbRad, thumbRad, thumbRad, thumbRad, prR, prG, prB, prA, zPos + 4 * zUnit,
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
     }
 
@@ -1053,8 +1249,9 @@ public class DisplayItemDrawer {
         float tipX = target.x() + (target.width() - boxW) / 2.0f;
         float tipY = target.y() - boxH - 4.0f;
         if (tipY < 2.0f) tipY = target.y() + target.height() + 4.0f;
-        tipX = Math.clamp(tipX, 2.0f, maxW - boxW - 2.0f);
-        tipY = Math.clamp(tipY, 2.0f, maxH - boxH - 2.0f);
+        // 画面よりツールチップが大きいと範囲が逆転する（Math.clamp は例外）。その場合は左上に寄せる
+        tipX = Math.max(2.0f, Math.min(tipX, maxW - boxW - 2.0f));
+        tipY = Math.max(2.0f, Math.min(tipY, maxH - boxH - 2.0f));
 
         poseStack.pushPose();
         try {

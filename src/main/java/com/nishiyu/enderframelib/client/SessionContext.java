@@ -101,6 +101,16 @@ public class SessionContext implements AutoCloseable {
     /** 位置の決め直しが要求されている（同じフレームの再スタイルがレイアウト不要でも、スクロールは反映する）。 */
     private volatile boolean repositionPending = false;
     /** まだ反映していないビューポートの大きさ。無ければ -1。 */
+    /**
+     * GUI など、クライアントが画面の大きさを自分で決めているセッションか。そうでない（ブロック・アイテム・ホログラムの
+     * ように世界に貼る）セッションは、サーバーが読み込んだときの解像度を画面の大きさとして使う。
+     */
+    private boolean explicitSize;
+
+    public void markExplicitSize() {
+        explicitSize = true;
+    }
+
     private volatile int pendingResizeW = -1;
     private volatile int pendingResizeH = -1;
     /** 直前の全レイアウト（描画要素の生成まで）にかかった時間と、それを終えた時刻（ナノ秒）。 */
@@ -558,6 +568,7 @@ public class SessionContext implements AutoCloseable {
      */
     public void requestResize(int width, int height) {
         if (width <= 0 || height <= 0) return;
+        explicitSize = true;
         if (width == rootW && height == rootH && pendingResizeW < 0) return;
         pendingResizeW = width;
         pendingResizeH = height;
@@ -768,15 +779,18 @@ public class SessionContext implements AutoCloseable {
             CompoundTag domTag = tag.getCompound("DomTree");
             String cssString = tag.getString("CssString");
 
-            int currentHash = Objects.hash(domTag.hashCode(), cssString.hashCode());
+            boolean serverSize = !explicitSize && tag.getInt("RootW") > 0 && tag.getInt("RootH") > 0;
+            int currentHash = Objects.hash(domTag.hashCode(), cssString.hashCode(),
+                    serverSize ? tag.getInt("RootW") : 0, serverSize ? tag.getInt("RootH") : 0);
             if (domHash == currentHash && document != null) {
                 setRequested(false);
                 return;
             }
             setDomHash(currentHash);
 
-            int w = rootW > 0 ? rootW : (tag.contains("RootW") ? tag.getInt("RootW") : 854);
-            int h = rootH > 0 ? rootH : (tag.contains("RootH") ? tag.getInt("RootH") : 480);
+            // 世界に貼る画面は、サーバーが読み込んだときの解像度がそのまま画面の大きさ（メニューモードと同じレイアウト）
+            int w = serverSize ? tag.getInt("RootW") : (rootW > 0 ? rootW : (tag.contains("RootW") ? tag.getInt("RootW") : 854));
+            int h = serverSize ? tag.getInt("RootH") : (rootH > 0 ? rootH : (tag.contains("RootH") ? tag.getInt("RootH") : 480));
 
             HtmlNode rootNode = HtmlNodeSerializer.deserialize(domTag, null);
             installDocument(rootNode, cssString, w, h, true);
@@ -850,6 +864,7 @@ public class SessionContext implements AutoCloseable {
 
     /** ローカルの HTML を読み込んで、このセッションの文書にする。 */
     public void loadLocalHtml(String html, int width, int height) {
+        explicitSize = true;
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document parsedDoc = parser.parseDocument(html, "", width, height);
         installDocument(parsedDoc.root, parsedDoc.authorCss, width, height, false);

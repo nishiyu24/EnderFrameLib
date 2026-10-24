@@ -70,6 +70,20 @@ public class EnderFrameBuiltInConfig {
     )
     public static volatile String defaultTheme = "enderframelib:dark.css";
 
+    @ConfigEntry(
+            category = "Media",
+            label = "Allow External Web Media",
+            description = "Allow downloading and rendering images/videos from external HTTP/HTTPS URLs."
+    )
+    public static volatile boolean allowExternalMedia = true;
+
+    @ConfigEntry(
+            category = "Media",
+            label = "Enable YouTube Playback (yt-dlp)",
+            description = "Allow downloading and executing yt-dlp to resolve YouTube video streams. Requires explicit consent."
+    )
+    public static volatile boolean allowYtDlp = false;
+
     /**
      * クライアント起動時に EnderFrameClientInit からバインドされるランタイム反映フック。
      * Dedicated Server 環境では null のままとなり、クライアントクラスのロードを発生させない。

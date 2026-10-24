@@ -555,6 +555,48 @@ public final class Gradients {
         };
     }
 
+    /**
+     * 2 色だけの {@code linear-gradient()} / {@code radial-gradient()}（繰り返しなし・ヒントなし・補間空間の指定なし）を、
+     * シェーダーが画素ごとに計算して 1 枚で描くための記述にする。帯や格子に刻まないので、継ぎ目も段もない。
+     * 対象外（停止点が 3 つ以上・繰り返し・円錐など）は null で、従来どおり {@link #strips} で刻む。
+     *
+     * 形式（カンマ区切り）: 線形 {@code L,dx,dy,offset,色0,色1}（t = dx*x + dy*y + offset）、
+     * 放射 {@code R,cx,cy,1/rx,1/ry,p0,1/(p1-p0),色0,色1}（t = (|((x-cx)/rx, (y-cy)/ry)| - p0) / (p1 - p0)）。
+     * どちらも t は 0〜1 に切り詰め、色はプリマルチプライドで補間する（{@link #lerpPremultiplied} と同じ）。
+     */
+    public static String shaderGradient(Gradient g, Rect tile, float rootW, float rootH, float fontSize, float rootFontSize) {
+        if (tile.w() <= 0 || tile.h() <= 0 || g.repeating() || g.colorSpace() != null) return null;
+        if (g instanceof LinearGradient linear) {
+            double rad = Math.toRadians(linear.angleFor(tile.w(), tile.h()));
+            double sin = Math.sin(rad), cos = Math.cos(rad);
+            if (Math.abs(sin) < 1e-9) sin = 0;
+            if (Math.abs(cos) < 1e-9) cos = 0;
+            double length = Math.abs(tile.w() * sin) + Math.abs(tile.h() * cos);
+            if (length <= 0) return null;
+            ResolvedStops stops = resolveStops(g.stops(), (float) length, false, rootW, rootH, fontSize, rootFontSize);
+            if (stops.positions().length != 2 || hasHint(stops)) return null;
+            double p0 = stops.positions()[0], span = stops.positions()[1] - p0;
+            if (span <= 1e-6) return null;
+            double cx = tile.x() + tile.w() / 2.0, cy = tile.y() + tile.h() / 2.0;
+            double k = 1.0 / (length * span);
+            double dx = sin * k, dy = -cos * k;
+            double off = (-cx * sin + cy * cos) * k + (0.5 - p0) / span;
+            return "L," + (float) dx + "," + (float) dy + "," + (float) off + "," + stops.colors()[0] + "," + stops.colors()[1];
+        }
+        if (g instanceof RadialGradient radial) {
+            float[] center = resolveCenter(radial.center(), tile, rootW, rootH, fontSize, rootFontSize);
+            float[] radii = radialRadii(radial, tile, center[0], center[1], rootW, rootH, fontSize, rootFontSize);
+            float rx = Math.max(radii[0], 1e-3f), ry = Math.max(radii[1], 1e-3f);
+            ResolvedStops stops = resolveStops(g.stops(), rx, false, rootW, rootH, fontSize, rootFontSize);
+            if (stops.positions().length != 2 || hasHint(stops)) return null;
+            float p0 = stops.positions()[0], span = stops.positions()[1] - p0;
+            if (span <= 1e-6f) return null;
+            return "R," + center[0] + "," + center[1] + "," + (1f / rx) + "," + (1f / ry) + "," + p0 + "," + (1f / span)
+                    + "," + stops.colors()[0] + "," + stops.colors()[1];
+        }
+        return null;
+    }
+
     private static List<GradientStrip> linearStrips(LinearGradient g, Rect tile, Rect visible, float rootW, float rootH,
                                                     float fontSize, float rootFontSize, ColorParser.ColorMixer mixer) {
         List<GradientStrip> out = new ArrayList<>();

@@ -4,7 +4,9 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
+import com.nishiyu.enderframelib.client.SurfaceHitResolver;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.SessionInput;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -12,7 +14,10 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
@@ -28,6 +33,8 @@ public class InvisibleInputScreen extends Screen {
     private final BlockPos blockPos;
     private WebTextInputHost inputHost;
     private boolean submitted = false;
+    /** 入力欄の外を押した。ボタンのクリックなどが解放まで届くよう、閉じるのは離したとき。 */
+    private boolean closeOnRelease = false;
 
     public InvisibleInputScreen(String sessionId, DisplayItem targetElement, BlockPos blockPos) {
         super(Component.empty());
@@ -68,12 +75,103 @@ public class InvisibleInputScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        // ブロック上のUIを操作している場合、プレイヤーが離れすぎたら自動で閉じる
+        // ブロック上のUIを操作している場合、プレイヤーが画面から離れすぎたら自動で閉じる
         if (this.blockPos != null && this.minecraft != null && this.minecraft.player != null) {
-            if (this.minecraft.player.blockPosition().distSqr(this.blockPos) > MAX_INTERACTION_DIST_SQR) {
+            if (distanceSqrToScreen() > MAX_INTERACTION_DIST_SQR) {
                 commitAndClose();
             }
         }
+    }
+
+    /** 目から画面全体（master から右へ幅、上へ高さ分のブロック）の箱までの距離の 2 乗。大きな画面でも、端の近くに立てば届く。 */
+    private double distanceSqrToScreen() {
+        Vec3 eye = this.minecraft.player.getEyePosition();
+        if (!(this.minecraft.level.getBlockEntity(blockPos) instanceof WebScreenBlockEntity screen) || screen.getFacing() == null
+                || screen.getFacing().getAxis().isVertical()) {
+            return eye.distanceToSqr(Vec3.atCenterOf(blockPos));
+        }
+        Direction right = screen.getFacing().getCounterClockWise();
+        BlockPos far = blockPos.relative(right, screen.getScreenWidth() - 1).above(screen.getScreenHeight() - 1);
+        double dx = axisGap(eye.x, Math.min(blockPos.getX(), far.getX()), Math.max(blockPos.getX(), far.getX()) + 1);
+        double dy = axisGap(eye.y, blockPos.getY(), far.getY() + 1);
+        double dz = axisGap(eye.z, Math.min(blockPos.getZ(), far.getZ()), Math.max(blockPos.getZ(), far.getZ()) + 1);
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double axisGap(double v, double min, double max) {
+        return Math.max(Math.max(min - v, v - max), 0.0);
+    }
+
+    // ------------------------------------------------------------------
+    // マウス。カーソルが自由になっているので、カーソル位置から画面上の点を求めてセッションへ転送する
+    // ------------------------------------------------------------------
+
+    private SurfaceHitResolver.SurfaceHit cursorHit(double mouseX, double mouseY) {
+        return this.minecraft != null ? SurfaceHitResolver.fromCursor(this.minecraft, blockPos, mouseX, mouseY) : null;
+    }
+
+    @Override
+    public void mouseMoved(double mouseX, double mouseY) {
+        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        if (hit != null) {
+            ClientScreenInteractionManager.handleHover(sessionId, hit.pixelX(), hit.pixelY());
+        } else {
+            ClientScreenInteractionManager.handleHover(sessionId, -1, -1);
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT && button != GLFW.GLFW_MOUSE_BUTTON_RIGHT) return false;
+        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        closeOnRelease = true;
+        if (hit == null) return true;
+
+        DisplayItem clicked = ClientScreenInteractionManager.handleClick(sessionId, hit.pixelX(), hit.pixelY(), button);
+        if (clicked == null) return true;
+
+        boolean isInput = clicked.type() == ElementType.INPUT || clicked.type() == ElementType.TEXTAREA;
+        if (isInput && clicked.id().equals(targetElement.id())) {
+            closeOnRelease = false;
+        } else if (isInput) {
+            switchTo(clicked);
+        }
+        return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        if (hit != null) ClientScreenInteractionManager.handleDrag(sessionId, hit.pixelX(), hit.pixelY());
+        return true;
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT && button != GLFW.GLFW_MOUSE_BUTTON_RIGHT) return false;
+        SurfaceHitResolver.SurfaceHit hit = cursorHit(mouseX, mouseY);
+        if (hit != null) {
+            ClientScreenInteractionManager.handleRelease(sessionId, hit.pixelX(), hit.pixelY(), button, true);
+        } else {
+            ClientScreenInteractionManager.handleRelease(sessionId);
+        }
+        if (closeOnRelease) {
+            closeOnRelease = false;
+            ClientScreenInteractionManager.swallowNextMouseEvent();
+            commitAndClose();
+        }
+        return true;
+    }
+
+    /** 別の入力欄がクリックされたとき。いまの値を確定して、そちらの入力画面へ移る。 */
+    private void switchTo(DisplayItem next) {
+        if (!submitted && this.inputHost != null) {
+            submitted = true;
+            input().submitInput(targetElement.id(), this.inputHost.getValue());
+            this.inputHost.deactivate();
+        }
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(next.id());
+        ClientScreenInteractionManager.openInputScreen(sessionId, next, blockPos);
     }
 
     @Override

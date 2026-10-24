@@ -45,6 +45,7 @@ public class ClientWebManager {
         int targetH = height > 0 ? height : 480;
 
         SessionContext ctx = getSession(sessionId);
+        if (ctx != null) ctx.markExplicitSize();
         if (!forceReload && ctx != null && ctx.isServerManaged() && ctx.document() != null) {
             if (ctx.rootW() != targetW || ctx.rootH() != targetH) {
                 ctx.recomputeLayout(targetW, targetH);
@@ -67,6 +68,7 @@ public class ClientWebManager {
         }
 
         SessionContext session = getOrCreateSession(sessionId);
+        session.markExplicitSize();
         session.setServerManaged(true);
         ClientScreenInteractionManager.ensureSynced(sessionId);
         if (session.document() != null && (session.rootW() != targetW || session.rootH() != targetH)) {
@@ -132,8 +134,20 @@ public class ClientWebManager {
     private static final Pattern NUMBERED_RENDER_PART = Pattern.compile(
             "_(?:[bo]_(?:top|right|bottom|left)_\\d+|b_round_\\d+|bgl\\d+_\\d+|shadow_(?:in)?\\d+)$");
 
+    /** 描画 ID から節の ID への変換は要素ごと・フレームごとに引かれ、正規表現が重いので結果を覚える。 */
+    private static final Map<String, String> BASE_NODE_ID_CACHE = new ConcurrentHashMap<>();
+
     public static String getBaseNodeId(String renderId) {
         if (renderId == null || renderId.isEmpty()) return "";
+        String cached = BASE_NODE_ID_CACHE.get(renderId);
+        if (cached != null) return cached;
+        String base = computeBaseNodeId(renderId);
+        if (BASE_NODE_ID_CACHE.size() > 100_000) BASE_NODE_ID_CACHE.clear();
+        BASE_NODE_ID_CACHE.put(renderId, base);
+        return base;
+    }
+
+    private static String computeBaseNodeId(String renderId) {
 
         Matcher numbered = NUMBERED_RENDER_PART.matcher(renderId);
         if (numbered.find() && numbered.start() > 0) return renderId.substring(0, numbered.start());

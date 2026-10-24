@@ -35,7 +35,9 @@ public record PaintRequest(
         boolean playAudio,
         boolean is2DAudio,
         String sessionId,
-        BlockPos audioPos
+        BlockPos audioPos,
+        boolean flatLayers,
+        boolean screenSpaceText
 ) {
     public void render() {
         DisplayItemDrawer.renderElements(this);
@@ -92,6 +94,8 @@ public record PaintRequest(
         private boolean playAudio = true;
         private boolean is2DAudio = true;
         private BlockPos audioPos = null;
+        private boolean flatLayers = false;
+        private Boolean screenSpaceText = null;
 
         public Builder(List<DisplayItem> elements, int screenWidth, int screenHeight,
                        PoseStack poseStack, MultiBufferSource buffer,
@@ -142,12 +146,31 @@ public record PaintRequest(
             return this;
         }
 
+        /**
+         * 重なる要素だけを奥行きで積む（重ならない要素は同じ奥行きに置く）。ワールド内の面のように斜めから見る面を
+         * 平らに保つ。既定は要素ごとに奥行きを積む（GUI 向け）。
+         */
+        public Builder flatLayers(boolean flatLayers) {
+            this.flatLayers = flatLayers;
+            return this;
+        }
+
+        /**
+         * 文字を画面空間（GUI・HUD）の描き方にするか。{@code audio} の 2D とは別。既定は {@code audio} の 2D に従う
+         * （GUI は両方 2D、世界内の面は両方 3D）。手持ちアイテムは「音は 2D、文字は 3D」なので、ここで切り分ける。
+         */
+        public Builder screenSpaceText(boolean screenSpaceText) {
+            this.screenSpaceText = screenSpaceText;
+            return this;
+        }
+
         public PaintRequest build() {
             return new PaintRequest(
                     elements, screenWidth, screenHeight, poseStack, buffer,
                     packedLight, packedOverlay, renderItems, renderText, renderRounded,
                     zStep, subZOffset, hoveredId, lodColor, isLodMode,
-                    level, playAudio, is2DAudio, sessionId, audioPos
+                    level, playAudio, is2DAudio, sessionId, audioPos, flatLayers,
+                    screenSpaceText != null ? screenSpaceText : is2DAudio
             );
         }
 

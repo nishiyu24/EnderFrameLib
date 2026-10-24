@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.gametest;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.nishiyu.enderframelib.EnderFrameLib;
@@ -54,6 +55,48 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.RegisterEvent;
+import org.jetbrains.annotations.Nullable;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.nishiyu.enderframelib.client.renderer.WebBlockRenderer;
+import com.nishiyu.enderframelib.client.renderer.WebItemRendererHelper;
+import net.minecraft.client.Minecraft;
+import com.nishiyu.enderframelib.api.template.EnderScreenBlock;
+import com.nishiyu.enderframelib.api.template.EnderScreenBlockEntity;
+import com.nishiyu.enderframelib.api.template.EnderScreenItem;
+import com.nishiyu.enderframelib.client.EnderScreenClient;
+import com.nishiyu.enderframelib.client.renderer.HologramRenderer;
+import com.nishiyu.enderframelib.client.EnderScreenItemClient;
+import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
+import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 /**
  * サーバー側のセッション寿命のゲームテスト。
@@ -93,6 +136,7 @@ public final class WebScreenGameTest {
     private static final String BATCH_DOCUMENT = "enderframe_document";
     private static final String BATCH_HEADLESS = "enderframe_headless";
     private static final String BATCH_HEADLESS_REPLACE = "enderframe_headless_replace";
+    private static final String BATCH_SURFACE = "enderframe_surface";
 
     /** 実機確認用のテンプレート（{@code assets/enderframelib/enderframe_ui/state_test.html}）。 */
     private static final String STATE_TEMPLATE = "enderframelib:state_test";
@@ -319,6 +363,76 @@ public final class WebScreenGameTest {
                 .thenSucceed();
     }
 
+    /**
+     * 並べたスクリーンブロックは欠けのない長方形で 1 枚の画面になり、壊して欠けると 1×1 に分かれ、
+     * 長方形に戻ると再びまとまる（左下が master）。
+     */
+    @GameTest(template = TEMPLATE, batch = BATCH_SURFACE, timeoutTicks = 100)
+    public static void screenBlocksFormRectangleAndSplitOnBreak(GameTestHelper helper) {
+        Block block = SurfaceDevHarness.BLOCK;
+        if (block == null) helper.fail("テスト用のスクリーンブロックが登録されていません");
+
+        Direction facing = Direction.SOUTH;
+        Direction right = facing.getCounterClockWise();
+        BlockPos origin = new BlockPos(0, 1, 1);
+        for (int x = 0; x < 3; x++) {
+            for (int y = 0; y < 2; y++) {
+                BlockPos p = origin.relative(right, x).above(y);
+                helper.setBlock(p, block);
+                screenAt(helper, p).setFacing(facing);
+            }
+        }
+        EnderScreenBlockEntity.rebuild(helper.getLevel(), helper.absolutePos(origin));
+
+        BlockPos absoluteOrigin = helper.absolutePos(origin);
+        for (int x = 0; x < 3; x++) {
+            for (int y = 0; y < 2; y++) {
+                EnderScreenBlockEntity be = screenAt(helper, origin.relative(right, x).above(y));
+                if (be.getScreenWidth() != 3 || be.getScreenHeight() != 2 || !be.getScreenMasterPos().equals(absoluteOrigin)) {
+                    helper.fail("3×2 の画面にまとまっていません (" + x + "," + y + "): " + be.getScreenWidth() + "x"
+                            + be.getScreenHeight() + " master=" + be.getScreenMasterPos());
+                }
+                if (be.isMaster() != (x == 0 && y == 0)) helper.fail("master が左下ではありません (" + x + "," + y + ")");
+            }
+        }
+
+        // 上の段の真ん中を壊す → L 字になり、残りは 1×1 の画面
+        helper.destroyBlock(origin.relative(right, 1).above(1));
+        for (int x = 0; x < 3; x++) {
+            for (int y = 0; y < 2; y++) {
+                if (x == 1 && y == 1) continue;
+                EnderScreenBlockEntity be = screenAt(helper, origin.relative(right, x).above(y));
+                if (!be.isMaster() || be.getScreenWidth() != 1 || be.getScreenHeight() != 1) {
+                    helper.fail("欠けた後に 1×1 へ分かれていません (" + x + "," + y + ")");
+                }
+            }
+        }
+
+        // 上の段を全部壊す → 下の段が 3×1 でまとまり直す
+        helper.destroyBlock(origin.above(1));
+        helper.destroyBlock(origin.relative(right, 2).above(1));
+        for (int x = 0; x < 3; x++) {
+            EnderScreenBlockEntity be = screenAt(helper, origin.relative(right, x));
+            if (be.getScreenWidth() != 3 || be.getScreenHeight() != 1 || !be.getScreenMasterPos().equals(absoluteOrigin)) {
+                helper.fail("下の段が 3×1 でまとまり直していません (" + x + ")");
+            }
+        }
+
+        // onScreenFormed が読み込んだセッションを片付ける（他のテストの「状態が空」を壊さない）
+        helper.getLevel().getServer().getCommands().performPrefixedCommand(
+                helper.getLevel().getServer().createCommandSourceStack().withSuppressedOutput(),
+                "enderframe session clear " + SurfaceDevHarness.BLOCK_SESSION);
+        helper.succeed();
+    }
+
+    private static EnderScreenBlockEntity screenAt(GameTestHelper helper, BlockPos pos) {
+        if (!(helper.getBlockEntity(pos) instanceof EnderScreenBlockEntity be)) {
+            helper.fail("スクリーンのブロックエンティティがありません: " + pos);
+            throw new IllegalStateException();
+        }
+        return be;
+    }
+
     /** 送ったパケットを本物のコーデックで書いて読み直す（受信側の辞書への登録・名前への復元まで）。 */
     private static <T extends CustomPacketPayload> T roundTrip(GameTestHelper helper, Map<UUID, List<CustomPacketPayload>> sent,
                                                                ServerPlayer player, int index, Class<T> type) {
@@ -416,6 +530,7 @@ public final class WebScreenGameTest {
                                                             StringArgumentType.getString(ctx, "value")))))))
                             .then(Commands.literal("info").then(Commands.argument("pos", BlockPosArgument.blockPos())
                                     .executes(ctx -> info(ctx.getSource(), BlockPosArgument.getLoadedBlockPos(ctx, "pos"))))))
+                    .then(SurfaceDevHarness.command())
                     .then(Commands.literal("count")
                             .then(Commands.literal("start").then(Commands.argument("target", EntityArgument.player())
                                     .executes(ctx -> countStart(ctx.getSource(), EntityArgument.getPlayer(ctx, "target")))))
@@ -552,6 +667,18 @@ public final class WebScreenGameTest {
         static void onChat(ClientChatReceivedEvent event) {
             if (!DevHarness.enabled()) return;
             String text = event.getMessage().getString();
+            if (text.startsWith(SurfaceDevHarness.HOLOGRAM_TRIGGER)) {
+                String[] parts = text.substring(SurfaceDevHarness.HOLOGRAM_TRIGGER.length()).trim().split(" ");
+                if (parts[0].equals("clear")) {
+                    HologramRenderer.clear();
+                } else {
+                    Vec3 base = new Vec3(Integer.parseInt(parts[0]) + 0.5, Integer.parseInt(parts[1]) + 0.5, Integer.parseInt(parts[2]) + 0.5);
+                    boolean billboard = Boolean.parseBoolean(parts[3]);
+                    HologramRenderer.show("efl_dev_" + parts[0] + "_" + parts[1] + "_" + parts[2], new HologramRenderer.Spec(
+                            SurfaceDevHarness.HOLOGRAM_SESSION, base, 2f, 1.5f, 0f, billboard, 32.0));
+                }
+                return;
+            }
             if (!text.startsWith(DevHarness.HUD_TRIGGER)) return;
             int frames = Integer.parseInt(text.substring(DevHarness.HUD_TRIGGER.length()).trim());
 
@@ -573,6 +700,183 @@ public final class WebScreenGameTest {
                 }
             });
             loop[0].run();
+        }
+    }
+
+    /**
+     * ブロック／手持ちアイテム表面への Web 描画の実機確認用ハーネス。{@code neoforge.enabledGameTestNamespaces} を付けた
+     * run（{@code runClient} / {@code runServer}）でだけ、テスト用ブロックとアイテムを登録しコマンドを足す。
+     *
+     * <p>ライブラリ自身は表面を持つブロックもアイテムも登録しない（{@code WebBlockRenderer} /
+     * {@code WebItemRendererHelper} はアドオン向け）。ここでは両方を実際に通すための最小実装を置く。</p>
+     *
+     * <ul>
+     *   <li>{@code /efl_dev surface place <pos> <facing> <w> <h>}: テストブロックを置き、
+     *       {@value #BLOCK_SESSION} に {@code enderframelib:surface_test} を（w*32 × h*32 px で）読み込む。</li>
+     *   <li>{@code /efl_dev surface give <targets>}: {@value #ITEM_SESSION} を持つテストアイテムを渡し、
+     *       320x240 で読み込む。</li>
+     *   <li>{@code /efl_dev surface clear}: 両方のセッションを消す。</li>
+     * </ul>
+     */
+    public static final class SurfaceDevHarness {
+
+        public static final String BLOCK_SESSION = "efl_surface_block";
+        public static final String ITEM_SESSION = "efl_surface_item";
+        public static final String HOLOGRAM_SESSION = "efl_surface_hologram";
+        /** どの面もページの設計どおりの解像度（512x384）で読み込む。面の大きさ（ブロック数）は、それを収める物理的な大きさ。 */
+        static final String UI_ID = "enderframelib:surface_test";
+        static final int UI_WIDTH = 512;
+        static final int UI_HEIGHT = 384;
+
+        private static final ResourceLocation BLOCK_ID = ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "surface_test_block");
+        private static final ResourceLocation ITEM_ID = ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "surface_test_item");
+
+        // Block / Item のコンストラクタはレジストリに触るので、凍結後の mod 構築中には作れない。登録イベントの中で作る。
+        public static Block BLOCK;
+        public static BlockEntityType<SurfaceBlockEntity> BLOCK_ENTITY;
+        public static EnderScreenItem ITEM;
+
+        private SurfaceDevHarness() {}
+
+        /** 開発用 run でだけ登録する。 */
+        public static void init(IEventBus modEventBus) {
+            if (!DevHarness.enabled()) return;
+            modEventBus.addListener(RegisterEvent.class, event -> {
+                event.register(Registries.BLOCK, helper -> {
+                    BLOCK = new EnderScreenBlock(BlockBehaviour.Properties.of().strength(1.0f).noOcclusion(), () -> BLOCK_ENTITY);
+                    helper.register(BLOCK_ID, BLOCK);
+                });
+                event.register(Registries.BLOCK_ENTITY_TYPE, helper -> {
+                    BLOCK_ENTITY = BlockEntityType.Builder.of(SurfaceBlockEntity::new, BLOCK).build(null);
+                    helper.register(BLOCK_ID, BLOCK_ENTITY);
+                });
+                event.register(Registries.ITEM, helper -> {
+                    ITEM = new EnderScreenItem(new Item.Properties().stacksTo(1));
+                    helper.register(BLOCK_ID, new BlockItem(BLOCK, new Item.Properties()));
+                    helper.register(ITEM_ID, ITEM);
+                });
+            });
+        }
+
+        static LiteralArgumentBuilder<CommandSourceStack> command() {
+            return Commands.literal("surface")
+                    .then(Commands.literal("place").then(Commands.argument("pos", BlockPosArgument.blockPos())
+                            .then(Commands.argument("facing", StringArgumentType.word())
+                                    .suggests((ctx, b) -> {
+                                        for (Direction d : Direction.Plane.HORIZONTAL) b.suggest(d.getName());
+                                        return b.buildFuture();
+                                    })
+                                    .then(Commands.argument("w", IntegerArgumentType.integer(1, 16))
+                                            .then(Commands.argument("h", IntegerArgumentType.integer(1, 16))
+                                                    .executes(ctx -> place(ctx.getSource(),
+                                                            BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                                                            StringArgumentType.getString(ctx, "facing"),
+                                                            IntegerArgumentType.getInteger(ctx, "w"),
+                                                            IntegerArgumentType.getInteger(ctx, "h"))))))))
+                    .then(Commands.literal("hologram").then(Commands.argument("pos", BlockPosArgument.blockPos())
+                            .then(Commands.argument("billboard", BoolArgumentType.bool())
+                                    .executes(ctx -> hologram(ctx.getSource(),
+                                            BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                                            BoolArgumentType.getBool(ctx, "billboard"))))))
+                    .then(Commands.literal("give").then(Commands.argument("targets", EntityArgument.players())
+                            .executes(ctx -> give(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets")))))
+                    .then(Commands.literal("clear").executes(ctx -> clear(ctx.getSource())));
+        }
+
+        private static int place(CommandSourceStack source, BlockPos pos, String facingName, int w, int h) {
+            Direction facing = Direction.byName(facingName);
+            if (facing == null || facing.getAxis().isVertical()) {
+                source.sendFailure(Component.literal("[efl_dev] facing must be north/south/east/west"));
+                return 0;
+            }
+            ServerLevel level = source.getLevel();
+            // w×h 個のブロックを並べ、1 枚の画面にまとめさせる（pos が左下 = master）。セッションは onScreenFormed が読み込む
+            Direction right = facing.getCounterClockWise();
+            for (int x = 0; x < w; x++) {
+                for (int y = 0; y < h; y++) {
+                    BlockPos p = pos.relative(right, x).above(y);
+                    level.setBlockAndUpdate(p, BLOCK.defaultBlockState());
+                    if (level.getBlockEntity(p) instanceof SurfaceBlockEntity be) be.setFacing(facing);
+                }
+            }
+            EnderScreenBlockEntity.rebuild(level, pos);
+            source.sendSuccess(() -> Component.literal("[efl_dev] surface block at " + pos.toShortString()
+                    + " facing=" + facing.getName() + " " + w + "x" + h + " blocks (layout " + UI_WIDTH + "x" + UI_HEIGHT + " px)"), false);
+            return 1;
+        }
+
+        /** ホログラムはクライアントだけの状態なので、サーバーからシステムメッセージで伝える（クライアントが読み取る）。 */
+        static final String HOLOGRAM_TRIGGER = "[efl_dev] hologram ";
+
+        private static int hologram(CommandSourceStack source, BlockPos pos, boolean billboard) {
+            loadSession(source, HOLOGRAM_SESSION, UI_WIDTH, UI_HEIGHT);
+            for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + pos.getX() + " " + pos.getY() + " " + pos.getZ() + " " + billboard));
+            }
+            return 1;
+        }
+
+        private static int give(CommandSourceStack source, Collection<ServerPlayer> targets) {
+            loadSession(source, ITEM_SESSION, UI_WIDTH, UI_HEIGHT);
+            for (ServerPlayer player : targets) {
+                ItemStack stack = ITEM.createStack(ITEM_SESSION);
+                stack.set(DataComponents.CUSTOM_NAME, Component.literal("EnderFrame Surface Tablet"));
+                if (!player.getInventory().add(stack)) player.drop(stack, false);
+            }
+            source.sendSuccess(() -> Component.literal("[efl_dev] gave surface item to " + targets.size() + " player(s)"), false);
+            return targets.size();
+        }
+
+        private static int clear(CommandSourceStack source) {
+            runCommand(source, "enderframe session clear " + BLOCK_SESSION);
+            runCommand(source, "enderframe session clear " + ITEM_SESSION);
+            runCommand(source, "enderframe session clear " + HOLOGRAM_SESSION);
+            for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + "clear"));
+            }
+            return 1;
+        }
+
+        private static void loadSession(CommandSourceStack source, String sessionId, int w, int h) {
+            runCommand(source, "enderframe session load " + sessionId + " " + UI_ID + " " + w + " " + h);
+        }
+
+        private static void runCommand(CommandSourceStack source, String command) {
+            source.getServer().getCommands().performPrefixedCommand(source.withSuppressedOutput(), command);
+        }
+
+        /** ひな形（{@link EnderScreenBlockEntity}）の上に、セッションと LOD 色だけを足した描画確認用のブロックエンティティ。 */
+        public static final class SurfaceBlockEntity extends EnderScreenBlockEntity {
+            public SurfaceBlockEntity(BlockPos pos, BlockState state) {
+                super(BLOCK_ENTITY, pos, state);
+            }
+
+            @Override public String getSessionId() { return BLOCK_SESSION; }
+            /** 遠距離 LOD の確認用に、はっきり分かる色を返す。 */
+            @Override public int getLodColor() { return 0xFF00E5FF; }
+
+            @Override
+            protected void onScreenFormed(int width, int height) {
+                if (level instanceof ServerLevel serverLevel) {
+                    loadSession(serverLevel.getServer().createCommandSourceStack(), BLOCK_SESSION, UI_WIDTH, UI_HEIGHT);
+                }
+            }
+        }
+    }
+
+    /** {@link SurfaceDevHarness} のクライアント側。ブロックは {@code WebBlockRenderer}、アイテムは {@code WebItemRendererHelper} に通す。 */
+    public static final class SurfaceDevHarnessClient {
+
+        /** アイテム面（320x240）。アイテム空間の幅 0.8、一人称では 0.6 までに収める。 */
+        private static final ItemSurfaceSpec ITEM_SURFACE = new ItemSurfaceSpec(
+                SurfaceDevHarness.UI_WIDTH, SurfaceDevHarness.UI_HEIGHT, 0.8f, 0.6f, ItemSurfaceSpec.Anchor.CENTER, 0f);
+
+        private SurfaceDevHarnessClient() {}
+
+        public static void init(IEventBus modEventBus) {
+            if (!DevHarness.enabled()) return;
+            EnderScreenClient.register(modEventBus, () -> SurfaceDevHarness.BLOCK_ENTITY);
+            EnderScreenItemClient.register(modEventBus, () -> SurfaceDevHarness.ITEM, ITEM_SURFACE);
         }
     }
 }
