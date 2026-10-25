@@ -141,7 +141,7 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 計算値はいずれも完全一致しており（`computed-values` が `opacity` / `transform` / `color` を固定する）、
 差はスクロールバーの有無によるクライアント幅とリストマーカーの行高に由来する。
 相殺されたマージンの scrollHeight への算入は R5（Phase 2）で一致させた（`margin-collapse-bottom`）。
-`pseudo-lang-dir-defined#e.x` だけは R4 で足したケースで見えた差（`direction` が未対応）。
+`pseudo-lang-dir-defined#e.x` だけは R4 で足したケースで見えた差（`direction` が未対応）だったが、Phase 4（2026-10-26）で `direction` に対応して解消した。
 
 ### R5（CSSOM / CSSOM View・スクロール）
 - `flex-column-overflow#scroller.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth/scrollWidth の縮小）
@@ -166,8 +166,7 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 - `list-ordered#a.scrollHeight`: ブラウザ 24 / エンジン 20（::marker の配置と行高による項目の scrollHeight の差）
 
 ### R7（テキストと国際化）
-- `forced-line-breaks#box.scrollHeight`: ブラウザ 62 / エンジン 60（強制改行の末尾行送り・ベースラインの 2px の差）
-- `pseudo-lang-dir-defined#e.x`: ブラウザ 172 / エンジン 8（`direction: rtl` のブロックは幅が余ると右に寄る。`direction` を未対応。`:dir(rtl)` の照合そのものは一致している）
+- `forced-line-breaks#box.scrollHeight`: ブラウザ 62 / エンジン 60（強制改行の末尾行送り・ベースラインの 2px の差。原因は、行の高さ 20px より高い書体の内容領域（Noto Sans JP の ascent + descent = 24px）の下端がスクロール範囲に入ること。エンジンは Phase 4 で内容領域を算入するようにしたが、このコーパスの測定は書体を持たない `FontResolver.FALLBACK` なので 60 のまま。システムの書体では `DirectionLayoutTest` が固定している）
 
 ### R9（レイアウトとパーサの残り）
 - `table-border-collapse#t.scrollWidth`: ブラウザ 90 / エンジン 88（border-collapse: collapse での表の scrollWidth 算出）
@@ -183,7 +182,7 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `pseudo-lang-dir-defined` / `math-level4` / `units-modern` / `property-registered`）を足した。
   `@layer`・CSS ネスト・`@container`・`:has()`・フォームの状態の擬似クラス・`:lang()` / `:dir()` / `:defined`・
   数学関数 Level 4・新しい単位・`@property` はブラウザと一致し、残ったのは `direction: rtl` の配置の 1 行
-  （上の R7）だけ。コーパスは 123 → 138 ケース。
+  （Phase 4 で解消）だけだった。コーパスは 123 → 138 ケース。
 - **W11（0 行）**: 台帳の行は無かった（装飾を持つインラインボックスの矩形・確定した高さの %・強制改行の
   shrink-to-fit・column wrap・`justify-content` の物理的な向きを測るケースが無かった）。8 ケース
   （`inline-box-edges` / `inline-box-wrap` / `inline-box-vertical-align` / `shrink-to-fit-line-breaks` /

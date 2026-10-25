@@ -7,6 +7,10 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.core.text.BidiText;
+import com.nishiyu.enderframelib.core.text.font.AtlasCache;
+import com.nishiyu.enderframelib.core.text.font.AtlasSizing;
+import com.nishiyu.enderframelib.core.text.font.GlyphKey;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
@@ -22,9 +26,7 @@ import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -36,25 +38,30 @@ import java.util.function.Function;
  * 字の位置は測定（{@link OutlineFontFace#positions}）と同じ値で、詰め（カーニング）と字間を含む。
  * 字の原点はデバイスピクセルに揃える（Windows の Chrome がグレースケールで描くときと同じ見え方）。
  *
- * 置き場は「面・合成の有無・ピクセルの大きさ・倍率」ごとに 1 つ作り、使われなくなったものから捨てる。
+ * 置き場は「面・合成の有無・ピクセルの大きさ・倍率」ごとに 1 つ作る。原点の端数と字の明るさは置き場の鍵に含めず、
+ * 字形の番号（{@link GlyphKey}）に入れて同じ置き場に載せる（以前は最大 8 枚のテクスチャに分かれ、どれも少ししか埋まらなかった）。
+ * 使われなくなった置き場は {@link AtlasCache} が捨てる。ピクセルの大きさは {@link AtlasSizing} で量子化するので、
+ * {@code scale} のアニメーション中もサイズごとの置き場が増え続けない。
  */
 public final class OutlineTextRenderer {
 
     /** 1 字のビットマップの最大の大きさ（px）。Minecraft の字形のテクスチャは 256px 四方。 */
     private static final float MAX_PIXEL_SIZE = 192f;
-    private static final int MAX_FONT_SETS = 256;
+    /** 置き場の個数の目安。超えても、直近に使われたものは捨てない（{@link AtlasCache}）。 */
+    private static final int SOFT_LIMIT_FONT_SETS = 64;
+    private static final long PROTECT_NANOS = 2_000_000_000L;
+    private static final long EXPIRE_NANOS = 30_000_000_000L;
+    /** 使われない面の FreeType のハンドルを閉じるまでの時間と、その確認の間隔。 */
+    private static final long FACE_IDLE_NANOS = 60_000_000_000L;
+    private static long lastFaceTrim = System.nanoTime();
 
-    private record AtlasKey(LoadedFace face, boolean bold, boolean italic, int pixelSizeQ, int scaleQ,
-                            int subpixel, boolean lightText) {}
+    private record AtlasKey(LoadedFace face, boolean bold, boolean italic, int pixelSizeQ, int scaleQ) {}
 
-    private static final Map<AtlasKey, FontSet> ATLASES = new LinkedHashMap<>(32, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<AtlasKey, FontSet> eldest) {
-            if (size() <= MAX_FONT_SETS) return false;
-            eldest.getValue().close();
-            return true;
-        }
-    };
+    /** 字形の置き場と、その中での字形の番号の割り当て。 */
+    private record Atlas(FontSet set, GlyphKey keys) {}
+
+    private static final AtlasCache<AtlasKey, Atlas> ATLASES = new AtlasCache<>(
+            SOFT_LIMIT_FONT_SETS, PROTECT_NANOS, EXPIRE_NANOS, System::nanoTime, atlas -> atlas.set().close());
     private static int atlasCounter;
 
     private OutlineTextRenderer() {}
@@ -73,6 +80,9 @@ public final class OutlineTextRenderer {
         if (text == null || text.isEmpty()) return;
         float a = ((argb >>> 24) & 0xFF) / 255f;
         if (a <= 0) return;
+        housekeeping();
+        // 右から左の文字を含むなら、描く順（視覚順）に並べ替えてから字を置く（UAX #9）
+        text = BidiText.toVisual(text, null);
         float scale = Math.max(0.25f, deviceScale);
         float[] positions = face.positions(text, style);
         if (shadow) {
@@ -123,7 +133,7 @@ public final class OutlineTextRenderer {
     private static void drawRun(String text, int[] colors, OutlineFontFace face, FontStyle style, float[] positions, float x,
                                 float baselineY, int argb, Matrix4f pose, MultiBufferSource buffer, float scale, boolean snap,
                                 int packedLight) {
-        float pixelSize = Math.min(style.fontSizePx() * scale, MAX_PIXEL_SIZE);
+        float pixelSize = AtlasSizing.quantize(Math.min(style.fontSizePx() * scale, MAX_PIXEL_SIZE));
         float glyphScale = pixelSize / style.fontSizePx();
         float originY = snap ? Math.round(baselineY * scale) / scale : baselineY;
 
@@ -168,35 +178,39 @@ public final class OutlineTextRenderer {
 
     private static BakedGlyph glyph(LoadedFace face, boolean bold, boolean italic, int cp, float pixelSize, float glyphScale,
                                     int subpixel, boolean lightText) {
-        AtlasKey key = new AtlasKey(face, bold, italic,
-                Math.round(pixelSize * 4), Math.round(glyphScale * 64), subpixel, lightText);
-        FontSet set;
-        synchronized (ATLASES) {
-            set = ATLASES.get(key);
-            if (set == null) {
-                set = createAtlas(key, pixelSize, glyphScale);
-                ATLASES.put(key, set);
-            }
-        }
-        return set.getGlyph(cp);
+        AtlasKey key = new AtlasKey(face, bold, italic, AtlasSizing.key(pixelSize), Math.round(glyphScale * 64));
+        Atlas atlas = ATLASES.get(key, k -> createAtlas(k, pixelSize, glyphScale));
+        return atlas.set().getGlyph(atlas.keys().encode(cp, subpixel, lightText));
     }
 
-    private static FontSet createAtlas(AtlasKey key, float pixelSize, float glyphScale) {
+    /** 置き場の掃除と、使われない面のハンドルの解放。描画のたびに呼んでよい（時刻の比較だけ）。 */
+    private static void housekeeping() {
+        ATLASES.sweepIfDue();
+        long now = System.nanoTime();
+        if (now - lastFaceTrim >= FACE_IDLE_NANOS / 2) {
+            lastFaceTrim = now;
+            LoadedFace.releaseIdle(FACE_IDLE_NANOS);
+        }
+    }
+
+    private static Atlas createAtlas(AtlasKey key, float pixelSize, float glyphScale) {
         Minecraft mc = Minecraft.getInstance();
         ResourceLocation name = ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "outline_text/" + (atlasCounter++));
         FontSet set = new FontSet(mc.getTextureManager(), name);
-        GlyphProvider provider = new FaceGlyphProvider(key.face(), key.bold(), key.italic(), pixelSize, glyphScale,
-                key.subpixel(), key.lightText());
+        GlyphKey keys = new GlyphKey();
+        GlyphProvider provider = new FaceGlyphProvider(key.face(), key.bold(), key.italic(), pixelSize, glyphScale, keys);
         set.reload(List.of(new GlyphProvider.Conditional(provider, FontOption.Filter.ALWAYS_PASS)), Set.of());
-        return set;
+        return new Atlas(set, keys);
     }
 
     /** 描画の倍率が変わった（画面の大きさの変更など）ときや資源の再読み込みのときに置き場を捨てる。 */
     public static void clear() {
-        synchronized (ATLASES) {
-            for (FontSet set : ATLASES.values()) set.close();
-            ATLASES.clear();
-        }
+        ATLASES.clear();
+    }
+
+    /** いま持っている置き場の数（テストと診断用）。 */
+    public static int atlasCount() {
+        return ATLASES.size();
     }
 
     /** 1 つの面を 1 つの大きさでラスタライズする {@link GlyphProvider}。 */
@@ -207,23 +221,25 @@ public final class OutlineTextRenderer {
         private final float pixelSize;
         /** 1 CSS px あたりのビットマップのピクセル数（字形の四角形の大きさを CSS px に直す）。 */
         private final float oversample;
-        private final int subpixel;
-        private final boolean lightText;
+        private final GlyphKey keys;
 
-        FaceGlyphProvider(LoadedFace face, boolean bold, boolean italic, float pixelSize, float oversample,
-                          int subpixel, boolean lightText) {
+        FaceGlyphProvider(LoadedFace face, boolean bold, boolean italic, float pixelSize, float oversample, GlyphKey keys) {
+            this.keys = keys;
             this.face = face;
             this.bold = bold;
             this.italic = italic;
             this.pixelSize = pixelSize;
             this.oversample = oversample;
-            this.subpixel = subpixel;
-            this.lightText = lightText;
         }
 
         @Override
-        public GlyphInfo getGlyph(int character) {
-            LoadedFace.GlyphBitmap bitmap = face.rasterize(character, pixelSize, bold, italic, subpixel).withTextContrast(lightText);
+        public GlyphInfo getGlyph(int glyphKey) {
+            int codePoint = keys.codePoint(glyphKey);
+            // FontSet が置き場を作るときに試す番号（割り当て前の空白など）。null を返すと FontSet はこの提供元を外してしまう
+            // （対応字を 1 つも引けない提供元は使われない）ので、空白の字形として答える
+            if (codePoint < 0) return (GlyphInfo.SpaceGlyphInfo) () -> 1.0f;
+            LoadedFace.GlyphBitmap bitmap = face.rasterize(codePoint, pixelSize, bold, italic,
+                    GlyphKey.subpixel(glyphKey)).withTextContrast(GlyphKey.lightText(glyphKey));
             if (bitmap.isEmpty()) return (GlyphInfo.SpaceGlyphInfo) () -> 1.0f;
             return new GlyphInfo() {
                 @Override

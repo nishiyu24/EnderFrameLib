@@ -128,7 +128,8 @@ final class ValueComputer {
         if (declared == null) declared = trimmed(ctx.parent().get(CssProperty.LINE_HEIGHT));
         float lineHeight = lineHeightPx(declared, ownFontSize, ctx.rootFontSize(), ctx.viewportW(), ctx.viewportH());
         return new Metrics(0, ctx.viewportW(), ctx.viewportH(), ownFontSize, ctx.rootFontSize(), lineHeight,
-                ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH());
+                ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH(),
+                GlyphUnits.of(style, ctx.parent(), ownFontSize));
     }
 
     /**
@@ -226,7 +227,7 @@ final class ValueComputer {
         // font-size の中では、em / lh などの基準は親のフォントサイズ（自身のサイズを決めている最中なので）
         Metrics metrics = new Metrics(parent, ctx.viewportW(), ctx.viewportH(), parent, ctx.rootFontSize(),
                 parent * LengthResolver.NORMAL_LINE_HEIGHT_EM, ctx.rootFontSize() * LengthResolver.NORMAL_LINE_HEIGHT_EM,
-                ctx.containerW(), ctx.containerH());
+                ctx.containerW(), ctx.containerH(), GlyphUnits.of(Map.of(), ctx.parent(), parent));
         List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(value));
         if (values.size() != 1) return parent;
         float result;

@@ -22,6 +22,10 @@ area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, 
 [hidden] { display: none; }
 input[type="hidden"] { display: none !important; }
 
+/* §15.3.6 双方向テキスト（dir 属性を direction に。dir=auto は最初の強い文字で決まるが、ここでは扱わない） */
+[dir="ltr"] { direction: ltr; }
+[dir="rtl"] { direction: rtl; }
+
 /* §15.3.2 ページ */
 html, body { display: block; }
 body { margin: 8px; }

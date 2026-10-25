@@ -31,12 +31,6 @@ public final class TextShaper {
     /** タブは Minecraft のフォントで描けないので空白に開く。 */
     private static final String TAB_SPACES = "    ";
 
-    /** 行頭に置けない文字（行頭禁則）。 */
-    private static final String NO_BREAK_BEFORE =
-            "、。，．！？：；」』）］｝〉》・ーぁぃぅぇぉっゃゅょゎヵヶ々ゝゞ.,!?:;)]}>%";
-    /** 行末に置けない文字（行末禁則）。 */
-    private static final String NO_BREAK_AFTER = "「『（［｛〈《([{<$¥";
-
     /**
      * 折り返し判定で「入る」とみなす誤差（Chrome の LayoutUnit の 1 単位 = 1/64px）。
      *
@@ -71,7 +65,7 @@ public final class TextShaper {
     // ==========================================
 
     /**
-     * 折り返し候補で区切った断片。末尾の空白は直前の断片に付く。
+     * 折り返し候補（UAX #14。{@link LineBreaker}）で区切った断片。末尾の空白は直前の断片に付く。
      *
      * インライン整形も同じ規則で単語を切り出すため公開している。
      * 以前は正規表現 1 本（空白と和文の句読点のみ）だったので、
@@ -82,8 +76,8 @@ public final class TextShaper {
         if (text == null || text.isEmpty()) return out;
 
         int start = 0;
-        for (int i = 1; i < text.length(); i++) {
-            if (canBreakBefore(text, i, wordBreak)) {
+        for (int i = text.offsetByCodePoints(0, 1); i < text.length(); i = text.offsetByCodePoints(i, 1)) {
+            if (LineBreaker.canBreakBefore(text, i, wordBreak)) {
                 out.add(text.substring(start, i));
                 start = i;
             }
@@ -92,36 +86,8 @@ public final class TextShaper {
         return out;
     }
 
-    private static boolean canBreakBefore(String text, int index, WordBreak wordBreak) {
-        char prev = text.charAt(index - 1);
-        char cur = text.charAt(index);
-
-        if (cur == '\n') return false;
-        // 空白の直後で切る。空白の手前では切らない（末尾の空白は前の行にぶら下げる）
-        if (isBlank(prev)) return !isBlank(cur);
-        if (isBlank(cur)) return false;
-
-        if (wordBreak == WordBreak.BREAK_ALL) return true;
-        if (wordBreak == WordBreak.KEEP_ALL) return prev == '-';
-
-        if (isIdeographic(prev) || isIdeographic(cur)) {
-            return NO_BREAK_BEFORE.indexOf(cur) < 0 && NO_BREAK_AFTER.indexOf(prev) < 0;
-        }
-        // 欧文は空白とハイフンだけが候補
-        return prev == '-';
-    }
-
     private static boolean isBlank(char c) {
-        return c == ' ' || c == '\t';
-    }
-
-    /** 表意文字・仮名・全角記号。語の内側でも分割できる文字。 */
-    private static boolean isIdeographic(char c) {
-        return (c >= 0x3000 && c <= 0x30FF)    // CJK 記号・ひらがな・カタカナ
-                || (c >= 0x3400 && c <= 0x4DBF)
-                || (c >= 0x4E00 && c <= 0x9FFF)  // CJK 統合漢字
-                || (c >= 0xF900 && c <= 0xFAFF)
-                || (c >= 0xFF00 && c <= 0xFF60); // 全角英数・記号
+        return c == ' ' || c == '	';
     }
 
     // ==========================================

@@ -259,6 +259,7 @@ public class DisplayListBuilder {
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
             // ここがするのは text-align の offset と丸めだけで、描画側は測り直さない。
             TextAlign align = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class);
+            boolean rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
             float contentX = box.x + box.pL + box.bL;
             float availableW = Math.max(0, box.w - box.pL - box.pR - box.bL - box.bR);
             float lineY = box.y + box.pT + box.bT;
@@ -266,7 +267,7 @@ public class DisplayListBuilder {
             for (ShapedLine line : box.shapedLines) {
                 if (!line.text().isBlank()) {
                     float lineW = line.width();
-                    float lineX = contentX + alignOffset(align, availableW, lineW);
+                    float lineX = contentX + alignOffset(align, rtl, availableW, lineW);
                     RenderMeta lineMeta = new RenderMeta(
                             normalizedClip, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）

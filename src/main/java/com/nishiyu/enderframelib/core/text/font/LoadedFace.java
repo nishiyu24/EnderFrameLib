@@ -91,7 +91,11 @@ public final class LoadedFace {
     private static final Map<SystemFonts.Face, LoadedFace> OPEN = new ConcurrentHashMap<>();
 
     private final SystemFonts.Face record;
-    private final FT_Face face;
+    /** 開いている FreeType のハンドル。{@link #release()} で閉じ、次に使うとき {@link #ensureOpen()} が開き直す。 */
+    private FT_Face face;
+    /** メモリから開いた書体（{@code @font-face}）の実体。FreeType はハンドルが生きている間これを参照し続ける。 */
+    private ByteBuffer memory;
+    private volatile long lastUseNanos = System.nanoTime();
     private final int unitsPerEm;
     private final float ascentEm;
     private final float descentEm;
@@ -118,9 +122,10 @@ public final class LoadedFace {
     /** 字の原点の横の端数の段数（1/4 ピクセル）。 */
     public static final int SUBPIXEL_STEPS = 4;
 
-    private LoadedFace(SystemFonts.Face record, FT_Face face) {
+    private LoadedFace(SystemFonts.Face record, FT_Face face, ByteBuffer memory) {
         this.record = record;
         this.face = face;
+        this.memory = memory;
         synchronized (LOCK) {
             this.unitsPerEm = Math.max(1, Short.toUnsignedInt(face.units_per_EM()));
             TT_OS2 os2 = TT_OS2.createSafe(FreeType.FT_Get_Sfnt_Table(face, FreeType.FT_SFNT_OS2));
@@ -195,6 +200,100 @@ public final class LoadedFace {
         }
     }
 
+    /** 開いたハンドルと、メモリから開いたときの実体（ハンドルより先に解放してはいけない）。 */
+    private record Opened(FT_Face face, ByteBuffer memory) {}
+
+    private static Opened openRecord(SystemFonts.Face record) {
+        byte[] data = record.data() != null ? record.data().bytes() : null;
+        if (data == null) {
+            FT_Face face = openFace(record.path(), record.faceIndex());
+            return face == null ? null : new Opened(face, null);
+        }
+        synchronized (LOCK) {
+            ByteBuffer buf = org.lwjgl.system.MemoryUtil.memAlloc(data.length);
+            buf.put(0, data);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                PointerBuffer out = stack.mallocPointer(1);
+                if (FreeType.FT_New_Memory_Face(library(), buf, record.faceIndex(), out) != 0) {
+                    org.lwjgl.system.MemoryUtil.memFree(buf);
+                    return null;
+                }
+                return new Opened(FT_Face.create(out.get(0)), buf);
+            }
+        }
+    }
+
+    /** ハンドルが閉じていれば開き直す。{@link #LOCK} の中で呼ぶ。開けなければ {@link IllegalStateException}。 */
+    private void ensureOpen() {
+        lastUseNanos = System.nanoTime();
+        if (face != null) return;
+        Opened opened = openRecord(record);
+        if (opened == null) throw new IllegalStateException("Cannot reopen font " + record.displayName());
+        face = opened.face();
+        memory = opened.memory();
+        currentCharSize = -1;
+        currentOblique = false;
+        currentSubpixel = 0;
+    }
+
+    /**
+     * FreeType のハンドルを閉じる。測った寸法・送り幅・字形番号の表は残るので、次に使うまでは何も失わない
+     * （使うと開き直す）。字形を描かない面がハンドルを持ち続けないようにするためのもの。
+     */
+    public void release() {
+        synchronized (LOCK) {
+            if (face == null) return;
+            FreeType.FT_Done_Face(face);
+            face = null;
+            if (memory != null) {
+                org.lwjgl.system.MemoryUtil.memFree(memory);
+                memory = null;
+            }
+        }
+    }
+
+    /** ハンドルを開いている面の数。 */
+    public static int openHandleCount() {
+        synchronized (LOCK) {
+            int n = 0;
+            for (LoadedFace f : OPEN.values()) if (f.face != null) n++;
+            return n;
+        }
+    }
+
+    /** {@code idleNanos} 以上使われていない面のハンドルを閉じる。閉じた数を返す。 */
+    public static int releaseIdle(long idleNanos) {
+        long now = System.nanoTime();
+        int closed = 0;
+        synchronized (LOCK) {
+            for (LoadedFace f : OPEN.values()) {
+                if (f.face != null && now - f.lastUseNanos >= idleNanos) {
+                    f.release();
+                    closed++;
+                }
+            }
+        }
+        return closed;
+    }
+
+    /** 一覧から外した面（登録を消した {@code @font-face}）のハンドルを閉じて忘れる。 */
+    static void forget(java.util.Collection<SystemFonts.Face> records) {
+        synchronized (LOCK) {
+            for (SystemFonts.Face r : records) {
+                LoadedFace f = OPEN.remove(r);
+                if (f != null) f.release();
+            }
+        }
+    }
+
+    /** すべての面のハンドルを閉じ、一覧からも外す（資源の再読み込みやクライアントの終了で呼ぶ）。 */
+    public static void releaseAll() {
+        synchronized (LOCK) {
+            for (LoadedFace f : OPEN.values()) f.release();
+            OPEN.clear();
+        }
+    }
+
     /** 面を開く（同じ面は 1 度だけ開いて共有する）。開けなければ null。 */
     public static LoadedFace open(SystemFonts.Face record) {
         LoadedFace cached = OPEN.get(record);
@@ -202,9 +301,9 @@ public final class LoadedFace {
         synchronized (LOCK) {
             cached = OPEN.get(record);
             if (cached != null) return cached;
-            FT_Face face = openFace(record.path(), record.faceIndex());
-            if (face == null) return null;
-            LoadedFace loaded = new LoadedFace(record, face);
+            Opened opened = openRecord(record);
+            if (opened == null) return null;
+            LoadedFace loaded = new LoadedFace(record, opened.face(), opened.memory());
             OPEN.put(record, loaded);
             return loaded;
         }
@@ -282,6 +381,7 @@ public final class LoadedFace {
             synchronized (LOCK) {
                 k = kerning;
                 if (k == null) {
+                    ensureOpen();
                     k = KerningTable.parse(loadTable("GPOS"), loadTable("kern"), loadTable("GDEF"), normalizedCoords());
                     kerning = k;
                 }
@@ -349,6 +449,7 @@ public final class LoadedFace {
 
     private float computeAdvanceEm(int codePoint) {
         synchronized (LOCK) {
+            ensureOpen();
             int gi = FreeType.FT_Get_Char_Index(face, codePoint);
             if (gi == 0) return notdefAdvanceEm;
             return rawAdvance(gi) / (float) unitsPerEm;
@@ -357,6 +458,7 @@ public final class LoadedFace {
 
     private int glyphIndex(int codePoint) {
         synchronized (LOCK) {
+            ensureOpen();
             return FreeType.FT_Get_Char_Index(face, codePoint);
         }
     }
@@ -384,6 +486,7 @@ public final class LoadedFace {
      */
     public GlyphBitmap rasterize(int codePoint, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel) {
         synchronized (LOCK) {
+            ensureOpen();
             int gi = FreeType.FT_Get_Char_Index(face, codePoint);
             long charSize = Math.max(64, Math.round(pixelSize * 64));
             if (charSize != currentCharSize) {

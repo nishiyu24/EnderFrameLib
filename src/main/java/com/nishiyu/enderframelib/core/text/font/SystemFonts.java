@@ -53,7 +53,30 @@ public final class SystemFonts implements FontResolver {
      * @param widthClass  幅（OS/2 usWidthClass、5 が通常）
      */
     public record Face(Path path, long faceIndex, Set<String> familyNames, String displayName,
-                       int weight, boolean italic, int widthClass) {}
+                       int weight, boolean italic, int widthClass, MemoryFont data) {
+
+        /** ファイルから読む書体（OS の書体）。 */
+        public Face(Path path, long faceIndex, Set<String> familyNames, String displayName,
+                    int weight, boolean italic, int widthClass) {
+            this(path, faceIndex, familyNames, displayName, weight, italic, widthClass, null);
+        }
+    }
+
+    /**
+     * メモリ上の書体ファイル（{@code @font-face} で読み込んだもの）。同じ実体かどうかは参照で見分ける
+     * （配列の中身を比べない）ので、{@link Face} を {@link java.util.Map} の鍵にしても高くつかない。
+     */
+    public static final class MemoryFont {
+        private final byte[] bytes;
+
+        public MemoryFont(byte[] bytes) {
+            this.bytes = bytes;
+        }
+
+        public byte[] bytes() {
+            return bytes;
+        }
+    }
 
     /** {@code font-family} の 1 つの名前。{@code generic} は総称ファミリのとき true（名前は小文字）。 */
     public record FamilyEntry(String name, boolean generic) {}
@@ -73,6 +96,7 @@ public final class SystemFonts implements FontResolver {
     private final Map<String, List<Face>> byFamily;
     private final boolean japanese;
     private final Map<String, FontFace> cache = new ConcurrentHashMap<>();
+    private volatile int cachedWebVersion = WebFonts.version();
 
     public SystemFonts(List<Face> faces, Locale locale) {
         this(index(faces), locale);
@@ -98,6 +122,29 @@ public final class SystemFonts implements FontResolver {
         return s;
     }
 
+    private static volatile Thread warmUp;
+
+    /**
+     * 書体の一覧の走査（Windows の 500 ファイル程度で数十〜百数十ミリ秒）を裏のスレッドで始める。
+     * 初めて文字を測るフレームで止まらないよう、クライアントの起動時に呼ぶ。何度呼んでも走査は 1 回だけ。
+     */
+    public static void warmUpAsync() {
+        if (system != null || warmUp != null) return;
+        synchronized (SystemFonts.class) {
+            if (system != null || warmUp != null) return;
+            Thread t = new Thread(() -> {
+                try {
+                    system().resolve(null);
+                } catch (Throwable ignored) {
+                    // 走査に失敗しても、初めて測るときに同じ処理が走り、そこで報告される
+                }
+            }, "EnderFrame-FontScan");
+            t.setDaemon(true);
+            warmUp = t;
+            t.start();
+        }
+    }
+
     /** 同じ書体の一覧で、総称ファミリの割り当てだけ別の言語にしたもの。 */
     public SystemFonts withLocale(Locale locale) {
         return new SystemFonts(byFamily, locale);
@@ -107,6 +154,11 @@ public final class SystemFonts implements FontResolver {
 
     @Override
     public FontFace resolve(String fontFamily) {
+        int webVersion = WebFonts.version();
+        if (webVersion != cachedWebVersion) {
+            cache.clear();
+            cachedWebVersion = webVersion;
+        }
         return cache.computeIfAbsent(fontFamily == null ? "" : fontFamily, this::create);
     }
 
@@ -120,7 +172,7 @@ public final class SystemFonts implements FontResolver {
     }
 
     private FontFace create(String fontFamily) {
-        if (byFamily.isEmpty()) return FontFace.FALLBACK;
+        if (byFamily.isEmpty() && !WebFonts.any()) return FontFace.FALLBACK;
         List<String> families = new ArrayList<>();
         for (FamilyEntry e : parseFamilyList(fontFamily)) {
             if (e.generic()) {
@@ -152,7 +204,10 @@ public final class SystemFonts implements FontResolver {
     /** ファミリ名（大文字小文字を区別しない）に属する面。無ければ空。 */
     public List<Face> family(String name) {
         if (name == null) return List.of();
-        return byFamily.getOrDefault(name.trim().toLowerCase(Locale.ROOT), List.of());
+        String key = name.trim().toLowerCase(Locale.ROOT);
+        List<Face> web = WebFonts.family(key);
+        if (!web.isEmpty()) return web;
+        return byFamily.getOrDefault(key, List.of());
     }
 
     public boolean hasFamily(String name) {
@@ -160,7 +215,15 @@ public final class SystemFonts implements FontResolver {
     }
 
     public boolean isEmpty() {
-        return byFamily.isEmpty();
+        return byFamily.isEmpty() && !WebFonts.any();
+    }
+
+    /**
+     * 解決結果の覚えを捨てる。{@code @font-face} の登録が変わると同じ {@code font-family} の指す書体が変わるので、
+     * 登録の版が進んだことに気づいたときに呼ぶ（{@link #resolve} が自分で確かめる）。
+     */
+    public void clearResolved() {
+        cache.clear();
     }
 
     private static Map<String, List<Face>> index(List<Face> faces) {

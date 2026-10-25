@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.renderer.MediaElementRenderer;
+import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.client.renderer.OutlineTextRenderer;
 import com.nishiyu.enderframelib.core.text.model.*;
@@ -66,20 +67,15 @@ public class EnderFrameClientInit {
             event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
                 WebFontManager.clearCache();
                 OutlineTextRenderer.clear();
+                LoadedFace.releaseIdle(0);
                 WebSdfShader.reload();
                 ClientTemplateManager.clearCache();
             });
         });
         // システムの書体の一覧は最初の画面を開くときに要る。読み込み（数十〜百数十ミリ秒）を起動中に裏で済ませておく
-        Thread fontScan = new Thread(() -> {
-            try {
-                SystemFonts.system().resolve(null);
-            } catch (Throwable t) {
-                EnderFrameLib.LOGGER.warn("Could not scan system fonts: {}", t.toString());
-            }
-        }, "EnderFrame-FontScan");
-        fontScan.setDaemon(true);
-        fontScan.start();
+        SystemFonts.warmUpAsync();
+        // ch / ex は、測定と描画が使う書体の指標（「0」の送り幅・x ハイト）で決める
+        com.nishiyu.enderframelib.core.css.GlyphUnits.install(WebFontManager.McFontResolver.INSTANCE);
         NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
             if (event.getLevel() != null && event.getLevel().isClientSide()) {
                 MediaElementRenderer.clearEntityPreviewCache();

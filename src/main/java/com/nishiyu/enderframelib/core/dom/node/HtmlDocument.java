@@ -79,6 +79,52 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.ownerDocument = this;
     }
 
+    // ---- Range / Selection
+
+    /** 生きた範囲（弱参照。使われなくなった範囲は集められる）。節の増減と文字の変更で境界点を直す。 */
+    private final List<java.lang.ref.WeakReference<HtmlRange>> liveRanges = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private HtmlSelection selection;
+
+    void registerRange(HtmlRange range) {
+        liveRanges.removeIf(ref -> ref.get() == null);
+        liveRanges.add(new java.lang.ref.WeakReference<>(range));
+    }
+
+    private void forEachRange(java.util.function.Consumer<HtmlRange> action) {
+        if (liveRanges.isEmpty()) return;
+        for (var ref : liveRanges) {
+            HtmlRange range = ref.get();
+            if (range != null) action.accept(range);
+        }
+    }
+
+    void rangesNodeInserted(HtmlNode parent, int index, int count) {
+        forEachRange(r -> r.onInsert(parent, index, count));
+    }
+
+    void rangesNodeRemoving(HtmlNode removed, HtmlNode parent, int index) {
+        forEachRange(r -> r.onRemove(removed, parent, index));
+    }
+
+    void rangesReplaceData(HtmlNode node, int offset, int count, int newLength) {
+        forEachRange(r -> r.onReplaceData(node, offset, count, newLength));
+    }
+
+    void rangesSplitText(HtmlNode node, int offset, HtmlNode newNode) {
+        forEachRange(r -> r.onSplitText(node, offset, newNode));
+    }
+
+    @Override
+    public com.nishiyu.enderframelib.api.dom.Range createRange() {
+        return new HtmlRange(this);
+    }
+
+    @Override
+    public com.nishiyu.enderframelib.api.dom.Selection getSelection() {
+        if (selection == null) selection = new HtmlSelection(this);
+        return selection;
+    }
+
     // ==========================================
     // :target と :defined の元になる文書の状態
     // ==========================================

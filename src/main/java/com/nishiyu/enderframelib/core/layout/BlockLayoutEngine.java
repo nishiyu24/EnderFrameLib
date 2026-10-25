@@ -203,7 +203,9 @@ public class BlockLayoutEngine extends LayoutEngine {
             state = new FlowBuilder(box, ConstraintSpace.block(innerW, 0), ctx).build();
             box.engineState = state;
         }
-        TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class);
+        TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class)
+                .physical("rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim()));
+        float textBottom = Float.NEGATIVE_INFINITY;
 
         for (Object item : state.items) {
             switch (item) {
@@ -217,13 +219,15 @@ public class BlockLayoutEngine extends LayoutEngine {
                 case LineRun run -> {
                     for (LayoutBox inlineBox : run.boxes()) clearFragmentsRecursively(inlineBox);
                     for (InlineLine line : run.lines()) {
-                        placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx);
+                        textBottom = Math.max(textBottom,
+                                placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx));
                     }
                     for (LayoutBox inlineBox : run.boxes()) fitToFragments(inlineBox);
                 }
                 default -> throw new IllegalStateException(String.valueOf(item));
             }
         }
+        box.inlineContentBottom = textBottom;
         placeOutsideMarkers(box, innerY, ctx);
     }
 
@@ -324,6 +328,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         final float childPercentBase;
         final FormattingContext childCtx;
         final boolean collapseTop;
+        /** この箱が {@code direction: rtl} か。ブロックの子の寄せ先と行の揃えが右始まりになる。 */
+        final boolean rtl;
 
         /** 次の箱の前で 1 つに畳まれるのを待っているマージン。 */
         final MarginStrut pending = new MarginStrut();
@@ -338,6 +344,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.box = box;
             this.ctx = ctx;
             this.innerW = Math.max(0, box.w - box.horizontalDecoration());
+            this.rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
             if (!box.establishesBfc && box.floatSpace != null) {
                 floats = box.floatSpace;
                 ox = box.floatSpaceX;
@@ -451,10 +458,22 @@ public class BlockLayoutEngine extends LayoutEngine {
                 }
             }
 
+            if (floats.isEmpty()) x = startOffsetForDirection(child);
             state.items.add(new Placement(child, x, y - child.mT));
             cursor = y + child.h;
             pending.add(child.mB);
             hasContent = true;
+        }
+
+        /**
+         * {@code direction: rtl} のブロックの子の横位置（マージンボックスの左端、内容ボックス相対）。
+         * 幅とマージンが決まって余りが出るとき（over-constrained、CSS 2.2 §10.3.3）、ltr は右のマージンが余りを受けて
+         * 子は左に寄るが、rtl は左のマージンが受けて子は右に寄る。右マージンが {@code auto} なら余りはそちらが受ける。
+         */
+        private float startOffsetForDirection(LayoutBox child) {
+            if (!rtl || child.isAbsolute) return 0;
+            if ("auto".equals(child.style.getOrDefault(CssProperty.MARGIN_RIGHT, "").trim())) return 0;
+            return Math.max(0, innerW - (child.w + child.mL + child.mR));
         }
 
         /** {@code clear} を持つ箱を、その側の float の下端まで下げた位置。 */
@@ -967,6 +986,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             FontStyle font = textStyle.font();
             float runH = textStyle.lineHeightPx();
             float baseline = baselineWithin(textStyle, face);
+            float descent = face.descent(font);
             Alignment alignment = alignmentOf(chainOf(null, run.inlineParents), runH, baseline);
 
             ensureLine();
@@ -1015,6 +1035,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
                     InlineFragment frag = new InlineFragment(run.box, lineX, 0, advance, runH, segment);
                     frag.baseline = baseline;
+                    frag.descent = descent;
                     frag.parents = run.inlineParents;
                     current.add(new LineItem(frag, alignment.align, alignment.raise));
                     lineX += advance;
@@ -1173,15 +1194,16 @@ public class BlockLayoutEngine extends LayoutEngine {
      * CSS はベースラインを揃える。また不可分なインラインの左マージンを断片の位置と
      * {@link LayoutBox#layout} の両方で足していて、二重にずれていた。
      */
-    private void placeLine(InlineLine line, float startX, float drawY, float maxW, TextAlign textAlign,
-                           LayoutContext ctx) {
+    private float placeLine(InlineLine line, float startX, float drawY, float maxW, TextAlign textAlign,
+                            LayoutContext ctx) {
         List<LineItem> items = line.items();
-        if (items.isEmpty() && line.spans().isEmpty()) return;
+        if (items.isEmpty() && line.spans().isEmpty()) return Float.NEGATIVE_INFINITY;
+        float textBottom = Float.NEGATIVE_INFINITY;
 
         // 揃えの幅は行の左端から内容の終わりまで（text-indent と開始端の装飾を含み、行末の空白を除く）
         float offsetX = startX;
         if (textAlign == TextAlign.CENTER) offsetX += Math.max(0, (maxW - line.used()) / 2);
-        else if (textAlign == TextAlign.RIGHT || textAlign == TextAlign.END) {
+        else if (textAlign == TextAlign.RIGHT) {
             offsetX += Math.max(0, maxW - line.used());
         }
 
@@ -1196,11 +1218,19 @@ public class BlockLayoutEngine extends LayoutEngine {
 
             InlineFragment f = new InlineFragment(src.box, src.x + offsetX, top + src.box.mT, src.w, src.h, src.text);
             f.baseline = src.baseline;
+            f.descent = src.descent;
             f.parents = src.parents;
             f.box.inlineFragments.add(f);
-            if (!f.isText()) f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
+            if (!f.isText()) {
+                f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
+            } else if (!src.text.isBlank()) {
+                // 文字の内容領域（ベースラインから descent まで）は行の高さより下に出ることがある。
+                // ブラウザのスクロール範囲（scrollHeight）はこの内容領域を含む
+                textBottom = Math.max(textBottom, f.y + f.baseline + f.descent);
+            }
         }
         for (BoxSpan span : line.spans()) placeSpan(span, offsetX, drawY, line, ctx);
+        return textBottom;
     }
 
     /**

@@ -100,7 +100,10 @@ public class ArchitectureTest {
     // 2026-10-26: Phase 3 で 1,800 行の DisplayListBuilder と 1,700 行の DisplayItemDrawer を責務ごとに分けた（+9）。
     // DisplayListBuilder: PaintSupport・BoxAnimation・BoxDecorationPainter・ControlPainter・PaintOrder・ItemProps（+6）。
     // DisplayItemDrawer: BackgroundRenderer・ControlElementRenderer・MediaElementRenderer・TextElementRenderer（+4。シェーダーの記述の整理で -1）。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 231;
+    // 2026-10-26: Phase 4 で +11。フォント: core/text/font の AtlasCache（置き場の破棄）・AtlasSizing（サイズの量子化）・GlyphKey（字形の番号）・
+    // WebFonts（@font-face の登録簿）と core/css の GlyphUnits（ch / ex の源）。国際化: core/text の LineBreaker（UAX #14）・BidiText（UAX #9）。
+    // 選択: api/dom の Range・Selection（公開 API）と core/dom/node の HtmlRange・HtmlSelection。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 242;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

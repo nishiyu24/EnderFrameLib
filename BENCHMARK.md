@@ -180,3 +180,20 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 この機械は負荷で 3 割ほど揺れる（基準値の記録時より遅い）。コミット済み（HEAD）の状態でも `showcase.html` の再レイアウトは 25〜28 ms で、`baseline.txt` の許容幅（基準値 × 2 + 3 ms = 33.4 ms）に近い。
 
 単一要素のホバーは dirty 要素だけ再計算するので Phase 2 の目標 `< 1.0 ms` を既に満たす。子孫セレクタに効く class トグルの時間は、500 行の見た目が実際に変わる仕事の量（行の再スタイル）で、Phase 2 の無効化セットの接続後も変わらない。
+
+### Phase 4（フォントアトラス・UAX #14・direction・Range）の前後（2026-10-26）
+
+同じマシン・同じ条件（`./gradlew test --tests '*PerformanceBenchmarkTest' --rerun-tasks`）で、HEAD（`02f7730`）の worktree と作業ツリーを交互に 3 往復した値（ms。Restyle / Relayout / DisplayList / ScrollStep。マシンが負荷で 3 割ほど揺れるので、往復の間にもばらつく）。
+
+| 文書 | 指標 | HEAD（3 回） | Phase 4（3 回） |
+| :--- | :--- | :---: | :---: |
+| showcase.html | Restyle | 25 / 23 / 25 | 22 / 27 / 20 |
+| showcase.html | Relayout | 35 / 28 / 35 | 31 / 38 / 35 |
+| guidebook.md | Relayout | 7.5 / 4.8 / 5.9 | 8.5 / 5.8 / 9.0 |
+| large-list | Relayout | 17.7 / 18.8 / 18.1 | 16.0 / 16.0 / 18.7 |
+
+揺れの範囲で差は見えない。厳密な `./gradlew benchmark` も通る（`baseline.txt` の許容幅 = 基準値 × 2 + 3 ms の内側）。
+
+途中で見つけて直した退行: 行の断片を置くたびに `fontStyleFor`（太さの解析を含む）で書体の descent を引いていて、showcase の Relayout が HEAD の 3 往復すべてより約 40% 遅かった（60 / 37 / 37 ms）。断片を作る時点（書体が手元にある）で descent を持たせる（`InlineFragment.descent`）と HEAD と同じ範囲に戻った。UAX #14 の `LineBreaker` は英字どうし（語の内側）を最初に判定して返すので、文字ごとの分類は語の境目でしか走らない。
+
+字形の置き場（VRAM）: 13px の文字を `scale(1 → 3)` で動かしたときの置き場の種類は、量子化の前 667 フレームで 667 種、後は約 90 種（`AtlasCacheTest`）。同じサイズの `subpixel` × `lightText` は 8 枚のテクスチャから 1 つの `FontSet` になった。ゲーム内の VRAM の実測（Phase 3b の FBO の予算を決める材料）は未実施。

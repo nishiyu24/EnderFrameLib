@@ -237,6 +237,12 @@ public class LayoutBox {
 
     public float scrollWidth = 0;
     public float scrollHeight = 0;
+
+    /**
+     * この箱が直接持つ行の文字の、内容領域の下端（座標系は {@link #y} と同じ）。行の高さが書体の高さより小さいとき、
+     * 文字は行の下にはみ出し、スクロール範囲（{@link #scrollHeight}）に入る。行が無ければ負の無限大。
+     */
+    public float inlineContentBottom = Float.NEGATIVE_INFINITY;
     /**
      * 子孫の境界ボックスの右端・下端（この箱の左上からの距離）。クリップされない子孫のはみ出しを含み、
      * マージンと内側の padding は含まない。親の {@link #scrollWidth} / {@link #scrollHeight} が読む。
@@ -460,6 +466,7 @@ public class LayoutBox {
     public void applyRelativeOffset(float dx, float dy) {
         this.x += dx;
         this.y += dy;
+        if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
         for (LayoutBox child : children) child.applyRelativeOffset(dx, dy);
         for (InlineFragment frag : inlineFragments) {
             frag.x += dx;
@@ -685,6 +692,7 @@ public class LayoutBox {
         box.scrollHeight = 0;
         box.descendantOverflowRight = 0;
         box.descendantOverflowBottom = 0;
+        box.inlineContentBottom = Float.NEGATIVE_INFINITY;
         for (LayoutBox child : box.children) resetPlacements(child, keepRun);
     }
 
@@ -1149,6 +1157,9 @@ public class LayoutBox {
             }
         }
         if (engineState != null) engineState.contributeScrollExtent(extent, scrollX, scrollY);
+        if (inlineContentBottom > Float.NEGATIVE_INFINITY) {
+            extent.include(this.x + pL + bL, inlineContentBottom + scrollY);
+        }
 
         this.descendantOverflowRight = descendants.right() - this.x;
         this.descendantOverflowBottom = descendants.bottom() - this.y;
@@ -1179,6 +1190,8 @@ public class LayoutBox {
          * 位置を推測していて、フォントサイズが混ざった行で文字が揃わなかった。
          */
         public float baseline;
+        /** 文字の断片の descent（px）。内容領域の下端（ベースライン + descent）がスクロール範囲に入る。文字でなければ 0。 */
+        public float descent;
         public String text;
         public List<LayoutBox> parents;
         /**

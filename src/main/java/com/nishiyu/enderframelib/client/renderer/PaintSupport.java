@@ -99,10 +99,10 @@ final class PaintSupport {
     }
 
     /** text-align が行に与える水平方向のずれ。 */
-    static float alignOffset(TextAlign align, float availableW, float lineW) {
-        return switch (align) {
+    static float alignOffset(TextAlign align, boolean rtl, float availableW, float lineW) {
+        return switch (align.physical(rtl)) {
             case CENTER -> Math.max(0, (availableW - lineW) / 2);
-            case RIGHT, END -> Math.max(0, availableW - lineW);
+            case RIGHT -> Math.max(0, availableW - lineW);
             default -> 0;
         };
     }
