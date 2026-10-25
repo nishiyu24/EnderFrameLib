@@ -1118,7 +1118,7 @@ public class DisplayListBuilder {
                                   BorderSpec border, ClipRect clip, float fontHVal, float ox, float oy) {
         BoxDecorations.Rect pad = BoxDecorations.boxArea(box, "padding-box");
         if (pad.w() <= 0 || pad.h() <= 0) return;
-        ClipRect padClip = intersectClip(clip, pad, border.innerRadii());
+        ClipRect padClip = intersectClip(clip, pad, border.innerRadii(), id);
         Map<String, String> events = Map.of(RenderKeys.MC_PARENT, id);
         int n = 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
@@ -1704,7 +1704,7 @@ public class DisplayListBuilder {
             int[] intrinsic = url != null && UiDocumentCompiler.intrinsicSizeResolver != null ? UiDocumentCompiler.intrinsicSizeResolver.getSize(url) : null;
             BoxDecorations.Rect paint = BoxDecorations.boxArea(box, layer.clip());
             Corners paintRadii = "border-box".equals(layer.clip()) ? radii : border.innerRadii();
-            ClipRect layerClip = intersectClip(clip, paint, paintRadii);
+            ClipRect layerClip = intersectClip(clip, paint, paintRadii, id);
             RenderMeta imageMeta = new RenderMeta(layerClip, null, null, null, fontHVal, ox, oy, 1, false);
 
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
@@ -1751,8 +1751,11 @@ public class DisplayListBuilder {
         }
     }
 
-    /** 描画領域（角丸 {@code r}）で親のクリップを狭める（{@link BoxDecorations#intersectClip}）。 */
-    private static ClipRect intersectClip(ClipRect parent, BoxDecorations.Rect area, Corners r) {
+    /**
+     * 描画領域（角丸 {@code r}）で親のクリップを狭める（{@link BoxDecorations#intersectClip}）。
+     * 領域は要素 {@code ownerId} 自身の箱なので、その要素の変形に矩形も付いていく（{@link ClipRect#ownerId()}）。
+     */
+    private static ClipRect intersectClip(ClipRect parent, BoxDecorations.Rect area, Corners r, String ownerId) {
         float[] own = {area.x(), area.y(), area.x() + area.w(), area.y() + area.h(), 0, 0, 0, 0};
         if (r != null) {
             own[4] = r.topLeft();
@@ -1760,7 +1763,7 @@ public class DisplayListBuilder {
             own[6] = r.bottomRight();
             own[7] = r.bottomLeft();
         }
-        return ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own));
+        return ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
     }
 
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */
