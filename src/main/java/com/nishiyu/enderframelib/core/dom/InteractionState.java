@@ -9,8 +9,12 @@ import com.nishiyu.enderframelib.core.css.model.StateLookup;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
+import com.nishiyu.enderframelib.core.css.InvalidationSets;
+import com.nishiyu.enderframelib.core.css.InvalidationSets.Relation;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +32,21 @@ import java.util.WeakHashMap;
 public class InteractionState implements StateLookup {
 
     private final Map<HtmlNode, StateFlags> flagsByNode = new WeakHashMap<>();
+
+    /**
+     * 無効化セットの出所。結ばれていれば、変化の影響が及ぶ要素だけを汚す。結ばれていない間（最初の描画の前）は、
+     * 変化した要素の子孫も祖先も汚す（従来の安全側の動き）。
+     */
+    private StyleSheet sheet;
+
+    /** 無効化セットを引くシートを結ぶ。描画のたびに呼んでよい（同じシートなら何もしない）。 */
+    public void bindStyleSheet(StyleSheet sheet) {
+        this.sheet = sheet;
+    }
+
+    private InvalidationSets invalidationSets() {
+        return sheet != null ? sheet.invalidationSets() : null;
+    }
 
     /** 現在 {@code :hover} な節（ポインタの下の節とその祖先）。 */
     private Set<HtmlNode> hoveredChain = new HashSet<>();
@@ -91,6 +110,15 @@ public class InteractionState implements StateLookup {
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */
         public boolean isStyleDirty = true;
+        /**
+         * この要素の子孫も、継承元が変わったかどうかによらず再スタイルが要るか
+         * （{@code .a:hover .b} のように、祖先の状態・class・属性を読む規則がある）。
+         */
+        public boolean subtreeDirty = true;
+        /** 影響範囲を絞らずに汚した（{@link InteractionState#markDirty}）。祖先も汚し直す必要がある。 */
+        public boolean unscoped = true;
+        /** style 属性が {@code inherit} を含む。親の非継承プロパティの変化が子へ届く。 */
+        public boolean inheritsExplicitly;
         /** 問い合わせコンテナとして測った内容ボックスの寸法（px）。測っていなければ NaN。 */
         public float containerWidth = Float.NaN;
         public float containerHeight = Float.NaN;
@@ -141,7 +169,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (flags.isHovered == hovered) return false;
         flags.isHovered = hovered;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.HOVER);
         return true;
     }
 
@@ -167,7 +195,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (flags.isActive == active) return false;
         flags.isActive = active;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.ACTIVE);
         return true;
     }
 
@@ -196,7 +224,7 @@ public class InteractionState implements StateLookup {
         flags.isFocused = focused;
         flags.isFocusVisible = nextVisible;
         flags.isFocusWithin = focused;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.FOCUS | ElementState.FOCUS_VISIBLE | ElementState.FOCUS_WITHIN);
         return true;
     }
 
@@ -213,7 +241,7 @@ public class InteractionState implements StateLookup {
                 if (oldFlags.isFocused || oldFlags.isFocusVisible) {
                     oldFlags.isFocused = false;
                     oldFlags.isFocusVisible = false;
-                    oldFlags.isStyleDirty = true;
+                    invalidateState(focusedNode, ElementState.FOCUS | ElementState.FOCUS_VISIBLE);
                     changed = true;
                 }
             }
@@ -230,7 +258,7 @@ public class InteractionState implements StateLookup {
             StateFlags flags = getOrCreate(left);
             if (flags.isFocusWithin) {
                 flags.isFocusWithin = false;
-                flags.isStyleDirty = true;
+                invalidateState(left, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
         }
@@ -238,7 +266,7 @@ public class InteractionState implements StateLookup {
             StateFlags flags = getOrCreate(entered);
             if (!flags.isFocusWithin) {
                 flags.isFocusWithin = true;
-                flags.isStyleDirty = true;
+                invalidateState(entered, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
         }
@@ -251,7 +279,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (Objects.equals(flags.isChecked, checked)) return false;
         flags.isChecked = checked;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.CHECKED);
         return true;
     }
 
@@ -260,7 +288,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (Objects.equals(flags.isDisabled, disabled)) return false;
         flags.isDisabled = disabled;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.DISABLED);
         return true;
     }
 
@@ -269,7 +297,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (Objects.equals(flags.isIndeterminate, indeterminate)) return false;
         flags.isIndeterminate = indeterminate;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.INDETERMINATE);
         return true;
     }
 
@@ -278,29 +306,171 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (Objects.equals(flags.isOpen, open)) return false;
         flags.isOpen = open;
-        flags.isStyleDirty = true;
+        invalidateState(node, ElementState.OPEN);
         return true;
     }
 
+    /**
+     * 理由を絞らずに要素を汚す。子孫も祖先も再スタイルの対象になる。変化の種類が分かる呼び出しは
+     * {@link #invalidateState} などで影響範囲を絞ること。
+     */
     public void markDirty(HtmlNode node) {
         if (node == null) return;
-        getOrCreate(node).isStyleDirty = true;
+        StateFlags flags = getOrCreate(node);
+        flags.isStyleDirty = true;
+        flags.subtreeDirty = true;
+        flags.unscoped = true;
+    }
+
+    /** 対話状態（{@code :hover} など）のビットが変わった要素の影響範囲を汚す。 */
+    public void invalidateState(HtmlNode node, int stateBits) {
+        InvalidationSets sets = invalidationSets();
+        if (sets == null) {
+            markDirty(node);
+            return;
+        }
+        dirty(node, false);
+        invalidate(node, sets.forState(stateBits));
+    }
+
+    /**
+     * 属性の変化で汚す。要素自身は常に再スタイルする（{@code hidden}・{@code style}・フォームの属性は規則の外で読まれる）。
+     * 加えて、規則がその属性・class・id を読んでいる範囲の要素を汚す。
+     *
+     * @param oldValue 変わる前の値（無ければ null）
+     * @param newValue 変わった後の値（無ければ null）
+     */
+    public void invalidateAttribute(HtmlNode node, String name, String oldValue, String newValue) {
+        InvalidationSets sets = invalidationSets();
+        if (sets == null) {
+            markDirty(node);
+            return;
+        }
+        StateFlags flags = getOrCreate(node);
+        flags.isStyleDirty = true;
+        Set<Relation> relations = EnumSet.noneOf(Relation.class);
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("class")) {
+            relations.addAll(sets.forAttribute("class"));
+            Set<String> before = tokens(oldValue);
+            Set<String> after = tokens(newValue);
+            Set<String> changed = new HashSet<>(before);
+            changed.addAll(after);
+            Set<String> kept = new HashSet<>(before);
+            kept.retainAll(after);
+            changed.removeAll(kept);
+            for (String cls : changed) relations.addAll(sets.forClass(cls));
+        } else if (lower.equals("id")) {
+            relations.addAll(sets.forId(oldValue == null ? "" : oldValue));
+            relations.addAll(sets.forId(newValue == null ? "" : newValue));
+        } else {
+            relations.addAll(sets.forAttribute(lower));
+            // checked / disabled / open などは属性から状態が決まる。そのビットを読む規則があれば一緒に汚す
+            relations.addAll(sets.forState(ElementState.CHECKED | ElementState.DISABLED
+                    | ElementState.INDETERMINATE | ElementState.OPEN));
+        }
+        if (lower.equals("style")) {
+            flags.inheritsExplicitly = newValue != null
+                    && newValue.toLowerCase(java.util.Locale.ROOT).contains("inherit");
+        }
+        invalidate(node, relations);
+    }
+
+    /**
+     * 子の増減で汚す。{@code changedAt} は {@code parent} の子のうち増減があった位置
+     * （挿入ならその子の位置、削除なら削除前にその子がいた位置）。
+     */
+    public void invalidateChildList(HtmlNode parent, int changedAt) {
+        InvalidationSets sets = invalidationSets();
+        if (sets == null) {
+            markDirty(parent);
+            return;
+        }
+        dirty(parent, false);
+        Set<Relation> relations = sets.forStructureChange();
+        if (parent.parent == null) relations.addAll(sets.forRootChange());
+        if (relations.isEmpty()) return;
+        List<HtmlNode> siblings = parent.children;
+        int size = siblings.size();
+        for (Relation relation : relations) {
+            switch (relation) {
+                case FOLLOWING_SIBLINGS, FOLLOWING_SIBLINGS_SUBTREE -> {
+                    // 挿入ならその子の次から、削除なら同じ位置に詰めた子から
+                    boolean subtree = relation == Relation.FOLLOWING_SIBLINGS_SUBTREE;
+                    for (int i = Math.max(0, changedAt); i < size; i++) dirty(siblings.get(i), subtree);
+                }
+                case PRECEDING_SIBLINGS -> {
+                    for (int i = 0; i < Math.min(changedAt, size); i++) dirty(siblings.get(i), false);
+                }
+                case ANCESTORS -> {
+                    for (HtmlNode cur = parent; cur != null; cur = cur.parent) dirty(cur, false);
+                }
+                case WHOLE_TREE -> markAllDirty();
+                case SELF -> dirty(parent, false);
+                case DESCENDANTS -> dirty(parent, true);
+            }
+        }
+    }
+
+    private void invalidate(HtmlNode node, Set<Relation> relations) {
+        for (Relation relation : relations) {
+            switch (relation) {
+                case SELF -> dirty(node, false);
+                case DESCENDANTS -> dirty(node, true);
+                case FOLLOWING_SIBLINGS, FOLLOWING_SIBLINGS_SUBTREE -> {
+                    boolean subtree = relation == Relation.FOLLOWING_SIBLINGS_SUBTREE;
+                    List<HtmlNode> siblings = node.parent != null ? node.parent.children : List.of();
+                    int index = siblings.indexOf(node);
+                    for (int i = index + 1; index >= 0 && i < siblings.size(); i++) dirty(siblings.get(i), subtree);
+                }
+                case PRECEDING_SIBLINGS -> {
+                    List<HtmlNode> siblings = node.parent != null ? node.parent.children : List.of();
+                    int index = siblings.indexOf(node);
+                    for (int i = 0; i < index; i++) dirty(siblings.get(i), false);
+                }
+                case ANCESTORS -> {
+                    for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) dirty(cur, false);
+                }
+                case WHOLE_TREE -> markAllDirty();
+            }
+        }
+    }
+
+    private void dirty(HtmlNode node, boolean subtree) {
+        StateFlags flags = getOrCreate(node);
+        flags.isStyleDirty = true;
+        if (subtree) flags.subtreeDirty = true;
+    }
+
+    private static Set<String> tokens(String classAttribute) {
+        Set<String> out = new HashSet<>();
+        if (classAttribute == null) return out;
+        for (String token : classAttribute.trim().split("\\s+")) {
+            if (!token.isEmpty()) out.add(token);
+        }
+        return out;
     }
 
     public void markAllDirty() {
         for (StateFlags flags : flagsByNode.values()) {
             flags.isStyleDirty = true;
+            flags.subtreeDirty = true;
         }
     }
 
     /**
-     * 汚れた要素の祖先も汚す。{@code :has()} は子孫・後続の兄弟の状態で要素自身の見た目が変わるので、
+     * 影響範囲を絞らずに汚した要素の祖先も汚す。{@code :has()} は子孫・後続の兄弟の状態で要素自身の見た目が変わるので、
      * 子孫の状態が変わったら、{@code :has()} の持ち主になり得る祖先を再スタイルに含める必要がある。
      */
     public void propagateDirtyToAncestors() {
         List<HtmlNode> dirty = new ArrayList<>();
         for (Map.Entry<HtmlNode, StateFlags> e : flagsByNode.entrySet()) {
-            if (e.getValue().isStyleDirty) dirty.add(e.getKey());
+            StateFlags flags = e.getValue();
+            // 影響範囲を絞って汚した要素の祖先は、無効化セットが既に汚している
+            if (flags.isStyleDirty && flags.unscoped) {
+                dirty.add(e.getKey());
+                flags.unscoped = false;
+            }
         }
         for (HtmlNode node : dirty) {
             for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) {
@@ -320,7 +490,10 @@ public class InteractionState implements StateLookup {
         boolean changed = differs(flags.containerWidth, width) || differs(flags.containerHeight, height);
         flags.containerWidth = width;
         flags.containerHeight = height;
-        if (changed) flags.isStyleDirty = true;
+        if (changed) {
+            flags.isStyleDirty = true;
+            flags.subtreeDirty = true;
+        }
         return changed;
     }
 

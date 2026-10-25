@@ -211,10 +211,13 @@ public class StyleResolver {
         Map<String, String> uaValues = new LinkedHashMap<>(result);
         Map<String, String> userValues = new LinkedHashMap<>(result);
 
-        Map<String, String> inlineNormal = new LinkedHashMap<>();
-        Map<String, String> inlineImportant = new LinkedHashMap<>();
+        // style 属性を持つ要素は少ないので、インラインの宣言の表は属性があるときだけ作る
+        Map<String, String> inlineNormal = Map.of();
+        Map<String, String> inlineImportant = Map.of();
         // インラインスタイルは要素自身にだけ掛かる
         if (pseudo == null && node != null && node.attrs.containsKey("style")) {
+            inlineNormal = new LinkedHashMap<>();
+            inlineImportant = new LinkedHashMap<>();
             for (Declaration decl : CssSyntax.parseDeclarationList(node.attrs.get("style"))) {
                 Map<String, String> target = decl.important() ? inlineImportant : inlineNormal;
                 target.remove(decl.name());

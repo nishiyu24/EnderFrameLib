@@ -39,14 +39,60 @@ public final class ComputedStyle {
     private final float elementFontSize;
     private final float rootFontSize;
 
+    // 算出スタイルは要素ごとに作られ、描画に使われない要素（display: none の部分木など）も多い。
+    // 参照キャッシュは最初の参照まで確保しない（要素 1 つあたり ConcurrentHashMap 4 個の即時確保をやめた）
     /** プロパティ名 -> 単位と数値に分解済みの長さ。参照時に 1 回だけ作る。 */
-    private final Map<String, LengthResolver.CompiledLength> lengthCache = new ConcurrentHashMap<>();
+    private volatile Map<String, LengthResolver.CompiledLength> lengthCache;
     /** プロパティ名 -> ARGB。ビューポートに依存しないため値そのものをキャッシュできる。 */
-    private final Map<String, Integer> colorCache = new ConcurrentHashMap<>();
+    private volatile Map<String, Integer> colorCache;
     /** プロパティ名 -> 数値。同上。 */
-    private final Map<String, Float> numberCache = new ConcurrentHashMap<>();
+    private volatile Map<String, Float> numberCache;
     /** プロパティ名 -> キーワードの enum。同上。 */
-    private final Map<String, Enum<?>> keywordCache = new ConcurrentHashMap<>();
+    private volatile Map<String, Enum<?>> keywordCache;
+
+    private static <V> Map<String, V> newCache() {
+        return new ConcurrentHashMap<>(8);
+    }
+
+    private Map<String, LengthResolver.CompiledLength> lengths() {
+        Map<String, LengthResolver.CompiledLength> m = lengthCache;
+        if (m == null) {
+            synchronized (this) {
+                if ((m = lengthCache) == null) lengthCache = m = newCache();
+            }
+        }
+        return m;
+    }
+
+    private Map<String, Integer> colors() {
+        Map<String, Integer> m = colorCache;
+        if (m == null) {
+            synchronized (this) {
+                if ((m = colorCache) == null) colorCache = m = newCache();
+            }
+        }
+        return m;
+    }
+
+    private Map<String, Float> numbers() {
+        Map<String, Float> m = numberCache;
+        if (m == null) {
+            synchronized (this) {
+                if ((m = numberCache) == null) numberCache = m = newCache();
+            }
+        }
+        return m;
+    }
+
+    private Map<String, Enum<?>> keywords() {
+        Map<String, Enum<?>> m = keywordCache;
+        if (m == null) {
+            synchronized (this) {
+                if ((m = keywordCache) == null) keywordCache = m = newCache();
+            }
+        }
+        return m;
+    }
 
     public ComputedStyle(Map<String, String> properties, float elementFontSize, float rootFontSize) {
         this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
@@ -141,10 +187,11 @@ public final class ComputedStyle {
     }
 
     private LengthResolver.CompiledLength compiledLength(String propertyName, String value) {
-        LengthResolver.CompiledLength cached = lengthCache.get(propertyName);
+        Map<String, LengthResolver.CompiledLength> cache = lengths();
+        LengthResolver.CompiledLength cached = cache.get(propertyName);
         if (cached != null) return cached;
         LengthResolver.CompiledLength compiled = LengthResolver.compile(value);
-        lengthCache.put(propertyName, compiled);
+        cache.put(propertyName, compiled);
         return compiled;
     }
 
@@ -152,10 +199,11 @@ public final class ComputedStyle {
     public int color(String propertyName, int defaultColor) {
         String val = properties.get(propertyName);
         if (val == null) return defaultColor;
-        Integer cached = colorCache.get(propertyName);
+        Map<String, Integer> cache = colors();
+        Integer cached = cache.get(propertyName);
         if (cached != null) return cached;
         int parsed = ColorParser.parseColor(val);
-        colorCache.put(propertyName, parsed);
+        cache.put(propertyName, parsed);
         return parsed;
     }
 
@@ -163,7 +211,8 @@ public final class ComputedStyle {
     public float number(String propertyName, float defaultValue) {
         String val = properties.get(propertyName);
         if (val == null) return defaultValue;
-        Float cached = numberCache.get(propertyName);
+        Map<String, Float> cache = numbers();
+        Float cached = cache.get(propertyName);
         if (cached != null) return cached;
         float parsed;
         try {
@@ -171,7 +220,7 @@ public final class ComputedStyle {
         } catch (NumberFormatException e) {
             parsed = defaultValue;
         }
-        numberCache.put(propertyName, parsed);
+        cache.put(propertyName, parsed);
         return parsed;
     }
 
@@ -180,11 +229,12 @@ public final class ComputedStyle {
      * 書かれていない値・知らない値はそのプロパティの初期値。
      */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
-        Enum<?> cached = keywordCache.get(propertyName);
+        Map<String, Enum<?>> cache = keywords();
+        Enum<?> cached = cache.get(propertyName);
         if (cached != null && type.isInstance(cached)) return type.cast(cached);
         E parsed = CssKeywords.parse(type, properties.get(propertyName));
         if (parsed == null) parsed = PropertyRegistry.initialKeyword(propertyName, type);
-        keywordCache.put(propertyName, parsed);
+        cache.put(propertyName, parsed);
         return parsed;
     }
 
