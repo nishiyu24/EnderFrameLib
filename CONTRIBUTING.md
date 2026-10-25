@@ -6,7 +6,8 @@
 - Minecraft 1.21.1 / NeoForge 21.1.248 / ModDevGradle 2.0.148
 
 ```bash
-./gradlew build test          # CI と同じ経路
+./gradlew build test          # CI と同じ経路（性能ベンチはスモーク動作のみ・実時間閾値では落とさない）
+./gradlew benchmark           # 単独 JVM での厳密な性能・メモリ回帰テスト（-Dbenchmark.enforce=true）
 ./gradlew runClient
 ./gradlew runServer
 ./gradlew runGameTestServer   # サーバー側ライフサイクルのゲームテスト
@@ -214,14 +215,20 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
 - **性能ベンチの基準値はリポジトリに固定する。**
   `src/test/resources/benchmark/baseline.txt` が showcase.html・guidebook.md・500 項目リストの
   再スタイル / 再レイアウト / ディスプレイリスト / スクロール 1 段の基準値を持つ。
-  `PerformanceBenchmarkTest` は「実測 <= 基準値 × factor（既定 2.0） + slack（既定 3ms）」を
-  超えたら回帰として落ちる。マシンが変わって恒久的に遅い/速い場合は
+  全件テスト（`./gradlew test`）では先行テストの GC や CPU 負荷で実時間が揺れるため、
+  通常実行時の `PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は少ない反復で
+  パイプライン完走・基準値ファイルの構文・保持 DOM ノード数（決定論的指標）だけを検証し、
+  実時間やヒープ差分の閾値超過は警告出力に留める。
+  厳密な性能回帰判定（「実測 <= 基準値 × factor（既定 2.0） + slack（既定 3ms）」で落とす）は、
+  他テストの影響を受けない単独 JVM タスクで実行する:
 
   ```bash
-  ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true
+  ./gradlew benchmark                                                          # 単独 JVM で厳密な回帰判定
+  ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.enforce=true  # 個別指定で閾値強制
+  ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true   # 基準値の更新
   ```
 
-  で更新し、**必ず `git diff` で数値の変化を確認してからコミットする。**
+  マシンが変わって恒久的に遅い/速い場合は `-Dbenchmark.update=true` で更新し、**必ず `git diff` で数値の変化を確認してからコミットする。**
   一時的な環境差は `-Dbenchmark.factor=2.5` / `-Dbenchmark.slackMs=10` で緩める。
   サーバー側の基準値（互換モードのパケット量とヒープ）は `src/test/resources/benchmark/server_baseline.txt` にあり、
   `PacketBandwidthTest` / `StateMemoryBenchmarkTest` が完全一致で、`HeadlessStateBandwidthAndMemoryTest` が

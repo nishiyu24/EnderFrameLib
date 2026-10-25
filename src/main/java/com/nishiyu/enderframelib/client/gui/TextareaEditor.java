@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.client.renderer.TextElementRenderer;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -57,7 +58,7 @@ public class TextareaEditor {
         RenderMeta meta = taEl.meta() != null ? taEl.meta() : RenderMeta.EMPTY;
         float textScale = meta.textScale();
         float lineHeight = meta.resolvedLineHeight();
-        float gutterW = DisplayItemDrawer.textareaGutterWidth(taEl, textScale);
+        float gutterW = TextElementRenderer.textareaGutterWidth(taEl, textScale);
 
         String[] lines = fullText.split("\n", -1);
         int scrollRow = TextEditState.getTextareaScrollRow(sessionId, renderTaId);

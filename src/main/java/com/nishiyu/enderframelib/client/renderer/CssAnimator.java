@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
@@ -327,17 +326,10 @@ public class CssAnimator {
             this.delayMs = 0;
             this.easing = EasingFunction.DEFAULT_EASING;
             String propSpec = "all";
-            if (el.events() != null) {
-                if (el.events().containsKey(RenderKeys.MC_DELAY)) {
-                    this.delayMs = parseIntSafe(el.events().get(RenderKeys.MC_DELAY), 0);
-                }
-                if (el.events().containsKey(RenderKeys.MC_EASING)) {
-                    this.easing = el.events().get(RenderKeys.MC_EASING);
-                }
-                if (el.events().containsKey(RenderKeys.MC_TRANSITION_PROP)) {
-                    propSpec = el.events().get(RenderKeys.MC_TRANSITION_PROP);
-                }
-            }
+            RenderHints hints = el.hints();
+            this.delayMs = hints.transitionDelayMs();
+            if (hints.transitionEasing() != null) this.easing = hints.transitionEasing();
+            if (hints.transitionProperty() != null) propSpec = hints.transitionProperty();
             this.transitionMask = parseTransitionPropertyMask(propSpec);
 
             // transition-property に含まれるチャネルは現在値から補間し、含まれないチャネルは即座に目標値へスナップする

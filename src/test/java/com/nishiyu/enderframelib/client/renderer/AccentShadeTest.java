@@ -35,17 +35,17 @@ public class AccentShadeTest {
             int accent = (int) row[0];
             boolean dark = (boolean) row[3];
             String name = String.format("#%06x", accent & 0xFFFFFF);
-            assertEquals(hex(accent), hex(DisplayListBuilder.shadeAccent(accent, IDLE, dark)), name + " 通常");
-            assertEquals(hex((int) row[1]), hex(DisplayListBuilder.shadeAccent(accent, HOVER, dark)), name + " マウスを乗せたとき");
-            assertEquals(hex((int) row[2]), hex(DisplayListBuilder.shadeAccent(accent, ACTIVE, dark)), name + " 押したとき");
+            assertEquals(hex(accent), hex(ControlPainter.shadeAccent(accent, IDLE, dark)), name + " 通常");
+            assertEquals(hex((int) row[1]), hex(ControlPainter.shadeAccent(accent, HOVER, dark)), name + " マウスを乗せたとき");
+            assertEquals(hex((int) row[2]), hex(ControlPainter.shadeAccent(accent, ACTIVE, dark)), name + " 押したとき");
         }
     }
 
     /** レンジは溝（#efefef）と比べるので、マゼンタは暗い配色になり向きが逆（Chrome の実測: 乗せると #ff38ff・押すと #c700c7）。 */
     @Test
     void magentaRangeShadesTheOtherWay() {
-        assertEquals(hex(0xFFFF38FF), hex(DisplayListBuilder.shadeAccent(0xFFFF00FF, HOVER, true)));
-        assertEquals(hex(0xFFC700C7), hex(DisplayListBuilder.shadeAccent(0xFFFF00FF, ACTIVE, true)));
+        assertEquals(hex(0xFFFF38FF), hex(ControlPainter.shadeAccent(0xFFFF00FF, HOVER, true)));
+        assertEquals(hex(0xFFC700C7), hex(ControlPainter.shadeAccent(0xFFFF00FF, ACTIVE, true)));
     }
 
     private static String hex(int argb) {

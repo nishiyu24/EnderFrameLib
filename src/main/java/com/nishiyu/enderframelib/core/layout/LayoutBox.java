@@ -547,6 +547,7 @@ public class LayoutBox {
      * 今の display だけでは前回表だったかが分からない（クライアントの class 変更がこの経路を通る）。
      */
     private boolean everLaidOutAsTable;
+    private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
     private LayoutBox[] measuredChildren;
     private boolean measuredFirstFlowChild;
     private boolean measuredHadFloatChild;
@@ -608,7 +609,7 @@ public class LayoutBox {
         measuredOutsideMarker = isOutsideMarker;
         measuredRenderedLegend = isRenderedLegend;
         everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
-        measuredChildren = children.toArray(new LayoutBox[0]);
+        measuredChildren = children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
         measuredFirstFlowChild = BlockLayoutEngine.isFirstFlowChild(this);
         measuredHadFloatChild = hasFloatingChild();
         layoutChanged = false;

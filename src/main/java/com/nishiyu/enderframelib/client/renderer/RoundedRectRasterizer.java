@@ -50,66 +50,6 @@ public final class RoundedRectRasterizer {
         builder.addVertex(matrix, minX, minY, zOffset).setColor(r, g, b, a).setUv(u0, v0).setOverlay(packedOverlay).setLight(packedLight).setNormal(0, 0, 1);
     }
 
-    /** 4 隅の色（左上・右上・右下・左下）を双線形に補間する矩形。 */
-    public static void addGradientQuadRaw(VertexConsumer builder, Matrix4f matrix,
-                                          float minX, float minY, float maxX, float maxY,
-                                          int cTL, int cTR, int cBR, int cBL, float opacity, float zOffset) {
-        vertex(builder, matrix, minX, maxY, zOffset, cBL, opacity);
-        vertex(builder, matrix, maxX, maxY, zOffset, cBR, opacity);
-        vertex(builder, matrix, maxX, minY, zOffset, cTR, opacity);
-        vertex(builder, matrix, minX, minY, zOffset, cTL, opacity);
-    }
-
-    private static void vertex(VertexConsumer builder, Matrix4f matrix, float x, float y, float z, int argb, float opacity) {
-        builder.addVertex(matrix, x, y, z).setColor(((argb >>> 16) & 0xFF) / 255.0f, ((argb >>> 8) & 0xFF) / 255.0f,
-                (argb & 0xFF) / 255.0f, ((argb >>> 24) & 0xFF) / 255.0f * opacity);
-    }
-
-    public static void drawGradientRoundedRect(
-            VertexConsumer builder, Matrix4f matrix,
-            float minX, float minY, float maxX, float maxY,
-            float rTL, float rTR, float rBR, float rBL,
-            int cTL, int cTR, int cBR, int cBL, float opacity, float zOffset,
-            float cx0, float cy0, float cx1, float cy1,
-            float cRTL, float cRTR, float cRBR, float cRBL,
-            boolean useSdfShader
-    ) {
-        if (useSdfShader) {
-            float[] tl = rgba(cTL, opacity), tr = rgba(cTR, opacity), br = rgba(cBR, opacity), bl = rgba(cBL, opacity);
-            if (WebSdfShader.drawSdfGradientRect(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
-                    tl[0], tl[1], tl[2], tl[3], tr[0], tr[1], tr[2], tr[3], br[0], br[1], br[2], br[3], bl[0], bl[1], bl[2], bl[3],
-                    zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL)) {
-                return;
-            }
-        }
-
-        // シェーダが無いときは矩形で切るだけ（隅の色は切った矩形の隅で求め直す）
-        float x0 = Math.max(minX, cx0), y0 = Math.max(minY, cy0);
-        float x1 = Math.min(maxX, cx1), y1 = Math.min(maxY, cy1);
-        if (x0 < x1 && y0 < y1) {
-            float w = maxX - minX, h = maxY - minY;
-            float u0 = (x0 - minX) / w, u1 = (x1 - minX) / w, v0 = (y0 - minY) / h, v1 = (y1 - minY) / h;
-            addGradientQuadRaw(builder, matrix, x0, y0, x1, y1,
-                    bilinear(cTL, cTR, cBR, cBL, u0, v0), bilinear(cTL, cTR, cBR, cBL, u1, v0),
-                    bilinear(cTL, cTR, cBR, cBL, u1, v1), bilinear(cTL, cTR, cBR, cBL, u0, v1), opacity, zOffset);
-        }
-    }
-
-    private static float[] rgba(int argb, float opacity) {
-        return new float[]{((argb >>> 16) & 0xFF) / 255.0f, ((argb >>> 8) & 0xFF) / 255.0f, (argb & 0xFF) / 255.0f,
-                ((argb >>> 24) & 0xFF) / 255.0f * opacity};
-    }
-
-    private static int bilinear(int tl, int tr, int br, int bl, float u, float v) {
-        int out = 0;
-        for (int shift = 0; shift < 32; shift += 8) {
-            float top = ((tl >>> shift) & 0xFF) * (1 - u) + ((tr >>> shift) & 0xFF) * u;
-            float bottom = ((bl >>> shift) & 0xFF) * (1 - u) + ((br >>> shift) & 0xFF) * u;
-            out |= Math.clamp(Math.round(top * (1 - v) + bottom * v), 0, 255) << shift;
-        }
-        return out;
-    }
-
     /**
      * 角丸の枠線。枠の領域（外側の角丸矩形 − パディングボックス）だけを、辺ごとの色の矩形の片で塗る
      * （{@link BoxDecorations#roundedBorderSpans}）。片は親のクリップで切る。

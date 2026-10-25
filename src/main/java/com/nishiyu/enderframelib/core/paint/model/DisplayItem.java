@@ -37,6 +37,11 @@ public record DisplayItem(
         return (baseNodeId != null && !baseNodeId.isEmpty()) ? baseNodeId : id;
     }
 
+    /** 型付きの付帯情報。メタが無ければ空。 */
+    public RenderHints hints() {
+        return meta != null ? meta.hints() : RenderHints.NONE;
+    }
+
     public boolean hasHover() {
         return meta != null && meta.interactiveState();
     }

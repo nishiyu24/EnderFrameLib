@@ -206,10 +206,21 @@ public final class AnimationParser {
 
     /** 最上位の空白で区切った語（関数の中の空白では切らない）。 */
     private static List<String> words(String value) {
-        List<String> out = new ArrayList<>();
-        for (List<CssSyntax.ComponentValue> part : CssSyntax.splitOnWhitespace(CssSyntax.parseComponentValues(value))) {
-            out.add(CssSyntax.serialize(part));
+        return CssSyntax.words(value);
+    }
+
+    /** {@code 0.3s} / {@code 300ms} をミリ秒に。時間でなければ null。 */
+    public static Integer parseTimeMs(String text) {
+        int ms = timeMs(text);
+        return ms == NOT_A_TIME ? null : ms;
+    }
+
+    /** カンマ区切りの時間の並び（{@code transition-duration} など）の先頭をミリ秒に。時間が無ければ null。 */
+    public static Integer firstTimeMs(String list) {
+        for (String item : CssSyntax.parseCommaList(list)) {
+            Integer ms = parseTimeMs(item);
+            if (ms != null) return ms;
         }
-        return out;
+        return null;
     }
 }

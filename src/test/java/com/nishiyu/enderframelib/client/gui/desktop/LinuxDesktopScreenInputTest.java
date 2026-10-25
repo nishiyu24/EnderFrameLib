@@ -363,7 +363,7 @@ public class LinuxDesktopScreenInputTest {
         java.util.List<String> chain = new java.util.ArrayList<>();
         DisplayItem cur = item;
         for (int guard = 0; cur != null && guard < 64; guard++) {
-            String parent = cur.events() != null ? cur.events().get("mc-parent") : null;
+            String parent = cur.hints().parentId();
             if (parent == null) break;
             chain.add(parent);
             cur = byId.get(parent);

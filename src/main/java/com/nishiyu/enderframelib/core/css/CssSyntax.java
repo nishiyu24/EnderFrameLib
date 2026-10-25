@@ -671,6 +671,15 @@ public final class CssSyntax {
         return out;
     }
 
+    /** 最上位の空白で区切った語（関数の中の空白では切らない）。{@code cubic-bezier(0, 0, 1, 1)} は 1 語。 */
+    public static List<String> words(String value) {
+        List<String> out = new ArrayList<>();
+        for (List<ComponentValue> part : splitOnWhitespace(parseComponentValues(value))) {
+            out.add(serialize(part));
+        }
+        return out;
+    }
+
     /** コンポーネント値を CSS のテキストに戻す。コメントで隔てられていたトークンの間には空白を 1 つ入れる。 */
     public static String serialize(List<ComponentValue> values) {
         return serialize(values, Token::raw);

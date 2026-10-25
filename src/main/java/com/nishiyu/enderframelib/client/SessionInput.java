@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.client.renderer.ControlElementRenderer;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.api.event.Event;
 import com.nishiyu.enderframelib.api.event.UIEvents;
@@ -190,7 +191,7 @@ public final class SessionInput {
             state.lastSentY = dragHit.localY();
 
             if (draggedEl.type() == ElementType.RANGE) {
-                float ratio = DisplayItemDrawer.rangeRatio(dragHit.localX(), draggedEl.width());
+                float ratio = ControlElementRenderer.rangeRatio(dragHit.localX(), draggedEl.width());
                 if (Math.abs(state.lastRatio - ratio) > 0.002f) {
                     state.lastRatio = ratio;
                     state.lastRangeText = generateRangeText(draggedEl.text(), ratio);
@@ -628,7 +629,7 @@ public final class SessionInput {
         state.lastSentY = hit.localY();
 
         if (element.type() == ElementType.RANGE) {
-            state.lastRatio = DisplayItemDrawer.rangeRatio(hit.localX(), element.width());
+            state.lastRatio = ControlElementRenderer.rangeRatio(hit.localX(), element.width());
             state.lastRangeText = generateRangeText(element.text(), state.lastRatio);
             updateInputLocally(state.draggingId, state.lastRangeText);
             dispatchRangeInput(session, state.draggingId, rangeValue(state.lastRangeText));

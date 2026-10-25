@@ -757,11 +757,11 @@ Layout differences from a real browser are measured, case by case, in
   fixed fraction of the font size. Corners are drawn as circular arcs, so an
   elliptical radius (`10px / 20px`, or a percentage on a box that is not
   square) uses the smaller of its two radii.
-- **Transforms in full.** `transform` reads `translate()` / `translateX()` /
-  `translateY()`, `scale()` and `rotate()` only, and applies them in a fixed
-  order (translate, rotate, scale) whatever order they are written in.
-  `matrix()`, `skew*()`, 3D functions and the individual `translate` /
-  `rotate` / `scale` properties are not applied.
+- **Transforms in full.** `transform`, `translate`, `rotate` and `scale` are
+  composed in written order into a 2D matrix, but a box carries only a
+  translation, a rotation and a scale, so the shear of `skew*()` and of a
+  `matrix()` is dropped, and the depth part of 3D functions
+  (`translateZ()`, `rotateX()` / `rotateY()`, `perspective()`) is not drawn.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
   YouTube sources need a `yt-dlp` binary you place in `<game dir>/enderframelib/` yourself
   and the opt-in `allowYtDlp` setting; it is never downloaded or self-updated (see [NOTICE](NOTICE)).

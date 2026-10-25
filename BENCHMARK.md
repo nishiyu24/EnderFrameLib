@@ -28,11 +28,12 @@
 ## 2. 回帰の基準値（固定）
 
 - **ファイル**: `src/test/resources/benchmark/baseline.txt`（2026-10-24 に更新、3 回測った中央値。初回は 2026-10-20）
-- **テスト**: `PerformanceBenchmarkTest`（ウォームアップ 5 回、測定 15 回の平均）
-- **判定**: 「実測 ≤ 基準値 × 2.0 + 3ms」を超えたら回帰として落ちる。レポートは `build/reports/benchmark-results.txt`。
+- **テスト**: `PerformanceBenchmarkTest`（厳密モード時: ウォームアップ 5 回、測定 15 回の平均 / 通常 `test` 時: ウォームアップ 1 回、測定 2 回のスモーク実行）
+- **通常テストとの分離**: `./gradlew test`（全件実行）では `IncrementalLayoutFuzzTest` 等の先行テストによる GC・CPU 負荷で実時間が揺れるため、決定論的な検証（描画結果の生成・基準値ファイルの整合性・保持 DOM ノード数）のみを強制し、実時間（ms）と GC ヒープ差分の超過は警告（`[WARN]`）出力に留める。厳密な回帰判定（「実測 ≤ 基準値 × 2.0 + 3ms」を超えたら落とす）は単独 JVM で走る `./gradlew benchmark`（または `-Dbenchmark.enforce=true`）で行う。レポートは `build/reports/benchmark-results.txt`。
 
 ```bash
-./gradlew test --tests '*PerformanceBenchmarkTest'
+./gradlew benchmark                                                          # 単独 JVM で厳密な回帰判定（-Dbenchmark.enforce=true）
+./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.enforce=true  # PerformanceBenchmarkTest のみ厳密実行
 ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true   # 基準値の更新（git diff で確認してからコミット）
 ```
 

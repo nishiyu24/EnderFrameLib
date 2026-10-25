@@ -149,7 +149,9 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 ### 描画（`client/renderer`）
 `DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸・グラデーション・角丸クリップは
 SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、システム書体の文字は `OutlineTextRenderer` がデバイスピクセルで
-ラスタライズして描く。
+ラスタライズして描く。グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
+`DisplayListBuilder` は順序（`PaintOrder`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、
+`DisplayItemDrawer` は背景・部品・メディア・文字の各 `*Renderer` に責務を分けて持たせている。
 
 ---
 

@@ -156,10 +156,10 @@ public class DisplayListGoldenTest {
                     Corners cr = meta.borderRadii();
                     sb.append(String.format(Locale.ROOT, " radii=[%d,%d,%d,%d]", cr.topLeft(), cr.topRight(), cr.bottomRight(), cr.bottomLeft()));
                 }
-                if (meta.gradient() != null) {
-                    GradientSpec g = meta.gradient();
-                    sb.append(String.format(Locale.ROOT, " gradient=[#%08X,#%08X,#%08X,#%08X]",
-                            g.topLeft(), g.topRight(), g.bottomRight(), g.bottomLeft()));
+                if (meta.hints().shaderGradient() != null) {
+                    var g = meta.hints().shaderGradient();
+                    sb.append(String.format(Locale.ROOT, " shader=[kind=%d,#%08X,#%08X,bounds=%d]",
+                            g.kind(), g.color0(), g.color1(), g.bounds()));
                 }
                 if (meta.roundedBorder() != null) {
                     RoundedBorderSpec rb = meta.roundedBorder();
@@ -168,8 +168,8 @@ public class DisplayListGoldenTest {
                             rb.colorTop(), rb.colorRight(), rb.colorBottom(), rb.colorLeft()));
                 }
             }
-            if (e.events() != null && e.events().containsKey(RenderKeys.POINTER_EVENTS)) {
-                sb.append(" pointer-events=").append(e.events().get(RenderKeys.POINTER_EVENTS));
+            if (e.hints().pointerEventsNone()) {
+                sb.append(" pointer-events=none");
             }
             sb.append('\n');
         }

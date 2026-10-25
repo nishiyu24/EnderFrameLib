@@ -22,7 +22,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ## 現在地（2026-10-25 時点）
 
-`./gradlew test` は 866 件（2026-10-25 の Phase 2 実装後。`PerformanceBenchmarkTest` は全体実行の負荷で落ちることがある。単独実行では通る）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 24 行）、WPT 採用 38 ケース（台帳 0 行）。
+`./gradlew test` は 893 件（2026-10-26 の Phase 3 実装後。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 24 行）、WPT 採用 38 ケース（台帳 0 行）。
 直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
 2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
@@ -38,7 +38,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化・Surface 連携・実機での観測も 2026-10-24〜25 に済。Surface 既知不具合は Phase 1/3 へ統合） |
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
 | R5 | インクリメンタル・パイプラインと CSSOM | ほぼ完了（差分レイアウトと近道、`InvalidationSets` 接続、`ComputedStyle` の遅延確保、再レイアウト境界と `contain`、配置の使い回し、描画だけの変化の近道、`StyleAnimator`（再スタイルで動かすトランジション・`@keyframes`）、CSSOM View は 2026-10-25 に完了。残: 台帳 R5 のスクロールバー 10 行（設計判断待ち）、`@starting-style`・`transition-behavior`） |
-| R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・2 色グラデーション・角丸クリップは完了。`RenderKeys` 撤去・多色 SDF グラデーション・transform 宣言順・FBO レイヤー合成・旧 W12 は Phase 3） |
+| R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・線形/放射グラデーション・角丸クリップ、`RenderKeys` 撤去、transform の宣言順合成は 2026-10-26 に完了。FBO レイヤー合成・ガウス影・楕円の角・回転クリップ・旧 W12 は Phase 3 の残） |
 | R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰めは完了。アトラス VRAM 最適化・`@font-face` の `OutlineFontFace` 統合・UAX #14・bidi・編集・台帳 2 行は Phase 4） |
 | R8 | 置換要素（SVG・Canvas 2D） | 未着手（Phase 5） |
 | R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行。表の台帳 4 行を含む残りは Phase 5） |
@@ -163,15 +163,17 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 ### Phase 3: 型付き `DisplayItem`・SDF/FBO 合成・`transform` 厳密化（R6 + 旧 W12）
 
-1. **`RenderKeys` と文字列エンコード描画メタの完全撤去（R6）**
-   - `DisplayItem.events` に `RenderKeys`（`SHADER_GRADIENT` のカンマ区切り文字列、`SHADOW_BLUR`、`EDGE_MASK`、`MC_PARENT`、`POINTER_EVENTS` 等）を詰め込み、`DisplayItemDrawer` が毎フレーム `String.split(",")` と `Float.parseFloat` でパースしている構造を撤去し、型付きの描画項目（`RenderMeta` / 個別 record）にする。
-   - 1,200 行を超える `DisplayListBuilder` と `DisplayItemDrawer` を責務ごとに分割する。
-2. **`transform` の `CssSyntax` 順列評価と多色シェーダーグラデーション（R6）**
-   - `DisplayListBuilder` の正規表現（`TRANSLATE_PATTERN` 等）を廃止し、`CssSyntax` のトークン列から宣言順どおりに 2D / 3D transform・`matrix()`・`skew*`・個別プロパティ（`translate` / `rotate` / `scale`）・`perspective` を合成する。
-   - 3 色以上のグラデーションを `Gradients.buildLinearStrips`（最大 200 分割の短冊ポリゴン）から `WebSdfShader`（カラーランプまたはストップ配列 uniform）へ移す。
-3. **FBO レイヤー合成・ガウス影・回転クリップ・旧 W12（R6 + 旧 W12）**
-   - FBO プールによるグループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-*`、および回転・傾斜した要素の角丸クリップ（`clipIntoLocalSpace` の軸並行近似の解消）。
-   - ガウスの `box-shadow`、楕円の角、角丸の破線・点線、旧 W12（逆変換を通るスクロールヒットテスト、`<mc-scene>` / `<mc-entity>` のシザー、[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) A-14 の複数 Surface バッティング時の半透明順序）。
+**進捗（2026-10-26）**: 項目 1・2 を実装し、肥大していた 2 クラスを分けた。項目 3（FBO・ガウス影・旧 W12）は未着手。
+`./gradlew test` は 893 件・失敗 0（`PerformanceBenchmarkTest` だけは全体実行の負荷で落ちることがあり、単独実行では通る）、`runGameTestServer` は 5 件通過。ラチェットは `RenderKeys` 参照 48 → 0、`DisplayListBuilder` の `Pattern.compile` 8 → 0。
+- 1（実装済み）: `RenderKeys` を撤去し、描画・ヒットテスト・アニメーションの付帯情報を型付きの `RenderHints`（`core/paint/model`）にして `RenderMeta.hints()` に持たせた（`DisplayItem.hints()` で読む）。持つのは親の錨の id・ツールチップ・スクロール範囲・影のぼかし半径・グラデーションの外縁の辺・シェーダーのグラデーション（`ShaderGradient`）・`pointer-events: none`・トランジションの遅延/イージング/対象。`DisplayItem.events` は DOM 由来の属性（`onclick`・`data-*`・書体）だけになり、描画側が毎フレーム `split(",")` と `parseFloat` で読み戻すことはなくなった。`DisplayListBuilder` は部品の群ごとに `ItemProps`（属性 + `RenderHints`）を持ち、`addElement` で `events` と `meta.hints` に振り分ける。読まれていなかった `mc-origin`・`mc-font-h`・`mc-scroll-current` は撤去。`HitTestIndex` の `title` 判定（旧 `mc-title`）は `hints().title()` に移した。
+  - 見つかった不具合: `LinuxDesktopScreenInputTest` が文字列 `"mc-parent"` で親を辿っていて、キー名の取り違えで常に null を読んでいた（型付きにして直った）。
+  - 見送り: `DisplayListBuilder` / `DisplayItemDrawer`（各 1,700 行超）の責務ごとの分割は、今回は型の移し替えを優先して未実施。
+- 2a（実装済み）: `transform` と個別プロパティ `translate` / `rotate` / `scale` を `core/paint/Transforms` が `CssSyntax` のトークン列から宣言順どおりに 2D の行列へ合成し（`translate` → `rotate` → `scale` → `transform`）、描画項目が運べる平行移動・回転・拡縮に分解する。`matrix()` / `matrix3d()` の 2D 成分・`skew*`・`rotate3d` の z 軸・`em` / `rem` / `calc()` の長さ・`deg` / `rad` / `grad` / `turn` に対応。以前は固定順（translate → rotate → scale）で、`scale(2) translate(10px)` の平行移動が拡大されなかった。せん断と 3D の奥行きは描かない（`README` の "Not supported" を更新）。`transition` / `animation` の時間の読み取りと `transform-origin` の語分けの正規表現も、`CssSyntax` のトークンで読むよう置き換えた。検証は `TransformsTest`・`PaintModelTest`。
+- 2b（実装済み）: すべての線形・放射・円錐グラデーション（`repeating-*`・補間のヒント・`in <色空間>` を含む）を `WebSdfShader` で描き、`Gradients.strips` / `GradientStrip` / `GradientSpec` / `RenderHints.edgeMask` / `RoundedRectRasterizer` の帯の経路を撤去した（`Gradients.shaderGradients`）。停止点の間（区間）ごとに同じ矩形へ重ねて描き、各区間は自分の t の範囲の外を捨てる（`ShaderGradient.LOWER_CLOSED` / `UPPER_CLOSED` を `GradA.w` に畳む。境目は 0.001 だけ重ねて抜けを防ぐ）。同じ位置の停止点（色の切り替わり）は区間を描かず、手前と先の端の色を単色の区間で塗る。繰り返しはシェーダーが位置 `u` を周期に畳む（頂点に `GradRepeat` を追加し、`EdgeMask` を外した。頂点は 156 バイト）。ヒントは区間の t の指数（`GradB.w`）、円錐は `atan` で求めた周の角。補間空間の指定は区間を 32 に刻み、その色空間の色を sRGB の補間でつなぐ近似（色が急に曲がる `oklch` の赤→緑は端で最大 20 ほどずれる）。
+  - 検証: `ShaderGradientTest`（シェーダーの式を `ShaderGradientEmulator` で CPU に再現し、停止点を直接引く基準の `colorAt` と画素ごとに比較。斜め・位置つき・切り替わり・透明・繰り返し・ヒント・色空間・放射・円錐）、`PaintModelTest`、ゴールデン 2 件（区間の注記 `shader=[…]` が加わった）、実機（`runClient`・PrintWindow）で斜め 3 色・位置つき 4 色・切り替わり・放射・繰り返し（以前は帯の経路で粗かった）・縞・円錐・ヒント・`oklab` / `oklch` を目視（継ぎ目・段なし）。
+  - LIMITATION: シェーダーが使えない環境（`WebSdfShader.isAvailable()` が偽）ではグラデーションは描かれない（以前は帯の矩形で近似していた）。
+- 責務ごとの分割（実装済み）: `DisplayListBuilder`（1,873 → 279 行）を `PaintOrder`（スタッキングコンテキストの順序・クリップ・スクロールバー）・`BoxAnimation`（transform / transition / animation）・`BoxDecorationPainter`（背景・枠線・影・輪郭線・インライン断片）・`ControlPainter`（フォーム部品・メディア・シーン・フィールドセット）・`PaintSupport`（状態を持たない道具）・`ItemProps`（属性 + `RenderHints`）に、`DisplayItemDrawer`（1,723 → 584 行）を `BackgroundRenderer`・`ControlElementRenderer`・`MediaElementRenderer`・`TextElementRenderer` に分けた。動作は変えていない（全テストと実機の目視で確認）。M9 の上限は 231。`ArchitectureTest` の `Pattern.compile` の上限は `DisplayListBuilder` とその部品の合計。
+- 未着手（項目 3）: FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`clip-path`・`mask`）、回転した要素の角丸クリップ、ガウスの `box-shadow`・楕円の角・角丸の破線・旧 W12。いずれも GL の状態（FBO・クリップ・合成）の設計を伴うので、別の段として扱う。
 
 ### Phase 4: フォント VRAM 最適化・`@font-face` 統合・国際化・編集（R7 + R4 残課題）
 
@@ -252,7 +254,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 **R6 — 達成**: 角丸・グラデーション・角丸の祖先クリップを 1 枚の四角形で描く SDF シェーダー（`WebSdfShader`・
 `RoundedRectRasterizer`）。GUI・ブロック面・手持ちアイテムで同じ経路。
-**R6 — 残（Phase 3）**: `DisplayItem` の `RenderKeys`（文字列キーと毎フレームの CSV `split`）の撤去、3 色以上のグラデーションの `WebSdfShader` 統合（`GradientStrip` の撤廃）、transform の関数と宣言順（いまは
+**R6 — 残（Phase 3）**: `DisplayItem` の `RenderKeys`（文字列キーと毎フレームの CSV `split`）の撤去、transform の関数と宣言順（いまは
 `DisplayListBuilder` の正規表現で translate / scale / rotate だけ）、FBO のレイヤー合成（opacity のグループ・`filter`・
 `mix-blend-mode`・`clip-path`・`mask`・回転した角丸クリップ）、ガウスの `box-shadow`、楕円の角、旧 W12。
 

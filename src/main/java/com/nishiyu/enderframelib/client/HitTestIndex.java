@@ -6,7 +6,6 @@ import com.nishiyu.enderframelib.client.renderer.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 
 import java.util.ArrayList;
@@ -63,9 +62,9 @@ public class HitTestIndex {
         this.interactiveEntries = entries;
     }
 
-    /** 描画側が {@code pointer-events: none} の箱の部品に載せた印（{@link RenderKeys#POINTER_EVENTS}）。 */
+    /** 描画側が {@code pointer-events: none} の箱の部品に載せた印（{@link RenderHints#pointerEventsNone()}）。 */
     private static boolean isPointerEventsNone(DisplayItem el) {
-        return el.events() != null && "none".equalsIgnoreCase(el.events().get(RenderKeys.POINTER_EVENTS));
+        return el.hints().pointerEventsNone();
     }
 
     /** 装飾だけの部品（影・枠線・輪郭線・背景のレイヤー・プレースホルダ）。クリックを受けず、下の要素を隠さない。 */
@@ -105,10 +104,11 @@ public class HitTestIndex {
         // テキストノード
         if (t == ElementType.TEXT) return true;
 
-        // イベントや対話属性がある
+        // ツールチップ・イベントや対話属性がある
+        if (el.hints().title() != null) return true;
         if (el.events() != null) {
             for (String key : el.events().keySet()) {
-                if (key.startsWith("on") || RenderKeys.MC_TITLE.equals(key) || "draggable".equals(key)) {
+                if (key.startsWith("on") || "draggable".equals(key)) {
                     return true;
                 }
             }
@@ -124,7 +124,7 @@ public class HitTestIndex {
             return true;
         }
 
-        DisplayItem parentAnchor = elementMap.get(el.events() != null ? el.events().get(RenderKeys.MC_PARENT) : null);
+        DisplayItem parentAnchor = elementMap.get(el.hints().parentId());
         return parentAnchor != null && (parentAnchor.hasHover() || parentAnchor.hasPseudo());
     }
 
@@ -133,7 +133,7 @@ public class HitTestIndex {
         DisplayItem curr = el;
         while (curr != null) {
             chain.add(curr);
-            String parentId = curr.events() != null ? curr.events().get(RenderKeys.MC_PARENT) : null;
+            String parentId = curr.hints().parentId();
             curr = parentId != null ? map.get(parentId) : null;
         }
         Collections.reverse(chain);
