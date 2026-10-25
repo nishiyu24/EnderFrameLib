@@ -114,6 +114,7 @@ public class RenderPipeline {
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
+        effectiveState.bindStyleSheet(doc.sheet);
         if (doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(rootW, rootH))) {
             effectiveState.markAllDirty();
         }
@@ -305,12 +306,51 @@ public class RenderPipeline {
         return sameViewport || !flags.viewportDependent ? StyleCache.VALID : StyleCache.VIEWPORT_STALE;
     }
 
+    /** 算出し直した結果が、子孫の算出に及ぶ度合い。 */
+    private enum Propagation {
+        /** 子孫が読む値は変わっていない。子孫はそれぞれのキャッシュの状態で判断する。 */
+        NONE,
+        /** 継承しないプロパティだけが変わった。{@code inherit} を明示した子孫だけが影響を受ける。 */
+        NON_INHERITED,
+        /** 継承する値（カスタムプロパティ・フォントサイズを含む）が変わった。子孫は全て算出し直す。 */
+        INHERITED
+    }
+
     /**
-     * 算出し直した要素の子孫も強制的に算出し直すか。ビューポートだけが理由で、算出値が前と変わらなければ
-     * 子孫は継承元が同じなので、それぞれのキャッシュの状態で判断させる。
+     * 算出し直した要素の子孫へ、どこまで再スタイルを及ぼすか。
+     * <ul>
+     *   <li>要素自身が子孫の規則の入力になる（{@code .a:hover .b}）なら {@code subtreeDirty}（無効化セットが立てる）で全部</li>
+     *   <li>継承する値が変わったなら全部。子孫の継承元が変わる</li>
+     *   <li>継承しない値だけが変わったなら、{@code inherit} を使う規則・style 属性が無い限り子孫は影響を受けない
+     *       （背景色の変化で子孫全員を再スタイルしない）</li>
+     * </ul>
      */
-    private static boolean forcesDescendants(StyleCache cache, ComputedStyle previous, ComputedStyle computed) {
-        return cache != StyleCache.VIEWPORT_STALE || previous == null || !previous.asMap().equals(computed.asMap());
+    private static Propagation propagationOf(ComputedStyle previous, ComputedStyle computed) {
+        if (previous == null) return Propagation.INHERITED;
+        if (Float.compare(previous.fontSizePx(), computed.fontSizePx()) != 0
+                || Float.compare(previous.rootFontSizePx(), computed.rootFontSizePx()) != 0) {
+            return Propagation.INHERITED;
+        }
+        Map<String, String> before = previous.asMap();
+        Map<String, String> after = computed.asMap();
+        if (before.equals(after)) return Propagation.NONE;
+        Propagation result = Propagation.NONE;
+        for (Map.Entry<String, String> e : before.entrySet()) {
+            if (Objects.equals(e.getValue(), after.get(e.getKey()))) continue;
+            if (isInheritedKey(e.getKey())) return Propagation.INHERITED;
+            result = Propagation.NON_INHERITED;
+        }
+        for (Map.Entry<String, String> e : after.entrySet()) {
+            if (before.containsKey(e.getKey())) continue;
+            if (isInheritedKey(e.getKey())) return Propagation.INHERITED;
+            result = Propagation.NON_INHERITED;
+        }
+        return result;
+    }
+
+    /** 親の値が子孫の算出に入る名前か。未登録の名前は安全側に継承するとみなす。 */
+    private static boolean isInheritedKey(String key) {
+        return key.startsWith("--") || PropertyRegistry.get(key) == null || PropertyRegistry.isInherited(key);
     }
 
     private static boolean dependsOnViewport(HtmlNode node, Map<String, String> rawStyle) {
@@ -335,6 +375,10 @@ public class RenderPipeline {
         flags.viewportDependent = dependsOnViewport(node, rawStyle);
         flags.hasInteractiveRules = hasInteractive;
         flags.isStyleDirty = false;
+        flags.subtreeDirty = false;
+        flags.unscoped = false;
+        String inlineStyle = node.attrs.get("style");
+        flags.inheritsExplicitly = inlineStyle != null && inlineStyle.toLowerCase(java.util.Locale.ROOT).contains("inherit");
     }
 
     private static ComputedStyle computeStyle(Map<String, String> rawStyle, Map<String, String> parentStyle,
@@ -357,6 +401,7 @@ public class RenderPipeline {
             return new RestyleResult(true, true);
         }
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
+        interactionState.bindStyleSheet(doc.sheet);
         if (doc.sheet != null && doc.sheet.usesHasSelectors()) interactionState.propagateDirtyToAncestors();
         return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, false,
                 ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
@@ -377,7 +422,10 @@ public class RenderPipeline {
         boolean layoutRequired = false;
         boolean repositionRequired = false;
         boolean childForceDirty = false;
+        boolean childForceIfInherits = false;
         ComputedStyle computed;
+        // 要素自身が子孫の規則の入力になる変化（祖先の状態・class を読む規則）。算出値が変わらなくても子孫を算出し直す
+        boolean subtreeDirty = flags.subtreeDirty;
 
         if (isDirty) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
@@ -410,7 +458,10 @@ public class RenderPipeline {
                 }
             }
 
-            childForceDirty = forcesDescendants(cache, prevStyle, computed);
+            Propagation propagation = propagationOf(prevStyle, computed);
+            childForceDirty = subtreeDirty || propagation == Propagation.INHERITED
+                    || (propagation == Propagation.NON_INHERITED && sheet != null && sheet.usesInheritKeyword());
+            childForceIfInherits = propagation == Propagation.NON_INHERITED;
             box.updateStyle(computed);
             resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState);
             BoxTreeBuilder.restyleGeneratedBoxes(box);
@@ -418,6 +469,8 @@ public class RenderPipeline {
             cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
             computed = flags.computedStyle;
+            childForceDirty = subtreeDirty;
+            flags.subtreeDirty = false;
         }
 
         float nextParentFontSize = computed.fontSizePx();
@@ -436,8 +489,13 @@ public class RenderPipeline {
         for (LayoutBox child : box.elementChildren) {
             if (child.node.isPseudoNode) continue;
             boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child.node);
+            boolean forceChild = childForceDirty || siblingForceDirty;
+            if (!forceChild && childForceIfInherits) {
+                InteractionState.StateFlags childFlags = interactionState.get(child.node);
+                forceChild = childFlags != null && childFlags.inheritsExplicitly;
+            }
             RestyleResult childRes = restyleBoxRecursive(child, computed.asMap(), sheet, env,
-                    childForceDirty || siblingForceDirty, nextParentFontSize, childScope, interactionState,
+                    forceChild, nextParentFontSize, childScope, interactionState,
                     siblingInvalidation);
             styleChanged |= childRes.styleChanged();
             layoutRequired |= childRes.layoutRequired();
@@ -540,6 +598,8 @@ public class RenderPipeline {
         ComputedStyle computed;
         boolean hasInteractive;
         boolean childForceDirty = false;
+        boolean childForceIfInherits = false;
+        boolean subtreeDirty = flags != null && flags.subtreeDirty;
 
         if (needsRestyle) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
@@ -554,11 +614,16 @@ public class RenderPipeline {
                     containerFor(node, interactionState));
             hasInteractive = styleSet.hasInteractiveRules();
 
-            childForceDirty = forcesDescendants(cache, flags != null ? flags.computedStyle : null, computed);
+            Propagation propagation = propagationOf(flags != null ? flags.computedStyle : null, computed);
+            childForceDirty = subtreeDirty || propagation == Propagation.INHERITED
+                    || (propagation == Propagation.NON_INHERITED && sheet != null && sheet.usesInheritKeyword());
+            childForceIfInherits = propagation == Propagation.NON_INHERITED;
             if (flags != null) cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
         } else {
             computed = flags.computedStyle;
             hasInteractive = flags.hasInteractiveRules;
+            childForceDirty = subtreeDirty;
+            flags.subtreeDirty = false;
         }
         Map<String, String> childInherited = computed.asMap();
         StyleScope childScope = scope.enter(node, computed);
@@ -612,7 +677,12 @@ public class RenderPipeline {
                 if (child.tag.equals("#text") && child.text.isEmpty()) continue;
                 if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
                 boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child);
-                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, childForceDirty || siblingForceDirty,
+                boolean forceChild = childForceDirty || siblingForceDirty;
+                if (!forceChild && childForceIfInherits && interactionState != null) {
+                    InteractionState.StateFlags childFlags = interactionState.get(child);
+                    forceChild = childFlags != null && childFlags.inheritsExplicitly;
+                }
+                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, forceChild,
                         computed.fontSizePx(), childScope, interactionState, siblingInvalidation, childReusable));
                 siblingForceDirty |= stateChanged;
             }

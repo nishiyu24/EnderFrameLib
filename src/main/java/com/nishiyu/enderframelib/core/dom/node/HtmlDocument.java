@@ -162,6 +162,20 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.domChangeListener = listener;
     }
 
+    /** 属性が変わった。規則が読む範囲だけを汚して、持ち主に知らせる。 */
+    void attributeChanged(HtmlNode node, String name, @Nullable String oldValue, @Nullable String newValue) {
+        interactionState.invalidateAttribute(node, name, oldValue, newValue);
+        DomChangeListener listener = domChangeListener;
+        if (listener != null) listener.onDomChanged(node, name);
+    }
+
+    /** 子が増減した。兄弟の並びを読む規則が及ぶ範囲だけを汚して、持ち主に知らせる。 */
+    void childListChanged(HtmlNode parent, int index) {
+        interactionState.invalidateChildList(parent, index);
+        DomChangeListener listener = domChangeListener;
+        if (listener != null) listener.onDomChanged(parent, null);
+    }
+
     /** {@link HtmlNode#notifyDomChanged} から呼ばれる。汚れの印を付け（算出スタイルを使い回させない）、持ち主に知らせる。 */
     void nodeChanged(HtmlNode node, @Nullable String attributeName) {
         interactionState.markDirty(node);

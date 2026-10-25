@@ -70,6 +70,31 @@ public class StyleSheet {
         return false;
     }
 
+    private boolean usesInherit;
+    private int usesInheritVersion = -1;
+
+    /**
+     * どれかの規則が {@code inherit} を宣言値に取るか。取るなら、親の非継承プロパティの変化が子の算出値に届き得るので、
+     * 親が変われば子孫も算出し直す。取らなければ、継承しないプロパティだけの変化で子孫を巻き込まない。
+     */
+    public boolean usesInheritKeyword() {
+        if (usesInheritVersion != rules.version()) {
+            boolean found = false;
+            for (StyleRule rule : rules) {
+                for (String value : rule.properties.values()) {
+                    if (ValueComputer.CssWideKeyword.of(value) == ValueComputer.CssWideKeyword.INHERIT) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            usesInherit = found;
+            usesInheritVersion = rules.version();
+        }
+        return usesInherit;
+    }
+
     /** {@code @container} の中の規則があるか。あれば、コンテナの寸法が変わると再スタイルが要る。 */
     public boolean usesContainerQueries() {
         for (StyleRule rule : rules) {

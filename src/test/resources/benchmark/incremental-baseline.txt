@@ -1,0 +1,9 @@
+# EnderFrameLib R0+ incremental micro-operation baseline (ms per operation)
+# 形式: <operation>\t<ms>。判定は PerformanceBenchmarkTest と同じ「実測 <= 基準値 * factor + slackMs」。
+# 更新: ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true
+# hover-single-row は Phase 2（R5）で < 1.0 ms に落とす。達成したら基準値も下げる。
+hover-single-row	0.32
+class-toggle-unrelated	0.15
+class-toggle-descendant	16.22
+insert-one-row	6.61
+scroll-reposition	0.31

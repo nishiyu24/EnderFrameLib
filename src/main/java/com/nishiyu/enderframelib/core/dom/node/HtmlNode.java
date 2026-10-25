@@ -266,7 +266,7 @@ public class HtmlNode implements Node {
 
         // MutationObserver 通知
         MutationObserverManager.queueChildList(this, List.of(newChild), Collections.emptyList(), prevSibling, nextSibling);
-        notifyDomChanged(null);
+        notifyChildListChanged(insertIndex);
 
         return newChild;
     }
@@ -283,12 +283,13 @@ public class HtmlNode implements Node {
         Node prevSibling = targetChild.getPreviousSibling();
         Node nextSibling = targetChild.getNextSibling();
 
+        int removedIndex = children.indexOf(targetChild);
         children.remove(targetChild);
         targetChild.parent = null;
 
         // MutationObserver 通知
         MutationObserverManager.queueChildList(this, Collections.emptyList(), List.of(targetChild), prevSibling, nextSibling);
-        notifyDomChanged(null);
+        notifyChildListChanged(removedIndex);
 
         return targetChild;
     }
@@ -401,6 +402,17 @@ public class HtmlNode implements Node {
     void notifyDomChanged(@Nullable String attributeName) {
         HtmlDocument doc = connectedDocument();
         if (doc != null) doc.nodeChanged(this, attributeName);
+    }
+
+    /** 子の挿入・削除を知らせる。{@code index} は増減があった子の位置（削除なら削除前の位置）。 */
+    private void notifyChildListChanged(int index) {
+        HtmlDocument doc = connectedDocument();
+        if (doc != null) doc.childListChanged(this, index);
+    }
+
+    private void notifyAttributeChanged(String name, @Nullable String oldValue, @Nullable String newValue) {
+        HtmlDocument doc = connectedDocument();
+        if (doc != null) doc.attributeChanged(this, name, oldValue, newValue);
     }
 
     private HtmlDocument connectedDocument() {
@@ -855,7 +867,7 @@ public class HtmlNode implements Node {
         }
 
         MutationObserverManager.queueAttributes(this, name, oldVal);
-        notifyDomChanged(name);
+        notifyAttributeChanged(name, oldVal, newVal);
     }
 
     public void removeAttribute(String name) {
@@ -867,7 +879,7 @@ public class HtmlNode implements Node {
         }
 
         MutationObserverManager.queueAttributes(this, name, oldVal);
-        notifyDomChanged(name);
+        notifyAttributeChanged(name, oldVal, null);
     }
 
     public boolean toggleAttribute(String name) {

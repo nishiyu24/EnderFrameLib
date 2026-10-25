@@ -52,6 +52,8 @@ public final class InvalidationSets {
     private final Map<Integer, Set<Relation>> byState = new HashMap<>();
     /** 兄弟の増減・順序の変化（{@code :first-child}・{@code :nth-child()}・{@code :empty}・兄弟結合子）が及ぶ範囲。 */
     private final Set<Relation> structure = EnumSet.noneOf(Relation.class);
+    /** 文書直下の子の増減（{@code :root} が別の要素になり得る）が及ぶ範囲。文書の最上位だけが対象。 */
+    private final Set<Relation> rootStructure = EnumSet.noneOf(Relation.class);
     /** 入力の値や検証の状態（{@code :valid}・{@code :placeholder-shown} など）が及ぶ範囲。 */
     private final Set<Relation> formState = EnumSet.noneOf(Relation.class);
 
@@ -102,10 +104,15 @@ public final class InvalidationSets {
         return EnumSet.copyOf(structure.isEmpty() ? EnumSet.noneOf(Relation.class) : structure);
     }
 
+    /** 文書の最上位の子の増減で、{@code :root} に一致する要素が変わり得る範囲。{@code :root} を読む規則が無ければ空。 */
+    public Set<Relation> forRootChange() {
+        return rootStructure.isEmpty() ? EnumSet.noneOf(Relation.class) : EnumSet.copyOf(rootStructure);
+    }
+
     /** どの規則も、変化を見張る必要のない（class・属性・状態・構造のどれにも依存しない）シートか。 */
     public boolean isEmpty() {
         return byClass.isEmpty() && byId.isEmpty() && byAttribute.isEmpty() && byState.isEmpty()
-                && structure.isEmpty() && formState.isEmpty();
+                && structure.isEmpty() && rootStructure.isEmpty() && formState.isEmpty();
     }
 
     private static Set<Relation> union(Set<Relation>... sets) {
@@ -185,7 +192,8 @@ public final class InvalidationSets {
                 byState.computeIfAbsent(mask, k -> EnumSet.noneOf(Relation.class)).addAll(scope);
             }
         }
-        if (token.isEmpty || !token.nths.isEmpty() || token.isRoot) structure.addAll(structureScope(scope));
+        if (token.isEmpty || !token.nths.isEmpty()) structure.addAll(structureScope(scope));
+        if (token.isRoot) rootStructure.addAll(structureScope(scope));
         for (DocumentPseudoClass pseudo : token.documentPseudoClasses) {
             addDocumentPseudoClass(pseudo, scope);
         }

@@ -367,6 +367,8 @@ public class PerformanceBenchmarkTest {
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(microListHtml(), "", VIEWPORT_W, VIEWPORT_H);
         InteractionState state = new InteractionState();
+        // セッションと同じく、文書の変異が対話状態へ届く（無効化セットで範囲を絞って汚す）ようにする
+        ((com.nishiyu.enderframelib.core.dom.node.HtmlDocument) doc.root).setInteractionState(state);
         ScrollState scroll = new ScrollState();
         LayoutBox root = compiler.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), scroll, FontResolver.FALLBACK, state);
         HtmlNode list = doc.root.getElementById("list");
@@ -391,14 +393,12 @@ public class PerformanceBenchmarkTest {
 
                 // 2a. 無関係な class のトグル（.flag は li の色だけ）
                 row.toggleClass("flag");
-                state.markDirty(row);
                 t = System.nanoTime();
                 compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
                 unrelatedNs += System.nanoTime() - t;
 
                 // 2b. 子孫セレクタ（.dark li）に効く class のトグル
                 list.toggleClass("dark");
-                state.markDirty(list);
                 t = System.nanoTime();
                 compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
                 descendantNs += System.nanoTime() - t;
