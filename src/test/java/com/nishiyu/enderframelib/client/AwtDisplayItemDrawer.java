@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.GradientSpec;
+import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.paint.model.RoundedBorderSpec;
 
@@ -124,7 +124,7 @@ public class AwtDisplayItemDrawer {
         if (w <= 0 || h <= 0) return;
 
         // 背景描画（RECT, BUTTON, INPUT, ROUNDED_BORDER 共通）
-        if (item.bgColor() != 0 || (meta != null && meta.gradient() != null)) {
+        if (item.bgColor() != 0 || item.hints().shaderGradient() != null) {
             drawBackground(g2d, item, meta, x, y, w, h);
         }
 
@@ -149,21 +149,21 @@ public class AwtDisplayItemDrawer {
     private static void drawBackground(Graphics2D g2d, DisplayItem item, RenderMeta meta, int x, int y, int w, int h) {
         Shape shape = createShape(meta != null ? meta.borderRadii() : null, item.radius(), x, y, w, h);
 
-        if (meta != null && meta.gradient() != null) {
-            GradientSpec grad = meta.gradient();
-            Color cTopLeft = toAwtColor(grad.topLeft());
-            Color cTopRight = toAwtColor(grad.topRight());
-            Color cBottomRight = toAwtColor(grad.bottomRight());
-            Color cBottomLeft = toAwtColor(grad.bottomLeft());
-
-            // 4隅から線形グラデーションを構築（垂直、水平、対角）
-            if (grad.topLeft() == grad.topRight() && grad.bottomLeft() == grad.bottomRight()) {
-                g2d.setPaint(new LinearGradientPaint(x, y, x, y + h, new float[]{0f, 1f}, new Color[]{cTopLeft, cBottomLeft}));
-            } else if (grad.topLeft() == grad.bottomLeft() && grad.topRight() == grad.bottomRight()) {
-                g2d.setPaint(new LinearGradientPaint(x, y, x + w, y, new float[]{0f, 1f}, new Color[]{cTopLeft, cTopRight}));
-            } else {
-                g2d.setPaint(new LinearGradientPaint(x, y, x + w, y + h, new float[]{0f, 1f}, new Color[]{cTopLeft, cBottomRight}));
+        if (item.hints().shaderGradient() != null) {
+            // シェーダーの 1 区間を画素ごとに計算する（範囲の外は捨てるので、区間を重ねて描けば 1 つのグラデーションになる）
+            ShaderGradient segment = item.hints().shaderGradient();
+            java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(Math.max(1, w), Math.max(1, h), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int py = 0; py < h; py++) {
+                for (int px = 0; px < w; px++) {
+                    Integer c = com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator.colorOf(segment, x + px + 0.5f, y + py + 0.5f);
+                    if (c != null) image.setRGB(px, py, c);
+                }
             }
+            java.awt.Shape oldClip = g2d.getClip();
+            g2d.clip(shape);
+            g2d.drawImage(image, x, y, null);
+            g2d.setClip(oldClip);
+            return;
         } else {
             g2d.setColor(toAwtColor(item.bgColor()));
         }

@@ -24,7 +24,6 @@ import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
 import com.nishiyu.enderframelib.network.HtmlNodeSerializer;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -1158,15 +1157,14 @@ public class SessionContext implements AutoCloseable {
 
         for (int i = elements.size() - 1; i >= 0; i--) {
             DisplayItem el = elements.get(i);
-            if (el.events() != null && el.events().containsKey(RenderKeys.MC_SCROLLABLE)) {
+            if (el.hints().scrollable()) {
                 CssAnimator.AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, el);
                 double[] localPt = inverseTransform(pixelX, pixelY, el, anim);
                 double localX = localPt[0] - el.x();
                 double localY = localPt[1] - el.y();
 
                 if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                    String[] maxStrs = el.events().get(RenderKeys.MC_SCROLLABLE).split(",");
-                    float maxW = Float.parseFloat(maxStrs[0]), maxH = Float.parseFloat(maxStrs[1]);
+                    float maxW = el.hints().scrollWidth(), maxH = el.hints().scrollHeight();
 
                     ScrollState state = scrollState;
                     // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。

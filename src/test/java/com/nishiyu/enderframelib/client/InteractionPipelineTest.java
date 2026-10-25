@@ -111,8 +111,9 @@ public class InteractionPipelineTest {
         DisplayItem overlay = new DisplayItem(
                 "overlay", "overlay", ElementType.RECT,
                 0, 0, 200, 100,
-                "", 0, 0xFFFFFFFF, Map.of("pointer-events", "none"),
-                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, RenderMeta.EMPTY
+                "", 0, 0xFFFFFFFF, Map.of(),
+                2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL,
+                RenderMeta.EMPTY.withHints(com.nishiyu.enderframelib.core.paint.model.RenderHints.NONE.withPointerEventsNone(true))
         );
 
         HitTestIndex index = new HitTestIndex(List.of(button, overlay));

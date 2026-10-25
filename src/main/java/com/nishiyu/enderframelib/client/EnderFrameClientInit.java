@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.client.renderer.MediaElementRenderer;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.client.renderer.OutlineTextRenderer;
 import com.nishiyu.enderframelib.core.text.model.*;
@@ -81,11 +82,11 @@ public class EnderFrameClientInit {
         fontScan.start();
         NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
             if (event.getLevel() != null && event.getLevel().isClientSide()) {
-                DisplayItemDrawer.clearEntityPreviewCache();
+                MediaElementRenderer.clearEntityPreviewCache();
             }
         });
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
-            DisplayItemDrawer.clearEntityPreviewCache();
+            MediaElementRenderer.clearEntityPreviewCache();
             ClientScheduler.clearAll();
             StateNbtConverter.clearReceivedKeyTables();
             Surfaces.clearHolograms();

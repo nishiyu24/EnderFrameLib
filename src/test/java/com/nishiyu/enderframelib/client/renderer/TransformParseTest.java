@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class TransformParseTest {
 
     private static float[] parse(String transform) {
-        return DisplayListBuilder.parseTransformProps(transform, 200f, 40f, 0f, 0f, 1f, 1f, 0f);
+        return BoxAnimation.parseTransformProps(transform, 200f, 40f, 0f, 0f, 1f, 1f, 0f);
     }
 
     @Test

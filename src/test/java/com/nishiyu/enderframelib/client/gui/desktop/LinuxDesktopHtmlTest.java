@@ -255,7 +255,7 @@ public class LinuxDesktopHtmlTest {
                 .orElse(null);
         assertNotNull(phItem, "test-input の placeholder 要素が存在すること");
         assertNotNull(phItem.events(), "placeholder の events が存在すること");
-        assertEquals("none", phItem.events().get("pointer-events"), "placeholder はクリックを透過するため pointer-events: none であること");
+        assertTrue(phItem.hints().pointerEventsNone(), "placeholder はクリックを透過するため pointer-events: none であること");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.client.renderer.ControlElementRenderer;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
 import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
@@ -92,9 +93,9 @@ public class RangeAppearanceTest {
     /** 押した所につまみの中心が来る（つまみの中心は両端から 8px の間を動く）。 */
     @Test
     void pointerPositionMapsToTheThumbCentre() {
-        assertEquals(0f, DisplayItemDrawer.rangeRatio(8, 129), 1e-6);
-        assertEquals(0f, DisplayItemDrawer.rangeRatio(2, 129), 1e-6);
-        assertEquals(1f, DisplayItemDrawer.rangeRatio(121, 129), 1e-6);
-        assertEquals(0.5f, DisplayItemDrawer.rangeRatio(64.5, 129), 1e-6);
+        assertEquals(0f, ControlElementRenderer.rangeRatio(8, 129), 1e-6);
+        assertEquals(0f, ControlElementRenderer.rangeRatio(2, 129), 1e-6);
+        assertEquals(1f, ControlElementRenderer.rangeRatio(121, 129), 1e-6);
+        assertEquals(0.5f, ControlElementRenderer.rangeRatio(64.5, 129), 1e-6);
     }
 }

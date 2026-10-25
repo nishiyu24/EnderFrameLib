@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
+import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,7 @@ import java.util.Locale;
  * CSS のグラデーション（CSS Images 3 / 4）: {@code linear-gradient()} / {@code radial-gradient()} /
  * {@code conic-gradient()} と {@code repeating-*}、色の補間のヒント、{@code in <色空間>}（色の補間空間）。
  *
- * 値は {@link CssSyntax} のトークンとして読み、描画側が扱える形（4 隅の色を持つ矩形 {@link GradientStrip}）に直す。
+ * 値は {@link CssSyntax} のトークンとして読み、描画側が扱える形（シェーダーの区間 {@link ShaderGradient}）に直す。
  * Minecraft に依存しないので単体テストで形を確かめられる。
  *
  * 何が壊れていたか: 以前は {@code linear-gradient()} だけを文字列の分割で読み、{@code radial-gradient()} /
@@ -79,9 +80,6 @@ public final class Gradients {
     /** 解いた {@code conic-gradient()}。{@code from} は開始角（度）、{@code center} は中心の位置の語の並び。 */
     public record ConicGradient(double from, List<String> center, List<ColorStop> stops, boolean repeating,
                                 String colorSpace) implements Gradient {}
-
-    /** グラデーションを塗る矩形 1 枚と 4 隅の色（左上・右上・右下・左下）。描画側は 4 隅の色を双線形に補間する。 */
-    public record GradientStrip(float x, float y, float w, float h, int topLeft, int topRight, int bottomRight, int bottomLeft) {}
 
     // ==========================================
     // 読む
@@ -509,212 +507,138 @@ public final class Gradients {
     }
 
     // ==========================================
-    // 矩形に直す
+    // シェーダーの記述に直す
     // ==========================================
 
-    /** 斜めのグラデーションを刻む帯の上限。 */
-    static final int MAX_GRADIENT_STRIPS = 24;
-
-    /** 放射・円錐・複雑な斜めのグラデーションを刻むときの矩形の上限。 */
-    static final int MAX_MESH_CELLS = 512;
-
-    /** 点の色を返す関数。 */
-    @FunctionalInterface
-    private interface ColorField {
-        int at(float x, float y);
-    }
+    /** 補間空間の指定があるとき、停止点の間をこの数に刻んで sRGB の補間で近似する。 */
+    private static final int COLOR_SPACE_SUBDIVISIONS = 32;
+    /** 区間の数の上限（停止点が多いときは色空間の細分を粗くして収める）。 */
+    private static final int MAX_SHADER_SEGMENTS = 512;
 
     /**
-     * タイルをグラデーションの矩形に分ける。
+     * グラデーション（{@code linear-} / {@code radial-} / {@code conic-}、{@code repeating-} を含む）を、
+     * シェーダーが画素ごとに計算して描くための記述にする。帯や格子に刻まないので、継ぎ目も段もない。
      *
-     * 縦横のグラデーションは停止点の位置（繰り返しなら各周期の停止点、ヒントや補間空間があれば区間の細分）で帯を切るので、
-     * 帯の中は 2 色の補間そのもの。斜めで停止点が両端の 2 つだけなら色は座標の 1 次式なので、1 枚の双線形補間で正確に描ける。
-     * それ以外（斜めで中間の停止点があるとき・放射・円錐）は点の色の関数を、色の変化が大きいところを細かくする
-     * 四分木で刻み、矩形の隅の間は線形に補間する。
+     * <p>停止点の間（区間）ごとに 1 つ返す。区間は同じ矩形を重ねて描き、各区間は自分の t（0〜1）の範囲の外を捨てる
+     * （{@link ShaderGradient#LOWER_CLOSED} / {@link ShaderGradient#UPPER_CLOSED}）ので、画素ごとにちょうど 1 区間が塗る。
+     * 最初の区間の手前と最後の区間の先は端の色が伸びる。幅 0 の区間（同じ位置の停止点。色の切り替わり）は描かず、
+     * その手前・先の端の色は単色の区間で塗る。繰り返しはシェーダーが位置を周期に畳む。
+     * 補間のヒントは区間の t の指数で表す。補間空間の指定（{@code in oklab} など）は、区間を細かく刻んで、
+     * その色空間での色を sRGB の補間でつなぐ近似にする。
      *
-     * LIMITATION(制約): 放射・円錐・斜めの多段のグラデーションは、矩形（最大 {@value #MAX_MESH_CELLS} 枚）の隅の色を
-     * 線形に補間する近似で、色の急な境目は矩形の細かさまでしか鋭くならない。README の "Not supported" に対応。
+     * <p>空のときは描くものがない（タイルの大きさが 0、線の長さが 0）。形式は {@link ShaderGradient}。
      */
-    public static List<GradientStrip> strips(Gradient g, Rect tile, float rootW, float rootH,
-                                             float fontSize, float rootFontSize) {
-        return strips(g, tile, tile, rootW, rootH, fontSize, rootFontSize);
-    }
-
-    /**
-     * {@link #strips(Gradient, Rect, float, float, float, float)} のうち、{@code visible}（描画領域）に掛かる矩形だけを返す。
-     * 繰り返しで敷いたタイルのほとんどは領域の外に出るので、そこは刻まない。色の計算にはタイル全体を使う。
-     */
-    public static List<GradientStrip> strips(Gradient g, Rect tile, Rect visible, float rootW, float rootH,
-                                             float fontSize, float rootFontSize) {
-        if (tile.w() <= 0 || tile.h() <= 0) return new ArrayList<>();
+    public static List<ShaderGradient> shaderGradients(Gradient g, Rect tile, float rootW, float rootH, float fontSize, float rootFontSize) {
+        if (tile.w() <= 0 || tile.h() <= 0) return List.of();
         ColorParser.ColorMixer mixer = g.colorSpace() == null ? null : ColorParser.mixer(g.colorSpace());
         return switch (g) {
-            case LinearGradient linear -> linearStrips(linear, tile, visible, rootW, rootH, fontSize, rootFontSize, mixer);
-            case RadialGradient radial -> radialStrips(radial, tile, visible, rootW, rootH, fontSize, rootFontSize, mixer);
-            case ConicGradient conic -> conicStrips(conic, tile, visible, rootW, rootH, fontSize, rootFontSize, mixer);
+            case LinearGradient linear -> {
+                double rad = Math.toRadians(linear.angleFor(tile.w(), tile.h()));
+                double sin = Math.sin(rad), cos = Math.cos(rad);
+                if (Math.abs(sin) < 1e-9) sin = 0;
+                if (Math.abs(cos) < 1e-9) cos = 0;
+                double length = Math.abs(tile.w() * sin) + Math.abs(tile.h() * cos);
+                if (length <= 0) yield List.<ShaderGradient>of();
+                ResolvedStops stops = resolveStops(g.stops(), (float) length, false, rootW, rootH, fontSize, rootFontSize);
+                double cx = tile.x() + tile.w() / 2.0, cy = tile.y() + tile.h() / 2.0;
+                float dx = (float) (sin / length), dy = (float) (-cos / length);
+                float off = (float) ((-cx * sin + cy * cos) / length + 0.5);
+                yield segments(ShaderGradient.LINEAR, dx, dy, off, 0f, stops, linear.repeating(), mixer);
+            }
+            case RadialGradient radial -> {
+                float[] center = resolveCenter(radial.center(), tile, rootW, rootH, fontSize, rootFontSize);
+                float[] radii = radialRadii(radial, tile, center[0], center[1], rootW, rootH, fontSize, rootFontSize);
+                float rx = Math.max(radii[0], 1e-3f), ry = Math.max(radii[1], 1e-3f);
+                ResolvedStops stops = resolveStops(g.stops(), rx, false, rootW, rootH, fontSize, rootFontSize);
+                yield segments(ShaderGradient.RADIAL, center[0], center[1], 1f / rx, 1f / ry, stops, radial.repeating(), mixer);
+            }
+            case ConicGradient conic -> {
+                float[] center = resolveCenter(conic.center(), tile, rootW, rootH, fontSize, rootFontSize);
+                ResolvedStops stops = resolveStops(g.stops(), 1, true, rootW, rootH, fontSize, rootFontSize);
+                float from = (float) (conic.from() / 360.0);
+                yield segments(ShaderGradient.CONIC, center[0], center[1], from, 0f, stops, conic.repeating(), mixer);
+            }
         };
     }
 
-    /**
-     * 2 色だけの {@code linear-gradient()} / {@code radial-gradient()}（繰り返しなし・ヒントなし・補間空間の指定なし）を、
-     * シェーダーが画素ごとに計算して 1 枚で描くための記述にする。帯や格子に刻まないので、継ぎ目も段もない。
-     * 対象外（停止点が 3 つ以上・繰り返し・円錐など）は null で、従来どおり {@link #strips} で刻む。
-     *
-     * 形式（カンマ区切り）: 線形 {@code L,dx,dy,offset,色0,色1}（t = dx*x + dy*y + offset）、
-     * 放射 {@code R,cx,cy,1/rx,1/ry,p0,1/(p1-p0),色0,色1}（t = (|((x-cx)/rx, (y-cy)/ry)| - p0) / (p1 - p0)）。
-     * どちらも t は 0〜1 に切り詰め、色はプリマルチプライドで補間する（{@link #lerpPremultiplied} と同じ）。
-     */
-    public static String shaderGradient(Gradient g, Rect tile, float rootW, float rootH, float fontSize, float rootFontSize) {
-        if (tile.w() <= 0 || tile.h() <= 0 || g.repeating() || g.colorSpace() != null) return null;
-        if (g instanceof LinearGradient linear) {
-            double rad = Math.toRadians(linear.angleFor(tile.w(), tile.h()));
-            double sin = Math.sin(rad), cos = Math.cos(rad);
-            if (Math.abs(sin) < 1e-9) sin = 0;
-            if (Math.abs(cos) < 1e-9) cos = 0;
-            double length = Math.abs(tile.w() * sin) + Math.abs(tile.h() * cos);
-            if (length <= 0) return null;
-            ResolvedStops stops = resolveStops(g.stops(), (float) length, false, rootW, rootH, fontSize, rootFontSize);
-            if (stops.positions().length != 2 || hasHint(stops)) return null;
-            double p0 = stops.positions()[0], span = stops.positions()[1] - p0;
-            if (span <= 1e-6) return null;
-            double cx = tile.x() + tile.w() / 2.0, cy = tile.y() + tile.h() / 2.0;
-            double k = 1.0 / (length * span);
-            double dx = sin * k, dy = -cos * k;
-            double off = (-cx * sin + cy * cos) * k + (0.5 - p0) / span;
-            return "L," + (float) dx + "," + (float) dy + "," + (float) off + "," + stops.colors()[0] + "," + stops.colors()[1];
+    /** 区間 1 つ分。{@code p0} は始まりの位置、{@code span} は幅（どちらも停止点の尺度）、{@code hint} は t の指数。 */
+    private record Piece(float p0, float span, int color0, int color1, float hint) {}
+
+    private static List<ShaderGradient> segments(int kind, float g0, float g1, float g2, float g3, ResolvedStops stops,
+                                                 boolean repeating, ColorParser.ColorMixer mixer) {
+        float[] pos = stops.positions();
+        int[] colors = stops.colors();
+        int n = pos.length;
+        List<Piece> real = new ArrayList<>();
+        int intervals = 0;
+        for (int i = 0; i + 1 < n; i++) {
+            if (pos[i + 1] - pos[i] > 1e-6f) intervals++;
         }
-        if (g instanceof RadialGradient radial) {
-            float[] center = resolveCenter(radial.center(), tile, rootW, rootH, fontSize, rootFontSize);
-            float[] radii = radialRadii(radial, tile, center[0], center[1], rootW, rootH, fontSize, rootFontSize);
-            float rx = Math.max(radii[0], 1e-3f), ry = Math.max(radii[1], 1e-3f);
-            ResolvedStops stops = resolveStops(g.stops(), rx, false, rootW, rootH, fontSize, rootFontSize);
-            if (stops.positions().length != 2 || hasHint(stops)) return null;
-            float p0 = stops.positions()[0], span = stops.positions()[1] - p0;
-            if (span <= 1e-6f) return null;
-            return "R," + center[0] + "," + center[1] + "," + (1f / rx) + "," + (1f / ry) + "," + p0 + "," + (1f / span)
-                    + "," + stops.colors()[0] + "," + stops.colors()[1];
-        }
-        return null;
-    }
-
-    private static List<GradientStrip> linearStrips(LinearGradient g, Rect tile, Rect visible, float rootW, float rootH,
-                                                    float fontSize, float rootFontSize, ColorParser.ColorMixer mixer) {
-        List<GradientStrip> out = new ArrayList<>();
-        double rad = Math.toRadians(g.angleFor(tile.w(), tile.h()));
-        double sin = Math.sin(rad), cos = Math.cos(rad);
-        if (Math.abs(sin) < 1e-9) sin = 0;
-        if (Math.abs(cos) < 1e-9) cos = 0;
-        double length = Math.abs(tile.w() * sin) + Math.abs(tile.h() * cos);
-        if (length <= 0) return out;
-        ResolvedStops stops = resolveStops(g.stops(), (float) length, false, rootW, rootH, fontSize, rootFontSize);
-        float[] positions = stops.positions();
-        boolean repeating = g.repeating();
-        double centerX = tile.x() + tile.w() / 2.0, centerY = tile.y() + tile.h() / 2.0;
-        double dirSin = sin, dirCos = cos;
-        ColorField field = (px, py) -> colorAt(stops, (float) (((px - centerX) * dirSin - (py - centerY) * dirCos) / length + 0.5),
-                repeating, mixer);
-
-        boolean horizontal = cos == 0, vertical = sin == 0;
-        boolean axisAligned = horizontal || vertical;
-        boolean plainTwoStops = !repeating && !hasHint(stops) && mixer == null && positions.length == 2
-                && positions[0] == 0 && positions[1] == 1;
-        // 斜めで色が座標の 1 次式にならないもの（中間の停止点・繰り返し・ヒント・補間空間）は格子で近似する
-        if (!axisAligned && !plainTwoStops) return mesh(field, tile, visible);
-
-        List<Float> cuts = new ArrayList<>();
-        cuts.add(0f);
-        if (axisAligned) {
-            // 停止点の位置で切る。グラデーションの線の向きが逆なら位置も反転する
-            boolean reversed = horizontal ? sin < 0 : cos > 0;
-            for (float p : lineCuts(stops, repeating, mixer != null || hasHint(stops))) {
-                if (p > 0 && p < 1) cuts.add(reversed ? 1 - p : p);
-            }
-        }
-        cuts.add(1f);
-        cuts.sort(Float::compare);
-
-        // 縦のグラデーション（上下に色が変わる）は横長の帯、それ以外は縦長の帯
-        boolean rows = vertical || (!horizontal && Math.abs(cos) > Math.abs(sin));
-        for (int i = 0; i + 1 < cuts.size() && out.size() < MAX_MESH_CELLS; i++) {
-            float a = cuts.get(i), b = cuts.get(i + 1);
-            if (b - a <= 1e-6f) continue;
-            float x0, y0, x1, y1;
-            if (rows) {
-                x0 = tile.x(); x1 = tile.x() + tile.w();
-                y0 = tile.y() + tile.h() * a; y1 = tile.y() + tile.h() * b;
+        int sub = mixer == null ? 1 : Math.clamp(MAX_SHADER_SEGMENTS / Math.max(1, intervals), 1, COLOR_SPACE_SUBDIVISIONS);
+        int firstReal = -1, lastReal = -1;
+        for (int i = 0; i + 1 < n; i++) {
+            float a = pos[i], b = pos[i + 1], span = b - a;
+            if (span <= 1e-6f) continue;
+            if (firstReal < 0) firstReal = i;
+            lastReal = i;
+            if (mixer != null) {
+                // 色空間での色を刻みの端で求め、刻みの中は sRGB でつなぐ（ヒントも色の側に入っている）
+                for (int s = 0; s < sub; s++) {
+                    float pa = a + span * s / sub, pb = a + span * (s + 1) / sub;
+                    real.add(new Piece(pa, pb - pa, colorAt(stops, pa, false, mixer), colorAt(stops, pb, false, mixer), 1f));
+                }
             } else {
-                y0 = tile.y(); y1 = tile.y() + tile.h();
-                x0 = tile.x() + tile.w() * a; x1 = tile.x() + tile.w() * b;
+                real.add(new Piece(a, span, colors[i], colors[i + 1], hintExponent(stops.hints()[i], a, b)));
             }
-            if (!intersects(x0, y0, x1, y1, visible)) continue;
-            out.add(new GradientStrip(x0, y0, x1 - x0, y1 - y0, field.at(x0, y0), field.at(x1, y0), field.at(x1, y1), field.at(x0, y1)));
+        }
+
+        List<ShaderGradient> out = new ArrayList<>();
+        float period = pos[n - 1] - pos[0];
+        if (repeating && period > 1e-6f) {
+            // 周期の中の区間は両側を閉じる（周期の外は畳まれて入ってこない）
+            int both = ShaderGradient.LOWER_CLOSED | ShaderGradient.UPPER_CLOSED;
+            for (Piece p : real) out.add(make(kind, g0, g1, g2, g3, p, pos[0], period, both));
+            return out;
+        }
+        if (repeating) {
+            // 周期が 0 の繰り返しは最後の色の単色（§3.5.2）
+            out.add(make(kind, g0, g1, g2, g3, new Piece(pos[n - 1], 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, 0));
+            return out;
+        }
+        boolean padBefore = firstReal != 0;
+        boolean padAfter = lastReal != n - 2;
+        if (padBefore) {
+            // 最初の区間より手前（幅 0 の区間のさらに手前）は最初の停止点の色。その停止点までを単色で塗る
+            float edge = firstReal >= 0 ? pos[firstReal] : pos[0];
+            out.add(make(kind, g0, g1, g2, g3, new Piece(edge - 1f, 1f, colors[0], colors[0], 1f), 0f, 0f, ShaderGradient.UPPER_CLOSED));
+        }
+        for (int k = 0; k < real.size(); k++) {
+            int bounds = (k > 0 || padBefore ? ShaderGradient.LOWER_CLOSED : 0)
+                    | (k < real.size() - 1 || padAfter ? ShaderGradient.UPPER_CLOSED : 0);
+            out.add(make(kind, g0, g1, g2, g3, real.get(k), 0f, 0f, bounds));
+        }
+        if (padAfter) {
+            float edge = lastReal >= 0 ? pos[lastReal + 1] : pos[n - 1];
+            out.add(make(kind, g0, g1, g2, g3, new Piece(edge, 1f, colors[n - 1], colors[n - 1], 1f), 0f, 0f, ShaderGradient.LOWER_CLOSED));
         }
         return out;
     }
 
-    private static boolean intersects(float x0, float y0, float x1, float y1, Rect area) {
-        return x0 < area.x() + area.w() && x1 > area.x() && y0 < area.y() + area.h() && y1 > area.y();
+    private static ShaderGradient make(int kind, float g0, float g1, float g2, float g3, Piece p,
+                                       float repeatOrigin, float repeatPeriod, int bounds) {
+        return ShaderGradient.of(kind, g0, g1, g2, g3, p.p0(), 1f / p.span(), p.hint(), repeatOrigin, repeatPeriod,
+                p.color0(), p.color1(), bounds);
     }
 
-    private static boolean hasHint(ResolvedStops stops) {
-        for (float h : stops.hints()) {
-            if (!Float.isNaN(h)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * 線上（0〜1）で色を区切る位置。停止点の位置のほか、繰り返しなら各周期の停止点、ヒントや補間空間があれば
-     * 区間を細かく刻んだ位置。上限を超える分は間引く。
-     */
-    private static List<Float> lineCuts(ResolvedStops stops, boolean repeating, boolean curved) {
-        float[] positions = stops.positions();
-        List<Float> cuts = new ArrayList<>();
-        float first = positions[0], last = positions[positions.length - 1];
-        float span = last - first;
-        int periods = 1;
-        float start = 0;
-        if (repeating && span > 1e-4f) {
-            // 0〜1 を覆う周期の範囲（負の側にもはみ出す）
-            int before = (int) Math.ceil(first / span);
-            start = first - before * span;
-            periods = (int) Math.ceil((1 - start) / span) + 1;
-            periods = Math.min(periods, MAX_MESH_CELLS / Math.max(1, positions.length));
-        }
-        int sub = curved ? 8 : 1;
-        for (int period = 0; period < periods; period++) {
-            float offset = repeating && span > 1e-4f ? start + period * span - first : 0;
-            for (int i = 0; i < positions.length; i++) {
-                cuts.add(positions[i] + offset);
-                if (i + 1 < positions.length && sub > 1) {
-                    for (int s = 1; s < sub; s++) {
-                        cuts.add(positions[i] + offset + (positions[i + 1] - positions[i]) * s / sub);
-                    }
-                }
-            }
-        }
-        return cuts;
-    }
-
-    // ---- 放射
-
-    private static List<GradientStrip> radialStrips(RadialGradient g, Rect tile, Rect visible, float rootW, float rootH,
-                                                    float fontSize, float rootFontSize, ColorParser.ColorMixer mixer) {
-        float[] center = resolveCenter(g.center(), tile, rootW, rootH, fontSize, rootFontSize);
-        float cx = center[0], cy = center[1];
-        float[] radii = radialRadii(g, tile, cx, cy, rootW, rootH, fontSize, rootFontSize);
-        float rx = Math.max(radii[0], 1e-3f), ry = Math.max(radii[1], 1e-3f);
-        ResolvedStops stops = resolveStops(g.stops(), rx, false, rootW, rootH, fontSize, rootFontSize);
-        boolean repeating = g.repeating();
-        ColorField field = (px, py) -> {
-            float dx = (px - cx) / rx, dy = (py - cy) / ry;
-            return colorAt(stops, (float) Math.sqrt(dx * dx + dy * dy), repeating, mixer);
-        };
-        return mesh(field, tile, visible);
+    /** 区間 [a, b] の補間のヒントを t の指数にする（中間点を hint に動かす: t' = t^(ln 0.5 / ln h)）。ヒントがなければ 1。 */
+    private static float hintExponent(float hint, float a, float b) {
+        if (Float.isNaN(hint) || hint <= a || hint >= b) return 1f;
+        double h = (hint - a) / (b - a);
+        return (float) (Math.log(0.5) / Math.log(h));
     }
 
     /** 終点の半径（横・縦）。円は同じ値（§3.2.3）。 */
-    private static float[] radialRadii(RadialGradient g, Rect tile, float cx, float cy, float rootW, float rootH,
+    static float[] radialRadii(RadialGradient g, Rect tile, float cx, float cy, float rootW, float rootH,
                                        float fontSize, float rootFontSize) {
         if (g.sizeKeyword() == null) {
             float rx = LengthResolver.parseDim(g.radiusX(), tile.w(), rootW, rootH, fontSize, rootFontSize);
@@ -757,24 +681,6 @@ public final class Gradients {
         float rx0 = Math.max(sideX, 1e-3f), ry0 = Math.max(sideY, 1e-3f);
         float scale = (float) Math.sqrt((bestDx / rx0) * (bestDx / rx0) + (bestDy / ry0) * (bestDy / ry0));
         return new float[]{rx0 * scale, ry0 * scale};
-    }
-
-    // ---- 円錐
-
-    private static List<GradientStrip> conicStrips(ConicGradient g, Rect tile, Rect visible, float rootW, float rootH,
-                                                   float fontSize, float rootFontSize, ColorParser.ColorMixer mixer) {
-        float[] center = resolveCenter(g.center(), tile, rootW, rootH, fontSize, rootFontSize);
-        float cx = center[0], cy = center[1];
-        ResolvedStops stops = resolveStops(g.stops(), 1, true, rootW, rootH, fontSize, rootFontSize);
-        boolean repeating = g.repeating();
-        double from = g.from();
-        ColorField field = (px, py) -> {
-            // 真上から時計回りの角度
-            double deg = Math.toDegrees(Math.atan2(px - cx, -(py - cy)));
-            double t = (((deg - from) % 360) + 360) % 360 / 360.0;
-            return colorAt(stops, (float) t, repeating, mixer);
-        };
-        return mesh(field, tile, visible);
     }
 
     // ---- 中心
@@ -844,68 +750,5 @@ public final class Gradients {
 
     private static boolean isEdgeWord(String t) {
         return t.equals("left") || t.equals("right") || t.equals("top") || t.equals("bottom") || t.equals("center");
-    }
-
-    // ---- 四分木
-
-    /**
-     * タイルを、色の変化が大きいところほど細かい矩形に刻む。最初に粗い格子（最大 8 × 8）に分け、各矩形の中心の色が
-     * 隅の色の平均から外れていれば 4 つに割る（上限 {@value #MAX_MESH_CELLS} 枚、最小 1px）。
-     */
-    private static List<GradientStrip> mesh(ColorField field, Rect tile, Rect visible) {
-        List<GradientStrip> out = new ArrayList<>();
-        int nx = Math.clamp((int) Math.ceil(tile.w() / 32f), 1, 8);
-        int ny = Math.clamp((int) Math.ceil(tile.h() / 32f), 1, 8);
-        int[] budget = {MAX_MESH_CELLS - nx * ny};
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                float x0 = tile.x() + tile.w() * i / nx, x1 = tile.x() + tile.w() * (i + 1) / nx;
-                float y0 = tile.y() + tile.h() * j / ny, y1 = tile.y() + tile.h() * (j + 1) / ny;
-                subdivide(field, x0, y0, x1, y1, visible, 0, budget, out);
-            }
-        }
-        return out;
-    }
-
-    private static final int MAX_SUBDIVISION_DEPTH = 6;
-    /** 中心の色が隅の平均から外れていても許す大きさ（チャンネルごとの最大差。0〜255）。 */
-    private static final int SUBDIVISION_TOLERANCE = 6;
-
-    private static void subdivide(ColorField field, float x0, float y0, float x1, float y1, Rect visible, int depth,
-                                  int[] budget, List<GradientStrip> out) {
-        if (!intersects(x0, y0, x1, y1, visible)) return;
-        int c00 = field.at(x0, y0), c10 = field.at(x1, y0), c11 = field.at(x1, y1), c01 = field.at(x0, y1);
-        boolean small = (x1 - x0) <= 1.5f && (y1 - y0) <= 1.5f;
-        if (depth < MAX_SUBDIVISION_DEPTH && !small && budget[0] >= 3) {
-            int mid = field.at((x0 + x1) / 2, (y0 + y1) / 2);
-            int average = averageOf(c00, c10, c11, c01);
-            if (maxChannelDifference(mid, average) > SUBDIVISION_TOLERANCE) {
-                budget[0] -= 3;
-                float mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-                subdivide(field, x0, y0, mx, my, visible, depth + 1, budget, out);
-                subdivide(field, mx, y0, x1, my, visible, depth + 1, budget, out);
-                subdivide(field, x0, my, mx, y1, visible, depth + 1, budget, out);
-                subdivide(field, mx, my, x1, y1, visible, depth + 1, budget, out);
-                return;
-            }
-        }
-        out.add(new GradientStrip(x0, y0, x1 - x0, y1 - y0, c00, c10, c11, c01));
-    }
-
-    private static int averageOf(int a, int b, int c, int d) {
-        int out = 0;
-        for (int shift = 0; shift <= 24; shift += 8) {
-            int sum = ((a >>> shift) & 0xFF) + ((b >>> shift) & 0xFF) + ((c >>> shift) & 0xFF) + ((d >>> shift) & 0xFF);
-            out |= (sum / 4) << shift;
-        }
-        return out;
-    }
-
-    private static int maxChannelDifference(int a, int b) {
-        int max = 0;
-        for (int shift = 0; shift <= 24; shift += 8) {
-            max = Math.max(max, Math.abs(((a >>> shift) & 0xFF) - ((b >>> shift) & 0xFF)));
-        }
-        return max;
     }
 }

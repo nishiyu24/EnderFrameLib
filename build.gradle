@@ -144,9 +144,30 @@ tasks.named('test', Test) {
     // -D で渡したフラグは Gradle デーモンのプロパティになるだけで、テスト JVM には伝わらない。
     // CONTRIBUTING に書いてある -Dgolden.update=true が黙って無効になっていたため明示的に渡す。
     // inputs.property があるのは、フラグを変えただけでは UP-TO-DATE で素通りしてしまうため。
-    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
         def value = System.getProperty(key)
         if (value != null) systemProperty key, value
         inputs.property key, value ?: ''
     }
+}
+
+// 全件テスト（test）では GC や他テストの負荷で実時間・ヒープ差分が揺れるため、
+// 厳密な性能回帰判定は単独 JVM で走るこのタスク（または -Dbenchmark.enforce=true）で行う。
+tasks.register('benchmark', Test) {
+    description = 'Runs performance and memory benchmarks in an isolated JVM with strict threshold enforcement.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+    }
+    include '**/PerformanceBenchmarkTest.class', '**/StateMemoryBenchmarkTest.class'
+    systemProperty 'benchmark.enforce', 'true'
+    ['benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
+        def value = System.getProperty(key)
+        if (value != null) systemProperty key, value
+        inputs.property key, value ?: ''
+    }
+    outputs.upToDateWhen { false }
 }

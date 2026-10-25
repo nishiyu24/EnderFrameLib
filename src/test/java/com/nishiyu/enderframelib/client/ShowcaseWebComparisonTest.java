@@ -8,9 +8,7 @@ import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.RenderKeys;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.GradientSpec;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.BeforeAll;
@@ -343,13 +341,12 @@ public class ShowcaseWebComparisonTest {
             }
             assertEquals(1, covering.size(), "パディングボックスを塗るタイルは 1 枚");
             // 2 色の線形グラデーションは、シェーダーが画素ごとに計算する記述（t = dx*x + dy*y + offset）で 1 枚に描く
-            String encoded = covering.get(0).events().get(RenderKeys.SHADER_GRADIENT);
-            assertNotNull(encoded);
-            String[] f = encoded.split(",");
-            assertEquals("L", f[0]);
-            float dx = Float.parseFloat(f[1]), dy = Float.parseFloat(f[2]), off = Float.parseFloat(f[3]);
-            assertEquals(0xFF1E293B, Integer.parseInt(f[4]), "始点の色 #1e293b");
-            assertEquals(0xFF0F172A, Integer.parseInt(f[5]), "終点の色 #0f172a");
+            var shader = covering.get(0).hints().shaderGradient();
+            assertNotNull(shader);
+            assertEquals(com.nishiyu.enderframelib.core.paint.model.ShaderGradient.LINEAR, shader.kind());
+            float dx = shader.gradA()[0], dy = shader.gradA()[1], off = shader.gradA()[2];
+            assertEquals(0xFF1E293B, shader.color0(), "始点の色 #1e293b");
+            assertEquals(0xFF0F172A, shader.color1(), "終点の色 #0f172a");
             // 135deg は左上が始点（t = 0）、右下が終点（t = 1）ちょうど
             assertEquals(0f, dx * covering.get(0).x() + dy * covering.get(0).y() + off, 0.02f);
             assertEquals(1f, dx * (covering.get(0).x() + covering.get(0).width())

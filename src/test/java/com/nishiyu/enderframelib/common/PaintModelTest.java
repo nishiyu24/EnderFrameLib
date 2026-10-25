@@ -12,9 +12,13 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator;
+import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
@@ -350,11 +354,11 @@ public class PaintModelTest {
         List<DisplayItem> parts = r.elements.stream().filter(e -> "a".equals(e.baseId()) || e.id().startsWith("a_")).toList();
         assertTrue(parts.size() > 2);
         for (DisplayItem e : parts) {
-            assertEquals("none", e.events().get(RenderKeys.POINTER_EVENTS), "pointer-events が載っていない: " + e.id());
+            assertTrue(e.hints().pointerEventsNone(), "pointer-events が載っていない: " + e.id());
         }
         // 子のテキストノードは継承した値を持つ
         assertTrue(r.elements.stream().filter(e -> e.type() == ElementType.TEXT)
-                .allMatch(e -> "none".equals(e.events().get(RenderKeys.POINTER_EVENTS))));
+                .allMatch(e -> e.hints().pointerEventsNone()));
     }
 
     @Test
@@ -390,7 +394,7 @@ public class PaintModelTest {
         List<DisplayItem> blurParts = parts(blurred, "a_shadow");
         assertEquals(1, blurParts.size(), "ぼかしは 1 枚の板（減衰はシェーダーが辺からの距離で計算する）");
         DisplayItem blurShadow = blurParts.getFirst();
-        assertEquals("8.0", blurShadow.events().get(RenderKeys.SHADOW_BLUR));
+        assertEquals(8.0f, blurShadow.hints().shadowBlur());
         // 板は影の形から、ぼかしが消える所（ぼかし半径の 1.5 倍）まで外側へ広い
         assertEquals(40 + 2 * 12, blurShadow.width());
         assertEquals(20 + 2 * 12, blurShadow.height());
@@ -418,29 +422,30 @@ public class PaintModelTest {
         assertNotNull(g);
         assertEquals(90, g.angle(), 0.001);
         assertEquals(3, g.stops().size());
-        List<Gradients.GradientStrip> strips = Gradients.strips(g, new BoxDecorations.Rect(0, 0, 100, 10), 320, 200, 16, 16);
-        assertEquals(2, strips.size(), "縦横のグラデーションは停止点の位置で切る");
-        assertEquals(25, strips.get(0).w(), 0.01f);
-        assertEquals(RED, strips.get(0).topLeft());
-        assertEquals(GREEN, strips.get(0).topRight());
-        assertEquals(GREEN, strips.get(1).bottomLeft());
-        assertEquals(0xFF0000FF, strips.get(1).bottomRight());
+        List<ShaderGradient> segments = Gradients.shaderGradients(g, new BoxDecorations.Rect(0, 0, 100, 10), 320, 200, 16, 16);
+        assertEquals(2, segments.size(), "停止点 3 つは区間 2 つ");
+        assertEquals(RED, segments.get(0).color0());
+        assertEquals(GREEN, segments.get(0).color1());
+        assertEquals(GREEN, segments.get(1).color0());
+        assertEquals(0xFF0000FF, segments.get(1).color1());
+        // 区間の境目は 25%（線の長さ 100px の 25px）
+        assertEquals(0.25f, 1f / segments.get(0).gradB()[2], 0.001f, "最初の区間の幅は 25%");
 
-        // to top は下から上へ
+        // to top は下から上へ: 上が終点
         Gradients.LinearGradient up = Gradients.parseLinear("linear-gradient(0.5turn, rgb(255, 0, 0), rgb(0, 255, 0))");
         assertEquals(180, up.angle(), 0.001);
         Gradients.LinearGradient top = Gradients.parseLinear("linear-gradient(to top, rgb(255, 0, 0), rgb(0, 255, 0))");
-        Gradients.GradientStrip t = Gradients.strips(top, new BoxDecorations.Rect(0, 0, 10, 10), 320, 200, 16, 16).getFirst();
-        assertEquals(GREEN, t.topLeft());
-        assertEquals(RED, t.bottomLeft());
+        List<ShaderGradient> t = Gradients.shaderGradients(top, new BoxDecorations.Rect(0, 0, 10, 10), 320, 200, 16, 16);
+        assertEquals(GREEN, ShaderGradientEmulator.colorOf(t, 5, 0.01f), "上は終点の緑");
+        assertEquals(RED, ShaderGradientEmulator.colorOf(t, 5, 9.99f), "下は始点の赤");
 
-        // 斜めの 2 色は 1 枚で正確（隅の色は線上の位置で決まる）。45deg の正方形は左下が始点、右上が終点
+        // 45deg の正方形は左下が始点、右上が終点で、左上と右下は同じ位置（中間の色）
         Gradients.LinearGradient diag = Gradients.parseLinear("linear-gradient(45deg, rgb(255, 0, 0), rgb(0, 0, 255))");
-        List<Gradients.GradientStrip> d = Gradients.strips(diag, new BoxDecorations.Rect(0, 0, 10, 10), 320, 200, 16, 16);
+        List<ShaderGradient> d = Gradients.shaderGradients(diag, new BoxDecorations.Rect(0, 0, 10, 10), 320, 200, 16, 16);
         assertEquals(1, d.size());
-        assertEquals(RED, d.getFirst().bottomLeft());
-        assertEquals(0xFF0000FF, d.getFirst().topRight());
-        assertEquals(d.getFirst().topLeft(), d.getFirst().bottomRight(), "45deg の左上と右下は同じ位置");
+        assertEquals(RED, ShaderGradientEmulator.colorOf(d, 0, 10) & 0xFFFFFFFF, "左下は始点");
+        assertEquals(0xFF0000FF, ShaderGradientEmulator.colorOf(d, 10, 0), "右上は終点");
+        assertEquals(ShaderGradientEmulator.colorOf(d, 0, 0), ShaderGradientEmulator.colorOf(d, 10, 10), "45deg の左上と右下は同じ位置");
 
         // 以前は 10deg が "0deg" を含むので上向きになっていた
         assertEquals(10, Gradients.parseLinear("linear-gradient(10deg, red, blue)").angle(), 0.001);
@@ -450,15 +455,49 @@ public class PaintModelTest {
     }
 
     @Test
-    public void testGradientBackgroundIsSplitIntoStripsInsideTheRoundedClip() {
+    public void testMultiStopGradientIsDrawnBySegmentsOfTheShader() {
         Rendered r = render("<div id=\"a\" style=\"width: 60px; height: 20px; border-radius: 8px; background-image: linear-gradient(to right, rgb(255, 0, 0), rgb(0, 255, 0), rgb(0, 0, 255));\"></div>");
-        List<DisplayItem> strips = parts(r, "a_bgl0");
-        assertEquals(2, strips.size());
-        for (DisplayItem s : strips) {
-            assertNotNull(s.meta().gradient());
-            assertEquals(8, s.meta().clipRect().radiusTopLeft(), 0.01f, "帯が箱の角丸で切られない");
+        List<DisplayItem> segments = parts(r, "a_bgl0");
+        assertEquals(2, segments.size(), "停止点 3 つは区間 2 つ（帯に刻まず、同じ矩形を重ねる）");
+        for (DisplayItem s : segments) {
+            assertNotNull(s.hints().shaderGradient(), "シェーダーのグラデーション");
+            assertEquals(8, s.meta().clipRect().radiusTopLeft(), 0.01f, "区間が箱の角丸で切られない");
+            assertEquals(segments.getFirst().x(), s.x());
+            assertEquals(segments.getFirst().width(), s.width());
         }
-        assertEquals(GREEN, strips.getFirst().meta().gradient().topRight());
+        assertEquals(GREEN, segments.getFirst().hints().shaderGradient().color1());
+        assertEquals(GREEN, segments.get(1).hints().shaderGradient().color0());
+    }
+
+    @Test
+    public void testRepeatingAndConicGradientsAreDrawnByTheShaderToo() {
+        Rendered r = render("<div id=\"a\" style=\"width: 60px; height: 20px; background-image: repeating-linear-gradient(to right, rgb(255, 0, 0), rgb(0, 255, 0) 20px);\"></div>"
+                + "<div id=\"b\" style=\"width: 40px; height: 40px; background-image: conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255));\"></div>");
+        List<DisplayItem> repeating = parts(r, "a_bgl0");
+        assertEquals(1, repeating.size(), "繰り返しも区間 1 つ（周期への畳みはシェーダーが行う）");
+        assertTrue(repeating.getFirst().hints().shaderGradient().repeatPeriod() > 0);
+        List<DisplayItem> conic = parts(r, "b_bgl0");
+        assertEquals(1, conic.size());
+        assertEquals(com.nishiyu.enderframelib.core.paint.model.ShaderGradient.CONIC, conic.getFirst().hints().shaderGradient().kind());
+    }
+
+    @Test
+    public void testTransformIsComposedInDeclarationOrderIntoTheDisplayItem() {
+        Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; transform: scale(2) translate(10px, 5px);\"></div>"
+                + "<div id=\"b\" style=\"width: 40px; height: 20px; transform: translate(10px, 5px) scale(2);\"></div>"
+                + "<div id=\"c\" style=\"width: 40px; height: 20px; translate: 10px 20px; rotate: 90deg; scale: 2; transform: translateX(5px);\"></div>");
+        DisplayItem a = element(r, "a");
+        assertEquals(20f, a.translateX(), 0.001f, "scale してから translate は、平行移動も拡大される");
+        assertEquals(10f, a.translateY(), 0.001f);
+        assertEquals(2f, a.scaleX(), 0.001f);
+        DisplayItem b = element(r, "b");
+        assertEquals(10f, b.translateX(), 0.001f, "translate してから scale は、平行移動はそのまま");
+        assertEquals(5f, b.translateY(), 0.001f);
+        DisplayItem c = element(r, "c");
+        assertEquals(10f, c.translateX(), 0.001f, "個別プロパティが先、transform はその座標系の中");
+        assertEquals(30f, c.translateY(), 0.001f);
+        assertEquals(2f, c.scaleX(), 0.001f);
+        assertEquals(90f, c.rotate(), 0.001f);
     }
 
     // ---- W10

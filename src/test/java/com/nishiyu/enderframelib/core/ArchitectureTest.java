@@ -94,7 +94,13 @@ public class ArchitectureTest {
     // 2026-10-25: Phase 2 の StyleAnimator（再スタイルで動かすトランジション・@keyframes）で +4（core/css の StyleAnimator・
     // ValueInterpolator・AnimationParser と、core/paint/model の AnimationTiming）。AnimationSpec の入れ子型を core/css から
     // 参照しない（M7）よう、時間の指定と進行度は paint/model に、CSS の読み取りは core/css に分けた。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 220;
+    // 2026-10-26: Phase 3 の RenderKeys 撤去で、型付きの付帯情報 RenderHints と ShaderGradient を追加（RenderKeys 削除で差し引き +1）。
+    // ShaderGradient は core/paint の Gradients と client/renderer の描画の両方が使うのでトップレベル（M7）。
+    // 2026-10-26: Phase 3 の transform の宣言順合成で core/paint/Transforms を追加（+1）。
+    // 2026-10-26: Phase 3 で 1,800 行の DisplayListBuilder と 1,700 行の DisplayItemDrawer を責務ごとに分けた（+9）。
+    // DisplayListBuilder: PaintSupport・BoxAnimation・BoxDecorationPainter・ControlPainter・PaintOrder・ItemProps（+6）。
+    // DisplayItemDrawer: BackgroundRenderer・ControlElementRenderer・MediaElementRenderer・TextElementRenderer（+4。シェーダーの記述の整理で -1）。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 231;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
@@ -102,10 +108,10 @@ public class ArchitectureTest {
     private static final int M1X_MAX_COMMAND_STATE_COLLECTIONS = 0;
     /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・CustomTagExpander の新規ノード構築を除く。Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int DOM_MAX_DIRECT_ATTR_WRITES = 0;
-    /** R6: RenderKeys.java 以外からの RenderKeys 参照行数（2026-10-25 時点: 48。Phase 3 で 0 にする）。 */
-    private static final int R6_MAX_RENDER_KEYS_REFERENCES = 48;
-    /** R6: DisplayListBuilder 内の Pattern.compile の数（2026-10-25 時点: 8。Phase 3 で 0 にする）。 */
-    private static final int R6_MAX_DISPLAY_LIST_BUILDER_REGEX = 8;
+    /** R6: RenderKeys の参照行数（Phase 3 で撤去して 0 にした。2026-10-26）。型付きの付帯情報は {@code RenderHints}。 */
+    private static final int R6_MAX_RENDER_KEYS_REFERENCES = 0;
+    /** R6: DisplayListBuilder 内の Pattern.compile の数（Phase 3 で 0 にした。2026-10-26）。transform は core/paint の Transforms、時間などは CssSyntax のトークンで読む。 */
+    private static final int R6_MAX_DISPLAY_LIST_BUILDER_REGEX = 0;
 
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {
@@ -287,21 +293,24 @@ public class ArchitectureTest {
         List<String> found = new ArrayList<>();
         Pattern ref = Pattern.compile("\\bRenderKeys\\b");
         for (Path path : javaFiles(MAIN)) {
-            if (mainRelative(path).equals("core/paint/model/RenderKeys.java")) continue;
             String[] lines = Files.readString(path).split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
                 if (ref.matcher(lines[i]).find()) found.add(mainRelative(path) + ":" + (i + 1));
             }
         }
         assertAtMost("R6 RenderKeys の参照", R6_MAX_RENDER_KEYS_REFERENCES, found,
-                "RenderKeys は Phase 3（R6）で撤去します。新しい参照を足さず、型付きディスプレイリストの属性を使ってください。");
+                "RenderKeys は撤去しました（Phase 3 / R6）。文字列キーで描画メタを運ばず、RenderHints の型付きの項目を使ってください。");
     }
 
     @Test
     public void testR6DisplayListBuilderRegexDoesNotGrow() throws IOException {
-        Path file = MAIN.resolve("client/renderer/DisplayListBuilder.java");
-        int count = countMatches(Files.readString(file), "Pattern\\.compile\\(");
-        assertMetricAtMost("R6 DisplayListBuilder の Pattern.compile", R6_MAX_DISPLAY_LIST_BUILDER_REGEX, count,
+        // 表示リストを作る一群（DisplayListBuilder とそこから分けた部品）の合計
+        int count = 0;
+        for (String name : List.of("DisplayListBuilder", "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
+                "ControlPainter", "PaintOrder", "ItemProps")) {
+            count += countMatches(Files.readString(MAIN.resolve("client/renderer/" + name + ".java")), "Pattern\\.compile\\(");
+        }
+        assertMetricAtMost("R6 DisplayListBuilder 一群の Pattern.compile", R6_MAX_DISPLAY_LIST_BUILDER_REGEX, count,
                 "描画時に CSS 文字列を正規表現で解釈せず、計算済みスタイルの型付き値を使ってください（Phase 3 / R6）。");
     }
 

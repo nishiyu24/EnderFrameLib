@@ -47,8 +47,8 @@ public class WebSdfShader {
             in vec4 ClipRadii;  // (cRTL, cRTR, cRBR, cRBL)
             in float Feather;   // 影のぼかし半径。0 なら通常の角丸矩形
             in vec4 Border;     // 枠線の太さ (上, 右, 下, 左)。全部 0 なら塗りつぶし
-            in float EdgeMask;  // 外縁の辺のビット（1=左 2=上 4=右 8=下）。15 なら 4 辺とも外縁
-            in vec4 GradA;      // グラデーション。w = 種類（0 なし、1 線形、2 放射）。線形は (dx, dy, offset)、放射は (cx, cy, 1/rx)
+            in vec2 GradRepeat; // グラデーションの繰り返し (畳み始めの位置, 周期)。周期 0 なら繰り返さない
+            in vec4 GradA;      // グラデーション。w = 種類（0 なし、1 線形、2 放射）+ 10 * 範囲の印。線形は (dx, dy, offset)、放射は (cx, cy, 1/rx)
             in vec4 GradB;      // 放射の (1/ry, p0, 1/(p1-p0))
             in vec4 Color2;     // グラデーションの終わりの色（始まりの色は Color）
 
@@ -64,7 +64,7 @@ public class WebSdfShader {
             flat out vec4 vClipRadii;
             flat out float vFeather;
             flat out vec4 vBorder;
-            flat out float vEdgeMask;
+            flat out vec2 vGradRepeat;
             flat out vec4 vGradA;
             flat out vec4 vGradB;
             flat out vec4 vColor2;
@@ -78,7 +78,7 @@ public class WebSdfShader {
                 vClipRadii = ClipRadii;
                 vFeather = Feather;
                 vBorder = Border;
-                vEdgeMask = EdgeMask;
+                vGradRepeat = GradRepeat;
                 vGradA = GradA;
                 vGradB = GradB;
                 vColor2 = Color2;
@@ -96,7 +96,7 @@ public class WebSdfShader {
             flat in vec4 vClipRadii;
             flat in float vFeather;
             flat in vec4 vBorder;
-            flat in float vEdgeMask;
+            flat in vec2 vGradRepeat;
             flat in vec4 vGradA;
             flat in vec4 vGradB;
             flat in vec4 vColor2;
@@ -148,16 +148,6 @@ public class WebSdfShader {
                 float dist = max(distBox, distClip);
                 float aa = clamp(fwidth(dist), 0.35, 1.25);
                 float alphaMask = 1.0 - smoothstep(-aa * 0.5, aa * 0.5, dist);
-                if (vEdgeMask < 14.5) {
-                    // グラデーションの 1 枚。隣と接する内側の辺は塗り切る（アンチエイリアスをかけると継ぎ目に線が出る）
-                    int m = int(vEdgeMask + 0.5);
-                    float cov = 1.0;
-                    if ((m & 1) != 0) cov *= smoothstep(-aa * 0.5, aa * 0.5, vLocalPos.x - vRect.x);
-                    if ((m & 2) != 0) cov *= smoothstep(-aa * 0.5, aa * 0.5, vLocalPos.y - vRect.y);
-                    if ((m & 4) != 0) cov *= smoothstep(-aa * 0.5, aa * 0.5, vRect.z - vLocalPos.x);
-                    if ((m & 8) != 0) cov *= smoothstep(-aa * 0.5, aa * 0.5, vRect.w - vLocalPos.y);
-                    alphaMask = cov * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, distClip));
-                }
                 if (vFeather > 0.0) {
                     // 影のぼかし: 形の辺からの距離で、ガウスぼかし（標準偏差 = ぼかし半径 / 2）の累積分布に近い滑らかな減衰にする
                     float sigma = vFeather * 0.5;
@@ -168,15 +158,29 @@ public class WebSdfShader {
 
                 vec4 col = vColor;
                 if (vGradA.w > 0.5) {
-                    // 2 色のグラデーションを画素ごとに計算する（プリマルチプライドで補間。透明へ向かうと色が黒くならない）
-                    float t;
-                    if (vGradA.w < 1.5) {
-                        t = dot(vLocalPos, vGradA.xy) + vGradA.z;
-                    } else {
+                    // グラデーションの 1 区間を画素ごとに計算する（プリマルチプライドで補間。透明へ向かうと色が黒くならない）。
+                    // w = 種類（1 線形・2 放射・3 円錐）+ 10 * 範囲の印（1 = t < 0 を捨てる、2 = t > 1 を捨てる）。
+                    // 停止点が 3 つ以上のときは区間ごとに重ねて描き、各画素は 1 区間だけが塗る
+                    int g = int(vGradA.w + 0.5);
+                    int kind = g % 10;
+                    int bounds = g / 10;
+                    float u;
+                    if (kind == 1) {
+                        u = dot(vLocalPos, vGradA.xy) + vGradA.z;
+                    } else if (kind == 2) {
                         vec2 d = vec2((vLocalPos.x - vGradA.x) * vGradA.z, (vLocalPos.y - vGradA.y) * vGradB.x);
-                        t = (length(d) - vGradB.y) * vGradB.z;
+                        u = length(d);
+                    } else {
+                        // 真上から時計回りの角（周）。開始角を引いて 0〜1 に畳む
+                        vec2 d = vLocalPos - vGradA.xy;
+                        u = fract(atan(d.x, -d.y) * 0.15915494 - vGradA.z);
                     }
+                    if (vGradRepeat.y > 0.0) u = vGradRepeat.x + mod(u - vGradRepeat.x, vGradRepeat.y);
+                    float t = (u - vGradB.y) * vGradB.z;
+                    // 隣の区間と少し重ねる（区間ごとの浮動小数点の誤差で、境目に 1 画素の抜けが出ないように）
+                    if (((bounds & 1) != 0 && t < -0.001) || ((bounds & 2) != 0 && t > 1.001)) discard;
                     t = clamp(t, 0.0, 1.0);
+                    if (vGradB.w != 1.0) t = pow(t, vGradB.w);
                     vec4 pm = mix(vec4(vColor.rgb * vColor.a, vColor.a), vec4(vColor2.rgb * vColor2.a, vColor2.a), t);
                     col = pm.a > 0.0001 ? vec4(pm.rgb / pm.a, pm.a) : vec4(0.0);
                 }
@@ -186,21 +190,16 @@ public class WebSdfShader {
             }
             """;
 
-    /** 頂点: 位置(12) + 色(4) + 矩形(16) + 角丸(16) + クリップ矩形(16) + クリップ角丸(16) + ぼかし(4) + 枠線の太さ(16) + 外縁の辺(4) + グラデーション(16+16) + 終わりの色(16) = 152 バイト。 */
-    private static final int VERTEX_STRIDE = 152;
+    /** 頂点: 位置(12) + 色(4) + 矩形(16) + 角丸(16) + クリップ矩形(16) + クリップ角丸(16) + ぼかし(4) + 枠線の太さ(16) + グラデーションの繰り返し(8) + グラデーション(16+16) + 終わりの色(16) = 156 バイト。 */
+    private static final int VERTEX_STRIDE = 156;
     /** 次に積む頂点のぼかし半径（影のとき）。{@link #drawSdfShadow} の間だけ 0 でない。 */
     private static float pendingFeather = 0f;
     /** 次に積む頂点の枠線の太さ（上, 右, 下, 左）。{@link #drawSdfBorder} の間だけ 0 でない。 */
     private static float pendingBorderT = 0f, pendingBorderR = 0f, pendingBorderB = 0f, pendingBorderL = 0f;
-    /** 次に積む頂点の外縁の辺のビット。15（4 辺とも外縁）が既定。 */
-    private static float pendingEdgeMask = 15f;
     /** 次に積む頂点のグラデーションの記述と終わりの色。{@link #drawSdfShaderGradient} の間だけ 0 でない。 */
     private static final float[] pendingGradA = new float[4], pendingGradB = new float[4], pendingColor2 = new float[4];
+    private static final float[] pendingGradRepeat = new float[2];
 
-    /** グラデーションの 1 枚を積む間だけ、外縁の辺のビット（1=左 2=上 4=右 8=下）を指定する。終わったら 15 に戻す。 */
-    public static void setEdgeMask(int mask) {
-        pendingEdgeMask = mask;
-    }
     private static final int INITIAL_BATCH_BYTES = 1 << 16;
 
     private static VertexFormat batchFormat;
@@ -293,7 +292,7 @@ public class WebSdfShader {
             GL20.glBindAttribLocation(programId, 5, "ClipRadii");
             GL20.glBindAttribLocation(programId, 6, "Feather");
             GL20.glBindAttribLocation(programId, 7, "Border");
-            GL20.glBindAttribLocation(programId, 8, "EdgeMask");
+            GL20.glBindAttribLocation(programId, 8, "GradRepeat");
             GL20.glBindAttribLocation(programId, 9, "GradA");
             GL20.glBindAttribLocation(programId, 10, "GradB");
             GL20.glBindAttribLocation(programId, 11, "Color2");
@@ -324,7 +323,7 @@ public class WebSdfShader {
                         .add("ClipRadii", genericVec4())
                         .add("Feather", genericFloat())
                         .add("Border", genericVec4())
-                        .add("EdgeMask", genericFloat())
+                        .add("GradRepeat", genericVec2())
                         .add("GradA", genericVec4())
                         .add("GradB", genericVec4())
                         .add("Color2", genericVec4())
@@ -346,6 +345,11 @@ public class WebSdfShader {
     private static VertexFormatElement genericFloat() {
         return VertexFormatElement.register(VertexFormatElement.findNextId(), 0,
                 VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 1);
+    }
+
+    private static VertexFormatElement genericVec2() {
+        return VertexFormatElement.register(VertexFormatElement.findNextId(), 0,
+                VertexFormatElement.Type.FLOAT, VertexFormatElement.Usage.GENERIC, 2);
     }
 
     private static VertexFormatElement genericVec4() {
@@ -439,11 +443,12 @@ public class WebSdfShader {
         MemoryUtil.memPutFloat(p + 88, pendingBorderR);
         MemoryUtil.memPutFloat(p + 92, pendingBorderB);
         MemoryUtil.memPutFloat(p + 96, pendingBorderL);
-        MemoryUtil.memPutFloat(p + 100, pendingEdgeMask);
+        MemoryUtil.memPutFloat(p + 100, pendingGradRepeat[0]);
+        MemoryUtil.memPutFloat(p + 104, pendingGradRepeat[1]);
         for (int i = 0; i < 4; i++) {
-            MemoryUtil.memPutFloat(p + 104 + i * 4L, pendingGradA[i]);
-            MemoryUtil.memPutFloat(p + 120 + i * 4L, pendingGradB[i]);
-            MemoryUtil.memPutFloat(p + 136 + i * 4L, pendingColor2[i]);
+            MemoryUtil.memPutFloat(p + 108 + i * 4L, pendingGradA[i]);
+            MemoryUtil.memPutFloat(p + 124 + i * 4L, pendingGradB[i]);
+            MemoryUtil.memPutFloat(p + 140 + i * 4L, pendingColor2[i]);
         }
         batchVertexCount++;
     }
@@ -472,8 +477,8 @@ public class WebSdfShader {
     }
 
     /**
-     * 2 色のグラデーションを 1 枚の Quad で描く。色は画素ごとにシェーダーが計算するので、帯や格子に刻んだときの継ぎ目や
-     * 段が出ない。{@code gradA} / {@code gradB} は記述（{@code Gradients#shaderGradient}）、{@code c0*} は始まりの色、
+     * 2 色のグラデーション（停止点が多いものは区間ごとの 1 枚）を 1 枚の Quad で描く。色は画素ごとにシェーダーが計算するので、帯や格子に刻んだときの継ぎ目や
+     * 段が出ない。{@code gradA} / {@code gradB} は記述（{@link ShaderGradient}）、{@code c0*} は始まりの色、
      * {@code c1*} は終わりの色。シェーダーが使えなければ false。
      */
     public static boolean drawSdfShaderGradient(
@@ -481,10 +486,12 @@ public class WebSdfShader {
             float minX, float minY, float maxX, float maxY,
             float r0, float g0, float b0, float a0,
             float r1, float g1, float b1, float a1,
-            float[] gradA, float[] gradB, float zOffset,
+            float[] gradA, float[] gradB, float repeatOrigin, float repeatPeriod, float zOffset,
             float cx0, float cy0, float cx1, float cy1,
             float cRTL, float cRTR, float cRBR, float cRBL
     ) {
+        pendingGradRepeat[0] = repeatOrigin;
+        pendingGradRepeat[1] = repeatPeriod;
         System.arraycopy(gradA, 0, pendingGradA, 0, 4);
         System.arraycopy(gradB, 0, pendingGradB, 0, 4);
         pendingColor2[0] = r1;
@@ -498,6 +505,7 @@ public class WebSdfShader {
             java.util.Arrays.fill(pendingGradA, 0f);
             java.util.Arrays.fill(pendingGradB, 0f);
             java.util.Arrays.fill(pendingColor2, 0f);
+            java.util.Arrays.fill(pendingGradRepeat, 0f);
         }
     }
 

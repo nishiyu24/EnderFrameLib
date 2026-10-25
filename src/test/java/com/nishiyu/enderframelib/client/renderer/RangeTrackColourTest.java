@@ -20,8 +20,8 @@ public class RangeTrackColourTest {
 
     @Test
     void borderOverTrackAndValueMatchesChromePixels() {
-        assertColour(0xFFB2B2B2, DisplayItemDrawer.over(0x80767676, 0xFFEFEFEF));
-        assertColour(0xFF3B75BA, DisplayItemDrawer.over(0x80767676, 0xFF0075FF));
-        assertColour(0xFF858585, DisplayItemDrawer.over(0x80CFCFCF, 0xFF3B3B3B));
+        assertColour(0xFFB2B2B2, ControlElementRenderer.over(0x80767676, 0xFFEFEFEF));
+        assertColour(0xFF3B75BA, ControlElementRenderer.over(0x80767676, 0xFF0075FF));
+        assertColour(0xFF858585, ControlElementRenderer.over(0x80CFCFCF, 0xFF3B3B3B));
     }
 }

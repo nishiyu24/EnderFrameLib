@@ -401,7 +401,7 @@ public class AnimationTestSiteParityTest {
                                 && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
                         .findFirst().orElseThrow();
                 List<DisplayItem> layers = displayItems.stream()
-                        .filter(i -> runnerItem.id().equals(i.events() == null ? null : i.events().get(com.nishiyu.enderframelib.core.paint.model.RenderKeys.MC_PARENT)))
+                        .filter(i -> runnerItem.id().equals(i.hints().parentId()))
                         .filter(i -> i.meta() != null && i.meta().clipRect() != null)
                         .toList();
                 assertFalse(layers.isEmpty(), lane + " の子部品（背景など）が存在すること");
