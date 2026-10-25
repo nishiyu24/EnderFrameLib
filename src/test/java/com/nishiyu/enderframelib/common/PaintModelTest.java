@@ -402,18 +402,53 @@ public class PaintModelTest {
 
     @Test
     public void testInsetShadowPaintsInsideThePaddingBoxAboveTheBackground() {
-        Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; border: 2px solid rgb(0, 0, 255); background-color: rgb(255, 255, 255); box-shadow: inset 0 0 0 3px rgb(255, 0, 0);\"></div>");
+        Rendered r = render("<div id=\"a\" style=\"width: 40px; height: 20px; border: 2px solid rgb(0, 0, 255); border-radius: 6px; background-color: rgb(255, 255, 255); box-shadow: inset 1px 2px 4px 3px rgb(255, 0, 0);\"></div>");
         LayoutBox a = find(r.root, "a");
-        List<DisplayItem> bands = r.elements.stream().filter(e -> e.id().startsWith("a_shadow_in")).toList();
-        assertEquals(4, bands.size());
-        for (DisplayItem band : bands) {
-            assertTrue(band.x() >= Math.round(a.x + 2) && band.x() + band.width() <= Math.round(a.x + a.w - 2), "内側の影がパディングボックスの外に出ている");
-            assertEquals(RED, band.bgColor());
-            assertTrue(r.elements.indexOf(band) > r.elements.indexOf(element(r, "a_bg")), "内側の影が背景より下");
-            assertTrue(r.elements.indexOf(band) < r.elements.indexOf(element(r, "a_b_top")), "内側の影が枠線より上");
-        }
-        DisplayItem top = bands.stream().filter(b -> b.width() == 40).findFirst().orElseThrow();
-        assertEquals(3, top.height());
+        List<DisplayItem> shadows = r.elements.stream().filter(e -> e.id().startsWith("a_shadow_in")).toList();
+        assertEquals(1, shadows.size(), "内側の影は 1 枚（穴の外をシェーダーが減衰させて塗る）");
+        DisplayItem shadow = shadows.getFirst();
+        assertEquals(Math.round(a.x + 2), shadow.x());
+        assertEquals(Math.round(a.y + 2), shadow.y());
+        assertEquals(40, shadow.width());
+        assertEquals(20, shadow.height());
+        assertEquals(RED, shadow.bgColor());
+        assertEquals(4.0f, shadow.hints().shadowBlur());
+        RenderHints.ShadowShape hole = shadow.hints().shadowShape();
+        assertNotNull(hole);
+        assertTrue(hole.inset());
+        // 穴 = パディングボックスをオフセット (1, 2) だけずらして広がり 3 だけ縮めた矩形。角丸（内側 4px）は広がりの分だけ小さい
+        assertEquals(a.x + 2 + 1 + 3, hole.x0(), 0.01);
+        assertEquals(a.y + 2 + 2 + 3, hole.y0(), 0.01);
+        assertEquals(a.x + 2 + 40 + 1 - 3, hole.x1(), 0.01);
+        assertEquals(a.y + 2 + 20 + 2 - 3, hole.y1(), 0.01);
+        assertEquals(1f, hole.rTL(), 0.01);
+        assertTrue(r.elements.indexOf(shadow) > r.elements.indexOf(element(r, "a_bg")), "内側の影が背景より下");
+        assertTrue(r.elements.indexOf(shadow) < r.elements.indexOf(r.elements.stream().filter(e -> e.id().startsWith("a_b_")).findFirst().orElseThrow()), "内側の影が枠線より上");
+    }
+
+    @Test
+    public void testBlurredOuterShadowCarriesTheBoxAsAHole() {
+        Rendered r = render("<div id=\"a\" style=\"margin: 20px; width: 40px; height: 20px; border-radius: 5px; box-shadow: 0 0 8px rgb(0, 0, 0);\"></div>");
+        LayoutBox a = find(r.root, "a");
+        RenderHints.ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
+        assertNotNull(hole, "ぼかした外側の影は箱の形を穴として持つ（透明な箱の内側に影が透けない）");
+        assertEquals(false, hole.inset());
+        assertEquals(a.x, hole.x0(), 0.01);
+        assertEquals(a.y + a.h, hole.y1(), 0.01);
+        assertEquals(5f, hole.rTL(), 0.01);
+    }
+
+    @Test
+    public void testTransformOriginReadsLengthsAndKeywords() {
+        Rendered r = render("<div id=\"a\" style=\"width: 80px; height: 40px; transform: rotate(10deg); transform-origin: 0 0;\"></div>"
+                + "<div id=\"b\" style=\"width: 80px; height: 40px; transform: rotate(10deg); transform-origin: 20px 10px;\"></div>"
+                + "<div id=\"c\" style=\"width: 80px; height: 40px; transform: rotate(10deg); transform-origin: right bottom;\"></div>");
+        assertEquals(0f, element(r, "a").meta().originX(), 0.001);
+        assertEquals(0f, element(r, "a").meta().originY(), 0.001);
+        assertEquals(0.25f, element(r, "b").meta().originX(), 0.001);
+        assertEquals(0.25f, element(r, "b").meta().originY(), 0.001);
+        assertEquals(1f, element(r, "c").meta().originX(), 0.001);
+        assertEquals(1f, element(r, "c").meta().originY(), 0.001);
     }
 
     @Test

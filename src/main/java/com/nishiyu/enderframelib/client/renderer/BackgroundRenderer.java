@@ -130,15 +130,29 @@ public final class BackgroundRenderer {
         float r = ((anim.bgColor() >>> 16) & 0xFF) / 255.0f;
         float g = ((anim.bgColor() >>> 8) & 0xFF) / 255.0f;
         float b = (anim.bgColor() & 0xFF) / 255.0f;
-        float reach = SHADOW_REACH * blur;
         float qx0 = el.x(), qy0 = el.y(), qx1 = el.x() + el.width(), qy1 = el.y() + el.height();
+        RenderHints.ShadowShape shape = el.hints().shadowShape();
+        if (shape != null && shape.inset()) {
+            // 内側の影: 形は影の無い穴。部品の矩形（パディングボックス）のうち穴の外を塗る
+            WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1,
+                    shape.x0(), shape.y0(), shape.x1(), shape.y1(), shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL(),
+                    r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur,
+                    WebSdfShader.SHADOW_INSET, 0, 0, 0, 0, 0, 0, 0, 0);
+            return;
+        }
+        float reach = SHADOW_REACH * blur;
         float sx0 = qx0 + reach, sy0 = qy0 + reach, sx1 = qx1 - reach, sy1 = qy1 - reach;
         if (sx1 <= sx0 || sy1 <= sy0) return;
         // 形の角丸は、要素の矩形に合わせて切り詰められた半径ではなく、形そのものの大きさで切り詰める
         float limit = Math.min(sx1 - sx0, sy1 - sy0) / 2.0f;
+        float mode = shape != null ? WebSdfShader.SHADOW_HOLE : 0f;
+        float[] hole = shape != null
+                ? new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1(), shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()}
+                : new float[8];
         WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1,
                 Math.min(rTL, limit), Math.min(rTR, limit), Math.min(rBR, limit), Math.min(rBL, limit),
-                r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur);
+                r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur,
+                mode, hole[0], hole[1], hole[2], hole[3], hole[4], hole[5], hole[6], hole[7]);
     }
 
     /** 影のぼかしが消える所までの広さ（ぼかし半径の倍数。標準偏差 = 半径 / 2 の 3 倍）。 */

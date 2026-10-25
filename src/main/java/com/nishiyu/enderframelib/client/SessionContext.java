@@ -1152,40 +1152,31 @@ public class SessionContext implements AutoCloseable {
     }
 
     public boolean handleScrollLocally(double pixelX, double pixelY, double scrollX, double scrollY) {
-        List<DisplayItem> elements = elements();
         float sens = EnderFrameBuiltInConfig.scrollSensitivity;
 
-        for (int i = elements.size() - 1; i >= 0; i--) {
-            DisplayItem el = elements.get(i);
-            if (el.hints().scrollable()) {
-                CssAnimator.AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, el);
-                double[] localPt = inverseTransform(pixelX, pixelY, el, anim);
-                double localX = localPt[0] - el.x();
-                double localY = localPt[1] - el.y();
+        // 手前のスクロールする箱から。祖先の変換（回転・拡縮・平行移動）の逆行列とクリップを通した点で当たりを取る
+        for (HitTestIndex.UIHitResultOf hit : hitTestIndex().scrollContainersAt(sessionId, pixelX, pixelY)) {
+            DisplayItem el = hit.element();
+            float maxW = el.hints().scrollWidth(), maxH = el.hints().scrollHeight();
 
-                if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                    float maxW = el.hints().scrollWidth(), maxH = el.hints().scrollHeight();
+            ScrollState state = scrollState;
+            // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。
+            // 読み手 (LayoutBox / DisplayListBuilder) はベースノード ID を使うため、
+            // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
+            HtmlNode scrollNode = findNode(el.baseId());
+            if (scrollNode == null) continue;
+            float curX = state.getScrollX(scrollNode);
+            float curY = state.getScrollY(scrollNode);
 
-                    ScrollState state = scrollState;
-                    // 何が壊れていたか: ここだけが描画 ID (foo_bg など) で読み書きしていた。
-                    // 読み手 (LayoutBox / DisplayListBuilder) はベースノード ID を使うため、
-                    // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
-                    HtmlNode scrollNode = findNode(el.baseId());
-                    if (scrollNode == null) continue;
-                    float curX = state.getScrollX(scrollNode);
-                    float curY = state.getScrollY(scrollNode);
+            float limitX = Math.max(0, maxW - el.width()), limitY = Math.max(0, maxH - el.height());
+            if (limitX > 0 || limitY > 0) {
+                float nextX = Mth.clamp(curX - (float) scrollX * sens, 0, limitX);
+                float nextY = Mth.clamp(curY - (float) scrollY * sens, 0, limitY);
 
-                    float limitX = Math.max(0, maxW - el.width()), limitY = Math.max(0, maxH - el.height());
-                    if (limitX > 0 || limitY > 0) {
-                        float nextX = Mth.clamp(curX - (float) scrollX * sens, 0, limitX);
-                        float nextY = Mth.clamp(curY - (float) scrollY * sens, 0, limitY);
-
-                        if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
-                            state.setScroll(scrollNode, nextX, nextY);
-                            requestReposition();
-                            return true;
-                        }
-                    }
+                if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
+                    state.setScroll(scrollNode, nextX, nextY);
+                    requestReposition();
+                    return true;
                 }
             }
         }
@@ -1273,31 +1264,6 @@ public class SessionContext implements AutoCloseable {
             return true;
         }
         return false;
-    }
-
-    private static double[] inverseTransform(double px, double py, DisplayItem el, CssAnimator.AnimatedValues anim) {
-        RenderMeta meta = el.meta();
-        float originX = meta != null ? meta.originX() : 0.5f;
-        float originY = meta != null ? meta.originY() : 0.5f;
-
-        float cx = el.x() + el.width() * originX;
-        float cy = el.y() + el.height() * originY;
-
-        double dx = px - cx - anim.tx();
-        double dy = py - cy - anim.ty();
-        if (anim.rot() != 0.0f) {
-            double rad = -Math.toRadians(anim.rot());
-            double cos = Math.cos(rad);
-            double sin = Math.sin(rad);
-            double nx = dx * cos - dy * sin;
-            double ny = dx * sin + dy * cos;
-            dx = nx;
-            dy = ny;
-        }
-        if (anim.sx() != 0 && anim.sx() != 1.0f) dx /= anim.sx();
-        if (anim.sy() != 0 && anim.sy() != 1.0f) dy /= anim.sy();
-
-        return new double[]{dx + cx, dy + cy};
     }
 
     public UIHitResult hitTest(double pixelX, double pixelY) {

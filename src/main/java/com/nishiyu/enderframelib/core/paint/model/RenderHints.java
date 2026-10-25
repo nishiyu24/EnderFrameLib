@@ -14,6 +14,7 @@ package com.nishiyu.enderframelib.core.paint.model;
  * @param scrollHeight        同じく高さ
  * @param shadowBlur          ぼかした外側の影の部品のぼかし半径（px）。0 なら影の部品ではない。
  *                            部品の矩形はぼかしが消える所までの広さで、影の形はそこから内側
+ * @param shadowShape         影の部品の形の付帯情報（{@link ShadowShape}）。影の部品でなければ null
  * @param shaderGradient      シェーダーで描くグラデーションの 1 区間。なければ null
  * @param pointerEventsNone   算出値の {@code pointer-events: none}。ヒットテストはこの部品を透過する
  * @param transitionDelayMs   {@code transition-delay}
@@ -27,39 +28,54 @@ public record RenderHints(
         float scrollWidth,
         float scrollHeight,
         float shadowBlur,
+        ShadowShape shadowShape,
         ShaderGradient shaderGradient,
         boolean pointerEventsNone,
         int transitionDelayMs,
         String transitionEasing,
         String transitionProperty
 ) {
-    public static final RenderHints NONE = new RenderHints(null, null, false, 0f, 0f, 0f, null, false, 0, null, null);
+    public static final RenderHints NONE = new RenderHints(null, null, false, 0f, 0f, 0f, null, null, false, 0, null, null);
 
     public RenderHints withParentId(String v) {
-        return new RenderHints(v, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(v, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withTitle(String v) {
-        return new RenderHints(parentId, v, scrollable, scrollWidth, scrollHeight, shadowBlur, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(parentId, v, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withScroll(float contentWidth, float contentHeight) {
-        return new RenderHints(parentId, title, true, contentWidth, contentHeight, shadowBlur, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(parentId, title, true, contentWidth, contentHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withShadowBlur(float v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, v, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, v, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withShaderGradient(ShaderGradient v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, v, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, v, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withPointerEventsNone(boolean v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shaderGradient, v, transitionDelayMs, transitionEasing, transitionProperty);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, v, transitionDelayMs, transitionEasing, transitionProperty);
     }
 
     public RenderHints withTransition(int delayMs, String easing, String property) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shaderGradient, pointerEventsNone, delayMs, easing, property);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, delayMs, easing, property);
     }
+
+    public RenderHints withShadowShape(ShadowShape v) {
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, v, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty);
+    }
+
+    /**
+     * ぼかした影の部品の形。外側の影は部品の矩形（ぼかしが消える所まで）から内側へ {@code SHADOW_REACH} だけ縮めた所が影の形で、
+     * 箱そのもの（{@code x0..y1}・角丸）は影を抜く「穴」。内側の影は {@code x0..y1}・角丸が影の無い「穴」で、部品の矩形（パディングボックス）のうち
+     * その外が影になる。
+     *
+     * @param inset 内側の影か
+     */
+    public record ShadowShape(boolean inset, float x0, float y0, float x1, float y1,
+                              float rTL, float rTR, float rBR, float rBL) {}
 }

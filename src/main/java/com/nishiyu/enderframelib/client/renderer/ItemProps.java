@@ -88,6 +88,11 @@ final class ItemProps {
             return this;
         }
 
+        ItemProps shadowShape(RenderHints.ShadowShape shape) {
+            hints = hints.withShadowShape(shape);
+            return this;
+        }
+
         ItemProps shaderGradient(ShaderGradient gradient) {
             hints = hints.withShaderGradient(gradient);
             return this;
