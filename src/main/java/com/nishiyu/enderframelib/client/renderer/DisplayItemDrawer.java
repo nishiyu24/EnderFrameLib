@@ -100,6 +100,13 @@ public class DisplayItemDrawer {
         return enableScissorRect(poseMat, buffer, clipMinX, clipMinY, clipMaxX, clipMaxY);
     }
 
+    /** {@link #enableClipScissorFor2D} で入れたシザーを、積んだ描画を流してから外す。 */
+    static void endClipScissor(boolean enabled, MultiBufferSource buffer) {
+        if (!enabled) return;
+        if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch();
+        RenderSystem.disableScissor();
+    }
+
     /** 祖先の変形を掛け終えた姿勢と、祖先の不透明度の積（1 フレームの間だけ使い回す）。 */
     private record AncestorTransform(Matrix4f pose, Matrix3f normal, float opacity) {}
 
@@ -353,7 +360,13 @@ public class DisplayItemDrawer {
                         ctx.renderCommands(el, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, packedLight);
                     }
                 } else if (type == ElementType.SCENE) {
-                    WebSceneContext.getOrCreate(animSessionId, baseId).renderScene(el, poseStack, buffer, finalOpacity, contentZ);
+                    // 3D の中身は頂点を切れないので、祖先のクリップ（overflow・スクロール端）はシザーで当てる
+                    boolean scissor = enableClipScissorFor2D(poseStack.last().pose(), buffer, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DText);
+                    try {
+                        WebSceneContext.getOrCreate(animSessionId, baseId).renderScene(el, poseStack, buffer, finalOpacity, contentZ);
+                    } finally {
+                        endClipScissor(scissor, buffer);
+                    }
                 } else if (type == ElementType.TEXTAREA) {
                     if (renderText) {
                         renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DText, packedLight);
@@ -365,8 +378,16 @@ public class DisplayItemDrawer {
                 } else if (type == ElementType.TOGGLE || type == ElementType.CHECKBOX || type == ElementType.RADIO) {
                     renderToggleElement(el, anim, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
                 } else if (type == ElementType.IMAGE || type == ElementType.VIDEO) {
-                    renderImageOrMediaElement(el, meta, poseStack, buffer, font, level, animSessionId, audioPos, playAudio, is2DAudio, renderItems, renderText,
-                            finalOpacity, contentZ, packedLight, packedOverlay, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    // アイテム・エンティティは 3D のモデルで頂点を切れないので、祖先のクリップはシザーで当てる
+                    boolean model = type == ElementType.IMAGE && el.text() != null
+                            && (el.text().startsWith("item:") || el.text().startsWith("entity:"));
+                    boolean scissor = model && enableClipScissorFor2D(poseStack.last().pose(), buffer, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DText);
+                    try {
+                        renderImageOrMediaElement(el, meta, poseStack, buffer, font, level, animSessionId, audioPos, playAudio, is2DAudio, renderItems, renderText,
+                                finalOpacity, contentZ, packedLight, packedOverlay, rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    } finally {
+                        endClipScissor(scissor, buffer);
+                    }
                 } else if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
                     renderTextOrInputElement(el, meta, anim, isFocused, elementMap, animSessionId, poseStack, buffer, font, renderText, is2DText,
                             finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);

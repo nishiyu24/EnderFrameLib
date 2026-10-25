@@ -34,6 +34,7 @@ public class HitTestIndex {
     }
 
     private final List<Entry> interactiveEntries; // z順序の逆順（上位優先）
+    private final List<Entry> scrollEntries = new ArrayList<>(); // スクロールする箱。z順序の逆順
     private final Map<String, DisplayItem> elementMap;
 
     public HitTestIndex(List<DisplayItem> elements) {
@@ -52,6 +53,9 @@ public class HitTestIndex {
         // elements は描画順（下層から上層）なので、逆順で探索できるように保持
         for (int i = elements.size() - 1; i >= 0; i--) {
             DisplayItem el = elements.get(i);
+            if (el.hints().scrollable() && !isPointerEventsNone(el)) {
+                scrollEntries.add(new Entry(el, el.meta() != null ? el.meta().clipRect() : null, buildTransformChain(el, elementMap)));
+            }
             if (isIgnoredElement(el)) continue;
             if (!isInteractiveOrOpaque(el, elementMap)) continue;
 
@@ -193,6 +197,32 @@ public class HitTestIndex {
         }
         return null;
     }
+
+    /**
+     * 点の下にあるスクロールする箱を、手前のものから順に返す。祖先の変換の逆行列を宣言順に当てて箱の局所座標にし、
+     * 祖先のクリップ（{@code overflow} / 角丸の外）に隠れた箱は除く。ホイールの宛先を決めるのに使う。
+     */
+    public List<UIHitResultOf> scrollContainersAt(String sessionId, double pixelX, double pixelY) {
+        List<UIHitResultOf> out = new ArrayList<>();
+        for (Entry entry : scrollEntries) {
+            if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) continue;
+            double px = pixelX, py = pixelY;
+            for (DisplayItem ancestor : entry.transformChain) {
+                double[] p = inverseTransform(px, py, ancestor, CssAnimator.getCurrentValues(sessionId, ancestor));
+                px = p[0];
+                py = p[1];
+            }
+            DisplayItem el = entry.element;
+            double localX = px - el.x(), localY = py - el.y();
+            if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
+                out.add(new UIHitResultOf(el, localX, localY));
+            }
+        }
+        return out;
+    }
+
+    /** {@link #scrollContainersAt} の 1 件。箱と、点の箱内の局所座標。 */
+    public record UIHitResultOf(DisplayItem element, double localX, double localY) {}
 
     public SessionContext.UIHitResult getLocalCoords(String sessionId, DisplayItem el, double pixelX, double pixelY) {
         List<DisplayItem> chain = buildTransformChain(el, elementMap);

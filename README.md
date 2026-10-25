@@ -723,11 +723,12 @@ Layout differences from a real browser are measured, case by case, in
   are drawn as a mesh of rectangles whose corner colours are interpolated
   linearly, so a hard colour edge is only as sharp as the mesh.
   `background-attachment` is always `scroll`.
-- **Box shadows in full.** `box-shadow` blur is approximated by a few stacked
-  layers rather than a Gaussian. An outer shadow is painted under the whole box,
-  so it shows through a transparent or translucent background (a browser draws
-  it only outside the border box), and the unshadowed area of an `inset` shadow
-  has square corners.
+- **Box shadows in full.** A blurred `box-shadow` is a Gaussian-like falloff
+  drawn by the SDF shader, a blurred outer shadow is cut out of the border box
+  (so it does not show through a translucent background), and an `inset` shadow
+  has the rounded hole and the same falloff. An outer shadow with no blur is
+  still painted under the whole box, so it shows through a transparent or
+  translucent background. Corners are circular (no elliptical `border-radius`).
 - **Native form controls.** `ua.css` follows the HTML standard's rendering
   defaults, but form controls are drawn by EnderFrameLib (sized after
   Chromium's light theme) rather than by the operating system.

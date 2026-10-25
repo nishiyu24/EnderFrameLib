@@ -158,8 +158,8 @@ public class DisplayListBuilder {
         applyTransitionEvents(anchorEvents, transSpec);
         if (box.style.containsKey(CssProperty.TRANSFORM_ORIGIN)) {
             List<String> parts = CssSyntax.words(box.style.get(CssProperty.TRANSFORM_ORIGIN).toLowerCase(Locale.ROOT));
-            if (parts.size() > 0) ox = parseOriginProp(parts.get(0));
-            if (parts.size() > 1) oy = parseOriginProp(parts.get(1));
+            if (parts.size() > 0) ox = parseOriginProp(parts.get(0), box.w, box.style.fontSizePx(), box.style.rootFontSizePx());
+            if (parts.size() > 1) oy = parseOriginProp(parts.get(1), box.h, box.style.fontSizePx(), box.style.rootFontSizePx());
         }
 
         // 算出済みの font-size をそのまま運ぶ。描画側は書体の em からの倍率に直す。

@@ -152,12 +152,19 @@ public class WebSdfShader {
                     // 影のぼかし: 形の辺からの距離で、ガウスぼかし（標準偏差 = ぼかし半径 / 2）の累積分布に近い滑らかな減衰にする
                     float sigma = vFeather * 0.5;
                     float falloff = 1.0 / (1.0 + exp(1.702 * distBox / sigma));
+                    if (vBorder.x < -1.5) falloff = 1.0 - falloff;           // 内側の影: 穴の外が影
                     alphaMask = falloff * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, distClip));
+                    if (vBorder.x < -0.5 && vBorder.x > -1.5) {              // 外側の影: 箱の中は抜く
+                        vec2 holeCenter = (vGradA.xy + vGradA.zw) * 0.5;
+                        vec2 holeHalf = max(vec2(0.001), (vGradA.zw - vGradA.xy) * 0.5);
+                        float distHole = sdRoundBox(vLocalPos - holeCenter, holeHalf, vGradB);
+                        alphaMask *= smoothstep(-aa * 0.5, aa * 0.5, distHole);
+                    }
                 }
                 if (alphaMask <= 0.003) discard;
 
                 vec4 col = vColor;
-                if (vGradA.w > 0.5) {
+                if (vFeather <= 0.0 && vGradA.w > 0.5) {
                     // グラデーションの 1 区間を画素ごとに計算する（プリマルチプライドで補間。透明へ向かうと色が黒くならない）。
                     // w = 種類（1 線形・2 放射・3 円錐）+ 10 * 範囲の印（1 = t < 0 を捨てる、2 = t > 1 を捨てる）。
                     // 停止点が 3 つ以上のときは区間ごとに重ねて描き、各画素は 1 区間だけが塗る
@@ -539,6 +546,11 @@ public class WebSdfShader {
      * （角丸矩形。辺の前後 {@code feather} の幅で透明から影の色へ変わる）。形の外側の減衰はシェーダーが計算する。
      * シェーダーが使えなければ false。
      */
+    /** {@link #drawSdfShadow} の {@code mode}: 外側の影。{@code h*} の箱の形（角丸矩形）の内側には影を出さない。 */
+    public static final float SHADOW_HOLE = -1f;
+    /** 同: 内側の影。形（{@code s*}）が影の無い穴で、その外側が影になる。 */
+    public static final float SHADOW_INSET = -2f;
+
     public static boolean drawSdfShadow(
             Matrix4f poseMatrix,
             float qMinX, float qMinY, float qMaxX, float qMaxY,
@@ -547,7 +559,9 @@ public class WebSdfShader {
             float r, float g, float b, float a, float zOffset,
             float cx0, float cy0, float cx1, float cy1,
             float cRTL, float cRTR, float cRBR, float cRBL,
-            float feather
+            float feather,
+            float mode, float hx0, float hy0, float hx1, float hy1,
+            float hrTL, float hrTR, float hrBR, float hrBL
     ) {
         if (!isAvailable()) return false;
         if (Math.max(qMinX, cx0) >= Math.min(qMaxX, cx1) || Math.max(qMinY, cy0) >= Math.min(qMaxY, cy1)) {
@@ -557,6 +571,10 @@ public class WebSdfShader {
         beginPass(poseMatrix);
         try {
             pendingFeather = feather;
+            // 影の形のほかの穴（外側の影は箱、内側の影は形そのもの）は、影では使わない枠線とグラデーションの欄で運ぶ
+            pendingBorderT = mode;
+            pendingGradA[0] = hx0; pendingGradA[1] = hy0; pendingGradA[2] = hx1; pendingGradA[3] = hy1;
+            pendingGradB[0] = hrTL; pendingGradB[1] = hrTR; pendingGradB[2] = hrBR; pendingGradB[3] = hrBL;
             putVertex(qMinX, qMaxY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
             putVertex(qMaxX, qMaxY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
             putVertex(qMaxX, qMinY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
@@ -568,6 +586,9 @@ public class WebSdfShader {
             return false;
         } finally {
             pendingFeather = 0f;
+            pendingBorderT = 0f;
+            java.util.Arrays.fill(pendingGradA, 0f);
+            java.util.Arrays.fill(pendingGradB, 0f);
             if (localPass) endPass();
         }
     }

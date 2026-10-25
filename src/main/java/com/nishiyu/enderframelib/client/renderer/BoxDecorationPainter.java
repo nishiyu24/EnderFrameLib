@@ -150,8 +150,8 @@ final class BoxDecorationPainter {
      * 影の形は箱をオフセットだけずらして広がりだけ膨らませた角丸矩形で、ぼかしは層の重ね塗りで近似する
      * （{@link BoxDecorations#shadowLayers}）。部品の id は {@code <id>_shadow_<番号>}。
      *
-     * LIMITATION(制約): 外側の影は箱の下全体に塗るので、背景が透明・半透明の箱では箱の内側にも影が見える
-     * （ブラウザは影を枠線ボックスの外だけに描く）。README の "Not supported" に対応。
+     * LIMITATION(制約): ぼかしのない外側の影は箱の下全体に塗るので、背景が透明・半透明の箱では箱の内側にも影が見える
+     * （ブラウザは影を枠線ボックスの外だけに描く）。ぼかした影は箱の形を穴として抜く。README の "Not supported" に対応。
      */
     void drawOuterShadows(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   int[] radii, ClipRect clip, float fontHVal, float ox, float oy) {
@@ -171,6 +171,9 @@ final class BoxDecorationPainter {
                         growRadius(radii[2], s.spread()), growRadius(radii[3], s.spread()));
                 ItemProps blurEvents = events.copy();
                 blurEvents.shadowBlur(s.blur());
+                // 影は箱の外だけに出す（背景が透明・半透明の箱の内側に透けないよう、箱の形を穴として抜く）
+                blurEvents.shadowShape(new RenderHints.ShadowShape(false, box.x, box.y, box.x + box.w, box.y + box.h,
+                        radii[0], radii[1], radii[2], radii[3]));
                 addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, s.color(), blurEvents,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
@@ -194,10 +197,9 @@ final class BoxDecorationPainter {
 
     /**
      * 内側の影。背景（色と画像）の上、枠線の下にパディングボックスの内側へ描く。影の無い「穴」は
-     * パディングボックスをオフセットだけずらして広がりだけ縮めた矩形で、パディングボックスから穴を除いた
-     * 上下左右の帯を塗る。帯はパディングボックスの角丸で切る。
-     *
-     * LIMITATION(制約): 穴の角は丸めない。README の "Not supported" に対応。
+     * パディングボックスをオフセットだけずらして広がりだけ縮めた角丸矩形（角丸はパディングボックスの内側の角丸から広がりだけ縮める）で、
+     * パディングボックスのうち穴の外を、穴の辺からの距離で減衰するガウス近似の 1 枚で塗る。パディングボックスの角丸で切る。
+     * ぼかしが 0 でも同じ経路で、辺は 0.5px だけにじませてアンチエイリアスにする。
      */
     void drawInsetShadows(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   BorderSpec border, ClipRect clip, float fontHVal, float ox, float oy) {
@@ -205,32 +207,27 @@ final class BoxDecorationPainter {
         if (pad.w() <= 0 || pad.h() <= 0) return;
         ClipRect padClip = intersectClip(clip, pad, border.innerRadii(), id);
         ItemProps events = ItemProps.parent(id);
+        Corners inner = border.innerRadii() != null ? border.innerRadii() : Corners.ZERO;
         int n = 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow s = shadows.get(i);
             if (!s.inset()) continue;
-            for (BoxDecorations.ShadowLayer layer : BoxDecorations.shadowLayers(s)) {
-                float shrink = s.spread() + layer.grow();
-                float px0 = pad.x(), py0 = pad.y(), px1 = pad.x() + pad.w(), py1 = pad.y() + pad.h();
-                float hx0 = Math.clamp(px0 + s.offsetX() + shrink, px0, px1), hx1 = Math.clamp(px1 + s.offsetX() - shrink, px0, px1);
-                float hy0 = Math.clamp(py0 + s.offsetY() + shrink, py0, py1), hy1 = Math.clamp(py1 + s.offsetY() - shrink, py0, py1);
-                if (hx1 <= hx0 || hy1 <= hy0) {
-                    hx0 = hx1 = px0;
-                    hy0 = hy1 = py0;
-                }
-                float[][] bands = {
-                        {px0, py0, px1 - px0, hy0 - py0},
-                        {px0, hy1, px1 - px0, py1 - hy1},
-                        {px0, hy0, hx0 - px0, hy1 - hy0},
-                        {hx1, hy0, px1 - hx1, hy1 - hy0},
-                };
-                for (float[] b : bands) {
-                    if (b[2] <= 0 || b[3] <= 0) continue;
-                    addElement(elements, id, id + "_shadow_in" + (n++), ElementType.RECT, b[0], b[1], b[2], b[3], "", 0,
-                            layer.color(), events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                            new RenderMeta(padClip, null, null, fontHVal, ox, oy, 1, false));
-                }
+            float px0 = pad.x(), py0 = pad.y(), px1 = pad.x() + pad.w(), py1 = pad.y() + pad.h();
+            float hx0 = Math.clamp(px0 + s.offsetX() + s.spread(), px0, px1), hx1 = Math.clamp(px1 + s.offsetX() - s.spread(), px0, px1);
+            float hy0 = Math.clamp(py0 + s.offsetY() + s.spread(), py0, py1), hy1 = Math.clamp(py1 + s.offsetY() - s.spread(), py0, py1);
+            if (hx1 <= hx0 || hy1 <= hy0) {
+                hx0 = hx1 = px0;
+                hy0 = hy1 = py0;
             }
+            float limit = Math.min(hx1 - hx0, hy1 - hy0) / 2f;
+            ItemProps shadowEvents = events.copy();
+            shadowEvents.shadowBlur(Math.max(s.blur(), 0.5f));
+            shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
+                    Math.min(Math.max(0, inner.topLeft() - s.spread()), limit), Math.min(Math.max(0, inner.topRight() - s.spread()), limit),
+                    Math.min(Math.max(0, inner.bottomRight() - s.spread()), limit), Math.min(Math.max(0, inner.bottomLeft() - s.spread()), limit)));
+            addElement(elements, id, id + "_shadow_in" + (n++), ElementType.RECT, px0, py0, px1 - px0, py1 - py0, "", 0,
+                    s.color(), shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
+                    new RenderMeta(padClip, null, null, fontHVal, ox, oy, 1, false));
         }
     }
 

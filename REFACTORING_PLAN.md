@@ -163,8 +163,8 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 ### Phase 3: 型付き `DisplayItem`・SDF/FBO 合成・`transform` 厳密化（R6 + 旧 W12）
 
-**進捗（2026-10-26）**: 項目 1・2 を実装し、肥大していた 2 クラスを分けた。項目 3（FBO・ガウス影・旧 W12）は未着手。
-`./gradlew test` は 893 件・失敗 0（`PerformanceBenchmarkTest` だけは全体実行の負荷で落ちることがあり、単独実行では通る）、`runGameTestServer` は 5 件通過。ラチェットは `RenderKeys` 参照 48 → 0、`DisplayListBuilder` の `Pattern.compile` 8 → 0。
+**進捗（2026-10-26）**: 項目 1・2 を実装し、肥大していた 2 クラスを分けた。項目 3 は影の穴抜き・内側の影のガウス化・W12 のスクロールとシザーまで実装（3a）。FBO レイヤー合成・楕円の角・角丸の破線・W12 の残りは未着手。
+`./gradlew test` は 897 件・失敗 0、`runGameTestServer` は 5 件通過。ラチェットは `RenderKeys` 参照 48 → 0、`DisplayListBuilder` の `Pattern.compile` 8 → 0。
 - 1（実装済み）: `RenderKeys` を撤去し、描画・ヒットテスト・アニメーションの付帯情報を型付きの `RenderHints`（`core/paint/model`）にして `RenderMeta.hints()` に持たせた（`DisplayItem.hints()` で読む）。持つのは親の錨の id・ツールチップ・スクロール範囲・影のぼかし半径・グラデーションの外縁の辺・シェーダーのグラデーション（`ShaderGradient`）・`pointer-events: none`・トランジションの遅延/イージング/対象。`DisplayItem.events` は DOM 由来の属性（`onclick`・`data-*`・書体）だけになり、描画側が毎フレーム `split(",")` と `parseFloat` で読み戻すことはなくなった。`DisplayListBuilder` は部品の群ごとに `ItemProps`（属性 + `RenderHints`）を持ち、`addElement` で `events` と `meta.hints` に振り分ける。読まれていなかった `mc-origin`・`mc-font-h`・`mc-scroll-current` は撤去。`HitTestIndex` の `title` 判定（旧 `mc-title`）は `hints().title()` に移した。
   - 見つかった不具合: `LinuxDesktopScreenInputTest` が文字列 `"mc-parent"` で親を辿っていて、キー名の取り違えで常に null を読んでいた（型付きにして直った）。
   - 見送り: `DisplayListBuilder` / `DisplayItemDrawer`（各 1,700 行超）の責務ごとの分割は、今回は型の移し替えを優先して未実施。
@@ -173,7 +173,13 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
   - 検証: `ShaderGradientTest`（シェーダーの式を `ShaderGradientEmulator` で CPU に再現し、停止点を直接引く基準の `colorAt` と画素ごとに比較。斜め・位置つき・切り替わり・透明・繰り返し・ヒント・色空間・放射・円錐）、`PaintModelTest`、ゴールデン 2 件（区間の注記 `shader=[…]` が加わった）、実機（`runClient`・PrintWindow）で斜め 3 色・位置つき 4 色・切り替わり・放射・繰り返し（以前は帯の経路で粗かった）・縞・円錐・ヒント・`oklab` / `oklch` を目視（継ぎ目・段なし）。
   - LIMITATION: シェーダーが使えない環境（`WebSdfShader.isAvailable()` が偽）ではグラデーションは描かれない（以前は帯の矩形で近似していた）。
 - 責務ごとの分割（実装済み）: `DisplayListBuilder`（1,873 → 279 行）を `PaintOrder`（スタッキングコンテキストの順序・クリップ・スクロールバー）・`BoxAnimation`（transform / transition / animation）・`BoxDecorationPainter`（背景・枠線・影・輪郭線・インライン断片）・`ControlPainter`（フォーム部品・メディア・シーン・フィールドセット）・`PaintSupport`（状態を持たない道具）・`ItemProps`（属性 + `RenderHints`）に、`DisplayItemDrawer`（1,723 → 584 行）を `BackgroundRenderer`・`ControlElementRenderer`・`MediaElementRenderer`・`TextElementRenderer` に分けた。動作は変えていない（全テストと実機の目視で確認）。M9 の上限は 231。`ArchitectureTest` の `Pattern.compile` の上限は `DisplayListBuilder` とその部品の合計。
-- 未着手（項目 3）: FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`clip-path`・`mask`）、回転した要素の角丸クリップ、ガウスの `box-shadow`・楕円の角・角丸の破線・旧 W12。いずれも GL の状態（FBO・クリップ・合成）の設計を伴うので、別の段として扱う。
+- 3a（実装済み・2026-10-26）影と W12 の一部:
+  - ぼかした外側の影は箱の角丸矩形を「穴」として抜く（`RenderHints.ShadowShape`・シェーダーの `SHADOW_HOLE`）ので、透明・半透明の背景の箱に影が透けない。内側の影は 4 本の帯をやめ、パディングボックスの 1 枚を「穴の外」で塗る（`SHADOW_INSET`）。穴は角丸（内側の角丸から広がりだけ縮める）で、ぼかしは外側と同じガウス近似。ぼかしのない外側の影は従来の 1 層のまま（箱の下全体）。実機（`runClient`・PrintWindow）で、透明な箱の赤い光彩・角丸の内側の影・オフセット/広がり付きの内側の影・回転した親の中の影を目視。
+  - W12 のスクロール: ホイールの宛先（`SessionContext.handleScrollLocally`）を `HitTestIndex.scrollContainersAt` に移し、祖先の変換の逆行列を宣言順に当て、祖先のクリップに隠れた箱を除く（以前は自身の変換だけで、クリップも見なかった）。`HitTestAndOcclusionTest` に拡大した親の中の箱と `overflow: hidden` に隠れた箱の 2 件。
+  - W12 のシザー: `<mc-scene>` と `item:` / `entity:` の画像は、祖先のクリップが部分的なとき（`enableClipScissorFor2D`）GUI・HUD でシザーを当てる（以前はクリップを無視して全部描いた）。世界内の面ではシザーが使えないので従来どおり。
+  - 見つけて直した不具合: `transform-origin` の長さ（`0 0`・`20px 10px`・`em` / `rem`）を読めず中心（50%）になっていた（`parseOriginProp`。`PaintModelTest.testTransformOriginReadsLengthsAndKeywords`）。
+  - 検証: `./gradlew test` は 897 件・失敗 0、`runGameTestServer` 5 件通過、`./gradlew benchmark` は許容幅内（hover 0.31ms・1 行追加 3.6ms・スクロール 0.72ms。`showcase.html` Restyle 18.3ms は基準 16.3 の許容幅内）。
+- 残り（項目 3）: FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`clip-path`・`mask`）、回転した要素の角丸クリップ、楕円の角・角丸の破線、旧 W12 の残り（スクロール端にかかる文字行の世界内面での部分クリップ・複数 Surface の半透明順序 A-14）。ぼかした影のガウス化は 3a で完了。いずれも GL の状態（FBO・クリップ・合成）の設計を伴うので、別の段として扱う。
 
 ### Phase 4: フォント VRAM 最適化・`@font-face` 統合・国際化・編集（R7 + R4 残課題）
 

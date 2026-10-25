@@ -40,6 +40,28 @@ final class BoxAnimation {
             "ease", "linear", "ease-in", "ease-out", "ease-in-out"
     );
 
+    /**
+     * {@code transform-origin} の 1 語を、箱の寸法（{@code size}）に対する割合にする。キーワード・割合・長さ（{@code 0} / {@code px} / {@code em} /
+     * {@code rem}）を読む。以前は長さを読めず、{@code transform-origin: 0 0} が中心（50%）になっていた。
+     */
+    static float parseOriginProp(String p, float size, float fontPx, float rootFontPx) {
+        float length = Float.NaN;
+        if ("0".equals(p)) length = 0f;
+        else if (p.endsWith("rem")) length = originNumber(p, 3) * rootFontPx;
+        else if (p.endsWith("em")) length = originNumber(p, 2) * fontPx;
+        else if (p.endsWith("px")) length = originNumber(p, 2);
+        if (!Float.isNaN(length)) return size > 0 ? length / size : 0f;
+        return parseOriginProp(p);
+    }
+
+    private static float originNumber(String p, int unitLength) {
+        try {
+            return Float.parseFloat(p.substring(0, p.length() - unitLength));
+        } catch (NumberFormatException e) {
+            return Float.NaN;
+        }
+    }
+
     static float parseOriginProp(String p) {
         return switch (p) {
             case "left", "top" -> 0.0f;

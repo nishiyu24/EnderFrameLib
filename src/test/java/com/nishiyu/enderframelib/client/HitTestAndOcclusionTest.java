@@ -116,6 +116,41 @@ public class HitTestAndOcclusionTest {
 
     // ==========================================
 
+    @Test
+    public void testScrollContainerIsFoundThroughAnAncestorTransform() {
+        // 左上 (100, 0) に置いた 100x50 のスクロール箱を、親が 2 倍に拡大している。画面上では x 100..300・y 0..100
+        HitTestIndex index = index("""
+                <div id="zoom" style="position: absolute; left: 0; top: 0; width: 160px; height: 100px; transform: scale(2); transform-origin: 0 0;">
+                  <div id="list" style="margin-left: 50px; width: 100px; height: 50px; overflow-y: auto;">
+                    <div style="height: 200px;"></div>
+                  </div>
+                </div>
+                """);
+        assertEquals(List.of("list"), scrollIds(index, 250, 80), "拡大後の画面座標でも箱の中なら見つかる");
+        assertEquals(List.of(), scrollIds(index, 80, 80), "箱の左（拡大後は x < 100）は箱ではない");
+        assertEquals(List.of(), scrollIds(index, 250, 150), "拡大後の箱の下（y > 100）は箱ではない");
+    }
+
+    @Test
+    public void testScrollContainerHiddenByAnAncestorClipIsNotFound() {
+        HitTestIndex index = index("""
+                <div id="frame" style="width: 100px; height: 30px; overflow: hidden;">
+                  <div id="list" style="width: 100px; height: 80px; overflow-y: auto;">
+                    <div style="height: 300px;"></div>
+                  </div>
+                </div>
+                """);
+        assertEquals(List.of("list"), scrollIds(index, 50, 10));
+        assertEquals(List.of(), scrollIds(index, 50, 60), "祖先の overflow: hidden に隠れた下半分ではホイールを受けない");
+    }
+
+    private static List<String> scrollIds(HitTestIndex index, double x, double y) {
+        return index.scrollContainersAt("w12", x, y).stream()
+                .map(h -> ClientWebManager.getBaseNodeId(h.element().id()))
+                .filter(id -> !id.startsWith("gen_") && !id.equals("zoom") && !id.equals("frame"))
+                .distinct().toList();
+    }
+
     private static HitTestIndex index(String html) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
