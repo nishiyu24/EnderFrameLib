@@ -52,7 +52,6 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.util.List;
 import com.nishiyu.enderframelib.api.dom.Document;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -89,6 +88,7 @@ public class EnderFrameClientInit {
             DisplayItemDrawer.clearEntityPreviewCache();
             ClientScheduler.clearAll();
             StateNbtConverter.clearReceivedKeyTables();
+            Surfaces.clearHolograms();
         });
 
         EnderFrameClientAPI.setInstance(EnderFrameClientAPIImpl.INSTANCE);
@@ -246,6 +246,30 @@ public class EnderFrameClientInit {
                     WebHudRenderer.customActiveHudSessionId = "";
                 }
             });
+            case "set_hologram" -> {
+                if (data == null) break;
+                String holoId = data.getString("Id");
+                double x = data.getDouble("X");
+                double y = data.getDouble("Y");
+                double z = data.getDouble("Z");
+                float w = data.contains("WidthBlocks") ? data.getFloat("WidthBlocks") : 2f;
+                float h = data.contains("HeightBlocks") ? data.getFloat("HeightBlocks") : 1.5f;
+                float yaw = data.getFloat("Yaw");
+                boolean billboard = data.getBoolean("Billboard");
+                double maxDist = data.contains("MaxDistance") ? data.getDouble("MaxDistance") : 32.0;
+                boolean interactive = !data.contains("Interactive") || data.getBoolean("Interactive");
+                Minecraft.getInstance().execute(() -> {
+                    Hologram holo = new Hologram(sessionId, new net.minecraft.world.phys.Vec3(x, y, z),
+                            w > 0 ? w : 2f, h > 0 ? h : 1.5f, yaw, billboard, maxDist > 0 ? maxDist : 32.0, interactive);
+                    Surfaces.hologram(holoId, holo);
+                });
+            }
+            case "remove_hologram" -> {
+                if (data == null) break;
+                String holoId = data.getString("Id");
+                Minecraft.getInstance().execute(() -> Surfaces.removeHologram(holoId));
+            }
+            case "clear_holograms" -> Minecraft.getInstance().execute(Surfaces::clearHolograms);
         }
     }
 

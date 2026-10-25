@@ -151,6 +151,15 @@ public class WebSessionManager {
         if (session != null) session.clear();
     }
 
+    static Set<String> standaloneSessionIds() {
+        return Set.copyOf(STANDALONE_SESSIONS.keySet());
+    }
+
+    static void clearStandaloneSessions() {
+        STANDALONE_SESSIONS.values().forEach(WebSession::clear);
+        STANDALONE_SESSIONS.clear();
+    }
+
     /** セッションをプレイヤー専用にする。HUD や個別に開いた画面はこれを通す。 */
     public static void setSessionOwner(String sessionId, ServerPlayer owner) {
         if (sessionId == null || owner == null) return;

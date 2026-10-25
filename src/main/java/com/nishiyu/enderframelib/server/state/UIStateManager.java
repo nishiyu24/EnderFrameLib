@@ -13,6 +13,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -181,6 +182,14 @@ public final class UIStateManager {
      */
     public static int stateCount() {
         return STATES.size();
+    }
+
+    /**
+     * 現在登録されている全 UIState の instanceId 一覧を返します。
+     */
+    @NotNull
+    public static Set<String> stateIds() {
+        return Set.copyOf(STATES.keySet());
     }
 
     /**

@@ -90,6 +90,17 @@ public class ArchitectureTest {
     // 2026-10-25: ホログラムの入力対応で SurfaceHit を client/ のトップレベルに出した（M7 準拠）ので +1。
     private static final int M9_MAX_TOP_LEVEL_FILES = 208;
 
+    /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（2026-10-25 時点: 1。Phase 1 / T8 で 0 にする）。 */
+    private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 1;
+    /** M1 拡張: コマンド定義クラス内のサーバー状態コレクション（2026-10-25 時点: 1。ACTIVE_HOLOGRAMS。Phase 1 / T8 で 0 にする）。 */
+    private static final int M1X_MAX_COMMAND_STATE_COLLECTIONS = 1;
+    /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・CustomTagExpander の新規ノード構築を除く。2026-10-25 時点: 22。Phase 1 / T8 で 0 にする）。 */
+    private static final int DOM_MAX_DIRECT_ATTR_WRITES = 22;
+    /** R6: RenderKeys.java 以外からの RenderKeys 参照行数（2026-10-25 時点: 48。Phase 3 で 0 にする）。 */
+    private static final int R6_MAX_RENDER_KEYS_REFERENCES = 48;
+    /** R6: DisplayListBuilder 内の Pattern.compile の数（2026-10-25 時点: 8。Phase 3 で 0 にする）。 */
+    private static final int R6_MAX_DISPLAY_LIST_BUILDER_REGEX = 8;
+
     /** core/ から参照してはいけないパッケージ（import でも完全修飾名でも禁止） */
     private static final String[] FORBIDDEN = {
             "net.minecraft.",
@@ -217,6 +228,75 @@ public class ArchitectureTest {
         }
         assertAtMost("M1 セッション状態の static な持ち主", M1_MAX_SESSION_STATE_OWNERS, owners,
                 "セッションごとの状態は SessionContext のフィールドにしてください（STRUCTURE_PLAN S1）。");
+    }
+
+    @Test
+    public void testM1xNoStaticCallbackFieldsInSingletons() throws IOException {
+        Pattern field = Pattern.compile("(?m)^\\s*(?:private|public|protected)?\\s*static\\s+(?:volatile\\s+)?"
+                + "(?!final\\b)\\w*Callback\\w*\\s+\\w+\\s*(?:=|;)");
+        List<String> found = new ArrayList<>();
+        for (Path path : javaFiles(MAIN.resolve("client"))) {
+            Matcher matcher = field.matcher(Files.readString(path));
+            while (matcher.find()) found.add(relative(path) + " → " + matcher.group().trim());
+        }
+        assertAtMost("M1拡張 static なコールバックフィールド", M1X_MAX_STATIC_CALLBACK_FIELDS, found,
+                "画面・セッションごとのコールバックは SessionContext（または sessionId ごとの登録簿）に持たせてください（REFACTORING_PLAN Phase 1 / T8）。");
+    }
+
+    @Test
+    public void testM1xCommandClassesHoldNoServerState() throws IOException {
+        Pattern field = Pattern.compile("(?m)^\\s*(?:private|public|protected)?\\s*static\\s+(?:final\\s+)?"
+                + "[\\w.]*(?:Map|Set|List|Queue|Deque)<[^;=]*>\\s+\\w+\\s*=\\s*new\\b");
+        List<String> found = new ArrayList<>();
+        for (Path path : javaFiles(MAIN.resolve("server"))) {
+            if (!path.getFileName().toString().endsWith("Commands.java")) continue;
+            Matcher matcher = field.matcher(Files.readString(path));
+            while (matcher.find()) found.add(relative(path) + " → " + matcher.group().trim());
+        }
+        assertAtMost("M1拡張 コマンドクラス内のサーバー状態", M1X_MAX_COMMAND_STATE_COLLECTIONS, found,
+                "サーバー状態は server/ の状態管理クラスに置き、コマンドクラスは呼び出すだけにしてください（REFACTORING_PLAN Phase 1 / T8）。");
+    }
+
+    @Test
+    public void testDomAttributesAreNotWrittenDirectly() throws IOException {
+        Pattern write = Pattern.compile("\\.attrs\\.(?:put|remove)\\(");
+        List<String> found = new ArrayList<>();
+        for (Path path : javaFiles(MAIN)) {
+            String rel = mainRelative(path);
+            if (rel.startsWith("core/dom/node/") || rel.startsWith("core/dom/parser/")
+                    || rel.equals("network/DomMutationRecord.java")
+                    || rel.equals("network/HtmlNodeSerializer.java")
+                    || rel.equals("common/CustomTagExpander.java")) continue;
+            String[] lines = Files.readString(path).split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (write.matcher(lines[i]).find()) found.add(rel + ":" + (i + 1));
+            }
+        }
+        assertAtMost("DOM 属性の直接書き換え", DOM_MAX_DIRECT_ATTR_WRITES, found,
+                "setAttribute / removeAttribute（MutationObserver と無効化フックを通る経路）を使ってください（REFACTORING_PLAN Phase 1 / T8）。");
+    }
+
+    @Test
+    public void testR6RenderKeysReferencesDoNotGrow() throws IOException {
+        List<String> found = new ArrayList<>();
+        Pattern ref = Pattern.compile("\\bRenderKeys\\b");
+        for (Path path : javaFiles(MAIN)) {
+            if (mainRelative(path).equals("core/paint/model/RenderKeys.java")) continue;
+            String[] lines = Files.readString(path).split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (ref.matcher(lines[i]).find()) found.add(mainRelative(path) + ":" + (i + 1));
+            }
+        }
+        assertAtMost("R6 RenderKeys の参照", R6_MAX_RENDER_KEYS_REFERENCES, found,
+                "RenderKeys は Phase 3（R6）で撤去します。新しい参照を足さず、型付きディスプレイリストの属性を使ってください。");
+    }
+
+    @Test
+    public void testR6DisplayListBuilderRegexDoesNotGrow() throws IOException {
+        Path file = MAIN.resolve("client/renderer/DisplayListBuilder.java");
+        int count = countMatches(Files.readString(file), "Pattern\\.compile\\(");
+        assertMetricAtMost("R6 DisplayListBuilder の Pattern.compile", R6_MAX_DISPLAY_LIST_BUILDER_REGEX, count,
+                "描画時に CSS 文字列を正規表現で解釈せず、計算済みスタイルの型付き値を使ってください（Phase 3 / R6）。");
     }
 
     @Test

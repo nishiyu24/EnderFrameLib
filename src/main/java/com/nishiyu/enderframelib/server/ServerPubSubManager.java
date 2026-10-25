@@ -239,6 +239,10 @@ public class ServerPubSubManager {
         return channelData.size();
     }
 
+    static Set<String> channelNames() {
+        return Set.copyOf(channelData.keySet());
+    }
+
     static int subscriberMapSize() {
         return subscribers.size();
     }
