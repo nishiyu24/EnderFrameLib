@@ -4,9 +4,10 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.ClientSession;
+import com.nishiyu.enderframelib.api.EnderFrameAPI;
 import com.nishiyu.enderframelib.api.EnderFrameClientAPI;
 import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.WebDocument;
@@ -14,9 +15,15 @@ import com.nishiyu.enderframelib.api.WebSessionHandle;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.api.state.UIState;
+import com.nishiyu.enderframelib.api.template.EnderScreenBlock;
+import com.nishiyu.enderframelib.api.template.EnderScreenBlockEntity;
+import com.nishiyu.enderframelib.api.template.EnderScreenItem;
+import com.nishiyu.enderframelib.client.Surfaces;
+import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
 import com.nishiyu.enderframelib.network.OpenUiS2CPacket;
 import com.nishiyu.enderframelib.network.StateDeltaS2CPacket;
 import com.nishiyu.enderframelib.network.StateNbtConverter;
+import com.nishiyu.enderframelib.server.EnderFrameCommands;
 import com.nishiyu.enderframelib.server.EnderFrameServerState;
 import com.nishiyu.enderframelib.server.state.UIStateImpl;
 import com.nishiyu.enderframelib.server.state.UIStateManager;
@@ -29,6 +36,9 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -36,17 +46,30 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.registries.RegisterEvent;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,47 +80,6 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
-import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
-import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.level.block.EntityBlock;
-import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.minecraft.world.level.block.state.BlockBehaviour;
-import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.registries.RegisterEvent;
-import org.jetbrains.annotations.Nullable;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.nishiyu.enderframelib.client.renderer.WebBlockRenderer;
-import com.nishiyu.enderframelib.client.renderer.WebItemRendererHelper;
-import net.minecraft.client.Minecraft;
-import com.nishiyu.enderframelib.api.template.EnderScreenBlock;
-import com.nishiyu.enderframelib.api.template.EnderScreenBlockEntity;
-import com.nishiyu.enderframelib.api.template.EnderScreenItem;
-import com.nishiyu.enderframelib.client.Hologram;
-import com.nishiyu.enderframelib.client.Surfaces;
-import com.nishiyu.enderframelib.client.renderer.surface.ItemSurfaceSpec;
-import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.world.item.ItemDisplayContext;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
-import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
-import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 /**
  * サーバー側のセッション寿命のゲームテスト。
@@ -423,10 +405,39 @@ public final class WebScreenGameTest {
             }
         }
 
-        // onScreenFormed が読み込んだセッションを片付ける（他のテストの「状態が空」を壊さない）
-        helper.getLevel().getServer().getCommands().performPrefixedCommand(
-                helper.getLevel().getServer().createCommandSourceStack().withSuppressedOutput(),
-                "enderframe session clear " + SurfaceDevHarness.BLOCK_SESSION);
+        // 統合コマンド (/ef screen load / patch / clear, /ef hologram spawn / clear) と権限チェックの検証
+        CommandSourceStack adminSrc = helper.getLevel().getServer().createCommandSourceStack().withSuppressedOutput();
+        if (!EnderFrameCommands.canUseCommand(adminSrc)) {
+            helper.fail("管理者権限の CommandSourceStack で canUseCommand が false になりました");
+        }
+        if (EnderFrameCommands.canUseCommand(adminSrc.withPermission(0))) {
+            helper.fail("OP 権限なし (permission 0) で canUseCommand が true になりました");
+        }
+        ServerPlayer survivalPlayer = mockPlayer(helper);
+        survivalPlayer.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
+        if (EnderFrameCommands.canUseCommand(survivalPlayer.createCommandSourceStack().withPermission(4))) {
+            helper.fail("サバイバルモードのプレイヤーで canUseCommand が true になりました");
+        }
+        EnderFrameServerState.onPlayerLogout(survivalPlayer);
+        survivalPlayer.connection.disconnect(Component.literal("gametest done"));
+
+        var commands = helper.getLevel().getServer().getCommands();
+        String posArgs = absoluteOrigin.getX() + " " + absoluteOrigin.getY() + " " + absoluteOrigin.getZ();
+        commands.performPrefixedCommand(adminSrc, "ef screen load " + posArgs + " enderframelib:surface_test 512 384 custom_screen_sess");
+        EnderScreenBlockEntity masterBe = screenAt(helper, origin);
+        if (!"custom_screen_sess".equals(masterBe.getSessionId())) {
+            helper.fail("/ef screen load でカスタムセッション ID が反映されていません: " + masterBe.getSessionId());
+        }
+        commands.performPrefixedCommand(adminSrc, "ef hologram spawn test_holo " + posArgs + " enderframelib:surface_test");
+        if (EnderFrameCommands.activeHologramCount() != 1) {
+            helper.fail("/ef hologram spawn でホログラムが登録されていません");
+        }
+        commands.performPrefixedCommand(adminSrc, "ef hologram clear");
+        if (EnderFrameCommands.activeHologramCount() != 0) {
+            helper.fail("/ef hologram clear でホログラムが消えていません");
+        }
+        commands.performPrefixedCommand(adminSrc, "ef screen clear " + posArgs + " true");
+        commands.performPrefixedCommand(adminSrc, "ef session clear_all");
         helper.succeed();
     }
 
@@ -487,17 +498,6 @@ public final class WebScreenGameTest {
     /**
      * 開発用の run（{@code runClient} / {@code runServer}。{@code build.gradle} が
      * {@code neoforge.enabledGameTestNamespaces} を付ける）でだけ有効になる、実機確認用のコマンド。
-     *
-     * <ul>
-     *   <li>{@code /efl_dev state open <pos> <targets>}: その座標に（無ければかまどを置いて）
-     *       {@code enderframelib:state_test} の Headless State を作り、対象に開く。クリック・入力・ホイールの
-     *       アクションは状態を書き換え、ログにも出す。</li>
-     *   <li>{@code /efl_dev state set <pos> <key> <value>} / {@code /efl_dev state info <pos>}</li>
-     *   <li>{@code /efl_dev count start|show <target>}: そのプレイヤーから届いた EnderFrame の C2S パケットを数える
-     *       （接続のパイプラインに数えるだけのハンドラを挟む）。</li>
-     *   <li>{@code /efl_dev hud <targets> <frames>}: クライアントだけで開く HUD を毎フレーム更新させる
-     *       （システムメッセージで {@link Client} に伝える）。</li>
-     * </ul>
      */
     @EventBusSubscriber(modid = EnderFrameLib.MODID)
     public static final class DevHarness {
@@ -519,7 +519,7 @@ public final class WebScreenGameTest {
         }
 
         private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-            dispatcher.register(Commands.literal("efl_dev").requires(src -> src.hasPermission(2))
+            dispatcher.register(Commands.literal("efl_dev").requires(EnderFrameCommands::canUseCommand)
                     .then(Commands.literal("state")
                             .then(Commands.literal("open").then(Commands.argument("pos", BlockPosArgument.blockPos())
                                     .then(Commands.argument("targets", EntityArgument.players())
@@ -572,25 +572,25 @@ public final class WebScreenGameTest {
         /** 状態の初期値とアクションを一度だけ入れる（{@code label} が無ければ未初期化とみなす）。 */
         static void initState(UIState state) {
             if (state.get("label") == null) {
-            state.set("label", state.instanceId()).set("status", "idle").set("running", false)
-                    .set("progress", 0.0).set("progress_css", "0%")
-                    .set("clicks", 0).set("wheels", 0).set("typed", "");
-            state.onAction("toggle", (player, payload) -> {
-                log(state, player, "toggle", payload);
-                boolean running = !state.getBoolean("running", false);
-                state.set("running", running)
-                        .set("status", running ? "running" : "idle")
-                        .set("clicks", state.getInt("clicks", 0) + 1);
-            });
-            state.onAction("typed", (player, payload) -> {
-                log(state, player, "typed", payload);
-                state.set("typed", payload.getString("Value"));
-            });
-            state.onAction("wheel", (player, payload) -> {
-                log(state, player, "wheel", payload);
-                state.set("wheels", state.getInt("wheels", 0) + 1);
-            });
-        }
+                state.set("label", state.instanceId()).set("status", "idle").set("running", false)
+                        .set("progress", 0.0).set("progress_css", "0%")
+                        .set("clicks", 0).set("wheels", 0).set("typed", "");
+                state.onAction("toggle", (player, payload) -> {
+                    log(state, player, "toggle", payload);
+                    boolean running = !state.getBoolean("running", false);
+                    state.set("running", running)
+                            .set("status", running ? "running" : "idle")
+                            .set("clicks", state.getInt("clicks", 0) + 1);
+                });
+                state.onAction("typed", (player, payload) -> {
+                    log(state, player, "typed", payload);
+                    state.set("typed", payload.getString("Value"));
+                });
+                state.onAction("wheel", (player, payload) -> {
+                    log(state, player, "wheel", payload);
+                    state.set("wheels", state.getInt("wheels", 0) + 1);
+                });
+            }
         }
 
         private static void log(UIState state, ServerPlayer player, String action, CompoundTag payload) {
@@ -677,19 +677,6 @@ public final class WebScreenGameTest {
         static void onChat(ClientChatReceivedEvent event) {
             if (!DevHarness.enabled()) return;
             String text = event.getMessage().getString();
-            if (text.startsWith(SurfaceDevHarness.HOLOGRAM_TRIGGER)) {
-                String[] parts = text.substring(SurfaceDevHarness.HOLOGRAM_TRIGGER.length()).trim().split(" ");
-                if (parts[0].equals("clear")) {
-                    Surfaces.clearHolograms();
-                } else {
-                    Vec3 base = new Vec3(Integer.parseInt(parts[0]) + 0.5, Integer.parseInt(parts[1]) + 0.5, Integer.parseInt(parts[2]) + 0.5);
-                    boolean billboard = Boolean.parseBoolean(parts[3]);
-                    Hologram holo = Hologram.at(parts[4], base, 2f, 1.5f).asInteractive();
-                    Surfaces.hologram("efl_dev_" + parts[0] + "_" + parts[1] + "_" + parts[2],
-                            billboard ? holo.asBillboard() : holo);
-                }
-                return;
-            }
             if (!text.startsWith(DevHarness.HUD_TRIGGER)) return;
             int frames = Integer.parseInt(text.substring(DevHarness.HUD_TRIGGER.length()).trim());
 
@@ -716,19 +703,9 @@ public final class WebScreenGameTest {
     }
 
     /**
-     * ブロック／手持ちアイテム表面への Web 描画の実機確認用ハーネス。{@code neoforge.enabledGameTestNamespaces} を付けた
-     * run（{@code runClient} / {@code runServer}）でだけ、テスト用ブロックとアイテムを登録しコマンドを足す。
-     *
-     * <p>ライブラリ自身は表面を持つブロックもアイテムも登録しない（{@code WebBlockRenderer} /
-     * {@code WebItemRendererHelper} はアドオン向け）。ここでは両方を実際に通すための最小実装を置く。</p>
-     *
-     * <ul>
-     *   <li>{@code /efl_dev surface place <pos> <facing> <w> <h>}: テストブロックを置き、
-     *       {@value #BLOCK_SESSION} に {@code enderframelib:surface_test} を（w*32 × h*32 px で）読み込む。</li>
-     *   <li>{@code /efl_dev surface give <targets>}: {@value #ITEM_SESSION} を持つテストアイテムを渡し、
-     *       320x240 で読み込む。</li>
-     *   <li>{@code /efl_dev surface clear}: 両方のセッションを消す。</li>
-     * </ul>
+     * ブロック／手持ちアイテム表面への Web 描画を行う標準ブロック＆アイテム登録と開発ハーネス。
+     * サバイバルモードでの不正な設置・破壊を防ぐため、管理者（OP 2 以上＆非サバイバル）のみが設置でき、
+     * サバイバルでは破壊不能（岩盤同等の強度＆ドロップなし）としている。
      */
     public static final class SurfaceDevHarness {
 
@@ -752,12 +729,16 @@ public final class WebScreenGameTest {
 
         private SurfaceDevHarness() {}
 
-        /** 開発用 run でだけ登録する。 */
+        /** 標準スクリーンブロック・アイテムとして常時登録する（サバイバルでは破壊・設置不可）。 */
         public static void init(IEventBus modEventBus) {
-            if (!DevHarness.enabled()) return;
             modEventBus.addListener(RegisterEvent.class, event -> {
                 event.register(Registries.BLOCK, helper -> {
-                    BLOCK = new EnderScreenBlock(BlockBehaviour.Properties.of().strength(1.0f).noOcclusion(), () -> BLOCK_ENTITY);
+                    BLOCK = new EnderScreenBlock(
+                            BlockBehaviour.Properties.of()
+                                    .strength(-1.0f, 3600000.0f)
+                                    .noLootTable()
+                                    .noOcclusion(),
+                            () -> BLOCK_ENTITY);
                     helper.register(BLOCK_ID, BLOCK);
                 });
                 event.register(Registries.BLOCK_ENTITY_TYPE, helper -> {
@@ -766,7 +747,17 @@ public final class WebScreenGameTest {
                 });
                 event.register(Registries.ITEM, helper -> {
                     ITEM = new EnderScreenItem(new Item.Properties().stacksTo(1));
-                    helper.register(BLOCK_ID, new BlockItem(BLOCK, new Item.Properties()));
+                    BlockItem blockItem = new BlockItem(BLOCK, new Item.Properties()) {
+                        @Override
+                        protected boolean canPlace(BlockPlaceContext context, BlockState state) {
+                            Player player = context.getPlayer();
+                            if (player != null && (!player.canUseGameMasterBlocks() || (!player.isCreative() && !player.isSpectator()))) {
+                                return false;
+                            }
+                            return super.canPlace(context, state);
+                        }
+                    };
+                    helper.register(BLOCK_ID, blockItem);
                     helper.register(ITEM_ID, ITEM);
                 });
             });
@@ -782,7 +773,7 @@ public final class WebScreenGameTest {
                                     })
                                     .then(Commands.argument("w", IntegerArgumentType.integer(1, 16))
                                             .then(Commands.argument("h", IntegerArgumentType.integer(1, 16))
-                                                    .executes(ctx -> place(ctx.getSource(),
+                                                     .executes(ctx -> place(ctx.getSource(),
                                                             BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
                                                             StringArgumentType.getString(ctx, "facing"),
                                                             IntegerArgumentType.getInteger(ctx, "w"),
@@ -824,27 +815,23 @@ public final class WebScreenGameTest {
             return 1;
         }
 
-        /** ホログラムはクライアントだけの状態なので、サーバーからシステムメッセージで伝える（クライアントが読み取る）。 */
-        static final String HOLOGRAM_TRIGGER = "[efl_dev] hologram ";
-
         private static int hologram(CommandSourceStack source, BlockPos pos, boolean billboard) {
-            String sessionId = HOLOGRAM_SESSION;
+            String holoId = "efl_dev_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
+            Vec3 center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            String orient = billboard ? "billboard" : "south";
             if (TEMPLATE_MODE) {
                 // テンプレート + UIState で動かす。状態はホログラムごとに分け、見せる相手は全員
-                sessionId = "efl_hologram_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
+                String sessionId = "efl_hologram_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
                 Ui.Template ui = Ui.template(STATE_TEMPLATE).instance(sessionId);
                 DevHarness.initState(EnderFrameAPI.get().stateOf(STATE_TEMPLATE, sessionId));
                 for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
                     EnderFrameAPI.get().showSurface(player, ui, UI_WIDTH, UI_HEIGHT);
                 }
+                return EnderFrameCommands.bindHologramSession(source, holoId, center, sessionId, 2.0f, 1.5f, orient, true);
             } else {
                 loadSession(source, HOLOGRAM_SESSION, UI_WIDTH, UI_HEIGHT);
+                return EnderFrameCommands.bindHologramSession(source, holoId, center, HOLOGRAM_SESSION, 2.0f, 1.5f, orient, true);
             }
-            for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + pos.getX() + " " + pos.getY() + " " + pos.getZ()
-                        + " " + billboard + " " + sessionId));
-            }
-            return 1;
         }
 
         private static int give(CommandSourceStack source, Collection<ServerPlayer> targets) {
@@ -871,9 +858,7 @@ public final class WebScreenGameTest {
             runCommand(source, "enderframe session clear " + BLOCK_SESSION);
             runCommand(source, "enderframe session clear " + ITEM_SESSION);
             runCommand(source, "enderframe session clear " + HOLOGRAM_SESSION);
-            for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-                player.sendSystemMessage(Component.literal(HOLOGRAM_TRIGGER + "clear"));
-            }
+            EnderFrameCommands.clearHologramsCmd(source);
             return 1;
         }
 
@@ -885,15 +870,27 @@ public final class WebScreenGameTest {
             source.getServer().getCommands().performPrefixedCommand(source.withSuppressedOutput(), command);
         }
 
-        /** ひな形（{@link EnderScreenBlockEntity}）の上に、セッションと LOD 色だけを足した描画確認用のブロックエンティティ。 */
+        /** ひな形（{@link EnderScreenBlockEntity}）の上に、セッションと LOD 色だけを足したブロックエンティティ。 */
         public static final class SurfaceBlockEntity extends EnderScreenBlockEntity {
             public SurfaceBlockEntity(BlockPos pos, BlockState state) {
                 super(BLOCK_ENTITY, pos, state);
             }
 
-            @Override public String getSessionId() { return getTemplateId() != null ? super.getSessionId() : BLOCK_SESSION; }
-            /** {@code /efl_dev surface template true} のとき、セッションではなくテンプレートの状態で動かす。 */
-            @Override public String getTemplateId() { return TEMPLATE_MODE ? STATE_TEMPLATE : null; }
+            @Override
+            public String getSessionId() {
+                if (getTemplateId() != null) return super.getSessionId();
+                if (getDatapackUiId() != null || getCustomSessionId() != null) return super.getSessionId();
+                return BLOCK_SESSION;
+            }
+
+            /** 明示的なテンプレート指定、または {@code /efl_dev surface template true} のときにテンプレートで動かす。 */
+            @Override
+            public String getTemplateId() {
+                String custom = super.getTemplateId();
+                if (custom != null) return custom;
+                return TEMPLATE_MODE ? STATE_TEMPLATE : null;
+            }
+
             /** 遠距離 LOD の確認用に、はっきり分かる色を返す。 */
             @Override public int getLodColor() { return 0xFF00E5FF; }
 
@@ -901,8 +898,10 @@ public final class WebScreenGameTest {
             protected void onScreenFormed(int width, int height) {
                 if (getTemplateId() != null) {
                     DevHarness.initState(screenState());
+                } else if (getDatapackUiId() != null) {
+                    EnderFrameCommands.ensureBlockScreenSessionLoaded(this);
                 } else if (level instanceof ServerLevel serverLevel) {
-                    loadSession(serverLevel.getServer().createCommandSourceStack(), BLOCK_SESSION, UI_WIDTH, UI_HEIGHT);
+                    loadSession(serverLevel.getServer().createCommandSourceStack(), getSessionId(), UI_WIDTH, UI_HEIGHT);
                 }
             }
         }
@@ -911,14 +910,13 @@ public final class WebScreenGameTest {
     /** {@link SurfaceDevHarness} のクライアント側。ブロックは {@code WebBlockRenderer}、アイテムは {@code WebItemRendererHelper} に通す。 */
     public static final class SurfaceDevHarnessClient {
 
-        /** アイテム面（320x240）。アイテム空間の幅 0.8、一人称では 0.6 までに収める。 */
+        /** アイテム面（512x384）。アイテム空間の幅 0.8、一人称では 0.6 までに収める。 */
         private static final ItemSurfaceSpec ITEM_SURFACE = new ItemSurfaceSpec(
                 SurfaceDevHarness.UI_WIDTH, SurfaceDevHarness.UI_HEIGHT, 0.8f, 0.6f, ItemSurfaceSpec.Anchor.CENTER, 0f);
 
         private SurfaceDevHarnessClient() {}
 
         public static void init(IEventBus modEventBus) {
-            if (!DevHarness.enabled()) return;
             Surfaces.block(modEventBus, () -> SurfaceDevHarness.BLOCK_ENTITY);
             Surfaces.item(modEventBus, () -> SurfaceDevHarness.ITEM, ITEM_SURFACE,
                     ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "item/surface_test_paper"));

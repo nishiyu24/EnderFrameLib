@@ -212,4 +212,48 @@ public class ClientActionRoutingTest {
 
         ClientWebManager.clearSession(legacySessionId);
     }
+
+    /**
+     * HUD 用と GUI 画面用の {@link EnderScreenDelegate} が同時に存在するとき、コールバックが static の 1 本なので
+     * 後から作った方が先の方を上書きし、先の画面のアクションが届かなくなる（監査 2026-10-25）。
+     * Phase 1 / T8 でコールバックをセッション単位にするまで無効にしておく。直したら {@code @Disabled} を外す。
+     */
+    @Test
+    @org.junit.jupiter.api.Disabled("Phase 1 / T8: イベントコールバックのセッション単位化まで失敗する（監査で確認済みの不具合）")
+    @DisplayName("複数画面の同時稼働: 後から開いた画面が先の画面のイベント配送を上書きしないこと")
+    void testConcurrentDelegatesKeepOwnCallbacks() {
+        String hudId = "concurrent_hud";
+        String guiId = "concurrent_gui";
+        String html = "<div><button id='go' onclick='do_it'>Go</button></div>";
+        ClientWebManager.clearSession(hudId);
+        ClientWebManager.clearSession(guiId);
+        SessionContext hud = ClientWebManager.getOrCreateSession(hudId);
+        SessionContext gui = ClientWebManager.getOrCreateSession(guiId);
+        hud.loadLocalHtml(html, 800, 600);
+        gui.loadLocalHtml(html, 800, 600);
+
+        java.util.concurrent.atomic.AtomicInteger hudHits = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger guiHits = new java.util.concurrent.atomic.AtomicInteger();
+        EnderScreenDelegate hudDelegate = new EnderScreenDelegate(hudId, hud.stateStore());
+        hudDelegate.onAction("do_it", hudHits::incrementAndGet);
+        EnderScreenDelegate guiDelegate = new EnderScreenDelegate(guiId, gui.stateStore());
+        guiDelegate.onAction("do_it", guiHits::incrementAndGet);
+        try {
+            hud.rootNode().getElementById("go").dispatchEvent(CoreEvent.click(0, 0, 0));
+            assertEquals(1, hudHits.get(), "後から GUI 画面を作っても HUD のアクションが届くこと");
+            assertEquals(0, guiHits.get());
+
+            gui.rootNode().getElementById("go").dispatchEvent(CoreEvent.click(0, 0, 0));
+            assertEquals(1, guiHits.get());
+
+            guiDelegate.onClose();
+            hud.rootNode().getElementById("go").dispatchEvent(CoreEvent.click(0, 0, 0));
+            assertEquals(2, hudHits.get(), "GUI 画面を閉じても HUD のイベント配送が壊れないこと");
+        } finally {
+            hudDelegate.onClose();
+            guiDelegate.onClose();
+            ClientWebManager.clearSession(hudId);
+            ClientWebManager.clearSession(guiId);
+        }
+    }
 }

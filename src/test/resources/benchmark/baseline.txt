@@ -7,7 +7,9 @@
 # 基準値は 2026-10-24 に Windows / JDK 21 で 3 回測った中央値（初回は 2026-10-20）。
 # 2026-10-24 の更新で変わったのは showcase.html だけ（restyle 9.1 → 16.3 / relayout 10.6 → 15.2 /
 # displayList 3.3 → 4.8 / scrollStep 12.4 → 17.5）。guidebook.md と large-list はほぼ同じなので、
-# マシンの差ではなく 2026-10-20 以降に showcase.html の処理が重くなったもの（原因は未調査）。
+# マシンの差ではなく showcase.html 自体が変わったため。原因は f34cc9b（2026-10-24）での文書の拡張で、
+# 要素が 99 → 163（+65%）、本文 14.3KB → 23.6KB、ディスプレイリストのゴールデンも 556 → 714 行に増えた。
+# 処理系の退行ではなく文書規模に概ね比例した増加（restyle は +79%）。以後は 163 要素版を基準とする。
 # マシンが変わって恒久的に遅い/速い場合は、次のコマンドで更新して差分を確認する:
 #   ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true
 # 一時的な環境差は -Dbenchmark.factor=... / -Dbenchmark.slackMs=... で緩められる。

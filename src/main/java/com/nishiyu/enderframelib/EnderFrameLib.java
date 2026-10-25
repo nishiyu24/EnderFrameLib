@@ -49,6 +49,7 @@ public class EnderFrameLib {
         // 4. サーバー＆データパックイベント登録
         NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        NeoForge.EVENT_BUS.addListener(this::onPlayerLogin);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLogout);
         NeoForge.EVENT_BUS.addListener(this::onPlayerChangedDimension);
         NeoForge.EVENT_BUS.addListener(this::onServerTick);
@@ -74,6 +75,12 @@ public class EnderFrameLib {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         EnderFrameCommands.register(event.getDispatcher());
+    }
+
+    private void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer sp) {
+            EnderFrameServerState.onPlayerLogin(sp);
+        }
     }
 
     private void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {

@@ -54,6 +54,12 @@ public final class EnderFrameServerState {
         SurfaceViewers.onChunkUnwatched(player, level, pos);
     }
 
+    /** プレイヤーのログイン。現在ディメンションのホログラムを同期する。 */
+    public static void onPlayerLogin(ServerPlayer player) {
+        if (player == null) return;
+        EnderFrameCommands.syncHologramsToPlayer(player);
+    }
+
     /** プレイヤーのログアウト。本人に紐づく状態を全て落とす。 */
     public static void onPlayerLogout(ServerPlayer player) {
         if (player == null) return;
@@ -66,13 +72,14 @@ public final class EnderFrameServerState {
 
     /**
      * ディメンション移動。ワールド内画面のセッションは移動先では見えないので
-     * 閲覧者から外し、AR 購読の対象も作り直させる。
+     * 閲覧者から外し、AR 購読の対象も作り直させ、移動先ディメンションのホログラムを同期する。
      */
     public static void onPlayerChangedDimension(ServerPlayer player) {
         if (player == null) return;
         WebSessionManager.removePlayerAll(player);
         ServerTargetSyncHandler.removePlayer(player.getUUID());
         UIStateManager.removePlayerAll(player);
+        EnderFrameCommands.syncHologramsToPlayer(player);
     }
 
     /** サーバー停止。全ての static 状態を捨てる。 */
@@ -84,6 +91,7 @@ public final class EnderFrameServerState {
         EnderFrameDataPackManager.clearAll();
         EnderFrameScriptingBridge.clearAll();
         UIStateManager.clearAll();
+        EnderFrameCommands.clearHologramsOnStop();
         tickCounter = 0;
         EnderFrameLib.LOGGER.debug("EnderFrameLib のサーバー側 static 状態を破棄しました。");
     }
@@ -99,7 +107,8 @@ public final class EnderFrameServerState {
                 + " rateLimited=" + PlayerRateLimiter.trackedPlayerCount()
                 + " datapackUis=" + EnderFrameDataPackManager.entryCount()
                 + " uiStates=" + UIStateManager.stateCount()
-                + " uiViewers=" + UIStateManager.viewerCount();
+                + " uiViewers=" + UIStateManager.viewerCount()
+                + " holograms=" + EnderFrameCommands.activeHologramCount();
     }
 
     /** 全ての static 状態が空かどうか。 */
@@ -112,6 +121,7 @@ public final class EnderFrameServerState {
                 && ServerTargetSyncHandler.subscriptionCount() == 0
                 && PlayerRateLimiter.trackedPlayerCount() == 0
                 && UIStateManager.stateCount() == 0
-                && UIStateManager.viewerCount() == 0;
+                && UIStateManager.viewerCount() == 0
+                && EnderFrameCommands.activeHologramCount() == 0;
     }
 }

@@ -16,29 +16,144 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 - ブラウザとの差異の台帳: [FIDELITY.md](FIDELITY.md)
 - 規約（コメントの種類、ゴールデン更新、3 点セット）: [CONTRIBUTING.md](CONTRIBUTING.md)
 - 利用者から見える制約: [README.md](README.md) の "Not supported"
+- 実機・機能別の手動/自動テスト仕様書: [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md)
 
 ---
 
-## 現在地（2026-10-24 時点）
+## 現在地（2026-10-25 時点）
 
-`./gradlew test` は 783 件・失敗 0。忠実度コーパス 138 ケース（台帳 25 行）、WPT 採用 38 ケース（台帳 0 行）。
-直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7 の実装と本文書群の整理が未コミットで載っている。
+`./gradlew test` は 783 件＋追加テスト 4 件（`SurfaceStateTest`・`HologramPickTest`・`AdHocSessionLifecycleTest`・`UIStateLoadTest`）。忠実度コーパス 138 ケース（台帳 25 行）、WPT 採用 38 ケース（台帳 0 行）。
+直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
+2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
-| R0 | 測定の拡張（計算値・DOM の振る舞い・ディスプレイリスト・性能） | 完了 |
-| R1 | ライブ DOM | 完了 |
-| R2 | イベントとフォーム | 完了（残: IME の composition。実機での観測は H の残と一緒に 2026-10-24 に済） |
-| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | 完了（実機・`WebScreenGameTest` での観測は 2026-10-24 に済） |
+| **R0+**（最優先） | **テスト・計測・番人ラチェットの拡充**（差分ベンチ・M1/DOM/R6 ラチェット・不具合再現テスト先行） | **完了（2026-10-25、Phase 0）。Phase 1 の無効化テスト 6 件が完了条件** |
+| R0 | 測定の拡張（計算値・DOM の振る舞い・ディスプレイリスト・性能） | 完了（差分・マイクロ操作計測は R0+ で拡張） |
+| R1 | ライブ DOM | 完了（残: バインディング・入力同期での `attrs.put` 直書き撤去 → T8） |
+| R2 | イベントとフォーム | ほぼ完了（残: IME の composition。実機での観測は H の残と一緒に 2026-10-24 に済） |
+| R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | ほぼ完了（実機・`WebScreenGameTest` での観測は 2026-10-24 に済。残: 互換 `WebSession` の開き直し無しライブ反映確認・再同期時の節状態引き継ぎ） |
 | T0〜T7 | 構造整理（セッション集約・入力一本化・M1〜M9 ラチェット） | 完了（[ARCHITECTURE.md](ARCHITECTURE.md) §7） |
-| H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化と実機での観測も 2026-10-24 に済） |
-| R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5） |
-| R5 | インクリメンタル・パイプラインと CSSOM | 一部（差分レイアウトと近道は完了。dirty ビット・CSSOM View は未着手） |
-| R6 | 描画の合成化 | 一部（SDF の角丸・グラデーション・角丸クリップ。transform・レイヤー合成は未着手） |
-| R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰め。改行・bidi・編集は未着手） |
-| R8 | 置換要素（SVG・Canvas 2D） | 未着手 |
-| R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行） |
-| R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit） |
+| **T8** | **監査指摘のライフサイクル・入力コールバック・サーバー状態・セキュリティ修正** | **R0+ 直後に着手（Phase 1）** |
+| H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化・Surface 連携・実機での観測も 2026-10-24〜25 に済。Surface 既知不具合は Phase 1/3 へ統合） |
+| R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
+| R5 | インクリメンタル・パイプラインと CSSOM | 一部（差分レイアウトと近道は完了。`InvalidationSets` 接続・dirty ビット・`ComputedStyle` 省メモリ化・CSSOM View・台帳 11 行は Phase 2） |
+| R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・2 色グラデーション・角丸クリップは完了。`RenderKeys` 撤去・多色 SDF グラデーション・transform 宣言順・FBO レイヤー合成・旧 W12 は Phase 3） |
+| R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰めは完了。アトラス VRAM 最適化・`@font-face` の `OutlineFontFace` 統合・UAX #14・bidi・編集・台帳 2 行は Phase 4） |
+| R8 | 置換要素（SVG・Canvas 2D） | 未着手（Phase 5） |
+| R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行。表の台帳 4 行を含む残りは Phase 5） |
+| R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・ホットリロードは Phase 5） |
+
+---
+
+## 課題全体の再設定と優先実行計画（2026-10-25 監査統合・テスト最優先）
+
+2026-10-25 の監査で判明した課題を既存の R2〜R10・T0〜T7・H0〜H4 と統合し、以下の **Phase 0（テスト系最優先）〜 Phase 5** の順序で進める。
+
+### Phase 0（最優先）: テスト・計測・番人ラチェットの拡充（R0+ / T-Guard）— 完了（2026-10-25）
+
+**結果**: `./gradlew test` は 820 件（失敗 0・無効 6）、`runGameTestServer` は 5 件すべて通過。実装した内容は次のとおり。
+
+- **ラチェット（`ArchitectureTest`、実測値で固定）**: static コールバックフィールド 1（`ClientScreenInteractionManager`）、コマンドクラス内のサーバー状態 1（`ACTIVE_HOLOGRAMS`）、`attrs.put/remove` の直接書き換え 22 箇所（`SessionInput` 3・`Bindings` 9・`StandardDefaultActions` 7・`EnderScreenDelegate` / `TextareaEditor` / `WebHudRenderer` 各 1。`core/dom/node/`・パーサ・直列化の復元・`CustomTagExpander` は新規ノード構築なので除外）、`RenderKeys` 参照 48 行、`DisplayListBuilder` の `Pattern.compile` 8。いずれも Phase 1 / 3 で 0 にする。
+- **インクリメンタル計測（`PerformanceBenchmarkTest`、基準値 `incremental-baseline.txt`）**: 1 行ホバー 0.32ms（Phase 2 の目標 `< 1.0ms` は計測上すでに満たす）、無関係な class トグル 0.15ms、子孫セレクタに効く class トグル 16.2ms、1 行追加（差分レイアウト）6.6ms、スクロール 1 段の `repositionLayout` 0.31ms。重いのは子孫セレクタと挿入で、Phase 2 の対象。
+- **`showcase.html` の Restyle 増加の原因**: 処理系の退行ではなく、`f34cc9b`（2026-10-24）で文書自体が拡張されたため（要素 99 → 163、ディスプレイリストのゴールデン 556 → 714 行）。`baseline.txt` と `BENCHMARK.md` に記録。
+- **失敗再現テスト（Phase 1 の完了条件。直したら `@Disabled` を外す）**:
+  1. `ClientActionRoutingTest.testConcurrentDelegatesKeepOwnCallbacks`（複数画面のコールバック上書き → T8 の 1）
+  2. `ReactiveStateStoreTest.testApplyI18nAttributesFiresMutationObserver`（→ T8 の 2）
+  3. `ReactiveStateStoreTest.testApplyLocalVariablesFiresMutationObserver`（→ T8 の 2）
+  4. `ReactiveStateStoreTest.testInputValueSyncFiresMutationObserver`（→ T8 の 2）
+  5. `WebMediaManagerRedirectTest.redirectFollowingIsAlwaysInspected`（2 本目の接続が自動追従のまま・307/308 未対応・相対 `Location` は常に遮断 → T8 の 4）
+  6. `WebMediaManagerRedirectTest.uniqueLocalIpv6IsRejected`（`isUrlSafe` が IPv6 ユニークローカル `fc00::/7` を素通りする → T8 の 4）
+- 有効なまま通る SSRF テスト: ループバック・プライベート・リンクローカル・IPv4 の別表記（10 進・16 進・8 進整数・省略形）・IPv4 射影 IPv6・非 http スキーム・許可ドメインの回り込み。
+- 実機仕様書との結びつけ: [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) §3 の C-1（共有セッションのサイズ競合）と B-1 / B-2（一人称のはみ出し）は Phase 1 の 5 番、[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md) §3 の A〜C 表と [TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md) の実機手順は、Phase 1 完了時の再実施項目とする。
+
+機能修正やパイプライン改修に入る前に、現状のテストとベンチマークが見落としていた領域をすべて自動テスト・ラチェットとして先に固定する。
+
+1. **進行中の自動テスト・実機仕様書の検証と統合**
+   - 作業ツリーに追加された `SurfaceStateTest`・`HologramPickTest`・`AdHocSessionLifecycleTest`・`UIStateLoadTest` および `gametest/WebScreenGameTest` の全件通過を確認する。
+   - [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md) の検証項目と既知不具合（§3）を本計画の完了条件に結びつける。
+2. **`ArchitectureTest`（番人ラチェット）の強化**
+   - **M1 拡張（静的コールバック・サーバー状態の混入防止）**:
+     - `ClientScreenInteractionManager.clientEventCallback` のように、画面やセッションごとのコールバックをシングルトンの static フィールドに持つことを禁止し、`SessionContext` への集約を強制する。
+     - `EnderFrameCommands` のようなコマンド定義クラス内にサーバー状態のマップ（`ACTIVE_HOLOGRAMS` 等）を直接持つことを禁止し、`server/` の状態管理クラスへの分離を強制する。
+   - **DOM 属性の直接書き換え禁止ラチェット（新規）**:
+     - `core/dom/node/` およびパーサの初期構築以外で `.attrs.put(` / `.attrs.remove(` を直接呼ぶことを禁止し、必ず `setAttribute` / `removeAttribute`（`MutationObserver` と無効化フックを通る経路）を使わせる。
+   - **R6 向けラチェット（新規）**:
+     - `RenderKeys` の参照箇所数を上限ラチェットとして固定し、Phase 3（R6）で 0 にするまで増加を禁止する。
+     - `DisplayListBuilder` 内の正規表現（`Pattern.compile`）の数を上限ラチェットとして固定する。
+3. **`PerformanceBenchmarkTest` のインクリメンタル・マイクロ操作計測の追加**
+   - 現行の `PerformanceBenchmarkTest` は毎回新しい `InteractionState`（全要素 dirty）を作って全文書の再スタイルを測り、スクロールも `runLayoutPasses` を呼んでいるため、R5 の目標である「1 箇所の変更で全文書を回さない」効果が見えない。以下の計測を追加し基準値化する:
+     - **単一要素の `:hover` 切替時の再スタイル時間**（500 項目リストの 1 行ホバー。Phase 2 での目標 `< 1.0 ms`）
+     - **単一要素の class トグル時の再スタイル時間**（無関係な class と子孫セレクタに効く class の比較）
+     - **リスト 1 行追加（DOM 1 ノード挿入）時の差分更新時間**
+     - **スクロール 1 段での `RenderPipeline.repositionLayout` 実測時間**
+     - **2026-10-20 → 10-24 で `showcase.html` の Restyle 基準値が 9.1ms → 16.3ms に増えた原因の特定と解消**
+4. **監査で発見した不具合に対する失敗再現テストの先行作成（Test-First）**
+   - **複数画面の同時稼働テスト**（`ClientActionRoutingTest` 拡張）: HUD 用の `EnderScreenDelegate` と GUI 画面用の `EnderScreenDelegate` が同時に存在するとき、後から開いた画面が先の画面の `eventCallback` を上書きせず、片方を閉じても他方のイベント配送が壊れないことを確かめる。
+   - **宣言的バインディング・入力同期の `MutationObserver` 発火テスト**（`ReactiveStateStoreTest` / `WptDomBehaviorTest` 拡張）: `Bindings.applyI18nAttributes`・`Bindings.applyLocalVariables`・フォーム入力の DOM 同期が `MutationObserver(attributes)` と再スタイル無効化を発火させることを確かめる。
+   - **`WebMediaManager` のリダイレクト・SSRF 防御テスト**: 301 / 302 / 303 / 307 / 308 の多段リダイレクト、相対 `Location`、およびリダイレクト先がループバック・プライベート IP を指すケースを遮断できることを確かめる。
+
+### Phase 1: ライフサイクル・入力経路・セキュリティ・Surface 修正（T8 + R2/R3 残課題）
+
+Phase 0 で追加したテストとラチェットを通す形で、状態管理のバグ・セキュリティ懸念・R2/R3/Surface の残課題を片付ける。
+
+1. **イベントコールバックのセッション単位化（T8）**
+   - `EnderScreenDelegate` コンストラクタが `ClientScreenInteractionManager.setClientEventCallback` でグローバルな static フィールドを上書きしている構造を廃止し、`SessionContext`（または `sessionId` ごとの登録簿）に持たせる。
+2. **DOM 属性変更の正規化（T8 / R1 補完）**
+   - `Bindings.applyI18nAttributes`・`Bindings.applyLocalVariables` および `EnderScreenDelegate.syncInputValueToDomNodes` の `vNode.attrs.put(...)` 直書きをやめ、DOM API（または無効化フックと `MutationObserver` を通す内部メソッド）に統一する。
+3. **コマンドクラスからのサーバー状態の分離（T8）**
+   - 1,899 行に肥大化した `EnderFrameCommands` から `ACTIVE_HOLOGRAMS` とホログラム管理ロジックを `server/` の管理クラスへ切り出す。
+4. **`WebMediaManager` のネットワーク・外部プロセス安全化（T8）**
+   - リダイレクト処理を 301 / 302 / 303 / 307 / 308 対応・最大 5 ホップ・`URI.resolve` による相対 URL 解決に改め、各ホップで `isUrlSafe` を検査する。
+   - 外部バイナリ `yt-dlp` の無検証ダウンロードと毎回の自己更新（`yt-dlp -U`）を廃止し、設定による明示的な有効化と SHA-256 検証（または事前導入バイナリの参照のみ）に限定する。
+5. **R3 残課題と Surface 既知不具合（[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) §3）の解消**
+   - 互換モード `WebSession` の変異が画面を開き直さなくてもライブ反映される経路の確認と、フル再同期フォールバック時の節状態（スクロール・フォーカス・選択範囲）の引き継ぎ。
+   - **C-1（共有セッションのサイズ競合）**: 同じ `sessionId` をアスペクト比の異なるブロック面・ホログラム・手持ちアイテムで共有した際、後から描画した面のサイズで先方のレイアウトが潰れないよう、論理ビューポートまたは面ごとのレイアウトキャッシュを分離する。
+   - **B-1 / B-2（一人称視点のアイテム Surface のはみ出し）**: `surface_test_item.json` の `firstperson_righthand` / `lefthand` の display transform 調整とクリッピングの確認。
+
+### Phase 2: インクリメンタル・パイプライン完遂とスタイル省メモリ化（R5 + R4 残課題）
+
+1. **`InvalidationSets` の実接続と要素ごとの dirty ビット（R4 残 + R5）**
+   - `InteractionState.propagateDirtyToAncestors` が親へ無条件に dirty を伝播している現状を改め、`Document.sheet.invalidation`（`forClass` / `forId` / `forAttribute` / `forState` / `forStructureChange`）から汚すべき要素だけを特定して `STYLE_DIRTY` を立てる。
+   - 要素・ボックスごとに `STYLE_DIRTY` / `INTRINSIC_DIRTY` / `LAYOUT_DIRTY` / `PAINT_DIRTY` を分ける。
+2. **`StyleResolver` / `ComputedStyle` のアロケーション削減と継承判定の厳密化（R5）**
+   - `RenderPipeline.restyleBoxRecursive` が `oldStyle.asMap().equals(newStyle.asMap())` で全マップを比較し、1 つでも違えば `childForceDirty = true` にして子孫をすべて再スタイルしている問題を直す。`background-color` などの**非継承プロパティだけが変わったときは子孫を再スタイルしない**（`PropertyRegistry.isInherited` と `--*` 変数の変化だけを見る）。
+   - `ComputedStyle` 1 個あたり `LinkedHashMap` 1 個 + `ConcurrentHashMap` 4 個を即時確保している構造と、`StyleResolver.resolveDeclarations` が要素ごとに 5 個の `LinkedHashMap` を作っている構造を遅延確保・軽量構造に置き換え、GC 負荷を下げる。
+3. **レイアウト境界・`transform`/`opacity` 高速経路・`CssAnimator` 汎用化・CSSOM View（R5）**
+   - `contain: layout | size | strict | content`・`content-visibility`・確定サイズのスクロールコンテナを再レイアウト境界（relayout boundary）にする。
+   - `transform` / `opacity` だけの変化はレイアウトを通さず、スクロール位置を `float` にする。
+   - `CssAnimator` を 4 チャネル固定から `PropertyRegistry` 駆動へ広げる。
+   - CSSOM / CSSOM View API を公開し、[FIDELITY.md](FIDELITY.md) の R5 の 11 行と R4 の 8 行（`::marker` の `scrollHeight`）を解消する。
+
+### Phase 3: 型付き `DisplayItem`・SDF/FBO 合成・`transform` 厳密化（R6 + 旧 W12）
+
+1. **`RenderKeys` と文字列エンコード描画メタの完全撤去（R6）**
+   - `DisplayItem.events` に `RenderKeys`（`SHADER_GRADIENT` のカンマ区切り文字列、`SHADOW_BLUR`、`EDGE_MASK`、`MC_PARENT`、`POINTER_EVENTS` 等）を詰め込み、`DisplayItemDrawer` が毎フレーム `String.split(",")` と `Float.parseFloat` でパースしている構造を撤去し、型付きの描画項目（`RenderMeta` / 個別 record）にする。
+   - 1,200 行を超える `DisplayListBuilder` と `DisplayItemDrawer` を責務ごとに分割する。
+2. **`transform` の `CssSyntax` 順列評価と多色シェーダーグラデーション（R6）**
+   - `DisplayListBuilder` の正規表現（`TRANSLATE_PATTERN` 等）を廃止し、`CssSyntax` のトークン列から宣言順どおりに 2D / 3D transform・`matrix()`・`skew*`・個別プロパティ（`translate` / `rotate` / `scale`）・`perspective` を合成する。
+   - 3 色以上のグラデーションを `Gradients.buildLinearStrips`（最大 200 分割の短冊ポリゴン）から `WebSdfShader`（カラーランプまたはストップ配列 uniform）へ移す。
+3. **FBO レイヤー合成・ガウス影・回転クリップ・旧 W12（R6 + 旧 W12）**
+   - FBO プールによるグループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-*`、および回転・傾斜した要素の角丸クリップ（`clipIntoLocalSpace` の軸並行近似の解消）。
+   - ガウスの `box-shadow`、楕円の角、角丸の破線・点線、旧 W12（逆変換を通るスクロールヒットテスト、`<mc-scene>` / `<mc-entity>` のシザー、[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) A-14 の複数 Surface バッティング時の半透明順序）。
+
+### Phase 4: フォント VRAM 最適化・`@font-face` 統合・国際化・編集（R7 + R4 残課題）
+
+1. **フォントアトラスの VRAM 膨張抑止と FreeType ハンドル管理（R7）**
+   - `OutlineTextRenderer.AtlasKey` が `subpixel`（4 種）× `lightText`（2 種）を含むため 1 サイズあたり最大 8 倍の `FontSet` テクスチャが作られる問題と、`scale` アニメーション中にサイズごとのアトラスが溜まり続ける問題を、共通アトラス化・サイズ量子化・LRU 破棄で解消する。
+   - `LoadedFace.OPEN` の解放ライフサイクルと、`SystemFonts.system()` の初回フォント走査の非同期ウォームアップを入れる。
+2. **`@font-face` の `OutlineFontFace` 統合と実測 `ch` / `ex`（R7 + R4 残）**
+   - `@font-face` の TTF / OTF を Minecraft の `BitmapFontFace` ではなく `OutlineFontFace`（FreeType + OpenType）で測り描きし、OS に依らず同じメトリクスにする。書体の指標から `ch` / `ex` と代替書体込みの `line-height: normal`、合字を決める。
+3. **UAX #14 改行・UAX #9 (Bidi)・`writing-mode`・Selection / Range・`contenteditable`・IME（R7）**
+   - [FIDELITY.md](FIDELITY.md) の R7 の 2 行（`direction: rtl` と `forced-line-breaks`）を解消し、選択・編集 API と IME の composition イベントを揃える。
+
+### Phase 5: 置換要素（SVG / Canvas 2D）・レイアウト/パーサ残課題・DevTools 拡張（R8 / R9 / R10）
+
+- **R8**: インライン `<svg>` と `<img src="*.svg">`、標準 `CanvasRenderingContext2D` と `Path2D`、`image-set()` / `srcset`。
+- **R9**: 表の `%` 列幅と `border-collapse` 完全対応（[FIDELITY.md](FIDELITY.md) の R9 の 4 行を解消し台帳 0 行へ）、multicol、grid の `subgrid` / `baseline` / `auto-fit`、ブロック内インライン分割、HTML パーサの adoption agency・外来要素・`<template>`。
+- **R10**: ゲーム内 DevTools（DOM ツリー・計算値・マッチ規則・ライブ編集）、WebSocket の CDP 部分集合 + MCP ブリッジ、ファイル監視のホットリロード。
+
+---
 
 ### H0〜H4 — Headless State（2026-10-23〜24）
 
@@ -91,31 +206,31 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 （`ColorParser`）、radial / conic / repeating のグラデーションと補間のヒント（`Gradients`）、数学関数 Level 4・
 `lh` / `rlh` / `cap` / `sv*` などの単位、`@media (resolution)`。コーパスに modern-css の 14 ケースを足して一致
 （台帳は `direction` の 1 行だけ）。
-**R4 — 残**: `ch` / `ex` を書体の指標から決める（R7 の指標を読む。いまは 0.5em の `LIMITATION`）。
-`InvalidationSets` は組めるが再スタイルに使っていない（R5）。
+**R4 — 残**: `ch` / `ex` を書体の指標から決める（R7 の指標を読む。いまは 0.5em の `LIMITATION`。Phase 4 で対応）。
+`InvalidationSets` は組めるが再スタイルに使っていない（Phase 2 で接続）。台帳の `::marker` の 8 行（Phase 2）。
 
 **R5 — 達成**: 差分レイアウト（`LayoutBox.measure` の再利用）、スクロール・ドラッグ・リサイズの近道
 （[BENCHMARK.md](BENCHMARK.md) §4・§5）。正しさは `IncrementalLayoutTest`・`IncrementalPipelineTest`・`ServerClientLayoutParityTest`。
-**R5 — 残**: 要素ごとの dirty ビットと `InvalidationSets` の接続、レイアウト境界と `contain`、transform / opacity の速い経路、
+**R5 — 残（Phase 2）**: 要素ごとの dirty ビットと `InvalidationSets` の接続、`ComputedStyle` / `StyleResolver` の一時 `Map` 削減と非継承プロパティ変更時の子孫再スタイル抑止、レイアウト境界と `contain`、transform / opacity の速い経路、
 `CssAnimator` の `PropertyRegistry` 駆動、CSSOM / CSSOM View（`getComputedStyle`・`getBoundingClientRect`・`scrollTo`・
 `ResizeObserver` など）、台帳の R5 の 11 行（スクロールバーの幅と相殺したマージンの scrollHeight）。
 
 **R6 — 達成**: 角丸・グラデーション・角丸の祖先クリップを 1 枚の四角形で描く SDF シェーダー（`WebSdfShader`・
 `RoundedRectRasterizer`）。GUI・ブロック面・手持ちアイテムで同じ経路。
-**R6 — 残**: `DisplayItem` の `RenderKeys`（文字列キーの描画メタ）の撤去、transform の関数と宣言順（いまは
+**R6 — 残（Phase 3）**: `DisplayItem` の `RenderKeys`（文字列キーと毎フレームの CSV `split`）の撤去、3 色以上のグラデーションの `WebSdfShader` 統合（`GradientStrip` の撤廃）、transform の関数と宣言順（いまは
 `DisplayListBuilder` の正規表現で translate / scale / rotate だけ）、FBO のレイヤー合成（opacity のグループ・`filter`・
-`mix-blend-mode`・`clip-path`・`mask`）、ガウスの `box-shadow`、楕円の角、旧 W12。
+`mix-blend-mode`・`clip-path`・`mask`・回転した角丸クリップ）、ガウスの `box-shadow`、楕円の角、旧 W12。
 
 **R7 — 達成**: システムの書体（`core/text/font`。OS の書体フォルダの一覧、CSS Fonts 4 §5.2 の照合、Chrome（Windows）の
 総称ファミリ、字単位の代替、GPOS / `kern` の詰め、Chrome と同じ縦の寸法）、デバイスピクセルでのラスタライズ
 （`OutlineTextRenderer`）、選択範囲のモデル（`TextSelection`）。`ChromeTextMetricsParityTest`・`ShowcaseChromeParityTest`・
 `GlyphRasterizationTest` が Chrome の実測と比べる。
-**R7 — 残**: 合字、`line-height: normal` での代替書体の指標、UAX #14 の改行、bidi と `direction`（台帳の 1 行）、
+**R7 — 残（Phase 4）**: `OutlineTextRenderer.AtlasKey` の `subpixel` × `lightText` 8 倍テクスチャ膨張の解消と LRU 破棄、`LoadedFace.OPEN` の解放、`@font-face` の `OutlineFontFace` 統合、合字、`line-height: normal` での代替書体の指標、UAX #14 の改行、bidi と `direction`（台帳の 1 行）、
 `writing-mode`、Selection / Range API と `contenteditable`、IME の composition、台帳の R7 の 2 行。
 
 **R10 — 達成**: GUI 画面の F12 で、ホバーした要素のタグ・id・class・矩形・バインディング属性を重ねて出す簡易インスペクタ、
 F5 で文書の再読み込み。
-**R10 — 残**: DOM ツリーと計算値・マッチした規則の表示とライブ編集、リモートデバッグプロトコル、ファイル監視のホットリロード。
+**R10 — 残（Phase 5）**: DOM ツリーと計算値・マッチした規則の表示とライブ編集、リモートデバッグプロトコル、ファイル監視のホットリロード。
 
 ### R0〜R3 の記録
 
@@ -146,9 +261,10 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
 
 **R1 — 達成**: `api/dom/` の Node / Element / Text / Comment / Document / DocumentFragment、`DOMTokenList`・`CSSStyleDeclaration`・
 `HTMLCollection`・`NodeList`・`MutationObserver`、`getElementById` の `idMap` 索引、WPT `dom/nodes` 19 件。
-**R1 — 残なし**: `InteractionState` と `LayoutContext.ScrollState` は節オブジェクトをキー（弱参照）にした。
+**R1 — 残なし（監査での補足は T8 で対応）**: `InteractionState` と `LayoutContext.ScrollState` は節オブジェクトをキー（弱参照）にした。
 `getElementById` は索引だけで引き、未登録なら null を返す（`findNodeById` と線形探索のフォールバックは削除）。
 文字列 id で節を引くのはネットワークと描画の境界だけで、`getNodeById` が担う。`NodeKeyedStateTest` で固定。
+（※ 2026-10-25 監査: `Bindings` の i18n / 局所変数展開と `EnderScreenDelegate` のフォーム値同期に `attrs.put` の直書きが残っていたため、Phase 0 のラチェットと Phase 1 の T8 で DOM API 経由に統一する。）
 
 **R2 — 達成**: `EventDispatcher` / `CoreEvent` / `DomAbortController` / `StandardDefaultActions`、`api/event` の UI Events 型、
 `ConstraintValidator` / `FormController` / `FormData` / `ValidityState`、`EventDispatcherTest` / `EventTargetDomStandardTest` / `Form*Test`。
@@ -179,7 +295,7 @@ WPT の枠（`WptHarness` / `WptDomBehaviorTest` / `WptManifestTest`、固定 SH
   `HtmlNode.dispatchEvent` は `on*` と転送を伝播の後ろへ回し、`preventDefault` されていれば出さない（以前は `preventDefault` しても `on*` が走っていた）。
   `forwardEventsToServer` を撤去。サーバーは `data-forward-action` も送出アクション名として検証する（`WebSession`）。
 - 検証: `EventForwardDeclarationTest`・`ServerOwnershipAndForwardingTest`（同期・変異・再同期・転送・クライアントだけの HUD を 240 フレーム更新して送出パケット 0）・`WebSessionForwardDeclarationTest`。テスト 478 件・失敗 0。
-**R3 — 残**:
+**R3 — 残（Phase 1）**:
 - HUD を毎フレーム更新してパケットが出ないこと（600 フレームで C2S 0 件）と `gametest/WebScreenGameTest` は 2026-10-24 に実機で確認。
   サーバー駆動画面（互換モードの `WebSession`）を実機で開き直す確認はまだ（ゲームテストでのサーバー側の文書と寿命まで）。
 - 再同期はサーバー所有のノードを作り直すため、ホバー・フォーカス・スクロールなどノードに紐づく状態は戻る（細かい更新は変異レコードで、ノードの同一性を保つ）。
@@ -319,7 +435,7 @@ CSS Syntax Level 3 の component value → 型付きの指定値・計算値 →
 各フェーズは **目的 / 内容 / 参照（AUI）/ 完了条件と検証** で書く。
 完了条件は、忠実度台帳か専用テストで表せるものにする（旧計画と同じ）。
 
-### R0 — 測定の拡張
+### R0 — 測定の拡張（＋ R0+ テスト・計測・ラチェット拡充）
 
 **目的**: R1 以降の変更（DOM・イベント・無効化・合成）が壊したり直したりするものを測れるようにする。
 今のコーパスは静的な矩形と描画順しか見ない。
@@ -336,11 +452,15 @@ CSS Syntax Level 3 の component value → 型付きの指定値・計算値 →
   ブラウザ側の期待値を今と同じ形で採り、台帳で管理する。採用の基準は「字幅に依存しない」「本エンジンのスコープ内」。
 - **性能ベンチ。** 代表文書（`showcase.html`・`guidebook.md`・大きなリスト）で、再スタイル・再レイアウト・
   ディスプレイリスト生成の時間とスクロール 1 段の時間を測る JUnit ベンチ。R1 と R5 の前後比較に使う。
+- **R0+（2026-10-25 追加・最優先）**:
+  - `PerformanceBenchmarkTest` に単一要素 `:hover`・単一 class トグル・1 行挿入・`repositionLayout` スクロールのマイクロ操作ベンチを追加する。
+  - `ArchitectureTest` に static コールバック禁止・サーバー状態のコマンド混入禁止・`attrs.put` 直書き禁止・`RenderKeys` と `DisplayListBuilder` 正規表現の上限ラチェットを追加する。
+  - 複数 `EnderScreenDelegate` 同時稼働、バインディング/入力同期の `MutationObserver` 通知、`WebMediaManager` のリダイレクト・SSRF 防御の回帰テストを先行追加する。
 
 **参照**: AUI `wpt/tools/browser-adapter.mjs`（プローブが採る値）、`wpt/README.md`（固定 SHA の運用）。
 
 **完了条件と検証**: 既存の全ケース（138 件）の計算値列がブラウザと一致（新しく見えた差は台帳へフェーズを振って載せる）。
-DOM 振る舞いテストの枠に最初の数ケースが入って通る。ベンチの基準値を記録する。
+DOM 振る舞いテストの枠に最初の数ケースが入って通る。ベンチの基準値を記録する。R0+ の新規ラチェットと回帰テストがすべて組まれ、Phase 1〜5 の番人として機能する。
 
 ### R1 — ライブ DOM
 
@@ -459,9 +579,10 @@ AUI の `parser/CSS` は正規表現でネストが原理的に書けないの�
 
 **内容**:
 - **dirty ビット**: 要素ごとに style / layout / paint / composite と子孫用のビット。R4 の無効化セットと R1 の変異が立てる。
-  `SessionContext.InvalidationLevel` と `markAllDirty()` の全文書再構築を置き換える。
-- **再スタイル**: 汚れた要素と、無効化セットが指す兄弟・子孫だけ。`ComputedStyle` の比較は全マップの `equals` ではなく、
-  `PropertyRegistry` の無効化種別ごとに「レイアウトに効く値が変わったか」を見る。
+  `SessionContext.InvalidationLevel` と `markAllDirty()` の全文書再構築、および `InteractionState.propagateDirtyToAncestors` の無条件な親汚しを置き換える。
+- **再スタイルと省メモリ化**: 汚れた要素と、無効化セットが指す兄弟・子孫だけ。`ComputedStyle` の比較は全マップの `equals` ではなく、
+  `PropertyRegistry` の無効化種別ごとに「継承される値が変わったか」「レイアウトに効く値が変わったか」を見る（非継承プロパティだけの変化では `childForceDirty` を立てない）。
+  あわせて `ComputedStyle` の `ConcurrentHashMap` × 4 個即時生成と `StyleResolver.resolveDeclarations` の一時 `LinkedHashMap` × 5 個生成を削減する。
 - **ボックスツリーとレイアウト**: 汚れた部分木だけボックスツリーを作り直す。レイアウト境界（確定サイズで `overflow` が `visible` 以外、
   `contain: layout` / `size` 等）を relayout root にして、そこから上へ伝えない。`contain` と `content-visibility` を入れる。
 - **速い経路**: スクロール・transform・opacity だけの変化はレイアウトを通さず、ディスプレイリストの変換と合成だけを変える。
@@ -474,8 +595,8 @@ AUI の `parser/CSS` は正規表現でネストが原理的に書けないの�
 **参照**: AUI `render/LayoutCommit`（`commitTransforms` / `commitScrollTranslation`）、`render/Drawer` の dirty ビット、`dom/RenderElement`。
 AUI も本物の再レイアウトは全文書なので、レイアウト境界は独自に入れる。
 
-**完了条件と検証**: R0 のベンチで、スクロール 1 段・hover の色変化・リストの 1 行追加がレイアウト全体を回さないことを数値で確認。
-インクリメンタル更新の結果が全再構築と一致することを、ランダムな変異列で比べるテスト。CSSOM View の WPT 採用ケース。
+**完了条件と検証**: R0 / R0+ のベンチで、スクロール 1 段・hover の色変化・class トグル・リストの 1 行追加がレイアウト全体を回さず `< 1.0 ms` で完了することを数値で確認。
+インクリメンタル更新の結果が全再構築と一致することを、ランダムな変異列で比べるテスト。CSSOM View の WPT 採用ケース。台帳の R5 の 11 行と R4 の 8 行が消えること。
 
 ### R6 — 描画の合成化
 
@@ -483,21 +604,21 @@ AUI も本物の再レイアウトは全文書なので、レイアウト境界�
 
 **内容**:
 - **ディスプレイリスト**: `DisplayItem` の `events` マップで描画メタ（`mc-radius`・`mc-clip`・`mc-gradient` 等の `RenderKeys`）を渡すのをやめ、
-  型付きの項目（矩形・角丸・枠・背景層・影・テキスト・画像・置換要素・クリップ・レイヤー開始 / 終了）にする。
+  型付きの項目（矩形・角丸・枠・背景層・影・テキスト・画像・置換要素・クリップ・レイヤー開始 / 終了）にする。`DisplayItemDrawer` での毎フレームの CSV `split` / `parseFloat` を根絶する。
   ヒットテスト（`HitTestIndex`）と忠実度ダンプの z 列は同じリストを読む。
 - **transform**: `matrix()` / `matrix3d()`・`skew*`・3D 関数・宣言順の合成・個別プロパティ（`translate` / `rotate` / `scale`）・
-  `perspective` / `perspective-origin`・`transform-style: preserve-3d`・`backface-visibility`。正規表現での読み取り（`DisplayListBuilder` の `TRANSLATE_PATTERN` 等）をやめる。
+  `perspective` / `perspective-origin`・`transform-style: preserve-3d`・`backface-visibility`。正規表現での読み取り（`DisplayListBuilder` の `TRANSLATE_PATTERN` 等）をやめ、`CssSyntax` のトークン列から順に評価する。
 - **レイヤー合成**: FBO のプールを持ち、opacity のグループ合成・`filter`（blur / brightness / contrast / grayscale / hue-rotate / invert / saturate / sepia / drop-shadow）・
   `backdrop-filter`・`mix-blend-mode`・`isolation` を描く。`clip-path`（基本図形・`path()`）と `mask-*` はステンシルかマスク用 FBO で。
   transform 後の空間での非矩形クリップもここで解く。
-- **装飾**: ガウスの `box-shadow`（今の段階的な層をやめる）・透明背景で外側の影を抜く・inset 影の角丸、楕円の角、
+- **装飾**: 3 色以上のグラデーションを `WebSdfShader` へ統合（`GradientStrip` の撤廃）。ガウスの `box-shadow`（今の段階的な層をやめる）・透明背景で外側の影を抜く・inset 影の角丸、楕円の角、
   角丸に沿う dashed / dotted、`outline` の角丸、インライン断片の背景画像、`background-attachment: fixed / local`。
 - **旧 W12**: スクロールのヒットテスト（`ClientScreenInteractionManager.handleScrollLocally`）が祖先の変換の逆行列とクリップを通ること、
-  `<mc-scene>` / `<mc-entity>` / `<img src="item:...">` のシザー、スクロール端にかかるテキスト行の部分クリップ。
+  `<mc-scene>` / `<mc-entity>` / `<img src="item:...">` のシザー、スクロール端にかかるテキスト行の部分クリップ、複数 Surface バッティング時の半透明順序（[TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md) A-14）。
 
 **参照**: AUI `render/FilterRenderer`（FBO プール・backdrop 用プール）、`render/Mask`、`render/ClipPath`、`render/CssBlendMode`、`style/Transform`。
 
-**完了条件と検証**: R0 のディスプレイリストのゴールデンで、効果ごとの項目が出ること。`PaintModelTest`・`HitTestAndOcclusionTest` の拡張。
+**完了条件と検証**: R0 のディスプレイリストのゴールデンで、効果ごとの項目が出ること。`RenderKeys` の参照数が 0 になること。`PaintModelTest`・`HitTestAndOcclusionTest` の拡張。
 `runClient` で効果ごとの見本ページを目視し、スクリーンショットを `guidebook.md` の見本と並べる。
 コーパスに transform（2D の合成順・3D の矩形）を足して一致。
 
@@ -506,7 +627,8 @@ AUI も本物の再レイアウトは全文書なので、レイアウト境界�
 **目的**: 字幅に依存する幾何を測れるようにし、多言語の改行と方向を Web と同じ規則にする。
 
 **内容**:
-- **TTF のグリフ描画**: `@font-face` の TTF / OTF をグリフアトラスで実寸に描く（今は Minecraft の FontSet に読ませている）。
+- **TTF のグリフ描画とアトラス VRAM 最適化**: `@font-face` の TTF / OTF を Minecraft の `BitmapFontFace` ではなく `OutlineFontFace` とグリフアトラスで実寸に描く。
+  `OutlineTextRenderer.AtlasKey` の `subpixel` × `lightText` による 8 倍アトラス分割を統合・量子化し、LRU 破棄と `LoadedFace.OPEN` の解放、`SystemFonts.system()` の非同期ウォームアップを入れる。
   フォント指標（ascent / descent / line gap / x-height / cap-height）を `FontFace` に出し、`line-height: normal` と `ch` / `ex` を書体から決める。
 - **字幅の測定**: コーパスで**同じフォントファイルをブラウザ側にも `@font-face` で読ませる**と、折り返し位置・中央寄せ・
   `line-height: normal` を比べられる。FIDELITY.md の「意図的に違うもの」のうち TTF を使う場合の差をここで消す。
@@ -519,7 +641,7 @@ AUI も本物の再レイアウトは全文書なので、レイアウト境界�
 **参照**: AUI `render/GlyphCache`（アトラスのページ・1 フレームのラスタ予算）、`resource/Font`、`behavior/richtext/*`・`behavior/TextSelection`。
 AUI も bidi と UAX #14 は無いので独自に入れる。
 
-**完了条件と検証**: `TextShaperTest` を UAX #14 / #9 の公式テストデータで拡張。コーパスに TTF を使うテキストの領域を足して一致。
+**完了条件と検証**: `TextShaperTest` を UAX #14 / #9 の公式テストデータで拡張。コーパスに TTF を使うテキストの領域を足して一致。台帳の R7 の 2 行が消えること。
 `TextSelectionTest` の拡張と `runClient` での日本語入力の確認。
 
 ### R8 — 置換要素（SVG・Canvas 2D）
@@ -556,7 +678,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 
 **参照**: AUI `layout/Grid`（`minmax()` / `repeat()` / `auto-fill`）、`layout/Flex`（baseline）。AUI は table / float / multicol が無いので、多くは独自。
 
-**完了条件と検証**: 各項目のコーパスケースと `HtmlTreeConstructionTest` のケース（html5lib の採用ケースを含む）。該当の `LIMITATION` と README の行を消す。
+**完了条件と検証**: 各項目のコーパスケースと `HtmlTreeConstructionTest` のケース（html5lib の採用ケースを含む）。台帳の R9 の 4 行と該当の `LIMITATION`・README の行を消す。
 
 ### R10 — 開発者ツール
 
@@ -576,19 +698,15 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 
 # 順序とリスク
 
-- **R0 がすべての前提。** 各フェーズの完了条件は R0 で入れる測定で書く。
-- **R1 → R2 → R3 は直列。** 識別子（ノードのオブジェクト化）→ イベント → 実行モデルの順。逆にすると、
-  イベントとバインディングが文字列 id の上に積まれて作り直しになる。
-- **R3 が最大の破壊的変更。** `SessionContext` の 3 コピーと旧差分適用エンジンを消し、サーバの更新を変異レコードにする。
-  先に互換テストを固定し、旧経路と新経路を並べて 1 経路ずつ移す（旧 W3 の SPI 移行と同じやり方）。
-- **R4 は R1 と独立に先行できる**（`core/css` の中で閉じる）。ただし `:has()` と `@container` の無効化は R5 の dirty ビットに乗るので、
-  照合は R4、無効化は R5 で仕上げる。
-- **R5 は R1 と R4 の後。** 変異（R1）と無効化セット（R4）が dirty ビットの入力。
-- **R6 は R4 の後**（型付きの値をディスプレイリストが読む）。R5 の速い経路（transform / opacity）は R6 の合成と合わせて完成する。
-- **R7 の TTF 描画は R6 と独立。** bidi と `writing-mode` は R9 のレイアウト変更とぶつかるので、同時に進めない。
-- **R8 は R6 の後**（Canvas と SVG はレイヤーとして合成する）。R9・R10 は R2 以降いつでも。
-- **H（Headless State）は R1〜R3 の上に独立して載る。** サーバーの状態とテンプレートの分離はパイプラインに触れないので、R4 以降と並行できる。互換モード（`WebSession`）は残し、両方を同じクライアントのパイプラインで描く。
-- **性能**: R1 の DOM 化で一時的に遅くなりうる。R0 のベンチで各段の前後を比べ、R5 までに今より速くする。
+- **R0 / R0+（テスト・計測・ラチェット）がすべての最優先前提（Phase 0）。** 機能修正やリファクタリングより先に、差分ベンチマーク・`ArchitectureTest` の番人ラチェット・不具合再現テストを揃える。
+- **T8 と R2 / R3 / Surface の残課題を Phase 1 で片付ける。** 複数画面のイベントコールバック上書き・`attrs.put` の直書き・`WebMediaManager` のリダイレクト検証・共有 Surface のサイズ競合を先に直し、土台のバグを無くす。
+- **Phase 2（R5 完遂 + R4 残）→ Phase 3（R6 完遂 + 旧 W12）→ Phase 4（R7 完遂）→ Phase 5（R8 / R9 / R10）の順に進める。**
+  - `InvalidationSets`（R4）と DOM 変異（R1）を `InteractionState` / `RenderPipeline` に結び、`ComputedStyle` の省メモリ化と非継承プロパティ判定を入れることで、Phase 0 で追加した差分ベンチマークを `< 1.0 ms` に落とす（Phase 2）。
+  - 型付きの値（R4）と高速経路（R5）の上に、`RenderKeys` 撤去・`CssSyntax` 順列の `transform`・FBO レイヤー合成・多色シェーダーグラデーションを載せる（Phase 3）。
+  - フォントアトラスの VRAM 最適化と `@font-face` の `OutlineFontFace` 統合、UAX #14 / #9、選択・編集を仕上げる（Phase 4）。
+  - SVG / Canvas 2D（R8）、表・段組・パーサの残り（R9）、DevTools 拡張（R10）で Web 標準との差を閉じ切る（Phase 5）。
+- **H（Headless State）は R1〜R3 の上に独立して載る。** サーバーの状態とテンプレートの分離は完了しており、互換モード（`WebSession`）と Headless State（`UIState`）の両方を同じクライアントのパイプラインで描く。
+- **性能**: R0+ のベンチで全文書と差分操作の両方の前後を比べ、回帰は CI で即座に落とす。
 - **破壊的変更の通知**: フェーズごとに README に移行メモを書き、`showcase.html`・`guidebook.md`・`config-form.css`・テーマを同じコミットで追従させる。
 
 ---
@@ -600,9 +718,9 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - `./gradlew build test`（CI と同じ経路）。
 - `WebFidelityTest`: 台帳に無い差は回帰として落ち、台帳にあるのに一致した差は「台帳が古い」として落ちる。
   台帳の行が消えることがフェーズの完了条件。
-- R0 で入れる計算値の列・DOM の振る舞いテスト・ディスプレイリストのゴールデン・性能ベンチ。
-- `ArchitectureTest`・`ApiBoundaryTest`（`core` が Minecraft に依存しない・公開 API に内部型が漏れない）。
-- `./gradlew runClient` の実機確認と `gametest/WebScreenGameTest`。
+- R0 / R0+ で入れる計算値の列・DOM の振る舞いテスト・ディスプレイリストのゴールデン・全文書および差分性能ベンチ。
+- `ArchitectureTest`・`ApiBoundaryTest`（`core` が Minecraft に依存しない・公開 API に内部型が漏れない・M1〜M9 および新規ラチェットが後退しない）。
+- `./gradlew runClient` の実機確認と `gametest/WebScreenGameTest`、および [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md)。
 
 ## 台帳と README の同期
 
@@ -615,7 +733,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 
 - **JS エンジンと `<script>`**（方針 1）。DOM API は Java と KubeJS から使う。
 - **Shadow DOM とカスタム要素。** 部品化は `mc-*` の宣言的な要素（`CustomTagExpander`）と Java 側のコンポーネントで行う。
-- **Minecraft の書体（`minecraft:*` と `@font-face`）のグリフ形状に由来する差**（折り返し位置・省略位置・中央寄せの offset）。
-  既定のシステムの書体は R7 で Chrome と測れるようになったが、Minecraft の書体は原理的に一致しないので台帳に載せない。根拠は FIDELITY.md の「意図的に違うもの」。
+- **Minecraft の書体（`minecraft:*`）のグリフ形状に由来する差**（折り返し位置・省略位置・中央寄せの offset）。
+  システムの書体と `@font-face`（R7）は Chrome と測れるようにするが、Minecraft のビットマップ書体は原理的に一致しないので台帳に載せない。根拠は FIDELITY.md の「意図的に違うもの」。
 - **印刷・ページ分割**（`@page`・ページの断片化）。multicol に要る断片化だけ R9 で入れる。
 - **ネットワーク上の文書読み込み**（ナビゲーション・`history`・`fetch`）。文書はリソースパック・データパック・サーバのセッションから来る。

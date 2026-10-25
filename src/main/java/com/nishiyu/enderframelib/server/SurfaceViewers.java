@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.server;
 
 import com.nishiyu.enderframelib.api.WebScreenBlockEntity;
 import com.nishiyu.enderframelib.api.state.UIState;
+import com.nishiyu.enderframelib.api.template.EnderScreenBlockEntity;
 import com.nishiyu.enderframelib.server.state.UIStateManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -38,6 +39,11 @@ final class SurfaceViewers {
     /** チャンクがプレイヤーに送られた。中の面を見せる。 */
     static void onChunkSent(ServerPlayer player, LevelChunk chunk) {
         for (BlockEntity be : chunk.getBlockEntities().values()) {
+            if (!be.isRemoved() && be instanceof EnderScreenBlockEntity screenBe
+                    && screenBe.isMaster() && screenBe.isActive()
+                    && screenBe.getTemplateId() == null && screenBe.getDatapackUiId() != null) {
+                EnderFrameCommands.ensureBlockScreenSessionLoaded(screenBe);
+            }
             showTo(player, be);
         }
     }

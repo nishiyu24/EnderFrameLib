@@ -51,6 +51,14 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
     private int height = 1;
     /** 描く命令（{@link #draw}）を受けて画面になっているか。そうでないブロックは何も映さず、入力も受けない。 */
     private boolean drawn;
+    /** コマンドや外部から明示的に指定されたセッション ID（null なら座標から決まる既定 ID）。 */
+    private String customSessionId;
+    /** コマンドや外部から明示的に指定されたクライアントテンプレート ID。 */
+    private String customTemplateId;
+    /** コマンドやデータパックから指定された UI リソース ID（{@code onScreenFormed} 等での自動読込用）。 */
+    private String datapackUiId;
+    private int uiWidth;
+    private int uiHeight;
     /** 読み込んだ（または最後に保存した）テンプレートの状態。状態が作られるときに戻す。 */
     private CompoundTag savedState;
     private UIState liveState;
@@ -102,6 +110,12 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
     public String getSessionId() {
         BlockPos master = getScreenMasterPos();
         if (getTemplateId() != null) return Ui.Template.blockInstanceId(master);
+        if (level != null && !master.equals(worldPosition)
+                && level.getBlockEntity(master) instanceof EnderScreenBlockEntity masterBe
+                && masterBe.customSessionId != null && !masterBe.customSessionId.isEmpty()) {
+            return masterBe.customSessionId;
+        }
+        if (customSessionId != null && !customSessionId.isEmpty()) return customSessionId;
         String dimension = level != null ? level.dimension().location().toString().replaceAll("[^a-z0-9_-]", "_") : "unknown";
         return "screen_" + dimension + "_" + master.getX() + "_" + master.getY() + "_" + master.getZ();
     }
@@ -117,7 +131,49 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
      */
     @Override
     public @Nullable String getTemplateId() {
-        return null;
+        BlockPos master = getScreenMasterPos();
+        if (level != null && !master.equals(worldPosition)
+                && level.getBlockEntity(master) instanceof EnderScreenBlockEntity masterBe
+                && masterBe.customTemplateId != null && !masterBe.customTemplateId.isEmpty()) {
+            return masterBe.customTemplateId;
+        }
+        return (customTemplateId != null && !customTemplateId.isEmpty()) ? customTemplateId : null;
+    }
+
+    /** 画面のセッション ID を上書き設定する（null または空文字で座標ベースの既定 ID に戻す）。 */
+    public void setCustomSessionId(@Nullable String sessionId) {
+        this.customSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : null;
+        markChangedAndSync();
+    }
+
+    public @Nullable String getCustomSessionId() {
+        return customSessionId;
+    }
+
+    /** 画面のクライアントテンプレート ID を設定する（null または空文字で解除）。 */
+    public void setCustomTemplateId(@Nullable String templateId) {
+        this.customTemplateId = (templateId != null && !templateId.isEmpty()) ? templateId : null;
+        markChangedAndSync();
+    }
+
+    /** データパック UI の ID とレイアウト解像度を設定する。 */
+    public void setDatapackUi(@Nullable String uiId, int uiWidth, int uiHeight) {
+        this.datapackUiId = (uiId != null && !uiId.isEmpty()) ? uiId : null;
+        this.uiWidth = Math.max(0, uiWidth);
+        this.uiHeight = Math.max(0, uiHeight);
+        markChangedAndSync();
+    }
+
+    public @Nullable String getDatapackUiId() {
+        return datapackUiId;
+    }
+
+    public int getUiWidth() {
+        return uiWidth;
+    }
+
+    public int getUiHeight() {
+        return uiHeight;
     }
 
     /**
@@ -321,6 +377,29 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
         }
     }
 
+    /**
+     * この画面のセッションを捨て、構成する全ブロックを初期化する（{@link #draw} 前の状態に戻す）。
+     */
+    public void clearScreen() {
+        if (level == null || level.isClientSide) return;
+        BlockPos master = getScreenMasterPos();
+        List<BlockPos> blocks = (level.getBlockEntity(master) instanceof EnderScreenBlockEntity masterBe)
+                ? masterBe.screenBlocks()
+                : screenBlocks();
+        if (level.getBlockEntity(master) instanceof EnderScreenBlockEntity masterBe) masterBe.discardSession();
+        else discardSession();
+        for (BlockPos pos : blocks) {
+            if (level.getBlockEntity(pos) instanceof EnderScreenBlockEntity member) {
+                member.customSessionId = null;
+                member.customTemplateId = null;
+                member.datapackUiId = null;
+                member.uiWidth = 0;
+                member.uiHeight = 0;
+                member.reset();
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // 保存・同期
     // ------------------------------------------------------------------
@@ -333,6 +412,11 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
         tag.putInt("W", width);
         tag.putInt("H", height);
         tag.putBoolean("Drawn", drawn);
+        if (customSessionId != null && !customSessionId.isEmpty()) tag.putString("CustomSession", customSessionId);
+        if (customTemplateId != null && !customTemplateId.isEmpty()) tag.putString("CustomTemplate", customTemplateId);
+        if (datapackUiId != null && !datapackUiId.isEmpty()) tag.putString("DatapackUi", datapackUiId);
+        if (uiWidth > 0) tag.putInt("UiW", uiWidth);
+        if (uiHeight > 0) tag.putInt("UiH", uiHeight);
         if (isMaster() && getTemplateId() != null) {
             // 閉じた状態は空になるので、中身のある最後の保存を残す
             CompoundTag live = liveState != null ? liveState.toCompoundTag() : null;
@@ -350,6 +434,11 @@ public class EnderScreenBlockEntity extends BlockEntity implements WebScreenBloc
         width = Math.max(1, tag.getInt("W"));
         height = Math.max(1, tag.getInt("H"));
         drawn = tag.getBoolean("Drawn");
+        customSessionId = tag.contains("CustomSession") ? tag.getString("CustomSession") : null;
+        customTemplateId = tag.contains("CustomTemplate") ? tag.getString("CustomTemplate") : null;
+        datapackUiId = tag.contains("DatapackUi") ? tag.getString("DatapackUi") : null;
+        uiWidth = tag.getInt("UiW");
+        uiHeight = tag.getInt("UiH");
         savedState = tag.contains("State", 10) ? tag.getCompound("State") : null;
     }
 

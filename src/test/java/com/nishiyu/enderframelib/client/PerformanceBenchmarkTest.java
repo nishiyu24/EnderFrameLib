@@ -335,6 +335,163 @@ public class PerformanceBenchmarkTest {
         return sb.toString();
     }
 
+    // ------------------------------------------------------------------
+    // R0+: インクリメンタル・マイクロ操作計測
+    // ------------------------------------------------------------------
+
+    private static final Path MICRO_BASELINE_PATH = Path.of("src/test/resources/benchmark/incremental-baseline.txt");
+    private static final int MICRO_ROWS = 500;
+    private static final int MICRO_ITERATIONS = 40;
+    /** Phase 2（R5）での目標。現状は基準値をこの値より大きく置き、達成したら基準値を下げる。 */
+    private static final double HOVER_TARGET_MS = 1.0;
+
+    private static final String MICRO_CSS = "body { margin: 8px; } ul { list-style: none; padding: 0; }"
+            + " li { padding: 4px; border-bottom: 1px solid #ccc; }"
+            + " li:hover { background-color: #def; }"
+            + " .flag { color: #c00; }"
+            + " .dark li { color: #ddd; background-color: #222; }";
+
+    private static String microListHtml() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<html><head><style>").append(MICRO_CSS).append("</style></head><body>");
+        sb.append("<div id=\"scroller\" style=\"height: 400px; overflow-y: auto;\"><ul id=\"list\">");
+        for (int i = 1; i <= MICRO_ROWS; i++) {
+            sb.append("<li id=\"item-").append(i).append("\">Row item #").append(i).append(" with description text</li>");
+        }
+        sb.append("</ul></div></body></html>");
+        return sb.toString();
+    }
+
+    /** 1 行ホバー・class トグル・1 ノード挿入・スクロール 1 段の、局所変更 1 回あたりの時間（ms）。 */
+    private Map<String, Double> measureIncremental() {
+        UiDocumentCompiler compiler = new UiDocumentCompiler();
+        Document doc = compiler.parseDocument(microListHtml(), "", VIEWPORT_W, VIEWPORT_H);
+        InteractionState state = new InteractionState();
+        ScrollState scroll = new ScrollState();
+        LayoutBox root = compiler.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), scroll, FontResolver.FALLBACK, state);
+        HtmlNode list = doc.root.getElementById("list");
+        HtmlNode scroller = doc.root.getElementById("scroller");
+        assertTrue(list != null && scroller != null, "計測用の文書に #list / #scroller が無い");
+
+        // 全要素の初回スタイルを確定させ、以降は「局所変更だけが dirty」の状態から測る
+        compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+        compiler.runLayoutPasses(root, VIEWPORT_W, VIEWPORT_H, scroll, FontResolver.FALLBACK);
+
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (int round = 0; round < 2; round++) { // 1 周目はウォームアップ
+            long hoverNs = 0, unrelatedNs = 0, descendantNs = 0, insertNs = 0, repositionNs = 0;
+            for (int i = 0; i < MICRO_ITERATIONS; i++) {
+                HtmlNode row = doc.root.getElementById("item-" + (1 + (i * 7) % MICRO_ROWS));
+
+                // 1. 1 行ホバー
+                long t = System.nanoTime();
+                state.setHoveredNode(row);
+                compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+                hoverNs += System.nanoTime() - t;
+
+                // 2a. 無関係な class のトグル（.flag は li の色だけ）
+                row.toggleClass("flag");
+                state.markDirty(row);
+                t = System.nanoTime();
+                compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+                unrelatedNs += System.nanoTime() - t;
+
+                // 2b. 子孫セレクタ（.dark li）に効く class のトグル
+                list.toggleClass("dark");
+                state.markDirty(list);
+                t = System.nanoTime();
+                compiler.restyleLayoutTree(root, doc, VIEWPORT_W, VIEWPORT_H, Map.of(), state);
+                descendantNs += System.nanoTime() - t;
+
+                // 3. リスト 1 行追加 → 差分レイアウト
+                HtmlNode added = row.cloneNode(true);
+                added.setAttribute("id", "added-" + round + "-" + i);
+                list.appendChild(added);
+                t = System.nanoTime();
+                root = compiler.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), scroll, FontResolver.FALLBACK, state, root);
+                insertNs += System.nanoTime() - t;
+                list.removeChild(added);
+                root = compiler.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), scroll, FontResolver.FALLBACK, state, root);
+
+                // 4. スクロール 1 段の位置決め直し
+                scroll.setScroll(scroller, 0, 20 + (i % 10) * 20);
+                t = System.nanoTime();
+                RenderPipeline.repositionLayout(root, VIEWPORT_W, VIEWPORT_H, scroll, FontResolver.FALLBACK);
+                repositionNs += System.nanoTime() - t;
+            }
+            if (round == 1) {
+                double toMs = 1.0 / (MICRO_ITERATIONS * 1_000_000.0);
+                out.put("hover-single-row", hoverNs * toMs);
+                out.put("class-toggle-unrelated", unrelatedNs * toMs);
+                out.put("class-toggle-descendant", descendantNs * toMs);
+                out.put("insert-one-row", insertNs * toMs);
+                out.put("scroll-reposition", repositionNs * toMs);
+            }
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("Incremental Benchmark: single hover / class toggle / insert / scroll reposition on a 500-row list")
+    public void runIncrementalBenchmarks() throws IOException {
+        Map<String, Double> results = measureIncremental();
+
+        StringBuilder report = new StringBuilder("\n== incremental micro-operations (500-row list, ms per operation) ==\n");
+        results.forEach((k, v) -> report.append(String.format(Locale.ROOT, "%-26s %8.3f ms%n", k, v)));
+        report.append(String.format(Locale.ROOT, "Phase 2 target: hover-single-row < %.1f ms%n", HOVER_TARGET_MS));
+        System.out.println(report);
+
+        if (Boolean.getBoolean("benchmark.update")) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("# EnderFrameLib R0+ incremental micro-operation baseline (ms per operation)\n");
+            sb.append("# 形式: <operation>\\t<ms>。判定は PerformanceBenchmarkTest と同じ「実測 <= 基準値 * factor + slackMs」。\n");
+            sb.append("# 更新: ./gradlew test --tests '*PerformanceBenchmarkTest' -Dbenchmark.update=true\n");
+            sb.append("# hover-single-row は Phase 2（R5）で < ").append(HOVER_TARGET_MS)
+                    .append(" ms に落とす。達成したら基準値も下げる。\n");
+            results.forEach((k, v) -> sb.append(k).append('\t').append(String.format(Locale.ROOT, "%.2f", v)).append('\n'));
+            Files.writeString(MICRO_BASELINE_PATH, sb.toString(), StandardCharsets.UTF_8);
+            return;
+        }
+
+        Baseline general = readBaseline();
+        Map<String, Double> baseline = readMicroBaseline();
+        List<String> regressions = new ArrayList<>();
+        for (Map.Entry<String, Double> e : results.entrySet()) {
+            Double ref = baseline.get(e.getKey());
+            if (ref == null) {
+                regressions.add(e.getKey() + ": incremental-baseline.txt に基準値が無い");
+                continue;
+            }
+            double allowed = ref * general.factor() + general.slackMs();
+            if (e.getValue() > allowed) {
+                regressions.add(String.format(Locale.ROOT, "%s: 基準 %.3fms / 実測 %.3fms（許容 %.3fms）",
+                        e.getKey(), ref, e.getValue(), allowed));
+            }
+        }
+        if (!regressions.isEmpty()) {
+            fail("インクリメンタル計測が基準値から後退しています:\n  " + String.join("\n  ", regressions));
+        }
+    }
+
+    @Test
+    public void testIncrementalBaselineIsWellFormed() throws IOException {
+        Map<String, Double> baseline = readMicroBaseline();
+        for (String key : List.of("hover-single-row", "class-toggle-unrelated", "class-toggle-descendant",
+                "insert-one-row", "scroll-reposition")) {
+            assertTrue(baseline.containsKey(key) && baseline.get(key) >= 0, "incremental-baseline.txt に " + key + " が無い");
+        }
+    }
+
+    private static Map<String, Double> readMicroBaseline() throws IOException {
+        Map<String, Double> map = new LinkedHashMap<>();
+        for (String line : Files.readAllLines(MICRO_BASELINE_PATH, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) continue;
+            String[] parts = line.split("\t", -1);
+            map.put(parts[0], Double.parseDouble(parts[1].trim()));
+        }
+        return map;
+    }
+
     /**
      * H0 ベンチマーク: サーバー側セッション 100 個を保持した際のヒープメモリ消費量計測。
      *
