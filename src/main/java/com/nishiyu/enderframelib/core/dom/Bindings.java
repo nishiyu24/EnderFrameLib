@@ -159,14 +159,14 @@ public final class Bindings {
         if (vNode.attrs.containsKey("data-i18n-placeholder")) {
             String tr = i18nResolver.apply(vNode.attrs.get("data-i18n-placeholder").trim());
             if (!Objects.equals(vNode.attrs.get("placeholder"), tr)) {
-                vNode.attrs.put("placeholder", tr);
+                vNode.setAttribute("placeholder", tr);
                 changed = true;
             }
         }
         if (vNode.attrs.containsKey("data-i18n-title")) {
             String tr = i18nResolver.apply(vNode.attrs.get("data-i18n-title").trim());
             if (!Objects.equals(vNode.attrs.get("title"), tr)) {
-                vNode.attrs.put("title", tr);
+                vNode.setAttribute("title", tr);
                 changed = true;
             }
         }
@@ -224,7 +224,7 @@ public final class Bindings {
             if (origVal != null && (origVal.contains("{{@") || origVal.contains("{{i18n:"))) {
                 String resolved = resolve(origVal, null, env);
                 if (!resolved.equals(vNode.attrs.get(key))) {
-                    vNode.attrs.put(key, resolved);
+                    vNode.setAttribute(key, resolved);
                     changed = true;
                 }
             }
@@ -449,7 +449,7 @@ public final class Bindings {
         int bottomPadding = Math.max(0, totalRows - endRow) * itemH;
 
         HtmlNode topSpacer = new HtmlElement("div");
-        topSpacer.attrs.put("style", "width: 100%; height: " + topPadding + "px; flex-shrink: 0;");
+        topSpacer.setAttribute("style", "width: 100%; height: " + topPadding + "px; flex-shrink: 0;");
         topSpacer.parent = targetNode;
         targetNode.children.add(topSpacer);
 
@@ -468,11 +468,12 @@ public final class Bindings {
         }
 
         HtmlNode botSpacer = new HtmlElement("div");
-        botSpacer.attrs.put("style", "width: 100%; height: " + bottomPadding + "px; flex-shrink: 0;");
+        botSpacer.setAttribute("style", "width: 100%; height: " + bottomPadding + "px; flex-shrink: 0;");
         botSpacer.parent = targetNode;
         targetNode.children.add(botSpacer);
 
-        targetNode.attrs.put("data-scroll-h", String.valueOf(totalRows * itemH));
+        String scrollH = String.valueOf(totalRows * itemH);
+        if (!scrollH.equals(targetNode.getAttribute("data-scroll-h"))) targetNode.setAttribute("data-scroll-h", scrollH);
         return true;
     }
 
@@ -520,11 +521,12 @@ public final class Bindings {
             boolean hide = (condResult != null) ? !condResult
                     : (showVal.isEmpty() || "false".equalsIgnoreCase(showVal) || "0".equals(showVal) || showVal.contains("{{"));
             if (hide) node.setStyleProperty("display", "none");
-            node.attrs.remove("data-show");
+            node.removeAttribute("data-show");
         }
 
         if (node.attrs.containsKey("data-list")) {
-            String jsonStr = node.attrs.remove("data-list");
+            String jsonStr = node.getAttribute("data-list");
+            node.removeAttribute("data-list");
             List<HtmlNode> templateChildren = extractTemplateChildren(node);
             node.children.clear();
 
@@ -899,7 +901,7 @@ public final class Bindings {
                                 if (instance == null) {
                                     instance = tmpl.cloneNode(true);
                                     uniquifyIds(instance, idx, rawKey);
-                                    instance.attrs.put("data-row-key", itemSubKey);
+                                    instance.setAttribute("data-row-key", itemSubKey);
                                 }
 
                                 applyRecursive(instance, merged, lists, null);

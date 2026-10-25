@@ -760,7 +760,8 @@ Layout differences from a real browser are measured, case by case, in
   `matrix()`, `skew*()`, 3D functions and the individual `translate` /
   `rotate` / `scale` properties are not applied.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
-  YouTube sources download `yt-dlp` at first use (see [NOTICE](NOTICE)).
+  YouTube sources need a `yt-dlp` binary you place in `<game dir>/enderframelib/` yourself
+  and the opt-in `allowYtDlp` setting; it is never downloaded or self-updated (see [NOTICE](NOTICE)).
 
 ---
 
@@ -805,7 +806,7 @@ LGPL-3.0-only. See [LICENSE](LICENSE), and
 [LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt) whose terms LGPL-3.0 incorporates.
 
 Third-party components — the bundled `lunex_video` native decoder, the
-runtime-downloaded `yt-dlp`, JNA, and the NeoForge MDK template files — are
+user-supplied `yt-dlp`, JNA, and the NeoForge MDK template files — are
 attributed in [NOTICE](NOTICE). The bundled native binary is **not** covered by
 the LGPL grant.
 

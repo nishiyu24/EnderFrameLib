@@ -20,6 +20,7 @@ import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.common.WebDevKitExporter;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.network.WebSyncS2CPacket;
+import com.nishiyu.enderframelib.server.HologramRegistry.ServerHologram;
 import com.nishiyu.enderframelib.server.ServerPubSubManager.ServerPacketSender;
 import com.nishiyu.enderframelib.server.state.UIStateManager;
 import net.minecraft.commands.CommandSourceStack;
@@ -87,39 +88,6 @@ public class EnderFrameCommands {
     private static final ResourceLocation DEFAULT_SURFACE_UI =
             ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "surface_test");
 
-    /** サーバー側で管理するホログラム定義。 */
-    public record ServerHologram(
-            String id,
-            ResourceLocation dimension,
-            String sessionId,
-            double x,
-            double y,
-            double z,
-            float widthBlocks,
-            float heightBlocks,
-            float yaw,
-            boolean billboard,
-            double maxDistance,
-            boolean interactive
-    ) {
-        CompoundTag toPayload() {
-            CompoundTag tag = new CompoundTag();
-            tag.putString("HologramId", id);
-            tag.putDouble("X", x);
-            tag.putDouble("Y", y);
-            tag.putDouble("Z", z);
-            tag.putFloat("WidthBlocks", widthBlocks);
-            tag.putFloat("HeightBlocks", heightBlocks);
-            tag.putFloat("Yaw", yaw);
-            tag.putBoolean("Billboard", billboard);
-            tag.putDouble("MaxDistance", maxDistance);
-            tag.putBoolean("Interactive", interactive);
-            return tag;
-        }
-    }
-
-    private static final Map<String, ServerHologram> ACTIVE_HOLOGRAMS = new ConcurrentHashMap<>();
-
     /**
      * コマンド実行権限の判定:
      * <ul>
@@ -185,7 +153,7 @@ public class EnderFrameCommands {
     };
 
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_HOLOGRAMS = (ctx, builder) ->
-            SharedSuggestionProvider.suggest(ACTIVE_HOLOGRAMS.keySet(), builder);
+            SharedSuggestionProvider.suggest(HologramRegistry.ids(), builder);
 
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_STATES = (ctx, builder) ->
             SharedSuggestionProvider.suggest(UIStateManager.stateIds(), builder);
@@ -1362,7 +1330,7 @@ public class EnderFrameCommands {
                 32.0,
                 interactive
         );
-        ACTIVE_HOLOGRAMS.put(id, holo);
+        HologramRegistry.register(holo);
 
         CompoundTag payload = holo.toPayload();
         WebSession standalone = WebSessionManager.findStandaloneSession(sessionId);
@@ -1380,7 +1348,7 @@ public class EnderFrameCommands {
     }
 
     public static int removeHologramCmd(CommandSourceStack source, String id) {
-        ServerHologram removed = ACTIVE_HOLOGRAMS.remove(id);
+        ServerHologram removed = HologramRegistry.remove(id);
         if (removed == null) {
             source.sendFailure(Component.literal("Hologram not found: " + id));
             return 0;
@@ -1398,8 +1366,7 @@ public class EnderFrameCommands {
     }
 
     public static int clearHologramsCmd(CommandSourceStack source) {
-        int count = ACTIVE_HOLOGRAMS.size();
-        ACTIVE_HOLOGRAMS.clear();
+        int count = HologramRegistry.clear();
         CompoundTag payload = new CompoundTag();
         MinecraftServer server = source.getServer();
         if (server != null) {
@@ -1412,12 +1379,12 @@ public class EnderFrameCommands {
     }
 
     private static int listHologramsCmd(CommandSourceStack source) {
-        if (ACTIVE_HOLOGRAMS.isEmpty()) {
+        if (HologramRegistry.count() == 0) {
             source.sendSuccess(() -> Component.literal("No active holograms."), false);
             return 0;
         }
-        StringBuilder sb = new StringBuilder("§b[Active Holograms (").append(ACTIVE_HOLOGRAMS.size()).append(")]§r");
-        for (ServerHologram h : ACTIVE_HOLOGRAMS.values()) {
+        StringBuilder sb = new StringBuilder("§b[Active Holograms (").append(HologramRegistry.count()).append(")]§r");
+        for (ServerHologram h : HologramRegistry.all()) {
             sb.append("\n - ").append(h.id())
                     .append(" [").append(h.dimension()).append("] ")
                     .append(String.format(Locale.ROOT, "(%.1f, %.1f, %.1f)", h.x(), h.y(), h.z()))
@@ -1426,30 +1393,7 @@ public class EnderFrameCommands {
         }
         String msg = sb.toString();
         source.sendSuccess(() -> Component.literal(msg), false);
-        return ACTIVE_HOLOGRAMS.size();
-    }
-
-    /** プレイヤーのログインまたはディメンション移動時に、現在ディメンションのホログラムを同期する。 */
-    public static void syncHologramsToPlayer(ServerPlayer player) {
-        if (player == null) return;
-        ServerPacketSender.send(player, new WebSyncS2CPacket("", "clear_holograms", new CompoundTag()));
-        ResourceLocation dim = player.level().dimension().location();
-        for (ServerHologram holo : ACTIVE_HOLOGRAMS.values()) {
-            if (dim.equals(holo.dimension())) {
-                if (WebSessionManager.findStandaloneSession(holo.sessionId()) != null) {
-                    WebSessionManager.forceSyncToPlayer(player, holo.sessionId());
-                }
-                ServerPacketSender.send(player, new WebSyncS2CPacket(holo.sessionId(), "set_hologram", holo.toPayload()));
-            }
-        }
-    }
-
-    public static void clearHologramsOnStop() {
-        ACTIVE_HOLOGRAMS.clear();
-    }
-
-    public static int activeHologramCount() {
-        return ACTIVE_HOLOGRAMS.size();
+        return HologramRegistry.count();
     }
 
     // ==========================================

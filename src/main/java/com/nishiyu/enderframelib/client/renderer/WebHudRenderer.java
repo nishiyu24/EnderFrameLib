@@ -436,7 +436,7 @@ public class WebHudRenderer {
 
             HtmlNode instanceNode = entry.templateNode.cloneNode();
             applyTemplateData(instanceNode, dataMap);
-            instanceNode.attrs.put("style", instanceNode.attrs.getOrDefault("style", "") + "; display: flex;");
+            instanceNode.setAttribute("style", instanceNode.attrs.getOrDefault("style", "") + "; display: flex;");
 
             buildTrackerLayout(instanceNode, screenKey, cache);
             trackerCaches.put(uuid, cache);

@@ -269,7 +269,7 @@ src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の�
   ペイロード（`CompoundTag`）の中身はクライアントの値なので、ハンドラ側で信用しない。
 - **PubSub のチャンネルは ACL を通る。** `EnderFrameAPI.addSubscriptionCheck`
   で登録された検査はすべて通過しなければならない。
-- 外部プロセスの起動とダウンロード（`yt-dlp`）は `WebMediaManager` の 1 箇所だけ。
+- 外部プロセスの起動（利用者が置いた `yt-dlp` の実行。ダウンロードと自己更新はしない）は `WebMediaManager` の 1 箇所だけ。
   増やす場合は `NOTICE` の第三者表記も更新する。
 
 ---

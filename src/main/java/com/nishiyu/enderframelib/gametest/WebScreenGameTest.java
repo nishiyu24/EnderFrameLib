@@ -429,11 +429,11 @@ public final class WebScreenGameTest {
             helper.fail("/ef screen load でカスタムセッション ID が反映されていません: " + masterBe.getSessionId());
         }
         commands.performPrefixedCommand(adminSrc, "ef hologram spawn test_holo " + posArgs + " enderframelib:surface_test");
-        if (EnderFrameCommands.activeHologramCount() != 1) {
+        if (com.nishiyu.enderframelib.server.HologramRegistry.count() != 1) {
             helper.fail("/ef hologram spawn でホログラムが登録されていません");
         }
         commands.performPrefixedCommand(adminSrc, "ef hologram clear");
-        if (EnderFrameCommands.activeHologramCount() != 0) {
+        if (com.nishiyu.enderframelib.server.HologramRegistry.count() != 0) {
             helper.fail("/ef hologram clear でホログラムが消えていません");
         }
         commands.performPrefixedCommand(adminSrc, "ef screen clear " + posArgs + " true");

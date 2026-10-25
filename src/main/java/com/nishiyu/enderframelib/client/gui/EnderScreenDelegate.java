@@ -82,7 +82,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (!this.sessionId.equals(sid)) return false;
             return router.dispatch(actionName, elementId, eventName, value);
         };
-        ClientScreenInteractionManager.setClientEventCallback(this.eventCallback);
+        ClientWebManager.getOrCreateSession(sessionId).input().setLocalEventCallback(this.eventCallback);
     }
 
     public WebViewport viewport() { return viewport; }
@@ -140,7 +140,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         String cleanVal = safeVal != null ? safeVal : "";
         SessionContext session = ClientWebManager.getSession(sessionId);
         HtmlNode vNode = session != null ? session.findNode(baseId) : null;
-        if (vNode != null) vNode.attrs.put("value", cleanVal);
+        if (vNode != null) vNode.setAttribute("value", cleanVal);
         ClientWebManager.getOrCreateSession(sessionId).input().updateInputLocally(baseId + "_input", cleanVal);
     }
 
@@ -858,7 +858,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
     }
 
     public void onClose() {
-        ClientScreenInteractionManager.removeClientEventCallback(this.eventCallback);
+        ClientScreenInteractionManager.clearSessionEventCallback(sessionId, this.eventCallback);
         unfocusWebInput();
         setFocusedDomElement("");
         activeSceneId = "";

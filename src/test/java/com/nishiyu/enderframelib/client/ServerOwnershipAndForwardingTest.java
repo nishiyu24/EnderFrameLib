@@ -53,14 +53,12 @@ public class ServerOwnershipAndForwardingTest {
     void setUp() {
         ClientWebManager.clearSession(SESSION);
         ClientScheduler.clearAll();
-        ClientScreenInteractionManager.setClientEventCallback(null);
         ClientScreenInteractionManager.setServerActionSender(sentPackets::add);
     }
 
     @AfterEach
     void tearDown() {
         ClientScreenInteractionManager.setServerActionSender(null);
-        ClientScreenInteractionManager.setClientEventCallback(null);
         ClientWebManager.clearSession(SESSION);
         ClientScheduler.clearAll();
     }
@@ -168,6 +166,25 @@ public class ServerOwnershipAndForwardingTest {
         assertTrue(documentHandle.contains(node("slot")), "島は生きている文書に接続し直される");
     }
 
+    @Test
+    @DisplayName("再同期で木を作り直しても、同じ id の要素のスクロール位置・フォーカス・ホバーは引き継がれる")
+    void resyncCarriesScrollFocusAndHoverByElementId() {
+        syncServerDocument("<div id=\"list\"><p id=\"row\">a</p></div><input id=\"name\"><button id=\"btn\">b</button>");
+        SessionContext session = ClientWebManager.getOrCreateSession(SESSION);
+        session.scrollState().setScroll(node("list"), 3, 42);
+        session.interactionState().setFocusedNode(node("name"), true);
+        session.interactionState().setHoveredNode(node("btn"));
+        HtmlNode oldList = node("list");
+
+        syncServerDocument("<div id=\"list\"><p id=\"row\">a</p><p id=\"row2\">b</p></div><input id=\"name\"><button id=\"btn\">b</button>");
+
+        assertNotSame(oldList, node("list"), "木は作り直されている");
+        assertEquals(3, session.scrollState().getScrollX(node("list")));
+        assertEquals(42, session.scrollState().getScrollY(node("list")));
+        assertSame(node("name"), session.interactionState().focusedNode(), "フォーカスが戻る");
+        assertSame(node("btn"), session.interactionState().hoveredNode(), "ホバーが戻る");
+    }
+
     // --- 宣言による転送 ---
 
     @Test
@@ -243,16 +260,21 @@ public class ServerOwnershipAndForwardingTest {
     @Test
     @DisplayName("ローカルのルータが処理した server: アクションを、ここで重ねて送らない")
     void locallyRoutedServerActionIsNotSentTwice() {
-        ClientScreenInteractionManager.setClientEventCallback((session, elementId, eventName, action, value) -> {
+        ClientScreenInteractionManager.IClientEventCallback recorder = (session, elementId, eventName, action, value) -> {
             localActions.add(action);
             return true;
-        });
-        loadClientDocument("<button id=\"go\" onclick=\"server:teleport\">Go</button>");
+        };
+        ClientScreenInteractionManager.setClientEventCallback(recorder);
+        try {
+            loadClientDocument("<button id=\"go\" onclick=\"server:teleport\">Go</button>");
 
-        node("go").dispatchEvent(CoreEvent.click(1, 1, 0));
+            node("go").dispatchEvent(CoreEvent.click(1, 1, 0));
 
-        assertEquals(List.of("server:teleport"), localActions);
-        assertTrue(sentPackets.isEmpty());
+            assertEquals(List.of("server:teleport"), localActions);
+            assertTrue(sentPackets.isEmpty());
+        } finally {
+            ClientScreenInteractionManager.removeClientEventCallback(recorder);
+        }
     }
 
     @Test

@@ -934,7 +934,9 @@ public class SessionContext implements AutoCloseable {
                 // ビューポートだけが変わったときは CSS を読み直さず、@media の条件だけ評価し直す
                 doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(width, height));
             }
+            NodeStateSnapshot carried = NodeStateSnapshot.capture(doc.root, scrollState, interactionState);
             adoptServerTree(doc.root, rootNode);
+            carried.restore(doc.root, scrollState, interactionState);
         }
 
         initializeBindings(doc.root);
@@ -977,6 +979,45 @@ public class SessionContext implements AutoCloseable {
             HtmlNode placeholder = liveRoot.getNodeById(island.getKey());
             if (placeholder != null && placeholder.parent != null) {
                 placeholder.parent.replaceChild(island.getValue(), placeholder);
+            }
+        }
+    }
+
+    /**
+     * 再同期で木を差し替えても戻す、節に紐づく状態（スクロール位置・フォーカス・ホバー）。
+     * 状態は節そのものをキーに持つので、作り直された節へは id をたよりに移す。id の無い節は対象外。
+     */
+    record NodeStateSnapshot(Map<String, int[]> scrolls, String focusedId, boolean focusVisible, String hoveredId) {
+
+        static NodeStateSnapshot capture(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
+            Map<String, int[]> scrolls = new LinkedHashMap<>();
+            collectScrolls(root, scrollState, scrolls);
+            HtmlNode focused = interaction.focusedNode();
+            boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible;
+            HtmlNode hovered = interaction.hoveredNode();
+            return new NodeStateSnapshot(scrolls, focused != null ? focused.getId() : "", visible,
+                    hovered != null ? hovered.getId() : "");
+        }
+
+        private static void collectScrolls(HtmlNode node, ScrollState scrollState, Map<String, int[]> out) {
+            int x = scrollState.getScrollX(node);
+            int y = scrollState.getScrollY(node);
+            if ((x != 0 || y != 0) && !node.getId().isEmpty()) out.put(node.getId(), new int[]{x, y});
+            for (HtmlNode child : node.children) collectScrolls(child, scrollState, out);
+        }
+
+        void restore(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
+            for (Map.Entry<String, int[]> entry : scrolls.entrySet()) {
+                HtmlNode node = root.getNodeById(entry.getKey());
+                if (node != null) scrollState.setScroll(node, entry.getValue()[0], entry.getValue()[1]);
+            }
+            if (!focusedId.isEmpty()) {
+                HtmlNode node = root.getNodeById(focusedId);
+                if (node != null) interaction.setFocusedNode(node, focusVisible);
+            }
+            if (!hoveredId.isEmpty()) {
+                HtmlNode node = root.getNodeById(hoveredId);
+                if (node != null) interaction.setHoveredNode(node);
             }
         }
     }
