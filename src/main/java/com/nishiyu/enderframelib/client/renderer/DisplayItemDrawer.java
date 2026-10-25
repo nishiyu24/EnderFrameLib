@@ -368,6 +368,14 @@ public class DisplayItemDrawer {
             boolean ownTransform = anim.tx() != 0 || anim.ty() != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
             boolean hasParentPose = el.events() != null && el.events().containsKey(RenderKeys.MC_PARENT);
             Matrix4f basePose = (ownTransform || hasParentPose) ? new Matrix4f(poseStack.last().pose()) : null;
+            // 要素自身の箱で切るクリップ（背景のグラデーション・画像など）は、その要素の変形に付いていく。
+            // 動かない祖先のクリップだけを画面に留める
+            String clipOwner = meta != null && meta.clipRect() != null ? meta.clipRect().ownerId() : null;
+            if (clipOwner != null && basePose != null) {
+                AncestorTransform owner = resolveAncestorTransform(poseStack, clipOwner, hoveredId, animSessionId,
+                        elementMap, ancestorTransforms);
+                if (owner != null) basePose = new Matrix4f(owner.pose());
+            }
 
             poseStack.pushPose();
             try {
@@ -716,7 +724,7 @@ public class DisplayItemDrawer {
      * 円（正方形で角丸が半分以上）のクリップだけ、中心を移して半径を拡縮する（円は回しても円）。
      * それ以外（回した角丸矩形など）は、直せないのでそのまま（{@code null}）。
      */
-    private static float[] clipIntoLocalSpace(Matrix4f base, Matrix4f eff,
+    static float[] clipIntoLocalSpace(Matrix4f base, Matrix4f eff,
                                               float x0, float y0, float x1, float y1,
                                               float r0, float r1, float r2, float r3) {
         Matrix4f toLocal = new Matrix4f(eff).invert().mul(base);

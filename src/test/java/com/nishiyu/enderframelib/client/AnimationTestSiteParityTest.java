@@ -357,6 +357,66 @@ public class AnimationTestSiteParityTest {
         }
 
         @Test
+        @DisplayName("4-5. Easing Curves Parity の 6 本のランナーが、レーンの中で実際に横へ動くこと")
+        void testEasingLaneRunnersMove() {
+            String[] lanes = {"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"};
+            for (String lane : lanes) {
+                LayoutBox runner = findBoxByClass(lane);
+                LayoutBox laneBox = findBoxByClass("track-lane");
+                assertTrue(runner.w > 0 && runner.h > 0, lane + " のランナーに大きさがあること");
+
+                DisplayItem item = displayItems.stream()
+                        .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
+                                && i.type() != ElementType.TEXT
+                                && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
+                        .findFirst().orElse(null);
+                assertNotNull(item, lane + " のランナーに AnimationSpec が付いた DisplayItem があること");
+                String sessionId = "test_lane_" + lane;
+                ClientWebManager.clearSession(sessionId);
+                long start = 1_000_000L;
+                float tx0 = CssAnimator.getValuesAt(sessionId, item, start).tx();
+                float txMid = CssAnimator.getValuesAt(sessionId, item, start + 500).tx();
+                float txEnd = CssAnimator.getValuesAt(sessionId, item, start + 2000).tx();
+                float txBack = CssAnimator.getValuesAt(sessionId, item, start + 3500).tx();
+                ClientWebManager.clearSession(sessionId);
+
+                assertEquals(0f, tx0, 0.5f, lane + " は開始時に左端 (0px) にあること");
+                assertTrue(txMid != tx0, lane + " は 0.5 秒後には動いていること");
+                assertTrue(txMid > 1f || lane.equals("lane-cubic"), lane + " は 0.5 秒後には右へ動いていること (実際: " + txMid + ")");
+                assertEquals(120f, txEnd, 0.5f, lane + " は 2 秒で右端 (120px) に着くこと");
+                // cubic-bezier(0.68, -0.55, 0.27, 1.55) は 0〜120px の外へはみ出す（行き過ぎ・引き戻し）ので範囲は見ない
+                assertTrue(lane.equals("lane-cubic") ? txBack < 120f : txBack > 0f && txBack < 120f,
+                        lane + " は alternate で戻りの途中にあること (実際: " + txBack + ")");
+            }
+        }
+
+        @Test
+        @DisplayName("4-6. ランナーのグラデーション層のクリップは、動くランナー自身に付いていくこと（円が元の位置に留まって切り取るだけにならない）")
+        void testRunnerGradientClipFollowsRunner() {
+            for (String lane : new String[]{"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"}) {
+                LayoutBox runner = findBoxByClass(lane);
+                String runnerId = runner.node.attrs.get("id");
+                DisplayItem runnerItem = displayItems.stream()
+                        .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
+                                && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
+                        .findFirst().orElseThrow();
+                List<DisplayItem> layers = displayItems.stream()
+                        .filter(i -> runnerItem.id().equals(i.events() == null ? null : i.events().get(com.nishiyu.enderframelib.core.paint.model.RenderKeys.MC_PARENT)))
+                        .filter(i -> i.meta() != null && i.meta().clipRect() != null)
+                        .toList();
+                assertFalse(layers.isEmpty(), lane + " の子部品（背景など）が存在すること");
+                for (DisplayItem layer : layers) {
+                    var clip = layer.meta().clipRect();
+                    if (clip.minX() < runner.x - 0.5f || clip.maxX() > runner.x + runner.w + 0.5f) continue; // 祖先のクリップ
+                    assertEquals(runnerItem.id(), clip.ownerId(),
+                            lane + " の " + layer.id() + " のクリップはランナー自身の箱で切るので、持ち主がランナーであること");
+                }
+                assertTrue(layers.stream().anyMatch(l -> l.meta().clipRect().ownerId() != null),
+                        lane + " に、ランナーの変形に付いていくクリップを持つ層があること");
+            }
+        }
+
+        @Test
         @DisplayName("4-4. 子孫が自分で color を指定していれば、祖先の color アニメーションは届かないこと")
         void testExplicitColorBlocksInheritedAnimation() {
             String src = "<style>@keyframes kf{0%{color:#ff0000}100%{color:#0000ff}}"
