@@ -98,4 +98,27 @@ public interface Document extends Node {
      */
     @Nullable
     Element getActiveElement();
+
+    /** 要素の算出スタイル（読み取り専用）。{@code width}・{@code height}・余白は、レイアウト済みなら使用値（px）。 */
+    CSSStyleDeclaration getComputedStyle(Element element);
+
+    /** ビューポートの幅・高さ（{@code window.innerWidth} / {@code innerHeight}）。レイアウト前は 0。 */
+    int getInnerWidth();
+
+    int getInnerHeight();
+
+    /** メディアクエリを今のメディア環境で評価する。 */
+    MediaQueryList matchMedia(String query);
+
+    /** レイアウトや位置が確定するたびに呼ばれる内部の購読口。ResizeObserver と IntersectionObserver が使う。 */
+    @ApiStatus.Internal
+    interface LayoutObserver {
+        void layoutUpdated();
+    }
+
+    @ApiStatus.Internal
+    void addLayoutObserver(LayoutObserver observer);
+
+    @ApiStatus.Internal
+    void removeLayoutObserver(LayoutObserver observer);
 }

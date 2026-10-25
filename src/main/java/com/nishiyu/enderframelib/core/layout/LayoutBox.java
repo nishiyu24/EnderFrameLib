@@ -145,7 +145,9 @@ public class LayoutBox {
     public LayoutBox findContainingBlock() {
         LayoutBox cur = this.parent;
         while (cur != null) {
-            boolean transformLike = cur.hasTransformOrFilter();
+            // layout / paint containment を持つ箱は、絶対配置・固定配置の包含ブロックにもなる（CSS Containment 2 §3, §4）
+            boolean transformLike = cur.hasTransformOrFilter()
+                    || (cur.style.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0;
             if (transformLike || (!this.isFixed && (cur.isRelative || cur.isAbsolute || cur.isSticky))) {
                 return cur;
             }
@@ -471,10 +473,25 @@ public class LayoutBox {
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
         for (LayoutBox child : children) child.parent = this;
-        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) return;
+        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
+            if (subtreeChanged && ctx.firstPass()) remeasureBoundaries(ctx);
+            return;
+        }
         MEASUREMENTS_COMPUTED.increment();
         BoxMeasurer.measure(this, space, ctx);
         recordMeasurement(space, ctx);
+    }
+
+    /**
+     * 自分の measure を使い回したが、再レイアウト境界の中だけが変わっている（境界の寸法は変わらないので祖先は使い回せる）。
+     * 境界まで降りて、中身だけを前回と同じ制約で測り直す。
+     */
+    private void remeasureBoundaries(LayoutContext ctx) {
+        for (LayoutBox child : children) {
+            if (!child.subtreeChanged || child.measuredSpace == null) continue;
+            if (child.isRelayoutBoundary()) child.measure(child.measuredSpace, ctx);
+            else child.remeasureBoundaries(ctx);
+        }
     }
 
     private static final java.util.concurrent.atomic.LongAdder MEASUREMENTS_COMPUTED =
@@ -531,6 +548,8 @@ public class LayoutBox {
      */
     private boolean everLaidOutAsTable;
     private LayoutBox[] measuredChildren;
+    private boolean measuredFirstFlowChild;
+    private boolean measuredHadFloatChild;
 
     private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx) {
         return measurementValid
@@ -558,10 +577,16 @@ public class LayoutBox {
      * 前回の measure の結果は使わせない。
      */
     void invalidateMeasurement() {
-        for (LayoutBox b = this; b != null; b = b.parent) b.measurementValid = false;
+        for (LayoutBox b = this; b != null; b = b.parent) {
+            b.measurementValid = false;
+            b.placementValid = false;
+        }
     }
 
     private void recordMeasurement(ConstraintSpace space, LayoutContext ctx) {
+        // 再レイアウト境界が中身だけを測り直し、外から見える寸法が前回と同じなら、祖先の測定は無効にならない
+        boolean outerSizeStable = measuredStyle != null && w == measuredW && h == measuredH
+                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML;
         measuredSpace = space;
         measuredOverrideW = overrideWidth;
         measuredOverrideH = overrideHeight;
@@ -584,11 +609,28 @@ public class LayoutBox {
         measuredRenderedLegend = isRenderedLegend;
         everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
         measuredChildren = children.toArray(new LayoutBox[0]);
+        measuredFirstFlowChild = BlockLayoutEngine.isFirstFlowChild(this);
+        measuredHadFloatChild = hasFloatingChild();
         layoutChanged = false;
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
         // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す
-        for (LayoutBox p = parent; p != null; p = p.parent) p.measurementValid = false;
+        invalidateAncestors(!(outerSizeStable && isRelayoutBoundary()));
+    }
+
+    /**
+     * 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。ただし再レイアウト境界から上は、
+     * 境界の寸法が変わらないので測定は有効なまま（配置の記録だけは全ての祖先で捨てる）。
+     */
+    private void invalidateAncestors(boolean measureAffected) {
+        boolean measureStillValid = measureAffected;
+        for (LayoutBox p = parent; p != null; p = p.parent) {
+            p.placementValid = false;
+            if (measureStillValid) {
+                p.measurementValid = false;
+                if (p.isRelayoutBoundary()) measureStillValid = false;
+            }
+        }
     }
 
     /**
@@ -619,6 +661,20 @@ public class LayoutBox {
      * 差分レイアウトが使い回す measure の結果には影響しない。
      */
     public static void resetPlacements(LayoutBox box) {
+        resetPlacements(box, -1);
+    }
+
+    /**
+     * @param keepRun 0 以上なら、この run で測り直されていない純粋な箱は配置を残す（{@link #layout} が原点を比べて、
+     *                同じなら飛ばし、違えば自分で捨ててから置き直す）。負なら全てを捨てる
+     */
+    public static void resetPlacements(LayoutBox box, long keepRun) {
+        if (keepRun >= 0 && box.canKeepPlacement(keepRun)) return;
+        // 配置を捨てた箱は、前回の layout の記録も無効にする（子を飛ばして古い 0,0 のまま残さない）
+        if (keepRun < 0) {
+            box.placementPure = false;
+            box.lastLayoutX = Float.NaN;
+        }
         box.inlineFragments.clear();
         box.x = 0;
         box.y = 0;
@@ -628,7 +684,7 @@ public class LayoutBox {
         box.scrollHeight = 0;
         box.descendantOverflowRight = 0;
         box.descendantOverflowBottom = 0;
-        for (LayoutBox child : box.children) resetPlacements(child);
+        for (LayoutBox child : box.children) resetPlacements(child, keepRun);
     }
 
     /**
@@ -663,19 +719,36 @@ public class LayoutBox {
         return com.nishiyu.enderframelib.core.css.StyleResolver.isLayoutAffectingChange(before, after);
     }
 
-    /** 測ったときから中身（署名）が変わったか。一度も測っていない箱は変わったとみなす。 */
-    private boolean contentChangedSinceMeasurement() {
+    /** 測ったときから、子の並び以外の中身（署名）が変わったか。一度も測っていない箱は変わったとみなす。 */
+    private boolean selfSignatureChanged() {
         if (measuredStyle == null) return true;
         if (style != measuredStyle && affectsLayout(measuredStyle, style)) return true;
         if (placeholderStyle != measuredPlaceholderStyle
                 && affectsLayout(measuredPlaceholderStyle, placeholderStyle)) return true;
         if (!java.util.Objects.equals(displayText, measuredText)) return true;
         if (isOutsideMarker != measuredOutsideMarker || isRenderedLegend != measuredRenderedLegend) return true;
-        if (measuredChildren.length != children.size()) return true;
+        return contentHash() != measuredContentHash;
+    }
+
+    /** 測ったときから、子の箱の並び（増減・入れ替え）が変わったか。 */
+    private boolean childListChanged() {
+        if (measuredChildren == null || measuredChildren.length != children.size()) return true;
         for (int i = 0; i < measuredChildren.length; i++) {
             if (measuredChildren[i] != children.get(i)) return true;
         }
-        return contentHash() != measuredContentHash;
+        return false;
+    }
+
+    private boolean hasFloatingChild() {
+        for (LayoutBox child : children) {
+            if (child.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
+        }
+        return false;
+    }
+
+    /** 測ったときと、親の最初のフローの子であるかどうかが違うか（親との相殺に効く）。 */
+    private boolean firstFlowStatusChanged() {
+        return BlockLayoutEngine.isFirstFlowChild(this) != measuredFirstFlowChild;
     }
 
     /**
@@ -688,14 +761,57 @@ public class LayoutBox {
         return markLayoutChanges(root, false);
     }
 
-    private static boolean markLayoutChanges(LayoutBox box, boolean parentChanged) {
-        boolean ownChange = box.contentChangedSinceMeasurement();
-        boolean changed = ownChange || parentChanged || !box.measurementValid;
+    /**
+     * 親の署名が変わったときだけ、全ての子に印を付ける。子の並びだけが変わったとき（行の追加・削除）は、
+     * 兄弟の並びを読む子（親の最初のフローの子かどうか）と、float が関わるとき（行が float を避けるため）だけ。
+     * 他の子の measure は、制約（幅・パーセントの基準・親の整形コンテキスト）が同じなら前回と同じ。
+     */
+    private static boolean markLayoutChanges(LayoutBox box, boolean forcedByParent) {
+        boolean selfChanged = box.selfSignatureChanged();
+        boolean listChanged = box.childListChanged();
+        // 子の並びの変化を兄弟に伝えなくてよいのは、子をブロックフローで並べる親だけ。flex / grid / 表は
+        // 兄弟の数と大きさで子の寸法を決める（伸縮・stretch・列幅）ので、従来どおり全ての子を測り直す
+        boolean blockFlow = box.display != null && !isTableBox(box)
+                && (box.display.inner() == Display.Inner.FLOW || box.display.inner() == Display.Inner.FLOW_ROOT);
+        boolean forceAllChildren = selfChanged
+                || (listChanged && (!blockFlow || box.measuredHadFloatChild || box.hasFloatingChild()));
+        boolean childAffects = false;
+        boolean subtreeChanged = false;
         for (LayoutBox child : box.children) {
-            changed |= markLayoutChanges(child, ownChange);
+            boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
+            childAffects |= markLayoutChanges(child, force);
+            subtreeChanged |= child.subtreeChanged;
         }
-        box.layoutChanged = changed;
-        return changed;
+        boolean remeasure = selfChanged || listChanged || forcedByParent || childAffects || !box.measurementValid;
+        box.layoutChanged = remeasure;
+        box.subtreeChanged = remeasure || subtreeChanged;
+        // 再レイアウト境界の中の変化は、境界の寸法を変えないので祖先の測り直しには及ばない
+        // （境界自身の署名が変わったときだけ祖先へ伝える）
+        return box.isRelayoutBoundary() ? selfChanged : remeasure;
+    }
+
+    /** 前回の measure の後に、自分か子孫の何かが変わった（境界を越えて伝わる。配置の使い回しの判定に使う）。 */
+    private boolean subtreeChanged = true;
+    /** 前回の layout の後に、子孫の再測定が起きていない（境界を越えて祖先まで切れる）。 */
+    private boolean placementValid = false;
+
+    /**
+     * 自分の寸法が子孫に依らず、中身の変化が祖先の layout の入力にならない箱（再レイアウト境界）。
+     * 中身の大きさで決まらない寸法（size containment・確定した幅と高さのスクロールコンテナ）を持ち、
+     * 独立した整形コンテキストを作る（float や margin が外へ及ばない）ブロックレベルの箱。
+     */
+    boolean isRelayoutBoundary() {
+        if (parent == null || display == null || display.isInlineLevel() || isTableBox(this) || !establishesBfc) return false;
+        if (containsInlineSize() && containsBlockSize()) return true;
+        if (!isScrollContainer()) return false;
+        return hasDefiniteLength(CssProperty.WIDTH) && hasDefiniteLength(CssProperty.HEIGHT);
+    }
+
+    private boolean hasDefiniteLength(String property) {
+        String value = style.get(property);
+        if (value == null) return false;
+        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return !v.isEmpty() && !v.equals("auto") && !v.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(v);
     }
 
     /** {@link #measure(ConstraintSpace, LayoutContext)} の制約を個別に渡す形（テストと HUD の入口）。 */
@@ -713,6 +829,27 @@ public class LayoutBox {
     public void layout(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if ("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         for (LayoutBox child : children) child.parent = this;
+        hasFloatChild = false;
+        for (LayoutBox child : children) {
+            if (child.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+                hasFloatChild = true;
+                break;
+            }
+        }
+        // 親の外寸（パーセントの基準）は、位置指定・スクロールコンテナ・float を含まない部分木（placementPure）の配置には効かない。
+        // 中身が増えて親の高さが変わっても、子の配置の入力は変わらない
+        boolean sameInputs = lastLayoutX == parentX && lastLayoutY == parentY
+                && (placementPure || (lastLayoutOuterW == parentOuterW && lastLayoutOuterH == parentOuterH));
+        if (ctx.reuseMeasurements() && sameInputs && canKeepPlacement(ctx.layoutRun())) {
+            LAYOUTS_SKIPPED.increment();
+            return;
+        }
+        // 原点か包含ブロックの寸法が変わったので、前回の配置を引き継いだ子孫の位置はどれも古い。先に捨てる
+        // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
+        // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
+        if (keepPlacements && placementPure && !sameInputs) {
+            for (LayoutBox child : children) resetPlacements(child, -1);
+        }
 
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
@@ -775,6 +912,99 @@ public class LayoutBox {
         applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
         if (this.isSticky) applyStickyOffset(ctx);
         updateScrollExtent(scrollX, scrollY);
+        recordPlacement(parentX, parentY, parentOuterW, parentOuterH, legend != null);
+    }
+
+    // ==========================================
+    // 差分レイアウト（layout の結果の再利用）
+    // ==========================================
+    //
+    // measure を使い回した箱は、寸法も子の並びも前回の layout のときと同じ。配置（layout）の入力は
+    // 親から渡る原点と包含ブロックの寸法だけなので、これも前回と同じなら、部分木の配置は前回の結果のまま使える。
+    // 箱の位置が祖先の外の何か（絶対配置の包含ブロック・float・スクロール量・sticky のポート）に依るときは使い回せない:
+    // そうした箱を部分木に含む箱は placementPure ではない。
+
+    private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SKIPPED =
+            new java.util.concurrent.atomic.LongAdder();
+
+    /** これまでに使い回して飛ばした layout の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
+    public static long layoutsSkipped() {
+        return LAYOUTS_SKIPPED.sum();
+    }
+
+    /** layout の結果の再利用を使うか。false なら毎回置き直す（再利用を疑うときの切り分け用）。 */
+    public static volatile boolean keepPlacements = true;
+
+    /** 前回の layout の配置を使い回せる状態か（再利用が有効で、前回の部分木が外の状態に依らなかった）。 */
+    public boolean holdsPlacement() {
+        return keepPlacements && placementPure;
+    }
+
+    public String debugInfo() {
+        return node.tag + "#" + node.getId() + " disp=" + display + " pure=" + placementPure + " lastX=" + lastLayoutX + " lastY=" + lastLayoutY + " x=" + x + " y=" + y + " valid=" + measurementValid + " runM=" + measuredRun + " anon=" + isAnonymous;
+    }
+
+    /** 部分木の配置が、この箱の外の状態に依らず親の渡す原点だけで決まる（前回の layout で確かめた）。 */
+    private boolean placementPure = false;
+    private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN, lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
+
+    private void recordPlacement(float parentX, float parentY, float parentOuterW, float parentOuterH, boolean hasLegend) {
+        lastLayoutX = parentX;
+        lastLayoutY = parentY;
+        lastLayoutOuterW = parentOuterW;
+        lastLayoutOuterH = parentOuterH;
+        placementPure = !hasLegend && subtreeIsSelfContained();
+        placementValid = true;
+    }
+
+    /**
+     * この箱とその子孫が、外の状態（絶対配置の包含ブロック・float・スクロール量・sticky のポート・表の分担）に
+     * 位置を依存しないか。layout を通らない子（行に流れるテキストやインラインの箱）は構造だけで見る。
+     */
+    private boolean subtreeIsSelfContained() {
+        if (isAbsolute || isFixed || isRelative || isSticky || isScrollContainer() || floatSpace != null
+                || isTableBox(this) || collapsedBorders != null
+                || style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+            return false;
+        }
+        for (LayoutBox child : children) {
+            if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block"))) continue;
+            boolean laidOutByLayout = !Float.isNaN(child.lastLayoutX);
+            if (laidOutByLayout ? !child.placementPure : !child.subtreeIsSelfContained()) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 前回の layout の配置をそのまま使えるか（原点が同じかは呼び出し側が確かめる）。この run で測り直されておらず
+     * （測り直した箱と、その祖先の測定は無効になる）、親がブロックコンテナで、前回の配置が純粋だったときだけ。
+     */
+    private boolean canKeepPlacement(long run) {
+        return keepPlacements && placementPure && placementValid && measurementValid && measuredRun != run
+                && !layoutChanged && !subtreeChanged
+                && parent != null && parent.display != null
+                && (parent.display.inner() == Display.Inner.FLOW || parent.display.inner() == Display.Inner.FLOW_ROOT)
+                && !display.isInlineLevel()
+                && !floatsAffectPlacement();
+    }
+
+    /** 自分の子に float があるか。{@link #layout} の始めに決め直す。 */
+    private boolean hasFloatChild = false;
+
+    /**
+     * 同じ BFC の中に float があると、後に続く箱の行は float を避けて置かれる。float の位置は layout の途中の状態で、
+     * 原点や包含ブロックの寸法には現れないので、祖先（BFC の根まで）に float を子に持つ箱があれば使い回さない。
+     */
+    private boolean floatsAffectPlacement() {
+        boolean inBfc = true;
+        for (LayoutBox p = parent; p != null; p = p.parent) {
+            // 相対配置・sticky の祖先は、子孫を置いた後でまとめてずらす。ずれは子孫の位置に残るので、
+            // ずれが変わった（なくなった）ときに古いずれを引き継がない
+            if (p.isRelative || p.isSticky) return true;
+            if (inBfc && p.hasFloatChild) return true;
+            if (p.establishesBfc) inBfc = false;
+        }
+        return false;
     }
 
     /**
@@ -857,12 +1087,14 @@ public class LayoutBox {
      * shrink-to-fit の幅や min-content の幅に中身は寄与しない（CSS Containment 3 §3）。
      */
     public boolean containsInlineSize() {
-        return style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize();
+        return (style.containment() & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_INLINE_SIZE)) != 0
+                || style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize();
     }
 
     /** 縦方向の size containment（{@code container-type: size}）。高さが {@code auto} でも中身の高さは寄与しない。 */
     public boolean containsBlockSize() {
-        return style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize();
+        return (style.containment() & ComputedStyle.CONTAIN_SIZE) != 0
+                || style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize();
     }
 
     /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
@@ -890,9 +1122,25 @@ public class LayoutBox {
         ScrollExtent extent = new ScrollExtent(this.x + pL + bL, this.y + pT + bT);
         // 子孫の境界ボックスの和。クリップしない子は、その子孫のはみ出しも親のはみ出しになる（CSS Overflow 3 §2.2）
         ScrollExtent descendants = new ScrollExtent(this.x + this.w, this.y + this.h);
+        // 下 padding・border・高さが無い親では、末子の margin-bottom は親を貫通して相殺する。貫通した余白は親の中身ではないので、
+        // 親のスクロール範囲に入れない（ブラウザと同じ）
+        boolean marginEscapes = !establishesBfc && pB == 0 && bB == 0 && !hasDefiniteHeight();
+        LayoutBox lastInFlow = null;
+        if (marginEscapes) {
+            for (LayoutBox child : children) {
+                if (!"none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) && !child.isAbsolute
+                        && !child.display.isInlineLevel()) {
+                    lastInFlow = child;
+                }
+            }
+        }
         for (LayoutBox child : children) {
             if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) || child.isAbsolute) continue;
-            extent.include(child, scrollX, scrollY);
+            if (child == lastInFlow) {
+                extent.include(child.x + child.w + child.mR + scrollX, child.y + child.h + scrollY);
+            } else {
+                extent.include(child, scrollX, scrollY);
+            }
             descendants.include(child.x + child.w + scrollX, child.y + child.h + scrollY);
             if (!child.clipsOverflow()) {
                 descendants.include(child.x + child.descendantOverflowRight + scrollX,
@@ -905,6 +1153,14 @@ public class LayoutBox {
         this.descendantOverflowBottom = descendants.bottom() - this.y;
         this.scrollWidth = Math.max(Math.max(this.w, extent.right() - this.x + pR + bR), descendantOverflowRight);
         this.scrollHeight = Math.max(Math.max(this.h, extent.bottom() - this.y + pB + bB), descendantOverflowBottom);
+    }
+
+    private boolean hasDefiniteHeight() {
+        String height = style.get(CssProperty.HEIGHT);
+        if (height != null && !height.isBlank() && !"auto".equalsIgnoreCase(height.trim())) return true;
+        String minHeight = style.get(CssProperty.MIN_HEIGHT);
+        return minHeight != null && !minHeight.isBlank() && !"0".equals(minHeight.trim()) && !"0px".equals(minHeight.trim())
+                && !"auto".equalsIgnoreCase(minHeight.trim());
     }
 
     /** はみ出しを切る・スクロールさせる（{@code overflow} が {@code visible} 以外）か。切られた中身は親のはみ出しにならない。 */

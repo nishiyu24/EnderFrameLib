@@ -89,7 +89,12 @@ public class ArchitectureTest {
     // 2026-10-25: テンプレートで動く世界内の面（server/SurfaceViewers）の追加で +1。
     // 2026-10-25: ホログラムの入力対応で SurfaceHit を client/ のトップレベルに出した（M7 準拠）ので +1。
     // 2026-10-25: Phase 1 / T8 でコマンドクラスから server/HologramRegistry（ホログラム状態）を切り出したので +1。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 209;
+    // 2026-10-25: Phase 2 の CSSOM View で +7（api/dom の DOMRect・MediaQueryList・ResizeObserver・IntersectionObserver、
+    // core/dom の LayoutQuery・node/ComputedStyleDeclaration、common/BoxLayoutQuery）。LayoutObserver は Document の入れ子型。
+    // 2026-10-25: Phase 2 の StyleAnimator（再スタイルで動かすトランジション・@keyframes）で +4（core/css の StyleAnimator・
+    // ValueInterpolator・AnimationParser と、core/paint/model の AnimationTiming）。AnimationSpec の入れ子型を core/css から
+    // 参照しない（M7）よう、時間の指定と進行度は paint/model に、CSS の読み取りは core/css に分けた。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 220;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

@@ -57,6 +57,8 @@ public final class CssProperty {
     public static final String COLUMN_GAP = "column-gap";
     public static final String CONTAINER_NAME = "container-name";
     public static final String CONTAINER_TYPE = "container-type";
+    public static final String CONTAIN = "contain";
+    public static final String CONTENT_VISIBILITY = "content-visibility";
     public static final String CONTENT = "content";
     public static final String COUNTER_INCREMENT = "counter-increment";
     public static final String COUNTER_RESET = "counter-reset";

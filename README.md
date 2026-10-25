@@ -458,6 +458,9 @@ colour hints and `in <colorspace>`)
 `space` and `round`) `background-clip` `background-origin`; `box-shadow` `transform`
 (`translate` `scale` `rotate`) `transform-origin` `transition`
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
+(lengths, numbers and colours of any animatable property, including
+layout-affecting ones such as `width` and `margin`; no `steps()`,
+`transition-behavior` or `@starting-style` yet)
 `object-fit` `cursor` `content` `src`
 
 **Units & functions** `px` `%` `em` `rem` `ch` `ex` `cap` `ic` `lh` `rlh`

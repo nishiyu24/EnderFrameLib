@@ -36,6 +36,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import com.nishiyu.enderframelib.common.Document;
+import com.nishiyu.enderframelib.common.BoxLayoutQuery;
 import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -250,6 +251,8 @@ public class SessionContext implements AutoCloseable {
         if (document == null || !(document.root instanceof HtmlDocument liveDocument)) return;
         liveDocument.setDefaultOwnership(serverManaged ? Ownership.SERVER : Ownership.CLIENT);
         liveDocument.setInteractionState(interactionState);
+        if (boxLayoutQuery == null) boxLayoutQuery = new BoxLayoutQuery(scrollState, this::requestReposition);
+        liveDocument.setLayoutQuery(boxLayoutQuery);
         // DOM の操作（クライアントのスクリプト・サーバーの変異・バインディング）は、文書が汚れの印を付けて知らせてくる。
         // どの経路から変えても同じ無効化になるよう、属性なら対話状態（checked / open など）もここで合わせる。
         // 見た目の属性（style / class / hidden）だけなら再スタイルから、文字・子の並び・その他の属性なら再レイアウトから始める
@@ -287,7 +290,18 @@ public class SessionContext implements AutoCloseable {
 
     public void setLayoutRoot(LayoutBox layoutRoot) {
         this.layoutRoot = layoutRoot;
+        publishLayoutToDom();
     }
+
+    /** CSSOM View が読む箱の木を差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
+    private void publishLayoutToDom() {
+        if (boxLayoutQuery == null || document == null || layoutRoot == null) return;
+        boxLayoutQuery.update(layoutRoot, document.sheet, rootW, rootH);
+        if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
+    }
+
+    /** CSSOM View のレイアウト結果の読み口（文書が生きている間に作る）。 */
+    private BoxLayoutQuery boxLayoutQuery;
 
     public InteractionState interactionState() {
         return interactionState;
@@ -699,6 +713,7 @@ public class SessionContext implements AutoCloseable {
         if (layoutRoot == null || document == null) return;
         RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, WebFontManager.McFontResolver.INSTANCE);
         repaintFromLayout();
+        if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
     }
 
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
@@ -740,6 +755,10 @@ public class SessionContext implements AutoCloseable {
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     void flushInvalidation() {
         if (document == null || document.root == null) return;
+
+        // 時間で動くスタイル（opacity / transform / 色以外のトランジションと @keyframes）を進める。
+        // 動いているうちは毎フレーム再スタイルを要求する（終わった要素は進めた時点で再スタイルの対象になる）
+        if (interactionState.advanceAnimations(System.currentTimeMillis())) requestRestyle();
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
@@ -987,10 +1006,10 @@ public class SessionContext implements AutoCloseable {
      * 再同期で木を差し替えても戻す、節に紐づく状態（スクロール位置・フォーカス・ホバー）。
      * 状態は節そのものをキーに持つので、作り直された節へは id をたよりに移す。id の無い節は対象外。
      */
-    record NodeStateSnapshot(Map<String, int[]> scrolls, String focusedId, boolean focusVisible, String hoveredId) {
+    record NodeStateSnapshot(Map<String, float[]> scrolls, String focusedId, boolean focusVisible, String hoveredId) {
 
         static NodeStateSnapshot capture(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
-            Map<String, int[]> scrolls = new LinkedHashMap<>();
+            Map<String, float[]> scrolls = new LinkedHashMap<>();
             collectScrolls(root, scrollState, scrolls);
             HtmlNode focused = interaction.focusedNode();
             boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible;
@@ -999,15 +1018,15 @@ public class SessionContext implements AutoCloseable {
                     hovered != null ? hovered.getId() : "");
         }
 
-        private static void collectScrolls(HtmlNode node, ScrollState scrollState, Map<String, int[]> out) {
-            int x = scrollState.getScrollX(node);
-            int y = scrollState.getScrollY(node);
-            if ((x != 0 || y != 0) && !node.getId().isEmpty()) out.put(node.getId(), new int[]{x, y});
+        private static void collectScrolls(HtmlNode node, ScrollState scrollState, Map<String, float[]> out) {
+            float x = scrollState.getScrollX(node);
+            float y = scrollState.getScrollY(node);
+            if ((x != 0 || y != 0) && !node.getId().isEmpty()) out.put(node.getId(), new float[]{x, y});
             for (HtmlNode child : node.children) collectScrolls(child, scrollState, out);
         }
 
         void restore(HtmlNode root, ScrollState scrollState, InteractionState interaction) {
-            for (Map.Entry<String, int[]> entry : scrolls.entrySet()) {
+            for (Map.Entry<String, float[]> entry : scrolls.entrySet()) {
                 HtmlNode node = root.getNodeById(entry.getKey());
                 if (node != null) scrollState.setScroll(node, entry.getValue()[0], entry.getValue()[1]);
             }
@@ -1164,7 +1183,7 @@ public class SessionContext implements AutoCloseable {
                         float nextY = Mth.clamp(curY - (float) scrollY * sens, 0, limitY);
 
                         if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
-                            state.setScroll(scrollNode, (int) nextX, (int) nextY);
+                            state.setScroll(scrollNode, nextX, nextY);
                             requestReposition();
                             return true;
                         }
@@ -1200,7 +1219,7 @@ public class SessionContext implements AutoCloseable {
             float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
             float maxScrollY = Math.max(0, box.scrollHeight - box.h);
             float curX = state.getScrollX(scrollNode);
-            state.setScroll(scrollNode, (int) curX, (int) (ratio * maxScrollY));
+            state.setScroll(scrollNode, curX, ratio * maxScrollY);
             requestReposition();
             return true;
         } else if (isHTrack) {
@@ -1211,7 +1230,7 @@ public class SessionContext implements AutoCloseable {
             float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
             float maxScrollX = Math.max(0, box.scrollWidth - box.w);
             float curY = state.getScrollY(scrollNode);
-            state.setScroll(scrollNode, (int) (ratio * maxScrollX), (int) curY);
+            state.setScroll(scrollNode, ratio * maxScrollX, curY);
             requestReposition();
             return true;
         }
@@ -1240,7 +1259,7 @@ public class SessionContext implements AutoCloseable {
             float ratio = Math.clamp((float) (pixelY - trackY - thumbH / 2.0) / (float) availH, 0f, 1f);
             float maxScrollY = Math.max(0, box.scrollHeight - box.h);
             float curX = state.getScrollX(scrollNode);
-            state.setScroll(scrollNode, (int) curX, (int) (ratio * maxScrollY));
+            state.setScroll(scrollNode, curX, ratio * maxScrollY);
             requestReposition();
             return true;
         } else if (isHThumb) {
@@ -1251,7 +1270,7 @@ public class SessionContext implements AutoCloseable {
             float ratio = Math.clamp((float) (pixelX - trackX - thumbW / 2.0) / (float) availW, 0f, 1f);
             float maxScrollX = Math.max(0, box.scrollWidth - box.w);
             float curY = state.getScrollY(scrollNode);
-            state.setScroll(scrollNode, (int) (ratio * maxScrollX), (int) curY);
+            state.setScroll(scrollNode, ratio * maxScrollX, curY);
             requestReposition();
             return true;
         }

@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -454,57 +455,12 @@ public class CssAnimator {
         }
 
         /**
-         * {@code animation-delay}, {@code animation-iteration-count}, {@code animation-direction},
-         * {@code animation-fill-mode} を考慮して現在のキーフレーム進行度（0〜100）を返す。
-         * アニメーションの適用外（delay 中で backwards 無し、または終了後で forwards 無し）の場合は {@code Float.NaN}。
+         * 現在のキーフレーム進行度（0〜100）。適用外（delay 中で backwards 無し、または終了後で forwards 無し）は {@code Float.NaN}。
+         * 計算は {@link AnimationTiming#progressPct} が持つ（再スタイルで動かす他のプロパティと共通）。
          */
         private static float computeKeyframePct(AnimationDef def, long elapsedFromStartMs) {
-            long activeElapsed = elapsedFromStartMs - def.delayMs;
-            int dur = Math.max(1, def.durationMs);
-
-            if (activeElapsed < 0) {
-                if (def.fillMode == AnimationSpec.FillMode.BACKWARDS || def.fillMode == AnimationSpec.FillMode.BOTH) {
-                    boolean reverseFirst = (def.direction == AnimationSpec.Direction.REVERSE
-                            || def.direction == AnimationSpec.Direction.ALTERNATE_REVERSE);
-                    return reverseFirst ? 100f : 0f;
-                }
-                return Float.NaN;
-            }
-
-            double totalActive = def.totalActiveDurationMs();
-            if (!def.infinite() && activeElapsed >= totalActive) {
-                if (def.fillMode == AnimationSpec.FillMode.FORWARDS || def.fillMode == AnimationSpec.FillMode.BOTH) {
-                    float ic = def.iterationCount;
-                    long finalIterIndex;
-                    float finalProgress;
-                    if (Math.floor(ic) == ic && ic >= 1.0f) {
-                        finalIterIndex = (long) ic - 1L;
-                        finalProgress = 1.0f;
-                    } else {
-                        finalIterIndex = (long) Math.floor(ic);
-                        finalProgress = ic - finalIterIndex;
-                    }
-                    boolean reverse = isIterationReversed(def.direction, finalIterIndex);
-                    float dirProgress = reverse ? (1.0f - finalProgress) : finalProgress;
-                    return dirProgress * 100f;
-                }
-                return Float.NaN;
-            }
-
-            long iterIndex = activeElapsed / dur;
-            float iterProgress = (float) (activeElapsed % dur) / dur;
-            boolean reverse = isIterationReversed(def.direction, iterIndex);
-            float dirProgress = reverse ? (1.0f - iterProgress) : iterProgress;
-            return dirProgress * 100f;
-        }
-
-        private static boolean isIterationReversed(AnimationSpec.Direction dir, long iterIndex) {
-            return switch (dir) {
-                case NORMAL -> false;
-                case REVERSE -> true;
-                case ALTERNATE -> (iterIndex % 2L) == 1L;
-                case ALTERNATE_REVERSE -> (iterIndex % 2L) == 0L;
-            };
+            return AnimationTiming.progressPct(def.durationMs, def.delayMs, def.iterationCount, def.direction,
+                    def.fillMode, elapsedFromStartMs);
         }
 
         private static float lerp(float a, float b, float t) {

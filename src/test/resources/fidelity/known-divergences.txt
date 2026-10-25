@@ -6,7 +6,6 @@
 #
 # R0 で測定を拡張（スクロール量・計算値）して新しく観測された差。行が消えることが各フェーズの完了条件。
 
-margin-collapse-bottom#parent.scrollHeight R5: 相殺されたマージンが親の外へ出たときの scrollHeight の扱い
 forced-line-breaks#box.scrollHeight R7: 強制改行の末尾行送り・ベースラインの 2px の差
 pseudo-lang-dir-defined#e.x R7: direction: rtl のブロックは幅が余ると右に寄る（direction プロパティを未対応。:dir(rtl) の照合そのものは一致している）
 flex-column-overflow#scroller.scrollWidth R5: スクロールバー表示による clientWidth/scrollWidth の縮小

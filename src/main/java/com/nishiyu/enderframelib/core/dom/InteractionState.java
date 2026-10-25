@@ -11,6 +11,7 @@ import com.nishiyu.enderframelib.core.css.model.ContainerType;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 import com.nishiyu.enderframelib.core.css.InvalidationSets;
 import com.nishiyu.enderframelib.core.css.InvalidationSets.Relation;
+import com.nishiyu.enderframelib.core.css.StyleAnimator;
 import com.nishiyu.enderframelib.core.css.StyleSheet;
 
 import java.util.ArrayList;
@@ -127,6 +128,12 @@ public class InteractionState implements StateLookup {
     public StateFlags getOrCreate(HtmlNode node) {
         if (node == null) return new StateFlags();
         return flagsByNode.computeIfAbsent(node, key -> new StateFlags());
+    }
+
+    /** 確定済みの算出スタイル。まだ再スタイルされていなければ null。 */
+    public ComputedStyle computedStyleOf(HtmlNode node) {
+        StateFlags flags = get(node);
+        return flags != null ? flags.computedStyle : null;
     }
 
     public StateFlags get(HtmlNode node) {
@@ -520,6 +527,41 @@ public class InteractionState implements StateLookup {
                 style.customProperties());
     }
 
+    // ==========================================
+    // アニメーション（トランジションと @keyframes のうち、再スタイルで動かす分）
+    // ==========================================
+
+    private StyleAnimator animator;
+    private long animationTimeMs = Long.MIN_VALUE;
+
+    /** この対話状態の要素が持つ、時間で動くスタイルの状態。最初に使うまで作らない。 */
+    public StyleAnimator animator() {
+        if (animator == null) animator = new StyleAnimator();
+        return animator;
+    }
+
+    /** 再スタイルがアニメーションの値を決めるときの時刻（ms）。フレームの先頭で決めると、同じフレームの値が揃う。 */
+    public void setAnimationTime(long ms) {
+        this.animationTimeMs = ms;
+    }
+
+    /** 設定されていなければ現在時刻。 */
+    public long animationTimeMs() {
+        return animationTimeMs != Long.MIN_VALUE ? animationTimeMs : System.currentTimeMillis();
+    }
+
+    /**
+     * 時刻を進め、値が変わる要素を再スタイルの対象にする（要素自身だけ。子孫への波及は再スタイルが算出値の変化から決める）。
+     *
+     * @return まだ動いているものがあるか（あれば次のフレームも呼ぶ）
+     */
+    public boolean advanceAnimations(long now) {
+        if (animator == null) return false;
+        animationTimeMs = now;
+        for (HtmlNode node : animator.advance(now)) dirty(node, false);
+        return animator.isRunning(now);
+    }
+
     public boolean hasDirtyNodes() {
         for (StateFlags flags : flagsByNode.values()) {
             if (flags.isStyleDirty) return true;
@@ -529,6 +571,7 @@ public class InteractionState implements StateLookup {
 
     public void clear() {
         flagsByNode.clear();
+        if (animator != null) animator.clear();
         hoveredChain = new HashSet<>();
         activeChain = new HashSet<>();
         focusWithinChain = new HashSet<>();

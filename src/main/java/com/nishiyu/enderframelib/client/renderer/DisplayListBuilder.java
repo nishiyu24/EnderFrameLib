@@ -17,6 +17,8 @@ import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
+import com.nishiyu.enderframelib.core.css.AnimationParser;
+import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
@@ -538,97 +540,9 @@ public class DisplayListBuilder {
      * {@link AnimationSpec} に解決する。
      */
     private AnimationSpec parseAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
-        String animProp = style.get(CssProperty.ANIMATION);
-        String name = "";
-        int dur = 1000;
-        int delay = 0;
-        float iterationCount = 1.0f;
-        AnimationSpec.Direction direction = AnimationSpec.Direction.NORMAL;
-        AnimationSpec.FillMode fillMode = AnimationSpec.FillMode.NONE;
-        String easing = EasingFunction.DEFAULT_EASING;
-
-        if (animProp != null && !"none".equalsIgnoreCase(animProp.trim())) {
-            easing = EasingFunction.extractFromShorthand(animProp);
-            String cleaned = CUBIC_BEZIER_SPAN_PATTERN.matcher(animProp).replaceAll(" ").trim();
-            String[] parts = WHITESPACE_SPLIT.split(cleaned);
-            int timeCount = 0;
-            for (String p : parts) {
-                if (p.isEmpty()) continue;
-                String lower = p.toLowerCase(Locale.ROOT);
-                Matcher tm = TIME_UNIT_PATTERN.matcher(lower);
-                if (tm.matches()) {
-                    int ms = parseTimeTokenMs(tm);
-                    if (timeCount == 0) dur = ms;
-                    else if (timeCount == 1) delay = ms;
-                    timeCount++;
-                } else if ("infinite".equals(lower)) {
-                    iterationCount = Float.POSITIVE_INFINITY;
-                } else if ("normal".equals(lower) || "reverse".equals(lower)
-                        || "alternate".equals(lower) || "alternate-reverse".equals(lower)) {
-                    direction = AnimationSpec.Direction.fromCss(lower);
-                } else if ("forwards".equals(lower) || "backwards".equals(lower) || "both".equals(lower)) {
-                    fillMode = AnimationSpec.FillMode.fromCss(lower);
-                } else if (EASING_KEYWORDS.contains(lower)) {
-                    easing = lower;
-                } else if (keyframes.containsKey(p)) {
-                    name = p;
-                } else {
-                    try {
-                        iterationCount = Float.parseFloat(lower);
-                    } catch (NumberFormatException ignored) {
-                        if (name.isEmpty()) name = p;
-                    }
-                }
-            }
-        }
-
-        // 個別ロングハンドの上書き
-        String nameProp = style.get(CssProperty.ANIMATION_NAME);
-        if (nameProp != null && !nameProp.isBlank()) {
-            name = nameProp.trim();
-        }
-        if (name.isEmpty() || "none".equalsIgnoreCase(name) || !keyframes.containsKey(name)) {
-            return AnimationSpec.NONE;
-        }
-
-        String durProp = style.get(CssProperty.ANIMATION_DURATION);
-        if (durProp != null) {
-            Matcher tm = TIME_UNIT_PATTERN.matcher(durProp.trim().toLowerCase(Locale.ROOT));
-            if (tm.find()) dur = parseTimeTokenMs(tm);
-        }
-
-        String delayProp = style.get(CssProperty.ANIMATION_DELAY);
-        if (delayProp != null) {
-            Matcher tm = TIME_UNIT_PATTERN.matcher(delayProp.trim().toLowerCase(Locale.ROOT));
-            if (tm.find()) delay = parseTimeTokenMs(tm);
-        }
-
-        String iterProp = style.get(CssProperty.ANIMATION_ITERATION_COUNT);
-        if (iterProp != null && !iterProp.isBlank()) {
-            String trimmed = iterProp.trim().toLowerCase(Locale.ROOT);
-            if ("infinite".equals(trimmed)) {
-                iterationCount = Float.POSITIVE_INFINITY;
-            } else {
-                try {
-                    iterationCount = Float.parseFloat(trimmed);
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-
-        String dirProp = style.get(CssProperty.ANIMATION_DIRECTION);
-        if (dirProp != null && !dirProp.isBlank()) {
-            direction = AnimationSpec.Direction.fromCss(dirProp);
-        }
-
-        String fillProp = style.get(CssProperty.ANIMATION_FILL_MODE);
-        if (fillProp != null && !fillProp.isBlank()) {
-            fillMode = AnimationSpec.FillMode.fromCss(fillProp);
-        }
-
-        String tfProp = style.get(CssProperty.ANIMATION_TIMING_FUNCTION);
-        if (tfProp != null && !tfProp.isBlank()) {
-            easing = tfProp.trim();
-        }
+        AnimationTiming timing = AnimationParser.parse(style, keyframes::containsKey);
+        if (timing == null) return AnimationSpec.NONE;
+        String name = timing.name();
 
         List<AnimationSpec.Keyframe> frames = new ArrayList<>();
         int animatedChannels = 0;
@@ -673,7 +587,8 @@ public class DisplayListBuilder {
         }
 
         if (frames.isEmpty() || animatedChannels == 0) return AnimationSpec.NONE;
-        return new AnimationSpec(dur, delay, iterationCount, direction, fillMode, easing, animatedChannels, frames);
+        return new AnimationSpec(timing.durationMs(), timing.delayMs(), timing.iterationCount(), timing.direction(),
+                timing.fillMode(), timing.easing(), animatedChannels, frames);
     }
 
     private static int parseTimeTokenMs(Matcher tm) {

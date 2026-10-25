@@ -381,7 +381,14 @@ public final class BoxMeasurer {
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う
-        float contentH = box.containsBlockSize() ? 0 : engine.contentBlockSize(box, space, ctx);
+        float contentH;
+        if (box.containsBlockSize()) {
+            // 中身の高さは寄与しないので測らない。前回の測定で作った配置の状態を残すと、子が増減した後の配置に使われてしまう
+            box.engineState = null;
+            contentH = 0;
+        } else {
+            contentH = engine.contentBlockSize(box, space, ctx);
+        }
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
         engine.finishLayout(box, space, ctx);
         if (overridden) return;
@@ -541,6 +548,8 @@ public final class BoxMeasurer {
         if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;
+        // layout / paint containment は独立した整形コンテキストを作る（CSS Containment 2）
+        if ((box.style.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0) return true;
         // visible と clip 以外の overflow は BFC を作る（clip はスクロールコンテナにならない）
         return box.style.overflowX().scrolls() || box.style.overflowY().scrolls();
     }

@@ -96,6 +96,9 @@ public final class CssKeywords {
 
     public enum ScrollbarWidth implements Keyword { AUTO, THIN, NONE }
 
+    /** {@code content-visibility}。{@code hidden} は中身を描かず測らない（size / layout / paint containment を伴う）。 */
+    public enum ContentVisibility implements Keyword { VISIBLE, AUTO, HIDDEN }
+
     /** {@code container-type}。{@code size} は両軸、{@code inline-size} は横軸の containment を伴う。 */
     public enum ContainerType implements Keyword {
         NORMAL, SIZE, INLINE_SIZE;
