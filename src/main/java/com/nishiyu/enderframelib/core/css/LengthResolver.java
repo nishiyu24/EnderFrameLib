@@ -51,9 +51,16 @@ public class LengthResolver {
      * @param rootLineHeight ルート要素の行の高さ（px）。{@code rlh} の基準
      * @param containerW    問い合わせコンテナの幅（px）。コンテナが無ければ NaN（{@code cq*} はビューポートに戻る）
      * @param containerH    問い合わせコンテナの高さ（px）。同上
+     * @param glyphs        {@code ch} / {@code ex} を書体の指標から決める源。無ければ 0.5em
      */
     public record Metrics(float percentBase, float rootW, float rootH, float fontSize, float rootFontSize,
-                          float lineHeight, float rootLineHeight, float containerW, float containerH) {
+                          float lineHeight, float rootLineHeight, float containerW, float containerH,
+                          GlyphUnits glyphs) {
+
+        public Metrics(float percentBase, float rootW, float rootH, float fontSize, float rootFontSize,
+                       float lineHeight, float rootLineHeight, float containerW, float containerH) {
+            this(percentBase, rootW, rootH, fontSize, rootFontSize, lineHeight, rootLineHeight, containerW, containerH, null);
+        }
 
         /** 行の高さとコンテナを知らない文脈（{@code lh} は {@code normal} の比、{@code cq*} はビューポート）。 */
         public static Metrics of(float percentBase, float rootW, float rootH, float fontSize, float rootFontSize) {
@@ -63,7 +70,7 @@ public class LengthResolver {
 
         Metrics withPercentBase(float base) {
             return new Metrics(base, rootW, rootH, fontSize, rootFontSize, lineHeight, rootLineHeight,
-                    containerW, containerH);
+                    containerW, containerH, glyphs);
         }
     }
 
@@ -140,7 +147,8 @@ public class LengthResolver {
      *
      * ビューポートは動的なツールバーを持たないので、{@code sv*} / {@code lv*} / {@code dv*} は {@code v*} と同じ。
      * {@code cq*} はコンテナの寸法（{@code %} ではなく 1% = 1 単位）で、コンテナが無ければ小ビューポート単位に戻る。
-     * LIMITATION: {@code ch} / {@code ex} は字形を測らず 0.5em で近似する（R7 のフォント指標を待つ）。README の "Not supported"
+     * {@code ch} / {@code ex} は書体の指標（「0」の送り幅・x ハイト。{@link GlyphUnits}）で決める。書体を解決する手段が
+     * 渡されていない文脈（ヘッドレスの単体テストなど）だけ 0.5em で近似する。
      */
     static float lengthUnitInPixels(String unit, Metrics m) {
         return switch (unit) {
@@ -159,7 +167,8 @@ public class LengthResolver {
             case "rlh" -> m.rootLineHeight();
             case "cap" -> m.fontSize() * CAP_HEIGHT_EM;
             case "ic" -> m.fontSize();
-            case "ch", "ex" -> m.fontSize() * GLYPH_FALLBACK_EM;
+            case "ch" -> m.glyphs() != null ? m.glyphs().ch() : m.fontSize() * GLYPH_FALLBACK_EM;
+            case "ex" -> m.glyphs() != null ? m.glyphs().ex() : m.fontSize() * GLYPH_FALLBACK_EM;
             default -> absoluteToPixels(1f, unit);
         };
     }

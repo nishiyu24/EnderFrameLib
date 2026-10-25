@@ -25,6 +25,9 @@ import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.core.text.font.WebFonts;
+import java.io.InputStream;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * W3C CSS Fonts Module Level 3 標準の {@code @font-face} ルールおよび {@code font-family} プロパティを解決し、
@@ -114,9 +117,54 @@ public class WebFontManager {
         return cleanedCss.toString();
     }
 
+    /** {@code @font-face} の TTF / OTF の出所。資源の再読み込みで読み直すために覚える。 */
+    private record OutlineSource(String family, ResourceLocation location, int weight, boolean italic) {}
+
+    private static final List<OutlineSource> OUTLINE_SOURCES = new CopyOnWriteArrayList<>();
+
+    /** {@code font-weight} 記述子（{@code bold} / 数値 / 範囲 {@code 100 900}）を下限の数値にする。 */
+    static int parseFontWeightDescriptor(String value) {
+        String v = value.trim().toLowerCase(Locale.ROOT);
+        if (v.startsWith("bold")) return 700;
+        if (v.startsWith("normal")) return 400;
+        Matcher m = Pattern.compile("^\\d+").matcher(v);
+        return m.find() ? Integer.parseInt(m.group()) : 400;
+    }
+
+    /**
+     * TTF / OTF を資源から読んで {@link WebFonts} に登録する。登録できればその書体は OS の書体と同じ経路
+     * （FreeType + OpenType）で測り・描かれる。読めなければ false（従来のビットマップの書体にフォールバック）。
+     */
+    private static boolean registerOutline(OutlineSource source) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        String path = source.location().getPath().toLowerCase(Locale.ROOT);
+        if (!(path.endsWith(".ttf") || path.endsWith(".otf"))) return false;
+        for (ResourceLocation loc : List.of(source.location(),
+                ResourceLocation.fromNamespaceAndPath(source.location().getNamespace(), "font/" + source.location().getPath()))) {
+            var resource = mc.getResourceManager().getResource(loc);
+            if (resource.isEmpty()) continue;
+            try (InputStream in = resource.get().open()) {
+                return WebFonts.register(source.family(), in.readAllBytes(), source.weight(), source.italic());
+            } catch (Exception e) {
+                EnderFrameLib.LOGGER.warn("Could not read @font-face {}: {}", loc, e.toString());
+            }
+        }
+        return false;
+    }
+
+    /** 資源の再読み込みのあとに、登録済みの TTF / OTF を読み直す。 */
+    private static void reloadOutlineFonts() {
+        WebFonts.clear();
+        for (OutlineSource source : OUTLINE_SOURCES) registerOutline(source);
+        McFontResolver.INSTANCE.clear();
+    }
+
     private static void parseFontFaceBlock(String block) {
         String family = null;
         String srcUrl = null;
+        int weight = 400;
+        boolean italic = false;
         float size = 11.0f;
         float oversample = 4.0f;
 
@@ -136,6 +184,8 @@ public class WebFontManager {
                         srcUrl = cleanFamilyName(val);
                     }
                 }
+                case "font-weight" -> weight = parseFontWeightDescriptor(val);
+                case "font-style" -> italic = val.toLowerCase(Locale.ROOT).startsWith("italic") || val.toLowerCase(Locale.ROOT).startsWith("oblique");
                 case "font-size", "size" -> {
                     try { size = Float.parseFloat(val.replace("px", "").trim()); } catch (Exception ignored) {}
                 }
@@ -148,6 +198,8 @@ public class WebFontManager {
         if (family != null && !family.isEmpty() && srcUrl != null && !srcUrl.isEmpty()) {
             try {
                 ResourceLocation loc = ResourceLocation.parse(srcUrl);
+                OutlineSource outline = new OutlineSource(family, loc, weight, italic);
+                if (registerOutline(outline)) OUTLINE_SOURCES.add(outline);
                 registerFontFace(new FontFaceSpec(family, loc, size, oversample, 0.0f, 0.0f));
             } catch (Exception ignored) {
             }
@@ -289,6 +341,7 @@ public class WebFontManager {
     }
 
     public static void clearCache() {
+        reloadOutlineFonts();
         FONT_CACHE.clear();
         cachedUniformFont = null;
         for (FontSet fs : CREATED_FONT_SETS) {
@@ -326,6 +379,8 @@ public class WebFontManager {
         for (var e : SystemFonts.parseFamilyList(fontFamily)) {
             if (!e.generic()) {
                 String lower = e.name().toLowerCase(Locale.ROOT);
+                // @font-face で TTF / OTF を読めたものはシステムの書体と同じ経路で描くので、Minecraft の書体ではない
+                if (WebFonts.has(lower)) return false;
                 if (MINECRAFT_FAMILIES.contains(lower) || REGISTERED_FACES.containsKey(lower) || lower.contains(":")) return true;
             }
             if (system.isAvailable(e)) return false;

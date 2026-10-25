@@ -22,7 +22,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ## 現在地（2026-10-25 時点）
 
-`./gradlew test` は 893 件（2026-10-26 の Phase 3 実装後。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 24 行）、WPT 採用 38 ケース（台帳 0 行）。
+`./gradlew test` は 973 件（2026-10-26 の Phase 4 実装後。Phase 3 実装後は 893 件。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 23 行）、WPT 採用 38 ケース（台帳 0 行）。
 直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
 2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
@@ -39,7 +39,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
 | R5 | インクリメンタル・パイプラインと CSSOM | ほぼ完了（差分レイアウトと近道、`InvalidationSets` 接続、`ComputedStyle` の遅延確保、再レイアウト境界と `contain`、配置の使い回し、描画だけの変化の近道、`StyleAnimator`（再スタイルで動かすトランジション・`@keyframes`）、CSSOM View は 2026-10-25 に完了。残: 台帳 R5 のスクロールバー 10 行（設計判断待ち）、`@starting-style`・`transition-behavior`） |
 | R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・線形/放射グラデーション・角丸クリップ、`RenderKeys` 撤去、transform の宣言順合成は 2026-10-26 に完了。FBO レイヤー合成・ガウス影・楕円の角・回転クリップ・旧 W12 は Phase 3 の残） |
-| R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰めは完了。アトラス VRAM 最適化・`@font-face` の `OutlineFontFace` 統合・UAX #14・bidi・編集・台帳 2 行は Phase 4） |
+| R7 | テキストと国際化 | ほぼ完了（システムの書体、アトラスの 1 サイズ 1 置き場化と破棄、`@font-face` の統合、`ch` / `ex`、UAX #14、`direction`、UAX #9 の並べ替え、Selection / Range は 2026-10-26 に完了。残: 合字・`line-height: normal` の代替書体の指標・`writing-mode`・`contenteditable` と IME・描画の選択と Selection API のつなぎ） |
 | R8 | 置換要素（SVG・Canvas 2D） | 未着手（Phase 5） |
 | R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行。表の台帳 4 行を含む残りは Phase 5） |
 | R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・ホットリロードは Phase 5） |
@@ -181,7 +181,38 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
   - 検証: `./gradlew test` は 897 件・失敗 0、`runGameTestServer` 5 件通過、`./gradlew benchmark` は許容幅内（hover 0.31ms・1 行追加 3.6ms・スクロール 0.72ms。`showcase.html` Restyle 18.3ms は基準 16.3 の許容幅内）。
 - 残り（項目 3）: FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`clip-path`・`mask`）、回転した要素の角丸クリップ、楕円の角・角丸の破線、旧 W12 の残り（スクロール端にかかる文字行の世界内面での部分クリップ・複数 Surface の半透明順序 A-14）。ぼかした影のガウス化は 3a で完了。いずれも GL の状態（FBO・クリップ・合成）の設計を伴うので、別の段として扱う。
 
+- **残りをいつやるか（実施時期の方針）**: 順序は「Phase 4 → Phase 3b（FBO 合成の段）→ Phase 5」。Phase 3 の残りは Phase 4 の完了後・Phase 5 の着手前に、独立した段（Phase 3b）として行う。
+  - **理由**: (1) 3b は GL の状態設計（FBO プール・ステンシル・合成順）を伴う大きな段で、他の段と混ぜると退行の原因を切り分けられない。(2) Phase 4 の文字アトラス（VRAM 最適化・LRU）が FBO プールと VRAM・テクスチャ管理を取り合うので、先に文字側を固めてから FBO の予算を決める。(3) Phase 5 の SVG / Canvas 2D と DevTools は、`clip-path` / `mask` / `filter` / `mix-blend-mode` を前提にするので、その前に合成基盤が要る。
+  - **3b の中の順序と着手条件**: ①楕円の角と角丸に沿う dashed / dotted（`Corners` を `int` から楕円半径へ変える型変更が先。SDF だけで済み、FBO 不要なので最初に片付ける）→ ②FBO プールとグループ `opacity`・`filter`・`mix-blend-mode`・`isolation` → ③`clip-path`・`mask`・回転した角丸クリップ（ステンシル / マスク FBO）→ ④`backdrop-filter`。①は Phase 4 と並行してもよい。②以降の着手条件は、Phase 4 のアトラス改修が済み VRAM の予算が決まっていること。
+  - **旧 W12 の残り**: A-14（複数 Surface の半透明順序。世界内の面のバッチ描画で文字・画像が SDF の Quad より後になる問題）は ②の FBO / レイヤー順序の設計と同じ根（描画順の管理）なので 3b ②と一緒にやる。世界内の面での文字行の部分クリップは、シザーが使えないため ③のマスク / ステンシルが入ってから解く。
+  - **完了条件**: 効果ごとの項目がディスプレイリストのゴールデンに出ること、`runClient` の見本ページの目視（`guidebook.md` と並べる）、ベンチで FBO を使わない文書の Restyle・DisplayList が基準の許容幅内であること（FBO は効果があるときだけ確保）。
+
 ### Phase 4: フォント VRAM 最適化・`@font-face` 統合・国際化・編集（R7 + R4 残課題）
+
+**進捗（2026-10-26）**: 項目 1・2 と項目 3 の一部（UAX #14・UAX #9 の並べ替え・`direction`・Selection / Range API）を実装した。合字・`line-height: normal` の代替書体の指標・`writing-mode`・`contenteditable`・IME は未着手。
+`./gradlew test` は 973 件・失敗 0、`./gradlew benchmark` は通過（HEAD と同じマシン・同じ条件で 3 往復比較し、有意な差なし。下の「検証」）。`::marker` の台帳 8 行は書体の指標が要る残りとして据え置き。
+
+- 1（実装済み）フォントアトラス:
+  - `OutlineTextRenderer` の置き場の鍵から `subpixel` と `lightText` を外し、同じサイズの 8 変種を **1 つの `FontSet`** に載せた（`GlyphKey`）。以前は 1 サイズ最大 8 枚の別テクスチャで、どれも少ししか埋まらなかった。Minecraft の `FontSet` が字形を引く表（`CodepointMap`）は 0〜0x10FFFF しか持てないので、字形の番号はコードポイントのビット詰めではなく、置き場ごとの通し番号 × 8 + 変種にした。
+  - 焼くピクセルサイズを量子化（`AtlasSizing`。32px まで 1/4px、64px まで 1/2px、それ以上 1px。誤差 1% 未満で、普通の静止した大きさは変わらない）。13px の文字を `scale(1 → 3)` で動かすと、毎フレーム違う大きさの置き場が 667 フレームで 667 枚できていたのが約 90 枚に収まる。
+  - 置き場の破棄を `AtlasCache` に分けた: 直近 2 秒以内に使った置き場は捨てない（描画バッファがまだ参照しているかもしれない）、個数の目安 64 を超えたら保護の外の古い順、30 秒使われなければ個数によらず捨てる。以前は個数 256 の LRU だけだった。
+  - `LoadedFace` の FreeType ハンドルを閉じて開き直せるようにした（`release()` / `releaseIdle()` / `releaseAll()`。測った寸法・送り幅・字形番号の表は残るので、閉じても何も失わない）。描画側が 60 秒使われない面を閉じる。資源の再読み込みでも閉じる。
+  - 書体の一覧の走査を `SystemFonts.warmUpAsync()`（クライアント起動時に裏のスレッドで 1 回）にまとめた（以前は `EnderFrameClientInit` にインラインのスレッドがあった）。
+- 2（実装済み）`@font-face` と `ch` / `ex`:
+  - `@font-face` の TTF / OTF を `WebFonts` に登録し、OS の書体と同じ `SystemFonts.Face`（メモリから開く `FT_New_Memory_Face`）として照合に載せた。測定（`OutlineFontFace`）も描画（`OutlineTextRenderer`）も OS の書体と同じ経路で、同じ書体ファイルなら OS によらず同じ寸法・同じ字形になる（`font-weight` / `font-style` 記述子も読む）。同名の OS の書体より優先し、資源の再読み込みで読み直す。TTF / OTF でない `src`（フォントの JSON など）と読めなかったファイルは従来のビットマップ経路。
+  - `ch`（「0」の送り幅）と `ex`（x ハイト）を要素の書体の指標から決める（`GlyphUnits`）。書体の解決は下の層が持つので `GlyphUnits.install` で渡す（クライアントは起動時に `McFontResolver`）。渡されない文脈（ヘッドレスの単体テスト）だけ 0.5em。書体を引くのは `ch` / `ex` が実際に使われたときだけ。
+- 3（一部）国際化:
+  - 折り返しを **UAX #14** にした（`LineBreaker`）。LB7〜LB31 のうち LB7 / 8 / 8a / 9 / 11〜19 / 21 / 23〜25 / 28〜30a / 31。以前は空白・ハイフン・和文だけを候補にしていたので、`/` の後ろ・`—` の前後などで折り返せなかった。`(3-5 days)` の `3-5` を割らなくなった（Chrome と同じ。ディスプレイリストのゴールデンの 2 か所が変わった: `"(3-" "5 "` → `"(3-5 "`、`"1-" "4 "` → `"1-4 "`）。`word-break: keep-all` は表意文字・ハングルを英字として扱い、`break-all` は英字・数字も表意文字として扱う。LIMITATION: タイ語などの辞書による分かち書き、ハングル音節の連結（LB26 / 27）、東アジア幅による LB30 の括弧の区別。
+  - **`direction`**: `dir` 属性を UA スタイルシートで `direction` に写し、ブロックの子の over-constrained な配置（CSS 2.2 §10.3.3。rtl は左のマージンが余りを受けて右に寄る）と `text-align: start / end`（`TextAlign.physical`）を向きで解く。台帳の `pseudo-lang-dir-defined#e.x` が解消した。
+  - **UAX #9**: `BidiText` が 1 つの文字列を視覚順に並べ替える（`OutlineTextRenderer` が描く前に通す。括弧は反転）。LIMITATION: アラビア文字の連結形（GSUB による整形）は選ばない。複数のインライン要素にまたがる行の並べ替えはしない。キャレットと選択の位置は論理順の測定のまま。
+  - **Selection / Range API**: `Document.createRange()` / `getSelection()`。`Range`（境界点の比較・`toString`・`cloneContents` / `extractContents` / `deleteContents` / `insertNode` / `surroundContents`・節の挿入・削除・文字の変更に追従する生きた範囲）と `Selection`（範囲は 1 つ。anchor / focus の向き・`extend` / `setBaseAndExtent` / `selectAllChildren` / `deleteFromDocument`・`selectionchange`）。描画の選択（`TextSelection`）とはまだつないでいない。
+  - **スクロール範囲**: 行の高さより高い書体の内容領域（ベースライン + descent）がスクロール範囲（`scrollHeight`）に入る。台帳の `forced-line-breaks#box.scrollHeight` の原因はこれ（Chrome 側の書体は日本語環境の Noto Sans JP で内容領域が 24px、行が 20px）。忠実度コーパスの測定は書体を持たない `FontResolver.FALLBACK` なので行は残る。システムの書体で測る `DirectionLayoutTest` で固定した。
+- 未着手: 合字（GSUB の `liga`）、`line-height: normal` での代替書体の指標、`writing-mode`、`contenteditable`・IME の composition、`::marker` の台帳 8 行（書体の指標とブラウザの実測が要る）、アトラスの VRAM を実測して FBO の予算を決める作業（Phase 3b の着手条件）。
+- 検証:
+  - 新規テスト（76 件）: `AtlasCacheTest`（置き場の保護・期限・個数・字形番号が `CodepointMap` の範囲に収まること・量子化）、`FontLifecycleTest`（ハンドルの解放と開き直しで同じ字形・`@font-face` が OS の書体と同じ幅・同名の上書きと復元・読めないデータの拒否）、`LineBreakerTest`（UAX #14 の規則と Chrome の挙動、結合・ZWJ・地域指示記号・禁則・`keep-all` / `break-all`）、`BidiTextTest`、`GlyphUnitsTest`、`DirectionLayoutTest`（rtl の配置・`dir` 属性・start / end・行の下にはみ出す文字のスクロール範囲）、`RangeSelectionTest`（範囲の追従・取り出し・Selection）。
+  - 実機（`runClient`、showcase を 1600×900）で、共有アトラスの描画を目視した。**単体テストでは捕まらない不具合を 2 つ直した**: (1) 字形の番号を `cp | 変種 << 21` と詰めたら `CodepointMap` の範囲外で描画スレッドが落ちた、(2) `FontSet` は対応字（空白）を引いて null を返す提供元を外すので、番号の割り当て前の問い合わせに null を返したら全字が豆腐になった。どちらも `GlyphKey` と `FaceGlyphProvider` に理由を書いた。
+  - ベンチ: `./gradlew benchmark`（厳密）が通る。HEAD の worktree と同じマシン・同じ `test --tests PerformanceBenchmarkTest` を 3 往復して比べた（マシンが負荷で 3 割ほど揺れる）。showcase の Relayout は HEAD 25〜35 ms / 今回 31〜38 ms、Restyle は HEAD 22〜25 ms / 今回 20〜27 ms で、揺れの範囲。途中で、行の断片を置くたびに書体を引いて Relayout が約 40% 遅くなっていたのを、断片を作る時点で descent を持たせて直し（`InlineFragment.descent`）、`LineBreaker` の英字どうしの近道を足した。
+  - 忠実度: 台帳は 24 → 23 行（`pseudo-lang-dir-defined#e.x` が解消）。ゴールデン（showcase）は UAX #14 で 2 か所変わった。`ArchitectureTest` の M9（トップレベルのファイル数）は 231 → 242。
 
 1. **フォントアトラスの VRAM 膨張抑止と FreeType ハンドル管理（R7）**
    - `OutlineTextRenderer.AtlasKey` が `subpixel`（4 種）× `lightText`（2 種）を含むため 1 サイズあたり最大 8 倍の `FontSet` テクスチャが作られる問題と、`scale` アニメーション中にサイズごとのアトラスが溜まり続ける問題を、共通アトラス化・サイズ量子化・LRU 破棄で解消する。
@@ -250,7 +281,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 （`ColorParser`）、radial / conic / repeating のグラデーションと補間のヒント（`Gradients`）、数学関数 Level 4・
 `lh` / `rlh` / `cap` / `sv*` などの単位、`@media (resolution)`。コーパスに modern-css の 14 ケースを足して一致
 （台帳は `direction` の 1 行だけ）。
-**R4 — 残**: `ch` / `ex` を書体の指標から決める（R7 の指標を読む。いまは 0.5em の `LIMITATION`。Phase 4 で対応）。
+**R4 — 残**: （`ch` / `ex` は 2026-10-26 に Phase 4 で書体の指標から決めるようにした。）
 `InvalidationSets` は組めるが再スタイルに使っていない（Phase 2 で接続）。台帳の `::marker` の 8 行（Phase 2）。
 
 **R5 — 達成**: 差分レイアウト（`LayoutBox.measure` の再利用）、スクロール・ドラッグ・リサイズの近道
@@ -268,8 +299,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 総称ファミリ、字単位の代替、GPOS / `kern` の詰め、Chrome と同じ縦の寸法）、デバイスピクセルでのラスタライズ
 （`OutlineTextRenderer`）、選択範囲のモデル（`TextSelection`）。`ChromeTextMetricsParityTest`・`ShowcaseChromeParityTest`・
 `GlyphRasterizationTest` が Chrome の実測と比べる。
-**R7 — 残（Phase 4）**: `OutlineTextRenderer.AtlasKey` の `subpixel` × `lightText` 8 倍テクスチャ膨張の解消と LRU 破棄、`LoadedFace.OPEN` の解放、`@font-face` の `OutlineFontFace` 統合、合字、`line-height: normal` での代替書体の指標、UAX #14 の改行、bidi と `direction`（台帳の 1 行）、
-`writing-mode`、Selection / Range API と `contenteditable`、IME の composition、台帳の R7 の 2 行。
+**R7 — 残（Phase 4 の続き）**: 合字、`line-height: normal` での代替書体の指標、`writing-mode`、`contenteditable` と IME の composition、描画の選択（`TextSelection`）と Selection API のつなぎ、台帳の R7 の 1 行（`forced-line-breaks`。測定に書体を使うコーパスが要る）。（アトラスの膨張と破棄・`LoadedFace` の解放・`@font-face` の統合・UAX #14・UAX #9 の並べ替え・`direction`・Selection / Range は 2026-10-26 に完了。）
 
 **R10 — 達成**: GUI 画面の F12 で、ホバーした要素のタグ・id・class・矩形・バインディング属性を重ねて出す簡易インスペクタ、
 F5 で文書の再読み込み。

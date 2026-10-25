@@ -27,6 +27,7 @@ public class HtmlText extends HtmlNode implements Text {
     public void setData(String data) {
         String oldVal = this.text;
         this.text = data != null ? data : "";
+        if (ownerDocument != null) ownerDocument.rangesReplaceData(this, 0, oldVal.length(), this.text.length());
         MutationObserverManager.queueCharacterData(this, oldVal);
         notifyDomChanged(null);
     }
@@ -49,6 +50,7 @@ public class HtmlText extends HtmlNode implements Text {
 
         HtmlText newText = new HtmlText(secondHalf);
         newText.ownerDocument = this.ownerDocument;
+        if (ownerDocument != null) ownerDocument.rangesSplitText(this, offset, newText);
         if (this.parent != null) {
             this.parent.insertBefore(newText, this.getNextSibling());
         }

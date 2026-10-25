@@ -739,9 +739,16 @@ Layout differences from a real browser are measured, case by case, in
   standard says (Chrome on Windows picks Semibold). Generic families
   (`sans-serif` and so on) map to the fonts Chrome uses on Windows; on other
   systems the installed fallbacks are used, so text can measure differently.
-  Fonts registered with `@font-face` and the `minecraft:*` families are drawn
-  with Minecraft's bitmap font system instead. See [FIDELITY.md](FIDELITY.md)
-  for what is measured.
+  TTF / OTF fonts registered with `@font-face` go through the same path as the
+  system fonts (so they measure and draw the same on every OS); only the
+  `minecraft:*` families (and `@font-face` sources that are not TTF / OTF) are
+  drawn with Minecraft's bitmap font system. Line breaking follows UAX #14.
+  Text in a right-to-left script is reordered per text fragment (UAX #9, with
+  `direction: rtl` aligning blocks and `text-align: start / end`), but Arabic
+  letters are not joined into their contextual forms and a line that mixes
+  inline elements of both directions is not reordered across them. There is
+  no `writing-mode` (vertical text), `contenteditable` or IME composition.
+  See [FIDELITY.md](FIDELITY.md) for what is measured.
 - **Media features that need a display.** `color-gamut` is unknown (and
   therefore false). `prefers-color-scheme` is always `light` and
   `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
@@ -753,9 +760,10 @@ Layout differences from a real browser are measured, case by case, in
   (`:user-valid`, `:autofill`, `:fullscreen` and so on) make the selector
   invalid, as an unknown pseudo-class does in a browser. There are no
   namespaces (`svg|rect`).
-- **Glyph-relative units and elliptical corners.** `ch` and `ex` are taken as
-  0.5em instead of being measured from the font, `ic` as 1em and `cap` as a
-  fixed fraction of the font size. Corners are drawn as circular arcs, so an
+- **Glyph-relative units and elliptical corners.** `ch` and `ex` are measured
+  from the element's font (the advance of "0", the x-height) in the game; where
+  no font is available (headless unit tests) they fall back to 0.5em. `ic` is
+  1em and `cap` a fixed fraction of the font size. Corners are drawn as circular arcs, so an
   elliptical radius (`10px / 20px`, or a percentage on a box that is not
   square) uses the smaller of its two radii.
 - **Transforms in full.** `transform`, `translate`, `rotate` and `scale` are

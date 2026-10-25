@@ -64,6 +64,12 @@ public interface Document extends Node {
      */
     DocumentFragment createDocumentFragment();
 
+    /** 文書の先頭に折りたたまれた範囲を作る（DOM Standard §5 の {@code createRange()}）。 */
+    Range createRange();
+
+    /** この文書の選択（Selection API の {@code getSelection()}）。文書ごとに 1 つ。 */
+    Selection getSelection();
+
     /**
      * Returns an {@link Element} object representing the element whose id property matches the specified string.
      *

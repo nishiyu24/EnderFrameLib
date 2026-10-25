@@ -263,6 +263,7 @@ public class HtmlNode implements Node {
         newChild.parent = this;
         children.add(insertIndex, newChild);
         propagateDocument(newChild, findDocument());
+        if (ownerDocument != null) ownerDocument.rangesNodeInserted(this, insertIndex, 1);
 
         // MutationObserver 通知
         MutationObserverManager.queueChildList(this, List.of(newChild), Collections.emptyList(), prevSibling, nextSibling);
@@ -284,6 +285,7 @@ public class HtmlNode implements Node {
         Node nextSibling = targetChild.getNextSibling();
 
         int removedIndex = children.indexOf(targetChild);
+        if (ownerDocument != null) ownerDocument.rangesNodeRemoving(targetChild, this, removedIndex);
         children.remove(targetChild);
         targetChild.parent = null;
 
