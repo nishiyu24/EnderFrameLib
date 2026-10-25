@@ -22,7 +22,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ## 現在地（2026-10-25 時点）
 
-`./gradlew test` は 783 件＋追加テスト 4 件（`SurfaceStateTest`・`HologramPickTest`・`AdHocSessionLifecycleTest`・`UIStateLoadTest`）。忠実度コーパス 138 ケース（台帳 25 行）、WPT 採用 38 ケース（台帳 0 行）。
+`./gradlew test` は 866 件（2026-10-25 の Phase 2 実装後。`PerformanceBenchmarkTest` は全体実行の負荷で落ちることがある。単独実行では通る）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 24 行）、WPT 採用 38 ケース（台帳 0 行）。
 直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
 2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
@@ -37,7 +37,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | **T8** | **監査指摘のライフサイクル・入力コールバック・サーバー状態・セキュリティ修正** | **R0+ 直後に着手（Phase 1）** |
 | H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化・Surface 連携・実機での観測も 2026-10-24〜25 に済。Surface 既知不具合は Phase 1/3 へ統合） |
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
-| R5 | インクリメンタル・パイプラインと CSSOM | 一部（差分レイアウトと近道は完了。`InvalidationSets` 接続・dirty ビット・`ComputedStyle` 省メモリ化・CSSOM View・台帳 11 行は Phase 2） |
+| R5 | インクリメンタル・パイプラインと CSSOM | ほぼ完了（差分レイアウトと近道、`InvalidationSets` 接続、`ComputedStyle` の遅延確保、再レイアウト境界と `contain`、配置の使い回し、描画だけの変化の近道、`StyleAnimator`（再スタイルで動かすトランジション・`@keyframes`）、CSSOM View は 2026-10-25 に完了。残: 台帳 R5 のスクロールバー 10 行（設計判断待ち）、`@starting-style`・`transition-behavior`） |
 | R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・2 色グラデーション・角丸クリップは完了。`RenderKeys` 撤去・多色 SDF グラデーション・transform 宣言順・FBO レイヤー合成・旧 W12 は Phase 3） |
 | R7 | テキストと国際化 | 一部（システムの書体の照合・測定・描画、詰めは完了。アトラス VRAM 最適化・`@font-face` の `OutlineFontFace` 統合・UAX #14・bidi・編集・台帳 2 行は Phase 4） |
 | R8 | 置換要素（SVG・Canvas 2D） | 未着手（Phase 5） |
@@ -124,6 +124,30 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
    - **B-1 / B-2（一人称視点のアイテム Surface のはみ出し）**: `surface_test_item.json` の `firstperson_righthand` / `lefthand` の display transform 調整とクリッピングの確認。
 
 ### Phase 2: インクリメンタル・パイプライン完遂とスタイル省メモリ化（R5 + R4 残課題）
+
+**進捗（2026-10-25）**: 項目 1〜3 を実装（台帳の 18 行を除く）。
+`./gradlew test` は 866 件・失敗 0（`PerformanceBenchmarkTest` だけは全体実行の CPU 競合で落ちることがあり、単独実行では通る。HEAD でも同じ）、`runGameTestServer` は 5 件通過。
+- 1（実装済み）: `InvalidationSets` を `InteractionState` に接続（`bindStyleSheet`）。状態（`:hover` など）・属性（class は変化した class だけ、id、その他）・子の増減（挿入/削除位置）を `invalidateState` / `invalidateAttribute` / `invalidateChildList` が `Relation` に従って汚す（自身・子孫・後続/先行の兄弟・祖先・文書全体）。`HtmlDocument.attributeChanged` / `childListChanged` が DOM の変異から呼ぶ。祖先の状態を読む規則（`.a:hover .b`）は要素の `subtreeDirty` で表し、再スタイルは `FORCE_SUBTREE` として下まで続ける。理由を絞らない `markDirty` は従来どおり安全側（子孫・祖先も汚す）。`:root` は `forRootChange` に分け、文書直下の子の増減でだけ効く（兄弟の増減で兄弟を汚さない）。要素ごとの `LAYOUT_DIRTY` / `PAINT_DIRTY` ビットへの分割は未実施。
+- 2（一部）: 継承しないプロパティだけが変わった要素は子孫を再スタイルしない（`propagationOf`。`inherit` を宣言値に使う規則 `StyleSheet.usesInheritKeyword()` か style 属性があるときだけ子孫が追従）。`ComputedStyle` の参照キャッシュ（`ConcurrentHashMap` × 4）を最初の参照まで確保しない。`StyleResolver` のインライン宣言用 `LinkedHashMap` × 2 は style 属性があるときだけ確保。`StyleResolver.resolveDeclarations` の `uaValues` / `userValues` / `layerBase` のコピー（3 個）は未削減。確保量・GC の測定は未実施。
+- 検証: `InvalidationPipelineTest`（乱数の変異列 20 系列 × 2 経路を、同じ列を毎回作り直した文書のディスプレイリストと比較。class・hover・style 属性・属性・挿入・削除と、子孫/子/隣接/一般兄弟/`:has`/`:nth-child`/`:first-child` 規則、`inherit` 規則あり/なしの 2 つの CSS）、範囲を絞った汚れ方の単体テスト 5 件。実装中に、強制の伝播が 1 段で止まる誤り（祖先の `:hover` を読む規則で孫が古いまま）をこのテストが捕まえ、`FORCE_NONE/SELF/SUBTREE` に直した。
+- 3a 再レイアウト境界と `contain`（実装済み）:
+  - `contain: layout | paint` は BFC を作り、絶対配置・固定配置の包含ブロックになる。`contain: size`（`strict` 含む）と `container-type: size` は中身の高さ・幅を箱の寸法に寄与させず、ベースラインも境界ボックスの端から合成する（`BlockLayoutEngine.synthesizesBaseline`）。
+  - 再レイアウト境界（`LayoutBox.isRelayoutBoundary()`）: BFC を作るブロックレベルの箱で、size containment を持つか、幅と高さが確定した（`auto`・`%`・内在キーワードでない）スクロールコンテナ。境界の中だけが変わり、境界の寸法・マージンが前回と同じなら、祖先の measure は無効にならない（`invalidateAncestors`）。使い回された祖先から境界まで降りて、中だけを前回と同じ制約で測り直す（`remeasureBoundaries`）。
+  - 配置の使い回し: measure を使い回した箱は、親から渡る原点と包含ブロックの寸法が前回の layout と同じなら layout を飛ばす（`LayoutBox.canKeepPlacement`、`layoutsSkipped()` で計測）。外の状態に位置が依る箱（絶対・固定・相対・sticky・スクロールコンテナ・float・表）を含む部分木と、同じ BFC に float がある箱は対象外。入力が同じ（原点が同じで、配置に外寸が効かない部分木では外寸が変わっても同じ扱い）で子孫の変化のために置き直すだけのときは、子孫の配置を捨てず、子がそれぞれ飛ばすかを決める。
+  - `content-visibility: hidden` は従来どおり中身を測らない。`auto`（画面外の中身を飛ばす）は未対応。
+  - 見つけて直した不具合（`IncrementalLayoutFuzzTest` が捕まえた）: (1) size containment の箱で、中身を測らないのに前回の layout が作った配置の状態（`engineState`）が残り、子の増減が配置に反映されなかった。(2) インラインブロックのベースラインが、測る時点では前回の layout の残りを読んでいて、作り直しと食い違った。(3) 入力が同じでも置き直すたびに子孫の配置を全部捨てていて、配置を飛ばす近道が効かなかった。
+- 3b 描画だけの変化の近道: `PropertyRegistry` の無効化種別（`Invalidation.PAINT`）で、`opacity`・`transform`・色・影・角丸・輪郭線だけの変化は再レイアウトも位置の決め直しも要求しない（`StyleAnimatorTest.opacityTransformAndColorChangesNeedNoLayout`）。位置指定の inset だけの変化は `repositionLayout` で足りる。スクロール位置は `ScrollState` が `float`（丸めは描画の 1 箇所）。
+- 3c `StyleAnimator`（`core/css`。実装済み）: `PropertyRegistry` で `animatable` と宣言されたプロパティのうち、描画項目の補間（`CssAnimator`）が担う `opacity`・`transform`・`translate`・`rotate`・`scale`・`color`・`background-color` を除く全てを、再スタイルで動かす。
+  - トランジション（`transition` の複数指定・各ロングハンドの繰り返し・遅延・イージング）は、再スタイルの前後の目標値の差で始まり、動いている最中に目標が変われば今の値から取り直す。継承しているだけの変化は子の分を始めない。`@keyframes` は `from` / `to` / 途中のストップ・暗黙の端（要素自身の値）・`animation-iteration-count` / `direction` / `fill-mode` / `delay` に対応する。
+  - 動く値は「アニメーションの起源」として生の宣言に重ねて算出し直す（`RenderPipeline.animated`）。レイアウトに効くプロパティが動けば再スタイルの比較が再レイアウトを、色や角丸のような描画だけに効くものは描き直しだけを要求する。時刻は `InteractionState.setAnimationTime` で渡す（テストは決定的）。`SessionContext.flushInvalidation` が実時間で進め、動いている間は次のフレームを予約し続ける。
+  - 値の補間は `ValueInterpolator`（色は sRGB、長さは同じ単位なら数値のまま、違えば `calc()`、`thin` / `medium` / `thick` は px、補間できない組は離散）。`animation` / `transition` の読み取りは `AnimationParser` に出し、`DisplayListBuilder` も同じものを使う。進行度の計算は `AnimationTiming`（`core/paint/model`）に一本化し、`CssAnimator` もこれを呼ぶ。
+  - 未対応: `transition-behavior`（離散的なプロパティのトランジション）・`@starting-style`・`steps()` のイージング・`animation` の複数指定（先頭のみ）・疑似要素のアニメーション。
+- 3d CSSOM View（実装済み）: `Element` の `getBoundingClientRect` / `getClientRects` / `offset*` / `client*` / `scroll*` / `scrollTo` / `scrollBy` / `scrollIntoView` / `offsetParent`、`Document.getComputedStyle`（読み取り専用の解決値）・`matchMedia` / `MediaQueryList`・ビューポートの寸法、`ResizeObserver`・`IntersectionObserver`。レイアウトの型は `core/dom/LayoutQuery`（値だけの `BoxMetrics`）の背後に置き、実装は `common/BoxLayoutQuery`。`CssomViewTest` が固定する（WPT の CSSOM View ケースの採用は未実施）。
+- 検証（追加分）: `IncrementalLayoutFuzzTest`（ブロック・flex・grid・float・絶対・相対・sticky・スクロールコンテナ・`contain`・`content-visibility`・表・インラインを混ぜた文書に、class・テキスト・style・挿入・削除・スクロールの乱数列 150 系列 × 2 経路 × 2 設定を当て、毎回作り直したディスプレイリストと一致）、`RelayoutBoundaryTest`（境界の外の 200 段落を測り直さず置き直しも飛ばすことを回数で、結果は作り直しと一致で確認）、`StyleAnimatorTest`（補間・指定の読み取り・進行度・各時刻の描画が同じ値を静的に書いた文書と一致・描画だけの補間が再レイアウトを要求しないこと）、`StyleAnimatorFuzzTest`（境界の中の要素や無限の `@keyframes` を含む文書に、class の付け外しと時刻の進みの乱数列 40 系列を当て、各フレームが作り直しと一致）、`SessionAnimationFlowTest`（`flushInvalidation` を通した実時間の進み方と終了）。
+- 計測（`incremental-baseline.txt`。この機械では単独実行でも 3 割ほど揺れる）: hover 1 行 0.3〜0.5ms（目標 `< 1.0ms` を満たす）、無関係な class 0.2ms、子孫セレクタに効く class 17〜31ms（500 行が実際に変わる仕事）、**1 行追加 6.3ms → 3.2〜4.4ms**（`RelayoutBoundaryTest.insertingARowSkipsLayoutOfTheRowsBeforeIt` は 300 行のリストの途中への挿入で、挿入位置より前の 250 行の layout を飛ばすことを回数で固定。後ろの行は位置がずれるので置き直す。`< 1.0ms` には届かない）、スクロール 1 段 0.3〜0.8ms。
+- 残り（判断待ち）:
+  - 台帳 R5 のスクロールバー 10 行（`flex-column-overflow` / `overflow-size`）: ブラウザ（Windows の Chrome）は `overflow: auto | scroll` の箱に 15px の古典的なスクロールバーの溝を確保して `clientWidth` と子の `%` 幅を縮めるが、エンジンのスクロールバーは中身に重ねる 4px の細いバーで、溝を取らない。揃えると既存の画面（`ua.css` の `textarea` / `select`、`config-form.css`、`linux_desktop.html` など）のレイアウトとスクロールバーの見た目・ヒットテストが全て変わるため、方針の決定を待つ。マージンの相殺と `scrollHeight` の 1 行（`margin-collapse-bottom`）は解消済み。
+  - 台帳 R4 の `::marker` 8 行（`list-basic` / `list-nested` / `list-ordered`）: ブラウザの項目の `scrollHeight` が項目の高さより 4px 大きい（外側マーカーの箱が行の外に出る）。マーカーの書体の指標とブラウザの実測が要るため、Phase 4（R7 の `ch` / `ex`・書体指標）と一緒に扱う。
 
 1. **`InvalidationSets` の実接続と要素ごとの dirty ビット（R4 残 + R5）**
    - `InteractionState.propagateDirtyToAncestors` が親へ無条件に dirty を伝播している現状を改め、`Document.sheet.invalidation`（`forClass` / `forId` / `forAttribute` / `forState` / `forStructureChange`）から汚すべき要素だけを特定して `STYLE_DIRTY` を立てる。
@@ -223,9 +247,8 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 **R5 — 達成**: 差分レイアウト（`LayoutBox.measure` の再利用）、スクロール・ドラッグ・リサイズの近道
 （[BENCHMARK.md](BENCHMARK.md) §4・§5）。正しさは `IncrementalLayoutTest`・`IncrementalPipelineTest`・`ServerClientLayoutParityTest`。
-**R5 — 残（Phase 2）**: 要素ごとの dirty ビットと `InvalidationSets` の接続、`ComputedStyle` / `StyleResolver` の一時 `Map` 削減と非継承プロパティ変更時の子孫再スタイル抑止、レイアウト境界と `contain`、transform / opacity の速い経路、
-`CssAnimator` の `PropertyRegistry` 駆動、CSSOM / CSSOM View（`getComputedStyle`・`getBoundingClientRect`・`scrollTo`・
-`ResizeObserver` など）、台帳の R5 の 11 行（スクロールバーの幅と相殺したマージンの scrollHeight）。
+**R5 — 達成（2026-10-25、Phase 2）**: `InvalidationSets` の接続、非継承プロパティ変更時の子孫再スタイル抑止、`ComputedStyle` の遅延確保、再レイアウト境界と `contain`、配置の使い回し、描画だけの変化の近道、`StyleAnimator`（再スタイルで動かすトランジション・`@keyframes`）、CSSOM View。詳細は Phase 2 の節。
+**R5 — 残**: 台帳 R5 のスクロールバー 10 行（古典的なスクロールバーの溝を取るかの方針待ち）、`transition-behavior`・`@starting-style`・`content-visibility: auto`、CSSOM View の WPT ケースの採用。
 
 **R6 — 達成**: 角丸・グラデーション・角丸の祖先クリップを 1 枚の四角形で描く SDF シェーダー（`WebSdfShader`・
 `RoundedRectRasterizer`）。GUI・ブロック面・手持ちアイテムで同じ経路。

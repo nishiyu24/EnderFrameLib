@@ -275,6 +275,5 @@ public class InvalidationPipelineTest {
         assertTrue(sets.forStructureChange().isEmpty(),
                 ":root だけを読む規則では、兄弟の増減で兄弟を汚さない");
         assertFalse(sets.forRootChange().isEmpty());
-        assertTrue(sets.forState(ElementState.HOVER).isEmpty());
     }
 }

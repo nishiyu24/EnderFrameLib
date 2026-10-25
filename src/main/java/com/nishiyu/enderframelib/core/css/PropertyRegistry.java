@@ -237,6 +237,10 @@ public final class PropertyRegistry {
         paint("text-decoration", "none", true, ValueType.OTHER, false);
         paint("text-shadow", "none", true, ValueType.LIST, true);
 
+        // ---- containment（箱の中身が外へ及ぶ範囲を限る。再レイアウト境界になる）
+        layout("contain", "none", false, ValueType.LIST, false);
+        keyword("content-visibility", CssKeywords.ContentVisibility.class, CssKeywords.ContentVisibility.VISIBLE, false, Invalidation.LAYOUT);
+
         // ---- コンテナクエリ（container-type は寸法の算出に効く: size containment がある）
         keyword("container-type", CssKeywords.ContainerType.class, CssKeywords.ContainerType.NORMAL, false, Invalidation.LAYOUT);
         layout("container-name", "none", false, ValueType.LIST, false);

@@ -149,6 +149,49 @@ public final class ComputedStyle {
         return properties.containsKey(propertyName);
     }
 
+    /** {@code contain} の値のビット（{@link #containment()}）。 */
+    public static final int CONTAIN_SIZE = 1, CONTAIN_INLINE_SIZE = 2, CONTAIN_LAYOUT = 4, CONTAIN_PAINT = 8, CONTAIN_STYLE = 16;
+
+    private volatile int containment = -1;
+
+    /**
+     * 有効な containment（{@code contain} と {@code content-visibility} の和）。{@code strict} は size layout paint style、
+     * {@code content} は layout paint style。{@code content-visibility: hidden} は size layout paint、{@code auto} は layout paint。
+     */
+    public int containment() {
+        int cached = containment;
+        if (cached >= 0) return cached;
+        int bits = 0;
+        String declared = properties.get(CssProperty.CONTAIN);
+        if (declared != null) {
+            for (String token : declared.trim().toLowerCase(java.util.Locale.ROOT).split("\s+")) {
+                switch (token) {
+                    case "strict" -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
+                    case "content" -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
+                    case "size" -> bits |= CONTAIN_SIZE;
+                    case "inline-size" -> bits |= CONTAIN_INLINE_SIZE;
+                    case "layout" -> bits |= CONTAIN_LAYOUT;
+                    case "paint" -> bits |= CONTAIN_PAINT;
+                    case "style" -> bits |= CONTAIN_STYLE;
+                    default -> {}
+                }
+            }
+        }
+        switch (keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)) {
+            case HIDDEN -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT;
+            case AUTO -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT;
+            default -> {}
+        }
+        containment = bits;
+        return bits;
+    }
+
+    /** {@code content-visibility: hidden}: 中身を箱の木に入れない。 */
+    public boolean skipsContents() {
+        return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
+                == CssKeywords.ContentVisibility.HIDDEN;
+    }
+
     private volatile Map<String, String> customProperties;
 
     /** カスタムプロパティ（{@code --x}）だけの読み取り専用ビュー。{@code style()} コンテナクエリが読む。 */
@@ -254,6 +297,13 @@ public final class ComputedStyle {
     }
 
     private Overflow overflowAxis(String property, int shorthandIndex) {
+        Overflow declared = declaredOverflowAxis(property, shorthandIndex);
+        // paint containment は中身を padding box で切る（overflow: clip と同じ。スクロールコンテナにはならない）
+        if (declared == Overflow.VISIBLE && (containment() & CONTAIN_PAINT) != 0) return Overflow.CLIP;
+        return declared;
+    }
+
+    private Overflow declaredOverflowAxis(String property, int shorthandIndex) {
         if (properties.containsKey(property)) return keywordOf(property, Overflow.class);
         String shorthand = properties.get(CssProperty.OVERFLOW);
         if (shorthand == null) return Overflow.VISIBLE;

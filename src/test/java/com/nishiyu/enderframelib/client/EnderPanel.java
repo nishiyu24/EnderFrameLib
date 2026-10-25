@@ -75,8 +75,8 @@ public class EnderPanel extends JPanel {
             public void mouseWheelMoved(MouseWheelEvent e) {
                 // スクロール処理
                 if (document != null && document.root != null) {
-                    int currentY = scrollState.getScrollY(document.root);
-                    int currentX = scrollState.getScrollX(document.root);
+                    float currentY = scrollState.getScrollY(document.root);
+                    float currentX = scrollState.getScrollX(document.root);
                     int notches = e.getWheelRotation();
                     scrollState.setScroll(document.root, currentX, Math.max(0, currentY + notches * 24));
                     relayout();

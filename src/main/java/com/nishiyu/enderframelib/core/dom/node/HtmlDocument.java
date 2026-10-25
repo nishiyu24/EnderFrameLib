@@ -6,7 +6,9 @@ import com.nishiyu.enderframelib.core.dom.parser.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import com.nishiyu.enderframelib.api.dom.DOMNodes.Comment;
+import com.nishiyu.enderframelib.api.dom.CSSStyleDeclaration;
 import com.nishiyu.enderframelib.api.dom.Document;
+import com.nishiyu.enderframelib.api.dom.MediaQueryList;
 import com.nishiyu.enderframelib.api.dom.DOMNodes.DocumentFragment;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.HTMLCollection;
@@ -144,6 +146,75 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     public void setInteractionState(InteractionState interactionState) {
         this.interactionState = interactionState != null ? interactionState : new InteractionState();
+    }
+
+    // ==========================================
+    // CSSOM View（レイアウト結果の読み取り）
+    // ==========================================
+
+    private LayoutQuery layoutQuery;
+    private final List<Document.LayoutObserver> layoutObservers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** レイアウト結果の読み口。差し込まれていなければ CSSOM View は 0 を返す。 */
+    @Nullable
+    public LayoutQuery layoutQuery() {
+        return layoutQuery;
+    }
+
+    public void setLayoutQuery(@Nullable LayoutQuery layoutQuery) {
+        this.layoutQuery = layoutQuery;
+    }
+
+    @Override
+    public CSSStyleDeclaration getComputedStyle(Element element) {
+        HtmlNode node = element instanceof HtmlNode n ? n : null;
+        return new ComputedStyleDeclaration(node != null ? interactionState.computedStyleOf(node) : null,
+                node != null && layoutQuery != null ? layoutQuery.metrics(node) : null);
+    }
+
+    @Override
+    public int getInnerWidth() {
+        return layoutQuery != null ? layoutQuery.viewportWidth() : 0;
+    }
+
+    @Override
+    public int getInnerHeight() {
+        return layoutQuery != null ? layoutQuery.viewportHeight() : 0;
+    }
+
+    @Override
+    public MediaQueryList matchMedia(String query) {
+        String text = query == null ? "" : query;
+        return new MediaQueryList(text, layoutQuery != null && layoutQuery.matchMedia(text));
+    }
+
+    @Override
+    public void addLayoutObserver(Document.LayoutObserver observer) {
+        if (!layoutObservers.contains(observer)) layoutObservers.add(observer);
+    }
+
+    @Override
+    public void removeLayoutObserver(Document.LayoutObserver observer) {
+        layoutObservers.remove(observer);
+    }
+
+    private boolean deliveringLayoutObservers;
+
+    /** レイアウトまたはスクロールが確定したときに呼ぶ。ResizeObserver / IntersectionObserver の通知を出す。 */
+    public void notifyLayoutObservers() {
+        if (deliveringLayoutObservers || layoutObservers.isEmpty()) return;
+        deliveringLayoutObservers = true;
+        try {
+            for (Document.LayoutObserver observer : layoutObservers) {
+                try {
+                    observer.layoutUpdated();
+                } catch (RuntimeException ignored) {
+                    // 利用者のコールバックの例外で他の観測や描画を止めない
+                }
+            }
+        } finally {
+            deliveringLayoutObservers = false;
+        }
     }
 
     /** DOM の操作で文書の中身が変わったときの知らせ先（持ち主のセッション）。 */

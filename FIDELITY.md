@@ -132,19 +132,18 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（25 件）
+## 既知の差異（24 件）
 
 ほとんどは R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
 ケースが宣言した `opacity` / `transform` / `color` など）と
 スクロール量（`scrollWidth` / `scrollHeight` / `clientWidth` / `clientHeight`）を
 ブラウザ実測と突き合わせるようにしたことで、新たに観測された差異。
 計算値はいずれも完全一致しており（`computed-values` が `opacity` / `transform` / `color` を固定する）、
-差はスクロールバーの有無によるクライアント幅やリストマーカーの行高、
-相殺されたマージンの scrollHeight への算入に由来する。
+差はスクロールバーの有無によるクライアント幅とリストマーカーの行高に由来する。
+相殺されたマージンの scrollHeight への算入は R5（Phase 2）で一致させた（`margin-collapse-bottom`）。
 `pseudo-lang-dir-defined#e.x` だけは R4 で足したケースで見えた差（`direction` が未対応）。
 
 ### R5（CSSOM / CSSOM View・スクロール）
-- `margin-collapse-bottom#parent.scrollHeight`: ブラウザ 20 / エンジン 50（相殺されたマージンが親の外へ出たときの scrollHeight の扱い）
 - `flex-column-overflow#scroller.scrollWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth/scrollWidth の縮小）
 - `flex-column-overflow#scroller.clientWidth`: ブラウザ 85 / エンジン 100（スクロールバー表示による clientWidth の縮小）
 - `flex-column-overflow#content.w`: ブラウザ 85 / エンジン 100（スクロールバーの内側での子の % 幅縮小）

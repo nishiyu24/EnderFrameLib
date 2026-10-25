@@ -519,7 +519,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
     }
 
-    private static boolean isFirstFlowChild(LayoutBox box) {
+    static boolean isFirstFlowChild(LayoutBox box) {
         if (box.parent == null) return true;
         for (LayoutBox c : box.parent.children) {
             if (c.isAbsolute || c.isOutsideMarker || c.isRenderedLegend || c.display.isNone()) continue;
@@ -662,7 +662,7 @@ public class BlockLayoutEngine extends LayoutEngine {
      * flex / grid の {@code baseline} 揃えが読む。
      */
     public static Float firstBaseline(LayoutBox box) {
-        if (!(box.engineState instanceof FlowState state)) return null;
+        if (synthesizesBaseline(box) || !(box.engineState instanceof FlowState state)) return null;
         for (Object item : state.items) {
             Float b = baselineOf(box, item);
             if (b != null) return b;
@@ -670,9 +670,18 @@ public class BlockLayoutEngine extends LayoutEngine {
         return null;
     }
 
+    /**
+     * size / layout containment を持つ箱のベースラインは、中身に依らず境界ボックスの端から合成する（CSS Containment 2 §3, §4）。
+     * 中身の配置の状態は、測った後に layout が組むので、読むと前回の layout の残りに左右される。
+     */
+    private static boolean synthesizesBaseline(LayoutBox box) {
+        return (box.style.containment() & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT)) != 0
+                || box.containsBlockSize();
+    }
+
     /** 最後の行のベースライン（border box の上端から）。インラインブロックのベースラインになる。 */
     static Float lastBaseline(LayoutBox box) {
-        if (!(box.engineState instanceof FlowState state)) return null;
+        if (synthesizesBaseline(box) || !(box.engineState instanceof FlowState state)) return null;
         for (int i = state.items.size() - 1; i >= 0; i--) {
             Object item = state.items.get(i);
             if (item instanceof Placement p && !isFloating(p.box())) {
@@ -1318,7 +1327,12 @@ public class BlockLayoutEngine extends LayoutEngine {
             box.x = 0;
             box.y = 0;
         }
-        for (LayoutBox child : box.children) clearFragmentsRecursively(child);
+        for (LayoutBox child : box.children) {
+            // 配置を使い回せる箱（原子的インラインの中身など）は、自分の layout が置き直すか前回の配置を残すかを決める。
+            // ここで断片だけを消すと、残す側で断片が消えたままになる
+            if (child.holdsPlacement()) continue;
+            clearFragmentsRecursively(child);
+        }
     }
 
     /** 入れ子のインライン要素を平坦化した 1 要素。 */

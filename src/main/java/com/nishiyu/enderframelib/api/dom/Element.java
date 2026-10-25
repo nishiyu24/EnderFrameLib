@@ -272,4 +272,81 @@ public interface Element extends Node {
      * Resets the form to its initial state.
      */
     void reset();
+
+    // ==========================================
+    // CSSOM View（レイアウト結果の読み取り・スクロール）
+    // ==========================================
+
+    /**
+     * border box の矩形（ビューポート左上が原点）。レイアウトされていない（{@code display: none}・未接続・未描画）なら全て 0。
+     * 祖先のスクロール量は反映されるが、{@code transform} は反映しない。
+     */
+    DOMRect getBoundingClientRect();
+
+    /** 要素が生成した矩形の一覧。インラインの折り返しは 1 つの矩形にまとめる。レイアウトされていなければ空。 */
+    List<DOMRect> getClientRects();
+
+    /** border box の幅（px を四捨五入）。 */
+    int getOffsetWidth();
+
+    int getOffsetHeight();
+
+    /** {@link #getOffsetParent()} の padding edge から border edge までの距離。 */
+    int getOffsetLeft();
+
+    int getOffsetTop();
+
+    /** 最も近い位置指定（{@code position} が static 以外）の祖先。無ければ null（文書のビューポートが基準）。 */
+    @Nullable
+    Element getOffsetParent();
+
+    /** スクロールバーを除いた padding box の幅（このエンジンはスクロールバーの幅を取らない）。 */
+    int getClientWidth();
+
+    int getClientHeight();
+
+    /** 左・上の border の幅。 */
+    int getClientLeft();
+
+    int getClientTop();
+
+    /** 中身の全体の幅・高さ（padding box 基準）。 */
+    int getScrollWidth();
+
+    int getScrollHeight();
+
+    float getScrollLeft();
+
+    float getScrollTop();
+
+    /** スクロール位置を設定する。範囲外は 0 〜 最大値に丸める。スクロールできない要素では何もしない。 */
+    void setScrollLeft(float x);
+
+    void setScrollTop(float y);
+
+    default void scrollTo(float x, float y) {
+        setScrollLeft(x);
+        setScrollTop(y);
+    }
+
+    default void scrollBy(float dx, float dy) {
+        scrollTo(getScrollLeft() + dx, getScrollTop() + dy);
+    }
+
+    /** スクロールコンテナの祖先を、この要素の上端が見えるようにスクロールする（{@code block: "start", inline: "nearest"}）。 */
+    void scrollIntoView();
+
+    /**
+     * ResizeObserver が読む content box（padding box の左上が原点）。レイアウトされていなければ null。
+     */
+    @ApiStatus.Internal
+    @Nullable
+    DOMRect getContentRect();
+
+    /**
+     * IntersectionObserver が読む「見えている部分」: 自身の矩形を、スクロール・クリップする祖先と
+     * {@code root}（null ならビューポート）で切り取った矩形。見えなければ幅・高さ 0。
+     */
+    @ApiStatus.Internal
+    DOMRect getVisibleClientRect(@Nullable Element root);
 }
