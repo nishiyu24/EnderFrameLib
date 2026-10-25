@@ -30,17 +30,17 @@ Third-party components
    apply to it. If you redistribute EnderFrameLib, carry this notice
    with it.
 
-2. yt-dlp (downloaded at runtime, not bundled)
+2. yt-dlp (user-supplied, not bundled)
 
    Project: https://github.com/yt-dlp/yt-dlp
    License: The Unlicense (public domain dedication)
 
-   When a YouTube URL is used as a video source, WebMediaManager
-   downloads the official yt-dlp release binary into the game directory
-   and runs it as an external process to resolve the stream URL. The
-   binary is fetched from the yt-dlp GitHub releases at first use; it is
-   not distributed as part of this mod. No network download and no
-   external process occurs unless a YouTube source is actually used.
+   When a YouTube URL is used as a video source and the allowYtDlp setting
+   is enabled, WebMediaManager runs a yt-dlp binary that the user has
+   placed in <game directory>/enderframelib/ as an external process to
+   resolve the stream URL. EnderFrameLib neither downloads nor updates it,
+   and it is not distributed as part of this mod. No external process
+   occurs unless a YouTube source is actually used.
 
    yt-dlp is released into the public domain under The Unlicense. See
    https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE for the text.

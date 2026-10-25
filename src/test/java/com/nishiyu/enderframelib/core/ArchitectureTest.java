@@ -88,14 +88,15 @@ public class ArchitectureTest {
     // EnderScreenClient / EnderScreenItemClient / 互換アダプタ 2 つの削除）で差し引き +1。
     // 2026-10-25: テンプレートで動く世界内の面（server/SurfaceViewers）の追加で +1。
     // 2026-10-25: ホログラムの入力対応で SurfaceHit を client/ のトップレベルに出した（M7 準拠）ので +1。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 208;
+    // 2026-10-25: Phase 1 / T8 でコマンドクラスから server/HologramRegistry（ホログラム状態）を切り出したので +1。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 209;
 
-    /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（2026-10-25 時点: 1。Phase 1 / T8 で 0 にする）。 */
-    private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 1;
-    /** M1 拡張: コマンド定義クラス内のサーバー状態コレクション（2026-10-25 時点: 1。ACTIVE_HOLOGRAMS。Phase 1 / T8 で 0 にする）。 */
-    private static final int M1X_MAX_COMMAND_STATE_COLLECTIONS = 1;
-    /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・CustomTagExpander の新規ノード構築を除く。2026-10-25 時点: 22。Phase 1 / T8 で 0 にする）。 */
-    private static final int DOM_MAX_DIRECT_ATTR_WRITES = 22;
+    /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
+    private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
+    /** M1 拡張: コマンド定義クラス内のサーバー状態コレクション（Phase 1 / T8 で server/HologramRegistry へ移し 0 にした。2026-10-25）。 */
+    private static final int M1X_MAX_COMMAND_STATE_COLLECTIONS = 0;
+    /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・CustomTagExpander の新規ノード構築を除く。Phase 1 / T8 で 0 にした。2026-10-25）。 */
+    private static final int DOM_MAX_DIRECT_ATTR_WRITES = 0;
     /** R6: RenderKeys.java 以外からの RenderKeys 参照行数（2026-10-25 時点: 48。Phase 3 で 0 にする）。 */
     private static final int R6_MAX_RENDER_KEYS_REFERENCES = 48;
     /** R6: DisplayListBuilder 内の Pattern.compile の数（2026-10-25 時点: 8。Phase 3 で 0 にする）。 */

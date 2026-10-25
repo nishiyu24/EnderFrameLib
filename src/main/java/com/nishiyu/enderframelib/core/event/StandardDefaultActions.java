@@ -62,10 +62,10 @@ public class StandardDefaultActions {
             HtmlNode details = summaryNode.parent;
             boolean wasOpen = details.attrs.containsKey("open");
             if (wasOpen) {
-                details.attrs.remove("open");
+                details.removeAttribute("open");
                 if (ctx != null) ctx.onAttributeChanged(details, "open", null);
             } else {
-                details.attrs.put("open", "true");
+                details.setAttribute("open", "true");
                 if (ctx != null) ctx.onAttributeChanged(details, "open", "true");
             }
             return;
@@ -101,10 +101,10 @@ public class StandardDefaultActions {
             if ("checkbox".equals(inputType)) {
                 boolean wasChecked = target.attrs.containsKey("checked");
                 if (wasChecked) {
-                    target.attrs.remove("checked");
+                    target.removeAttribute("checked");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", null);
                 } else {
-                    target.attrs.put("checked", "true");
+                    target.setAttribute("checked", "true");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
                 }
                 // input / change イベントの発火
@@ -121,12 +121,12 @@ public class StandardDefaultActions {
                         findRadiosByName(root, name, radios);
                         for (HtmlNode r : radios) {
                             if (r != target && r.attrs.containsKey("checked")) {
-                                r.attrs.remove("checked");
+                                r.removeAttribute("checked");
                                 if (ctx != null) ctx.onAttributeChanged(r, "checked", null);
                             }
                         }
                     }
-                    target.attrs.put("checked", "true");
+                    target.setAttribute("checked", "true");
                     if (ctx != null) ctx.onAttributeChanged(target, "checked", "true");
                     target.dispatchEvent(new CoreUIEvent("input", true, false, 0));
                     target.dispatchEvent(new CoreUIEvent("change", true, false, 0));

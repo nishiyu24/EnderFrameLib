@@ -97,7 +97,7 @@ public class TextareaEditor {
         String safeVal = value != null ? value.replace("\r\n", "\n") : "";
         SessionContext session = ClientWebManager.getSession(sessionId);
         HtmlNode vNode = session != null ? session.findNode(baseId) : null;
-        if (vNode != null) vNode.attrs.put("value", safeVal);
+        if (vNode != null) vNode.setAttribute("value", safeVal);
         ClientScreenInteractionManager.updateInputLocally(sessionId, baseId + "_textarea", safeVal);
     }
 

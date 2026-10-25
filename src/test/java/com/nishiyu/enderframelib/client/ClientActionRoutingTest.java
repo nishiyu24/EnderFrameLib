@@ -216,10 +216,9 @@ public class ClientActionRoutingTest {
     /**
      * HUD 用と GUI 画面用の {@link EnderScreenDelegate} が同時に存在するとき、コールバックが static の 1 本なので
      * 後から作った方が先の方を上書きし、先の画面のアクションが届かなくなる（監査 2026-10-25）。
-     * Phase 1 / T8 でコールバックをセッション単位にするまで無効にしておく。直したら {@code @Disabled} を外す。
+     * コールバックはセッション単位（{@code SessionInput} が保持）なので、互いに上書きしない（Phase 1 / T8）。
      */
     @Test
-    @org.junit.jupiter.api.Disabled("Phase 1 / T8: イベントコールバックのセッション単位化まで失敗する（監査で確認済みの不具合）")
     @DisplayName("複数画面の同時稼働: 後から開いた画面が先の画面のイベント配送を上書きしないこと")
     void testConcurrentDelegatesKeepOwnCallbacks() {
         String hudId = "concurrent_hud";

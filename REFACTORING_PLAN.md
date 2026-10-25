@@ -95,6 +95,18 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ### Phase 1: ライフサイクル・入力経路・セキュリティ・Surface 修正（T8 + R2/R3 残課題）
 
+**進捗（2026-10-25）**: 項目 1〜5 すべて完了。
+`./gradlew test` は 820 件・失敗 0・無効 0、`runGameTestServer` は 5 件通過。Phase 0 の無効化テスト 6 件はすべて有効化して通る。
+- 1: 画面のコールバックは `sessionId` 引きの登録簿（`ClientScreenInteractionManager`）に移し、static の単一フィールドを廃止（ラチェット 1 → 0）。全体向けの `setClientEventCallback` は追加式・`remove` で外す。
+- 2: `Bindings`・`SessionInput`・`EnderScreenDelegate`・`TextareaEditor`・`WebHudRenderer`・`StandardDefaultActions` の属性書き込みを `setAttribute` / `removeAttribute` に統一（ラチェット 22 → 0）。
+- 3: ホログラム状態を `server/HologramRegistry` へ切り出し（ラチェット 1 → 0。M9 は +1 で 209）。
+- 5（R3 残・Surface）:
+  - 再同期（`adoptServerTree`）で木を作り直しても、同じ id の要素のスクロール位置・フォーカス・ホバーを `NodeStateSnapshot` で引き継ぐ（`ServerOwnershipAndForwardingTest`）。
+  - 互換 `WebSession` の変異が開き直さずに反映されることは `ServerClientLayoutParityTest`（サーバー変異をクライアントへ適用して描画を比較）が固定している。
+  - C-1: 世界内の面（ブロック・ホログラム・アイテム）はセッションを読み込んだ解像度を縦横比を保って収めるだけで、面側からセッションを作り直さない。この設計のまま、縦横比の異なる 4 面で共有しても解像度が変わらないことを `SharedSessionSurfaceFitTest` で固定した。残る競合は GUI 画面が同じ `sessionId` を `requestResize` する場合だけで、これは 1 つの DOM が 1 つのレイアウトを持つ設計上の仕様（面ごとのレイアウト分離は持たない）。
+  - B-1/B-2: `surface_test_item.json` の一人称 `display` を調整し、実機（`runClient`・PrintWindow）で右手・左手とも視界に収まり正立することを確認。
+- 4: `WebMediaManager` は `openCheckedConnection`（301/302/303/307/308・最大 5 ホップ・相対 `Location` の解決・各ホップで `isUrlSafe`）に統一。IPv6 ユニークローカル・マルチキャストを遮断。`yt-dlp` は利用者が置いた実行ファイルのみを使い、ダウンロードと `-U` を廃止（README・NOTICE・CONTRIBUTING を更新）。
+
 Phase 0 で追加したテストとラチェットを通す形で、状態管理のバグ・セキュリティ懸念・R2/R3/Surface の残課題を片付ける。
 
 1. **イベントコールバックのセッション単位化（T8）**

@@ -39,12 +39,10 @@ import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -114,7 +112,8 @@ public class WebMediaManager {
                     return false;
                 }
                 InetAddress addr = InetAddress.getByName(host);
-                if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()) {
+                if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()
+                        || addr.isMulticastAddress() || isUniqueLocalIpv6(addr)) {
                     return false;
                 }
             }
@@ -122,6 +121,11 @@ public class WebMediaManager {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** IPv6 のユニークローカル（fc00::/7）。{@code isSiteLocalAddress} は旧 fec0::/10 しか見ないので別に判定する。 */
+    private static boolean isUniqueLocalIpv6(InetAddress addr) {
+        return addr instanceof java.net.Inet6Address && (addr.getAddress()[0] & 0xFE) == 0xFC;
     }
 
     // ==========================================
@@ -195,24 +199,10 @@ public class WebMediaManager {
                     return;
                 }
 
-                HttpURLConnection conn = (HttpURLConnection) URI.create(directUrlString).toURL().openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setInstanceFollowRedirects(false);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-
-                int status = conn.getResponseCode();
-                if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == HttpURLConnection.HTTP_SEE_OTHER) {
-                    String newUrl = conn.getHeaderField("Location");
-                    if (!isUrlSafe(newUrl)) {
-                        IMG_DOWNLOADING.remove(originalUrl);
-                        return;
-                    }
-                    conn = (HttpURLConnection) URI.create(newUrl).toURL().openConnection();
-                    conn.setConnectTimeout(5000);
-                    conn.setReadTimeout(5000);
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                HttpURLConnection conn = openCheckedConnection(directUrlString);
+                if (conn == null) {
+                    IMG_DOWNLOADING.remove(originalUrl);
+                    return;
                 }
 
                 long contentLength = conn.getContentLengthLong();
@@ -256,13 +246,43 @@ public class WebMediaManager {
         });
     }
 
+    private static final int MAX_REDIRECT_HOPS = 5;
+
+    private static boolean isRedirect(int status) {
+        return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+    }
+
+    /**
+     * リダイレクトを自動追従せず 1 ホップずつ辿り、各ホップの URL を {@link #isUrlSafe} で検査する。
+     * 相対 {@code Location} は直前の URL に対して解決する。最終応答（リダイレクトでないもの）を返し、
+     * 遮断された・{@code Location} が無い・{@link #MAX_REDIRECT_HOPS} を超えたときは {@code null}。
+     */
+    private static HttpURLConnection openCheckedConnection(String startUrl) throws java.io.IOException {
+        String current = startUrl;
+        for (int hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+            if (!isUrlSafe(current)) return null;
+            HttpURLConnection conn = (HttpURLConnection) URI.create(current).toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            int status = conn.getResponseCode();
+            if (!isRedirect(status)) return conn;
+            String location = conn.getHeaderField("Location");
+            conn.disconnect();
+            if (location == null || location.isBlank()) return null;
+            current = URI.create(current).resolve(location.trim()).toString();
+        }
+        return null;
+    }
+
     // ==========================================
     // 2. Video Player System
     // ==========================================
     private static final Map<String, VideoTexture> ACTIVE_VIDEOS = new ConcurrentHashMap<>();
     private static final Map<BlockPos, List<BlockPos>> SCREEN_AUDIO_LINKS = new ConcurrentHashMap<>();
     private static final Map<String, YtDlpCache> YT_DLP_CACHE = new ConcurrentHashMap<>();
-    private static boolean ytDlpUpdated = false;
 
     static {
         try {
@@ -419,40 +439,21 @@ public class WebMediaManager {
         try {
             String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
             String ytDlpFileName = "yt-dlp";
-            String downloadUrlStr = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
             if (osName.contains("win")) {
                 ytDlpFileName = "yt-dlp.exe";
-                downloadUrlStr = downloadUrlStr + ".exe";
             } else if (osName.contains("mac")) {
                 ytDlpFileName = "yt-dlp_macos";
-                downloadUrlStr = downloadUrlStr + "_macos";
             }
 
             File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
             if (!dir.exists()) dir.mkdirs();
 
+            // 実行ファイルは利用者が事前に置いたものだけを使う。無検証のダウンロードと自己更新（-U）はしない。
             File ytDlpFile = new File(dir, ytDlpFileName);
-            if (!ytDlpFile.exists()) {
-                URL downloadUrl = URI.create(downloadUrlStr).toURL();
-                HttpURLConnection conn = (HttpURLConnection) downloadUrl.openConnection();
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(15000);
-                try (InputStream in = conn.getInputStream()) {
-                    Files.copy(in, ytDlpFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                }
-                ytDlpFile.setExecutable(true);
-            }
-
-            if (!ytDlpUpdated && ytDlpFile.exists()) {
-                ytDlpUpdated = true;
-                try {
-                    Process updateProc = new ProcessBuilder(ytDlpFile.getAbsolutePath(), "-U").start();
-                    if (!updateProc.waitFor(30, TimeUnit.SECONDS)) {
-                        updateProc.destroyForcibly();
-                    }
-                } catch (Exception ignored) {}
+            if (!ytDlpFile.isFile()) {
+                LOGGER.warn("yt-dlp is enabled but {} was not found; place a yt-dlp binary there to play YouTube URLs", ytDlpFile);
+                YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
+                return null;
             }
 
             Process process = new ProcessBuilder(
@@ -494,20 +495,11 @@ public class WebMediaManager {
         try {
             if (!targetUrl.contains("youtube.com/watch") && !targetUrl.contains("youtu.be/")) {
                 if (!targetUrl.startsWith("file://") && !targetUrl.contains(":\\") && !targetUrl.startsWith("/") && targetUrl.contains("://")) {
-                    if (!isUrlSafe(targetUrl)) return null;
-                    URL url = URI.create(targetUrl).toURL();
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-                    conn.setInstanceFollowRedirects(false);
-                    int status = conn.getResponseCode();
-                    if (status == 302 || status == 301 || status == 303) {
-                        String redirectUrl = conn.getHeaderField("Location");
-                        if (redirectUrl != null && !redirectUrl.isEmpty() && isUrlSafe(redirectUrl)) {
-                            return resolveDirectStreamUrl(redirectUrl);
-                        }
-                        return null;
-                    }
-                    return targetUrl;
+                    HttpURLConnection conn = openCheckedConnection(targetUrl);
+                    if (conn == null) return null;
+                    String finalUrl = conn.getURL().toString();
+                    conn.disconnect();
+                    return finalUrl;
                 }
                 return null;
             }

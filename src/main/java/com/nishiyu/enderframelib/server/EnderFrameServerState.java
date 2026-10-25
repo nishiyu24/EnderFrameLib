@@ -57,7 +57,7 @@ public final class EnderFrameServerState {
     /** プレイヤーのログイン。現在ディメンションのホログラムを同期する。 */
     public static void onPlayerLogin(ServerPlayer player) {
         if (player == null) return;
-        EnderFrameCommands.syncHologramsToPlayer(player);
+        HologramRegistry.syncToPlayer(player);
     }
 
     /** プレイヤーのログアウト。本人に紐づく状態を全て落とす。 */
@@ -79,7 +79,7 @@ public final class EnderFrameServerState {
         WebSessionManager.removePlayerAll(player);
         ServerTargetSyncHandler.removePlayer(player.getUUID());
         UIStateManager.removePlayerAll(player);
-        EnderFrameCommands.syncHologramsToPlayer(player);
+        HologramRegistry.syncToPlayer(player);
     }
 
     /** サーバー停止。全ての static 状態を捨てる。 */
@@ -91,7 +91,7 @@ public final class EnderFrameServerState {
         EnderFrameDataPackManager.clearAll();
         EnderFrameScriptingBridge.clearAll();
         UIStateManager.clearAll();
-        EnderFrameCommands.clearHologramsOnStop();
+        HologramRegistry.clear();
         tickCounter = 0;
         EnderFrameLib.LOGGER.debug("EnderFrameLib のサーバー側 static 状態を破棄しました。");
     }
@@ -108,7 +108,7 @@ public final class EnderFrameServerState {
                 + " datapackUis=" + EnderFrameDataPackManager.entryCount()
                 + " uiStates=" + UIStateManager.stateCount()
                 + " uiViewers=" + UIStateManager.viewerCount()
-                + " holograms=" + EnderFrameCommands.activeHologramCount();
+                + " holograms=" + HologramRegistry.count();
     }
 
     /** 全ての static 状態が空かどうか。 */
@@ -122,6 +122,6 @@ public final class EnderFrameServerState {
                 && PlayerRateLimiter.trackedPlayerCount() == 0
                 && UIStateManager.stateCount() == 0
                 && UIStateManager.viewerCount() == 0
-                && EnderFrameCommands.activeHologramCount() == 0;
+                && HologramRegistry.count() == 0;
     }
 }

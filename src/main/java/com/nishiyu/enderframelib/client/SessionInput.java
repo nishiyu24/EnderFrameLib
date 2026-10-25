@@ -45,9 +45,6 @@ public final class SessionInput {
 
     private final SessionContext session;
 
-    /** GUI 画面など、セッションごとのルータへ先に届けるための受け皿。 */
-    private ClientScreenInteractionManager.IClientEventCallback localEventCallback;
-
     /** クリックの配送中だけ有効な、GUI 側のアクション受け皿。 */
     private ClickSink activeClickSink = ClickSink.NONE;
     private DisplayItem activeClickedItem = null;
@@ -342,7 +339,7 @@ public final class SessionInput {
         }
         if (safeValue.equals(prev)) return;
         state().lastCommittedValues.put(baseId, safeValue);
-        control.attrs.put("value", safeValue);
+        control.setAttribute("value", safeValue);
         control.dispatchEvent(CoreEvent.input("input", data, false, inputType));
     }
 
@@ -360,7 +357,7 @@ public final class SessionInput {
 
         if (control != null) {
             state().lastCommittedValues.put(baseId, safeText);
-            control.attrs.put("value", safeText);
+            control.setAttribute("value", safeText);
             if (!isCheckable(control)) {
                 if (valueChanged) {
                     control.dispatchEvent(CoreEvent.input("input", safeText, false, "insertText"));
@@ -424,11 +421,11 @@ public final class SessionInput {
      * 画面を閉じるときは {@link #clearLocalEventCallback} で自分のものだけを外す。
      */
     public void setLocalEventCallback(ClientScreenInteractionManager.IClientEventCallback callback) {
-        this.localEventCallback = callback;
+        ClientScreenInteractionManager.setSessionEventCallback(session.sessionId(), callback);
     }
 
     public void clearLocalEventCallback(ClientScreenInteractionManager.IClientEventCallback callback) {
-        if (this.localEventCallback == callback) this.localEventCallback = null;
+        ClientScreenInteractionManager.clearSessionEventCallback(session.sessionId(), callback);
     }
 
     public void forwardDeclared(HtmlNode node, Event event, EventForwardDeclaration declaration) {
@@ -439,13 +436,12 @@ public final class SessionInput {
     private void triggerLocalEvent(String elementId, String eventName, String actionName, String value) {
         if (actionName == null || actionName.isEmpty()) return;
         boolean handledLocally = false;
-        ClientScreenInteractionManager.IClientEventCallback local = this.localEventCallback;
+        ClientScreenInteractionManager.IClientEventCallback local = ClientScreenInteractionManager.sessionEventCallback(session.sessionId());
         if (local != null) {
             handledLocally = local.onEvent(session.sessionId(), elementId, eventName, actionName, value);
         }
-        ClientScreenInteractionManager.IClientEventCallback global = ClientScreenInteractionManager.clientEventCallback();
-        if (!handledLocally && global != null && global != local) {
-            handledLocally = global.onEvent(session.sessionId(), elementId, eventName, actionName, value);
+        if (!handledLocally) {
+            handledLocally = ClientScreenInteractionManager.dispatchGlobalEvent(session.sessionId(), elementId, eventName, actionName, value);
         }
         if (!handledLocally && (actionName.startsWith("server:") || session.isHeadlessState())) {
             sendUiEvent(elementId, eventName, actionName, value);
@@ -652,7 +648,7 @@ public final class SessionInput {
     private static void dispatchRangeInput(SessionContext session, String baseId, String value) {
         HtmlNode slider = session.findNode(baseId);
         if (slider == null) return;
-        slider.attrs.put("value", value);
+        slider.setAttribute("value", value);
         slider.dispatchEvent(new CoreUIEvent("input", true, false, 0));
     }
 

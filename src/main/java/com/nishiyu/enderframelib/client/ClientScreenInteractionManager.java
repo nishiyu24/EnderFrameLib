@@ -52,7 +52,16 @@ public class ClientScreenInteractionManager {
         boolean onEvent(String sessionId, String elementId, String eventName, String actionName, String value);
     }
 
-    private static volatile IClientEventCallback clientEventCallback = null;
+    /**
+     * セッションに紐づかない全体向けの受け皿（下流 MOD・テスト用）。画面ごとの受け皿は
+     * {@link SessionInput#setLocalEventCallback} が持つので、ここは画面の開閉では書き換わらない。
+     */
+    private static final java.util.List<IClientEventCallback> GLOBAL_EVENT_CALLBACKS = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /**
+     * 画面（{@code EnderScreenDelegate}）ごとの受け皿。{@code sessionId} で引くので、セッションが作り直されても、
+     * 別の画面を開いても互いに上書きしない。
+     */
+    private static final java.util.Map<String, IClientEventCallback> SESSION_EVENT_CALLBACKS = new java.util.concurrent.ConcurrentHashMap<>();
     private static volatile Consumer<WebActionC2SPacket> serverActionSender = PacketDistributor::sendToServer;
     private static volatile Consumer<UiActionC2SPacket> uiActionSender = PacketDistributor::sendToServer;
     private static volatile boolean enableDefaultUiSounds = true;
@@ -60,9 +69,25 @@ public class ClientScreenInteractionManager {
     private static volatile Function<ItemStack, String> itemSessionIdExtractor = ClientScreenInteractionManager::defaultGetSessionIdFromItem;
     private static volatile BiPredicate<Minecraft, ItemStack> itemRangeValidator = ClientScreenInteractionManager::defaultIsItemInRange;
 
-    public static void setClientEventCallback(IClientEventCallback callback) { clientEventCallback = callback; }
-    static IClientEventCallback clientEventCallback() { return clientEventCallback; }
-    public static void removeClientEventCallback(IClientEventCallback callback) { if (clientEventCallback == callback) clientEventCallback = null; }
+    /** 全体向けの受け皿を足す。{@code null} は何もしない。同じものは重ねて登録しない。 */
+    public static void setClientEventCallback(IClientEventCallback callback) {
+        if (callback != null && !GLOBAL_EVENT_CALLBACKS.contains(callback)) GLOBAL_EVENT_CALLBACKS.add(callback);
+    }
+    public static void removeClientEventCallback(IClientEventCallback callback) { GLOBAL_EVENT_CALLBACKS.remove(callback); }
+    static void setSessionEventCallback(String sessionId, IClientEventCallback callback) {
+        if (sessionId != null && callback != null) SESSION_EVENT_CALLBACKS.put(sessionId, callback);
+    }
+    @org.jetbrains.annotations.ApiStatus.Internal
+    public static void clearSessionEventCallback(String sessionId, IClientEventCallback callback) {
+        if (sessionId != null) SESSION_EVENT_CALLBACKS.remove(sessionId, callback);
+    }
+    static IClientEventCallback sessionEventCallback(String sessionId) { return SESSION_EVENT_CALLBACKS.get(sessionId); }
+    static boolean dispatchGlobalEvent(String sessionId, String elementId, String eventName, String actionName, String value) {
+        for (IClientEventCallback callback : GLOBAL_EVENT_CALLBACKS) {
+            if (callback.onEvent(sessionId, elementId, eventName, actionName, value)) return true;
+        }
+        return false;
+    }
     public static void setServerActionSender(Consumer<WebActionC2SPacket> sender) { serverActionSender = sender != null ? sender : PacketDistributor::sendToServer; }
     public static void sendToServer(WebActionC2SPacket packet) { serverActionSender.accept(packet); }
     public static void setUiActionSender(Consumer<UiActionC2SPacket> sender) { uiActionSender = sender != null ? sender : PacketDistributor::sendToServer; }

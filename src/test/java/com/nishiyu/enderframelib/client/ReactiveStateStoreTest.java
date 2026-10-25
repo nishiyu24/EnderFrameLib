@@ -277,7 +277,7 @@ public class ReactiveStateStoreTest {
 
     // ------------------------------------------------------------------
     // R0+: 宣言的バインディング・入力同期が MutationObserver を通ること（監査 2026-10-25）
-    // 現状は attrs.put の直書きで観測されない。Phase 1 / T8 で DOM API に統一したら @Disabled を外す。
+    // DOM API（setAttribute）を通すので観測される（Phase 1 / T8）。
     // ------------------------------------------------------------------
 
     private static java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> observeAttributes(
@@ -293,7 +293,6 @@ public class ReactiveStateStoreTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Phase 1 / T8: Bindings.applyI18nAttributes の attrs.put 直書きを setAttribute に直すまで失敗する")
     public void testApplyI18nAttributesFiresMutationObserver() {
         java.util.function.Function<String, String> saved = com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver;
         com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver = key -> "tr:" + key;
@@ -315,7 +314,6 @@ public class ReactiveStateStoreTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Phase 1 / T8: Bindings.applyLocalVariables の attrs.put 直書きを setAttribute に直すまで失敗する")
     public void testApplyLocalVariablesFiresMutationObserver() {
         HtmlNode template = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         template.setAttribute("title", "Level {{@level}}");
@@ -333,7 +331,6 @@ public class ReactiveStateStoreTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Phase 1 / T8: EnderScreenDelegate.syncInputValueToDomNodes の attrs.put 直書きを setAttribute に直すまで失敗する")
     public void testInputValueSyncFiresMutationObserver() {
         session().loadLocalHtml("<div><input id='name' type='text' value='a'></div>", 800, 600);
         HtmlNode input = session().rootNode().getElementById("name");
