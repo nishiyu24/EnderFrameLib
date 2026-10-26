@@ -111,7 +111,13 @@ public class ArchitectureTest {
     // core/raster/svg（SvgRenderer・SvgImage・SvgSize）、core/paint の ImageSources・ImageChoice（srcset / image-set）・ObjectFit、
     // client/renderer の RasterTextures・SvgSources・RasterPainting（SVG・canvas の画素をテクスチャにして置く）。
     // 2026-10-26: Phase 5 の R9 で +3（core/layout の MulticolLayout、core/css の CounterStyle・CounterStyles）。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 278;
+    // 2026-10-26: P0 セキュリティ修正で client/renderer の SafeHttpClient を追加（+1）。DNS 固定接続・
+    // リダイレクト再検証・サイズ上限を WebMediaManager から分離し、取得経路を 1 か所にまとめるためトップレベルに置く。
+    // 2026-10-26: 動画のループバック・リレー VideoStreamServer を追加（+1）。ネイティブへ外部 URL を渡さず、
+    // Range 付きのストリームを中継するための独立コンポーネント。
+    // 2026-10-26: yt-dlp の自動配置 YtDlpProvisioner を追加（+1）。公式 GitHub リリースの取得・
+    // SHA-256 検証・原子的配置を WebMediaManager から分離し、テスト可能にするため。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 281;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

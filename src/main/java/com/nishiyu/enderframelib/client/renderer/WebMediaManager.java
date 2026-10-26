@@ -32,13 +32,13 @@ import org.lwjgl.opengl.GL21;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
-import java.net.HttpURLConnection;
-import java.net.InetAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -75,58 +75,45 @@ public class WebMediaManager {
         return t;
     });
 
+    // 動画の初期化・ネイティブハンドルの解放は画像・SVG の取得と同じプールを塞がない。
+    private static final ExecutorService VIDEO_IO_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "EnderFrameLib-VideoWorker-" + THREAD_COUNTER.getAndIncrement());
+        t.setDaemon(true);
+        return t;
+    });
+
+    // yt-dlp の stdout を読み切るまで待つと、パイプが詰まったプロセスをタイムアウトできない。
+    // 読み取りだけを別スレッドへ出し、waitFor の制限時間を確実に効かせる。
+    private static final ExecutorService YT_DLP_OUTPUT_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "EnderFrameLib-YtDlpReader-" + THREAD_COUNTER.getAndIncrement());
+        t.setDaemon(true);
+        return t;
+    });
+
     // ==========================================
     // セキュリティ・ガードレール設定 (大手MODパック基準)
     // ==========================================
-    public static boolean allowExternalMedia = true;
-    public static boolean allowYtDlp = false; // 既定で無効化 (外部プロセス実行に対する同意ゲート)
-    public static boolean blockPrivateNetworkAccess = true;
-    public static long maxImageDownloadBytes = 10L * 1024L * 1024L; // 最大10MB
+    /**
+     * 外部 HTTP(S) メディアを許可するか。既定は無効で、{@code mod:} / {@code mc:} などの
+     * ローカルスキームだけが動く。有効化は利用者の明示的な設定変更を必要とする。
+     */
+    public static volatile boolean allowExternalMedia = false;
+    public static volatile boolean allowYtDlp = false; // 既定で無効化 (外部プロセス実行に対する同意ゲート)
+    public static volatile boolean blockPrivateNetworkAccess = true;
+    public static volatile long maxImageDownloadBytes = 10L * 1024L * 1024L; // 最大10MB
+    /** ループバック・リレーが 1 回の応答で流す最大バイト数（ディスクへは保存しない）。 */
+    public static volatile long maxVideoDownloadBytes = 512L * 1024L * 1024L;
+    /** Mod API から追加する許可ドメイン。空なら「公開アドレスならどこでも」を意味する。 */
     public static final Set<String> ALLOWED_DOMAINS = ConcurrentHashMap.newKeySet();
+    /** 設定ファイル（allowedMediaDomains）由来の許可ドメイン。設定再読込時は丸ごと差し替える。 */
+    public static volatile Set<String> CONFIG_ALLOWED_DOMAINS = Set.of();
 
+    /**
+     * URL の事前検査。実際の取得は {@link SafeHttpClient} が同じ検査をやり直し、
+     * その場で解決した {@link java.net.InetAddress} へ直接接続する（DNS Rebinding 対策）。
+     */
     public static boolean isUrlSafe(String urlString) {
-        if (!allowExternalMedia || urlString == null || urlString.isEmpty()) return false;
-        try {
-            URI uri = URI.create(urlString.trim());
-            String scheme = uri.getScheme();
-            if (scheme == null || (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme))) {
-                return false;
-            }
-            String host = uri.getHost();
-            if (host == null || host.isEmpty()) return false;
-            String lowerHost = host.toLowerCase(Locale.ROOT);
-
-            if (!ALLOWED_DOMAINS.isEmpty()) {
-                boolean matched = false;
-                for (String domain : ALLOWED_DOMAINS) {
-                    String d = domain.toLowerCase(Locale.ROOT);
-                    if (lowerHost.equals(d) || lowerHost.endsWith("." + d)) {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (!matched) return false;
-            }
-
-            if (blockPrivateNetworkAccess) {
-                if ("localhost".equals(lowerHost) || lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
-                    return false;
-                }
-                InetAddress addr = InetAddress.getByName(host);
-                if (addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress() || addr.isAnyLocalAddress()
-                        || addr.isMulticastAddress() || isUniqueLocalIpv6(addr)) {
-                    return false;
-                }
-            }
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /** IPv6 のユニークローカル（fc00::/7）。{@code isSiteLocalAddress} は旧 fec0::/10 しか見ないので別に判定する。 */
-    private static boolean isUniqueLocalIpv6(InetAddress addr) {
-        return addr instanceof java.net.Inet6Address && (addr.getAddress()[0] & 0xFE) == 0xFC;
+        return SafeHttpClient.isUrlAllowed(urlString);
     }
 
     // ==========================================
@@ -205,22 +192,15 @@ public class WebMediaManager {
         MEDIA_IO_EXECUTOR.submit(() -> {
             try {
                 String directUrl = convertToDirectLink(originalUrl);
-                if (!isUrlSafe(directUrl)) return;
-                HttpURLConnection conn = openCheckedConnection(directUrl);
-                if (conn == null) return;
                 long limit = Math.min(maxImageDownloadBytes, SvgImage.MAX_BYTES);
-                if (conn.getContentLengthLong() > limit) return;
-                try (InputStream is = conn.getInputStream()) {
-                    byte[] bytes = is.readNBytes((int) limit + 1);
-                    if (bytes.length > limit) return;
-                    SvgImage svg = SvgImage.parse(new String(bytes, StandardCharsets.UTF_8));
-                    if (svg == null) return;
-                    Minecraft.getInstance().execute(() -> {
-                        SVG_CACHE.put(originalUrl, svg);
-                        ClientImageRegistry.setSize(originalUrl, (int) Math.max(1, Math.round(svg.width())),
-                                (int) Math.max(1, Math.round(svg.height())));
-                    });
-                }
+                byte[] bytes = SafeHttpClient.fetchBytes(directUrl, limit);
+                SvgImage svg = SvgImage.parse(new String(bytes, StandardCharsets.UTF_8));
+                if (svg == null) return;
+                Minecraft.getInstance().execute(() -> {
+                    SVG_CACHE.put(originalUrl, svg);
+                    ClientImageRegistry.setSize(originalUrl, (int) Math.max(1, Math.round(svg.width())),
+                            (int) Math.max(1, Math.round(svg.height())));
+                });
             } catch (Exception ignored) {
                 // 取れない SVG は描かない（再試行は SVG_DOWNLOADING を外した次回の参照）
             } finally {
@@ -246,87 +226,26 @@ public class WebMediaManager {
         MEDIA_IO_EXECUTOR.submit(() -> {
             try {
                 String directUrlString = convertToDirectLink(originalUrl);
-                if (!isUrlSafe(directUrlString)) {
+                byte[] bytes = SafeHttpClient.fetchBytes(directUrlString, maxImageDownloadBytes);
+
+                NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(bytes));
+                int imgW = nativeImage.getWidth();
+                int imgH = nativeImage.getHeight();
+                String safeHash = computeUrlHash(originalUrl);
+
+                Minecraft.getInstance().execute(() -> {
+                    DynamicTexture texture = new DynamicTexture(nativeImage);
+                    ResourceLocation id = ResourceLocation.fromNamespaceAndPath("enderframelib", "webimg_" + safeHash);
+                    Minecraft.getInstance().getTextureManager().register(id, texture);
+
+                    IMG_CACHE.put(originalUrl, new ImageInfo(id, imgW, imgH));
                     IMG_DOWNLOADING.remove(originalUrl);
-                    return;
-                }
-
-                HttpURLConnection conn = openCheckedConnection(directUrlString);
-                if (conn == null) {
-                    IMG_DOWNLOADING.remove(originalUrl);
-                    return;
-                }
-
-                long contentLength = conn.getContentLengthLong();
-                if (contentLength > maxImageDownloadBytes) {
-                    IMG_DOWNLOADING.remove(originalUrl);
-                    return;
-                }
-
-                try (InputStream is = conn.getInputStream()) {
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buf = new byte[8192];
-                    long totalRead = 0;
-                    int n;
-                    while ((n = is.read(buf)) != -1) {
-                        totalRead += n;
-                        if (totalRead > maxImageDownloadBytes) {
-                            IMG_DOWNLOADING.remove(originalUrl);
-                            return;
-                        }
-                        baos.write(buf, 0, n);
-                    }
-
-                    NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(baos.toByteArray()));
-                    int imgW = nativeImage.getWidth();
-                    int imgH = nativeImage.getHeight();
-                    String safeHash = computeUrlHash(originalUrl);
-
-                    Minecraft.getInstance().execute(() -> {
-                        DynamicTexture texture = new DynamicTexture(nativeImage);
-                        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("enderframelib", "webimg_" + safeHash);
-                        Minecraft.getInstance().getTextureManager().register(id, texture);
-
-                        IMG_CACHE.put(originalUrl, new ImageInfo(id, imgW, imgH));
-                        IMG_DOWNLOADING.remove(originalUrl);
-                        ClientImageRegistry.setSize(originalUrl, imgW, imgH);
-                    });
-                }
+                    ClientImageRegistry.setSize(originalUrl, imgW, imgH);
+                });
             } catch (Exception e) {
                 IMG_DOWNLOADING.remove(originalUrl);
             }
         });
-    }
-
-    private static final int MAX_REDIRECT_HOPS = 5;
-
-    private static boolean isRedirect(int status) {
-        return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
-    }
-
-    /**
-     * リダイレクトを自動追従せず 1 ホップずつ辿り、各ホップの URL を {@link #isUrlSafe} で検査する。
-     * 相対 {@code Location} は直前の URL に対して解決する。最終応答（リダイレクトでないもの）を返し、
-     * 遮断された・{@code Location} が無い・{@link #MAX_REDIRECT_HOPS} を超えたときは {@code null}。
-     */
-    private static HttpURLConnection openCheckedConnection(String startUrl) throws java.io.IOException {
-        String current = startUrl;
-        for (int hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-            if (!isUrlSafe(current)) return null;
-            HttpURLConnection conn = (HttpURLConnection) URI.create(current).toURL().openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(5000);
-            conn.setInstanceFollowRedirects(false);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
-            int status = conn.getResponseCode();
-            if (!isRedirect(status)) return conn;
-            String location = conn.getHeaderField("Location");
-            conn.disconnect();
-            if (location == null || location.isBlank()) return null;
-            current = URI.create(current).resolve(location.trim()).toString();
-        }
-        return null;
     }
 
     // ==========================================
@@ -335,6 +254,7 @@ public class WebMediaManager {
     private static final Map<String, VideoTexture> ACTIVE_VIDEOS = new ConcurrentHashMap<>();
     private static final Map<BlockPos, List<BlockPos>> SCREEN_AUDIO_LINKS = new ConcurrentHashMap<>();
     private static final Map<String, YtDlpCache> YT_DLP_CACHE = new ConcurrentHashMap<>();
+    private static final AtomicBoolean YT_DLP_PREFETCH_SCHEDULED = new AtomicBoolean(false);
 
     static {
         try {
@@ -359,8 +279,25 @@ public class WebMediaManager {
         SCREEN_AUDIO_LINKS.clear();
     }
 
+    /**
+     * 動画として受け付けるのは HTTP(S) だけ。{@code file:} や {@code mod:} を
+     * そのままネイティブへ渡すと、HTML 側からローカルファイルを読む経路になる。
+     */
+    private static boolean isSupportedExternalVideoUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            return scheme != null
+                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    && uri.getHost() != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public static VideoTexture getVideoTexture(String url) {
         if (url == null || url.isEmpty() || !allowExternalMedia) return null;
+        if (!isSupportedExternalVideoUrl(url)) return null;
         VideoTexture existing = ACTIVE_VIDEOS.get(url);
         if (existing != null && (existing.isClosed || existing.isFailed)) {
             ACTIVE_VIDEOS.remove(url);
@@ -476,9 +413,36 @@ public class WebMediaManager {
         YT_DLP_CACHE.entrySet().removeIf(e -> (now - e.getValue().timestamp) > 3600000L);
     }
 
+    /**
+     * 設定で YouTube 再生が有効になった時点で、yt-dlp の配置をバックグラウンドで始める。
+     * 実際の取得は {@link YtDlpProvisioner} が直列化するため、動画初期化と競合しても
+     * 二重ダウンロードにはならない。
+     */
+    public static void ensureYtDlpAvailableAsync() {
+        if (!allowExternalMedia || !allowYtDlp) return;
+        if (!YT_DLP_PREFETCH_SCHEDULED.compareAndSet(false, true)) return;
+        try {
+            VIDEO_IO_EXECUTOR.submit(() -> {
+                try {
+                    if (!allowExternalMedia || !allowYtDlp) return;
+                    if (externalContext != null && !externalContext.isYouTubeSupportEnabled()) return;
+                    File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
+                    YtDlpProvisioner.ensureAvailable(dir);
+                } catch (Throwable t) {
+                    LOGGER.warn("Failed to prepare yt-dlp: {}", t.getMessage());
+                } finally {
+                    YT_DLP_PREFETCH_SCHEDULED.set(false);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            YT_DLP_PREFETCH_SCHEDULED.set(false);
+        }
+    }
+
     private static String resolveYouTubeUrlViaYtDlp(String youtubeUrl) {
         if (!allowExternalMedia || !allowYtDlp) return null;
-        if (!isUrlSafe(youtubeUrl)) return null;
+        // 外部プロセスに渡す URL は YouTube のホストに限定する（任意 URL でのプロセス起動を防ぐ）
+        if (!isYouTubeUrl(youtubeUrl) || !isUrlSafe(youtubeUrl)) return null;
         if (externalContext != null && !externalContext.isYouTubeSupportEnabled()) return null;
 
         long now = System.currentTimeMillis();
@@ -488,76 +452,93 @@ public class WebMediaManager {
             if (cache.resolvedUrl == null && (now - cache.timestamp < 60000L)) return null;
         }
 
+        Process process = null;
         try {
-            String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
-            String ytDlpFileName = "yt-dlp";
-            if (osName.contains("win")) {
-                ytDlpFileName = "yt-dlp.exe";
-            } else if (osName.contains("mac")) {
-                ytDlpFileName = "yt-dlp_macos";
-            }
-
             File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
-            if (!dir.exists()) dir.mkdirs();
-
-            // 実行ファイルは利用者が事前に置いたものだけを使う。無検証のダウンロードと自己更新（-U）はしない。
-            File ytDlpFile = new File(dir, ytDlpFileName);
-            if (!ytDlpFile.isFile()) {
-                LOGGER.warn("yt-dlp is enabled but {} was not found; place a yt-dlp binary there to play YouTube URLs", ytDlpFile);
+            File ytDlpFile = YtDlpProvisioner.ensureAvailable(dir);
+            if (ytDlpFile == null) {
+                LOGGER.warn("yt-dlp is enabled but could not be prepared at {}; YouTube playback is skipped",
+                        YtDlpProvisioner.binaryPath(dir));
                 YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
                 return null;
             }
 
-            Process process = new ProcessBuilder(
+            ProcessBuilder builder = new ProcessBuilder(
                     ytDlpFile.getAbsolutePath(), "-f", "22/18/b",
                     "--extractor-args", "youtube:player_client=android",
-                    "--no-warnings", "-g", youtubeUrl
-            ).start();
-            String rawUrl = null;
-            try (Scanner scanner = new Scanner(process.getInputStream(), StandardCharsets.UTF_8)) {
-                while (scanner.hasNextLine()) {
-                    String line = scanner.nextLine().trim();
-                    if (line.startsWith("http")) {
-                        rawUrl = line;
-                        break;
-                    }
-                }
-            }
-            boolean finished = process.waitFor(15, TimeUnit.SECONDS);
-            if (!finished) {
+                    "--no-warnings", "--no-playlist", "--no-progress", "-g", youtubeUrl
+            );
+            // stderr を別に読まないと、エラー出力でパイプが詰まったときにタイムアウトできない。
+            builder.redirectErrorStream(true);
+            process = builder.start();
+            Process running = process;
+            Future<String> output = CompletableFuture.supplyAsync(
+                    () -> readFirstHttpUrl(running.getInputStream()), YT_DLP_OUTPUT_EXECUTOR);
+
+            if (!process.waitFor(15, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
+                output.cancel(true);
                 LOGGER.warn("yt-dlp process timed out while resolving YouTube URL: {}", youtubeUrl);
                 YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
                 return null;
             }
 
-            if (rawUrl != null && rawUrl.startsWith("http")) {
+            String rawUrl;
+            try {
+                rawUrl = output.get(2, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                output.cancel(true);
+                rawUrl = null;
+            }
+
+            // yt-dlp の出力も、ネイティブへ渡す前に HTTP(S) の絶対 URL であることだけ確認する。
+            // 実際の取得時の SSRF・許可ドメイン検査はリレー側の SafeHttpClient が行う。
+            if (rawUrl != null && isSupportedExternalVideoUrl(rawUrl)) {
                 YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(rawUrl, System.currentTimeMillis()));
                 return rawUrl;
             }
             YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.warn("Interrupted while running yt-dlp: {}", e.getMessage());
+            YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
         } catch (Exception e) {
             LOGGER.warn("Exception running yt-dlp: {}", e.getMessage());
             YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
         return null;
     }
 
-    private static String resolveDirectStreamUrl(String targetUrl) {
-        try {
-            if (!targetUrl.contains("youtube.com/watch") && !targetUrl.contains("youtu.be/")) {
-                if (!targetUrl.startsWith("file://") && !targetUrl.contains(":\\") && !targetUrl.startsWith("/") && targetUrl.contains("://")) {
-                    HttpURLConnection conn = openCheckedConnection(targetUrl);
-                    if (conn == null) return null;
-                    String finalUrl = conn.getURL().toString();
-                    conn.disconnect();
-                    return finalUrl;
+    private static String readFirstHttpUrl(InputStream input) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                    return trimmed;
                 }
-                return null;
             }
-            return resolveYouTubeUrlViaYtDlp(targetUrl);
+        } catch (IOException ignored) {
+            // プロセス終了時のストリーム切断など。URL が取れなければ呼び出し側が失敗扱いにする。
+        }
+        return null;
+    }
+
+    private static boolean isYouTubeUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+            return host.equals("youtube.com") || host.endsWith(".youtube.com") || host.equals("youtu.be");
         } catch (Exception e) {
-            return null;
+            return false;
         }
     }
 
@@ -638,14 +619,20 @@ public class WebMediaManager {
         }
 
         NativeVideoAPI INSTANCE = Holder.INSTANCE;
+        void setVideoProxyPort(int var1);
         long initVideo(WString var1);
         int getVideoWidth(long var1);
         int getVideoHeight(long var1);
         int checkNewFrame(long var1);
         int copyVideoFrame(long var1, ByteBuffer var3);
+        int copyNewVideoFrame(long var1, ByteBuffer var3);
+        double getVideoDuration(long var1);
+        double getVideoPosition(long var1);
         void seekVideo(long var1, double var3);
         void setVideoPaused(long var1, int var3);
+        int isVideoPaused(long var1);
         void setVideoSpeed(long var1, float var3);
+        void setVideoLoop(long var1, int var3);
         int hasAudio(long var1);
         int getAudioSampleRate(long var1);
         int getAudioChannels(long var1);
@@ -677,14 +664,18 @@ public class WebMediaManager {
         private volatile long nativeHandle = 0L;
         private volatile boolean isFailed = false;
         private volatile boolean isClosed = false;
-        private boolean isPaused = false;
-        private float playbackSpeed = 1.0F;
+        private volatile boolean isPaused = false;
+        private volatile float playbackSpeed = 1.0F;
+        private volatile float volume = 1.0F;
+        private volatile boolean muted = false;
+        private volatile boolean looping = false;
         private boolean hasAudio = false;
         private int audioSampleRate = 44100;
         private int audioChannels = 1;
         private int alFormat = AL10.AL_FORMAT_MONO16;
         private ByteBuffer pixelBuffer = null;
         private ByteBuffer audioReadBuffer = null;
+        private VideoStreamServer.Handle streamHandle = null;
 
         public VideoTexture(String url) {
             this.url = url;
@@ -692,15 +683,19 @@ public class WebMediaManager {
             // 32bit の String.hashCode では別の動画 URL が同じテクスチャを掴みうる。
             this.textureLocation = ResourceLocation.fromNamespaceAndPath("enderframelib", "video_" + computeUrlHash(url));
             if (NativeVideoAPI.getInstance() != null) {
-                MEDIA_IO_EXECUTOR.submit(this::initVideoWorker);
+                VIDEO_IO_EXECUTOR.submit(this::initVideoWorker);
             } else {
                 this.isFailed = true;
             }
         }
 
         private void initVideoWorker() {
+            NativeVideoAPI api = null;
+            VideoStreamServer.Handle relay = null;
+            long handle = 0L;
+            boolean published = false;
             try {
-                NativeVideoAPI api = NativeVideoAPI.getInstance();
+                api = NativeVideoAPI.getInstance();
                 if (api == null) {
                     this.isFailed = true;
                     return;
@@ -711,56 +706,100 @@ public class WebMediaManager {
                 if (atIndex != -1) targetUrl = targetUrl.substring(0, atIndex);
 
                 targetUrl = convertToDirectLink(targetUrl);
-                targetUrl = WebMediaManager.resolveDirectStreamUrl(targetUrl);
-                if (targetUrl == null) {
+                String streamUrl = isYouTubeUrl(targetUrl)
+                        ? resolveYouTubeUrlViaYtDlp(targetUrl)
+                        : targetUrl;
+                if (streamUrl == null || streamUrl.isBlank()) {
                     this.isFailed = true;
                     return;
                 }
 
-                if (!targetUrl.contains(".mp4") && targetUrl.startsWith("http") && !targetUrl.contains("googlevideo.com")) {
-                    targetUrl = targetUrl + "#.mp4";
-                }
+                // ネイティブには外部 URL を渡さず、検証済みのストリームを中継する
+                // ループバック・リレーの URL だけを渡す。本文はディスクへ保存しない。
+                relay = VideoStreamServer.register(streamUrl, maxVideoDownloadBytes);
+                final VideoStreamServer.Handle relayHandle = relay;
 
-                synchronized (stateLock) {
-                    if (this.isClosed) return;
-                }
-
-                long handle = api.initVideo(new WString(targetUrl));
-                if (handle == 0L) {
-                    this.isFailed = true;
-                    return;
-                }
-
+                // リレーを先に公開し、close() が初期化中のリソースを回収できるようにする。
                 synchronized (stateLock) {
                     if (this.isClosed) {
-                        MEDIA_IO_EXECUTOR.submit(() -> {
-                            try { api.closeVideo(handle); } catch (Exception ignored) {}
-                        });
+                        relayHandle.close();
+                        return;
+                    }
+                    this.streamHandle = relayHandle;
+                }
+
+                // initVideo はネットワーク I/O を含むため、stateLock を保持したまま
+                // 呼ばない（クライアントスレッドの close() を長時間ブロックしない）。
+                api.setVideoProxyPort(VideoStreamServer.port());
+                handle = api.initVideo(new WString(relayHandle.loopbackUrl()));
+
+                int videoWidth;
+                int videoHeight;
+                boolean audioPresent;
+                synchronized (stateLock) {
+                    if (this.isClosed) {
+                        // close() 呼び出し時点では nativeHandle がまだ 0 だった。
+                        // initVideo が確保したハンドルとリレーをここで回収する。
+                        this.streamHandle = null;
+                        relayHandle.close();
+                        if (handle != 0L) {
+                            final long orphan = handle;
+                            final NativeVideoAPI apiForClose = api;
+                            MEDIA_IO_EXECUTOR.submit(() -> {
+                                try {
+                                    apiForClose.closeVideo(orphan);
+                                } catch (Exception ignored) {
+                                }
+                            });
+                        }
+                        return;
+                    }
+                    if (handle == 0L) {
+                        this.streamHandle = null;
+                        relayHandle.close();
+                        this.isFailed = true;
                         return;
                     }
                     this.nativeHandle = handle;
+                    published = true;
+
+                    // ハンドル確定前に Lua から来た再生状態を反映する。
+                    api.setVideoPaused(handle, this.isPaused ? 1 : 0);
+                    api.setVideoSpeed(handle, this.playbackSpeed);
+                    api.setVideoLoop(handle, this.looping ? 1 : 0);
+
+                    videoWidth = api.getVideoWidth(handle);
+                    videoHeight = api.getVideoHeight(handle);
+                    audioPresent = api.hasAudio(handle) == 1;
+
+                    this.width = videoWidth;
+                    this.height = videoHeight;
+                    if (videoWidth > 0 && videoHeight > 0) {
+                        this.pixelBuffer = ByteBuffer.allocateDirect(videoWidth * videoHeight * 4)
+                                .order(ByteOrder.nativeOrder());
+                    }
+                    if (audioPresent) {
+                        this.hasAudio = true;
+                        this.audioSampleRate = api.getAudioSampleRate(handle);
+                        this.audioChannels = api.getAudioChannels(handle);
+                        this.alFormat = this.audioChannels == 1 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_STEREO16;
+                        this.audioReadBuffer = ByteBuffer.allocateDirect(65536).order(ByteOrder.nativeOrder());
+                    }
                 }
 
-                this.width = api.getVideoWidth(handle);
-                this.height = api.getVideoHeight(handle);
-                if (this.width > 0 && this.height > 0) {
-                    this.pixelBuffer = ByteBuffer.allocateDirect(this.width * this.height * 4).order(ByteOrder.nativeOrder());
+                if (videoWidth > 0 && videoHeight > 0) {
                     RenderSystem.recordRenderCall(() -> {
+                        if (this.isClosed) return;
                         RenderSystem.bindTexture(this.getId());
-                        TextureUtil.prepareImage(this.getId(), this.width, this.height);
+                        TextureUtil.prepareImage(this.getId(), videoWidth, videoHeight);
                         this.setFilter(true, false);
                         this.isInitialized = true;
                     });
                 }
 
-                if (api.hasAudio(handle) == 1) {
-                    this.hasAudio = true;
-                    this.audioSampleRate = api.getAudioSampleRate(handle);
-                    this.audioChannels = api.getAudioChannels(handle);
-                    this.alFormat = this.audioChannels == 1 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_STEREO16;
-                    this.audioReadBuffer = ByteBuffer.allocateDirect(65536).order(ByteOrder.nativeOrder());
-
+                if (audioPresent) {
                     RenderSystem.recordRenderCall(() -> {
+                        if (this.isClosed) return;
                         try {
                             AL10.alGenBuffers(this.alBuffers);
                             for (int b : this.alBuffers) this.freeBuffers.add(b);
@@ -769,6 +808,43 @@ public class WebMediaManager {
                 }
             } catch (Throwable t) {
                 this.isFailed = true;
+                long handleToClose = 0L;
+                VideoStreamServer.Handle relayToClose = null;
+                synchronized (stateLock) {
+                    // close() が先にハンドルを引き取っていた場合は、ここで二重に閉じない。
+                    if (this.nativeHandle != 0L) {
+                        handleToClose = this.nativeHandle;
+                        this.nativeHandle = 0L;
+                        relayToClose = this.streamHandle;
+                        this.streamHandle = null;
+                    } else {
+                        if (!published && handle != 0L) {
+                            handleToClose = handle;
+                        }
+                        if (this.streamHandle == relay) {
+                            this.streamHandle = null;
+                            relayToClose = relay;
+                        }
+                    }
+                }
+                if (handleToClose != 0L && api != null) {
+                    final NativeVideoAPI apiForClose = api;
+                    final long closeHandle = handleToClose;
+                    final VideoStreamServer.Handle relayForClose = relayToClose;
+                    MEDIA_IO_EXECUTOR.submit(() -> {
+                        try {
+                            apiForClose.closeVideo(closeHandle);
+                        } catch (Exception ignored) {
+                        } finally {
+                            if (relayForClose != null) relayForClose.close();
+                        }
+                    });
+                } else if (relayToClose != null) {
+                    relayToClose.close();
+                } else if (relay != null) {
+                    relay.close();
+                }
+                LOGGER.debug("Could not initialize video {}: {}", url, t.getMessage());
             }
         }
 
@@ -789,26 +865,52 @@ public class WebMediaManager {
         @Override
         public void load(@NotNull ResourceManager manager) {}
 
-        public void setVolume(float volume) {
+        private float currentGain() {
+            return this.muted ? 0.0F : this.volume;
+        }
+
+        private void applyGain() {
+            float gain = currentGain();
             RenderSystem.recordRenderCall(() -> {
                 for (int src : this.alSources) {
-                    if (AL10.alIsSource(src)) AL10.alSourcef(src, AL10.AL_GAIN, Math.clamp(volume, 0.0F, 1.0F));
+                    if (AL10.alIsSource(src)) AL10.alSourcef(src, AL10.AL_GAIN, gain);
                 }
             });
         }
 
+        public void setVolume(float volume) {
+            this.volume = Math.clamp(volume, 0.0F, 1.0F);
+            applyGain();
+        }
+
+        public float getVolume() {
+            return this.volume;
+        }
+
+        public void setMuted(boolean muted) {
+            this.muted = muted;
+            applyGain();
+        }
+
+        public boolean isMuted() {
+            return this.muted;
+        }
+
         public void setPlaybackSpeed(float speed) {
-            this.playbackSpeed = speed;
+            this.playbackSpeed = Math.clamp(speed, 0.0F, 4.0F);
             NativeVideoAPI api = NativeVideoAPI.getInstance();
-            if (this.nativeHandle != 0L && api != null) {
-                api.setVideoSpeed(this.nativeHandle, speed);
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    api.setVideoSpeed(this.nativeHandle, this.playbackSpeed);
+                }
             }
 
+            float effectiveSpeed = this.playbackSpeed;
             RenderSystem.recordRenderCall(() -> {
                 for (int src : this.alSources) {
                     if (AL10.alIsSource(src)) {
-                        if (speed > 0.0F) {
-                            AL10.alSourcef(src, AL10.AL_PITCH, Math.clamp(speed, 0.1F, 2.0F));
+                        if (effectiveSpeed > 0.0F) {
+                            AL10.alSourcef(src, AL10.AL_PITCH, Math.clamp(effectiveSpeed, 0.1F, 2.0F));
                             if (this.isPaused) AL10.alSourcePause(src);
                             else if (AL10.alGetSourcei(src, AL10.AL_SOURCE_STATE) != AL10.AL_PLAYING) AL10.alSourcePlay(src);
                         } else {
@@ -822,8 +924,10 @@ public class WebMediaManager {
         public void setPaused(boolean paused) {
             this.isPaused = paused;
             NativeVideoAPI api = NativeVideoAPI.getInstance();
-            if (this.nativeHandle != 0L && api != null) {
-                api.setVideoPaused(this.nativeHandle, paused ? 1 : 0);
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    api.setVideoPaused(this.nativeHandle, paused ? 1 : 0);
+                }
             }
 
             RenderSystem.recordRenderCall(() -> {
@@ -836,27 +940,97 @@ public class WebMediaManager {
             });
         }
 
+        public boolean isPaused() {
+            NativeVideoAPI api = NativeVideoAPI.getInstance();
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    return api.isVideoPaused(this.nativeHandle) != 0;
+                }
+            }
+            return this.isPaused || this.playbackSpeed <= 0.0F;
+        }
+
+        public void play() {
+            setPaused(false);
+        }
+
+        public void pause() {
+            setPaused(true);
+        }
+
+        public void togglePause() {
+            setPaused(!isPaused());
+        }
+
+        /** HTML の stop に相当。停止して先頭へ戻す（要素自体は閉じない）。 */
+        public void stop() {
+            setPaused(true);
+            seekTo(0.0);
+        }
+
+        public double getCurrentTime() {
+            NativeVideoAPI api = NativeVideoAPI.getInstance();
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    return Math.max(0.0, api.getVideoPosition(this.nativeHandle));
+                }
+            }
+            return 0.0;
+        }
+
+        public double getDuration() {
+            NativeVideoAPI api = NativeVideoAPI.getInstance();
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    return Math.max(0.0, api.getVideoDuration(this.nativeHandle));
+                }
+            }
+            return 0.0;
+        }
+
+        public void setLoop(boolean loop) {
+            this.looping = loop;
+            NativeVideoAPI api = NativeVideoAPI.getInstance();
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    api.setVideoLoop(this.nativeHandle, loop ? 1 : 0);
+                }
+            }
+        }
+
+        public boolean isLooping() {
+            return this.looping;
+        }
+
         public void seekTo(double seconds) {
             NativeVideoAPI api = NativeVideoAPI.getInstance();
-            if (this.nativeHandle != 0L && api != null) {
-                api.seekVideo(this.nativeHandle, seconds);
-                if (this.audioReadBuffer != null) this.audioReadBuffer.clear();
-
-                RenderSystem.recordRenderCall(() -> {
-                    for (int src : this.alSources) {
-                        if (AL10.alIsSource(src)) {
-                            AL10.alGetError();
-                            AL10.alSourceStop(src);
-                            AL10.alSourcei(src, AL10.AL_BUFFER, 0);
-                        }
-                    }
-                    this.freeBuffers.clear();
-                    for (int b : this.alBuffers) this.freeBuffers.add(b);
-                    if (!this.isPaused && this.playbackSpeed > 0.0F) {
-                        for (int src : this.alSources) AL10.alSourcePlay(src);
-                    }
-                });
+            boolean applied = false;
+            synchronized (stateLock) {
+                if (this.nativeHandle != 0L && api != null) {
+                    double duration = api.getVideoDuration(this.nativeHandle);
+                    double target = Math.max(0.0, seconds);
+                    if (duration > 0.0) target = Math.min(target, duration);
+                    api.seekVideo(this.nativeHandle, target);
+                    applied = true;
+                }
             }
+            if (!applied) return;
+
+            if (this.audioReadBuffer != null) this.audioReadBuffer.clear();
+            RenderSystem.recordRenderCall(() -> {
+                for (int src : this.alSources) {
+                    if (AL10.alIsSource(src)) {
+                        AL10.alGetError();
+                        AL10.alSourceStop(src);
+                        AL10.alSourcei(src, AL10.AL_BUFFER, 0);
+                    }
+                }
+                this.freeBuffers.clear();
+                for (int b : this.alBuffers) this.freeBuffers.add(b);
+                if (!this.isPaused && this.playbackSpeed > 0.0F) {
+                    for (int src : this.alSources) AL10.alSourcePlay(src);
+                }
+            });
         }
 
         private void updateAudioSourcesIfNeeded() {
@@ -898,7 +1072,7 @@ public class WebMediaManager {
                     int totalSources = (this.is2DEnabled ? 1 : 0) + newSpeakers.size();
                     for (int i = 0; i < totalSources; i++) {
                         int src = AL10.alGenSources();
-                        AL10.alSourcef(src, AL10.AL_GAIN, 1.0F);
+                        AL10.alSourcef(src, AL10.AL_GAIN, this.currentGain());
                         AL10.alSourcef(src, AL10.AL_PITCH, Math.clamp(this.playbackSpeed, 0.1F, 2.0F));
                         this.alSources.add(src);
                     }
@@ -924,8 +1098,11 @@ public class WebMediaManager {
 
             if (timeSinceLast > 500L && this.hasAudio && !this.alSources.isEmpty()) {
                 this.audioReadBuffer.clear();
-                while (api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) > 0) {
-                    this.audioReadBuffer.clear();
+                synchronized (stateLock) {
+                    while (this.nativeHandle != 0L
+                            && api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) > 0) {
+                        this.audioReadBuffer.clear();
+                    }
                 }
                 for (int src : this.alSources) {
                     if (AL10.alIsSource(src)) {
@@ -939,25 +1116,37 @@ public class WebMediaManager {
             }
 
             try {
-                if (api.checkNewFrame(this.nativeHandle) == 1) {
-                    this.pixelBuffer.clear();
-                    if (api.copyVideoFrame(this.nativeHandle, this.pixelBuffer) == 1) {
-                        RenderSystem.bindTexture(this.getId());
-                        GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.getId());
-                        GL21.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
-                        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
-                        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-                        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
-                        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-                        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, this.width, this.height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, this.pixelBuffer);
+                // ネイティブ側で「新フレームの有無」とコピーを 1 回の呼び出しにまとめ、
+                // フレームごとの JNA 呼び出しと競合を減らす。close() との競合を避けるため、
+                // ネイティブハンドルの読み取りとコピーは同じロック内で行う。
+                boolean copied = false;
+                if (this.pixelBuffer != null) {
+                    synchronized (stateLock) {
+                        if (this.nativeHandle != 0L) {
+                            this.pixelBuffer.clear();
+                            copied = api.copyNewVideoFrame(this.nativeHandle, this.pixelBuffer) == 1;
+                        }
                     }
+                }
+                if (copied) {
+                    RenderSystem.bindTexture(this.getId());
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.getId());
+                    GL21.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
+                    GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+                    GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
+                    GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
+                    GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+                    GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, this.width, this.height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, this.pixelBuffer);
                 }
             } catch (Exception ignored) {}
 
             if (this.hasAudio && !this.isPaused && this.playbackSpeed > 0.0F && this.audioReadBuffer != null) {
                 if (this.alSources.isEmpty()) {
-                    while (api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) > 0) {
-                        this.audioReadBuffer.clear();
+                    synchronized (stateLock) {
+                        while (this.nativeHandle != 0L
+                                && api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 16384) > 0) {
+                            this.audioReadBuffer.clear();
+                        }
                     }
                 } else {
                     try {
@@ -969,7 +1158,7 @@ public class WebMediaManager {
                             int src = this.alSources.get(sourceIndex++);
                             AL10.alSourcei(src, AL10.AL_SOURCE_RELATIVE, 1);
                             AL10.alSource3f(src, AL10.AL_POSITION, 0.0f, 0.0f, 0.0f);
-                            AL10.alSourcef(src, AL10.AL_GAIN, 1.0f);
+                            AL10.alSourcef(src, AL10.AL_GAIN, this.currentGain());
                             AL10.alSourcef(src, AL10.AL_ROLLOFF_FACTOR, 2.0F);
                             AL10.alSourcei(src, AL11.AL_DISTANCE_MODEL, AL11.AL_LINEAR_DISTANCE_CLAMPED);
                         }
@@ -989,7 +1178,7 @@ public class WebMediaManager {
                                 double distance = Math.sqrt(mc.player.blockPosition().distSqr(sp));
                                 if (distance <= maxDist) gain = 1.0f - (float) (distance / maxDist);
                             }
-                            AL10.alSourcef(src, AL10.AL_GAIN, gain);
+                            AL10.alSourcef(src, AL10.AL_GAIN, gain * this.currentGain());
                             AL10.alSourcef(src, AL10.AL_ROLLOFF_FACTOR, 2.0F);
                             AL10.alSourcei(src, AL11.AL_DISTANCE_MODEL, AL11.AL_LINEAR_DISTANCE_CLAMPED);
                         }
@@ -1011,7 +1200,11 @@ public class WebMediaManager {
 
                         while (!this.freeBuffers.isEmpty()) {
                             this.audioReadBuffer.clear();
-                            int readBytes = api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, chunkSize);
+                            int readBytes;
+                            synchronized (stateLock) {
+                                if (this.nativeHandle == 0L) break;
+                                readBytes = api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, chunkSize);
+                            }
                             if (readBytes <= 0) break;
 
                             int validBytes = readBytes - readBytes % frameSize;
@@ -1036,11 +1229,14 @@ public class WebMediaManager {
         @Override
         public void close() {
             long handleToClose;
+            VideoStreamServer.Handle relayToClose;
             synchronized (stateLock) {
                 if (this.isClosed) return;
                 this.isClosed = true;
                 handleToClose = this.nativeHandle;
                 this.nativeHandle = 0L;
+                relayToClose = this.streamHandle;
+                this.streamHandle = null;
                 this.isFailed = true;
             }
 
@@ -1071,11 +1267,17 @@ public class WebMediaManager {
             });
 
             if (handleToClose != 0L && api != null) {
+                final VideoStreamServer.Handle relayForClose = relayToClose;
                 MEDIA_IO_EXECUTOR.submit(() -> {
                     try {
                         api.closeVideo(handleToClose);
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                    } finally {
+                        if (relayForClose != null) relayForClose.close();
+                    }
                 });
+            } else if (relayToClose != null) {
+                relayToClose.close();
             }
             super.close();
         }

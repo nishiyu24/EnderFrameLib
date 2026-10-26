@@ -31,8 +31,10 @@ import com.nishiyu.enderframelib.core.dom.Bindings;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import com.nishiyu.enderframelib.network.SubscribeC2SPacket;
 import com.nishiyu.enderframelib.network.PubSubUpdateS2CPacket;
 import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
@@ -97,8 +99,19 @@ public class EnderFrameClientInit {
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
             DisplayItemDrawer.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
             ClientScreenInteractionManager.setEnableDefaultUiSounds(EnderFrameBuiltInConfig.enableDefaultUiSounds);
-            WebMediaManager.allowExternalMedia = EnderFrameBuiltInConfig.allowExternalMedia;
+            WebMediaManager.allowExternalMedia = EnderFrameBuiltInConfig.enableExternalWebMedia;
             WebMediaManager.allowYtDlp = EnderFrameBuiltInConfig.allowYtDlp;
+            WebMediaManager.blockPrivateNetworkAccess = EnderFrameBuiltInConfig.blockPrivateNetworkAccess;
+            WebMediaManager.maxVideoDownloadBytes = Math.max(1, EnderFrameBuiltInConfig.maxVideoDownloadMb)
+                    * 1024L * 1024L;
+
+            WebMediaManager.CONFIG_ALLOWED_DOMAINS = parseAllowedMediaDomains(EnderFrameBuiltInConfig.allowedMediaDomains);
+
+            // 外部メディアと yt-dlp の両方が有効なときだけ、公式リリースの配置を裏で始める。
+            // 取得に失敗しても設定変更や起動を妨げず、YouTube 再生時に再試行される。
+            if (WebMediaManager.allowExternalMedia && WebMediaManager.allowYtDlp) {
+                WebMediaManager.ensureYtDlpAvailableAsync();
+            }
         };
         EnderFrameBuiltInConfig.applyToRuntime();
 
@@ -181,6 +194,24 @@ public class EnderFrameClientInit {
         OpenUiS2CPacket.clientHandler = EnderFrameClientInit::handleOpenUiPacket;
         StateDeltaS2CPacket.clientHandler = EnderFrameClientInit::handleStateDeltaPacket;
         StateDeltaS2CPacket.clientCloseHandler = EnderFrameClientInit::handleStateClosed;
+    }
+
+    /**
+     * 設定文字列（カンマ区切り）を不変の許可ドメイン集合へ変換する。
+     * {@code https://example.com/path} のような貼り付けもホスト名として扱う。
+     */
+    private static Set<String> parseAllowedMediaDomains(String raw) {
+        if (raw == null || raw.isBlank()) return Set.of();
+        Set<String> domains = new LinkedHashSet<>();
+        for (String entry : raw.split(",")) {
+            String value = entry.trim();
+            int schemeEnd = value.indexOf("://");
+            if (schemeEnd >= 0) value = value.substring(schemeEnd + 3);
+            int pathStart = value.indexOf('/');
+            if (pathStart >= 0) value = value.substring(0, pathStart);
+            if (!value.isBlank()) domains.add(value);
+        }
+        return Set.copyOf(domains);
     }
 
     private static void handleWebSyncPacket(String sessionId, String action, CompoundTag data) {

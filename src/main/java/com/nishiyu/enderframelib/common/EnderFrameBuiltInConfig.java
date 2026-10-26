@@ -70,17 +70,44 @@ public class EnderFrameBuiltInConfig {
     )
     public static volatile String defaultTheme = "enderframelib:dark.css";
 
+    // 旧キー名 allowExternalMedia は既定 true だったため、既存の設定ファイルでは
+    // 利用者が明示していなくても true が残っている。キー名を変えて既定 false を一度
+    // 適用し、外部メディアを使う場合は改めて明示的に有効化してもらう。
     @ConfigEntry(
             category = "Media",
             label = "Allow External Web Media",
-            description = "Allow downloading and rendering images/videos from external HTTP/HTTPS URLs."
+            description = "Allow downloading and rendering images/videos from public HTTP/HTTPS URLs. Disabled by default: only mod:/mc: media works until this is enabled. Use Allowed Media Domains to restrict which hosts may be contacted."
     )
-    public static volatile boolean allowExternalMedia = true;
+    public static volatile boolean enableExternalWebMedia = false;
+
+    @ConfigEntry(
+            category = "Media",
+            label = "Allowed Media Domains",
+            description = "Comma-separated hostnames (subdomains included) allowed for external media. Leave empty to allow any public host while external media is enabled. When using yt-dlp, include youtube.com (or youtu.be) and the resolved media host (for example googlevideo.com). The yt-dlp binary itself is fetched from the official GitHub release separately, so GitHub does not need to be listed here. Loopback/LAN/link-local addresses are blocked while Block Private Network Media is enabled."
+    )
+    public static volatile String allowedMediaDomains = "";
+
+    @ConfigEntry(
+            category = "Media",
+            label = "Block Private Network Media",
+            description = "Refuse to connect to loopback, LAN, link-local, carrier-grade NAT, and other non-public addresses. Keep enabled to prevent server-side request forgery (SSRF)."
+    )
+    public static volatile boolean blockPrivateNetworkAccess = true;
+
+    @ConfigEntry(
+            category = "Media",
+            label = "Max Video Stream (MB)",
+            description = "Videos are streamed through a loopback relay and are never saved to disk. This limits the size of each relayed response (range); increase it for long or high-bitrate videos.",
+            min = 1,
+            max = 4096,
+            slider = true
+    )
+    public static volatile int maxVideoDownloadMb = 512;
 
     @ConfigEntry(
             category = "Media",
             label = "Enable YouTube Playback (yt-dlp)",
-            description = "Allow downloading and executing yt-dlp to resolve YouTube video streams. Requires explicit consent."
+            description = "Allow EnderFrameLib to download the official yt-dlp executable from GitHub (SHA-256 verified) and run it to resolve YouTube video streams. Requires Allow External Web Media. An existing binary in <game dir>/enderframelib/ is used as-is. Only YouTube URLs are passed to the process; self-update is disabled."
     )
     public static volatile boolean allowYtDlp = false;
 

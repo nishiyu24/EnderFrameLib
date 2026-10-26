@@ -9,10 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,29 +18,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * メディア取得の SSRF 防御（REFACTORING_PLAN Phase 0 / 監査 2026-10-25）。
  *
  * <p>リダイレクト先は {@link WebMediaManager#isUrlSafe} を通ってから辿られる。ここでは
- * 「リダイレクト先として現れ得る URL 表記」がすべて遮断されることと、リダイレクトを辿るコード側が
- * 301 / 302 / 303 / 307 / 308 を同じ検査で扱い、検査なしに自動追従しないことを固定する。</p>
+ * 「リダイレクト先として現れ得る URL 表記」がすべて遮断されること、取得が検証済み IP へ
+ * 直接接続する共通クライアントに一本化されていること、ネイティブ動画ローダーに生 URL を
+ * 渡していないことを固定する。</p>
  */
 public class WebMediaManagerRedirectTest {
 
     private static final Path SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/WebMediaManager.java");
+    private static final Path SAFE_CLIENT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/SafeHttpClient.java");
+    private static final Path YT_DLP_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/YtDlpProvisioner.java");
+    private static final Path CLIENT_INIT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/EnderFrameClientInit.java");
 
     private boolean savedBlock;
     private boolean savedAllow;
+    private Set<String> savedConfigAllowed;
 
     @BeforeEach
     void setUp() {
         savedBlock = WebMediaManager.blockPrivateNetworkAccess;
         savedAllow = WebMediaManager.allowExternalMedia;
+        savedConfigAllowed = WebMediaManager.CONFIG_ALLOWED_DOMAINS;
         WebMediaManager.blockPrivateNetworkAccess = true;
         WebMediaManager.allowExternalMedia = true;
         WebMediaManager.ALLOWED_DOMAINS.clear();
+        WebMediaManager.CONFIG_ALLOWED_DOMAINS = Set.of();
     }
 
     @AfterEach
     void tearDown() {
         WebMediaManager.blockPrivateNetworkAccess = savedBlock;
         WebMediaManager.allowExternalMedia = savedAllow;
+        WebMediaManager.CONFIG_ALLOWED_DOMAINS = savedConfigAllowed;
     }
 
     @Test
@@ -120,36 +126,92 @@ public class WebMediaManagerRedirectTest {
         }
     }
 
+    @Test
+    @DisplayName("動画として受け付けるのは HTTP(S) だけで、file: や mod: は受け付けない")
+    void videoSourcesAreRestrictedToHttp() throws IOException {
+        String source = Files.readString(SOURCE);
+        String helper = source.substring(source.indexOf("private static boolean isSupportedExternalVideoUrl"),
+                source.indexOf("public static VideoTexture getVideoTexture"));
+
+        assertTrue(helper.contains("scheme.equalsIgnoreCase(\"http\")"));
+        assertTrue(helper.contains("scheme.equalsIgnoreCase(\"https\")"));
+        assertTrue(helper.contains("uri.getHost() != null"));
+        assertFalse(helper.contains("file:"));
+        assertFalse(helper.contains("mod:"));
+    }
+
     /**
-     * 画像取得の 2 本目の接続は自動追従が既定のままで、1 回目のリダイレクト先の次のリダイレクト
-     * （安全な URL → 安全に見える URL → ループバック）を検査せずに辿る。また 307 / 308 を扱わず、
-     * 相対 Location は常に遮断になる（正当なリダイレクトも失敗する）。
-     * Phase 1 で検査つきの多段リダイレクト解決（{@code openCheckedConnection}）に置き換えた。
+     * 画像・SVG は「検証してから別の接続で取りに行く」旧経路をやめ、検証と接続を同じ
+     * {@link SafeHttpClient} の呼び出しにまとめる。{@code openConnection()} を直接使うと
+     * 検証時と接続時で DNS を引き直すため、DNS Rebinding の余地が残る。
      */
     @Test
-    @DisplayName("画像取得は自動追従せず、全リダイレクト種別を 1 つの検査経路で扱う")
-    void redirectFollowingIsAlwaysInspected() throws IOException {
+    @DisplayName("画像・SVG の取得は検証済み IP へ接続する共通クライアントだけを使う")
+    void mediaDownloadsUsePinnedSafeClient() throws IOException {
         String source = Files.readString(SOURCE);
         String imageDownload = source.substring(source.indexOf("private static void downloadImageAsync"),
                 source.indexOf("// 2. Video Player System"));
+        String svgDownload = source.substring(source.indexOf("private static void downloadSvgAsync"),
+                source.indexOf("private static String convertToDirectLink"));
 
-        int opened = count(imageDownload, "openConnection\\(\\)");
-        int manual = count(imageDownload, "setInstanceFollowRedirects\\(false\\)");
-        assertEquals(opened, manual, "openConnection のたびに自動追従を切ること（開いた数 " + opened + " / 切った数 " + manual + "）");
-
-        for (int status : new int[] {301, 302, 303, 307, 308}) {
-            boolean handled = imageDownload.contains(String.valueOf(status))
-                    || imageDownload.contains(status == 301 ? "HTTP_MOVED_PERM" : status == 302 ? "HTTP_MOVED_TEMP"
-                    : status == 303 ? "HTTP_SEE_OTHER" : "isRedirect");
-            assertTrue(handled, "リダイレクト " + status + " が扱われていること");
-        }
-        assertTrue(imageDownload.contains("resolve("), "相対 Location を基準 URL に対して解決していること");
+        assertTrue(imageDownload.contains("SafeHttpClient.fetchBytes"), "画像は SafeHttpClient 経由で取得すること");
+        assertTrue(svgDownload.contains("SafeHttpClient.fetchBytes"), "SVG は SafeHttpClient 経由で取得すること");
+        assertFalse(imageDownload.contains("openConnection"), "画像取得に openConnection を使わないこと");
+        assertFalse(svgDownload.contains("openConnection"), "SVG 取得に openConnection を使わないこと");
     }
 
-    private static int count(String text, String regex) {
-        Matcher matcher = Pattern.compile(regex).matcher(text);
-        int n = 0;
-        while (matcher.find()) n++;
-        return n;
+    @Test
+    @DisplayName("リダイレクトは自動追従せず、各ホップを同じ検査経路で扱う")
+    void redirectFollowingIsAlwaysInspected() throws IOException {
+        String source = Files.readString(SAFE_CLIENT_SOURCE);
+
+        assertFalse(source.contains(".openConnection()"), "HttpURLConnection の自動追従を使わないこと");
+        assertTrue(source.contains("current.resolve("), "相対 Location を基準 URL に対して解決していること");
+        assertTrue(source.contains("parseAndValidate(next.toString())"), "リダイレクト先を毎ホップ検証していること");
+        for (int status : new int[] {301, 302, 303, 307, 308}) {
+            assertTrue(source.contains(String.valueOf(status)), "リダイレクト " + status + " が扱われていること");
+        }
+    }
+
+    @Test
+    @DisplayName("ネイティブ動画ローダーには生 URL ではなくループバック・リレーの URL を渡す")
+    void nativeVideoLoaderNeverReceivesRawUrl() throws IOException {
+        String source = Files.readString(SOURCE);
+        String init = source.substring(source.indexOf("private void initVideoWorker"),
+                source.indexOf("public void keepAlive"));
+
+        assertTrue(init.contains("VideoStreamServer.register"), "検証済みストリームをリレーへ登録すること");
+        assertTrue(init.contains("initVideo(new WString(relayHandle.loopbackUrl()))"),
+                "ネイティブにはループバック・リレーの URL だけを渡すこと");
+        assertFalse(init.contains("fetchVideoToTempFile"), "動画を一時ファイルへ全体ダウンロードしないこと");
+        assertFalse(init.contains("initVideo(new WString(targetUrl"), "生の URL をネイティブへ渡さないこと");
+        assertFalse(init.contains("initVideo(new WString(streamUrl"), "解決後 URL をネイティブへ渡さないこと");
+    }
+
+    @Test
+    @DisplayName("DNS 解決結果を保持し、検証済み InetAddress へ直接接続する")
+    void dnsResolutionIsPinnedToValidatedAddress() throws IOException {
+        String source = Files.readString(SAFE_CLIENT_SOURCE);
+        assertTrue(source.contains("InetAddress.getAllByName"), "ホスト名を明示的に解決すること");
+        assertTrue(source.contains("new InetSocketAddress(address, port)"),
+                "解決済みの InetAddress へ直接接続すること（再解決しない）");
+    }
+
+    @Test
+    @DisplayName("yt-dlp の自動配置は両方の同意設定が揃ったときだけ始まり、取得元は固定ホストに限る")
+    void ytDlpProvisioningIsGatedAndPinned() throws IOException {
+        String init = Files.readString(CLIENT_INIT_SOURCE);
+        assertTrue(init.contains("WebMediaManager.allowExternalMedia && WebMediaManager.allowYtDlp"),
+                "外部メディアと yt-dlp の両方が有効なときだけ自動配置すること");
+        assertTrue(init.contains("WebMediaManager.ensureYtDlpAvailableAsync()"),
+                "設定反映時に自動配置を開始すること");
+
+        String provisioner = Files.readString(YT_DLP_SOURCE);
+        assertTrue(provisioner.contains("SafeHttpClient.fetchBytesFromTrustedHosts"),
+                "チェックサム取得は固定ホスト用の安全なクライアントを使うこと");
+        assertTrue(provisioner.contains("SafeHttpClient.downloadFromTrustedHosts"),
+                "本体取得は固定ホスト用の安全なクライアントを使うこと");
+        assertTrue(provisioner.contains("SHA2-256SUMS"), "公式チェックサムと照合すること");
+        assertFalse(provisioner.contains("openConnection"), "自動配置に自動追従の HTTP クライアントを使わないこと");
     }
 }

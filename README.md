@@ -801,8 +801,11 @@ Layout differences from a real browser are measured, case by case, in
   `matrix()` is dropped, and the depth part of 3D functions
   (`translateZ()`, `rotateX()` / `rotateY()`, `perspective()`) is not drawn.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
-  YouTube sources need a `yt-dlp` binary you place in `<game dir>/enderframelib/` yourself
-  and the opt-in `allowYtDlp` setting; it is never downloaded or self-updated (see [NOTICE](NOTICE)).
+  YouTube sources need the opt-in `allowExternalMedia` and `allowYtDlp` settings.
+  When both are enabled, the official yt-dlp release for the current platform is
+  downloaded from GitHub, verified against the release's
+  `SHA2-256SUMS`, and run. A binary you place in `<game dir>/enderframelib/` is
+  used as-is; EnderFrameLib does not self-update it (see [NOTICE](NOTICE)).
 
 ---
 
@@ -847,7 +850,7 @@ LGPL-3.0-only. See [LICENSE](LICENSE), and
 [LICENSE.GPL-3.0.txt](LICENSE.GPL-3.0.txt) whose terms LGPL-3.0 incorporates.
 
 Third-party components — the bundled `lunex_video` native decoder, the
-user-supplied `yt-dlp`, JNA, and the NeoForge MDK template files — are
+on-demand `yt-dlp`, JNA, and the NeoForge MDK template files — are
 attributed in [NOTICE](NOTICE). The bundled native binary is **not** covered by
 the LGPL grant.
 
