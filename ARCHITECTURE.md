@@ -151,7 +151,7 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 `DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
 グラデーション・角丸クリップ・ガウス影は SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、画面の面（GUI・HUD）でのグループ
 `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-image`・回転した角丸クリップは
-FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。システム書体と `@font-face`（TTF / OTF）の
+FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。FBO は画面全体ではなく、箱と子孫の外接矩形にフィルターの滲みを足した大きさ（`LayerBounds`。子孫に変形があるときは画面いっぱい）。システム書体と `@font-face`（TTF / OTF）の
 文字は `OutlineTextRenderer` がデバイスピクセルでラスタライズして描く（置き場の破棄は `AtlasCache`、VRAM の見積もりは `AtlasFootprint`）。
 グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
 `DisplayListBuilder` は順序（`PaintOrder`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、

@@ -10,7 +10,8 @@ import java.util.function.IntSupplier;
  * {@link Factory} が受け持つ（テストは偽の描画先で、貸し借り・予算・縮小を確かめる）。
  *
  * <ul>
- *   <li>同じ大きさの空きがあれば使い回す。大きさが違う空き（ウィンドウのサイズ変更の後）は壊して作り直す。</li>
+ *   <li>同じ大きさの空きがあれば使い回す。無ければ、上限に達しているときだけ最も古い空きを壊して作り直す
+ *       （大きさは箱の外接矩形ごとに違う。{@link com.nishiyu.enderframelib.core.paint.model.LayerBounds#bucket} で粗く丸めて使い回しやすくしている）。</li>
  *   <li>同時に持てる数の上限は {@code maxTargets}（{@link com.nishiyu.enderframelib.core.paint.model.VramBudget#maxLayers}）。
  *       上限に達していて空きが無ければ {@code null} を返す（呼び出し側は効果を諦めて直に描く）。</li>
  *   <li>効果が無いフレームが続けば確保を残さない（{@link #trim}）。FBO は効果があるときだけ確保するので、
@@ -58,13 +59,13 @@ final class LayerPool<T> {
                 return e.target;
             }
         }
-        // 大きさが違う空きは使えない。壊して枠を空ける
-        for (Iterator<Entry> it = free.iterator(); it.hasNext(); ) {
-            Entry e = it.next();
-            if (e.width != width || e.height != height) {
-                it.remove();
-                factory.destroy(e.target);
-            }
+        // 同じ大きさの空きが無いときだけ、上限まで古い空き（使われていない順）を壊して枠を空ける。
+        // 大きさはレイヤーごとに違う（箱の外接矩形）ので、違う大きさの空きを全部壊すと毎回作り直しになる
+        while (inUse.size() + free.size() >= maxTargets.getAsInt() && !free.isEmpty()) {
+            Entry oldest = free.get(0);
+            for (Entry e : free) if (e.freedAt < oldest.freedAt) oldest = e;
+            free.remove(oldest);
+            factory.destroy(oldest.target);
         }
         if (inUse.size() + free.size() >= maxTargets.getAsInt()) return null;
         T created = factory.create(width, height);
