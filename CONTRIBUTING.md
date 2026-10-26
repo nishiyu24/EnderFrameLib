@@ -74,12 +74,13 @@
 - 制約を解消したら、コードのマーカーと README の記述を同じコミットで消す。
 
 現在 README に記録されている主な制約（コード側の `LIMITATION` と対応させること）:
-JavaScript 非対応と `MutationObserver` の通知時点、HTML のツリー構築の未対応部分（書式要素の再構築と adoption agency・
-SVG / MathML・`<template>` の中身を別の断片にしない）、Markdown のネストリスト非対応、表の未対応部分（列幅の %・
-枠線の重ね方の簡略化・`visibility: collapse`）、float の横の行幅は行の上端で決める・段組みと書字方向は非対応、
-ボックスツリーの未対応部分（インライン中のブロックで分割しない・flex / grid 内のテキストを匿名アイテムで包まない・
-`<ol reversed>`）、`list-style-image` 非対応、flex / grid の簡略化した部分（列方向の自動最小高さ・トラックの寸法・
-subgrid・`auto-fit` など）、高さの内容サイズのキーワード非対応、opacity をグループで合成しない・変形した子孫を
+JavaScript 非対応と `MutationObserver` の通知時点、HTML のツリー構築の未対応部分（SVG / MathML の名前空間）、
+Markdown のネストリスト非対応、表の未対応部分（`border-collapse` の `border-style` の優先順位・行 / 列の枠線・
+潰れた列の `border-spacing`）、float の横の行幅は行の上端で決める・書字方向は非対応、段組みの未対応部分（枠線・
+余白・背景を持つブロックと行を持たない箱を分けない・`break-*` / `orphans` / `widows`・rtl の列順・段組内の float）、
+ボックスツリーの未対応部分（インライン中のブロックで分割しない・flex / grid 内のテキストを匿名アイテムで包まない）、
+flex / grid の簡略化した部分（先頭 baseline だけ・列方向の自動最小高さ・トラックの寸法・subgrid・baseline 揃えなど）、
+opacity をグループで合成しない・変形した子孫を
 祖先の空間で切らない、角丸の枠線は実線・輪郭線は角丸に沿わない、背景の未対応部分（インラインの断片の画像・
 放射 / 円錐 / 斜めのグラデーションは矩形の網で近似・`background-attachment`）、`box-shadow` のぼかしは段の近似で
 外側の影が箱の内側にも出る、フォームコントロールは OS の部品でない、書体の差（合字なし・総称ファミリは Windows の

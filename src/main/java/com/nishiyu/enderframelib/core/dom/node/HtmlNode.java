@@ -208,16 +208,17 @@ public class HtmlNode implements Node {
             return;
         }
         // 要素やフラグメントの場合: 既存の子を全削除し、非空なら Text ノードを1つ追加
-        List<Node> removed = new ArrayList<>(children);
-        for (HtmlNode child : new ArrayList<>(children)) {
-            removeChild(child);
+        // template の textContent は（getter は空でも）中身を書き換える
+        HtmlNode container = this instanceof HtmlElement el && el.isTemplateElement() ? el.getContent() : this;
+        for (HtmlNode child : new ArrayList<>(container.children)) {
+            container.removeChild(child);
         }
         if (textContent != null && !textContent.isEmpty()) {
             HtmlText txtNode = new HtmlText(textContent);
             // 描画要素の id と親子の連鎖（mc-parent）は節の id で引くので、空の id を作らない。
             // 空のままだと同じく空の id の節どうしが取り違えられ、祖先の transform などが掛からない
             if (!getId().isEmpty()) txtNode.setId(getId() + "_txt");
-            appendChild(txtNode);
+            container.appendChild(txtNode);
         }
     }
 
@@ -390,6 +391,15 @@ public class HtmlNode implements Node {
         node.ownerDocument = doc;
         for (HtmlNode c : node.children) {
             propagateDocument(c, doc);
+        }
+        if (node instanceof HtmlElement el) {
+            HtmlDocumentFragment content = el.peekTemplateContent();
+            if (content != null) {
+                content.ownerDocument = doc;
+                for (HtmlNode c : content.children) {
+                    propagateDocument(c, doc);
+                }
+            }
         }
     }
 
@@ -712,6 +722,18 @@ public class HtmlNode implements Node {
                 HtmlNode childCopy = child.cloneNode(true);
                 childCopy.parent = copy;
                 copy.children.add(childCopy);
+            }
+            // template の中身は子ではなく content にある
+            if (this instanceof HtmlElement el && el.isTemplateElement()) {
+                HtmlDocumentFragment content = el.peekTemplateContent();
+                if (content != null) {
+                    HtmlDocumentFragment contentCopy = ((HtmlElement) copy).getContent();
+                    for (HtmlNode child : content.children) {
+                        HtmlNode childCopy = child.cloneNode(true);
+                        childCopy.parent = contentCopy;
+                        contentCopy.children.add(childCopy);
+                    }
+                }
             }
         }
         return copy;

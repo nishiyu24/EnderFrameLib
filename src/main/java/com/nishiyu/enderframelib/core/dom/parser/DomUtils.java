@@ -63,25 +63,37 @@ public class DomUtils {
 
     public static void setInnerHTML(HtmlNode target, String html) {
         if (target == null) return;
-        target.children.clear();
+        // template の中身は要素の子ではなく content の子
+        HtmlNode container = target instanceof HtmlElement el && el.isTemplateElement() ? el.getContent() : target;
+        if (container == null) return;
+        container.children.clear();
         if (html != null && !html.trim().isEmpty()) {
             if (innerHtmlParser != null) {
                 HtmlNode parsedRoot = innerHtmlParser.apply(html, target.tag);
                 if (parsedRoot != null) {
                     for (HtmlNode child : parsedRoot.children) {
-                        child.parent = target;
-                        target.children.add(child);
+                        child.parent = container;
+                        container.children.add(child);
                     }
                 }
             }
         }
     }
 
+    /** 直列化する子の並び。template は中身（content）を子として書き出す。 */
+    private static java.util.List<HtmlNode> serializedChildren(HtmlNode node) {
+        if (node instanceof HtmlElement el && el.isTemplateElement()) {
+            HtmlNode container = el.getContent();
+            return container != null ? container.children : java.util.List.of();
+        }
+        return node.children;
+    }
+
     public static String getInnerHTML(HtmlNode node) {
         if (node == null) return "";
         if (node.nodeType == NodeType.TEXT) return node.text != null ? node.text : "";
         StringBuilder sb = new StringBuilder();
-        for (HtmlNode child : node.children) {
+        for (HtmlNode child : serializedChildren(node)) {
             sb.append(getOuterHTML(child));
         }
         return sb.toString();
@@ -102,7 +114,7 @@ public class DomUtils {
             return sb.toString();
         }
         sb.append(">");
-        for (HtmlNode child : node.children) {
+        for (HtmlNode child : serializedChildren(node)) {
             sb.append(getOuterHTML(child));
         }
         sb.append("</").append(node.tag).append(">");

@@ -180,7 +180,7 @@ public class BindingsTest {
         HtmlNode itemTmpl = new HtmlElement("div");
         itemTmpl.attrs.put("id", "row");
         itemTmpl.text = "{{name}} - {{count}}";
-        template.children.add(itemTmpl);
+        ((HtmlElement) template).getContent().children.add(itemTmpl);
 
         List<Map<String, String>> data = List.of(
                 Map.of("name", "Apple", "count", "5"),

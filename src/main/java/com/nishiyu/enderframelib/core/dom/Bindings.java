@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.dom;
 
 import com.nishiyu.enderframelib.core.dom.node.*;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
 import com.nishiyu.enderframelib.core.dom.parser.*;
 
 import java.util.*;
@@ -296,7 +297,7 @@ public final class Bindings {
         List<HtmlNode> extracted = new ArrayList<>();
         for (HtmlNode c : src.children) {
             if ("template".equalsIgnoreCase(c.tag)) {
-                for (HtmlNode tc : c.children) extracted.add(tc.cloneNode(true));
+                for (HtmlNode tc : templateContentChildren(c)) extracted.add(tc.cloneNode(true));
             }
         }
         if (extracted.isEmpty()) {
@@ -305,6 +306,21 @@ public final class Bindings {
             }
         }
         return extracted;
+    }
+
+    /** {@code template} の不活性な中身。テンプレート以外では空。 */
+    private static List<HtmlNode> templateContentChildren(HtmlNode template) {
+        if (template instanceof HtmlElement el && el.isTemplateElement()) {
+            HtmlDocumentFragment content = el.getContent();
+            return content != null ? content.children : Collections.emptyList();
+        }
+        return Collections.emptyList();
+    }
+
+    /** 仮想リストが1行ごとに複製する雛形。template なら content の中身、そうでなければ子。 */
+    private static List<HtmlNode> templateChildrenForRender(HtmlNode template) {
+        if (template instanceof HtmlElement el && el.isTemplateElement()) return templateContentChildren(template);
+        return template.children;
     }
 
     public static void uniquifyIds(HtmlNode node, int index, String rowKey) {
@@ -459,7 +475,7 @@ public final class Bindings {
 
         for (int i = startIndex; i < endIndex; i++) {
             Map<String, String> localData = dataList.get(i);
-            for (HtmlNode tmpl : templateRoot.children) {
+            for (HtmlNode tmpl : templateChildrenForRender(templateRoot)) {
                 HtmlNode itemNode = tmpl.cloneNode(true);
                 applyTemplate(itemNode, text -> resolve(text, localData, null));
                 itemNode.parent = targetNode;

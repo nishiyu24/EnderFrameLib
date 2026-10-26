@@ -14,6 +14,7 @@ import com.nishiyu.enderframelib.api.dom.DOMCollections.HTMLCollection;
 import com.nishiyu.enderframelib.api.dom.Node;
 import com.nishiyu.enderframelib.api.dom.DOMCollections.NodeList;
 import com.nishiyu.enderframelib.api.dom.ValidityState;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher;
 import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
 import com.nishiyu.enderframelib.core.event.CoreEvent;
@@ -37,9 +38,37 @@ public class HtmlElement extends HtmlNode implements Element {
     private HtmlDOMTokenList classList = null;
     private HtmlCSSStyleDeclaration style = null;
     private String customValidityMessage = "";
+    /** {@code <template>} の不活性な中身。テンプレート以外では {@code null}。 */
+    private HtmlDocumentFragment templateContent = null;
 
     public HtmlElement(String tag) {
         super(NodeType.ELEMENT, tag);
+    }
+
+    /** {@code template} 要素か。{@code cloneNode} と直列化が中身の置き場を切り替える。 */
+    public boolean isTemplateElement() {
+        return "template".equalsIgnoreCase(tag);
+    }
+
+    /**
+     * {@code <template>} の中身（HTML §4.12.3 の template contents）。
+     * 文書の木には入らず、{@code document.querySelector} も見つけない。テンプレート以外では {@code null}。
+     */
+    @Nullable
+    public HtmlDocumentFragment getContent() {
+        if (!isTemplateElement()) return null;
+        if (templateContent == null) {
+            templateContent = new HtmlDocumentFragment();
+        }
+        HtmlDocument owner = getOwnerDocument() instanceof HtmlDocument doc ? doc : null;
+        if (templateContent.ownerDocument != owner) templateContent.ownerDocument = owner;
+        return templateContent;
+    }
+
+    /** 中身を作らずに読む（クローンと直列化のための内部用）。 */
+    @Nullable
+    HtmlDocumentFragment peekTemplateContent() {
+        return isTemplateElement() ? templateContent : null;
     }
 
     @Override
@@ -95,10 +124,12 @@ public class HtmlElement extends HtmlNode implements Element {
 
     @Override
     public void setInnerHTML(String html) {
+        // template の innerHTML は中身（content）を書き換える。要素の子ではない
+        HtmlNode container = isTemplateElement() ? getContent() : this;
         // 既存の子をすべて removeChild で切り離す（MutationObserver通知と idMap 解除のため）
-        List<HtmlNode> currentChildren = new ArrayList<>(this.children);
+        List<HtmlNode> currentChildren = new ArrayList<>(container.children);
         for (HtmlNode child : currentChildren) {
-            removeChild(child);
+            container.removeChild(child);
         }
         if (html != null && !html.trim().isEmpty()) {
             HtmlNode parsedRoot = DomUtils.innerHtmlParser != null
@@ -107,7 +138,7 @@ public class HtmlElement extends HtmlNode implements Element {
             if (parsedRoot != null) {
                 List<HtmlNode> newChildren = new ArrayList<>(parsedRoot.children);
                 for (HtmlNode child : newChildren) {
-                    appendChild(child);
+                    container.appendChild(child);
                 }
             }
         }

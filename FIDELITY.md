@@ -102,7 +102,8 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 `HtmlTreeConstructionTest` の各ケースは、入力を Edge 155 の `DOMParser`（文書）と innerHTML（断片。文脈は
 `body` / `tbody` / `tr` / `template`）に通して書き出した木を期待値にしている（暗黙の html / head / body・
 暗黙終了・暗黙の `tbody` / `tr` / `colgroup`・表の前に出される要素と文字・文字参照）。
-書式要素の再構築（`<p><b>x</p>y` の 2 つ目の `b`）は入れていない（`HtmlParser` の `LIMITATION`）。
+書式要素の再構築（`<p><b>x</p>y` の 2 つ目の `b`）と adoption agency も同じテストで固定する。
+`<template>` は content の子を書き出す（要素の子ではない）。
 属性値の中の `;` の無い文字参照は仕様に従う。Chromium は同じ属性に `&amp;` があると `&copy=` のような
 名前も解く（仕様では `=` が続けば解かない）ので、そのケースは期待値にしていない。
 
@@ -175,9 +176,11 @@ TTF / OTF 以外の `@font-face` で登録した書体）だけの話。シス�
   `scrollWidth` / `scrollHeight` はセルの端まで測る（箱より 2px 小さくなる）。エンジンも同じにした
   （`LayoutBox.isCollapsedTable()`。`overflow` でクリップする表は普通の箱として測る）。
   あわせて表の `%` 列幅・`visibility: collapse`・multicol・grid の `auto-fit` の畳み・`grid-template` / `grid`・
-  adoption agency・`<ol reversed>`・`list-style-image`・`@counter-style` を入れた。矩形のダンプに出ない、または文字の幅に依存する差なので
+  adoption agency・`<ol reversed>`・`list-style-image`・`@counter-style`・`<template>` の不活性な `content` を入れた。
+  矩形のダンプに出ない、または文字の幅に依存する差なので
   コーパスは足さず、Edge 156 を採った `MulticolTest` / `TablePercentColumnTest` / `GridAutoFitTest` /
-  `R9MiscLayoutTest` / `HtmlTreeConstructionTest` と、`CounterStyleTest` / `BoxTreeTest` が固定する。
+  `R9MiscLayoutTest` / `HtmlTreeConstructionTest` と、`CounterStyleTest` / `BoxTreeTest` /
+  `TemplateElementTest` が固定する。
 
 - **R0 / R4（追加 15 ケース、台帳 1 行）**: 計算値の列を比べる `computed-values`（R0）と、現代の CSS の 14 ケース（R4）
   （`layer-order` / `layer-important` / `layer-nested-anonymous` / `nesting-basic` / `nesting-specificity` /

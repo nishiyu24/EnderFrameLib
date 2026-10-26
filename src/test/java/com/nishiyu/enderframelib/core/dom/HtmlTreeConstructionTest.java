@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -103,7 +104,11 @@ public class HtmlTreeConstructionTest {
             {"body", "<p>a<!-->b", "<p>ab</p>"},
             {"body", "<p>a<!--->b", "<p>ab</p>"},
             {"body", "<p>a<!-- x --!>b", "<p>ab</p>"},
-            {"body", "<p>a<!-- never", "<p>a</p>"}
+            {"body", "<p>a<!-- never", "<p>a</p>"},
+            {"body", "<template><div>x</div></template>", "<template><div>x</div></template>"},
+            {"body", "<template><tr><td>a</td></tr></template>", "<template><tr><td>a</td></tr></template>"},
+            {"body", "<template><template><b>x</b></template></template>", "<template><template><b>x</b></template></template>"},
+            {"body", "<template><div>a</template>b", "<template><div>a</div></template>b"}
     };
 
     @TestFactory
@@ -132,7 +137,10 @@ public class HtmlTreeConstructionTest {
         }
         out.append('>');
         if (VoidElements.isVoid(node.tag)) return;
-        for (HtmlNode child : node.children) serialize(child, out);
+        List<HtmlNode> children = node instanceof HtmlElement el && el.isTemplateElement() && el.getContent() != null
+                ? el.getContent().children
+                : node.children;
+        for (HtmlNode child : children) serialize(child, out);
         out.append("</").append(node.tag).append('>');
     }
 }
