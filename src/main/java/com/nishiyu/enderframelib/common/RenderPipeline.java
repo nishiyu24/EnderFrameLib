@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
+import com.nishiyu.enderframelib.core.css.CounterStyles;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.PropertyRegistry;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
@@ -127,7 +128,7 @@ public class RenderPipeline {
             rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
-            BoxTreeBuilder.build(rootBox);
+            BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
             runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts, incremental);
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
@@ -141,7 +142,7 @@ public class RenderPipeline {
     public static LayoutBox layoutSubtree(HtmlNode root, StyleSheet sheet, int rootW, int rootH,
                                           Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
         LayoutBox rootBox = buildLayoutTree(root, Map.of("display", "inline-block"), sheet, env, false);
-        BoxTreeBuilder.build(rootBox);
+        BoxTreeBuilder.build(rootBox, CounterStyles.of(sheet.counterStyles));
         runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
         return rootBox;
     }

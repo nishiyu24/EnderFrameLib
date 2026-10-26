@@ -115,11 +115,14 @@ final class FidelityDumper {
         int z = stackDepthAtCenter(box, paintedWithId);
 
         boolean isInlineNonBfc = box.display != null && box.display.isInlineLevel() && !box.establishesBfc;
-        float cw = isInlineNonBfc ? 0 : Math.max(0, w - box.bL - box.bR);
-        float ch = isInlineNonBfc ? 0 : Math.max(0, h - box.bT - box.bB);
+        boolean collapsedTable = box.isCollapsedTable();
+        float cw = isInlineNonBfc ? 0 : collapsedTable ? w : Math.max(0, w - box.bL - box.bR);
+        float ch = isInlineNonBfc ? 0 : collapsedTable ? h : Math.max(0, h - box.bT - box.bB);
 
-        float sw = isInlineNonBfc ? 0 : Math.max(cw, (box.scrollWidth > 0 ? box.scrollWidth : w) - box.bL - box.bR);
-        float sh = isInlineNonBfc ? 0 : Math.max(ch, (box.scrollHeight > 0 ? box.scrollHeight : h) - box.bT - box.bB);
+        float sw = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollWidth > 0 ? box.scrollWidth : w)
+                : Math.max(cw, (box.scrollWidth > 0 ? box.scrollWidth : w) - box.bL - box.bR);
+        float sh = isInlineNonBfc ? 0 : collapsedTable ? (box.scrollHeight > 0 ? box.scrollHeight : h)
+                : Math.max(ch, (box.scrollHeight > 0 ? box.scrollHeight : h) - box.bT - box.bB);
 
         Map<String, String> computed = new LinkedHashMap<>();
         computed.put("display", computeDisplay(box));

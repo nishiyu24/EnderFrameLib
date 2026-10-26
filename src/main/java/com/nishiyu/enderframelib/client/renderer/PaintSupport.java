@@ -43,6 +43,28 @@ final class PaintSupport {
     }
 
     /**
+     * {@code empty-cells: hide} で、枠線も背景も描かない空のセルか（CSS 2.2 §17.6.1.1）。
+     * {@code border-collapse: separate} の表のセルだけで、中身が空白だけ（子孫に要素も語も無い）のもの。
+     */
+    static boolean hidesEmptyCell(LayoutBox box) {
+        if (box.display == null || box.display.inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders != null) return false;
+        if (!"hide".equalsIgnoreCase(String.valueOf(box.style.get("empty-cells")).trim())) return false;
+        return hasNoContent(box);
+    }
+
+    private static boolean hasNoContent(LayoutBox box) {
+        for (LayoutBox.InlineFragment f : box.inlineFragments) {
+            if (!f.isText() || !f.text.isBlank()) return false;
+        }
+        for (LayoutBox c : box.children) {
+            if (c.display != null && c.display.isNone()) continue;
+            if (c.node != null && c.node.tag != null && !c.node.tag.isEmpty() && !c.node.tag.startsWith("#")) return false;
+            if (!hasNoContent(c)) return false;
+        }
+        return true;
+    }
+
+    /**
      * 描画要素を 1 つ足す。レイアウトの float 座標を整数に丸めるのはここ 1 箇所だけ（軸 3）。
      *
      * 幅と高さを個別に丸めず、左右（上下）の辺をそれぞれ丸めて差を取る。こうすると

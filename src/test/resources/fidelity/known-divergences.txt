@@ -12,10 +12,6 @@ flex-column-overflow#scroller.clientWidth R5: スクロールバー表示によ�
 flex-column-overflow#content.w R5: スクロールバーの内側での子の % 幅縮小
 flex-column-overflow#content.scrollWidth R5: スクロールバーの内側での子の % 幅縮小
 flex-column-overflow#content.clientWidth R5: スクロールバーの内側での子の % 幅縮小
-table-border-collapse#t.scrollWidth R9: border-collapse: collapse での表の scrollWidth 算出
-table-border-collapse#t.scrollHeight R9: border-collapse: collapse での表の scrollHeight 算出
-table-border-collapse#t.clientWidth R9: border-collapse: collapse での表の clientWidth 算出
-table-border-collapse#t.clientHeight R9: border-collapse: collapse での表の clientHeight 算出
 list-basic#list.scrollHeight R4: ::marker の配置と行高によるリストの scrollHeight の差
 list-basic#a.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差
 list-basic#b.scrollHeight R4: ::marker の配置と行高による項目の scrollHeight の差

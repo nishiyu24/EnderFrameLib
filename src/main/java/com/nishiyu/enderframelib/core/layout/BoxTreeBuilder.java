@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.PropertyRegistry;
+import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
@@ -21,6 +22,7 @@ import java.util.function.Predicate;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
+import com.nishiyu.enderframelib.core.css.CounterStyles;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
@@ -45,11 +47,16 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * LIMITATION(制約): インラインボックスの中にブロックがあるとき、インラインを分割しない
  * （ブロックはインラインの中に置かれたまま組まれる）。flex / grid コンテナの中のテキストは
  * 匿名の flex / grid アイテムで包まず、テキストの箱がそのままアイテムになる。
- * {@code <ol reversed>} は逆順に数えない。README の "Not supported" に対応。
+ * README の "Not supported" に対応。
+ *
+ * <p>リスト（R9）: {@code <ol reversed>} は項目数（{@code start} があればその値）から 1 ずつ減らして数える。
+ * {@code list-style-image: url(...)} は、マーカーの文字の代わりに画像の置換要素を置く。
+ * {@code @counter-style} の作者定義は {@link CounterStyles} が解決する（知らない名前は {@code decimal}）。
  */
 public final class BoxTreeBuilder {
 
     private final Counters counters = new Counters();
+    private final CounterStyles counterStyles;
     /** 匿名ボックスの id の通し番号（持ち主ごと）。再レイアウトしても同じ id になるよう決定的に振る。 */
     private final Map<LayoutBox, Integer> anonymousCounts = new IdentityHashMap<>();
 
@@ -61,11 +68,18 @@ public final class BoxTreeBuilder {
     private final Map<String, LayoutBox> reusableGenerated = new java.util.HashMap<>();
     private final java.util.Set<String> ambiguousGeneratedIds = new java.util.HashSet<>();
 
-    private BoxTreeBuilder() {}
+    private BoxTreeBuilder(CounterStyles counterStyles) {
+        this.counterStyles = counterStyles != null ? counterStyles : CounterStyles.builtins();
+    }
 
-    /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。 */
+    /** 定義済みスタイルだけで {@code root} 以下のボックスツリーを作り直す。 */
     public static void build(LayoutBox root) {
-        BoxTreeBuilder builder = new BoxTreeBuilder();
+        build(root, CounterStyles.builtins());
+    }
+
+    /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。{@code counterStyles} は文書の {@code @counter-style}。 */
+    public static void build(LayoutBox root, CounterStyles counterStyles) {
+        BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
         builder.collectReusableGenerated(root);
         builder.counters.apply(root);
         builder.buildBox(root);
@@ -362,12 +376,14 @@ public final class BoxTreeBuilder {
      * {@code ::marker} の規則（色・フォント・{@code content} など）は {@link LayoutBox#markerStyle} から読む。
      * {@code content} があればリストの種類より優先する（{@code li::marker { content: "→ " }}）。
      *
-     * LIMITATION(制約): {@code list-style-image} は読まない。README の "Not supported" に対応。
+     * {@code list-style-image: url(...)} は、{@code content} が無いときに文字の代わりに画像を置く。
      */
     private LayoutBox createMarker(LayoutBox listItem, Counters counters) {
         String text = markerContent(listItem, counters);
+        String imageUrl = text == null ? listStyleImageUrl(listItem.style.get(CssProperty.LIST_STYLE_IMAGE)) : null;
+        if (imageUrl != null) return createImageMarker(listItem, imageUrl);
         if (text == null) {
-            text = markerText(listItem.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc"),
+            text = counterStyles.marker(listItem.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc"),
                     counters.value(LIST_ITEM));
         }
         if (text == null || text.isEmpty()) return null;
@@ -402,8 +418,59 @@ public final class BoxTreeBuilder {
         return marker;
     }
 
+    /** {@code list-style-image} の {@code url(...)} の中身。{@code none} や url 以外は null。 */
+    static String listStyleImageUrl(String value) {
+        if (value == null) return null;
+        String v = value.trim();
+        if (v.length() < 6 || !v.regionMatches(true, 0, "url(", 0, 4) || !v.endsWith(")")) return null;
+        String inner = v.substring(4, v.length() - 1).trim();
+        if (inner.length() >= 2 && (inner.charAt(0) == '"' || inner.charAt(0) == '\'')
+                && inner.charAt(inner.length() - 1) == inner.charAt(0)) {
+            inner = inner.substring(1, inner.length() - 1);
+        }
+        return inner.isEmpty() ? null : inner;
+    }
+
+    /** 画像のマーカー: 画像の置換要素と、続く空白 1 文字。画像が同じなら前回の箱を使い回す。 */
+    private LayoutBox createImageMarker(LayoutBox listItem, String url) {
+        ComputedStyle style = markerStyleOf(listItem);
+        boolean outside = listItem.style.keywordOf(CssProperty.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+                != CssKeywords.ListStylePosition.INSIDE;
+
+        LayoutBox reused = takeReusableGenerated(listItem.node.getId() + "_marker");
+        if (reused != null && reused.node.isPseudoNode && reused.children.size() == 2
+                && reused.children.getFirst().node.nodeType == NodeType.ELEMENT
+                && url.equals(reused.children.getFirst().node.attrs.get("src"))) {
+            reused.node.parent = listItem.node;
+            reused.updateStyle(style);
+            reused.isOutsideMarker = outside;
+            for (LayoutBox child : reused.children) child.updateStyle(style);
+            return reused;
+        }
+
+        HtmlNode node = new HtmlNode("span");
+        node.isPseudoNode = true;
+        node.parent = listItem.node;
+        node.setId(listItem.node.getId() + "_marker");
+        HtmlNode image = new HtmlElement("img");
+        image.isPseudoNode = true;
+        // 親に繋ぐ前に書く（DOM の観測者には見えない箱なので、属性の変更を通知させない）
+        image.setAttribute("src", url);
+        image.parent = node;
+        image.setId(node.getId() + "_img");
+        HtmlNode gap = new HtmlText(" ");
+        gap.parent = node;
+        gap.setId(node.getId() + "_txt");
+
+        LayoutBox marker = LayoutBox.anonymous(node, style);
+        marker.isOutsideMarker = outside;
+        marker.addChild(new LayoutBox(image, style));
+        marker.addChild(new LayoutBox(gap, style));
+        return marker;
+    }
+
     /** {@code ::marker} の {@code content}。無い・{@code normal} は null（リストの種類で決める）、{@code none} は空文字列。 */
-    private static String markerContent(LayoutBox listItem, Counters counters) {
+    private String markerContent(LayoutBox listItem, Counters counters) {
         if (listItem.markerStyle == null) return null;
         String content = listItem.markerStyle.get(CssProperty.CONTENT);
         if (content == null || content.isBlank() || content.trim().equalsIgnoreCase("normal")) return null;
@@ -417,82 +484,13 @@ public final class BoxTreeBuilder {
             CssProperty.WHITE_SPACE, "pre",
             CssProperty.TEXT_TRANSFORM, "none");
 
-    /** {@code list-style-type} からマーカーの文字列を作る（記号は後ろに空白、序数は「. 」を付ける）。 */
-    static String markerText(String listStyleType, int ordinal) {
-        String type = listStyleType == null ? "disc" : listStyleType.trim();
-        if (type.isEmpty() || type.equals("none")) return null;
-        if (type.length() >= 2 && (type.startsWith("\"") || type.startsWith("'"))) {
-            return type.substring(1, type.length() - 1);
-        }
-        String symbol = symbolMarker(type);
-        if (symbol != null) return symbol + " ";
-        return formatCounter(ordinal, type) + ". ";
-    }
-
-    private static String symbolMarker(String type) {
-        return switch (type.toLowerCase(Locale.ROOT)) {
-            case "disc" -> "•";
-            case "circle" -> "◦";
-            case "square" -> "▪";
-            case "disclosure-open" -> "▾";
-            case "disclosure-closed" -> "▸";
-            default -> null;
-        };
-    }
-
-    /** カウンタの値を counter style で書く。知らない名前は {@code decimal}（CSS Counter Styles 3）。 */
-    static String formatCounter(int value, String style) {
-        String type = style == null ? "decimal" : style.trim().toLowerCase(Locale.ROOT);
-        String symbol = symbolMarker(type);
-        if (symbol != null) return symbol;
-        return switch (type) {
-            case "none" -> "";
-            case "decimal-leading-zero" -> (value >= 0 && value < 10 ? "0" : "") + value;
-            case "lower-alpha", "lower-latin" -> alphabetic(value, 'a', 26);
-            case "upper-alpha", "upper-latin" -> alphabetic(value, 'A', 26);
-            case "lower-greek" -> alphabetic(value, 'α', 24);
-            case "lower-roman" -> roman(value).toLowerCase(Locale.ROOT);
-            case "upper-roman" -> roman(value);
-            default -> Integer.toString(value);
-        };
-    }
-
-    /** a, b, …, z, aa, ab, …（0 以下は表せないので decimal に落とす）。 */
-    private static String alphabetic(int value, char first, int radix) {
-        if (value <= 0) return Integer.toString(value);
-        StringBuilder sb = new StringBuilder();
-        int n = value;
-        while (n > 0) {
-            n--;
-            sb.insert(0, (char) (first + n % radix));
-            n /= radix;
-        }
-        return sb.toString();
-    }
-
-    /** ローマ数字は 1〜3999 だけ表せる。範囲外は decimal に落とす。 */
-    private static String roman(int value) {
-        if (value <= 0 || value >= 4000) return Integer.toString(value);
-        int[] values = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
-        String[] numerals = {"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"};
-        StringBuilder sb = new StringBuilder();
-        int n = value;
-        for (int i = 0; i < values.length; i++) {
-            while (n >= values[i]) {
-                sb.append(numerals[i]);
-                n -= values[i];
-            }
-        }
-        return sb.toString();
-    }
-
     /**
      * {@code ::before} / {@code ::after} の {@code content} を評価して、擬似要素のテキストにする。
      *
      * 何が壊れていたか: 以前はパーサが {@code content} の前後の引用符を外すだけだったので、
      * {@code "(" attr(title) ")"} のような連結が文字列のまま出ていた。カウンタも読めなかった。
      */
-    private static void evaluateGeneratedContent(LayoutBox pseudo, Counters counters) {
+    private void evaluateGeneratedContent(LayoutBox pseudo, Counters counters) {
         String content = pseudo.style.get(CssProperty.CONTENT);
         if (content == null || pseudo.elementChildren.isEmpty()) return;
         LayoutBox textBox = pseudo.elementChildren.getFirst();
@@ -502,7 +500,7 @@ public final class BoxTreeBuilder {
     }
 
     /** {@code content} の値（文字列・{@code attr()}・{@code counter()}・{@code counters()} の並び）を評価する。 */
-    static String evaluateContent(String content, HtmlNode owner, Counters counters) {
+    String evaluateContent(String content, HtmlNode owner, Counters counters) {
         StringBuilder out = new StringBuilder();
         int i = 0;
         int n = content.length();
@@ -542,19 +540,20 @@ public final class BoxTreeBuilder {
         return out.toString();
     }
 
-    private static String evaluateFunction(String name, String args, HtmlNode owner, Counters counters) {
+    private String evaluateFunction(String name, String args, HtmlNode owner, Counters counters) {
         List<String> parts = splitArgs(args);
         return switch (name) {
             case "attr" -> owner != null && !parts.isEmpty() ? owner.attrs.getOrDefault(parts.getFirst(), "") : "";
             case "counter" -> parts.isEmpty() ? ""
-                    : formatCounter(counters.value(parts.get(0)), parts.size() > 1 ? parts.get(1) : "decimal");
+                    : counterStyles.representation(counters.value(parts.get(0)),
+                            parts.size() > 1 ? parts.get(1) : "decimal");
             case "counters" -> {
                 if (parts.size() < 2) yield "";
                 String separator = unquote(parts.get(1));
                 String style = parts.size() > 2 ? parts.get(2) : "decimal";
                 List<String> formatted = new ArrayList<>();
-                for (int v : counters.values(parts.get(0))) formatted.add(formatCounter(v, style));
-                if (formatted.isEmpty()) formatted.add(formatCounter(0, style));
+                for (int v : counters.values(parts.get(0))) formatted.add(counterStyles.representation(v, style));
+                if (formatted.isEmpty()) formatted.add(counterStyles.representation(0, style));
                 yield String.join(separator, formatted);
             }
             default -> "";
@@ -626,11 +625,24 @@ public final class BoxTreeBuilder {
             return names.size();
         }
 
+        /** 逆順に数える {@code list-item}（{@code <ol reversed>}）の実体の位置。 */
+        private final java.util.Set<Integer> reversedInstances = new java.util.HashSet<>();
+
         void release(int mark) {
             while (names.size() > mark) {
                 names.removeLast();
                 values.removeLast();
+                reversedInstances.remove(names.size());
             }
+        }
+
+        /** {@code <ol>} の項目（{@code li} の子）の数。 */
+        private static int listItemChildren(HtmlNode list) {
+            int count = 0;
+            for (HtmlNode child : list.children) {
+                if (child.nodeType == NodeType.ELEMENT && "li".equalsIgnoreCase(child.tag)) count++;
+            }
+            return count;
         }
 
         int value(String name) {
@@ -661,10 +673,22 @@ public final class BoxTreeBuilder {
                 Integer start = parseInt(node.attrs.get("start"));
                 if (start != null) resets.put(LIST_ITEM, start - 1);
             }
-            resets.forEach(this::reset);
+            // <ol reversed> は項目数（start があればその値）から 1 ずつ減らす。最初の項目の減算の前に 1 足しておく
+            boolean reversed = resets.containsKey(LIST_ITEM) && "ol".equalsIgnoreCase(node.tag) && node.attrs.containsKey("reversed");
+            if (reversed) {
+                Integer start = node.attrs.containsKey("start") ? parseInt(node.attrs.get("start")) : null;
+                resets.put(LIST_ITEM, (start != null ? start : listItemChildren(node)) + 1);
+            }
+            for (var reset : resets.entrySet()) {
+                reset(reset.getKey(), reset.getValue());
+                if (reversed && reset.getKey().equals(LIST_ITEM)) reversedInstances.add(names.size() - 1);
+            }
 
             Map<String, Integer> increments = parseCounterList(style.get(CssProperty.COUNTER_INCREMENT), 1);
-            if (box.display.listItem() && !increments.containsKey(LIST_ITEM)) increments.put(LIST_ITEM, 1);
+            if (box.display.listItem() && !increments.containsKey(LIST_ITEM)) {
+                int i = innermost(LIST_ITEM);
+                increments.put(LIST_ITEM, i >= 0 && reversedInstances.contains(i) ? -1 : 1);
+            }
             increments.forEach(this::increment);
 
             Map<String, Integer> sets = parseCounterList(style.get(CssProperty.COUNTER_SET), 0);

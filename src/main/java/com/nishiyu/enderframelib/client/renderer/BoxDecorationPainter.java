@@ -187,6 +187,28 @@ final class BoxDecorationPainter {
     }
 
     /**
+     * 段組（multicol）の列の間の線（{@code column-rule}）。線の位置は {@link LayoutBox#columnRules}
+     * （レイアウトが列の間の中央に置いた矩形）で、箱の背景の上・文字の下に出る。
+     */
+    void drawColumnRules(List<DisplayItem> elements, LayoutBox box, String id, int color,
+                         ItemProps events, RenderMeta meta, int transDur) {
+        float[][] rules = box.columnRules;
+        if (rules == null) return;
+        String lineStyle = box.style.keywordOf("column-rule-style", BorderStyle.class).cssName();
+        if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
+        String colorProp = box.style.get("column-rule-color");
+        int c = colorProp == null ? color : ColorParser.parseColor(colorProp);
+        String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
+        int[] colors = {c, c, c, c};
+        for (int i = 0; i < rules.length; i++) {
+            float[] r = rules[i];
+            if (r[2] <= 0 || r[3] <= 0) continue;
+            drawLines(elements, id, "_cr" + i + "_", r[0], r[1], r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0,
+                    events, meta, transDur);
+        }
+    }
+
+    /**
      * 外側の影（{@code inset} でないもの）。リストの先頭が最前面なので後ろから描き、箱の背景より下に置く。
      * 影の形は箱をオフセットだけずらして広がりだけ膨らませた角丸矩形で、ぼかしは層の重ね塗りで近似する
      * （{@link BoxDecorations#shadowLayers}）。部品の id は {@code <id>_shadow_<番号>}。

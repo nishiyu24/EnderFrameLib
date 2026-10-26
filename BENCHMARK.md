@@ -181,6 +181,24 @@ R1 の時点では対話状態とスクロール量をノードの参照をキ�
 
 単一要素のホバーは dirty 要素だけ再計算するので Phase 2 の目標 `< 1.0 ms` を既に満たす。子孫セレクタに効く class トグルの時間は、500 行の見た目が実際に変わる仕事の量（行の再スタイル）で、Phase 2 の無効化セットの接続後も変わらない。
 
+### Phase 5 R9（表の `%` 列幅・multicol・grid の畳み・adoption agency）の前後（2026-10-26）
+
+`./gradlew benchmark`（単独 JVM・厳密）は許容幅内（基準値 × 2 + 3 ms）。R9 の追加は既存の経路に分岐を足すだけ
+（`MulticolLayout.isMulticol` は `column-count` / `column-width` が `auto` の箱で即 false）なので、段組を使わない文書の経路は変わらない。
+
+| Document | Restyle | Relayout | DisplayList | ScrollStep |
+| :--- | :---: | :---: | :---: | :---: |
+| `showcase.html` | 11.814 ms | 15.236 ms | 4.598 ms | 17.823 ms |
+| `guidebook.md` | 4.660 ms | 3.608 ms | 2.801 ms | 5.422 ms |
+| `large-list (500 items)` | 17.337 ms | 9.892 ms | 9.375 ms | 12.768 ms |
+
+段組の組版（400 段落・約 1,200 行・幅 380px）は `layoutDocument` 1 回で、段組なし 26.4 ms（best。平均 37.4）、
+`column-count: 4` 29.2 ms（best。平均 32.0）。段組は組版を列の幅で 1 回行い、単位の列への詰めは二分探索（24 回 × 単位数）なので、
+段組なしと同じ桁に収まる。
+
+`@counter-style` を入れた最終状態でも `./gradlew benchmark`（厳密）は許容幅内（showcase 12.4 / 17.0 / 4.7 / 21.4 ms、
+guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms。Restyle / Relayout / DisplayList / ScrollStep）。
+
 ### Phase 4（フォントアトラス・UAX #14・direction・Range）の前後（2026-10-26）
 
 同じマシン・同じ条件（`./gradlew test --tests '*PerformanceBenchmarkTest' --rerun-tasks`）で、HEAD（`02f7730`）の worktree と作業ツリーを交互に 3 往復した値（ms。Restyle / Relayout / DisplayList / ScrollStep。マシンが負荷で 3 割ほど揺れるので、往復の間にもばらつく）。

@@ -46,6 +46,9 @@ public class BlockLayoutEngine extends LayoutEngine {
     @Override
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         float tentativeInnerW = space.availableInlineSize();
+        // 段組は、中身を列の幅で測る（全幅の column-span: all だけ段組全体の幅）
+        MulticolLayout.Geometry columns = MulticolLayout.isMulticol(box)
+                ? MulticolLayout.geometry(box, tentativeInnerW, ctx.viewport().rootW(), ctx.viewport().rootH()) : null;
         float maxChildW = 0;
         // 行の内容の幅は強制改行（<br> と保持された改行）で区切って、最も広い行を取る。
         // 何が壊れていたか: 以前は区切らずに足し続けていて、<br> を含む inline-block・float・flex アイテムが
@@ -62,7 +65,8 @@ public class BlockLayoutEngine extends LayoutEngine {
                 child.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, childParentH, MARKER_CONTEXT), ctx);
                 continue;
             }
-            child.measure(new ConstraintSpace(tentativeInnerW, childParentH, childCtx), ctx);
+            float measureW = columns != null && !MulticolLayout.isSpanner(child) ? columns.width() : tentativeInnerW;
+            child.measure(new ConstraintSpace(measureW, childParentH, childCtx), ctx);
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
                 addInlineWidth(child, line, ctx);
@@ -71,6 +75,12 @@ public class BlockLayoutEngine extends LayoutEngine {
                 line.clear();
                 maxChildW = Math.max(maxChildW, child.w + child.mL + child.mR);
             }
+        }
+        if (columns != null) {
+            // 内容の幅は、列を並べた幅（確定した幅の箱では使われない）
+            float natural = columns.count() * Math.max(maxChildW, 0) + (columns.count() - 1) * columns.gap();
+            return tentativeInnerW > 0 && tentativeInnerW < LayoutMetrics.UNBOUNDED_WIDTH
+                    ? Math.min(tentativeInnerW, natural) : natural;
         }
         return maxChildW;
     }
@@ -164,6 +174,8 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     @Override
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        if (MulticolLayout.isMulticol(box)) return MulticolLayout.contentBlockSize(this, box, space, ctx);
+        if (box.engineState instanceof MulticolLayout.State) box.engineState = null;
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) stretchBlockChildren(box, space, ctx);
         FlowState state = new FlowBuilder(box, space, ctx).build();
         box.engineState = state;
@@ -197,19 +209,50 @@ public class BlockLayoutEngine extends LayoutEngine {
     @Override
     public void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx) {
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
+        if (box.engineState instanceof MulticolLayout.State columns) {
+            box.inlineContentBottom = MulticolLayout.arrange(this, box, columns, innerX, innerY, ctx);
+            placeOutsideMarkers(box, innerY, ctx);
+            return;
+        }
         FlowState state = box.engineState instanceof FlowState s ? s : null;
         if (state == null || Math.abs(state.innerW - innerW) > 0.01f) {
             // 高さを決めた後に幅だけが変わった（親が stretch した）ときは組み直す
             state = new FlowBuilder(box, ConstraintSpace.block(innerW, 0), ctx).build();
             box.engineState = state;
         }
+        box.inlineContentBottom = arrangeFlow(box, state, innerX, innerY, innerW, box.columnShifts, ctx);
+        placeOutsideMarkers(box, innerY, ctx);
+    }
+
+    /** 段組の 1 区間の流れを、列幅 {@code columnW} で組む（{@link MulticolLayout} が呼ぶ）。 */
+    FlowState buildFlow(LayoutBox box, List<LayoutBox> children, float columnW, ConstraintSpace space, LayoutContext ctx) {
+        return new FlowBuilder(box, space, ctx, children, columnW).build();
+    }
+
+    private static final float[] NO_SHIFT = {0, 0};
+
+    private static float[] shiftOf(java.util.Map<Object, float[]> shifts, Object key) {
+        if (shifts == null) return NO_SHIFT;
+        float[] s = shifts.get(key);
+        return s == null ? NO_SHIFT : s;
+    }
+
+    /**
+     * 組んだ流れの子と行を置く。{@code shifts} は段組が列に割り当てた単位ごとの移動量（無ければ全て 0）。
+     * 戻り値は文字の最下端（スクロール範囲が読む）。
+     */
+    float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
+                      java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
         TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class)
                 .physical("rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim()));
         float textBottom = Float.NEGATIVE_INFINITY;
 
         for (Object item : state.items) {
             switch (item) {
-                case Placement p -> p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, ctx);
+                case Placement p -> {
+                    float[] sh = shiftOf(shifts, p);
+                    p.box().layout(innerX + sh[0] + p.x(), innerY + sh[1] + p.y(), innerW, p.box().h, ctx);
+                }
                 case StaticPosition sp -> {
                     sp.box().staticX = innerX + sp.x();
                     sp.box().staticY = innerY + sp.y();
@@ -219,16 +262,16 @@ public class BlockLayoutEngine extends LayoutEngine {
                 case LineRun run -> {
                     for (LayoutBox inlineBox : run.boxes()) clearFragmentsRecursively(inlineBox);
                     for (InlineLine line : run.lines()) {
+                        float[] sh = shiftOf(shifts, line);
                         textBottom = Math.max(textBottom,
-                                placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx));
+                                placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(), textAlign, ctx));
                     }
                     for (LayoutBox inlineBox : run.boxes()) fitToFragments(inlineBox);
                 }
                 default -> throw new IllegalStateException(String.valueOf(item));
             }
         }
-        box.inlineContentBottom = textBottom;
-        placeOutsideMarkers(box, innerY, ctx);
+        return textBottom;
     }
 
     /** 外側のマーカーを測るときの文脈。折り返さず、内容の幅に縮む。 */
@@ -317,8 +360,10 @@ public class BlockLayoutEngine extends LayoutEngine {
      * 1 つのブロックコンテナの子を積む。マージンの相殺、float の配置と回避、clear、行の分割を
      * 文書順に 1 回で行う。
      */
-    private final class FlowBuilder {
+    final class FlowBuilder {
         final LayoutBox box;
+        /** 流す子。段組は区間ごとに分けた子を渡す。 */
+        final List<LayoutBox> children;
         final LayoutContext ctx;
         final FlowState state = new FlowState();
         final FloatSpace floats;
@@ -341,9 +386,15 @@ public class BlockLayoutEngine extends LayoutEngine {
         boolean firstRun = true;
 
         FlowBuilder(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+            this(box, space, ctx, box.children, Float.NaN);
+        }
+
+        /** {@code innerWOverride} が NaN でなければ、箱の幅ではなくその幅（段組の列の幅）で組む。 */
+        FlowBuilder(LayoutBox box, ConstraintSpace space, LayoutContext ctx, List<LayoutBox> children, float innerWOverride) {
             this.box = box;
             this.ctx = ctx;
-            this.innerW = Math.max(0, box.w - box.horizontalDecoration());
+            this.children = children;
+            this.innerW = Float.isNaN(innerWOverride) ? Math.max(0, box.w - box.horizontalDecoration()) : innerWOverride;
             this.rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
             if (!box.establishesBfc && box.floatSpace != null) {
                 floats = box.floatSpace;
@@ -363,7 +414,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         FlowState build() {
             state.innerW = innerW;
             List<LayoutBox> run = new ArrayList<>();
-            for (LayoutBox child : box.children) {
+            for (LayoutBox child : children) {
                 if (isDisplayNone(child.style) || child.isOutsideMarker || child.isRenderedLegend) continue;
                 if (child.isAbsolute) {
                     // 行の中の絶対配置は、行を組むときにその位置を静的位置として記録する
@@ -664,13 +715,13 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 子の箱の位置（マージンボックスの左上。{@link LayoutBox#layout} がマージンを足す）。 */
-    private record Placement(LayoutBox box, float x, float y) {}
+    record Placement(LayoutBox box, float x, float y) {}
 
     /** 絶対配置の静的位置。 */
     private record StaticPosition(LayoutBox box, float x, float y) {}
 
     /** 匿名ブロックに包まれていないインライン内容の並びと、その行。 */
-    private record LineRun(List<LayoutBox> boxes, List<InlineLine> lines) {}
+    record LineRun(List<LayoutBox> boxes, List<InlineLine> lines) {}
 
     // ==========================================
     // ベースライン
@@ -761,13 +812,13 @@ public class BlockLayoutEngine extends LayoutEngine {
     private enum VAlign { BASELINE, TOP, BOTTOM }
 
     /** 行の中の 1 断片。{@code raise} はベースラインから持ち上げる量（px）。 */
-    private record LineItem(InlineFragment frag, VAlign align, float raise) {}
+    record LineItem(InlineFragment frag, VAlign align, float raise) {}
 
     /**
      * 行分割の結果 1 行。座標は内容ボックス相対、{@code baseline} は行の上端から。
      * {@code used} は行の内容の幅（行の左端から、行末の空白を除く）で、{@code text-align} が読む。
      */
-    private record InlineLine(List<LineItem> items, List<BoxSpan> spans, float top, float left, float width,
+    record InlineLine(List<LineItem> items, List<BoxSpan> spans, float top, float left, float width,
                               float height, float baseline, float used) {}
 
     /**
@@ -793,7 +844,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 1 行に載ったインラインボックスの断片（border box の左右端、行の左端からの相対）。 */
-    private record BoxSpan(OpenBox open, float left, float right, boolean startEdge, boolean endEdge) {}
+    record BoxSpan(OpenBox open, float left, float right, boolean startEdge, boolean endEdge) {}
 
     /**
      * インライン内容を行に分割する。float を避けて各行の左端と幅を決め、行の中の float を置く。

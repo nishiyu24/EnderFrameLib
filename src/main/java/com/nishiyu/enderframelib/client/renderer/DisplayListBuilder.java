@@ -230,7 +230,7 @@ public class DisplayListBuilder {
 
         // visibility: hidden の箱は場所だけを取る。錨（NODE）は子孫の変形と不透明度の親として残す
         // 何が壊れていたか: 以前は visibility を読んでおらず、hidden の箱が描かれクリックも受けていた
-        if (isInvisible(box)) return;
+        if (isInvisible(box) || PaintSupport.hidesEmptyCell(box)) return;
 
         ItemProps partsEvents = ItemProps.forParts(box, id, transSpec);
         ItemProps passiveBorderEvents = ItemProps.forPassiveBorder(id, transSpec);
@@ -289,6 +289,7 @@ public class DisplayListBuilder {
             case "fieldset" -> controls.drawFieldsetElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
             default -> decor.drawDefaultBlockElement(elements, box, id, color, bgColor, fallbackRadius, radii, normalizedClip, fontHVal, ox, oy, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim, shadows);
         }
+        decor.drawColumnRules(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
         decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
     }
 

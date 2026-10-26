@@ -407,8 +407,11 @@ on state changes such as `:hover::after`); `::marker` on list items,
 
 **Lists and counters** `list-style-type` (`disc` `circle` `square` `decimal`
 `decimal-leading-zero` `lower-` / `upper-alpha` / `latin` / `roman`
-`lower-greek` `none`, or a string), `list-style-position`, `counter-reset`
-`counter-increment` `counter-set`, `<ol start>` and `<li value>`
+`lower-greek` `none`, a string, or an `@counter-style` name), `@counter-style`
+(`cyclic` `numeric` `alphabetic` `symbolic` `additive` `fixed` `extends`;
+`symbols` `additive-symbols` `negative` `prefix` `suffix` `range` `pad`
+`fallback`), `list-style-position`, `counter-reset` `counter-increment`
+`counter-set`, `<ol start>` and `<li value>`
 
 **Box model** `display` (`block` `inline` `inline-block` `flow-root` `flex`
 `inline-flex` `grid` `inline-grid` `table` `inline-table` `table-*`
@@ -429,14 +432,22 @@ longhands (`border-top-left-radius` …) `outline`
 
 **Grid** `grid-template-columns` `grid-template-rows` (lengths, `%`, `fr`,
 `auto`, `min-content`, `max-content`, `fit-content()`, `minmax()`, `repeat()`
-including `auto-fill`, named lines) `grid-template-areas` `grid-auto-rows`
+including `auto-fill` and `auto-fit`, whose empty tracks collapse; named lines)
+`grid-template-areas` `grid-template` `grid` (the `auto-flow` forms too)
+`grid-auto-rows`
 `grid-auto-columns` `grid-auto-flow` (`row` `column` `dense`) `grid-row`
 `grid-column` `grid-area` and their `-start` / `-end` longhands (line numbers,
 negative numbers, names, `span`) `justify-items` `align-items` `justify-self`
 `align-self` `justify-content` `align-content` `place-*` `gap`
 
 **Tables** `table-layout` `border-collapse` `border-spacing` `caption-side`,
-`vertical-align` on cells
+`vertical-align` on cells, percentage column widths, `visibility: collapse` on
+rows and columns
+
+**Multi-column** `columns` `column-count` `column-width` `column-gap`
+`column-rule` `column-fill` `column-span: all`; columns are balanced, and
+break between lines and between blocks that have no border, padding or
+background
 
 **Text** `color` `font-size` `font-family` (fonts installed on the system,
 matched as in a browser, plus Minecraft's fonts and `@font-face`) `font-weight`
@@ -674,30 +685,35 @@ Layout differences from a real browser are measured, case by case, in
   as an action name, never evaluated. A Java-side `MutationObserver` API is available, but
   notifications are batched and dispatched at client tick (before restyle) or manual flush rather
   than via JavaScript microtasks.
-- **HTML parsing in full.** Formatting elements are not reconstructed and the
-  adoption agency algorithm is not run: in `<p><b>x<p>y` the second paragraph
-  is not bold, and misnested formatting tags such as `<b><i></b></i>` close by
-  the generic end-tag rule. SVG and MathML are parsed as ordinary HTML
-  elements, and `<template>` content is part of the document tree (hidden by
-  `display: none`) rather than an inert fragment.
+- **HTML parsing in full.** Formatting elements are reconstructed and misnested
+  ones are fixed by the adoption agency algorithm (`<p><b>x<p>y` makes the second
+  paragraph bold). SVG and MathML elements are parsed without a namespace (names
+  and attributes stay lower-case, so `viewBox` is read as `viewbox`), and
+  `<template>` content is part of the document tree (hidden by `display: none`)
+  rather than an inert fragment.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
-- **Tables in full.** Percentage column widths are treated as `auto`.
-  `border-collapse: collapse` merges cell and table borders by width only
-  (not by `border-style` precedence) and ignores row, row-group and column
-  borders. No `empty-cells`, and `visibility: collapse` hides a row or column
-  like `hidden` instead of removing its space.
-- **Floats in full; multi-column layout, writing modes.** A line next to a
+- **Tables in full.** `border-collapse: collapse` merges cell and table borders by
+  width only (not by `border-style` precedence) and ignores row, row-group and
+  column borders. A collapsed column keeps its
+  `border-spacing`.
+- **Floats in full; writing modes.** A line next to a
   float takes its width from the float area at the top of the line, and a
   float inside an inline box that does not fit is moved to the next line
-  rather than back to an earlier one. No multi-column layout or writing modes.
+  rather than back to an earlier one. No writing modes.
+- **Multi-column layout in full.** A block with a border, padding or background
+  is not split across columns, and neither is a box without lines (an empty
+  block or an image), so a tall one overflows its column. No `break-before` /
+  `break-after`, `orphans` / `widows`, `direction: rtl` column order, or floats
+  inside columns.
 - **Box-tree generation in full.** A block inside an inline box does not split
   the inline box, and text directly inside a flex or grid container is not
-  wrapped in an anonymous item. `<ol reversed>` does not count down.
-- **List marker images.** `list-style-image` is ignored; markers are always
-  text (styled by `::marker`).
-- **Intrinsic sizing keywords as heights.** `min-content`, `max-content` and
-  `fit-content` work as widths and grid track sizes, but not as a `height`.
+  wrapped in an anonymous item.
+- **List markers.** `list-style-image: url(...)` shows the image followed by a
+  space; a failed load does not fall back to the `list-style-type` marker.
+  `@counter-style` reads the systems and descriptors listed above, but not
+  `symbols()` anonymous styles or image symbols (`url(...)`); an unknown style
+  name counts as `decimal`.
 - **Flexbox in full.** `align-items: baseline` uses the first baseline of row
   items only. In a column, an item's automatic minimum height is its specified
   height if it has one, otherwise its content height. Lines are broken by the
@@ -706,9 +722,8 @@ Layout differences from a real browser are measured, case by case, in
   basis instead of behaving as `auto`.
 - **Grid in full.** Track sizing is a simplified version of the spec's: an
   item spanning several content-sized tracks spreads its size evenly over
-  them. No subgrid, no `grid-template` / `grid` shorthands, no implicit tracks
-  before the explicit grid, no `baseline` alignment, and `auto-fit` keeps its
-  empty tracks (it behaves like `auto-fill`).
+  them. No subgrid, no implicit tracks before the explicit grid, and no
+  `baseline` alignment.
 - **Compositing on in-world surfaces.** On screen-space surfaces (GUI screens
   and HUDs), stacking contexts with `opacity < 1`, `filter`, `backdrop-filter`,
   `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, or a rotated

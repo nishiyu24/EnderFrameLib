@@ -191,6 +191,45 @@ public class ShorthandExpansionTest {
         assertEquals(6f, l[3], 0.001f);
     }
 
+    @Test
+    public void testGridTemplateRowsSlashColumns() {
+        ComputedStyle s = resolve("grid-template", "auto 40px / repeat(2, 1fr)");
+        assertEquals("auto 40px", s.get("grid-template-rows"));
+        assertEquals("repeat(2, 1fr)", s.get("grid-template-columns"));
+        assertEquals("none", s.get("grid-template-areas"));
+    }
+
+    @Test
+    public void testGridTemplateAreasWithRowSizesAndColumns() {
+        ComputedStyle s = resolve("grid-template", "[top] \"a b\" 40px [mid] \"c d\" / 1fr 2fr");
+        assertEquals("[top] 40px [mid] auto", s.get("grid-template-rows"));
+        assertEquals("\"a b\" \"c d\"", s.get("grid-template-areas"));
+        assertEquals("1fr 2fr", s.get("grid-template-columns"));
+    }
+
+    @Test
+    public void testGridShorthandResetsAutoLonghands() {
+        ComputedStyle s = resolve("grid", "100px / 1fr 1fr");
+        assertEquals("100px", s.get("grid-template-rows"));
+        assertEquals("1fr 1fr", s.get("grid-template-columns"));
+        assertEquals("row", s.get("grid-auto-flow"));
+        assertEquals("auto", s.get("grid-auto-rows"));
+    }
+
+    @Test
+    public void testGridAutoFlowForms() {
+        ComputedStyle rows = resolve("grid", "auto-flow dense 30px / 1fr 1fr");
+        assertEquals("row dense", rows.get("grid-auto-flow"));
+        assertEquals("30px", rows.get("grid-auto-rows"));
+        assertEquals("1fr 1fr", rows.get("grid-template-columns"));
+        assertEquals("none", rows.get("grid-template-rows"));
+
+        ComputedStyle cols = resolve("grid", "repeat(2, 20px) / auto-flow 50px");
+        assertEquals("column", cols.get("grid-auto-flow"));
+        assertEquals("50px", cols.get("grid-auto-columns"));
+        assertEquals("repeat(2, 20px)", cols.get("grid-template-rows"));
+    }
+
     private static ComputedStyle resolve(String... keyValues) {
         Map<String, String> raw = new LinkedHashMap<>();
         for (int i = 0; i + 1 < keyValues.length; i += 2) {

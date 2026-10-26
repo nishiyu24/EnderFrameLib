@@ -393,6 +393,7 @@ public final class BoxMeasurer {
         } else {
             contentH = engine.contentBlockSize(box, space, ctx);
         }
+        box.contentBlockExtent = contentH + box.verticalDecoration();
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
         engine.finishLayout(box, space, ctx);
         if (overridden) return;
@@ -591,6 +592,8 @@ public final class BoxMeasurer {
             default -> {
             }
         }
+        // 段組のコンテナは独立した整形コンテキストを作る（CSS Multicol 1 §2）
+        if (MulticolLayout.isMulticol(box)) return true;
         // fieldset と、その描画される legend は独立した整形コンテキストを作る（HTML §15.3.13）
         if (box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
         if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;

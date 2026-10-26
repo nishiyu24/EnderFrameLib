@@ -146,6 +146,68 @@ public class BoxTreeTest {
     }
 
     @Test
+    public void testCounterStyleDrivesMarkersAndCounterFunction() {
+        LayoutBox root = layout("""
+                <style>
+                  @counter-style parens { system: cyclic; symbols: "x" "y"; prefix: "("; suffix: ")"; }
+                  @counter-style Foo { system: cyclic; symbols: "Z"; }
+                  ol.parens { list-style-type: parens; }
+                  ol.upper { list-style-type: Foo; }
+                  ol.lower { list-style-type: foo; }
+                  .parens li::before { content: counter(list-item, parens) " "; }
+                </style>
+                <ol class="parens"><li id="a">a</li><li id="b">b</li></ol>
+                <ol class="upper"><li id="c">c</li></ol>
+                <ol class="lower"><li id="d">d</li></ol>
+                """);
+        // マーカーは prefix / suffix を含み、counter() は含まない
+        assertEquals("(x)", markerText(findElement(root, "a")));
+        assertEquals("(y)", markerText(findElement(root, "b")));
+        assertEquals("x ", beforeText(findElement(root, "a")));
+        assertEquals("y ", beforeText(findElement(root, "b")));
+        // 作者の名前は大文字小文字を区別する
+        assertEquals("Z. ", markerText(findElement(root, "c")));
+        assertEquals("1. ", markerText(findElement(root, "d")));
+    }
+
+    @Test
+    public void testOlReversedCountsDown() {
+        LayoutBox root = layout("""
+                <ol reversed><li id="a">a</li><li id="b">b</li><li id="c">c</li></ol>
+                <ol reversed start="5"><li id="d">d</li><li id="e">e</li><li id="f" value="9">f</li><li id="g">g</li></ol>
+                <ol reversed><li id="outer">x<ol><li id="inner">y</li></ol></li><li id="outer2">z</li></ol>
+                """);
+        assertEquals("3. ", markerText(findElement(root, "a")));
+        assertEquals("2. ", markerText(findElement(root, "b")));
+        assertEquals("1. ", markerText(findElement(root, "c")));
+        assertEquals("5. ", markerText(findElement(root, "d")));
+        assertEquals("4. ", markerText(findElement(root, "e")));
+        assertEquals("9. ", markerText(findElement(root, "f")));
+        assertEquals("8. ", markerText(findElement(root, "g")));
+        // 入れ子の逆順でない ol は普通に数え、外側は 2 項目から数える
+        assertEquals("2. ", markerText(findElement(root, "outer")));
+        assertEquals("1. ", markerText(findElement(root, "inner")));
+        assertEquals("1. ", markerText(findElement(root, "outer2")));
+    }
+
+    @Test
+    public void testListStyleImageReplacesTheMarkerText() {
+        String svg = "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2712%27%20height%3D%2710%27%2F%3E";
+        LayoutBox root = layout("<ul style=\"list-style-image: url(" + svg + ");\"><li id=\"a\">a</li></ul>"
+                + "<ul style=\"list-style-image: url(" + svg + "); list-style-type: square\"><li id=\"b\" style=\"list-style-image: none\">b</li></ul>");
+        LayoutBox marker = findElement(root, "a").children.getFirst();
+        assertTrue(marker.node.getId().endsWith("_marker"));
+        LayoutBox image = marker.children.getFirst();
+        assertEquals("img", image.node.tag);
+        assertEquals(svg, image.node.attrs.get("src"));
+        assertEquals(12, image.w, 0.01f);
+        assertEquals(10, image.h, 0.01f);
+        assertTrue(marker.w >= 12, "marker.w=" + marker.w);
+        // list-style-image: none は list-style-type の記号に戻る
+        assertEquals("▪ ", markerText(findElement(root, "b")));
+    }
+
+    @Test
     public void testOutsideMarkerSitsLeftOfTheItemWithoutTakingSpace() {
         LayoutBox root = layout("""
                 <ul style="margin: 0; padding-left: 40px;"><li id="li" style="margin: 0; line-height: 20px;">text</li></ul>

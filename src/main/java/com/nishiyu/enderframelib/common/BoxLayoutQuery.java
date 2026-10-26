@@ -79,7 +79,7 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 box.pL, box.pT, box.pR, box.pB,
                 box.mL, box.mT, box.mR, box.mB,
                 box.scrollWidth, box.scrollHeight,
-                box.style != null && box.style.isBorderBox(), box.isScrollContainer(), clips(box), offsetParent);
+                box.style != null && box.style.isBorderBox(), box.isScrollContainer(), clips(box), box.isCollapsedTable(), offsetParent);
     }
 
     private static boolean clips(LayoutBox box) {

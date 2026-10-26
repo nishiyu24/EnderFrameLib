@@ -110,7 +110,8 @@ public class ArchitectureTest {
     // Pixmap・Paint・CanvasGradient・CanvasPattern・CompositeOp・Matrix2D・ImageData・TextMetrics・SvgPathData と置き場の RasterImageStore）、
     // core/raster/svg（SvgRenderer・SvgImage・SvgSize）、core/paint の ImageSources・ImageChoice（srcset / image-set）・ObjectFit、
     // client/renderer の RasterTextures・SvgSources・RasterPainting（SVG・canvas の画素をテクスチャにして置く）。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 275;
+    // 2026-10-26: Phase 5 の R9 で +3（core/layout の MulticolLayout、core/css の CounterStyle・CounterStyles）。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 278;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

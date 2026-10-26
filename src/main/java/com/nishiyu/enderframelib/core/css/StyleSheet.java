@@ -31,6 +31,8 @@ public class StyleSheet {
     public final RuleList rules = new RuleList();
     /** 名前 → {@code @keyframes}。同じ名前は後のものが勝つ。 */
     public final Map<String, Keyframes> keyframes = new LinkedHashMap<>();
+    /** 名前 → 作者の {@code @counter-style}。同じ名前は後のものが勝つ。 */
+    public final Map<String, CounterStyle> counterStyles = new LinkedHashMap<>();
     public final Map<String, String> variables = new HashMap<>();
     /** {@code @property} で登録したカスタムプロパティ（名前は {@code --x}）。シートごとに持つ（文書の登録簿）。 */
     public final Map<String, CustomPropertyRegistration> registeredProperties = new LinkedHashMap<>();
@@ -110,6 +112,7 @@ public class StyleSheet {
     public void merge(StyleSheet other) {
         rules.addAll(other.rules);
         keyframes.putAll(other.keyframes);
+        counterStyles.putAll(other.counterStyles);
         variables.putAll(other.variables);
         registeredProperties.putAll(other.registeredProperties);
         layers.merge(other.layers);
