@@ -16,6 +16,7 @@ import com.nishiyu.enderframelib.core.paint.ShaderGradientEmulator;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -496,7 +497,10 @@ public class PaintModelTest {
         assertEquals(2, segments.size(), "停止点 3 つは区間 2 つ（帯に刻まず、同じ矩形を重ねる）");
         for (DisplayItem s : segments) {
             assertNotNull(s.hints().shaderGradient(), "シェーダーのグラデーション");
-            assertEquals(8, s.meta().clipRect().radiusTopLeft(), 0.01f, "区間が箱の角丸で切られない");
+            // 角丸の形は塗る範囲（箱）そのものの半径で、祖先のクリップ（ここでは無し）とは別に持つ。
+            // 合成した 1 つの角丸矩形にすると、祖先の縁が箱を切ったとき切り口の角に半径が付いて形が歪む
+            assertEquals(8, s.meta().borderRadii().topLeft(), 0.01f, "区間が箱の角丸で描かれる");
+            assertNull(s.meta().clipRect(), "祖先のクリップが無ければ、切り取りは無い");
             assertEquals(segments.getFirst().x(), s.x());
             assertEquals(segments.getFirst().width(), s.width());
         }

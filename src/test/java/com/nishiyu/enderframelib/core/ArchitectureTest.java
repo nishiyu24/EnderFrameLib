@@ -119,7 +119,9 @@ public class ArchitectureTest {
     // SHA-256 検証・原子的配置を WebMediaManager から分離し、テスト可能にするため。
     // 2026-10-26: Phase 2（レイヤー FBO の局所化）で core/paint/model に LayerBounds を追加（+1）。外接矩形・滲み・FBO の丸めを
     // GL を知らない純粋な計算にして、LayerCompositor から分離しテストできるようにするため。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 282;
+    // 2026-10-27: クリップを祖先ごとの連鎖にする修正で client/renderer の ClipResolver を追加（+1）。連鎖を項目の空間へ直す
+    // 純粋な行列計算で、DisplayItemDrawer（既に最大級）へ詰め込まずに単体でテストするため。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 283;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

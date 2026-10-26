@@ -391,28 +391,27 @@ public class AnimationTestSiteParityTest {
         }
 
         @Test
-        @DisplayName("4-6. ランナーのグラデーション層のクリップは、動くランナー自身に付いていくこと（円が元の位置に留まって切り取るだけにならない）")
+        @DisplayName("4-6. ランナーのグラデーション層は、角丸の形をランナー自身の箱で持ち、祖先のクリップとは別に切ること（動いても切り口が元の位置に留まらない）")
         void testRunnerGradientClipFollowsRunner() {
             for (String lane : new String[]{"lane-linear", "lane-ease", "lane-ease-in", "lane-ease-out", "lane-ease-in-out", "lane-cubic"}) {
                 LayoutBox runner = findBoxByClass(lane);
-                String runnerId = runner.node.attrs.get("id");
                 DisplayItem runnerItem = displayItems.stream()
                         .filter(i -> i.animDef() != null && i.animDef().durationMs() == 2000
                                 && Math.abs(i.x() - runner.x) < 1 && Math.abs(i.y() - runner.y) < 1)
                         .findFirst().orElseThrow();
                 List<DisplayItem> layers = displayItems.stream()
                         .filter(i -> runnerItem.id().equals(i.hints().parentId()))
-                        .filter(i -> i.meta() != null && i.meta().clipRect() != null)
+                        .filter(i -> i.hints().shaderGradient() != null)
                         .toList();
-                assertFalse(layers.isEmpty(), lane + " の子部品（背景など）が存在すること");
+                assertFalse(layers.isEmpty(), lane + " のグラデーションの層が存在すること");
                 for (DisplayItem layer : layers) {
-                    var clip = layer.meta().clipRect();
-                    if (clip.minX() < runner.x - 0.5f || clip.maxX() > runner.x + runner.w + 0.5f) continue; // 祖先のクリップ
-                    assertEquals(runnerItem.id(), clip.ownerId(),
-                            lane + " の " + layer.id() + " のクリップはランナー自身の箱で切るので、持ち主がランナーであること");
+                    // 形（角丸）は層の矩形そのものの半径。ランナーが動けば層ごと動く。祖先のクリップは動かない持ち主なし
+                    assertNotNull(layer.meta().borderRadii(), lane + " の " + layer.id() + " は角丸の形を持つこと");
+                    assertTrue(layer.meta().borderRadii().hasRadius(), lane + " の " + layer.id() + " の角は丸いこと");
+                    if (layer.meta().clipRect() != null) {
+                        assertNull(layer.meta().clipRect().ownerId(), lane + " の " + layer.id() + " の祖先のクリップは、ランナーの変形に付いていかないこと");
+                    }
                 }
-                assertTrue(layers.stream().anyMatch(l -> l.meta().clipRect().ownerId() != null),
-                        lane + " に、ランナーの変形に付いていくクリップを持つ層があること");
             }
         }
 

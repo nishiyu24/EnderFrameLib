@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.BlendMode;
 import com.nishiyu.enderframelib.core.paint.ClipShape;
 import com.nishiyu.enderframelib.core.paint.FilterOp;
 import com.mojang.blaze3d.pipeline.TextureTarget;
@@ -10,6 +11,7 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.LayerBounds;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.VramBudget;
@@ -27,6 +29,8 @@ import org.lwjgl.system.MemoryUtil;
 import java.nio.FloatBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -41,6 +45,10 @@ import java.util.List;
  * <p>FBO の大きさは画面全体ではなく、箱とその子孫の外接矩形にフィルターが滲む分を足した矩形（{@link LayerBounds}）だけ。
  * 描くときはビューポートを矩形の原点だけずらす（行列は変えない）ので、中の画素の位置は矩形の左下からの相対になり、
  * ぼかし・合成の重い段も矩形の中だけで済む。矩形を決められない（子孫に変形がある・数値が壊れている）ときは従来どおり枠いっぱい。
+ *
+ * <p>使い回し: 中身が前のフレームと同じレイヤー（{@link CacheRequest}。入力欄・画像・動画などの外の状態で変わる型を含まない箱）は、
+ * フィルターまで済んだ絵を FBO ごと持ち越し、次のフレームは描き直さずに合成だけする（{@link #drawCached}）。
+ * 持ち越しはプールの予算の半分まで、最長でも数秒で捨てて描き直す。
  *
  * <p>描画先の中はプリマルチプライドで溜まる（バイト単位の色は、描くときのブレンドが {@code SRC_ALPHA / ONE_MINUS_SRC_ALPHA} と
  * アルファだけ {@code ONE / ONE_MINUS_SRC_ALPHA} のため）。合成のシェーダーはそれを読み、色の行列は
@@ -72,7 +80,7 @@ public final class LayerCompositor {
         public void destroy(TextureTarget target) {
             target.destroyBuffers();
         }
-    }, () -> VramBudget.maxLayers(Minecraft.getInstance().getWindow().getWidth(), Minecraft.getInstance().getWindow().getHeight(),
+    }, () -> VramBudget.fboBudgetBytes(Minecraft.getInstance().getWindow().getWidth(), Minecraft.getInstance().getWindow().getHeight(),
             OutlineTextRenderer.atlasBytes()));
 
     /** 効果の無いフレームがこれだけ続いたら、確保した FBO を手放す。 */
@@ -99,6 +107,189 @@ public final class LayerCompositor {
         boolean empty;
         /** 中身を描くときのビューポート（親のビューポートを矩形の原点だけずらしたもの）。 */
         int[] contentViewport;
+        /** 描き終えた中身を次のフレームへ使い回す指定（なければ null）。 */
+        CacheRequest cacheReq;
+        /** 使い回しのために手放さず持つ描画先（{@link #end} が返さない）。 */
+        TextureTarget retained;
+        /** {@code target} がフィルターの段まで済んだ絵（使い回しから合成するとき）。 */
+        boolean staged;
+        /** 保持した絵を、描いたときと違う変換（移動・回転・拡縮）で貼るときの、画素 → テクスチャの変換（{@link LayerBounds#reuseMap}）。なければ null。 */
+        float[] reuseMap;
+        /** {@link #reuseMap} があるとき、絵を貼る範囲（親の描画先の画素）。 */
+        LayerBounds dest;
+    }
+
+    // ==========================================
+    // 使い回し（保持するレイヤー）
+    // ==========================================
+
+    /**
+     * 中身が前のフレームと同じなら描き直さない、というレイヤーの指定。{@code signature} は描画側が補間値・状態から作った要約で、
+     * 項目は同一のインスタンスであることも見る（ディスプレイリストが作り直されても、同じ項目なら見た目は同じ）。
+     */
+    record CacheRequest(String key, List<DisplayItem> list, int from, int span, long signature) {
+        boolean sameItems(DisplayItem[] items) {
+            if (items.length != Math.min(span, list.size() - from)) return false;
+            for (int i = 0; i < items.length; i++) {
+                if (list.get(from + i) != items[i]) return false;
+            }
+            return true;
+        }
+    }
+
+    /** 描き終えた（フィルターまで済んだ）絵と、それが有効な条件。 */
+    private static final class Cached {
+        String key;
+        DisplayItem[] items;
+        long signature;
+        float[] deviceMap;
+        int[] viewport;
+        int frameW, frameH, rx, ry, rw, rh, bw, bh;
+        TextureTarget content;
+        long createdAt, lastUsed, maxAge;
+        long bytes;
+        /** 矩形が親の枠で切られている（枠の外の中身を描いていない）。動かして使い回すと切れた部分が見えるので、描いたときのままだけ使う。 */
+        boolean clippedByFrame;
+    }
+
+    /** 使い回しの絵（最近使った順）。 */
+    private static final LinkedHashMap<String, Cached> CACHE = new LinkedHashMap<>(16, 0.75f, true);
+    private static long cachedBytes = 0L;
+    /** 絵を持ち続ける最長。外の状態（非同期の読み込みなど）を見落としても、いつかは描き直して直る。 */
+    private static final long CACHE_MAX_AGE_NANOS = 2_000_000_000L;
+    private static final int CACHE_MAX_ENTRIES = 4096;
+
+    /** 使い回しに回してよいバイト数（プールの上限の半分。残りは描く最中のレイヤーのために空けておく）。 */
+    private static long cacheBudget() {
+        return POOL.maxBytes() / 2;
+    }
+
+    private static void dropCached(Cached c) {
+        if (CACHE.remove(c.key, c)) {
+            cachedBytes -= c.bytes;
+            POOL.release(c.content, System.nanoTime());
+        }
+    }
+
+    private static void dropAllCached() {
+        for (Cached c : new ArrayList<>(CACHE.values())) dropCached(c);
+    }
+
+    private static void trimCache(long now, long idleNanos) {
+        for (Cached c : new ArrayList<>(CACHE.values())) {
+            if (now - c.lastUsed >= idleNanos) dropCached(c);
+        }
+    }
+
+    private static void storeCache(Layer layer, TextureTarget content, List<TextureTarget> temps) {
+        CacheRequest req = layer.cacheReq;
+        long bytes = VramBudget.layerBytes(content.width, content.height);
+        long budget = cacheBudget();
+        if (bytes > budget) return;
+        Cached old = CACHE.get(req.key());
+        if (old != null) dropCached(old);
+        while ((cachedBytes + bytes > budget || CACHE.size() >= CACHE_MAX_ENTRIES) && !CACHE.isEmpty()) {
+            dropCached(CACHE.values().iterator().next());
+        }
+        Cached c = new Cached();
+        c.key = req.key();
+        int end = Math.min(req.list().size(), req.from() + req.span());
+        c.items = req.list().subList(req.from(), end).toArray(new DisplayItem[0]);
+        c.signature = req.signature();
+        c.deviceMap = layer.deviceMap.clone();
+        c.viewport = layer.parentViewport.clone();
+        c.frameW = layer.frameW;
+        c.frameH = layer.frameH;
+        c.rx = layer.rx;
+        c.ry = layer.ry;
+        c.rw = layer.rw;
+        c.rh = layer.rh;
+        c.bw = layer.bw;
+        c.bh = layer.bh;
+        c.clippedByFrame = layer.rx <= 0 || layer.ry <= 0 || layer.rx + layer.rw >= layer.frameW || layer.ry + layer.rh >= layer.frameH;
+        c.content = content;
+        c.bytes = bytes;
+        c.createdAt = c.lastUsed = System.nanoTime();
+        c.maxAge = CACHE_MAX_AGE_NANOS + Math.floorMod(c.key.hashCode(), 1000) * 1_000_000L; // 揃って描き直さないようにずらす
+        CACHE.put(c.key, c);
+        cachedBytes += bytes;
+        temps.remove(content);
+        layer.retained = content;
+    }
+
+    /**
+     * 使い回しの絵があれば、描き直さずに今の描画先へ合成する（{@code true}）。条件（中身の要約・項目・箱の画素への写り・
+     * 描画先の大きさ・年齢）のどれかが違えば捨てて {@code false}（呼び出し側が普通に描く。描き終えた絵は {@link #end} が持ち直す）。
+     */
+    static boolean drawCached(MultiBufferSource buffer, CacheRequest req, LayerSpec spec, Matrix4f anchorPose, float opacity,
+                              Matrix4f basePose, float maxX, float maxY, float z) {
+        Cached c = CACHE.get(req.key());
+        if (c == null) return false;
+        List<TextureTarget> temps = new ArrayList<>();
+        int[] viewport = new int[4];
+        int parentFbo = 0;
+        boolean drawn = false;
+        try {
+            GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
+            parentFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+            float[] map = deviceMap(anchorPose, viewport);
+            int[] frame = frameSize(viewport);
+            long now = System.nanoTime();
+            if (c.signature != req.signature() || !Arrays.equals(c.viewport, viewport)
+                    || c.frameW != frame[0] || c.frameH != frame[1] || now - c.createdAt > c.maxAge || !req.sameItems(c.items)) {
+                dropCached(c);
+                return false;
+            }
+            // 箱の写り（移動・回転・拡縮）だけが変わったなら、保持した絵を変換して貼る（ブラウザの合成アニメーションと同じ）。
+            // 混合は下の画素を同じ位置で読むので、描いたときのままだけ。枠で切れた絵や、拡縮が大きく違う絵は描き直す
+            float[] reuseMap = null;
+            LayerBounds dest = null;
+            if (!Arrays.equals(c.deviceMap, map)) {
+                LayerBounds old = new LayerBounds(c.rx, c.ry, c.rw, c.rh);
+                reuseMap = c.clippedByFrame || spec.blend() != BlendMode.NORMAL ? null : LayerBounds.reuseMap(c.deviceMap, map, c.rx, c.ry);
+                dest = reuseMap == null ? null : LayerBounds.movedBounds(c.deviceMap, map, old);
+                if (reuseMap == null || dest == null) {
+                    dropCached(c);
+                    return false;
+                }
+            }
+            flush(buffer);
+            Layer layer = new Layer();
+            layer.target = c.content;
+            layer.retained = c.content;
+            layer.staged = true;
+            layer.parentFbo = parentFbo;
+            layer.parentViewport = viewport;
+            layer.spec = spec;
+            layer.deviceMap = map;
+            layer.rx = c.rx;
+            layer.ry = c.ry;
+            layer.rw = c.rw;
+            layer.rh = c.rh;
+            layer.bw = c.bw;
+            layer.bh = c.bh;
+            layer.frameW = c.frameW;
+            layer.frameH = c.frameH;
+            layer.reuseMap = reuseMap;
+            layer.dest = dest;
+            composite(layer, opacity, basePose, maxX, maxY, z, temps);
+            c.lastUsed = now;
+            lastUse = now;
+            drawn = true;
+        } catch (Throwable t) {
+            fail("drawCached", t);
+        } finally {
+            long now = System.nanoTime();
+            for (TextureTarget temp : temps) POOL.release(temp, now);
+            if (drawn) {
+                try {
+                    restore(parentFbo, viewport);
+                } catch (Throwable ignored) {
+                    // 後始末の失敗は握りつぶす
+                }
+            }
+        }
+        return drawn;
     }
 
     /** 外接矩形に足す余白（画素）。アンチエイリアス・字形・文字の影のはみ出し。 */
@@ -175,7 +366,11 @@ public final class LayerCompositor {
 
     /** 効果の無いフレームが続いたら FBO を手放す（クライアントの tick から）。 */
     public static void trimIdle() {
-        if (STACK.isEmpty() && lastUse != 0L) POOL.trim(System.nanoTime(), IDLE_NANOS);
+        if (STACK.isEmpty() && lastUse != 0L) {
+            long now = System.nanoTime();
+            trimCache(now, IDLE_NANOS);
+            POOL.trim(now, IDLE_NANOS);
+        }
     }
 
     /** 資源の再読み込み・GL の作り直し。 */
@@ -185,6 +380,7 @@ public final class LayerCompositor {
             return;
         }
         STACK.clear();
+        dropAllCached();
         POOL.releaseFree();
         Shaders.delete();
         broken = false;
@@ -201,8 +397,9 @@ public final class LayerCompositor {
      * @param anchorPose 錨の姿勢（箱の座標から、画面の面の座標まで）。{@code blur()} の大きさとドロップシャドウの向きに使う
      * @param boxRect    箱とその子孫の外接矩形（箱の座標。{@code {x0, y0, x1, y1}}）。子孫に変形があるなどで決められなければ null
      *                   （枠いっぱいの FBO を使う）
+     * @param cacheReq   描き終えた絵を次のフレームへ使い回す指定。なければ null
      */
-    static boolean begin(MultiBufferSource buffer, LayerSpec spec, Matrix4f anchorPose, float[] boxRect) {
+    static boolean begin(MultiBufferSource buffer, LayerSpec spec, Matrix4f anchorPose, float[] boxRect, CacheRequest cacheReq) {
         try {
             flush(buffer);
             int[] viewport = new int[4];
@@ -219,7 +416,7 @@ public final class LayerCompositor {
             if (bounds == null) bounds = LayerBounds.full(frame[0], frame[1]);
             boolean empty = bounds.isEmpty();
             if (empty) bounds = new LayerBounds(0, 0, 1, 1);
-            int bw = bounds.textureWidth(frame[0]), bh = bounds.textureHeight(frame[1]);
+            int bw = LayerBounds.bucket(bounds.w(), frame[0]), bh = LayerBounds.bucket(bounds.h(), frame[1]);
             TextureTarget target = POOL.acquire(bw, bh);
             if (target == null) {
                 restore(parentFbo, viewport);
@@ -240,6 +437,7 @@ public final class LayerCompositor {
             layer.frameW = frame[0];
             layer.frameH = frame[1];
             layer.empty = empty;
+            layer.cacheReq = cacheReq;
             layer.contentViewport = new int[]{viewport[0] - bounds.x(), viewport[1] - bounds.y(), viewport[2], viewport[3]};
             bindLayerTarget(target, layer);
             target.clear(Minecraft.ON_OSX);
@@ -299,7 +497,7 @@ public final class LayerCompositor {
             long now = System.nanoTime();
             for (TextureTarget temp : temps) POOL.release(temp, now);
             if (layer.mask != null) POOL.release(layer.mask, now);
-            POOL.release(layer.target, now);
+            if (layer.target != layer.retained) POOL.release(layer.target, now);
             try {
                 restore(layer.parentFbo, layer.parentViewport);
             } catch (Throwable ignored) {
@@ -331,7 +529,7 @@ public final class LayerCompositor {
             LayerBounds bounds = LayerBounds.of(dr[0], dr[1], dr[2], dr[3], 1, 0, frame[0], frame[1]);
             if (bounds == null) bounds = LayerBounds.full(frame[0], frame[1]);
             if (bounds.isEmpty()) return;
-            int w = bounds.textureWidth(frame[0]), h = bounds.textureHeight(frame[1]);
+            int w = LayerBounds.bucket(bounds.w(), frame[0]), h = LayerBounds.bucket(bounds.h(), frame[1]);
             TextureTarget copy = POOL.acquire(w, h);
             if (copy == null) return;
             temps.add(copy);
@@ -443,11 +641,20 @@ public final class LayerCompositor {
             finalOpacity *= last.opacity;
         }
 
+        float[] edgeClamp = new LayerBounds(layer.rx, layer.ry, layer.rw, layer.rh).clampUv(layer.frameW, layer.frameH, w, h);
         TextureTarget current = layer.target;
-        for (Stage stage : stages) {
-            TextureTarget next = runStage(stage, current, layer.deviceMap, w, h, null, temps);
-            if (next == null) break; // FBO が足りない: 以降の段は諦める
-            current = next;
+        if (!layer.staged) {
+            boolean complete = true;
+            for (Stage stage : stages) {
+                TextureTarget next = runStage(stage, current, layer.deviceMap, w, h, edgeClamp, temps);
+                if (next == null) { // FBO が足りない: 以降の段は諦める
+                    complete = false;
+                    break;
+                }
+                current = next;
+            }
+            // フィルターまで済んだ絵を、次のフレームへ持ち越す（段を諦めた絵は持ち越さない）
+            if (layer.cacheReq != null && complete) storeCache(layer, current, temps);
         }
 
         // 最終の合成: 親の描画先へ
@@ -481,6 +688,13 @@ public final class LayerCompositor {
         Shaders.use();
         Shaders.common(layer.rx, layer.ry, w, h);
         Shaders.mode(Shaders.MODE_FINAL);
+        if (layer.reuseMap != null) {
+            float[] m = layer.reuseMap;
+            GL20.glUniform1i(Shaders.uUseTexMap, 1);
+            GL20.glUniform4f(Shaders.uTexL, m[0], m[1], m[2], m[3]);
+            GL20.glUniform2f(Shaders.uTexT, m[4], m[5]);
+            GL20.glUniform2f(Shaders.uTexMax, (float) layer.rw / w, (float) layer.rh / h);
+        }
         Shaders.opacity(finalOpacity);
         Shaders.matrix(finalMatrix);
         GL20.glUniform1i(Shaders.uBlend, blend);
@@ -524,7 +738,8 @@ public final class LayerCompositor {
 
     /** レイヤーの矩形のうち、親の枠の中に見える部分 {@code {x, y, w, h}}（親の描画先の画素）。無ければ null。 */
     private static int[] visibleRect(Layer layer) {
-        return new LayerBounds(layer.rx, layer.ry, layer.rw, layer.rh).visible(layer.frameW, layer.frameH);
+        LayerBounds area = layer.dest != null ? layer.dest : new LayerBounds(layer.rx, layer.ry, layer.rw, layer.rh);
+        return area.visible(layer.frameW, layer.frameH);
     }
 
     // ---- フィルターの段 ----
@@ -755,7 +970,7 @@ public final class LayerCompositor {
         private static boolean ok = false;
         static int uModelView, uProj, uPose, uClipSpace, uSrc, uAux, uSize, uOrigin, uMode, uOpacity, uHasMatrix, uRow0, uRow1, uRow2,
                 uBlend, uBackdropOpaque, uDir, uSigma, uTaps, uStep, uShadowOffset, uShadowColor,
-                uClamp, uMask, uMaskMode, uClipKind, uClipA, uClipRx, uClipRy, uEdges, uEdgeCount, uEvenOdd, uInv, uInvT;
+                uClamp, uMask, uMaskMode, uUseTexMap, uTexL, uTexT, uTexMax, uClipKind, uClipA, uClipRx, uClipRy, uEdges, uEdgeCount, uEvenOdd, uInv, uInvT;
 
         static final String VERTEX = """
                 #version 150
@@ -786,6 +1001,10 @@ public final class LayerCompositor {
                 uniform int uEvenOdd;
                 uniform vec4 uInv;            // 画素 → 箱の座標の逆変換の線形部分 (x = uInv.x fx + uInv.y fy, y = uInv.z fx + uInv.w fy)
                 uniform vec2 uInvT;           // 箱の原点の画素
+                uniform int uUseTexMap;       // 1: 最終の合成で、保持した絵を描いたときと違う変換で貼る
+                uniform vec4 uTexL;           // 画素 → テクスチャの画素の線形部分 (l00 l01 l10 l11)
+                uniform vec2 uTexT;           // 同じく平行移動
+                uniform vec2 uTexMax;         // 絵のある範囲の uv の上限（矩形 / FBO の大きさ）
                 uniform vec2 uSize;           // 描画先の大きさ（画素）
                 uniform vec2 uOrigin;         // 描画先のビューポートの左下
                 uniform int uMode;            // 0 最終の合成, 1 行列と不透明度, 2 ぼかし, 3 ドロップシャドウ
@@ -925,6 +1144,11 @@ public final class LayerCompositor {
 
                 void main() {
                     vec2 uv = (gl_FragCoord.xy - uOrigin) / uSize;
+                    if (uMode == 0 && uUseTexMap == 1) {
+                        vec2 f = gl_FragCoord.xy;
+                        uv = (vec2(uTexL.x * f.x + uTexL.y * f.y, uTexL.z * f.x + uTexL.w * f.y) + uTexT) / uSize;
+                        if (uv.x < 0.0 || uv.y < 0.0 || uv.x > uTexMax.x || uv.y > uTexMax.y) discard;
+                    }
                     if (uMode == 2) {
                         // ガウスぼかし（片方向）。重みは標本の位置（画素）の正規分布
                         vec4 sum = texture(uSrc, clamp(uv, uClamp.xy, uClamp.zw));
@@ -1048,6 +1272,10 @@ public final class LayerCompositor {
                 uEvenOdd = loc("uEvenOdd");
                 uInv = loc("uInv");
                 uInvT = loc("uInvT");
+                uUseTexMap = loc("uUseTexMap");
+                uTexL = loc("uTexL");
+                uTexT = loc("uTexT");
+                uTexMax = loc("uTexMax");
                 ok = true;
             } catch (Throwable t) {
                 ok = false;
@@ -1080,6 +1308,7 @@ public final class LayerCompositor {
             GL20.glUniform1i(uMask, 2);
             GL20.glUniform1i(uClipKind, 0);
             GL20.glUniform1i(uMaskMode, 0);
+            GL20.glUniform1i(uUseTexMap, 0);
             GL20.glUniform4f(uClamp, 0f, 0f, 1f, 1f);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 FloatBuffer buf = stack.mallocFloat(16);

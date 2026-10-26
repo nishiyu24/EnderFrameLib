@@ -105,7 +105,7 @@ public final class BackgroundRenderer {
             return;
         }
         if (hints.shaderGradient() != null) {
-            renderShaderGradient(el, hints.shaderGradient(), poseStack, finalOpacity, zOffset,
+            renderShaderGradient(el, hints.shaderGradient(), poseStack, finalOpacity, zOffset, rTL, rTR, rBR, rBL,
                     clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
             return;
         }
@@ -127,6 +127,7 @@ public final class BackgroundRenderer {
 
     /** {@link ShaderGradient} の 1 区間を 1 枚で描く。 */
     static void renderShaderGradient(DisplayItem el, ShaderGradient g, PoseStack poseStack, float finalOpacity, float zOffset,
+                                             float rTL, float rTR, float rBR, float rBL,
                                              float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                              float cRTL, float cRTR, float cRBR, float cRBL) {
         float[] gradA = g.gradA(), gradB = g.gradB();
@@ -135,6 +136,7 @@ public final class BackgroundRenderer {
         if (a0 <= 0 && a1 <= 0) return;
         WebSdfShader.drawSdfShaderGradient(poseStack.last().pose(),
                 el.x(), el.y(), el.x() + el.width(), el.y() + el.height(),
+                rTL, rTR, rBR, rBL,
                 ((c0 >>> 16) & 0xFF) / 255.0f, ((c0 >>> 8) & 0xFF) / 255.0f, (c0 & 0xFF) / 255.0f, a0,
                 ((c1 >>> 16) & 0xFF) / 255.0f, ((c1 >>> 8) & 0xFF) / 255.0f, (c1 & 0xFF) / 255.0f, a1,
                 gradA, gradB, g.repeatOrigin(), g.repeatPeriod(), zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);

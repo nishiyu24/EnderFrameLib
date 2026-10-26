@@ -25,16 +25,25 @@ import java.util.Locale;
 public final class Transforms {
     private Transforms() {}
 
-    /** 2D アフィン行列。 */
-    public record Affine(double a, double b, double c, double d, double e, double f) {
+    /**
+     * 2D アフィン行列。{@code spin} は {@code rotate()} に書かれた角度の和（ラジアン）。行列は 360° の回転と回転なしを区別できないので、
+     * 回転の「何周したか」だけをここに持つ（{@link #toTrs} が使う）。{@code rotate(0deg) → rotate(360deg)} のアニメーションが
+     * 一周するのに必要。
+     */
+    public record Affine(double a, double b, double c, double d, double e, double f, double spin) {
         public static final Affine IDENTITY = new Affine(1, 0, 0, 1, 0, 0);
+
+        public Affine(double a, double b, double c, double d, double e, double f) {
+            this(a, b, c, d, e, f, 0);
+        }
 
         /** {@code this · other}（{@code other} を先に点へ掛ける）。 */
         public Affine then(Affine other) {
             return new Affine(
                     a * other.a + c * other.b, b * other.a + d * other.b,
                     a * other.c + c * other.d, b * other.c + d * other.d,
-                    a * other.e + c * other.f + e, b * other.e + d * other.f + f);
+                    a * other.e + c * other.f + e, b * other.e + d * other.f + f,
+                    spin + other.spin);
         }
     }
 
@@ -183,7 +192,7 @@ public final class Transforms {
         // 90° の倍数での丸め誤差（cos(π/2) ≈ 6e-17）が、軸平行かの判定を崩さないようにする
         if (Math.abs(cos) < 1e-12) cos = 0;
         if (Math.abs(sin) < 1e-12) sin = 0;
-        return new Affine(cos, sin, -sin, cos, 0, 0);
+        return new Affine(cos, sin, -sin, cos, 0, 0, radians);
     }
 
     // ---- 引数 ----
@@ -250,14 +259,18 @@ public final class Transforms {
      */
     public static float[] toTrs(Affine m) {
         double sx, sy, rot;
+        double spinDeg = Math.toDegrees(m.spin());
         if (m.b() == 0 && m.c() == 0) {
             // 軸平行（負の拡大は反転のまま。回転 180° に化けさせない）
             sx = m.a();
             sy = m.d();
-            rot = 0;
+            // 回転が 360° の倍数なら、行列は回転なしと同じ。書かれた角度の周回数だけ戻す
+            rot = sx > 0 && sy > 0 ? 360.0 * Math.round(spinDeg / 360.0) : 0;
         } else {
             sx = Math.hypot(m.a(), m.b());
             rot = Math.toDegrees(Math.atan2(m.b(), m.a()));
+            // atan2 は (-180°, 180°]。書かれた角度に最も近い周回へ寄せる（回転の連続性を保つ）
+            rot += 360.0 * Math.round((spinDeg - rot) / 360.0);
             double det = m.a() * m.d() - m.b() * m.c();
             sy = sx == 0 ? Math.hypot(m.c(), m.d()) : det / sx;
         }

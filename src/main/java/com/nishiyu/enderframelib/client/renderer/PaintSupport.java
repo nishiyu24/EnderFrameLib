@@ -148,7 +148,11 @@ final class PaintSupport {
                 own[11] = r.bottomLeftV();
             }
         }
-        return ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
+        ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
+        // 合成する前の 1 つ 1 つも持つ。持ち主はこの要素（自分の箱で切るクリップは、要素の変形に付いていく）
+        java.util.List<ClipRect.Part> chain = new java.util.ArrayList<>(parent == null ? java.util.List.<ClipRect.Part>of() : parent.chain());
+        chain.add(new ClipRect.Part(own, ownerId));
+        return merged.withChain(chain);
     }
 
     /** 角丸の半径は描画側の整数値（{@link Corners}）なので、解いた長さをここで丸める。 */

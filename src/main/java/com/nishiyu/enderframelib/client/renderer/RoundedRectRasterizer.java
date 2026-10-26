@@ -154,7 +154,7 @@ public final class RoundedRectRasterizer {
         float startY = Math.max(minY, cy0), endY = Math.min(maxY, cy1);
         if (startY >= endY) return;
 
-        if (cRTL <= 0.01f && cRTR <= 0.01f && cRBR <= 0.01f && cRBL <= 0.01f) {
+        if (cRTL <= 0.01f && cRTR <= 0.01f && cRBR <= 0.01f && cRBL <= 0.01f && !(useSdfShader && WebSdfShader.hasClipTransform())) {
             float drawX0 = Math.max(minX, cx0), drawX1 = Math.min(maxX, cx1);
             if (drawX0 < drawX1) {
                 addQuadRaw(builder, matrix, drawX0, startY, drawX1, endY, rCol, gCol, bCol, aCol, zOffset);

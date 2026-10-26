@@ -170,7 +170,7 @@ public class DisplayListBuilder {
      */
     private static final int DEFAULT_CANVAS_COLOR = 0x00000000;
 
-    private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, float[] clipRect, String parentId) {
+    private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
         int[] xy = roundRadii(LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH));
         Corners radii = Corners.ofEllipses(java.util.Arrays.copyOfRange(xy, 0, 4), java.util.Arrays.copyOfRange(xy, 4, 8));
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
@@ -224,7 +224,7 @@ public class DisplayListBuilder {
                 == CssKeywords.PointerEvents.NONE;
         if (pointerEventsNone) anchorEvents.pointerEventsNone();
 
-        ClipRect normalizedClip = normalizeClipRect(clipRect);
+        ClipRect normalizedClip = clipRect;
         RenderMeta anchorMeta = new RenderMeta(normalizedClip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", color, bgColor, anchorEvents, 0, opacity, tx, ty, sx, sy, rot, transDur, animDef, anchorMeta);
 
