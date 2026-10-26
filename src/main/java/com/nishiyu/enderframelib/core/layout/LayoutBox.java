@@ -1158,6 +1158,18 @@ public class LayoutBox {
         }
         for (LayoutBox child : children) {
             if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) || child.isAbsolute) continue;
+            if (child.node != null && child.node.nodeType == NodeType.TEXT) {
+                // 文字の塊の箱は位置を持たない（x / y は 0 のまま。置かれるのは断片）。箱の x / y / h を読むと、相対配置・sticky で
+                // 祖先が動いたとき（その分だけ箱も平行移動される）スクロール範囲にそのずれが入り、sticky ではスクロールするほど
+                // 範囲が伸び続ける。断片の端を取り込む
+                for (InlineFragment frag : child.inlineFragments) {
+                    float right = frag.x + frag.w + scrollX;
+                    float bottom = Math.max(frag.y + frag.h, frag.y + frag.baseline + frag.descent) + scrollY;
+                    extent.include(right, bottom);
+                    descendants.include(right, bottom);
+                }
+                continue;
+            }
             if (child == lastInFlow) {
                 extent.include(child.x + child.w + child.mR + scrollX, child.y + child.h + scrollY);
             } else {

@@ -3,7 +3,9 @@ package com.nishiyu.enderframelib.client.renderer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.function.IntSupplier;
+import java.util.function.LongSupplier;
+
+import com.nishiyu.enderframelib.core.paint.model.VramBudget;
 
 /**
  * レイヤー（効果のある箱の描画先）の FBO のプール。GL を知らない純粋な管理だけを持ち、描画先の作り方と壊し方は
@@ -12,7 +14,8 @@ import java.util.function.IntSupplier;
  * <ul>
  *   <li>同じ大きさの空きがあれば使い回す。無ければ、上限に達しているときだけ最も古い空きを壊して作り直す
  *       （大きさは箱の外接矩形ごとに違う。{@link com.nishiyu.enderframelib.core.paint.model.LayerBounds#bucket} で粗く丸めて使い回しやすくしている）。</li>
- *   <li>同時に持てる数の上限は {@code maxTargets}（{@link com.nishiyu.enderframelib.core.paint.model.VramBudget#maxLayers}）。
+ *   <li>同時に持てる大きさの上限は {@code maxBytes}（{@link com.nishiyu.enderframelib.core.paint.model.VramBudget#fboBudgetBytes}）。
+ *       レイヤーの FBO は箱の大きさで、小さいものを数多く持てるので、枚数ではなくバイト数で数える。
  *       上限に達していて空きが無ければ {@code null} を返す（呼び出し側は効果を諦めて直に描く）。</li>
  *   <li>効果が無いフレームが続けば確保を残さない（{@link #trim}）。FBO は効果があるときだけ確保するので、
  *       効果の無い文書は予算を一切使わない。</li>
@@ -40,13 +43,29 @@ final class LayerPool<T> {
     }
 
     private final Factory<T> factory;
-    private final IntSupplier maxTargets;
+    private final LongSupplier maxBytes;
     private final List<Entry> free = new ArrayList<>();
     private final List<Entry> inUse = new ArrayList<>();
 
-    LayerPool(Factory<T> factory, IntSupplier maxTargets) {
+    LayerPool(Factory<T> factory, LongSupplier maxBytes) {
         this.factory = factory;
-        this.maxTargets = maxTargets;
+        this.maxBytes = maxBytes;
+    }
+
+    private long bytesOf(Entry e) {
+        return VramBudget.layerBytes(e.width, e.height);
+    }
+
+    private long totalBytes() {
+        long total = 0;
+        for (Entry e : free) total += bytesOf(e);
+        for (Entry e : inUse) total += bytesOf(e);
+        return total;
+    }
+
+    /** 持てるバイト数の上限（使い回しのために持ち続ける分の目安にも使う）。 */
+    long maxBytes() {
+        return maxBytes.getAsLong();
     }
 
     /** 大きさ {@code width x height} の描画先を借りる。上限に達していて空きが無ければ null。 */
@@ -61,13 +80,17 @@ final class LayerPool<T> {
         }
         // 同じ大きさの空きが無いときだけ、上限まで古い空き（使われていない順）を壊して枠を空ける。
         // 大きさはレイヤーごとに違う（箱の外接矩形）ので、違う大きさの空きを全部壊すと毎回作り直しになる
-        while (inUse.size() + free.size() >= maxTargets.getAsInt() && !free.isEmpty()) {
+        long need = VramBudget.layerBytes(width, height);
+        long limit = maxBytes.getAsLong();
+        long total = totalBytes();
+        while (total + need > limit && !free.isEmpty()) {
             Entry oldest = free.get(0);
             for (Entry e : free) if (e.freedAt < oldest.freedAt) oldest = e;
             free.remove(oldest);
+            total -= bytesOf(oldest);
             factory.destroy(oldest.target);
         }
-        if (inUse.size() + free.size() >= maxTargets.getAsInt()) return null;
+        if (total + need > limit) return null;
         T created = factory.create(width, height);
         inUse.add(new Entry(created, width, height));
         return created;

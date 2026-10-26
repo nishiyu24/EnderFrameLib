@@ -422,6 +422,10 @@ final class BoxDecorationPainter {
             Corners paintRadii = "border-box".equals(layer.clip()) ? radii : border.innerRadii();
             ClipRect layerClip = intersectClip(clip, paint, paintRadii, id);
             RenderMeta imageMeta = new RenderMeta(layerClip, null, null, fontHVal, ox, oy, 1, false);
+            // 塗る範囲 = 描画領域のとき（ふつうの背景）、角丸の形は描画領域そのもので、祖先のクリップは別に渡す。
+            // 合成した 1 つの角丸矩形（layerClip）は、祖先の縁が円や角丸の箱を切ると、切り口の角に半径を当てて形を歪め、
+            // 祖先が動くと矩形ごと動いてしまう。形（角丸）と切り取り（祖先）を分ければどちらも正確に描ける
+            RenderMeta exactMeta = new RenderMeta(clip, paintRadii, null, fontHVal, ox, oy, 1, false);
 
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx());
@@ -444,11 +448,14 @@ final class BoxDecorationPainter {
                 float gx0 = Math.max(t.x(), paint.x()), gy0 = Math.max(t.y(), paint.y());
                 float gx1 = Math.min(t.x() + t.w(), paint.x() + paint.w()), gy1 = Math.min(t.y() + t.h(), paint.y() + paint.h());
                 if (gx1 <= gx0 || gy1 <= gy0) continue;
+                boolean coversPaint = Math.abs(gx0 - paint.x()) < 0.01f && Math.abs(gy0 - paint.y()) < 0.01f
+                        && Math.abs(gx1 - (paint.x() + paint.w())) < 0.01f && Math.abs(gy1 - (paint.y() + paint.h())) < 0.01f;
+                RenderMeta gradientMeta = coversPaint ? exactMeta : imageMeta;
                 for (ShaderGradient segment : shaderGradients) {
                     ItemProps gradientEvents = events.copy();
                     gradientEvents.shaderGradient(segment);
                     addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
-                            0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
+                            0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, gradientMeta);
                 }
             }
         }

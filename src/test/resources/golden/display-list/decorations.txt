@@ -9,7 +9,7 @@
 008: [c1_b_round] ROUNDED_BORDER rect=[20,10,204,124] radii=[8,8,8,8] roundedBorder=[w=2.0,2.0,2.0,2.0,c=#FF89B4FA,#FF89B4FA,#FF89B4FA,#FF89B4FA]
 009: [g1] NODE rect=[20,144,150,40] color=#FFFFFFFF radii=[4,4,4,4]
 010: [g1_bg] RECT rect=[20,144,150,40] color=#FFFFFFFF r=4 radii=[4,4,4,4]
-011: [g1_bgl0_0] RECT rect=[20,144,150,40] clip=[20.0,144.0,170.0,184.0] shader=[kind=1,#FFF38BA8,#FFA6E3A1,bounds=0]
+011: [g1_bgl0_0] RECT rect=[20,144,150,40] radii=[4,4,4,4] shader=[kind=1,#FFF38BA8,#FFA6E3A1,bounds=0]
 012: [s1] NODE rect=[10,194,162,82] color=#FFFFFFFF radii=[6,6,6,6]
 013: [s1_bg] RECT rect=[10,194,162,82] color=#FFFFFFFF r=6 radii=[6,6,6,6]
 014: [s1_b_round] ROUNDED_BORDER rect=[10,194,162,82] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF9E2AF,#FFF9E2AF,#FFF9E2AF,#FFF9E2AF] dash=dashed

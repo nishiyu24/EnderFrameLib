@@ -32,11 +32,11 @@ public class LayerBoundsTest {
     }
 
     @Test
-    void textureEdgeMatchesTheFrameEdgeOnTouchingSides() {
-        // 右・上の端に接する辺は丸めない（縁の画素を引き伸ばす）。接しない辺は丸める
-        LayerBounds touching = new LayerBounds(1850, 100, 70, 65);
-        assertEquals(70, touching.textureWidth(1920));
-        assertEquals(128, touching.textureHeight(1080));
+    void blurSamplesStopAtTheFrameEdgeOnTouchingSides() {
+        // 右・上の端に接する辺は矩形の縁で止める（縁の画素を引き伸ばす）。接しない辺は FBO の端まで
+        float[] c = new LayerBounds(1850, 100, 70, 65).clampUv(1920, 1080, 256, 256);
+        assertArrayEquals(new float[]{0f, 0f, 70f / 256f, 1f}, c);
+        assertArrayEquals(new float[]{0f, 0f, 1f, 1f}, new LayerBounds(10, 10, 70, 65).clampUv(1920, 1080, 256, 256));
     }
 
     @Test
@@ -62,7 +62,10 @@ public class LayerBoundsTest {
     @Test
     void bucketRoundsUpButNeverBeyondTheFrame() {
         assertEquals(128, LayerBounds.bucket(65, 1920));
-        assertEquals(64, LayerBounds.bucket(64, 1920));
+        assertEquals(32, LayerBounds.bucket(1, 1920));
+        assertEquals(256, LayerBounds.bucket(256, 1920));
+        assertEquals(512, LayerBounds.bucket(257, 1920));
+        assertEquals(1024, LayerBounds.bucket(600, 1920));
         assertEquals(1000, LayerBounds.bucket(990, 1000), "枠より大きくしない");
         assertEquals(1100, LayerBounds.bucket(1100, 1000), "矩形が枠を超えるならそのまま");
         assertEquals(1, LayerBounds.bucket(0, 1000));
@@ -89,5 +92,40 @@ public class LayerBoundsTest {
     @Test
     void fullFrameKeepsTheLegacySize() {
         assertEquals(new LayerBounds(0, 0, 1920, 1080), LayerBounds.full(1920, 1080));
+    }
+
+    private static float[] apply(float[] reuse, float fx, float fy) {
+        return new float[]{reuse[0] * fx + reuse[1] * fy + reuse[4], reuse[2] * fx + reuse[3] * fy + reuse[5]};
+    }
+
+    @Test
+    void translatedBoxReusesThePictureShiftedByTheSameAmount() {
+        float[] oldMap = {1, 0, 0, 1, 100, 50}, newMap = {1, 0, 0, 1, 130, 50};
+        float[] m = LayerBounds.reuseMap(oldMap, newMap, 90, 40);
+        // 新しい画素 (135, 60) は、30 右へ動く前の (105, 60)。矩形の左下 (90, 40) からの (15, 20)
+        assertArrayEquals(new float[]{15f, 20f}, apply(m, 135, 60), 1e-4f);
+        LayerBounds moved = LayerBounds.movedBounds(oldMap, newMap, new LayerBounds(90, 40, 50, 30));
+        assertEquals(new LayerBounds(119, 39, 52, 32), moved, "30 右へ動き、縁の補間のために 1 画素ずつ広がる");
+    }
+
+    @Test
+    void rotatedAndScaledBoxMapsPixelsBackToTheCachedPicture() {
+        float[] oldMap = {1, 0, 0, 1, 0, 0};
+        // 90 度回す: 箱の (2, 3) は新しい画素の (-3, 2)、描いたときの画素の (2, 3)
+        float[] rot = {0, 1, -1, 0, 0, 0};
+        assertArrayEquals(new float[]{2f, 3f}, apply(LayerBounds.reuseMap(oldMap, rot, 0, 0), -3, 2), 1e-4f);
+        // 1.5 倍: 箱の (2, 3) は新しい画素の (3, 4.5)
+        float[] scale = {1.5f, 0, 0, 1.5f, 0, 0};
+        assertArrayEquals(new float[]{2f, 3f}, apply(LayerBounds.reuseMap(oldMap, scale, 0, 0), 3, 4.5f), 1e-4f);
+    }
+
+    @Test
+    void tooDifferentScaleMirroredOrSingularMapsAreNotReused() {
+        float[] oldMap = {1, 0, 0, 1, 0, 0};
+        assertNull(LayerBounds.reuseMap(oldMap, new float[]{3, 0, 0, 3, 0, 0}, 0, 0), "3 倍は引き伸ばさず描き直す");
+        assertNull(LayerBounds.reuseMap(oldMap, new float[]{0.3f, 0, 0, 0.3f, 0, 0}, 0, 0));
+        assertNull(LayerBounds.reuseMap(oldMap, new float[]{-1, 0, 0, 1, 0, 0}, 0, 0), "裏返し");
+        assertNull(LayerBounds.reuseMap(oldMap, new float[]{0, 0, 0, 0, 5, 5}, 0, 0), "つぶれた");
+        assertNull(LayerBounds.reuseMap(oldMap, new float[]{Float.NaN, 0, 0, 1, 0, 0}, 0, 0));
     }
 }

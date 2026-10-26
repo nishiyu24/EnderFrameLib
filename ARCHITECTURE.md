@@ -151,7 +151,14 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 `DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
 グラデーション・角丸クリップ・ガウス影は SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、画面の面（GUI・HUD）でのグループ
 `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-image`・回転した角丸クリップは
-FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。FBO は画面全体ではなく、箱と子孫の外接矩形にフィルターの滲みを足した大きさ（`LayerBounds`。子孫に変形があるときは画面いっぱい）。システム書体と `@font-face`（TTF / OTF）の
+FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。FBO は画面全体ではなく、箱と子孫の外接矩形にフィルターの滲みを足した大きさ（`LayerBounds`。子孫に変形があるときは画面いっぱい）。描く項目が重ならない単純な `opacity` はレイヤーにせず部品ごとの不透明度で描き、中身が前のフレームと同じ（補間値・状態の要約と項目のインスタンスが同じ）レイヤーはフィルターまで済んだ絵を保持して描き直さない（`LayerCompositor.drawCached`）。
+
+クリップ（`overflow`・自分の箱で切る背景）は、祖先ごとの連鎖（`ClipRect.chain`。持ち主の要素 id と、その要素の空間の矩形）として項目に載る。
+合成した 1 つの矩形は、祖先どうしの変形が違うと（動くレールの中の `overflow`、回る要素と動かない角丸の祖先）どの空間にも属さず、
+切り口がずれたり、円が歪んだりする。描画側（`DisplayItemDrawer`）は、変形のある項目だけ、`ClipResolver` で連鎖を 1 つずつ項目の空間へ直す:
+平行移動だけの違いは矩形のずらしで正確（頂点のクリップ）、回転・拡縮の違いは 1 つをシェーダーが持ち主の空間の角丸矩形として当て
+（`WebSdfShader.setClipTransform`）、軸平行の持ち主はシザーでも切る。要素を「元の位置が画面の外」で捨てる判定（描画項目・文字）も、
+変形のある項目では外す（動いて画面へ入ってくる項目を捨てない）。錨の移動・回転・拡縮・不透明度の変化は絵の要約に入れず、箱の画素への写り（変換）の差として保持した絵を貼り直す（`LayerBounds.reuseMap`。拡縮が 0.5〜2 倍を外れる・枠で切れた絵・混合ありは描き直す）。システム書体と `@font-face`（TTF / OTF）の
 文字は `OutlineTextRenderer` がデバイスピクセルでラスタライズして描く（置き場の破棄は `AtlasCache`、VRAM の見積もりは `AtlasFootprint`）。
 グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
 `DisplayListBuilder` は順序（`PaintOrder`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、

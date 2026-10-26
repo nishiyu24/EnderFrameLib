@@ -29,9 +29,11 @@ import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -64,7 +66,11 @@ public class DisplayItemDrawer {
         return (float) (Math.round(coord * step) / step);
     }
 
-    public static boolean enableScissorRect(Matrix4f poseMat, MultiBufferSource buffer, float minX, float minY, float maxX, float maxY) {
+    /**
+     * 姿勢 {@code poseMat} で画面へ写した矩形のシザー {@code {x, y, w, h}}（描画先の画素）。見える所が無い（幅か高さが 0）か、
+     * 計算できなければ null。レイヤーの中では、描画先の原点と大きさに合わせる。
+     */
+    static int[] scissorPx(Matrix4f poseMat, float minX, float minY, float maxX, float maxY) {
         try {
             Window window = Minecraft.getInstance().getWindow();
             double guiScale = window.getGuiScale();
@@ -91,15 +97,38 @@ public class DisplayItemDrawer {
                 sy = ly - origin[1];
             }
 
-            if (sw > 0 && sh > 0) {
-                if (buffer instanceof MultiBufferSource.BufferSource bs) {
-                    bs.endBatch();
-                }
-                RenderSystem.enableScissor(sx, sy, sw, sh);
-                return true;
-            }
+            if (sw > 0 && sh > 0) return new int[]{sx, sy, sw, sh};
         } catch (Exception ignored) {}
-        return false;
+        return null;
+    }
+
+    /** 2 つのシザーの交わり（無ければ幅か高さが 0）。 */
+    static int[] intersectPx(int[] a, int[] b) {
+        int x0 = Math.max(a[0], b[0]), y0 = Math.max(a[1], b[1]);
+        int x1 = Math.min(a[0] + a[2], b[0] + b[2]), y1 = Math.min(a[1] + a[3], b[1] + b[3]);
+        return new int[]{x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0)};
+    }
+
+    /** シザーを掛ける（積んだ描画は先に流す）。 */
+    static boolean applyScissorPx(int[] px, MultiBufferSource buffer) {
+        if (px == null || px[2] <= 0 || px[3] <= 0) return false;
+        if (buffer instanceof MultiBufferSource.BufferSource bs) {
+            bs.endBatch();
+        }
+        RenderSystem.enableScissor(px[0], px[1], px[2], px[3]);
+        return true;
+    }
+
+    public static boolean enableScissorRect(Matrix4f poseMat, MultiBufferSource buffer, float minX, float minY, float maxX, float maxY) {
+        return applyScissorPx(scissorPx(poseMat, minX, minY, maxX, maxY), buffer);
+    }
+
+    /** 「クリップしない」を表す矩形の大きさ（局所座標のどこにある要素も切らない）。 */
+    static final float NO_CLIP = 1.0e7f;
+
+    /** 2 つの姿勢が（平行移動を含めて）同じか。 */
+    static boolean samePose(Matrix4f a, Matrix4f b) {
+        return a.equals(b, 1e-4f);
     }
 
     static boolean enableClipScissorFor2D(Matrix4f poseMat, MultiBufferSource buffer, float clipMinX, float clipMinY, float clipMaxX, float clipMaxY, float maxAllowedX, float maxAllowedY, boolean is2D) {
@@ -147,7 +176,8 @@ public class DisplayItemDrawer {
      */
     static AncestorTransform resolveAncestorTransform(PoseStack poseStack, String id, String hoveredId, String sessionId,
                                                               Map<String, DisplayItem> elementMap,
-                                                              Map<String, AncestorTransform> memo, boolean layersEnabled) {
+                                                              Map<String, AncestorTransform> memo, boolean layersEnabled,
+                                                              Set<String> directOpacity) {
         AncestorTransform cached = memo.get(id);
         if (cached != null) return cached;
         DisplayItem el = elementMap.get(id);
@@ -158,14 +188,14 @@ public class DisplayItemDrawer {
             float[] cumulativeOpacity = {1.0f};
             String parentId = el.hints().parentId();
             if (parentId != null) {
-                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo, layersEnabled);
+                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo, layersEnabled, directOpacity);
                 if (parent != null) {
                     poseStack.last().pose().set(parent.pose());
                     poseStack.last().normal().set(parent.normal());
                     cumulativeOpacity[0] = parent.opacity();
                 }
             }
-            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity, layersEnabled);
+            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity, layersEnabled, directOpacity);
             AncestorTransform result = new AncestorTransform(new Matrix4f(poseStack.last().pose()),
                     new Matrix3f(poseStack.last().normal()), cumulativeOpacity[0]);
             memo.put(id, result);
@@ -176,7 +206,7 @@ public class DisplayItemDrawer {
     }
 
     static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity,
-                                  boolean layersEnabled) {
+                                  boolean layersEnabled, Set<String> directOpacity) {
         String baseId = ClientWebManager.getBaseNodeId(el.id());
         boolean isHovered = baseId.equals(hoveredId);
         SessionContext session = ClientWebManager.getSession(sessionId);
@@ -198,7 +228,9 @@ public class DisplayItemDrawer {
         // 画面の面（GUI・HUD）では、スタッキングコンテキストの箱はレイヤー（別の FBO）に描いてから、自分の不透明度で 1 回だけ合成する
         // （LayerCompositor）。そのため子孫の連鎖には自分の不透明度を掛けない。レイヤーを使えない面（世界の中・FBO を確保できない）では、
         // 従来どおり部品ごとに祖先の不透明度を掛ける。このとき重なった子孫が互いに透けて見える。README の "Not supported" に対応。
-        if (!(layersEnabled && el.hints().layer() != null)) cumulativeOpacity[0] *= anim.opacity();
+        // 描く部品が互いに重ならない箱（{@link #isDirectOpacity}）は、レイヤーにせず部品ごとの不透明度で描いても同じ見た目になるので、
+        // こちらの経路で描く（FBO の確保・合成が要らない）。
+        if (!(layersEnabled && el.hints().layer() != null && !directOpacity.contains(el.id()))) cumulativeOpacity[0] *= anim.opacity();
     }
 
     public static void renderElements(PaintRequest pass) {
@@ -253,6 +285,7 @@ public class DisplayItemDrawer {
         Map<String, DisplayItem> elementMap = new HashMap<>(uiElements.size());
         for (DisplayItem el : uiElements) elementMap.put(el.id(), el);
         Map<String, AncestorTransform> ancestorTransforms = new HashMap<>();
+        Set<String> directOpacity = new HashSet<>();
         // レイヤー（FBO）で描くのは画面の面だけ。世界の中の面は描画先を切り替えると世界の深度との前後が取れない
         boolean layersEnabled = is2DText && !pass.flatLayers() && LayerCompositor.available();
         Matrix4f passPose = new Matrix4f(poseStack.last().pose());
@@ -298,17 +331,56 @@ public class DisplayItemDrawer {
                     skipUntil = elementIndex + spec.span();
                 } else {
                     boolean wantsLayer = spec.needsLayer(groupOpacity);
+                    if (wantsLayer && isDirectOpacity(spec, groupOpacity, uiElements, elementIndex)) {
+                        // 重ならない箱の不透明度は、部品ごとに掛ければ 1 枚に描いたのと同じ。レイヤーを使わない
+                        directOpacity.add(el.id());
+                        wantsLayer = false;
+                    }
                     AncestorTransform anchor = spec.hasBackdrop() || wantsLayer
-                            ? resolveAncestorTransform(poseStack, el.id(), hoveredId, animSessionId, elementMap, ancestorTransforms, true)
+                            ? resolveAncestorTransform(poseStack, el.id(), hoveredId, animSessionId, elementMap, ancestorTransforms, true, directOpacity)
                             : null;
                     // backdrop-filter は、箱の後ろの画素を加工して箱の形に貼る。箱自身の描画（と子孫）より前に、直前の深さの少し上で
                     if (anchor != null && spec.hasBackdrop()) {
                         LayerCompositor.backdrop(buffer, spec, anchor.pose(), passPose, maxAllowedX, maxAllowedY,
                                 zOffset + effectiveZStep * 0.5f);
                     }
-                    boolean opened = anchor != null && wantsLayer
-                            && LayerCompositor.begin(buffer, spec, anchor.pose(),
-                            layerBoxRect(uiElements, elementIndex, spec.span(), animSessionId, hoveredId, session));
+                    boolean opened = false;
+                    if (anchor != null && wantsLayer) {
+                        LayerProbe probe = probeLayer(uiElements, elementIndex, spec, animSessionId, hoveredId, session, anchor.opacity());
+                        LayerCompositor.CacheRequest cache = probe.cacheable()
+                                ? new LayerCompositor.CacheRequest(animSessionId + '|' + el.id(), uiElements, elementIndex, spec.span(), probe.signature())
+                                : null;
+                        if (cache != null) {
+                            // 中身が前のフレームと同じなら、描き直さずに前の絵を合成する（スキップした項目の奥行き・ツールチップは同じに進める）
+                            float zAfter = zOffset;
+                            float topAfter = topZ;
+                            DisplayItem tipEl = null;
+                            String tipText = null;
+                            int endIdx = Math.min(uiElements.size(), elementIndex + spec.span());
+                            for (int i = elementIndex; i < endIdx; i++) {
+                                DisplayItem skipped = uiElements.get(i);
+                                if (skipped.type() == ElementType.NODE) continue;
+                                zAfter = zLevels != null ? zLevels[i] * effectiveZStep : zAfter + effectiveZStep;
+                                topAfter = Math.max(topAfter, zAfter);
+                                String sb = ClientWebManager.getBaseNodeId(skipped.id());
+                                if (tipText == null && resolvedTooltipText == null && !hoveredId.isEmpty() && sb.equals(hoveredId)) {
+                                    tipText = extractTooltipText(skipped);
+                                    if (tipText != null) tipEl = skipped;
+                                }
+                            }
+                            if (LayerCompositor.drawCached(buffer, cache, spec, anchor.pose(), groupOpacity, passPose, maxAllowedX, maxAllowedY, zAfter)) {
+                                zOffset = zAfter;
+                                topZ = topAfter;
+                                if (tipText != null) {
+                                    resolvedTooltipText = tipText;
+                                    hoveredTooltipEl = tipEl;
+                                }
+                                skipUntil = elementIndex + spec.span();
+                                continue;
+                            }
+                        }
+                        opened = LayerCompositor.begin(buffer, spec, anchor.pose(), probe.boxRect(), cache);
+                    }
                     // マスクの項目は、レイヤーを開けなかったときも描かない（中身の上にそのまま重なってしまう）ので、枠は常に作る
                     if (opened || spec.masked()) {
                         layerFrames.push(new LayerFrame(elementIndex + spec.span(),
@@ -343,9 +415,10 @@ public class DisplayItemDrawer {
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
             float cRTL = 0, cRTR = 0, cRBR = 0, cRBL = 0;
             float[] clipV = null;
-            // LIMITATION(制約): クリップの矩形は要素自身の変形の後の座標で当てる。クリップする祖先と要素の間に
-            // transform があると、祖先の矩形ではなく変形した矩形で切られる（回転した子は回転した矩形で切られる）。
-            // 祖先の空間で切るにはステンシルが要る。README の "Not supported" に対応。
+            // クリップは祖先ごとの連鎖（ClipRect#chain）で持ち、変形のある項目は 1 つずつ持ち主の姿勢で項目の空間へ直して当てる
+            // （ClipResolver）。平行移動だけの違いは矩形のずらしで正確。回転・拡縮の違いは、1 つをシェーダーが持ち主の空間の
+            // 角丸矩形として当て（角丸も正確）、軸平行の持ち主はシザーでも切る。ここで読む合成した矩形は、変形の無い項目と、
+            // 連鎖を持たないクリップ（凡例の枠線の切り抜きなど）のためのもの。
             float[] clipArr = (meta != null && meta.clipRect() != null) ? meta.clipRect().toArray() : anim.clipData;
             if (clipArr != null && clipArr.length >= 8) {
                 // 祖先のクリップが画面より大きいとき（overflow が画面からはみ出すレイアウト）も、画面の外へは描かない
@@ -355,9 +428,23 @@ public class DisplayItemDrawer {
                 if (clipArr.length >= 12) clipV = new float[]{clipArr[8], clipArr[9], clipArr[10], clipArr[11]};
             }
 
-            if (el.x() + el.width() < clipMinX || el.x() > clipMaxX || el.y() + el.height() < clipMinY || el.y() > clipMaxY) {
+            // 変形する祖先・要素自身の変形があると、項目は元の位置とは違う所へ描かれる。レイアウトの空間のクリップ矩形（と元の位置）で
+            // 捨てると、動いて画面へ入ってくる項目まで捨ててしまう（流れるリボンやカルーセルの右側が空になる）。
+            // 変形のある項目は、描く空間へ直したクリップで、後で判定する
+            boolean ownTransform = anim.tx() != 0 || anim.ty() != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
+            boolean hasParentPose = el.hints().parentId() != null;
+            Matrix4f framePose = new Matrix4f(poseStack.last().pose());
+            boolean moved = ownTransform;
+            if (!moved && hasParentPose) {
+                AncestorTransform parentAt = resolveAncestorTransform(poseStack, el.hints().parentId(), hoveredId, animSessionId,
+                        elementMap, ancestorTransforms, layersEnabled, directOpacity);
+                moved = parentAt != null && !samePose(framePose, parentAt.pose());
+            }
+            if (!moved && (el.x() + el.width() < clipMinX || el.x() > clipMaxX || el.y() + el.height() < clipMinY || el.y() > clipMaxY)) {
                 continue;
             }
+            // 文字の描画も「元の位置が画面の外なら描かない」で捨てる。動いて画面へ入ってくる項目は、その判定を外す
+            float cullMaxX = moved ? NO_CLIP : maxAllowedX, cullMaxY = moved ? NO_CLIP : maxAllowedY;
 
             float rTL = 0, rTR = 0, rBR = 0, rBL = 0;
             // 楕円の角（横と縦の半径が違う）。SDF で描く背景・枠線・影だけが楕円で、画像など他の描き方は円で近似する
@@ -387,25 +474,24 @@ public class DisplayItemDrawer {
 
             // 祖先や要素自身の変形があると、描く座標（要素の空間）とクリップの座標（レイアウトの空間）がずれる。
             // 変形の前の姿勢を覚えておき、変形の後でクリップを要素の空間へ直す
-            boolean ownTransform = anim.tx() != 0 || anim.ty() != 0 || anim.rot() != 0 || anim.sx() != 1.0f || anim.sy() != 1.0f;
-            boolean hasParentPose = el.hints().parentId() != null;
-            Matrix4f basePose = (ownTransform || hasParentPose) ? new Matrix4f(poseStack.last().pose()) : null;
+            Matrix4f basePose = (ownTransform || hasParentPose) ? new Matrix4f(framePose) : null;
             // 要素自身の箱で切るクリップ（背景のグラデーション・画像など）は、その要素の変形に付いていく。
             // 動かない祖先のクリップだけを画面に留める
             String clipOwner = meta != null && meta.clipRect() != null ? meta.clipRect().ownerId() : null;
             if (clipOwner != null && basePose != null) {
                 AncestorTransform owner = resolveAncestorTransform(poseStack, clipOwner, hoveredId, animSessionId,
-                        elementMap, ancestorTransforms, layersEnabled);
+                        elementMap, ancestorTransforms, layersEnabled, directOpacity);
                 if (owner != null) basePose = new Matrix4f(owner.pose());
             }
 
+            boolean itemScissor = false;
             poseStack.pushPose();
             try {
                 float[] cumulativeOpacity = {1.0f};
                 String parentId = el.hints().parentId();
                 if (parentId != null) {
                     AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, animSessionId,
-                            elementMap, ancestorTransforms, layersEnabled);
+                            elementMap, ancestorTransforms, layersEnabled, directOpacity);
                     if (parent != null) {
                         poseStack.last().pose().set(parent.pose());
                         poseStack.last().normal().set(parent.normal());
@@ -423,13 +509,65 @@ public class DisplayItemDrawer {
                 if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
                 poseStack.translate(-cx, -cy, 0);
 
-                if (basePose != null) {
+                ClipRect chainClip = meta != null ? meta.clipRect() : null;
+                if (moved && chainClip != null && !chainClip.chain().isEmpty()) {
+                    // 祖先のクリップは 1 つ 1 つ持ち主の空間にある。持ち主ごとの姿勢で項目の空間へ直してから当てる
+                    ClipResolver.Result res = ClipResolver.resolve(chainClip.chain(), framePose, poseStack.last().pose(), owner -> {
+                        AncestorTransform at = resolveAncestorTransform(poseStack, owner, hoveredId, animSessionId, elementMap,
+                                ancestorTransforms, layersEnabled, directOpacity);
+                        return at == null ? null : at.pose();
+                    });
+                    if (res.local() != null) {
+                        float[] l = res.local();
+                        clipMinX = l[0]; clipMinY = l[1]; clipMaxX = l[2]; clipMaxY = l[3];
+                        cRTL = l[4]; cRTR = l[5]; cRBR = l[6]; cRBL = l[7];
+                        clipV = l.length >= 12 ? new float[]{l[8], l[9], l[10], l[11]} : null;
+                    } else {
+                        clipMinX = -NO_CLIP; clipMinY = -NO_CLIP; clipMaxX = NO_CLIP; clipMaxY = NO_CLIP;
+                        cRTL = cRTR = cRBR = cRBL = 0;
+                        clipV = null;
+                    }
+                    if (is2DText && !res.screen().isEmpty()) {
+                        // シェーダーを通らない文字・画像のために、軸平行の祖先は画面の矩形でも切る
+                        int[] px = null;
+                        for (ClipResolver.ScreenRect sr : res.screen()) {
+                            int[] one = scissorPx(sr.pose(), sr.x0(), sr.y0(), sr.x1(), sr.y1());
+                            px = one == null ? new int[]{0, 0, 0, 0} : px == null ? one : intersectPx(px, one);
+                        }
+                        if (px == null || px[2] <= 0 || px[3] <= 0) continue; // 何も見えない
+                        itemScissor = applyScissorPx(px, buffer);
+                    }
+                    if (is2DText && res.transformed() != null) {
+                        ClipResolver.Transformed t = res.transformed();
+                        WebSdfShader.setClipTransform(t.rect(), t.m00(), t.m10(), t.m01(), t.m11(), t.tx(), t.ty(), t.distanceScale());
+                    }
+                    // 平行移動だけの連鎖は正確なので、要素が切り口の外なら描かない（それ以外は見積もれない）
+                    if (res.transformed() == null && res.screen().isEmpty() && res.local() != null
+                            && (el.x() + el.width() < clipMinX || el.x() > clipMaxX || el.y() + el.height() < clipMinY || el.y() > clipMaxY)) {
+                        continue;
+                    }
+                } else if (basePose != null) {
                     float[] fixed = clipIntoLocalSpace(basePose, poseStack.last().pose(),
                             clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, clipV);
                     if (fixed != null) {
                         clipMinX = fixed[0]; clipMinY = fixed[1]; clipMaxX = fixed[2]; clipMaxY = fixed[3];
                         cRTL = fixed[4]; cRTR = fixed[5]; cRBR = fixed[6]; cRBL = fixed[7];
                         clipV = fixed.length >= 12 ? new float[]{fixed[8], fixed[9], fixed[10], fixed[11]} : null;
+                    } else if (!samePose(basePose, poseStack.last().pose())) {
+                        // 回転・拡縮した要素は、クリップの矩形を要素の空間へ直せない（直さずに当てると、回るたびに切り口が傾いて
+                        // 形が歪む。スクロールで画面の上・左へ出た部分は局所座標が負なので、既定の「画面の矩形」でも切られる）
+                        boolean realClip = clipArr != null && clipArr.length >= 8;
+                        if (is2DText && realClip) {
+                            // 祖先の切り口は画面の矩形なので、ハードウェアのシザーで画面の空間のまま切る
+                            // （回すと局所の箱が祖先の外へ出るので、局所の箱が祖先の内側に収まっていても切る）
+                            itemScissor = enableScissorRect(basePose, buffer, clipMinX, clipMinY, clipMaxX, clipMaxY);
+                        }
+                        if (itemScissor || !realClip) {
+                            // 空間の違うクリップは当てない（画面の端は GPU のビューポートが切る）
+                            clipMinX = -NO_CLIP; clipMinY = -NO_CLIP; clipMaxX = NO_CLIP; clipMaxY = NO_CLIP;
+                            cRTL = cRTR = cRBR = cRBL = 0;
+                            clipV = null;
+                        }
                     }
                 }
                 WebSdfShader.setClipVerticalRadii(clipV);
@@ -501,7 +639,7 @@ public class DisplayItemDrawer {
                     }
                 } else if (type == ElementType.TEXTAREA) {
                     if (renderText) {
-                        renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2DText, packedLight);
+                        renderTextareaElement(el, animSessionId, poseStack, buffer, font, anim, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cullMaxX, cullMaxY, is2DText, packedLight);
                     }
                 } else if (type == ElementType.RANGE) {
                     renderRangeElement(el, anim, poseStack, buffer, finalOpacity, contentZ, effectiveZStep * 0.08f, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
@@ -522,9 +660,11 @@ public class DisplayItemDrawer {
                     }
                 } else if ((el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT || type == ElementType.SELECT) {
                     renderTextOrInputElement(el, meta, anim, isFocused, elementMap, animSessionId, poseStack, buffer, font, renderText, is2DText,
-                            finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
+                            finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, cullMaxX, cullMaxY);
                 }
             } finally {
+                endClipScissor(itemScissor, buffer);
+                WebSdfShader.setClipTransform(null, 0, 0, 0, 0, 0, 0, 1f);
                 WebSdfShader.setClipVerticalRadii(null);
                 poseStack.popPose();
             }
@@ -543,31 +683,102 @@ public class DisplayItemDrawer {
     }
 
     /**
-     * レイヤーの錨から {@code span} 個の項目（錨と子孫）の外接矩形（錨の座標。{@code {x0, y0, x1, y1}}）。
-     * 影・枠の板は項目の矩形が広がり分を含んでいる。子孫に自分の変形（移動・回転・拡縮のアニメーションを含む）があると、
-     * 錨の姿勢では子孫の位置が決まらないので null（枠いっぱいのレイヤーで描く）。
+     * レイヤーの調べた結果。{@code boxRect} は錨から {@code span} 個の項目（錨と子孫）の外接矩形（錨の座標。{@code {x0, y0, x1, y1}}）で、
+     * 子孫に自分の変形（移動・回転・拡縮のアニメーションを含む）があると、錨の姿勢では子孫の位置が決まらないので null
+     * （枠いっぱいのレイヤーで描く）。{@code signature} は中身の見た目を決める値（補間値・状態）の要約で、前のフレームと同じなら
+     * 描き直さなくてよい。{@code cacheable} はその使い回しを許す箱か。
      */
-    static float[] layerBoxRect(List<DisplayItem> items, int anchorIndex, int span, String sessionId, String hoveredId,
-                                SessionContext session) {
+    record LayerProbe(float[] boxRect, boolean cacheable, long signature) {}
+
+    /** 使い回しを許す項目の型。入力欄・画像・動画・キャンバス・3D など、外の状態で見た目が変わるものは含めない。 */
+    private static boolean isStaticPaint(ElementType type) {
+        return switch (type) {
+            case NODE, RECT, TEXT, CIRCLE_BORDER, ROUNDED_BORDER, BUTTON, A -> true;
+            default -> false;
+        };
+    }
+
+    /** 使い回しを考える箱の項目数の上限（調べる費用が描き直しに近づく大きさでは、使い回さない）。 */
+    private static final int MAX_CACHED_SPAN = 256;
+
+    static LayerProbe probeLayer(List<DisplayItem> items, int anchorIndex, LayerSpec spec, String sessionId, String hoveredId,
+                                 SessionContext session, float anchorOpacity) {
         float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
-        int end = Math.min(items.size(), anchorIndex + span);
+        int end = Math.min(items.size(), anchorIndex + spec.span());
+        boolean moved = false;
+        boolean cacheable = !spec.masked() && spec.span() <= MAX_CACHED_SPAN;
+        long sig = 1125899906842597L * 31 + Float.floatToIntBits(anchorOpacity);
         for (int i = anchorIndex; i < end; i++) {
             DisplayItem item = items.get(i);
-            if (i > anchorIndex) {
-                String baseId = ClientWebManager.getBaseNodeId(item.id());
-                boolean hovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
-                boolean active = session != null && session.isPressedBase(baseId);
-                boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));
-                CssAnimator.AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
-                if (a.tx() != 0 || a.ty() != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f) return null;
+            if (!isStaticPaint(item.type())) cacheable = false;
+            String baseId = ClientWebManager.getBaseNodeId(item.id());
+            boolean hovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
+            boolean active = session != null && session.isPressedBase(baseId);
+            boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));
+            CssAnimator.AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
+            if (i > anchorIndex && (a.tx() != 0 || a.ty() != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f)) moved = true;
+            // 錨自身の不透明度・変形は、合成のときに掛ける（変形は箱の写り = 変換として別に比べる）だけで、中身の絵は変わらない
+            // （フェード・移動・回転・拡縮の最中も使い回せる）。子孫のものは中身に入る
+            if (i != anchorIndex) sig = sig * 31 + Float.floatToIntBits(a.opacity());
+            if (i != anchorIndex) {
+                sig = sig * 31 + Float.floatToIntBits(a.tx());
+                sig = sig * 31 + Float.floatToIntBits(a.ty());
+                sig = sig * 31 + Float.floatToIntBits(a.sx());
+                sig = sig * 31 + Float.floatToIntBits(a.sy());
+                sig = sig * 31 + Float.floatToIntBits(a.rot());
             }
+            sig = sig * 31 + a.color();
+            sig = sig * 31 + a.bgColor();
+            sig = sig * 31 + java.util.Arrays.hashCode(a.clipData);
+            sig = sig * 31 + java.util.Arrays.hashCode(a.radiusData);
+            sig = sig * 31 + Float.floatToIntBits(a.rangeVal);
+            sig = sig * 31 + java.util.Arrays.hashCode(a.circleColors);
+            sig = sig * 31 + (hovered ? 1 : 0) + (active ? 2 : 0) + (focused ? 4 : 0);
+            // NODE は何も描かない。文字の塊の NODE などは座標が箱の局所の原点（0, 0）なので、含めると矩形が画面の左上へ伸びる
+            if (item.type() == ElementType.NODE && i != anchorIndex) continue;
             minX = Math.min(minX, item.x());
             minY = Math.min(minY, item.y());
             maxX = Math.max(maxX, item.x() + item.width());
             maxY = Math.max(maxY, item.y() + item.height());
         }
-        if (minX > maxX || minY > maxY) return null;
-        return new float[]{minX, minY, maxX, maxY};
+        float[] rect = moved || minX > maxX || minY > maxY ? null : new float[]{minX, minY, maxX, maxY};
+        return new LayerProbe(rect, cacheable, sig);
+    }
+
+    /** 重なりを調べる描く項目の数の上限（それ以上はレイヤーに描く）。 */
+    private static final int MAX_DIRECT_ITEMS = 16;
+
+    /**
+     * 不透明度だけが理由のレイヤーを、使わずに済むか。描く項目が 1 回の描画で済み（背景・影・グラデーションの板。文字・画像・枠は
+     * 重なるので含めない）、互いの矩形が重ならないなら、部品ごとに不透明度を掛けても、1 枚に描いてから透かしても同じになる。
+     * 他の理由（フィルター・混合・クリップ・マスク・背景のフィルター・孤立）がある箱や、中に別のレイヤーの錨を含む箱は含めない
+     * （中のレイヤーの合成が、この箱の不透明度を受け取れない）。
+     */
+    static boolean isDirectOpacity(LayerSpec spec, float animatedOpacity, List<DisplayItem> items, int anchorIndex) {
+        if (!spec.filters().isEmpty() || spec.blend() != BlendMode.NORMAL || spec.isolate() || spec.clip() != null
+                || spec.masked() || spec.hasBackdrop() || animatedOpacity >= 0.999f) {
+            return false;
+        }
+        int end = Math.min(items.size(), anchorIndex + spec.span());
+        DisplayItem[] paint = new DisplayItem[MAX_DIRECT_ITEMS];
+        int n = 0;
+        for (int i = anchorIndex; i < end; i++) {
+            DisplayItem item = items.get(i);
+            if (item.type() == ElementType.NODE) {
+                if (i > anchorIndex && item.hints().layer() != null) return false;
+                continue;
+            }
+            if (item.type() != ElementType.RECT || (item.text() != null && !item.text().isEmpty()) || n == MAX_DIRECT_ITEMS) return false;
+            for (int k = 0; k < n; k++) {
+                DisplayItem o = paint[k];
+                if (item.x() < o.x() + o.width() && o.x() < item.x() + item.width()
+                        && item.y() < o.y() + o.height() && o.y() < item.y() + item.height()) {
+                    return false;
+                }
+            }
+            paint[n++] = item;
+        }
+        return true;
     }
 
     /** 影・ぼかしが箱の外へ広がる分（仮想 px）の見込み。文字・画像との重なりの判定を広げる。 */

@@ -800,6 +800,20 @@ Layout differences from a real browser are measured, case by case, in
   translation, a rotation and a scale, so the shear of `skew*()` and of a
   `matrix()` is dropped, and the depth part of 3D functions
   (`translateZ()`, `rotateX()` / `rotateY()`, `perspective()`) is not drawn.
+- **Clipping under rotation or scaling.** Each ancestor's clip (`overflow`, a
+  box's own background) is kept as a chain and converted into the clipped
+  item's space one by one, so clips stay correct inside moving rails and under
+  translated, scaled or rotated boxes. What is still approximate, only when an
+  item is *rotated or scaled relative to* a clipping ancestor (for example a
+  spinning child inside a static rounded card): the shader applies **one** such
+  clip exactly, rounded corners included (the innermost one with a radius, else
+  the innermost); further ones of that kind are cut by an axis-aligned
+  hardware scissor when the ancestor itself is not rotated (corners are not
+  rounded) and are not applied when it is. Text, images and everything else
+  that does not go through the SDF shader is cut by that scissor only, so a
+  rounded ancestor's corners are not rounded for them. Clips on in-world
+  surfaces (blocks, holograms, held items) cannot use the scissor: only the
+  translation-only part of the chain applies there.
 - **Video** needs the bundled native decoder, which is Windows-only today, and
   YouTube sources need the opt-in `allowExternalMedia` and `allowYtDlp` settings.
   When both are enabled, the official yt-dlp release for the current platform is

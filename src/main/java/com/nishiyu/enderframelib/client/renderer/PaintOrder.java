@@ -39,7 +39,7 @@ final class PaintOrder {
     /** 箱 1 つ自身（背景・枠・部品）を描画項目にする。 */
     @FunctionalInterface
     interface BoxPainter {
-        void draw(List<DisplayItem> elements, LayoutBox box, float[] clipRect, String parentId);
+        void draw(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId);
     }
 
     private final int rootW;
@@ -51,7 +51,7 @@ final class PaintOrder {
      * 箱が中身に掛けるクリップ（祖先のクリップと自分の overflow の交わり。null なら切らない）。
      * 絶対配置の箱は木の親ではなく包含ブロックの値を引く。
      */
-    private final Map<LayoutBox, float[]> contentClips = new IdentityHashMap<>();
+    private final Map<LayoutBox, ClipRect> contentClips = new IdentityHashMap<>();
     /** その箱の {@code animation} が {@code opacity} を動かすか（静的な値は 1 でも、動く間はグループとして合成する）。 */
     private final Predicate<LayoutBox> animatesOpacity;
     /** 子孫に {@code mix-blend-mode} を持つ箱がある（スタッキングコンテキストを越えない範囲で）か。 */
@@ -136,11 +136,11 @@ final class PaintOrder {
      * @param sc    いちばん近い本物のスタッキングコンテキストの層（負・0・正の z-index と位置指定要素が入る）
      * @param local 今いる層（float・位置指定要素・不可分なインラインは自分の中身だけを持つ疑似コンテキストを作る）
      */
-    void collectChildren(LayoutBox box, float[] clip, String parentId, PaintLayers sc, PaintLayers local) {
+    void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
         String tag = box.node.tag;
         if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) return;
 
-        float[] childClip = computeChildClipRect(box, clip);
+        ClipRect childClip = computeChildClipRect(box, clip);
         contentClips.put(box, childClip);
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
         String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.getId();
@@ -160,7 +160,7 @@ final class PaintOrder {
      * 何が壊れていたか: 以前は親のクリップを木のすべての子へそのまま渡していたので、位置指定の無い
      * {@code overflow: hidden} の箱の中のドロップダウンやモーダル（absolute / fixed）が箱の枠で切り落とされていた。
      */
-    float[] clipForChild(LayoutBox child, float[] flowClip) {
+    ClipRect clipForChild(LayoutBox child, ClipRect flowClip) {
         if (!child.isAbsolute) return flowClip;
         LayoutBox cb = child.findContainingBlock();
         if (cb == null) return null;
@@ -173,7 +173,7 @@ final class PaintOrder {
      * 不可分なインラインと flex / grid アイテム（層 7）は「コンテキストを作ったかのように」中身ごと描くが、
      * 中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
      */
-    void classify(LayoutBox box, float[] clip, String parentId, PaintLayers sc, PaintLayers local) {
+    void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
         if (box.display.isNone() || "none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
@@ -229,7 +229,7 @@ final class PaintOrder {
         if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
     }
 
-    RenderTask selfTask(LayoutBox box, float[] clip, String parentId) {
+    RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId) {
         if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
         return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId));
     }
@@ -384,7 +384,7 @@ final class PaintOrder {
      * 何が壊れていたか: 以前はショートハンドの {@code overflow} だけを読んでいたので、展開後は常に
      * visible 扱いになり、{@code overflow: hidden} も {@code overflow-y: auto} も子を切らなかった。
      */
-    float[] computeChildClipRect(LayoutBox box, float[] parentClip) {
+    ClipRect computeChildClipRect(LayoutBox box, ClipRect parentClip) {
         String tag = box.node.tag;
         boolean isRootElement = "root".equals(tag) || "html".equals(tag) || "body".equals(tag);
         if (isRootElement) return parentClip;
@@ -421,7 +421,9 @@ final class PaintOrder {
                 }
             }
         }
-        return BoxDecorations.intersectClip(parentClip, own);
+        ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parentClip == null ? null : parentClip.toArray(), own));
+        // 合成した矩形に、合成する前のこの箱の矩形を持ち主（この箱）つきで足す。箱が動く（変形する）と、切り口も一緒に動く
+        return merged.withChain(parentClip == null ? List.of(new ClipRect.Part(own, box.node.getId())) : parentClip.chainPlus(own, box.node.getId()));
     }
 
     /**
@@ -444,7 +446,7 @@ final class PaintOrder {
         return "scroll".equals(overflow) || "auto".equals(overflow);
     }
 
-    void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, float[] clipRect) {
+    void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
         if (box.style.keywordOf(CssProperty.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
 
         float scrollW = box.scrollWidth;
@@ -454,7 +456,7 @@ final class PaintOrder {
 
         ItemProps sbEvents = new ItemProps();
         sbEvents.parentId(box.node.getId());
-        ClipRect sbClip = normalizeClipRect(clipRect);
+        ClipRect sbClip = clipRect;
         RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, 12.0f, 0.5f, 0.5f, 1, false);
 
         int barThickness = 4;

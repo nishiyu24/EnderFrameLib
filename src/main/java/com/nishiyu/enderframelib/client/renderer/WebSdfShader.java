@@ -115,6 +115,15 @@ public class WebSdfShader {
 
             uniform vec4 uSegment;   // 線分の両端 (ax, ay, bx, by)。uSegWidth > 0 のときだけ使う
             uniform float uSegWidth; // 線分の太さ。0 なら角丸矩形
+            // 別の空間にあるクリップ（回る・伸び縮みする要素を、動かない角丸の祖先で切るとき）。頂点のクリップは要素の空間の矩形だが、
+            // これは持ち主の空間の角丸矩形で、要素の空間からそこへの変換 (x' = m.x * x + m.y * y + t.x, y' = m.z * x + m.w * y + t.y) を持つ
+            uniform float uXClipOn;
+            uniform vec4 uXClipRect;
+            uniform vec4 uXClipRadii;
+            uniform vec4 uXClipRadiiV;
+            uniform vec4 uXClipM;
+            uniform vec2 uXClipT;
+            uniform float uXClipScale; // 持ち主の空間の距離を要素の空間の距離にする倍率
 
             out vec4 fragColor;
 
@@ -253,6 +262,16 @@ public class WebSdfShader {
                 float distClip = clipEll ? sdEllipseBox(vLocalPos - clipCenter, clipHalf, vClipRadii, vClipRadiiV)
                         : sdRoundBox(vLocalPos - clipCenter, clipHalf, vClipRadii);
 
+                if (uXClipOn > 0.5) {
+                    vec2 po = vec2(uXClipM.x * vLocalPos.x + uXClipM.y * vLocalPos.y + uXClipT.x,
+                            uXClipM.z * vLocalPos.x + uXClipM.w * vLocalPos.y + uXClipT.y);
+                    vec2 xc = (uXClipRect.xy + uXClipRect.zw) * 0.5;
+                    vec2 xh = max(vec2(0.001), (uXClipRect.zw - uXClipRect.xy) * 0.5);
+                    bool xell = any(notEqual(uXClipRadiiV, vec4(0.0)));
+                    float dX = (xell ? sdEllipseBox(po - xc, xh, uXClipRadii, uXClipRadiiV) : sdRoundBox(po - xc, xh, uXClipRadii)) * uXClipScale;
+                    distClip = max(distClip, dX);
+                }
+
                 float dist = max(distBox, distClip);
                 float aa = clamp(fwidth(dist), 0.35, 1.25);
                 float alphaMask = 1.0 - smoothstep(-aa * 0.5, aa * 0.5, dist);
@@ -340,6 +359,38 @@ public class WebSdfShader {
     public static void setClipVerticalRadii(float[] v) {
         copyOrZero(v, pendingClipRadiiV);
     }
+
+    /**
+     * もう 1 つのクリップ（別の空間の角丸矩形）を、次に描く Quad に掛ける。{@code rect} は持ち主の空間の矩形 + 横の半径
+     * （楕円の角があれば縦の半径が続く 12 値）、{@code m00 … ty} は Quad の空間から持ち主の空間への変換。{@code null} で外す。
+     * Quad を積んで後で描くパス（世界の中の面）では使わない（描く時点の値が、積んだ全部に掛かる）。
+     */
+    public static void setClipTransform(float[] rect, float m00, float m10, float m01, float m11, float tx, float ty, float scale) {
+        if (rect == null) {
+            pendingXClip = null;
+            return;
+        }
+        float[] x = new float[19];
+        System.arraycopy(rect, 0, x, 0, Math.min(rect.length, 8));
+        if (rect.length >= 12) System.arraycopy(rect, 8, x, 8, 4);
+        x[12] = m00;
+        x[13] = m10;
+        x[14] = m01;
+        x[15] = m11;
+        x[16] = tx;
+        x[17] = ty;
+        x[18] = scale;
+        pendingXClip = x;
+    }
+
+    /** 別の空間のクリップが掛かっているか（掛かっていれば、角丸の無い矩形も頂点の矩形ではなくシェーダーで描く）。 */
+    public static boolean hasClipTransform() {
+        return pendingXClip != null;
+    }
+
+    /** {@link #setClipTransform} の値。{@code null} なら掛けない。 */
+    private static float[] pendingXClip = null;
+    private static int uXClipOn = -1, uXClipRect = -1, uXClipRadii = -1, uXClipRadiiV = -1, uXClipM = -1, uXClipT = -1, uXClipScale = -1;
 
     /** いま {@link #setEllipseRadii} に入っている横の半径。無ければ {@code fallback}（円の角）。 */
     static float[] currentEllipseRx(float... fallback) {
@@ -476,6 +527,13 @@ public class WebSdfShader {
             uPoseMat = GL20.glGetUniformLocation(programId, "uPoseMat");
             uSegment = GL20.glGetUniformLocation(programId, "uSegment");
             uSegWidth = GL20.glGetUniformLocation(programId, "uSegWidth");
+            uXClipOn = GL20.glGetUniformLocation(programId, "uXClipOn");
+            uXClipRect = GL20.glGetUniformLocation(programId, "uXClipRect");
+            uXClipRadii = GL20.glGetUniformLocation(programId, "uXClipRadii");
+            uXClipRadiiV = GL20.glGetUniformLocation(programId, "uXClipRadiiV");
+            uXClipM = GL20.glGetUniformLocation(programId, "uXClipM");
+            uXClipT = GL20.glGetUniformLocation(programId, "uXClipT");
+            uXClipScale = GL20.glGetUniformLocation(programId, "uXClipScale");
 
             if (batchFormat == null) {
                 batchFormat = VertexFormat.builder()
@@ -567,6 +625,18 @@ public class WebSdfShader {
             GL20.glUniform1f(uSegWidth, segment[4]);
         } else {
             GL20.glUniform1f(uSegWidth, 0f);
+        }
+        if (pendingXClip != null) {
+            float[] x = pendingXClip;
+            GL20.glUniform1f(uXClipOn, 1f);
+            GL20.glUniform4f(uXClipRect, x[0], x[1], x[2], x[3]);
+            GL20.glUniform4f(uXClipRadii, x[4], x[5], x[6], x[7]);
+            GL20.glUniform4f(uXClipRadiiV, x[8], x[9], x[10], x[11]);
+            GL20.glUniform4f(uXClipM, x[12], x[13], x[14], x[15]);
+            GL20.glUniform2f(uXClipT, x[16], x[17]);
+            GL20.glUniform1f(uXClipScale, x[18]);
+        } else {
+            GL20.glUniform1f(uXClipOn, 0f);
         }
         try {
             BufferUploader.draw(mesh);
@@ -672,6 +742,7 @@ public class WebSdfShader {
     public static boolean drawSdfShaderGradient(
             Matrix4f poseMatrix,
             float minX, float minY, float maxX, float maxY,
+            float rTL, float rTR, float rBR, float rBL,
             float r0, float g0, float b0, float a0,
             float r1, float g1, float b1, float a1,
             float[] gradA, float[] gradB, float repeatOrigin, float repeatPeriod, float zOffset,
@@ -687,7 +758,7 @@ public class WebSdfShader {
         pendingColor2[2] = b1;
         pendingColor2[3] = a1;
         try {
-            return drawSdfRect(poseMatrix, minX, minY, maxX, maxY, 0f, 0f, 0f, 0f, r0, g0, b0, a0, zOffset,
+            return drawSdfRect(poseMatrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL, r0, g0, b0, a0, zOffset,
                     cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
         } finally {
             java.util.Arrays.fill(pendingGradA, 0f);

@@ -644,9 +644,20 @@ public final class BoxDecorations {
         if (r <= 0) return 0;
         float cx = corner == 0 || corner == 3 ? clip[0] : clip[2];
         float cy = corner == 0 || corner == 1 ? clip[1] : clip[3];
-        if (clip.length < 12) return Math.max(0, r - Math.max(Math.abs(x - cx), Math.abs(y - cy)));
+        float dx = Math.abs(x - cx), dy = Math.abs(y - cy);
+        if (clip.length < 12) {
+            if (dx >= r || dy >= r) return 0;
+            // 交わりの角が角丸矩形の内側にあれば、そこは切られていない直角の角（半径を当てると形が歪む）
+            if (Math.hypot(r - dx, r - dy) <= r) return 0;
+            return Math.max(0, r - Math.max(dx, dy));
+        }
         // 楕円の角は軸ごとに縮める（横の半径は横の移動、縦の半径は縦の移動の分）
-        return Math.max(0, r - (vertical ? Math.abs(y - cy) : Math.abs(x - cx)));
+        float rx = clip[4 + corner], ry = clip[8 + corner];
+        if (rx > 0 && ry > 0 && dx < rx && dy < ry) {
+            double ux = (rx - dx) / rx, uy = (ry - dy) / ry;
+            if (ux * ux + uy * uy <= 1.0) return 0;
+        }
+        return Math.max(0, r - (vertical ? dy : dx));
     }
 
     /** 逆転した矩形を空に潰し、半径を短い辺の半分までに収める。 */
