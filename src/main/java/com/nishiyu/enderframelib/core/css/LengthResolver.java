@@ -345,8 +345,8 @@ public class LengthResolver {
      * 何が壊れていたか: 以前は描画が {@code border-radius} の文字列だけを読んでいたので、
      * {@code border-top-left-radius} が無視され、{@code border-radius} の後に 1 角だけ上書きすることもできなかった。
      *
-     * LIMITATION: 角は円弧で描くので、楕円の角（{@code 10px / 20px}・長方形の箱の {@code 50%}）は
-     * 横と縦の半径の小さい方の円で近似する。README の "Not supported"。
+     * この版は楕円の角を横と縦の半径の小さい方の円で近似する（オーバーフローのクリップなど円しか持たない所用）。
+     * 楕円のまま使うなら {@link #cornerRadiiXY}。
      */
     public static float[] cornerRadii(ComputedStyle style, float w, float h, float rootW, float rootH) {
         float[] out = new float[4];
@@ -368,6 +368,60 @@ public class LengthResolver {
                     : parseDim(parts.get(0), h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
             out[i] = Math.max(0, Math.min(rx, ry));
         }
+        return out;
+    }
+
+    /**
+     * 四隅の楕円の半径。{@code {rx0..rx3, ry0..ry3}}（左上・右上・右下・左下の順）で、横は箱の幅、縦は箱の高さの % を解く。
+     * 隣り合う角の半径の和が辺を越えるときは、全部の半径に同じ倍率を掛けて収める（CSS Backgrounds 3 §5.5）。
+     * どちらかが 0 の角は直角（両方 0）。
+     */
+    public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
+        String[] values = new String[4];
+        String shorthand = null;
+        for (int i = 0; i < 4; i++) {
+            String value = style.get(CORNER_PROPERTIES[i]);
+            if (value == null) {
+                if (shorthand == null) shorthand = style.getOrDefault(CssProperty.BORDER_RADIUS, "0");
+                value = ShorthandExpanders.borderRadius(shorthand).getOrDefault(CORNER_PROPERTIES[i], "0");
+            }
+            values[i] = value;
+        }
+        return cornerRadiiXY(values, w, h, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+    }
+
+    /**
+     * {@code border-radius} のショートハンドの文字列（{@code 10px 20px / 5px} など）を箱の寸法で解く。
+     * {@code clip-path: inset(... round ...)} が使う。読めない値は全部 0。
+     */
+    public static float[] cornerRadiiXY(String borderRadius, float w, float h, float rootW, float rootH,
+                                        float fontSize, float rootFontSize) {
+        Map<String, String> expanded = ShorthandExpanders.borderRadius(borderRadius == null ? "0" : borderRadius);
+        String[] values = new String[4];
+        for (int i = 0; i < 4; i++) values[i] = expanded.getOrDefault(CORNER_PROPERTIES[i], "0");
+        return cornerRadiiXY(values, w, h, rootW, rootH, fontSize, rootFontSize);
+    }
+
+    private static float[] cornerRadiiXY(String[] values, float w, float h, float rootW, float rootH,
+                                         float fontSize, float rootFontSize) {
+        float[] out = new float[8];
+        for (int i = 0; i < 4; i++) {
+            List<String> parts = ShorthandExpanders.splitTopLevelTokens(values[i]);
+            if (parts.isEmpty()) continue;
+            float rx = parseDim(parts.get(0), w, rootW, rootH, fontSize, rootFontSize);
+            float ry = parts.size() > 1
+                    ? parseDim(parts.get(1), h, rootW, rootH, fontSize, rootFontSize)
+                    : parseDim(parts.get(0), h, rootW, rootH, fontSize, rootFontSize);
+            if (rx <= 0 || ry <= 0) rx = ry = 0;
+            out[i] = rx;
+            out[4 + i] = ry;
+        }
+        float f = 1f;
+        if (out[0] + out[1] > w) f = Math.min(f, w / (out[0] + out[1]));
+        if (out[3] + out[2] > w) f = Math.min(f, w / (out[3] + out[2]));
+        if (out[4] + out[7] > h) f = Math.min(f, h / (out[4] + out[7]));
+        if (out[5] + out[6] > h) f = Math.min(f, h / (out[5] + out[6]));
+        if (f < 1f) for (int i = 0; i < 8; i++) out[i] *= f;
         return out;
     }
 

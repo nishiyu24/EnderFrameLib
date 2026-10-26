@@ -69,6 +69,7 @@ public class EnderFrameClientInit {
                 OutlineTextRenderer.clear();
                 LoadedFace.releaseIdle(0);
                 WebSdfShader.reload();
+                com.nishiyu.enderframelib.client.renderer.LayerCompositor.reload();
                 ClientTemplateManager.clearCache();
             });
         });
@@ -76,6 +77,9 @@ public class EnderFrameClientInit {
         SystemFonts.warmUpAsync();
         // ch / ex は、測定と描画が使う書体の指標（「0」の送り幅・x ハイト）で決める
         com.nishiyu.enderframelib.core.css.GlyphUnits.install(WebFontManager.McFontResolver.INSTANCE);
+        // 効果のあるフレームが続かなければ、レイヤーの FBO は手放す（効果のある箱があるときだけ確保する）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientTickEvent.Post event) ->
+                com.nishiyu.enderframelib.client.renderer.LayerCompositor.trimIdle());
         NeoForge.EVENT_BUS.addListener((LevelEvent.Unload event) -> {
             if (event.getLevel() != null && event.getLevel().isClientSide()) {
                 MediaElementRenderer.clearEntityPreviewCache();

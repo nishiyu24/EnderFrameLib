@@ -34,6 +34,13 @@ final class BoxDecorationPainter {
         this.fragIds = fragIds;
     }
 
+    /** 影の広がり {@code g} だけ膨らませた角（丸みの無い角は角のまま。§7.1.1）。 */
+    private static Corners grow(Corners c, float g) {
+        int[] h = {growRadius(c.topLeft(), g), growRadius(c.topRight(), g), growRadius(c.bottomRight(), g), growRadius(c.bottomLeft(), g)};
+        int[] v = {growRadius(c.topLeftV(), g), growRadius(c.topRightV(), g), growRadius(c.bottomRightV(), g), growRadius(c.bottomLeftV(), g)};
+        return c.isElliptical() ? Corners.ofEllipses(h, v) : new Corners(h[0], h[1], h[2], h[3]);
+    }
+
     static final String[] BORDER_DIRECTIONS = {"top", "right", "bottom", "left"};
 
     /**
@@ -43,7 +50,7 @@ final class BoxDecorationPainter {
      * 何が壊れていたか: 以前は描画が {@code border-<辺>} の文字列から幅と色を読み直しており、
      * 色を書かない {@code border: 1px solid} の枠が透明になり、線種は読まずに常に実線だった。
      */
-    BorderSpec parseBorderSpec(LayoutBox box, int[] radii, int textColor) {
+    BorderSpec parseBorderSpec(LayoutBox box, int[] radii, Corners corners, int textColor) {
         float[] widths = {box.bT, box.bR, box.bB, box.bL};
         int[] colors = new int[4];
         String[] styles = new String[4];
@@ -58,22 +65,46 @@ final class BoxDecorationPainter {
         float bwTop = widths[0], bwRight = widths[1], bwBottom = widths[2], bwLeft = widths[3];
         int bcTop = colors[0], bcRight = colors[1], bcBottom = colors[2], bcLeft = colors[3];
 
-        boolean isCircle = radii[0] >= (box.w / 2) - 1 && radii[1] >= (box.w / 2) - 1
+        // 4 辺が同じ線種（破線か点線）・太さ・色なら、角の円弧に沿って 1 本の経路として割り付ける（Blink と同じ）。
+        // LIMITATION(制約): 辺ごとに線種・太さ・色が違う角丸の枠線は、線種を読まず実線で描き、角の中で隣り合う辺の色が
+        // 切り替わる境目は斜めの線ではなく辺の太さの内側か外側かで決める。README の "Not supported" に対応。
+        int dashKind = BorderPath.SOLID;
+        boolean anyRadius = radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0;
+        if (anyRadius && bwTop > 0 && bwTop == bwRight && bwRight == bwBottom && bwBottom == bwLeft
+                && bcTop == bcRight && bcRight == bcBottom && bcBottom == bcLeft
+                && styles[0].equals(styles[1]) && styles[1].equals(styles[2]) && styles[2].equals(styles[3])) {
+            dashKind = "dashed".equals(styles[0]) ? BorderPath.DASHED : "dotted".equals(styles[0]) ? BorderPath.DOTTED : BorderPath.SOLID;
+        }
+
+        boolean isCircle = dashKind == BorderPath.SOLID
+                && radii[0] >= (box.w / 2) - 1 && radii[1] >= (box.w / 2) - 1
                 && radii[2] >= (box.w / 2) - 1 && radii[3] >= (box.w / 2) - 1
                 && box.w > 0 && box.h > 0 && Math.abs(box.w - box.h) <= 2;
-        // LIMITATION(制約): 角丸の枠線は線種を読まず実線で描き、角の中で隣り合う辺の色が切り替わる境目は
-        // 斜めの線ではなく辺の太さの内側か外側かで決める。README の "Not supported" に対応。
-        boolean useRoundedBorder = (radii[0] > 0 || radii[1] > 0 || radii[2] > 0 || radii[3] > 0) && hasBorder && !isCircle;
+        boolean useRoundedBorder = anyRadius && hasBorder && !isCircle;
 
-        Corners innerRadii = new Corners(
-                Math.max(0, Math.round(radii[0] - Math.max(bwTop, bwLeft))),
-                Math.max(0, Math.round(radii[1] - Math.max(bwTop, bwRight))),
-                Math.max(0, Math.round(radii[2] - Math.max(bwBottom, bwRight))),
-                Math.max(0, Math.round(radii[3] - Math.max(bwBottom, bwLeft)))
-        );
+        Corners innerRadii;
+        if (corners.isElliptical()) {
+            // 内側の角は外側の半径から、その軸に接する辺の太さを引いた楕円（CSS Backgrounds 3 §5.2）。どちらかが 0 なら直角
+            int[] ih = {Math.round(corners.topLeft() - bwLeft), Math.round(corners.topRight() - bwRight),
+                    Math.round(corners.bottomRight() - bwRight), Math.round(corners.bottomLeft() - bwLeft)};
+            int[] iv = {Math.round(corners.topLeftV() - bwTop), Math.round(corners.topRightV() - bwTop),
+                    Math.round(corners.bottomRightV() - bwBottom), Math.round(corners.bottomLeftV() - bwBottom)};
+            for (int i = 0; i < 4; i++) {
+                ih[i] = Math.max(0, ih[i]);
+                iv[i] = Math.max(0, iv[i]);
+            }
+            innerRadii = Corners.ofEllipses(ih, iv);
+        } else {
+            innerRadii = new Corners(
+                    Math.max(0, Math.round(radii[0] - Math.max(bwTop, bwLeft))),
+                    Math.max(0, Math.round(radii[1] - Math.max(bwTop, bwRight))),
+                    Math.max(0, Math.round(radii[2] - Math.max(bwBottom, bwRight))),
+                    Math.max(0, Math.round(radii[3] - Math.max(bwBottom, bwLeft)))
+            );
+        }
 
         return new BorderSpec(hasBorder, isCircle, useRoundedBorder,
-                bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, styles, innerRadii);
+                bwTop, bwRight, bwBottom, bwLeft, bcTop, bcRight, bcBottom, bcLeft, styles, innerRadii, dashKind);
     }
 
     /**
@@ -88,7 +119,7 @@ final class BoxDecorationPainter {
                                      ClipRect clip, float fontHVal, float ox, float oy, int itemCount, boolean interactive,
                                      ItemProps partsEvents, ItemProps passiveBorderEvents,
                                      int transDur, AnimationSpec colorBgAnim) {
-        BorderSpec border = parseBorderSpec(box, rawRadii, color);
+        BorderSpec border = parseBorderSpec(box, rawRadii, Corners.fromArray(rawRadii), color);
         String[] styles = border.styles();
         int[] colors = {border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft()};
         for (LayoutBox.InlineFragment frag : box.inlineFragments) {
@@ -154,7 +185,7 @@ final class BoxDecorationPainter {
      * （ブラウザは影を枠線ボックスの外だけに描く）。ぼかした影は箱の形を穴として抜く。README の "Not supported" に対応。
      */
     void drawOuterShadows(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.Shadow> shadows,
-                                  int[] radii, ClipRect clip, float fontHVal, float ox, float oy) {
+                                  Corners radii, ClipRect clip, float fontHVal, float ox, float oy) {
         ItemProps events = ItemProps.parent(id);
         int n = 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
@@ -167,13 +198,13 @@ final class BoxDecorationPainter {
                 float grow = s.spread() + reach;
                 float w = box.w + 2 * grow, h = box.h + 2 * grow;
                 if (w <= 0 || h <= 0) continue;
-                Corners r = new Corners(growRadius(radii[0], s.spread()), growRadius(radii[1], s.spread()),
-                        growRadius(radii[2], s.spread()), growRadius(radii[3], s.spread()));
+                Corners r = grow(radii, s.spread());
                 ItemProps blurEvents = events.copy();
                 blurEvents.shadowBlur(s.blur());
                 // 影は箱の外だけに出す（背景が透明・半透明の箱の内側に透けないよう、箱の形を穴として抜く）
                 blurEvents.shadowShape(new RenderHints.ShadowShape(false, box.x, box.y, box.x + box.w, box.y + box.h,
-                        radii[0], radii[1], radii[2], radii[3]));
+                        radii.topLeft(), radii.topRight(), radii.bottomRight(), radii.bottomLeft(),
+                        radii.topLeftV(), radii.topRightV(), radii.bottomRightV(), radii.bottomLeftV()));
                 addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, s.color(), blurEvents,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
@@ -185,8 +216,7 @@ final class BoxDecorationPainter {
                 float w = box.w + 2 * grow, h = box.h + 2 * grow;
                 if (w <= 0 || h <= 0) continue;
                 // 広がりは角の丸みも同じだけ変える（丸みの無い角は角のまま。§7.1.1）
-                Corners r = new Corners(growRadius(radii[0], grow), growRadius(radii[1], grow),
-                        growRadius(radii[2], grow), growRadius(radii[3], grow));
+                Corners r = grow(radii, grow);
                 addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, layer.color(), events,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
@@ -219,12 +249,26 @@ final class BoxDecorationPainter {
                 hx0 = hx1 = px0;
                 hy0 = hy1 = py0;
             }
-            float limit = Math.min(hx1 - hx0, hy1 - hy0) / 2f;
+            float limitX = (hx1 - hx0) / 2f, limitY = (hy1 - hy0) / 2f, limit = Math.min(limitX, limitY);
             ItemProps shadowEvents = events.copy();
             shadowEvents.shadowBlur(Math.max(s.blur(), 0.5f));
-            shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
-                    Math.min(Math.max(0, inner.topLeft() - s.spread()), limit), Math.min(Math.max(0, inner.topRight() - s.spread()), limit),
-                    Math.min(Math.max(0, inner.bottomRight() - s.spread()), limit), Math.min(Math.max(0, inner.bottomLeft() - s.spread()), limit)));
+            if (inner.isElliptical()) {
+                // 楕円の角は軸ごとに、広がりの分だけ縮める。どちらかが 0 になれば直角
+                float[] ih = {inner.topLeft(), inner.topRight(), inner.bottomRight(), inner.bottomLeft()};
+                float[] iv = {inner.topLeftV(), inner.topRightV(), inner.bottomRightV(), inner.bottomLeftV()};
+                float[] hh = new float[4], hv = new float[4];
+                for (int c = 0; c < 4; c++) {
+                    hh[c] = Math.min(Math.max(0, ih[c] - s.spread()), limitX);
+                    hv[c] = Math.min(Math.max(0, iv[c] - s.spread()), limitY);
+                    if (hh[c] <= 0 || hv[c] <= 0) hh[c] = hv[c] = 0;
+                }
+                shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
+                        hh[0], hh[1], hh[2], hh[3], hv[0], hv[1], hv[2], hv[3]));
+            } else {
+                shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
+                        Math.min(Math.max(0, inner.topLeft() - s.spread()), limit), Math.min(Math.max(0, inner.topRight() - s.spread()), limit),
+                        Math.min(Math.max(0, inner.bottomRight() - s.spread()), limit), Math.min(Math.max(0, inner.bottomLeft() - s.spread()), limit)));
+            }
             addElement(elements, id, id + "_shadow_in" + (n++), ElementType.RECT, px0, py0, px1 - px0, py1 - py0, "", 0,
                     s.color(), shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
                     new RenderMeta(padClip, null, null, fontHVal, ox, oy, 1, false));
@@ -299,7 +343,27 @@ final class BoxDecorationPainter {
      */
     void drawBackgroundImages(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
                                       BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
-        List<BoxDecorations.BackgroundLayer> layers = BoxDecorations.layers(box.style);
+        drawImageLayers(elements, box, id, BoxDecorations.layers(box.style), "_bgl", clip, radii, border, events, fontHVal, ox, oy);
+    }
+
+    /**
+     * {@code mask-image} のレイヤー。背景の画像と同じ描き方（位置・大きさ・繰り返し・箱）で、部品の id は
+     * {@code <id>_mask<番号>_<タイル>}。レイヤーの終わりに足し、描画側がマスク用の描画先に描く（{@link LayerSpec#maskFrom}）。
+     * マスクの部品はヒットテストを素通りさせる（子孫のクリックを覆わない）。
+     *
+     * LIMITATION(制約): {@code mask-composite} は {@code add} だけ（複数のレイヤーは重ねる）。{@code mask-border} と
+     * {@code mask-type} は読まない。README の "Not supported" に対応。
+     */
+    void drawMaskLayers(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
+                                BorderSpec border, float fontHVal, float ox, float oy) {
+        ItemProps events = ItemProps.parent(id);
+        events.pointerEventsNone();
+        drawImageLayers(elements, box, id, BoxDecorations.maskLayers(box.style), "_mask", clip, radii, border, events, fontHVal, ox, oy);
+    }
+
+    private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,
+                                 String idInfix, ClipRect clip, Corners radii, BorderSpec border, ItemProps events,
+                                 float fontHVal, float ox, float oy) {
         for (int i = layers.size() - 1; i >= 0; i--) {
             BoxDecorations.BackgroundLayer layer = layers.get(i);
             String url = layer.url();
@@ -317,7 +381,7 @@ final class BoxDecorationPainter {
             int part = 0;
             for (BoxDecorations.Rect t : tiles) {
                 if (url != null) {
-                    addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), url,
+                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), url,
                             0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
                     continue;
                 }
@@ -331,7 +395,7 @@ final class BoxDecorationPainter {
                 for (ShaderGradient segment : shaderGradients) {
                     ItemProps gradientEvents = events.copy();
                     gradientEvents.shaderGradient(segment);
-                    addElement(elements, id, id + "_bgl" + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
+                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
                             0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
                 }
             }
@@ -369,7 +433,7 @@ final class BoxDecorationPainter {
                     meta.clipRect() == null ? null : meta.clipRect().toArray(), regions[i]));
             if (b.useRoundedBorder()) {
                 RoundedBorderSpec spec = new RoundedBorderSpec(widths[0], widths[1], widths[2], widths[3],
-                        colors[0], colors[1], colors[2], colors[3]);
+                        colors[0], colors[1], colors[2], colors[3], b.dashKind());
                 RenderMeta ringMeta = new RenderMeta(clip, meta.borderRadii(), null,
                         meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
                 addElement(elements, id, id + "_b_round_" + i, ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
@@ -394,7 +458,7 @@ final class BoxDecorationPainter {
     void drawRoundedBorder(List<DisplayItem> elements, String id, LayoutBox box, ItemProps events,
                                    BorderSpec b, RenderMeta meta, int transDur) {
         RoundedBorderSpec spec = new RoundedBorderSpec(b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft(),
-                b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft());
+                b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
         RenderMeta ringMeta = new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
                 meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
@@ -457,7 +521,7 @@ final class BoxDecorationPainter {
             boolean hasBorder, boolean isCircle, boolean useRoundedBorder,
             float bwTop, float bwRight, float bwBottom, float bwLeft,
             int bcTop, int bcRight, int bcBottom, int bcLeft,
-            String[] styles, Corners innerRadii
+            String[] styles, Corners innerRadii, int dashKind
     ) {
         int maxThickness() {
             return Math.round(Math.max(Math.max(bwTop, bwRight), Math.max(bwBottom, bwLeft)));

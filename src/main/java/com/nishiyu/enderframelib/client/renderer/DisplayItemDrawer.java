@@ -107,6 +107,26 @@ public class DisplayItemDrawer {
         RenderSystem.disableScissor();
     }
 
+    /**
+     * 描画中に開いているレイヤー。{@code end} は項目の通し番号でレイヤーの外になる位置、{@code maskStart} はマスクの項目の最初
+     * （なければ -1）、{@code opened} は FBO を開けたか。
+     */
+    private static final class LayerFrame {
+        final int end;
+        final int maskStart;
+        final float opacity;
+        final boolean opened;
+        boolean maskBegun;
+        boolean maskActive;
+
+        LayerFrame(int end, int maskStart, float opacity, boolean opened) {
+            this.end = end;
+            this.maskStart = maskStart;
+            this.opacity = opacity;
+            this.opened = opened;
+        }
+    }
+
     /** 祖先の変形を掛け終えた姿勢と、祖先の不透明度の積（1 フレームの間だけ使い回す）。 */
     private record AncestorTransform(Matrix4f pose, Matrix3f normal, float opacity) {}
 
@@ -117,7 +137,7 @@ public class DisplayItemDrawer {
      */
     static AncestorTransform resolveAncestorTransform(PoseStack poseStack, String id, String hoveredId, String sessionId,
                                                               Map<String, DisplayItem> elementMap,
-                                                              Map<String, AncestorTransform> memo) {
+                                                              Map<String, AncestorTransform> memo, boolean layersEnabled) {
         AncestorTransform cached = memo.get(id);
         if (cached != null) return cached;
         DisplayItem el = elementMap.get(id);
@@ -128,14 +148,14 @@ public class DisplayItemDrawer {
             float[] cumulativeOpacity = {1.0f};
             String parentId = el.hints().parentId();
             if (parentId != null) {
-                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo);
+                AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, sessionId, elementMap, memo, layersEnabled);
                 if (parent != null) {
                     poseStack.last().pose().set(parent.pose());
                     poseStack.last().normal().set(parent.normal());
                     cumulativeOpacity[0] = parent.opacity();
                 }
             }
-            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity);
+            applyOwnTransform(poseStack, el, hoveredId, sessionId, cumulativeOpacity, layersEnabled);
             AncestorTransform result = new AncestorTransform(new Matrix4f(poseStack.last().pose()),
                     new Matrix3f(poseStack.last().normal()), cumulativeOpacity[0]);
             memo.put(id, result);
@@ -145,7 +165,8 @@ public class DisplayItemDrawer {
         }
     }
 
-    static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity) {
+    static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity,
+                                  boolean layersEnabled) {
         String baseId = ClientWebManager.getBaseNodeId(el.id());
         boolean isHovered = baseId.equals(hoveredId);
         SessionContext session = ClientWebManager.getSession(sessionId);
@@ -164,10 +185,10 @@ public class DisplayItemDrawer {
         if (anim.sx() != 1.0f || anim.sy() != 1.0f) poseStack.scale(anim.sx(), anim.sy(), 1.0f);
         poseStack.translate(-cx, -cy, 0);
 
-        // LIMITATION(制約): opacity はグループとして合成せず、部品ごとに祖先の不透明度を掛けて描く。
-        // 半透明の箱の中で重なった子孫が互いに透けて見える（ブラウザは中身を 1 枚に描いてから透かす）。
-        // 正しくするには描画先を別のフレームバッファに切り替える必要がある。README の "Not supported" に対応。
-        cumulativeOpacity[0] *= anim.opacity();
+        // 画面の面（GUI・HUD）では、スタッキングコンテキストの箱はレイヤー（別の FBO）に描いてから、自分の不透明度で 1 回だけ合成する
+        // （LayerCompositor）。そのため子孫の連鎖には自分の不透明度を掛けない。レイヤーを使えない面（世界の中・FBO を確保できない）では、
+        // 従来どおり部品ごとに祖先の不透明度を掛ける。このとき重なった子孫が互いに透けて見える。README の "Not supported" に対応。
+        if (!(layersEnabled && el.hints().layer() != null)) cumulativeOpacity[0] *= anim.opacity();
     }
 
     public static void renderElements(PaintRequest pass) {
@@ -222,6 +243,11 @@ public class DisplayItemDrawer {
         Map<String, DisplayItem> elementMap = new HashMap<>(uiElements.size());
         for (DisplayItem el : uiElements) elementMap.put(el.id(), el);
         Map<String, AncestorTransform> ancestorTransforms = new HashMap<>();
+        // レイヤー（FBO）で描くのは画面の面だけ。世界の中の面は描画先を切り替えると世界の深度との前後が取れない
+        boolean layersEnabled = is2DText && !pass.flatLayers() && LayerCompositor.available();
+        Matrix4f passPose = new Matrix4f(poseStack.last().pose());
+        java.util.ArrayDeque<LayerFrame> layerFrames = new java.util.ArrayDeque<>();
+        int skipUntil = -1;
 
         DisplayItem hoveredTooltipEl = null;
         String resolvedTooltipText = null;
@@ -235,7 +261,53 @@ public class DisplayItemDrawer {
         int elementIndex = -1;
         for (DisplayItem el : uiElements) {
             elementIndex++;
+            // 終わったレイヤーを閉じる（深さは直前に描いた項目の深さ）
+            while (!layerFrames.isEmpty() && elementIndex >= layerFrames.peek().end) {
+                LayerFrame done = layerFrames.pop();
+                if (done.opened) LayerCompositor.end(buffer, done.opacity, passPose, maxAllowedX, maxAllowedY, zOffset);
+            }
+            // マスクの項目に入ったら、描画先をマスク用に切り替える（借りられなければ、マスクの項目は描かない）
+            if (!layerFrames.isEmpty()) {
+                LayerFrame inner = layerFrames.peek();
+                if (inner.maskStart >= 0 && elementIndex >= inner.maskStart && !inner.maskBegun) {
+                    inner.maskBegun = true;
+                    inner.maskActive = inner.opened && LayerCompositor.beginMask(buffer);
+                }
+            }
+            if (layersEnabled && el.type() == ElementType.NODE && el.hints().layer() != null && elementIndex >= skipUntil) {
+                LayerSpec spec = el.hints().layer();
+                String anchorBase = ClientWebManager.getBaseNodeId(el.id());
+                boolean anchorHovered = !hoveredId.isEmpty() && anchorBase.equals(hoveredId);
+                boolean anchorActive = session != null && session.isPressedBase(anchorBase);
+                boolean anchorFocused = session != null && (session.isActiveInput(el.id()) || session.isFocusedBase(anchorBase));
+                float groupOpacity = CssAnimator.getValues(animSessionId, el, anchorHovered, anchorActive, anchorFocused).opacity();
+                if (groupOpacity <= 0.003f && spec.blend() == BlendMode.NORMAL && spec.filters().isEmpty()) {
+                    // 見えない箱は中身ごと描かない
+                    skipUntil = elementIndex + spec.span();
+                } else {
+                    boolean wantsLayer = spec.needsLayer(groupOpacity);
+                    AncestorTransform anchor = spec.hasBackdrop() || wantsLayer
+                            ? resolveAncestorTransform(poseStack, el.id(), hoveredId, animSessionId, elementMap, ancestorTransforms, true)
+                            : null;
+                    // backdrop-filter は、箱の後ろの画素を加工して箱の形に貼る。箱自身の描画（と子孫）より前に、直前の深さの少し上で
+                    if (anchor != null && spec.hasBackdrop()) {
+                        LayerCompositor.backdrop(buffer, spec, anchor.pose(), passPose, maxAllowedX, maxAllowedY,
+                                zOffset + effectiveZStep * 0.5f);
+                    }
+                    boolean opened = anchor != null && wantsLayer && LayerCompositor.begin(buffer, spec, anchor.pose());
+                    // マスクの項目は、レイヤーを開けなかったときも描かない（中身の上にそのまま重なってしまう）ので、枠は常に作る
+                    if (opened || spec.masked()) {
+                        layerFrames.push(new LayerFrame(elementIndex + spec.span(),
+                                spec.masked() ? elementIndex + spec.maskFrom() : -1, groupOpacity, opened));
+                    }
+                }
+            }
             if (el.type() == ElementType.NODE) continue;
+            if (elementIndex < skipUntil) continue;
+            if (!layerFrames.isEmpty()) {
+                LayerFrame inner = layerFrames.peek();
+                if (inner.maskStart >= 0 && elementIndex >= inner.maskStart && !inner.maskActive) continue;
+            }
 
             Font font = resolveElementFont(el, defaultFont);
             zOffset = zLevels != null ? zLevels[elementIndex] * effectiveZStep : zOffset + effectiveZStep;
@@ -256,6 +328,7 @@ public class DisplayItemDrawer {
 
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
             float cRTL = 0, cRTR = 0, cRBR = 0, cRBL = 0;
+            float[] clipV = null;
             // LIMITATION(制約): クリップの矩形は要素自身の変形の後の座標で当てる。クリップする祖先と要素の間に
             // transform があると、祖先の矩形ではなく変形した矩形で切られる（回転した子は回転した矩形で切られる）。
             // 祖先の空間で切るにはステンシルが要る。README の "Not supported" に対応。
@@ -265,6 +338,7 @@ public class DisplayItemDrawer {
                 clipMinX = Math.max(clipArr[0], 0); clipMinY = Math.max(clipArr[1], 0);
                 clipMaxX = Math.min(clipArr[2], maxAllowedX); clipMaxY = Math.min(clipArr[3], maxAllowedY);
                 cRTL = clipArr[4]; cRTR = clipArr[5]; cRBR = clipArr[6]; cRBL = clipArr[7];
+                if (clipArr.length >= 12) clipV = new float[]{clipArr[8], clipArr[9], clipArr[10], clipArr[11]};
             }
 
             if (el.x() + el.width() < clipMinX || el.x() > clipMaxX || el.y() + el.height() < clipMinY || el.y() > clipMaxY) {
@@ -272,9 +346,22 @@ public class DisplayItemDrawer {
             }
 
             float rTL = 0, rTR = 0, rBR = 0, rBL = 0;
+            // 楕円の角（横と縦の半径が違う）。SDF で描く背景・枠線・影だけが楕円で、画像など他の描き方は円で近似する
+            float[] ellipseRx = null, ellipseRy = null;
             if (renderRounded) {
                 float limit = Math.min(el.width(), el.height()) / 2.0f;
-                if (meta != null && meta.borderRadii() != null) {
+                if (meta != null && meta.borderRadii() != null && meta.borderRadii().isElliptical()) {
+                    Corners br = meta.borderRadii();
+                    ellipseRx = new float[]{br.topLeft(), br.topRight(), br.bottomRight(), br.bottomLeft()};
+                    ellipseRy = br.toFloatArrayV();
+                    for (int i = 0; i < 4; i++) {
+                        ellipseRx[i] = Math.min(ellipseRx[i], el.width() / 2.0f);
+                        ellipseRy[i] = Math.min(ellipseRy[i], el.height() / 2.0f);
+                        if (ellipseRx[i] <= 0 || ellipseRy[i] <= 0) ellipseRx[i] = ellipseRy[i] = 0;
+                    }
+                    rTL = Math.min(Math.min(ellipseRx[0], ellipseRy[0]), limit); rTR = Math.min(Math.min(ellipseRx[1], ellipseRy[1]), limit);
+                    rBR = Math.min(Math.min(ellipseRx[2], ellipseRy[2]), limit); rBL = Math.min(Math.min(ellipseRx[3], ellipseRy[3]), limit);
+                } else if (meta != null && meta.borderRadii() != null) {
                     Corners br = meta.borderRadii();
                     rTL = Math.min(br.topLeft(), limit); rTR = Math.min(br.topRight(), limit);
                     rBR = Math.min(br.bottomRight(), limit); rBL = Math.min(br.bottomLeft(), limit);
@@ -294,7 +381,7 @@ public class DisplayItemDrawer {
             String clipOwner = meta != null && meta.clipRect() != null ? meta.clipRect().ownerId() : null;
             if (clipOwner != null && basePose != null) {
                 AncestorTransform owner = resolveAncestorTransform(poseStack, clipOwner, hoveredId, animSessionId,
-                        elementMap, ancestorTransforms);
+                        elementMap, ancestorTransforms, layersEnabled);
                 if (owner != null) basePose = new Matrix4f(owner.pose());
             }
 
@@ -304,7 +391,7 @@ public class DisplayItemDrawer {
                 String parentId = el.hints().parentId();
                 if (parentId != null) {
                     AncestorTransform parent = resolveAncestorTransform(poseStack, parentId, hoveredId, animSessionId,
-                            elementMap, ancestorTransforms);
+                            elementMap, ancestorTransforms, layersEnabled);
                     if (parent != null) {
                         poseStack.last().pose().set(parent.pose());
                         poseStack.last().normal().set(parent.normal());
@@ -324,12 +411,14 @@ public class DisplayItemDrawer {
 
                 if (basePose != null) {
                     float[] fixed = clipIntoLocalSpace(basePose, poseStack.last().pose(),
-                            clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                            clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, clipV);
                     if (fixed != null) {
                         clipMinX = fixed[0]; clipMinY = fixed[1]; clipMaxX = fixed[2]; clipMaxY = fixed[3];
                         cRTL = fixed[4]; cRTR = fixed[5]; cRBR = fixed[6]; cRBL = fixed[7];
+                        clipV = fixed.length >= 12 ? new float[]{fixed[8], fixed[9], fixed[10], fixed[11]} : null;
                     }
                 }
+                WebSdfShader.setClipVerticalRadii(clipV);
 
                 float finalOpacity = cumulativeOpacity[0] * anim.opacity();
                 if (finalOpacity <= 0.005f) continue;
@@ -341,14 +430,24 @@ public class DisplayItemDrawer {
                     }
                 }
                 if (el.type() == ElementType.ROUNDED_BORDER) {
-                    renderRoundedBorderElement(el, meta, poseStack, buffer, finalOpacity, zOffset,
-                            rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    WebSdfShader.setEllipseRadii(ellipseRx, ellipseRy);
+                    try {
+                        renderRoundedBorderElement(el, meta, poseStack, buffer, finalOpacity, zOffset,
+                                rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    } finally {
+                        WebSdfShader.setEllipseRadii(null, null);
+                    }
                     continue;
                 }
 
                 if (el.type() != ElementType.RANGE) {
-                    renderElementBackground(el, anim, poseStack, buffer, finalOpacity, zOffset,
-                            rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    WebSdfShader.setEllipseRadii(ellipseRx, ellipseRy);
+                    try {
+                        renderElementBackground(el, anim, poseStack, buffer, finalOpacity, zOffset,
+                                rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                    } finally {
+                        WebSdfShader.setEllipseRadii(null, null);
+                    }
                 }
 
                 ElementType type = el.type();
@@ -393,8 +492,14 @@ public class DisplayItemDrawer {
                             finalOpacity, contentZ, packedLight, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
                 }
             } finally {
+                WebSdfShader.setClipVerticalRadii(null);
                 poseStack.popPose();
             }
+        }
+
+        while (!layerFrames.isEmpty()) {
+            LayerFrame done = layerFrames.pop();
+            if (done.opened) LayerCompositor.end(buffer, done.opacity, passPose, maxAllowedX, maxAllowedY, zOffset);
         }
 
         if (renderText && hoveredTooltipEl != null && resolvedTooltipText != null && !resolvedTooltipText.isEmpty()) {
@@ -487,6 +592,13 @@ public class DisplayItemDrawer {
     static float[] clipIntoLocalSpace(Matrix4f base, Matrix4f eff,
                                               float x0, float y0, float x1, float y1,
                                               float r0, float r1, float r2, float r3) {
+        return clipIntoLocalSpace(base, eff, x0, y0, x1, y1, r0, r1, r2, r3, null);
+    }
+
+    /** 同上。{@code v} はクリップの縦の半径（楕円の角のとき）。平行移動だけなら 12 値（縦の半径が続く）で返す。 */
+    static float[] clipIntoLocalSpace(Matrix4f base, Matrix4f eff,
+                                              float x0, float y0, float x1, float y1,
+                                              float r0, float r1, float r2, float r3, float[] v) {
         Matrix4f toLocal = new Matrix4f(eff).invert().mul(base);
         float a = toLocal.m00(), b = toLocal.m10(), c = toLocal.m01(), d = toLocal.m11();
         float tx = toLocal.m30(), ty = toLocal.m31();
@@ -494,11 +606,12 @@ public class DisplayItemDrawer {
         boolean identityLinear = Math.abs(a - 1) < 1e-4f && Math.abs(d - 1) < 1e-4f && Math.abs(b) < 1e-4f && Math.abs(c) < 1e-4f;
         if (identityLinear) {
             if (Math.abs(tx) < 1e-4f && Math.abs(ty) < 1e-4f) return null;
+            if (v != null) return new float[]{x0 + tx, y0 + ty, x1 + tx, y1 + ty, r0, r1, r2, r3, v[0], v[1], v[2], v[3]};
             return new float[]{x0 + tx, y0 + ty, x1 + tx, y1 + ty, r0, r1, r2, r3};
         }
         float w = x1 - x0, h = y1 - y0;
         float half = Math.min(w, h) / 2.0f;
-        boolean circle = Math.abs(w - h) < 0.5f && half > 0
+        boolean circle = v == null && Math.abs(w - h) < 0.5f && half > 0
                 && r0 >= half - 0.5f && r1 >= half - 0.5f && r2 >= half - 0.5f && r3 >= half - 0.5f;
         float scaleX = (float) Math.sqrt(a * a + c * c), scaleY = (float) Math.sqrt(b * b + d * d);
         if (!circle || Math.abs(scaleX - scaleY) > 1e-3f * Math.max(1f, scaleX)) return null;

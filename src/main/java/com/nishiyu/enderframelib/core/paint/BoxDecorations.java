@@ -78,7 +78,8 @@ public final class BoxDecorations {
                     }
                 }
             }
-            case "dashed" -> dashes(out, horizontal, x, y, w, h, thickness * 3f, thickness * 3f, false);
+            case "dashed" -> dashes(out, horizontal, x, y, w, h, BorderPath.dashLength(BorderPath.DASHED, thickness),
+                    BorderPath.gapLength(BorderPath.DASHED, thickness), false);
             case "dotted" -> dashes(out, horizontal, x, y, w, h, thickness, thickness, thickness >= 2);
             case "inset", "outset" -> {
                 boolean darkSide = (side == Side.TOP || side == Side.LEFT) == "inset".equals(style);
@@ -183,6 +184,40 @@ public final class BoxDecorations {
             out.add(new BackgroundLayer(images.get(i), positions.get(i % positions.size()), sizes.get(i % sizes.size()),
                     repeats.get(i % repeats.size()), origins.get(i % origins.size()), clips.get(i % clips.size())));
         }
+        return out;
+    }
+
+    /**
+     * {@code mask-image} のレイヤーを上から順に返す（先頭が最前面）。背景のレイヤーと同じ並びで、{@code mask-origin} /
+     * {@code mask-clip} の既定は {@code border-box}。{@code no-clip} は {@code border-box} として扱う。
+     */
+    public static List<BackgroundLayer> maskLayers(ComputedStyle style) {
+        List<String> images = list(style.get("mask-image"), "none");
+        List<String> positions = list(style.get("mask-position"), "0% 0%");
+        List<String> sizes = list(style.get("mask-size"), "auto");
+        List<String> repeats = list(style.get("mask-repeat"), "repeat");
+        List<String> origins = list(style.get("mask-origin"), "border-box");
+        List<String> clips = list(style.get("mask-clip"), "border-box");
+        List<BackgroundLayer> out = new ArrayList<>(images.size());
+        for (int i = 0; i < images.size(); i++) {
+            String origin = origins.get(i % origins.size()), clip = clips.get(i % clips.size());
+            out.add(new BackgroundLayer(images.get(i), positions.get(i % positions.size()), sizes.get(i % sizes.size()),
+                    repeats.get(i % repeats.size()), boxKeyword(origin), boxKeyword(clip)));
+        }
+        return out;
+    }
+
+    private static String boxKeyword(String v) {
+        return switch (v.trim().toLowerCase(Locale.ROOT)) {
+            case "padding-box", "content-box" -> v.trim().toLowerCase(Locale.ROOT);
+            default -> "border-box";
+        };
+    }
+
+    /** {@code mask-mode} のリスト（{@code alpha} / {@code luminance} / {@code match-source}）。 */
+    public static List<String> maskModes(ComputedStyle style) {
+        List<String> out = new ArrayList<>();
+        for (String m : list(style.get("mask-mode"), "match-source")) out.add(m.trim().toLowerCase(Locale.ROOT));
         return out;
     }
 
@@ -572,27 +607,54 @@ public final class BoxDecorations {
         maxX = Math.max(minX, maxX);
         maxY = Math.max(minY, maxY);
         float[] cornerX = {minX, maxX, maxX, minX}, cornerY = {minY, minY, maxY, maxY};
-        float[] out = {minX, minY, maxX, maxY, 0, 0, 0, 0};
+        boolean elliptical = outer.length >= 12 || inner.length >= 12;
+        float[] out = new float[elliptical ? 12 : 8];
+        out[0] = minX;
+        out[1] = minY;
+        out[2] = maxX;
+        out[3] = maxY;
         for (int c = 0; c < 4; c++) {
-            out[4 + c] = Math.max(cornerRadius(outer, c, cornerX[c], cornerY[c]), cornerRadius(inner, c, cornerX[c], cornerY[c]));
+            out[4 + c] = Math.max(cornerRadius(outer, c, cornerX[c], cornerY[c], false), cornerRadius(inner, c, cornerX[c], cornerY[c], false));
+            if (elliptical) {
+                out[8 + c] = Math.max(cornerRadius(outer, c, cornerX[c], cornerY[c], true), cornerRadius(inner, c, cornerX[c], cornerY[c], true));
+            }
         }
         return normalizeClip(out);
     }
 
-    private static float cornerRadius(float[] clip, int corner, float x, float y) {
-        float r = clip.length > 4 + corner ? clip[4 + corner] : 0;
+    /**
+     * 矩形の角 {@code corner} に当たる半径。矩形の角から交わりの角までの距離（その軸）の分だけ小さくなる。
+     * {@code vertical} なら縦の半径（楕円の角を持たない矩形は横と同じ）。
+     */
+    private static float cornerRadius(float[] clip, int corner, float x, float y, boolean vertical) {
+        int index = vertical && clip.length >= 12 ? 8 + corner : 4 + corner;
+        float r = clip.length > index ? clip[index] : 0;
         if (r <= 0) return 0;
         float cx = corner == 0 || corner == 3 ? clip[0] : clip[2];
         float cy = corner == 0 || corner == 1 ? clip[1] : clip[3];
-        return Math.max(0, r - Math.max(Math.abs(x - cx), Math.abs(y - cy)));
+        if (clip.length < 12) return Math.max(0, r - Math.max(Math.abs(x - cx), Math.abs(y - cy)));
+        // 楕円の角は軸ごとに縮める（横の半径は横の移動、縦の半径は縦の移動の分）
+        return Math.max(0, r - (vertical ? Math.abs(y - cy) : Math.abs(x - cx)));
     }
 
     /** 逆転した矩形を空に潰し、半径を短い辺の半分までに収める。 */
     private static float[] normalizeClip(float[] c) {
         if (c[2] < c[0]) c[2] = c[0];
         if (c[3] < c[1]) c[3] = c[1];
-        float limit = Math.min(c[2] - c[0], c[3] - c[1]) / 2f;
-        for (int i = 4; i < c.length; i++) c[i] = Math.clamp(c[i], 0, Math.max(0, limit));
-        return c;
+        float halfW = Math.max(0, (c[2] - c[0]) / 2f), halfH = Math.max(0, (c[3] - c[1]) / 2f);
+        if (c.length < 12) {
+            float limit = Math.min(halfW, halfH);
+            for (int i = 4; i < c.length; i++) c[i] = Math.clamp(c[i], 0, limit);
+            return c;
+        }
+        // 楕円の角: 横は幅の半分、縦は高さの半分まで。どちらかが 0 の角は直角
+        boolean elliptical = false;
+        for (int i = 0; i < 4; i++) {
+            c[4 + i] = Math.clamp(c[4 + i], 0, halfW);
+            c[8 + i] = Math.clamp(c[8 + i], 0, halfH);
+            if (c[4 + i] <= 0 || c[8 + i] <= 0) c[4 + i] = c[8 + i] = 0;
+            if (c[4 + i] != c[8 + i]) elliptical = true;
+        }
+        return elliptical ? c : java.util.Arrays.copyOf(c, 8);
     }
 }

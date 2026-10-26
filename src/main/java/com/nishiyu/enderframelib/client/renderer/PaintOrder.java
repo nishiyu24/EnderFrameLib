@@ -23,6 +23,7 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
+import java.util.function.Predicate;
 import static com.nishiyu.enderframelib.client.renderer.PaintSupport.addElement;
 import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isAtomicInline;
 import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isFlexOrGridItem;
@@ -51,13 +52,19 @@ final class PaintOrder {
      * 絶対配置の箱は木の親ではなく包含ブロックの値を引く。
      */
     private final Map<LayoutBox, float[]> contentClips = new IdentityHashMap<>();
+    /** その箱の {@code animation} が {@code opacity} を動かすか（静的な値は 1 でも、動く間はグループとして合成する）。 */
+    private final Predicate<LayoutBox> animatesOpacity;
+    /** 子孫に {@code mix-blend-mode} を持つ箱がある（スタッキングコンテキストを越えない範囲で）か。 */
+    private final Map<LayoutBox, Boolean> blendDescendants = new IdentityHashMap<>();
 
-    PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter) {
+    PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter,
+               Predicate<LayoutBox> animatesOpacity) {
         this.rootW = rootW;
         this.rootH = rootH;
         this.scrollState = scrollState;
         this.fragIds = fragIds;
         this.painter = painter;
+        this.animatesOpacity = animatesOpacity;
     }
 
     /**
@@ -109,6 +116,7 @@ final class PaintOrder {
     List<RenderTask> paintTasks(LayoutBox root) {
         fragIds.set(0);
         contentClips.clear();
+        blendDescendants.clear();
         PaintNode top;
         if ("root".equals(root.node.tag)) {
             top = new PaintNode(null, true, 0);
@@ -172,7 +180,7 @@ final class PaintOrder {
         RenderTask self = selfTask(box, clip, parentId);
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
-            PaintNode node = new PaintNode(self, true, z);
+            PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
             (z < 0 ? sc.negative : z > 0 ? sc.positive : sc.positioned).add(node);
             collectChildren(box, clip, parentId, node.layers, node.layers);
         } else if (isPositioned(box)) {
@@ -197,9 +205,14 @@ final class PaintOrder {
 
     /** 付録 E の層の順に平らにする。z-index の並べ替えは安定（同じ値なら木の順）。 */
     static void emit(PaintNode node, List<RenderTask> out) {
+        // レイヤーに描く箱は、錨から子孫の最後までを開始と終了の印で挟む（スタッキングコンテキストの木は連続している）
+        if (node.layerSpec != null) out.add(RenderTask.layerStart(node.layerSpec, node.layerBox));
         if (node.self != null) out.add(node.self);
         PaintLayers l = node.layers;
-        if (l == null) return;
+        if (l == null) {
+            if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
+            return;
+        }
         if (node.stackingContext) {
             l.negative.sort(Comparator.comparingInt(PaintNode::z));
             for (PaintNode n : l.negative) emit(n, out);
@@ -213,6 +226,7 @@ final class PaintOrder {
             for (PaintNode n : l.positive) emit(n, out);
         }
         out.addAll(l.after);
+        if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
     }
 
     RenderTask selfTask(LayoutBox box, float[] clip, String parentId) {
@@ -233,16 +247,96 @@ final class PaintOrder {
      * スタッキングコンテキストを作るか（CSS 2.2 §9.9.1 と CSS Positioned Layout 3 / Color 4 /
      * Compositing 1 / Transforms 1 の追加分）。
      */
-    static boolean createsStackingContext(LayoutBox box) {
+    boolean createsStackingContext(LayoutBox box) {
         boolean zAuto = isZIndexAuto(box);
         if (isPositioned(box) && !zAuto) return true;
         if (box.isFixed || box.isSticky) return true;
         if (!zAuto && isFlexOrGridItem(box)) return true;
         if (box.style.number(CssProperty.OPACITY, 1f) < 1f) return true;
+        // opacity を動かすアニメーションは、静的な値が 1 でも動いている間スタッキングコンテキストを作る（CSS Positioned Layout 3 §2）
+        if (animatesOpacity.test(box)) return true;
         if (!isNone(box.style.get(CssProperty.TRANSFORM))) return true;
         if (!isNone(box.style.get("filter"))) return true;
+        // clip-path・mask・backdrop-filter もスタッキングコンテキストを作る（CSS Masking 1 §3 / §6、Filter Effects 2 §2）
+        if (!isNone(box.style.get("clip-path")) || !isNone(box.style.get("backdrop-filter")) || hasMask(box)) return true;
         if (box.style.keywordOf("isolation", CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE) return true;
         return !"normal".equals(box.style.keyword("mix-blend-mode", "normal"));
+    }
+
+    /**
+     * スタッキングコンテキストの箱をレイヤーに描いて合成する指定。グループの不透明度・{@code filter}・{@code mix-blend-mode}、
+     * 子孫の混合を閉じ込める必要があるとき（{@code isolation: isolate} か、{@code mix-blend-mode} の子孫を含む）に作る。
+     * どれも無ければ null（直に描く）。{@code span} は {@link DisplayListBuilder} が項目を出し終えてから埋める。
+     */
+    LayerSpec layerSpecFor(LayoutBox box) {
+        float opacity = box.style.number(CssProperty.OPACITY, 1f);
+        boolean opacityMoves = animatesOpacity.test(box);
+        List<FilterOp> filters = FilterOp.parse(box.style.get("filter"), new FilterOp.Context(rootW, rootH,
+                box.style.fontSizePx(), box.style.rootFontSizePx(), box.style.color(CssProperty.COLOR, 0xFF000000)));
+        BlendMode blend = BlendMode.fromCss(box.style.keyword("mix-blend-mode", "normal"));
+        boolean isolate = hasBlendDescendant(box);
+
+        float fontPx = box.style.fontSizePx(), rootFontPx = box.style.rootFontSizePx();
+        float[] border = {box.x, box.y, box.w, box.h};
+        float[] padding = {box.x + box.bL, box.y + box.bT, Math.max(0, box.w - box.bL - box.bR), Math.max(0, box.h - box.bT - box.bB)};
+        float[] content = {padding[0] + box.pL, padding[1] + box.pT, Math.max(0, padding[2] - box.pL - box.pR), Math.max(0, padding[3] - box.pT - box.pB)};
+        ClipShape clip = ClipShape.parse(box.style.get("clip-path"),
+                ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
+
+        boolean masked = hasMask(box);
+        boolean luminance = masked && !BoxDecorations.maskModes(box.style).isEmpty()
+                && "luminance".equals(BoxDecorations.maskModes(box.style).getFirst());
+
+        List<FilterOp> backdrop = FilterOp.parse(box.style.get("backdrop-filter"), new FilterOp.Context(rootW, rootH, fontPx, rootFontPx,
+                box.style.color(CssProperty.COLOR, 0xFF000000)));
+        ClipShape backdropShape = null;
+        if (!backdrop.isEmpty()) {
+            float[] r = LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH);
+            float[] d = new float[12];
+            d[0] = box.x;
+            d[1] = box.y;
+            d[2] = box.x + box.w;
+            d[3] = box.y + box.h;
+            System.arraycopy(r, 0, d, 4, 8);
+            backdropShape = new ClipShape(ClipShape.Kind.INSET, d, false);
+        }
+
+        if (opacity >= 1f && !opacityMoves && filters.isEmpty() && blend == BlendMode.NORMAL && !isolate
+                && clip == null && !masked && backdrop.isEmpty()) {
+            return null;
+        }
+        return new LayerSpec(0, opacity, filters, blend, isolate, clip, masked ? LayerSpec.WANTS_MASK : -1, luminance, backdrop, backdropShape);
+    }
+
+    /** {@code mask-image} に画像かグラデーションのレイヤーがあるか。 */
+    static boolean hasMask(LayoutBox box) {
+        for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayers(box.style)) {
+            if (layer.url() != null || layer.isGradient()) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 子孫に {@code mix-blend-mode} を持つ箱があるか。混合は自分を含む最も近いスタッキングコンテキストの中で起こるので、
+     * 途中にスタッキングコンテキストを作る子孫があれば、その箱自身の混合までを数え、中は数えない（その箱が閉じ込める）。
+     */
+    private boolean hasBlendDescendant(LayoutBox box) {
+        Boolean cached = blendDescendants.get(box);
+        if (cached != null) return cached;
+        boolean found = false;
+        for (LayoutBox child : box.children) {
+            if (child.display.isNone()) continue;
+            if (!"normal".equals(child.style.keyword("mix-blend-mode", "normal"))) {
+                found = true;
+                break;
+            }
+            if (!createsStackingContext(child) && hasBlendDescendant(child)) {
+                found = true;
+                break;
+            }
+        }
+        blendDescendants.put(box, found);
+        return found;
     }
 
     static boolean isNone(String value) {
@@ -260,10 +354,21 @@ final class PaintOrder {
         final List<RenderTask> after = new ArrayList<>();     // スクロールバー（中身より上）
     }
 
-    /** {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。 */
-    record PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers) {
+    /**
+     * {@code layers} が null なら箱自身だけ（中身は今の層に流れている）。{@code layerSpec} があれば、この箱は
+     * レイヤーに描いて合成する（スタッキングコンテキストだけが持つ）。
+     */
+    record PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers, LayerSpec layerSpec, LayoutBox layerBox) {
+        PaintNode(RenderTask self, boolean stackingContext, int z, PaintLayers layers) {
+            this(self, stackingContext, z, layers, null, null);
+        }
+
         PaintNode(RenderTask self, boolean stackingContext, int z) {
-            this(self, stackingContext, z, new PaintLayers());
+            this(self, stackingContext, z, new PaintLayers(), null, null);
+        }
+
+        static PaintNode context(RenderTask self, int z, LayerSpec layerSpec, LayoutBox layerBox) {
+            return new PaintNode(self, true, z, new PaintLayers(), layerSpec, layerBox);
         }
     }
 
@@ -298,11 +403,23 @@ final class PaintOrder {
         // 内側の角は外側の半径から隣り合う辺の太さを引いたもの（角丸は両軸を切るときだけ）
         float[] own = {minX, minY, maxX, maxY, 0, 0, 0, 0};
         if (clipX && clipY) {
-            float[] r = LengthResolver.cornerRadii(box.style, box.w, box.h, rootW, rootH);
-            own[4] = r[0] - Math.max(box.bT, box.bL);
-            own[5] = r[1] - Math.max(box.bT, box.bR);
-            own[6] = r[2] - Math.max(box.bB, box.bR);
-            own[7] = r[3] - Math.max(box.bB, box.bL);
+            float[] r = LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH);
+            boolean elliptical = false;
+            for (int i = 0; i < 4; i++) elliptical |= Math.round(r[i]) != Math.round(r[4 + i]);
+            if (!elliptical) {
+                own[4] = Math.min(r[0], r[4]) - Math.max(box.bT, box.bL);
+                own[5] = Math.min(r[1], r[5]) - Math.max(box.bT, box.bR);
+                own[6] = Math.min(r[2], r[6]) - Math.max(box.bB, box.bR);
+                own[7] = Math.min(r[3], r[7]) - Math.max(box.bB, box.bL);
+            } else {
+                // 楕円の角は、内側の角を軸ごとに縮める（横は左右の枠線、縦は上下の枠線の太さ）
+                own = java.util.Arrays.copyOf(own, 12);
+                float[] bx = {box.bL, box.bR, box.bR, box.bL}, by = {box.bT, box.bT, box.bB, box.bB};
+                for (int i = 0; i < 4; i++) {
+                    own[4 + i] = Math.max(0, r[i] - bx[i]);
+                    own[8 + i] = Math.max(0, r[4 + i] - by[i]);
+                }
+            }
         }
         return BoxDecorations.intersectClip(parentClip, own);
     }
@@ -365,6 +482,20 @@ final class PaintOrder {
         }
     }
 
-    /** {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。 */
-    record RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction) {}
+    /**
+     * {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。{@code layerStart} はレイヤーの開始の印
+     * （次に出る錨から {@link #LAYER_END} までがレイヤーの中身）、{@code layerEnd} は終了の印。印は項目を出さない。
+     */
+    record RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, LayerSpec layerStart, boolean layerEnd, LayoutBox layerBox) {
+        static final RenderTask LAYER_END = new RenderTask(null, elements -> {}, null, true, null);
+
+        RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction) {
+            this(box, drawAction, null, false, null);
+        }
+
+        /** {@code layerBox} は、レイヤーの終わりにマスクの項目を足すときの持ち主の箱。 */
+        static RenderTask layerStart(LayerSpec spec, LayoutBox layerBox) {
+            return new RenderTask(null, elements -> {}, spec, false, layerBox);
+        }
+    }
 }

@@ -81,7 +81,9 @@ public final class PropertyRegistry {
             "place-content", "place-items", "place-self", "container",
             "font", "list-style", "outline", "background",
             "border", "border-color", "border-width", "border-style",
-            "border-top", "border-right", "border-bottom", "border-left", "border-radius"
+            "border-top", "border-right", "border-bottom", "border-left", "border-radius",
+            "mask", "-webkit-mask", "-webkit-mask-image", "-webkit-mask-position", "-webkit-mask-size", "-webkit-mask-repeat",
+            "-webkit-mask-origin", "-webkit-mask-clip", "-webkit-clip-path", "-webkit-backdrop-filter"
     );
 
     private static final String[] SIDES = {"top", "right", "bottom", "left"};
@@ -273,6 +275,30 @@ public final class PropertyRegistry {
         paint("filter", "none", false, ValueType.LIST, true);
         paint("mix-blend-mode", "normal", false, ValueType.KEYWORD, false);
         keyword("isolation", CssKeywords.Isolation.class, CssKeywords.Isolation.AUTO, false, Invalidation.PAINT);
+        // クリップ・マスク・背景のフィルター。どれもスタッキングコンテキストを作り、レイヤーに描いて合成する（LayerCompositor）
+        paint("clip-path", "none", false, ValueType.OTHER, false);
+        paint("backdrop-filter", "none", false, ValueType.LIST, true);
+        paint("mask-image", "none", false, ValueType.LIST, false);
+        paint("mask-position", "0% 0%", false, ValueType.LIST, false);
+        paint("mask-size", "auto", false, ValueType.LIST, false);
+        paint("mask-repeat", "repeat", false, ValueType.LIST, false);
+        paint("mask-origin", "border-box", false, ValueType.LIST, false);
+        paint("mask-clip", "border-box", false, ValueType.LIST, false);
+        paint("mask-mode", "match-source", false, ValueType.LIST, false);
+        paint("mask-composite", "add", false, ValueType.LIST, false);
+        shorthand("mask", Invalidation.PAINT, ShorthandExpanders::mask,
+                "mask-image", "mask-position", "mask-size", "mask-repeat", "mask-origin", "mask-clip");
+        // -webkit- 付きは別名（広く使われている）
+        shorthand("-webkit-clip-path", Invalidation.PAINT, v -> Map.of("clip-path", v), "clip-path");
+        shorthand("-webkit-backdrop-filter", Invalidation.PAINT, v -> Map.of("backdrop-filter", v), "backdrop-filter");
+        shorthand("-webkit-mask", Invalidation.PAINT, ShorthandExpanders::mask,
+                "mask-image", "mask-position", "mask-size", "mask-repeat", "mask-origin", "mask-clip");
+        shorthand("-webkit-mask-image", Invalidation.PAINT, v -> Map.of("mask-image", v), "mask-image");
+        shorthand("-webkit-mask-position", Invalidation.PAINT, v -> Map.of("mask-position", v), "mask-position");
+        shorthand("-webkit-mask-size", Invalidation.PAINT, v -> Map.of("mask-size", v), "mask-size");
+        shorthand("-webkit-mask-repeat", Invalidation.PAINT, v -> Map.of("mask-repeat", v), "mask-repeat");
+        shorthand("-webkit-mask-origin", Invalidation.PAINT, v -> Map.of("mask-origin", v), "mask-origin");
+        shorthand("-webkit-mask-clip", Invalidation.PAINT, v -> Map.of("mask-clip", v), "mask-clip");
         paint("cursor", "auto", true, ValueType.OTHER, false);
         keyword("pointer-events", CssKeywords.PointerEvents.class, CssKeywords.PointerEvents.AUTO, true, Invalidation.PAINT);
         paint("user-select", "auto", false, ValueType.KEYWORD, false);

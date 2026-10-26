@@ -155,6 +155,9 @@ public class DisplayListGoldenTest {
                 if (meta.hasBorderRadii()) {
                     Corners cr = meta.borderRadii();
                     sb.append(String.format(Locale.ROOT, " radii=[%d,%d,%d,%d]", cr.topLeft(), cr.topRight(), cr.bottomRight(), cr.bottomLeft()));
+                    if (cr.isElliptical()) {
+                        sb.append(String.format(Locale.ROOT, " radiiV=[%d,%d,%d,%d]", cr.topLeftV(), cr.topRightV(), cr.bottomRightV(), cr.bottomLeftV()));
+                    }
                 }
                 if (meta.hints().shaderGradient() != null) {
                     var g = meta.hints().shaderGradient();
@@ -166,10 +169,16 @@ public class DisplayListGoldenTest {
                     sb.append(String.format(Locale.ROOT, " roundedBorder=[w=%.1f,%.1f,%.1f,%.1f,c=#%08X,#%08X,#%08X,#%08X]",
                             rb.widthTop(), rb.widthRight(), rb.widthBottom(), rb.widthLeft(),
                             rb.colorTop(), rb.colorRight(), rb.colorBottom(), rb.colorLeft()));
+                    if (rb.dashKind() != 0) sb.append(" dash=").append(rb.dashKind() == 1 ? "dashed" : "dotted");
                 }
             }
             if (e.hints().pointerEventsNone()) {
                 sb.append(" pointer-events=none");
+            }
+            if (e.hints().layer() != null) {
+                LayerSpec layer = e.hints().layer();
+                sb.append(String.format(Locale.ROOT, " layer=[span=%d,opacity=%.2f,filters=%d,blend=%s%s]", layer.span(), layer.opacity(),
+                        layer.filters().size(), layer.blend().cssName(), layer.isolate() ? ",isolate" : ""));
             }
             sb.append('\n');
         }

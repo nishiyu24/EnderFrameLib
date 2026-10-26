@@ -63,6 +63,20 @@ public final class RoundedRectRasterizer {
             float cRTL, float cRTR, float cRBR, float cRBL,
             boolean useSdfShader
     ) {
+        drawRoundedBorder(builder, matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL, widths, colors, opacity, zOffset,
+                cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL, useSdfShader, null);
+    }
+
+    /** 同上。{@code dash}（{@link WebSdfShader#drawSdfBorder} の破線の記述）があれば、4 辺が同じ色の輪を破線・点線で描く。 */
+    public static void drawRoundedBorder(
+            VertexConsumer builder, Matrix4f matrix,
+            float minX, float minY, float maxX, float maxY,
+            float rTL, float rTR, float rBR, float rBL,
+            float[] widths, int[] colors, float opacity, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL,
+            boolean useSdfShader, float[] dash
+    ) {
         // 4 辺が同じ色なら、シェーダーで輪として 1 枚に描く（アンチエイリアスがかかる）。辺ごとに色が違うときだけ、下の帯で描く
         if (useSdfShader) {
             Integer single = null;
@@ -80,7 +94,7 @@ public final class RoundedRectRasterizer {
                 if (WebSdfShader.drawSdfBorder(matrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL,
                         widths[0], widths[1], widths[2], widths[3],
                         ((c >>> 16) & 0xFF) / 255.0f, ((c >>> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f, a, zOffset,
-                        cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL)) {
+                        cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL, dash)) {
                     return;
                 }
             }

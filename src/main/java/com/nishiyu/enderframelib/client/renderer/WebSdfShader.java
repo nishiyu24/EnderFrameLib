@@ -50,7 +50,10 @@ public class WebSdfShader {
             in vec2 GradRepeat; // グラデーションの繰り返し (畳み始めの位置, 周期)。周期 0 なら繰り返さない
             in vec4 GradA;      // グラデーション。w = 種類（0 なし、1 線形、2 放射）+ 10 * 範囲の印。線形は (dx, dy, offset)、放射は (cx, cy, 1/rx)
             in vec4 GradB;      // 放射の (1/ry, p0, 1/(p1-p0))
-            in vec4 Color2;     // グラデーションの終わりの色（始まりの色は Color）
+            in vec4 Color2;     // グラデーションの終わりの色（始まりの色は Color）。影では穴の縦の半径
+            in vec4 RadiiV;     // 縦の半径 (rTL, rTR, rBR, rBL)。全部 0 なら円の角（縦は Radii と同じ）
+            in vec4 ClipRadiiV; // クリップの縦の半径。全部 0 なら円の角
+            in vec4 BorderDash; // 枠線の破線 (種類 0 実線・1 破線・2 点線, 周期の数, 線の長さ（点は直径）, 丸い点なら 1)
 
             uniform mat4 ModelViewMat;
             uniform mat4 ProjMat;
@@ -68,6 +71,9 @@ public class WebSdfShader {
             flat out vec4 vGradA;
             flat out vec4 vGradB;
             flat out vec4 vColor2;
+            flat out vec4 vRadiiV;
+            flat out vec4 vClipRadiiV;
+            flat out vec4 vBorderDash;
 
             void main() {
                 vLocalPos = Position.xy;
@@ -82,6 +88,9 @@ public class WebSdfShader {
                 vGradA = GradA;
                 vGradB = GradB;
                 vColor2 = Color2;
+                vRadiiV = RadiiV;
+                vClipRadiiV = ClipRadiiV;
+                vBorderDash = BorderDash;
                 gl_Position = ProjMat * ModelViewMat * uPoseMat * vec4(Position, 1.0);
             }
             """;
@@ -100,6 +109,9 @@ public class WebSdfShader {
             flat in vec4 vGradA;
             flat in vec4 vGradB;
             flat in vec4 vColor2;
+            flat in vec4 vRadiiV;
+            flat in vec4 vClipRadiiV;
+            flat in vec4 vBorderDash;
 
             uniform vec4 uSegment;   // 線分の両端 (ax, ay, bx, by)。uSegWidth > 0 のときだけ使う
             uniform float uSegWidth; // 線分の太さ。0 なら角丸矩形
@@ -124,26 +136,122 @@ public class WebSdfShader {
                 return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rad;
             }
 
+            // 楕円の角を持つ角丸矩形までの符号付き距離。rx / ry は (左上, 右上, 右下, 左下) の横と縦の半径。
+            // 角の領域は楕円の勾配で正規化した距離の近似（円なら厳密）、辺の領域は辺までの距離。どちらかが 0 の角は直角
+            float sdEllipseBox(vec2 p, vec2 b, vec4 rx, vec4 ry) {
+                vec2 sx = (p.x > 0.0) ? vec2(rx.y, rx.z) : vec2(rx.x, rx.w);
+                vec2 sy = (p.x > 0.0) ? vec2(ry.y, ry.z) : vec2(ry.x, ry.w);
+                vec2 rr = min(vec2((p.y > 0.0) ? sx.y : sx.x, (p.y > 0.0) ? sy.y : sy.x), b);
+                if (rr.x <= 0.0 || rr.y <= 0.0) {
+                    vec2 e = abs(p) - b;
+                    return length(max(e, 0.0)) + min(max(e.x, e.y), 0.0);
+                }
+                vec2 q = abs(p) - b + rr;
+                if (q.x > 0.0 && q.y > 0.0) {
+                    float k0 = length(q / rr);
+                    float k1 = length(q / (rr * rr));
+                    return k0 * (k0 - 1.0) / max(k1, 1e-6);
+                }
+                return max(q.x - rr.x, q.y - rr.y);
+            }
+
+            // 楕円の 4 分の 1 の弧長（Ramanujan の近似）。BorderPath.quarterArc と同じ
+            float quarterArc(float rx, float ry) {
+                if (rx <= 0.0 || ry <= 0.0) return 0.0;
+                return 0.7853982 * (3.0 * (rx + ry) - sqrt((3.0 * rx + ry) * (rx + 3.0 * ry)));
+            }
+
+            // 角丸矩形の中心線の全長。BorderPath.length と同じ
+            float pathLength(vec2 b, vec4 rx, vec4 ry) {
+                return (2.0 * b.x - rx.x - rx.y) + (2.0 * b.y - ry.y - ry.z) + (2.0 * b.x - rx.z - rx.w) + (2.0 * b.y - ry.w - ry.x)
+                        + quarterArc(rx.x, ry.x) + quarterArc(rx.y, ry.y) + quarterArc(rx.z, ry.z) + quarterArc(rx.w, ry.w);
+            }
+
+            // 点 p に最も近い中心線の位置（上辺の左の角の終わりが 0、時計回り）。BorderPath.param と同じ
+            float pathParam(vec2 p, vec2 b, vec4 rx, vec4 ry) {
+                float lt = 2.0 * b.x - rx.x - rx.y;
+                float lr = 2.0 * b.y - ry.y - ry.z;
+                float lb = 2.0 * b.x - rx.z - rx.w;
+                float ll = 2.0 * b.y - ry.w - ry.x;
+                float sR = lt + quarterArc(rx.y, ry.y);
+                float sBR = sR + lr;
+                float sB = sBR + quarterArc(rx.z, ry.z);
+                float sBL = sB + lb;
+                float sL = sBL + quarterArc(rx.w, ry.w);
+                float sTL = sL + ll;
+                const float K = 0.63661977; // 2 / pi
+                if (p.y < 0.0) {
+                    if (p.x >= 0.0) {
+                        vec2 c = vec2(b.x - rx.y, -(b.y - ry.y));
+                        if (p.x > c.x && p.y < c.y) return lt + atan((p.x - c.x) / max(rx.y, 1e-4), (c.y - p.y) / max(ry.y, 1e-4)) * K * quarterArc(rx.y, ry.y);
+                        if (p.x <= c.x) return p.x + b.x - rx.x;
+                        return sR + (p.y + b.y - ry.y);
+                    }
+                    vec2 c = vec2(-(b.x - rx.x), -(b.y - ry.x));
+                    if (p.x < c.x && p.y < c.y) return sTL + atan((c.y - p.y) / max(ry.x, 1e-4), (c.x - p.x) / max(rx.x, 1e-4)) * K * quarterArc(rx.x, ry.x);
+                    if (p.x >= c.x) return p.x + b.x - rx.x;
+                    return sL + (b.y - ry.w - p.y);
+                }
+                if (p.x >= 0.0) {
+                    vec2 c = vec2(b.x - rx.z, b.y - ry.z);
+                    if (p.x > c.x && p.y > c.y) return sBR + atan((p.y - c.y) / max(ry.z, 1e-4), (p.x - c.x) / max(rx.z, 1e-4)) * K * quarterArc(rx.z, ry.z);
+                    if (p.y <= c.y) return sR + (p.y + b.y - ry.y);
+                    return sB + (b.x - rx.z - p.x);
+                }
+                vec2 c = vec2(-(b.x - rx.w), b.y - ry.w);
+                if (p.x < c.x && p.y > c.y) return sBL + atan((c.x - p.x) / max(rx.w, 1e-4), (p.y - c.y) / max(ry.w, 1e-4)) * K * quarterArc(rx.w, ry.w);
+                if (p.x >= c.x) return sB + (b.x - rx.z - p.x);
+                return sL + (b.y - ry.w - p.y);
+            }
+
             void main() {
                 vec2 center = (vRect.xy + vRect.zw) * 0.5;
                 vec2 halfSize = max(vec2(0.001), (vRect.zw - vRect.xy) * 0.5);
-                float distBox = uSegWidth > 0.0
+                bool ell = any(notEqual(vRadiiV, vec4(0.0)));
+                bool clipEll = any(notEqual(vClipRadiiV, vec4(0.0)));
+                float distOuter = uSegWidth > 0.0
                         ? sdOrientedBox(vLocalPos, uSegment.xy, uSegment.zw, uSegWidth)
-                        : sdRoundBox(vLocalPos - center, halfSize, vRadii);
+                        : (ell ? sdEllipseBox(vLocalPos - center, halfSize, vRadii, vRadiiV) : sdRoundBox(vLocalPos - center, halfSize, vRadii));
+                float distBox = distOuter;
 
                 if (vBorder.x + vBorder.y + vBorder.z + vBorder.w > 0.0) {
                     // 枠線: 外側の角丸矩形から、太さの分だけ縮めた内側の角丸矩形を引いた輪
                     vec2 innerHalf = max(vec2(0.001), halfSize - vec2(vBorder.w + vBorder.y, vBorder.x + vBorder.z) * 0.5);
                     vec2 innerCenter = center + vec2(vBorder.w - vBorder.y, vBorder.x - vBorder.z) * 0.5;
-                    vec4 innerRadii = max(vRadii - vec4(max(vBorder.w, vBorder.x), max(vBorder.y, vBorder.x),
-                            max(vBorder.y, vBorder.z), max(vBorder.w, vBorder.z)), 0.0);
-                    float distInner = sdRoundBox(vLocalPos - innerCenter, innerHalf, innerRadii);
+                    float distInner;
+                    if (ell) {
+                        // 楕円の角: 内側は外側の半径から、その軸に接する辺の太さを引く（どちらかが 0 になれば直角）
+                        vec4 innerRx = max(vRadii - vec4(vBorder.w, vBorder.y, vBorder.y, vBorder.w), 0.0);
+                        vec4 innerRy = max(vRadiiV - vec4(vBorder.x, vBorder.x, vBorder.z, vBorder.z), 0.0);
+                        distInner = sdEllipseBox(vLocalPos - innerCenter, innerHalf, innerRx, innerRy);
+                    } else {
+                        vec4 innerRadii = max(vRadii - vec4(max(vBorder.w, vBorder.x), max(vBorder.y, vBorder.x),
+                                max(vBorder.y, vBorder.z), max(vBorder.w, vBorder.z)), 0.0);
+                        distInner = sdRoundBox(vLocalPos - innerCenter, innerHalf, innerRadii);
+                    }
                     distBox = max(distBox, -distInner);
+                    if (vBorderDash.x > 0.5) {
+                        // 破線・点線: 中心線に沿った位置を周期に畳み、周期の中央の線（点）だけを残す。4 辺が同じ太さのときだけ
+                        float w = vBorder.x;
+                        vec2 bC = max(halfSize - vec2(0.5 * w), vec2(0.001));
+                        vec4 rxC = min(max(vRadii - 0.5 * w, 0.0), vec4(bC.x));
+                        vec4 ryC = min(max((ell ? vRadiiV : vRadii) - 0.5 * w, 0.0), vec4(bC.y));
+                        vec4 round = vec4(rxC.x > 0.0 && ryC.x > 0.0 ? 1.0 : 0.0, rxC.y > 0.0 && ryC.y > 0.0 ? 1.0 : 0.0,
+                                rxC.z > 0.0 && ryC.z > 0.0 ? 1.0 : 0.0, rxC.w > 0.0 && ryC.w > 0.0 ? 1.0 : 0.0);
+                        rxC *= round;
+                        ryC *= round;
+                        float period = pathLength(bC, rxC, ryC) / vBorderDash.y;
+                        float ds = mod(pathParam(vLocalPos - center, bC, rxC, ryC), period) - 0.5 * period;
+                        float across = distOuter + 0.5 * w;
+                        float dd = vBorderDash.w > 0.5 ? length(vec2(ds, across)) - 0.5 * vBorderDash.z : abs(ds) - 0.5 * vBorderDash.z;
+                        distBox = max(distBox, dd);
+                    }
                 }
 
                 vec2 clipCenter = (vClipRect.xy + vClipRect.zw) * 0.5;
                 vec2 clipHalf = max(vec2(0.001), (vClipRect.zw - vClipRect.xy) * 0.5);
-                float distClip = sdRoundBox(vLocalPos - clipCenter, clipHalf, vClipRadii);
+                float distClip = clipEll ? sdEllipseBox(vLocalPos - clipCenter, clipHalf, vClipRadii, vClipRadiiV)
+                        : sdRoundBox(vLocalPos - clipCenter, clipHalf, vClipRadii);
 
                 float dist = max(distBox, distClip);
                 float aa = clamp(fwidth(dist), 0.35, 1.25);
@@ -157,7 +265,8 @@ public class WebSdfShader {
                     if (vBorder.x < -0.5 && vBorder.x > -1.5) {              // 外側の影: 箱の中は抜く
                         vec2 holeCenter = (vGradA.xy + vGradA.zw) * 0.5;
                         vec2 holeHalf = max(vec2(0.001), (vGradA.zw - vGradA.xy) * 0.5);
-                        float distHole = sdRoundBox(vLocalPos - holeCenter, holeHalf, vGradB);
+                        float distHole = any(notEqual(vColor2, vec4(0.0))) ? sdEllipseBox(vLocalPos - holeCenter, holeHalf, vGradB, vColor2)
+                                : sdRoundBox(vLocalPos - holeCenter, holeHalf, vGradB);
                         alphaMask *= smoothstep(-aa * 0.5, aa * 0.5, distHole);
                     }
                 }
@@ -197,8 +306,11 @@ public class WebSdfShader {
             }
             """;
 
-    /** 頂点: 位置(12) + 色(4) + 矩形(16) + 角丸(16) + クリップ矩形(16) + クリップ角丸(16) + ぼかし(4) + 枠線の太さ(16) + グラデーションの繰り返し(8) + グラデーション(16+16) + 終わりの色(16) = 156 バイト。 */
-    private static final int VERTEX_STRIDE = 156;
+    /**
+     * 頂点: 位置(12) + 色(4) + 矩形(16) + 角丸(16) + クリップ矩形(16) + クリップ角丸(16) + ぼかし(4) + 枠線の太さ(16)
+     * + グラデーションの繰り返し(8) + グラデーション(16+16) + 終わりの色(16) + 縦の半径(16) + クリップの縦の半径(16) + 破線(16) = 204 バイト。
+     */
+    private static final int VERTEX_STRIDE = 204;
     /** 次に積む頂点のぼかし半径（影のとき）。{@link #drawSdfShadow} の間だけ 0 でない。 */
     private static float pendingFeather = 0f;
     /** 次に積む頂点の枠線の太さ（上, 右, 下, 左）。{@link #drawSdfBorder} の間だけ 0 でない。 */
@@ -206,6 +318,43 @@ public class WebSdfShader {
     /** 次に積む頂点のグラデーションの記述と終わりの色。{@link #drawSdfShaderGradient} の間だけ 0 でない。 */
     private static final float[] pendingGradA = new float[4], pendingGradB = new float[4], pendingColor2 = new float[4];
     private static final float[] pendingGradRepeat = new float[2];
+    /** 次に積む頂点の縦の半径（楕円の角）、クリップの縦の半径、枠線の破線。全部 0 なら円の角・実線。縦の半径は {@link #setEllipseRadii} で入る。 */
+    private static final float[] pendingRadiiV = new float[4], pendingClipRadiiV = new float[4], pendingDash = new float[4];
+
+    /** 以降に積む Quad の角として、各 draw の {@code rTL…} の代わりに使う横の半径。{@code null} なら各 draw の値。 */
+    private static final float[] ellipseRx = new float[4];
+    private static boolean ellipseActive = false;
+
+    /**
+     * 以降に積む Quad の角を楕円にする（横 {@code rx}・縦 {@code ry}。左上・右上・右下・左下の順）。各 draw の {@code rTL…} は
+     * 円の角用なので、楕円の間は {@code rx} で置き換える。{@code null} で円の角に戻す。呼び出し側は描き終えたら戻すこと
+     * （要素ごとの背景・枠線の前後）。
+     */
+    public static void setEllipseRadii(float[] rx, float[] ry) {
+        ellipseActive = rx != null && ry != null;
+        if (ellipseActive) System.arraycopy(rx, 0, ellipseRx, 0, 4);
+        copyOrZero(ellipseActive ? ry : null, pendingRadiiV);
+    }
+
+    /** 以降に積む Quad のクリップの縦の半径。{@code null} か全部 0 で円の角。 */
+    public static void setClipVerticalRadii(float[] v) {
+        copyOrZero(v, pendingClipRadiiV);
+    }
+
+    /** いま {@link #setEllipseRadii} に入っている横の半径。無ければ {@code fallback}（円の角）。 */
+    static float[] currentEllipseRx(float... fallback) {
+        return ellipseActive ? ellipseRx.clone() : fallback.clone();
+    }
+
+    /** 同じく縦の半径。無ければ円の角なので {@code fallback}（横と同じ）。 */
+    static float[] currentEllipseRy(float... fallback) {
+        return ellipseActive ? pendingRadiiV.clone() : fallback.clone();
+    }
+
+    private static void copyOrZero(float[] from, float[] to) {
+        if (from == null) java.util.Arrays.fill(to, 0f);
+        else System.arraycopy(from, 0, to, 0, 4);
+    }
 
     private static final int INITIAL_BATCH_BYTES = 1 << 16;
 
@@ -303,6 +452,9 @@ public class WebSdfShader {
             GL20.glBindAttribLocation(programId, 9, "GradA");
             GL20.glBindAttribLocation(programId, 10, "GradB");
             GL20.glBindAttribLocation(programId, 11, "Color2");
+            GL20.glBindAttribLocation(programId, 12, "RadiiV");
+            GL20.glBindAttribLocation(programId, 13, "ClipRadiiV");
+            GL20.glBindAttribLocation(programId, 14, "BorderDash");
 
             GL20.glAttachShader(programId, vShader);
             GL20.glAttachShader(programId, fShader);
@@ -334,6 +486,9 @@ public class WebSdfShader {
                         .add("GradA", genericVec4())
                         .add("GradB", genericVec4())
                         .add("Color2", genericVec4())
+                        .add("RadiiV", genericVec4())
+                        .add("ClipRadiiV", genericVec4())
+                        .add("BorderDash", genericVec4())
                         .build();
             }
             if (batchBytes == null) {
@@ -390,7 +545,7 @@ public class WebSdfShader {
                 VertexFormat.Mode.QUADS, VertexFormat.IndexType.least(indexCount)));
 
         RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        applyBlend();
         RenderSystem.enableDepthTest();
         GL20.glUseProgram(programId);
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -412,6 +567,18 @@ public class WebSdfShader {
             BufferUploader.draw(mesh);
         } finally {
             GL20.glUseProgram(0);
+            applyBlend();
+        }
+    }
+
+    /**
+     * 通常のブレンド。レイヤー（FBO）の中では、アルファも重ねて溜める（{@code ONE / ONE_MINUS_SRC_ALPHA}）。
+     * そうしないと、半透明の部品を重ねたときにアルファが最後の部品の値で上書きされ、合成の透け方が狂う。
+     */
+    private static void applyBlend() {
+        if (LayerCompositor.isRecording()) {
+            RenderSystem.blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        } else {
             RenderSystem.defaultBlendFunc();
         }
     }
@@ -421,6 +588,12 @@ public class WebSdfShader {
                                   float rTL, float rTR, float rBR, float rBL,
                                   float cx0, float cy0, float cx1, float cy1,
                                   float cRTL, float cRTR, float cRBR, float cRBL) {
+        if (ellipseActive) {
+            rTL = ellipseRx[0];
+            rTR = ellipseRx[1];
+            rBR = ellipseRx[2];
+            rBL = ellipseRx[3];
+        }
         long p = batchBytes.reserve(VERTEX_STRIDE);
         MemoryUtil.memPutFloat(p, x);
         MemoryUtil.memPutFloat(p + 4, y);
@@ -456,6 +629,9 @@ public class WebSdfShader {
             MemoryUtil.memPutFloat(p + 108 + i * 4L, pendingGradA[i]);
             MemoryUtil.memPutFloat(p + 124 + i * 4L, pendingGradB[i]);
             MemoryUtil.memPutFloat(p + 140 + i * 4L, pendingColor2[i]);
+            MemoryUtil.memPutFloat(p + 156 + i * 4L, pendingRadiiV[i]);
+            MemoryUtil.memPutFloat(p + 172 + i * 4L, pendingClipRadiiV[i]);
+            MemoryUtil.memPutFloat(p + 188 + i * 4L, pendingDash[i]);
         }
         batchVertexCount++;
     }
@@ -529,6 +705,25 @@ public class WebSdfShader {
             float cx0, float cy0, float cx1, float cy1,
             float cRTL, float cRTR, float cRBR, float cRBL
     ) {
+        return drawSdfBorder(poseMatrix, minX, minY, maxX, maxY, rTL, rTR, rBR, rBL, wT, wR, wB, wL, r, g, b, a, zOffset,
+                cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL, null);
+    }
+
+    /**
+     * 同上。{@code dash}（種類 1 破線・2 点線, 周期の数, 線の長さ（点は直径）, 丸い点なら 1）があれば、枠線の中心線に沿って破線・点線にする
+     * （4 辺が同じ太さのときだけ）。
+     */
+    public static boolean drawSdfBorder(
+            Matrix4f poseMatrix,
+            float minX, float minY, float maxX, float maxY,
+            float rTL, float rTR, float rBR, float rBL,
+            float wT, float wR, float wB, float wL,
+            float r, float g, float b, float a, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL,
+            float[] dash
+    ) {
+        if (dash != null) System.arraycopy(dash, 0, pendingDash, 0, 4);
         pendingBorderT = wT;
         pendingBorderR = wR;
         pendingBorderB = wB;
@@ -538,6 +733,7 @@ public class WebSdfShader {
                     cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
         } finally {
             pendingBorderT = pendingBorderR = pendingBorderB = pendingBorderL = 0f;
+            java.util.Arrays.fill(pendingDash, 0f);
         }
     }
 
@@ -563,6 +759,25 @@ public class WebSdfShader {
             float mode, float hx0, float hy0, float hx1, float hy1,
             float hrTL, float hrTR, float hrBR, float hrBL
     ) {
+        return drawSdfShadow(poseMatrix, qMinX, qMinY, qMaxX, qMaxY, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL,
+                r, g, b, a, zOffset, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL, feather,
+                mode, hx0, hy0, hx1, hy1, hrTL, hrTR, hrBR, hrBL, null);
+    }
+
+    /** 同上。{@code holeV} は穴の縦の半径（楕円の角のとき。{@code null} なら円の角）。影の形の縦の半径は {@link #setEllipseRadii} で渡す。 */
+    public static boolean drawSdfShadow(
+            Matrix4f poseMatrix,
+            float qMinX, float qMinY, float qMaxX, float qMaxY,
+            float sMinX, float sMinY, float sMaxX, float sMaxY,
+            float rTL, float rTR, float rBR, float rBL,
+            float r, float g, float b, float a, float zOffset,
+            float cx0, float cy0, float cx1, float cy1,
+            float cRTL, float cRTR, float cRBR, float cRBL,
+            float feather,
+            float mode, float hx0, float hy0, float hx1, float hy1,
+            float hrTL, float hrTR, float hrBR, float hrBL,
+            float[] holeV
+    ) {
         if (!isAvailable()) return false;
         if (Math.max(qMinX, cx0) >= Math.min(qMaxX, cx1) || Math.max(qMinY, cy0) >= Math.min(qMaxY, cy1)) {
             return true;
@@ -575,6 +790,7 @@ public class WebSdfShader {
             pendingBorderT = mode;
             pendingGradA[0] = hx0; pendingGradA[1] = hy0; pendingGradA[2] = hx1; pendingGradA[3] = hy1;
             pendingGradB[0] = hrTL; pendingGradB[1] = hrTR; pendingGradB[2] = hrBR; pendingGradB[3] = hrBL;
+            if (holeV != null) System.arraycopy(holeV, 0, pendingColor2, 0, 4);
             putVertex(qMinX, qMaxY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
             putVertex(qMaxX, qMaxY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
             putVertex(qMaxX, qMinY, zOffset, r, g, b, a, sMinX, sMinY, sMaxX, sMaxY, rTL, rTR, rBR, rBL, cx0, cy0, cx1, cy1, cRTL, cRTR, cRBR, cRBL);
@@ -589,6 +805,7 @@ public class WebSdfShader {
             pendingBorderT = 0f;
             java.util.Arrays.fill(pendingGradA, 0f);
             java.util.Arrays.fill(pendingGradB, 0f);
+            java.util.Arrays.fill(pendingColor2, 0f);
             if (localPass) endPass();
         }
     }

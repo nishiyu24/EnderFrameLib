@@ -68,23 +68,23 @@
 067: [txt_33_txt_7] TEXT rect=[701,34,57,12] color=#FFFFFFFF text="Search"
 068: [gen_34] NODE rect=[29,65,384,22] color=#FFF8FAFC
 069: [gen_34_bg] RECT rect=[29,65,384,22] color=#FFF8FAFC
-070: [gen_35] NODE rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 radii=[12,12,12,12]
-071: [gen_35_bg] RECT rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 r=12 radii=[12,12,12,12]
-072: [gen_35_b_round] ROUNDED_BORDER rect=[29,65,120,22] radii=[12,12,12,12] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF6366F1,#FF6366F1,#FF6366F1,#FF6366F1]
+070: [gen_35] NODE rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 radii=[11,11,11,11]
+071: [gen_35_bg] RECT rect=[29,65,120,22] color=#FF818CF8 bg=#336366F1 r=11 radii=[11,11,11,11]
+072: [gen_35_b_round] ROUNDED_BORDER rect=[29,65,120,22] radii=[11,11,11,11] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF6366F1,#FF6366F1,#FF6366F1,#FF6366F1]
 073: [txt_36] NODE rect=[0,0,98,15] color=#FF818CF8
 074: [txt_36_txt_8] TEXT rect=[40,69,18,14] color=#FF818CF8 text="♥ "
 075: [txt_36_txt_9] TEXT rect=[58,69,56,14] color=#FF818CF8 text="Wishlist "
 076: [txt_36_txt_10] TEXT rect=[114,69,24,14] color=#FF818CF8 text="(4)"
-077: [gen_37] NODE rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 radii=[12,12,12,12]
-078: [gen_37_bg] RECT rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 r=12 radii=[12,12,12,12]
-079: [gen_37_b_round] ROUNDED_BORDER rect=[157,65,153,22] radii=[12,12,12,12] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF38BDF8,#FF38BDF8,#FF38BDF8,#FF38BDF8]
+077: [gen_37] NODE rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 radii=[11,11,11,11]
+078: [gen_37_bg] RECT rect=[157,65,153,22] color=#FF38BDF8 bg=#FF334155 r=11 radii=[11,11,11,11]
+079: [gen_37_b_round] ROUNDED_BORDER rect=[157,65,153,22] radii=[11,11,11,11] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FF38BDF8,#FF38BDF8,#FF38BDF8,#FF38BDF8]
 080: [txt_38] NODE rect=[0,0,131,15] color=#FF38BDF8
 081: [txt_38_txt_11] TEXT rect=[168,69,37,14] color=#FF38BDF8 text="Cart "
 082: [txt_38_txt_12] TEXT rect=[205,69,29,14] color=#FF38BDF8 text="(3) "
 083: [txt_38_txt_13] TEXT rect=[234,69,13,14] color=#FF38BDF8 text="· "
 084: [txt_38_txt_14] TEXT rect=[247,69,52,14] color=#FF38BDF8 text="$419.97"
-085: [gen_39] NODE rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 radii=[12,12,12,12]
-086: [gen_39_bg] RECT rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 r=12 radii=[12,12,12,12]
+085: [gen_39] NODE rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 radii=[10,10,10,10]
+086: [gen_39_bg] RECT rect=[318,66,95,20] color=#FFCBD5E1 bg=#FF334155 r=10 radii=[10,10,10,10]
 087: [txt_40] NODE rect=[0,0,75,15] color=#FFCBD5E1
 088: [txt_40_txt_15] TEXT rect=[328,69,18,14] color=#FFCBD5E1 text="☺ "
 089: [txt_40_txt_16] TEXT rect=[346,69,57,14] color=#FFCBD5E1 text="Account"
