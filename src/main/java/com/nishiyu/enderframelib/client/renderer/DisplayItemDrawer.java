@@ -258,6 +258,8 @@ public class DisplayItemDrawer {
         // GUI などは従来どおり、Quad ごとに描く（バッファの吐き出しも Quad ごと。描く順が要素の順のまま保たれる）
         if (pass.flatLayers()) WebSdfShader.beginPass(poseStack.last().pose());
         int[] zLevels = pass.flatLayers() ? zLevelsFor(uiElements, screenWidth, screenHeight) : null;
+        // バッチ中に積んだ文字・画像の範囲。その上に重なる Quad が来たら、先に文字・画像を描き切る（描く順を保つ）
+        QuadClip.Pending pendingBuffer = pass.flatLayers() ? new QuadClip.Pending() : null;
         int elementIndex = -1;
         for (DisplayItem el : uiElements) {
             elementIndex++;
@@ -423,6 +425,19 @@ public class DisplayItemDrawer {
                 float finalOpacity = cumulativeOpacity[0] * anim.opacity();
                 if (finalOpacity <= 0.005f) continue;
 
+                boolean transformed = ownTransform || hasParentPose;
+                if (pendingBuffer != null && pendingBuffer.overlaps(el.x() - SHADOW_REACH, el.y() - SHADOW_REACH,
+                        el.x() + el.width() + SHADOW_REACH, el.y() + el.height() + SHADOW_REACH, transformed)) {
+                    WebSdfShader.flushPass();
+                    if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch();
+                    pendingBuffer.clear();
+                }
+                if (pendingBuffer != null && el.type() != ElementType.CIRCLE_BORDER && el.type() != ElementType.ROUNDED_BORDER
+                        && hasBufferContent(el)) {
+                    if (transformed) pendingBuffer.addEverywhere();
+                    else pendingBuffer.add(el.x(), el.y(), el.x() + el.width(), el.y() + el.height());
+                }
+
                 if (el.type() == ElementType.CIRCLE_BORDER) {
                     if (renderCircleBorderElement(el, meta, anim, poseStack, buffer, finalOpacity, zOffset + effectiveSubZ,
                             clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL)) {
@@ -507,6 +522,17 @@ public class DisplayItemDrawer {
         }
 
         WebSdfShader.endPass();
+    }
+
+    /** 影・ぼかしが箱の外へ広がる分（仮想 px）の見込み。文字・画像との重なりの判定を広げる。 */
+    private static final float SHADOW_REACH = 48f;
+
+    /** SDF の Quad ではなくバッファ（文字・画像・3D）へ描く要素か。 */
+    private static boolean hasBufferContent(DisplayItem el) {
+        return switch (el.type()) {
+            case CANVAS, SCENE, TEXTAREA, IMAGE, VIDEO, INPUT, SELECT, RANGE, PROGRESS, TOGGLE, CHECKBOX, RADIO -> true;
+            default -> el.text() != null && !el.text().isEmpty();
+        };
     }
 
     static final int Z_LEVEL_CELL = 4;

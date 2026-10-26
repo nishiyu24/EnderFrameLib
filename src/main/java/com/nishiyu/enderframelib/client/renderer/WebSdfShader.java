@@ -420,6 +420,11 @@ public class WebSdfShader {
         return passActive;
     }
 
+    /** 積んだ Quad をここまでで描き切る（パスは続く）。この後に描く文字・画像との前後を守りたいときに呼ぶ。 */
+    public static void flushPass() {
+        if (passActive) flushBatch(null);
+    }
+
     public static void endPass() {
         if (passActive) {
             flushBatch(null);

@@ -317,9 +317,14 @@ public final class TextElementRenderer {
             int textColor = (newA << 24) | (anim.color() & 0x00FFFFFF);
             int gutterColor = (newA << 24) | 0x585B70;
             if (outline != null) {
-                drawOutlineTextareaRows(el, outline, lines, syntax, showLineNums, gutterW, lineHeight, scrollRow, maxVisibleRows,
-                        isFocused, cursorRow, cursorCol, textColor, gutterColor, finalOpacity, poseStack, buffer, zPos,
-                        taClipMinY, taClipMaxY, is2D, packedLight);
+                boolean worldClip = beginWorldTextClip(is2D, taClipMinX, taClipMinY, taClipMaxX, taClipMaxY, maxAllowedX, maxAllowedY);
+                try {
+                    drawOutlineTextareaRows(el, outline, lines, syntax, showLineNums, gutterW, lineHeight, scrollRow, maxVisibleRows,
+                            isFocused, cursorRow, cursorCol, textColor, gutterColor, finalOpacity, poseStack, buffer, zPos,
+                            taClipMinY, taClipMaxY, is2D, packedLight);
+                } finally {
+                    if (worldClip) OutlineTextRenderer.clearClip();
+                }
                 if (taScissor && buffer instanceof MultiBufferSource.BufferSource bs) {
                     bs.endBatch();
                 }
@@ -417,6 +422,7 @@ public final class TextElementRenderer {
         Matrix4f outer = poseStack.last().pose();
         float deviceScale = deviceScaleFor(outer, is2D);
         boolean textScissor = enableClipScissorFor2D(outer, buffer, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY, is2D);
+        boolean worldClip = beginWorldTextClip(is2D, clipMinX, clipMinY, clipMaxX, clipMaxY, maxAllowedX, maxAllowedY);
         poseStack.pushPose();
         try {
             poseStack.translate(0, 0, zPos);
@@ -472,10 +478,23 @@ public final class TextElementRenderer {
             }
         } finally {
             poseStack.popPose();
+            if (worldClip) OutlineTextRenderer.clearClip();
             if (textScissor) {
                 RenderSystem.disableScissor();
             }
         }
+    }
+
+    /**
+     * シザーが使えない世界内の面で、祖先のクリップにかかる字を {@link OutlineTextRenderer} で板ごと切る準備をする。
+     * クリップが面全体なら何もしない。切ったら {@link OutlineTextRenderer#clearClip} で戻すこと。
+     */
+    static boolean beginWorldTextClip(boolean is2D, float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
+                                      float maxAllowedX, float maxAllowedY) {
+        if (is2D) return false;
+        if (clipMinX <= 0.5f && clipMinY <= 0.5f && clipMaxX >= maxAllowedX - 0.5f && clipMaxY >= maxAllowedY - 0.5f) return false;
+        OutlineTextRenderer.setClip(clipMinX, clipMinY, clipMaxX, clipMaxY);
+        return true;
     }
 
     /** テキストエリアの行をシステムの書体で描く。行の中の文字の位置は half-leading の分け方（{@link TextShaper#leadingAbove}）で決める。 */

@@ -7,6 +7,7 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nishiyu.enderframelib.EnderFrameLib;
+import com.nishiyu.enderframelib.core.paint.QuadClip;
 import com.nishiyu.enderframelib.core.text.BidiText;
 import com.nishiyu.enderframelib.core.paint.model.VramBudget;
 import com.nishiyu.enderframelib.core.text.font.AtlasCache;
@@ -67,6 +68,85 @@ public final class OutlineTextRenderer {
     private static int atlasCounter;
 
     private OutlineTextRenderer() {}
+
+    private static final Matrix4f IDENTITY = new Matrix4f();
+    private static final float[] clip = new float[4];
+    private static boolean clipActive;
+
+    /**
+     * 以後の {@link #draw} の字を、変換行列の座標系の矩形で切る（部分的にかかる字は板ごと切る）。シザーが使えない
+     * 世界内の面で、スクロール端や {@code overflow: hidden} にかかる文字行を隠すのに使う。{@link #clearClip} で戻す。
+     */
+    public static void setClip(float minX, float minY, float maxX, float maxY) {
+        clip[0] = minX;
+        clip[1] = minY;
+        clip[2] = maxX;
+        clip[3] = maxY;
+        clipActive = true;
+    }
+
+    public static void clearClip() {
+        clipActive = false;
+    }
+
+    /** 字形の板（4 頂点）を溜めて、矩形で切ってから姿勢を掛けて {@code out} に出す。 */
+    private static final class ClippingConsumer implements VertexConsumer {
+        private final VertexConsumer out;
+        private final Matrix4f pose;
+        private final float minX, minY, maxX, maxY;
+        private final float[] x = new float[4], y = new float[4], u = new float[4], v = new float[4];
+        private final int[] color = new int[4], light = new int[4];
+        private int n;
+
+        ClippingConsumer(VertexConsumer out, Matrix4f pose, float minX, float minY, float maxX, float maxY) {
+            this.out = out;
+            this.pose = pose;
+            this.minX = minX;
+            this.minY = minY;
+            this.maxX = maxX;
+            this.maxY = maxY;
+        }
+
+        @Override public VertexConsumer addVertex(float px, float py, float pz) {
+            x[n] = px;
+            y[n] = py;
+            return this;
+        }
+
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) {
+            color[n] = (a << 24) | (r << 16) | (g << 8) | b;
+            return this;
+        }
+
+        @Override public VertexConsumer setUv(float pu, float pv) {
+            u[n] = pu;
+            v[n] = pv;
+            return this;
+        }
+
+        @Override public VertexConsumer setUv1(int pu, int pv) { return this; }
+
+        /** 頂点の最後の属性（明るさ）。4 つ溜まったら出す。 */
+        @Override public VertexConsumer setUv2(int pu, int pv) {
+            light[n] = (pv << 16) | (pu & 0xFFFF);
+            if (++n == 4) {
+                n = 0;
+                float[] r = QuadClip.clip(x, y, u, v, minX, minY, maxX, maxY);
+                if (r != null) {
+                    for (int i = 0; i < 4; i++) {
+                        int col = color[i];
+                        out.addVertex(pose, r[i], r[4 + i], 0f)
+                                .setColor((col >>> 16) & 0xFF, (col >>> 8) & 0xFF, col & 0xFF, col >>> 24)
+                                .setUv(r[8 + i], r[12 + i])
+                                .setUv2(light[i] & 0xFFFF, light[i] >>> 16);
+                    }
+                }
+            }
+            return this;
+        }
+
+        @Override public VertexConsumer setNormal(float nx, float ny, float nz) { return this; }
+    }
 
     /**
      * 文字列を描く。
@@ -165,9 +245,14 @@ public final class OutlineTextRenderer {
                     subpixel, isLightText(c));
             // 字形の上端はベースラインから GlyphProvider.BASELINE（7）を引いた位置が基準
             VertexConsumer vc = buffer.getBuffer(glyph.renderType(Font.DisplayMode.NORMAL));
-            glyph.render(false, gx, originY - GlyphProvider.BASELINE, pose, vc,
-                    ((c >>> 16) & 0xFF) / 255f, ((c >>> 8) & 0xFF) / 255f, (c & 0xFF) / 255f, ((c >>> 24) & 0xFF) / 255f,
-                    packedLight);
+            float cr = ((c >>> 16) & 0xFF) / 255f, cg = ((c >>> 8) & 0xFF) / 255f, cb = (c & 0xFF) / 255f, ca = ((c >>> 24) & 0xFF) / 255f;
+            if (clipActive) {
+                // 板を単位行列で受け取って矩形で切り、姿勢を掛けて出す
+                ClippingConsumer cc = new ClippingConsumer(vc, pose, clip[0], clip[1], clip[2], clip[3]);
+                glyph.render(false, gx, originY - GlyphProvider.BASELINE, IDENTITY, cc, cr, cg, cb, ca, packedLight);
+            } else {
+                glyph.render(false, gx, originY - GlyphProvider.BASELINE, pose, vc, cr, cg, cb, ca, packedLight);
+            }
             i += n;
         }
     }

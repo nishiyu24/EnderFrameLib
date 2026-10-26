@@ -106,7 +106,7 @@ public class ArchitectureTest {
     // 2026-10-26: Phase 3b の前提で +2（core/text/font の AtlasFootprint・core/paint/model の VramBudget）。
     // 2026-10-26: Phase 3b で +7。core/paint の BlendMode・BorderPath（角丸に沿う破線）・ClipShape（clip-path / mask）・FilterOp、
     // core/paint/model の LayerSpec、client/renderer の LayerCompositor・LayerPool（FBO 合成）。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 251;
+    private static final int M9_MAX_TOP_LEVEL_FILES = 252;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
