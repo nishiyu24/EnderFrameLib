@@ -2,12 +2,14 @@ package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.ColorParser;
+import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.List;
@@ -27,6 +29,14 @@ final class BoxDecorationPainter {
     private final int rootW;
     private final int rootH;
     private final AtomicInteger fragIds;
+
+    int rootW() {
+        return rootW;
+    }
+
+    int rootH() {
+        return rootH;
+    }
 
     BoxDecorationPainter(int rootW, int rootH, AtomicInteger fragIds) {
         this.rootW = rootW;
@@ -361,6 +371,11 @@ final class BoxDecorationPainter {
         drawImageLayers(elements, box, id, BoxDecorations.maskLayers(box.style), "_mask", clip, radii, border, events, fontHVal, ox, oy);
     }
 
+    /** {@code currentColor} になる色（要素の {@code color}）。 */
+    private static int currentColor(LayoutBox box) {
+        return ColorParser.parseColor(box.style.getOrDefault(CssProperty.COLOR, "black"));
+    }
+
     private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,
                                  String idInfix, ClipRect clip, Corners radii, BorderSpec border, ItemProps events,
                                  float fontHVal, float ox, float oy) {
@@ -371,6 +386,16 @@ final class BoxDecorationPainter {
             if (url == null && gradient == null) continue;
 
             int[] intrinsic = url != null && UiDocumentCompiler.intrinsicSizeResolver != null ? UiDocumentCompiler.intrinsicSizeResolver.getSize(url) : null;
+            if (intrinsic != null && layer.density() != 1.0) {
+                // image-set() の解像度（2x なら画像の画素数の半分が CSS px の大きさ）
+                intrinsic = new int[]{(int) Math.max(1, Math.round(intrinsic[0] / layer.density())),
+                        (int) Math.max(1, Math.round(intrinsic[1] / layer.density()))};
+            }
+            SvgImage svgLayer = url != null && SvgImage.looksLikeSvg(url) ? SvgSources.get(url) : null;
+            if (svgLayer != null && intrinsic == null) {
+                intrinsic = new int[]{(int) Math.max(1, Math.round(svgLayer.width() / layer.density())),
+                        (int) Math.max(1, Math.round(svgLayer.height() / layer.density()))};
+            }
             BoxDecorations.Rect paint = BoxDecorations.boxArea(box, layer.clip());
             Corners paintRadii = "border-box".equals(layer.clip()) ? radii : border.innerRadii();
             ClipRect layerClip = intersectClip(clip, paint, paintRadii, id);
@@ -381,7 +406,12 @@ final class BoxDecorationPainter {
             int part = 0;
             for (BoxDecorations.Rect t : tiles) {
                 if (url != null) {
-                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), url,
+                    String tileSrc = url;
+                    if (SvgImage.looksLikeSvg(url)) {
+                        // SVG はタイルの大きさで描く（拡大しても滲まない）。届くまでは描かない
+                        tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box));
+                    }
+                    addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
                             0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
                     continue;
                 }

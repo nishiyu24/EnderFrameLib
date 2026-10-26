@@ -450,7 +450,14 @@ lengths, `%`) `text-decoration` `text-shadow`
 **Paint / effects** stacking contexts (positioned boxes with a `z-index`,
 flex and grid items with a `z-index`, `opacity` below 1, `transform`, `filter`,
 `isolation: isolate`, `mix-blend-mode`, and fixed / sticky boxes) painted in
-CSS 2.2 Appendix E order; `background` with multiple layers,
+CSS 2.2 Appendix E order; `filter` and `backdrop-filter` (`blur()`,
+`brightness()`, `contrast()`, `grayscale()`, `hue-rotate()`, `invert()`,
+`opacity()`, `saturate()`, `sepia()`, `drop-shadow()`); `mix-blend-mode` (all
+16 blend modes plus `plus-lighter`) and `isolation`; `clip-path` (`inset()`
+with `round`, `circle()`, `ellipse()`, `polygon()`, `path()`, with
+`border-box` / `padding-box` / `content-box`); `mask` / `mask-image` /
+`mask-size` / `mask-position` / `mask-repeat` / `mask-clip` / `mask-origin` /
+`mask-mode` (`alpha` / `luminance`); `background` with multiple layers,
 `background-color` `background-image` (`url()`, `linear-gradient()`,
 `radial-gradient()`, `conic-gradient()` and their `repeating-` forms, with
 colour hints and `in <colorspace>`)
@@ -702,33 +709,38 @@ Layout differences from a real browser are measured, case by case, in
   them. No subgrid, no `grid-template` / `grid` shorthands, no implicit tracks
   before the explicit grid, no `baseline` alignment, and `auto-fit` keeps its
   empty tracks (it behaves like `auto-fill`).
-- **Compositing.** Stacking contexts and the CSS 2.2 painting order are
-  implemented, but `opacity` is applied to each painted part separately rather
-  than to the group, so overlapping descendants of a translucent box show
-  through each other. `overflow` clipping is applied in each element's own
-  transformed space, so a transformed descendant of a clipping box is clipped
-  by a transformed copy of the clip rather than the ancestor's rectangle.
-  Flex and grid items paint in document order, not `order`-modified order.
-- **Borders and outlines in full.** On a box with `border-radius` the border is
-  drawn solid whatever its `border-style`, and where two sides of different
-  colours meet in a rounded corner the colour changes at the side's width
-  rather than along the diagonal. Outlines do not
-  follow `border-radius` and are not drawn per line fragment on inline boxes.
-  The shading of `inset` / `outset` / `groove` / `ridge` is an approximation
-  (the spec leaves it to the user agent).
+- **Compositing on in-world surfaces.** On screen-space surfaces (GUI screens
+  and HUDs), stacking contexts with `opacity < 1`, `filter`, `backdrop-filter`,
+  `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, or a rotated
+  rounded `overflow` clip are composited via offscreen FBO layers (`url()` SVG
+  references in `filter` / `clip-path` and `rect()` / `xywh()` are not read).
+  On in-world surfaces (blocks, holograms, held items), offscreen FBO
+  compositing is not used so depth testing against the world is preserved:
+  `opacity` is applied per painted part, and `overflow` clipping is applied in
+  each element's own transformed space. Flex and grid items paint in document
+  order, not `order`-modified order.
+- **Borders and outlines in full.** On a box with `border-radius`, `solid`,
+  `dashed` and `dotted` borders follow the rounded (or elliptical) path, while
+  other styles (`double`, `groove`, `ridge`, `inset`, `outset`) are drawn
+  solid, and where two sides of different colours meet in a rounded corner the
+  colour changes at the side's width rather than along the diagonal. Outlines
+  do not follow `border-radius` and are not drawn per line fragment on inline
+  boxes. The shading of `inset` / `outset` / `groove` / `ridge` is an
+  approximation (the spec leaves it to the user agent).
 - **Backgrounds in full.** Multiple layers, `url()` images and
   `background-size / position / repeat / clip / origin` work on block-level
   boxes; inline boxes paint their background colour and borders on each line
-  but no background images. Radial, conic and diagonal multi-stop gradients
-  are drawn as a mesh of rectangles whose corner colours are interpolated
-  linearly, so a hard colour edge is only as sharp as the mesh.
-  `background-attachment` is always `scroll`.
+  but no background images. Linear, radial and conic gradients (including
+  `repeating-*`, colour hints and `in <colorspace>`) are drawn per pixel by the
+  SDF shader (non-sRGB interpolation spaces are approximated with 32 linear
+  sRGB segments per stop pair, and nothing is drawn if the SDF shader is
+  unavailable). `background-attachment` is always `scroll`.
 - **Box shadows in full.** A blurred `box-shadow` is a Gaussian-like falloff
   drawn by the SDF shader, a blurred outer shadow is cut out of the border box
   (so it does not show through a translucent background), and an `inset` shadow
   has the rounded hole and the same falloff. An outer shadow with no blur is
   still painted under the whole box, so it shows through a transparent or
-  translucent background. Corners are circular (no elliptical `border-radius`).
+  translucent background.
 - **Native form controls.** `ua.css` follows the HTML standard's rendering
   defaults, but form controls are drawn by EnderFrameLib (sized after
   Chromium's light theme) rather than by the operating system.
@@ -763,9 +775,11 @@ Layout differences from a real browser are measured, case by case, in
 - **Glyph-relative units and elliptical corners.** `ch` and `ex` are measured
   from the element's font (the advance of "0", the x-height) in the game; where
   no font is available (headless unit tests) they fall back to 0.5em. `ic` is
-  1em and `cap` a fixed fraction of the font size. Corners are drawn as circular arcs, so an
-  elliptical radius (`10px / 20px`, or a percentage on a box that is not
-  square) uses the smaller of its two radii.
+  1em and `cap` a fixed fraction of the font size. Elliptical `border-radius`
+  (`10px / 20px`, or a percentage on a box that is not square) is drawn as true
+  elliptical arcs on SDF backgrounds, borders, shadows and clips; images and
+  other non-SDF elements approximate each corner with the smaller of its two
+  radii.
 - **Transforms in full.** `transform`, `translate`, `rotate` and `scale` are
   composed in written order into a 2D matrix, but a box carries only a
   translation, a rotation and a scale, so the shear of `skew*()` and of a

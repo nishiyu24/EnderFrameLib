@@ -51,7 +51,7 @@ public class DisplayListBuilder {
 
     private static final Set<String> NON_FRAGMENT_TAGS = Set.of(
             "#text", "img", "mc-fluid", "mc-entity", "mc-scene",
-            "input", "select", "progress", "meter", "textarea", "canvas"
+            "input", "select", "progress", "meter", "textarea", "canvas", "svg"
     );
 
     private final int rootW;
@@ -269,6 +269,7 @@ public class DisplayListBuilder {
                 // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
                 addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             }
+            case "svg" -> controls.drawSvgElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "canvas" -> controls.drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "textarea" -> controls.drawTextareaElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "select" -> controls.drawSelectElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);

@@ -255,6 +255,7 @@ public final class PropertyRegistry {
         }
         layout("src", null, false, ValueType.STRING, false);
         layout("object-fit", "fill", false, ValueType.KEYWORD, false);
+        paint("object-position", "50% 50%", false, ValueType.LIST, true);
 
         // ---- 描画
         paint("background-color", "transparent", false, ValueType.COLOR, true);

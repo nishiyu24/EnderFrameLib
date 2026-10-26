@@ -150,8 +150,10 @@ public final class BoxDecorations {
             return image.toLowerCase(Locale.ROOT).contains("gradient(");
         }
 
-        /** {@code url(...)} の中身。画像でなければ null。 */
+        /** {@code url(...)}（または {@code image-set()} が選んだ候補）の URL。画像でなければ null。 */
         public String url() {
+            ImageChoice set = imageSet();
+            if (set != null) return set.url();
             String v = image.trim();
             if (!v.toLowerCase(Locale.ROOT).startsWith("url(") || !v.endsWith(")")) return null;
             String inner = v.substring(4, v.length() - 1).trim();
@@ -159,6 +161,16 @@ public final class BoxDecorations {
                 inner = inner.substring(1, inner.length() - 1);
             }
             return inner;
+        }
+
+        /** 画像の画素数を割る密度（{@code image-set()} の選んだ解像度。それ以外は 1）。 */
+        public double density() {
+            ImageChoice set = imageSet();
+            return set != null ? set.density() : 1.0;
+        }
+
+        private ImageChoice imageSet() {
+            return ImageSources.isImageSet(image) ? ImageSources.selectImageSet(image, ImageSources.devicePixelRatio()) : null;
         }
     }
 

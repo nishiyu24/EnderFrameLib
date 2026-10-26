@@ -123,7 +123,7 @@ fieldset { display: block; margin-left: 2px; margin-right: 2px; border: groove 2
 legend { padding-left: 2px; padding-right: 2px; }
 
 /* §15.3.13 埋め込みコンテンツ（置換要素は不可分なインラインとして組む） */
-img, video, canvas, mc-fluid, mc-entity, mc-scene { display: inline-block; }
+img, video, canvas, svg, mc-fluid, mc-entity, mc-scene { display: inline-block; }
 iframe { border: 2px inset; }
 video { object-fit: contain; }
 

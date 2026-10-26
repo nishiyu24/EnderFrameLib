@@ -20,9 +20,9 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ---
 
-## 現在地（2026-10-25 時点）
+## 現在地（2026-10-26 時点）
 
-`./gradlew test` は 973 件（2026-10-26 の Phase 4 実装後。Phase 3 実装後は 893 件。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 23 行）、WPT 採用 38 ケース（台帳 0 行）。
+`./gradlew test` は 1,036 件（2026-10-26 の Phase 3b 完了後。Phase 4 実装後は 973 件、Phase 3a 実装後は 897 件。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 23 行）、WPT 採用 38 ケース（台帳 0 行）。
 直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
 2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
@@ -38,9 +38,9 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化・Surface 連携・実機での観測も 2026-10-24〜25 に済。Surface 既知不具合は Phase 1/3 へ統合） |
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
 | R5 | インクリメンタル・パイプラインと CSSOM | ほぼ完了（差分レイアウトと近道、`InvalidationSets` 接続、`ComputedStyle` の遅延確保、再レイアウト境界と `contain`、配置の使い回し、描画だけの変化の近道、`StyleAnimator`（再スタイルで動かすトランジション・`@keyframes`）、CSSOM View は 2026-10-25 に完了。残: 台帳 R5 のスクロールバー 10 行（設計判断待ち）、`@starting-style`・`transition-behavior`） |
-| R6 | 描画の合成化と型付きディスプレイリスト | 一部（SDF の角丸・線形/放射グラデーション・角丸クリップ、`RenderKeys` 撤去、transform の宣言順合成は 2026-10-26 に完了。FBO レイヤー合成・ガウス影・楕円の角・回転クリップ・旧 W12 は Phase 3 の残） |
+| R6 | 描画の合成化と型付きディスプレイリスト | 完了（SDF の角丸・楕円の角・角丸に沿う破線・線形/放射/円錐グラデーション・角丸クリップ・ガウス影、型付き `RenderHints`、transform の宣言順合成、FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask`・回転角丸クリップ）、VRAM 予算 `VramBudget`、旧 W12 のスクロール・シザー・世界内面の描画順と文字行部分クリップまで 2026-10-26 に完了） |
 | R7 | テキストと国際化 | ほぼ完了（システムの書体、アトラスの 1 サイズ 1 置き場化と破棄、`@font-face` の統合、`ch` / `ex`、UAX #14、`direction`、UAX #9 の並べ替え、Selection / Range は 2026-10-26 に完了。残: 合字・`line-height: normal` の代替書体の指標・`writing-mode`・`contenteditable` と IME・描画の選択と Selection API のつなぎ） |
-| R8 | 置換要素（SVG・Canvas 2D） | 未着手（Phase 5） |
+| R8 | 置換要素（SVG・Canvas 2D） | ほぼ完了（2026-10-26。ソフトウェア Canvas 2D・インライン SVG・画像としての SVG・`srcset` / `image-set()`・`object-fit` / `object-position`。残: SVG の `mask` / `filter` / `marker` / `pattern` / `tspan`、WPT `html/canvas/` の採用ケース、canvas / SVG のテキストの書体） |
 | R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行。表の台帳 4 行を含む残りは Phase 5） |
 | R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・ホットリロードは Phase 5） |
 
@@ -186,7 +186,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
   - **3b の中の順序と着手条件**: ①楕円の角と角丸に沿う dashed / dotted（`Corners` を `int` から楕円半径へ変える型変更が先。SDF だけで済み、FBO 不要なので最初に片付ける）→ ②FBO プールとグループ `opacity`・`filter`・`mix-blend-mode`・`isolation` → ③`clip-path`・`mask`・回転した角丸クリップ（ステンシル / マスク FBO）→ ④`backdrop-filter`。①は Phase 4 と並行してもよい。②以降の着手条件は、Phase 4 のアトラス改修が済み VRAM の予算が決まっていること。
   - **旧 W12 の残り**: A-14（複数 Surface の半透明順序。世界内の面のバッチ描画で文字・画像が SDF の Quad より後になる問題）は ②の FBO / レイヤー順序の設計と同じ根（描画順の管理）なので 3b ②と一緒にやる。世界内の面での文字行の部分クリップは、シザーが使えないため ③のマスク / ステンシルが入ってから解く。
   - **着手条件の実装（2026-10-26）**: アトラスの VRAM の実測と FBO の予算を入れた。`AtlasFootprint`（置き場ごとの字形数・面積 → テクスチャ枚数と VRAM の見積もり。256px 四方 × 1 バイト、詰め込みの余裕 1.3 倍）を `OutlineTextRenderer` が置き場ごとに持ち（`atlasBytes()` / `glyphCount()`）、`VramBudget`（`core/paint/model`）が配分を決める: 全体 192 MiB のうち文字の置き場に最低 32 MiB を予約し、残りを FBO プールへ（画面サイズの RGBA8 + D24S8 のレイヤー 4〜16 枚分に収める）。置き場が 64 MiB を超えたら保護の外の置き場を捨てる（`AtlasCache.evictUnprotected`）。FBO が先に削られることはない。実測（`AtlasFootprintTest`、Arial の ASCII + 漢字 400 字 × 13/16/26px × 端数 4 段 = 1,128 字形）: 字形 13.6 万 px、見積もり 3 枚（192 KiB）で、高さ順の棚詰めの 3 枚と一致。予算の範囲に十分収まる（日本語を大量に使っても数 MiB）ので、FBO を競合で削る必要は当面ない。
-- **3b の実装（2026-10-26。コミット前の作業ツリー）**: ①楕円の角と角丸に沿う dashed / dotted（`Corners` の楕円半径・`BorderPath`・SDF）、②FBO レイヤー合成（`LayerSpec`・`LayerPool`・`LayerCompositor`。グループ `opacity`・`filter`（`FilterOp`）・`mix-blend-mode`（`BlendMode`）・`isolation`）、③`clip-path`・`mask`・回転した角丸クリップ（`ClipShape`・マスク用 FBO）、④`backdrop-filter`。レイヤーは画面の面（GUI・HUD）だけで、世界の中の面は従来どおり部品ごとの不透明度。検証: `EllipticalCornersTest`・`LayerDisplayListTest`・`ClipMaskDisplayListTest`・`FilterAndBlendTest` を追加。`./gradlew test` は 1,029 件・失敗 0（`ArchitectureTest` の M9 は 244 → 251 に引き上げ）、`runGameTestServer` 5 件通過、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 10.9 / Relayout 16.7 / DisplayList 4.6 / ScrollStep 19.2 ms、hover 0.26ms・1 行追加 3.0ms・スクロール 0.52ms。FBO を使わない文書は基準どおり）。実機（`runClient`・PrintWindow、1600×900）で効果ごとの見本ページを目視: グループ `opacity`（重なった子が透けず、部品ごとの比較用の箱では透ける）、`filter`（`blur`・`grayscale`・`hue-rotate`・`invert`）、`isolation` + `multiply`、楕円の角、角丸に沿う dashed / dotted、`clip-path`（`circle` は寸法どおり上下が平らに切れる・`polygon`）、`mask-image`、`backdrop-filter: blur`（背後の境目だけがぼける）、回転した角丸の `overflow: hidden` がいずれも期待どおり。不具合なし。未実施: A-14（複数 Surface の半透明順序）、世界内の面での文字行の部分クリップ（→ 下の「3b の残りの実装」）。
+- **3b の実装（2026-10-26）**: ①楕円の角と角丸に沿う dashed / dotted（`Corners` の楕円半径・`BorderPath`・SDF）、②FBO レイヤー合成（`LayerSpec`・`LayerPool`・`LayerCompositor`。グループ `opacity`・`filter`（`FilterOp`）・`mix-blend-mode`（`BlendMode`）・`isolation`）、③`clip-path`・`mask`・回転した角丸クリップ（`ClipShape`・マスク用 FBO）、④`backdrop-filter`。レイヤーは画面の面（GUI・HUD）だけで、世界の中の面は従来どおり部品ごとの不透明度。検証: `EllipticalCornersTest`・`LayerDisplayListTest`・`ClipMaskDisplayListTest`・`FilterAndBlendTest` を追加。`./gradlew test` は 1,029 件・失敗 0（`ArchitectureTest` の M9 は 244 → 251 に引き上げ）、`runGameTestServer` 5 件通過、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 10.9 / Relayout 16.7 / DisplayList 4.6 / ScrollStep 19.2 ms、hover 0.26ms・1 行追加 3.0ms・スクロール 0.52ms。FBO を使わない文書は基準どおり）。実機（`runClient`・PrintWindow、1600×900）で効果ごとの見本ページを目視: グループ `opacity`（重なった子が透けず、部品ごとの比較用の箱では透ける）、`filter`（`blur`・`grayscale`・`hue-rotate`・`invert`）、`isolation` + `multiply`、楕円の角、角丸に沿う dashed / dotted、`clip-path`（`circle` は寸法どおり上下が平らに切れる・`polygon`）、`mask-image`、`backdrop-filter: blur`（背後の境目だけがぼける）、回転した角丸の `overflow: hidden` がいずれも期待どおり。不具合なし。未実施: A-14（複数 Surface の半透明順序）、世界内の面での文字行の部分クリップ（→ 下の「3b の残りの実装」で完了）。
 - **3b の残りの実装（2026-10-26）**:
   - **A-14（世界内の面の描画順）**: バッチ中に積んだ文字・画像・3D の範囲を `QuadClip.Pending` に覚え（変形のある要素は「どこでも」）、そこに重なる SDF の Quad（影のぼかしの分 48 を広げて判定）が来たら、先に `WebSdfShader.flushPass()` と `endBatch()` で積んだ分を描き切ってから続ける。重ならない要素どうしはこれまでどおり 1 回の draw にまとまる。以前は SDF が先、文字が後に描かれ、半透明の要素の下の文字が奥行きで隠れた。
   - **世界内の面の文字行の部分クリップ**: シザーが使えない面で、祖先のクリップ（`overflow` / スクロール端）にかかる字を `OutlineTextRenderer.setClip` で板ごと切る。字形の板を単位行列で受けて `QuadClip.clip` で矩形に切り、テクスチャ座標を位置に比例して詰め直し、姿勢を掛けて出す（`ClippingConsumer`）。テキストエリアの行も同じ。LIMITATION: ビットマップ書体の経路・下線 / 取り消し線・キャレットは切らない。
@@ -213,7 +213,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
   - **UAX #9**: `BidiText` が 1 つの文字列を視覚順に並べ替える（`OutlineTextRenderer` が描く前に通す。括弧は反転）。LIMITATION: アラビア文字の連結形（GSUB による整形）は選ばない。複数のインライン要素にまたがる行の並べ替えはしない。キャレットと選択の位置は論理順の測定のまま。
   - **Selection / Range API**: `Document.createRange()` / `getSelection()`。`Range`（境界点の比較・`toString`・`cloneContents` / `extractContents` / `deleteContents` / `insertNode` / `surroundContents`・節の挿入・削除・文字の変更に追従する生きた範囲）と `Selection`（範囲は 1 つ。anchor / focus の向き・`extend` / `setBaseAndExtent` / `selectAllChildren` / `deleteFromDocument`・`selectionchange`）。描画の選択（`TextSelection`）とはまだつないでいない。
   - **スクロール範囲**: 行の高さより高い書体の内容領域（ベースライン + descent）がスクロール範囲（`scrollHeight`）に入る。台帳の `forced-line-breaks#box.scrollHeight` の原因はこれ（Chrome 側の書体は日本語環境の Noto Sans JP で内容領域が 24px、行が 20px）。忠実度コーパスの測定は書体を持たない `FontResolver.FALLBACK` なので行は残る。システムの書体で測る `DirectionLayoutTest` で固定した。
-- 未着手: 合字（GSUB の `liga`）、`line-height: normal` での代替書体の指標、`writing-mode`、`contenteditable`・IME の composition、`::marker` の台帳 8 行（書体の指標とブラウザの実測が要る）、アトラスの VRAM を実測して FBO の予算を決める作業（Phase 3b の着手条件）。
+- 未着手: 合字（GSUB の `liga`）、`line-height: normal` での代替書体の指標、`writing-mode`、`contenteditable`・IME の composition、`::marker` の台帳 8 行（書体の指標とブラウザの実測が要る）。（アトラスの VRAM 実測と FBO の予算配分 `AtlasFootprint` / `VramBudget` は 2026-10-26 に Phase 3b の着手条件として完了。）
 - 検証:
   - 新規テスト（76 件）: `AtlasCacheTest`（置き場の保護・期限・個数・字形番号が `CodepointMap` の範囲に収まること・量子化）、`FontLifecycleTest`（ハンドルの解放と開き直しで同じ字形・`@font-face` が OS の書体と同じ幅・同名の上書きと復元・読めないデータの拒否）、`LineBreakerTest`（UAX #14 の規則と Chrome の挙動、結合・ZWJ・地域指示記号・禁則・`keep-all` / `break-all`）、`BidiTextTest`、`GlyphUnitsTest`、`DirectionLayoutTest`（rtl の配置・`dir` 属性・start / end・行の下にはみ出す文字のスクロール範囲）、`RangeSelectionTest`（範囲の追従・取り出し・Selection）。
   - 実機（`runClient`、showcase を 1600×900）で、共有アトラスの描画を目視した。**単体テストでは捕まらない不具合を 2 つ直した**: (1) 字形の番号を `cp | 変種 << 21` と詰めたら `CodepointMap` の範囲外で描画スレッドが落ちた、(2) `FontSet` は対応字（空白）を引いて null を返す提供元を外すので、番号の割り当て前の問い合わせに null を返したら全字が豆腐になった。どちらも `GlyphKey` と `FaceGlyphProvider` に理由を書いた。
@@ -287,8 +287,8 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 （`ColorParser`）、radial / conic / repeating のグラデーションと補間のヒント（`Gradients`）、数学関数 Level 4・
 `lh` / `rlh` / `cap` / `sv*` などの単位、`@media (resolution)`。コーパスに modern-css の 14 ケースを足して一致
 （台帳は `direction` の 1 行だけ）。
-**R4 — 残**: （`ch` / `ex` は 2026-10-26 に Phase 4 で書体の指標から決めるようにした。）
-`InvalidationSets` は組めるが再スタイルに使っていない（Phase 2 で接続）。台帳の `::marker` の 8 行（Phase 2）。
+**R4 — 残**: （`ch` / `ex` は 2026-10-26 に Phase 4 で書体の指標から決めるようにし、`InvalidationSets` は Phase 2 で再スタイルへ接続した。）
+台帳の `::marker` の 8 行（書体の指標とブラウザの実測が要る）。
 
 **R5 — 達成**: 差分レイアウト（`LayoutBox.measure` の再利用）、スクロール・ドラッグ・リサイズの近道
 （[BENCHMARK.md](BENCHMARK.md) §4・§5）。正しさは `IncrementalLayoutTest`・`IncrementalPipelineTest`・`ServerClientLayoutParityTest`。
@@ -297,9 +297,8 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 **R6 — 達成**: 角丸・グラデーション・角丸の祖先クリップを 1 枚の四角形で描く SDF シェーダー（`WebSdfShader`・
 `RoundedRectRasterizer`）。GUI・ブロック面・手持ちアイテムで同じ経路。
-**R6 — 残（Phase 3）**: `DisplayItem` の `RenderKeys`（文字列キーと毎フレームの CSV `split`）の撤去、transform の関数と宣言順（いまは
-`DisplayListBuilder` の正規表現で translate / scale / rotate だけ）、FBO のレイヤー合成（opacity のグループ・`filter`・
-`mix-blend-mode`・`clip-path`・`mask`・回転した角丸クリップ）、ガウスの `box-shadow`、楕円の角、旧 W12。
+**R6 — 達成（2026-10-25〜26、Phase 3a / 3b）**: `DisplayItem` の型付き描画情報（`RenderHints` / `BorderInfo` / `ShadowInfo` / `Gradients` / `Transforms`）への刷新と文字列キー撤去、宣言順の `transform`（`skew*` / `matrix` を含む）、ガウスの `box-shadow`（`blur`・`spread`・`inset`・複数指定）、楕円の角（`Corners`）と角丸に沿う `dashed` / `dotted`（`BorderPath`）、FBO のレイヤー合成（`LayerPool`・`LayerCompositor`。グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask`・回転した角丸クリップ）、旧 W12 の解消（スクロール後のヒットテスト・3D プレビューのシザー・世界内の面の半透明順序と文字行の部分クリップ `QuadClip`）。詳細は Phase 3 の節。
+**R6 — 残**: 世界内の面（ブロック面・手持ちアイテム）は FBO を持たないためレイヤー効果を適用しない仕様（LIMITATION）。
 
 **R7 — 達成**: システムの書体（`core/text/font`。OS の書体フォルダの一覧、CSS Fonts 4 §5.2 の照合、Chrome（Windows）の
 総称ファミリ、字単位の代替、GPOS / `kern` の詰め、Chrome と同じ縦の寸法）、デバイスピクセルでのラスタライズ
@@ -738,6 +737,13 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 **参照**: AUI `canvas/CanvasRenderingContext2D` と周辺 20 クラス、`element/Svg`（Java2D で 4 倍ラスタ）、`resource/SvgImageDecoder`。
 
 **完了条件と検証**: WPT `html/canvas/` の採用ケース（ピクセルを読むもの）、SVG の矩形をコーパスに足して一致。
+
+**R8 — 達成（2026-10-26。Phase 5 の 1 段目）**:
+- **Canvas 2D**: `core/raster`（`CanvasRenderingContext2D`・`Path2D`・`Stroker`・`Rasterizer`・`Pixmap`・`CanvasGradient` / `CanvasPattern`・22 種の合成・影・`ImageData`・`isPointInPath`）。`<canvas>` は `width` / `height` 属性（既定 300×150）のビットマップを `Canvas2DContext` が持ち、1 枚のテクスチャ（`RasterTextures`）にして `object-fit` で内容ボックスへ収める。`drawArrow` / `drawSparkline` / `drawNodeLink` などは標準コンテキストの上の薄い補助関数に移した（座標はビットマップの画素。以前の CSS px の命令列からの変更）。
+- **SVG**: `core/raster/svg`（`SvgRenderer`・`SvgImage`・`SvgSize`）。基本図形・path・`viewBox` / `preserveAspectRatio`・`transform`・`fill` / `stroke` 一式・破線・線形 / 放射グラデーション（`href` 継承）・`clipPath`・`use` / `symbol`・グループ `opacity`・`currentColor`・`style` 属性。インライン `<svg>` は置換要素として組み（子は箱にしない）、画像と同じ経路でラスタライズして置く。`<img src="*.svg">`・`background-image: url(*.svg)`（`data:` / リソースパック / http(s)）も同じ。ラスタライズは描く大きさ × デバイスピクセル比で、内容・寸法・色が同じなら `RasterImageStore` から使い回す。HTML パーサは `svg` / `math` の中で自己終了タグを守る（R9 の外来要素の一部）。
+- **画像**: `ImageSources`（`srcset` / `sizes` / `image-set()` の選択、密度で固有サイズを割る）、`ObjectFit`（`object-fit` 5 種と `object-position`。`img` / `canvas` / `video` 共通）。
+- **検証**: `RasterCoreTest`・`CanvasRenderingContext2DTest`（45 件）、`SvgRendererTest`（28）、`ImageSourcesTest`（9）、`ReplacedElementsTest`（16）、`ForeignContentTest`（5）、`Canvas2DContextTest`（6）、`RasterBenchmarkTest`。`ArchitectureTest` の M9 は 252 → 275。実機（`runClient`・PrintWindow）で、グラデーション・`clip-path`・破線・グループ `opacity`・`currentColor`・リソース SVG の `contain` / `cover` / `none` + `object-position`・canvas（グラデーション・矢印・円・折れ線・`contain`）・背景 SVG のタイル・`image-set()` を目視し、期待どおり。
+- **LIMITATION**: SVG の `mask` / `filter` / `marker` / `pattern` / `image` / `tspan` の個別配置 / `textPath`、ページの `<style>` の規則（要素の `style` 属性と提示属性だけ）。canvas / SVG のテキストは `OutlineFontFace` の書体だけ（`McFontResolver` が返す Minecraft の書体では描かれない）。`srcset` の選択に使うデバイスピクセル比は画面共通の 1 値。SVG の再読み込みはリソースの再ロードで破棄しない。
 
 ### R9 — レイアウトとパーサの残り
 

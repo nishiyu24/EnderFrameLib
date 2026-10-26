@@ -108,17 +108,17 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
 
 測れていないのは次の 2 つ。
 
-- **コーパスでのグリフの送り幅に依存する幾何。** テキストは既定でシステムの書体（`SystemFonts`）で組むので、
-  Windows では上の表のテストが Chrome と同じ書体で比べている。ただしコーパスは OS をまたいで回すため
-  字幅に依存させず、Minecraft の書体（`minecraft:*` と `@font-face`）で組む文字はブラウザと原理的に一致しない
+- **コーパスでのグリフの送り幅に依存する幾何。** テキストは既定でシステムの書体（`SystemFonts`）と `@font-face` の TTF / OTF
+  （`WebFonts`）で組むので、Windows では上の表のテストが Chrome と同じ書体で比べている。ただしコーパスは OS をまたいで回すため
+  字幅に依存させず、Minecraft のビットマップ書体（`minecraft:*` と TTF / OTF 以外の `@font-face`）で組む文字はブラウザと原理的に一致しない
   （下の「意図的に違うもの」）。
 - **操作感。** 状態・入力・アニメーションは別の軸で、ここでは測っていない（`AnimationTestSiteParityTest` は
   幾何・スタイルの読み込み・アニメーションの指定の解決までを見る）。
 
 ## 意図的に違うもの（台帳に載せない差）
 
-以下は `font-family` が Minecraft の書体に解決されたとき（`minecraft:default` などを指定したときと、
-`@font-face` で登録した書体）だけの話。システムの書体で組む既定の文字には当てはまらない。
+以下は `font-family` が Minecraft のビットマップ書体に解決されたとき（`minecraft:default` などを指定したときと、
+TTF / OTF 以外の `@font-face` で登録した書体）だけの話。システムの書体と `@font-face` の TTF / OTF で組む文字には当てはまらない。
 
 - **`font-size` の意味。** Minecraft のフォントは素のサイズで ascent 7px /
   descent 2px（行高 9px）。これを **1em = 9px** と見なしている
@@ -132,7 +132,7 @@ F2 で**フォント指標に依存しないテキストの幾何**が入った�
   `BitmapFontFace.MC_LINE_GAP_RATIO` として与え、`normal` = 1.15 にしている。
   F2 以前は 1.375 の固定値だった。
 
-## 既知の差異（24 件）
+## 既知の差異（23 件）
 
 ほとんどは R0 で測定を拡張し、計算値の列（`display` / `position` / `box-sizing` / `overflow` と、
 ケースが宣言した `opacity` / `transform` / `color` など）と

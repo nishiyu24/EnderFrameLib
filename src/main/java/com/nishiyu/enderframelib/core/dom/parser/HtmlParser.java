@@ -34,8 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * LIMITATION(制約): 書式要素の再構築（active formatting elements）と adoption agency は無い。
  * {@code <p><b>a<p>b} の 2 つ目の段落は太字にならず、{@code <b><i></b></i>} の誤った入れ子は
- * 終了タグの一般規則（特殊な要素を越えて閉じない）で閉じる。SVG / MathML の外来要素も
- * HTML の要素として組み、{@code <template>} の中身は別の断片にせず子として持つ（ua.css が隠す）。
+ * 終了タグの一般規則（特殊な要素を越えて閉じない）で閉じる。SVG / MathML の外来要素は
+ * HTML の暗黙終了を受けず自己終了タグで閉じるが、名前空間は持たず、{@code <template>} の中身は別の断片にせず子として持つ（ua.css が隠す）。
  * README の "Not supported" に対応。
  */
 public class HtmlParser {
@@ -301,9 +301,24 @@ public class HtmlParser {
             }
         }
 
+        /** 開いている要素に {@code svg} / {@code math} があるか（外来要素の中か）。 */
+        private boolean inForeignContent() {
+            for (int i = stack.size() - 1; i >= 0; i--) {
+                String tag = stack.get(i).tag;
+                if (tag.equals("svg") || tag.equals("math")) return true;
+            }
+            return false;
+        }
+
         void inBodyStart(HtmlTokenizer.Token t) {
             String tag = t.name;
             if (stack.size() > MAX_DEPTH && !VoidElements.isVoid(tag)) return;
+
+            // SVG / MathML の外来要素は、HTML の暗黙終了や要素名の読み替えを受けず、自己終了タグ（{@code <rect/>}）で閉じる
+            if (tag.equals("svg") || tag.equals("math") || inForeignContent()) {
+                insertElement(tag, t.attrs, t.isSelfClosing);
+                return;
+            }
 
             switch (tag) {
                 case "html" -> { if (!fragment) mergeAttributes(htmlEl, t.attrs); }

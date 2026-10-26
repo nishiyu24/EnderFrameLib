@@ -116,6 +116,7 @@ public final class CssProperty {
     public static final String MIN_HEIGHT = "min-height";
     public static final String MIN_WIDTH = "min-width";
     public static final String OBJECT_FIT = "object-fit";
+    public static final String OBJECT_POSITION = "object-position";
     public static final String OPACITY = "opacity";
     public static final String ORDER = "order";
     public static final String OVERFLOW = "overflow";

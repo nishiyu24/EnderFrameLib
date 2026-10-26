@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.TextareaEditor.TextEditState;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.raster.RasterImageStore;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
@@ -131,7 +132,17 @@ public final class MediaElementRenderer {
         if (!renderItems || el.text() == null || el.text().isEmpty()) return;
         String src = el.text();
 
-        if (src.startsWith("https://") || src.startsWith("http://")) {
+        if (RasterImageStore.isRasterSrc(src)) {
+            // SVG をソフトウェアで描いた画素（RasterPainting が置いたもの）
+            String key = RasterPainting.keyOf(src);
+            RasterImageStore.Entry entry = RasterImageStore.get(key);
+            int[] css = RasterPainting.cssSizeOf(src);
+            if (entry != null && css != null) {
+                WebMediaManager.ImageInfo info = RasterTextures.textureFor(key, entry.pixmap(), entry.version(), css[0], css[1]);
+                renderExternalWebImage(el, info, poseStack, buffer, finalOpacity, zPos, packedLight, packedOverlay,
+                        rTL, rTR, rBR, rBL, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+            }
+        } else if (src.startsWith("https://") || src.startsWith("http://")) {
             WebMediaManager.ImageInfo info = WebMediaManager.getImage(src);
             if (info != null) {
                 renderExternalWebImage(el, info, poseStack, buffer, finalOpacity, zPos, packedLight, packedOverlay,
@@ -184,31 +195,19 @@ public final class MediaElementRenderer {
     ) {
         VertexConsumer builder = buffer.getBuffer(RenderType.entityTranslucent(info.textureId()));
         int imgW = info.width(), imgH = info.height();
-        float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
-        float drawMinX = el.x(), drawMinY = el.y(), drawMaxX = el.x() + el.width(), drawMaxY = el.y() + el.height();
         ImageFitMode fit = el.fitMode() != null ? el.fitMode() : ImageFitMode.FILL;
-        float boxW = drawMaxX - drawMinX, boxH = drawMaxY - drawMinY;
+        float boxW = el.width(), boxH = el.height();
+        if (boxW <= 0 || boxH <= 0) return;
 
-        if (imgW > 0 && imgH > 0 && boxW > 0 && boxH > 0) {
-            float boxAspect = boxW / boxH, imgAspect = (float) imgW / imgH;
-            if (fit == ImageFitMode.CONTAIN) {
-                if (imgAspect > boxAspect) {
-                    float diff = (boxH - (boxW / imgAspect)) / 2.0f;
-                    drawMinY += diff; drawMaxY -= diff;
-                } else {
-                    float diff = (boxW - (boxH * imgAspect)) / 2.0f;
-                    drawMinX += diff; drawMaxX -= diff;
-                }
-            } else if (fit == ImageFitMode.COVER) {
-                if (imgAspect > boxAspect) {
-                    float crop = (imgW - (imgH * boxAspect)) / (2.0f * imgW);
-                    u0 = crop; u1 = 1.0f - crop;
-                } else {
-                    float crop = (imgH - (imgW / boxAspect)) / (2.0f * imgH);
-                    v0 = crop; v1 = 1.0f - crop;
-                }
-            }
-        }
+        // object-fit / object-position: 中身の矩形を決め、箱の外にはみ出す分はテクスチャ座標で切る
+        ObjectFit.Placement pl = ObjectFit.place(fit, el.events() == null ? null : el.events().get("object-position"),
+                imgW, imgH, boxW, boxH, 16f);
+        float vx0 = Math.max(0f, pl.x()), vy0 = Math.max(0f, pl.y());
+        float vx1 = Math.min(boxW, pl.x() + pl.w()), vy1 = Math.min(boxH, pl.y() + pl.h());
+        if (!(vx1 > vx0) || !(vy1 > vy0) || !(pl.w() > 0) || !(pl.h() > 0)) return;
+        float u0 = (vx0 - pl.x()) / pl.w(), u1 = (vx1 - pl.x()) / pl.w();
+        float v0 = (vy0 - pl.y()) / pl.h(), v1 = (vy1 - pl.y()) / pl.h();
+        float drawMinX = el.x() + vx0, drawMinY = el.y() + vy0, drawMaxX = el.x() + vx1, drawMaxY = el.y() + vy1;
         drawRoundedTexturedRect(builder, poseStack.last().pose(), drawMinX, drawMinY, drawMaxX, drawMaxY,
                 u0, v0, u1, v1, rTL, rTR, rBR, rBL, 1f, 1f, 1f, finalOpacity, zPos, packedLight, packedOverlay,
                 clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);

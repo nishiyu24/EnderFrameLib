@@ -710,7 +710,8 @@ public class RenderPipeline {
             }
         }
 
-        if (!skipContents && !"textarea".equalsIgnoreCase(node.tag)) {
+        // svg の子（図形）は箱にしない。svg 要素が木を読んで自分でラスタライズする
+        if (!skipContents && !"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");

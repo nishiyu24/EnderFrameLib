@@ -115,13 +115,14 @@ core/
 - カスケードは CSS Cascade 5 の順（重要度 → オリジン → レイヤー → 詳細度 → 出現順）。`@layer`・CSS ネスト・`@container`・
   `@property`・`:has()` を含む。対応範囲の一覧は README の "Supported CSS"。
 - 規則は右端の複合セレクタの id / class / tag で振り分けて照合する（`StyleSheet`）。
-- セレクタから作る無効化セット（`InvalidationSets`）は `StyleSheet.invalidationSets()` で組めるが、
-  再スタイルの範囲決めにはまだ使っていない（R5 の dirty ビットとともに接続する）。
+- セレクタから作る無効化セット（`InvalidationSets`）は `StyleSheet.invalidationSets()` で組み、`InteractionState` に接続して、
+  状態・属性・子の増減で汚れた要素と関係する要素だけを再スタイルの対象にする。
 
 ### テキスト
 - **測定の出所は `TextShaper` 1 つ。** 描画側は測り直さない。
-- `font-family` は既定でシステムの書体（`SystemFonts`、CSS Fonts 4 §5.2 の照合）に解決し、`minecraft:*` などの名前と
-  `@font-face` で登録した書体だけが Minecraft のビットマップ書体（`BitmapFontFace`）で描かれる。
+- `font-family` は既定でシステムの書体（`SystemFonts`、CSS Fonts 4 §5.2 の照合）に解決し、`@font-face` の TTF / OTF も
+  `WebFonts` を通して同じ `OutlineFontFace` の経路で測り描きする。`minecraft:*` などの名前と、TTF / OTF 以外の `@font-face`
+  だけが Minecraft のビットマップ書体（`BitmapFontFace`）で描かれる。
 
 ---
 
@@ -147,9 +148,12 @@ GUI 画面（`AbstractEnderScreen` / `AbstractEnderContainerScreen`、共通部�
 `data-for` の行は鍵（`data-row-key` か添字）で既存ノードを再利用する。
 
 ### 描画（`client/renderer`）
-`DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸・グラデーション・角丸クリップは
-SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、システム書体の文字は `OutlineTextRenderer` がデバイスピクセルで
-ラスタライズして描く。グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
+`DisplayListBuilder` がレイアウト結果をディスプレイリストにし、`DisplayItemDrawer` が描く。角丸（楕円の角を含む）・角丸に沿う破線・
+グラデーション・角丸クリップ・ガウス影は SDF シェーダー（`WebSdfShader`）で 1 枚の四角形に描き、画面の面（GUI・HUD）でのグループ
+`opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask-image`・回転した角丸クリップは
+FBO プール（`LayerPool`・`LayerCompositor`、VRAM 予算は `VramBudget`）で合成する。システム書体と `@font-face`（TTF / OTF）の
+文字は `OutlineTextRenderer` がデバイスピクセルでラスタライズして描く（置き場の破棄は `AtlasCache`、VRAM の見積もりは `AtlasFootprint`）。
+グラデーションは停止点の区間ごとに同じ矩形を重ね、画素ごとの色をシェーダーが計算する（帯・格子には刻まない）。
 `DisplayListBuilder` は順序（`PaintOrder`）・アニメーション（`BoxAnimation`）・飾り（`BoxDecorationPainter`）・フォーム部品（`ControlPainter`）に、
 `DisplayItemDrawer` は背景・部品・メディア・文字の各 `*Renderer` に責務を分けて持たせている。
 
@@ -210,7 +214,11 @@ flowchart TD
 | **M6** | 入力をイベントに変える経路 | 1（`SessionInput`） |
 | **M7** | 2 つ以上のパッケージから参照される入れ子型（`api` は除く） | 0（トップレベルへ出す） |
 | **M8** | CSS の値を文字列で分割する自前の関数 | 8（新しく書かない。`CssSyntax` を使う） |
-| **M9** | トップレベルのファイル数（参考値） | 193 |
+| **M9** | トップレベルのファイル数（参考値） | 252 |
+| **M1拡張** | シングルトンの static フィールドに持つ画面・セッション単位のコールバック | 0 |
+| **M1拡張** | コマンド定義クラス内のサーバー状態コレクション | 0 |
+| **DOM直書き** | `node/`・パーサ・直列化以外の `.attrs.put` / `.attrs.remove` 直接呼び出し | 0 |
+| **R6** | `DisplayListBuilder` 一群の `Pattern.compile` の数（型付き値と `CssSyntax` を使う） | 0 |
 
 指標の外にも、次を同じテストで検査している。
 
