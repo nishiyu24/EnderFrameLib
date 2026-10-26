@@ -295,12 +295,18 @@ public final class DomMutationRecord {
             tag.put("attrs", attrsTag);
 
             ListTag childrenTag = new ListTag();
-            for (HtmlNode child : node.children) {
+            HtmlNode childHost = childHost(node);
+            for (HtmlNode child : childHost.children) {
                 childrenTag.add(serialize(child));
             }
             tag.put("children", childrenTag);
 
             return tag;
+        }
+
+        /** {@code template} の中身は要素の子ではなく content に直列化する。 */
+        private static HtmlNode childHost(HtmlNode node) {
+            return node instanceof HtmlElement el && el.isTemplateElement() ? el.getContent() : node;
         }
 
         public static HtmlNode deserialize(CompoundTag tag, HtmlNode parent) {
@@ -340,8 +346,9 @@ public final class DomMutationRecord {
             }
 
             ListTag childrenTag = tag.getList("children", Tag.TAG_COMPOUND);
+            HtmlNode childHost = childHost(node);
             for (int i = 0; i < childrenTag.size(); i++) {
-                node.children.add(deserialize(childrenTag.getCompound(i), node, depth + 1));
+                childHost.children.add(deserialize(childrenTag.getCompound(i), childHost, depth + 1));
             }
 
             return node;

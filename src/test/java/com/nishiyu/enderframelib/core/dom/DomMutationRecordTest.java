@@ -158,6 +158,7 @@ public class DomMutationRecordTest {
 
     @Test
     public void testInnerHtmlMutation() {
+        java.util.function.BiFunction<String, String, HtmlNode> previous = DomUtils.innerHtmlParser;
         DomUtils.innerHtmlParser = (html, parent) -> {
             HtmlNode container = new HtmlElement("div");
             HtmlNode n = new HtmlElement("strong");
@@ -166,14 +167,17 @@ public class DomMutationRecordTest {
             container.appendChild(n);
             return container;
         };
+        try {
+            HtmlNode root = tree("root", el("div", "content"));
+            DomMutationRecord innerHtml = DomMutationRecord.innerHtml("content", "<strong>bold text</strong>");
+            assertTrue(innerHtml.applyTo(root, null));
 
-        HtmlNode root = tree("root", el("div", "content"));
-        DomMutationRecord innerHtml = DomMutationRecord.innerHtml("content", "<strong>bold text</strong>");
-        assertTrue(innerHtml.applyTo(root, null));
-
-        HtmlNode content = root.children.get(0);
-        assertEquals(1, content.children.size());
-        assertEquals("bold", content.children.get(0).getId());
+            HtmlNode content = root.children.get(0);
+            assertEquals(1, content.children.size());
+            assertEquals("bold", content.children.get(0).getId());
+        } finally {
+            DomUtils.innerHtmlParser = previous;
+        }
     }
 
     @Test

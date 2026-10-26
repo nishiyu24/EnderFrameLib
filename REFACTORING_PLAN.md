@@ -22,7 +22,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 
 ## 現在地（2026-10-26 時点）
 
-`./gradlew test` は 1,036 件（2026-10-26 の Phase 3b 完了後。Phase 4 実装後は 973 件、Phase 3a 実装後は 897 件。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 23 行）、WPT 採用 38 ケース（台帳 0 行）。
+`./gradlew test` は 1,229 件（2026-10-26 の R9 実装後。Phase 4 実装後は 973 件、Phase 3b 完了後は 1,036 件、Phase 3a 実装後は 897 件。`PerformanceBenchmarkTest` / `StateMemoryBenchmarkTest` は通常 `test` では決定論的スモーク検証のみとし、厳密な実時間・メモリ閾値判定は単独 JVM の `./gradlew benchmark` に分離）、`runGameTestServer` は 5 件通過。忠実度コーパス 138 ケース（台帳 19 行）、WPT 採用 38 ケース（台帳 0 行）。
 直近コミット（`511672e`）以降の作業ツリーに、H1・R4〜R7・Surface 描画の実装と本文書群の整理が載っている。
 2026-10-25 にコードベース全体の技術監査を実施し、既存の残課題（R2〜R10・旧 W12）と監査で新たに判明した課題（テスト・計測の空白、ライフサイクル・入力コールバック競合、DOM 属性の直接書き換え、スタイル/描画/フォントのメモリ・GC ボトルネック、メディア取得のセキュリティ）を統合して、**テスト・計測・番人ラチェットを最優先（Phase 0）**に課題全体を再設定した。
 
@@ -41,7 +41,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | R6 | 描画の合成化と型付きディスプレイリスト | 完了（SDF の角丸・楕円の角・角丸に沿う破線・線形/放射/円錐グラデーション・角丸クリップ・ガウス影、型付き `RenderHints`、transform の宣言順合成、FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask`・回転角丸クリップ）、VRAM 予算 `VramBudget`、旧 W12 のスクロール・シザー・世界内面の描画順と文字行部分クリップまで 2026-10-26 に完了） |
 | R7 | テキストと国際化 | ほぼ完了（システムの書体、アトラスの 1 サイズ 1 置き場化と破棄、`@font-face` の統合、`ch` / `ex`、UAX #14、`direction`、UAX #9 の並べ替え、Selection / Range は 2026-10-26 に完了。残: 合字・`line-height: normal` の代替書体の指標・`writing-mode`・`contenteditable` と IME・描画の選択と Selection API のつなぎ） |
 | R8 | 置換要素（SVG・Canvas 2D） | ほぼ完了（2026-10-26。ソフトウェア Canvas 2D・インライン SVG・画像としての SVG・`srcset` / `image-set()`・`object-fit` / `object-position`。残: SVG の `mask` / `filter` / `marker` / `pattern` / `tspan`、WPT `html/canvas/` の採用ケース、canvas / SVG のテキストの書体） |
-| R9 | レイアウトとパーサの残り | 一部完了（2026-10-26。Phase 5 の 2 段目。表の台帳 4 行の解消・`%` 列幅・`visibility: collapse`・multicol・grid の `auto-fit` の畳みと `grid-template` / `grid`・adoption agency とコメントの端・`<ol reversed>`・`list-style-image`・`@counter-style`・高さの内容サイズのキーワード。残: subgrid・baseline・flex の残り・ブロックを含むインラインの分割・`<template>` の断片・外来要素の名前空間・枠線の `border-style` の優先順位と行・列の枠線） |
+| R9 | レイアウトとパーサの残り | 一部完了（2026-10-26。Phase 5 の 2 段目。表の台帳 4 行の解消・`%` 列幅・`visibility: collapse`・multicol・grid の `auto-fit` の畳みと `grid-template` / `grid`・adoption agency とコメントの端・`<ol reversed>`・`list-style-image`・`@counter-style`・高さの内容サイズのキーワード・`<template>` の不活性な `content`。残: subgrid・baseline・flex の残り・ブロックを含むインラインの分割・外来要素の名前空間・枠線の `border-style` の優先順位と行・列の枠線） |
 | R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・F5スマートリロード強化は Phase 5。ファイル監視は行わない） |
 
 ---
@@ -759,7 +759,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
   `min-content` / `max-content` / `fit-content` を高さにも。
 - **表**: `%` の列幅、`border-collapse` の線種と優先順位、`empty-cells`、`visibility: collapse`。
 - **リスト**: `<ol reversed>`、`list-style-image`、`@counter-style`（2026-10-26 に完了）。
-- **HTML パーサ**: 書式要素の一覧と adoption agency、SVG / MathML の外来要素、`<template>` の中身を別の `DocumentFragment` にする、
+- **HTML パーサ**: 書式要素の一覧と adoption agency、SVG / MathML の外来要素、`<template>` の中身を別の `DocumentFragment` にする（2026-10-26 に完了）、
   閉じていない `<!--` で残りの文書を捨てるのをやめる（仕様どおりコメントを EOF まで続ける）。
 
 **参照**: AUI `layout/Grid`（`minmax()` / `repeat()` / `auto-fill`）、`layout/Flex`（baseline）。AUI は table / float / multicol が無いので、多くは独自。
@@ -778,7 +778,8 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - **flex（続き。同日）**: 列方向アイテムの `min-height: auto` は、指定の高さより内容が低ければ内容の高さまで縮められる（Flexbox §4.5。`LayoutBox.contentBlockExtent` に指定値と無関係な内容の高さを残し `FlexLayoutEngine.minMainSize` が読む）。`R9MiscLayoutTest` に 2 件追加。`./gradlew test` 失敗 0、`./gradlew benchmark` は許容幅内（showcase 11.4 / 15.4 / 5.1 / 17.2 ms）。期待値は仕様の式から導出（Edge 実測ではない）。
 - **検証**: `TablePercentColumnTest`（8）・`MulticolTest`（14。期待値は Edge 156 の `getBoundingClientRect` / `Range`）・`GridAutoFitTest`（4）・`R9MiscLayoutTest`（3。Edge 実測）・`HtmlTreeConstructionTest` に 18 ケース追加（Edge 156 の innerHTML）・`BoxTreeTest` に 2 件・`ShorthandExpansionTest` に 4 件。`./gradlew test` は 1,201 件・失敗 0（`ArchitectureTest` の M9 は 275 → 276、`MulticolLayout` の 1 ファイル）、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 11.8 / Relayout 15.2 / DisplayList 4.6 / ScrollStep 17.8 ms。基準 16.3 / 15.2 / 4.8 / 17.5）。段組の組版は 400 段落（約 1,200 行）で 3 段組なし ≈ 26 ms・4 列 ≈ 29 ms（best。いずれも測定は JUnit 上の 1 回の `layoutDocument`）。実機（`runClient`）での目視は未実施。
 - **`@counter-style`（検証。同日）**: `CounterStyleTest`（7）・`BoxTreeTest` に 1 件（`::marker` は `prefix + 表現 + suffix`、`counter()` は付けないこと、作者名の大文字小文字、定義済み名を小文字に直してから作者の定義を探すこと）。`./gradlew test` は 1,215 件・失敗 0（`ArchitectureTest` の M9 は 276 → 278、`CounterStyle` / `CounterStyles` の 2 ファイル）、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 12.4 / Relayout 17.0 / DisplayList 4.7 / ScrollStep 21.4 ms、guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms）。
-- **LIMITATION / 残**: multicol は枠線・余白・背景を持つブロックと、行を持たない箱（空のブロック・画像）を途中で分けない（ブラウザは空のブロックも分ける）。`break-before` / `break-after`・`orphans` / `widows`・`direction: rtl` の列順・段組内の float は未対応。表は行・列・行グループの枠線の重ね合わせと `hidden` 以外の `border-style` の優先順位が残り、潰れた列の `border-spacing` は残る。grid の subgrid・baseline・負の方向の暗黙トラック、flex の last baseline・不定の高さのコンテナ内の `%` 高さ、ブロックを含むインラインボックスの分割、flex / grid 直下のテキストの匿名アイテム、float の横の行幅の測り直し、`<template>` の別 `DocumentFragment`（`Bindings` が子の `template` を読むため）、SVG / MathML の名前空間（`SvgRenderer` が小文字で読むため）は未着手。`@counter-style` は `symbols()` の匿名スタイルと画像記号（`url(...)`）を読まない。`list-style-image` の読み込み失敗は `list-style-type` に戻さない。
+- **`<template>`（2026-10-26）**: 中身を要素の子ではなく、不活性な `HtmlDocumentFragment`（`HtmlElement.getContent()`）に置く。パーサの挿入先、`innerHTML` / `outerHTML`、`cloneNode`、`textContent`、文書の伝播、ネットワーク直列化、`Bindings` / `ClientPubSubManager` の雛形が content を読む。文書の走査（id 索引・`querySelector`）とレイアウトは content を辿らない。`TemplateElementTest`（10）・`HtmlTreeConstructionTest` に 4 ケース追加。`./gradlew test` は 1,229 件・失敗 0（`ArchitectureTest` の M9 は 278 のまま）、`./gradlew benchmark`（厳密）は許容幅内（showcase 17.6 / 24.7 / 7.3 / 27.7 ms、guidebook 6.2 / 5.7 / 3.9 / 7.9 ms、large-list 27.2 / 14.5 / 13.3 / 20.2 ms）。
+- **LIMITATION / 残**: multicol は枠線・余白・背景を持つブロックと、行を持たない箱（空のブロック・画像）を途中で分けない（ブラウザは空のブロックも分ける）。`break-before` / `break-after`・`orphans` / `widows`・`direction: rtl` の列順・段組内の float は未対応。表は行・列・行グループの枠線の重ね合わせと `hidden` 以外の `border-style` の優先順位が残り、潰れた列の `border-spacing` は残る。grid の subgrid・baseline・負の方向の暗黙トラック、flex の last baseline・不定の高さのコンテナ内の `%` 高さ、ブロックを含むインラインボックスの分割、flex / grid 直下のテキストの匿名アイテム、float の横の行幅の測り直し、SVG / MathML の名前空間（`SvgRenderer` が小文字で読むため）は未着手。`@counter-style` は `symbols()` の匿名スタイルと画像記号（`url(...)`）を読まない。`list-style-image` の読み込み失敗は `list-style-type` に戻さない。
 ### R10 — 開発者ツール
 
 **目的**: R1〜R3 で生きた DOM ができると、外から観測して触れるようになる。デバッグと AI 支援の両方に効く。R2 の後なら並行できる。

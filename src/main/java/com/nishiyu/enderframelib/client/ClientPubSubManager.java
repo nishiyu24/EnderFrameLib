@@ -39,7 +39,7 @@ public class ClientPubSubManager {
 
     public static void registerVirtualList(String sessionId, String targetId, String channel, HtmlNode templateNode, int itemW, int itemH) {
         List<VirtualListBinding> list = ClientWebManager.getOrCreateSession(sessionId).virtualListBindings();
-        VirtualListBinding binding = new VirtualListBinding(targetId, channel, templateNode != null ? templateNode.cloneNode() : new HtmlNode("template"), itemW, itemH);
+        VirtualListBinding binding = new VirtualListBinding(targetId, channel, templateNode != null ? templateNode.cloneNode(true) : new HtmlNode("template"), itemW, itemH);
         list.removeIf(b -> b.targetId().equals(targetId));
         list.add(binding);
     }

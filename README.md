@@ -317,7 +317,9 @@ the engine against.
 ## Supported HTML
 
 **Structure** `html` `head` `body` `div` `section` `main` `header` `footer`
-`article` `nav` `aside` `span` `template`
+`article` `nav` `aside` `span` `template` (its content is an inert
+`DocumentFragment`: not rendered, not part of the document tree, and not
+reached by document queries)
 
 **Text** `h1`–`h6` `p` `br` `hr` `b` `strong` `i` `em` `s` `strike` `del` `u`
 `ins` `code` `kbd` `pre` `blockquote` `label` `output`
@@ -688,9 +690,7 @@ Layout differences from a real browser are measured, case by case, in
 - **HTML parsing in full.** Formatting elements are reconstructed and misnested
   ones are fixed by the adoption agency algorithm (`<p><b>x<p>y` makes the second
   paragraph bold). SVG and MathML elements are parsed without a namespace (names
-  and attributes stay lower-case, so `viewBox` is read as `viewbox`), and
-  `<template>` content is part of the document tree (hidden by `display: none`)
-  rather than an inert fragment.
+  and attributes stay lower-case, so `viewBox` is read as `viewbox`).
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
 - **Tables in full.** `border-collapse: collapse` merges cell and table borders by

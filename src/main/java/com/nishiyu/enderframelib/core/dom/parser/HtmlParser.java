@@ -38,10 +38,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 木を組み替える。{@code td} / {@code th} / {@code caption} / {@code applet} / {@code object} / {@code marquee} /
  * {@code template} の開始は一覧にマーカーを置き、その要素が閉じたらマーカー以降の項目を捨てる。
  *
+ * {@code <template>} の中身は要素の子ではなく、不活性な {@code DocumentFragment}（content）に置く。
+ * パーサの挿入先・{@code innerHTML} / {@code outerHTML}・{@code cloneNode}・ネットワークの直列化が
+ * 同じ置き場を読み、{@code Bindings} は content の子を雛形にする。
+ *
  * LIMITATION(制約): SVG / MathML の外来要素は HTML の暗黙終了を受けず自己終了タグで閉じるが、
  * 名前空間は持たない（要素名と属性名は小文字のまま。{@code SvgRenderer} が小文字で読む）。
- * {@code <template>} の中身は別の {@code DocumentFragment} にせず子として持つ（ua.css が隠す。
- * {@code Bindings} が子の {@code template} を読むため）。
  * README の "Not supported" に対応。
  */
 public class HtmlParser {
@@ -424,6 +426,12 @@ public class HtmlParser {
                 case "body", "html", "head" -> {
                     // </body> の後に書かれた内容も body に入る（after body が in body に戻すのと同じ）
                 }
+                case "template" -> {
+                    // template の中身は content にあり、要素の子ではない。開いている子をまとめて閉じる
+                    if (!inScope("template", Scope.DEFAULT)) return;
+                    generateImpliedEndTags(null);
+                    popUntil("template");
+                }
                 case "p" -> {
                     if (!inScope("p", Scope.BUTTON)) {
                         // 開いていない </p> は空の段落になる
@@ -614,11 +622,12 @@ public class HtmlParser {
                 insertAt(commonAncestor, lastNode);
 
                 HtmlNode fresh = createElement(fe.tag, fe.attrs);
-                for (HtmlNode child : furthestBlock.children) child.parent = fresh;
-                fresh.children.addAll(furthestBlock.children);
-                furthestBlock.children.clear();
-                fresh.parent = furthestBlock;
-                furthestBlock.children.add(fresh);
+                HtmlNode blockHost = childHost(furthestBlock);
+                for (HtmlNode child : blockHost.children) child.parent = fresh;
+                fresh.children.addAll(blockHost.children);
+                blockHost.children.clear();
+                fresh.parent = blockHost;
+                blockHost.children.add(fresh);
 
                 formatting.remove(fe);
                 bookmark = Math.min(bookmark, formatting.size());
@@ -648,8 +657,9 @@ public class HtmlParser {
                     return;
                 }
             }
-            node.parent = target;
-            target.children.add(node);
+            HtmlNode host = childHost(target);
+            node.parent = host;
+            host.children.add(node);
         }
 
         /** 終了タグの一般規則: 同名の要素まで閉じる。途中に特殊な要素があれば無視する。 */
@@ -971,7 +981,7 @@ public class HtmlParser {
 
         /**
          * 適切な挿入先（§13.2.6.1）に入れる。表の中で表に直接入らない要素と文字は、
-         * いちばん内側の表の直前に出す（foster parenting）。
+         * いちばん内側の表の直前に出す（foster parenting）。{@code template} は中身（content）に入れる。
          */
         void insertNode(HtmlNode node) {
             HtmlNode target = currentNode();
@@ -984,8 +994,14 @@ public class HtmlParser {
                     return;
                 }
             }
-            node.parent = target;
-            target.children.add(node);
+            HtmlNode host = childHost(target);
+            node.parent = host;
+            host.children.add(node);
+        }
+
+        /** 要素の子の置き場。{@code template} だけは不活性な content に置く。 */
+        static HtmlNode childHost(HtmlNode node) {
+            return node instanceof HtmlElement el && el.isTemplateElement() ? el.getContent() : node;
         }
 
         HtmlNode lastOpen(String tag) {
@@ -1005,10 +1021,15 @@ public class HtmlParser {
         }
 
         void insertText(HtmlTokenizer.Token token) {
-            HtmlNode parent = currentNode();
-            if (fosterParenting && FOSTER_TARGETS.contains(parent.tag)) {
+            HtmlNode target = currentNode();
+            HtmlNode parent = childHost(target);
+            boolean fostered = false;
+            if (fosterParenting && FOSTER_TARGETS.contains(target.tag)) {
                 HtmlNode table = lastOpen("table");
-                if (table != null && table.parent != null) parent = table.parent;
+                if (table != null && table.parent != null) {
+                    parent = table.parent;
+                    fostered = true;
+                }
             }
             String text = normalizeText(token, parent);
             // <style> / <script> の中身はシート全体が意味を持つので、通常テキストより大きい上限にする
@@ -1016,10 +1037,7 @@ public class HtmlParser {
             if (text.length() > maxText) text = text.substring(0, maxText);
             if (text.isEmpty()) return;
 
-            int at = parent.children.size();
-            if (parent != currentNode()) {
-                at = parent.children.indexOf(lastOpen("table"));
-            }
+            int at = fostered ? parent.children.indexOf(lastOpen("table")) : parent.children.size();
             // 捨てたタグを挟んだ文字（"a<tr>b"）や表の前に出した文字は、隣のテキストノードに繋げる
             HtmlNode previous = at > 0 ? parent.children.get(at - 1) : null;
             if (previous != null && previous.nodeType == NodeType.TEXT) {
