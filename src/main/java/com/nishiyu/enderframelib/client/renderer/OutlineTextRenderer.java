@@ -8,7 +8,9 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.text.BidiText;
+import com.nishiyu.enderframelib.core.paint.model.VramBudget;
 import com.nishiyu.enderframelib.core.text.font.AtlasCache;
+import com.nishiyu.enderframelib.core.text.font.AtlasFootprint;
 import com.nishiyu.enderframelib.core.text.font.AtlasSizing;
 import com.nishiyu.enderframelib.core.text.font.GlyphKey;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
@@ -58,7 +60,7 @@ public final class OutlineTextRenderer {
     private record AtlasKey(LoadedFace face, boolean bold, boolean italic, int pixelSizeQ, int scaleQ) {}
 
     /** 字形の置き場と、その中での字形の番号の割り当て。 */
-    private record Atlas(FontSet set, GlyphKey keys) {}
+    private record Atlas(FontSet set, GlyphKey keys, AtlasFootprint footprint) {}
 
     private static final AtlasCache<AtlasKey, Atlas> ATLASES = new AtlasCache<>(
             SOFT_LIMIT_FONT_SETS, PROTECT_NANOS, EXPIRE_NANOS, System::nanoTime, atlas -> atlas.set().close());
@@ -186,6 +188,7 @@ public final class OutlineTextRenderer {
     /** 置き場の掃除と、使われない面のハンドルの解放。描画のたびに呼んでよい（時刻の比較だけ）。 */
     private static void housekeeping() {
         ATLASES.sweepIfDue();
+        if (VramBudget.atlasOverCeiling(atlasBytes())) ATLASES.evictUnprotected();
         long now = System.nanoTime();
         if (now - lastFaceTrim >= FACE_IDLE_NANOS / 2) {
             lastFaceTrim = now;
@@ -198,9 +201,10 @@ public final class OutlineTextRenderer {
         ResourceLocation name = ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "outline_text/" + (atlasCounter++));
         FontSet set = new FontSet(mc.getTextureManager(), name);
         GlyphKey keys = new GlyphKey();
-        GlyphProvider provider = new FaceGlyphProvider(key.face(), key.bold(), key.italic(), pixelSize, glyphScale, keys);
+        AtlasFootprint footprint = new AtlasFootprint();
+        GlyphProvider provider = new FaceGlyphProvider(key.face(), key.bold(), key.italic(), pixelSize, glyphScale, keys, footprint);
         set.reload(List.of(new GlyphProvider.Conditional(provider, FontOption.Filter.ALWAYS_PASS)), Set.of());
-        return new Atlas(set, keys);
+        return new Atlas(set, keys, footprint);
     }
 
     /** 描画の倍率が変わった（画面の大きさの変更など）ときや資源の再読み込みのときに置き場を捨てる。 */
@@ -213,6 +217,16 @@ public final class OutlineTextRenderer {
         return ATLASES.size();
     }
 
+    /** 字形の置き場が使っている VRAM の見積もり（バイト。{@link AtlasFootprint}）。FBO プールの予算（{@link VramBudget}）の入力。 */
+    public static long atlasBytes() {
+        return ATLASES.sum(a -> a.footprint().estimatedBytes());
+    }
+
+    /** 置き場に載った字形の総数（診断用）。 */
+    public static long glyphCount() {
+        return ATLASES.sum(a -> a.footprint().glyphCount());
+    }
+
     /** 1 つの面を 1 つの大きさでラスタライズする {@link GlyphProvider}。 */
     private static final class FaceGlyphProvider implements GlyphProvider {
         private final LoadedFace face;
@@ -222,9 +236,12 @@ public final class OutlineTextRenderer {
         /** 1 CSS px あたりのビットマップのピクセル数（字形の四角形の大きさを CSS px に直す）。 */
         private final float oversample;
         private final GlyphKey keys;
+        private final AtlasFootprint footprint;
 
-        FaceGlyphProvider(LoadedFace face, boolean bold, boolean italic, float pixelSize, float oversample, GlyphKey keys) {
+        FaceGlyphProvider(LoadedFace face, boolean bold, boolean italic, float pixelSize, float oversample, GlyphKey keys,
+                          AtlasFootprint footprint) {
             this.keys = keys;
+            this.footprint = footprint;
             this.face = face;
             this.bold = bold;
             this.italic = italic;
@@ -250,6 +267,7 @@ public final class OutlineTextRenderer {
 
                 @Override
                 public BakedGlyph bake(Function<SheetGlyphInfo, BakedGlyph> baker) {
+                    footprint.recordGlyph(bitmap.width(), bitmap.height());
                     return baker.apply(new Sheet(bitmap, oversample));
                 }
             };
