@@ -43,10 +43,13 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * 名前付きの線・{@code grid-template-areas}・{@code repeat(auto-fill)}・{@code grid-auto-flow}・
  * {@code auto} トラックの内容の寸法・揃えも無かった。
  *
+ * <p>{@code repeat(auto-fit, ...)} は、アイテムが 1 つも入らなかった繰り返しのトラックを潰す
+ * （トラックと、その隣の gap を 1 本ぶん取り除いたのと同じ寸法になる）。
+ *
  * LIMITATION(制約): トラックの寸法は CSS Grid §11 の簡略版で、複数のトラックにまたがるアイテムの
- * 寸法は、またがる内容依存のトラックに等分する。サブグリッド・{@code grid-template} /
- * {@code grid} ショートハンド・明示的なグリッドより前の暗黙のトラック（負の方向への拡張）・
- * {@code baseline} 揃えは無い。README の "Not supported" に対応。
+ * 寸法は、またがる内容依存のトラックに等分する。サブグリッド・明示的なグリッドより前の暗黙のトラック
+ * （負の方向への拡張）・{@code baseline} 揃えは無い（{@code grid-template} / {@code grid} ショートハンドは
+ * 読む側ではなく展開側 {@code ShorthandExpanders} が担う）。README の "Not supported" に対応。
  */
 public class GridLayoutEngine extends LayoutEngine {
 
@@ -77,6 +80,8 @@ public class GridLayoutEngine extends LayoutEngine {
         areas.addLineNames(gs.columns, gs.rows);
 
         placeItems(box, gs, areas);
+        collapseEmptyAutoFitTracks(gs, true);
+        collapseEmptyAutoFitTracks(gs, false);
 
         // 列の寸法。内容依存のトラックがあれば、アイテムの最小・最大の寸法を先に測る
         List<TrackDef> colDefs = gs.trackDefs(true);
@@ -262,6 +267,57 @@ public class GridLayoutEngine extends LayoutEngine {
         }
         gs.colCount = Math.max(1, cols);
         gs.rowCount = rows;
+    }
+
+    /**
+     * {@code repeat(auto-fit)} の繰り返しのうち、アイテムが 1 つも重ならないトラックを取り除く（CSS Grid §7.2.3.2）。
+     * 潰れたトラックは寸法 0 で、前後の gap は 1 本に重なる。つまりトラックを無かったことにするのと同じなので、
+     * アイテムの始点を詰める。
+     */
+    private static void collapseEmptyAutoFitTracks(GridState gs, boolean columns) {
+        TrackList list = columns ? gs.columns : gs.rows;
+        if (list.autoFit.isEmpty()) return;
+        int n = list.tracks.size();
+        boolean[] empty = new boolean[n];
+        int emptyCount = 0;
+        for (int i = list.autoFit.nextSetBit(0); i >= 0 && i < n; i = list.autoFit.nextSetBit(i + 1)) {
+            boolean used = false;
+            for (GridItem item : gs.items) {
+                int start = columns ? item.colStart : item.rowStart;
+                int span = columns ? item.colSpan : item.rowSpan;
+                if (i >= start && i < start + span) {
+                    used = true;
+                    break;
+                }
+            }
+            if (!used) {
+                empty[i] = true;
+                emptyCount++;
+            }
+        }
+        if (emptyCount == 0 || emptyCount == n) return;
+        int[] removedBefore = new int[n + 1];
+        for (int i = 0; i < n; i++) removedBefore[i + 1] = removedBefore[i] + (empty[i] ? 1 : 0);
+        for (GridItem item : gs.items) {
+            int start = columns ? item.colStart : item.rowStart;
+            int end = start + (columns ? item.colSpan : item.rowSpan);
+            int newStart = start - removedBefore[Math.min(start, n)];
+            int newEnd = end - removedBefore[Math.min(end, n)];
+            if (columns) {
+                item.colStart = newStart;
+                item.colSpan = Math.max(1, newEnd - newStart);
+            } else {
+                item.rowStart = newStart;
+                item.rowSpan = Math.max(1, newEnd - newStart);
+            }
+        }
+        List<TrackDef> kept = new ArrayList<>();
+        for (int i = 0; i < n; i++) if (!empty[i]) kept.add(list.tracks.get(i));
+        list.tracks.clear();
+        list.tracks.addAll(kept);
+        list.lineNames.clear();
+        if (columns) gs.colCount = Math.max(1, gs.colCount - emptyCount);
+        else gs.rowCount = Math.max(0, gs.rowCount - emptyCount);
     }
 
     /** 行優先なら lane = 行・pos = 列、列優先なら lane = 列・pos = 行。 */
@@ -677,6 +733,8 @@ public class GridLayoutEngine extends LayoutEngine {
     static final class TrackList {
         final List<TrackDef> tracks = new ArrayList<>();
         final List<List<String>> lineNames = new ArrayList<>();
+        /** {@code repeat(auto-fit)} が作ったトラックの位置。アイテムが入らなければ潰す。 */
+        final java.util.BitSet autoFit = new java.util.BitSet();
 
         private void addNames(List<String> names) {
             while (lineNames.size() <= tracks.size()) lineNames.add(new ArrayList<>());
@@ -734,7 +792,9 @@ public class GridLayoutEngine extends LayoutEngine {
                             continue;
                         }
                     }
+                    int from = list.tracks.size();
                     for (int i = 0; i < count; i++) parseInto(list, body, available, gap, style, rootW, rootH);
+                    if (countStr.equals("auto-fit")) list.autoFit.set(from, list.tracks.size());
                 } else {
                     list.addTrack(parseTrack(t, available, style, rootW, rootH));
                 }
@@ -744,8 +804,7 @@ public class GridLayoutEngine extends LayoutEngine {
         /**
          * {@code repeat(auto-fill, ...)} の繰り返し数。トラックの寸法（max が確定していなければ min）で
          * 利用できる幅に入るだけ。空間が不定なら 1。
-         *
-         * LIMITATION(制約): {@code auto-fit} の空のトラックを潰さない（auto-fill と同じに扱う）。
+         * {@code auto-fit} の個数は {@code auto-fill} と同じで、空の繰り返しを潰すのは配置の後（{@link #collapseEmptyAutoFitTracks}）。
          */
         private static int autoRepeatCount(String body, float available, float gap, ComputedStyle style, float rootW, float rootH) {
             if (Float.isNaN(available)) return 1;

@@ -117,7 +117,26 @@ final class ValueComputer {
             style.put(key, value);
         }
         computeLineWidths(style);
+        computeBlockSizeKeywords(style);
     }
+
+    /**
+     * ブロック方向の寸法（{@code height} / {@code min-height} / {@code max-height}）の
+     * {@code min-content} / {@code max-content} / {@code fit-content} は、初期値と同じに振る舞う
+     * （CSS Sizing 3 §5.1）。算出値を初期値に直しておけば、レイアウトの側は特別扱いしなくてよい。
+     */
+    private static void computeBlockSizeKeywords(Map<String, String> style) {
+        for (String key : BLOCK_SIZE_PROPERTIES) {
+            String value = style.get(key);
+            if (value == null) continue;
+            String v = value.trim().toLowerCase(Locale.ROOT);
+            if (v.equals("min-content") || v.equals("max-content") || v.equals("fit-content") || v.startsWith("fit-content(")) {
+                style.put(key, key.equals(CssProperty.MAX_HEIGHT) ? "none" : "auto");
+            }
+        }
+    }
+
+    private static final String[] BLOCK_SIZE_PROPERTIES = {CssProperty.HEIGHT, CssProperty.MIN_HEIGHT, CssProperty.MAX_HEIGHT};
 
     /**
      * 値の中の単位を px にするときの基準。{@code lh} はこの要素の行の高さ（数値なら font-size 倍、{@code normal} は
@@ -169,6 +188,7 @@ final class ValueComputer {
             computeLineWidth(style, "border-" + side + "-style", "border-" + side + "-width");
         }
         computeLineWidth(style, "outline-style", "outline-width");
+        computeLineWidth(style, "column-rule-style", "column-rule-width");
     }
 
     private static void computeLineWidth(Map<String, String> style, String styleKey, String widthKey) {

@@ -408,6 +408,7 @@ public final class CssParser {
                 }
                 case "keyframes", "-webkit-keyframes" -> collectKeyframes(rule, ctx.sheet());
                 case "property" -> registerProperty(rule, ctx.sheet());
+                case "counter-style" -> collectCounterStyle(rule, ctx.sheet());
                 case "font-face" -> {
                     // フォント登録は CssParser.fontFaceCallback が CSS 全体を受け取って処理する
                 }
@@ -496,6 +497,32 @@ public final class CssParser {
                 }
             }
             return out.isEmpty() ? null : out;
+        }
+
+        // ---- @counter-style
+
+        /**
+         * {@code @counter-style <name> { ... }} を読む（CSS Counter Styles 3 §3）。
+         * 名前は大文字小文字を区別する（{@code <custom-ident>}）。予約名・読めない宣言は規則ごと無効。
+         */
+        private static void collectCounterStyle(CssSyntax.Rule rule, StyleSheet sheet) {
+            if (!rule.hasBlock()) return;
+            List<ComponentValue> prelude = CssSyntax.trim(rule.prelude());
+            if (prelude.size() != 1) return;
+            Token nameToken = CssSyntax.tokenOf(prelude.getFirst());
+            if (nameToken == null || nameToken.type() != Type.IDENT) return;
+            String name = nameToken.value();
+            if (CounterStyles.isReservedName(name)) return;
+
+            List<Declaration> declarations = new ArrayList<>();
+            for (Item item : CssSyntax.parseBlockContents(rule.block())) {
+                Declaration declaration = item.declaration();
+                // 記述子に !important は無い（付いた宣言は無効）
+                if (declaration != null && !declaration.important()) declarations.add(declaration);
+            }
+            CounterStyle style = CounterStyle.fromDeclarations(name, declarations);
+            // 無効な規則は無視する（同じ名前の先の定義は残る）
+            if (style != null) sheet.counterStyles.put(name, style);
         }
 
         // ---- @property

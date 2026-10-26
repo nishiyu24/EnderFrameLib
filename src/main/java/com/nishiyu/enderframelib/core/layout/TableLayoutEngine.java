@@ -44,9 +44,16 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * {@code rowspan}・{@code border-spacing} / {@code border-collapse}・キャプション・セルの縦揃えが無く、
  * HTML の {@code <table>} は ua.css が flex の行として組んでいた。
  *
- * LIMITATION(制約): 列幅の % 指定は読まない（auto として扱う）。{@code border-collapse} で重ねるのは
+ * <p>列幅の {@code %}: 列要素と 1 列だけのセルの {@code width: N%} を表の幅に対する割合の列にする
+ * （自動レイアウトは表の幅が割合の列の max-content を収められる幅になるまで広がる。割合の合計が 100 を
+ * 超えれば 100 に縮める）。残りの列が残りの幅を分け合う。
+ *
+ * <p>{@code visibility: collapse} の行（と、その行グループ）は高さ 0 で、前の {@code border-spacing} も無くなる。
+ * 列要素（と列グループ）は幅 0 になる（列の間の {@code border-spacing} は残る）。
+ *
+ * LIMITATION(制約): {@code border-collapse} で重ねるのは
  * セルどうしと表の枠線だけで、行・行グループ・列の枠線は重ねない（枠線の太さだけを比べ、
- * {@code border-style} の優先順位は見ない）。{@code empty-cells} と {@code visibility: collapse} は無い。
+ * {@code border-style} の優先順位は、{@code hidden} が勝つことだけ見る）。
  * README の "Not supported" に対応。
  */
 public class TableLayoutEngine extends LayoutEngine {
@@ -66,6 +73,7 @@ public class TableLayoutEngine extends LayoutEngine {
         box.engineState = state;
         collectStructure(box, state);
         buildGrid(state);
+        markCollapsed(state);
 
         state.collapse = box.style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
                 == CssKeywords.BorderCollapse.COLLAPSE;
@@ -92,16 +100,26 @@ public class TableLayoutEngine extends LayoutEngine {
             float[] min = new float[n], max = new float[n];
             boolean[] specified = new boolean[n];
             columnContributions(state, min, max, specified, parentH, ctx, rootW, rootH);
+            for (int c = 0; c < n; c++) {
+                if (state.collapsedColumns[c]) {
+                    min[c] = 0;
+                    max[c] = 0;
+                }
+            }
+            float[] percent = columnPercents(state, n);
             float sumMin = sum(min), sumMax = sum(max);
             float target;
             if (definite) {
                 target = Math.max(sumMin, box.w - box.horizontalDecoration() - spacingW);
             } else {
                 float available = Math.max(0, space.availableInlineSize() - spacingW);
-                target = Math.max(sumMin, Math.min(sumMax, available));
+                // 割合の列の max-content を収めるのに要る幅まで、表は広がる
+                float wanted = Math.max(sumMax, percentRequiredWidth(percent, max));
+                target = Math.max(sumMin, Math.min(wanted, available));
             }
-            widths = distributeWidths(min, max, specified, target);
+            widths = distributePercentWidths(min, max, specified, percent, target);
         }
+        for (int c = 0; c < n; c++) if (state.collapsedColumns[c]) widths[c] = 0;
         state.columnWidths = widths;
 
         float contentW = sum(widths) + spacingW;
@@ -138,12 +156,12 @@ public class TableLayoutEngine extends LayoutEngine {
 
         for (int r = 0; r < rows; r++) {
             LayoutBox row = state.rows.get(r);
-            if (row.style.containsKey(CssProperty.HEIGHT)) {
+            if (!state.collapsedRows[r] && row.style.containsKey(CssProperty.HEIGHT)) {
                 heights[r] = row.style.length(CssProperty.HEIGHT, space.percentageBlockSize(), rootW, rootH);
             }
         }
         for (CellSlot slot : state.cells) {
-            if (slot.rowSpan != 1) continue;
+            if (slot.rowSpan != 1 || state.collapsedRows[slot.row]) continue;
             heights[slot.row] = Math.max(heights[slot.row], slot.naturalHeight);
             if ("baseline".equals(verticalAlign(slot.cell))) {
                 slot.baseline = cellBaseline(slot.cell, slot.naturalHeight);
@@ -154,7 +172,7 @@ public class TableLayoutEngine extends LayoutEngine {
         }
         // 複数行にまたがるセルが入りきらなければ、またがる最後の行を高くする
         for (CellSlot slot : state.cells) {
-            if (slot.rowSpan == 1) continue;
+            if (slot.rowSpan == 1 || state.collapsedRows[slot.row]) continue;
             float have = state.vSpacing * (slot.rowSpan - 1);
             for (int r = slot.row; r < slot.row + slot.rowSpan; r++) have += heights[r];
             if (slot.naturalHeight > have) heights[slot.row + slot.rowSpan - 1] += slot.naturalHeight - have;
@@ -183,7 +201,9 @@ public class TableLayoutEngine extends LayoutEngine {
             }
             else captionTop += outer;
         }
-        float gridH = rows > 0 ? sum(heights) + state.vSpacing * (rows + 1) : 0;
+        int visibleRows = 0;
+        for (boolean collapsed : state.collapsedRows) if (!collapsed) visibleRows++;
+        float gridH = visibleRows > 0 ? sum(heights) + state.vSpacing * (visibleRows + 1) : 0;
         placeChildren(box, state, captionTop, gridH);
         return captionTop + gridH + captionBottom;
     }
@@ -239,6 +259,20 @@ public class TableLayoutEngine extends LayoutEngine {
                 }
             }
         }
+    }
+
+    /** {@code visibility: collapse} の行と列に印を付ける（可視性は継承されるので、行グループ・列グループの指定も届く）。 */
+    private static void markCollapsed(TableState state) {
+        state.collapsedRows = new boolean[state.rows.size()];
+        for (int r = 0; r < state.rows.size(); r++) state.collapsedRows[r] = isCollapsed(state.rows.get(r));
+        state.collapsedColumns = new boolean[state.columnCount];
+        for (int c = 0; c < state.columnElements.size() && c < state.columnCount; c++) {
+            state.collapsedColumns[c] = isCollapsed(state.columnElements.get(c));
+        }
+    }
+
+    private static boolean isCollapsed(LayoutBox box) {
+        return "collapse".equalsIgnoreCase(box.style.getOrDefault(CssProperty.VISIBILITY, "visible").trim());
     }
 
     /** セルを格子に並べる。{@code rowspan} で上の行から伸びてきたセルの位置は飛ばす。 */
@@ -362,10 +396,10 @@ public class TableLayoutEngine extends LayoutEngine {
             CellSlot below = s.row + s.rowSpan < rows ? at[s.row + s.rowSpan][s.col] : null;
             CellSlot before = s.col > 0 ? at[s.row][s.col - 1] : null;
             CellSlot after = s.col + s.colSpan < cols ? at[s.row][s.col + s.colSpan] : null;
-            top = Math.max(top, above != null ? border(above.cell, CssProperty.BORDER_BOTTOM_WIDTH, rootW, rootH) : tableTop);
-            bottom = Math.max(bottom, below != null ? border(below.cell, CssProperty.BORDER_TOP_WIDTH, rootW, rootH) : tableBottom);
-            left = Math.max(left, before != null ? border(before.cell, CssProperty.BORDER_RIGHT_WIDTH, rootW, rootH) : tableLeft);
-            right = Math.max(right, after != null ? border(after.cell, CssProperty.BORDER_LEFT_WIDTH, rootW, rootH) : tableRight);
+            top = joint(s.cell, "top", top, above != null ? above.cell : table, "bottom", above != null ? border(above.cell, CssProperty.BORDER_BOTTOM_WIDTH, rootW, rootH) : tableTop);
+            bottom = joint(s.cell, "bottom", bottom, below != null ? below.cell : table, "top", below != null ? border(below.cell, CssProperty.BORDER_TOP_WIDTH, rootW, rootH) : tableBottom);
+            left = joint(s.cell, "left", left, before != null ? before.cell : table, "right", before != null ? border(before.cell, CssProperty.BORDER_RIGHT_WIDTH, rootW, rootH) : tableLeft);
+            right = joint(s.cell, "right", right, after != null ? after.cell : table, "left", after != null ? border(after.cell, CssProperty.BORDER_LEFT_WIDTH, rootW, rootH) : tableRight);
             if (above == null) outerTop = Math.max(outerTop, top);
             if (below == null) outerBottom = Math.max(outerBottom, bottom);
             if (before == null) outerLeft = Math.max(outerLeft, left);
@@ -377,6 +411,13 @@ public class TableLayoutEngine extends LayoutEngine {
         table.bR = outerRight / 2;
         table.bB = outerBottom / 2;
         table.bL = outerLeft / 2;
+    }
+
+    /** 隣り合う 2 本の枠線の幅。どちらかが {@code hidden} なら 0、そうでなければ太い方（CSS 2.2 §17.6.2.1）。 */
+    private static float joint(LayoutBox a, String sideA, float widthA, LayoutBox b, String sideB, float widthB) {
+        if (a.style.keywordOf("border-" + sideA + "-style", BorderStyle.class) == BorderStyle.HIDDEN
+                || b.style.keywordOf("border-" + sideB + "-style", BorderStyle.class) == BorderStyle.HIDDEN) return 0;
+        return Math.max(widthA, widthB);
     }
 
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
@@ -442,6 +483,112 @@ public class TableLayoutEngine extends LayoutEngine {
         }
     }
 
+    /** 列ごとの {@code width: N%}（無い列は -1）。割合の合計が 100 を超えれば 100 に縮める。 */
+    private static float[] columnPercents(TableState state, int n) {
+        float[] percent = new float[n];
+        java.util.Arrays.fill(percent, -1f);
+        boolean any = false;
+        for (int c = 0; c < state.columnElements.size() && c < n; c++) {
+            float p = percentWidth(state.columnElements.get(c).style);
+            if (p >= 0) {
+                percent[c] = p;
+                any = true;
+            }
+        }
+        for (CellSlot slot : state.cells) {
+            if (slot.colSpan != 1) continue;
+            float p = percentWidth(slot.cell.style);
+            if (p >= 0) {
+                percent[slot.col] = Math.max(percent[slot.col], p);
+                any = true;
+            }
+        }
+        if (!any) return percent;
+        float total = 0;
+        for (float p : percent) if (p > 0) total += p;
+        if (total > 100) {
+            for (int c = 0; c < n; c++) if (percent[c] > 0) percent[c] *= 100f / total;
+        }
+        return percent;
+    }
+
+    /** {@code width: N%}（N は 0 以上）。% 以外・負・auto は -1。 */
+    private static float percentWidth(ComputedStyle style) {
+        String w = style.get(CssProperty.WIDTH);
+        if (w == null) return -1f;
+        w = w.trim();
+        if (!w.endsWith("%") || w.indexOf('(') >= 0) return -1f;
+        try {
+            float p = Float.parseFloat(w.substring(0, w.length() - 1).trim());
+            return p >= 0 && Float.isFinite(p) ? p : -1f;
+        } catch (NumberFormatException e) {
+            return -1f;
+        }
+    }
+
+    /** 割合の列が自分の max-content を収め、割合を持たない列が残りの割合の分に収まる、表の最小の幅。 */
+    private static float percentRequiredWidth(float[] percent, float[] max) {
+        float required = 0, autoMax = 0, pctSum = 0;
+        for (int c = 0; c < percent.length; c++) {
+            if (percent[c] > 0) {
+                required = Math.max(required, max[c] * 100f / percent[c]);
+                pctSum += percent[c];
+            } else if (percent[c] < 0) {
+                autoMax += max[c];
+            }
+        }
+        if (pctSum > 0 && pctSum < 100 && autoMax > 0) required = Math.max(required, autoMax * 100f / (100f - pctSum));
+        return required;
+    }
+
+    /**
+     * 割合の列を表の幅の割合（ただし min を下回らない）にし、残りの幅を割合を持たない列に
+     * {@link #distributeWidths} で配る。割合の列が無ければ {@link #distributeWidths} と同じ。
+     */
+    private static float[] distributePercentWidths(float[] min, float[] max, boolean[] specified,
+                                                   float[] percent, float target) {
+        int n = min.length;
+        boolean any = false;
+        for (float p : percent) any |= p >= 0;
+        if (!any) return distributeWidths(min, max, specified, target);
+
+        float[] widths = new float[n];
+        float used = 0;
+        int autoCount = 0;
+        for (int c = 0; c < n; c++) {
+            if (percent[c] >= 0) {
+                widths[c] = Math.max(min[c], target * percent[c] / 100f);
+                used += widths[c];
+            } else {
+                autoCount++;
+            }
+        }
+        if (autoCount == 0) {
+            // 全列が割合: 合計が表の幅に満たなければ割合の比で配る
+            if (used < target && used > 0) {
+                float scale = target / used;
+                for (int c = 0; c < n; c++) widths[c] *= scale;
+            }
+            return widths;
+        }
+        int[] idx = new int[autoCount];
+        float[] aMin = new float[autoCount], aMax = new float[autoCount];
+        boolean[] aSpec = new boolean[autoCount];
+        int k = 0;
+        for (int c = 0; c < n; c++) {
+            if (percent[c] >= 0) continue;
+            idx[k] = c;
+            aMin[k] = min[c];
+            aMax[k] = max[c];
+            aSpec[k] = specified[c];
+            k++;
+        }
+        float rest = Math.max(sum(aMin), target - used);
+        float[] a = distributeWidths(aMin, aMax, aSpec, rest);
+        for (int i = 0; i < autoCount; i++) widths[idx[i]] = a[i];
+        return widths;
+    }
+
     /**
      * 表の幅を列に配る。max の合計以上なら余りを幅の指定が無い列へ（無ければ全列へ）max の比で、
      * min と max の間なら各列を同じ割合だけ max に近づける。
@@ -486,14 +633,27 @@ public class TableLayoutEngine extends LayoutEngine {
         float[] widths = new float[n];
         boolean[] known = new boolean[n];
         for (int c = 0; c < state.columnElements.size() && c < n; c++) {
-            Float w = fixedWidth(state.columnElements.get(c).style, rootW, rootH);
+            ComputedStyle colStyle = state.columnElements.get(c).style;
+            Float w = fixedWidth(colStyle, rootW, rootH);
+            float p = percentWidth(colStyle);
             if (w != null) {
                 widths[c] = w;
+                known[c] = true;
+            } else if (p >= 0) {
+                widths[c] = target * p / 100f;
                 known[c] = true;
             }
         }
         for (CellSlot slot : state.cells) {
             if (slot.row != 0) continue;
+            float p = percentWidth(slot.cell.style);
+            if (p >= 0 && slot.colSpan == 1) {
+                if (!known[slot.col]) {
+                    widths[slot.col] = target * p / 100f;
+                    known[slot.col] = true;
+                }
+                continue;
+            }
             Float w = fixedWidth(slot.cell.style, rootW, rootH);
             if (w == null) continue;
             // 指定は内容ボックスの幅なので、パディングと枠線を足す（border-box ならそのまま）
@@ -576,7 +736,8 @@ public class TableLayoutEngine extends LayoutEngine {
         float y = captionTop + vs;
         for (int r = 0; r < rows; r++) {
             rowY[r] = y;
-            y += state.rowHeights[r] + vs;
+            // 潰れた行は高さも前後の border-spacing も持たない
+            if (!state.collapsedRows[r]) y += state.rowHeights[r] + vs;
         }
         float[] colX = new float[state.columnCount];
         float x = hs;
@@ -661,6 +822,8 @@ public class TableLayoutEngine extends LayoutEngine {
         public float[] columnWidths = new float[0];
         float[] rowHeights = new float[0];
         int columnCount;
+        boolean[] collapsedRows = new boolean[0];
+        boolean[] collapsedColumns = new boolean[0];
         boolean collapse;
         float hSpacing, vSpacing, contentW;
 

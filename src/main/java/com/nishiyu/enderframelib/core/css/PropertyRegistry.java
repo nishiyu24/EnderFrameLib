@@ -76,10 +76,10 @@ public final class PropertyRegistry {
      */
     private static final List<String> EXPANSION_ORDER = List.of(
             "margin", "padding",
-            "grid-row-gap", "grid-column-gap", "gap", "grid-gap",
+            "grid-row-gap", "grid-column-gap", "gap", "grid-gap", "grid", "grid-template",
             "flex", "flex-flow", "overflow", "inset",
             "place-content", "place-items", "place-self", "container",
-            "font", "list-style", "outline", "background",
+            "font", "list-style", "outline", "columns", "column-rule", "background",
             "border", "border-color", "border-width", "border-style",
             "border-top", "border-right", "border-bottom", "border-left", "border-radius",
             "mask", "-webkit-mask", "-webkit-mask-image", "-webkit-mask-position", "-webkit-mask-size", "-webkit-mask-repeat",
@@ -182,6 +182,18 @@ public final class PropertyRegistry {
         shorthand("grid-row-gap", Invalidation.LAYOUT, v -> Map.of("row-gap", v.trim()), "row-gap");
         shorthand("grid-column-gap", Invalidation.LAYOUT, v -> Map.of("column-gap", v.trim()), "column-gap");
 
+        // ---- 段組（multicol）
+        layout("column-count", "auto", false, ValueType.INTEGER, true);
+        layout("column-width", "auto", false, ValueType.LENGTH, true);
+        shorthand("columns", Invalidation.LAYOUT, ShorthandExpanders::columns, "column-width", "column-count");
+        layout("column-fill", "balance", false, ValueType.KEYWORD, false);
+        layout("column-span", "none", false, ValueType.KEYWORD, false);
+        paint("column-rule-color", "currentcolor", false, ValueType.COLOR, true);
+        keyword("column-rule-style", BorderStyle.class, BorderStyle.NONE, false, Invalidation.LAYOUT);
+        layout("column-rule-width", "medium", false, ValueType.LENGTH, true);
+        shorthand("column-rule", Invalidation.LAYOUT, ShorthandExpanders::columnRule,
+                "column-rule-width", "column-rule-style", "column-rule-color");
+
         // ---- grid
         // grid-column / grid-row / grid-area は展開せず、GridLayoutEngine がロングハンド → ショートハンドの順に直接読む
         for (String p : List.of("grid-template-columns", "grid-template-rows", "grid-template-areas")) {
@@ -190,6 +202,11 @@ public final class PropertyRegistry {
         layout("grid-auto-columns", "auto", false, ValueType.LIST, true);
         layout("grid-auto-rows", "auto", false, ValueType.LIST, true);
         layout("grid-auto-flow", "row", false, ValueType.KEYWORD, false);
+        shorthand("grid-template", Invalidation.LAYOUT, ShorthandExpanders::gridTemplate,
+                "grid-template-rows", "grid-template-columns", "grid-template-areas");
+        shorthand("grid", Invalidation.LAYOUT, ShorthandExpanders::grid,
+                "grid-template-rows", "grid-template-columns", "grid-template-areas",
+                "grid-auto-rows", "grid-auto-columns", "grid-auto-flow");
         for (String p : List.of("grid-column-start", "grid-column-end", "grid-row-start", "grid-row-end",
                 "grid-column", "grid-row", "grid-area")) {
             layout(p, "auto", false, ValueType.OTHER, false);

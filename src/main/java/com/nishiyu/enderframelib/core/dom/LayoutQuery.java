@@ -17,29 +17,32 @@ public interface LayoutQuery {
      * @param offsetParent 最も近い位置指定の祖先（無ければ null）
      * @param scrolls      {@code overflow} でスクロールコンテナになっている
      * @param clips        中身をクリップする（{@code overflow} が visible 以外）
+     * @param collapsedTable {@code border-collapse: collapse} の表。外周の枠線を client に数えず、スクロール範囲は箱の大きさで切らない
      */
     record BoxMetrics(float x, float y, float w, float h,
                       float bL, float bT, float bR, float bB,
                       float pL, float pT, float pR, float pB,
                       float mL, float mT, float mR, float mB,
                       float scrollWidth, float scrollHeight,
-                      boolean borderBoxSizing, boolean scrolls, boolean clips,
+                      boolean borderBoxSizing, boolean scrolls, boolean clips, boolean collapsedTable,
                       @Nullable HtmlNode offsetParent) {
 
         public float clientWidth() {
-            return Math.max(0, w - bL - bR);
+            return collapsedTable ? w : Math.max(0, w - bL - bR);
         }
 
         public float clientHeight() {
-            return Math.max(0, h - bT - bB);
+            return collapsedTable ? h : Math.max(0, h - bT - bB);
         }
 
         /** padding box 基準の全体の幅（クライアント幅を下回らない）。 */
         public float fullScrollWidth() {
+            if (collapsedTable) return scrollWidth > 0 ? scrollWidth : w;
             return Math.max(clientWidth(), (scrollWidth > 0 ? scrollWidth : w) - bL - bR);
         }
 
         public float fullScrollHeight() {
+            if (collapsedTable) return scrollHeight > 0 ? scrollHeight : h;
             return Math.max(clientHeight(), (scrollHeight > 0 ? scrollHeight : h) - bT - bB);
         }
 

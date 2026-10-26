@@ -36,7 +36,8 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * テキストはそのまま（U+00A0 だけ {@code &nbsp;}）で書き出して比べる。
  * パーサが振る id（{@code gen_N} / {@code txt_N}）と textarea の {@code value} は比べない。
  *
- * 書式要素の再構築（{@code <p><b>x</p>y} の 2 つ目の b）は LIMITATION なので入れていない。
+ * 書式要素の再構築と adoption agency（R9）は {@code <p><b>x</p>y} などで固定する。コメントはノードにしないので、
+ * ブラウザの木から取り除いた形を期待値にする。
  */
 public class HtmlTreeConstructionTest {
 
@@ -84,7 +85,25 @@ public class HtmlTreeConstructionTest {
             {"body", "<option>a<option>b", "<option>a</option><option>b</option>"},
             {"body", "<div id=a id=b>x</div>", "<div id=\"a\">x</div>"},
             {"body", "a<3 b</>c", "a<3 bc"},
-            {"body", "<form><form><input></form>", "<form><input></form>"}
+            {"body", "<form><form><input></form>", "<form><input></form>"},
+            {"body", "<p><b>x</p>y", "<p><b>x</b></p><b>y</b>"},
+            {"body", "<b><i>a</b>b</i>", "<b><i>a</i></b><i>b</i>"},
+            {"body", "<a>1<div>2</a>3</div>", "<a>1</a><div><a>2</a>3</div>"},
+            {"body", "<a href=1>x<a href=2>y", "<a href=\"1\">x</a><a href=\"2\">y</a>"},
+            {"body", "<b>1<p>2</b>3</p>", "<b>1</b><p><b>2</b>3</p>"},
+            {"body", "<p><b><i>x</p>y", "<p><b><i>x</i></b></p><b><i>y</i></b>"},
+            {"body", "<b>a<table><td>x</table>b", "<b>a<table><tbody><tr><td>x</td></tr></tbody></table>b</b>"},
+            {"body", "<b><b><b><b>x</b></b></b></b>", "<b><b><b><b>x</b></b></b></b>"},
+            {"body", "<nobr>1<nobr>2", "<nobr>1</nobr><nobr>2</nobr>"},
+            {"body", "<b><div><i>x</b>y</i>z</div>", "<b></b><div><b><i>x</i></b><i>y</i>z</div>"},
+            {"body", "<a>1<p>2</a>3", "<a>1</a><p><a>2</a>3</p>"},
+            {"body", "<b>a<p>b<a>c</b>d</a>e", "<b>a</b><p><b>b<a>c</a></b><a>d</a>e</p>"},
+            {"body", "<b>a<button>x</button>b", "<b>a<button>x</button>b</b>"},
+            {"body", "<i>a<ul><li>b</i>c</ul>", "<i>a</i><ul><i></i><li><i>b</i>c</li></ul>"},
+            {"body", "<p>a<!-->b", "<p>ab</p>"},
+            {"body", "<p>a<!--->b", "<p>ab</p>"},
+            {"body", "<p>a<!-- x --!>b", "<p>ab</p>"},
+            {"body", "<p>a<!-- never", "<p>a</p>"}
     };
 
     @TestFactory

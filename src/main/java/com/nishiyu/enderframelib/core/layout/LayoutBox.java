@@ -92,6 +92,13 @@ public class LayoutBox {
      * 表のエンジンがセルと表自身に入れる。
      */
     public float[] collapsedBorders;
+    /**
+     * 段組（multicol）が列に割り当てた、単位（子の配置・行）ごとの移動量 {x, y}。鍵は {@code BlockLayoutEngine} の
+     * 配置と行の実体（同一性で比べる）。持ち主の配置のときに足す。段組でなければ null。
+     */
+    public java.util.Map<Object, float[]> columnShifts;
+    /** 段組の列の間の線の矩形 {x, y, w, h}（ビューポート座標）。無ければ null。 */
+    public float[][] columnRules;
     /** 内容を縦にずらす量（px）。表のセルの {@code vertical-align} を表のエンジンが入れる。 */
     float contentOffsetY = 0;
     /**
@@ -99,6 +106,12 @@ public class LayoutBox {
      * {@link #verticalDecoration()} に入る。{@link BoxMeasurer} が legend を測ったあとに入れる。
      */
     float legendSpill = 0;
+
+    /**
+     * 指定された {@code height} / 最小・最大に関わらない内容の高さ（装飾を含む）。直近の測定で入る。
+     * flex の列方向の {@code min-height: auto}（内容の最小寸法）が読む。
+     */
+    float contentBlockExtent = 0;
     /** 相殺する前の上下マージン（px）。親子のマージン相殺は解き直すたびにここから始める。 */
     public float ownMarginTop, ownMarginBottom;
 
@@ -1163,8 +1176,24 @@ public class LayoutBox {
 
         this.descendantOverflowRight = descendants.right() - this.x;
         this.descendantOverflowBottom = descendants.bottom() - this.y;
+        if (isCollapsedTable()) {
+            // 枠線を重ねる表のスクロール範囲は、セルの端まで（表の外周の枠線の半分は含めず、表の箱の大きさで下限も切らない）
+            this.scrollWidth = extent.right() - this.x;
+            this.scrollHeight = extent.bottom() - this.y;
+            return;
+        }
         this.scrollWidth = Math.max(Math.max(this.w, extent.right() - this.x + pR + bR), descendantOverflowRight);
         this.scrollHeight = Math.max(Math.max(this.h, extent.bottom() - this.y + pB + bB), descendantOverflowBottom);
+    }
+
+    /**
+     * {@code border-collapse: collapse} の表か。この表の外周の枠線は、表の箱の中に半分だけあるが
+     * {@code clientLeft} などには数えない（ブラウザと同じ。{@code clientWidth} は箱の幅のまま）。
+     * {@code overflow} でクリップする表は普通の箱と同じに扱う。
+     */
+    public boolean isCollapsedTable() {
+        return display != null && display.inner() == Display.Inner.TABLE && style != null && !clipsOverflow()
+                && style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE;
     }
 
     private boolean hasDefiniteHeight() {

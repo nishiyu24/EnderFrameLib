@@ -54,7 +54,14 @@ public final class CssProperty {
     public static final String CAPTION_SIDE = "caption-side";
     public static final String CLEAR = "clear";
     public static final String COLOR = "color";
+    public static final String COLUMN_COUNT = "column-count";
+    public static final String COLUMN_FILL = "column-fill";
     public static final String COLUMN_GAP = "column-gap";
+    public static final String COLUMN_RULE_COLOR = "column-rule-color";
+    public static final String COLUMN_RULE_STYLE = "column-rule-style";
+    public static final String COLUMN_RULE_WIDTH = "column-rule-width";
+    public static final String COLUMN_SPAN = "column-span";
+    public static final String COLUMN_WIDTH = "column-width";
     public static final String CONTAINER_NAME = "container-name";
     public static final String CONTAINER_TYPE = "container-type";
     public static final String CONTAIN = "contain";
@@ -106,6 +113,7 @@ public final class CssProperty {
     public static final String LINE_HEIGHT = "line-height";
     public static final String LIST_STYLE_POSITION = "list-style-position";
     public static final String LIST_STYLE_TYPE = "list-style-type";
+    public static final String LIST_STYLE_IMAGE = "list-style-image";
     public static final String MARGIN = "margin";
     public static final String MARGIN_BOTTOM = "margin-bottom";
     public static final String MARGIN_LEFT = "margin-left";

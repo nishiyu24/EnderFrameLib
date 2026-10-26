@@ -36,8 +36,8 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * {@code max-width} で止まらず（止まった分を他のアイテムに回さず）、{@code min-width: auto} は
  * 内容の最小幅ではなく基本サイズだった。
  *
- * LIMITATION(制約): 列方向のアイテムの {@code min-height: auto} は、高さが指定されていれば指定値、
- * 無ければ内容の高さで近似する（指定された高さより内容が低くても、そこまでしか縮まない）。
+ * LIMITATION(制約): 列方向のアイテムの {@code min-height: auto} は、内容の高さ（{@code contentBlockExtent}）で
+ * 近似する（min-content の高さではなく、その幅で組んだ高さ）。
  * 行の折り返しは仮の主軸の寸法で決め、{@code baseline} 揃えは行方向の最初のベースラインだけ。
  * README の "Not supported" に対応。
  */
@@ -530,7 +530,10 @@ public class FlexLayoutEngine extends LayoutEngine {
                     || isReplaced(child);
             content = hasContent ? child.getMinContentWidth(ctx) : decoration;
         } else {
-            content = hasSize(child.style, sizeProp) && child.getFlowChildren().isEmpty() ? decoration : child.h;
+            boolean hasFlow = child.node.nodeType != NodeType.TEXT && !child.getFlowChildren().isEmpty();
+            // 指定の高さより内容が低ければ、内容の高さまで縮められる（Flexbox §4.5）
+            content = hasFlow ? child.contentBlockExtent
+                    : hasSize(child.style, sizeProp) ? decoration : child.h;
         }
         if (hasSize(child.style, sizeProp)) content = Math.min(content, row ? child.w : child.h);
         float max = maxMainSize(child, row, Float.NaN, null, ctx);

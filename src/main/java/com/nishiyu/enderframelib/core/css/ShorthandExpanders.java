@@ -244,6 +244,157 @@ final class ShorthandExpanders {
         return borderParts(value, "outline");
     }
 
+    // ---- grid-template / grid（CSS Grid 1 §7.4 / §7.8）
+
+    /**
+     * {@code grid-template}: {@code <rows> / <columns>}、または行ごとに領域名の文字列を書く形
+     * （{@code "a b" 40px "c d" / 1fr 2fr}）。書かれなかった方は {@code none}。読めなければ空。
+     */
+    static Map<String, String> gridTemplate(String value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        String v = value.trim();
+        if (v.isEmpty()) return out;
+        if (v.equalsIgnoreCase("none")) {
+            out.put("grid-template-rows", "none");
+            out.put("grid-template-columns", "none");
+            out.put("grid-template-areas", "none");
+            return out;
+        }
+        int slash = topLevelSlash(v);
+        String left = slash < 0 ? v : v.substring(0, slash).trim();
+        String right = slash < 0 ? "none" : v.substring(slash + 1).trim();
+        if (left.isEmpty() || right.isEmpty()) return out;
+
+        if (left.indexOf('"') < 0 && left.indexOf('\'') < 0) {
+            out.put("grid-template-rows", left);
+            out.put("grid-template-columns", right);
+            out.put("grid-template-areas", "none");
+            return out;
+        }
+        // 行ごとに [名前]? "領域" サイズ? [名前]?（サイズが無ければ auto）
+        List<String> parts = new ArrayList<>();
+        List<String> areas = new ArrayList<>();
+        int sizeSlot = -1;
+        for (String token : splitTopLevelTokens(left)) {
+            if (token.startsWith("[")) {
+                parts.add(token);
+            } else if (token.startsWith("\"") || token.startsWith("'")) {
+                areas.add(token);
+                sizeSlot = parts.size();
+                parts.add("auto");
+            } else if (sizeSlot >= 0) {
+                parts.set(sizeSlot, token);
+                sizeSlot = -1;
+            } else {
+                return Map.of();
+            }
+        }
+        if (areas.isEmpty()) return Map.of();
+        out.put("grid-template-rows", String.join(" ", parts));
+        out.put("grid-template-columns", right);
+        out.put("grid-template-areas", String.join(" ", areas));
+        return out;
+    }
+
+    /**
+     * {@code grid}: {@code grid-template} の形、{@code <rows> / auto-flow [dense] <auto-columns>?}、
+     * {@code auto-flow [dense] <auto-rows>? / <columns>}。書かれなかったロングハンドは初期値に戻る。
+     */
+    static Map<String, String> grid(String value) {
+        String v = value.trim();
+        Map<String, String> out = new LinkedHashMap<>();
+        if (v.isEmpty()) return out;
+        int slash = topLevelSlash(v);
+        String lower = v.toLowerCase();
+        if (slash >= 0 && lower.contains("auto-flow")) {
+            String left = v.substring(0, slash).trim(), right = v.substring(slash + 1).trim();
+            boolean rowFlow = left.toLowerCase().contains("auto-flow");
+            String flowSide = rowFlow ? left : right, templateSide = rowFlow ? right : left;
+            if (templateSide.isEmpty() || templateSide.toLowerCase().contains("auto-flow")) return Map.of();
+            boolean dense = false;
+            StringBuilder autoSize = new StringBuilder();
+            for (String token : splitTopLevelTokens(flowSide)) {
+                String t = token.toLowerCase();
+                if (t.equals("auto-flow")) continue;
+                if (t.equals("dense")) dense = true;
+                else autoSize.append(autoSize.length() > 0 ? " " : "").append(token);
+            }
+            String autoTracks = autoSize.length() > 0 ? autoSize.toString() : "auto";
+            out.put("grid-template-areas", "none");
+            if (rowFlow) {
+                out.put("grid-template-rows", "none");
+                out.put("grid-template-columns", templateSide);
+                out.put("grid-auto-rows", autoTracks);
+                out.put("grid-auto-columns", "auto");
+                out.put("grid-auto-flow", dense ? "row dense" : "row");
+            } else {
+                out.put("grid-template-rows", templateSide);
+                out.put("grid-template-columns", "none");
+                out.put("grid-auto-rows", "auto");
+                out.put("grid-auto-columns", autoTracks);
+                out.put("grid-auto-flow", dense ? "column dense" : "column");
+            }
+            return out;
+        }
+        Map<String, String> template = gridTemplate(v);
+        if (template.isEmpty()) return out;
+        out.putAll(template);
+        out.put("grid-auto-rows", "auto");
+        out.put("grid-auto-columns", "auto");
+        out.put("grid-auto-flow", "row");
+        return out;
+    }
+
+    /** 最上位（括弧と引用符の外）の最初の {@code /} の位置。無ければ -1。 */
+    private static int topLevelSlash(String s) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (quote != 0) {
+                if (c == quote) quote = 0;
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (c == '/' && depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    static Map<String, String> columnRule(String value) {
+        return borderParts(value, "column-rule");
+    }
+
+    /** {@code columns: <column-width> || <column-count>}。書かれなかった方は {@code auto}。 */
+    static Map<String, String> columns(String value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        List<String> parts = splitTopLevelTokens(value);
+        if (parts.isEmpty() || parts.size() > 2) return out;
+        int autos = 0;
+        for (String part : parts) {
+            String lower = part.toLowerCase();
+            if (lower.equals("auto")) {
+                autos++;
+            } else if (lower.matches("[0-9]+")) {
+                if (out.containsKey("column-count")) return Map.of();
+                out.put("column-count", lower);
+            } else {
+                if (out.containsKey("column-width")) return Map.of();
+                out.put("column-width", part);
+            }
+        }
+        // auto は、数・幅のうち書かれなかった方に入る
+        if (parts.size() - autos > 2) return Map.of();
+        out.putIfAbsent("column-count", "auto");
+        out.putIfAbsent("column-width", "auto");
+        return out;
+    }
+
     /**
      * 幅・線種・色を順不同で読み分ける。
      *

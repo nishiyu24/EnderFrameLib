@@ -32,10 +32,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code option} の暗黙終了・表の中に誤って置かれた要素の扱いが無く、断片の文書には
  * {@code body} が無かった（ua.css の {@code body { margin: 8px }} が効かなかった）。
  *
- * LIMITATION(制約): 書式要素の再構築（active formatting elements）と adoption agency は無い。
- * {@code <p><b>a<p>b} の 2 つ目の段落は太字にならず、{@code <b><i></b></i>} の誤った入れ子は
- * 終了タグの一般規則（特殊な要素を越えて閉じない）で閉じる。SVG / MathML の外来要素は
- * HTML の暗黙終了を受けず自己終了タグで閉じるが、名前空間は持たず、{@code <template>} の中身は別の断片にせず子として持つ（ua.css が隠す）。
+ * 書式要素（{@code a b big code em font i nobr s small strike strong tt u}）は、仕様どおり
+ * active formatting elements の一覧に入れる（§13.2.4.3）。{@code <p><b>a<p>b} の 2 つ目の段落は太字になり
+ * （再構築）、{@code <b><i></b></i>} や {@code <a><div></a>} の誤った入れ子は adoption agency（§13.2.6.4.7）で
+ * 木を組み替える。{@code td} / {@code th} / {@code caption} / {@code applet} / {@code object} / {@code marquee} /
+ * {@code template} の開始は一覧にマーカーを置き、その要素が閉じたらマーカー以降の項目を捨てる。
+ *
+ * LIMITATION(制約): SVG / MathML の外来要素は HTML の暗黙終了を受けず自己終了タグで閉じるが、
+ * 名前空間は持たない（要素名と属性名は小文字のまま。{@code SvgRenderer} が小文字で読む）。
+ * {@code <template>} の中身は別の {@code DocumentFragment} にせず子として持つ（ua.css が隠す。
+ * {@code Bindings} が子の {@code template} を読むため）。
  * README の "Not supported" に対応。
  */
 public class HtmlParser {
@@ -144,6 +150,8 @@ public class HtmlParser {
         /** 表の中の「その他」を本文の規則で処理している間。挿入先が表なら表の前に出す。 */
         boolean fosterParenting;
         int nodeCount;
+        /** active formatting elements（§13.2.4.3）。マーカーは {@link FormatEntry#marker} が true の項目。 */
+        final List<FormatEntry> formatting = new ArrayList<>();
 
         TreeBuilder(boolean fragment, String context) {
             this.fragment = fragment;
@@ -295,7 +303,10 @@ public class HtmlParser {
 
         void inBody(HtmlTokenizer.Token t) {
             switch (t.type) {
-                case TEXT -> insertText(t);
+                case TEXT -> {
+                    if (!isWhitespace(t.text) && !t.isRawText) reconstructFormatting();
+                    insertText(t);
+                }
                 case START_TAG -> inBodyStart(t);
                 case END_TAG -> inBodyEnd(t);
             }
@@ -316,6 +327,7 @@ public class HtmlParser {
 
             // SVG / MathML の外来要素は、HTML の暗黙終了や要素名の読み替えを受けず、自己終了タグ（{@code <rect/>}）で閉じる
             if (tag.equals("svg") || tag.equals("math") || inForeignContent()) {
+                if (!inForeignContent()) reconstructFormatting();
                 insertElement(tag, t.attrs, t.isSelfClosing);
                 return;
             }
@@ -349,24 +361,41 @@ public class HtmlParser {
                         generateImpliedEndTags(null);
                         popUntil("button");
                     }
+                    reconstructFormatting();
                     insertElement(tag, t.attrs, false);
                 }
                 case "a" -> {
-                    // adoption agency の代わりに、開いている a を閉じてから入れる（a は入れ子にならない）
-                    if (inScope("a", Scope.DEFAULT)) popUntil("a");
-                    insertElement(tag, t.attrs, false);
+                    // 一覧に開きかけの a があれば adoption agency で閉じる（a は入れ子にならない）
+                    FormatEntry open = lastFormatting("a");
+                    if (open != null) {
+                        adoptionAgency("a");
+                        formatting.remove(open);
+                        stack.remove(open.node);
+                    }
+                    reconstructFormatting();
+                    pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
+                }
+                case "b", "big", "code", "em", "font", "i", "s", "small", "strike", "strong", "tt", "u" -> {
+                    reconstructFormatting();
+                    pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
                 }
                 case "nobr" -> {
-                    if (inScope("nobr", Scope.DEFAULT)) popUntil("nobr");
-                    insertElement(tag, t.attrs, false);
+                    reconstructFormatting();
+                    if (inScope("nobr", Scope.DEFAULT)) {
+                        adoptionAgency("nobr");
+                        reconstructFormatting();
+                    }
+                    pushFormatting(insertElement(tag, t.attrs, false), t.attrs);
                 }
                 case "option" -> {
                     if (currentNode().tag.equals("option")) stack.removeLast();
+                    reconstructFormatting();
                     insertElement(tag, t.attrs, false);
                 }
                 case "optgroup" -> {
                     if (currentNode().tag.equals("option")) stack.removeLast();
                     if (currentNode().tag.equals("optgroup") && hasOpen("select")) stack.removeLast();
+                    reconstructFormatting();
                     insertElement(tag, t.attrs, false);
                 }
                 case "rb", "rtc" -> {
@@ -377,9 +406,13 @@ public class HtmlParser {
                     if (inScope("ruby", Scope.DEFAULT)) generateImpliedEndTags("rtc");
                     insertElement(tag, t.attrs, false);
                 }
-                case "image" -> insertElement("img", t.attrs, true);
+                case "image" -> {
+                    reconstructFormatting();
+                    insertElement("img", t.attrs, true);
+                }
                 default -> {
                     if (CLOSES_P.contains(tag)) closePIfInButtonScope();
+                    else reconstructFormatting();
                     insertElement(tag, t.attrs, VoidElements.isVoid(tag));
                 }
             }
@@ -413,7 +446,12 @@ public class HtmlParser {
                     generateImpliedEndTags(null);
                     while (stack.size() > 1 && !HEADINGS.contains(stack.removeLast().tag)) { }
                 }
-                case "br" -> insertElement("br", Map.of(), true);
+                case "br" -> {
+                    reconstructFormatting();
+                    insertElement("br", Map.of(), true);
+                }
+                case "a", "b", "big", "code", "em", "font", "i", "nobr", "s", "small", "strike", "strong", "tt", "u" ->
+                        adoptionAgency(tag);
                 default -> {
                     if (BLOCK_END_TAGS.contains(tag)) {
                         if (!inScope(tag, Scope.DEFAULT)) return;
@@ -424,6 +462,194 @@ public class HtmlParser {
                     anyOtherEndTag(tag);
                 }
             }
+        }
+
+        // ---------- 書式要素の一覧（§13.2.4.3）と adoption agency（§13.2.6.4.7） ----------
+
+        /** マーカーを置く要素。これが閉じるとマーカー以降の項目を捨てる。 */
+        private static final Set<String> MARKER_ELEMENTS = Set.of("applet", "caption", "marquee", "object", "td", "th", "template");
+
+        /** 一覧の項目。マーカーは {@code node} がその要素（閉じたら項目ごと捨てる）、書式要素は作った時の属性を持つ。 */
+        static final class FormatEntry {
+            final boolean marker;
+            final HtmlNode node;
+            final String tag;
+            final Map<String, String> attrs;
+
+            FormatEntry(boolean marker, HtmlNode node, String tag, Map<String, String> attrs) {
+                this.marker = marker;
+                this.node = node;
+                this.tag = tag;
+                this.attrs = attrs;
+            }
+        }
+
+        /** 持ち主の要素がスタックから消えたマーカーと、それ以降の項目を捨てる（マーカー以降を掃除する手順の代わり）。 */
+        void pruneFormatting() {
+            for (int i = formatting.size() - 1; i >= 0; i--) {
+                FormatEntry e = formatting.get(i);
+                if (e.marker && !stack.contains(e.node)) {
+                    while (formatting.size() > i) formatting.removeLast();
+                }
+            }
+        }
+
+        /** 最後のマーカーより後で、{@code tag} の最後の項目。 */
+        FormatEntry lastFormatting(String tag) {
+            pruneFormatting();
+            for (int i = formatting.size() - 1; i >= 0; i--) {
+                FormatEntry e = formatting.get(i);
+                if (e.marker) return null;
+                if (e.tag.equals(tag)) return e;
+            }
+            return null;
+        }
+
+        void pushMarker(HtmlNode owner) {
+            formatting.add(new FormatEntry(true, owner, owner.tag, Map.of()));
+        }
+
+        /** 書式要素を一覧に入れる。同じ要素名・同じ属性が最後のマーカー以降に 3 つあれば最も古いものを捨てる（Noah's Ark）。 */
+        void pushFormatting(HtmlNode node, Map<String, String> attrs) {
+            pruneFormatting();
+            Map<String, String> copy = new LinkedHashMap<>(attrs);
+            int same = 0, oldest = -1;
+            for (int i = formatting.size() - 1; i >= 0; i--) {
+                FormatEntry e = formatting.get(i);
+                if (e.marker) break;
+                if (e.tag.equals(node.tag) && e.attrs.equals(copy)) {
+                    same++;
+                    oldest = i;
+                }
+            }
+            if (same >= 3) formatting.remove(oldest);
+            formatting.add(new FormatEntry(false, node, node.tag, copy));
+        }
+
+        /** 一覧の書式要素のうちスタックに無いものを、開き直す（§13.2.4.3 の再構築）。 */
+        void reconstructFormatting() {
+            pruneFormatting();
+            if (formatting.isEmpty()) return;
+            FormatEntry last = formatting.getLast();
+            if (last.marker || stack.contains(last.node)) return;
+            int i = formatting.size() - 1;
+            while (i > 0) {
+                FormatEntry e = formatting.get(i - 1);
+                if (e.marker || stack.contains(e.node)) break;
+                i--;
+            }
+            for (; i < formatting.size(); i++) {
+                FormatEntry old = formatting.get(i);
+                HtmlNode fresh = insertElement(old.tag, old.attrs, false);
+                formatting.set(i, new FormatEntry(false, fresh, old.tag, old.attrs));
+            }
+        }
+
+        /** 誤って入れ子になった書式要素の終了タグで木を組み替える（外側 8 回・内側 3 回まで）。 */
+        void adoptionAgency(String subject) {
+            HtmlNode current = currentNode();
+            if (current.tag.equals(subject) && formatting.stream().noneMatch(e -> !e.marker && e.node == current)) {
+                stack.removeLast();
+                return;
+            }
+            for (int outer = 0; outer < 8; outer++) {
+                FormatEntry fe = lastFormatting(subject);
+                if (fe == null) {
+                    anyOtherEndTag(subject);
+                    return;
+                }
+                int feIdx = stack.indexOf(fe.node);
+                if (feIdx < 0) {
+                    formatting.remove(fe);
+                    return;
+                }
+                if (!inScope(subject, Scope.DEFAULT)) return;
+
+                int blockIdx = -1;
+                for (int i = feIdx + 1; i < stack.size(); i++) {
+                    if (SPECIAL.contains(stack.get(i).tag)) {
+                        blockIdx = i;
+                        break;
+                    }
+                }
+                if (blockIdx < 0) {
+                    while (stack.size() > feIdx) stack.removeLast();
+                    formatting.remove(fe);
+                    return;
+                }
+                HtmlNode furthestBlock = stack.get(blockIdx);
+                HtmlNode commonAncestor = stack.get(feIdx - 1);
+                int bookmark = formatting.indexOf(fe);
+
+                HtmlNode node = furthestBlock, lastNode = furthestBlock;
+                int nodeIdx = blockIdx;
+                for (int inner = 1; ; inner++) {
+                    nodeIdx--;
+                    node = stack.get(nodeIdx);
+                    if (node == fe.node) break;
+                    FormatEntry entry = entryOf(node);
+                    if (inner > 3 && entry != null) {
+                        int at = formatting.indexOf(entry);
+                        formatting.remove(at);
+                        if (at < bookmark) bookmark--;
+                        entry = null;
+                    }
+                    if (entry == null) {
+                        stack.remove(nodeIdx);
+                        continue;
+                    }
+                    HtmlNode fresh = createElement(entry.tag, entry.attrs);
+                    FormatEntry replaced = new FormatEntry(false, fresh, entry.tag, entry.attrs);
+                    int at = formatting.indexOf(entry);
+                    formatting.set(at, replaced);
+                    stack.set(nodeIdx, fresh);
+                    node = fresh;
+                    if (lastNode == furthestBlock) bookmark = at + 1;
+                    detach(lastNode);
+                    lastNode.parent = node;
+                    node.children.add(lastNode);
+                    lastNode = node;
+                }
+                detach(lastNode);
+                insertAt(commonAncestor, lastNode);
+
+                HtmlNode fresh = createElement(fe.tag, fe.attrs);
+                for (HtmlNode child : furthestBlock.children) child.parent = fresh;
+                fresh.children.addAll(furthestBlock.children);
+                furthestBlock.children.clear();
+                fresh.parent = furthestBlock;
+                furthestBlock.children.add(fresh);
+
+                formatting.remove(fe);
+                bookmark = Math.min(bookmark, formatting.size());
+                formatting.add(bookmark, new FormatEntry(false, fresh, fe.tag, fe.attrs));
+                stack.remove(fe.node);
+                stack.add(stack.indexOf(furthestBlock) + 1, fresh);
+            }
+        }
+
+        private FormatEntry entryOf(HtmlNode node) {
+            for (FormatEntry e : formatting) if (!e.marker && e.node == node) return e;
+            return null;
+        }
+
+        private static void detach(HtmlNode node) {
+            if (node.parent != null) node.parent.children.remove(node);
+            node.parent = null;
+        }
+
+        /** {@code target} の子として入れる。表の部品なら表の前に出す（foster parenting）。 */
+        private void insertAt(HtmlNode target, HtmlNode node) {
+            if (FOSTER_TARGETS.contains(target.tag)) {
+                HtmlNode table = lastOpen("table");
+                if (table != null && table.parent != null) {
+                    node.parent = table.parent;
+                    table.parent.children.add(table.parent.children.indexOf(table), node);
+                    return;
+                }
+            }
+            node.parent = target;
+            target.children.add(node);
         }
 
         /** 終了タグの一般規則: 同名の要素まで閉じる。途中に特殊な要素があれば無視する。 */
@@ -739,6 +965,7 @@ public class HtmlParser {
             insertNode(node);
             if (!isVoid) stack.add(node);
             if ("body".equals(tag) && !fragment) bodyEl = node;
+            if (!isVoid && MARKER_ELEMENTS.contains(tag) && !inForeignContent()) pushMarker(node);
             return node;
         }
 
@@ -873,7 +1100,13 @@ public class HtmlParser {
                 // コメントのスキップ <!-- ... -->
                 if (html.startsWith("<!--", i)) {
                     flushText(tokens, textBuffer);
+                    // "<!-->" と "<!--->" は空のコメント（§13.2.5.43）。それ以外は "-->" か "--!>" まで
+                    if (html.startsWith(">", i + 4)) { i += 5; continue; }
+                    if (html.startsWith("->", i + 4)) { i += 6; continue; }
                     int end = html.indexOf("-->", i + 4);
+                    int bang = html.indexOf("--!>", i + 4);
+                    if (bang >= 0 && (end < 0 || bang < end)) { i = bang + 4; continue; }
+                    // 閉じていないコメントは入力の終わりまで続く（残りは文書に入らない）
                     if (end == -1) break;
                     i = end + 3;
                     continue;

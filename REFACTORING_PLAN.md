@@ -41,8 +41,8 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | R6 | 描画の合成化と型付きディスプレイリスト | 完了（SDF の角丸・楕円の角・角丸に沿う破線・線形/放射/円錐グラデーション・角丸クリップ・ガウス影、型付き `RenderHints`、transform の宣言順合成、FBO レイヤー合成（グループ `opacity`・`filter`・`backdrop-filter`・`mix-blend-mode`・`isolation`・`clip-path`・`mask`・回転角丸クリップ）、VRAM 予算 `VramBudget`、旧 W12 のスクロール・シザー・世界内面の描画順と文字行部分クリップまで 2026-10-26 に完了） |
 | R7 | テキストと国際化 | ほぼ完了（システムの書体、アトラスの 1 サイズ 1 置き場化と破棄、`@font-face` の統合、`ch` / `ex`、UAX #14、`direction`、UAX #9 の並べ替え、Selection / Range は 2026-10-26 に完了。残: 合字・`line-height: normal` の代替書体の指標・`writing-mode`・`contenteditable` と IME・描画の選択と Selection API のつなぎ） |
 | R8 | 置換要素（SVG・Canvas 2D） | ほぼ完了（2026-10-26。ソフトウェア Canvas 2D・インライン SVG・画像としての SVG・`srcset` / `image-set()`・`object-fit` / `object-position`。残: SVG の `mask` / `filter` / `marker` / `pattern` / `tspan`、WPT `html/canvas/` の採用ケース、canvas / SVG のテキストの書体） |
-| R9 | レイアウトとパーサの残り | 未着手（fieldset / legend の重ね配置だけ R2 で先行。表の台帳 4 行を含む残りは Phase 5） |
-| R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・ホットリロードは Phase 5） |
+| R9 | レイアウトとパーサの残り | 一部完了（2026-10-26。Phase 5 の 2 段目。表の台帳 4 行の解消・`%` 列幅・`visibility: collapse`・multicol・grid の `auto-fit` の畳みと `grid-template` / `grid`・adoption agency とコメントの端・`<ol reversed>`・`list-style-image`・`@counter-style`・高さの内容サイズのキーワード。残: subgrid・baseline・flex の残り・ブロックを含むインラインの分割・`<template>` の断片・外来要素の名前空間・枠線の `border-style` の優先順位と行・列の枠線） |
+| R10 | 開発者ツール | 一部（F12 の簡易インスペクタ・F5 の再読み込み・devkit。DOM ツリー・CDP・F5スマートリロード強化は Phase 5。ファイル監視は行わない） |
 
 ---
 
@@ -232,7 +232,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 - **R8**: インライン `<svg>` と `<img src="*.svg">`、標準 `CanvasRenderingContext2D` と `Path2D`、`image-set()` / `srcset`。
 - **R9**: 表の `%` 列幅と `border-collapse` 完全対応（[FIDELITY.md](FIDELITY.md) の R9 の 4 行を解消し台帳 0 行へ）、multicol、grid の `subgrid` / `baseline` / `auto-fit`、ブロック内インライン分割、HTML パーサの adoption agency・外来要素・`<template>`。
-- **R10**: ゲーム内 DevTools（DOM ツリー・計算値・マッチ規則・ライブ編集）、WebSocket の CDP 部分集合 + MCP ブリッジ、ファイル監視のホットリロード。
+- **R10**: ゲーム内 DevTools（DOM ツリー・計算値・マッチ規則・ライブ編集）、WebSocket の CDP 部分集合 + MCP ブリッジ、明示的リロード強化（F5 スマートリロード / Ctrl+F5 完全リロード。常時ファイル監視は行わない）。
 
 ---
 
@@ -308,7 +308,7 @@ Phase 0 で追加したテストとラチェットを通す形で、状態管理
 
 **R10 — 達成**: GUI 画面の F12 で、ホバーした要素のタグ・id・class・矩形・バインディング属性を重ねて出す簡易インスペクタ、
 F5 で文書の再読み込み。
-**R10 — 残（Phase 5）**: DOM ツリーと計算値・マッチした規則の表示とライブ編集、リモートデバッグプロトコル、ファイル監視のホットリロード。
+**R10 — 残（Phase 5）**: DOM ツリーと計算値・マッチした規則の表示とライブ編集、リモートデバッグプロトコル（CDP/MCP）、F5 スマートリロード（状態維持スタイル更新）と完全リロード（常時ファイル監視スレッドは持たない）。
 
 ### R0〜R3 の記録
 
@@ -452,6 +452,7 @@ EnderFrameLib はさらに radial / conic / repeating グラデーションと 3
 - WPT の全量を回して pass 率を見る運用。採用したケースを固定して台帳で管理する今の方式を広げる（R0）。
 - 組み込み JS エンジン（Rhino。方針 1）。
 - マルチローダーの targets 構成と WebView2 の iframe（Web 標準への接近とは別の話なのでスコープ外）。
+- 常時ファイル監視（Java WatchService）による自動ホットリロード（重さやファイルロックを避けるため真似せず、F5 スマートリロード/ハードリロードおよび CDP の明示的リロードに集約）。
 
 ---
 
@@ -757,7 +758,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - **ブロックとインライン**: ブロックを含むインラインボックスの分割、flex / grid 直下のテキストの匿名アイテム、float の横の行幅を行ごとに測り直す、
   `min-content` / `max-content` / `fit-content` を高さにも。
 - **表**: `%` の列幅、`border-collapse` の線種と優先順位、`empty-cells`、`visibility: collapse`。
-- **リスト**: `<ol reversed>`、`list-style-image`、`@counter-style`。
+- **リスト**: `<ol reversed>`、`list-style-image`、`@counter-style`（2026-10-26 に完了）。
 - **HTML パーサ**: 書式要素の一覧と adoption agency、SVG / MathML の外来要素、`<template>` の中身を別の `DocumentFragment` にする、
   閉じていない `<!--` で残りの文書を捨てるのをやめる（仕様どおりコメントを EOF まで続ける）。
 
@@ -765,6 +766,19 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 
 **完了条件と検証**: 各項目のコーパスケースと `HtmlTreeConstructionTest` のケース（html5lib の採用ケースを含む）。台帳の R9 の 4 行と該当の `LIMITATION`・README の行を消す。
 
+**R9 — 達成（2026-10-26。Phase 5 の 2 段目。項目の一部）**:
+- **表**: `%` の列幅（列要素と 1 列だけのセルの `width: N%`。自動レイアウトは割合の列の max-content を収める幅まで表が広がり、割合の合計が 100 を超えれば縮める。`table-layout: fixed` も表の幅への割合で解く）。`visibility: collapse` の行（高さも前後の `border-spacing` も無くなる）と列（幅 0）。台帳の R9 の 4 行は、ブラウザが `border-collapse: collapse` の表の `clientWidth` / `clientHeight` に外周の枠線の半分を引かず、`scrollWidth` / `scrollHeight` がセルの端まで（箱より小さくなりうる）なのをそのまま写して解消した（`LayoutBox.isCollapsedTable()`・`BoxMetrics.collapsedTable`。`overflow` でクリップする表は普通の箱）。台帳は 23 → 19 行（R4 8・R5 10・R7 1）。
+- **multicol**（新規 `MulticolLayout`）: `columns` / `column-count` / `column-width` / `column-gap`（既定 1em）/ `column-rule*` / `column-fill`（balance は列数に収まる最小の高さを二分探索、auto は高さまで順に）/ `column-span: all`。通常のブロックフローを列の幅で 1 回組み、行と「分けてよいブロックの子」を上から列に詰め、列ごとの移動量（`LayoutBox.columnShifts`）を配置のときに足す。段組コンテナは BFC を作る。線は `LayoutBox.columnRules` から `BoxDecorationPainter.drawColumnRules` が引く。
+- **grid**: `repeat(auto-fit)` の空の繰り返しを配置の後に畳む（トラックと隣の gap が 1 本ぶん無くなる）。`grid-template`（`<rows> / <columns>` と領域名の文字列の形）・`grid`（`grid-template` の形と `auto-flow` の 2 形）のショートハンド。
+- **HTML パーサ**: 書式要素の一覧（active formatting elements・Noah's Ark・マーカー）と再構築、adoption agency（外側 8 回・内側 3 回）、`<nobr>` / `<a>` の入れ子。`<!-->` / `<!--->` / `--!>` で閉じるコメント。
+- **リスト**: `<ol reversed>`（項目数、または `start` から 1 ずつ減らす。入れ子の通常の `ol` は影響を受けない）、`list-style-image: url(...)`（画像の置換要素 + 空白 1 文字をマーカーに置く）。
+- **`@counter-style`**: CSS Counter Styles 3 の `cyclic` / `numeric` / `alphabetic` / `symbolic` / `additive` / `fixed` / `extends` と、記述子 `system` / `symbols` / `additive-symbols` / `negative` / `prefix` / `suffix` / `range` / `pad` / `fallback`。定義済みスタイル（`decimal`・`decimal-leading-zero`・`lower-` / `upper-alpha` / `latin` / `roman`・`lower-greek`・`disc` / `circle` / `square` / `disclosure-*`）も同じ経路で扱う。作者名は `<custom-ident>` として大文字小文字を区別し、予約名は規則ごと無効。`::marker` は `prefix + 表現 + suffix`、`counter()` / `counters()` は prefix / suffix を付けない。`symbols()` の匿名スタイルと画像記号（`url(...)`）は読まない。
+- **サイズ**: `height` / `min-height` / `max-height` の `min-content` / `max-content` / `fit-content` を算出値の段階で `auto` / `none` にする（CSS Sizing 3 §5.1）。
+- **表（続き。同日）**: `empty-cells: hide`（`border-collapse: separate` の表で、中身が空白だけのセルは背景も枠線も描かない。`PaintSupport.hidesEmptyCell`）。`border-collapse: collapse` の `border-style: hidden` が隣の太い枠線にも勝つ（`TableLayoutEngine.joint`）。`EmptyCellsTest`（3）・`R9MiscLayoutTest` に 1 件追加。`./gradlew test` は 1,205 件・失敗 0、`./gradlew benchmark` は許容幅内（showcase 11.0 / 16.2 / 4.4 / 19.0 ms）。
+- **flex（続き。同日）**: 列方向アイテムの `min-height: auto` は、指定の高さより内容が低ければ内容の高さまで縮められる（Flexbox §4.5。`LayoutBox.contentBlockExtent` に指定値と無関係な内容の高さを残し `FlexLayoutEngine.minMainSize` が読む）。`R9MiscLayoutTest` に 2 件追加。`./gradlew test` 失敗 0、`./gradlew benchmark` は許容幅内（showcase 11.4 / 15.4 / 5.1 / 17.2 ms）。期待値は仕様の式から導出（Edge 実測ではない）。
+- **検証**: `TablePercentColumnTest`（8）・`MulticolTest`（14。期待値は Edge 156 の `getBoundingClientRect` / `Range`）・`GridAutoFitTest`（4）・`R9MiscLayoutTest`（3。Edge 実測）・`HtmlTreeConstructionTest` に 18 ケース追加（Edge 156 の innerHTML）・`BoxTreeTest` に 2 件・`ShorthandExpansionTest` に 4 件。`./gradlew test` は 1,201 件・失敗 0（`ArchitectureTest` の M9 は 275 → 276、`MulticolLayout` の 1 ファイル）、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 11.8 / Relayout 15.2 / DisplayList 4.6 / ScrollStep 17.8 ms。基準 16.3 / 15.2 / 4.8 / 17.5）。段組の組版は 400 段落（約 1,200 行）で 3 段組なし ≈ 26 ms・4 列 ≈ 29 ms（best。いずれも測定は JUnit 上の 1 回の `layoutDocument`）。実機（`runClient`）での目視は未実施。
+- **`@counter-style`（検証。同日）**: `CounterStyleTest`（7）・`BoxTreeTest` に 1 件（`::marker` は `prefix + 表現 + suffix`、`counter()` は付けないこと、作者名の大文字小文字、定義済み名を小文字に直してから作者の定義を探すこと）。`./gradlew test` は 1,215 件・失敗 0（`ArchitectureTest` の M9 は 276 → 278、`CounterStyle` / `CounterStyles` の 2 ファイル）、`./gradlew benchmark`（厳密）は許容幅内（showcase Restyle 12.4 / Relayout 17.0 / DisplayList 4.7 / ScrollStep 21.4 ms、guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms）。
+- **LIMITATION / 残**: multicol は枠線・余白・背景を持つブロックと、行を持たない箱（空のブロック・画像）を途中で分けない（ブラウザは空のブロックも分ける）。`break-before` / `break-after`・`orphans` / `widows`・`direction: rtl` の列順・段組内の float は未対応。表は行・列・行グループの枠線の重ね合わせと `hidden` 以外の `border-style` の優先順位が残り、潰れた列の `border-spacing` は残る。grid の subgrid・baseline・負の方向の暗黙トラック、flex の last baseline・不定の高さのコンテナ内の `%` 高さ、ブロックを含むインラインボックスの分割、flex / grid 直下のテキストの匿名アイテム、float の横の行幅の測り直し、`<template>` の別 `DocumentFragment`（`Bindings` が子の `template` を読むため）、SVG / MathML の名前空間（`SvgRenderer` が小文字で読むため）は未着手。`@counter-style` は `symbols()` の匿名スタイルと画像記号（`url(...)`）を読まない。`list-style-image` の読み込み失敗は `list-style-type` に戻さない。
 ### R10 — 開発者ツール
 
 **目的**: R1〜R3 で生きた DOM ができると、外から観測して触れるようになる。デバッグと AI 支援の両方に効く。R2 の後なら並行できる。
@@ -773,11 +787,11 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - **ゲーム内インスペクタ**: DOM ツリー、選んだ要素の計算値・マッチした規則・ボックスモデル、計算値のライブ編集、ヒットテストでの要素選択。
 - **リモートデバッグプロトコル**: CDP の部分集合（`DOM.*`・`CSS.getComputedStyleForNode`・`Runtime` は持たない）を WebSocket で出し、
   MCP ブリッジから文書一覧・スナップショット・検索・計算値・クリック・入力を使えるようにする。ローカルホストのみ・トークン認証。
-- **ホットリロード**: リソースの変更を監視して文書を開き直す（クライアント駆動の文書は状態を保ったまま CSS だけ差し替える）。
+- **明示的リロードの強化**: 常時ファイル監視（WatchService）は重さ・ファイルロック・GC 負荷の観点から持たず、F5 打鍵によるスマートリロード（クライアント駆動の文書はフォーム値・フォーカス・スクロール位置の状態を保ったまま CSS だけ差し替えて高速更新）と Ctrl+F5 の完全ハードリロード、および CDP の `Page.reload` による外部からの明示的トリガーとする。
 
-**参照**: AUI `dev/devtools/*`（`DevToolsController`）、`dev/debug/ExternalDebugServer`・`DebugProtocolSession`、`tools/apricity-mcp/server.mjs`。
+**参照**: AUI `dev/devtools/*`（`DevToolsController`）、`dev/debug/ExternalDebugServer`・`DebugProtocolSession`、`tools/apricity-mcp/server.mjs`。AUI のファイル監視は真似しない。
 
-**完了条件と検証**: プロトコルの往復テスト（JUnit で WebSocket クライアントを立てる）。`runClient` でインスペクタを開いて計算値を変え、即座に反映されること。
+**完了条件と検証**: プロトコルの往復テスト（JUnit で WebSocket クライアントを立てる）。`runClient` でインスペクタを開いて計算値を変え、即座に反映されること。F5 で状態（入力値・スクロール）を保ったまま CSS 変更が反映されること。
 
 ---
 

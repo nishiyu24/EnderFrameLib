@@ -168,13 +168,16 @@ TTF / OTF 以外の `@font-face` で登録した書体）だけの話。シス�
 ### R7（テキストと国際化）
 - `forced-line-breaks#box.scrollHeight`: ブラウザ 62 / エンジン 60（強制改行の末尾行送り・ベースラインの 2px の差。原因は、行の高さ 20px より高い書体の内容領域（Noto Sans JP の ascent + descent = 24px）の下端がスクロール範囲に入ること。エンジンは Phase 4 で内容領域を算入するようにしたが、このコーパスの測定は書体を持たない `FontResolver.FALLBACK` なので 60 のまま。システムの書体では `DirectionLayoutTest` が固定している）
 
-### R9（レイアウトとパーサの残り）
-- `table-border-collapse#t.scrollWidth`: ブラウザ 90 / エンジン 88（border-collapse: collapse での表の scrollWidth 算出）
-- `table-border-collapse#t.scrollHeight`: ブラウザ 26 / エンジン 24（border-collapse: collapse での表の scrollHeight 算出）
-- `table-border-collapse#t.clientWidth`: ブラウザ 92 / エンジン 88（border-collapse: collapse での表の clientWidth 算出）
-- `table-border-collapse#t.clientHeight`: ブラウザ 28 / エンジン 24（border-collapse: collapse での表の clientHeight 算出）
-
 ## 解消済みの差異
+
+- **R9（台帳 4 行 → 0 行）**: `table-border-collapse` の `t.scrollWidth` / `t.scrollHeight` / `t.clientWidth` / `t.clientHeight`。
+  ブラウザは `border-collapse: collapse` の表で、外周の枠線の半分を `clientLeft` などに数えず（`clientWidth` は箱の幅のまま）、
+  `scrollWidth` / `scrollHeight` はセルの端まで測る（箱より 2px 小さくなる）。エンジンも同じにした
+  （`LayoutBox.isCollapsedTable()`。`overflow` でクリップする表は普通の箱として測る）。
+  あわせて表の `%` 列幅・`visibility: collapse`・multicol・grid の `auto-fit` の畳み・`grid-template` / `grid`・
+  adoption agency・`<ol reversed>`・`list-style-image`・`@counter-style` を入れた。矩形のダンプに出ない、または文字の幅に依存する差なので
+  コーパスは足さず、Edge 156 を採った `MulticolTest` / `TablePercentColumnTest` / `GridAutoFitTest` /
+  `R9MiscLayoutTest` / `HtmlTreeConstructionTest` と、`CounterStyleTest` / `BoxTreeTest` が固定する。
 
 - **R0 / R4（追加 15 ケース、台帳 1 行）**: 計算値の列を比べる `computed-values`（R0）と、現代の CSS の 14 ケース（R4）
   （`layer-order` / `layer-important` / `layer-nested-anonymous` / `nesting-basic` / `nesting-specificity` /
