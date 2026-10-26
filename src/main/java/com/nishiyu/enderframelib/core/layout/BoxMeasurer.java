@@ -14,6 +14,10 @@ import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
 import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
+import com.nishiyu.enderframelib.core.paint.ImageChoice;
+import com.nishiyu.enderframelib.core.paint.ImageSources;
+import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
+import com.nishiyu.enderframelib.core.raster.svg.SvgSize;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
@@ -231,7 +235,7 @@ public final class BoxMeasurer {
             int[] intrinsic = intrinsicSize(box, ctx);
             box.w = (intrinsic != null && intrinsic[0] > 0)
                     ? intrinsic[0] + box.horizontalDecoration()
-                    : replacedFallbackWidth(box) + box.horizontalDecoration();
+                    : replacedFallbackWidth(box, ctx) + box.horizontalDecoration();
             box.sizingMode = SizingMode.DEFINITE;
         } else if (tag.equals("input") || tag.equals("select") || tag.equals("progress")) {
             box.w = box.getMinContentWidth(ctx);
@@ -474,7 +478,7 @@ public final class BoxMeasurer {
                     box.h = intrinsic[1] + box.verticalDecoration();
                 }
             } else {
-                box.h = replacedFallbackWidth(box) + box.verticalDecoration();
+                box.h = replacedFallbackWidth(box, ctx) + box.verticalDecoration();
             }
             return;
         }
@@ -509,22 +513,66 @@ public final class BoxMeasurer {
     }
 
     private static boolean isReplacedImage(String tag) {
-        return tag.equals("img") || tag.equals("mc-fluid") || tag.equals("mc-entity");
+        return tag.equals("img") || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("canvas") || tag.equals("svg");
     }
 
-    /** リモート画像だけが外部解決を必要とする。ローカル資産は固定サイズ。 */
+    /**
+     * 置換要素の固有サイズ（CSS px）。{@code canvas} は {@code width} / {@code height} 属性（既定 300×150）、
+     * インライン {@code svg} は属性か {@code viewBox}、{@code img} は選んだ候補（{@code srcset} / {@code sizes}）の画像の画素数を
+     * 選んだ密度で割った値。ローカルの PNG などは固定サイズ（null）、リモート画像と SVG は外部の解決を待つ。
+     */
     private static int[] intrinsicSize(LayoutBox box, LayoutContext ctx) {
-        String src = box.node.attrs.getOrDefault("src", "");
-        if (!src.startsWith("http://") && !src.startsWith("https://")) return null;
-        IntrinsicSizeResolver resolver = ctx.intrinsicResolver();
-        return resolver != null ? resolver.getSize(src) : null;
+        String tag = box.node.tag;
+        if (tag.equals("canvas")) {
+            return new int[]{canvasDimension(box.node.attrs.get("width"), 300), canvasDimension(box.node.attrs.get("height"), 150)};
+        }
+        if (tag.equals("svg")) {
+            double[] d = SvgSize.intrinsic(box.node);
+            double w = Double.isNaN(d[0]) ? 300 : d[0];
+            double h = Double.isNaN(d[1]) ? 150 : d[1];
+            return new int[]{(int) Math.max(1, Math.round(w)), (int) Math.max(1, Math.round(h))};
+        }
+        ImageChoice sel = selectedImage(box, ctx);
+        if (sel == null) return null;
+        String src = sel.url();
+        int[] size;
+        if (SvgImage.isSvgDataUri(src)) {
+            SvgImage svg = SvgImage.cachedFromDataUri(src);
+            size = svg == null ? null : new int[]{(int) Math.round(svg.width()), (int) Math.round(svg.height())};
+        } else if (isRemote(src) || SvgImage.looksLikeSvg(src)) {
+            IntrinsicSizeResolver resolver = ctx.intrinsicResolver();
+            size = resolver != null ? resolver.getSize(src) : null;
+        } else {
+            return null;
+        }
+        if (size == null || sel.density() == 1) return size;
+        return new int[]{(int) Math.max(1, Math.round(size[0] / sel.density())), (int) Math.max(1, Math.round(size[1] / sel.density()))};
+    }
+
+    private static int canvasDimension(String attr, int def) {
+        if (attr == null) return def;
+        try {
+            int v = Integer.parseInt(attr.trim());
+            return v >= 0 && v <= 32767 ? v : def;
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static ImageChoice selectedImage(LayoutBox box, LayoutContext ctx) {
+        return ImageSources.forImg(box.node.attrs, ctx.viewport().rootW(), ctx.viewport().rootH());
+    }
+
+    private static boolean isRemote(String src) {
+        return src.startsWith("http://") || src.startsWith("https://");
     }
 
     /** サイズが分からないときの既定値。リモート画像は読み込み中なので少し大きめにとる。 */
-    private static float replacedFallbackWidth(LayoutBox box) {
-        String src = box.node.attrs.getOrDefault("src", "");
-        boolean remote = src.startsWith("http://") || src.startsWith("https://");
-        return remote ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;
+    private static float replacedFallbackWidth(LayoutBox box, LayoutContext ctx) {
+        ImageChoice sel = box.node.tag.equals("img") ? selectedImage(box, ctx) : null;
+        String src = sel != null ? sel.url() : box.node.attrs.getOrDefault("src", "");
+        boolean pending = isRemote(src) || SvgImage.looksLikeSvg(src);
+        return pending ? LayoutMetrics.PENDING_IMAGE_SIZE : LayoutMetrics.FALLBACK_REPLACED_SIZE;
     }
 
     /**

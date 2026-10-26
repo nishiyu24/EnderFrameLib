@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import java.util.List;
 import java.util.Locale;
 import com.nishiyu.enderframelib.core.paint.*;
+import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
@@ -54,7 +55,10 @@ final class ControlPainter {
                                   ItemProps partsEvents, ItemProps passiveBorderEvents,
                                   BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                   int transDur, AnimationSpec colorBgAnim) {
-        String src = box.style.getOrDefault(CssProperty.SRC, box.node.attrs.getOrDefault("src", ""));
+        // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
+        ImageChoice chosen = "img".equals(box.node.tag)
+                ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH()) : null;
+        String src = box.style.getOrDefault(CssProperty.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
         if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
             src = "fluid:" + box.node.attrs.getOrDefault("fluid", src);
         } else if ("mc-entity".equals(box.node.tag) && !src.startsWith("entity:")) {
@@ -79,7 +83,33 @@ final class ControlPainter {
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
-        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+        // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
+        if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
+            SvgImage svg = SvgSources.get(src);
+            src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color);
+        }
+        ItemProps imageEvents = partsEvents;
+        String position = box.style.get(CssProperty.OBJECT_POSITION);
+        if (position != null && !position.isBlank()) {
+            imageEvents = partsEvents.copy();
+            imageEvents.put("object-position", position);
+        }
+        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+    }
+
+    /** インライン {@code <svg>}。内容は SVG の木から描く画素にして、画像と同じ経路で置く。 */
+    void drawSvgElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
+                        ItemProps partsEvents, ItemProps passiveBorderEvents,
+                        BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
+                        int transDur, AnimationSpec colorBgAnim) {
+        decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
+        float innerX = box.x + border.bwLeft();
+        float innerY = box.y + border.bwTop();
+        float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
+        float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
+        String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color);
+        addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
+                partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 
     void drawCanvasElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -91,7 +121,14 @@ final class ControlPainter {
         float innerY = box.y + border.bwTop();
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
-        addElement(elements, id, id + "_canvas", ElementType.CANVAS, innerX, innerY, innerW, innerH, id, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+        // canvas の画素の大きさは width / height 属性（既定 300×150）。内容ボックスへは object-fit で収める
+        ItemProps canvasEvents = partsEvents.copy();
+        canvasEvents.put("canvas-width", box.node.attrs.getOrDefault("width", ""));
+        canvasEvents.put("canvas-height", box.node.attrs.getOrDefault("height", ""));
+        String position = box.style.get(CssProperty.OBJECT_POSITION);
+        if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
+        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssProperty.OBJECT_FIT, "fill"));
+        addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 
     void drawTextareaElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,

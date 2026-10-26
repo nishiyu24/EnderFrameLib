@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
@@ -175,6 +176,57 @@ public class WebMediaManager {
             downloadImageAsync(urlString);
         }
         return null;
+    }
+
+    // ==========================================
+    // 1b. SVG（画像としての SVG はビットマップではなく、描く大きさで毎回ラスタライズする）
+    // ==========================================
+    private static final Map<String, SvgImage> SVG_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<String, SvgImage>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, SvgImage> eldest) {
+                    return size() > 64;
+                }
+            });
+    private static final ConcurrentHashMap<String, Boolean> SVG_DOWNLOADING = new ConcurrentHashMap<>();
+
+    /** 取得済みの SVG。未取得なら取りに行って null（届いたら固有サイズを登録してレイアウトし直す）。 */
+    public static SvgImage getSvg(String urlString) {
+        if (urlString == null || urlString.isEmpty() || !allowExternalMedia) return null;
+        SvgImage cached = SVG_CACHE.get(urlString);
+        if (cached != null) return cached;
+        if (SVG_DOWNLOADING.putIfAbsent(urlString, Boolean.TRUE) == null) {
+            downloadSvgAsync(urlString);
+        }
+        return null;
+    }
+
+    private static void downloadSvgAsync(String originalUrl) {
+        MEDIA_IO_EXECUTOR.submit(() -> {
+            try {
+                String directUrl = convertToDirectLink(originalUrl);
+                if (!isUrlSafe(directUrl)) return;
+                HttpURLConnection conn = openCheckedConnection(directUrl);
+                if (conn == null) return;
+                long limit = Math.min(maxImageDownloadBytes, SvgImage.MAX_BYTES);
+                if (conn.getContentLengthLong() > limit) return;
+                try (InputStream is = conn.getInputStream()) {
+                    byte[] bytes = is.readNBytes((int) limit + 1);
+                    if (bytes.length > limit) return;
+                    SvgImage svg = SvgImage.parse(new String(bytes, StandardCharsets.UTF_8));
+                    if (svg == null) return;
+                    Minecraft.getInstance().execute(() -> {
+                        SVG_CACHE.put(originalUrl, svg);
+                        ClientImageRegistry.setSize(originalUrl, (int) Math.max(1, Math.round(svg.width())),
+                                (int) Math.max(1, Math.round(svg.height())));
+                    });
+                }
+            } catch (Exception ignored) {
+                // 取れない SVG は描かない（再試行は SVG_DOWNLOADING を外した次回の参照）
+            } finally {
+                SVG_DOWNLOADING.remove(originalUrl);
+            }
+        });
     }
 
     private static String convertToDirectLink(String urlString) {
@@ -1067,7 +1119,13 @@ public class WebMediaManager {
         }
 
         public static int[] getSize(String url) {
-            return SIZES.get(url);
+            int[] known = SIZES.get(url);
+            if (known != null) return known;
+            // data: とリソースパックの SVG は同期で読めるので、レイアウトの途中でも寸法が決まる（再レイアウトは要らない）
+            if (SvgImage.looksLikeSvg(url) && !url.startsWith("http://") && !url.startsWith("https://")) {
+                return SvgSources.intrinsicSize(url);
+            }
+            return null;
         }
 
         /**

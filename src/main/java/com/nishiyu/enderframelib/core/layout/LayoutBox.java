@@ -1235,7 +1235,7 @@ public class LayoutBox {
 
         /** {@code display} の宣言が無いときにインラインとして扱うタグ（従来の推測と同じ一覧）。 */
         private static final Set<String> INLINE_TAGS = Set.of(
-                "br", "span", "a", "b", "i", "strong", "em", "img", "input", "button", "select", "progress",
+                "br", "span", "a", "b", "i", "strong", "em", "img", "canvas", "svg", "input", "button", "select", "progress",
                 "mc-fluid", "mc-entity", "mc-scene");
 
         /** 箱の display。テキストは常にインライン、宣言が無い・解釈できない値はタグから推測する。 */

@@ -13,6 +13,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -471,7 +472,13 @@ public class DisplayItemDrawer {
                 if (type == ElementType.CANVAS) {
                     Canvas2DContext ctx = Canvas2DContext.get(animSessionId, baseId);
                     if (ctx != null) {
-                        ctx.renderCommands(el, poseStack, buffer, finalOpacity, contentZ, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, packedLight);
+                        ctx.adoptSize(el.events());
+                        WebMediaManager.ImageInfo canvasTexture = ctx.texture("canvas:" + animSessionId + ":" + baseId);
+                        if (canvasTexture != null) {
+                            MediaElementRenderer.renderExternalWebImage(el, canvasTexture, poseStack, buffer, finalOpacity, contentZ,
+                                    packedLight, OverlayTexture.NO_OVERLAY, rTL, rTR, rBR, rBL,
+                                    clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL);
+                        }
                     }
                 } else if (type == ElementType.SCENE) {
                     // 3D の中身は頂点を切れないので、祖先のクリップ（overflow・スクロール端）はシザーで当てる

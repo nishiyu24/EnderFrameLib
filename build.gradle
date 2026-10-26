@@ -162,7 +162,7 @@ tasks.register('benchmark', Test) {
     testLogging {
         showStandardStreams = true
     }
-    include '**/PerformanceBenchmarkTest.class', '**/StateMemoryBenchmarkTest.class'
+    include '**/PerformanceBenchmarkTest.class', '**/StateMemoryBenchmarkTest.class', '**/RasterBenchmarkTest.class'
     systemProperty 'benchmark.enforce', 'true'
     ['benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
         def value = System.getProperty(key)
