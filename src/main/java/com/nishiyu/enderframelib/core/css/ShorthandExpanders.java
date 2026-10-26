@@ -354,6 +354,30 @@ final class ShorthandExpanders {
         return out;
     }
 
+    /**
+     * {@code mask: <mask-layer>#}（画像・位置 / 大きさ・繰り返し・箱）。背景のレイヤーと同じ書き方なので
+     * {@link #background} で読み、{@code mask-*} の名前に付け替える。背景との違いは箱の既定（{@code mask-origin} / {@code mask-clip} は
+     * どちらも {@code border-box}）だけ。{@code mask-mode} と {@code mask-composite} はこのショートハンドでは読まない（ロングハンドで書く）。
+     */
+    static Map<String, String> mask(String value) {
+        Map<String, String> bg = background(value);
+        if (bg.isEmpty()) return bg;
+        List<String> origins = new ArrayList<>(List.of(bg.get("background-origin").split(", ")));
+        List<String> clips = List.of(bg.get("background-clip").split(", "));
+        // 箱のキーワードが無いレイヤーは、背景の既定（origin = padding-box・clip = border-box）の組になっている。mask の既定は両方 border-box
+        for (int i = 0; i < origins.size(); i++) {
+            if ("padding-box".equals(origins.get(i)) && "border-box".equals(clips.get(i % clips.size()))) origins.set(i, "border-box");
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("mask-image", bg.get("background-image"));
+        out.put("mask-position", bg.get("background-position"));
+        out.put("mask-size", bg.get("background-size"));
+        out.put("mask-repeat", bg.get("background-repeat"));
+        out.put("mask-origin", String.join(", ", origins));
+        out.put("mask-clip", bg.get("background-clip"));
+        return out;
+    }
+
     private static boolean isBackgroundSize(String token) {
         String lower = token.toLowerCase();
         return BG_SIZE_KEYWORDS.contains(lower) || startsNumeric(lower) || lower.startsWith("calc(");

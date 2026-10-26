@@ -80,7 +80,9 @@ public class DisplayListBuilder {
         this.anim = new BoxAnimation(rootW, rootH, this.keyframes);
         this.decor = new BoxDecorationPainter(rootW, rootH, fragIds);
         this.controls = new ControlPainter(decor);
-        this.order = new PaintOrder(rootW, rootH, scrollState, fragIds, this::drawBoxSelf);
+        this.order = new PaintOrder(rootW, rootH, scrollState, fragIds, this::drawBoxSelf,
+                box -> (box.style.get(CssProperty.ANIMATION) != null || box.style.get(CssProperty.ANIMATION_NAME) != null)
+                        && (anim.parseAnimationDef(box.style, box.w, box.h, 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0);
     }
 
     /** 箱を描く順（スタッキングコンテキストの順）に並べた箱。 */
@@ -107,10 +109,58 @@ public class DisplayListBuilder {
             }
         }
 
+        // レイヤーに描く箱: 開始の印の次に出る錨の位置を覚え、終了の印でそこから出し終えた項目の数（span）を錨に書く
+        java.util.ArrayDeque<int[]> openLayers = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<LayerSpec> openSpecs = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<LayoutBox> openBoxes = new java.util.ArrayDeque<>();
         for (RenderTask task : order.paintTasks(box)) {
+            if (task.layerStart() != null) {
+                openLayers.push(new int[]{elements.size()});
+                openSpecs.push(task.layerStart());
+                openBoxes.push(task.layerBox());
+                continue;
+            }
+            if (task.layerEnd()) {
+                int start = openLayers.pop()[0];
+                LayerSpec spec = openSpecs.pop();
+                LayoutBox layerBox = openBoxes.pop();
+                if (elements.size() - start > 0) {
+                    // マスクは、箱の中身を出し終えたあとに足す（描画側は maskFrom 以降をマスク用の描画先へ描く）
+                    if (spec.wantsMask()) {
+                        int maskFrom = elements.size() - start;
+                        drawMaskItems(elements, layerBox);
+                        spec = spec.withMaskFrom(elements.size() - start > maskFrom ? maskFrom : -1);
+                    }
+                    DisplayItem anchor = elements.get(start);
+                    elements.set(start, withLayer(anchor, spec.withSpan(elements.size() - start)));
+                }
+                continue;
+            }
             task.drawAction().accept(elements);
         }
         return elements;
+    }
+
+    /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
+    private void drawMaskItems(List<DisplayItem> elements, LayoutBox box) {
+        int[] xy = roundRadii(LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH));
+        Corners radii = Corners.ofEllipses(java.util.Arrays.copyOfRange(xy, 0, 4), java.util.Arrays.copyOfRange(xy, 4, 8));
+        int[] rawRadii = {Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
+                Math.min(radii.bottomRight(), radii.bottomRightV()), Math.min(radii.bottomLeft(), radii.bottomLeftV())};
+        int color = box.style.color(CssProperty.COLOR, 0xFF000000);
+        BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
+        float fontHVal = Math.max(1.0f, box.style.fontSizePx());
+        decor.drawMaskLayers(elements, box, box.node.getId(), null, radii, border, fontHVal, 0.5f, 0.5f);
+    }
+
+    /** 錨の項目にレイヤーの指定を載せる。 */
+    private static DisplayItem withLayer(DisplayItem anchor, LayerSpec spec) {
+        RenderMeta meta = anchor.meta() != null ? anchor.meta() : RenderMeta.EMPTY;
+        RenderMeta withLayer = meta.withHints(meta.hints().withLayer(spec));
+        return new DisplayItem(anchor.id(), anchor.baseNodeId(), anchor.type(), anchor.x(), anchor.y(), anchor.width(), anchor.height(),
+                anchor.text(), anchor.color(), anchor.bgColor(), anchor.events(), anchor.radius(), anchor.opacity(),
+                anchor.translateX(), anchor.translateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
+                anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer);
     }
 
     /**
@@ -121,8 +171,11 @@ public class DisplayListBuilder {
     private static final int DEFAULT_CANVAS_COLOR = 0x00000000;
 
     private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, float[] clipRect, String parentId) {
-        int[] rawRadii = roundRadii(LengthResolver.cornerRadii(box.style, box.w, box.h, rootW, rootH));
-        Corners radii = Corners.fromArray(rawRadii);
+        int[] xy = roundRadii(LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH));
+        Corners radii = Corners.ofEllipses(java.util.Arrays.copyOfRange(xy, 0, 4), java.util.Arrays.copyOfRange(xy, 4, 8));
+        // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
+        int[] rawRadii = {Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
+                Math.min(radii.bottomRight(), radii.bottomRightV()), Math.min(radii.bottomLeft(), radii.bottomLeftV())};
         int fallbackRadius = radii.topLeft();
         float rOff = Math.min(fallbackRadius, Math.min(box.w, box.h) / 2);
 
@@ -198,9 +251,9 @@ public class DisplayListBuilder {
 
         List<BoxDecorations.Shadow> shadows = BoxDecorations.parseBoxShadows(box.style.get(CssProperty.BOX_SHADOW), color,
                 rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-        decor.drawOuterShadows(elements, box, id, shadows, rawRadii, normalizedClip, fontHVal, ox, oy);
+        decor.drawOuterShadows(elements, box, id, shadows, radii, normalizedClip, fontHVal, ox, oy);
 
-        BorderSpec border = decor.parseBorderSpec(box, rawRadii, color);
+        BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
         RenderMeta innerMeta = new RenderMeta(normalizedClip, border.innerRadii(), null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
         switch (box.node.tag) {

@@ -118,6 +118,13 @@ final class PaintSupport {
             own[5] = r.topRight();
             own[6] = r.bottomRight();
             own[7] = r.bottomLeft();
+            if (r.isElliptical()) {
+                own = java.util.Arrays.copyOf(own, 12);
+                own[8] = r.topLeftV();
+                own[9] = r.topRightV();
+                own[10] = r.bottomRightV();
+                own[11] = r.bottomLeftV();
+            }
         }
         return ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
     }

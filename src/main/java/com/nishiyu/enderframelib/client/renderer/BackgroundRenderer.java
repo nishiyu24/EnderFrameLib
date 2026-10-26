@@ -66,7 +66,31 @@ public final class BackgroundRenderer {
         RoundedRectRasterizer.drawRoundedBorder(builder, poseStack.last().pose(),
                 el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), rTL, rTR, rBR, rBL,
                 spec.widths(), colors, finalOpacity, zOffset,
-                clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, useSdfShader);
+                clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, useSdfShader,
+                dashOf(spec, el.width(), el.height(), rTL, rTR, rBR, rBL));
+    }
+
+    /**
+     * 角丸の枠線の破線・点線の記述（種類・周期の数・線の長さ・丸い点か）。実線や 4 辺の太さが違うときは null。
+     * 周期の数は中心線の全長から決める（{@link BorderPath#pattern}）。中心線の寸法はシェーダーと同じ式で求める
+     * （箱から太さの半分だけ内側。半径も太さの半分だけ小さくなり、どちらかの軸が 0 になれば直角）。
+     * 楕円の角のときは、いま {@link WebSdfShader#setEllipseRadii} に入っている半径を使う。
+     */
+    static float[] dashOf(RoundedBorderSpec spec, float w, float h, float rTL, float rTR, float rBR, float rBL) {
+        if (spec.dashKind() == BorderPath.SOLID) return null;
+        float t = spec.widthTop();
+        if (t <= 0 || t != spec.widthRight() || t != spec.widthBottom() || t != spec.widthLeft()) return null;
+        float[] rx = WebSdfShader.currentEllipseRx(rTL, rTR, rBR, rBL);
+        float[] ry = WebSdfShader.currentEllipseRy(rTL, rTR, rBR, rBL);
+        float bx = Math.max(0.001f, w / 2f - t / 2f), by = Math.max(0.001f, h / 2f - t / 2f);
+        float[] cx = new float[4], cy = new float[4];
+        for (int i = 0; i < 4; i++) {
+            cx[i] = Math.min(Math.max(rx[i] - t / 2f, 0f), bx);
+            cy[i] = Math.min(Math.max(ry[i] - t / 2f, 0f), by);
+            if (cx[i] <= 0 || cy[i] <= 0) cx[i] = cy[i] = 0;
+        }
+        BorderPath.Pattern pattern = BorderPath.pattern(spec.dashKind(), t, BorderPath.length(bx, by, cx, cy));
+        return new float[]{spec.dashKind(), pattern.count(), pattern.dash(), pattern.round() ? 1f : 0f};
     }
 
     static void renderElementBackground(DisplayItem el, CssAnimator.AnimatedValues anim,
@@ -134,10 +158,20 @@ public final class BackgroundRenderer {
         RenderHints.ShadowShape shape = el.hints().shadowShape();
         if (shape != null && shape.inset()) {
             // 内側の影: 形は影の無い穴。部品の矩形（パディングボックス）のうち穴の外を塗る
-            WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1,
-                    shape.x0(), shape.y0(), shape.x1(), shape.y1(), shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL(),
-                    r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur,
-                    WebSdfShader.SHADOW_INSET, 0, 0, 0, 0, 0, 0, 0, 0);
+            boolean ellipse = shape.rTLv() != shape.rTL() || shape.rTRv() != shape.rTR()
+                    || shape.rBRv() != shape.rBR() || shape.rBLv() != shape.rBL();
+            if (ellipse) {
+                WebSdfShader.setEllipseRadii(new float[]{shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()},
+                        new float[]{shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()});
+            }
+            try {
+                WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1,
+                        shape.x0(), shape.y0(), shape.x1(), shape.y1(), shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL(),
+                        r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur,
+                        WebSdfShader.SHADOW_INSET, 0, 0, 0, 0, 0, 0, 0, 0);
+            } finally {
+                if (ellipse) WebSdfShader.setEllipseRadii(null, null);
+            }
             return;
         }
         float reach = SHADOW_REACH * blur;
@@ -149,10 +183,14 @@ public final class BackgroundRenderer {
         float[] hole = shape != null
                 ? new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1(), shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()}
                 : new float[8];
+        // 箱が楕円の角なら、穴（箱）も影の形（箱を広げたもの）も楕円。形の半径は要素の meta から setEllipseRadii で入っている
+        float[] holeV = shape != null && (shape.rTLv() != shape.rTL() || shape.rTRv() != shape.rTR()
+                || shape.rBRv() != shape.rBR() || shape.rBLv() != shape.rBL())
+                ? new float[]{shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()} : null;
         WebSdfShader.drawSdfShadow(poseStack.last().pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1,
                 Math.min(rTL, limit), Math.min(rTR, limit), Math.min(rBR, limit), Math.min(rBL, limit),
                 r, g, b, a, zOffset, clipMinX, clipMinY, clipMaxX, clipMaxY, cRTL, cRTR, cRBR, cRBL, blur,
-                mode, hole[0], hole[1], hole[2], hole[3], hole[4], hole[5], hole[6], hole[7]);
+                mode, hole[0], hole[1], hole[2], hole[3], hole[4], hole[5], hole[6], hole[7], holeV);
     }
 
     /** 影のぼかしが消える所までの広さ（ぼかし半径の倍数。標準偏差 = 半径 / 2 の 3 倍）。 */
