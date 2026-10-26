@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.function.ToLongFunction;
 
 /**
  * 字形の置き場（GPU のテクスチャを持つ）を、使われた順に覚えて、使われなくなったものから捨てる入れ物。
@@ -83,6 +84,28 @@ public final class AtlasCache<K, V> {
                 break;
             }
         }
+    }
+
+    /** 全ての置き場の {@code sizer} の合計（VRAM の使用量の集計用）。 */
+    public synchronized long sum(ToLongFunction<V> sizer) {
+        long total = 0;
+        for (Entry<V> e : entries.values()) total += sizer.applyAsLong(e.value);
+        return total;
+    }
+
+    /** 保護の外（{@code protectNanos} より前に使った）にある置き場を、古い順に全て捨てる。VRAM の上限を超えたときに使う。 */
+    public synchronized int evictUnprotected() {
+        long now = clock.getAsLong();
+        int removed = 0;
+        Iterator<Map.Entry<K, Entry<V>>> it = entries.entrySet().iterator();
+        while (it.hasNext()) {
+            Entry<V> e = it.next().getValue();
+            if (now - e.lastUsed < protectNanos) break;
+            it.remove();
+            release.accept(e.value);
+            removed++;
+        }
+        return removed;
     }
 
     public synchronized int size() {
