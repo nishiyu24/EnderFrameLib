@@ -81,6 +81,15 @@ public class DisplayItemDrawer {
             int sy = Math.max(0, (int) Math.floor(window.getHeight() - maxGuiY * guiScale));
             int sw = Math.max(0, (int) Math.ceil((maxGuiX - minGuiX) * guiScale));
             int sh = Math.max(0, (int) Math.ceil((maxGuiY - minGuiY) * guiScale));
+            // レイヤーの中の描画先は画面より小さく、原点も画面の左下ではない。シザーは描画先の画素で指す
+            int[] origin = LayerCompositor.originOffset();
+            if (origin[0] != 0 || origin[1] != 0) {
+                int lx = Math.max(sx, origin[0]), ly = Math.max(sy, origin[1]);
+                sw = Math.max(0, sx + sw - lx);
+                sh = Math.max(0, sy + sh - ly);
+                sx = lx - origin[0];
+                sy = ly - origin[1];
+            }
 
             if (sw > 0 && sh > 0) {
                 if (buffer instanceof MultiBufferSource.BufferSource bs) {
@@ -297,7 +306,9 @@ public class DisplayItemDrawer {
                         LayerCompositor.backdrop(buffer, spec, anchor.pose(), passPose, maxAllowedX, maxAllowedY,
                                 zOffset + effectiveZStep * 0.5f);
                     }
-                    boolean opened = anchor != null && wantsLayer && LayerCompositor.begin(buffer, spec, anchor.pose());
+                    boolean opened = anchor != null && wantsLayer
+                            && LayerCompositor.begin(buffer, spec, anchor.pose(),
+                            layerBoxRect(uiElements, elementIndex, spec.span(), animSessionId, hoveredId, session));
                     // マスクの項目は、レイヤーを開けなかったときも描かない（中身の上にそのまま重なってしまう）ので、枠は常に作る
                     if (opened || spec.masked()) {
                         layerFrames.push(new LayerFrame(elementIndex + spec.span(),
@@ -529,6 +540,34 @@ public class DisplayItemDrawer {
         }
 
         WebSdfShader.endPass();
+    }
+
+    /**
+     * レイヤーの錨から {@code span} 個の項目（錨と子孫）の外接矩形（錨の座標。{@code {x0, y0, x1, y1}}）。
+     * 影・枠の板は項目の矩形が広がり分を含んでいる。子孫に自分の変形（移動・回転・拡縮のアニメーションを含む）があると、
+     * 錨の姿勢では子孫の位置が決まらないので null（枠いっぱいのレイヤーで描く）。
+     */
+    static float[] layerBoxRect(List<DisplayItem> items, int anchorIndex, int span, String sessionId, String hoveredId,
+                                SessionContext session) {
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        int end = Math.min(items.size(), anchorIndex + span);
+        for (int i = anchorIndex; i < end; i++) {
+            DisplayItem item = items.get(i);
+            if (i > anchorIndex) {
+                String baseId = ClientWebManager.getBaseNodeId(item.id());
+                boolean hovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
+                boolean active = session != null && session.isPressedBase(baseId);
+                boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));
+                CssAnimator.AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
+                if (a.tx() != 0 || a.ty() != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f) return null;
+            }
+            minX = Math.min(minX, item.x());
+            minY = Math.min(minY, item.y());
+            maxX = Math.max(maxX, item.x() + item.width());
+            maxY = Math.max(maxY, item.y() + item.height());
+        }
+        if (minX > maxX || minY > maxY) return null;
+        return new float[]{minX, minY, maxX, maxY};
     }
 
     /** 影・ぼかしが箱の外へ広がる分（仮想 px）の見込み。文字・画像との重なりの判定を広げる。 */

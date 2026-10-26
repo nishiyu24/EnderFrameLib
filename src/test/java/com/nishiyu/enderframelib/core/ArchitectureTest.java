@@ -117,7 +117,9 @@ public class ArchitectureTest {
     // Range 付きのストリームを中継するための独立コンポーネント。
     // 2026-10-26: yt-dlp の自動配置 YtDlpProvisioner を追加（+1）。公式 GitHub リリースの取得・
     // SHA-256 検証・原子的配置を WebMediaManager から分離し、テスト可能にするため。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 281;
+    // 2026-10-26: Phase 2（レイヤー FBO の局所化）で core/paint/model に LayerBounds を追加（+1）。外接矩形・滲み・FBO の丸めを
+    // GL を知らない純粋な計算にして、LayerCompositor から分離しテストできるようにするため。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 282;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

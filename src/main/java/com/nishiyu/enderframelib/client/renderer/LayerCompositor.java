@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormatElement;
+import com.nishiyu.enderframelib.core.paint.model.LayerBounds;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.VramBudget;
 import net.minecraft.client.Minecraft;
@@ -36,6 +37,10 @@ import java.util.List;
  * <p>使い方（{@code DisplayItemDrawer.renderElements}）: レイヤーの錨の項目の手前で {@link #begin}、錨から {@code span} 個の
  * 項目を描き終えたところで {@link #end}。間に描いたものは、画面と同じ行列・同じ大きさの FBO に描かれる
  * （画素の位置は同じで、合成は 1 対 1 の貼り付け）。FBO は {@link LayerPool} から借り、効果のある箱があるときだけ確保する。
+ *
+ * <p>FBO の大きさは画面全体ではなく、箱とその子孫の外接矩形にフィルターが滲む分を足した矩形（{@link LayerBounds}）だけ。
+ * 描くときはビューポートを矩形の原点だけずらす（行列は変えない）ので、中の画素の位置は矩形の左下からの相対になり、
+ * ぼかし・合成の重い段も矩形の中だけで済む。矩形を決められない（子孫に変形がある・数値が壊れている）ときは従来どおり枠いっぱい。
  *
  * <p>描画先の中はプリマルチプライドで溜まる（バイト単位の色は、描くときのブレンドが {@code SRC_ALPHA / ONE_MINUS_SRC_ALPHA} と
  * アルファだけ {@code ONE / ONE_MINUS_SRC_ALPHA} のため）。合成のシェーダーはそれを読み、色の行列は
@@ -84,6 +89,76 @@ public final class LayerCompositor {
         float[] deviceMap;
         /** {@code mask-image} を描いた描画先（マスクの項目を描き始めたら入る）。 */
         TextureTarget mask;
+        /** 親の描画先での矩形（左下原点、枠の外へ出ていれば負）。中身は FBO の左下から {@code rw x rh} に描かれる。 */
+        int rx, ry, rw, rh;
+        /** FBO の大きさ（矩形を丸めたもの。この層の描画先・一時の描画先はすべてこの大きさ）。 */
+        int bw, bh;
+        /** 親の描画先の枠の大きさ。 */
+        int frameW, frameH;
+        /** 矩形が枠の外へ出きっていて、合成しても何も見えない。 */
+        boolean empty;
+        /** 中身を描くときのビューポート（親のビューポートを矩形の原点だけずらしたもの）。 */
+        int[] contentViewport;
+    }
+
+    /** 外接矩形に足す余白（画素）。アンチエイリアス・字形・文字の影のはみ出し。 */
+    private static final int PAD = 4;
+
+    /** いま描いているレイヤーの描画先が、画面（最外の描画先）の原点からどれだけずれているか（画素）。シザーの座標を直すのに使う。 */
+    static int[] originOffset() {
+        int x = 0, y = 0;
+        for (Layer layer : STACK) {
+            x += layer.rx;
+            y += layer.ry;
+        }
+        return new int[]{x, y};
+    }
+
+    /** 今の描画先の枠の大きさ（最外は画面、レイヤーの中はそのレイヤーの矩形）。 */
+    private static int[] frameSize(int[] viewport) {
+        Layer top = STACK.peek();
+        return top == null ? new int[]{viewport[2], viewport[3]} : new int[]{top.rw, top.rh};
+    }
+
+    /** 箱の座標の矩形が、{@code map} で画素のどこに写るか（{@code {minX, minY, maxX, maxY}}）。 */
+    private static float[] deviceRect(float[] map, float x0, float y0, float x1, float y1) {
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        float[][] corners = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
+        for (float[] c : corners) {
+            float fx = map[0] * c[0] + map[2] * c[1] + map[4], fy = map[1] * c[0] + map[3] * c[1] + map[5];
+            minX = Math.min(minX, fx);
+            maxX = Math.max(maxX, fx);
+            minY = Math.min(minY, fy);
+            maxY = Math.max(maxY, fy);
+        }
+        return new float[]{minX, minY, maxX, maxY};
+    }
+
+    private static void bindLayerTarget(TextureTarget target, Layer layer) {
+        target.bindWrite(true);
+        GlStateManager._viewport(layer.contentViewport[0], layer.contentViewport[1], layer.contentViewport[2], layer.contentViewport[3]);
+    }
+
+    /** シザーを {@code rect}（{@code {x, y, w, h}}）に絞る（すでに有効なシザーとは交差させる）。戻り値は元の状態で、{@link #popScissor} に渡す。 */
+    private static int[] pushScissor(int[] rect) {
+        int[] prev = null;
+        int x = rect[0], y = rect[1], w = rect[2], h = rect[3];
+        if (GL11.glIsEnabled(GL11.GL_SCISSOR_TEST)) {
+            prev = new int[4];
+            GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, prev);
+            int x1 = Math.min(x + w, prev[0] + prev[2]), y1 = Math.min(y + h, prev[1] + prev[3]);
+            x = Math.max(x, prev[0]);
+            y = Math.max(y, prev[1]);
+            w = Math.max(0, x1 - x);
+            h = Math.max(0, y1 - y);
+        }
+        RenderSystem.enableScissor(x, y, w, h);
+        return prev == null ? new int[0] : prev;
+    }
+
+    private static void popScissor(int[] prev) {
+        if (prev.length == 4) RenderSystem.enableScissor(prev[0], prev[1], prev[2], prev[3]);
+        else RenderSystem.disableScissor();
     }
 
     /** いま、レイヤーの中に描いているか（ブレンドのアルファの扱いを変える）。 */
@@ -124,14 +199,28 @@ public final class LayerCompositor {
      * （呼び出し側は効果を諦めて直に描く。このとき {@link #end} は呼ばない）。
      *
      * @param anchorPose 錨の姿勢（箱の座標から、画面の面の座標まで）。{@code blur()} の大きさとドロップシャドウの向きに使う
+     * @param boxRect    箱とその子孫の外接矩形（箱の座標。{@code {x0, y0, x1, y1}}）。子孫に変形があるなどで決められなければ null
+     *                   （枠いっぱいの FBO を使う）
      */
-    static boolean begin(MultiBufferSource buffer, LayerSpec spec, Matrix4f anchorPose) {
+    static boolean begin(MultiBufferSource buffer, LayerSpec spec, Matrix4f anchorPose, float[] boxRect) {
         try {
             flush(buffer);
             int[] viewport = new int[4];
             GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
             int parentFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-            TextureTarget target = POOL.acquire(viewport[2], viewport[3]);
+            float[] map = deviceMap(anchorPose, viewport);
+            int[] frame = frameSize(viewport);
+            LayerBounds bounds = null;
+            if (boxRect != null) {
+                float[] r = deviceRect(map, boxRect[0], boxRect[1], boxRect[2], boxRect[3]);
+                float scale = Math.max((float) Math.hypot(map[0], map[1]), (float) Math.hypot(map[2], map[3]));
+                bounds = LayerBounds.of(r[0], r[1], r[2], r[3], PAD, LayerBounds.reach(spec.filters(), scale), frame[0], frame[1]);
+            }
+            if (bounds == null) bounds = LayerBounds.full(frame[0], frame[1]);
+            boolean empty = bounds.isEmpty();
+            if (empty) bounds = new LayerBounds(0, 0, 1, 1);
+            int bw = bounds.textureWidth(frame[0]), bh = bounds.textureHeight(frame[1]);
+            TextureTarget target = POOL.acquire(bw, bh);
             if (target == null) {
                 restore(parentFbo, viewport);
                 return false;
@@ -141,10 +230,20 @@ public final class LayerCompositor {
             layer.parentFbo = parentFbo;
             layer.parentViewport = viewport;
             layer.spec = spec;
-            layer.deviceMap = deviceMap(anchorPose, viewport);
-            target.bindWrite(true);
+            layer.deviceMap = map;
+            layer.rx = bounds.x();
+            layer.ry = bounds.y();
+            layer.rw = bounds.w();
+            layer.rh = bounds.h();
+            layer.bw = bw;
+            layer.bh = bh;
+            layer.frameW = frame[0];
+            layer.frameH = frame[1];
+            layer.empty = empty;
+            layer.contentViewport = new int[]{viewport[0] - bounds.x(), viewport[1] - bounds.y(), viewport[2], viewport[3]};
+            bindLayerTarget(target, layer);
             target.clear(Minecraft.ON_OSX);
-            target.bindWrite(true);
+            bindLayerTarget(target, layer);
             STACK.push(layer);
             lastUse = System.nanoTime();
             return true;
@@ -163,15 +262,15 @@ public final class LayerCompositor {
         if (layer == null || layer.mask != null) return layer != null && layer.mask != null;
         try {
             flush(buffer);
-            TextureTarget mask = POOL.acquire(layer.parentViewport[2], layer.parentViewport[3]);
+            TextureTarget mask = POOL.acquire(layer.bw, layer.bh);
             if (mask == null) {
-                layer.target.bindWrite(true);
+                bindLayerTarget(layer.target, layer);
                 return false;
             }
             layer.mask = mask;
-            mask.bindWrite(true);
+            bindLayerTarget(mask, layer);
             mask.clear(Minecraft.ON_OSX);
-            mask.bindWrite(true);
+            bindLayerTarget(mask, layer);
             return true;
         } catch (Throwable t) {
             fail("beginMask", t);
@@ -224,17 +323,24 @@ public final class LayerCompositor {
             flush(buffer);
             GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
             parentFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-            int w = viewport[2], h = viewport[3];
+            float[] map = deviceMap(anchorPose, viewport);
+            float[] box = spec.backdropShape().data();
+            // 箱の形の外接矩形だけを写し取る（ぼかしは箱の縁の外の画素を混ぜないので、滲みの余白は要らない）
+            int[] frame = frameSize(viewport);
+            float[] dr = deviceRect(map, box[0], box[1], box[2], box[3]);
+            LayerBounds bounds = LayerBounds.of(dr[0], dr[1], dr[2], dr[3], 1, 0, frame[0], frame[1]);
+            if (bounds == null) bounds = LayerBounds.full(frame[0], frame[1]);
+            if (bounds.isEmpty()) return;
+            int w = bounds.textureWidth(frame[0]), h = bounds.textureHeight(frame[1]);
             TextureTarget copy = POOL.acquire(w, h);
             if (copy == null) return;
             temps.add(copy);
             GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, parentFbo);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, copy.frameBufferId);
-            GL30.glBlitFramebuffer(viewport[0], viewport[1], viewport[0] + w, viewport[1] + h, 0, 0, w, h, GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+            GL30.glBlitFramebuffer(bounds.x(), bounds.y(), bounds.x() + bounds.w(), bounds.y() + bounds.h(),
+                    0, 0, bounds.w(), bounds.h(), GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
 
-            float[] map = deviceMap(anchorPose, viewport);
-            float[] box = spec.backdropShape().data();
-            float[] clamp = deviceBounds(map, box[0], box[1], box[2], box[3], viewport);
+            float[] clamp = deviceBounds(dr, bounds, w, h);
 
             List<Stage> stages = stages(spec.backdrop());
             float[] finalMatrix = null;
@@ -253,7 +359,7 @@ public final class LayerCompositor {
 
             restore(parentFbo, viewport);
             Shaders.use();
-            Shaders.common(viewport, w, h);
+            Shaders.common(bounds.x(), bounds.y(), w, h);
             Shaders.mode(Shaders.MODE_BACKDROP);
             Shaders.opacity(finalOpacity);
             Shaders.matrix(finalMatrix);
@@ -269,7 +375,12 @@ public final class LayerCompositor {
             bindTextures(current, null);
             Shaders.pose(basePose);
             Shaders.clipSpace(false);
-            drawQuad(0f, 0f, maxX, maxY, z);
+            int[] scissor = pushScissor(new int[]{bounds.x(), bounds.y(), bounds.w(), bounds.h()});
+            try {
+                drawQuad(0f, 0f, maxX, maxY, z);
+            } finally {
+                popScissor(scissor);
+            }
             unbindTextures();
             GL20.glUseProgram(0);
             RenderSystem.defaultBlendFunc();
@@ -288,22 +399,12 @@ public final class LayerCompositor {
         }
     }
 
-    /** 箱の座標の矩形を画面の画素にして囲む矩形（uv）。 */
-    private static float[] deviceBounds(float[] map, float x0, float y0, float x1, float y1, int[] viewport) {
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
-        float[][] corners = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
-        for (float[] c : corners) {
-            float fx = map[0] * c[0] + map[2] * c[1] + map[4], fy = map[1] * c[0] + map[3] * c[1] + map[5];
-            minX = Math.min(minX, fx);
-            maxX = Math.max(maxX, fx);
-            minY = Math.min(minY, fy);
-            maxY = Math.max(maxY, fy);
-        }
-        float w = viewport[2], h = viewport[3];
+    /** 画素の矩形 {@code dr} を、写し取った描画先（矩形 {@code bounds} の左下を原点とする大きさ {@code w x h}）の uv にしたもの。 */
+    private static float[] deviceBounds(float[] dr, LayerBounds bounds, int w, int h) {
         // 半画素内側に寄せて、縁の外の画素に触れないようにする
         return new float[]{
-                Math.max(0f, (minX - viewport[0] + 0.5f) / w), Math.max(0f, (minY - viewport[1] + 0.5f) / h),
-                Math.min(1f, (maxX - viewport[0] - 0.5f) / w), Math.min(1f, (maxY - viewport[1] - 0.5f) / h)};
+                Math.max(0f, (dr[0] - bounds.x() + 0.5f) / w), Math.max(0f, (dr[1] - bounds.y() + 0.5f) / h),
+                Math.min((float) bounds.w() / w, (dr[2] - bounds.x() - 0.5f) / w), Math.min((float) bounds.h() / h, (dr[3] - bounds.y() - 0.5f) / h)};
     }
 
     private static void fail(String where, Throwable t) {
@@ -329,7 +430,8 @@ public final class LayerCompositor {
     private static void composite(Layer layer, float opacity, Matrix4f basePose, float maxX, float maxY, float z,
                                   List<TextureTarget> temps) {
         LayerSpec spec = layer.spec;
-        int w = layer.parentViewport[2], h = layer.parentViewport[3];
+        if (layer.empty) return;
+        int w = layer.bw, h = layer.bh;
 
         // フィルターの段（色と不透明度の連続は 1 つにまとめ、最後の段は最終の合成に畳む）
         List<Stage> stages = stages(spec.filters());
@@ -358,8 +460,13 @@ public final class LayerCompositor {
                 temps.add(backdrop);
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, layer.parentFbo);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, backdrop.frameBufferId);
-                GL30.glBlitFramebuffer(layer.parentViewport[0], layer.parentViewport[1], layer.parentViewport[0] + w, layer.parentViewport[1] + h,
-                        0, 0, w, h, GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+                // 親の、レイヤーの矩形に当たる部分（枠の外はコピーできないので見える部分だけ）
+                int[] vis = visibleRect(layer);
+                if (vis != null) {
+                    GL30.glBlitFramebuffer(vis[0], vis[1], vis[0] + vis[2], vis[1] + vis[3],
+                            vis[0] - layer.rx, vis[1] - layer.ry, vis[0] - layer.rx + vis[2], vis[1] - layer.ry + vis[3],
+                            GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+                }
             }
         }
         restore(layer.parentFbo, layer.parentViewport);
@@ -372,7 +479,7 @@ public final class LayerCompositor {
             }
         }
         Shaders.use();
-        Shaders.common(layer.parentViewport, w, h);
+        Shaders.common(layer.rx, layer.ry, w, h);
         Shaders.mode(Shaders.MODE_FINAL);
         Shaders.opacity(finalOpacity);
         Shaders.matrix(finalMatrix);
@@ -399,11 +506,25 @@ public final class LayerCompositor {
         }
         Shaders.pose(basePose);
         Shaders.clipSpace(false);
-        drawQuad(0f, 0f, maxX, maxY, z);
+        int[] vis = visibleRect(layer);
+        if (vis != null) {
+            // 矩形の外には何も描かれていない（外側の uv は縁の画素で埋まってしまう）ので、貼る範囲を矩形に絞る
+            int[] scissor = pushScissor(vis);
+            try {
+                drawQuad(0f, 0f, maxX, maxY, z);
+            } finally {
+                popScissor(scissor);
+            }
+        }
         unbindTextures();
         GL20.glUseProgram(0);
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableBlend();
+    }
+
+    /** レイヤーの矩形のうち、親の枠の中に見える部分 {@code {x, y, w, h}}（親の描画先の画素）。無ければ null。 */
+    private static int[] visibleRect(Layer layer) {
+        return new LayerBounds(layer.rx, layer.ry, layer.rw, layer.rh).visible(layer.frameW, layer.frameH);
     }
 
     // ---- フィルターの段 ----
@@ -543,7 +664,7 @@ public final class LayerCompositor {
         GlStateManager._clearColor(0f, 0f, 0f, 0f);
         GlStateManager._clear(GL11.GL_COLOR_BUFFER_BIT, Minecraft.ON_OSX);
         Shaders.use();
-        Shaders.common(new int[]{0, 0, w, h}, w, h);
+        Shaders.common(0, 0, w, h);
         Shaders.mode(mode);
         Shaders.opacity(1f);
         Shaders.matrix(null);
@@ -969,9 +1090,10 @@ public final class LayerCompositor {
             }
         }
 
-        static void common(int[] viewport, int w, int h) {
+        /** 読むテクスチャの左下が描画先のどの画素にあたるか（{@code originX, originY}）と、その大きさ。 */
+        static void common(int originX, int originY, int w, int h) {
             GL20.glUniform2f(uSize, w, h);
-            GL20.glUniform2f(uOrigin, viewport[0], viewport[1]);
+            GL20.glUniform2f(uOrigin, originX, originY);
         }
 
         static void mode(int mode) {
