@@ -20,3 +20,5 @@
 *.log
 *.log.gz
 hs_err_pid*.log
+/.agents/
+/.gemini/
