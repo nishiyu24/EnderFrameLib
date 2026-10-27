@@ -191,11 +191,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
     public void setFocusedDomElement(String baseId, boolean focusVisible) {
         String safeNext = baseId != null ? baseId : "";
-        focusNavigator.setFocused(safeNext);
-        SessionContext session = safeNext.isEmpty()
-                ? ClientWebManager.getSession(sessionId)
-                : ClientWebManager.getOrCreateSession(sessionId);
-        if (session != null) session.setFocusedElement(safeNext, focusVisible);
+        focusNavigator.setFocused(safeNext, focusVisible);
     }
 
     public void renderOverlays(GuiGraphics guiGraphics, Font font, List<DisplayItem> elements,
@@ -203,7 +199,6 @@ public class EnderScreenDelegate implements SessionInput.Host {
         RenderSystem.disableDepthTest();
         try {
             SessionContext session = ClientWebManager.getSession(sessionId);
-            focusNavigator.renderFocusRing(guiGraphics, elements);
             selectWidget.renderOverlay(guiGraphics, font, webX, webY, session != null ? session.rootNode() : null);
             dragDropController.renderGhost(guiGraphics, font, webX, webY);
             if (devToolsEnabled) {
@@ -248,7 +243,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         SessionInput.PressResult result = session.input().press(webX, webY, button, this);
-        return result != null && shouldConsumePress(result);
+        if (result == null) {
+            unfocusWebInput();
+            setFocusedDomElement("", false);
+            return false;
+        }
+        return shouldConsumePress(result);
     }
 
     /**
@@ -334,10 +334,9 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         String baseId = clicked.baseId();
-        focusNavigator.setFocused(baseId);
-        session.setFocusedElement(baseId, false);
-
         HtmlNode domNode = session.findInteractiveNode(baseId);
+        HtmlNode focusTarget = focusNavigator.findFocusableTarget(domNode);
+        setFocusedDomElement(focusTarget != null ? focusTarget.getId() : "", false);
         boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
         if (isSelectElement && button == 0) {
             selectWidget.open(baseId, clicked, session.rootNode());

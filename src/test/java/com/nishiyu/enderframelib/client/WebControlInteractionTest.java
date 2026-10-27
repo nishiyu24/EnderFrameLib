@@ -388,4 +388,43 @@ public class WebControlInteractionTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("非フォーカス要素（div等）のクリックではフォーカスが付かず、既存のフォーカスは解除される")
+    void testClickingNonFocusableElementDoesNotFocusAndBlursPrevious() {
+        String sessionId = "test-non-focusable-click";
+        try (UiEventFixture fixture = new UiEventFixture(sessionId)) {
+            fixture.load("<div style=\"width:300px;height:200px\">"
+                    + "<div id=\"plain_box\" style=\"width:120px;height:40px\">Plain Text</div>"
+                    + "<button id=\"act_btn\" style=\"width:100px;height:30px\"><span id=\"btn_label\">Click</span></button>"
+                    + "</div>");
+
+            EnderScreenDelegate delegate = new EnderScreenDelegate(sessionId, new ReactiveStateStore(sessionId));
+            try {
+                SessionContext session = ClientWebManager.getSession(sessionId);
+                assertNotNull(session);
+
+                // 1. 通常の div をクリックしてもフォーカスされない
+                double[] plainCenter = fixture.center("plain_box");
+                delegate.handleMouseClicked(null, null, plainCenter[0], plainCenter[1], 0, null, null);
+                delegate.handleMouseReleased(plainCenter[0], plainCenter[1], 0, null);
+                assertEquals("", session.focusedId(), "非フォーカス要素をクリックしてもフォーカスされないこと");
+
+                // 2. button 内の span をクリックすると親の button にフォーカスが移り、focusVisible は false
+                double[] btnCenter = fixture.center("btn_label");
+                delegate.handleMouseClicked(null, null, btnCenter[0], btnCenter[1], 0, null, null);
+                delegate.handleMouseReleased(btnCenter[0], btnCenter[1], 0, null);
+                assertEquals("act_btn", session.focusedId(), "button 内の子要素クリックで button にフォーカスが当たること");
+                assertFalse(session.interactionState().stateOf(fixture.node("act_btn")).focusVisible(),
+                        "マウスクリックでは :focus-visible にならないこと");
+
+                // 3. 再び通常の div をクリックするとフォーカスが解除される
+                delegate.handleMouseClicked(null, null, plainCenter[0], plainCenter[1], 0, null, null);
+                delegate.handleMouseReleased(plainCenter[0], plainCenter[1], 0, null);
+                assertEquals("", session.focusedId(), "非フォーカス要素をクリックするとフォーカスが解除されること");
+            } finally {
+                delegate.onClose();
+            }
+        }
+    }
 }

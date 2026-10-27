@@ -2,13 +2,11 @@ package com.nishiyu.enderframelib.client.gui;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
 
@@ -16,7 +14,7 @@ import java.util.*;
 import java.util.function.Consumer;
 
 /**
- * キーボードフォーカス管理・Tabキー順次移動・十字キー空間ナビゲーションおよびフォーカスリング描画。
+ * キーボードフォーカス管理・Tabキー順次移動・十字キー空間ナビゲーション。
  */
 public class WebFocusNavigator {
 
@@ -34,41 +32,55 @@ public class WebFocusNavigator {
     }
 
     public void setFocused(String baseId) {
+        setFocused(baseId, false);
+    }
+
+    public void setFocused(String baseId, boolean focusVisible) {
         String safeId = (baseId != null) ? baseId : "";
         SessionContext session = safeId.isEmpty()
                 ? ClientWebManager.getSession(sessionId)
                 : ClientWebManager.getOrCreateSession(sessionId);
-        if (session != null) session.setFocusedElement(safeId, false);
+        if (session != null) session.setFocusedElement(safeId, focusVisible);
     }
 
-    public void renderFocusRing(GuiGraphics guiGraphics, List<DisplayItem> elements) {
-        String currentFocusedId = focusedId();
-        if (currentFocusedId.isEmpty() || elements == null) return;
+    /**
+     * クリックされた節から祖先を辿り、最初にフォーカス可能な要素を返す。
+     * フォーカス可能な要素が無ければ {@code null}（ブラウザと同様にフォーカスを解除する）。
+     */
+    public HtmlNode findFocusableTarget(HtmlNode start) {
+        for (HtmlNode cur = start; cur != null; cur = cur.parent) {
+            if (cur.attrs.containsKey("hidden") || cur.attrs.containsKey("disabled")) return null;
+            String styleAttr = cur.attrs.getOrDefault("style", "").replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            if (styleAttr.contains("display:none")) return null;
+            if (isMouseFocusable(cur)) return cur;
+        }
+        return null;
+    }
 
-        DisplayItem focusedEl = null;
-        for (DisplayItem el : elements) {
-            if (el.type() == ElementType.NODE && currentFocusedId.equals(el.id())) {
-                focusedEl = el;
-                break;
-            }
+    public static boolean isMouseFocusable(HtmlNode node) {
+        if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")) return false;
+        if (hasExplicitTabIndex(node)) return true;
+        return isNaturallyFocusable(node);
+    }
+
+    private static boolean hasExplicitTabIndex(HtmlNode node) {
+        if (!node.attrs.containsKey("tabindex")) return false;
+        try {
+            Integer.parseInt(node.attrs.get("tabindex").trim());
+            return true;
+        } catch (NumberFormatException ignored) {
+            return false;
         }
-        if (focusedEl == null) {
-            SessionContext session = ClientWebManager.getSession(sessionId);
-            focusedEl = session != null ? session.elementById(currentFocusedId) : null;
+    }
+
+    private static boolean isNaturallyFocusable(HtmlNode node) {
+        String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
+        if ("input".equals(tag)) {
+            return !"hidden".equalsIgnoreCase(node.attrs.getOrDefault("type", ""));
         }
-        if (focusedEl != null && focusedEl.width() > 0 && focusedEl.height() > 0) {
-            PoseStack pose = guiGraphics.pose();
-            pose.pushPose();
-            pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.FOCUS_INDICATOR_OVERLAY_Z);
-            guiGraphics.renderOutline(
-                    focusedEl.x() - 2,
-                    focusedEl.y() - 2,
-                    focusedEl.width() + 4,
-                    focusedEl.height() + 4,
-                    0xFF89B4FA
-            );
-            pose.popPose();
-        }
+        return "button".equals(tag) || "select".equals(tag)
+                || "textarea".equals(tag) || "summary".equals(tag)
+                || ("a".equals(tag) && node.attrs.containsKey("href"));
     }
 
     public List<FocusCandidate> collectFocusableCandidates() {
@@ -160,7 +172,7 @@ public class WebFocusNavigator {
         }
 
         FocusCandidate chosen = candidates.get(nextIdx);
-        setFocused(chosen.node().getId());
+        setFocused(chosen.node().getId(), true);
         if (applyCallback != null) applyCallback.accept(chosen);
         return true;
     }
@@ -178,7 +190,7 @@ public class WebFocusNavigator {
         }
         if (current == null) {
             FocusCandidate first = candidates.getFirst();
-            setFocused(first.node().getId());
+            setFocused(first.node().getId(), true);
             if (applyCallback != null) applyCallback.accept(first);
             return true;
         }
@@ -215,7 +227,7 @@ public class WebFocusNavigator {
         }
 
         if (best != null) {
-            setFocused(best.node().getId());
+            setFocused(best.node().getId(), true);
             if (applyCallback != null) applyCallback.accept(best);
             return true;
         }
