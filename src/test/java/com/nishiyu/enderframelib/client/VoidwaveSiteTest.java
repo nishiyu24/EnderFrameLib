@@ -48,8 +48,8 @@ public class VoidwaveSiteTest {
         String html = Files.readString(PAGE, StandardCharsets.UTF_8);
         assertFalse(html.toLowerCase().contains("<script"), "このエンジンに JavaScript は無い");
         Document doc = new UiDocumentCompiler().parseDocument(html, "", 1600, 900);
-        for (String name : List.of("float", "floatTilt", "spin", "spinRev", "pulse", "ring", "beacon", "shimmer", "blink",
-                "marqueeL", "marqueeR", "bars", "bounceDown", "fadeUp", "hue", "carousel", "breathe", "waveRun", "glowText")) {
+        for (String name : List.of("float", "floatTilt", "drift1", "drift2", "spin", "spinRev", "pulse", "ring", "beacon", "shimmer", "blink",
+                "marquee", "bars", "bounceDown", "fadeUp", "hue", "carousel", "sweepLine", "breathe")) {
             assertTrue(doc.sheet.keyframes.containsKey(name), name + " がパースされていること");
         }
     }
@@ -68,7 +68,7 @@ public class VoidwaveSiteTest {
     }
 
     @Test
-    @DisplayName("アニメーション（移動・回転・拡縮・不透明度・色）、背景のフィルター、アイテム画像が描画項目に載る")
+    @DisplayName("アニメーション（移動・回転・拡縮・不透明度・背景色）、背景のフィルター、アイテム画像が描画項目に載る")
     void animationsLayersAndItemImagesArePresent() throws Exception {
         String html = Files.readString(PAGE, StandardCharsets.UTF_8);
         List<DisplayItem> items = render(html, 1600, 900);
@@ -77,7 +77,6 @@ public class VoidwaveSiteTest {
         assertTrue(animated.stream().anyMatch(i -> i.animDef().animates(AnimationSpec.CH_TRANSFORM)), "移動・回転・拡縮");
         assertTrue(animated.stream().anyMatch(i -> i.animDef().animates(AnimationSpec.CH_OPACITY)), "不透明度");
         assertTrue(animated.stream().anyMatch(i -> i.animDef().animates(AnimationSpec.CH_BG_COLOR)), "背景色");
-        assertTrue(animated.stream().anyMatch(i -> i.animDef().animates(AnimationSpec.CH_COLOR)), "文字色");
         assertTrue(items.stream().anyMatch(i -> i.hints().layer() != null && i.hints().layer().hasBackdrop()),
                 "ナビゲーションの backdrop-filter がレイヤーの指定として載ること");
         long itemImages = items.stream().filter(i -> i.type() == ElementType.IMAGE && i.text() != null && i.text().startsWith("item:")).count();
@@ -125,10 +124,9 @@ public class VoidwaveSiteTest {
         LayoutBox root = compiler.layoutDocument(doc, 1920, 1080, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
         record Loop(String box, String keyframes, int period) {}
         // 周期は「同じ内容が現れるまでの個数」（リボンは 6 個、カルーセルは 6 枚）
-        for (Loop loop : List.of(new Loop("lane-l", "marqueeL", 6), new Loop("lane-r", "marqueeR", 6), new Loop("view", "carousel", 6))) {
-            LayoutBox lane = findByClass(root, loop.box());
-            assertNotNull(lane, loop.box());
-            LayoutBox track = lane.children.stream().filter(c -> !c.children.isEmpty()).findFirst().orElseThrow();
+        for (Loop loop : List.of(new Loop("track", "marquee", 6), new Loop("rail", "carousel", 6))) {
+            LayoutBox track = findByClass(root, loop.box());
+            assertNotNull(track, loop.box());
             float distance = keyframeDistance(doc, loop.keyframes());
             float period = track.children.get(loop.period()).x - track.children.get(0).x;
             assertEquals(period, distance, 0.5f, loop.keyframes() + ": 動く距離が 1 周期に等しい（ずれると、戻るときに飛ぶ）");
@@ -136,5 +134,41 @@ public class VoidwaveSiteTest {
             float contentRight = last.x + last.w - track.x;
             assertTrue(contentRight >= distance + 1920, loop.keyframes() + ": 周期 + 画面の幅 (1920) 以上の内容があること (right=" + contentRight + ")");
         }
+    }
+
+    private static java.util.Set<String> matches(String regex, String text, int group) {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(text);
+        while (m.find()) out.add(m.group(group));
+        return out;
+    }
+
+    @Test
+    @DisplayName("ページが散らからない: 使われていない・定義されていない class と @keyframes が無い")
+    void classesAndKeyframesAreAllUsedAndDefined() throws Exception {
+        String html = Files.readString(PAGE, StandardCharsets.UTF_8);
+        int styleEnd = html.indexOf("</style>");
+        String css = html.substring(0, styleEnd).replaceAll("(?s)/\\*.*?\\*/", "");
+        String body = html.substring(styleEnd);
+
+        java.util.Set<String> usedInHtml = new java.util.TreeSet<>();
+        for (String value : matches("class=\"([^\"]*)\"", body, 1)) usedInHtml.addAll(List.of(value.trim().split("\\s+")));
+        java.util.Set<String> definedInCss = matches("\\.([A-Za-z_][\\w-]*)", css.replaceAll("(?s)\\{[^{}]*\\}", "{}"), 1);
+
+        java.util.Set<String> undefined = new java.util.TreeSet<>(usedInHtml);
+        undefined.removeAll(definedInCss);
+        assertTrue(undefined.isEmpty(), "HTML が使っているのに CSS に無い class: " + undefined);
+        java.util.Set<String> unused = new java.util.TreeSet<>(definedInCss);
+        unused.removeAll(usedInHtml);
+        assertTrue(unused.isEmpty(), "CSS にあるのに HTML で使われていない class: " + unused);
+
+        java.util.Set<String> keyframes = matches("@keyframes\\s+([\\w-]+)", css, 1);
+        java.util.Set<String> referenced = matches("animation:\\s*([\\w-]+)", css, 1);
+        java.util.Set<String> missing = new java.util.TreeSet<>(referenced);
+        missing.removeAll(keyframes);
+        assertTrue(missing.isEmpty(), "animation が参照しているのに @keyframes が無い: " + missing);
+        java.util.Set<String> orphan = new java.util.TreeSet<>(keyframes);
+        orphan.removeAll(referenced);
+        assertTrue(orphan.isEmpty(), "@keyframes があるのにどこからも参照されていない: " + orphan);
     }
 }
