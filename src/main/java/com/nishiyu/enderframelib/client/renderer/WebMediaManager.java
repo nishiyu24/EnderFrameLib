@@ -254,6 +254,8 @@ public class WebMediaManager {
     private static final Map<String, VideoTexture> ACTIVE_VIDEOS = new ConcurrentHashMap<>();
     private static final Map<BlockPos, List<BlockPos>> SCREEN_AUDIO_LINKS = new ConcurrentHashMap<>();
     private static final Map<String, YtDlpCache> YT_DLP_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Long> VIDEO_RETRY_AT = new ConcurrentHashMap<>();
+    private static final long VIDEO_RETRY_COOLDOWN_MS = 60_000L;
     private static final AtomicBoolean YT_DLP_PREFETCH_SCHEDULED = new AtomicBoolean(false);
 
     static {
@@ -298,9 +300,20 @@ public class WebMediaManager {
     public static VideoTexture getVideoTexture(String url) {
         if (url == null || url.isEmpty() || !allowExternalMedia) return null;
         if (!isSupportedExternalVideoUrl(url)) return null;
+        long now = System.currentTimeMillis();
+        Long retryAt = VIDEO_RETRY_AT.get(url);
+        if (retryAt != null) {
+            if (now < retryAt) return null;
+            VIDEO_RETRY_AT.remove(url);
+        }
         VideoTexture existing = ACTIVE_VIDEOS.get(url);
         if (existing != null && (existing.isClosed || existing.isFailed)) {
             ACTIVE_VIDEOS.remove(url);
+            // 失敗した動画を毎フレーム作り直すと、サーバーエラーの再試行とログが止まらない。
+            if (existing.isFailed && !existing.isClosed) {
+                VIDEO_RETRY_AT.put(url, now + VIDEO_RETRY_COOLDOWN_MS);
+                return null;
+            }
         }
         return ACTIVE_VIDEOS.computeIfAbsent(url, k -> {
             VideoTexture tex = new VideoTexture(url);
@@ -657,6 +670,7 @@ public class WebMediaManager {
         public volatile int width = 0;
         public volatile int height = 0;
         public volatile long lastRenderTime;
+        private volatile long lastFrameUpdateTime = 0L;
         public volatile boolean isInitialized = false;
         public volatile boolean isRegistered = false;
         public volatile boolean forceClose = false;
@@ -1092,7 +1106,11 @@ public class WebMediaManager {
             if (api == null) return;
 
             long currentTime = System.currentTimeMillis();
-            long timeSinceLast = currentTime - this.lastRenderTime;
+            // lastRenderTime は keepAlive が直前に更新するため、停止の検出には使えない。
+            // スクロールで画面外に出ている間は updateFrame が呼ばれず、音声だけが
+            // 溜まって復帰後に遅れて再生されるので、更新の途切れ自体を測る。
+            long timeSinceLast = this.lastFrameUpdateTime == 0L ? 0L : currentTime - this.lastFrameUpdateTime;
+            this.lastFrameUpdateTime = currentTime;
 
             updateAudioSourcesIfNeeded();
 

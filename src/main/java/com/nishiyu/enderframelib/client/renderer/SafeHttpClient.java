@@ -28,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
@@ -203,7 +204,39 @@ final class SafeHttpClient {
             throw new IOException("Invalid Range header");
         }
 
-        URI current = parseAndValidate(urlString);
+        URI original = parseAndValidate(urlString);
+
+        // Range のたびにリダイレクト鎖（drive.google.com → googleusercontent.com など）を
+        // 辿り直すと遅いので、解決済みの最終 URL を短時間だけメモリに覚える。
+        FinalUrl cached = FINAL_URLS.get(urlString);
+        if (cached != null) {
+            if (System.currentTimeMillis() < cached.expiresAt) {
+                AtomicBoolean started = new AtomicBoolean(false);
+                try {
+                    streamRangeFrom(cached.uri, original, urlString, maxBytes, rangeHeader, consumer, started);
+                    return;
+                } catch (IOException e) {
+                    // 応答を返し始めた後の失敗は、やり直せないのでそのまま伝える。
+                    if (started.get()) throw e;
+                    FINAL_URLS.remove(urlString, cached);
+                }
+            } else {
+                FINAL_URLS.remove(urlString, cached);
+            }
+        }
+        streamRangeFrom(original, original, urlString, maxBytes, rangeHeader, consumer, new AtomicBoolean(false));
+    }
+
+    private record FinalUrl(URI uri, long expiresAt) {}
+
+    private static final Map<String, FinalUrl> FINAL_URLS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long FINAL_URL_TTL_MS = 5 * 60_000L;
+    private static final int MAX_FINAL_URLS = 64;
+
+    private static void streamRangeFrom(URI startUri, URI original, String cacheKey, long maxBytes,
+                                        String rangeHeader, StreamConsumer consumer, AtomicBoolean started)
+            throws IOException {
+        URI current = startUri;
         for (int hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
             List<InetAddress> addresses = resolveChecked(current);
 
@@ -248,6 +281,12 @@ final class SafeHttpClient {
                         head.first("Content-Type"),
                         head.first("Accept-Ranges"));
 
+                if (!current.equals(original)) {
+                    if (FINAL_URLS.size() >= MAX_FINAL_URLS) FINAL_URLS.clear();
+                    FINAL_URLS.put(cacheKey, new FinalUrl(current, System.currentTimeMillis() + FINAL_URL_TTL_MS));
+                }
+
+                started.set(true);
                 if (head.status == 416) {
                     consumer.accept(streamHead, InputStream.nullInputStream());
                     return;
@@ -259,7 +298,7 @@ final class SafeHttpClient {
                 } else if (head.contentLength >= 0) {
                     body = new FixedLengthInputStream(body, head.contentLength);
                 }
-                body = new BufferedInputStream(body, 8192);
+                body = new BufferedInputStream(body, 64 * 1024);
                 consumer.accept(streamHead, new LimitedInputStream(body, maxBytes));
                 return;
             }
