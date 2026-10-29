@@ -281,6 +281,12 @@ public final class WebScreenGameTest {
                                 + " bob=" + bobDelta.deltas());
                     }
 
+                    // 閲覧者でも、ブロックから遠く離れていればアクションは届かない
+                    bob.setPos(helper.absoluteVec(net.minecraft.world.phys.Vec3.atCenterOf(pos)).add(200, 0, 0));
+                    if (UIStateManager.handleAction(instanceId, "toggle", bob, new CompoundTag()) || toggles.get() != 0) {
+                        helper.fail("離れた閲覧者のアクションが通りました");
+                    }
+                    bob.setPos(helper.absoluteVec(net.minecraft.world.phys.Vec3.atCenterOf(pos)));
                     if (!UIStateManager.handleAction(instanceId, "toggle", bob, new CompoundTag()) || toggles.get() != 1) {
                         helper.fail("閲覧者のアクションが届きません");
                     }
