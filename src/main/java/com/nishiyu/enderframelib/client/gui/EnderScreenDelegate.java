@@ -127,7 +127,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         this.inputHost = new WebTextInputHost(sessionId, font, newText -> {
             SessionContext session = ClientWebManager.getSession(sessionId);
             if (session != null && !session.activeInputId().isEmpty() && !textareaEditor.isEditing()) {
-                String baseId = ClientWebManager.getBaseNodeId(session.activeInputId());
+                String baseId = session.activeInputBaseId();
                 syncInputValueToDomNodes(baseId, newText);
                 if (this.state != null) this.state.notifyElementModelChanged(baseId, newText);
                 if (onInputChanged != null) onInputChanged.accept(baseId, newText);
@@ -149,12 +149,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
             unfocusWebInput();
         }
         textareaEditor.unfocus();
-        String baseId = ClientWebManager.getBaseNodeId(inputElementId);
+        String baseId = inputElementId;
         setFocusedDomElement(baseId);
         String renderInputId = baseId + "_input";
         String safeVal = currentText != null ? currentText : "";
 
-        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderInputId);
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderInputId, baseId);
         ClientWebManager.getOrCreateSession(sessionId).input().setLastCommittedValue(baseId, safeVal);
         syncInputValueToDomNodes(baseId, safeVal);
         if (this.inputHost != null) {
@@ -167,8 +167,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
     public void unfocusWebInput() {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session != null && !session.activeInputId().isEmpty()) {
-            String activeId = session.activeInputId();
-            String baseId = ClientWebManager.getBaseNodeId(activeId);
+            String baseId = session.activeInputBaseId();
             SessionInput input = session.input();
             if (textareaEditor.isEditing()) {
                 String fullVal = textareaEditor.getValue(baseId);
@@ -312,13 +311,13 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         boolean isInputOrPlaceholder = clicked.type() == ElementType.INPUT
-                || (clicked.type() == ElementType.TEXT && clicked.id().endsWith("_ph"));
+                || (clicked.type() == ElementType.TEXT && clicked.isPart("_ph"));
         if (isInputOrPlaceholder && button == 0) {
             String baseId = clicked.baseId();
             focusNavigator.setFocused(baseId);
             session.setFocusedElement(baseId, false);
             String curVal = getInputValue(baseId);
-            if (curVal.isEmpty() && clicked.text() != null && !clicked.id().endsWith("_ph")) curVal = clicked.text();
+            if (curVal.isEmpty() && clicked.text() != null && !clicked.isPart("_ph")) curVal = clicked.text();
             focusWebInput(gestureScreen, baseId, curVal);
             return;
         }
@@ -462,7 +461,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         if (inputSession.input().drag(webX, webY)) {
             SessionContext session = ClientWebManager.getSession(sessionId);
             if (session != null && !session.activePressedId().isEmpty()) {
-                String baseId = ClientWebManager.getBaseNodeId(session.activePressedId());
+                String baseId = session.activePressedId();
                 DisplayItem updated = session.elementById(baseId);
                 if (updated != null && updated.type() == ElementType.RANGE && updated.text() != null) {
                     String val = updated.text().split(":")[0];
@@ -536,7 +535,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         } else {
             SessionContext session = ClientWebManager.getSession(sessionId);
             if (session != null && !session.activeInputId().isEmpty() && this.inputHost != null) {
-                String baseId = ClientWebManager.getBaseNodeId(session.activeInputId());
+                String baseId = session.activeInputBaseId();
                 if (!input.beginTextEdit(baseId, data, "insertText")) return true;
                 if (this.inputHost.charTyped(codePoint, modifiers)) {
                     input.commitTextEdit(baseId, this.inputHost.getValue(), data, "insertText");
@@ -666,8 +665,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 if (isInventoryKey(keyCode, scanCode)) return true;
             }
             case SINGLE_LINE_INPUT -> {
-                String activeId = session != null ? session.activeInputId() : "";
-                String baseId = ClientWebManager.getBaseNodeId(activeId);
+                String baseId = session != null ? session.activeInputBaseId() : "";
                 if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                     unfocusWebInput();
                     return true;
@@ -676,7 +674,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                     String val = (this.inputHost != null) ? this.inputHost.getValue() : "";
                     syncInputValueToDomNodes(baseId, val);
-                    input.submitInput(activeId, val);
+                    input.submitInput(baseId, val);
                     if (onInputSubmitted != null) onInputSubmitted.accept(baseId, val);
                     return true;
                 }
@@ -802,7 +800,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
     }
 
     public void setInputValue(String id, String value) {
-        String baseId = ClientWebManager.getBaseNodeId(id);
+        String baseId = id;
         String safeVal = value != null ? value : "";
         syncInputValueToDomNodes(baseId, safeVal);
         SessionContext session = ClientWebManager.getSession(sessionId);
@@ -814,17 +812,17 @@ public class EnderScreenDelegate implements SessionInput.Host {
     }
 
     public void setTextareaValue(String id, String value) {
-        String baseId = ClientWebManager.getBaseNodeId(id);
+        String baseId = id;
         textareaEditor.setValue(baseId, value);
     }
 
     public String getTextareaValue(String id) {
-        String baseId = ClientWebManager.getBaseNodeId(id);
+        String baseId = id;
         return textareaEditor.getValue(baseId);
     }
 
     public String getInputValue(String id) {
-        String baseId = ClientWebManager.getBaseNodeId(id);
+        String baseId = id;
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session != null && !textareaEditor.isEditing() && session.isFocusedBase(baseId)) {
             if (this.inputHost != null) return this.inputHost.getValue();

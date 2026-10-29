@@ -110,8 +110,7 @@ public class ReactiveStateStore {
         SessionContext session = ClientWebManager.getSession(sessionId);
         HtmlNode vRoot = session != null ? session.rootNode() : null;
         if (vRoot == null || elementId == null) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
-        HtmlNode node = vRoot.getNodeById(baseId);
+        HtmlNode node = vRoot.getNodeById(elementId);
         if (node != null) {
             String modelKey = Bindings.getModelKey(node);
             if (modelKey != null && !modelKey.isEmpty()) {

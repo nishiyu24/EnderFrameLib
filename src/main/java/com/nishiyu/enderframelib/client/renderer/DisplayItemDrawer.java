@@ -207,7 +207,7 @@ public class DisplayItemDrawer {
 
     static void applyOwnTransform(PoseStack poseStack, DisplayItem el, String hoveredId, String sessionId, float[] cumulativeOpacity,
                                   boolean layersEnabled, Set<String> directOpacity) {
-        String baseId = ClientWebManager.getBaseNodeId(el.id());
+        String baseId = el.baseId();
         boolean isHovered = baseId.equals(hoveredId);
         SessionContext session = ClientWebManager.getSession(sessionId);
         boolean isActive = session != null && session.isPressedBase(baseId);
@@ -321,7 +321,7 @@ public class DisplayItemDrawer {
             }
             if (layersEnabled && el.type() == ElementType.NODE && el.hints().layer() != null && elementIndex >= skipUntil) {
                 LayerSpec spec = el.hints().layer();
-                String anchorBase = ClientWebManager.getBaseNodeId(el.id());
+                String anchorBase = el.baseId();
                 boolean anchorHovered = !hoveredId.isEmpty() && anchorBase.equals(hoveredId);
                 boolean anchorActive = session != null && session.isPressedBase(anchorBase);
                 boolean anchorFocused = session != null && (session.isActiveInput(el.id()) || session.isFocusedBase(anchorBase));
@@ -362,7 +362,7 @@ public class DisplayItemDrawer {
                                 if (skipped.type() == ElementType.NODE) continue;
                                 zAfter = zLevels != null ? zLevels[i] * effectiveZStep : zAfter + effectiveZStep;
                                 topAfter = Math.max(topAfter, zAfter);
-                                String sb = ClientWebManager.getBaseNodeId(skipped.id());
+                                String sb = skipped.baseId();
                                 if (tipText == null && resolvedTooltipText == null && !hoveredId.isEmpty() && sb.equals(hoveredId)) {
                                     tipText = extractTooltipText(skipped);
                                     if (tipText != null) tipEl = skipped;
@@ -399,7 +399,7 @@ public class DisplayItemDrawer {
             zOffset = zLevels != null ? zLevels[elementIndex] * effectiveZStep : zOffset + effectiveZStep;
             topZ = Math.max(topZ, zOffset);
 
-            String baseId = ClientWebManager.getBaseNodeId(el.id());
+            String baseId = el.baseId();
             boolean isHovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
             boolean isActive = session != null && session.isPressedBase(baseId);
             boolean isFocused = session != null && (session.isActiveInput(el.id()) || session.isFocusedBase(baseId));
@@ -711,7 +711,7 @@ public class DisplayItemDrawer {
         for (int i = anchorIndex; i < end; i++) {
             DisplayItem item = items.get(i);
             if (!isStaticPaint(item.type())) cacheable = false;
-            String baseId = ClientWebManager.getBaseNodeId(item.id());
+            String baseId = item.baseId();
             boolean hovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
             boolean active = session != null && session.isPressedBase(baseId);
             boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));

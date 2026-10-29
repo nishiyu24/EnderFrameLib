@@ -298,6 +298,7 @@ public class ReactiveStateStoreTest {
         com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver = key -> "tr:" + key;
         try {
             HtmlNode input = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("input");
+            input.ownerDocument = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
             input.setAttribute("data-i18n-placeholder", "ui.name");
             java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> received = new java.util.ArrayList<>();
             var observer = com.nishiyu.enderframelib.api.dom.MutationObserver.create((records, obs) -> received.addAll(records));
@@ -319,6 +320,7 @@ public class ReactiveStateStoreTest {
         template.setAttribute("title", "Level {{@level}}");
         HtmlNode live = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
         live.setAttribute("title", "Level ?");
+        live.ownerDocument = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
         java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> received = new java.util.ArrayList<>();
         var observer = com.nishiyu.enderframelib.api.dom.MutationObserver.create((records, obs) -> received.addAll(records));
         observeAttributes(observer, live);

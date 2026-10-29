@@ -148,7 +148,7 @@ public class WebRecipeViewerBridge {
 
         HtmlNode vRoot = session.rootNode();
         if (vRoot != null) {
-            String baseId = ClientWebManager.getBaseNodeId(el.id());
+            String baseId = el.baseId();
             HtmlNode domNode = vRoot.getNodeById(baseId);
             while (domNode != null) {
                 if (domNode.attrs.containsKey("data-item")) {

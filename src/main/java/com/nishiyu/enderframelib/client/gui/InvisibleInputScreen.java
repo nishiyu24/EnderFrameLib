@@ -50,7 +50,7 @@ public class InvisibleInputScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        String baseId = ClientWebManager.getBaseNodeId(targetElement.id());
+        String baseId = targetElement.baseId();
         String initialVal = targetElement.text() != null ? targetElement.text() : "";
         SessionContext session = ClientWebManager.getSession(sessionId);
         HtmlNode vNode = session != null ? session.findNode(baseId) : null;
@@ -59,7 +59,7 @@ public class InvisibleInputScreen extends Screen {
         }
 
         this.inputHost = new WebTextInputHost(sessionId, this.font, newText ->
-                input().updateInputLocally(targetElement.id(), newText)
+                input().updateInputLocally(targetElement.baseId(), newText)
         );
         this.inputHost.setValue(initialVal);
         this.addWidget(this.inputHost.editBox());
@@ -178,10 +178,10 @@ public class InvisibleInputScreen extends Screen {
     private void switchTo(DisplayItem next) {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.id(), this.inputHost.getValue());
+            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
             this.inputHost.deactivate();
         }
-        ClientWebManager.getOrCreateSession(sessionId).activateInput(next.id());
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(next.id(), next.baseId());
         ClientScreenInteractionManager.openInputScreen(sessionId, next, blockPos);
     }
 
@@ -201,10 +201,10 @@ public class InvisibleInputScreen extends Screen {
             // textarea の場合は Enter で画面を閉じず、改行を挿入する
             if (targetElement.type() == ElementType.TEXTAREA) {
                 String data = "\n";
-                if (!input.beginTextEdit(targetElement.id(), data, "insertLineBreak")) return true;
+                if (!input.beginTextEdit(targetElement.baseId(), data, "insertLineBreak")) return true;
                 if (this.inputHost != null) {
                     this.inputHost.editBox().insertText(data);
-                    input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), data, "insertLineBreak");
+                    input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), data, "insertLineBreak");
                 }
                 return true;
             } else {
@@ -214,10 +214,10 @@ public class InvisibleInputScreen extends Screen {
         }
 
         String inputType = SessionInput.editingInputType(keyCode, modifiers, targetElement.type() == ElementType.TEXTAREA);
-        if (inputType != null && !input.beginTextEdit(targetElement.id(), null, inputType)) return true;
+        if (inputType != null && !input.beginTextEdit(targetElement.baseId(), null, inputType)) return true;
         if (this.inputHost != null && this.inputHost.keyPressed(keyCode, scanCode, modifiers)) {
             if (inputType != null) {
-                input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), null, inputType);
+                input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), null, inputType);
             }
             return true;
         }
@@ -237,9 +237,9 @@ public class InvisibleInputScreen extends Screen {
     public boolean charTyped(char codePoint, int modifiers) {
         SessionInput input = input();
         String data = String.valueOf(codePoint);
-        if (!input.beginTextEdit(targetElement.id(), data, "insertText")) return true;
+        if (!input.beginTextEdit(targetElement.baseId(), data, "insertText")) return true;
         if (this.inputHost != null && this.inputHost.charTyped(codePoint, modifiers)) {
-            input.commitTextEdit(targetElement.id(), this.inputHost.getValue(), data, "insertText");
+            input.commitTextEdit(targetElement.baseId(), this.inputHost.getValue(), data, "insertText");
             return true;
         }
         return super.charTyped(codePoint, modifiers);
@@ -251,7 +251,7 @@ public class InvisibleInputScreen extends Screen {
 
     private UIEvents.Keyboard dispatchKeyEvent(String type, int keyCode, int modifiers) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        String baseId = ClientWebManager.getBaseNodeId(targetElement.id());
+        String baseId = targetElement.baseId();
         HtmlNode target = session != null ? session.findNode(baseId) : null;
         if (target == null && session != null) target = session.rootNode();
         boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
@@ -264,7 +264,7 @@ public class InvisibleInputScreen extends Screen {
     private void commitAndClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.id(), this.inputHost.getValue());
+            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
         }
         this.onClose();
     }
@@ -273,7 +273,7 @@ public class InvisibleInputScreen extends Screen {
     public void onClose() {
         if (!submitted && this.inputHost != null) {
             submitted = true;
-            input().submitInput(targetElement.id(), this.inputHost.getValue());
+            input().submitInput(targetElement.baseId(), this.inputHost.getValue());
         }
         if (this.inputHost != null) {
             this.inputHost.deactivate();

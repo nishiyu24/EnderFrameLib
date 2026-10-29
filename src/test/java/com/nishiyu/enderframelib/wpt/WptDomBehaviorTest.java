@@ -725,6 +725,7 @@ public class WptDomBehaviorTest extends WptBehaviorTest {
     )
     public void testMutationObserver() {
         com.nishiyu.enderframelib.core.dom.node.HtmlElement root = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("div");
+        root.ownerDocument = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
         java.util.List<com.nishiyu.enderframelib.api.dom.MutationObserver.Record> received = new java.util.ArrayList<>();
 
         com.nishiyu.enderframelib.api.dom.MutationObserver observer = com.nishiyu.enderframelib.api.dom.MutationObserver.create(

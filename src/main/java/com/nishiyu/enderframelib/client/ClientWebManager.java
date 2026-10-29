@@ -7,8 +7,6 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * セッションの登録簿。取得・作成・破棄・描画キューだけを持ち、
@@ -114,49 +112,6 @@ public class ClientWebManager {
             if (session == null) continue;
             session.flushInvalidation();
         }
-    }
-
-    private static final String[] RENDER_SUFFIXES = {
-            "_ghost_img", "_b_bottom", "_b_round", "_b_right", "_textarea", "_progress", "_b_left", "_select", "_canvas",
-            "_b_top", "_o_bottom", "_o_right", "_o_left", "_o_top", "_sb_vt", "_sb_ht", "_scene", "_input", "_sb_v", "_sb_h",
-            "_img", "_cb", "_bg", "_ph"
-    };
-
-    /**
-     * 番号の付く部品: 線種で分けた枠線・輪郭線の 2 つ目以降の片（{@code _b_top_3}）、インラインボックスの
-     * 断片ごとの枠線（{@code _b_left_7}・{@code _b_round_8}）、背景のレイヤーのタイル
-     * （{@code _bgl0_5}）、影の層（{@code _shadow_2}、内側の影は {@code _shadow_in4}）。
-     * 数が決まっていないので接尾辞の一覧では表せない。
-     *
-     * 何が壊れていたか: 以前は影の {@code _shadow_1..3} を剥がせず、影にカーソルが乗ると
-     * 存在しないノード id でホバーとクリックが起きていた。
-     */
-    private static final Pattern NUMBERED_RENDER_PART = Pattern.compile(
-            "_(?:[bo]_(?:top|right|bottom|left)_\\d+|b_round_\\d+|bgl\\d+_\\d+|shadow_(?:in)?\\d+)$");
-
-    /** 描画 ID から節の ID への変換は要素ごと・フレームごとに引かれ、正規表現が重いので結果を覚える。 */
-    private static final Map<String, String> BASE_NODE_ID_CACHE = new ConcurrentHashMap<>();
-
-    public static String getBaseNodeId(String renderId) {
-        if (renderId == null || renderId.isEmpty()) return "";
-        String cached = BASE_NODE_ID_CACHE.get(renderId);
-        if (cached != null) return cached;
-        String base = computeBaseNodeId(renderId);
-        if (BASE_NODE_ID_CACHE.size() > 100_000) BASE_NODE_ID_CACHE.clear();
-        BASE_NODE_ID_CACHE.put(renderId, base);
-        return base;
-    }
-
-    private static String computeBaseNodeId(String renderId) {
-
-        Matcher numbered = NUMBERED_RENDER_PART.matcher(renderId);
-        if (numbered.find() && numbered.start() > 0) return renderId.substring(0, numbered.start());
-        for (String suffix : RENDER_SUFFIXES) {
-            if (renderId.length() > suffix.length() && renderId.endsWith(suffix)) {
-                return renderId.substring(0, renderId.length() - suffix.length());
-            }
-        }
-        return renderId;
     }
 
     /** セッションの登録を外し、そのセッションが持つ全状態を片付ける。 */

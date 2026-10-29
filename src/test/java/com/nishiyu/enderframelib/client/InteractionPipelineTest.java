@@ -188,7 +188,7 @@ public class InteractionPipelineTest {
         assertTrue(scrollY >= 80 && scrollY <= 120, "スクロール位置が中央付近にジャンプすること: " + scrollY);
 
         // サムのドラッグで最下部 (y = 100) へドラッグ
-        boolean dragHandled = session.handleScrollbarDrag("scrollBox_sb_v", 94, 100);
+        boolean dragHandled = session.handleScrollbarDrag("scrollBox", SessionContext.SB_V_THUMB, 94, 100);
         assertTrue(dragHandled, "サムドラッグが処理されること");
 
         float scrollYMax = session.scrollState().getScrollY(containerNode);

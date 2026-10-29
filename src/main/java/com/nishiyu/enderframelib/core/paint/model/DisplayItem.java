@@ -37,6 +37,21 @@ public record DisplayItem(
         return (baseNodeId != null && !baseNodeId.isEmpty()) ? baseNodeId : id;
     }
 
+    /**
+     * 描画 ID のうち持ち主の節の ID を除いた部分（背景なら {@code _bg}、節自身なら空）。
+     * 節の ID の綴りに依存せず、{@link #baseId()} との差だけで決まる。
+     */
+    public String partSuffix() {
+        String base = baseId();
+        return id.startsWith(base) ? id.substring(base.length()) : "";
+    }
+
+    /** この項目が持ち主の節の部品 {@code suffix}（{@code _sb_v} など）か。 */
+    public boolean isPart(String suffix) {
+        String base = baseId();
+        return id.length() == base.length() + suffix.length() && id.startsWith(base) && id.endsWith(suffix);
+    }
+
     /** 型付きの付帯情報。メタが無ければ空。 */
     public RenderHints hints() {
         return meta != null ? meta.hints() : RenderHints.NONE;

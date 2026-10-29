@@ -66,7 +66,7 @@ public final class TextElementRenderer {
     }
 
     static boolean shouldSkipPlaceholder(DisplayItem el, Map<String, DisplayItem> elementMap, String animSessionId) {
-        if (!el.id().endsWith("_ph")) return false;
+        if (!el.isPart("_ph")) return false;
         SessionContext session = ClientWebManager.getSession(animSessionId);
         String inputNodeId = el.id().substring(0, el.id().length() - 3);
         DisplayItem inputEl = elementMap.get(inputNodeId + "_input");
@@ -129,7 +129,7 @@ public final class TextElementRenderer {
         // ベースラインはレイアウトが決める。持たない要素（入力欄・プレースホルダ）だけ
         // 内容領域の中央に置く。以前は全要素を「高さ 8px の箱」として中央寄せしていた。
         boolean centersInBox = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT
-                || el.id().endsWith("_ph") || meta == null || meta.baseline() <= 0;
+                || el.isPart("_ph") || meta == null || meta.baseline() <= 0;
         float baseline = centersInBox
                 ? (el.height() + ascent - descent) / 2.0f
                 : meta.baseline();
@@ -186,7 +186,7 @@ public final class TextElementRenderer {
                         addQuadRaw(buffer.getBuffer(RenderType.gui()), poseStack.last().pose(), cursorX, -1.0f, cursorX + 1.5f, 9.0f, r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
                     }
                 }
-            } else if (el.id().endsWith("_ph")) {
+            } else if (el.isPart("_ph")) {
                 poseStack.translate(snapCoordFor2D(textX, matScale, is2DAudio), snapCoordFor2D(textY, matScale, is2DAudio), zPos);
                 poseStack.scale(textScale, textScale, 1.0f);
                 float availableWidth = Math.max(0, Math.min((el.width() - 8.0f) / textScale, (clipMaxX - textX) / textScale));
@@ -403,7 +403,7 @@ public final class TextElementRenderer {
         float ascent = face.ascent(style);
         float descent = face.descent(style);
         boolean isField = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
-        boolean centersInBox = isField || el.id().endsWith("_ph") || meta == null || meta.baseline() <= 0;
+        boolean centersInBox = isField || el.isPart("_ph") || meta == null || meta.baseline() <= 0;
         float baseline = el.y() + (centersInBox ? (el.height() + ascent - descent) / 2.0f : meta.baseline());
         float textX = el.x() + (isField ? 4.0f : 0.0f);
 
@@ -449,7 +449,7 @@ public final class TextElementRenderer {
                     addQuadRaw(buffer.getBuffer(RenderType.gui()), pose, cx, baseline - ascent, cx + 1.0f, baseline + descent,
                             r, g, b, newA / 255.0f, ZLayers.SUB_Z_OFFSET);
                 }
-            } else if (el.id().endsWith("_ph")) {
+            } else if (el.isPart("_ph")) {
                 float available = Math.max(0, Math.min(el.width() - 8.0f, clipMaxX - textX));
                 String visible = textToDraw.substring(0, face.fitChars(textToDraw, style, available));
                 OutlineTextRenderer.draw(visible, face, style, textX, baseline, argb, useShadow, pose, buffer, deviceScale, is2D, packedLight);
