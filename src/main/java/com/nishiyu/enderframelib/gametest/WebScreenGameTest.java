@@ -421,8 +421,11 @@ public final class WebScreenGameTest {
         }
         ServerPlayer survivalPlayer = mockPlayer(helper);
         survivalPlayer.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
-        if (EnderFrameCommands.canUseCommand(survivalPlayer.createCommandSourceStack().withPermission(4))) {
-            helper.fail("サバイバルモードのプレイヤーで canUseCommand が true になりました");
+        if (!EnderFrameCommands.canUseCommand(survivalPlayer.createCommandSourceStack().withPermission(4))) {
+            helper.fail("サバイバルモードの OP プレイヤーで canUseCommand が false になりました");
+        }
+        if (EnderFrameCommands.canUseCommand(survivalPlayer.createCommandSourceStack().withPermission(0))) {
+            helper.fail("サバイバルモードの非 OP プレイヤーで canUseCommand が true になりました");
         }
         EnderFrameServerState.onPlayerLogout(survivalPlayer);
         survivalPlayer.connection.disconnect(Component.literal("gametest done"));
