@@ -89,20 +89,11 @@ public class EnderFrameCommands {
             ResourceLocation.fromNamespaceAndPath(EnderFrameLib.MODID, "surface_test");
 
     /**
-     * コマンド実行権限の判定:
-     * <ul>
-     *   <li>マルチ・シングル問わず管理者権限（OP レベル 2 以上）が必須</li>
-     *   <li>プレイヤー自身がサバイバルモードの場合は実行不可（データパック関数・コマンドブロックからの実行は OP 2 権限を持つため可能だが、サバイバルプレイヤー本人の直接実行は拒否）</li>
-     * </ul>
+     * コマンド実行権限の判定: マルチ・シングル問わず管理者権限（OP レベル 2 以上）が必須。
+     * ゲームモードは問わない（サバイバルの OP も実行可能）。
      */
     public static boolean canUseCommand(CommandSourceStack src) {
-        if (!src.hasPermission(2)) {
-            return false;
-        }
-        if (src.getEntity() instanceof ServerPlayer player && player.gameMode.isSurvival()) {
-            return false;
-        }
-        return true;
+        return src.hasPermission(2);
     }
 
     // ==========================================
