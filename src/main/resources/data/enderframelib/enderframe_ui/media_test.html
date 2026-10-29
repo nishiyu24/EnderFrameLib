@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>EnderFrame Media Lab - Video & Media Test Suite</title>
+    <title>EnderFrame Media Lab - Video, Audio & GIF Test Suite</title>
 </head>
 <style>
     /* =========================================================================
@@ -459,7 +459,7 @@
             <div class="brand-title-box">
                 <div class="brand-heading">
                     <span class="brand-name">EnderFrame Media Lab</span>
-                    <span class="brand-tag">VIDEO &middot; YOUTUBE &middot; GDRIVE</span>
+                    <span class="brand-tag">VIDEO &middot; AUDIO &middot; GIF &middot; YOUTUBE &middot; GDRIVE</span>
                 </div>
                 <span class="brand-subline">Comprehensive Verification Suite for Native Media Engine</span>
             </div>
@@ -568,42 +568,38 @@
 
         </div>
 
-
         <!-- ================================================================= -->
-        <!-- SECTION 1: VIDEO OBJECT-FIT & STYLING VARIATIONS                 -->
+        <!-- SECTION 1: VIDEO (object-fit / CSS / loop / muted)                -->
         <!-- ================================================================= -->
         <div class="section-title-bar">
-            <span class="section-title">1. User Video Object-Fit &amp; CSS Styling Matrix</span>
-            <span class="section-desc">Testing the user specified Google Drive video under different CSS transforms and object-fit modes</span>
+            <span class="section-title">1. Video &mdash; Object-Fit, CSS Styling &amp; Attributes</span>
+            <span class="section-desc">Public CDN MP4 (H.264/AAC) under different CSS modes, plus the <code>loop</code> / <code>muted</code> attributes</span>
         </div>
 
         <div class="test-grid-4">
 
-            <!-- Variant 1: Cover -->
             <div class="lab-card">
                 <div class="card-head">
                     <span class="card-title">object-fit: cover</span>
                     <span class="card-chip chip-video">COVER</span>
                 </div>
                 <div class="media-box media-box-square">
-                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover" muted></video>
                 </div>
                 <span class="card-desc">比率を保ち正方形枠を隙間なく満たします。</span>
             </div>
 
-            <!-- Variant 2: Rounded Corners -->
             <div class="lab-card">
                 <div class="card-head">
                     <span class="card-title">Border Radius (16px)</span>
                     <span class="card-chip chip-video">ROUNDED</span>
                 </div>
                 <div class="media-box media-box-square style-rounded">
-                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-rounded"></video>
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover style-rounded" muted></video>
                 </div>
-                <span class="card-desc">四隅 16px の角丸シェーダークリッピング。</span>
+                <span class="card-desc">四隅 16px の角丸クリッピング。</span>
             </div>
 
-            <!-- Variant 3: Circular Mask -->
             <div class="lab-card">
                 <div class="card-head">
                     <span class="card-title">Circular Mask (50%)</span>
@@ -611,74 +607,161 @@
                 </div>
                 <div style="display:flex; justify-content:center; align-items:center; width:100%; height:140px;">
                     <div class="media-box style-circle" style="background:#000;">
-                        <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-circle"></video>
+                        <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover style-circle" muted></video>
                     </div>
                 </div>
                 <span class="card-desc">正円形マスクによる動画切り抜き。</span>
             </div>
 
-            <!-- Variant 4: Opacity & Glow -->
             <div class="lab-card">
                 <div class="card-head">
                     <span class="card-title">Opacity &amp; Glow</span>
                     <span class="card-chip chip-video">EFFECTS</span>
                 </div>
                 <div class="media-box media-box-square style-glow">
-                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover style-opacity"></video>
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover style-opacity" muted></video>
                 </div>
-                <span class="card-desc">55%透過ブレンド ＋ 外枠グロー発光。</span>
+                <span class="card-desc">55%透過 ＋ 外枠グロー。</span>
+            </div>
+
+        </div>
+
+        <div class="test-grid-2">
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">loop + muted</span>
+                    <span class="card-chip chip-video">ATTR</span>
+                </div>
+                <div class="media-box media-box-compact">
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover" loop muted></video>
+                </div>
+                <span class="card-desc">
+                    <code>&lt;video loop muted&gt;</code>。終端で先頭へ戻って繰り返し、音声は鳴りません。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 終端（約15秒）で止まらず先頭から再開する</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 音が出ない（muted）</div>
+                </div>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">no attributes (play once, sound on)</span>
+                    <span class="card-chip chip-video">DEFAULT</span>
+                </div>
+                <div class="media-box media-box-compact">
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover"></video>
+                </div>
+                <span class="card-desc">
+                    属性なし。1回再生して終端で止まり、音声が出ます（2D 画面なら左右均等）。
+                </span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 終端で止まる</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 音声が出る</div>
+                </div>
             </div>
 
         </div>
 
 
         <!-- ================================================================= -->
-        <!-- SECTION 2: AUDIO & ACOUSTIC MODES                                -->
+        <!-- SECTION 2: AUDIO                                                  -->
         <!-- ================================================================= -->
         <div class="section-title-bar">
-            <span class="section-title">2. Audio Decoding &amp; Spatial Acoustics (OpenAL)</span>
-            <span class="section-desc">Testing 2D direct audio, 3D world positional attenuation, and multi-speaker linking</span>
+            <span class="section-title">2. Audio &mdash; &lt;audio&gt; &amp; Spatial Acoustics (OpenAL)</span>
+            <span class="section-desc">映像なしの音声ファイル。<code>&lt;audio&gt;</code> は何も描画せず、この枠が表示されている間だけ進みます</span>
+        </div>
+
+        <div class="test-grid-3">
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">MP3</span>
+                    <span class="card-chip chip-audio">AUDIO_MP3</span>
+                </div>
+                <div class="url-tag">soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3</div>
+                <div class="media-box media-box-compact">
+                    <audio src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" loop></audio>
+                    <span class="mc-label">&#9835; mp3 &middot; loop</span>
+                </div>
+                <span class="card-desc">mp3 demuxer / decoder。映像が無くても音声だけで再生と時刻管理が進みます。</span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 音が鳴る（ステレオ音源はモノラルにダウンミックス）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> <code>loop</code> で終端後も続く</div>
+                </div>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">OGG (Vorbis)</span>
+                    <span class="card-chip chip-audio">AUDIO_OGG</span>
+                </div>
+                <div class="url-tag">upload.wikimedia.org/.../Example.ogg</div>
+                <div class="media-box media-box-compact">
+                    <audio src="https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg"></audio>
+                    <span class="mc-label">&#9835; ogg &middot; once</span>
+                </div>
+                <span class="card-desc">今回追加した ogg demuxer と vorbis decoder の確認。1回だけ鳴って止まります。</span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 再生される（旧 DLL では不可）</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 終端で止まる</div>
+                </div>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">WAV</span>
+                    <span class="card-chip chip-audio">AUDIO_WAV</span>
+                </div>
+                <div class="url-tag">upload.wikimedia.org/.../Sample_of_Dubstep.wav</div>
+                <div class="media-box media-box-compact">
+                    <audio src="https://upload.wikimedia.org/wikipedia/commons/2/22/Sample_of_Dubstep.wav" muted></audio>
+                    <span class="mc-label">&#9835; wav &middot; muted</span>
+                </div>
+                <span class="card-desc">wav demuxer と PCM decoder。<code>muted</code> なので <em>音は出ません</em>（出たら属性が効いていません）。</span>
+                <div class="checklist-box">
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> エラーなく読み込まれる</div>
+                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 音が出ない</div>
+                </div>
+            </div>
+
         </div>
 
         <div class="test-grid-2">
 
-            <!-- Card: 2D Audio -->
             <div class="lab-card">
                 <div class="card-head">
                     <span class="card-title">2D Screen Audio Mode (HUD / Menu)</span>
                     <span class="card-chip chip-audio">OPENAL_2D</span>
                 </div>
                 <div class="media-box media-box-compact">
-                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover" loop></video>
                 </div>
                 <span class="card-desc">
-                    GUI / HUD 画面表示時は <code>AL_SOURCE_RELATIVE = 1</code> として再生され、
-                    プレイヤーの位置や向きに左右されず、左右均等かつクリアに音声が出力されます。
+                    GUI / HUD 表示時は <code>AL_SOURCE_RELATIVE = 1</code>。プレイヤーの位置や向きに関係なく、左右均等に聞こえます。
                 </span>
                 <div class="checklist-box">
                     <div class="checklist-item"><span class="badge-pass">&#10003;</span> サンプリングレート自動取得（44.1kHz / 48kHz）</div>
-                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> モノラル / ステレオ（AL_FORMAT_STEREO16）自動判別</div>
                     <div class="checklist-item"><span class="badge-pass">&#10003;</span> バッファキューイング（alSourceQueueBuffers）同期</div>
                 </div>
             </div>
 
-            <!-- Card: 3D Audio -->
-            <div class="lab-card">
+            <div class="lab-card featured">
                 <div class="card-head">
-                    <span class="card-title">3D World Positional Audio (Block Screen)</span>
-                    <span class="card-chip chip-audio">OPENAL_3D</span>
+                    <span class="card-title">Scroll Sync Check (音ズレ回帰テスト)</span>
+                    <span class="card-chip chip-audio">SYNC</span>
                 </div>
                 <div class="media-box media-box-compact">
-                    <video src="https://drive.google.com/file/d/1A3V6ozYlT82Trl-cJcM2_OFsT5RRpN0c/view?usp=drive_link" class="fit-cover"></video>
+                    <video src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" class="fit-cover" loop></video>
                 </div>
                 <span class="card-desc">
-                    ブロック画面（WebScreenBlockEntity）設置時は <code>AL_SOURCE_RELATIVE = 0</code> となり、
-                    ブロック座標に応じた立体音響（距離減衰・左右パンニング）が計算されます。
+                    再生中にこのカードをスクロールで画面外へ出し、5秒以上待ってから戻してください。
+                    溜まった古い音声が破棄され、映像と音声が揃ったまま再開するはずです。
                 </span>
                 <div class="checklist-box">
-                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 距離減衰（LINEAR_DISTANCE_CLAMPED）</div>
-                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 外部スピーカー連動（WebScreenBlockEntity.getLinkedSpeakers）</div>
-                    <div class="checklist-item"><span class="badge-pass">&#10003;</span> 視界外・遠距離時のミュート・省電力化</div>
+                    <div class="checklist-item"><span class="badge-warn">&#9888;</span> 戻った直後に、映像だけが先行していない</div>
+                    <div class="checklist-item"><span class="badge-warn">&#9888;</span> 数秒前の音が遅れて鳴らない</div>
                 </div>
             </div>
 
@@ -686,10 +769,85 @@
 
 
         <!-- ================================================================= -->
-        <!-- SECTION 3: MINECRAFT NATIVE SCHEMES                               -->
+        <!-- SECTION 3: GIF                                                    -->
         <!-- ================================================================= -->
         <div class="section-title-bar">
-            <span class="section-title">3. Minecraft Native Media Schemes</span>
+            <span class="section-title">3. GIF &mdash; &lt;img src="*.gif"&gt;</span>
+            <span class="section-desc">http(s) の .gif は動画デコーダで再生（ミュート・ループ）。それ以外の画像は従来の静止画経路</span>
+        </div>
+
+        <div class="test-grid-4">
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Animated GIF</span>
+                    <span class="card-chip chip-image">GIF</span>
+                </div>
+                <div class="media-box media-box-square">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif" class="fit-contain" alt="Rotating earth GIF" />
+                </div>
+                <span class="card-desc">回転する地球。動いて、終わったら繰り返します。</span>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">GIF + object-fit: cover</span>
+                    <span class="card-chip chip-image">GIF_COVER</span>
+                </div>
+                <div class="media-box media-box-square">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif" class="fit-cover" alt="Rotating earth GIF cover" />
+                </div>
+                <span class="card-desc">枠いっぱいに切り抜いて表示。</span>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">GIF + Rounded</span>
+                    <span class="card-chip chip-image">GIF_ROUND</span>
+                </div>
+                <div class="media-box media-box-square style-rounded">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif" class="fit-cover style-rounded" alt="Rotating earth GIF rounded" />
+                </div>
+                <span class="card-desc">角丸クリッピングが GIF にも掛かる。</span>
+            </div>
+
+            <div class="lab-card">
+                <div class="card-head">
+                    <span class="card-title">Static PNG (control)</span>
+                    <span class="card-chip chip-image">PNG</span>
+                </div>
+                <div class="media-box media-box-square" style="background:#7c3aed;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png" class="fit-contain" alt="PNG transparency" />
+                </div>
+                <span class="card-desc">比較用の静止画。従来経路のままで、透過が背景色に重なって見えます。</span>
+            </div>
+
+        </div>
+
+        <div class="lab-card">
+            <div class="card-head">
+                <span class="card-title">GIF with intrinsic size (width / height: auto)</span>
+                <span class="card-chip chip-image">GIF_AUTO</span>
+            </div>
+            <div class="media-box" style="width:100%; height:auto; padding:8px;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif" style="width:auto; height:auto;" alt="Rotating earth GIF auto" />
+            </div>
+            <span class="card-desc">
+                大きさを指定しない GIF。デコーダが寸法を取得した時点で自動リフローされ、元の大きさで表示されます。
+            </span>
+            <div class="checklist-box">
+                <div class="checklist-item"><span class="badge-pass">&#10003;</span> 最初は 0&times;0、読み込み後に元寸法へ広がる</div>
+                <div class="checklist-item"><span class="badge-pass">&#10003;</span> 周囲のレイアウトが崩れずに押し下げられる</div>
+            </div>
+        </div>
+
+
+
+        <!-- ================================================================= -->
+        <!-- SECTION 4: MINECRAFT NATIVE SCHEMES                               -->
+        <!-- ================================================================= -->
+        <div class="section-title-bar">
+            <span class="section-title">4. Minecraft Native Media Schemes</span>
             <span class="section-desc">Testing in-engine renderers for items, fluids, entities, player skins, and potion effects</span>
         </div>
 
@@ -744,10 +902,10 @@
 
 
         <!-- ================================================================= -->
-        <!-- SECTION 4: SECURITY & GUARDRAILS                                  -->
+        <!-- SECTION 5: SECURITY & GUARDRAILS                                  -->
         <!-- ================================================================= -->
         <div class="section-title-bar">
-            <span class="section-title">4. Security Guardrails &amp; Network Protection</span>
+            <span class="section-title">5. Security Guardrails &amp; Network Protection</span>
             <span class="section-desc">Verifying private IP blocking, 10MB payload thresholds, and yt-dlp consent gate</span>
         </div>
 
