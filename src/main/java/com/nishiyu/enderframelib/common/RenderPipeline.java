@@ -216,22 +216,18 @@ public class RenderPipeline {
         boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position);
         if (!offsetOnly && !outOfFlow) return false;
 
-        Map<String, String> before = oldStyle.asMap();
-        Map<String, String> after = newStyle.asMap();
-        boolean horizontal = false;
-        boolean vertical = false;
-        Set<String> keys = new HashSet<>(before.keySet());
-        keys.addAll(after.keySet());
-        for (String key : keys) {
-            if (Objects.equals(before.get(key), after.get(key)) || PropertyRegistry.isPaintOnly(key)) continue;
+        boolean[] axes = {false, false, false}; // 横, 縦, 他（位置の指定では吸収できない変更）
+        ComputedStyle.diff(oldStyle, newStyle, (key, paintOnly, inherited) -> {
+            if (paintOnly) return;
             switch (key) {
-                case CssProperty.LEFT, CssProperty.RIGHT -> horizontal = true;
-                case CssProperty.TOP, CssProperty.BOTTOM -> vertical = true;
-                default -> {
-                    return false;
-                }
+                case CssProperty.LEFT, CssProperty.RIGHT -> axes[0] = true;
+                case CssProperty.TOP, CssProperty.BOTTOM -> axes[1] = true;
+                default -> axes[2] = true;
             }
-        }
+        });
+        if (axes[2]) return false;
+        boolean horizontal = axes[0];
+        boolean vertical = axes[1];
         if (offsetOnly) return true;
         if (horizontal && (bothInsets(oldStyle, CssProperty.LEFT, CssProperty.RIGHT)
                 || bothInsets(newStyle, CssProperty.LEFT, CssProperty.RIGHT))) {
@@ -340,21 +336,13 @@ public class RenderPipeline {
                 || Float.compare(previous.rootFontSizePx(), computed.rootFontSizePx()) != 0) {
             return Propagation.INHERITED;
         }
-        Map<String, String> before = previous.asMap();
-        Map<String, String> after = computed.asMap();
-        if (before.equals(after)) return Propagation.NONE;
-        Propagation result = Propagation.NONE;
-        for (Map.Entry<String, String> e : before.entrySet()) {
-            if (Objects.equals(e.getValue(), after.get(e.getKey()))) continue;
-            if (isInheritedKey(e.getKey())) return Propagation.INHERITED;
-            result = Propagation.NON_INHERITED;
-        }
-        for (Map.Entry<String, String> e : after.entrySet()) {
-            if (before.containsKey(e.getKey())) continue;
-            if (isInheritedKey(e.getKey())) return Propagation.INHERITED;
-            result = Propagation.NON_INHERITED;
-        }
-        return result;
+        if (ComputedStyle.sameDeclarations(previous, computed)) return Propagation.NONE;
+        Propagation[] result = {Propagation.NONE};
+        ComputedStyle.diff(previous, computed, (name, paintOnly, inherited) -> {
+            if (inherited) result[0] = Propagation.INHERITED;
+            else if (result[0] == Propagation.NONE) result[0] = Propagation.NON_INHERITED;
+        });
+        return result[0];
     }
 
     private static int childForceOf(boolean subtreeDirty, Propagation propagation, StyleSheet sheet) {
@@ -364,11 +352,6 @@ public class RenderPipeline {
             return FORCE_SELF;
         }
         return FORCE_NONE;
-    }
-
-    /** 親の値が子孫の算出に入る名前か。未登録の名前は安全側に継承するとみなす。 */
-    private static boolean isInheritedKey(String key) {
-        return key.startsWith("--") || PropertyRegistry.get(key) == null || PropertyRegistry.isInherited(key);
     }
 
     private static boolean dependsOnViewport(HtmlNode node, Map<String, String> rawStyle) {
@@ -477,7 +460,7 @@ public class RenderPipeline {
                     interactionState);
             boolean hasInteractive = styleSet.hasInteractiveRules();
 
-            if (prevStyle == null || !prevStyle.asMap().equals(computed.asMap())) {
+            if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
                 styleChanged = true;
                 if (StyleResolver.isLayoutAffectingChange(prevStyle, computed)) {
                     if (isPositionOnlyChange(prevStyle, computed)) {
@@ -580,7 +563,7 @@ public class RenderPipeline {
             return new RestyleResult(true, true);
         }
 
-        boolean styleChanged = !existing.style.asMap().equals(next.asMap());
+        boolean styleChanged = !ComputedStyle.sameDeclarations(existing.style, next);
         boolean layoutRequired = styleChanged && StyleResolver.isLayoutAffectingChange(existing.style, next);
         existing.updateStyle(next);
         existing.hasInteractiveRules = owner.hasInteractiveRules;
