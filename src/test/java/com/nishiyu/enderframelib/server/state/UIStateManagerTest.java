@@ -166,6 +166,57 @@ public class UIStateManagerTest {
     }
 
     @Test
+    @DisplayName("アクセス検証述語が false の間はアクションが拒否され、true に戻れば受け付けること")
+    void testHandleActionHonoursAccessValidator() {
+        UIStateImpl state = (UIStateImpl) UIStateManager.createState("mymod:crusher", "block:10,64,10");
+        state.setPacketSender((p, pkt) -> {});
+        AtomicInteger invoked = new AtomicInteger();
+        state.onAction("toggle_power", (p, payload) -> invoked.incrementAndGet());
+        ServerPlayer alice = TestServerPlayerHelper.createMockPlayer("Alice");
+        state.addViewer(alice);
+
+        AtomicBoolean inReach = new AtomicBoolean(true);
+        state.setAccessValidator(p -> inReach.get());
+        assertTrue(UIStateManager.handleAction("block:10,64,10", "toggle_power", alice, new CompoundTag()));
+        assertEquals(1, invoked.get());
+
+        inReach.set(false);
+        assertFalse(UIStateManager.handleAction("block:10,64,10", "toggle_power", alice, new CompoundTag()));
+        assertEquals(1, invoked.get(), "範囲外の閲覧者のアクションはハンドラへ届かないこと");
+
+        // 画面を閉じる通知は検証に関わらず通る（閲覧者から外せなくなるのを防ぐ）
+        assertTrue(UIStateManager.handleAction("block:10,64,10", UiActionC2SPacket.CLOSE_ACTION, alice, new CompoundTag()));
+        assertFalse(state.isViewer(alice));
+
+        state.setAccessValidator(null);
+        state.addViewer(alice);
+        assertTrue(UIStateManager.handleAction("block:10,64,10", "toggle_power", alice, new CompoundTag()));
+        assertEquals(2, invoked.get());
+    }
+
+    @Test
+    @DisplayName("持ち主のブロックエンティティが破壊済み・ワールド外なら閲覧者でもアクションが拒否されること")
+    void testHandleActionRejectsWhenOwnerGoneOrNotInLevel() {
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(5, 64, 5);
+        net.minecraft.world.level.block.entity.BlockEntity be = TestBlockEntityHelper.createMockBlockEntity(pos);
+        UIStateImpl state = (UIStateImpl) UIStateManager.getOrCreateBlockEntityState("mymod:crusher", be);
+        state.setPacketSender((p, pkt) -> {});
+        AtomicInteger invoked = new AtomicInteger();
+        state.onAction("toggle_power", (p, payload) -> invoked.incrementAndGet());
+        ServerPlayer alice = TestServerPlayerHelper.createMockPlayer("Alice");
+        state.addViewer(alice);
+
+        // モックの BlockEntity はレベルに属さないため、同一ディメンション・距離を証明できず拒否される
+        assertFalse(UIStateManager.handleAction("block:5,64,5", "toggle_power", alice, new CompoundTag()));
+        assertEquals(0, invoked.get());
+
+        be.setRemoved();
+        assertFalse(UIStateManager.handleAction("block:5,64,5", "toggle_power", alice, new CompoundTag()),
+                "破壊済みブロックへのアクションは拒否されること");
+        assertEquals(0, invoked.get());
+    }
+
+    @Test
     @DisplayName("クローズ通知で閲覧者から外れ、以降の差分配信とアクション受付が止まること")
     void testCloseActionRemovesViewer() {
         UIStateImpl state = (UIStateImpl) UIStateManager.createState("mymod:crusher", "block:4,5,6");

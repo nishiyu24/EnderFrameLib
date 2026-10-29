@@ -144,10 +144,10 @@ public final class UIStateManager {
      * クライアントから受信した UI アクションを該当する UIState にルーティングして実行します。
      *
      * <p>instanceId（例: {@code block:x,y,z}）はクライアントが自由に指定できるため、
-     * 送信者がその UIState の閲覧者である場合のみ実行します。予約アクション
+     * 送信者がその UIState の閲覧者で、かつ {@link UIStateImpl#canAct} を満たす場合のみ実行します。予約アクション
      * {@link UiActionC2SPacket#CLOSE_ACTION} は画面クローズ通知として閲覧者から外します。</p>
      *
-     * @return アクションを受け付けた場合 true（閲覧者でない・状態が存在しない場合は false）
+     * @return アクションを受け付けた場合 true（閲覧者でない・状態が存在しない・アクセス検証に通らない場合は false）
      */
     public static boolean handleAction(@NotNull String instanceId, @NotNull String actionName,
                                        @NotNull ServerPlayer player, @Nullable CompoundTag payload) {
@@ -162,6 +162,10 @@ public final class UIStateManager {
         if (UiActionC2SPacket.CLOSE_ACTION.equals(actionName)) {
             state.removeViewer(player);
             return true;
+        }
+        // 画面を開いたまま遠くへ離れた・別ディメンションへ移った・持ち主が消えた閲覧者の操作は受け付けない
+        if (!state.canAct(player)) {
+            return false;
         }
         state.dispatchAction(actionName, player, payload != null ? payload : new CompoundTag());
         return true;

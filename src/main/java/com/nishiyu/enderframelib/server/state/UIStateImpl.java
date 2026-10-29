@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 
 /**
  * {@link UIState} の標準実装。
@@ -71,6 +72,11 @@ public class UIStateImpl implements UIState {
      */
     private volatile WeakReference<BlockEntity> owner;
 
+    /** 操作を許す持ち主ブロックからの距離（{@code WebSessionManager} の操作距離と同じ）。 */
+    private static final double OWNER_INTERACT_RANGE_SQR = 12.0 * 12.0;
+
+    private volatile Predicate<ServerPlayer> accessValidator;
+
     public UIStateImpl(@NotNull String templateId, @NotNull String instanceId) {
         this.templateId = Objects.requireNonNull(templateId, "templateId cannot be null");
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId cannot be null");
@@ -107,6 +113,31 @@ public class UIStateImpl implements UIState {
         if (ref == null) return false;
         BlockEntity be = ref.get();
         return be == null || be.isRemoved();
+    }
+
+    @Override
+    public @NotNull UIState setAccessValidator(@Nullable Predicate<ServerPlayer> validator) {
+        this.accessValidator = validator;
+        return this;
+    }
+
+    /**
+     * 閲覧者からのアクションを今受け付けてよいか。持ち主のブロックエンティティがあれば、
+     * 生存・同じディメンション・操作距離内を確かめ、続けて {@link #setAccessValidator} の述語を確かめる。
+     */
+    public boolean canAct(@NotNull ServerPlayer player) {
+        WeakReference<BlockEntity> ref = owner;
+        if (ref != null) {
+            BlockEntity be = ref.get();
+            if (be == null || be.isRemoved()) return false;
+            net.minecraft.world.level.Level level = be.getLevel();
+            if (level == null || player.level() != level) return false;
+            if (player.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(be.getBlockPos())) > OWNER_INTERACT_RANGE_SQR) {
+                return false;
+            }
+        }
+        Predicate<ServerPlayer> validator = accessValidator;
+        return validator == null || validator.test(player);
     }
 
     /** パケット上でこのインスタンスを指す番号。 */

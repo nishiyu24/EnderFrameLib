@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Predicate;
 
 /**
  * Headless server state: the values behind one UI instance, kept on the server
@@ -177,6 +178,21 @@ public interface UIState extends AutoCloseable {
      */
     @NotNull
     UIState onAction(@NotNull String actionName, @NotNull BiConsumer<ServerPlayer, CompoundTag> handler);
+
+    /**
+     * Sets an extra check that is run every time a viewer sends an action, before its handler runs;
+     * an action from a player for whom it returns {@code false} is dropped. Use it to keep a UI usable
+     * only while the player is still in reach of whatever it controls. Closing the screen is never blocked.
+     *
+     * <p>A state made for a block entity ({@code EnderFrameAPI.stateOf}) is already checked for the block
+     * entity still existing and the player being in the same dimension and within range of it; this check
+     * is applied on top of that.</p>
+     *
+     * @param validator the check, or {@code null} to remove it
+     * @return this state, for chaining
+     */
+    @NotNull
+    UIState setAccessValidator(@Nullable Predicate<ServerPlayer> validator);
 
     /**
      * Runs the handler registered for an action, as if {@code player} had sent it.
