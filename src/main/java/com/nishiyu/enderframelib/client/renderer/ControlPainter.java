@@ -65,7 +65,16 @@ final class ControlPainter {
             src = "entity:" + box.node.attrs.getOrDefault("entity", src.isEmpty() ? "@self" : src);
         }
 
-        ElementType type = "video".equals(box.node.tag) ? ElementType.VIDEO : ElementType.IMAGE;
+        String tag = box.node.tag;
+        boolean gif = "img".equals(tag) && isRemoteGif(src);
+        ElementType type = "video".equals(tag) || "audio".equals(tag) || gif ? ElementType.VIDEO : ElementType.IMAGE;
+        ItemProps mediaEvents = partsEvents;
+        if (type == ElementType.VIDEO) {
+            mediaEvents = partsEvents.copy();
+            // GIF は音の無い繰り返しの動画として扱う。video / audio は属性で決める
+            if (gif || box.node.attrs.containsKey("loop")) mediaEvents.put("media-loop", "1");
+            if (gif || box.node.attrs.containsKey("muted")) mediaEvents.put("media-muted", "1");
+        }
         ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssProperty.OBJECT_FIT, "fill"));
 
         if (border.isCircle() && border.hasBorder()) {
@@ -88,13 +97,24 @@ final class ControlPainter {
             SvgImage svg = SvgSources.get(src);
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color);
         }
-        ItemProps imageEvents = partsEvents;
+        ItemProps imageEvents = mediaEvents;
         String position = box.style.get(CssProperty.OBJECT_POSITION);
         if (position != null && !position.isBlank()) {
-            imageEvents = partsEvents.copy();
+            imageEvents = mediaEvents.copy();
             imageEvents.put("object-position", position);
         }
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+    }
+
+    /** 動画デコーダで再生する GIF（パスが .gif の http(s) URL）。それ以外は従来どおり静止画。 */
+    static boolean isRemoteGif(String src) {
+        if (src == null || !(src.startsWith("https://") || src.startsWith("http://"))) return false;
+        int end = src.length();
+        int cut = src.indexOf('?');
+        if (cut >= 0) end = cut;
+        cut = src.indexOf('#');
+        if (cut >= 0 && cut < end) end = cut;
+        return src.substring(0, end).toLowerCase(java.util.Locale.ROOT).endsWith(".gif");
     }
 
     /** インライン {@code <svg>}。内容は SVG の木から描く画素にして、画像と同じ経路で置く。 */

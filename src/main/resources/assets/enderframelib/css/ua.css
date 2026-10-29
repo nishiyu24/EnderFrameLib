@@ -126,6 +126,9 @@ legend { padding-left: 2px; padding-right: 2px; }
 img, video, canvas, svg, mc-fluid, mc-entity, mc-scene { display: inline-block; }
 iframe { border: 2px inset; }
 video { object-fit: contain; }
+/* §4.8.9 audio: controls が無ければ描画されない。音を鳴らすだけの要素。0x0 の箱は描画列から外れて
+   再生が進まないので、見えない 1px を持たせる（映像テクスチャが無いので何も描かれない） */
+audio { display: inline-block; width: 1px; height: 1px; }
 
 /* §15.5.? details と summary */
 details, summary { display: block; }

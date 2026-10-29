@@ -115,6 +115,10 @@ public final class MediaElementRenderer {
             if (el.text() != null && !el.text().isEmpty()) {
                 WebMediaManager.VideoTexture vTex = WebMediaManager.getVideoTexture(el.text());
                 if (vTex != null) {
+                    java.util.Map<String, String> mediaEvents = el.events();
+                    vTex.applyMediaAttributes(
+                            mediaEvents != null && mediaEvents.containsKey("media-loop"),
+                            mediaEvents != null && mediaEvents.containsKey("media-muted"));
                     if (is2DAudio) vTex.keepAlive2D(animSessionId);
                     else if (playAudio) vTex.keepAlive(audioPos, animSessionId);
                     vTex.updateFrame();

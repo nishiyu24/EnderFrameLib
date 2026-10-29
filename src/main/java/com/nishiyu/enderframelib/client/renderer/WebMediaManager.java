@@ -10,6 +10,7 @@ import com.mojang.blaze3d.platform.TextureUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
+import com.nishiyu.enderframelib.client.gui.EnderScreenHost;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -297,6 +298,18 @@ public class WebMediaManager {
         }
     }
 
+    /** クライアントスレッドへ処理を渡す口。テストでは差し替えて、どのスレッドで走るかを確かめる。 */
+    static volatile java.util.function.Consumer<Runnable> clientThreadExecutor =
+            task -> Minecraft.getInstance().execute(task);
+
+    /**
+     * 動画の固有サイズを登録する。登録はレイアウトのやり直しを起動し、ボックスツリーを書き換えるので、
+     * 描画スレッドと競合しないよう必ずクライアントスレッドで行う（デコード用スレッドから直接呼ばない）。
+     */
+    static void publishVideoSize(String url, int width, int height) {
+        clientThreadExecutor.accept(() -> ClientImageRegistry.setSize(url, width, height));
+    }
+
     public static VideoTexture getVideoTexture(String url) {
         if (url == null || url.isEmpty() || !allowExternalMedia) return null;
         if (!isSupportedExternalVideoUrl(url)) return null;
@@ -361,14 +374,26 @@ public class WebMediaManager {
         if (externalContext != null) {
             activeIps.addAll(externalContext.getActiveSessionIdsFromHotbar());
         }
+        // 開いているページのメディアは、スクロールなどで描画されなくなっても閉じるまで維持して進める（Web と同じ）。
+        // 描画のたびにしか進めないと、画面外の間に音声が溜まり、映像だけが先へ進んで音がずれる。
+        if (mc.screen instanceof EnderScreenHost host) {
+            String screenSession = host.getWebSessionId();
+            if (screenSession != null && !screenSession.isEmpty() && !activeIps.contains(screenSession)) {
+                activeIps.add(screenSession);
+            }
+        }
 
         for (String sessionKey : activeIps) {
             List<DisplayItem> els = elementsOf(sessionKey);
             if (els != null) {
                 for (DisplayItem el : els) {
                     if (el.type() == ElementType.VIDEO && el.text() != null) {
-                        VideoTexture videoTex = ACTIVE_VIDEOS.get(el.text());
+                        // まだ一度も描画されていない（折り返しの下にある）メディアもページを開いた時点で始める
+                        VideoTexture videoTex = getVideoTexture(el.text());
                         if (videoTex != null) {
+                            videoTex.applyMediaAttributes(
+                                    el.events() != null && el.events().containsKey("media-loop"),
+                                    el.events() != null && el.events().containsKey("media-muted"));
                             videoTex.keepAlive2D(sessionKey);
                             videoTex.updateFrame();
                         }
@@ -415,7 +440,7 @@ public class WebMediaManager {
                 tex.lastRenderTime = now;
             }
 
-            long timeout = tex.isInitialized ? 1500L : 30000L;
+            long timeout = (tex.isInitialized || tex.hasAudio) ? 1500L : 30000L;
             if (now - tex.lastRenderTime > timeout) {
                 tex.close();
                 return true;
@@ -650,6 +675,7 @@ public class WebMediaManager {
         int getAudioSampleRate(long var1);
         int getAudioChannels(long var1);
         int fetchAudioData(long var1, ByteBuffer var3, int var4);
+        void clearAudioBuffer(long var1);
         void closeVideo(long var1);
     }
 
@@ -671,6 +697,7 @@ public class WebMediaManager {
         public volatile int height = 0;
         public volatile long lastRenderTime;
         private volatile long lastFrameUpdateTime = 0L;
+        private boolean attributesApplied = false;
         public volatile boolean isInitialized = false;
         public volatile boolean isRegistered = false;
         public volatile boolean forceClose = false;
@@ -802,6 +829,8 @@ public class WebMediaManager {
                 }
 
                 if (videoWidth > 0 && videoHeight > 0) {
+                    // 固有サイズが分かったので、大きさ未指定の <img>(GIF) をレイアウトし直させる
+                    publishVideoSize(url, videoWidth, videoHeight);
                     RenderSystem.recordRenderCall(() -> {
                         if (this.isClosed) return;
                         RenderSystem.bindTexture(this.getId());
@@ -1002,6 +1031,13 @@ public class WebMediaManager {
             return 0.0;
         }
 
+        /** HTML の loop / muted 属性（および GIF）を反映する。毎フレーム呼ばれるので変化したときだけ適用する。 */
+        public void applyMediaAttributes(boolean loop, boolean muted) {
+            if (!attributesApplied || this.looping != loop) setLoop(loop);
+            if (!attributesApplied || this.muted != muted) setMuted(muted);
+            attributesApplied = true;
+        }
+
         public void setLoop(boolean loop) {
             this.looping = loop;
             NativeVideoAPI api = NativeVideoAPI.getInstance();
@@ -1099,9 +1135,12 @@ public class WebMediaManager {
         }
 
         public synchronized void updateFrame() {
-            if (this.isFailed || this.isClosed || this.nativeHandle == 0L || !this.isRegistered || !this.isInitialized || this.pixelBuffer == null) {
+            if (this.isFailed || this.isClosed || this.nativeHandle == 0L || !this.isRegistered) {
                 return;
             }
+            // 映像の無い音声ファイル（<audio>）は pixelBuffer / テクスチャを持たず、音声だけを進める
+            boolean hasVideo = this.isInitialized && this.pixelBuffer != null;
+            if (!hasVideo && !this.hasAudio) return;
             NativeVideoAPI api = NativeVideoAPI.getInstance();
             if (api == null) return;
 
@@ -1117,10 +1156,8 @@ public class WebMediaManager {
             if (timeSinceLast > 500L && this.hasAudio && !this.alSources.isEmpty()) {
                 this.audioReadBuffer.clear();
                 synchronized (stateLock) {
-                    while (this.nativeHandle != 0L
-                            && api.fetchAudioData(this.nativeHandle, this.audioReadBuffer, 65536) > 0) {
-                        this.audioReadBuffer.clear();
-                    }
+                    // 読み出して捨てる方式だと、デコーダが補充し続ける間に新しい音声まで捨ててしまう。
+                    if (this.nativeHandle != 0L) api.clearAudioBuffer(this.nativeHandle);
                 }
                 for (int src : this.alSources) {
                     if (AL10.alIsSource(src)) {
@@ -1138,7 +1175,7 @@ public class WebMediaManager {
                 // フレームごとの JNA 呼び出しと競合を減らす。close() との競合を避けるため、
                 // ネイティブハンドルの読み取りとコピーは同じロック内で行う。
                 boolean copied = false;
-                if (this.pixelBuffer != null) {
+                if (hasVideo) {
                     synchronized (stateLock) {
                         if (this.nativeHandle != 0L) {
                             this.pixelBuffer.clear();
