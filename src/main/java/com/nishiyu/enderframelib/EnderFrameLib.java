@@ -62,9 +62,16 @@ public class EnderFrameLib {
         // 5. クライアント環境のみクライアントコールバックとシェーダーを初期化 (Dedicated Serverでクラッシュしない)
         if (FMLEnvironment.dist.isClient()) {
             EnderFrameClientInit.init(modEventBus);
-            com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarnessClient.init(modEventBus);
         }
-        com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarness.init(modEventBus);
+
+        // 6. 開発用の surface_test ブロック／アイテムは開発環境（runClient / runServer / runGameTestServer）でのみ登録する。
+        //    配布ビルドには登録されない（EnderFrameCommands は未登録を許容する）。
+        if (!FMLEnvironment.production) {
+            if (FMLEnvironment.dist.isClient()) {
+                com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarnessClient.init(modEventBus);
+            }
+            com.nishiyu.enderframelib.gametest.WebScreenGameTest.SurfaceDevHarness.init(modEventBus);
+        }
 
         LOGGER.info("EnderFrameLib Initialized.");
     }

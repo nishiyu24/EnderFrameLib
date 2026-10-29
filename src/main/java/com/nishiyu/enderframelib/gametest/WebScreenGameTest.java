@@ -729,7 +729,7 @@ public final class WebScreenGameTest {
 
         private SurfaceDevHarness() {}
 
-        /** 標準スクリーンブロック・アイテムとして常時登録する（サバイバルでは破壊・設置不可）。 */
+        /** 開発環境でのみ呼ばれる（EnderFrameLib 側で本番ビルドを除外）。サバイバルでは破壊・設置不可。 */
         public static void init(IEventBus modEventBus) {
             modEventBus.addListener(RegisterEvent.class, event -> {
                 event.register(Registries.BLOCK, helper -> {
