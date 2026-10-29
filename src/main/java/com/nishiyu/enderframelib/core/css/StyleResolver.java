@@ -207,9 +207,7 @@ public class StyleResolver {
         }
         applyRegisteredInitialValues(result, parent, sheet);
 
-        // revert の巻き戻し先。UA オリジンの宣言だけでカスケードした結果（継承値を含む）と、それにユーザーオリジンを足した結果
-        Map<String, String> uaValues = new LinkedHashMap<>(result);
-        Map<String, String> userValues = new LinkedHashMap<>(result);
+        List<StyleRule> candidates = sheet != null && node != null ? sheet.index().candidates(node) : List.of();
 
         // style 属性を持つ要素は少ないので、インラインの宣言の表は属性があるときだけ作る
         Map<String, String> inlineNormal = Map.of();
@@ -225,13 +223,23 @@ public class StyleResolver {
             }
         }
 
+        // revert の巻き戻し先。UA オリジンの宣言だけでカスケードした結果（継承値を含む）と、それにユーザーオリジンを足した結果。
+        // revert / revert-layer を書いた宣言も、UA の枠線色を読む部品（input）も無ければ誰も読まないので、コピーを作らない
+        boolean trackOrigins = pseudo == null && node != null && "input".equals(node.tag)
+                || mentionsRevert(inlineNormal) || mentionsRevert(inlineImportant);
+        for (int i = 0; !trackOrigins && i < candidates.size(); i++) {
+            trackOrigins = mentionsRevert(candidates.get(i).properties);
+        }
+        Map<String, String> uaValues = trackOrigins ? new LinkedHashMap<>(result) : null;
+        Map<String, String> userValues = trackOrigins ? new LinkedHashMap<>(result) : null;
+
         // 規則はカスケード順（弱い順）に並んでいる。通常の宣言 → style 属性の通常の宣言 →
         // 作者の !important → style 属性の !important → ユーザー・UA の !important の順に重ねる。
         CascadeState state = new CascadeState(result, uaValues, userValues, parent);
         boolean inlineNormalDone = false;
         boolean inlineImportantDone = false;
         if (sheet != null && node != null) {
-            for (StyleRule rule : sheet.index().candidates(node)) {
+            for (StyleRule rule : candidates) {
                 boolean important = rule.specificity.important();
                 if (important && !inlineNormalDone) {
                     state.applyInline(inlineNormal);
@@ -250,8 +258,16 @@ public class StyleResolver {
         if (!inlineNormalDone) state.applyInline(inlineNormal);
         if (!inlineImportantDone) state.applyInline(inlineImportant);
 
-        if (pseudo == null && node != null) adjustForAppearance(node, result, uaValues);
+        if (uaValues != null && pseudo == null && node != null) adjustForAppearance(node, result, uaValues);
         return result;
+    }
+
+    /** 宣言の値に {@code revert} / {@code revert-layer} があるか（保守的: 先頭が revert なら真）。 */
+    private static boolean mentionsRevert(Map<String, String> declarations) {
+        for (String value : declarations.values()) {
+            if (value != null && value.trim().regionMatches(true, 0, "revert", 0, 6)) return true;
+        }
+        return false;
     }
 
     private static final String[] SIDES = {"top", "right", "bottom", "left"};
@@ -327,13 +343,13 @@ public class StyleResolver {
             this.uaValues = uaValues;
             this.userValues = userValues;
             this.parent = parent;
-            this.layerBase = new LinkedHashMap<>(result);
+            this.layerBase = uaValues != null ? new LinkedHashMap<>(result) : null;
         }
 
         void apply(StyleRule rule) {
             StyleSheet.Specificity s = rule.specificity;
             if (!started || s.origin() != currentOrigin || s.layer() != currentLayer || s.important() != currentImportant) {
-                layerBase = new LinkedHashMap<>(result);
+                if (uaValues != null) layerBase = new LinkedHashMap<>(result);
                 currentOrigin = s.origin();
                 currentLayer = s.layer();
                 currentImportant = s.important();
@@ -342,12 +358,14 @@ public class StyleResolver {
             switch (s.origin()) {
                 case USER_AGENT -> {
                     applyDeclarations(result, rule.properties, null, layerBase, parent);
-                    applyDeclarations(uaValues, rule.properties, null, uaValues, parent);
-                    applyDeclarations(userValues, rule.properties, null, userValues, parent);
+                    if (uaValues != null) {
+                        applyDeclarations(uaValues, rule.properties, null, uaValues, parent);
+                        applyDeclarations(userValues, rule.properties, null, userValues, parent);
+                    }
                 }
                 case USER -> {
                     applyDeclarations(result, rule.properties, uaValues, layerBase, parent);
-                    applyDeclarations(userValues, rule.properties, uaValues, userValues, parent);
+                    if (uaValues != null) applyDeclarations(userValues, rule.properties, uaValues, userValues, parent);
                 }
                 default -> applyDeclarations(result, rule.properties, userValues, layerBase, parent);
             }
@@ -357,7 +375,7 @@ public class StyleResolver {
         void applyInline(Map<String, String> declarations) {
             if (declarations.isEmpty()) return;
             if (currentOrigin != CascadeOrigin.AUTHOR || currentLayer != StyleSheet.LayerTree.UNLAYERED) {
-                layerBase = new LinkedHashMap<>(result);
+                if (uaValues != null) layerBase = new LinkedHashMap<>(result);
                 currentOrigin = CascadeOrigin.AUTHOR;
                 currentLayer = StyleSheet.LayerTree.UNLAYERED;
             }
@@ -548,23 +566,13 @@ public class StyleResolver {
                 || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
             return true;
         }
-        Map<String, String> m1 = oldStyle.asMap();
-        Map<String, String> m2 = newStyle.asMap();
-        if (m1.equals(m2)) return false;
-
-        for (Map.Entry<String, String> e : m1.entrySet()) {
-            String key = e.getKey();
-            if (!java.util.Objects.equals(e.getValue(), m2.get(key)) && !PropertyRegistry.isPaintOnly(key)) {
-                return true;
-            }
-        }
-        for (Map.Entry<String, String> e : m2.entrySet()) {
-            String key = e.getKey();
-            if (!m1.containsKey(key) && !PropertyRegistry.isPaintOnly(key)) {
-                return true;
-            }
-        }
-        return false;
+        if (ComputedStyle.sameDeclarations(oldStyle, newStyle)) return false;
+        boolean[] affects = {false};
+        // 未登録の名前は paintOnly=false で渡る（安全側にレイアウトへ効くとみなす）
+        ComputedStyle.diff(oldStyle, newStyle, (name, paintOnly, inherited) -> {
+            if (!paintOnly) affects[0] = true;
+        });
+        return affects[0];
     }
 
     public static ComputedStyle finalizeComputedStyle(Map<String, String> rawStyle, StyleSheet sheet, Map<String, String> env) {
