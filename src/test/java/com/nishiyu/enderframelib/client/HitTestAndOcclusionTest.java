@@ -14,7 +14,9 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.core.paint.*;
@@ -47,7 +49,7 @@ public class HitTestAndOcclusionTest {
                 """);
         SessionContext.UIHitResult hit = index.hitTest("w8", 50, 20);
         assertNotNull(hit);
-        assertEquals("btn", ClientWebManager.getBaseNodeId(hit.element().id()));
+        assertEquals("btn", hit.element().baseId());
     }
 
     @Test
@@ -58,7 +60,7 @@ public class HitTestAndOcclusionTest {
                 """);
         SessionContext.UIHitResult hit = index.hitTest("w8", 50, 20);
         assertNotNull(hit);
-        assertEquals("overlay", ClientWebManager.getBaseNodeId(hit.element().id()));
+        assertEquals("overlay", hit.element().baseId());
     }
 
     @Test
@@ -69,9 +71,9 @@ public class HitTestAndOcclusionTest {
                   <div id="shown" onclick="shown" style="visibility: visible; width: 20px; height: 20px; margin-left: 150px; background-color: rgb(0, 0, 0);"></div>
                 </div>
                 """);
-        assertEquals("btn", ClientWebManager.getBaseNodeId(index.hitTest("w8", 50, 20).element().id()));
+        assertEquals("btn", index.hitTest("w8", 50, 20).element().baseId());
         // 隠れた箱の中の visible な子はクリックを受ける
-        assertEquals("shown", ClientWebManager.getBaseNodeId(index.hitTest("w8", 160, 10).element().id()));
+        assertEquals("shown", index.hitTest("w8", 160, 10).element().baseId());
     }
 
     @Test
@@ -83,11 +85,43 @@ public class HitTestAndOcclusionTest {
         // 影はボタンの上に掛かっているが、クリックはボタンに届く
         SessionContext.UIHitResult hit = index.hitTest("w8", 50, 65);
         assertNotNull(hit);
-        assertEquals("btn", ClientWebManager.getBaseNodeId(hit.element().id()));
-        // 影の番号付きの部品は持ち主の id に戻る（以前は "_shadow_1" を剥がせなかった）
-        assertEquals("card", ClientWebManager.getBaseNodeId("card_shadow_3"));
-        assertEquals("card", ClientWebManager.getBaseNodeId("card_shadow_in12"));
-        assertEquals("card", ClientWebManager.getBaseNodeId("card_b_round"));
+        assertEquals("btn", hit.element().baseId());
+        // 影の番号付きの部品は持ち主の id を持つ（以前は "_shadow_1" を剥がせなかった）
+        List<DisplayItem> shadows = render("""
+                <div id="card" style="position: absolute; left: 0; top: 0; width: 100px; height: 50px; background-color: rgb(255, 255, 255); box-shadow: 0 20px 6px rgb(0, 0, 0), inset 0 2px 3px rgb(0, 0, 0); border-radius: 6px;"></div>
+                """).stream().filter(e -> e.id().startsWith("card_shadow")).toList();
+        assertFalse(shadows.isEmpty());
+        assertTrue(shadows.stream().allMatch(e -> e.baseId().equals("card")), "影の部品の持ち主は card");
+    }
+
+    /**
+     * 何が壊れていたか: 描画 ID の末尾を文字列で剥がして持ち主を推測していたため、作者が
+     * {@code id="user_img"} や {@code id="search_input"} と書くと別の節（"user" / "search"）に化け、
+     * クリックもホバーも届かなかった。持ち主は項目が直接持つので、綴りには依存しない。
+     */
+    @Test
+    public void testNodeIdsThatLookLikeRenderPartSuffixesKeepTheirOwnIdentity() {
+        String[] ids = {"user_img", "search_input", "price_label", "a_bg", "x_sb_v", "x_sb_vt", "c_ph", "pane_textarea", "s_shadow_1", "b_b_top"};
+        StringBuilder html = new StringBuilder();
+        for (int i = 0; i < ids.length; i++) {
+            html.append("<button id=\"").append(ids[i]).append("\" onclick=\"act\" style=\"position: absolute; left: ")
+                    .append(i * 20).append("px; top: 0; width: 18px; height: 18px; background-color: rgb(255, 255, 255);\"></button>");
+        }
+        HitTestIndex index = index(html.toString());
+        for (int i = 0; i < ids.length; i++) {
+            SessionContext.UIHitResult hit = index.hitTest("w8", i * 20 + 9, 9);
+            assertNotNull(hit, ids[i]);
+            assertEquals(ids[i], hit.element().baseId(), "持ち主の節の id が書き換わった");
+        }
+        // ボタンの背景の部品は持ち主の id に _bg を足した綴り
+        DisplayItem item = render(html.toString()).stream().filter(e -> e.id().equals("user_img_bg")).findFirst().orElseThrow();
+        assertEquals("user_img", item.baseId());
+        assertEquals("_bg", item.partSuffix());
+        assertTrue(item.isPart("_bg"));
+        // 節の id が部品の接尾辞と同じ綴りでも、節自身の項目は部品ではない
+        DisplayItem self = render(html.toString()).stream().filter(e -> e.id().equals("x_sb_v") && e.type() == ElementType.NODE).findFirst().orElseThrow();
+        assertFalse(self.isPart("_sb_v"));
+        assertEquals("", self.partSuffix());
     }
 
     @Test
@@ -110,7 +144,7 @@ public class HitTestAndOcclusionTest {
                 """);
         assertNotNull(index.hitTest("w8", 10, 10));
         SessionContext.UIHitResult outside = index.hitTest("w8", 10, 40);
-        String outsideId = outside == null ? null : ClientWebManager.getBaseNodeId(outside.element().id());
+        String outsideId = outside == null ? null : outside.element().baseId();
         assertNotEquals("inner", outsideId, "overflow-y: auto の外にはみ出した子がクリックを受けている");
     }
 
@@ -146,9 +180,17 @@ public class HitTestAndOcclusionTest {
 
     private static List<String> scrollIds(HitTestIndex index, double x, double y) {
         return index.scrollContainersAt("w12", x, y).stream()
-                .map(h -> ClientWebManager.getBaseNodeId(h.element().id()))
+                .map(h -> h.element().baseId())
                 .filter(id -> !id.startsWith("gen_") && !id.equals("zoom") && !id.equals("frame"))
                 .distinct().toList();
+    }
+
+    private static List<DisplayItem> render(String html) {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        Document doc = parser.parseDocument(
+                "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", VIEWPORT_W, VIEWPORT_H);
+        LayoutBox root = parser.layoutDocument(doc, VIEWPORT_W, VIEWPORT_H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+        return new DisplayListBuilder(VIEWPORT_W, VIEWPORT_H, doc.sheet.keyframes, new ScrollState()).render(root);
     }
 
     private static HitTestIndex index(String html) {

@@ -43,8 +43,8 @@ public class TextareaEditor {
     public void focus(Font font, DisplayItem taEl, double localX, double localY) {
         this.isEditing = true;
         this.activeBaseId = taEl.baseId();
-        String renderTaId = taEl.id().endsWith("_textarea") ? taEl.id() : this.activeBaseId + "_textarea";
-        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderTaId);
+        String renderTaId = taEl.isPart("_textarea") ? taEl.id() : this.activeBaseId + "_textarea";
+        ClientWebManager.getOrCreateSession(sessionId).activateInput(renderTaId, activeBaseId);
 
         String fullText = getValue(activeBaseId);
         if (localX < 0 || localY < 0) {

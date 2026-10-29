@@ -215,7 +215,7 @@ public class ClientScreenInteractionManager {
                 DisplayItem clickedEl = handleClick(sessionId, hit.pixelX(), hit.pixelY(), pressedButton);
                 if (clickedEl != null && (clickedEl.type() == ElementType.INPUT || clickedEl.type() == ElementType.TEXTAREA)) {
                     SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
-                    session.activateInput(clickedEl.id());
+                    session.activateInput(clickedEl.id(), clickedEl.baseId());
                     openInputScreen(sessionId, clickedEl, hit.masterPos());
                 } else {
                     SessionContext session = ClientWebManager.getSession(sessionId);
@@ -388,7 +388,7 @@ public class ClientScreenInteractionManager {
         if (result == null) return null;
         if (!result.consumed() && result.element() != null && result.element().type() == ElementType.SELECT
                 && Minecraft.getInstance().screen == null) {
-            cycleSelectOption(sessionId, ClientWebManager.getBaseNodeId(result.element().id()));
+            cycleSelectOption(sessionId, result.element().baseId());
         }
         return result.element();
     }

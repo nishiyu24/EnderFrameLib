@@ -17,7 +17,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
+import java.util.IdentityHashMap;
 
 /**
  * MutationObserver の通知管理と配信キュー。
@@ -31,19 +32,26 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class MutationObserverManager {
 
-    private static final List<HtmlMutationObserver> ACTIVE_OBSERVERS = new CopyOnWriteArrayList<>();
-
     static {
         // API 側のファクトリプロバイダを初期化
         MutationObserver.Factory.provider = HtmlMutationObserver::new;
     }
 
+    /** 節が属する文書。文書に繋がっていない節は null。 */
+    @Nullable
+    private static HtmlDocument documentOf(@Nullable Node node) {
+        if (node instanceof HtmlDocument doc) return doc;
+        return node != null && node.getOwnerDocument() instanceof HtmlDocument doc ? doc : null;
+    }
+
     /**
-     * DOM ツリー内の変異を監視中のすべての observer へ通知キューイングする。
+     * 対象の節が属する文書を監視中の observer へ通知キューイングする。
      */
     public static void queue(Record record) {
         if (record == null) return;
-        for (HtmlMutationObserver obs : ACTIVE_OBSERVERS) {
+        HtmlDocument doc = documentOf(record.getTarget());
+        if (doc == null) return;
+        for (HtmlMutationObserver obs : doc.mutationObservers()) {
             obs.tryEnqueue(record);
         }
     }
@@ -53,7 +61,8 @@ public final class MutationObserverManager {
      */
     public static void queueChildList(Node target, List<Node> addedNodes, List<Node> removedNodes,
                                       @Nullable Node previousSibling, @Nullable Node nextSibling) {
-        if (ACTIVE_OBSERVERS.isEmpty()) return;
+        HtmlDocument doc = documentOf(target);
+        if (doc == null || doc.mutationObservers().isEmpty()) return;
         Record record = new HtmlMutationRecord(
                 "childList",
                 target,
@@ -71,7 +80,8 @@ public final class MutationObserverManager {
      * attributes 変異レコードを作成してキューイングする。
      */
     public static void queueAttributes(Node target, String attributeName, @Nullable String oldValue) {
-        if (ACTIVE_OBSERVERS.isEmpty()) return;
+        HtmlDocument doc = documentOf(target);
+        if (doc == null || doc.mutationObservers().isEmpty()) return;
         Record record = new HtmlMutationRecord(
                 "attributes",
                 target,
@@ -89,7 +99,8 @@ public final class MutationObserverManager {
      * characterData 変異レコードを作成してキューイングする。
      */
     public static void queueCharacterData(Node target, @Nullable String oldValue) {
-        if (ACTIVE_OBSERVERS.isEmpty()) return;
+        HtmlDocument doc = documentOf(target);
+        if (doc == null || doc.mutationObservers().isEmpty()) return;
         Record record = new HtmlMutationRecord(
                 "characterData",
                 target,
@@ -106,20 +117,20 @@ public final class MutationObserverManager {
     /**
      * 保留中の変異レコードを各 observer のコールバックに配信する。
      */
-    public static void flush() {
-        for (HtmlMutationObserver obs : ACTIVE_OBSERVERS) {
+    public static void flush(HtmlDocument doc) {
+        for (HtmlMutationObserver obs : doc.mutationObservers()) {
             obs.deliver();
         }
     }
 
     /**
-     * すべてのアクティブな observer を切断し、キューをクリアする（テスト用／セッション破棄用）。
+     * 文書の observer を切断し、キューをクリアする（テスト用／セッション破棄用）。
      */
-    public static void clearAll() {
-        for (HtmlMutationObserver obs : ACTIVE_OBSERVERS) {
+    public static void clearAll(HtmlDocument doc) {
+        for (HtmlMutationObserver obs : doc.mutationObservers()) {
             obs.disconnect();
         }
-        ACTIVE_OBSERVERS.clear();
+        doc.mutationObservers().clear();
     }
 
     // ==========================================
@@ -189,6 +200,7 @@ public final class MutationObserverManager {
         private final Callback callback;
         private final List<TargetRegistration> registrations = new ArrayList<>();
         private final Queue<Record> queue = new ArrayDeque<>();
+        private final Set<HtmlDocument> documents = Collections.newSetFromMap(new IdentityHashMap<>());
         private boolean disconnected = false;
 
         public HtmlMutationObserver(Callback callback) {
@@ -196,7 +208,6 @@ public final class MutationObserverManager {
                 throw new IllegalArgumentException("Callback must not be null");
             }
             this.callback = callback;
-            ACTIVE_OBSERVERS.add(this);
         }
 
         @Override
@@ -221,6 +232,10 @@ public final class MutationObserverManager {
             // 既存の同一ターゲットの登録を置き換え
             registrations.removeIf(reg -> reg.target() == target);
             registrations.add(new TargetRegistration(target, options));
+            HtmlDocument doc = documentOf(target);
+            if (doc != null && documents.add(doc)) {
+                doc.mutationObservers().add(this);
+            }
         }
 
         @Override
@@ -228,7 +243,10 @@ public final class MutationObserverManager {
             disconnected = true;
             registrations.clear();
             queue.clear();
-            ACTIVE_OBSERVERS.remove(this);
+            for (HtmlDocument doc : documents) {
+                doc.mutationObservers().remove(this);
+            }
+            documents.clear();
         }
 
         @Override

@@ -144,15 +144,15 @@ public final class SessionInput {
 
         SessionContext.InputSessionState state = state();
         DisplayItem clickedEl = hit.element();
-        String elementId = clickedEl.id();
 
-        if (elementId.endsWith("_sb_vt") || elementId.endsWith("_sb_ht")) {
+        if (clickedEl.isPart(SessionContext.SB_V_TRACK) || clickedEl.isPart(SessionContext.SB_H_TRACK)) {
             session.handleScrollbarClick(clickedEl, pixelX, pixelY);
             PressResult result = new PressResult(clickedEl, hit, null, minecraftButton, true);
             if (host != null) host.pressed(result);
             return result;
-        } else if (elementId.endsWith("_sb_v") || elementId.endsWith("_sb_h")) {
-            state.draggingId = elementId;
+        } else if (clickedEl.isPart(SessionContext.SB_V_THUMB) || clickedEl.isPart(SessionContext.SB_H_THUMB)) {
+            state.draggingId = clickedEl.baseId();
+            state.draggingScrollbarPart = clickedEl.partSuffix();
             state.lastSentX = hit.localX();
             state.lastSentY = hit.localY();
             PressResult result = new PressResult(clickedEl, hit, null, minecraftButton, true);
@@ -179,7 +179,7 @@ public final class SessionInput {
     public boolean drag(double pixelX, double pixelY) {
         SessionContext.InputSessionState state = state();
         if (state.draggingId.isEmpty()) return false;
-        if (session.handleScrollbarDrag(state.draggingId, pixelX, pixelY)) {
+        if (session.handleScrollbarDrag(state.draggingId, state.draggingScrollbarPart, pixelX, pixelY)) {
             return true;
         }
         SessionContext.UIHitResult dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
@@ -321,7 +321,7 @@ public final class SessionInput {
     }
 
     public boolean beginTextEdit(String elementId, String data, String inputType) {
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         HtmlNode control = session.findNode(baseId);
         if (control == null) return true;
         var beforeInput = CoreEvent.input("beforeinput", data, false, inputType);
@@ -330,7 +330,7 @@ public final class SessionInput {
     }
 
     public void commitTextEdit(String elementId, String newValue, String data, String inputType) {
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         HtmlNode control = session.findNode(baseId);
         String safeValue = newValue != null ? newValue : "";
         if (control == null) return;
@@ -346,7 +346,7 @@ public final class SessionInput {
 
     public void submitInput(String elementId, String text) {
         if (elementId == null || elementId.isEmpty()) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         String safeText = text != null ? text : "";
         HtmlNode control = session.findNode(baseId);
         String prev = state().lastCommittedValues.get(baseId);
@@ -373,13 +373,13 @@ public final class SessionInput {
     }
 
     public void setLastCommittedValue(String elementId, String value) {
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         state().lastCommittedValues.put(baseId, value != null ? value : "");
     }
 
     public void updateInputLocally(String elementId, String text) {
         if (elementId == null || elementId.isEmpty()) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         String safeText = text != null ? text : "";
         state().localInputCache.put(baseId, safeText);
         session.updateElementTextLocally(baseId, safeText);
@@ -398,9 +398,7 @@ public final class SessionInput {
 
     /** 描画部品の基底ノード ID。テキスト片のような合成 ID でも正しい節へ戻れる。 */
     private static String baseIdOf(DisplayItem element) {
-        if (element == null) return "";
-        String baseId = element.baseId();
-        return baseId != null && !baseId.isEmpty() ? baseId : ClientWebManager.getBaseNodeId(element.id());
+        return element == null ? "" : element.baseId();
     }
 
     // ------------------------------------------------------------------
@@ -624,7 +622,8 @@ public final class SessionInput {
         if (!hasEvent(events, "ondrag") && element.type() != ElementType.RANGE) return;
 
         SessionContext.InputSessionState state = state();
-        state.draggingId = ClientWebManager.getBaseNodeId(element.id());
+        state.draggingId = element.baseId();
+        state.draggingScrollbarPart = "";
         state.lastSentX = hit.localX();
         state.lastSentY = hit.localY();
 
@@ -715,14 +714,14 @@ public final class SessionInput {
         if (activeId != null && !activeId.isEmpty() && !activeId.endsWith("_textarea")) {
             String activeVal = WebTextInputHost.getActiveText(session.sessionId());
             if (activeVal != null) {
-                updateInputLocally(activeId, activeVal);
+                updateInputLocally(session.activeInputBaseId(), activeVal);
             }
         }
     }
 
     public void syncServerValueOverride(String elementId, String newValue) {
         if (elementId == null) return;
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         SessionContext.InputSessionState state = state();
         if (state.localInputCache.containsKey(baseId)) {
             state.localInputCache.put(baseId, newValue != null ? newValue : "");

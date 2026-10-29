@@ -118,6 +118,8 @@ public class SessionContext implements AutoCloseable {
     private long lastLayoutFinishedNanos = 0L;
 
     private String activeInputId = "";
+    /** {@link #activeInputId} の持ち主の節の ID。描画 ID の綴りから逆算せず、入力欄を開いた時点の項目から取る。 */
+    private String activeInputBaseId = "";
     private final TextSelection textSelection = new TextSelection();
     private volatile HitTestIndex hitTestIndex;
     /** {@link #hitTestIndex} を作った描画要素リスト（同じ物を指す間だけ使い回す）。 */
@@ -423,6 +425,12 @@ public class SessionContext implements AutoCloseable {
 
     public void setActiveInputId(String activeInputId) {
         this.activeInputId = activeInputId != null ? activeInputId : "";
+        if (this.activeInputId.isEmpty()) this.activeInputBaseId = "";
+    }
+
+    /** アクティブな入力欄の節の ID。無ければ空。 */
+    public String activeInputBaseId() {
+        return activeInputBaseId;
     }
 
     /** 押下中の節の ID。押下中の節は {@link InteractionState} が唯一の持ち主。 */
@@ -645,9 +653,10 @@ public class SessionContext implements AutoCloseable {
     }
 
     /** 入力欄をアクティブにし、その節へフォーカスを移す（旧 setActiveInputId の完全な挙動）。 */
-    public void activateInput(String id) {
-        setActiveInputId(id);
-        String baseId = ClientWebManager.getBaseNodeId(id);
+    public void activateInput(String renderId, String baseId) {
+        setActiveInputId(renderId);
+        baseId = baseId != null ? baseId : "";
+        this.activeInputBaseId = baseId;
         if (!baseId.isEmpty() && interactionState.setFocusedNode(resolveInteractiveNode(baseId), false)) {
             requestRestyle();
         }
@@ -662,17 +671,16 @@ public class SessionContext implements AutoCloseable {
         if (baseId.equals(focusedId())) {
             return true;
         }
-        String active = activeInputId;
-        return !active.isEmpty() && ClientWebManager.getBaseNodeId(active).equals(baseId);
+        return baseId.equals(activeInputBaseId);
     }
 
     public boolean isPressedBase(String baseId) {
         String pressed = activePressedId();
-        return !pressed.isEmpty() && ClientWebManager.getBaseNodeId(pressed).equals(baseId);
+        return !pressed.isEmpty() && pressed.equals(baseId);
     }
 
     public void setActivePressedId(String id) {
-        if (interactionState.setActiveNode(resolveInteractiveNode(ClientWebManager.getBaseNodeId(id)))) {
+        if (interactionState.setActiveNode(resolveInteractiveNode(id))) {
             requestRestyle();
         }
     }
@@ -847,7 +855,7 @@ public class SessionContext implements AutoCloseable {
             HtmlNode mutationTarget = root.getNodeById(mut.getTargetId());
             if (mutationTarget != null && mutationTarget.ownership() == Ownership.CLIENT) continue;
 
-            String targetId = ClientWebManager.getBaseNodeId(mut.getTargetId());
+            String targetId = mut.getTargetId();
             boolean applied = mut.applyTo(root, interactionState::markDirty);
             if (applied) {
                 anyChanged = true;
@@ -1102,18 +1110,17 @@ public class SessionContext implements AutoCloseable {
         }
     }
 
-    /** 描画 ID が指す表示要素。無ければ null。 */
+    /** 描画 ID または節の ID が指す表示要素。無ければ null。 */
     public DisplayItem elementById(String id) {
         if (id == null) return null;
-        String targetBase = ClientWebManager.getBaseNodeId(id);
         DisplayItem fallback = null;
         List<DisplayItem> elements = renderCache();
         for (DisplayItem el : elements) {
             if (el.id().equals(id) && el.type() != ElementType.NODE) {
                 return el;
             }
-            if (targetBase.equals(ClientWebManager.getBaseNodeId(el.id()))) {
-                if (el.type() == ElementType.NODE || el.id().endsWith("_ph") || el.id().contains("_shadow") || el.id().contains("_b_") || el.id().contains("_o_") || el.id().contains("_bgl")) {
+            if (id.equals(el.baseId())) {
+                if (el.type() == ElementType.NODE || isDecorationPart(el.partSuffix())) {
                     if (fallback == null) fallback = el;
                     continue;
                 }
@@ -1123,8 +1130,14 @@ public class SessionContext implements AutoCloseable {
         return fallback;
     }
 
+    /** 背景・枠線・影・プレースホルダなど、操作の相手ではなく飾りの部品か。 */
+    private static boolean isDecorationPart(String suffix) {
+        return suffix.equals("_ph") || suffix.startsWith("_shadow") || suffix.startsWith("_b_")
+                || suffix.startsWith("_o_") || suffix.startsWith("_bgl");
+    }
+
     public void updateNodeAttributeLocally(String elementId, String attrName, String attrValue, boolean remove) {
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
         HtmlNode target = findNode(baseId);
         if (target == null) return;
 
@@ -1138,7 +1151,7 @@ public class SessionContext implements AutoCloseable {
     }
 
     public void updateNodeInnerHtmlLocally(String elementId, String html) {
-        HtmlNode target = findNode(ClientWebManager.getBaseNodeId(elementId));
+        HtmlNode target = findNode(elementId);
         if (target == null) return;
 
         target.setInnerHTML(html);
@@ -1148,7 +1161,7 @@ public class SessionContext implements AutoCloseable {
     }
 
     public void updateNodeStyleLocally(String elementId, String prop, String val) {
-        HtmlNode target = findNode(ClientWebManager.getBaseNodeId(elementId));
+        HtmlNode target = findNode(elementId);
         if (target == null) return;
 
         target.setStyleProperty(prop, val);
@@ -1191,16 +1204,15 @@ public class SessionContext implements AutoCloseable {
 
     public boolean handleScrollbarClick(DisplayItem clickedEl, double pixelX, double pixelY) {
         if (clickedEl == null || clickedEl.id() == null) return false;
-        String id = clickedEl.id();
-        boolean isVTrack = id.endsWith("_sb_vt");
-        boolean isHTrack = id.endsWith("_sb_ht");
-        boolean isVThumb = id.endsWith("_sb_v");
-        boolean isHThumb = id.endsWith("_sb_h");
+        boolean isVTrack = clickedEl.isPart(SB_V_TRACK);
+        boolean isHTrack = clickedEl.isPart(SB_H_TRACK);
+        boolean isVThumb = clickedEl.isPart(SB_V_THUMB);
+        boolean isHThumb = clickedEl.isPart(SB_H_THUMB);
         if (!isVTrack && !isHTrack && !isVThumb && !isHThumb) return false;
 
         if (layoutRoot == null) return false;
 
-        HtmlNode scrollNode = findNode(ClientWebManager.getBaseNodeId(id));
+        HtmlNode scrollNode = findNode(clickedEl.baseId());
         LayoutBox box = scrollNode != null ? layoutRoot.findByNode(scrollNode) : null;
         if (box == null) return false;
 
@@ -1232,15 +1244,22 @@ public class SessionContext implements AutoCloseable {
         return false;
     }
 
-    public boolean handleScrollbarDrag(String draggingId, double pixelX, double pixelY) {
-        if (draggingId == null || draggingId.isEmpty()) return false;
-        boolean isVThumb = draggingId.endsWith("_sb_v") || draggingId.endsWith("_sb_vt");
-        boolean isHThumb = draggingId.endsWith("_sb_h") || draggingId.endsWith("_sb_ht");
+    /** スクロールバーの部品の描画 ID 接尾辞（持ち主の節の ID に続く部分）。 */
+    public static final String SB_V_TRACK = "_sb_vt";
+    public static final String SB_H_TRACK = "_sb_ht";
+    public static final String SB_V_THUMB = "_sb_v";
+    public static final String SB_H_THUMB = "_sb_h";
+
+    /** @param nodeId スクロールする節の ID  @param part つかんでいる部品の接尾辞（{@code SB_*}） */
+    public boolean handleScrollbarDrag(String nodeId, String part, double pixelX, double pixelY) {
+        if (nodeId == null || nodeId.isEmpty() || part == null) return false;
+        boolean isVThumb = part.equals(SB_V_THUMB) || part.equals(SB_V_TRACK);
+        boolean isHThumb = part.equals(SB_H_THUMB) || part.equals(SB_H_TRACK);
         if (!isVThumb && !isHThumb) return false;
 
         if (layoutRoot == null) return false;
 
-        HtmlNode scrollNode = findNode(ClientWebManager.getBaseNodeId(draggingId));
+        HtmlNode scrollNode = findNode(nodeId);
         LayoutBox box = scrollNode != null ? layoutRoot.findByNode(scrollNode) : null;
         if (box == null) return false;
 
@@ -1284,7 +1303,7 @@ public class SessionContext implements AutoCloseable {
 
     public void updateElementTextLocally(String elementId, String newText) {
         String safeText = newText != null ? newText : "";
-        String baseId = ClientWebManager.getBaseNodeId(elementId);
+        String baseId = elementId;
 
         HtmlNode target = findNode(baseId);
         boolean isRange = target != null && "range".equalsIgnoreCase(target.attrs.getOrDefault("type", ""));
@@ -1393,6 +1412,7 @@ public class SessionContext implements AutoCloseable {
         pendingResizeW = -1;
         pendingResizeH = -1;
         activeInputId = "";
+        activeInputBaseId = "";
         textSelection.clear();
 
         inputState.clear();
@@ -1431,6 +1451,8 @@ public class SessionContext implements AutoCloseable {
      */
     static final class InputSessionState {
         String draggingId = "";
+        /** スクロールバーの部品をつかんでいる間の接尾辞。つかんでいなければ空。 */
+        String draggingScrollbarPart = "";
         float lastRatio = -1.0f;
         String lastRangeText = "";
         double lastSentX = -1, lastSentY = -1;
@@ -1451,6 +1473,7 @@ public class SessionContext implements AutoCloseable {
 
         void clear() {
             draggingId = "";
+            draggingScrollbarPart = "";
             lastRatio = -1.0f;
             lastRangeText = "";
             lastSentX = -1;

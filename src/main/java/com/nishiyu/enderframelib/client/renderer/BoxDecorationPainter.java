@@ -535,7 +535,7 @@ final class BoxDecorationPainter {
      * 上下の辺は幅いっぱい、左右の辺は高さいっぱいの帯で、角は重ねて塗る（従来どおり）。
      *
      * 片の id は {@code <id><prefix><辺>} と、2 つ目からは {@code _<番号>} を足したもの
-     * （{@code getBaseNodeId} がどちらも持ち主の id に戻す）。
+     * （{@link DisplayItem#baseId()} がどちらも持ち主の id に戻す）。
      */
     void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,

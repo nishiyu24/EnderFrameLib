@@ -103,7 +103,7 @@ public class HitTestIndex {
         if (isInput) return true;
 
         // スクロールバー
-        if (el.id().contains("_sb_")) return true;
+        if (el.partSuffix().startsWith("_sb_")) return true;
 
         // テキストノード
         if (t == ElementType.TEXT) return true;

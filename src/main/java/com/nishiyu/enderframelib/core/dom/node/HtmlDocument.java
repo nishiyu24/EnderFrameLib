@@ -246,6 +246,14 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     private boolean deliveringLayoutObservers;
 
+    private final List<com.nishiyu.enderframelib.core.dom.MutationObserverManager.HtmlMutationObserver> mutationObservers =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** この文書を観測中の MutationObserver。文書と同じ寿命で、文書が捨てられれば一緒に解放される。 */
+    public List<com.nishiyu.enderframelib.core.dom.MutationObserverManager.HtmlMutationObserver> mutationObservers() {
+        return mutationObservers;
+    }
+
     /** レイアウトまたはスクロールが確定したときに呼ぶ。ResizeObserver / IntersectionObserver の通知を出す。 */
     public void notifyLayoutObservers() {
         if (deliveringLayoutObservers || layoutObservers.isEmpty()) return;
