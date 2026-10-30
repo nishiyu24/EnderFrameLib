@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.client.renderer;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.ImageSources;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.raster.RasterImageStore;
@@ -25,10 +24,11 @@ final class RasterPainting {
      * @param intrW 固有の幅（CSS px）。{@code object-fit} の縦横比の基準
      * @param color {@code currentColor} になる色（非乗算 ARGB）
      */
-    static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color) {
+    static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color,
+                         float devicePixelRatio) {
         if (!(boxW > 0) || !(boxH > 0)) return "";
         float[] obj = ObjectFit.objectSize(fit, (float) intrW, (float) intrH, boxW, boxH);
-        float dpr = Math.max(1f, Math.min(4f, ImageSources.devicePixelRatio()));
+        float dpr = Math.max(1f, Math.min(4f, devicePixelRatio));
         double sw = obj[0] * dpr;
         double sh = obj[1] * dpr;
         double k = Math.min(1.0, MAX_SIDE / Math.max(1.0, Math.max(sw, sh)));

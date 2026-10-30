@@ -121,7 +121,8 @@ public class ArchitectureTest {
     // GL を知らない純粋な計算にして、LayerCompositor から分離しテストできるようにするため。
     // 2026-10-27: クリップを祖先ごとの連鎖にする修正で client/renderer の ClipResolver を追加（+1）。連鎖を項目の空間へ直す
     // 純粋な行列計算で、DisplayItemDrawer（既に最大級）へ詰め込まずに単体でテストするため。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 283;
+    // 2026-10-30: content/（ScreenBlockEntity ほか）と server/ServerHologramManager の追加で +3。
+    private static final int M9_MAX_TOP_LEVEL_FILES = 286;
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

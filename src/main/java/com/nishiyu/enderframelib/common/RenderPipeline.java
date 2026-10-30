@@ -130,7 +130,7 @@ public class RenderPipeline {
                     effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
-            runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts, incremental);
+            runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, incremental);
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
         return rootBox;
@@ -143,7 +143,7 @@ public class RenderPipeline {
                                           Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
         LayoutBox rootBox = buildLayoutTree(root, Map.of("display", "inline-block"), sheet, env, false);
         BoxTreeBuilder.build(rootBox, CounterStyles.of(sheet.counterStyles));
-        runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts);
+        runLayoutPasses(rootBox, rootW, rootH, sheet.mediaEnvironment().resolution(), scrollState, fonts, false);
         return rootBox;
     }
 
@@ -166,13 +166,14 @@ public class RenderPipeline {
     }
 
     public static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        runLayoutPasses(rootBox, rootW, rootH, scrollState, fonts, false);
+        runLayoutPasses(rootBox, rootW, rootH, 1f, scrollState, fonts, false);
     }
 
-    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts,
-                                        boolean reuseMeasurements) {
+    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                        ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements) {
         rootBox.linkParents();
-        Viewport viewport = new Viewport(rootW, rootH);
+        Viewport viewport = new Viewport(rootW, rootH, devicePixelRatio);
+        rootBox.devicePixelRatio = viewport.devicePixelRatio();
         long run = LAYOUT_RUNS.incrementAndGet();
         LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
@@ -192,7 +193,8 @@ public class RenderPipeline {
      * スクロールバーやウィンドウのドラッグのように毎フレーム変わる値で、木の作り直しと 2 回の measure を省く。</p>
      */
     public static void repositionLayout(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        LayoutContext ctx = new LayoutContext(new Viewport(rootW, rootH), effectiveIntrinsicResolver(), scrollState, fonts);
+        LayoutContext ctx = new LayoutContext(new Viewport(rootW, rootH, rootBox.devicePixelRatio),
+                effectiveIntrinsicResolver(), scrollState, fonts);
         LayoutBox.resetPlacements(rootBox);
         rootBox.layout(0, 0, rootW, rootH, ctx);
     }

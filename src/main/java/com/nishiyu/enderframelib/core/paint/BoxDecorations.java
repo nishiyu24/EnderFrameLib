@@ -145,7 +145,8 @@ public final class BoxDecorations {
     // ==========================================
 
     /** 1 枚のレイヤー。値はどれもそのレイヤーに対応するリストの要素（短いリストは繰り返して揃える）。 */
-    public record BackgroundLayer(String image, String position, String size, String repeat, String origin, String clip) {
+    public record BackgroundLayer(String image, String position, String size, String repeat, String origin, String clip,
+                                  double dppx) {
         public boolean isGradient() {
             return image.toLowerCase(Locale.ROOT).contains("gradient(");
         }
@@ -170,7 +171,7 @@ public final class BoxDecorations {
         }
 
         private ImageChoice imageSet() {
-            return ImageSources.isImageSet(image) ? ImageSources.selectImageSet(image, ImageSources.devicePixelRatio()) : null;
+            return ImageSources.isImageSet(image) ? ImageSources.selectImageSet(image, dppx) : null;
         }
     }
 
@@ -185,6 +186,11 @@ public final class BoxDecorations {
      * レイヤーの数は {@code background-image} のリストの長さで決まり、他のリストは繰り返して揃える（§2.3）。
      */
     public static List<BackgroundLayer> layers(ComputedStyle style) {
+        return layers(style, 1.0);
+    }
+
+    /** @param dppx {@code image-set()} の候補を選ぶデバイスピクセル比 */
+    public static List<BackgroundLayer> layers(ComputedStyle style, double dppx) {
         List<String> images = list(style.get("background-image"), "none");
         List<String> positions = list(style.get("background-position"), "0% 0%");
         List<String> sizes = list(style.get("background-size"), "auto");
@@ -194,7 +200,7 @@ public final class BoxDecorations {
         List<BackgroundLayer> out = new ArrayList<>(images.size());
         for (int i = 0; i < images.size(); i++) {
             out.add(new BackgroundLayer(images.get(i), positions.get(i % positions.size()), sizes.get(i % sizes.size()),
-                    repeats.get(i % repeats.size()), origins.get(i % origins.size()), clips.get(i % clips.size())));
+                    repeats.get(i % repeats.size()), origins.get(i % origins.size()), clips.get(i % clips.size()), dppx));
         }
         return out;
     }
@@ -204,6 +210,10 @@ public final class BoxDecorations {
      * {@code mask-clip} の既定は {@code border-box}。{@code no-clip} は {@code border-box} として扱う。
      */
     public static List<BackgroundLayer> maskLayers(ComputedStyle style) {
+        return maskLayers(style, 1.0);
+    }
+
+    public static List<BackgroundLayer> maskLayers(ComputedStyle style, double dppx) {
         List<String> images = list(style.get("mask-image"), "none");
         List<String> positions = list(style.get("mask-position"), "0% 0%");
         List<String> sizes = list(style.get("mask-size"), "auto");
@@ -214,7 +224,7 @@ public final class BoxDecorations {
         for (int i = 0; i < images.size(); i++) {
             String origin = origins.get(i % origins.size()), clip = clips.get(i % clips.size());
             out.add(new BackgroundLayer(images.get(i), positions.get(i % positions.size()), sizes.get(i % sizes.size()),
-                    repeats.get(i % repeats.size()), boxKeyword(origin), boxKeyword(clip)));
+                    repeats.get(i % repeats.size()), boxKeyword(origin), boxKeyword(clip), dppx));
         }
         return out;
     }

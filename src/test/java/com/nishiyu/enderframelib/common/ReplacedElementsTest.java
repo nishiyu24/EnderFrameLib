@@ -3,7 +3,6 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.ImageSources;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
@@ -25,9 +24,12 @@ public class ReplacedElementsTest {
     private static final int W = 400;
     private static final int H = 300;
 
+    /** 次の render() が文書に与えるデバイスピクセル比（文書ごとの値。グローバル状態ではない）。 */
+    private static float dppx = 1f;
+
     @AfterEach
     void resetDensity() {
-        ImageSources.setDevicePixelRatio(1f);
+        dppx = 1f;
         RasterImageStore.clear();
     }
 
@@ -37,6 +39,7 @@ public class ReplacedElementsTest {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         Document doc = parser.parseDocument(
                 "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>", "", W, H);
+        doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withResolution(dppx));
         LayoutBox root = parser.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
         DisplayListBuilder builder = new DisplayListBuilder(W, H, doc.sheet.keyframes, new ScrollState());
         return new Rendered(root, builder.render(root));
@@ -124,7 +127,7 @@ public class ReplacedElementsTest {
 
     @Test
     public void devicePixelRatioScalesTheRasterButNotTheCssSize() {
-        ImageSources.setDevicePixelRatio(2f);
+        dppx = 2f;
         Rendered r = render("<svg id=\"s\" width=\"40\" height=\"20\"><rect width=\"40\" height=\"20\" fill=\"red\"/></svg>");
         String src = item(r, "s_svg").text();
         assertArrayEquals(new int[]{40, 20}, sizeOf(src));
@@ -182,12 +185,48 @@ public class ReplacedElementsTest {
     public void srcsetPicksTheCandidateForTheDensity() {
         String html = "<img id=\"i\" src=\"a.png\" srcset=\"a.png 1x, b.png 2x, c.png 3x\" style=\"width: 20px; height: 20px\">";
         assertEquals("a.png", item(render(html), "i_img").text());
-        ImageSources.setDevicePixelRatio(2f);
+        dppx = 2f;
         assertEquals("b.png", item(render(html), "i_img").text());
-        ImageSources.setDevicePixelRatio(2.5f);
+        dppx = 2.5f;
         assertEquals("c.png", item(render(html), "i_img").text());
-        ImageSources.setDevicePixelRatio(5f);
+        dppx = 5f;
         assertEquals("c.png", item(render(html), "i_img").text());
+    }
+
+    /** 2 つの Surface（文書）が違う密度でも、互いの選びに影響しない（順に何度交互に描いても）。 */
+    @Test
+    public void devicePixelRatioIsIsolatedPerDocument() {
+        String html = "<img id=\"i\" src=\"a.png\" srcset=\"a.png 1x, b.png 2x\" style=\"width: 20px; height: 20px\">"
+                + "<svg id=\"s\" width=\"40\" height=\"20\"><rect width=\"40\" height=\"20\" fill=\"red\"/></svg>"
+                + "<div id=\"d\" style=\"width: 50px; height: 50px; background-image: image-set(url(a.png) 1x, url(b.png) 2x)\"></div>";
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        String page = "<html><head><style>body { margin: 0; }</style></head><body>" + html + "</body></html>";
+        Document low = parser.parseDocument(page, "", W, H);
+        Document high = parser.parseDocument(page, "", W, H);
+        low.sheet.updateMediaEnvironment(low.sheet.mediaEnvironment().withResolution(1f));
+        high.sheet.updateMediaEnvironment(high.sheet.mediaEnvironment().withResolution(2f));
+
+        for (int round = 0; round < 2; round++) {
+            LayoutBox lowRoot = parser.layoutDocument(low, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+            LayoutBox highRoot = parser.layoutDocument(high, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK);
+            List<DisplayItem> lowItems = new DisplayListBuilder(W, H, low.sheet.keyframes, new ScrollState()).render(lowRoot);
+            List<DisplayItem> highItems = new DisplayListBuilder(W, H, high.sheet.keyframes, new ScrollState()).render(highRoot);
+
+            assertEquals("a.png", item(new Rendered(lowRoot, lowItems), "i_img").text());
+            assertEquals("b.png", item(new Rendered(highRoot, highItems), "i_img").text());
+            assertEquals("a.png", lowItems.stream().filter(e -> e.type() == ElementType.IMAGE && e.text().endsWith(".png")
+                    && e.id().contains("bgl")).findFirst().orElseThrow().text());
+            assertEquals("b.png", highItems.stream().filter(e -> e.type() == ElementType.IMAGE && e.text().endsWith(".png")
+                    && e.id().contains("bgl")).findFirst().orElseThrow().text());
+            RasterImageStore.Entry lowEntry = rasterOf(item(new Rendered(lowRoot, lowItems), "s_svg").text());
+            RasterImageStore.Entry highEntry = rasterOf(item(new Rendered(highRoot, highItems), "s_svg").text());
+            assertEquals(40, lowEntry.pixmap().width());
+            assertEquals(80, highEntry.pixmap().width());
+        }
+    }
+
+    private static RasterImageStore.Entry rasterOf(String src) {
+        return RasterImageStore.get(RasterImageStore.keyOf(src.substring(0, src.lastIndexOf('@'))));
     }
 
     @Test
@@ -195,7 +234,7 @@ public class ReplacedElementsTest {
         String html = "<img id=\"i\" srcset=\"s.png 200w, m.png 400w, l.png 800w\" sizes=\"(max-width: 500px) 200px, 800px\" style=\"width: 20px; height: 20px\">";
         // ビューポート 400px → sizes は 200px。200w は 1x、400w は 2x
         assertEquals("s.png", item(render(html), "i_img").text());
-        ImageSources.setDevicePixelRatio(2f);
+        dppx = 2f;
         assertEquals("m.png", item(render(html), "i_img").text());
     }
 
@@ -205,7 +244,7 @@ public class ReplacedElementsTest {
         List<DisplayItem> one = render(html).elements.stream().filter(e -> e.type() == ElementType.IMAGE).toList();
         assertEquals(1, one.size());
         assertEquals("a.png", one.getFirst().text());
-        ImageSources.setDevicePixelRatio(2f);
+        dppx = 2f;
         List<DisplayItem> two = render(html).elements.stream().filter(e -> e.type() == ElementType.IMAGE).toList();
         assertEquals("b.png", two.getFirst().text());
     }

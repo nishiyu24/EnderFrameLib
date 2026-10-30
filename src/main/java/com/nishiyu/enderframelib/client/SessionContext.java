@@ -381,8 +381,6 @@ public class SessionContext implements AutoCloseable {
     public void setDevicePixelRatio(float dppx) {
         if (dppx <= 0 || Math.abs(dppx - devicePixelRatio) < 0.001f) return;
         this.devicePixelRatio = dppx;
-        // srcset / image-set() の候補選びと SVG のラスタライズの密度（レイアウトの文脈には載せていない単一の値）
-        com.nishiyu.enderframelib.core.paint.ImageSources.setDevicePixelRatio(dppx);
         Document doc = document;
         if (doc != null && doc.sheet != null && doc.root != null
                 && doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withResolution(dppx))) {

@@ -11,22 +11,12 @@ import java.util.Locale;
  * 選び方は仕様どおり、デバイスピクセル比以上で最小の密度、無ければ最大の密度。
  * 選んだ画像の固有サイズは、画像の画素数を選んだ密度で割った CSS px になる。
  *
- * デバイスピクセル比は画面ごとの値だが、レイアウトの文脈（{@code LayoutContext}）には載せていないので、
- * クライアントが {@link #setDevicePixelRatio} で渡す 1 つの値を使う（LIMITATION(R8)）。
+ * デバイスピクセル比は画面ごとの値なので、状態は持たず、呼び出し側が文書ごとの値
+ * （{@code Viewport#devicePixelRatio}）を渡す。
  */
 public final class ImageSources {
 
     private ImageSources() {}
-
-    private static volatile float devicePixelRatio = 1f;
-
-    public static float devicePixelRatio() {
-        return devicePixelRatio;
-    }
-
-    public static void setDevicePixelRatio(float dppx) {
-        if (dppx > 0 && Float.isFinite(dppx)) devicePixelRatio = dppx;
-    }
 
     /** 候補。{@code density} は 1 CSS px あたりの画像の画素数。 */
     public record Candidate(String url, double density) {}
@@ -130,13 +120,13 @@ public final class ImageSources {
     }
 
     /** {@code <img>} の属性（{@code srcset} / {@code sizes} / {@code src}）から選ぶ。何も無ければ null。 */
-    public static ImageChoice forImg(java.util.Map<String, String> attrs, double viewportW, double viewportH) {
+    public static ImageChoice forImg(java.util.Map<String, String> attrs, double viewportW, double viewportH, double dppx) {
         String src = attrs.get("src");
         String srcset = attrs.get("srcset");
         if (srcset == null || srcset.isBlank()) {
             return src == null || src.isBlank() ? null : new ImageChoice(src.trim(), 1);
         }
-        return selectSrcset(srcset, attrs.get("sizes"), src, viewportW, viewportH, devicePixelRatio);
+        return selectSrcset(srcset, attrs.get("sizes"), src, viewportW, viewportH, dppx);
     }
 
     // ------------------------------------------------------------------ sizes

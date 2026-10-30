@@ -41,6 +41,8 @@ public class LayoutBox {
     /** {@code display} を outer / inner に分けたもの。{@link #updateStyle} が算出スタイルから決める。 */
     public Display display;
     public LayoutBox parent = null;
+    /** ルートの箱だけが使う: この木をレイアウトしたときのデバイスピクセル比（描画が同じ値で候補を選ぶ）。 */
+    public float devicePixelRatio = 1f;
     /**
      * ボックスツリーの子。レイアウトと描画はこちらを読む。
      *
@@ -342,6 +344,7 @@ public class LayoutBox {
      */
     public float getMinContentWidth(LayoutContext ctx) {
         long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
+        key = key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
         if (cachedMinContentKey == key && cachedMinContentWidth >= 0) return cachedMinContentWidth;
 
         float result = computeMinContentWidth(ctx);
