@@ -262,8 +262,10 @@ Minecraft の UI ライブラリとして実用段階（多くの MOD 開発者�
   - **状況（一部のみ実施・目標未達）**: `ComputedStyle` の差分比較（`isLayoutAffectingChange` / `propagationOf` / `isPositionOnlyChange` / `RenderPipeline` の等価判定）を配列の直接比較に置き換え、1 行追加を約 3.1ms → 約 2.8ms に短縮した。目標の `< 1.0ms` は未達。
   - **構造的な床**: 何も変わっていない 500 行の文書を差分レイアウトし直すだけで 1.6ms かかる（build / `markLayoutChanges` / measure / `resetPlacements` / layout が全ノードをたどるため）。親相対座標化・`DisplayList` の部分更新には、変更のない部分木を飛ばす仕組みが先に要る。
   - **未着手の前提作業**: 部分木スキップは「子孫は clean」と言い切れることが条件だが、dirty フラグを通らない書き込みが残っている（`Bindings` の `node.text` 直接代入、`DomUtils.updateAttribute` の `attrs.put` / `remove` 直接呼び出し。呼び出し元は `SessionContext` / `WebSession` / `WebSessionManager` / `DomMutationRecord`）。`attrs` を書き込み検知付きの Map にし、`text` の書き込みも検知できるようにしてから、dirty 祖先の集合と部分木スキップを入れる必要がある。取りこぼすと画面が古いまま残る。
-- [ ] **8. Static グローバル状態のコンテキスト集約** (`ImageSources.java`, `Bindings.java`, `DomUtils.java`, `RenderPipeline.java`)
+- [~] **8. Static グローバル状態のコンテキスト集約** (`ImageSources.java`, `Bindings.java`, `DomUtils.java`, `RenderPipeline.java`)
   - `devicePixelRatio` や各種 Resolver を `Document` / `LayoutContext` 単位に隔離し、マルチ Surface・統合サーバでの競合をなくす。
+  - **状況（`devicePixelRatio` のみ実施）**: Surface ごとに値が違う `devicePixelRatio` の static（`ImageSources.devicePixelRatio` / `setDevicePixelRatio`）を廃止した。値は文書の `sheet.mediaEnvironment().resolution()` が持ち、レイアウトは `Viewport.devicePixelRatio`、描画はルートの `LayoutBox.devicePixelRatio` 経由で `srcset` / `image-set()` / SVG ラスタライズの密度に使う。`ReplacedElementsTest.devicePixelRatioIsIsolatedPerDocument` が 2 文書の交互描画で干渉しないことを確かめる。
+  - **据え置き（判断）**: `Bindings.i18nResolver` / `i18nFormatter` / `jsonListParser`、`DomUtils.innerHtmlParser`、`RenderPipeline` / `UiDocumentCompiler` の `clientBoxRenderer` / `intrinsicSizeResolver` は、起動時に 1 回差すプロセス共通のサービスで Surface ごとに値が変わらない（競合しない）ため、文書単位へは移していない。差し替えるテストが多く、移すなら注入の API 設計が先に要る。
 
 ### Phase C: 保守性・開発体験・ドキュメント整備
 - [ ] **9. `M9` ラチェットの「ファイル行数上限ラチェット」への転換と God Class 分割** (`ArchitectureTest.java`)

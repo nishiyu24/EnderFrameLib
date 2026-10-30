@@ -38,6 +38,17 @@ final class BoxDecorationPainter {
         return rootH;
     }
 
+    /** いま描いている木をレイアウトしたデバイスピクセル比（{@link DisplayListBuilder#render} が描画の頭で入れる）。 */
+    private float devicePixelRatio = 1f;
+
+    float devicePixelRatio() {
+        return devicePixelRatio;
+    }
+
+    void setDevicePixelRatio(float dppx) {
+        this.devicePixelRatio = dppx;
+    }
+
     BoxDecorationPainter(int rootW, int rootH, AtomicInteger fragIds) {
         this.rootW = rootW;
         this.rootH = rootH;
@@ -375,7 +386,7 @@ final class BoxDecorationPainter {
      */
     void drawBackgroundImages(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, Corners radii,
                                       BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
-        drawImageLayers(elements, box, id, BoxDecorations.layers(box.style), "_bgl", clip, radii, border, events, fontHVal, ox, oy);
+        drawImageLayers(elements, box, id, BoxDecorations.layers(box.style, devicePixelRatio), "_bgl", clip, radii, border, events, fontHVal, ox, oy);
     }
 
     /**
@@ -390,7 +401,7 @@ final class BoxDecorationPainter {
                                 BorderSpec border, float fontHVal, float ox, float oy) {
         ItemProps events = ItemProps.parent(id);
         events.pointerEventsNone();
-        drawImageLayers(elements, box, id, BoxDecorations.maskLayers(box.style), "_mask", clip, radii, border, events, fontHVal, ox, oy);
+        drawImageLayers(elements, box, id, BoxDecorations.maskLayers(box.style, devicePixelRatio), "_mask", clip, radii, border, events, fontHVal, ox, oy);
     }
 
     /** {@code currentColor} になる色（要素の {@code color}）。 */
@@ -435,7 +446,7 @@ final class BoxDecorationPainter {
                     String tileSrc = url;
                     if (SvgImage.looksLikeSvg(url)) {
                         // SVG はタイルの大きさで描く（拡大しても滲まない）。届くまでは描かない
-                        tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box));
+                        tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box), devicePixelRatio);
                     }
                     addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
                             0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);

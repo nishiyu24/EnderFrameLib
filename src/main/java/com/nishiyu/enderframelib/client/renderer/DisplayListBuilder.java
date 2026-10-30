@@ -93,6 +93,7 @@ public class DisplayListBuilder {
     public List<DisplayItem> render(LayoutBox box) {
         List<DisplayItem> elements = new ArrayList<>();
         canvasBackgroundSource = null;
+        decor.setDevicePixelRatio(box.devicePixelRatio);
 
         if ("root".equals(box.node.tag)) {
             // キャンバスの背景はルート要素の背景、それが透明なら body の背景（CSS Backgrounds 3 §2.11.2）。

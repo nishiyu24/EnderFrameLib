@@ -57,8 +57,8 @@ class ImageSourcesTest {
 
     @Test
     void forImgReadsAttributes() {
-        assertEquals("p.png", ImageSources.forImg(Map.of("src", "p.png"), 100, 100).url());
-        assertNull(ImageSources.forImg(Map.of(), 100, 100));
+        assertEquals("p.png", ImageSources.forImg(Map.of("src", "p.png"), 100, 100, 1).url());
+        assertNull(ImageSources.forImg(Map.of(), 100, 100, 1));
     }
 
     @Test

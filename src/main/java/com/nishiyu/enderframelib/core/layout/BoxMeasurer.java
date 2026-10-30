@@ -561,7 +561,7 @@ public final class BoxMeasurer {
     }
 
     private static ImageChoice selectedImage(LayoutBox box, LayoutContext ctx) {
-        return ImageSources.forImg(box.node.attrs, ctx.viewport().rootW(), ctx.viewport().rootH());
+        return ImageSources.forImg(box.node.attrs, ctx.viewport().rootW(), ctx.viewport().rootH(), ctx.viewport().devicePixelRatio());
     }
 
     private static boolean isRemote(String src) {

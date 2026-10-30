@@ -57,7 +57,7 @@ final class ControlPainter {
                                   int transDur, AnimationSpec colorBgAnim) {
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
         ImageChoice chosen = "img".equals(box.node.tag)
-                ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH()) : null;
+                ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = box.style.getOrDefault(CssProperty.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
         if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
             src = "fluid:" + box.node.attrs.getOrDefault("fluid", src);
@@ -95,7 +95,7 @@ final class ControlPainter {
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
         if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
             SvgImage svg = SvgSources.get(src);
-            src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color);
+            src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio());
         }
         ItemProps imageEvents = mediaEvents;
         String position = box.style.get(CssProperty.OBJECT_POSITION);
@@ -127,7 +127,7 @@ final class ControlPainter {
         float innerY = box.y + border.bwTop();
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
-        String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color);
+        String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
         addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
                 partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
