@@ -48,7 +48,7 @@ public class FontLifecycleTest {
     void releasedHandleReopensAndGivesTheSameMetrics() {
         LoadedFace loaded = LoadedFace.open(face);
         float advance = loaded.advanceEm('W');
-        LoadedFace.GlyphBitmap before = loaded.rasterize('g', 20f, false, false, 1);
+        GlyphBitmap before = loaded.rasterize('g', 20f, false, false, 1);
         int opened = LoadedFace.openHandleCount();
         assertTrue(opened >= 1);
 
@@ -57,7 +57,7 @@ public class FontLifecycleTest {
 
         // 使うと開き直す。測定の表（寸法・送り幅・字形番号）は残っていて、ラスタライズは同じ結果になる
         assertEquals(advance, loaded.advanceEm('W'), 0f);
-        LoadedFace.GlyphBitmap after = loaded.rasterize('g', 20f, false, false, 1);
+        GlyphBitmap after = loaded.rasterize('g', 20f, false, false, 1);
         assertEquals(before.width(), after.width());
         assertEquals(before.height(), after.height());
         assertTrue(java.util.Arrays.equals(before.coverage(), after.coverage()), "開き直しても同じ字形");
@@ -99,7 +99,7 @@ public class FontLifecycleTest {
         assertEquals(localOutline.xHeight(STYLE), webOutline.xHeight(STYLE), 0.001f);
 
         // 字形も描ける（メモリから開いた面でのラスタライズ）
-        LoadedFace.GlyphBitmap g = webOutline.glyphFace('H', STYLE).face().rasterize('H', 24f, false, false);
+        GlyphBitmap g = webOutline.glyphFace('H', STYLE).face().rasterize('H', 24f, false, false);
         assertFalse(g.isEmpty());
         assertTrue(g.width() > 5 && g.height() > 10);
     }

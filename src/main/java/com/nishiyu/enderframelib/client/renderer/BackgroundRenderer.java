@@ -18,7 +18,7 @@ import static com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.useSdf
 public final class BackgroundRenderer {
     private BackgroundRenderer() {}
 
-    static boolean renderCircleBorderElement(DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim,
+    static boolean renderCircleBorderElement(DisplayItem el, RenderMeta meta, AnimatedValues anim,
                                                      PoseStack poseStack, MultiBufferSource buffer, float finalOpacity, float zPos,
                                                      float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                                      float cRTL, float cRTR, float cRBR, float cRBL) {
@@ -89,11 +89,11 @@ public final class BackgroundRenderer {
             cy[i] = Math.min(Math.max(ry[i] - t / 2f, 0f), by);
             if (cx[i] <= 0 || cy[i] <= 0) cx[i] = cy[i] = 0;
         }
-        BorderPath.Pattern pattern = BorderPath.pattern(spec.dashKind(), t, BorderPath.length(bx, by, cx, cy));
+        BorderDashPattern pattern = BorderPath.pattern(spec.dashKind(), t, BorderPath.length(bx, by, cx, cy));
         return new float[]{spec.dashKind(), pattern.count(), pattern.dash(), pattern.round() ? 1f : 0f};
     }
 
-    static void renderElementBackground(DisplayItem el, CssAnimator.AnimatedValues anim,
+    static void renderElementBackground(DisplayItem el, AnimatedValues anim,
                                                 PoseStack poseStack, MultiBufferSource buffer,
                                                 float finalOpacity, float zOffset, float rTL, float rTR, float rBR, float rBL,
                                                 float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
@@ -146,7 +146,7 @@ public final class BackgroundRenderer {
      * ぼかした影を 1 枚で描く。要素の矩形は「ぼかしが消える所まで」の広さ（{@link #SHADOW_REACH} × ぼかし半径だけ形の外側）で、
      * 影の形はそこから同じだけ内側。減衰はシェーダーがガウスぼかしに近い形で計算する（以前は層の重ね塗りで、段が見えた）。
      */
-    static void renderBlurredShadow(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack,
+    static void renderBlurredShadow(DisplayItem el, AnimatedValues anim, PoseStack poseStack,
                                             float finalOpacity, float zOffset, float blur,
                                             float rTL, float rTR, float rBR, float rBL,
                                             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
@@ -157,7 +157,7 @@ public final class BackgroundRenderer {
         float g = ((anim.bgColor() >>> 8) & 0xFF) / 255.0f;
         float b = (anim.bgColor() & 0xFF) / 255.0f;
         float qx0 = el.x(), qy0 = el.y(), qx1 = el.x() + el.width(), qy1 = el.y() + el.height();
-        RenderHints.ShadowShape shape = el.hints().shadowShape();
+        ShadowShape shape = el.hints().shadowShape();
         if (shape != null && shape.inset()) {
             // 内側の影: 形は影の無い穴。部品の矩形（パディングボックス）のうち穴の外を塗る
             boolean ellipse = shape.rTLv() != shape.rTL() || shape.rTRv() != shape.rTR()

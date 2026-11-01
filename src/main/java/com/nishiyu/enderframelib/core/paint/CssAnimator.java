@@ -490,32 +490,4 @@ public class CssAnimator {
         }
     }
 
-    public static class AnimatedValues {
-        public float[] clipData;
-        public float[] radiusData;
-        public float rangeVal, rangeMin, rangeMax, circleThickness;
-        public int[] circleColors;
-        private float opacity, tx, ty, sx, sy, rot;
-        private int color, bgColor;
-
-        public void set(float op, float tx, float ty, float sx, float sy, float rot, int col, int bgCol) {
-            this.opacity = op;
-            this.tx = tx;
-            this.ty = ty;
-            this.sx = sx;
-            this.sy = sy;
-            this.rot = rot;
-            this.color = col;
-            this.bgColor = bgCol;
-        }
-
-        public float opacity() { return opacity; }
-        public float tx() { return tx; }
-        public float ty() { return ty; }
-        public float sx() { return sx; }
-        public float sy() { return sy; }
-        public float rot() { return rot; }
-        public int color() { return color; }
-        public int bgColor() { return bgColor; }
-    }
 }

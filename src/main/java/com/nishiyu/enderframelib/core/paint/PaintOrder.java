@@ -423,7 +423,7 @@ final class PaintOrder {
         }
         ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parentClip == null ? null : parentClip.toArray(), own));
         // 合成した矩形に、合成する前のこの箱の矩形を持ち主（この箱）つきで足す。箱が動く（変形する）と、切り口も一緒に動く
-        return merged.withChain(parentClip == null ? List.of(new ClipRect.Part(own, box.node.getId())) : parentClip.chainPlus(own, box.node.getId()));
+        return merged.withChain(parentClip == null ? List.of(new ClipChainPart(own, box.node.getId())) : parentClip.chainPlus(own, box.node.getId()));
     }
 
     /**

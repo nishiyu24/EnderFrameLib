@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
+
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
@@ -30,8 +32,8 @@ public class ClipResolverTest {
         return new Matrix4f().translation(x, y, 0f);
     }
 
-    private static ClipRect.Part part(float x0, float y0, float x1, float y1, String owner, float r) {
-        return new ClipRect.Part(new float[]{x0, y0, x1, y1, r, r, r, r}, owner);
+    private static ClipChainPart part(float x0, float y0, float x1, float y1, String owner, float r) {
+        return new ClipChainPart(new float[]{x0, y0, x1, y1, r, r, r, r}, owner);
     }
 
     @Test
@@ -158,7 +160,7 @@ public class ClipResolverTest {
                 + "<div id=\"abs\" style=\"position:absolute;left:10px;top:10px;width:100px;height:100px;background:blue\"></div></div></div>");
         DisplayItem abs = items.stream().filter(i -> i.id().equals("abs_bg")).findFirst().orElseThrow();
         ClipRect clip = abs.meta().clipRect();
-        for (ClipRect.Part p : clip == null ? List.<ClipRect.Part>of() : clip.chain()) {
+        for (ClipChainPart p : clip == null ? List.<ClipChainPart>of() : clip.chain()) {
             assertTrue(!"clipper".equals(p.ownerId()), "木の親（clipper）の overflow は掛からない");
         }
     }

@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
+
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
@@ -244,7 +246,7 @@ public class EllipticalCornersTest {
 
     @Test
     public void patternClosesWithoutASeam() {
-        BorderPath.Pattern dashed = BorderPath.pattern(BorderPath.DASHED, 2f, 300f);
+        BorderDashPattern dashed = BorderPath.pattern(BorderPath.DASHED, 2f, 300f);
         // 細い破線（2px）は線 3 倍 = 6・間 2 倍 = 4 で周期 10。300 に割り付けると 30 個
         assertEquals(30, dashed.count());
         assertEquals(300f, dashed.count() * dashed.period(), 0.001f);
@@ -253,7 +255,7 @@ public class EllipticalCornersTest {
         // 太い破線（3px 以上）は線 2 倍・間 1 倍（Blink と同じ）
         assertEquals(6f, BorderPath.dashLength(BorderPath.DASHED, 3f), 0.001f);
         assertEquals(3f, BorderPath.gapLength(BorderPath.DASHED, 3f), 0.001f);
-        BorderPath.Pattern dotted = BorderPath.pattern(BorderPath.DOTTED, 4f, 300f);
+        BorderDashPattern dotted = BorderPath.pattern(BorderPath.DOTTED, 4f, 300f);
         assertTrue(dotted.round());
         assertEquals(4f, dotted.dash(), 0.001f);
         assertEquals(300f, dotted.count() * dotted.period(), 0.001f);

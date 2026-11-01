@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.paint.AnimatedValues;
+
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
@@ -96,9 +98,9 @@ public class AnimationTestSiteTest {
         ClientWebManager.clearSession(sessionId);
         long now = 100_000L;
         for (DisplayItem el : animatedItems) {
-            CssAnimator.AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, el, now);
+            AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, el, now);
             assertNotNull(v0);
-            CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, el, now + 500L);
+            AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, el, now + 500L);
             assertNotNull(vMid);
         }
         ClientWebManager.clearSession(sessionId);

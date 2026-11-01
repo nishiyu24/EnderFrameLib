@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
+
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
@@ -70,7 +72,7 @@ public class ReplacedElementsTest {
 
     private static int pixel(String rasterSrc, int x, int y) {
         int at = rasterSrc.lastIndexOf('@');
-        RasterImageStore.Entry e = RasterImageStore.get(RasterImageStore.keyOf(rasterSrc.substring(0, at)));
+        RasterImageEntry e = RasterImageStore.get(RasterImageStore.keyOf(rasterSrc.substring(0, at)));
         assertNotNull(e, "ラスタ画像がストアに無い: " + rasterSrc);
         return e.pixmap().getStraight(x, y);
     }
@@ -132,7 +134,7 @@ public class ReplacedElementsTest {
         String src = item(r, "s_svg").text();
         assertArrayEquals(new int[]{40, 20}, sizeOf(src));
         int at = src.lastIndexOf('@');
-        RasterImageStore.Entry e = RasterImageStore.get(RasterImageStore.keyOf(src.substring(0, at)));
+        RasterImageEntry e = RasterImageStore.get(RasterImageStore.keyOf(src.substring(0, at)));
         assertEquals(80, e.pixmap().width());
         assertEquals(40, e.pixmap().height());
     }
@@ -218,14 +220,14 @@ public class ReplacedElementsTest {
                     && e.id().contains("bgl")).findFirst().orElseThrow().text());
             assertEquals("b.png", highItems.stream().filter(e -> e.type() == ElementType.IMAGE && e.text().endsWith(".png")
                     && e.id().contains("bgl")).findFirst().orElseThrow().text());
-            RasterImageStore.Entry lowEntry = rasterOf(item(new Rendered(lowRoot, lowItems), "s_svg").text());
-            RasterImageStore.Entry highEntry = rasterOf(item(new Rendered(highRoot, highItems), "s_svg").text());
+            RasterImageEntry lowEntry = rasterOf(item(new Rendered(lowRoot, lowItems), "s_svg").text());
+            RasterImageEntry highEntry = rasterOf(item(new Rendered(highRoot, highItems), "s_svg").text());
             assertEquals(40, lowEntry.pixmap().width());
             assertEquals(80, highEntry.pixmap().width());
         }
     }
 
-    private static RasterImageStore.Entry rasterOf(String src) {
+    private static RasterImageEntry rasterOf(String src) {
         return RasterImageStore.get(RasterImageStore.keyOf(src.substring(0, src.lastIndexOf('@'))));
     }
 

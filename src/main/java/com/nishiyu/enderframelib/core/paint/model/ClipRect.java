@@ -22,42 +22,9 @@ public record ClipRect(
         float radiusTopLeft, float radiusTopRight, float radiusBottomRight, float radiusBottomLeft,
         String ownerId,
         float radiusTopLeftV, float radiusTopRightV, float radiusBottomRightV, float radiusBottomLeftV,
-        java.util.List<Part> chain
+        java.util.List<ClipChainPart> chain
 ) {
     public static final ClipRect EMPTY = null;
-
-    /**
-     * 連鎖の 1 つ。{@code rect} は矩形 + 横の半径 4 つ（楕円の角があれば縦の半径 4 つが続く 12 値。{@link #toArray} と同じ並び）で、
-     * {@code ownerId} の要素の空間（レイアウトの座標）で持つ。持ち主の変形（移動・回転・拡縮）に付いていく。
-     * {@code ownerId} が null なら動かない（フレームの基準の空間）。
-     */
-    public static final class Part {
-        private final float[] rect;
-        private final String ownerId;
-
-        public Part(float[] rect, String ownerId) {
-            this.rect = rect.clone();
-            this.ownerId = ownerId;
-        }
-
-        public float[] rect() {
-            return rect.clone();
-        }
-
-        public String ownerId() {
-            return ownerId;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof Part p && java.util.Arrays.equals(rect, p.rect) && java.util.Objects.equals(ownerId, p.ownerId);
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * java.util.Arrays.hashCode(rect) + java.util.Objects.hashCode(ownerId);
-        }
-    }
 
     public ClipRect {
         chain = chain == null || chain.isEmpty() ? java.util.List.of() : java.util.List.copyOf(chain);
@@ -88,15 +55,15 @@ public record ClipRect(
     }
 
     /** 連鎖を差し替える（合成した矩形はそのまま）。 */
-    public ClipRect withChain(java.util.List<Part> newChain) {
+    public ClipRect withChain(java.util.List<ClipChainPart> newChain) {
         return new ClipRect(minX, minY, maxX, maxY, radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft, ownerId,
                 radiusTopLeftV, radiusTopRightV, radiusBottomRightV, radiusBottomLeftV, newChain);
     }
 
     /** この矩形の連鎖に、{@code ownerId} の要素の空間の矩形 {@code rect}（{@link #toArray} の並び）を 1 つ足したもの。 */
-    public java.util.List<Part> chainPlus(float[] rect, String owner) {
-        java.util.List<Part> out = new java.util.ArrayList<>(chain);
-        out.add(new Part(rect, owner));
+    public java.util.List<ClipChainPart> chainPlus(float[] rect, String owner) {
+        java.util.List<ClipChainPart> out = new java.util.ArrayList<>(chain);
+        out.add(new ClipChainPart(rect, owner));
         return out;
     }
 

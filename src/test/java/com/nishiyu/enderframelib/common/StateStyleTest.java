@@ -346,7 +346,7 @@ public class StateStyleTest {
         assertNotNull(node1);
 
         long t0 = 1_000_000L;
-        CssAnimator.AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, node1, t0);
+        AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, node1, t0);
         assertEquals(1.0f, v0.opacity(), 1e-4f);
         assertEquals(0.0f, v0.tx(), 1e-4f);
 
@@ -360,7 +360,7 @@ public class StateStyleTest {
         // t0 + 100ms（200ms の半分）で評価:
         // transition-property: opacity なので opacity は 0.6 に補間され、transform (tx) は即座に 40px にスナップする
         CssAnimator.getValuesAt(sessionId, node2, t0);
-        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, node2, t0 + 100L);
+        AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, node2, t0 + 100L);
         assertEquals(0.6f, vMid.opacity(), 1e-3f, "transition-property に含まれる opacity は中間値に補間される");
         assertEquals(40.0f, vMid.tx(), 1e-3f, "transition-property に含まれない transform は即座に目標値へスナップする");
 
@@ -410,12 +410,12 @@ public class StateStyleTest {
         assertNotNull(actor2);
 
         CssAnimator.getValuesAt(sessionId, actor2, t0);
-        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, actor2, t0 + 100L);
+        AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, actor2, t0 + 100L);
         assertEquals(50.0f, vMid.tx(), 1e-2f, "@keyframes の translateX が 50% 進行している");
         assertEquals(0.5f, vMid.opacity(), 1e-2f, "@keyframes が触っていない opacity のトランジションが潰されない");
 
         // 200ms 経過後も forwards により tx=100px が保持される
-        CssAnimator.AnimatedValues vEnd = CssAnimator.getValuesAt(sessionId, actor2, t0 + 300L);
+        AnimatedValues vEnd = CssAnimator.getValuesAt(sessionId, actor2, t0 + 300L);
         assertEquals(100.0f, vEnd.tx(), 1e-2f, "animation-fill-mode: forwards により終了後も最終フレームの値が維持される");
         assertEquals(0.0f, vEnd.opacity(), 1e-2f);
 
@@ -455,12 +455,12 @@ public class StateStyleTest {
 
         long t0 = 3_000_000L;
         CssAnimator.getValuesAt(sessionId, bgEl, t0);
-        CssAnimator.AnimatedValues vHalf = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 50L);
+        AnimatedValues vHalf = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 50L);
         int rHalf = (vHalf.bgColor() >>> 16) & 0xFF;
         assertTrue(rHalf >= 120 && rHalf <= 135, "50ms 時点で背景色が中間グレー付近に補間される: " + rHalf);
 
         // alternate の 2 周目 (t0 + 175ms = 2周目の75% → 逆再生で 25%)
-        CssAnimator.AnimatedValues vAlt = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 175L);
+        AnimatedValues vAlt = CssAnimator.getValuesAt(sessionId, bgEl, t0 + 175L);
         int rAlt = (vAlt.bgColor() >>> 16) & 0xFF;
         assertTrue(rAlt >= 55 && rAlt <= 75, "alternate の 2 周目後半は逆方向に補間される: " + rAlt);
 
@@ -510,20 +510,20 @@ public class StateStyleTest {
         CssAnimator.getValuesAt(sessionId, elNone, t0);
 
         // 遅延中 (t0 + 40ms) の評価
-        CssAnimator.AnimatedValues vBackwardsDelay = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 40L);
-        CssAnimator.AnimatedValues vNoneDelay = CssAnimator.getValuesAt(sessionId, elNone, t0 + 40L);
+        AnimatedValues vBackwardsDelay = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 40L);
+        AnimatedValues vNoneDelay = CssAnimator.getValuesAt(sessionId, elNone, t0 + 40L);
 
         assertEquals(50.0f, vBackwardsDelay.tx(), 1e-2f, "backwards は delay 中に 0% キーフレーム (50px) を適用する");
         assertEquals(0.0f, vNoneDelay.tx(), 1e-2f, "none は delay 中に基底スタイル (0px) を維持する");
 
         // アニメーション中 (t0 + 150ms: 遅延 100ms + 50ms 経過 = 50%) の評価
-        CssAnimator.AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 150L);
+        AnimatedValues vMid = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 150L);
 
         assertEquals(100.0f, vMid.tx(), 1e-2f, "進行度 50% で 50px と 150px の中間値 100px になる");
 
         // アニメーション終了後 (t0 + 250ms)
         // backwards 単独では終了後に forwards が無いため、基底スタイル (0px) に戻る
-        CssAnimator.AnimatedValues vAfter = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 250L);
+        AnimatedValues vAfter = CssAnimator.getValuesAt(sessionId, elBackwards, t0 + 250L);
         assertEquals(0.0f, vAfter.tx(), 1e-2f, "forwards 指定が無いため終了後は基底スタイル (0px) に戻る");
 
         ClientWebManager.clearSession(sessionId);

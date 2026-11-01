@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
+
 import com.nishiyu.enderframelib.core.paint.BoxDecorations;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import org.joml.Matrix4f;
@@ -59,15 +61,15 @@ final class ClipResolver {
      * @param eff       項目を描く姿勢（祖先と自分の変形の後）
      * @param ownerPose 持ち主の id から、その要素の姿勢を引く（分からなければ null）
      */
-    static Result resolve(List<ClipRect.Part> chain, Matrix4f base, Matrix4f eff, Function<String, Matrix4f> ownerPose) {
+    static Result resolve(List<ClipChainPart> chain, Matrix4f base, Matrix4f eff, Function<String, Matrix4f> ownerPose) {
         Matrix4f invEff = new Matrix4f(eff).invert();
         float[] local = null;
         List<ScreenRect> screen = new ArrayList<>();
-        ClipRect.Part shaderPart = null;
+        ClipChainPart shaderPart = null;
         Matrix4f shaderPose = null;
-        List<ClipRect.Part> others = new ArrayList<>();
+        List<ClipChainPart> others = new ArrayList<>();
         List<Matrix4f> otherPoses = new ArrayList<>();
-        for (ClipRect.Part part : chain) {
+        for (ClipChainPart part : chain) {
             Matrix4f pose = part.ownerId() == null ? null : ownerPose.apply(part.ownerId());
             if (pose == null) pose = base;
             Matrix4f toLocal = new Matrix4f(invEff).mul(pose);

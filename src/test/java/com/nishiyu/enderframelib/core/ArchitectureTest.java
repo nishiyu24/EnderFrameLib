@@ -64,7 +64,7 @@ public class ArchitectureTest {
     /** M6: 入力をイベントに変える経路（2026-10-21 時点: 1。SessionInput のみ）。 */
     private static final int M6_MAX_INPUT_ENTRY_POINTS = 1;
     /** M7: 2 つ以上のパッケージから参照される入れ子型（2026-10-20 時点: 26。api は公開面のまとまりとして除外）。 */
-    private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 3; // 2026-11-01: STANDALONE_RENDERING Step 1 で表示リスト生成を core/paint へ移したため +3（ClipRect.Part・RenderHints.ShadowShape・RasterImageStore.Entry）。Step 2 でトップレベルへ出して 0 に戻す
+    private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 0; // 2026-11-01: STANDALONE_RENDERING Step 2 で ClipChainPart・ShadowShape・RasterImageEntry・BorderDashPattern・ImagePlacement・AnimatedValues・GlyphBitmap をトップレベルへ出して 0 に戻した
     /** M8: CSS 値を文字列で分割する自前の関数（2026-10-20 時点: 8）。 */
     private static final int M8_MAX_CSS_SPLIT_HELPERS = 8;
     /**
@@ -122,7 +122,7 @@ public class ArchitectureTest {
     // 2026-10-27: クリップを祖先ごとの連鎖にする修正で client/renderer の ClipResolver を追加（+1）。連鎖を項目の空間へ直す
     // 純粋な行列計算で、DisplayItemDrawer（既に最大級）へ詰め込まずに単体でテストするため。
     // 2026-10-30: content/（ScreenBlockEntity ほか）と server/ServerHologramManager の追加で +3。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 288; // 2026-11-01: Step 1 で UIHitResult・PaintServices を追加（+2）
+    private static final int M9_MAX_TOP_LEVEL_FILES = 300; // 2026-11-01: Step 2 でソフトウェア描画バックエンド（SoftwareRenderBackend・SoftShapes・ImageProvider・SoftwareRendering・ShaderGradientEmulator）を追加（+5）、複数パッケージから使う入れ子型 7 つをトップレベルへ出した（+7）
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;

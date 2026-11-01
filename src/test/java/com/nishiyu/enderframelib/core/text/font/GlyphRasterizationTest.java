@@ -28,13 +28,13 @@ public class GlyphRasterizationTest {
         segoe = (OutlineFontFace) system.withLocale(Locale.JAPANESE).resolve("'Segoe UI'");
     }
 
-    private static LoadedFace.GlyphBitmap raster(char c, float pixelSize) {
+    private static GlyphBitmap raster(char c, float pixelSize) {
         FontStyle style = new FontStyle(13, false, false, 0);
         return segoe.glyphFace(c, style).face().rasterize(c, pixelSize, false, false);
     }
 
     /** x ハイトの中ほどの行で、被覆率 50% 以上の区間がいくつあるか（縦線の数）。 */
-    private static int stemsAtMidXHeight(LoadedFace.GlyphBitmap g, float pixelSize) {
+    private static int stemsAtMidXHeight(GlyphBitmap g, float pixelSize) {
         float xHeight = segoe.primaryFace(new FontStyle(pixelSize, false, false, 0)).xHeight(pixelSize);
         int row = Math.round(g.top() - xHeight / 2f);
         int stems = 0;
@@ -61,7 +61,7 @@ public class GlyphRasterizationTest {
     void bitmapIsRasterizedAtTheDeviceSize() {
         // 拡大縮小していなければ、H の高さはその大きさでの大文字の高さ（Segoe UI は 0.7em）にほぼ等しい
         for (float px : new float[]{13f, 19.5f, 26f, 52f}) {
-            LoadedFace.GlyphBitmap h = raster('H', px);
+            GlyphBitmap h = raster('H', px);
             assertEquals(0.7f * px, h.height(), 1.5f, "H の高さ @" + px + "px");
             assertTrue(h.top() > 0 && h.top() <= Math.ceil(0.7f * px) + 1, "H はベースラインの上に乗る");
         }
@@ -79,7 +79,7 @@ public class GlyphRasterizationTest {
         }
     }
 
-    private static float centroidX(LoadedFace.GlyphBitmap g) {
+    private static float centroidX(GlyphBitmap g) {
         double sum = 0, weighted = 0;
         for (int y = 0; y < g.height(); y++) {
             for (int x = 0; x < g.width(); x++) {
@@ -97,9 +97,9 @@ public class GlyphRasterizationTest {
      */
     @Test
     void textContrastKeepsEndsAndBoostsLightText() {
-        LoadedFace.GlyphBitmap g = new LoadedFace.GlyphBitmap(3, 1, 0, 0, new byte[]{0, (byte) 128, (byte) 255});
-        LoadedFace.GlyphBitmap light = g.withTextContrast(true);
-        LoadedFace.GlyphBitmap dark = g.withTextContrast(false);
+        GlyphBitmap g = new GlyphBitmap(3, 1, 0, 0, new byte[]{0, (byte) 128, (byte) 255});
+        GlyphBitmap light = g.withTextContrast(true);
+        GlyphBitmap dark = g.withTextContrast(false);
         assertEquals(0, light.coverageAt(0, 0));
         assertEquals(255, light.coverageAt(2, 0));
         assertEquals(0, dark.coverageAt(0, 0));
@@ -113,7 +113,7 @@ public class GlyphRasterizationTest {
         FontStyle style = new FontStyle(13, false, false, 0);
         LoadedFace face = segoe.glyphFace('日', style).face();
         assertTrue(face.hasGlyph('日'));
-        LoadedFace.GlyphBitmap g = face.rasterize('日', 19.5f, false, false);
+        GlyphBitmap g = face.rasterize('日', 19.5f, false, false);
         assertTrue(g.width() > 10 && g.height() > 10, "代替書体（Noto Sans JP など）で描ける");
     }
 }
