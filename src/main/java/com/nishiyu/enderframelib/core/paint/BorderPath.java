@@ -11,9 +11,6 @@ package com.nishiyu.enderframelib.core.paint;
 public final class BorderPath {
     private BorderPath() {}
 
-    /** 破線 1 周分の割り付け。{@code count} 個の周期に分け、周期ごとに長さ {@code dash} の線（または直径 {@code dash} の点）を中央に置く。 */
-    public record Pattern(int count, float period, float dash, boolean round) {}
-
     public static final int SOLID = 0;
     public static final int DASHED = 1;
     public static final int DOTTED = 2;
@@ -86,11 +83,11 @@ public final class BorderPath {
      * 寸法は直線の辺（{@code BoxDecorations.sideSegments}）と同じ {@link #dashLength} / {@link #gapLength} で、
      * 継ぎ目なく閉じるように周期の数を丸めて間隔を均す。点線は太さが 2px 以上なら丸い点。
      */
-    public static Pattern pattern(int kind, float width, float length) {
+    public static BorderDashPattern pattern(int kind, float width, float length) {
         float dash = dashLength(kind, width);
         float gap = gapLength(kind, width);
         int count = Math.max(4, Math.round(length / (dash + gap)));
         float period = length / count;
-        return new Pattern(count, period, Math.min(dash, period * 0.95f), kind == DOTTED && width >= 2f);
+        return new BorderDashPattern(count, period, Math.min(dash, period * 0.95f), kind == DOTTED && width >= 2f);
     }
 }

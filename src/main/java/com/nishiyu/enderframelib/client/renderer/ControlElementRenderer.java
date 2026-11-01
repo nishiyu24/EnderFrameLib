@@ -18,7 +18,7 @@ import static com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.useSdf
 public final class ControlElementRenderer {
     private ControlElementRenderer() {}
 
-    static void renderProgressElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
+    static void renderProgressElement(DisplayItem el, AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
                                               float finalOpacity, float zPos, float rTL, float rTR, float rBR, float rBL,
                                               float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                               float cRTL, float cRTR, float cRBR, float cRBL) {
@@ -37,7 +37,7 @@ public final class ControlElementRenderer {
         }
     }
 
-    static void renderRangeElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
+    static void renderRangeElement(DisplayItem el, AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
                                            float finalOpacity, float zPos, float zUnit,
                                            float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                            float cRTL, float cRTR, float cRBR, float cRBL) {
@@ -133,7 +133,7 @@ public final class ControlElementRenderer {
         return Math.clamp((float) ((localX - RANGE_THUMB_SIZE / 2) / travel), 0f, 1f);
     }
 
-    static void renderToggleElement(DisplayItem el, CssAnimator.AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
+    static void renderToggleElement(DisplayItem el, AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,
                                             float finalOpacity, float zPos,
                                             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
                                             float cRTL, float cRTR, float cRBR, float cRBL) {

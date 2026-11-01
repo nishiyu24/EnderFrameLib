@@ -77,7 +77,7 @@ public class AtlasFootprintTest {
         for (float px : new float[]{13f, 16f, 26f}) {
             for (int i = 0; i < n; i++) {
                 for (int sub = 0; sub < LoadedFace.SUBPIXEL_STEPS; sub++) {
-                    LoadedFace.GlyphBitmap b = face.rasterize(cps[i], px, false, false, sub);
+                    GlyphBitmap b = face.rasterize(cps[i], px, false, false, sub);
                     if (b.isEmpty()) continue;
                     footprint.recordGlyph(b.width(), b.height());
                     sizes.add(new int[]{b.width() + 1, b.height() + 1});

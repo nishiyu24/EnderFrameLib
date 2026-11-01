@@ -212,7 +212,7 @@ public class DisplayItemDrawer {
         SessionContext session = ClientWebManager.getSession(sessionId);
         boolean isActive = session != null && session.isPressedBase(baseId);
         boolean isFocused = session != null && session.isFocusedBase(baseId);
-        CssAnimator.AnimatedValues anim = CssAnimator.getValues(sessionId, el, isHovered, isActive, isFocused);
+        AnimatedValues anim = CssAnimator.getValues(sessionId, el, isHovered, isActive, isFocused);
 
         RenderMeta meta = el.meta();
         float originX = meta != null ? meta.originX() : 0.5f;
@@ -409,7 +409,7 @@ public class DisplayItemDrawer {
                 if (resolvedTooltipText != null) hoveredTooltipEl = el;
             }
 
-            CssAnimator.AnimatedValues anim = CssAnimator.getValues(animSessionId, el, isHovered, isActive, isFocused);
+            AnimatedValues anim = CssAnimator.getValues(animSessionId, el, isHovered, isActive, isFocused);
             RenderMeta meta = el.meta();
 
             float clipMinX = 0, clipMinY = 0, clipMaxX = maxAllowedX, clipMaxY = maxAllowedY;
@@ -715,7 +715,7 @@ public class DisplayItemDrawer {
             boolean hovered = !hoveredId.isEmpty() && baseId.equals(hoveredId);
             boolean active = session != null && session.isPressedBase(baseId);
             boolean focused = session != null && (session.isActiveInput(item.id()) || session.isFocusedBase(baseId));
-            CssAnimator.AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
+            AnimatedValues a = CssAnimator.getValues(sessionId, item, hovered, active, focused);
             if (i > anchorIndex && (a.tx() != 0 || a.ty() != 0 || a.rot() != 0 || a.sx() != 1.0f || a.sy() != 1.0f)) moved = true;
             // 錨自身の不透明度・変形は、合成のときに掛ける（変形は箱の写り = 変換として別に比べる）だけで、中身の絵は変わらない
             // （フェード・移動・回転・拡縮の最中も使い回せる）。子孫のものは中身に入る

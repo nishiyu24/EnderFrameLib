@@ -88,7 +88,7 @@ final class ItemProps {
             return this;
         }
 
-        ItemProps shadowShape(RenderHints.ShadowShape shape) {
+        ItemProps shadowShape(ShadowShape shape) {
             hints = hints.withShadowShape(shape);
             return this;
         }

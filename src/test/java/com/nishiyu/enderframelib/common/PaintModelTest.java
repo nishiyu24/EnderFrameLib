@@ -414,7 +414,7 @@ public class PaintModelTest {
         assertEquals(20, shadow.height());
         assertEquals(RED, shadow.bgColor());
         assertEquals(4.0f, shadow.hints().shadowBlur());
-        RenderHints.ShadowShape hole = shadow.hints().shadowShape();
+        ShadowShape hole = shadow.hints().shadowShape();
         assertNotNull(hole);
         assertTrue(hole.inset());
         // 穴 = パディングボックスをオフセット (1, 2) だけずらして広がり 3 だけ縮めた矩形。角丸（内側 4px）は広がりの分だけ小さい
@@ -431,7 +431,7 @@ public class PaintModelTest {
     public void testBlurredOuterShadowCarriesTheBoxAsAHole() {
         Rendered r = render("<div id=\"a\" style=\"margin: 20px; width: 40px; height: 20px; border-radius: 5px; box-shadow: 0 0 8px rgb(0, 0, 0);\"></div>");
         LayoutBox a = find(r.root, "a");
-        RenderHints.ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
+        ShadowShape hole = parts(r, "a_shadow").getFirst().hints().shadowShape();
         assertNotNull(hole, "ぼかした外側の影は箱の形を穴として持つ（透明な箱の内側に影が透けない）");
         assertEquals(false, hole.inset());
         assertEquals(a.x, hole.x0(), 0.01);

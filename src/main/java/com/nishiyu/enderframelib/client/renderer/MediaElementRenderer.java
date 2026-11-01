@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
+
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -139,7 +141,7 @@ public final class MediaElementRenderer {
         if (RasterImageStore.isRasterSrc(src)) {
             // SVG をソフトウェアで描いた画素（RasterPainting が置いたもの）
             String key = RasterPainting.keyOf(src);
-            RasterImageStore.Entry entry = RasterImageStore.get(key);
+            RasterImageEntry entry = RasterImageStore.get(key);
             int[] css = RasterPainting.cssSizeOf(src);
             if (entry != null && css != null) {
                 WebMediaManager.ImageInfo info = RasterTextures.textureFor(key, entry.pixmap(), entry.version(), css[0], css[1]);
@@ -204,7 +206,7 @@ public final class MediaElementRenderer {
         if (boxW <= 0 || boxH <= 0) return;
 
         // object-fit / object-position: 中身の矩形を決め、箱の外にはみ出す分はテクスチャ座標で切る
-        ObjectFit.Placement pl = ObjectFit.place(fit, el.events() == null ? null : el.events().get("object-position"),
+        ImagePlacement pl = ObjectFit.place(fit, el.events() == null ? null : el.events().get("object-position"),
                 imgW, imgH, boxW, boxH, 16f);
         float vx0 = Math.max(0f, pl.x()), vy0 = Math.max(0f, pl.y());
         float vx1 = Math.min(boxW, pl.x() + pl.w()), vy1 = Math.min(boxH, pl.y() + pl.h());

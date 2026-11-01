@@ -86,7 +86,7 @@ public final class TextElementRenderer {
     }
 
     static void renderTextOrInputElement(
-            DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim, boolean isFocused,
+            DisplayItem el, RenderMeta meta, AnimatedValues anim, boolean isFocused,
             Map<String, DisplayItem> elementMap, String animSessionId,
             PoseStack poseStack, MultiBufferSource buffer, Font font, boolean renderText, boolean is2DAudio,
             float finalOpacity, float zPos, int packedLight,
@@ -248,7 +248,7 @@ public final class TextElementRenderer {
 
     static void renderTextareaElement(
             DisplayItem el, String sessionId, PoseStack poseStack, MultiBufferSource buffer, Font font,
-            CssAnimator.AnimatedValues anim, float finalOpacity, float zPos,
+            AnimatedValues anim, float finalOpacity, float zPos,
             float clipMinX, float clipMinY, float clipMaxX, float clipMaxY,
             float maxAllowedX, float maxAllowedY, boolean is2D, int packedLight
     ) {
@@ -393,7 +393,7 @@ public final class TextElementRenderer {
      * ベースラインはレイアウトが決めた値、持たない要素（入力欄など）は内容領域の中央に置く。
      */
     static void renderOutlineTextOrInput(
-            DisplayItem el, RenderMeta meta, CssAnimator.AnimatedValues anim, OutlineFontFace face,
+            DisplayItem el, RenderMeta meta, AnimatedValues anim, OutlineFontFace face,
             String textToDraw, int cursorPos, float fontH, String animSessionId,
             PoseStack poseStack, MultiBufferSource buffer, boolean renderText, boolean is2D,
             float finalOpacity, float zPos, int packedLight,

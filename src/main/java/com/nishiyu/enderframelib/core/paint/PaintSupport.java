@@ -150,8 +150,8 @@ final class PaintSupport {
         }
         ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parent == null ? null : parent.toArray(), own)).withOwner(ownerId);
         // 合成する前の 1 つ 1 つも持つ。持ち主はこの要素（自分の箱で切るクリップは、要素の変形に付いていく）
-        java.util.List<ClipRect.Part> chain = new java.util.ArrayList<>(parent == null ? java.util.List.<ClipRect.Part>of() : parent.chain());
-        chain.add(new ClipRect.Part(own, ownerId));
+        java.util.List<ClipChainPart> chain = new java.util.ArrayList<>(parent == null ? java.util.List.<ClipChainPart>of() : parent.chain());
+        chain.add(new ClipChainPart(own, ownerId));
         return merged.withChain(chain);
     }
 

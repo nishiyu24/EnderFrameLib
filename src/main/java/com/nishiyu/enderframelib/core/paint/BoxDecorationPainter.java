@@ -247,7 +247,7 @@ public final class BoxDecorationPainter {
                 ItemProps blurEvents = events.copy();
                 blurEvents.shadowBlur(s.blur());
                 // 影は箱の外だけに出す（背景が透明・半透明の箱の内側に透けないよう、箱の形を穴として抜く）
-                blurEvents.shadowShape(new RenderHints.ShadowShape(false, box.x, box.y, box.x + box.w, box.y + box.h,
+                blurEvents.shadowShape(new ShadowShape(false, box.x, box.y, box.x + box.w, box.y + box.h,
                         radii.topLeft(), radii.topRight(), radii.bottomRight(), radii.bottomLeft(),
                         radii.topLeftV(), radii.topRightV(), radii.bottomRightV(), radii.bottomLeftV()));
                 addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
@@ -307,10 +307,10 @@ public final class BoxDecorationPainter {
                     hv[c] = Math.min(Math.max(0, iv[c] - s.spread()), limitY);
                     if (hh[c] <= 0 || hv[c] <= 0) hh[c] = hv[c] = 0;
                 }
-                shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
+                shadowEvents.shadowShape(new ShadowShape(true, hx0, hy0, hx1, hy1,
                         hh[0], hh[1], hh[2], hh[3], hv[0], hv[1], hv[2], hv[3]));
             } else {
-                shadowEvents.shadowShape(new RenderHints.ShadowShape(true, hx0, hy0, hx1, hy1,
+                shadowEvents.shadowShape(new ShadowShape(true, hx0, hy0, hx1, hy1,
                         Math.min(Math.max(0, inner.topLeft() - s.spread()), limit), Math.min(Math.max(0, inner.topRight() - s.spread()), limit),
                         Math.min(Math.max(0, inner.bottomRight() - s.spread()), limit), Math.min(Math.max(0, inner.bottomLeft() - s.spread()), limit)));
             }

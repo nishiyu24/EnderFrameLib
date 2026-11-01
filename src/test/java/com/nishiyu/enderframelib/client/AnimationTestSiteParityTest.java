@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.paint.AnimatedValues;
+
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
@@ -322,7 +324,7 @@ public class AnimationTestSiteParityTest {
             long start = 1_000_000L;
 
             // 0% 時点
-            CssAnimator.AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, bounceItem, start);
+            AnimatedValues v0 = CssAnimator.getValuesAt(sessionId, bounceItem, start);
             assertEquals(0.0f, v0.ty(), 0.1f, "0% 時点の translateY は 0px であること");
             assertEquals(1.15f, v0.sx(), 0.05f, "0% 時点の scaleX は 1.15 であること");
             assertEquals(0.85f, v0.sy(), 0.05f, "0% 時点の scaleY は 0.85 であること");

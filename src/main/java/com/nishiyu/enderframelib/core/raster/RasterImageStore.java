@@ -14,12 +14,9 @@ public final class RasterImageStore {
     public static final String PREFIX = "raster:";
     private static final int MAX_ENTRIES = 96;
 
-    /** 画素と版。版が変わったらテクスチャを上げ直す。 */
-    public record Entry(Pixmap pixmap, long version) {}
-
-    private static final Map<String, Entry> ENTRIES = new LinkedHashMap<>(64, 0.75f, true) {
+    private static final Map<String, RasterImageEntry> ENTRIES = new LinkedHashMap<>(64, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Entry> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, RasterImageEntry> eldest) {
             return size() > MAX_ENTRIES;
         }
     };
@@ -27,17 +24,17 @@ public final class RasterImageStore {
     private RasterImageStore() {}
 
     /** キーが無ければ {@code supplier} で作って置く。作れなければ null。 */
-    public static synchronized Entry getOrCreate(String key, java.util.function.Supplier<Pixmap> supplier) {
-        Entry e = ENTRIES.get(key);
+    public static synchronized RasterImageEntry getOrCreate(String key, java.util.function.Supplier<Pixmap> supplier) {
+        RasterImageEntry e = ENTRIES.get(key);
         if (e != null) return e;
         Pixmap p = supplier.get();
         if (p == null) return null;
-        e = new Entry(p, 1);
+        e = new RasterImageEntry(p, 1);
         ENTRIES.put(key, e);
         return e;
     }
 
-    public static synchronized Entry get(String key) {
+    public static synchronized RasterImageEntry get(String key) {
         return ENTRIES.get(key);
     }
 

@@ -88,25 +88,25 @@ class ImageSourcesTest {
 
     @Test
     void objectPositionDefaultsToCenterAndSupportsKeywordsLengthsAndPercents() {
-        ObjectFit.Placement c = ObjectFit.place(ImageFitMode.NONE, null, 20, 10, 100, 100, 16);
+        ImagePlacement c = ObjectFit.place(ImageFitMode.NONE, null, 20, 10, 100, 100, 16);
         assertEquals(40, c.x(), 1e-4);
         assertEquals(45, c.y(), 1e-4);
-        ObjectFit.Placement lt = ObjectFit.place(ImageFitMode.NONE, "left top", 20, 10, 100, 100, 16);
+        ImagePlacement lt = ObjectFit.place(ImageFitMode.NONE, "left top", 20, 10, 100, 100, 16);
         assertEquals(0, lt.x(), 1e-4);
         assertEquals(0, lt.y(), 1e-4);
-        ObjectFit.Placement rb = ObjectFit.place(ImageFitMode.NONE, "bottom right", 20, 10, 100, 100, 16);
+        ImagePlacement rb = ObjectFit.place(ImageFitMode.NONE, "bottom right", 20, 10, 100, 100, 16);
         assertEquals(80, rb.x(), 1e-4);
         assertEquals(90, rb.y(), 1e-4);
-        ObjectFit.Placement mixed = ObjectFit.place(ImageFitMode.NONE, "25% 10px", 20, 10, 100, 100, 16);
+        ImagePlacement mixed = ObjectFit.place(ImageFitMode.NONE, "25% 10px", 20, 10, 100, 100, 16);
         assertEquals(20, mixed.x(), 1e-4);
         assertEquals(10, mixed.y(), 1e-4);
-        ObjectFit.Placement offset = ObjectFit.place(ImageFitMode.NONE, "right 5px bottom 3px", 20, 10, 100, 100, 16);
+        ImagePlacement offset = ObjectFit.place(ImageFitMode.NONE, "right 5px bottom 3px", 20, 10, 100, 100, 16);
         assertEquals(75, offset.x(), 1e-4);
         assertEquals(87, offset.y(), 1e-4);
-        ObjectFit.Placement cover = ObjectFit.place(ImageFitMode.COVER, "left top", 20, 10, 100, 100, 16);
+        ImagePlacement cover = ObjectFit.place(ImageFitMode.COVER, "left top", 20, 10, 100, 100, 16);
         assertEquals(0, cover.x(), 1e-4);
         assertEquals(200, cover.w(), 1e-4);
-        ObjectFit.Placement bogus = ObjectFit.place(ImageFitMode.NONE, "wat", 20, 10, 100, 100, 16);
+        ImagePlacement bogus = ObjectFit.place(ImageFitMode.NONE, "wat", 20, 10, 100, 100, 16);
         assertEquals(40, bogus.x(), 1e-4);
     }
 }

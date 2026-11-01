@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * フラグメントシェーダー（{@code WebSdfShader}）のグラデーションの計算を CPU で再現する。
  * 式・範囲の外を捨てる・繰り返し・ヒント・色の補間を、シェーダーと同じ順で行う。
- * テストの基準との比較と、AWT のテスト用描画で使う。
+ * テストの基準との比較と、ソフトウェア描画バックエンド（SoftwareRenderBackend）が使う。
  */
 public final class ShaderGradientEmulator {
     private ShaderGradientEmulator() {}

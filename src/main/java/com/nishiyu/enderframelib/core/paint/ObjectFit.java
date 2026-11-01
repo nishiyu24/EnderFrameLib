@@ -12,9 +12,6 @@ public final class ObjectFit {
 
     private ObjectFit() {}
 
-    /** 内容ボックスの左上を原点とした、中身の矩形。ボックスからはみ出してよい（はみ出しは切る）。 */
-    public record Placement(float x, float y, float w, float h) {}
-
     /** 中身の具体的な大きさ（CSS px）。{@code none} は固有の大きさ、{@code scale-down} は none と contain の小さい方。 */
     public static float[] objectSize(ImageFitMode fit, float imgW, float imgH, float boxW, float boxH) {
         if (!(imgW > 0) || !(imgH > 0)) return new float[]{boxW, boxH};
@@ -34,13 +31,13 @@ public final class ObjectFit {
      *
      * @param fontPx {@code em} を含む位置の基準
      */
-    public static Placement place(ImageFitMode fit, String position, float imgW, float imgH, float boxW, float boxH, float fontPx) {
+    public static ImagePlacement place(ImageFitMode fit, String position, float imgW, float imgH, float boxW, float boxH, float fontPx) {
         float[] size = objectSize(fit, imgW, imgH, boxW, boxH);
         float[] pos = parsePosition(position, fontPx);
         // pos は {割合, 長さ}（x・y）。位置 = (余白) * 割合 + 長さ
         float x = (boxW - size[0]) * pos[0] + pos[1];
         float y = (boxH - size[1]) * pos[2] + pos[3];
-        return new Placement(x, y, size[0], size[1]);
+        return new ImagePlacement(x, y, size[0], size[1]);
     }
 
     /** {@code [xFraction, xOffsetPx, yFraction, yOffsetPx]}。読めなければ中央。 */

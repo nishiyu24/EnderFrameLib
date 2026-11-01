@@ -144,7 +144,7 @@ public class HitTestIndex {
         return chain;
     }
 
-    public static double[] inverseTransform(double px, double py, DisplayItem el, CssAnimator.AnimatedValues anim) {
+    public static double[] inverseTransform(double px, double py, DisplayItem el, AnimatedValues anim) {
         RenderMeta meta = el.meta();
         float originX = meta != null ? meta.originX() : 0.5f;
         float originY = meta != null ? meta.originY() : 0.5f;
@@ -182,7 +182,7 @@ public class HitTestIndex {
             double px = pixelX;
             double py = pixelY;
             for (DisplayItem ancestor : entry.transformChain) {
-                CssAnimator.AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
+                AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
                 double[] p = inverseTransform(px, py, ancestor, anim);
                 px = p[0];
                 py = p[1];
@@ -229,7 +229,7 @@ public class HitTestIndex {
         double px = pixelX;
         double py = pixelY;
         for (DisplayItem ancestor : chain) {
-            CssAnimator.AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
+            AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
             double[] p = inverseTransform(px, py, ancestor, anim);
             px = p[0];
             py = p[1];

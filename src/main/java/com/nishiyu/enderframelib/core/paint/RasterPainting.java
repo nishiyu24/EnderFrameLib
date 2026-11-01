@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
+
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
@@ -35,7 +37,7 @@ public final class RasterPainting {
         int pw = (int) Math.max(1, Math.round(sw * k));
         int ph = (int) Math.max(1, Math.round(sh * k));
         String key = "svg:" + Long.toHexString(SvgRenderer.signature(svg)) + ":" + pw + "x" + ph + ":" + Integer.toHexString(color);
-        RasterImageStore.Entry entry = RasterImageStore.getOrCreate(key,
+        RasterImageEntry entry = RasterImageStore.getOrCreate(key,
                 () -> SvgRenderer.render(svg, pw, ph, color, PaintServices.fontResolver()));
         if (entry == null) return "";
         return RasterImageStore.src(key) + "@" + Math.max(1, Math.round(obj[0])) + "x" + Math.max(1, Math.round(obj[1]));

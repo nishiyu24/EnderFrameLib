@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
+
 import com.mojang.blaze3d.font.GlyphInfo;
 import com.mojang.blaze3d.font.GlyphProvider;
 import com.mojang.blaze3d.font.SheetGlyphInfo;
@@ -340,7 +342,7 @@ public final class OutlineTextRenderer {
             // FontSet が置き場を作るときに試す番号（割り当て前の空白など）。null を返すと FontSet はこの提供元を外してしまう
             // （対応字を 1 つも引けない提供元は使われない）ので、空白の字形として答える
             if (codePoint < 0) return (GlyphInfo.SpaceGlyphInfo) () -> 1.0f;
-            LoadedFace.GlyphBitmap bitmap = face.rasterize(codePoint, pixelSize, bold, italic,
+            GlyphBitmap bitmap = face.rasterize(codePoint, pixelSize, bold, italic,
                     GlyphKey.subpixel(glyphKey)).withTextContrast(GlyphKey.lightText(glyphKey));
             if (bitmap.isEmpty()) return (GlyphInfo.SpaceGlyphInfo) () -> 1.0f;
             return new GlyphInfo() {
@@ -365,7 +367,7 @@ public final class OutlineTextRenderer {
         }
     }
 
-    private record Sheet(LoadedFace.GlyphBitmap bitmap, float oversample) implements SheetGlyphInfo {
+    private record Sheet(GlyphBitmap bitmap, float oversample) implements SheetGlyphInfo {
         @Override public int getPixelWidth() { return bitmap.width(); }
         @Override public int getPixelHeight() { return bitmap.height(); }
         @Override public boolean isColored() { return false; }
