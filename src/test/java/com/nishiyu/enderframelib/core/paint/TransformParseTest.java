@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import org.junit.jupiter.api.Test;
 

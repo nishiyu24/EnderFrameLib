@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;

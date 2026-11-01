@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.api.event.Event;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.InteractionState;

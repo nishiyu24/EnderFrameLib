@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 /** 他パッケージのテストから {@link DisplayListBuilder} の transform 解釈を使うための窓口。 */
 public final class TransformParseTestBridge {

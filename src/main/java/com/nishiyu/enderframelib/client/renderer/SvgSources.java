@@ -16,7 +16,7 @@ import java.util.Map;
  * {@code data:} は同期、リソースパック（{@code ns:path/icon.svg} → {@code assets/ns/path/icon.svg}）は初回に同期で読んで覚え、
  * {@code http(s)} は {@link WebMediaManager} が非同期に取る（届くまでは null で、届いたら固有サイズの登録でレイアウトし直す）。
  */
-final class SvgSources {
+public final class SvgSources {
 
     private static final Object MISSING = new Object();
     private static final Map<String, Object> RESOURCES = Collections.synchronizedMap(new LinkedHashMap<>(32, 0.75f, true) {
@@ -29,7 +29,7 @@ final class SvgSources {
     private SvgSources() {}
 
     /** 読めていれば SVG。読み込み中・失敗なら null。 */
-    static SvgImage get(String src) {
+    public static SvgImage get(String src) {
         if (src == null || src.isEmpty()) return null;
         if (SvgImage.isSvgDataUri(src)) return SvgImage.cachedFromDataUri(src);
         if (src.startsWith("http://") || src.startsWith("https://")) return WebMediaManager.getSvg(src);

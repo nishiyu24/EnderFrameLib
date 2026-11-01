@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -24,11 +24,11 @@ import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 import java.util.function.Predicate;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.addElement;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isAtomicInline;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isFlexOrGridItem;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isInvisible;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.normalizeClipRect;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.isAtomicInline;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.isFlexOrGridItem;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.isInvisible;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.normalizeClipRect;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**

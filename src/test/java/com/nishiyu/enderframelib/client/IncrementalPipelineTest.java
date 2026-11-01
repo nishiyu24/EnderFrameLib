@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;

@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.raster.svg.SvgRenderer;
  * SVG を描画項目の画像（{@code raster:<key>@<幅>x<高さ>}）にする。表示項目は文字列しか持てないので、
  * 画素は {@link RasterImageStore} に置き、項目にはキーと CSS px の大きさ（{@code object-fit} の縦横比の基準）を入れる。
  */
-final class RasterPainting {
+public final class RasterPainting {
 
     /** ラスタライズの一辺の上限（px）。 */
     private static final int MAX_SIDE = 2048;
@@ -24,7 +24,7 @@ final class RasterPainting {
      * @param intrW 固有の幅（CSS px）。{@code object-fit} の縦横比の基準
      * @param color {@code currentColor} になる色（非乗算 ARGB）
      */
-    static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color,
+    public static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color,
                          float devicePixelRatio) {
         if (!(boxW > 0) || !(boxH > 0)) return "";
         float[] obj = ObjectFit.objectSize(fit, (float) intrW, (float) intrH, boxW, boxH);
@@ -36,13 +36,13 @@ final class RasterPainting {
         int ph = (int) Math.max(1, Math.round(sh * k));
         String key = "svg:" + Long.toHexString(SvgRenderer.signature(svg)) + ":" + pw + "x" + ph + ":" + Integer.toHexString(color);
         RasterImageStore.Entry entry = RasterImageStore.getOrCreate(key,
-                () -> SvgRenderer.render(svg, pw, ph, color, WebFontManager.McFontResolver.INSTANCE));
+                () -> SvgRenderer.render(svg, pw, ph, color, PaintServices.fontResolver()));
         if (entry == null) return "";
         return RasterImageStore.src(key) + "@" + Math.max(1, Math.round(obj[0])) + "x" + Math.max(1, Math.round(obj[1]));
     }
 
     /** {@code raster:<key>@<w>x<h>} の CSS px の大きさ。無ければ null。 */
-    static int[] cssSizeOf(String src) {
+    public static int[] cssSizeOf(String src) {
         int at = src.lastIndexOf('@');
         int x = src.lastIndexOf('x');
         if (at < 0 || x < at) return null;
@@ -54,7 +54,7 @@ final class RasterPainting {
     }
 
     /** {@code raster:<key>@...} のキー。 */
-    static String keyOf(String src) {
+    public static String keyOf(String src) {
         int at = src.lastIndexOf('@');
         return RasterImageStore.keyOf(at < 0 ? src : src.substring(0, at));
     }

@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.HitTestIndex;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.HitTestIndex;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
@@ -47,7 +47,7 @@ public class HitTestAndOcclusionTest {
                 <button id="btn" onclick="act" style="position: absolute; left: 0; top: 0; width: 100px; height: 40px;"></button>
                 <div id="overlay" style="position: absolute; left: 0; top: 0; width: 200px; height: 100px; background-color: rgb(255, 255, 255); pointer-events: none;"></div>
                 """);
-        SessionContext.UIHitResult hit = index.hitTest("w8", 50, 20);
+        UIHitResult hit = index.hitTest("w8", 50, 20);
         assertNotNull(hit);
         assertEquals("btn", hit.element().baseId());
     }
@@ -58,7 +58,7 @@ public class HitTestAndOcclusionTest {
                 <button id="btn" onclick="act" style="position: absolute; left: 0; top: 0; width: 100px; height: 40px;"></button>
                 <div id="overlay" style="position: absolute; left: 0; top: 0; width: 200px; height: 100px; background-color: rgb(255, 255, 255);"></div>
                 """);
-        SessionContext.UIHitResult hit = index.hitTest("w8", 50, 20);
+        UIHitResult hit = index.hitTest("w8", 50, 20);
         assertNotNull(hit);
         assertEquals("overlay", hit.element().baseId());
     }
@@ -83,7 +83,7 @@ public class HitTestAndOcclusionTest {
                 <div id="card" onclick="card" style="position: absolute; left: 0; top: 0; width: 100px; height: 50px; background-color: rgb(255, 255, 255); box-shadow: 0 20px 6px rgb(0, 0, 0);"></div>
                 """);
         // 影はボタンの上に掛かっているが、クリックはボタンに届く
-        SessionContext.UIHitResult hit = index.hitTest("w8", 50, 65);
+        UIHitResult hit = index.hitTest("w8", 50, 65);
         assertNotNull(hit);
         assertEquals("btn", hit.element().baseId());
         // 影の番号付きの部品は持ち主の id を持つ（以前は "_shadow_1" を剥がせなかった）
@@ -109,7 +109,7 @@ public class HitTestAndOcclusionTest {
         }
         HitTestIndex index = index(html.toString());
         for (int i = 0; i < ids.length; i++) {
-            SessionContext.UIHitResult hit = index.hitTest("w8", i * 20 + 9, 9);
+            UIHitResult hit = index.hitTest("w8", i * 20 + 9, 9);
             assertNotNull(hit, ids[i]);
             assertEquals(ids[i], hit.element().baseId(), "持ち主の節の id が書き換わった");
         }
@@ -130,7 +130,7 @@ public class HitTestAndOcclusionTest {
                 <div id="frame" onclick="frame" style="position: absolute; left: 0; top: 0; width: 100px; height: 40px; border: 2px solid rgb(255, 255, 255); border-radius: 6px;"></div>
                 """);
         // 枠の上をクリックしても、受け口は枠の部品ではなく箱の _bg（枠線ボックスいっぱい）
-        SessionContext.UIHitResult hit = index.hitTest("w8", 1, 20);
+        UIHitResult hit = index.hitTest("w8", 1, 20);
         assertNotNull(hit);
         assertEquals("frame_bg", hit.element().id());
     }
@@ -143,7 +143,7 @@ public class HitTestAndOcclusionTest {
                 </div>
                 """);
         assertNotNull(index.hitTest("w8", 10, 10));
-        SessionContext.UIHitResult outside = index.hitTest("w8", 10, 40);
+        UIHitResult outside = index.hitTest("w8", 10, 40);
         String outsideId = outside == null ? null : outside.element().baseId();
         assertNotEquals("inner", outsideId, "overflow-y: auto の外にはみ出した子がクリックを受けている");
     }

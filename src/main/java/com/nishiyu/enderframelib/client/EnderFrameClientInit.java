@@ -15,7 +15,9 @@ import com.nishiyu.enderframelib.api.Ui;
 import com.nishiyu.enderframelib.api.config.EnderConfigManager;
 import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.PaintServices;
+import com.nishiyu.enderframelib.client.renderer.SvgSources;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
@@ -121,10 +123,13 @@ public class EnderFrameClientInit {
         }
         EnderConfigScreen.registerForMod(EnderFrameLib.MODID);
 
-        UiDocumentCompiler.clientBoxRenderer = (rootBox, rootW, rootH, keyframes, scrollState) -> {
-            DisplayListBuilder renderer = new DisplayListBuilder(rootW, rootH, keyframes, scrollState);
-            return renderer.render(rootBox);
-        };
+        // 表示リスト生成は core/paint に移したので、Minecraft のリソース・書体・セッション状態だけをここで繋ぐ
+        PaintServices.setSvgSource(SvgSources::get);
+        PaintServices.setFontResolver(WebFontManager.McFontResolver.INSTANCE);
+        CssAnimator.setStateStore((sessionId, create) -> {
+            SessionContext ctx = create ? ClientWebManager.getOrCreateSession(sessionId) : ClientWebManager.getSession(sessionId);
+            return ctx == null ? null : ctx.cssAnimations();
+        });
 
         CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
 
@@ -179,6 +184,7 @@ public class EnderFrameClientInit {
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
         UiDocumentCompiler.intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
+        PaintServices.setIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER);
 
         ClientImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);
 

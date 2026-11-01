@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -19,9 +19,9 @@ import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.addElement;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.resolveLiveInputValue;
-import com.nishiyu.enderframelib.client.renderer.BoxDecorationPainter.BorderSpec;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInputValue;
+import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
 
 /** フォームの部品・メディア・シーン・フィールドセットを描画項目にする。枠や背景は {@link BoxDecorationPainter} に任せる。 */
 final class ControlPainter {
@@ -94,7 +94,7 @@ final class ControlPainter {
 
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
         if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
-            SvgImage svg = SvgSources.get(src);
+            SvgImage svg = PaintServices.svg(src);
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio());
         }
         ItemProps imageEvents = mediaEvents;

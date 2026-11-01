@@ -26,7 +26,9 @@ public class UiDocumentCompiler {
 
     public interface ILayoutBoxRenderer extends RenderPipeline.ILayoutBoxRenderer {}
 
-    public static RenderPipeline.ILayoutBoxRenderer clientBoxRenderer = null;
+    /** 既定は core/paint の {@link com.nishiyu.enderframelib.core.paint.DisplayListBuilder}。Minecraft 無しでも補間前の表示リストまで組める。 */
+    public static RenderPipeline.ILayoutBoxRenderer clientBoxRenderer = (rootBox, rootW, rootH, keyframes, scrollState) ->
+            new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(rootW, rootH, keyframes, scrollState).render(rootBox);
     public static Function<String, String> clientResourceFallback = null;
     public static Function<String, String> datapackResourceFallback = null;
     public static IntrinsicSizeResolver intrinsicSizeResolver = null;

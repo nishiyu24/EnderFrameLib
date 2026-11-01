@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
-import com.nishiyu.enderframelib.client.renderer.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
@@ -1361,7 +1361,6 @@ public class SessionContext implements AutoCloseable {
         textareaScrollRow.remove(renderId);
     }
 
-    public record UIHitResult(DisplayItem element, double localX, double localY) {}
 
     public void initializeBindings(HtmlNode target) {
         if (target == null) return;

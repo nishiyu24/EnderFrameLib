@@ -1,6 +1,5 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -19,13 +18,16 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.BorderStyle;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.addElement;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.growRadius;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.intersectClip;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.growRadius;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.intersectClip;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** 箱の飾り（背景・枠線・影・輪郭線・インラインの断片）を描画項目にする。 */
-final class BoxDecorationPainter {
+public final class BoxDecorationPainter {
+    /** ぼかした影の矩形が、ぼかしが消える所まで外へ広がる倍率（ぼかし半径に対して）。 */
+    public static final float SHADOW_REACH = 1.5f;
+
     private final int rootW;
     private final int rootH;
     private final AtomicInteger fragIds;
@@ -237,7 +239,7 @@ final class BoxDecorationPainter {
             if (s.blur() > 0) {
                 // ぼかしは 1 枚の板に任せ、シェーダーが辺からの距離で滑らかに減衰させる（層の重ね塗りは段が見えた）。
                 // 板は影の形から「ぼかしが消える所まで」広げた矩形で、形の角丸は広がりの分だけ変える
-                float reach = BackgroundRenderer.SHADOW_REACH * s.blur();
+                float reach = SHADOW_REACH * s.blur();
                 float grow = s.spread() + reach;
                 float w = box.w + 2 * grow, h = box.h + 2 * grow;
                 if (w <= 0 || h <= 0) continue;
@@ -418,13 +420,13 @@ final class BoxDecorationPainter {
             Gradients.Gradient gradient = layer.isGradient() ? Gradients.parse(layer.image()) : null;
             if (url == null && gradient == null) continue;
 
-            int[] intrinsic = url != null && UiDocumentCompiler.intrinsicSizeResolver != null ? UiDocumentCompiler.intrinsicSizeResolver.getSize(url) : null;
+            int[] intrinsic = PaintServices.intrinsicSize(url);
             if (intrinsic != null && layer.density() != 1.0) {
                 // image-set() の解像度（2x なら画像の画素数の半分が CSS px の大きさ）
                 intrinsic = new int[]{(int) Math.max(1, Math.round(intrinsic[0] / layer.density())),
                         (int) Math.max(1, Math.round(intrinsic[1] / layer.density()))};
             }
-            SvgImage svgLayer = url != null && SvgImage.looksLikeSvg(url) ? SvgSources.get(url) : null;
+            SvgImage svgLayer = url != null && SvgImage.looksLikeSvg(url) ? PaintServices.svg(url) : null;
             if (svgLayer != null && intrinsic == null) {
                 intrinsic = new int[]{(int) Math.max(1, Math.round(svgLayer.width() / layer.density())),
                         (int) Math.max(1, Math.round(svgLayer.height() / layer.density()))};

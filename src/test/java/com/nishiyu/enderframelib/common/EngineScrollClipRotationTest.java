@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.renderer.CssAnimator;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;

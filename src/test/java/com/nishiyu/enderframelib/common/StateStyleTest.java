@@ -2,8 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
-import com.nishiyu.enderframelib.client.renderer.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.paint.model.EasingFunction;

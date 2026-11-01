@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
-import com.nishiyu.enderframelib.client.HitTestIndex;
+import com.nishiyu.enderframelib.core.paint.HitTestIndex;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -88,7 +88,7 @@ public class InteractionPipelineTest {
         HitTestIndex index = new HitTestIndex(List.of(button, modal));
 
         // (50, 25) は button と modal の両方が重なっている座標
-        SessionContext.UIHitResult hit = index.hitTest("testSession", 50, 25);
+        UIHitResult hit = index.hitTest("testSession", 50, 25);
         assertNotNull(hit, "ヒット結果が存在すること");
 
         // 背後のボタンではなく、前面の不透明な modal がヒットして遮蔽すること
@@ -119,7 +119,7 @@ public class InteractionPipelineTest {
         HitTestIndex index = new HitTestIndex(List.of(button, overlay));
 
         // (50, 25) で前面の overlay は pointer-events: none なので透過して背後の btn に届く
-        SessionContext.UIHitResult hit = index.hitTest("testSession", 50, 25);
+        UIHitResult hit = index.hitTest("testSession", 50, 25);
         assertNotNull(hit, "ヒット結果が存在すること");
         assertEquals("btn", hit.element().baseId(), "pointer-events: none により前面を透過してボタンにヒットすること");
     }
@@ -270,8 +270,8 @@ public class InteractionPipelineTest {
         com.nishiyu.enderframelib.core.layout.LayoutBox rootBox = parser.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
         assertNotNull(rootBox);
-        com.nishiyu.enderframelib.client.renderer.DisplayListBuilder renderer =
-                new com.nishiyu.enderframelib.client.renderer.DisplayListBuilder(854, 480, doc.sheet.keyframes, new ScrollState());
+        com.nishiyu.enderframelib.core.paint.DisplayListBuilder renderer =
+                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(854, 480, doc.sheet.keyframes, new ScrollState());
         List<DisplayItem> elements = renderer.render(rootBox);
         assertNotNull(elements);
 

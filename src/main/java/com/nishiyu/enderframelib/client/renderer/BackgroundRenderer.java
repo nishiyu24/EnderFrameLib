@@ -196,5 +196,5 @@ public final class BackgroundRenderer {
     }
 
     /** 影のぼかしが消える所までの広さ（ぼかし半径の倍数。標準偏差 = 半径 / 2 の 3 倍）。 */
-    public static final float SHADOW_REACH = 1.5f;
+    public static final float SHADOW_REACH = com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.SHADOW_REACH;
 }

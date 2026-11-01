@@ -1,10 +1,11 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
+import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopLayout;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.RenderPipeline;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -222,7 +223,7 @@ public class LinuxDesktopScreenInputTest {
         assertEquals(50f, shown.translateY(), 0.01f);
 
         // ヒットテストも描画上の位置に付いてくる（移動後の見出しの上で同じウィンドウに当たる）
-        SessionContext.UIHitResult hit = session.hitTest(pressX + 200, pressY + 50);
+        UIHitResult hit = session.hitTest(pressX + 200, pressY + 50);
         assertNotNull(hit);
         assertTrue(isInside(hit.element().baseId(), "win-docs"), "動かしたウィンドウに当たること: " + hit.element().id());
 

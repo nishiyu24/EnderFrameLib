@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -131,7 +132,7 @@ public class WebRecipeViewerBridge {
     public static Object resolveIngredientAt(String sessionId, double webX, double webY) {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (session == null) return null;
-        SessionContext.UIHitResult hit = session.hitTest(webX, webY);
+        UIHitResult hit = session.hitTest(webX, webY);
         if (hit == null || hit.element() == null) return null;
 
         DisplayItem el = hit.element();

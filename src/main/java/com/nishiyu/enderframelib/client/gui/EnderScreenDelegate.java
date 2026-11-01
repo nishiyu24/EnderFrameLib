@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
@@ -224,7 +225,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 }
             } else {
                 SessionContext session = ClientWebManager.getSession(sessionId);
-                SessionContext.UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
+                UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
                 String hitBaseId = hit != null && hit.element() != null ? hit.element().baseId() : "";
                 if (selectWidget.openSelectBaseId().equals(hitBaseId)) {
                     selectWidget.close();
@@ -286,7 +287,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         if (session == null || result.hit() == null) return;
 
         DisplayItem clicked = result.element();
-        SessionContext.UIHitResult hit = result.hit();
+        UIHitResult hit = result.hit();
         int button = result.minecraftButton();
 
         if (clicked.type() == ElementType.SCENE) {
@@ -361,7 +362,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
     }
 
     @Override
-    public boolean scrollHandled(SessionContext.UIHitResult hit, double scrollY) {
+    public boolean scrollHandled(UIHitResult hit, double scrollY) {
         if (hit == null || hit.element() == null) return false;
         if (hit.element().type() == ElementType.SCENE) {
             WebSceneContext.getOrCreate(sessionId, hit.element().baseId()).addZoom((float) (scrollY * 0.12));
@@ -475,7 +476,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         SessionContext session = ClientWebManager.getSession(sessionId);
         TextSelection sel = session != null ? session.textSelection() : null;
         if (sel != null && !sel.anchorNodeId().isEmpty()) {
-            SessionContext.UIHitResult dragHit = session.hitTest(webX, webY);
+            UIHitResult dragHit = session.hitTest(webX, webY);
             if (dragHit != null && dragHit.element() != null && dragHit.element().text() != null) {
                 if (sel.anchorNodeId().equals(dragHit.element().baseId())) {
                     Font font = Minecraft.getInstance().font;
@@ -1214,7 +1215,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         public void handleRelease(String sessionId, double webX, double webY, DropCallback onWebDrop) {
             if (!isDragging()) return;
             SessionContext session = ClientWebManager.getSession(sessionId);
-            SessionContext.UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
+            UIHitResult hit = session != null ? session.hitTest(webX, webY) : null;
             if (hit != null && hit.element() != null) {
                 String targetBaseId = hit.element().baseId();
                 String dropAction = hit.element().events() != null ? hit.element().events().getOrDefault("ondrop", "") : "";
