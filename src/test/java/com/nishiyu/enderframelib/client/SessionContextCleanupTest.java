@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.client;
 
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
-import com.nishiyu.enderframelib.client.renderer.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.WebSceneContext;
 import com.nishiyu.enderframelib.core.css.model.ElementState;

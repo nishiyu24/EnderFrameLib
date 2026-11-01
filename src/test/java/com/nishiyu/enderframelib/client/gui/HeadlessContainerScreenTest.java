@@ -8,7 +8,7 @@ import com.nishiyu.enderframelib.client.template.ClientTemplateManager;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.event.CoreEvent;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.network.StateDeltaS2CPacket;
 import com.nishiyu.enderframelib.network.UiActionC2SPacket;
 import net.minecraft.SharedConstants;

@@ -1,7 +1,5 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.client.ClientWebManager;
-import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
@@ -27,6 +25,29 @@ import com.nishiyu.enderframelib.core.paint.model.*;
  * そのまま検知して補間する一般化された仕組みとなった。
  */
 public class CssAnimator {
+
+    /** セッション ID ごとの補間状態の置き場。 */
+    public interface StateStore {
+        /** {@code create} が false で無ければ null を返してよい。 */
+        Map<String, AnimState> mapFor(String sessionId, boolean create);
+    }
+
+    /** 既定: プロセス内のレジストリ。Minecraft 側はセッション自身の保持先に差し替える。 */
+    private static final Map<String, Map<String, AnimState>> DEFAULT_STATES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final StateStore DEFAULT_STORE = (id, create) -> create
+            ? DEFAULT_STATES.computeIfAbsent(id, k -> new java.util.concurrent.ConcurrentHashMap<>())
+            : DEFAULT_STATES.get(id);
+
+    private static volatile StateStore store = DEFAULT_STORE;
+
+    public static void setStateStore(StateStore newStore) {
+        store = newStore == null ? DEFAULT_STORE : newStore;
+    }
+
+    /** 既定の置き場の指定セッションを捨てる。 */
+    public static void clearSession(String sessionId) {
+        DEFAULT_STATES.remove(sessionId);
+    }
 
     /**
      * DisplayListBuilder が解決した {@link AnimationSpec} を、補間しやすい進行度順のキーフレーム列に正規化する。
@@ -56,7 +77,7 @@ public class CssAnimator {
      */
     public static AnimatedValues getValuesAt(String sessionId, DisplayItem el, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        Map<String, AnimState> sessionMap = ClientWebManager.getOrCreateSession(safeSessionId).cssAnimations();
+        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, true);
         AnimState state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
 
         if (state.hasTargetChanged(el)) {
@@ -68,8 +89,7 @@ public class CssAnimator {
 
     public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
-        SessionContext session = ClientWebManager.getSession(safeSessionId);
-        Map<String, AnimState> sessionMap = session != null ? session.cssAnimations() : null;
+        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
         AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
         if (state != null) {
             return state.getInterpolatedValues(System.currentTimeMillis());
@@ -83,14 +103,13 @@ public class CssAnimator {
 
     public static void cleanup(String sessionId, List<DisplayItem> currentElements) {
         if (sessionId == null) return;
-        SessionContext session = ClientWebManager.getSession(sessionId);
-        if (session == null || session.cssAnimations().isEmpty()) return;
+        Map<String, AnimState> sessionMap = store.mapFor(sessionId, false);
+        if (sessionMap == null || sessionMap.isEmpty()) return;
         // 毎フレームやると要素数分の集合を作り直すので、掃除は 1 秒に 1 回でよい（消えた要素の状態が少し残るだけ）
         long now = System.nanoTime();
         Long last = LAST_CLEANUP.get(sessionId);
         if (last != null && now - last < 1_000_000_000L) return;
         LAST_CLEANUP.put(sessionId, now);
-        Map<String, AnimState> sessionMap = session.cssAnimations();
 
         Set<String> activeIds = new HashSet<>(currentElements.size());
         for (DisplayItem el : currentElements) {

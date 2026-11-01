@@ -63,7 +63,7 @@ public final class SessionInput {
         default void pressed(PressResult result) {}
 
         /** ホイールを DOM に送った後、ホスト固有のスクロール（シーン・テキストエリア）を処理する。 */
-        default boolean scrollHandled(SessionContext.UIHitResult hit, double scrollY) {
+        default boolean scrollHandled(UIHitResult hit, double scrollY) {
             return false;
         }
     }
@@ -88,7 +88,7 @@ public final class SessionInput {
     }
 
     /** 押下の結果。{@code consumed} はスクロールバーなど、ホスト側の追加処理が不要な操作。 */
-    public record PressResult(DisplayItem element, SessionContext.UIHitResult hit, HtmlNode pressedNode,
+    public record PressResult(DisplayItem element, UIHitResult hit, HtmlNode pressedNode,
                               int minecraftButton, boolean consumed) {
     }
 
@@ -102,7 +102,7 @@ public final class SessionInput {
 
     public String hover(double pixelX, double pixelY) {
         SessionContext.InputSessionState state = state();
-        SessionContext.UIHitResult hit = session.hitTest(pixelX, pixelY);
+        UIHitResult hit = session.hitTest(pixelX, pixelY);
         state.hoverX = pixelX;
         state.hoverY = pixelY;
 
@@ -136,7 +136,7 @@ public final class SessionInput {
     }
 
     public PressResult press(double pixelX, double pixelY, int minecraftButton, Host host) {
-        SessionContext.UIHitResult hit = session.hitTest(pixelX, pixelY);
+        UIHitResult hit = session.hitTest(pixelX, pixelY);
         if (hit == null) {
             session.setActivePressedId("");
             return null;
@@ -182,7 +182,7 @@ public final class SessionInput {
         if (session.handleScrollbarDrag(state.draggingId, state.draggingScrollbarPart, pixelX, pixelY)) {
             return true;
         }
-        SessionContext.UIHitResult dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
+        UIHitResult dragHit = session.localCoords(state.draggingId, pixelX, pixelY);
         long now = System.currentTimeMillis();
 
         if (dragHit != null) {
@@ -223,7 +223,7 @@ public final class SessionInput {
         DisplayItem pressedElement = state.pressedElement;
         session.setActivePressedId("");
 
-        SessionContext.UIHitResult hit = session.hitTest(pixelX, pixelY);
+        UIHitResult hit = session.hitTest(pixelX, pixelY);
         HtmlNode released = hit != null
                 ? session.findInteractiveNode(baseIdOf(hit.element()))
                 : null;
@@ -289,7 +289,7 @@ public final class SessionInput {
 
     public boolean scroll(double pixelX, double pixelY, double deltaX, double deltaY,
                           boolean ctrl, boolean shift, boolean alt, Host host) {
-        SessionContext.UIHitResult hit = session.hitTest(pixelX, pixelY);
+        UIHitResult hit = session.hitTest(pixelX, pixelY);
         if (hit != null) {
             String baseId = baseIdOf(hit.element());
             HtmlNode domNode = session.findInteractiveNode(baseId);
@@ -390,7 +390,7 @@ public final class SessionInput {
     }
 
     public void beginDrag(double pixelX, double pixelY) {
-        SessionContext.UIHitResult hit = session.hitTest(pixelX, pixelY);
+        UIHitResult hit = session.hitTest(pixelX, pixelY);
         if (hit == null) return;
         HtmlNode pressed = session.findInteractiveNode(baseIdOf(hit.element()));
         startDragInteraction(session, hit, pressed);
@@ -616,7 +616,7 @@ public final class SessionInput {
     // レンジ・ドラッグ
     // ------------------------------------------------------------------
 
-    private void startDragInteraction(SessionContext session, SessionContext.UIHitResult hit, HtmlNode pressed) {
+    private void startDragInteraction(SessionContext session, UIHitResult hit, HtmlNode pressed) {
         DisplayItem element = hit.element();
         Map<String, String> events = element.events() != null ? element.events() : Map.of();
         if (!hasEvent(events, "ondrag") && element.type() != ElementType.RANGE) return;

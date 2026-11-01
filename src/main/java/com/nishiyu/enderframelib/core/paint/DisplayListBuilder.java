@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
@@ -27,24 +27,24 @@ import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.TextAlign;
 import java.util.concurrent.atomic.AtomicInteger;
-import static com.nishiyu.enderframelib.client.renderer.BoxAnimation.applyTransitionEvents;
-import static com.nishiyu.enderframelib.client.renderer.BoxAnimation.parseOriginProp;
-import static com.nishiyu.enderframelib.client.renderer.BoxAnimation.parseTransitionSpec;
-import static com.nishiyu.enderframelib.client.renderer.ControlPainter.isPlainRange;
-import static com.nishiyu.enderframelib.client.renderer.ControlPainter.isPlainToggle;
-import static com.nishiyu.enderframelib.client.renderer.ControlPainter.rangeData;
-import static com.nishiyu.enderframelib.client.renderer.PaintOrder.canvasBackgroundSource;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.addElement;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.alignOffset;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.isInvisible;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.normalizeClipRect;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.parseFloatAttr;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.putFontEvents;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.resolveLiveInputValue;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.roundRadii;
-import com.nishiyu.enderframelib.client.renderer.BoxAnimation.TransitionSpec;
-import com.nishiyu.enderframelib.client.renderer.BoxDecorationPainter.BorderSpec;
-import com.nishiyu.enderframelib.client.renderer.PaintOrder.RenderTask;
+import static com.nishiyu.enderframelib.core.paint.BoxAnimation.applyTransitionEvents;
+import static com.nishiyu.enderframelib.core.paint.BoxAnimation.parseOriginProp;
+import static com.nishiyu.enderframelib.core.paint.BoxAnimation.parseTransitionSpec;
+import static com.nishiyu.enderframelib.core.paint.ControlPainter.isPlainRange;
+import static com.nishiyu.enderframelib.core.paint.ControlPainter.isPlainToggle;
+import static com.nishiyu.enderframelib.core.paint.ControlPainter.rangeData;
+import static com.nishiyu.enderframelib.core.paint.PaintOrder.canvasBackgroundSource;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.addElement;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.alignOffset;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.isInvisible;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.normalizeClipRect;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.parseFloatAttr;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInputValue;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.roundRadii;
+import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
+import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
+import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
 
 public class DisplayListBuilder {
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）

@@ -1,14 +1,15 @@
 package com.nishiyu.enderframelib.client.gui.desktop;
 
+import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.client.EnderFrameStandalone;
-import com.nishiyu.enderframelib.client.HitTestIndex;
+import com.nishiyu.enderframelib.core.paint.HitTestIndex;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopLayout;
 import com.nishiyu.enderframelib.client.gui.desktop.LinuxDesktopScreen.DesktopWindowManager;
-import com.nishiyu.enderframelib.client.renderer.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -193,7 +194,7 @@ public class LinuxDesktopHtmlTest {
         for (LayoutBox item : menuItems) {
             double cx = item.x + 40;
             double cy = item.y + item.h / 2.0;
-            SessionContext.UIHitResult hit = index.hitTest("desktop_hit", cx, cy);
+            UIHitResult hit = index.hitTest("desktop_hit", cx, cy);
             assertNotNull(hit, "メニュー項目の上で何かに当たること");
             HtmlNode node = laid.doc().root.getNodeById(hit.element().baseId());
             boolean inMenuItem = false;
@@ -216,7 +217,7 @@ public class LinuxDesktopHtmlTest {
     /** 箱の transform の平行移動量（描画と同じ解釈）。 */
     private static final class DisplayListBuilderAccess {
         static float[] translate(LayoutBox box) {
-            return com.nishiyu.enderframelib.client.renderer.TransformParseTestBridge.translate(
+            return com.nishiyu.enderframelib.core.paint.TransformParseTestBridge.translate(
                     box.style.get(CssProperty.TRANSFORM), box.w, box.h);
         }
     }
@@ -246,7 +247,7 @@ public class LinuxDesktopHtmlTest {
         LayoutBox rootBox = compiler.layoutDocument(
                 doc, 854, 480, Map.of(), new ScrollState(), EnderFrameStandalone.defaultFontResolver()
         );
-        List<DisplayItem> items = new com.nishiyu.enderframelib.client.renderer.DisplayListBuilder(
+        List<DisplayItem> items = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(
                 854, 480, doc.sheet.keyframes, new ScrollState()
         ).render(rootBox);
         DisplayItem phItem = items.stream()

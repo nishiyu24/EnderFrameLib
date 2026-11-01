@@ -1,8 +1,8 @@
-package com.nishiyu.enderframelib.client;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
 
-import com.nishiyu.enderframelib.client.renderer.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -169,7 +169,7 @@ public class HitTestIndex {
         return new double[]{dx + cx, dy + cy};
     }
 
-    public SessionContext.UIHitResult hitTest(String sessionId, double pixelX, double pixelY) {
+    public UIHitResult hitTest(String sessionId, double pixelX, double pixelY) {
         for (Entry entry : interactiveEntries) {
             DisplayItem el = entry.element;
 
@@ -192,7 +192,7 @@ public class HitTestIndex {
             double localY = py - el.y();
 
             if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                return new SessionContext.UIHitResult(el, localX, localY);
+                return new UIHitResult(el, localX, localY);
             }
         }
         return null;
@@ -224,7 +224,7 @@ public class HitTestIndex {
     /** {@link #scrollContainersAt} の 1 件。箱と、点の箱内の局所座標。 */
     public record UIHitResultOf(DisplayItem element, double localX, double localY) {}
 
-    public SessionContext.UIHitResult getLocalCoords(String sessionId, DisplayItem el, double pixelX, double pixelY) {
+    public UIHitResult getLocalCoords(String sessionId, DisplayItem el, double pixelX, double pixelY) {
         List<DisplayItem> chain = buildTransformChain(el, elementMap);
         double px = pixelX;
         double py = pixelY;
@@ -234,7 +234,7 @@ public class HitTestIndex {
             px = p[0];
             py = p[1];
         }
-        return new SessionContext.UIHitResult(el, px - el.x(), py - el.y());
+        return new UIHitResult(el, px - el.x(), py - el.y());
     }
 
     public DisplayItem getElementById(String id) {

@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.client.renderer;
+package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -13,9 +13,9 @@ import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
-import static com.nishiyu.enderframelib.client.renderer.BoxAnimation.applyTransitionEvents;
-import static com.nishiyu.enderframelib.client.renderer.PaintSupport.putFontEvents;
-import com.nishiyu.enderframelib.client.renderer.BoxAnimation.TransitionSpec;
+import static com.nishiyu.enderframelib.core.paint.BoxAnimation.applyTransitionEvents;
+import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
+import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 
 /**
  * {@link DisplayListBuilder} が 1 つの要素の部品群に共通して付ける情報。DOM 由来の属性（{@code onclick}・{@code data-*}・書体）と、

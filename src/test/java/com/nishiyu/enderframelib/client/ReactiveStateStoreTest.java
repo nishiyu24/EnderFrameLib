@@ -145,7 +145,7 @@ public class ReactiveStateStoreTest {
     public void testBoundStyleChangesReachLayoutWithoutOtherInvalidation() {
         com.nishiyu.enderframelib.common.RenderPipeline.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer;
         com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) ->
-                new com.nishiyu.enderframelib.client.renderer.DisplayListBuilder(w, h, kf, ss).render(rootBox);
+                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
         try {
             String html = "<style>#mover{position:absolute;width:10px;height:10px;background:red}"
                     + "#overlay{display:none;position:absolute;width:20px;height:20px;background:blue}"
