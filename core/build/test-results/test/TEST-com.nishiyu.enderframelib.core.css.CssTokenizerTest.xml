@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.css.CssTokenizerTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.529Z" hostname="N_UESUGI" time="0.012">
+<testsuite name="com.nishiyu.enderframelib.core.css.CssTokenizerTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:37.829Z" hostname="N_UESUGI" time="0.003">
   <properties/>
-  <testcase name="testMediaQueryListIsOr()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.001"/>
-  <testcase name="testCommentsAreStrippedOutsideStrings()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.001"/>
+  <testcase name="testMediaQueryListIsOr()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.0"/>
+  <testcase name="testCommentsAreStrippedOutsideStrings()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.0"/>
   <testcase name="testImportantBeatsHigherSpecificity()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.0"/>
   <testcase name="testKeyframesAreParsedWithoutStringFlattening()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.0"/>
   <testcase name="testSelectorListSplitIgnoresCommasInsideParensAndBrackets()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.001"/>
   <testcase name="testUrlAndStringsDoNotBreakDeclarations()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.0"/>
-  <testcase name="testNestedBracesAreOneBlock()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.002"/>
+  <testcase name="testNestedBracesAreOneBlock()" classname="com.nishiyu.enderframelib.core.css.CssTokenizerTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

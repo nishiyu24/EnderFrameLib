@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.event.EventDispatcherTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.014Z" hostname="N_UESUGI" time="0.018">
+<testsuite name="com.nishiyu.enderframelib.core.event.EventDispatcherTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.075Z" hostname="N_UESUGI" time="0.006">
   <properties/>
   <testcase name="testCheckboxToggleDefaultAction()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
-  <testcase name="testPreventDefaultCancelsDefaultAction()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
-  <testcase name="testSummaryTogglesDetailsOpenDefaultAction()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.002"/>
-  <testcase name="testLabelForDispatchesClickToTarget()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.005"/>
+  <testcase name="testPreventDefaultCancelsDefaultAction()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.0"/>
+  <testcase name="testSummaryTogglesDetailsOpenDefaultAction()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
+  <testcase name="testLabelForDispatchesClickToTarget()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
   <testcase name="testRadioGroupExclusivity()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
-  <testcase name="testSubmitButtonTriggersFormOnSubmit()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.002"/>
-  <testcase name="testStopPropagationPreventsBubbling()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.002"/>
-  <testcase name="testEventBubblingFiresContainerOnClick()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
+  <testcase name="testSubmitButtonTriggersFormOnSubmit()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
+  <testcase name="testStopPropagationPreventsBubbling()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.001"/>
+  <testcase name="testEventBubblingFiresContainerOnClick()" classname="com.nishiyu.enderframelib.core.event.EventDispatcherTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

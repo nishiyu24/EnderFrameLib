@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.199Z" hostname="N_UESUGI" time="0.048">
+<testsuite name="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.155Z" hostname="N_UESUGI" time="0.027">
   <properties/>
-  <testcase name="testWrappedTextHeightMatchesPlacedLines()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.003"/>
-  <testcase name="testConsecutiveLineBreaksOccupyHeightInBothPasses()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.002"/>
-  <testcase name="testWhitespaceBetweenInlineSpansIsPreserved()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.012"/>
-  <testcase name="testShrinkToFitHeightMatchesPlacedLines()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.001"/>
+  <testcase name="testWrappedTextHeightMatchesPlacedLines()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.002"/>
+  <testcase name="testConsecutiveLineBreaksOccupyHeightInBothPasses()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.001"/>
+  <testcase name="testWhitespaceBetweenInlineSpansIsPreserved()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.004"/>
+  <testcase name="testShrinkToFitHeightMatchesPlacedLines()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.0"/>
   <testcase name="testFragmentsOnOneLineShareABaselineAndAdvanceInOrder()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.001"/>
-  <testcase name="testWrappedInlineBoxSlicesItsEdges()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.009"/>
-  <testcase name="testMultiWordInlineBoxIsOneFragmentWithEdgesOnce()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.006"/>
+  <testcase name="testWrappedInlineBoxSlicesItsEdges()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.004"/>
+  <testcase name="testMultiWordInlineBoxIsOneFragmentWithEdgesOnce()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.003"/>
   <testcase name="testInlineElementsWithoutExplicitDisplayPropertyAreLaidOutInline()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.001"/>
-  <testcase name="testInlineBoxVerticalDecorationDoesNotGrowTheLine()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.007"/>
+  <testcase name="testInlineBoxVerticalDecorationDoesNotGrowTheLine()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.004"/>
   <testcase name="testInlineBoxStartingAtTheWrapPointMovesItsStartEdge()" classname="com.nishiyu.enderframelib.core.layout.InlineLayoutConsistencyTest" time="0.004"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

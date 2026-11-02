@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.layout.FormControlHeightTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.155Z" hostname="N_UESUGI" time="0.042">
+<testsuite name="com.nishiyu.enderframelib.core.layout.FormControlHeightTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.140Z" hostname="N_UESUGI" time="0.015">
   <properties/>
-  <testcase name="heightsMatchChrome()" classname="com.nishiyu.enderframelib.core.layout.FormControlHeightTest" time="0.042"/>
+  <testcase name="heightsMatchChrome()" classname="com.nishiyu.enderframelib.core.layout.FormControlHeightTest" time="0.015"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

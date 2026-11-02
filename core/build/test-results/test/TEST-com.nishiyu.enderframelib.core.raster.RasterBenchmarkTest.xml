@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:13.003Z" hostname="N_UESUGI" time="1.241">
+<testsuite name="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:43.687Z" hostname="N_UESUGI" time="0.641">
   <properties/>
-  <testcase name="displayListWithInlineSvgsReusesTheRasterAcrossBuilds()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.281"/>
-  <testcase name="svgRasterizeCostAndCachedLookupCost()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.429"/>
-  <testcase name="canvasPrimitiveCosts()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.53"/>
-  <system-out><![CDATA[[R8 benchmark] display list with 40 inline svgs: cold 12.99 ms, warm (raster cached) 9.66 ms, rasters stored 1
+  <testcase name="displayListWithInlineSvgsReusesTheRasterAcrossBuilds()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.057"/>
+  <testcase name="svgRasterizeCostAndCachedLookupCost()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.257"/>
+  <testcase name="canvasPrimitiveCosts()" classname="com.nishiyu.enderframelib.core.raster.RasterBenchmarkTest" time="0.327"/>
+  <system-out><![CDATA[[R8 benchmark] display list with 40 inline svgs: cold 1.71 ms, warm (raster cached) 1.31 ms, rasters stored 1
 
-[R8 benchmark] svg 22 shapes+gradient: raster 64px 5.54 ms, 256px 11.49 ms, signature 0.005 ms, parse 0.06 ms
-[R8 benchmark] canvas 300x150: 500 fillRect 12.74 ms, 200-segment stroke 7.85 ms, 50 arcs (r25) 2.08 ms, get+putImageData 1.04 ms
+[R8 benchmark] svg 22 shapes+gradient: raster 64px 2.60 ms, 256px 9.70 ms, signature 0.041 ms, parse 0.04 ms
+[R8 benchmark] canvas 300x150: 500 fillRect 7.91 ms, 200-segment stroke 5.13 ms, 50 arcs (r25) 2.87 ms, get+putImageData 0.67 ms
 ]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

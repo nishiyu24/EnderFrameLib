@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.text.TextSelectionTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.329Z" hostname="N_UESUGI" time="0.0">
+<testsuite name="com.nishiyu.enderframelib.core.text.TextSelectionTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:44.358Z" hostname="N_UESUGI" time="0.001">
   <properties/>
   <testcase name="クリア操作（clear）の検証" classname="com.nishiyu.enderframelib.core.text.TextSelectionTest" time="0.0"/>
   <testcase name="空の選択モデルの検証" classname="com.nishiyu.enderframelib.core.text.TextSelectionTest" time="0.0"/>

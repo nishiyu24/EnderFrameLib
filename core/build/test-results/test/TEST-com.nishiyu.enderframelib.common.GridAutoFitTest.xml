@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.common.GridAutoFitTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.232Z" hostname="N_UESUGI" time="0.027">
+<testsuite name="com.nishiyu.enderframelib.common.GridAutoFitTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:36.385Z" hostname="N_UESUGI" time="0.023">
   <properties/>
-  <testcase name="testAutoFillKeepsEmptyTracks()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.012"/>
+  <testcase name="testAutoFillKeepsEmptyTracks()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.01"/>
   <testcase name="testAutoFitGapsCollapseWithTheTracks()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.004"/>
-  <testcase name="testAutoFitKeepsTracksThatItemsSpan()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.003"/>
-  <testcase name="testAutoFitCollapsesEmptyTracksSoItemsStretch()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.005"/>
+  <testcase name="testAutoFitKeepsTracksThatItemsSpan()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.005"/>
+  <testcase name="testAutoFitCollapsesEmptyTracksSoItemsStretch()" classname="com.nishiyu.enderframelib.common.GridAutoFitTest" time="0.004"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

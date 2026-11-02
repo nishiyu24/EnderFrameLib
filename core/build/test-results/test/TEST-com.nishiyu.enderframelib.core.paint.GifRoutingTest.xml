@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.GifRoutingTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.596Z" hostname="N_UESUGI" time="0.001">
+<testsuite name="com.nishiyu.enderframelib.core.paint.GifRoutingTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.394Z" hostname="N_UESUGI" time="0.001">
   <properties/>
   <testcase name="http(s) の .gif はクエリや大文字小文字が付いていても GIF として扱う" classname="com.nishiyu.enderframelib.core.paint.GifRoutingTest" time="0.0"/>
   <testcase name="GIF 以外・ローカルスキーム・クエリ内の .gif は対象にしない" classname="com.nishiyu.enderframelib.core.paint.GifRoutingTest" time="0.001"/>

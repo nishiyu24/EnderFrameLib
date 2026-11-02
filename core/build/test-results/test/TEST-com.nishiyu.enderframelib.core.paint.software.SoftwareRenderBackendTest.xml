@@ -1,59 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" tests="53" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:10.551Z" hostname="N_UESUGI" time="0.905">
+<testsuite name="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" tests="53" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:42.704Z" hostname="N_UESUGI" time="0.435">
   <properties/>
-  <testcase name="pngDataUriImageIsScaledIntoItsBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.008"/>
+  <testcase name="pngDataUriImageIsScaledIntoItsBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.006"/>
   <testcase name="filterAppliesToTheWholeGroupNotToEachPart()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
   <testcase name="layersDoNotLeakBetweenFrames()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="overflowHiddenWithRadiusClipsChildren()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="backdropFilterFollowsRoundedCorners()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="insetShadowDarkensTheEdgesOnly()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="differenceAndScreenBlend()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.005"/>
+  <testcase name="overflowHiddenWithRadiusClipsChildren()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="backdropFilterFollowsRoundedCorners()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="insetShadowDarkensTheEdgesOnly()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="differenceAndScreenBlend()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
   <testcase name="clearColorFillsTheBackdrop()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="svgDataUriImageIsRasterized()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.008"/>
+  <testcase name="svgDataUriImageIsRasterized()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
   <testcase name="translateMovesThePaintedArea()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="backdropFilterBlurSmoothsTheEdgeBehindTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.028"/>
-  <testcase name="filterAndMaskLayersDoNotLeakBetweenFrames()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.014"/>
-  <testcase name="rotatedTextStillRenders()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.005"/>
-  <testcase name="backdropFilterInvertsWhatIsBehindTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="solidBackgroundFillsExactlyTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.005"/>
-  <testcase name="blendHonoursGroupOpacity()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="backdropFilterBlurSmoothsTheEdgeBehindTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.015"/>
+  <testcase name="filterAndMaskLayersDoNotLeakBetweenFrames()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.008"/>
+  <testcase name="rotatedTextStillRenders()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="backdropFilterInvertsWhatIsBehindTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
+  <testcase name="solidBackgroundFillsExactlyTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="blendHonoursGroupOpacity()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
   <testcase name="blurredShadowFadesWithDistance()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="blurSpreadsTheEdgeOutsideTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.009"/>
-  <testcase name="alphaMaskRevealsWhereMaskIsOpaque()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="renderingIsDeterministicAndClearsBetweenFrames()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="boldTextHasMoreInkAndBiggerTextMoreStill()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.019"/>
-  <testcase name="uniformBorderRingAndInterior()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="deviceRatioScalesTheCanvasAndTheGeometry()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="clipPathCircleCutsOutsideTheShape()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="luminanceMaskUsesBrightness()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="multiplyBlendsWithTheBackdrop()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="groupOpacityWithoutOverlapMatchesPerPartOpacity()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="dashedBorderAlternatesAlongTheEdge()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="groupOpacityScalesParts()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="nestedGroupOpacityMultiplies()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="radialAndConicGradientsAreRendered()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.006"/>
-  <testcase name="linearGradientRunsFromStartToEnd()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="textDrawsInkInsideItsLineBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
+  <testcase name="blurSpreadsTheEdgeOutsideTheBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.006"/>
+  <testcase name="alphaMaskRevealsWhereMaskIsOpaque()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="renderingIsDeterministicAndClearsBetweenFrames()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
+  <testcase name="boldTextHasMoreInkAndBiggerTextMoreStill()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.011"/>
+  <testcase name="uniformBorderRingAndInterior()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="deviceRatioScalesTheCanvasAndTheGeometry()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="clipPathCircleCutsOutsideTheShape()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="luminanceMaskUsesBrightness()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="multiplyBlendsWithTheBackdrop()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="groupOpacityWithoutOverlapMatchesPerPartOpacity()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="dashedBorderAlternatesAlongTheEdge()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="groupOpacityScalesParts()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="nestedGroupOpacityMultiplies()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="radialAndConicGradientsAreRendered()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
+  <testcase name="linearGradientRunsFromStartToEnd()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="textDrawsInkInsideItsLineBox()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
   <testcase name="clipPathAppliesToChildrenAsAGroup()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="dropShadowFilterIsDrawnBehindAndOffset()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="underlineAddsAHorizontalRule()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.009"/>
-  <testcase name="grayscaleFilterRemovesColor()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="canvasIsDrawnFromTheHostProvidedPixels()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.006"/>
+  <testcase name="dropShadowFilterIsDrawnBehindAndOffset()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="underlineAddsAHorizontalRule()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="grayscaleFilterRemovesColor()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="canvasIsDrawnFromTheHostProvidedPixels()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
   <testcase name="keyframeOpacityFollowsTheClock()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
-  <testcase name="showcaseDocumentRendersWithoutOpenGl()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.622"/>
-  <testcase name="checkedCheckboxDrawsAMark()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.013"/>
+  <testcase name="showcaseDocumentRendersWithoutOpenGl()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.267"/>
+  <testcase name="checkedCheckboxDrawsAMark()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.005"/>
   <testcase name="borderSidesKeepTheirOwnColorsWithDiagonalJoin()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="bufferedImageAndPngExportMatchThePixmap()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.009"/>
+  <testcase name="bufferedImageAndPngExportMatchThePixmap()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.004"/>
   <testcase name="groupOpacityDoesNotShowOverlappingPartsThrough()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="ellipticalCornersUseSeparateRadii()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="ellipticalCornersUseSeparateRadii()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
   <testcase name="isolationKeepsChildBlendInsideTheGroup()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="childTransformFollowsTheParent()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="rotationTurnsAWideBoxUpright()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="roundedCornersAreAntialiased()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="clipPathInsetRoundAndPolygon()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.007"/>
-  <testcase name="opacityFilterScalesAlpha()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
-  <testcase name="progressBarFillsProportionally()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
-  <testcase name="scaleGrowsAroundTheCenter()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="childTransformFollowsTheParent()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="rotationTurnsAWideBoxUpright()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="roundedCornersAreAntialiased()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
+  <testcase name="clipPathInsetRoundAndPolygon()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="opacityFilterScalesAlpha()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.003"/>
+  <testcase name="progressBarFillsProportionally()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.002"/>
+  <testcase name="scaleGrowsAroundTheCenter()" classname="com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackendTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

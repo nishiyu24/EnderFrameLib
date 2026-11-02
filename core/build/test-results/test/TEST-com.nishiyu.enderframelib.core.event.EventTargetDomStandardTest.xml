@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.033Z" hostname="N_UESUGI" time="0.014">
+<testsuite name="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.082Z" hostname="N_UESUGI" time="0.009">
   <properties/>
   <testcase name="addEventListener と removeEventListener の基本動作" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
-  <testcase name="同一 (type, listener, capture) の重複登録防止 (WHATWG DOM §2.7)" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.002"/>
-  <testcase name="AbortSignal によるリスナー解除と中絶済みシグナル" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.004"/>
-  <testcase name="once オプションによる自動解除" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
+  <testcase name="同一 (type, listener, capture) の重複登録防止 (WHATWG DOM §2.7)" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.0"/>
+  <testcase name="AbortSignal によるリスナー解除と中絶済みシグナル" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.003"/>
+  <testcase name="once オプションによる自動解除" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.0"/>
   <testcase name="composedPath のターゲットからルートへの包含" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.0"/>
   <testcase name="イベント伝播フェーズ順序: キャプチャ -&gt; ターゲット -&gt; バブリング" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
-  <testcase name="stopImmediatePropagation による同一ノードの後続リスナー停止" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
+  <testcase name="stopImmediatePropagation による同一ノードの後続リスナー停止" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.0"/>
   <testcase name="stopPropagation による祖先へのバブリング停止" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
   <testcase name="CustomEvent による detail データの受け渡し" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
-  <testcase name="passive: true による preventDefault の抑止" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.001"/>
+  <testcase name="passive: true による preventDefault の抑止" classname="com.nishiyu.enderframelib.core.event.EventTargetDomStandardTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
