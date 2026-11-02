@@ -25,6 +25,7 @@ import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.core.text.font.FontFaceRules;
 import com.nishiyu.enderframelib.core.text.font.WebFonts;
 import java.io.InputStream;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -34,9 +35,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Minecraft の TrueType (TTF/OTF) グリフプロバイダーおよび FontSet を動的に構築・キャッシュするフォントマネージャー。
  */
 public class WebFontManager {
-
-    private static final Pattern FONT_FACE_PATTERN = Pattern.compile("(?is)@font-face\\s*\\{([^}]+)}");
-    private static final Pattern URL_PATTERN = Pattern.compile("(?i)url\\(\\s*[\"']?([^\"')]+)[\"']?\\s*\\)");
 
     public record FontFaceSpec(
             String familyName,
@@ -83,132 +81,39 @@ public class WebFontManager {
         return uniform != null ? uniform : mc.font;
     }
 
-    /**
-     * 指定されたフォント名が Web 標準の Sans-Serif 系フォント群であるかを判定する。
-     */
     public static boolean isWebSansSerifFamily(String family) {
-        if (family == null || family.isBlank()) return false;
-        String f = cleanFamilyName(family);
-        return switch (f) {
-            case "sans-serif", "sans", "system-ui", "ui-sans-serif", "-apple-system", "blinkmacsystemfont",
-                 "segoe ui", "roboto", "helvetica", "helvetica neue", "arial", "inter",
-                 "noto sans", "noto sans jp", "noto sans cjk", "meiryo", "yu gothic",
-                 "verdana", "tahoma", "trebuchet ms", "open sans", "lato", "poppins" -> true;
-            default -> false;
-        };
+        return FontFaceRules.isWebSansSerifFamily(family);
     }
 
-    /**
-     * CSS文字列内の {@code @font-face} ブロックを解析して登録し、残りのCSS文字列を返す。
-     */
+    /** CSS 文字列内の {@code @font-face} を解析して登録し、残りの CSS を返す。 */
     public static String extractAndRegisterFontFaces(String css) {
-        if (css == null || !css.toLowerCase(Locale.ROOT).contains("@font-face")) {
-            return css;
-        }
-
-        Matcher m = FONT_FACE_PATTERN.matcher(css);
-        StringBuilder cleanedCss = new StringBuilder();
-        while (m.find()) {
-            String body = m.group(1);
-            parseFontFaceBlock(body);
-            m.appendReplacement(cleanedCss, "");
-        }
-        m.appendTail(cleanedCss);
-        return cleanedCss.toString();
-    }
-
-    /** {@code @font-face} の TTF / OTF の出所。資源の再読み込みで読み直すために覚える。 */
-    private record OutlineSource(String family, ResourceLocation location, int weight, boolean italic) {}
-
-    private static final List<OutlineSource> OUTLINE_SOURCES = new CopyOnWriteArrayList<>();
-
-    /** {@code font-weight} 記述子（{@code bold} / 数値 / 範囲 {@code 100 900}）を下限の数値にする。 */
-    static int parseFontWeightDescriptor(String value) {
-        String v = value.trim().toLowerCase(Locale.ROOT);
-        if (v.startsWith("bold")) return 700;
-        if (v.startsWith("normal")) return 400;
-        Matcher m = Pattern.compile("^\\d+").matcher(v);
-        return m.find() ? Integer.parseInt(m.group()) : 400;
-    }
-
-    /**
-     * TTF / OTF を資源から読んで {@link WebFonts} に登録する。登録できればその書体は OS の書体と同じ経路
-     * （FreeType + OpenType）で測り・描かれる。読めなければ false（従来のビットマップの書体にフォールバック）。
-     */
-    private static boolean registerOutline(OutlineSource source) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null) return false;
-        String path = source.location().getPath().toLowerCase(Locale.ROOT);
-        if (!(path.endsWith(".ttf") || path.endsWith(".otf"))) return false;
-        for (ResourceLocation loc : List.of(source.location(),
-                ResourceLocation.fromNamespaceAndPath(source.location().getNamespace(), "font/" + source.location().getPath()))) {
-            var resource = mc.getResourceManager().getResource(loc);
-            if (resource.isEmpty()) continue;
-            try (InputStream in = resource.get().open()) {
-                return WebFonts.register(source.family(), in.readAllBytes(), source.weight(), source.italic());
-            } catch (Exception e) {
-                EnderFrameLib.LOGGER.warn("Could not read @font-face {}: {}", loc, e.toString());
-            }
-        }
-        return false;
-    }
-
-    /** 資源の再読み込みのあとに、登録済みの TTF / OTF を読み直す。 */
-    private static void reloadOutlineFonts() {
-        WebFonts.clear();
-        for (OutlineSource source : OUTLINE_SOURCES) registerOutline(source);
-        McFontResolver.INSTANCE.clear();
-    }
-
-    private static void parseFontFaceBlock(String block) {
-        String family = null;
-        String srcUrl = null;
-        int weight = 400;
-        boolean italic = false;
-        float size = 11.0f;
-        float oversample = 4.0f;
-
-        for (String decl : block.split(";")) {
-            int colon = decl.indexOf(':');
-            if (colon <= 0) continue;
-            String key = decl.substring(0, colon).trim().toLowerCase(Locale.ROOT);
-            String val = decl.substring(colon + 1).trim();
-
-            switch (key) {
-                case "font-family" -> family = cleanFamilyName(val);
-                case "src" -> {
-                    Matcher um = URL_PATTERN.matcher(val);
-                    if (um.find()) {
-                        srcUrl = um.group(1).trim();
-                    } else {
-                        srcUrl = cleanFamilyName(val);
-                    }
-                }
-                case "font-weight" -> weight = parseFontWeightDescriptor(val);
-                case "font-style" -> italic = val.toLowerCase(Locale.ROOT).startsWith("italic") || val.toLowerCase(Locale.ROOT).startsWith("oblique");
-                case "font-size", "size" -> {
-                    try { size = Float.parseFloat(val.replace("px", "").trim()); } catch (Exception ignored) {}
-                }
-                case "oversample" -> {
-                    try { oversample = Float.parseFloat(val.trim()); } catch (Exception ignored) {}
-                }
-            }
-        }
-
-        if (family != null && !family.isEmpty() && srcUrl != null && !srcUrl.isEmpty()) {
+        return FontFaceRules.extractAndRegister(css, d -> {
             try {
-                ResourceLocation loc = ResourceLocation.parse(srcUrl);
-                OutlineSource outline = new OutlineSource(family, loc, weight, italic);
-                if (registerOutline(outline)) OUTLINE_SOURCES.add(outline);
-                registerFontFace(new FontFaceSpec(family, loc, size, oversample, 0.0f, 0.0f));
+                ResourceLocation loc = ResourceLocation.parse(d.src());
+                registerFontFace(new FontFaceSpec(d.family(), loc, d.size(), d.oversample(), 0.0f, 0.0f));
             } catch (Exception ignored) {
             }
-        }
+        });
+    }
+
+    /** 書体データの読み出しをリソースパックへつなぐ（起動時に 1 回）。 */
+    public static void installFontReader() {
+        FontFaceRules.setFontReader(source -> {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null) return null;
+            ResourceLocation loc = ResourceLocation.tryParse(source);
+            if (loc == null) return null;
+            var resource = mc.getResourceManager().getResource(loc);
+            if (resource.isEmpty()) return null;
+            try (InputStream in = resource.get().open()) {
+                return in.readAllBytes();
+            }
+        });
     }
 
     public static void registerFontFace(FontFaceSpec spec) {
         if (spec == null || spec.familyName() == null) return;
-        String key = cleanFamilyName(spec.familyName());
+        String key = FontFaceRules.cleanFamilyName(spec.familyName());
         REGISTERED_FACES.put(key, spec);
         FONT_CACHE.remove(key);
         McFontResolver.INSTANCE.clear();
@@ -226,7 +131,7 @@ public class WebFontManager {
         }
 
         for (String candidate : fontFamilyCss.split(",")) {
-            String family = cleanFamilyName(candidate);
+            String family = FontFaceRules.cleanFamilyName(candidate);
             if (family.isEmpty()) {
                 continue;
             }
@@ -341,7 +246,8 @@ public class WebFontManager {
     }
 
     public static void clearCache() {
-        reloadOutlineFonts();
+        FontFaceRules.reloadOutlineFonts();
+        McFontResolver.INSTANCE.clear();
         FONT_CACHE.clear();
         cachedUniformFont = null;
         for (FontSet fs : CREATED_FONT_SETS) {
@@ -352,40 +258,8 @@ public class WebFontManager {
         CREATED_FONT_SETS.clear();
     }
 
-    private static final Pattern FAMILY_QUOTES = Pattern.compile("^[\"']+|[\"']+$");
-    /** 要素ごと・フレームごとに引かれるので、結果を覚える（書体名の種類は少ない）。 */
-    private static final Map<String, String> CLEAN_FAMILY_CACHE = new ConcurrentHashMap<>();
-
-    private static String cleanFamilyName(String raw) {
-        if (raw == null) return "";
-        String cached = CLEAN_FAMILY_CACHE.get(raw);
-        if (cached != null) return cached;
-        String cleaned = FAMILY_QUOTES.matcher(raw.trim()).replaceAll("").trim().toLowerCase(Locale.ROOT);
-        if (CLEAN_FAMILY_CACHE.size() > 1024) CLEAN_FAMILY_CACHE.clear();
-        CLEAN_FAMILY_CACHE.put(raw, cleaned);
-        return cleaned;
-    }
-
-    /** Minecraft の書体を表す {@code font-family} の名前（小文字）。これらはビットマップの書体で描く。 */
-    private static final Set<String> MINECRAFT_FAMILIES = Set.of(
-            "minecraft:default", "minecraft:uniform", "minecraft:alt", "pixel", "uniform", "alt", "enchant", "minecraft");
-
-    /**
-     * {@code font-family} の並びで最初に使える書体が Minecraft の書体（{@code minecraft:default} や
-     * {@code @font-face} で登録した書体など）なら true。それ以外はシステムの書体で描く。
-     */
     static boolean prefersMinecraftFont(String fontFamily) {
-        SystemFonts system = SystemFonts.system();
-        for (var e : SystemFonts.parseFamilyList(fontFamily)) {
-            if (!e.generic()) {
-                String lower = e.name().toLowerCase(Locale.ROOT);
-                // @font-face で TTF / OTF を読めたものはシステムの書体と同じ経路で描くので、Minecraft の書体ではない
-                if (WebFonts.has(lower)) return false;
-                if (MINECRAFT_FAMILIES.contains(lower) || REGISTERED_FACES.containsKey(lower) || lower.contains(":")) return true;
-            }
-            if (system.isAvailable(e)) return false;
-        }
-        return false;
+        return FontFaceRules.prefersMinecraftFont(fontFamily, REGISTERED_FACES::containsKey);
     }
 
     /** 要素の文字をシステムの書体で描くならその書体、Minecraft の書体で描くなら null。 */
@@ -394,18 +268,8 @@ public class WebFontManager {
         return McFontResolver.INSTANCE.resolve(family) instanceof OutlineFontFace outline ? outline : null;
     }
 
-    /** 描画要素に載っている指定から、測定と同じ {@link FontStyle} を作る。 */
     public static FontStyle fontStyleFor(DisplayItem el, float fontSizePx) {
-        Map<String, String> ev = el.events() != null ? el.events() : Map.of();
-        int weight = LayoutMetrics.numericWeight(ev.get("font-weight"));
-        String style = ev.getOrDefault("font-style", "normal").trim();
-        float letterSpacing = 0;
-        try {
-            letterSpacing = Float.parseFloat(ev.getOrDefault("letter-spacing", "0"));
-        } catch (NumberFormatException ignored) {
-        }
-        boolean kerning = !"none".equalsIgnoreCase(ev.getOrDefault("font-kerning", "auto").trim());
-        return new FontStyle(fontSizePx, weight >= 600, !style.equalsIgnoreCase("normal"), letterSpacing, weight, kerning);
+        return FontFaceRules.fontStyleFor(el, fontSizePx);
     }
 
     /**

@@ -86,6 +86,7 @@ public final class UiEventFixture implements AutoCloseable {
         elements = new DisplayListBuilder(WIDTH, HEIGHT, document.sheet.keyframes, new ScrollState()).render(rootBox);
         SessionContext session = ClientWebManager.getOrCreateSession(sessionId);
         session.setDocument(document);
+        session.setLayoutRoot(rootBox);
         session.setRenderCache(elements);
     }
 

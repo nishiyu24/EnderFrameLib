@@ -1,8 +1,11 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.net.MediaUrls;
 import com.nishiyu.enderframelib.core.net.VideoStreamServer;
+import com.nishiyu.enderframelib.core.net.YtDlpResolver;
 import com.nishiyu.enderframelib.core.net.YtDlpProvisioner;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
+import com.nishiyu.enderframelib.core.raster.svg.SvgSources;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
@@ -87,11 +90,6 @@ public class WebMediaManager {
 
     // yt-dlp の stdout を読み切るまで待つと、パイプが詰まったプロセスをタイムアウトできない。
     // 読み取りだけを別スレッドへ出し、waitFor の制限時間を確実に効かせる。
-    private static final ExecutorService YT_DLP_OUTPUT_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
-        Thread t = new Thread(r, "EnderFrameLib-YtDlpReader-" + THREAD_COUNTER.getAndIncrement());
-        t.setDaemon(true);
-        return t;
-    });
 
     // ==========================================
     // セキュリティ・ガードレール設定 (大手MODパック基準)
@@ -143,17 +141,7 @@ public class WebMediaManager {
     private static final ConcurrentHashMap<String, Boolean> IMG_DOWNLOADING = new ConcurrentHashMap<>();
 
     private static String computeUrlHash(String url) {
-        try {
-            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(url.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 16; i++) {
-                sb.append(String.format("%02x", digest[i]));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return Integer.toUnsignedString(url.hashCode(), 16);
-        }
+        return MediaUrls.urlHash(url);
     }
 
     public record ImageInfo(ResourceLocation textureId, int width, int height) {}
@@ -213,16 +201,7 @@ public class WebMediaManager {
     }
 
     private static String convertToDirectLink(String urlString) {
-        if (urlString.contains("drive.google.com/file/d/")) {
-            try {
-                String[] parts = urlString.split("/file/d/");
-                if (parts.length > 1) {
-                    String fileId = parts[1].split("/")[0];
-                    return "https://drive.google.com/uc?export=download&id=" + fileId;
-                }
-            } catch (Exception ignored) {}
-        }
-        return urlString;
+        return MediaUrls.convertToDirectLink(urlString);
     }
 
     private static void downloadImageAsync(String originalUrl) {
@@ -256,7 +235,6 @@ public class WebMediaManager {
     // ==========================================
     private static final Map<String, VideoTexture> ACTIVE_VIDEOS = new ConcurrentHashMap<>();
     private static final Map<BlockPos, List<BlockPos>> SCREEN_AUDIO_LINKS = new ConcurrentHashMap<>();
-    private static final Map<String, YtDlpCache> YT_DLP_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Long> VIDEO_RETRY_AT = new ConcurrentHashMap<>();
     private static final long VIDEO_RETRY_COOLDOWN_MS = 60_000L;
     private static final AtomicBoolean YT_DLP_PREFETCH_SCHEDULED = new AtomicBoolean(false);
@@ -289,15 +267,7 @@ public class WebMediaManager {
      * そのままネイティブへ渡すと、HTML 側からローカルファイルを読む経路になる。
      */
     private static boolean isSupportedExternalVideoUrl(String url) {
-        try {
-            URI uri = URI.create(url);
-            String scheme = uri.getScheme();
-            return scheme != null
-                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
-                    && uri.getHost() != null;
-        } catch (Exception e) {
-            return false;
-        }
+        return MediaUrls.isSupportedExternalVideoUrl(url);
     }
 
     /** クライアントスレッドへ処理を渡す口。テストでは差し替えて、どのスレッドで走るかを確かめる。 */
@@ -450,7 +420,7 @@ public class WebMediaManager {
             return false;
         });
 
-        YT_DLP_CACHE.entrySet().removeIf(e -> (now - e.getValue().timestamp) > 3600000L);
+        YtDlpResolver.expire();
     }
 
     /**
@@ -481,107 +451,14 @@ public class WebMediaManager {
     }
 
     private static String resolveYouTubeUrlViaYtDlp(String youtubeUrl) {
-        if (!allowExternalMedia || !allowYtDlp) return null;
-        // 外部プロセスに渡す URL は YouTube のホストに限定する（任意 URL でのプロセス起動を防ぐ）
-        if (!isYouTubeUrl(youtubeUrl) || !isUrlSafe(youtubeUrl)) return null;
         if (externalContext != null && !externalContext.isYouTubeSupportEnabled()) return null;
-
-        long now = System.currentTimeMillis();
-        YtDlpCache cache = YT_DLP_CACHE.get(youtubeUrl);
-        if (cache != null) {
-            if (cache.resolvedUrl != null && (now - cache.timestamp < 3600000L)) return cache.resolvedUrl;
-            if (cache.resolvedUrl == null && (now - cache.timestamp < 60000L)) return null;
-        }
-
-        Process process = null;
-        try {
-            File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
-            File ytDlpFile = YtDlpProvisioner.ensureAvailable(dir, SafeHttpClient.shared(),
-                            () -> allowExternalMedia && allowYtDlp);
-            if (ytDlpFile == null) {
-                LOGGER.warn("yt-dlp is enabled but could not be prepared at {}; YouTube playback is skipped",
-                        YtDlpProvisioner.binaryPath(dir));
-                YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
-                return null;
-            }
-
-            ProcessBuilder builder = new ProcessBuilder(
-                    ytDlpFile.getAbsolutePath(), "-f", "22/18/b",
-                    "--extractor-args", "youtube:player_client=android",
-                    "--no-warnings", "--no-playlist", "--no-progress", "-g", youtubeUrl
-            );
-            // stderr を別に読まないと、エラー出力でパイプが詰まったときにタイムアウトできない。
-            builder.redirectErrorStream(true);
-            process = builder.start();
-            Process running = process;
-            Future<String> output = CompletableFuture.supplyAsync(
-                    () -> readFirstHttpUrl(running.getInputStream()), YT_DLP_OUTPUT_EXECUTOR);
-
-            if (!process.waitFor(15, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                output.cancel(true);
-                LOGGER.warn("yt-dlp process timed out while resolving YouTube URL: {}", youtubeUrl);
-                YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
-                return null;
-            }
-
-            String rawUrl;
-            try {
-                rawUrl = output.get(2, TimeUnit.SECONDS);
-            } catch (TimeoutException e) {
-                output.cancel(true);
-                rawUrl = null;
-            }
-
-            // yt-dlp の出力も、ネイティブへ渡す前に HTTP(S) の絶対 URL であることだけ確認する。
-            // 実際の取得時の SSRF・許可ドメイン検査はリレー側の SafeHttpClient が行う。
-            if (rawUrl != null && isSupportedExternalVideoUrl(rawUrl)) {
-                YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(rawUrl, System.currentTimeMillis()));
-                return rawUrl;
-            }
-            YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOGGER.warn("Interrupted while running yt-dlp: {}", e.getMessage());
-            YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
-        } catch (Exception e) {
-            LOGGER.warn("Exception running yt-dlp: {}", e.getMessage());
-            YT_DLP_CACHE.put(youtubeUrl, new YtDlpCache(null, System.currentTimeMillis()));
-        } finally {
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-            }
-        }
-        return null;
-    }
-
-    private static String readFirstHttpUrl(InputStream input) {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(input, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-                    return trimmed;
-                }
-            }
-        } catch (IOException ignored) {
-            // プロセス終了時のストリーム切断など。URL が取れなければ呼び出し側が失敗扱いにする。
-        }
-        return null;
+        File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
+        return YtDlpResolver.resolve(youtubeUrl, WebMediaManager::isUrlSafe, dir, SafeHttpClient.shared(),
+                () -> allowExternalMedia && allowYtDlp);
     }
 
     private static boolean isYouTubeUrl(String url) {
-        try {
-            URI uri = URI.create(url);
-            String host = uri.getHost();
-            if (host == null) return false;
-            host = host.toLowerCase(Locale.ROOT);
-            if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
-            return host.equals("youtube.com") || host.endsWith(".youtube.com") || host.equals("youtu.be");
-        } catch (Exception e) {
-            return false;
-        }
+        return MediaUrls.isYouTubeUrl(url);
     }
 
     public interface NativeVideoAPI extends Library {
@@ -682,8 +559,6 @@ public class WebMediaManager {
         void clearAudioBuffer(long var1);
         void closeVideo(long var1);
     }
-
-    private record YtDlpCache(String resolvedUrl, long timestamp) {}
 
     public static class VideoTexture extends AbstractTexture {
         public final String url;

@@ -83,6 +83,11 @@ public final class HttpImageFetcher {
         return PENDING;
     }
 
+    /** 取得に使っている HTTP クライアント（動画のリレーなど、同じ検査を通したいものが共有する）。 */
+    public SafeHttpClient client() {
+        return http;
+    }
+
     /** 取得中の件数。 */
     public int pending() {
         return inFlight.get();

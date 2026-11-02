@@ -35,6 +35,8 @@ dependencies {
     api 'org.slf4j:slf4j-api:2.0.9'
     api 'it.unimi.dsi:fastutil:8.5.12'
     api 'org.joml:joml:1.10.5'
+    api 'com.google.code.gson:gson:2.10.1' // Minecraft 1.21.1 が持つ版と同じ（EnderConfigManager）
+    api 'net.java.dev.jna:jna:5.14.0' // Minecraft 1.21.1 が持つ版と同じ（動画デコーダの JNA）
     api "org.lwjgl:lwjgl:${lwjglVersion}"
     api "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
     api "org.lwjgl:lwjgl-opengl:${lwjglVersion}"

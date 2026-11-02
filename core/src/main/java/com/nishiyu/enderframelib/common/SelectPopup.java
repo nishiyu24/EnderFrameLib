@@ -47,6 +47,24 @@ public final class SelectPopup {
         return highlighted;
     }
 
+    /** ハイライトを直接指定する（範囲外・無効な項目は無視）。 */
+    public void setHighlightedIndex(int index) {
+        if (index >= 0 && index < options.size() && !options.get(index).disabled()) highlighted = index;
+    }
+
+    /** ポップアップの左上と幅（CSS px。{@link #open} のあと）。 */
+    public int x() {
+        return x;
+    }
+
+    public int y() {
+        return y;
+    }
+
+    public int width() {
+        return width;
+    }
+
     /**
      * {@code box}（select の表示項目）の直下に開く。下に収まらず上に余裕があれば上に開く。選択肢が無ければ開かない。
      *
