@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.software.ViewportCullingTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:12.059Z" hostname="N_UESUGI" time="0.888">
+<testsuite name="com.nishiyu.enderframelib.core.paint.software.ViewportCullingTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:43.367Z" hostname="N_UESUGI" time="0.297">
   <properties/>
-  <testcase name="culledListMatchesTheFullListOnScreen()" classname="com.nishiyu.enderframelib.core.paint.software.ViewportCullingTest" time="0.888"/>
+  <testcase name="culledListMatchesTheFullListOnScreen()" classname="com.nishiyu.enderframelib.core.paint.software.ViewportCullingTest" time="0.297"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

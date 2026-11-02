@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.ClipResolverTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.554Z" hostname="N_UESUGI" time="0.037">
+<testsuite name="com.nishiyu.enderframelib.core.paint.ClipResolverTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.365Z" hostname="N_UESUGI" time="0.026">
   <properties/>
-  <testcase name="aRotatedItemUnderARoundedStaticClipGetsAShaderClipInTheOwnersSpace()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.023"/>
-  <testcase name="theInnermostRoundedClipIsTheOneTheShaderGets()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.001"/>
-  <testcase name="translationOnlyIsRecognizedWithinTolerance()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
-  <testcase name="anOwnerThatItselfRotatesProducesNoScissorButStillAShaderClip()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.001"/>
+  <testcase name="aRotatedItemUnderARoundedStaticClipGetsAShaderClipInTheOwnersSpace()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.017"/>
+  <testcase name="theInnermostRoundedClipIsTheOneTheShaderGets()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
+  <testcase name="translationOnlyIsRecognizedWithinTolerance()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.001"/>
+  <testcase name="anOwnerThatItselfRotatesProducesNoScissorButStillAShaderClip()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
   <testcase name="aScaledItemMapsDistancesBackThroughTheScale()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
   <testcase name="moreThanOneTranslationOnlyClipAreIntersectedInTheItemSpace()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.001"/>
   <testcase name="aClipThatStaysPutFollowsBackToTheItemInsideAMovingRail()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
   <testcase name="aClipOwnedByAnElementThatMovesWithTheItemIsUnchanged()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.0"/>
-  <testcase name="theChainKeepsEveryAncestorClipWithItsOwner()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.005"/>
-  <testcase name="anAbsoluteChildUsesTheChainOfItsContainingBlockNotTheTreeParent()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.004"/>
+  <testcase name="theChainKeepsEveryAncestorClipWithItsOwner()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.004"/>
+  <testcase name="anAbsoluteChildUsesTheChainOfItsContainingBlockNotTheTreeParent()" classname="com.nishiyu.enderframelib.core.paint.ClipResolverTest" time="0.003"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

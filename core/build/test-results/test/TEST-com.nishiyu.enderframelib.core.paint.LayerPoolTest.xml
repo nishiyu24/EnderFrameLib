@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.LayerPoolTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.612Z" hostname="N_UESUGI" time="0.005">
+<testsuite name="com.nishiyu.enderframelib.core.paint.LayerPoolTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.398Z" hostname="N_UESUGI" time="0.003">
   <properties/>
-  <testcase name="atTheLimitOnlyTheOldestFreeTargetIsEvicted()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.002"/>
+  <testcase name="atTheLimitOnlyTheOldestFreeTargetIsEvicted()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.001"/>
   <testcase name="reusesSameSizedFreeTarget()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.001"/>
   <testcase name="differentSizedFreeTargetsAreKeptWhileUnderTheLimit()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.0"/>
-  <testcase name="manySmallTargetsFitWhereOneFullScreenWouldNot()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.001"/>
+  <testcase name="manySmallTargetsFitWhereOneFullScreenWouldNot()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.0"/>
   <testcase name="returnsNullWhenEverythingIsInUse()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.0"/>
   <testcase name="trimDestroysIdleTargetsOnly()" classname="com.nishiyu.enderframelib.core.paint.LayerPoolTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>

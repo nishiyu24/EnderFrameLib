@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.252Z" hostname="N_UESUGI" time="0.022">
+<testsuite name="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.185Z" hostname="N_UESUGI" time="0.011">
   <properties/>
-  <testcase name="testGridUsesColumnGapHorizontallyAndRowGapVertically()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testGapShorthandReachesBothAxes()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testTwoValueGapUsesTheCorrectAxisInFlexRow()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testBlockChildrenStackVertically()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
-  <testcase name="testAbsolutePositioningUsesContainingBlock()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
+  <testcase name="testGridUsesColumnGapHorizontallyAndRowGapVertically()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testGapShorthandReachesBothAxes()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testTwoValueGapUsesTheCorrectAxisInFlexRow()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testBlockChildrenStackVertically()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
+  <testcase name="testAbsolutePositioningUsesContainingBlock()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
   <testcase name="testColumnGapSeparatesFlexRowChildren()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
   <testcase name="testContentBoxIsTheDefault()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
   <testcase name="testShorthandMarginAndPaddingReachTheLayout()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
-  <testcase name="testTextWrapsWithinAvailableWidth()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.009"/>
-  <testcase name="testRowGapSeparatesFlexColumnChildren()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testBasicBlockLayout()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testRowGapDoesNotApplyToBlockChildren()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
-  <testcase name="testScrollStateIsReadFromContextNotDom()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.001"/>
+  <testcase name="testTextWrapsWithinAvailableWidth()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.006"/>
+  <testcase name="testRowGapSeparatesFlexColumnChildren()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testBasicBlockLayout()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testRowGapDoesNotApplyToBlockChildren()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
+  <testcase name="testScrollStateIsReadFromContextNotDom()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
   <testcase name="testDisplayNoneCollapses()" classname="com.nishiyu.enderframelib.core.layout.LayoutGoldenTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

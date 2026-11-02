@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:57.764Z" hostname="N_UESUGI" time="0.202">
+<testsuite name="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:36.132Z" hostname="N_UESUGI" time="0.093">
   <properties/>
-  <testcase name="webkitPrefixedMaskIsAnAlias()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.108"/>
-  <testcase name="invalidClipPathIsIgnored()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.012"/>
-  <testcase name="maskModeLuminanceIsCarried()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.012"/>
-  <testcase name="maskShorthandReadsPositionSizeAndRepeat()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.013"/>
-  <testcase name="clipMaskAndBackdropCreateStackingContexts()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.016"/>
-  <testcase name="clipPathMakesALayerWithTheShapeInBoxCoordinates()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.014"/>
-  <testcase name="maskImageAppendsMaskItemsAfterTheContent()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.013"/>
-  <testcase name="backdropFilterIsCarriedWithItsShapeAndNeedsNoLayerByItself()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.008"/>
+  <testcase name="webkitPrefixedMaskIsAnAlias()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.046"/>
+  <testcase name="invalidClipPathIsIgnored()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.008"/>
+  <testcase name="maskModeLuminanceIsCarried()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.004"/>
+  <testcase name="maskShorthandReadsPositionSizeAndRepeat()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.007"/>
+  <testcase name="clipMaskAndBackdropCreateStackingContexts()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.007"/>
+  <testcase name="clipPathMakesALayerWithTheShapeInBoxCoordinates()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.005"/>
+  <testcase name="maskImageAppendsMaskItemsAfterTheContent()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.006"/>
+  <testcase name="backdropFilterIsCarriedWithItsShapeAndNeedsNoLayerByItself()" classname="com.nishiyu.enderframelib.common.ClipMaskDisplayListTest" time="0.006"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

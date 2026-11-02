@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:10.274Z" hostname="N_UESUGI" time="0.244">
+<testsuite name="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:42.531Z" hostname="N_UESUGI" time="0.148">
   <properties/>
-  <testcase name="closingTheSharedBackendDoesNotTerminateGlfwOrBreakTheHost()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.165"/>
-  <testcase name="rendersIntoATextureTheHostCanSampleAndRestoresHostState()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.041"/>
-  <testcase name="hostGlObjectsSurviveBesideTheSharedBackend()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.038"/>
+  <testcase name="closingTheSharedBackendDoesNotTerminateGlfwOrBreakTheHost()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.092"/>
+  <testcase name="rendersIntoATextureTheHostCanSampleAndRestoresHostState()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.029"/>
+  <testcase name="hostGlObjectsSurviveBesideTheSharedBackend()" classname="com.nishiyu.enderframelib.core.paint.gl.SharedContextBackendTest" time="0.027"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

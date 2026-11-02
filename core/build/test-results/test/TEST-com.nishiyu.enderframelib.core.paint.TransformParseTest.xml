@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.paint.TransformParseTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:02.061Z" hostname="N_UESUGI" time="0.003">
+<testsuite name="com.nishiyu.enderframelib.core.paint.TransformParseTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.619Z" hostname="N_UESUGI" time="0.001">
   <properties/>
-  <testcase name="translateWithUnits()" classname="com.nishiyu.enderframelib.core.paint.TransformParseTest" time="0.001"/>
+  <testcase name="translateWithUnits()" classname="com.nishiyu.enderframelib.core.paint.TransformParseTest" time="0.0"/>
   <testcase name="translateAxisFunctionsAcceptUnitlessZero()" classname="com.nishiyu.enderframelib.core.paint.TransformParseTest" time="0.0"/>
   <testcase name="translateCombinedWithScale()" classname="com.nishiyu.enderframelib.core.paint.TransformParseTest" time="0.001"/>
   <testcase name="translateWithUnitlessZeroFirstArgument()" classname="com.nishiyu.enderframelib.core.paint.TransformParseTest" time="0.0"/>

@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.css.ModernCascadeTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.550Z" hostname="N_UESUGI" time="0.062">
+<testsuite name="com.nishiyu.enderframelib.core.css.ModernCascadeTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:37.836Z" hostname="N_UESUGI" time="0.041">
   <properties/>
-  <testcase name="testNestingWithAmpersandAndImplicitDescendant()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.006"/>
-  <testcase name="testRevertLayerFallsBackToThePreviousLayer()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
-  <testcase name="testContainerQueryUsesTheNearestContainerSize()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
-  <testcase name="testImportantInLayersReversesTheLayerOrder()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
-  <testcase name="testNestedAtRulesAndSelectorListSpecificity()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.005"/>
-  <testcase name="testRegisteredPropertyInitialValueAndInheritance()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
-  <testcase name="testLaterLayerBeatsEarlierLayerAndOrderIsFixedByFirstMention()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
-  <testcase name="testRegisteredLengthPropertyIsComputedToAbsolute()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.005"/>
-  <testcase name="testNamedContainerAndContainerUnits()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.006"/>
+  <testcase name="testNestingWithAmpersandAndImplicitDescendant()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
+  <testcase name="testRevertLayerFallsBackToThePreviousLayer()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testContainerQueryUsesTheNearestContainerSize()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testImportantInLayersReversesTheLayerOrder()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testNestedAtRulesAndSelectorListSpecificity()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testRegisteredPropertyInitialValueAndInheritance()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testLaterLayerBeatsEarlierLayerAndOrderIsFixedByFirstMention()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.002"/>
+  <testcase name="testRegisteredLengthPropertyIsComputedToAbsolute()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testNamedContainerAndContainerUnits()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
   <testcase name="testNestedAndAnonymousLayers()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.004"/>
-  <testcase name="testHasMatchesByDescendantChildAndSiblingRelativeSelectors()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.007"/>
-  <testcase name="testUnlayeredRulesBeatLayeredRulesRegardlessOfSpecificity()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.003"/>
+  <testcase name="testHasMatchesByDescendantChildAndSiblingRelativeSelectors()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.005"/>
+  <testcase name="testUnlayeredRulesBeatLayeredRulesRegardlessOfSpecificity()" classname="com.nishiyu.enderframelib.core.css.ModernCascadeTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
