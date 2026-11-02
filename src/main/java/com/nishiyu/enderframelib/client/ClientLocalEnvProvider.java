@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.LocalEnvironment;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import net.minecraft.client.Minecraft;
@@ -27,11 +28,8 @@ import java.util.regex.Pattern;
 public class ClientLocalEnvProvider {
 
 
-    private static final Map<String, Supplier<String>> CUSTOM_PROVIDERS = new ConcurrentHashMap<>();
-    private static volatile Map<String, String> CACHED_SNAPSHOT = Collections.emptyMap();
-    private static volatile long lastSnapshotTime = 0;
-
     static {
+        LocalEnvironment.setBaseSource(ClientLocalEnvProvider::captureMinecraftEnv);
         Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
         Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
     }
@@ -64,18 +62,15 @@ public class ClientLocalEnvProvider {
      * @param supplier 変数の現在値を返すサプライヤ。null の場合は登録を無視する
      */
     public static void registerCustomVariable(String key, Supplier<String> supplier) {
-        if (key == null || supplier == null) return;
-        String cleanKey = key.startsWith("@") ? key.substring(1) : key;
-        CUSTOM_PROVIDERS.put(cleanKey, supplier);
+        LocalEnvironment.registerCustomVariable(key, supplier);
     }
 
     public static Map<String, String> captureCurrentEnv() {
-        long now = System.currentTimeMillis();
-        Map<String, String> cached = CACHED_SNAPSHOT;
-        if (now - lastSnapshotTime < 100 && !cached.isEmpty()) {
-            return cached;
-        }
+        return LocalEnvironment.capture();
+    }
 
+    /** Minecraft のクライアント状態から基本の変数を集める。Minecraft が無ければ null（既定値が使われる）。 */
+    private static Map<String, String> captureMinecraftEnv() {
         Minecraft mc = null;
         try {
             mc = Minecraft.getInstance();
@@ -83,13 +78,7 @@ public class ClientLocalEnvProvider {
         }
 
         Map<String, String> env = new HashMap<>();
-        if (mc == null) {
-            env.put("@lang", "en_us");
-            env.put("@fps", "60");
-            CACHED_SNAPSHOT = env;
-            lastSnapshotTime = now;
-            return env;
-        }
+        if (mc == null) return null;
 
         String lang = (mc.getLanguageManager() != null && mc.getLanguageManager().getSelected() != null)
                 ? mc.getLanguageManager().getSelected() : "en_us";
@@ -138,17 +127,7 @@ public class ClientLocalEnvProvider {
             }
         }
 
-        for (Map.Entry<String, Supplier<String>> entry : CUSTOM_PROVIDERS.entrySet()) {
-            try {
-                String val = entry.getValue().get();
-                env.put("@" + entry.getKey(), val != null ? val : "");
-            } catch (Exception ignored) {}
-        }
-
-        Map<String, String> unmodifiable = Collections.unmodifiableMap(env);
-        CACHED_SNAPSHOT = unmodifiable;
-        lastSnapshotTime = now;
-        return unmodifiable;
+        return env;
     }
 
     public static boolean applyI18nAttributes(HtmlNode vNode) {

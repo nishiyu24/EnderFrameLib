@@ -26,7 +26,7 @@ public class WebMediaManagerRedirectTest {
 
     private static final Path SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/WebMediaManager.java");
     private static final Path SAFE_CLIENT_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/SafeHttpClient.java");
-    private static final Path YT_DLP_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/YtDlpProvisioner.java");
+    private static final Path YT_DLP_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/YtDlpProvisioner.java");
     private static final Path CLIENT_INIT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/EnderFrameClientInit.java");
 
     private boolean savedBlock;
@@ -207,9 +207,9 @@ public class WebMediaManagerRedirectTest {
                 "設定反映時に自動配置を開始すること");
 
         String provisioner = Files.readString(YT_DLP_SOURCE);
-        assertTrue(provisioner.contains("SafeHttpClient.fetchBytesFromTrustedHosts"),
+        assertTrue(provisioner.contains("client.fetchBytesFromTrustedHosts"),
                 "チェックサム取得は固定ホスト用の安全なクライアントを使うこと");
-        assertTrue(provisioner.contains("SafeHttpClient.downloadFromTrustedHosts"),
+        assertTrue(provisioner.contains("client.downloadFromTrustedHosts"),
                 "本体取得は固定ホスト用の安全なクライアントを使うこと");
         assertTrue(provisioner.contains("SHA2-256SUMS"), "公式チェックサムと照合すること");
         assertFalse(provisioner.contains("openConnection"), "自動配置に自動追従の HTTP クライアントを使わないこと");

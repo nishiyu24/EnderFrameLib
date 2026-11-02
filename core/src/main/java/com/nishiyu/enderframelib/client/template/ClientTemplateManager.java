@@ -1,16 +1,13 @@
 package com.nishiyu.enderframelib.client.template;
 
-import com.nishiyu.enderframelib.EnderFrameLib;
-import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.DocumentLoader;
-import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
-import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -31,9 +29,29 @@ import java.util.function.Function;
  */
 public final class ClientTemplateManager {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientTemplateManager.class);
     private static final Map<String, ParsedTemplate> CACHE = new ConcurrentHashMap<>();
+    /** {@code namespace:path} の形式（Minecraft の {@code ResourceLocation} と同じ文字種）。 */
+    private static final Pattern RESOURCE_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
+    /** テンプレートの取得元。{@code "namespace:path"} を受け取り、HTML を返す（無ければ null）。先に登録したものから試す。 */
+    private static final List<Function<String, String>> SOURCES = new CopyOnWriteArrayList<>();
 
     private ClientTemplateManager() {}
+
+    /**
+     * テンプレートの取得元を足します。Minecraft 上ではリソースマネージャー、窓ではファイルなどを渡します。
+     * 取得元は登録順に試され、クラスパス（{@code /assets/}・{@code /data/}）は最後の手段です。
+     *
+     * @param source {@code "namespace:path"} を受け取り HTML を返す（見つからなければ null か空）。例外は無視される
+     */
+    public static void addSource(@NotNull Function<String, String> source) {
+        SOURCES.add(Objects.requireNonNull(source, "source cannot be null"));
+    }
+
+    /** 登録済みの取得元をすべて外します（テスト用）。 */
+    public static void clearSources() {
+        SOURCES.clear();
+    }
 
     /**
      * 指定された templateId のテンプレートを取得します。
@@ -108,7 +126,7 @@ public final class ClientTemplateManager {
     private static ParsedTemplate loadTemplate(String templateId) {
         String html = resolveTemplateHtml(templateId);
         if (html == null || html.isEmpty()) {
-            EnderFrameLib.LOGGER.warn("Template not found for templateId: {}", templateId);
+            LOGGER.warn("Template not found for templateId: {}", templateId);
             return null;
         }
 
@@ -177,13 +195,17 @@ public final class ClientTemplateManager {
 
     @Nullable
     private static String tryReadHtml(@NotNull String resourceLocationStr) {
-        ResourceLocation loc = ResourceLocation.tryParse(resourceLocationStr);
+        boolean valid = RESOURCE_ID.matcher(resourceLocationStr).matches();
 
-        // 1. AbstractEnderScreen のリソースファインダー（Minecraft ResourceManager / assets fallback）
-        if (loc != null) {
-            Optional<String> res = AbstractEnderScreen.findHtmlResource(loc);
-            if (res.isPresent() && !res.get().isEmpty()) {
-                return res.get();
+        // 1. 登録された取得元（Minecraft の ResourceManager など）
+        if (valid) {
+            for (Function<String, String> source : SOURCES) {
+                try {
+                    String res = source.apply(resourceLocationStr);
+                    if (res != null && !res.isEmpty()) return res;
+                } catch (Exception e) {
+                    LOGGER.debug("Template source failed for {}: {}", resourceLocationStr, e.getMessage());
+                }
             }
         }
 
@@ -197,11 +219,13 @@ public final class ClientTemplateManager {
         }
 
         // 3. クラスパスフォールバック
-        if (loc != null) {
-            String cpAsset = readClasspathString("/assets/" + loc.getNamespace() + "/" + loc.getPath());
+        if (valid) {
+            int colon = resourceLocationStr.indexOf(':');
+            String ns = resourceLocationStr.substring(0, colon), path = resourceLocationStr.substring(colon + 1);
+            String cpAsset = readClasspathString("/assets/" + ns + "/" + path);
             if (cpAsset != null) return cpAsset;
 
-            String cpData = readClasspathString("/data/" + loc.getNamespace() + "/" + loc.getPath());
+            String cpData = readClasspathString("/data/" + ns + "/" + path);
             if (cpData != null) return cpData;
         }
 

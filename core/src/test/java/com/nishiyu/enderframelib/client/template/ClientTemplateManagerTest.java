@@ -21,6 +21,37 @@ public class ClientTemplateManagerTest {
     @AfterEach
     void cleanUp() {
         ClientTemplateManager.clearCache();
+        ClientTemplateManager.clearSources();
+    }
+
+    @Test
+    @DisplayName("登録した取得元から、候補の順（enderframe_ui/ が先）で HTML を解決する")
+    void testSourceResolution() {
+        java.util.List<String> asked = new java.util.ArrayList<>();
+        ClientTemplateManager.addSource(id -> {
+            asked.add(id);
+            return id.equals("mymod:enderframe_ui/panel.html") ? "<div id=\"from-source\">x</div>" : null;
+        });
+        ParsedTemplate t = ClientTemplateManager.getTemplate("mymod:panel");
+        assertNotNull(t);
+        assertNotNull(t.cloneDocument().getElementById("from-source"));
+        assertEquals(java.util.List.of("mymod:enderframe_ui/panel.html"), asked);
+    }
+
+    @Test
+    @DisplayName("取得元が例外を投げても次の候補へ進み、見つからなければ null")
+    void testFailingSourceIsSkipped() {
+        ClientTemplateManager.addSource(id -> { throw new IllegalStateException("boom"); });
+        assertNull(ClientTemplateManager.getTemplate("mymod:missing_one"));
+    }
+
+    @Test
+    @DisplayName("名前空間なしは enderframelib 名前空間として扱う")
+    void testDefaultNamespace() {
+        java.util.List<String> asked = new java.util.ArrayList<>();
+        ClientTemplateManager.addSource(id -> { asked.add(id); return null; });
+        ClientTemplateManager.getTemplate("lonely");
+        assertEquals("enderframelib:enderframe_ui/lonely.html", asked.get(0));
     }
 
     @Test

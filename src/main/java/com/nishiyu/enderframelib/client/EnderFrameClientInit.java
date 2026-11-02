@@ -146,6 +146,11 @@ public class EnderFrameClientInit {
 
         Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
         Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
+        ClientTemplateManager.clearSources();
+        ClientTemplateManager.addSource(id -> {
+            ResourceLocation loc = ResourceLocation.tryParse(id);
+            return loc == null ? null : AbstractEnderScreen.findHtmlResource(loc).orElse(null);
+        });
         Bindings.jsonListParser = jsonStr -> {
             try {
                 com.google.gson.JsonElement parsedJson = com.google.gson.JsonParser.parseString(jsonStr);
