@@ -24,3 +24,6 @@
 hs_err_pid*.log
 /.agents/
 /.gemini/
+
+# IDE のビルド出力
+/out/

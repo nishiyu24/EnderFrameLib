@@ -31,6 +31,7 @@ public class EnderFrameLib {
     public static final Logger LOGGER = LoggerFactory.getLogger(EnderFrameLib.class);
 
     public EnderFrameLib(IEventBus modEventBus) {
+        EnderConfigManager.configDirProvider = net.neoforged.fml.loading.FMLPaths.CONFIGDIR::get;
         // 0. 設定画面のテンプレート解決を注入（api/config から common への依存を持たせないため）
         EnderConfigManager.resourceResolver = path -> {
             Function<String, String> resolver = UiDocumentCompiler.resourceTextResolver;

@@ -189,6 +189,16 @@ public final class StandaloneView implements AutoCloseable {
                 || !ui.timers().isEmpty();
     }
 
+    /**
+     * 書体の登録が変わった（{@code @font-face} の取得完了など）。文字の幅が変わりうるので測り直して再レイアウトする。
+     * 描画スレッドから呼ぶ。
+     */
+    public void fontsChanged() {
+        com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
+        ui.markInvalidation(UiView.InvalidationLevel.RELAYOUT);
+        redraw = true;
+    }
+
     /** 外の事情（画像の取得完了など）で描き直したいとき。 */
     public void invalidate() {
         redraw = true;

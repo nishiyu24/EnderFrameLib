@@ -17,7 +17,7 @@ import com.nishiyu.enderframelib.client.gui.AbstractEnderScreen;
 import com.nishiyu.enderframelib.client.gui.EnderConfigScreen;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.PaintServices;
-import com.nishiyu.enderframelib.client.renderer.SvgSources;
+import com.nishiyu.enderframelib.core.raster.svg.SvgSources;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.client.renderer.WebHudRenderer;
 import com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer;
@@ -126,6 +126,16 @@ public class EnderFrameClientInit {
         EnderConfigScreen.registerForMod(EnderFrameLib.MODID);
 
         // 表示リスト生成は core/paint に移したので、Minecraft のリソース・書体・セッション状態だけをここで繋ぐ
+        SvgSources.setHttpSource(com.nishiyu.enderframelib.client.renderer.WebMediaManager::getSvg);
+        SvgSources.setResourceReader((name, max) -> {
+            var loc = net.minecraft.resources.ResourceLocation.tryParse(name);
+            if (loc == null) return null;
+            var res = net.minecraft.client.Minecraft.getInstance().getResourceManager().getResource(loc);
+            if (res.isEmpty()) return null;
+            try (java.io.InputStream in = res.get().open()) {
+                return in.readNBytes(max);
+            }
+        });
         PaintServices.setSvgSource(SvgSources::get);
         PaintServices.setFontResolver(WebFontManager.McFontResolver.INSTANCE);
         CssAnimator.setStateStore((sessionId, create) -> {
@@ -133,6 +143,7 @@ public class EnderFrameClientInit {
             return ctx == null ? null : ctx.cssAnimations();
         });
 
+        WebFontManager.installFontReader();
         CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
 
         UiDocumentCompiler.clientResourceFallback = path -> {

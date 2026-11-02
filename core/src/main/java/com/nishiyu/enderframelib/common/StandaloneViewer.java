@@ -1,7 +1,12 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
+import com.nishiyu.enderframelib.core.css.CssParser;
+import com.nishiyu.enderframelib.core.net.HttpPolicy;
+import com.nishiyu.enderframelib.core.net.SafeHttpClient;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.text.font.FontFaceRules;
+import com.nishiyu.enderframelib.core.text.font.FontSources;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import org.lwjgl.glfw.GLFW;
 
@@ -50,12 +55,21 @@ public final class StandaloneViewer {
         }
 
         String html = load(source);
+        FontSources fonts = installFonts(source);
         if (png != null) {
             StandaloneView view = new StandaloneView(html, w, h);
             try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f)) {
                 cpu.images(ImageProvider.web());
                 long t0 = System.currentTimeMillis();
                 view.frame(t0, cpu, true);
+                // http の @font-face は取れてから描き直す（最大 5 秒待つ）
+                long wait = System.currentTimeMillis() + 5000;
+                while (fonts.pending() > 0 && System.currentTimeMillis() < wait) Thread.sleep(20);
+                if (fonts.consumeLoaded()) {
+                    FontFaceRules.reloadOutlineFonts();
+                    view.fontsChanged();
+                    view.frame(t0, cpu, true);
+                }
                 // アニメーション（フェードインなど）が終わった後の見た目。ブラウザの --virtual-time-budget と同じ
                 if (after > 0) view.frame(t0 + after, cpu, true);
                 cpu.writePng(Path.of(png));
@@ -63,7 +77,18 @@ public final class StandaloneViewer {
             System.out.println("wrote " + png);
             return;
         }
-        run(html, w, h);
+        run(html, w, h, fonts);
+    }
+
+    /**
+     * {@code @font-face} を窓でも効かせる: CSS の解析から登録へつなぎ、書体の出所（ファイル・HTTP・data:）を引く。
+     * 文書を作る前に呼ぶ。
+     */
+    static FontSources installFonts(String source) {
+        FontSources fonts = new FontSources(new SafeHttpClient(HttpPolicy.publicOnly())).setBase(source);
+        FontFaceRules.setFontReader(fonts);
+        CssParser.fontFaceCallback = css -> FontFaceRules.extractAndRegister(css, null);
+        return fonts;
     }
 
     static String load(String source) throws Exception {
@@ -78,7 +103,7 @@ public final class StandaloneViewer {
         return Files.readString(Path.of(source), StandardCharsets.UTF_8);
     }
 
-    private static void run(String html, int w, int h) {
+    private static void run(String html, int w, int h, FontSources fonts) {
         ImageProvider.Web images = ImageProvider.web();
         try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib")) {
             gl.images(images).clearColor(0xFFFFFFFF);
@@ -121,9 +146,13 @@ public final class StandaloneViewer {
             while (!gl.shouldClose()) {
                 gl.pollEvents();
                 int done = images.fetcher().completedCount();
-                if (done != seenImages) {
+                if (done != seenImages || images.hasAnimation()) {
                     seenImages = done;
                     view.invalidate();
+                }
+                if (fonts.consumeLoaded()) {
+                    FontFaceRules.reloadOutlineFonts();
+                    view.fontsChanged();
                 }
                 if (view.frame(System.currentTimeMillis(), gl, first) || first) {
                     gl.present();
@@ -138,7 +167,8 @@ public final class StandaloneViewer {
                 }
             }
         } finally {
-            images.fetcher().close();
+            images.close();
+            fonts.close();
         }
     }
 }

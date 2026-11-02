@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.nishiyu.enderframelib.core.layout.IntrinsicSizingTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:30:38.182Z" hostname="N_UESUGI" time="0.002">
-  <properties/>
-  <testcase name="testMaxContentKeywordDoesNotCapTheWidth()" classname="com.nishiyu.enderframelib.core.layout.IntrinsicSizingTest" time="0.001"/>
-  <testcase name="testFlexOneSplitsTheRowEvenly()" classname="com.nishiyu.enderframelib.core.layout.IntrinsicSizingTest" time="0.0"/>
-  <testcase name="testMinContentKeywordKeepsTheButtonFromCollapsing()" classname="com.nishiyu.enderframelib.core.layout.IntrinsicSizingTest" time="0.001"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>

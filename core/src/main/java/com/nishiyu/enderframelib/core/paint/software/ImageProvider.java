@@ -4,6 +4,10 @@ import com.nishiyu.enderframelib.core.raster.RasterImageEntry;
 
 import com.nishiyu.enderframelib.core.paint.PaintServices;
 import com.nishiyu.enderframelib.core.paint.RasterPainting;
+import com.nishiyu.enderframelib.core.media.NativeVideoApi;
+import com.nishiyu.enderframelib.core.media.VideoPlayer;
+import com.nishiyu.enderframelib.core.net.MediaUrls;
+import com.nishiyu.enderframelib.core.raster.GifAnimation;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.RasterImageStore;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
@@ -85,6 +89,34 @@ public interface ImageProvider {
             return fetcher;
         }
 
+        /** GIF アニメーションの時計（テスト用に差し替えられる。既定は現在時刻）。 */
+        public Web clock(java.util.function.LongSupplier clock) {
+            delegate.clock = clock;
+            return this;
+        }
+
+        /** 再生中の GIF・動画があるか。true の間は描き直し続ける（ビューアの合図）。 */
+        public boolean hasAnimation() {
+            return delegate.hasAnimation();
+        }
+
+        /** 動画のデコーダを差し替える（テスト用。既定は同梱の DLL。使えなければ動画は描かない）。 */
+        public Web nativeVideo(java.util.function.Supplier<NativeVideoApi> api) {
+            delegate.nativeVideo = api;
+            return this;
+        }
+
+        /** 再生中の動画を閉じ、取得を止める。 */
+        public void close() {
+            delegate.closeVideos();
+            fetcher.close();
+        }
+
+        @Override
+        public Image load(com.nishiyu.enderframelib.core.paint.model.DisplayItem item, int boxW, int boxH) {
+            return delegate.load(item, boxW, boxH);
+        }
+
         @Override
         public Image load(String src, int boxW, int boxH) {
             return delegate.load(src, boxW, boxH);
@@ -98,9 +130,98 @@ public interface ImageProvider {
         private final Map<String, Image> decoded = new ConcurrentHashMap<>();
 
         private final HttpImageFetcher remote;
+        volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
+        private final Map<String, GifAnimation.Player> gifs = new ConcurrentHashMap<>();
+        volatile java.util.function.Supplier<NativeVideoApi> nativeVideo =
+                () -> NativeVideoApi.shared(new java.io.File("enderframelib"));
+        private final Map<String, VideoPlayer> videos = new ConcurrentHashMap<>();
+        private static final java.util.concurrent.Executor VIDEO_INIT = java.util.concurrent.Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "enderframe-video-init");
+            t.setDaemon(true);
+            return t;
+        });
+        private static final GifAnimation.Player NOT_GIF = new GifAnimation.Player(GifAnimation.single());
 
         private Standard(HttpImageFetcher remote) {
             this.remote = remote;
+        }
+
+        boolean hasAnimation() {
+            for (GifAnimation.Player p : gifs.values()) if (p != NOT_GIF && p.isAnimated()) return true;
+            for (VideoPlayer v : videos.values()) if (!v.isFailed() && !v.isClosed()) return true;
+            return false;
+        }
+
+        void closeVideos() {
+            for (VideoPlayer v : videos.values()) v.close();
+            videos.clear();
+        }
+
+        /** 動画（{@code http(s)} のみ。ローカルのパスをデコーダへ渡さない）。映像だけを窓に出す。 */
+        private Image video(com.nishiyu.enderframelib.core.paint.model.DisplayItem item) {
+            String src = item.text();
+            if (remote == null || !MediaUrls.isSupportedExternalVideoUrl(src)) return null;
+            VideoPlayer v = videos.get(src);
+            if (v == null) {
+                if (videos.size() >= 8) closeVideos();
+                v = new VideoPlayer(nativeVideo.get(), remote.client(), src, 512L * 1024 * 1024,
+                        () -> false, new java.io.File("enderframelib"), VIDEO_INIT);
+                videos.put(src, v);
+            }
+            if (v.isFailed() || v.isClosed()) return null;
+            v.applyAttributes(item.events() != null && item.events().containsKey("media-loop"));
+            Pixmap frame = v.update();
+            return frame == null ? null : new Image(frame, v.width(), v.height());
+        }
+
+        /**
+         * 動画扱いの項目（リモートの {@code .gif}）は、GIF なら時刻でフレームを進める。{@code media-loop} が無ければ最後で止まる。
+         * GIF でなければ（動画など）通常の画像の引き方。
+         */
+        @Override
+        public Image load(com.nishiyu.enderframelib.core.paint.model.DisplayItem item, int boxW, int boxH) {
+            if (item.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.VIDEO && item.text() != null) {
+                GifAnimation.Player p = mayBeGif(item.text()) ? gifPlayer(item.text()) : null;
+                if (p != null) {
+                    boolean loop = item.events() != null && item.events().containsKey("media-loop");
+                    p.update(clock.getAsLong(), loop);
+                    GifAnimation a = p.animation();
+                    return new Image(p.pixmap(), a.width(), a.height());
+                }
+            }
+            if (item.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.VIDEO && item.text() != null
+                    && !mayBeGif(item.text())) {
+                return video(item);
+            }
+            return ImageProvider.super.load(item, boxW, boxH);
+        }
+
+        /** 名前から GIF と見込めるか（動画を丸ごと取得して GIF か調べないため）。 */
+        static boolean mayBeGif(String src) {
+            if (src.startsWith("data:")) return src.regionMatches(true, 0, "data:image/gif", 0, 14);
+            int end = src.length();
+            int cut = src.indexOf('?');
+            if (cut >= 0) end = cut;
+            cut = src.indexOf('#');
+            if (cut >= 0 && cut < end) end = cut;
+            return src.substring(0, end).toLowerCase(java.util.Locale.ROOT).endsWith(".gif");
+        }
+
+        private GifAnimation.Player gifPlayer(String src) {
+            GifAnimation.Player p = gifs.get(src);
+            if (p == null) {
+                try {
+                    byte[] bytes = readBytes(src);
+                    if (bytes == null) return null; // 取得中。取れた次のフレームで引き直す
+                    GifAnimation anim = GifAnimation.decode(bytes);
+                    p = anim == null ? NOT_GIF : new GifAnimation.Player(anim);
+                } catch (IOException | RuntimeException e) {
+                    p = NOT_GIF;
+                }
+                if (gifs.size() >= 16) gifs.clear();
+                gifs.put(src, p);
+            }
+            return p == NOT_GIF ? null : p;
         }
 
         private static boolean isHttp(String src) {

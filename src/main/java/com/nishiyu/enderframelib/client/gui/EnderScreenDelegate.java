@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.client.gui;
 
+import com.nishiyu.enderframelib.common.SelectPopup;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
@@ -657,7 +658,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                 String inputType = SessionInput.editingInputType(keyCode, modifiers, true);
                 SessionInput input = ClientWebManager.getOrCreateSession(sessionId).input();
                 if (inputType != null && !input.beginTextEdit(baseId, null, inputType)) return true;
-                if (textareaEditor.handleKeyPressed(keyCode, onInputChanged, () -> {
+                if (textareaEditor.handleKeyPressed(keyCode, modifiers, onInputChanged, () -> {
                     if (this.state != null) this.state.notifyElementModelChanged(baseId, textareaEditor.getValue(baseId));
                 })) {
                     input.commitTextEdit(baseId, textareaEditor.getValue(baseId), null, inputType != null ? inputType : "insertText");
@@ -1227,137 +1228,93 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
     }
 
+    /**
+     * {@code <select>} のポップアップ。選択肢の取り出し（{@code optgroup}・{@code disabled}）・ハイライトの移動・当たり判定は
+     * core の {@link SelectPopup}（窓と同じ）に任せ、ここは Minecraft の {@code GuiGraphics} への描画と、
+     * 従来の呼び出し口（基底 ID・確定コールバック）への橋渡しだけを持つ。
+     */
     public static class WebSelectDropdownWidget {
-        public record SelectOption(String value, String label) {}
-        private String openSelectBaseId = "";
-        private int popupX, popupY, popupW;
-        private int highlightedIndex = -1;
-        private final List<SelectOption> options = new ArrayList<>();
+        private final SelectPopup popup = new SelectPopup();
 
-        public boolean isOpen() { return !openSelectBaseId.isEmpty() && !options.isEmpty(); }
-        public String openSelectBaseId() { return openSelectBaseId; }
-        public int highlightedIndex() { return highlightedIndex; }
+        public boolean isOpen() { return popup.isOpen(); }
+        public String openSelectBaseId() { return popup.isOpen() ? popup.select().getId() : ""; }
+        public int highlightedIndex() { return popup.highlightedIndex(); }
 
         public void setHighlightedIndex(int index) {
-            if (index >= 0 && index < options.size()) {
-                this.highlightedIndex = index;
-            }
+            popup.setHighlightedIndex(index);
         }
 
         public void moveHighlight(int delta) {
-            if (options.isEmpty()) return;
-            if (highlightedIndex < 0) highlightedIndex = 0;
-            else highlightedIndex = Math.floorMod(highlightedIndex + delta, options.size());
+            popup.moveHighlight(delta);
         }
 
         public boolean confirmHighlight(BiConsumer<String, String> onSelected) {
-            if (!isOpen() || highlightedIndex < 0 || highlightedIndex >= options.size()) return false;
-            String chosenVal = options.get(highlightedIndex).value();
-            String baseId = openSelectBaseId;
+            if (!popup.isOpen()) return false;
+            String chosenVal = popup.highlightedValue();
+            if (chosenVal == null) return false;
+            String baseId = popup.select().getId();
             close();
             if (onSelected != null) onSelected.accept(baseId, chosenVal);
             return true;
         }
 
         public boolean isWithinPopup(double webX, double webY) {
-            if (!isOpen()) return false;
-            int itemH = 18;
-            int totalH = options.size() * itemH + 2;
-            return webX >= popupX && webX <= popupX + popupW && webY >= popupY && webY <= popupY + totalH;
+            return popup.contains(webX, webY);
         }
 
         public void open(String baseId, DisplayItem selectEl, HtmlNode virtualRoot) {
-            if (baseId.equals(openSelectBaseId)) {
+            if (baseId.equals(openSelectBaseId())) {
                 close();
                 return;
             }
             HtmlNode selectNode = virtualRoot != null ? virtualRoot.getNodeById(baseId) : null;
             if (selectNode == null) return;
-
-            options.clear();
-            for (HtmlNode child : selectNode.children) {
-                if ("option".equalsIgnoreCase(child.tag)) {
-                    String val = child.attrs.getOrDefault("value", child.getTextContent().trim());
-                    String label = child.getTextContent().trim();
-                    options.add(new SelectOption(val, label.isEmpty() ? val : label));
-                }
-            }
-
-            if (!options.isEmpty()) {
-                this.openSelectBaseId = baseId;
-                this.popupX = selectEl.x();
-                this.popupY = selectEl.y() + selectEl.height() + 2;
-                this.popupW = Math.max(selectEl.width(), 90);
-                this.highlightedIndex = -1;
-                String currentVal = getCurrentValue(virtualRoot);
-                for (int i = 0; i < options.size(); i++) {
-                    if (options.get(i).value().equals(currentVal)) {
-                        this.highlightedIndex = i;
-                        break;
-                    }
-                }
-                if (this.highlightedIndex == -1) {
-                    this.highlightedIndex = 0;
-                }
-            }
+            // 画面の高さの見込みが無いので、従来どおり常に下へ開く
+            popup.open(selectNode, selectEl, Integer.MAX_VALUE);
         }
 
         public void close() {
-            this.openSelectBaseId = "";
-            this.options.clear();
-            this.highlightedIndex = -1;
+            popup.close();
         }
 
         public boolean handleClick(double webX, double webY, BiConsumer<String, String> onSelected) {
-            if (!isOpen()) return false;
-            int itemH = 18;
-            int totalH = options.size() * itemH + 2;
-            boolean withinBounds = webX >= popupX && webX <= popupX + popupW && webY >= popupY && webY <= popupY + totalH;
-
-            if (withinBounds) {
-                int idx = (int) ((webY - popupY - 1) / itemH);
-                if (idx >= 0 && idx < options.size()) {
-                    String chosenVal = options.get(idx).value();
-                    String baseId = openSelectBaseId;
-                    close();
-                    if (onSelected != null) onSelected.accept(baseId, chosenVal);
-                    return true;
-                }
-            }
+            if (!popup.isOpen()) return false;
+            boolean withinBounds = popup.contains(webX, webY);
+            String chosenVal = popup.valueAt(webX, webY);
+            String baseId = popup.select().getId();
             close();
-            return withinBounds;
+            if (chosenVal != null) {
+                if (onSelected != null) onSelected.accept(baseId, chosenVal);
+                return true;
+            }
+            return withinBounds; // 枠や無効な項目は閉じて、クリックは使ったことにする
         }
 
         public void renderOverlay(GuiGraphics guiGraphics, Font font, int webX, int webY, HtmlNode virtualRoot) {
-            if (!isOpen()) return;
+            if (!popup.isOpen()) return;
             PoseStack pose = guiGraphics.pose();
             pose.pushPose();
             pose.translate(0, 0, com.nishiyu.enderframelib.client.renderer.DisplayItemDrawer.ZLayers.DROPDOWN_POPUP_OVERLAY_Z);
 
-            int itemH = 18;
-            int totalH = options.size() * itemH + 2;
-            guiGraphics.fill(popupX, popupY, popupX + popupW, popupY + totalH, 0xFF89B4FA);
-            guiGraphics.fill(popupX + 1, popupY + 1, popupX + popupW - 1, popupY + totalH - 1, 0xFF181825);
+            int popupX = popup.x(), popupY = popup.y(), popupW = popup.width();
+            int itemH = SelectPopup.ROW_HEIGHT;
+            guiGraphics.fill(popupX, popupY, popupX + popupW, popupY + popup.totalHeight(), 0xFF89B4FA);
+            guiGraphics.fill(popupX + 1, popupY + 1, popupX + popupW - 1, popupY + popup.totalHeight() - 1, 0xFF181825);
 
-            String currentVal = getCurrentValue(virtualRoot);
+            String currentVal = popup.select().attrs.getOrDefault("value", "");
+            List<SelectPopup.Option> options = popup.options();
             for (int i = 0; i < options.size(); i++) {
-                SelectOption opt = options.get(i);
+                SelectPopup.Option opt = options.get(i);
                 int iy = popupY + 1 + i * itemH;
-                boolean hov = webX >= popupX && webX <= popupX + popupW && webY >= iy && webY < iy + itemH;
-                boolean isHighlighted = (i == highlightedIndex) || hov;
+                boolean hov = !opt.disabled() && webX >= popupX && webX <= popupX + popupW && webY >= iy && webY < iy + itemH;
+                boolean isHighlighted = (i == popup.highlightedIndex()) || hov;
                 boolean sel = opt.value().equals(currentVal);
                 if (isHighlighted) guiGraphics.fill(popupX + 1, iy, popupX + popupW - 1, iy + itemH, 0xFF45475A);
                 else if (sel) guiGraphics.fill(popupX + 1, iy, popupX + popupW - 1, iy + itemH, 0xFF313244);
-                guiGraphics.drawString(font, opt.label(), popupX + 6, iy + 5, (isHighlighted || sel) ? 0xFF89B4FA : 0xFFCDD6F4, false);
+                int color = opt.disabled() ? 0xFF6C7086 : (isHighlighted || sel) ? 0xFF89B4FA : 0xFFCDD6F4;
+                guiGraphics.drawString(font, opt.label(), popupX + 6, iy + 5, color, false);
             }
             pose.popPose();
-        }
-
-        private String getCurrentValue(HtmlNode virtualRoot) {
-            HtmlNode node = virtualRoot != null ? virtualRoot.getNodeById(openSelectBaseId) : null;
-            if (node == null) return "";
-            if (node.attrs.containsKey("value") && !node.attrs.get("value").isEmpty()) return node.attrs.get("value");
-            return !options.isEmpty() ? options.getFirst().value() : "";
         }
     }
 }

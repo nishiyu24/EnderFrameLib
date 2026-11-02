@@ -28,6 +28,7 @@ public class WebMediaManagerRedirectTest {
     private static final Path SAFE_CLIENT_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/SafeHttpClient.java");
     private static final Path YT_DLP_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/YtDlpProvisioner.java");
     private static final Path CLIENT_INIT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/EnderFrameClientInit.java");
+    private static final Path MEDIA_URLS_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/MediaUrls.java");
 
     private boolean savedBlock;
     private boolean savedAllow;
@@ -129,9 +130,9 @@ public class WebMediaManagerRedirectTest {
     @Test
     @DisplayName("動画として受け付けるのは HTTP(S) だけで、file: や mod: は受け付けない")
     void videoSourcesAreRestrictedToHttp() throws IOException {
-        String source = Files.readString(SOURCE);
-        String helper = source.substring(source.indexOf("private static boolean isSupportedExternalVideoUrl"),
-                source.indexOf("public static VideoTexture getVideoTexture"));
+        String source = Files.readString(MEDIA_URLS_SOURCE);
+        String helper = source.substring(source.indexOf("public static boolean isSupportedExternalVideoUrl"),
+                source.indexOf("public static boolean isYouTubeUrl"));
 
         assertTrue(helper.contains("scheme.equalsIgnoreCase(\"http\")"));
         assertTrue(helper.contains("scheme.equalsIgnoreCase(\"https\")"));

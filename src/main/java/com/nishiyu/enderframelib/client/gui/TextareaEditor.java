@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.client.gui;
 
 import com.nishiyu.enderframelib.client.renderer.TextElementRenderer;
+import com.nishiyu.enderframelib.common.TextEditing;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.client.renderer.WebFontManager;
 import com.nishiyu.enderframelib.core.paint.model.*;
@@ -124,97 +125,79 @@ public class TextareaEditor {
         return false;
     }
 
-    public boolean handleKeyPressed(int keyCode, BiConsumer<String, String> onInputChanged, Runnable onModelChanged) {
+    /** Minecraft のクリップボードを core の編集規則へ渡す。 */
+    private static final TextEditing.Clipboard CLIPBOARD = new TextEditing.Clipboard() {
+        @Override
+        public String get() {
+            try {
+                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                return clip != null ? clip : "";
+            } catch (Throwable t) {
+                return "";
+            }
+        }
+
+        @Override
+        public void set(String text) {
+            try {
+                Minecraft.getInstance().keyboardHandler.setClipboard(text);
+            } catch (Throwable ignored) {
+            }
+        }
+    };
+
+    private static int currentModifiers(int modifiers) {
+        int mods = modifiers;
+        try {
+            if (Screen.hasControlDown()) mods |= GLFW.GLFW_MOD_CONTROL;
+            if (Screen.hasShiftDown()) mods |= GLFW.GLFW_MOD_SHIFT;
+            if (Screen.hasAltDown()) mods |= GLFW.GLFW_MOD_ALT;
+        } catch (Throwable ignored) {
+        }
+        return mods;
+    }
+
+    /**
+     * キー入力。矢印・Home / End・Backspace / Delete・Ctrl+V などの規則は core の {@link TextEditing}（窓と同じ）に任せ、
+     * ここは Minecraft 固有の作法（Esc で編集を抜ける・Enter の自動インデント・Tab の空白 2 つ）だけを持つ。
+     * 範囲選択の描画はこちらに無いので、選択は保持しない（キャレットだけ）。
+     */
+    public boolean handleKeyPressed(int keyCode, int modifiers, BiConsumer<String, String> onInputChanged, Runnable onModelChanged) {
         SessionContext session = ClientWebManager.getSession(sessionId);
         if (!isEditing || session == null || session.activeInputId().isEmpty()) return false;
         String renderId = session.activeInputId();
         String text = getValue(activeBaseId);
         int cursor = Math.clamp(TextEditState.getTextareaCursor(sessionId, renderId, text.length()), 0, text.length());
+        int mods = currentModifiers(modifiers);
+        boolean plain = (mods & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_ALT | GLFW.GLFW_MOD_SUPER)) == 0;
 
-        switch (keyCode) {
-            case GLFW.GLFW_KEY_ESCAPE -> {
-                unfocus();
-                session.setActiveInputId("");
-                return true;
-            }
-            case GLFW.GLFW_KEY_LEFT -> {
-                if (cursor > 0) TextEditState.setTextareaCursor(sessionId, renderId, cursor - 1);
-                return true;
-            }
-            case GLFW.GLFW_KEY_RIGHT -> {
-                if (cursor < text.length()) TextEditState.setTextareaCursor(sessionId, renderId, cursor + 1);
-                return true;
-            }
-            case GLFW.GLFW_KEY_HOME -> {
-                int lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
-                TextEditState.setTextareaCursor(sessionId, renderId, lineStart);
-                return true;
-            }
-            case GLFW.GLFW_KEY_END -> {
-                int lineEnd = text.indexOf('\n', cursor);
-                TextEditState.setTextareaCursor(sessionId, renderId, lineEnd == -1 ? text.length() : lineEnd);
-                return true;
-            }
-            case GLFW.GLFW_KEY_UP, GLFW.GLFW_KEY_DOWN -> {
-                String[] lines = text.split("\n", -1);
-                int row = 0, col = 0, acc = 0;
-                for (int i = 0; i < lines.length; i++) {
-                    if (cursor <= acc + lines[i].length()) { row = i; col = cursor - acc; break; }
-                    acc += lines[i].length() + 1;
-                }
-                int targetRow = (keyCode == GLFW.GLFW_KEY_UP) ? row - 1 : row + 1;
-                if (targetRow >= 0 && targetRow < lines.length) {
-                    int newCursor = 0;
-                    for (int i = 0; i < targetRow; i++) newCursor += lines[i].length() + 1;
-                    newCursor += Math.min(col, lines[targetRow].length());
-                    TextEditState.setTextareaCursor(sessionId, renderId, newCursor);
-                }
-                return true;
-            }
-            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
-                int lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
-                String currentLine = text.substring(lineStart, cursor);
-                int indentLen = 0;
-                while (indentLen < currentLine.length() && currentLine.charAt(indentLen) == ' ') indentLen++;
-                insert("\n" + " ".repeat(indentLen), onInputChanged, onModelChanged);
-                return true;
-            }
-            case GLFW.GLFW_KEY_TAB -> {
-                insert("  ", onInputChanged, onModelChanged);
-                return true;
-            }
-            case GLFW.GLFW_KEY_BACKSPACE -> {
-                if (cursor > 0) {
-                    String next = text.substring(0, cursor - 1) + text.substring(cursor);
-                    TextEditState.setTextareaCursor(sessionId, renderId, cursor - 1);
-                    setValue(activeBaseId, next);
-                    if (onModelChanged != null) onModelChanged.run();
-                    if (onInputChanged != null) onInputChanged.accept(activeBaseId, next);
-                }
-                return true;
-            }
-            case GLFW.GLFW_KEY_DELETE -> {
-                if (cursor < text.length()) {
-                    String next = text.substring(0, cursor) + text.substring(cursor + 1);
-                    setValue(activeBaseId, next);
-                    if (onModelChanged != null) onModelChanged.run();
-                    if (onInputChanged != null) onInputChanged.accept(activeBaseId, next);
-                }
-                return true;
-            }
-            case GLFW.GLFW_KEY_V -> {
-                try {
-                    if (Screen.hasControlDown()) {
-                    String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
-                    if (clip != null && !clip.isEmpty()) {
-                        insert(clip.replace("\r\n", "\n"), onInputChanged, onModelChanged);
-                    }
-                    return true;
-                }
-                } catch (Throwable ignored) {}
-            }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            unfocus();
+            session.setActiveInputId("");
+            return true;
         }
-        return false;
+        if (plain && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+            int lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
+            String currentLine = text.substring(lineStart, cursor);
+            int indentLen = 0;
+            while (indentLen < currentLine.length() && currentLine.charAt(indentLen) == ' ') indentLen++;
+            insert("\n" + " ".repeat(indentLen), onInputChanged, onModelChanged);
+            return true;
+        }
+        if (plain && keyCode == GLFW.GLFW_KEY_TAB) {
+            insert("  ", onInputChanged, onModelChanged);
+            return true;
+        }
+
+        TextEditing.Result r = TextEditing.key(new TextEditing.State(cursor), text, keyCode, mods, true, CLIPBOARD);
+        if (!r.handled()) return false;
+        TextEditState.setTextareaCursor(sessionId, renderId, r.caret());
+        if (r.changed()) {
+            setValue(activeBaseId, r.text());
+            if (onModelChanged != null) onModelChanged.run();
+            if (onInputChanged != null) onInputChanged.accept(activeBaseId, r.text());
+        }
+        return true;
     }
 
     /**
