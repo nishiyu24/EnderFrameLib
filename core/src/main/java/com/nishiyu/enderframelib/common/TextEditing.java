@@ -220,6 +220,36 @@ public final class TextEditing {
         return i;
     }
 
+    /**
+     * {@code at} を含む単語の範囲 {@code [start, end]}（ダブルクリックの選択）。単語の上でなければ、同じ種類（空白・記号）の連なり。
+     */
+    public static int[] wordRange(String text, int at) {
+        int n = text.length();
+        at = Math.max(0, Math.min(n, at));
+        if (n == 0) return new int[]{0, 0};
+        // 境界上のキャレットは右側の文字を見る（末尾だけは左側）
+        int probe = at < n ? at : step(text, at, -1);
+        int cp = text.codePointAt(probe);
+        int kind = kindOf(cp);
+        int s = probe, e = step(text, probe, 1);
+        while (s > 0 && kindOf(text.codePointBefore(s)) == kind) s = step(text, s, -1);
+        while (e < n && kindOf(text.codePointAt(e)) == kind) e = step(text, e, 1);
+        return new int[]{s, e};
+    }
+
+    /** 0: 単語の文字、1: 空白、2: 改行、3: 記号。 */
+    private static int kindOf(int cp) {
+        if (cp == '\n') return 2;
+        if (isWordChar(cp)) return 0;
+        return Character.isWhitespace(cp) ? 1 : 3;
+    }
+
+    /** {@code at} がある行の範囲 {@code [start, end]}（トリプルクリックの選択。改行は含まない）。 */
+    public static int[] lineRange(String text, int at) {
+        at = Math.max(0, Math.min(text.length(), at));
+        return new int[]{lineStart(text, at), lineEnd(text, at)};
+    }
+
     static int lineStart(String text, int caret) {
         return startOfLine(text, caret);
     }

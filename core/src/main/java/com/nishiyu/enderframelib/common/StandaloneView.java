@@ -82,8 +82,8 @@ public final class StandaloneView implements AutoCloseable {
         }
     }
 
-    private final int width;
-    private final int height;
+    private int width;
+    private int height;
     private final FontResolver fonts;
     private final Ui ui;
     private final UiInput input;
@@ -108,6 +108,11 @@ public final class StandaloneView implements AutoCloseable {
     private HtmlNode dragField;
     /** 押下をポップアップが使ったので、対になる解放は文書へ渡さない。 */
     private boolean swallowRelease;
+    private java.util.function.LongSupplier clickClock = System::currentTimeMillis;
+    private long lastClickAt = Long.MIN_VALUE;
+    private double lastClickX, lastClickY;
+    private int clickCount;
+    private HtmlNode lastClickField;
 
     public StandaloneView(String html, int width, int height) {
         this(html, width, height, SystemFonts.system());
@@ -323,8 +328,23 @@ public final class StandaloneView implements AutoCloseable {
             if (focusable != null && isTextControl(focusable)) {
                 TextEditing.State st = editState(focusable);
                 int at = caretAt(focusable, mouseX, mouseY);
-                if (at >= 0) st.set(at, false);
-                dragField = focusable;
+                int count = countClick(focusable);
+                if (at >= 0) {
+                    String text = valueOf(focusable);
+                    if (count == 2) {
+                        int[] w = TextEditing.wordRange(text, at);
+                        st.anchor = w[0];
+                        st.caret = w[1];
+                    } else if (count >= 3) {
+                        int[] l = "textarea".equalsIgnoreCase(focusable.tag)
+                                ? TextEditing.lineRange(text, at) : new int[]{0, text.length()};
+                        st.anchor = l[0];
+                        st.caret = l[1];
+                    } else {
+                        st.set(at, false);
+                    }
+                }
+                dragField = count >= 2 ? null : focusable; // 単語・行の選択はドラッグで崩さない
                 redraw = true;
             } else if (focusable != null && "select".equalsIgnoreCase(focusable.tag)) {
                 openSelect(focusable);
@@ -338,6 +358,37 @@ public final class StandaloneView implements AutoCloseable {
             return;
         }
         input.release(mouseX, mouseY, 0, true, linkSink);
+    }
+
+    /** 同じ場所を続けて押した回数（500ms・4px 以内で積む）。 */
+    private int countClick(HtmlNode field) {
+        long now = clickClock.getAsLong();
+        boolean chained = field == lastClickField && now - lastClickAt <= 500
+                && Math.abs(mouseX - lastClickX) <= 4 && Math.abs(mouseY - lastClickY) <= 4;
+        clickCount = chained ? clickCount + 1 : 1;
+        lastClickAt = now;
+        lastClickX = mouseX;
+        lastClickY = mouseY;
+        lastClickField = field;
+        return clickCount;
+    }
+
+    /** ダブルクリックの判定に使う時計（ミリ秒）。テスト用。 */
+    public void setClickClock(java.util.function.LongSupplier clock) {
+        this.clickClock = clock != null ? clock : System::currentTimeMillis;
+    }
+
+    /**
+     * 表示領域の大きさ（CSS px）が変わった。次の {@link #frame} で再レイアウトする
+     * （連続したリサイズは {@link UiView} が間引く）。描画先のバックエンドは呼び出し側が同じ大きさで作り直す。
+     */
+    public void resize(int newWidth, int newHeight) {
+        if (newWidth <= 0 || newHeight <= 0 || (newWidth == width && newHeight == height)) return;
+        width = newWidth;
+        height = newHeight;
+        popup.close();
+        ui.requestResize(newWidth, newHeight);
+        redraw = true;
     }
 
     /** ナビゲーション（{@code href} が {@code #id} 以外）の受け皿。既定は何もしない。 */
