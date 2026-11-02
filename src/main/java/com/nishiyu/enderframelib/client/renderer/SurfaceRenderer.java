@@ -65,11 +65,13 @@ public final class SurfaceRenderer {
         String hovered = style.hovered() != null ? style.hovered() : ClientScreenInteractionManager.getHoveredId(sessionId);
         SurfaceStyle.Detail detail = style.detail();
         SurfaceStyle.Audio audio = style.audio();
-        new PaintRequest(empty ? List.of() : elements, widthBlocks, heightBlocks, poseStack, buffer,
+        PaintRequest request = new PaintRequest(empty ? List.of() : elements, widthBlocks, heightBlocks, poseStack, buffer,
                 style.light(), style.overlay(), detail.items(), detail.text(), detail.rounded(),
                 step, sub, hovered != null ? hovered : "", style.lodColor(), style.lodActive(),
                 Minecraft.getInstance().level, audio.play(), audio.twoD(), sessionId, audio.pos(),
-                style.flatLayers(), style.screenSpaceText()).render();
+                style.flatLayers(), style.screenSpaceText());
+        // 試験的: 描画コア（Minecraft 非依存の GPU バックエンド）で描ける面はそちらに任せる
+        if (!CoreGpuSurface.tryDraw(request)) request.render();
         return true;
     }
 }

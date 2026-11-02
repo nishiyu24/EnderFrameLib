@@ -54,15 +54,20 @@ public class ApiBoundaryTest {
                         + " (テストはプロジェクトルートを作業ディレクトリとして実行してください)");
 
         List<String> violations = new ArrayList<>();
-        try (Stream<Path> paths = Files.walk(API)) {
-            for (Path path : paths.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".java"))
-                    .toList()) {
+        // api は mod 側と :core モジュール側（api/dom・api/event など）に分かれている
+        List<Path> all = new ArrayList<>();
+        for (Path root : List.of(API, Paths.get("core/src/main/java/com/nishiyu/enderframelib/api"))) {
+            try (Stream<Path> w = Files.walk(root)) {
+                all.addAll(w.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(".java")).toList());
+            }
+        }
+        {
+            for (Path path : all) {
                 // Javadoc は実装クラスに言及して良い（下流に「ここが基底クラス」と伝える必要がある）
                 String content = stripComments(Files.readString(path));
                 for (String forbidden : FORBIDDEN) {
                     if (content.contains(forbidden)) {
-                        violations.add(API.relativize(path) + " → " + forbidden);
+                        violations.add(path.getFileName() + " → " + forbidden);
                     }
                 }
             }

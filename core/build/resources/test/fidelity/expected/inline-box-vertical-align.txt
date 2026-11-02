@@ -1,0 +1,6 @@
+row 8 8 300 23 0 sw=300 sh=25 cw=300 ch=23 display=block position=static box-sizing=content-box overflow=visible
+a 8 8 20 20 0 sw=20 sh=20 cw=20 ch=20 display=inline-block position=static box-sizing=content-box overflow=visible
+v 28 21 24 4 0 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+b 30 13 20 10 0 sw=20 sh=10 cw=20 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible
+w 52 29 14 4 0 sw=0 sh=0 cw=0 ch=0 display=inline position=static box-sizing=content-box overflow=visible
+c 54 21 10 10 0 sw=10 sh=10 cw=10 ch=10 display=inline-block position=static box-sizing=content-box overflow=visible

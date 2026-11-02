@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.802Z" hostname="N_UESUGI" time="0.012">
+  <properties/>
+  <testcase name="subpixelOffsetsShiftTheGlyph()" classname="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" time="0.006"/>
+  <testcase name="textContrastKeepsEndsAndBoostsLightText()" classname="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" time="0.001"/>
+  <testcase name="bitmapIsRasterizedAtTheDeviceSize()" classname="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" time="0.0"/>
+  <testcase name="japaneseGlyphsComeFromFallbackAndRasterize()" classname="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" time="0.004"/>
+  <testcase name="stemsStaySeparateAtEveryScale()" classname="com.nishiyu.enderframelib.core.text.font.GlyphRasterizationTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

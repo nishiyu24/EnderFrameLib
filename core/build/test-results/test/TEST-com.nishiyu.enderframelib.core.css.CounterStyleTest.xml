@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.css.CounterStyleTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.509Z" hostname="N_UESUGI" time="0.006">
+  <properties/>
+  <testcase name="testSystems()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.001"/>
+  <testcase name="testBuiltInStyles()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.001"/>
+  <testcase name="testReservedNamesAndInvalidRulesAreIgnored()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.0"/>
+  <testcase name="testExtendsInheritsPrefixNegativePadRangeAndFallback()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.001"/>
+  <testcase name="testBuiltInNameCaseIsLowercasedBeforeAuthorLookup()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.0"/>
+  <testcase name="testDescriptorNamesAreCaseInsensitiveAndLastValidWins()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.0"/>
+  <testcase name="testFallbackChainStopsAtDecimal()" classname="com.nishiyu.enderframelib.core.css.CounterStyleTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

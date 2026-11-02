@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.ReplacedElementsTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.718Z" hostname="N_UESUGI" time="0.48">
+  <properties/>
+  <testcase name="backgroundImageSetPicksByDensity()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.011"/>
+  <testcase name="svgWithoutSizeIs300By150AndViewBoxSetsTheRatio()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.311"/>
+  <testcase name="canvasHasDefaultAndAttributeSizesAndCarriesThemToThePainter()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.009"/>
+  <testcase name="srcsetPicksTheCandidateForTheDensity()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.016"/>
+  <testcase name="devicePixelRatioIsIsolatedPerDocument()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.018"/>
+  <testcase name="backgroundSvgIsRasterizedAtTheTileSize()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.008"/>
+  <testcase name="imgWithSvgDataUriUsesViewBoxSizeAndRasterizes()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.009"/>
+  <testcase name="srcsetWithWidthDescriptorsUsesSizes()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.009"/>
+  <testcase name="remoteOrUnloadedSvgPaintsNothingYet()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.004"/>
+  <testcase name="inlineSvgGetsIntrinsicSizeFromAttributesAndRasterizesItsShapes()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.009"/>
+  <testcase name="devicePixelRatioScalesTheRasterButNotTheCssSize()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.005"/>
+  <testcase name="inlineSvgChildrenDoNotBecomeBoxes()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.005"/>
+  <testcase name="cssSizeStretchesTheSvgAndRasterizesAtThatSize()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.015"/>
+  <testcase name="cssSizeStretchesTheCanvasBitmapBox()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.003"/>
+  <testcase name="identicalSvgsShareOneRaster()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.005"/>
+  <testcase name="svgUsesTheElementColorForCurrentColor()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.005"/>
+  <testcase name="imgSvgKeepsItsAspectUnderObjectFitContainAndCover()" classname="com.nishiyu.enderframelib.common.ReplacedElementsTest" time="0.03"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.592Z" hostname="N_UESUGI" time="0.003">
+  <properties/>
+  <testcase name="colorMatricesMatchTheSpecification()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <testcase name="nonSeparableModesKeepTheRightComponents()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.001"/>
+  <testcase name="separableBlendModesMatchTheirDefinitions()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <testcase name="noneAndInvalidValuesGiveNoFilters()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.001"/>
+  <testcase name="adjacentColorFunctionsFoldIntoOneMatrixInOrder()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <testcase name="compositeFollowsTheAlphaFormula()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <testcase name="cssNamesRoundTrip()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.001"/>
+  <testcase name="dropShadowColorMayComeFirstAndDefaultsToCurrentColor()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <testcase name="parsesEveryFunction()" classname="com.nishiyu.enderframelib.core.paint.FilterAndBlendTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

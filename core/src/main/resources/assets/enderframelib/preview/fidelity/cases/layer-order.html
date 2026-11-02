@@ -1,0 +1,14 @@
+<!-- @layer: 後ろの層が勝ち、層に入っていない規則はどの層よりも強い。層の外どうしは詳細度。 -->
+<style>
+  @layer base, theme;
+  @layer theme { #a { width: 100px; } }
+  @layer base { #a { width: 200px; } #b { width: 50px; } #c { width: 300px; } }
+  #c { width: 70px; }
+  .u { width: 40px; }
+  #d { width: 150px; }
+  div { height: 10px; }
+</style>
+<div id="a"></div>
+<div id="b"></div>
+<div id="c"></div>
+<div id="d" class="u"></div>

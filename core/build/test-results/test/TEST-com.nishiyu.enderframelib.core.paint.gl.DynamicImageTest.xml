@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.paint.gl.DynamicImageTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:02.086Z" hostname="N_UESUGI" time="0.358">
+  <properties/>
+  <testcase name="rewrittenPixmapIsReuploadedOnTheGpuAndSeenByTheItemOverload()" classname="com.nishiyu.enderframelib.core.paint.gl.DynamicImageTest" time="0.358"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,16 @@
+<!-- 入れ子の層・無名の層・ドット区切りの層名。親の層に直接書いた規則は入れ子の層より強い。 -->
+<style>
+  @layer outer { @layer inner { #a { width: 10px; } } #a { width: 20px; } }
+  @layer { #b { width: 30px; } }
+  #b { width: 40px; }
+  @layer outer.inner { #c { width: 60px; } }
+  @layer outer { #c { width: 70px; } }
+  @layer one { #d { width: 80px; } }
+  @layer two { #d { width: 90px; } }
+  @layer two, one;
+  div { height: 10px; }
+</style>
+<div id="a"></div>
+<div id="b"></div>
+<div id="c"></div>
+<div id="d"></div>

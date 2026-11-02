@@ -1,0 +1,21 @@
+<!-- :has(): 子・子孫・隣接兄弟・後続兄弟の相対セレクタ、リスト、:not(:has())。 -->
+<style>
+  div { height: 10px; }
+  #a:has(> .k) { width: 100px; }
+  #b:has(.deep) { width: 110px; }
+  #c:has(+ #d) { width: 120px; }
+  #e:has(~ .z) { width: 130px; }
+  #f:not(:has(.k)) { width: 140px; }
+  .row:has(.k, .m) { height: 30px; }
+  #g:has(> .deep) { width: 150px; }
+</style>
+<div id="a"><span class="k"></span></div>
+<div id="b"><section><span class="deep"></span></section></div>
+<div id="c"></div>
+<div id="d"></div>
+<div id="e"></div>
+<div class="z"></div>
+<div id="f"><span></span></div>
+<div class="row" id="r1"><span class="m"></span></div>
+<div class="row" id="r2"><span class="n"></span></div>
+<div id="g"><section><span class="deep"></span></section></div>

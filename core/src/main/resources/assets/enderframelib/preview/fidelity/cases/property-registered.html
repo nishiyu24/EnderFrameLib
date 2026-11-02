@@ -1,0 +1,19 @@
+<!-- @property: 初期値・継承しない登録・em を絶対長にしてから継承・数値の型・構文に合わない値は初期値。 -->
+<style>
+  @property --w { syntax: '<length>'; inherits: false; initial-value: 30px; }
+  @property --h { syntax: '<length>'; inherits: true; initial-value: 5px; }
+  @property --n { syntax: '<number>'; inherits: false; initial-value: 2; }
+  div { height: 10px; }
+  #a { width: var(--w); }
+  #p { --w: 80px; }
+  #b { width: var(--w); }
+  #q { --h: 2em; font-size: 10px; height: auto; }
+  #c { height: var(--h); }
+  #d { width: calc(var(--n) * 25px); }
+  #e { --w: red; width: var(--w); }
+</style>
+<div id="a"></div>
+<div id="p"><div id="b"></div></div>
+<div id="q"><div id="c"></div></div>
+<div id="d"></div>
+<div id="e"></div>

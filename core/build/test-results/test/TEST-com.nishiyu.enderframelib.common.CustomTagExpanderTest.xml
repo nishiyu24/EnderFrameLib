@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.CustomTagExpanderTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:57.995Z" hostname="N_UESUGI" time="0.022">
+  <properties/>
+  <testcase name="testBarProducesProgressAndLabel()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.001"/>
+  <testcase name="testSlotKeepsIndexClassStyleAndId()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.0"/>
+  <testcase name="testSlotGridProducesRowsAndSequentialIndices()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.005"/>
+  <testcase name="testNestedCustomTagsAndAngleBracketInAttributeValue()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.002"/>
+  <testcase name="testSlotFallsBackToSlotAttributeThenZero()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.001"/>
+  <testcase name="testInventoryHasThirtySixSlotsWithHotbarLast()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.001"/>
+  <testcase name="testBarWithoutLabelHasNoSpan()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.001"/>
+  <testcase name="testExpansionIsStableAcrossReparse()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.002"/>
+  <testcase name="testEnergyBarKeepsBindingsAndDefaultsLabel()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.003"/>
+  <testcase name="testInventoryHotbarFirstReordersIndices()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.001"/>
+  <testcase name="testFluidBarColorFollowsFluidAndLabelCanBeHidden()" classname="com.nishiyu.enderframelib.common.CustomTagExpanderTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

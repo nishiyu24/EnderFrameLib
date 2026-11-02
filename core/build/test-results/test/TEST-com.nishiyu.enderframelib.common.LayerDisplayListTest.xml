@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.LayerDisplayListTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.260Z" hostname="N_UESUGI" time="0.09">
+  <properties/>
+  <testcase name="isolationWithoutBlendingDescendantsNeedsNoLayer()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.006"/>
+  <testcase name="nestedLayersNestTheirSpans()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.007"/>
+  <testcase name="innerBlendIsNotCountedAcrossAnInnerStackingContext()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.005"/>
+  <testcase name="mixBlendModeMakesTheBoxALayerAndIsolatesItsStackingContextParent()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.006"/>
+  <testcase name="blendingChildOfAPlainBoxIsolatesOnlyAtTheNearestStackingContext()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.006"/>
+  <testcase name="groupOpacityMarksTheAnchorWithTheItemsOfItsSubtree()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.008"/>
+  <testcase name="invalidFilterIsIgnored()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.005"/>
+  <testcase name="filterAloneMakesALayerAtFullOpacity()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.008"/>
+  <testcase name="boxesWithoutEffectsGetNoLayer()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.014"/>
+  <testcase name="nodeOpacityStaysOnTheAnchorForTheTransitionMachinery()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.008"/>
+  <testcase name="animatedOpacityMakesALayerEvenWhenTheStaticValueIsOne()" classname="com.nishiyu.enderframelib.common.LayerDisplayListTest" time="0.013"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

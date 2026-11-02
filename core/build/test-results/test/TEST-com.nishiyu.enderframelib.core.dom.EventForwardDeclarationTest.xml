@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.743Z" hostname="N_UESUGI" time="0.023">
+  <properties/>
+  <testcase name="バブリングしないイベントは、祖先の宣言には届かない" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.005"/>
+  <testcase name="所有者は祖先の data-owner が決め、無ければ文書の既定、文書の外の木はクライアント所有" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.0"/>
+  <testcase name="サーバー所有の入力コントロールだけが、値の書き戻しを暗黙に宣言する" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.001"/>
+  <testcase name="アクション名の無い input/change の宣言は、入力コントロールの値の書き戻しとして残る" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.0"/>
+  <testcase name="どこかのリスナーが preventDefault すれば、on* も転送も渡らない" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.0"/>
+  <testcase name="明示した宣言は、同じ種別の暗黙の宣言に勝つ" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.001"/>
+  <testcase name="未知の送る値の種別と、宛先（アクション名）の無い宣言は捨てる" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.001"/>
+  <testcase name="data-forward は 種別[:値] の列で、値の既定は DEFAULT、アクション名は data-forward-action" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.0"/>
+  <testcase name="リスナーが先に走り、その後に on* と転送が経路の順（対象 → 祖先）で渡る" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.007"/>
+  <testcase name="stopPropagation すれば祖先の宣言には届かない（対象自身の分は渡る）" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.001"/>
+  <testcase name="送出アクション名は data-forward-action と糖衣の on*=&quot;server:…&quot; の頭だけを数える" classname="com.nishiyu.enderframelib.core.dom.EventForwardDeclarationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

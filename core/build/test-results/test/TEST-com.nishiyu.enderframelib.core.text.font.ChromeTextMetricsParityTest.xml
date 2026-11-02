@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.text.font.ChromeTextMetricsParityTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.628Z" hostname="N_UESUGI" time="0.116">
+  <properties/>
+  <testcase name="verticalMetricsMatchChrome()" classname="com.nishiyu.enderframelib.core.text.font.ChromeTextMetricsParityTest" time="0.064"/>
+  <testcase name="weightMatchingFollowsCssFonts4()" classname="com.nishiyu.enderframelib.core.text.font.ChromeTextMetricsParityTest" time="0.001"/>
+  <testcase name="textWidthsMatchChrome()" classname="com.nishiyu.enderframelib.core.text.font.ChromeTextMetricsParityTest" time="0.05"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,5 @@
+rel 8 8 300 40 0 sw=300 sh=40 cw=300 ch=40 display=block position=relative box-sizing=content-box overflow=visible
+abs 8 8 50 30 0 sw=50 sh=30 cw=50 ch=30 display=block position=absolute box-sizing=content-box overflow=visible
+ac 8 8 50 15 0 sw=50 sh=15 cw=50 ch=15 display=block position=static box-sizing=content-box overflow=visible
+abs2 68 13 50 30 1 sw=50 sh=30 cw=50 ch=30 display=block position=absolute box-sizing=content-box overflow=visible
+ac2 68 18 50 20 0 sw=50 sh=20 cw=50 ch=20 display=block position=static box-sizing=content-box overflow=visible

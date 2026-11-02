@@ -1,0 +1,5 @@
+<!-- opacity < 1 はスタッキングコンテキストを作り、z-index: 0 相当の層に描かれる。中の z-index は外に出ない。 -->
+<div id="ctx" style="opacity: 0.5; position: relative; width: 100px; height: 100px;">
+  <div id="inner" style="position: absolute; left: 0; top: 0; width: 100px; height: 100px; z-index: 10;"></div>
+</div>
+<div id="over" style="position: absolute; left: 0; top: 0; width: 100px; height: 100px; z-index: 1;"></div>

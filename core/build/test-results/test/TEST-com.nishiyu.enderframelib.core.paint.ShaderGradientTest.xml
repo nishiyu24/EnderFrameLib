@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:01.618Z" hostname="N_UESUGI" time="0.442">
+  <properties/>
+  <testcase name="大きさ 0 のタイルは何も描かない" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.0"/>
+  <testcase name="放射の 3 色と繰り返し" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.073"/>
+  <testcase name="同じ位置の停止点は色が急に切り替わる（区間は描かず、両側の色を伸ばす）" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.054"/>
+  <testcase name="斜めの 3 色は、画素ごとに停止点を直接引いた色と一致する" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.012"/>
+  <testcase name="繰り返しは周期に畳む（手前にも先にも続く）" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.038"/>
+  <testcase name="透明を含む色は乗算済みアルファで補間する" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.012"/>
+  <testcase name="円錐の 3 色・開始角・繰り返し" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.031"/>
+  <testcase name="補間空間の指定は、刻んだ区間を sRGB でつなぐ近似で、基準の色空間の補間に近い" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.189"/>
+  <testcase name="補間のヒントは区間の中間点を動かす" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.017"/>
+  <testcase name="2 色は区間 1 つで、両側とも端の色が伸びる" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.001"/>
+  <testcase name="位置つきの 4 色・手前と先は端の色が伸びる" classname="com.nishiyu.enderframelib.core.paint.ShaderGradientTest" time="0.009"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

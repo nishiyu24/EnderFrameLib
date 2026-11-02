@@ -402,7 +402,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         @Override
-        public void clickDelegate(SessionInput input, HtmlNode target, double x, double y, int minecraftButton) {
+        public void clickDelegate(com.nishiyu.enderframelib.common.UiInput input, HtmlNode target, double x, double y, int minecraftButton) {
             SessionContext session = ClientWebManager.getSession(sessionId);
             DisplayItem targetItem = session != null ? session.elementById(target.getId()) : null;
             input.dispatchClick(target, x, y, minecraftButton, targetItem, this);

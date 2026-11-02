@@ -1,0 +1,702 @@
+"Segoe UI"|100|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|100|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|100|normal|16|♥☺⚿✓→★|w=83.063|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|300|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|300|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|300|normal|16|♥☺⚿✓→★|w=83.328|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|400|normal|16|Hello, World! The quick brown fox|w=240.156|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|400|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|400|normal|16|♥☺⚿✓→★|w=83.688|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|500|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|500|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|500|normal|16|♥☺⚿✓→★|w=83.984|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|600|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|600|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|600|normal|16|♥☺⚿✓→★|w=84.328|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|700|normal|16|Hello, World! The quick brown fox|w=259.797|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|700|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|700|normal|16|♥☺⚿✓→★|w=84.328|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|900|normal|16|Hello, World! The quick brown fox|w=273.719|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|900|normal|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|900|normal|16|♥☺⚿✓→★|w=84.688|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|400|italic|16|Hello, World! The quick brown fox|w=234.141|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|400|italic|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|400|italic|16|♥☺⚿✓→★|w=83.688|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|700|italic|16|Hello, World! The quick brown fox|w=257.203|content=21.000|asc=17.000|line=21.000
+"Segoe UI"|700|italic|16|日本語のテキスト|w=128.000|content=21.000|asc=17.000|line=24.000
+"Segoe UI"|700|italic|16|♥☺⚿✓→★|w=84.328|content=21.000|asc=17.000|line=24.000
+Arial|100|normal|16|Hello, World! The quick brown fox|w=239.203|content=17.000|asc=14.000|line=18.000
+Arial|100|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|100|normal|16|♥☺⚿✓→★|w=84.141|content=17.000|asc=14.000|line=24.000
+Arial|300|normal|16|Hello, World! The quick brown fox|w=239.203|content=17.000|asc=14.000|line=18.000
+Arial|300|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|300|normal|16|♥☺⚿✓→★|w=84.406|content=17.000|asc=14.000|line=24.000
+Arial|400|normal|16|Hello, World! The quick brown fox|w=239.203|content=17.000|asc=14.000|line=18.000
+Arial|400|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|400|normal|16|♥☺⚿✓→★|w=84.766|content=17.000|asc=14.000|line=24.000
+Arial|500|normal|16|Hello, World! The quick brown fox|w=239.203|content=17.000|asc=14.000|line=18.000
+Arial|500|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|500|normal|16|♥☺⚿✓→★|w=85.063|content=17.000|asc=14.000|line=24.000
+Arial|600|normal|16|Hello, World! The quick brown fox|w=258.672|content=17.000|asc=14.000|line=18.000
+Arial|600|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|600|normal|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+Arial|700|normal|16|Hello, World! The quick brown fox|w=258.672|content=17.000|asc=14.000|line=18.000
+Arial|700|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|700|normal|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+Arial|900|normal|16|Hello, World! The quick brown fox|w=295.141|content=23.000|asc=18.000|line=23.000
+Arial|900|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=24.000
+Arial|900|normal|16|♥☺⚿✓→★|w=85.688|content=23.000|asc=18.000|line=24.000
+Arial|400|italic|16|Hello, World! The quick brown fox|w=239.203|content=17.000|asc=14.000|line=18.000
+Arial|400|italic|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|400|italic|16|♥☺⚿✓→★|w=84.766|content=17.000|asc=14.000|line=24.000
+Arial|700|italic|16|Hello, World! The quick brown fox|w=258.672|content=17.000|asc=14.000|line=18.000
+Arial|700|italic|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+Arial|700|italic|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|100|normal|16|Hello, World! The quick brown fox|w=228.391|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|100|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|100|normal|16|♥☺⚿✓→★|w=84.141|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|300|normal|16|Hello, World! The quick brown fox|w=228.391|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|300|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|300|normal|16|♥☺⚿✓→★|w=84.406|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|400|normal|16|Hello, World! The quick brown fox|w=228.391|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|400|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|400|normal|16|♥☺⚿✓→★|w=84.766|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|500|normal|16|Hello, World! The quick brown fox|w=228.391|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|500|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|500|normal|16|♥☺⚿✓→★|w=85.063|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|600|normal|16|Hello, World! The quick brown fox|w=240.906|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|600|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|600|normal|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|700|normal|16|Hello, World! The quick brown fox|w=240.906|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|700|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|700|normal|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|900|normal|16|Hello, World! The quick brown fox|w=240.906|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|900|normal|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|900|normal|16|♥☺⚿✓→★|w=85.766|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|400|italic|16|Hello, World! The quick brown fox|w=223.969|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|400|italic|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|400|italic|16|♥☺⚿✓→★|w=84.766|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|700|italic|16|Hello, World! The quick brown fox|w=232.906|content=17.000|asc=14.000|line=18.000
+"Times New Roman"|700|italic|16|日本語のテキスト|w=128.000|content=17.000|asc=14.000|line=24.000
+"Times New Roman"|700|italic|16|♥☺⚿✓→★|w=85.406|content=17.000|asc=14.000|line=24.000
+Consolas|100|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|100|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|100|normal|16|♥☺⚿✓→★|w=68.703|content=19.000|asc=15.000|line=24.000
+Consolas|300|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|300|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|300|normal|16|♥☺⚿✓→★|w=68.953|content=19.000|asc=15.000|line=24.000
+Consolas|400|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|400|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|400|normal|16|♥☺⚿✓→★|w=69.328|content=19.000|asc=15.000|line=24.000
+Consolas|500|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|500|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|500|normal|16|♥☺⚿✓→★|w=69.609|content=19.000|asc=15.000|line=24.000
+Consolas|600|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|600|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|600|normal|16|♥☺⚿✓→★|w=69.969|content=19.000|asc=15.000|line=24.000
+Consolas|700|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|700|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|700|normal|16|♥☺⚿✓→★|w=69.969|content=19.000|asc=15.000|line=24.000
+Consolas|900|normal|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|900|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|900|normal|16|♥☺⚿✓→★|w=70.313|content=19.000|asc=15.000|line=24.000
+Consolas|400|italic|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|400|italic|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|400|italic|16|♥☺⚿✓→★|w=69.328|content=19.000|asc=15.000|line=24.000
+Consolas|700|italic|16|Hello, World! The quick brown fox|w=290.297|content=19.000|asc=15.000|line=19.000
+Consolas|700|italic|16|日本語のテキスト|w=128.000|content=19.000|asc=15.000|line=24.000
+Consolas|700|italic|16|♥☺⚿✓→★|w=69.969|content=19.000|asc=15.000|line=24.000
+"Yu Gothic UI"|100|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|100|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|100|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|300|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|300|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|300|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|normal|16|Hello, World! The quick brown fox|w=240.156|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|500|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|500|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|500|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|600|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|600|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|600|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|900|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|900|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|900|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|italic|16|Hello, World! The quick brown fox|w=240.156|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|italic|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|400|italic|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|italic|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|italic|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+"Yu Gothic UI"|700|italic|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+"Noto Sans JP"|100|normal|16|Hello, World! The quick brown fox|w=236.219|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|100|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|100|normal|16|♥☺⚿✓→★|w=90.313|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|300|normal|16|Hello, World! The quick brown fox|w=242.453|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|300|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|300|normal|16|♥☺⚿✓→★|w=90.563|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|normal|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|normal|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|500|normal|16|Hello, World! The quick brown fox|w=258.422|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|500|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|500|normal|16|♥☺⚿✓→★|w=91.219|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|600|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|600|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|600|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|900|normal|16|Hello, World! The quick brown fox|w=275.766|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|900|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|900|normal|16|♥☺⚿✓→★|w=91.922|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|italic|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|400|italic|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|italic|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+"Noto Sans JP"|700|italic|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+Impact|100|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|100|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|100|normal|16|♥☺⚿✓→★|w=84.813|content=19.000|asc=16.000|line=24.000
+Impact|300|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|300|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|300|normal|16|♥☺⚿✓→★|w=85.063|content=19.000|asc=16.000|line=24.000
+Impact|400|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|400|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|400|normal|16|♥☺⚿✓→★|w=85.438|content=19.000|asc=16.000|line=24.000
+Impact|500|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|500|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|500|normal|16|♥☺⚿✓→★|w=85.719|content=19.000|asc=16.000|line=24.000
+Impact|600|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|600|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|600|normal|16|♥☺⚿✓→★|w=86.078|content=19.000|asc=16.000|line=24.000
+Impact|700|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|700|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|700|normal|16|♥☺⚿✓→★|w=86.078|content=19.000|asc=16.000|line=24.000
+Impact|900|normal|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|900|normal|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|900|normal|16|♥☺⚿✓→★|w=86.422|content=19.000|asc=16.000|line=24.000
+Impact|400|italic|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|400|italic|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|400|italic|16|♥☺⚿✓→★|w=85.438|content=19.000|asc=16.000|line=24.000
+Impact|700|italic|16|Hello, World! The quick brown fox|w=216.328|content=19.000|asc=16.000|line=19.000
+Impact|700|italic|16|日本語のテキスト|w=128.000|content=19.000|asc=16.000|line=24.000
+Impact|700|italic|16|♥☺⚿✓→★|w=86.078|content=19.000|asc=16.000|line=24.000
+Meiryo|100|normal|16|Hello, World! The quick brown fox|w=266.250|content=24.000|asc=17.000|line=24.000
+Meiryo|100|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|100|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|300|normal|16|Hello, World! The quick brown fox|w=266.250|content=24.000|asc=17.000|line=24.000
+Meiryo|300|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|300|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|400|normal|16|Hello, World! The quick brown fox|w=266.250|content=24.000|asc=17.000|line=24.000
+Meiryo|400|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|400|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|500|normal|16|Hello, World! The quick brown fox|w=266.250|content=24.000|asc=17.000|line=24.000
+Meiryo|500|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|500|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|600|normal|16|Hello, World! The quick brown fox|w=288.703|content=24.000|asc=17.000|line=24.000
+Meiryo|600|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|600|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|700|normal|16|Hello, World! The quick brown fox|w=288.703|content=24.000|asc=17.000|line=24.000
+Meiryo|700|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|700|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|900|normal|16|Hello, World! The quick brown fox|w=288.703|content=24.000|asc=17.000|line=24.000
+Meiryo|900|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|900|normal|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|400|italic|16|Hello, World! The quick brown fox|w=265.781|content=24.000|asc=17.000|line=24.000
+Meiryo|400|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|400|italic|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+Meiryo|700|italic|16|Hello, World! The quick brown fox|w=287.469|content=24.000|asc=17.000|line=24.000
+Meiryo|700|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=17.000|line=24.000
+Meiryo|700|italic|16|♥☺⚿✓→★|w=93.781|content=24.000|asc=17.000|line=24.000
+sans-serif|100|normal|16|Hello, World! The quick brown fox|w=236.219|content=24.000|asc=19.000|line=24.000
+sans-serif|100|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|100|normal|16|♥☺⚿✓→★|w=90.313|content=24.000|asc=19.000|line=24.000
+sans-serif|300|normal|16|Hello, World! The quick brown fox|w=242.453|content=24.000|asc=19.000|line=24.000
+sans-serif|300|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|300|normal|16|♥☺⚿✓→★|w=90.563|content=24.000|asc=19.000|line=24.000
+sans-serif|400|normal|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+sans-serif|400|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|400|normal|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+sans-serif|500|normal|16|Hello, World! The quick brown fox|w=258.422|content=24.000|asc=19.000|line=24.000
+sans-serif|500|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|500|normal|16|♥☺⚿✓→★|w=91.219|content=24.000|asc=19.000|line=24.000
+sans-serif|600|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+sans-serif|600|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|600|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+sans-serif|700|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+sans-serif|700|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|700|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+sans-serif|900|normal|16|Hello, World! The quick brown fox|w=275.766|content=24.000|asc=19.000|line=24.000
+sans-serif|900|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|900|normal|16|♥☺⚿✓→★|w=91.922|content=24.000|asc=19.000|line=24.000
+sans-serif|400|italic|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+sans-serif|400|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|400|italic|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+sans-serif|700|italic|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+sans-serif|700|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+sans-serif|700|italic|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+serif|100|normal|16|Hello, World! The quick brown fox|w=267.219|content=23.000|asc=18.000|line=23.000
+serif|100|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|100|normal|16|♥☺⚿✓→★|w=90.031|content=23.000|asc=18.000|line=23.000
+serif|300|normal|16|Hello, World! The quick brown fox|w=269.469|content=23.000|asc=18.000|line=23.000
+serif|300|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|300|normal|16|♥☺⚿✓→★|w=90.172|content=23.000|asc=18.000|line=23.000
+serif|400|normal|16|Hello, World! The quick brown fox|w=272.047|content=23.000|asc=18.000|line=23.000
+serif|400|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|400|normal|16|♥☺⚿✓→★|w=90.328|content=23.000|asc=18.000|line=23.000
+serif|500|normal|16|Hello, World! The quick brown fox|w=275.594|content=23.000|asc=18.000|line=23.000
+serif|500|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|500|normal|16|♥☺⚿✓→★|w=90.547|content=23.000|asc=18.000|line=23.000
+serif|600|normal|16|Hello, World! The quick brown fox|w=279.047|content=23.000|asc=18.000|line=23.000
+serif|600|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|600|normal|16|♥☺⚿✓→★|w=90.766|content=23.000|asc=18.000|line=23.000
+serif|700|normal|16|Hello, World! The quick brown fox|w=284.031|content=23.000|asc=18.000|line=23.000
+serif|700|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|700|normal|16|♥☺⚿✓→★|w=91.078|content=23.000|asc=18.000|line=23.000
+serif|900|normal|16|Hello, World! The quick brown fox|w=290.313|content=23.000|asc=18.000|line=23.000
+serif|900|normal|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|900|normal|16|♥☺⚿✓→★|w=91.484|content=23.000|asc=18.000|line=23.000
+serif|400|italic|16|Hello, World! The quick brown fox|w=272.047|content=23.000|asc=18.000|line=23.000
+serif|400|italic|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|400|italic|16|♥☺⚿✓→★|w=90.328|content=23.000|asc=18.000|line=23.000
+serif|700|italic|16|Hello, World! The quick brown fox|w=284.031|content=23.000|asc=18.000|line=23.000
+serif|700|italic|16|日本語のテキスト|w=128.000|content=23.000|asc=18.000|line=23.000
+serif|700|italic|16|♥☺⚿✓→★|w=91.078|content=23.000|asc=18.000|line=23.000
+monospace|100|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|100|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|100|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|300|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|300|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|300|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|400|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|400|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|400|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|500|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|500|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|500|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|600|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|600|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|600|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|700|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|700|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|700|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|900|normal|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|900|normal|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|900|normal|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|400|italic|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|400|italic|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|400|italic|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+monospace|700|italic|16|Hello, World! The quick brown fox|w=264.000|content=16.000|asc=14.000|line=16.000
+monospace|700|italic|16|日本語のテキスト|w=128.000|content=16.000|asc=14.000|line=16.000
+monospace|700|italic|16|♥☺⚿✓→★|w=88.000|content=16.000|asc=14.000|line=21.000
+system-ui|100|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+system-ui|100|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+system-ui|100|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|300|normal|16|Hello, World! The quick brown fox|w=227.844|content=21.000|asc=17.000|line=21.000
+system-ui|300|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+system-ui|300|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|400|normal|16|Hello, World! The quick brown fox|w=240.156|content=21.000|asc=17.000|line=21.000
+system-ui|400|normal|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+system-ui|400|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|500|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+system-ui|500|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+system-ui|500|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|600|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+system-ui|600|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+system-ui|600|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|700|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+system-ui|700|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+system-ui|700|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|900|normal|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+system-ui|900|normal|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+system-ui|900|normal|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|400|italic|16|Hello, World! The quick brown fox|w=240.156|content=21.000|asc=17.000|line=21.000
+system-ui|400|italic|16|日本語のテキスト|w=108.250|content=21.000|asc=17.000|line=21.000
+system-ui|400|italic|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+system-ui|700|italic|16|Hello, World! The quick brown fox|w=249.000|content=21.000|asc=17.000|line=21.000
+system-ui|700|italic|16|日本語のテキスト|w=109.766|content=21.000|asc=17.000|line=21.000
+system-ui|700|italic|16|♥☺⚿✓→★|w=96.000|content=21.000|asc=17.000|line=21.000
+initial|100|normal|16|Hello, World! The quick brown fox|w=236.219|content=24.000|asc=19.000|line=24.000
+initial|100|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|100|normal|16|♥☺⚿✓→★|w=90.313|content=24.000|asc=19.000|line=24.000
+initial|300|normal|16|Hello, World! The quick brown fox|w=242.453|content=24.000|asc=19.000|line=24.000
+initial|300|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|300|normal|16|♥☺⚿✓→★|w=90.563|content=24.000|asc=19.000|line=24.000
+initial|400|normal|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+initial|400|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|400|normal|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+initial|500|normal|16|Hello, World! The quick brown fox|w=258.422|content=24.000|asc=19.000|line=24.000
+initial|500|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|500|normal|16|♥☺⚿✓→★|w=91.219|content=24.000|asc=19.000|line=24.000
+initial|600|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+initial|600|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|600|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+initial|700|normal|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+initial|700|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|700|normal|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+initial|900|normal|16|Hello, World! The quick brown fox|w=275.766|content=24.000|asc=19.000|line=24.000
+initial|900|normal|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|900|normal|16|♥☺⚿✓→★|w=91.922|content=24.000|asc=19.000|line=24.000
+initial|400|italic|16|Hello, World! The quick brown fox|w=251.688|content=24.000|asc=19.000|line=24.000
+initial|400|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|400|italic|16|♥☺⚿✓→★|w=90.938|content=24.000|asc=19.000|line=24.000
+initial|700|italic|16|Hello, World! The quick brown fox|w=267.109|content=24.000|asc=19.000|line=24.000
+initial|700|italic|16|日本語のテキスト|w=128.000|content=24.000|asc=19.000|line=24.000
+initial|700|italic|16|♥☺⚿✓→★|w=91.578|content=24.000|asc=19.000|line=24.000
+"Segoe UI"|100|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|100|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|100|normal|13|♥☺⚿✓→★|w=67.500|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|300|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|300|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|300|normal|13|♥☺⚿✓→★|w=67.703|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|400|normal|13|Hello, World! The quick brown fox|w=195.125|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|400|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|400|normal|13|♥☺⚿✓→★|w=68.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|500|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|500|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|500|normal|13|♥☺⚿✓→★|w=68.234|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|600|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|600|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|600|normal|13|♥☺⚿✓→★|w=68.516|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|700|normal|13|Hello, World! The quick brown fox|w=211.094|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|700|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|700|normal|13|♥☺⚿✓→★|w=68.516|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|900|normal|13|Hello, World! The quick brown fox|w=222.406|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|900|normal|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|900|normal|13|♥☺⚿✓→★|w=68.813|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|400|italic|13|Hello, World! The quick brown fox|w=190.234|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|400|italic|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|400|italic|13|♥☺⚿✓→★|w=68.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|700|italic|13|Hello, World! The quick brown fox|w=208.984|content=17.000|asc=14.000|line=17.000
+"Segoe UI"|700|italic|13|日本語のテキスト|w=104.000|content=17.000|asc=14.000|line=19.000
+"Segoe UI"|700|italic|13|♥☺⚿✓→★|w=68.516|content=17.000|asc=14.000|line=19.000
+Arial|100|normal|13|Hello, World! The quick brown fox|w=194.359|content=15.000|asc=12.000|line=15.000
+Arial|100|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|100|normal|13|♥☺⚿✓→★|w=68.375|content=15.000|asc=12.000|line=19.000
+Arial|300|normal|13|Hello, World! The quick brown fox|w=194.359|content=15.000|asc=12.000|line=15.000
+Arial|300|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|300|normal|13|♥☺⚿✓→★|w=68.578|content=15.000|asc=12.000|line=19.000
+Arial|400|normal|13|Hello, World! The quick brown fox|w=194.359|content=15.000|asc=12.000|line=15.000
+Arial|400|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|400|normal|13|♥☺⚿✓→★|w=68.875|content=15.000|asc=12.000|line=19.000
+Arial|500|normal|13|Hello, World! The quick brown fox|w=194.359|content=15.000|asc=12.000|line=15.000
+Arial|500|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|500|normal|13|♥☺⚿✓→★|w=69.109|content=15.000|asc=12.000|line=19.000
+Arial|600|normal|13|Hello, World! The quick brown fox|w=210.172|content=15.000|asc=12.000|line=15.000
+Arial|600|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|600|normal|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+Arial|700|normal|13|Hello, World! The quick brown fox|w=210.172|content=15.000|asc=12.000|line=15.000
+Arial|700|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|700|normal|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+Arial|900|normal|13|Hello, World! The quick brown fox|w=239.813|content=18.000|asc=14.000|line=18.000
+Arial|900|normal|13|日本語のテキスト|w=104.000|content=18.000|asc=14.000|line=19.000
+Arial|900|normal|13|♥☺⚿✓→★|w=69.625|content=18.000|asc=14.000|line=19.000
+Arial|400|italic|13|Hello, World! The quick brown fox|w=194.359|content=15.000|asc=12.000|line=15.000
+Arial|400|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|400|italic|13|♥☺⚿✓→★|w=68.875|content=15.000|asc=12.000|line=19.000
+Arial|700|italic|13|Hello, World! The quick brown fox|w=210.172|content=15.000|asc=12.000|line=15.000
+Arial|700|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Arial|700|italic|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|100|normal|13|Hello, World! The quick brown fox|w=185.563|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|100|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|100|normal|13|♥☺⚿✓→★|w=68.375|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|300|normal|13|Hello, World! The quick brown fox|w=185.563|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|300|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|300|normal|13|♥☺⚿✓→★|w=68.578|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|400|normal|13|Hello, World! The quick brown fox|w=185.563|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|400|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|400|normal|13|♥☺⚿✓→★|w=68.875|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|500|normal|13|Hello, World! The quick brown fox|w=185.563|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|500|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|500|normal|13|♥☺⚿✓→★|w=69.109|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|600|normal|13|Hello, World! The quick brown fox|w=195.750|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|600|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|600|normal|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|700|normal|13|Hello, World! The quick brown fox|w=195.750|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|700|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|700|normal|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|900|normal|13|Hello, World! The quick brown fox|w=195.750|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|900|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|900|normal|13|♥☺⚿✓→★|w=69.688|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|400|italic|13|Hello, World! The quick brown fox|w=181.984|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|400|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|400|italic|13|♥☺⚿✓→★|w=68.875|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|700|italic|13|Hello, World! The quick brown fox|w=189.250|content=15.000|asc=12.000|line=16.000
+"Times New Roman"|700|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+"Times New Roman"|700|italic|13|♥☺⚿✓→★|w=69.406|content=15.000|asc=12.000|line=19.000
+Consolas|100|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|100|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|100|normal|13|♥☺⚿✓→★|w=55.828|content=15.000|asc=12.000|line=19.000
+Consolas|300|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|300|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|300|normal|13|♥☺⚿✓→★|w=56.031|content=15.000|asc=12.000|line=19.000
+Consolas|400|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|400|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|400|normal|13|♥☺⚿✓→★|w=56.328|content=15.000|asc=12.000|line=19.000
+Consolas|500|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|500|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|500|normal|13|♥☺⚿✓→★|w=56.563|content=15.000|asc=12.000|line=19.000
+Consolas|600|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|600|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|600|normal|13|♥☺⚿✓→★|w=56.844|content=15.000|asc=12.000|line=19.000
+Consolas|700|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|700|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|700|normal|13|♥☺⚿✓→★|w=56.844|content=15.000|asc=12.000|line=19.000
+Consolas|900|normal|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|900|normal|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|900|normal|13|♥☺⚿✓→★|w=57.141|content=15.000|asc=12.000|line=19.000
+Consolas|400|italic|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|400|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|400|italic|13|♥☺⚿✓→★|w=56.328|content=15.000|asc=12.000|line=19.000
+Consolas|700|italic|13|Hello, World! The quick brown fox|w=235.875|content=15.000|asc=12.000|line=15.000
+Consolas|700|italic|13|日本語のテキスト|w=104.000|content=15.000|asc=12.000|line=19.000
+Consolas|700|italic|13|♥☺⚿✓→★|w=56.844|content=15.000|asc=12.000|line=19.000
+"Yu Gothic UI"|100|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|100|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|100|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|300|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|300|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|300|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|normal|13|Hello, World! The quick brown fox|w=195.125|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|500|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|500|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|500|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|600|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|600|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|600|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|900|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|900|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|900|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|italic|13|Hello, World! The quick brown fox|w=195.125|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|italic|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|400|italic|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|italic|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|italic|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+"Yu Gothic UI"|700|italic|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+"Noto Sans JP"|100|normal|13|Hello, World! The quick brown fox|w=191.922|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|100|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|100|normal|13|♥☺⚿✓→★|w=73.375|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|300|normal|13|Hello, World! The quick brown fox|w=197.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|300|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|300|normal|13|♥☺⚿✓→★|w=73.594|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|normal|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|normal|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|500|normal|13|Hello, World! The quick brown fox|w=209.969|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|500|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|500|normal|13|♥☺⚿✓→★|w=74.125|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|600|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|600|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|600|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|900|normal|13|Hello, World! The quick brown fox|w=224.063|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|900|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|900|normal|13|♥☺⚿✓→★|w=74.688|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|italic|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|400|italic|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|italic|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+"Noto Sans JP"|700|italic|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+Impact|100|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|100|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|100|normal|13|♥☺⚿✓→★|w=68.906|content=16.000|asc=13.000|line=19.000
+Impact|300|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|300|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|300|normal|13|♥☺⚿✓→★|w=69.125|content=16.000|asc=13.000|line=19.000
+Impact|400|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|400|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|400|normal|13|♥☺⚿✓→★|w=69.422|content=16.000|asc=13.000|line=19.000
+Impact|500|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|500|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|500|normal|13|♥☺⚿✓→★|w=69.656|content=16.000|asc=13.000|line=19.000
+Impact|600|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|600|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|600|normal|13|♥☺⚿✓→★|w=69.938|content=16.000|asc=13.000|line=19.000
+Impact|700|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|700|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|700|normal|13|♥☺⚿✓→★|w=69.938|content=16.000|asc=13.000|line=19.000
+Impact|900|normal|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|900|normal|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|900|normal|13|♥☺⚿✓→★|w=70.219|content=16.000|asc=13.000|line=19.000
+Impact|400|italic|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|400|italic|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|400|italic|13|♥☺⚿✓→★|w=69.422|content=16.000|asc=13.000|line=19.000
+Impact|700|italic|13|Hello, World! The quick brown fox|w=175.766|content=16.000|asc=13.000|line=16.000
+Impact|700|italic|13|日本語のテキスト|w=104.000|content=16.000|asc=13.000|line=19.000
+Impact|700|italic|13|♥☺⚿✓→★|w=69.938|content=16.000|asc=13.000|line=19.000
+Meiryo|100|normal|13|Hello, World! The quick brown fox|w=216.328|content=20.000|asc=14.000|line=20.000
+Meiryo|100|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|100|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|300|normal|13|Hello, World! The quick brown fox|w=216.328|content=20.000|asc=14.000|line=20.000
+Meiryo|300|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|300|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|400|normal|13|Hello, World! The quick brown fox|w=216.328|content=20.000|asc=14.000|line=20.000
+Meiryo|400|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|400|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|500|normal|13|Hello, World! The quick brown fox|w=216.328|content=20.000|asc=14.000|line=20.000
+Meiryo|500|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|500|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|600|normal|13|Hello, World! The quick brown fox|w=234.578|content=20.000|asc=14.000|line=20.000
+Meiryo|600|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|600|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|700|normal|13|Hello, World! The quick brown fox|w=234.578|content=20.000|asc=14.000|line=20.000
+Meiryo|700|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|700|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|900|normal|13|Hello, World! The quick brown fox|w=234.578|content=20.000|asc=14.000|line=20.000
+Meiryo|900|normal|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|900|normal|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|400|italic|13|Hello, World! The quick brown fox|w=215.953|content=20.000|asc=14.000|line=20.000
+Meiryo|400|italic|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|400|italic|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+Meiryo|700|italic|13|Hello, World! The quick brown fox|w=233.563|content=20.000|asc=14.000|line=20.000
+Meiryo|700|italic|13|日本語のテキスト|w=104.000|content=20.000|asc=14.000|line=20.000
+Meiryo|700|italic|13|♥☺⚿✓→★|w=76.203|content=20.000|asc=14.000|line=20.000
+sans-serif|100|normal|13|Hello, World! The quick brown fox|w=191.922|content=19.000|asc=15.000|line=19.000
+sans-serif|100|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|100|normal|13|♥☺⚿✓→★|w=73.375|content=19.000|asc=15.000|line=19.000
+sans-serif|300|normal|13|Hello, World! The quick brown fox|w=197.000|content=19.000|asc=15.000|line=19.000
+sans-serif|300|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|300|normal|13|♥☺⚿✓→★|w=73.594|content=19.000|asc=15.000|line=19.000
+sans-serif|400|normal|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+sans-serif|400|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|400|normal|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+sans-serif|500|normal|13|Hello, World! The quick brown fox|w=209.969|content=19.000|asc=15.000|line=19.000
+sans-serif|500|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|500|normal|13|♥☺⚿✓→★|w=74.125|content=19.000|asc=15.000|line=19.000
+sans-serif|600|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+sans-serif|600|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|600|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+sans-serif|700|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+sans-serif|700|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|700|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+sans-serif|900|normal|13|Hello, World! The quick brown fox|w=224.063|content=19.000|asc=15.000|line=19.000
+sans-serif|900|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|900|normal|13|♥☺⚿✓→★|w=74.688|content=19.000|asc=15.000|line=19.000
+sans-serif|400|italic|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+sans-serif|400|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|400|italic|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+sans-serif|700|italic|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+sans-serif|700|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+sans-serif|700|italic|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+serif|100|normal|13|Hello, World! The quick brown fox|w=217.125|content=19.000|asc=15.000|line=19.000
+serif|100|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|100|normal|13|♥☺⚿✓→★|w=73.141|content=19.000|asc=15.000|line=19.000
+serif|300|normal|13|Hello, World! The quick brown fox|w=218.938|content=19.000|asc=15.000|line=19.000
+serif|300|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|300|normal|13|♥☺⚿✓→★|w=73.266|content=19.000|asc=15.000|line=19.000
+serif|400|normal|13|Hello, World! The quick brown fox|w=221.031|content=19.000|asc=15.000|line=19.000
+serif|400|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|400|normal|13|♥☺⚿✓→★|w=73.391|content=19.000|asc=15.000|line=19.000
+serif|500|normal|13|Hello, World! The quick brown fox|w=223.922|content=19.000|asc=15.000|line=19.000
+serif|500|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|500|normal|13|♥☺⚿✓→★|w=73.578|content=19.000|asc=15.000|line=19.000
+serif|600|normal|13|Hello, World! The quick brown fox|w=226.734|content=19.000|asc=15.000|line=19.000
+serif|600|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|600|normal|13|♥☺⚿✓→★|w=73.750|content=19.000|asc=15.000|line=19.000
+serif|700|normal|13|Hello, World! The quick brown fox|w=230.766|content=19.000|asc=15.000|line=19.000
+serif|700|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|700|normal|13|♥☺⚿✓→★|w=74.000|content=19.000|asc=15.000|line=19.000
+serif|900|normal|13|Hello, World! The quick brown fox|w=235.875|content=19.000|asc=15.000|line=19.000
+serif|900|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|900|normal|13|♥☺⚿✓→★|w=74.328|content=19.000|asc=15.000|line=19.000
+serif|400|italic|13|Hello, World! The quick brown fox|w=221.031|content=19.000|asc=15.000|line=19.000
+serif|400|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|400|italic|13|♥☺⚿✓→★|w=73.391|content=19.000|asc=15.000|line=19.000
+serif|700|italic|13|Hello, World! The quick brown fox|w=230.766|content=19.000|asc=15.000|line=19.000
+serif|700|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+serif|700|italic|13|♥☺⚿✓→★|w=74.000|content=19.000|asc=15.000|line=19.000
+monospace|100|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|100|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|100|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|300|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|300|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|300|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|400|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|400|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|400|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|500|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|500|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|500|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|600|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|600|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|600|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|700|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|700|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|700|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|900|normal|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|900|normal|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|900|normal|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|400|italic|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|400|italic|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|400|italic|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+monospace|700|italic|13|Hello, World! The quick brown fox|w=214.500|content=13.000|asc=11.000|line=13.000
+monospace|700|italic|13|日本語のテキスト|w=104.000|content=13.000|asc=11.000|line=13.000
+monospace|700|italic|13|♥☺⚿✓→★|w=71.500|content=13.000|asc=11.000|line=17.000
+system-ui|100|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+system-ui|100|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+system-ui|100|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|300|normal|13|Hello, World! The quick brown fox|w=185.125|content=17.000|asc=14.000|line=17.000
+system-ui|300|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+system-ui|300|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|400|normal|13|Hello, World! The quick brown fox|w=195.125|content=17.000|asc=14.000|line=17.000
+system-ui|400|normal|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+system-ui|400|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|500|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+system-ui|500|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+system-ui|500|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|600|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+system-ui|600|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+system-ui|600|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|700|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+system-ui|700|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+system-ui|700|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|900|normal|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+system-ui|900|normal|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+system-ui|900|normal|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|400|italic|13|Hello, World! The quick brown fox|w=195.125|content=17.000|asc=14.000|line=17.000
+system-ui|400|italic|13|日本語のテキスト|w=87.953|content=17.000|asc=14.000|line=17.000
+system-ui|400|italic|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+system-ui|700|italic|13|Hello, World! The quick brown fox|w=202.313|content=17.000|asc=14.000|line=17.000
+system-ui|700|italic|13|日本語のテキスト|w=89.188|content=17.000|asc=14.000|line=17.000
+system-ui|700|italic|13|♥☺⚿✓→★|w=78.000|content=17.000|asc=14.000|line=17.000
+initial|100|normal|13|Hello, World! The quick brown fox|w=191.922|content=19.000|asc=15.000|line=19.000
+initial|100|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|100|normal|13|♥☺⚿✓→★|w=73.375|content=19.000|asc=15.000|line=19.000
+initial|300|normal|13|Hello, World! The quick brown fox|w=197.000|content=19.000|asc=15.000|line=19.000
+initial|300|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|300|normal|13|♥☺⚿✓→★|w=73.594|content=19.000|asc=15.000|line=19.000
+initial|400|normal|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+initial|400|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|400|normal|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+initial|500|normal|13|Hello, World! The quick brown fox|w=209.969|content=19.000|asc=15.000|line=19.000
+initial|500|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|500|normal|13|♥☺⚿✓→★|w=74.125|content=19.000|asc=15.000|line=19.000
+initial|600|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+initial|600|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|600|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+initial|700|normal|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+initial|700|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|700|normal|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000
+initial|900|normal|13|Hello, World! The quick brown fox|w=224.063|content=19.000|asc=15.000|line=19.000
+initial|900|normal|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|900|normal|13|♥☺⚿✓→★|w=74.688|content=19.000|asc=15.000|line=19.000
+initial|400|italic|13|Hello, World! The quick brown fox|w=204.500|content=19.000|asc=15.000|line=19.000
+initial|400|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|400|italic|13|♥☺⚿✓→★|w=73.891|content=19.000|asc=15.000|line=19.000
+initial|700|italic|13|Hello, World! The quick brown fox|w=217.031|content=19.000|asc=15.000|line=19.000
+initial|700|italic|13|日本語のテキスト|w=104.000|content=19.000|asc=15.000|line=19.000
+initial|700|italic|13|♥☺⚿✓→★|w=74.406|content=19.000|asc=15.000|line=19.000

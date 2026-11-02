@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.343Z" hostname="N_UESUGI" time="0.218">
+  <properties/>
+  <testcase name="recentlyUsedAtlasIsNeverEvictedEvenOverTheLimit()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.001"/>
+  <testcase name="sameKeyIsCreatedOnce()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.0"/>
+  <testcase name="glyphKeyRoundTripsAndKeepsVariantsApart()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.053"/>
+  <testcase name="glyphKeysStayInsideMinecraftsCodepointTable()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.146"/>
+  <testcase name="sizesAreQuantizedSoAnimationDoesNotMultiplyAtlases()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.002"/>
+  <testcase name="unusedAtlasesExpireEvenUnderTheLimit()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.008"/>
+  <testcase name="touchingAnAtlasKeepsItAlive()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.0"/>
+  <testcase name="overTheLimitTheOldestIdleOnesGoFirst()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.0"/>
+  <testcase name="clearReleasesEverything()" classname="com.nishiyu.enderframelib.core.text.font.AtlasCacheTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

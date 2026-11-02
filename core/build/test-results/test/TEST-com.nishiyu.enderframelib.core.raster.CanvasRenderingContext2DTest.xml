@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" tests="29" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:12.949Z" hostname="N_UESUGI" time="0.053">
+  <properties/>
+  <testcase name="clearRectRespectsClipAndTransform()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="radialGradientCenterAndEdge()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.01"/>
+  <testcase name="gradientStopsPadOutsideRange()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.002"/>
+  <testcase name="putImageDataIgnoresStateButGetSeesDraws()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="roundRectAndBounds()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="linearGradientInterpolates()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="invalidValuesAreIgnored()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="conicGradientSweepsAngle()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.003"/>
+  <testcase name="dashedStroke()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="compositeOperations()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.006"/>
+  <testcase name="fillRectPaintsExactPixels()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="patternRepeats()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.003"/>
+  <testcase name="modCountAdvancesOnDraw()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="getAndPutImageDataRoundTrip()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="pathIsFixedAtConstructionTime()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="transformsApplyToFills()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="closePathThenLineToStartsFromSubpathStart()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="strokeWidthFollowsNonUniformScale()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="gradientRespectsTransformAtFillTime()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="clipRestrictsDrawing()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.006"/>
+  <testcase name="resizeClearsBitmapAndState()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="arcFillsCircle()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="saveRestoreStateStack()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="globalAlphaAndSourceOver()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="pointInPathAndStroke()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="drawImageScalesAndFlips()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.0"/>
+  <testcase name="measureTextUsesFontFaceMetrics()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.004"/>
+  <testcase name="defaultsMatchSpecification()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.001"/>
+  <testcase name="shadowDrawsOffsetCopyAndBlurSpreads()" classname="com.nishiyu.enderframelib.core.raster.CanvasRenderingContext2DTest" time="0.004"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

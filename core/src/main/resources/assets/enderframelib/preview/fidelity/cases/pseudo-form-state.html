@@ -1,0 +1,25 @@
+<!-- :placeholder-shown / :read-only / :read-write / :in-range / :out-of-range / :valid / :invalid。 -->
+<style>
+  input, div { display: block; box-sizing: border-box; width: 50px; height: 10px; padding: 0; border: 0; margin: 0; }
+  :placeholder-shown { margin-bottom: 3px; }
+  input:read-only { height: 21px; }
+  input:read-write { height: 22px; }
+  div:read-only { height: 23px; }
+  :in-range { margin-left: 11px; }
+  :out-of-range { margin-left: 12px; }
+  :invalid { width: 121px; }
+  :valid { width: 122px; }
+</style>
+<input id="p1" placeholder="name">
+<input id="p2" placeholder="name" value="v">
+<input id="p3">
+<input id="r1" readonly>
+<input id="r2">
+<input id="r3" disabled>
+<div id="r4"></div>
+<input id="g1" type="number" min="1" max="10" value="5">
+<input id="g2" type="number" min="1" max="10" value="50">
+<input id="g3" type="number">
+<input id="v1" required>
+<input id="v2" required value="a">
+<input id="v3" type="email" value="not-an-email">

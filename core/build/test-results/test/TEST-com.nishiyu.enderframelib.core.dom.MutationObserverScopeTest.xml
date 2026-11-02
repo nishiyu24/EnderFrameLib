@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.dom.MutationObserverScopeTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.930Z" hostname="N_UESUGI" time="0.008">
+  <properties/>
+  <testcase name="disconnectAndClearAllReleaseDocumentRegistration()" classname="com.nishiyu.enderframelib.core.dom.MutationObserverScopeTest" time="0.003"/>
+  <testcase name="unobservedObserverIsNotRegisteredAnywhere()" classname="com.nishiyu.enderframelib.core.dom.MutationObserverScopeTest" time="0.001"/>
+  <testcase name="observerOnlySeesItsOwnDocument()" classname="com.nishiyu.enderframelib.core.dom.MutationObserverScopeTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

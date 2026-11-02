@@ -48,7 +48,9 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 public class ArchitectureTest {
 
     private static final Path MAIN = Paths.get("src/main/java/com/nishiyu/enderframelib");
-    private static final Path CORE = MAIN.resolve("core");
+    /** Minecraft 非依存の :core モジュール側のソース（core/・common/・api の一部）。 */
+    private static final Path CORE_MODULE = Paths.get("core/src/main/java/com/nishiyu/enderframelib");
+    private static final Path CORE = CORE_MODULE.resolve("core");
     private static final Path TEST = Paths.get("src/test/java/com/nishiyu/enderframelib");
 
     /** M1: セッション ID をキーにした static な状態を持つクラス（2026-10-20 時点: 1。ClientWebManager の登録簿のみ）。 */
@@ -122,7 +124,7 @@ public class ArchitectureTest {
     // 2026-10-27: クリップを祖先ごとの連鎖にする修正で client/renderer の ClipResolver を追加（+1）。連鎖を項目の空間へ直す
     // 純粋な行列計算で、DisplayItemDrawer（既に最大級）へ詰め込まずに単体でテストするため。
     // 2026-10-30: content/（ScreenBlockEntity ほか）と server/ServerHologramManager の追加で +3。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 300; // 2026-11-01: Step 2 でソフトウェア描画バックエンド（SoftwareRenderBackend・SoftShapes・ImageProvider・SoftwareRendering・ShaderGradientEmulator）を追加（+5）、複数パッケージから使う入れ子型 7 つをトップレベルへ出した（+7）
+    private static final int M9_MAX_TOP_LEVEL_FILES = 321; // 2026-11-02: Step 5-6 で UiFocus・TextEditing・SelectPopup をコアへ追加（+3）。// // 2026-11-02: Step 5-3 で UiTimers・UiStateStore・UiPubSub・CanvasSurface をコアへ分離（+4）。// 2026-11-02: Step 5-2 で SessionInput の純 Java 部分を UiInput としてコアへ分離（+1）。// // 2026-11-02: Step 5-1 で SessionContext の純 Java 部分を UiView としてコアへ分離（+1）。// // 2026-11-02: StandardDefaultActions.Context を複数の層から使うため DefaultActionContext としてトップレベルへ出した（+1）。// 2026-11-02: 単体で動かす StandaloneView・StandaloneViewer・HttpImageFetcher を追加（+3）。// 2026-11-02: 画像・動画をコアに渡す McMediaImages を追加（+1）。// 2026-11-02: 描画コアを Minecraft の面に貼る CoreGpuSurface を追加（+1）。// 2026-11-01: グループの filter / mask の CPU 版 LayerFx を追加（+1。ぼかし・影・マスクの画素計算で SoftwareRenderBackend から切り出した）。2026-11-01: Step 3 で RenderBackend・GpuSink・LwjglGlRenderBackend を追加（+3）。2026-11-01: Step 2 でソフトウェア描画バックエンド（SoftwareRenderBackend・SoftShapes・ImageProvider・SoftwareRendering・ShaderGradientEmulator）を追加（+5）、複数パッケージから使う入れ子型 7 つをトップレベルへ出した（+7）
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
@@ -330,7 +332,7 @@ public class ArchitectureTest {
         int count = 0;
         for (String name : List.of("DisplayListBuilder", "PaintSupport", "BoxAnimation", "BoxDecorationPainter",
                 "ControlPainter", "PaintOrder", "ItemProps")) {
-            count += countMatches(Files.readString(MAIN.resolve("core/paint/" + name + ".java")), "Pattern\\.compile\\(");
+            count += countMatches(Files.readString(resolveMain("core/paint/" + name + ".java")), "Pattern\\.compile\\(");
         }
         assertMetricAtMost("R6 DisplayListBuilder 一群の Pattern.compile", R6_MAX_DISPLAY_LIST_BUILDER_REGEX, count,
                 "描画時に CSS 文字列を正規表現で解釈せず、計算済みスタイルの型付き値を使ってください（Phase 3 / R6）。");
@@ -378,7 +380,7 @@ public class ArchitectureTest {
     @Test
     public void testM5PipelineBuildersDoNotGrow() throws IOException {
         List<String> builders = new ArrayList<>();
-        List<Path> roots = List.of(MAIN.resolve("client"), MAIN.resolve("common"));
+        List<Path> roots = List.of(MAIN.resolve("client"), CORE_MODULE.resolve("common"));
         for (Path root : roots) {
             for (Path path : javaFiles(root)) {
                 String content = Files.readString(path);
@@ -396,7 +398,7 @@ public class ArchitectureTest {
         List<String> missing = new ArrayList<>();
         List<String> found = new ArrayList<>();
         for (String entry : INPUT_ENTRY_POINTS) {
-            Path path = MAIN.resolve(entry);
+            Path path = resolveMain(entry);
             if (Files.isRegularFile(path)) {
                 found.add(entry);
             } else {
@@ -410,12 +412,12 @@ public class ArchitectureTest {
 
     @Test
     public void testInputSynthesisIsCentralized() throws IOException {
-        Path input = MAIN.resolve("client/SessionInput.java");
+        Path input = resolveMain("common/UiInput.java");
         assertTrue(Files.isRegularFile(input), "入力経路の本体がありません: " + input);
         String inputContent = Files.readString(input);
         for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
             assertTrue(inputContent.contains(marker),
-                    "SessionInput が " + marker + " を使っていません。入力合成の置き場所が変わった可能性があります");
+                    "UiInput が " + marker + " を使っていません。入力合成の置き場所が変わった可能性があります");
         }
 
         List<String> violations = new ArrayList<>();
@@ -423,7 +425,7 @@ public class ArchitectureTest {
                 "client/ClientScreenInteractionManager.java",
                 "client/gui/EnderScreenDelegate.java",
                 "client/ClientDomEventDispatcher.java")) {
-            String content = Files.readString(MAIN.resolve(legacy));
+            String content = Files.readString(resolveMain(legacy));
             for (String marker : List.of("CoreEvent.pointer", "CoreEvent.mouse", "CoreEvent.click", "core.event.StandardDefaultActions")) {
                 if (content.contains(marker)) {
                     violations.add(legacy + " → " + marker);
@@ -431,7 +433,7 @@ public class ArchitectureTest {
             }
         }
         assertTrue(violations.isEmpty(),
-                "入力イベントの合成が SessionInput の外に残っています:\n  " + String.join("\n  ", violations));
+                "入力イベントの合成が UiInput の外に残っています:\n  " + String.join("\n  ", violations));
     }
 
     @Test
@@ -591,12 +593,31 @@ public class ArchitectureTest {
         assertTrue(Files.isDirectory(root),
                 "ソースディレクトリが見つかりません: " + root.toAbsolutePath()
                         + " (テストはプロジェクトルートを作業ディレクトリとして実行してください)");
-        try (Stream<Path> paths = Files.walk(root)) {
-            return paths.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().endsWith(".java"))
-                    .sorted()
-                    .toList();
+        List<Path> result = new ArrayList<>();
+        // MAIN 配下は :core モジュールの同じ相対位置にも同名パッケージがある。両方を 1 つの木として扱う
+        for (Path r : counterparts(root)) {
+            if (!Files.isDirectory(r)) continue;
+            try (Stream<Path> paths = Files.walk(r)) {
+                paths.filter(Files::isRegularFile)
+                        .filter(path -> path.toString().endsWith(".java"))
+                        .forEach(result::add);
+            }
         }
+        result.sort(null);
+        return result;
+    }
+
+    /** root と、もう一方のモジュールの同じ相対位置（無ければ root だけ）。 */
+    private static List<Path> counterparts(Path root) {
+        if (root.startsWith(MAIN)) return List.of(root, CORE_MODULE.resolve(MAIN.relativize(root)));
+        if (root.startsWith(CORE_MODULE)) return List.of(root, MAIN.resolve(CORE_MODULE.relativize(root)));
+        return List.of(root);
+    }
+
+    /** MAIN 相対のファイルを、mod 側／:core 側のどちらか存在する方で返す。 */
+    private static Path resolveMain(String relative) {
+        Path inCore = CORE_MODULE.resolve(relative);
+        return Files.exists(inCore) ? inCore : MAIN.resolve(relative);
     }
 
     private static List<Path> mainFilesUnderClientOrCoreDom() throws IOException {
@@ -659,7 +680,7 @@ public class ArchitectureTest {
 
     /** MAIN からの相対パス（`client/...` のような層判定に使う）。 */
     private static String mainRelative(Path path) {
-        return relative(MAIN.relativize(path));
+        return relative(path.startsWith(CORE_MODULE) ? CORE_MODULE.relativize(path) : MAIN.relativize(path));
     }
 
     private static void assertAtMost(String metric, int limit, Collection<String> found, String advice) {

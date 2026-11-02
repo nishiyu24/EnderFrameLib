@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.786Z" hostname="N_UESUGI" time="0.01">
+  <properties/>
+  <testcase name="form.reset() によるリセットイベント発火とコントロール初期値の復元" classname="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" time="0.004"/>
+  <testcase name="requestSubmit 成功時: submit イベント発火 -&gt; FormData 構築 -&gt; formdata イベント発火" classname="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" time="0.004"/>
+  <testcase name="requestSubmit 制約違反時: submit は発火せず違反コントロールにフォーカス" classname="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" time="0.001"/>
+  <testcase name="form 属性によりフォーム外の要素が正しく紐付くこと" classname="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" time="0.0"/>
+  <testcase name="submit ハンドラで preventDefault した場合 formdata は発火しないこと" classname="com.nishiyu.enderframelib.core.dom.FormSubmissionAndResetTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

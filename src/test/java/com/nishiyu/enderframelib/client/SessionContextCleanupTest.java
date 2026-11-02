@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client;
 
+import com.nishiyu.enderframelib.common.UiPubSub;
+import com.nishiyu.enderframelib.common.UiTimers;
 import com.nishiyu.enderframelib.client.gui.WebTextInputHost;
 import com.nishiyu.enderframelib.client.renderer.Canvas2DContext;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
@@ -87,16 +89,16 @@ public class SessionContextCleanupTest {
         session.setEnvApplied(Map.of("key", "value"));
 
         session.subscriptions().add("channel");
-        session.dataBindings().add(new ClientPubSubManager.DataBinding("target", "channel", "path", "textContent"));
+        session.dataBindings().add(new UiPubSub.DataBinding("target", "channel", "path", "textContent"));
         session.virtualListBindings().add(
-                new ClientPubSubManager.VirtualListBinding("target", "channel", null, 10, 20));
+                new UiPubSub.VirtualListBinding("target", "channel", null, 10, 20));
 
         session.setHudConfig(new WebHudRenderer.HudTemplateConfig());
         session.setLastHudData(Map.of("key", "value"));
         session.setTrackerEntry(new WebHudRenderer.TrackerEntry(new WebHudRenderer.TrackerTemplateConfig(), null));
 
-        session.rafCallbacks().put(1, new ClientScheduler.RafCallback(1, sessionId, timestamp -> {}));
-        session.timers().put(2, new ClientScheduler.TimerTask(2, sessionId, () -> {}, 0, 0, false));
+        session.timers().rafCallbacks().put(1, new UiTimers.RafCallback(1, sessionId, timestamp -> {}));
+        session.timers().timers().put(2, new UiTimers.TimerTask(2, sessionId, () -> {}, 0, 0, false));
 
         session.markInvalidation(SessionContext.InvalidationLevel.RELAYOUT);
 
@@ -149,7 +151,7 @@ public class SessionContextCleanupTest {
         assertNull(session.lastHudData());
         assertNull(session.trackerEntry());
 
-        assertTrue(session.rafCallbacks().isEmpty());
-        assertTrue(session.timers().isEmpty());
+        assertTrue(session.timers().rafCallbacks().isEmpty());
+        assertTrue(session.timers().timers().isEmpty());
     }
 }

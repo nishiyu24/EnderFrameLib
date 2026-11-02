@@ -122,15 +122,14 @@ public final class ControlElementRenderer {
     }
 
     /** レンジの溝の高さとつまみの直径（Chromium の既定、CSS px）。 */
-    public static final float RANGE_TRACK_HEIGHT = 8f, RANGE_THUMB_SIZE = 16f;
+    public static final float RANGE_TRACK_HEIGHT = 8f, RANGE_THUMB_SIZE = com.nishiyu.enderframelib.common.UiInput.RANGE_THUMB_SIZE;
 
     /**
      * レンジの横の位置（要素の左端から）を値の割合（0〜1）に直す。つまみの中心が指す位置になるよう、
      * 両端のつまみの半径の分を除いた幅で割る（Chrome と同じく、押した所につまみの中心が来る）。
      */
     public static float rangeRatio(double localX, float width) {
-        float travel = Math.max(1f, width - RANGE_THUMB_SIZE);
-        return Math.clamp((float) ((localX - RANGE_THUMB_SIZE / 2) / travel), 0f, 1f);
+        return com.nishiyu.enderframelib.common.UiInput.rangeRatio(localX, width);
     }
 
     static void renderToggleElement(DisplayItem el, AnimatedValues anim, PoseStack poseStack, MultiBufferSource buffer,

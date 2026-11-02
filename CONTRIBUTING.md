@@ -8,6 +8,7 @@
 ```bash
 ./gradlew build test          # CI と同じ経路（性能ベンチはスモーク動作のみ・実時間閾値では落とさない）
 ./gradlew benchmark           # 単独 JVM での厳密な性能・メモリ回帰テスト（-Dbenchmark.enforce=true）
+./gradlew :core:test         # Minecraft 非依存の :core だけのテスト
 ./gradlew runClient
 ./gradlew runServer
 ./gradlew runGameTestServer   # サーバー側ライフサイクルのゲームテスト
@@ -144,13 +145,16 @@ network/  →  core/, api/（ペイロードの登録で server のハンドラ�
 ## テスト
 
 ```
-src/test/java/.../core/        core/ の単体テスト・ゴールデンテスト
+core/src/test/java/.../        :core モジュールのテスト（core/・common/・WPT の移植ハーネス。Minecraft を使わない）
+src/test/java/.../core/        ArchitectureTest（両モジュールのソースを走査）
 src/test/java/.../api/         API 境界テスト（内部型が漏れていないか）
 src/test/resources/golden/     期待出力
 src/test/resources/fidelity/   ブラウザ実測の期待値と既知差分の台帳
 ```
 
-- `core/` に手を入れる変更には、素の JUnit テストを付ける。
+- `core/` に手を入れる変更には、素の JUnit テストを付ける。`./gradlew :core:test` で Minecraft なしに単体実行できる
+  （作業ディレクトリはリポジトリ直下。テスト資源は `src/test/resources` を共有する）。
+  ソースは `core/src/main/java`、Minecraft に触れる側は `src/main/java`。
   Minecraft の起動が要らないので、ここが唯一安く速く検証できる層。
 - **テストのパッケージは本体に合わせる。** `src/test/java` に本体の無いパッケージを作らない
   （WPT の移植ハーネスだけは例外）。`ArchitectureTest` が検査する。

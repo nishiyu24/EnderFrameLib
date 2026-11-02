@@ -1,0 +1,6 @@
+c 8 8 100 10 0 sw=100 sh=30 cw=100 ch=10 display=block position=static box-sizing=content-box overflow=visible
+t 8 8 20 10 0 sw=20 sh=10 cw=20 ch=10 display=block position=static box-sizing=content-box overflow=visible
+u 8 18 30 10 1 sw=30 sh=10 cw=30 ch=10 display=block position=static box-sizing=content-box overflow=visible
+k 8 28 40 10 1 sw=40 sh=10 cw=40 ch=10 display=block position=static box-sizing=content-box overflow=visible
+big 8 18 150 10 0 sw=150 sh=10 cw=150 ch=10 display=block position=static box-sizing=content-box overflow=visible
+d 8 28 160 10 0 sw=160 sh=10 cw=160 ch=10 display=block position=static box-sizing=content-box overflow=visible

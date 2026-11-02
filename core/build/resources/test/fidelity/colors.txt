@@ -1,0 +1,79 @@
+# 色の値の実測。Edge のヘッドレスで Canvas 2D に白地へ塗り、1 ピクセルの sRGB を読んだもの（色空間の変換とガマットの丸めを含む）。
+# 形式: <CSS の色>\t<R G B（0-255）>。ブラウザが構文として受け付けなかった式は INVALID。
+# 採り直すときは CONTRIBUTING.md の「色の実測」の手順に従う（エンジンの出力を期待値にしてはいけない）。
+rgb(10, 20, 30)	10 20 30
+rgb(10 20 30 / 50%)	132 137 142
+rgba(255, 0, 0, 0.25)	255 191 191
+hsl(120 100% 25%)	0 128 0
+hsl(210deg 50% 40% / 0.5)	153 178 204
+hsla(0, 100%, 50%, 0.3)	255 178 178
+rebeccapurple	102 51 153
+transparent	255 255 255
+#ff000080	255 127 127
+#0f08	119 255 119
+hwb(120 0% 0%)	0 255 0
+hwb(0 50% 50%)	128 128 128
+hwb(200 10% 20%)	26 145 204
+hwb(90deg 20% 30% / 0.4)	199 225 173
+hwb(0.25turn 0% 0%)	128 255 0
+lab(100 0 0)	255 255 255
+lab(50 40 59.5)	191 87 0
+lab(29.2345% 39.3825 20.0664)	125 35 41
+lab(70 -30 40 / 0.5)	194 220 174
+lch(50 60 30)	202 73 72
+lch(80 40 200deg)	80 218 222
+lch(29.2345% 44.2 27)	125 35 41
+lch(0 0 0)	0 0 0
+oklab(1 0 0)	255 255 255
+oklab(0.628 0.2249 0.1258)	255 0 0
+oklab(60% -0.1 0.1)	89 146 51
+oklab(0.7 0.05 -0.1 / 0.5)	210 199 237
+oklch(0.628 0.2577 29.23)	255 0 0
+oklch(0.7 0.1 200)	64 177 183
+oklch(70% 0.15 150deg)	76 184 106
+oklch(0.9 0.05 80 / 0.6)	246 233 213
+oklch(0 0 0)	0 0 0
+color(srgb 1 0 0)	255 0 0
+color(srgb 0.2 0.4 0.6)	51 102 153
+color(srgb-linear 0.5 0.5 0.5)	188 188 188
+color(srgb-linear 1 1 1)	255 255 255
+color(display-p3 1 0 0)	255 0 0
+color(display-p3 0.3 0.6 0.9)	36 155 236
+color(a98-rgb 0.4 0.5 0.6)	89 128 155
+color(prophoto-rgb 0.4 0.5 0.6)	69 151 173
+color(rec2020 0.4 0.5 0.6)	92 142 166
+color(xyz 0.3 0.4 0.5)	92 184 181
+color(xyz-d50 0.3 0.4 0.5)	62 186 208
+color(xyz-d65 0.2 0.3 0.4)	0 167 164
+color(srgb 0.5 0.5 0.5 / 0.5)	191 191 191
+color-mix(in srgb, red, blue)	128 0 128
+color-mix(in srgb, red 25%, blue)	64 0 191
+color-mix(in srgb, red 30%, blue 30%)	179 102 179
+color-mix(in srgb-linear, red, blue)	188 0 188
+color-mix(in lab, red, blue)	193 0 136
+color-mix(in oklab, red, blue)	140 83 162
+color-mix(in oklch, red, blue)	186 0 194
+color-mix(in oklch longer hue, red, blue)	0 147 0
+color-mix(in hsl, red, blue)	255 0 255
+color-mix(in hsl shorter hue, hsl(10 80% 50%), hsl(350 80% 50%))	230 25 25
+color-mix(in hwb, red, blue)	255 0 255
+color-mix(in lch, lch(50 40 30), lch(70 20 200))	135 150 95
+color-mix(in srgb, rgb(255 0 0 / 0.5), blue)	128 64 191
+color-mix(in xyz, red, blue)	188 0 188
+color-mix(in display-p3, red, blue)	128 10 145
+rgb(from red r g b)	255 0 0
+rgb(from #102030 calc(r + 10) g b)	26 32 48
+rgb(from rgb(100 150 200) b g r)	200 150 100
+rgb(from rgb(100 150 200) r g b / 0.5)	177 202 227
+hsl(from lime h s l)	0 255 0
+hsl(from hsl(200 50% 40%) calc(h + 60) s l)	85 51 153
+hwb(from hwb(120 10% 20%) h w b)	26 204 26
+lab(from lab(50 40 30) calc(l + 10) a b)	217 114 94
+oklch(from oklch(0.6 0.1 100) l c calc(h + 90))	20 147 141
+oklab(from red l a b)	255 0 0
+color(from rgb(10 20 30) srgb r g b)	10 20 30
+lch(from lch(40 30 50) l c h / 0.5)	193 168 156
+rgb(from hsl(120 100% 50%) r g b)	0 255 0
+oklch(0.7 none 200)	158 158 158
+hsl(none 50% 50%)	191 64 64
+lab(50 none none)	119 119 119

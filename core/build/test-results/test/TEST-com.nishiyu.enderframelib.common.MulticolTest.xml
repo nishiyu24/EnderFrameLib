@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.MulticolTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.352Z" hostname="N_UESUGI" time="0.094">
+  <properties/>
+  <testcase name="testColumnCountIsCappedByColumnWidth()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.007"/>
+  <testcase name="testColumnFillAutoFillsToTheHeight()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.004"/>
+  <testcase name="testBalancedColumnsFillTopToBottom()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.005"/>
+  <testcase name="testParagraphIsSplitAcrossColumns()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.012"/>
+  <testcase name="testPlainBlockHasNoColumns()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.005"/>
+  <testcase name="testOwnInlineContentBreaksBetweenLines()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.009"/>
+  <testcase name="testBlockChildrenGoToSeparateColumns()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.006"/>
+  <testcase name="testDecoratedBlockIsNotSplit()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.009"/>
+  <testcase name="testColumnRuleSitsInTheMiddleOfTheGap()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.005"/>
+  <testcase name="testContainerContentBoxIsTheOrigin()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.004"/>
+  <testcase name="testColumnWidthDecidesTheCount()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.007"/>
+  <testcase name="testDefaultGapIsOneEm()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.005"/>
+  <testcase name="testNoRuleWithoutStyle()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.004"/>
+  <testcase name="testColumnSpanAllBreaksTheColumns()" classname="com.nishiyu.enderframelib.common.MulticolTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

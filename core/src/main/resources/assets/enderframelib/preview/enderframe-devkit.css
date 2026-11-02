@@ -1,0 +1,53 @@
+/* =========================================================================
+ * EnderFrameLib DevKit: プレビューページ専用のスタイル
+ *
+ * ここには「ゲーム内に対応物が無いもの」だけを置く。
+ * 要素の既定値は ua.css（enderframe-ua.css として同梱）が、テーマの見た目は
+ * 組み込みテーマ（theme-dark.css など）が唯一の出所。
+ *
+ * 何が壊れていたか: 以前このファイルは UA 相当の宣言を独自の値で持っていた
+ * （* { box-sizing: border-box }、:root { font-size: 14px }、button / input /
+ * table / code / pre / .mc-slot 24px …）。ゲーム内の ua.css とは値が違ったため、
+ * プレビューで作った見た目がゲーム内で再現しなかった。
+ * 要素セレクタをここに書かないことを CssResourcesTest が検査する。
+ * ========================================================================= */
+
+/* Markdown プレビューの item: 記法バッジ（ゲーム内はアイテム画像になる） */
+.badge {
+    background-color: rgba(137, 180, 250, 0.16);
+    border: 1px solid var(--border-color, #585b70);
+    border-radius: 3px;
+    padding: 0 5px;
+}
+
+/* F12 インスペクタ風オーバーレイ（プレビューだけの開発補助） */
+#devtools_inspector_badge {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    z-index: 9999;
+    padding: 4px 8px;
+    background-color: rgba(17, 17, 27, 0.92);
+    color: #a6e3a1;
+    font-family: monospace;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.devtools-active *:hover {
+    outline: 1px dashed rgba(137, 180, 250, 0.8);
+}
+
+/* プレビューページ自身の枠組み。ゲーム内の文書には存在しない */
+.devkit-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 854px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.devkit-note {
+    color: var(--text-sub, #a6adc8);
+}

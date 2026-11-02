@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.542Z" hostname="N_UESUGI" time="0.007">
+  <properties/>
+  <testcase name="theFontIsOnlyResolvedWhenAChOrExUnitIsUsed()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.001"/>
+  <testcase name="withoutAResolverTheUnitsFallBackToHalfAnEm()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.002"/>
+  <testcase name="unitsComeFromTheFontMetrics()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.0"/>
+  <testcase name="fontIsReadFromTheElementAndInheritedFromTheParent()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.001"/>
+  <testcase name="childrenMeasureWithTheInheritedFamilyAndTheirOwnSize()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.001"/>
+  <testcase name="computedStyleUsesTheMeasuredUnits()" classname="com.nishiyu.enderframelib.core.css.GlyphUnitsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,18 @@
+<!-- CSS ネスト: & 付きと暗黙の子孫、& の複合、& を後ろに置く文脈、先頭の結合子。 -->
+<style>
+  div { height: 10px; }
+  .card { width: 100px;
+    & .t { width: 20px; }
+    .u { width: 30px; }
+    &.big { width: 150px; }
+    .dark & { width: 160px; }
+    > .kid { width: 40px; }
+  }
+</style>
+<div class="card" id="c">
+  <div class="t" id="t"></div>
+  <div class="u" id="u"></div>
+  <div class="kid" id="k"></div>
+</div>
+<div class="card big" id="big"></div>
+<div class="dark"><div class="card" id="d"></div></div>

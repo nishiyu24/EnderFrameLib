@@ -1,0 +1,13 @@
+cw 8 8 200 50 0 sw=200 sh=50 cw=200 ch=50 display=flex position=static box-sizing=content-box overflow=visible
+a 8 8 30 20 0 sw=30 sh=20 cw=30 ch=20 display=block position=static box-sizing=content-box overflow=visible
+b 8 28 40 20 0 sw=40 sh=20 cw=40 ch=20 display=block position=static box-sizing=content-box overflow=visible
+c 118 8 20 20 0 sw=20 sh=20 cw=20 ch=20 display=block position=static box-sizing=content-box overflow=visible
+cm 8 58 200 40 0 sw=200 sh=40 cw=200 ch=40 display=flex position=static box-sizing=content-box overflow=visible
+d 8 58 30 20 0 sw=30 sh=20 cw=30 ch=20 display=block position=static box-sizing=content-box overflow=visible
+e 8 78 40 20 0 sw=40 sh=20 cw=40 ch=20 display=block position=static box-sizing=content-box overflow=visible
+f 118 58 20 20 0 sw=20 sh=20 cw=20 ch=20 display=block position=static box-sizing=content-box overflow=visible
+fl 8 98 69 50 2 sw=69 sh=50 cw=69 ch=50 display=block position=static box-sizing=content-box overflow=visible
+cg 8 98 69 50 1 sw=69 sh=50 cw=69 ch=50 display=flex position=static box-sizing=content-box overflow=visible
+g 8 98 30 20 0 sw=30 sh=20 cw=30 ch=20 display=block position=static box-sizing=content-box overflow=visible
+h 8 118 40 20 0 sw=40 sh=20 cw=40 ch=20 display=block position=static box-sizing=content-box overflow=visible
+i 57 98 20 20 0 sw=20 sh=20 cw=20 ch=20 display=block position=static box-sizing=content-box overflow=visible

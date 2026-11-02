@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.UiInputTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:59.273Z" hostname="N_UESUGI" time="0.125">
+  <properties/>
+  <testcase name="mouseEventsReachTheDocumentListeners()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.073"/>
+  <testcase name="hoverSetsInteractionStateAndRestyles()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.008"/>
+  <testcase name="wheelScrollsThroughTheInput()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.011"/>
+  <testcase name="clickingACheckboxTogglesIt()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.011"/>
+  <testcase name="clickRunsTheInlineActionThroughTheHook()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.006"/>
+  <testcase name="rangeRatioAndKeyNames()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.001"/>
+  <testcase name="closeClearsInputState()" classname="com.nishiyu.enderframelib.common.UiInputTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
