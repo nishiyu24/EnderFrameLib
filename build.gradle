@@ -18,6 +18,8 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache")
 }
 
+evaluationDependsOn(':core')
+
 repositories {
     // JNA はここから解決する。ModDevGradle が NeoForge / Parchment 用の
     // リポジトリを足すが、通常の依存の出所は明示しておく
@@ -69,6 +71,7 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            sourceSet(project(':core').sourceSets.main)
         }
     }
 }
@@ -80,6 +83,12 @@ configurations {
 }
 
 dependencies {
+    // Minecraft に依存しない描画コア（単体でも動く）。Mod の JAR にはクラスと資源を同梱する
+    api project(':core')
+
+    // core 側へ移したテストの補助クラス（GoldenFiles 等）
+    testImplementation rootProject.project(':core').sourceSets.test.output
+
     implementation 'net.java.dev.jna:jna:5.14.0'
     implementation 'net.java.dev.jna:jna-platform:5.14.0'
 
@@ -121,6 +130,11 @@ publishing {
             url "file://${project.projectDir}/repo"
         }
     }
+}
+
+// core の出力を Mod の JAR に取り込む（jarJar は project 依存を扱えないため）
+tasks.named('jar', Jar) {
+    from project(':core').sourceSets.main.output
 }
 
 tasks.withType(JavaCompile).configureEach {

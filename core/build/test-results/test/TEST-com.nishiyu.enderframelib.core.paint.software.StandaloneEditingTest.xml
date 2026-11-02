@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:11.456Z" hostname="N_UESUGI" time="0.218">
+  <properties/>
+  <testcase name="caretAndSelectionArePaintedOnTheCanvas()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.031"/>
+  <testcase name="positiveTabindexComesFirstAndNegativeOrDisabledAreSkipped()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.013"/>
+  <testcase name="shiftExtendsSelectionAndTypingReplacesIt()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.002"/>
+  <testcase name="multilineEnterAndVerticalMovement()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.0"/>
+  <testcase name="viewEditsAtTheCaretWithSelectionAndClipboard()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.013"/>
+  <testcase name="clipboardCopyCutPasteAndSelectAll()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.0"/>
+  <testcase name="selectOpensChoosesWithTheMouseAndFiresChange()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.019"/>
+  <testcase name="beforeInputCanVetoAnEditAndKeepsTheCaret()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.017"/>
+  <testcase name="textareaKeepsNewlinesAndMovesVertically()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.044"/>
+  <testcase name="arrowKeysMoveFocusSpatially()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.016"/>
+  <testcase name="selectKeyboardNavigationSkipsDisabledAndEscapeCloses()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.026"/>
+  <testcase name="surrogatePairsAreNotSplit()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.001"/>
+  <testcase name="caretMovesAndEditsInTheMiddle()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.0"/>
+  <testcase name="wordMovementAndDeletion()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.0"/>
+  <testcase name="selectPopupIsPaintedOverTheDocumentAndClickOutsideJustCloses()" classname="com.nishiyu.enderframelib.core.paint.software.StandaloneEditingTest" time="0.029"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" tests="28" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.251Z" hostname="N_UESUGI" time="0.034">
+  <properties/>
+  <testcase name="radialGradientCenterAndEdge()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="roundedRectRxRy()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="defaultFillIsBlackAndStrokeIsNone()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="viewBoxScalesUserSpaceToOutput()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="preserveAspectRatioMeetCentersAndSliceCrops()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.003"/>
+  <testcase name="transformAttributeComposesLeftToRight()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="groupInheritsPresentationAttributesAndOverrides()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="polygonAndFillRule()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="looksLikeSvg()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="malformedAndHostileInputsDoNotThrow()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="useDoesNotRecurseForever()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="useReferencesDefinitionWithOffset()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="dataUriPlainAndBase64()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="circleAndEllipseCoverTheirInterior()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="intrinsicSizeFollowsWidthHeightThenViewBox()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="standaloneFileWithPrologAndSelfClosingChildren()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="unitsAreConvertedToPixels()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="dashedStrokeLeavesGaps()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="styleAttributeBeatsPresentationAttribute()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="displayNoneAndHiddenAreNotPainted()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="rectFillsExactPixels()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="strokeDrawsLineWidthAround()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="linearGradientObjectBoundingBox()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.002"/>
+  <testcase name="currentColorUsesInitialColorAndColorAttribute()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.0"/>
+  <testcase name="pathWithArcsAndCurves()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="gradientUserSpaceAndHrefInheritance()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <testcase name="fillAndGroupOpacity()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.002"/>
+  <testcase name="clipPathRestrictsPainting()" classname="com.nishiyu.enderframelib.core.raster.svg.SvgRendererTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

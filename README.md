@@ -16,8 +16,10 @@ and HUDs as HTML and CSS instead of hand-placing widgets and pixel offsets.
   fine-grained DOM mutation records applied directly to the live DOM tree.
 - **Single DOM, no diff copies.** Client code, bindings and server packets all
   mutate the same live DOM through the standard DOM API.
-- **No browser is embedded.** The engine is plain Java in `core/`, with no
-  dependency on Minecraft, so it is unit-testable headlessly. Text is laid out
+- **No browser is embedded.** The engine is plain Java in the `:core` Gradle module
+  (`core/`), with no dependency on Minecraft, so it is unit-testable headlessly and
+  usable standalone (software or pure-LWJGL OpenGL rendering to PNG/Swing/GLFW; see
+  [STANDALONE_RENDERING.md](STANDALONE_RENDERING.md)). Text is laid out
   with the fonts installed on the system, as a browser does.
 
 > Status: usable, pre-1.0 in practice. The supported surface is `api/`;
@@ -826,7 +828,10 @@ Layout differences from a real browser are measured, case by case, in
 ## Project layout
 
 ```
-core/     HTML, CSS, layout, markdown, text — plain Java, no Minecraft. Headlessly testable.
+core/     (Gradle module `:core`, sources in core/src) HTML, CSS, layout, markdown, text, painting
+          and the Minecraft-free render backends — plain Java, no Minecraft. Headlessly testable.
+          Holds the `core`, `common` and `api/dom`/`api/event`/`api/config` (annotations) packages;
+          the root project depends on it and bundles it into the mod JAR.
 api/      The supported surface: EnderFrameAPI, EnderFrameClientAPI, WebSessionHandle,
           UIState (api/state), the DOM and event interfaces (api/dom, api/event), config.
 common/   Shared between sides: resource loading, custom-element expansion, the render
@@ -850,6 +855,8 @@ structure is described in [ARCHITECTURE.md](ARCHITECTURE.md) (Japanese).
 ./gradlew runClient
 ./gradlew runGameTestServer   # the server-side lifecycle game test
 ./gradlew publish             # into ./repo
+./gradlew :core:test          # the Minecraft-free module alone
+./gradlew :core:jar           # standalone enderframelib-core jar
 ```
 
 ## Contributing

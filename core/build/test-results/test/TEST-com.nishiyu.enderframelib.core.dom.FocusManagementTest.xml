@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.dom.FocusManagementTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.767Z" hostname="N_UESUGI" time="0.011">
+  <properties/>
+  <testcase name="フォーカス移動時のイベント発火順序 (focusout -&gt; blur -&gt; focusin -&gt; focus)" classname="com.nishiyu.enderframelib.core.dom.FocusManagementTest" time="0.001"/>
+  <testcase name="blur() によるフォーカス解除と activeElement の初期化" classname="com.nishiyu.enderframelib.core.dom.FocusManagementTest" time="0.007"/>
+  <testcase name="disabled 要素への focus() は無視されること" classname="com.nishiyu.enderframelib.core.dom.FocusManagementTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

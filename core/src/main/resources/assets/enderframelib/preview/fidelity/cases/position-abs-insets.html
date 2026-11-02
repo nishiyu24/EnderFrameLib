@@ -1,0 +1,5 @@
+<!-- left と right の両方があれば width: auto は間の幅になる。right / bottom は包含ブロックの padding box 基準。 -->
+<div id="host" style="position: relative; width: 300px; height: 100px;">
+  <div id="stretch" style="position: absolute; left: 10px; right: 30px; top: 0; height: 10px;"></div>
+  <div id="corner" style="position: absolute; right: 0; bottom: 0; width: 20px; height: 20px;"></div>
+</div>

@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.client.renderer;
 
+import com.nishiyu.enderframelib.core.net.VideoStreamServer;
+import com.nishiyu.enderframelib.core.net.YtDlpProvisioner;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
@@ -465,7 +467,8 @@ public class WebMediaManager {
                     if (!allowExternalMedia || !allowYtDlp) return;
                     if (externalContext != null && !externalContext.isYouTubeSupportEnabled()) return;
                     File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
-                    YtDlpProvisioner.ensureAvailable(dir);
+                    YtDlpProvisioner.ensureAvailable(dir, SafeHttpClient.shared(),
+                            () -> allowExternalMedia && allowYtDlp);
                 } catch (Throwable t) {
                     LOGGER.warn("Failed to prepare yt-dlp: {}", t.getMessage());
                 } finally {
@@ -493,7 +496,8 @@ public class WebMediaManager {
         Process process = null;
         try {
             File dir = new File(Minecraft.getInstance().gameDirectory, "enderframelib");
-            File ytDlpFile = YtDlpProvisioner.ensureAvailable(dir);
+            File ytDlpFile = YtDlpProvisioner.ensureAvailable(dir, SafeHttpClient.shared(),
+                            () -> allowExternalMedia && allowYtDlp);
             if (ytDlpFile == null) {
                 LOGGER.warn("yt-dlp is enabled but could not be prepared at {}; YouTube playback is skipped",
                         YtDlpProvisioner.binaryPath(dir));
@@ -718,6 +722,36 @@ public class WebMediaManager {
         private ByteBuffer audioReadBuffer = null;
         private VideoStreamServer.Handle streamHandle = null;
 
+        private volatile boolean captureCpu = false;
+        private com.nishiyu.enderframelib.core.raster.Pixmap cpuFrame;
+
+        /**
+         * 直近のフレームの画素（描画コアが読む）。初めて呼んだ以降、フレームが届くたびに同じ {@code Pixmap} を
+         * 書き換えて {@code markChanged()} する。最初のフレームが届くまでは null。描画スレッドから呼ぶ。
+         */
+        public synchronized com.nishiyu.enderframelib.core.raster.Pixmap cpuFrame() {
+            captureCpu = true;
+            return cpuFrame;
+        }
+
+        private void captureCpuFrame() {
+            int w = this.width, h = this.height;
+            ByteBuffer buf = this.pixelBuffer;
+            if (buf == null || w <= 0 || h <= 0 || buf.capacity() < w * h * 4) return;
+            synchronized (this) {
+                if (cpuFrame == null || cpuFrame.width() != w || cpuFrame.height() != h) {
+                    cpuFrame = new com.nishiyu.enderframelib.core.raster.Pixmap(w, h);
+                }
+                int[] dst = cpuFrame.pixels();
+                for (int i = 0, n = w * h; i < n; i++) {
+                    int o = i * 4;
+                    // 動画は不透明。RGBA のバイト列を事前乗算の ARGB にする
+                    dst[i] = 0xFF000000 | ((buf.get(o) & 0xFF) << 16) | ((buf.get(o + 1) & 0xFF) << 8) | (buf.get(o + 2) & 0xFF);
+                }
+                cpuFrame.markChanged();
+            }
+        }
+
         public VideoTexture(String url) {
             this.url = url;
             this.lastRenderTime = System.currentTimeMillis();
@@ -757,7 +791,7 @@ public class WebMediaManager {
 
                 // ネイティブには外部 URL を渡さず、検証済みのストリームを中継する
                 // ループバック・リレーの URL だけを渡す。本文はディスクへ保存しない。
-                relay = VideoStreamServer.register(streamUrl, maxVideoDownloadBytes);
+                relay = VideoStreamServer.register(SafeHttpClient.shared(), streamUrl, maxVideoDownloadBytes);
                 final VideoStreamServer.Handle relayHandle = relay;
 
                 // リレーを先に公開し、close() が初期化中のリソースを回収できるようにする。
@@ -1192,6 +1226,7 @@ public class WebMediaManager {
                     GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
                     GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
                     GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, this.width, this.height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, this.pixelBuffer);
+                    if (this.captureCpu) captureCpuFrame();
                 }
             } catch (Exception ignored) {}
 

@@ -1,0 +1,14 @@
+<!-- :nth-child(An+B of S) と :nth-last-child(An+B of S): S に当たる兄弟だけを数える。 -->
+<style>
+  div { height: 10px; }
+  .x:nth-child(2 of .x) { width: 100px; }
+  :nth-last-child(1 of .x) { height: 30px; }
+  :nth-child(odd of .y) { width: 120px; }
+</style>
+<div id="p">
+  <div class="x" id="a"></div>
+  <div class="y" id="b"></div>
+  <div class="x" id="c"></div>
+  <div class="y" id="d"></div>
+  <div class="x" id="e"></div>
+</div>

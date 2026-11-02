@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class WebMediaManagerRedirectTest {
 
     private static final Path SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/WebMediaManager.java");
-    private static final Path SAFE_CLIENT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/SafeHttpClient.java");
+    private static final Path SAFE_CLIENT_SOURCE = Path.of("core/src/main/java/com/nishiyu/enderframelib/core/net/SafeHttpClient.java");
     private static final Path YT_DLP_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/renderer/YtDlpProvisioner.java");
     private static final Path CLIENT_INIT_SOURCE = Path.of("src/main/java/com/nishiyu/enderframelib/client/EnderFrameClientInit.java");
 

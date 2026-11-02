@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.dom.FormValidationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.796Z" hostname="N_UESUGI" time="0.007">
+  <properties/>
+  <testcase name="数値範囲とステップの検証 (min, max, step, badInput)" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.001"/>
+  <testcase name="setCustomValidity によるカスタムエラーメッセージ" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.0"/>
+  <testcase name="長さ検証 (minlength, maxlength)" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.001"/>
+  <testcase name="form.checkValidity() による全コントロールの検証と invalid 発火" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.002"/>
+  <testcase name="checkValidity() が制約違反時に invalid イベントを発火すること" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.001"/>
+  <testcase name="required 属性による valueMissing の検証 (text, checkbox, radio)" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.0"/>
+  <testcase name="typeMismatch の検証 (email, url, color)" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.001"/>
+  <testcase name="pattern 属性による正規表現検証" classname="com.nishiyu.enderframelib.core.dom.FormValidationTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

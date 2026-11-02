@@ -1,0 +1,13 @@
+p1 8 8 122 22 0 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+p2 8 33 122 22 0 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+p3 8 55 122 22 0 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+r1 8 77 50 21 0 sw=50 sh=21 cw=50 ch=21 display=block position=static box-sizing=border-box overflow=clip
+r2 8 98 122 22 0 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+r3 8 120 50 21 0 sw=50 sh=21 cw=50 ch=21 display=block position=static box-sizing=border-box overflow=clip
+r4 8 141 50 23 0 sw=50 sh=23 cw=50 ch=23 display=block position=static box-sizing=border-box overflow=visible
+g1 19 164 122 22 0 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+g2 20 186 121 22 0 sw=121 sh=22 cw=121 ch=22 display=block position=static box-sizing=border-box overflow=clip
+g3 19 208 122 22 -1 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+v1 8 230 121 22 -1 sw=121 sh=22 cw=121 ch=22 display=block position=static box-sizing=border-box overflow=clip
+v2 8 252 122 22 -1 sw=122 sh=22 cw=122 ch=22 display=block position=static box-sizing=border-box overflow=clip
+v3 8 274 121 22 -1 sw=121 sh=22 cw=121 ch=22 display=block position=static box-sizing=border-box overflow=clip

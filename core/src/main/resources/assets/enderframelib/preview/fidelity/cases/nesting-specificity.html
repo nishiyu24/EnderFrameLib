@@ -1,0 +1,11 @@
+<!-- ネストの & は :is() と同じ詳細度（リスト中で最大）。入れ子の @media と、入れ子の規則の後の宣言。 -->
+<style>
+  div { height: 10px; }
+  .x, #y { & .z { width: 77px; } }
+  .x .z { width: 66px; }
+  #m { width: 10px; @media (min-width: 200px) { width: 20px; } @media (max-width: 100px) { width: 30px; } }
+  #p { width: 10px; & .q { height: 20px; } width: 30px; }
+</style>
+<div class="x"><div class="z" id="z"></div></div>
+<div id="m"></div>
+<div id="p"><div class="q" id="q"></div></div>

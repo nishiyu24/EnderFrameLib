@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.FormattingContextTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.177Z" hostname="N_UESUGI" time="0.054">
+  <properties/>
+  <testcase name="testLinesFlowBesideFloat()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.006"/>
+  <testcase name="testHtmlTableUsesTableLayoutWithColspan()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.007"/>
+  <testcase name="testShrinkToFitWidthBreaksAtLineBreaksInText()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.007"/>
+  <testcase name="testColumnWrapBreaksInOrderAndSumsColumnWidths()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.006"/>
+  <testcase name="testPercentHeightUnderIndefiniteBlockStaysUnresolved()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.006"/>
+  <testcase name="testAbsoluteInsideInlineBoxIsPositioned()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.007"/>
+  <testcase name="testCellVerticalAlignMiddleShiftsContent()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.008"/>
+  <testcase name="testPercentHeightInsideStretchedBorderBoxItemUsesItsContentBox()" classname="com.nishiyu.enderframelib.common.FormattingContextTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

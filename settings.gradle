@@ -9,3 +9,6 @@ plugins {
 }
 
 rootProject.name = 'EnderFrameLib'
+
+// Minecraft に依存しない描画コア。ルートの NeoForge Mod がこれを取り込む
+include 'core'

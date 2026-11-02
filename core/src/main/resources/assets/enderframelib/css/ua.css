@@ -1,0 +1,190 @@
+/* EnderFrameLib ユーザーエージェントスタイルシート（組み込みの既定値）
+ * CascadeOrigin.USER_AGENT として読み込まれ、作者スタイルシートより弱い。
+ *
+ * WHATWG HTML の Rendering 節（§15.3 / §15.4）の既定値を、このエンジンが読める形で書いたもの。
+ * 論理プロパティは横書き・左から右の物理プロパティに、:is() は子孫セレクタの列挙に、
+ * :link / :visited は a[href] に置き換えてある。色・角丸・背景などの装飾は持たず、
+ * 組み込みテーマ（dark / vanilla / brass）が持つ。標準に無いものは次の 4 つだけ:
+ *   - インライン要素の display: inline（エンジンは display の宣言が無い要素の多くをブロックと推測するため）
+ *   - フォームコントロールの見た目（appearance: auto 相当。ブラウザは OS の部品で描くので CSS に現れない）
+ *   - EnderFrameLib のカスタムタグ（mc-*）とそれが展開するクラス（ブラウザに無い要素の既定値）
+ *   - Minecraft のチャットの 16 色の変数（--mc-*。CSS の名前付き色は CSS の値なので、Minecraft の色はこちら）
+ *
+ * 何が壊れていたか: 以前は UA がテーマ的な装飾（暗い pre・リンク色 #89b4fa・h6 の色・表の枠と幅 100%・
+ * 白い body）を持ち、dl / dd などの既定値が欠け、body の margin が 0 だったため、素の HTML が
+ * ブラウザと違って見えた。
+ *
+ * fieldset の legend を枠線に重ねて置くのは CSS ではなくレイアウト（BoxTreeBuilder / BoxMeasurer）と
+ * 描画（DisplayListBuilder）が行う（§15.3.13 も CSS で書けない振る舞いとして定めている）。 */
+
+/* §15.3.1 隠す要素 */
+area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none; }
+[hidden] { display: none; }
+input[type="hidden"] { display: none !important; }
+
+/* §15.3.6 双方向テキスト（dir 属性を direction に。dir=auto は最初の強い文字で決まるが、ここでは扱わない） */
+[dir="ltr"] { direction: ltr; }
+[dir="rtl"] { direction: rtl; }
+
+/* §15.3.2 ページ */
+html, body { display: block; }
+body { margin: 8px; }
+
+/* §15.3.3 フローコンテンツ */
+address, blockquote, center, dialog, div, figure, figcaption, footer, form, header, hr, legend, listing, main, p, plaintext, pre, search, xmp { display: block; }
+blockquote, figure, listing, p, plaintext, pre, xmp { margin-top: 1em; margin-bottom: 1em; }
+blockquote, figure { margin-left: 40px; margin-right: 40px; }
+address { font-style: italic; }
+listing, plaintext, pre, xmp { font-family: monospace; white-space: pre; }
+dialog:not([open]) { display: none; }
+dialog { position: absolute; left: 0; right: 0; width: fit-content; margin: auto; border: solid; padding: 1em; background-color: white; color: black; }
+slot { display: contents; }
+
+/* §15.3.4 フレージングコンテンツ（display: inline は標準では初期値。エンジンの推測を上書きするために書く） */
+a, abbr, acronym, b, bdi, bdo, big, cite, code, data, del, dfn, em, font, i, ins, kbd, label, mark, nobr, output, q, s, samp, small, span, strike, strong, sub, sup, time, tt, u, var { display: inline; }
+cite, dfn, em, i, var { font-style: italic; }
+b, strong { font-weight: bold; }
+code, kbd, samp, tt { font-family: monospace; }
+big { font-size: larger; }
+small { font-size: smaller; }
+sub { vertical-align: sub; }
+sup { vertical-align: super; }
+sub, sup { line-height: normal; font-size: smaller; }
+a[href] { color: #0000ee; text-decoration: underline; cursor: pointer; }
+a[href]:active { color: #ff0000; }
+:focus-visible { outline: auto 1px; }
+mark { background-color: yellow; color: black; }
+abbr[title], acronym[title] { text-decoration: dotted underline; }
+ins, u { text-decoration: underline; }
+del, s, strike { text-decoration: line-through; }
+nobr { white-space: nowrap; }
+
+/* §15.3.6 セクションと見出し */
+article, aside, h1, h2, h3, h4, h5, h6, hgroup, nav, section { display: block; }
+h1 { margin-top: 0.67em; margin-bottom: 0.67em; font-size: 2em; font-weight: bold; }
+h2 { margin-top: 0.83em; margin-bottom: 0.83em; font-size: 1.5em; font-weight: bold; }
+h3 { margin-top: 1em; margin-bottom: 1em; font-size: 1.17em; font-weight: bold; }
+h4 { margin-top: 1.33em; margin-bottom: 1.33em; font-size: 1em; font-weight: bold; }
+h5 { margin-top: 1.67em; margin-bottom: 1.67em; font-size: 0.83em; font-weight: bold; }
+h6 { margin-top: 2.33em; margin-bottom: 2.33em; font-size: 0.67em; font-weight: bold; }
+
+/* §15.3.7 リスト */
+dir, dd, dl, dt, menu, ol, ul { display: block; }
+li { display: list-item; }
+dir, dl, menu, ol, ul { margin-top: 1em; margin-bottom: 1em; }
+dl dl, dl menu, dl ol, dl ul, menu dl, menu menu, menu ol, menu ul,
+ol dl, ol menu, ol ol, ol ul, ul dl, ul menu, ul ol, ul ul { margin-top: 0; margin-bottom: 0; }
+dd { margin-left: 40px; }
+dir, menu, ol, ul { padding-left: 40px; }
+menu, ol, ul { counter-reset: list-item; }
+ol { list-style-type: decimal; }
+dir, menu, ul { list-style-type: disc; }
+menu menu, menu ul, ol menu, ol ul, ul menu, ul ul { list-style-type: circle; }
+menu menu menu, menu menu ul, menu ol menu, menu ol ul, menu ul menu, menu ul ul,
+ol menu menu, ol menu ul, ol ol menu, ol ol ul, ol ul menu, ol ul ul,
+ul menu menu, ul menu ul, ul ol menu, ul ol ul, ul ul menu, ul ul ul { list-style-type: square; }
+
+/* §15.3.8 表 */
+table { display: table; box-sizing: border-box; border-spacing: 2px; border-collapse: separate; text-indent: initial; }
+caption { display: table-caption; text-align: center; }
+colgroup { display: table-column-group; }
+col { display: table-column; }
+thead { display: table-header-group; }
+tbody { display: table-row-group; }
+tfoot { display: table-footer-group; }
+tr { display: table-row; }
+td, th { display: table-cell; padding: 1px; }
+th { font-weight: bold; text-align: center; }
+thead, tbody, tfoot, table > tr { vertical-align: middle; }
+tr, td, th { vertical-align: inherit; }
+table, td, th { border-color: gray; }
+thead, tbody, tfoot, tr { border-color: inherit; }
+
+/* §15.3.10 フォームコントロール（標準） */
+input, select, button, textarea { letter-spacing: initial; word-spacing: initial; line-height: initial; text-transform: initial; text-indent: initial; text-shadow: initial; }
+/* Chrome（Windows）のフォームコントロールの文字（-webkit-small-control）: 13.333px、input / select / button は Arial、textarea は monospace */
+input, select, button, textarea { font-size: 13.333333px; font-weight: normal; font-style: normal; }
+input, select, button { font-family: Arial, sans-serif; }
+textarea { font-family: monospace; }
+input, select, textarea { text-align: initial; }
+input[type="reset"], input[type="button"], input[type="submit"], button { text-align: center; }
+input, button, select, textarea { display: inline-block; }
+input[type="radio"], input[type="checkbox"], input[type="reset"], input[type="button"], input[type="submit"], input[type="color"], input[type="search"], select, button { box-sizing: border-box; }
+textarea { white-space: pre-wrap; }
+/* フォームコントロールは中身を枠で切る（Chromium の実測。チェックボックス・ラジオ・レンジの印は枠の外にも描く） */
+input, select { overflow: clip; }
+input[type="checkbox"], input[type="radio"], input[type="range"] { overflow: visible; }
+
+/* §15.3.11 hr */
+hr { color: gray; border-style: inset; border-width: 1px; margin: 0.5em auto; overflow: hidden; }
+
+/* §15.3.12 fieldset と legend */
+fieldset { display: block; margin-left: 2px; margin-right: 2px; border: groove 2px #c0c0c0; padding: 0.35em 0.75em 0.625em; min-width: min-content; }
+legend { padding-left: 2px; padding-right: 2px; }
+
+/* §15.3.13 埋め込みコンテンツ（置換要素は不可分なインラインとして組む） */
+img, video, canvas, svg, mc-fluid, mc-entity, mc-scene { display: inline-block; }
+iframe { border: 2px inset; }
+video { object-fit: contain; }
+/* §4.8.9 audio: controls が無ければ描画されない。音を鳴らすだけの要素。0x0 の箱は描画列から外れて
+   再生が進まないので、見えない 1px を持たせる（映像テクスチャが無いので何も描かれない） */
+audio { display: inline-block; width: 1px; height: 1px; }
+
+/* §15.5.? details と summary */
+details, summary { display: block; }
+details > summary { display: list-item; counter-increment: list-item 0; list-style: disclosure-closed inside; }
+details[open] > summary { list-style-type: disclosure-open; }
+
+/* フォームコントロールの見た目（appearance: auto 相当）。
+ * ブラウザは OS の部品で描き、寸法は Chromium の既定値（ライトテーマ）に合わせる。
+ * option はエンジンが select の中で描くので箱を作らない。 */
+option { display: none; }
+/* §15.5 フォームコントロールは UA の部品の見た目で描く。チェックボックスとラジオボタンでは作者の枠線・背景・padding が
+ * 効かない（StyleResolver の調整）。appearance: none にすると作者の CSS だけで描く */
+button, input, meter, progress, select, textarea { appearance: auto; }
+button, input[type="button"], input[type="submit"], input[type="reset"] { background-color: #efefef; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 6px; }
+button:hover, input[type="button"]:hover, input[type="submit"]:hover, input[type="reset"]:hover { background-color: #e5e5e5; border-color: #4f4f4f; }
+button:active, input[type="button"]:active, input[type="submit"]:active, input[type="reset"]:active { background-color: #f5f5f5; border-color: #8d8d8d; }
+input, textarea { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 1px 2px; }
+select { background-color: white; color: black; border: 1px solid #767676; border-radius: 2px; padding: 0 4px; }
+textarea { padding: 2px; width: 100%; height: 120px; overflow: auto; }
+/* チェックボックスとラジオボタンは枠線・背景・角丸を持たない（Chromium の html.css と同じ。appearance: none で素の箱になる）。
+ * border-color は部品の未選択の輪の色（下の状態ごとの色の基準） */
+input[type="checkbox"], input[type="radio"] { width: 13px; height: 13px; padding: 0; margin: 3px 3px 3px 4px;
+    border: none; border-color: #767676; border-radius: 0; background-color: transparent; }
+input[type="radio"] { margin: 3px 3px 0 5px; }
+/* ラジオボタンとチェックボックスの部品の色（Chromium のライトテーマ）。枠の色として書くが、描画側は部品の輪・強調色として読み、
+ * 作者の border-color では変わらない（UA のスタイルシートだけでカスケードした値を使う）。accent-color があれば選択時はその色 */
+input[type="radio"]:hover { border-color: #4f4f4f; }
+input[type="radio"]:active { border-color: #8d8d8d; }
+input[type="radio"]:checked { border-color: #0075ff; }
+input[type="radio"]:checked:hover { border-color: #005cc8; }
+input[type="radio"]:checked:active { border-color: #3793ff; }
+/* チェックボックスも同じ色。選択・未確定のときの枠の色は、箱を塗る強調色として使う（枠は描かない） */
+input[type="checkbox"]:hover { border-color: #4f4f4f; }
+input[type="checkbox"]:active { border-color: #8d8d8d; }
+input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { border-color: #0075ff; }
+input[type="checkbox"]:checked:hover, input[type="checkbox"]:indeterminate:hover { border-color: #005cc8; }
+input[type="checkbox"]:checked:active, input[type="checkbox"]:indeterminate:active { border-color: #3793ff; }
+/* レンジは部品の溝とつまみで描く（作者の背景・枠線は描かないが、大きさには効く）。border-color はつまみと値の側の強調色 */
+input[type="range"] { width: 129px; height: 16px; margin: 2px; padding: 0; border: none; border-color: #0075ff; }
+input[type="range"]:hover { border-color: #005cc8; }
+input[type="range"]:active { border-color: #3793ff; }
+input[type="color"] { width: 50px; height: 27px; padding: 1px 2px; background-color: #efefef; }
+progress { width: 160px; height: 16px; background-color: #efefef; color: #0075ff; border: none; padding: 0; border-radius: 8px; }
+meter { width: 80px; height: 16px; background-color: #efefef; color: #107c10; border: none; padding: 0; border-radius: 8px; }
+button[disabled], input[disabled], select[disabled], textarea[disabled] { opacity: 0.5; }
+
+/* EnderFrameLib のカスタムタグ（CustomTagExpander が展開するクラス） */
+.mc-slot { width: 18px; height: 18px; background-color: #8b8b8b; border: 1px solid #373737; box-sizing: border-box; display: inline-block; }
+.mc-inventory { display: flex; flex-direction: column; gap: 4px; width: 162px; }
+.mc-inventory-row { display: flex; flex-direction: row; gap: 0px; }
+.mc-bar { position: relative; display: inline-block; width: 140px; height: 14px; overflow: hidden; }
+
+/* Minecraft のチャットの色（§ の書式コード 0〜f）。以前は CSS の名前付き色（red / gray など）がこの値になっていた */
+:root {
+  --mc-black: #000000; --mc-dark-blue: #0000aa; --mc-dark-green: #00aa00; --mc-dark-aqua: #00aaaa;
+  --mc-dark-red: #aa0000; --mc-dark-purple: #aa00aa; --mc-gold: #ffaa00; --mc-gray: #aaaaaa;
+  --mc-dark-gray: #555555; --mc-blue: #5555ff; --mc-green: #55ff55; --mc-aqua: #55ffff;
+  --mc-red: #ff5555; --mc-light-purple: #ff55ff; --mc-yellow: #ffff55; --mc-white: #ffffff;
+}

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.core.css.ValueModelTest" tests="31" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:00.700Z" hostname="N_UESUGI" time="0.022">
+  <properties/>
+  <testcase name="testInvalidColorDeclarationIsDroppedByTheCascade()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testSupportsConditions()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testEmLengthsAreAbsolutizedAgainstTheElementsOwnFontSize()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testViewportMinMaxFontAndAbsoluteUnits()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testNewUnitsAreAbsolutizedInComputedValues()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testInvalidShorthandDoesNotClearEarlierLonghands()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testNestedMathFunctionsInsideCalc()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testRgbAndHslInBothSyntaxes()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testVarChainsResolveThroughCustomProperties()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testTransparentColorIsKeptAsTransparent()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testCurrentColorResolvesToTheElementsColor()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testShorthandWithCssWideKeywordReachesEveryLonghand()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testFontSizeKeywordsAndZero()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testInheritTakesTheParentsComputedValueEvenForNonInheritedProperties()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testVarFallbackMayContainParenthesesAndNestedVar()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testLaterShorthandOverridesEarlierLonghandInTheCascade()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testBorderComponentsInAnyOrder()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testDivisionByZeroDoesNotLeakInfinityOrNaN()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testMediaFeaturesBeyondWidth()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.002"/>
+  <testcase name="testRegistryDrivesInheritanceAndInvalidation()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testInitialAndUnset()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testNamedColorsAreTheCssValues()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testDescendantsInheritComputedFontSizeNotTheEmString()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testHexColorsWithAlphaAreRgba()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testAllRevertAndAllInitial()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testRevertWithoutUserAgentValueBehavesLikeUnset()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testCyclicOrUndefinedVarMakesTheDeclarationUnset()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testImportResolvesAtTheTopOfTheSheetOnly()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testFontSizeInViewportUnitsUsesTheViewport()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.001"/>
+  <testcase name="testRevertRollsBackToTheUserAgentValue()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <testcase name="testFontShorthand()" classname="com.nishiyu.enderframelib.core.css.ValueModelTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

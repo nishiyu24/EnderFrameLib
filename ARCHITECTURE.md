@@ -15,6 +15,11 @@ EnderFrameLib は NeoForge 1.21.1 向けに、ブラウザ標準（HTML / CSS / 
 
 ## 1. 層と依存の向き
 
+> Gradle のモジュールは 2 つ。`:core`（`core/`）が Minecraft に依存しない `core`・`common`・`api/dom`・`api/event` などのパッケージを持ち、
+> ルート（NeoForge Mod）が `:core` を取り込んで Mod の JAR に同梱する。パッケージ名はモジュールをまたいでも同じ。
+> `ArchitectureTest` / `ApiBoundaryTest` は両モジュールのソースを 1 本の木として検査する。
+> `:core` を単体で使う経路（ソフトウェア／純 LWJGL の描画）と、Minecraft の面への接続は [STANDALONE_RENDERING.md](STANDALONE_RENDERING.md)。
+
 ```
  client/   server/            （Minecraft / NeoForge に依存する実行系）
     │  ╲     │   ╲

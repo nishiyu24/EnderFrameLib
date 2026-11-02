@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.common.R9MiscLayoutTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:17:58.678Z" hostname="N_UESUGI" time="0.039">
+  <properties/>
+  <testcase name="testColumnFlexAutoMinHeightStopsAtContent()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.006"/>
+  <testcase name="testIntrinsicKeywordsAsHeightBehaveAsAuto()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.011"/>
+  <testcase name="testCollapsedColumnTakesNoWidth()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.005"/>
+  <testcase name="testHiddenBorderWinsOverWiderNeighbor()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.008"/>
+  <testcase name="testColumnFlexAutoMinHeightUsesContentWhenSpecifiedHeightIsLarger()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.004"/>
+  <testcase name="testCollapsedRowTakesNoSpace()" classname="com.nishiyu.enderframelib.common.R9MiscLayoutTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

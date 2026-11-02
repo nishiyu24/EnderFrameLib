@@ -1,0 +1,14 @@
+# WPT 採用ケースの既知差分の台帳（機械可読側）
+#
+# 形式: <case>#<subtest> <フェーズ>: <理由>
+#   <case>     wpt/manifest.json の id（WPT のリポジトリルートからの相対パス）
+#   <subtest>  WptHarness.test(...) / expectDivergence(...) に渡した名前
+#   フェーズ   R1〜R10。どのフェーズで解消する予定かを書く
+#
+# ここに無い差異が出たら WptHarness.expectDivergence が回帰として落とす。
+# ここに載っているのに一致した差異も「台帳が古い」として落ちる。
+# 行が消えることが各フェーズの完了条件。
+#
+# manifest.json の browserExpectation が "pass" のケースには行を置けない
+# （ブラウザ側の期待値と一致しているはずなので、行があれば台帳が古い）。
+# 現在の採用ケースはすべてブラウザで pass。既知差分は 0 行。

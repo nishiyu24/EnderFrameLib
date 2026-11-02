@@ -1,0 +1,8 @@
+<!-- stretch された flex / grid アイテムと、top と bottom で高さが決まる絶対配置は、子の高さの % の基準になる。 -->
+<div id="fx" style="display: flex; height: 100px; width: 300px;">
+  <div id="item"><div id="ic" style="height: 50%; width: 20px;"></div></div>
+  <div id="item2" style="display: flex; flex-direction: column;"><div id="ic2" style="height: 40%; width: 20px;"></div></div>
+</div>
+<div id="gr" style="display: grid; grid-template-rows: 60px; width: 300px;">
+  <div id="gi"><div id="gc" style="height: 100%; width: 20px;"></div></div>
+</div>

@@ -1,0 +1,13 @@
+<!-- @container: 最も近い問い合わせコンテナの幅で条件を評価する。 -->
+<style>
+  .wrap { container-type: inline-size; }
+  div { height: 10px; }
+  #w1 { width: 300px; }
+  #w2 { width: 180px; }
+  .item { width: 10px; }
+  @container (min-width: 250px) { .item { width: 100px; } }
+  @container (max-width: 200px) { .item { width: 50px; } }
+  @container (min-width: 100px) and (max-width: 200px) { .item { height: 30px; } }
+</style>
+<div class="wrap" id="w1"><div class="item" id="i1"></div></div>
+<div class="wrap" id="w2"><div class="item" id="i2"></div></div>

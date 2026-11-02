@@ -94,12 +94,14 @@ public class EnderFrameClientInit {
             ClientScheduler.clearAll();
             StateNbtConverter.clearReceivedKeyTables();
             Surfaces.clearHolograms();
+            com.nishiyu.enderframelib.client.renderer.CoreGpuSurface.release();
         });
 
         EnderFrameClientAPI.setInstance(EnderFrameClientAPIImpl.INSTANCE);
 
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
             DisplayItemDrawer.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;
+            com.nishiyu.enderframelib.client.renderer.CoreGpuSurface.setEnabled(EnderFrameBuiltInConfig.useCoreBackend);
             ClientScreenInteractionManager.setEnableDefaultUiSounds(EnderFrameBuiltInConfig.enableDefaultUiSounds);
             WebMediaManager.allowExternalMedia = EnderFrameBuiltInConfig.enableExternalWebMedia;
             WebMediaManager.allowYtDlp = EnderFrameBuiltInConfig.allowYtDlp;

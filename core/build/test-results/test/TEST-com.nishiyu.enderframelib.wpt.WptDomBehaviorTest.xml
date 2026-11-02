@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-11-02T14:18:14.927Z" hostname="N_UESUGI" time="0.069">
+  <properties/>
+  <testcase name="dom/nodes/Document-getElementById.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.006"/>
+  <testcase name="dom/nodes/Element-matches.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.007"/>
+  <testcase name="dom/nodes/Node-appendChild.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.006"/>
+  <testcase name="dom/events/Event-stopImmediatePropagation.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.002"/>
+  <testcase name="dom/nodes/Node-childNodes.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/ParentNode-append.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.008"/>
+  <testcase name="dom/nodes/MutationObserver-childList.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.003"/>
+  <testcase name="dom/nodes/Element-hasAttribute.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-contains.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.002"/>
+  <testcase name="dom/events/Event-dispatch-order.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.0"/>
+  <testcase name="dom/nodes/Node-removeChild.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-insertBefore.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-compareDocumentPosition.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.002"/>
+  <testcase name="dom/nodes/Element-style.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.007"/>
+  <testcase name="dom/nodes/Node-replaceChild.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-textContent.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.0"/>
+  <testcase name="dom/nodes/Node-cloneNode.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.002"/>
+  <testcase name="dom/nodes/ChildNode-remove.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-nodeName.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.001"/>
+  <testcase name="dom/nodes/Node-nodeType.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.002"/>
+  <testcase name="dom/events/EventTarget-addEventListener.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.003"/>
+  <testcase name="dom/nodes/Element-classList.html" classname="com.nishiyu.enderframelib.wpt.WptDomBehaviorTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
