@@ -86,10 +86,4 @@ public final class AlphaMask {
 
     /** ヒットテストが画像の項目から引くマスクと、画像の固有の大きさ。 */
     public record Source(AlphaMask mask, float cssW, float cssH) {}
-
-    /** 画像の項目のマスクを引く差し込み口（ホストが画像の読み方を知っている）。未読み込み・不明なら null（矩形で判定する）。 */
-    @FunctionalInterface
-    public interface Provider {
-        Source maskFor(DisplayItem item, int threshold);
-    }
 }

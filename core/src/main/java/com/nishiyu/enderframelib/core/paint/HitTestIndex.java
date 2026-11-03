@@ -50,9 +50,9 @@ public class HitTestIndex {
     }
 
     /** 透過ヒットテストが画像のマスクを引く先。null なら（画像が引けないときも）矩形で判定する。 */
-    private volatile AlphaMask.Provider alphaProvider;
+    private volatile AlphaMaskProvider alphaProvider;
 
-    public void alphaMaskProvider(AlphaMask.Provider provider) {
+    public void alphaMaskProvider(AlphaMaskProvider provider) {
         this.alphaProvider = provider;
     }
 
@@ -274,7 +274,7 @@ public class HitTestIndex {
 
     /** 画像の不透明な画素の上か。マスクが引けない（読み込み中など）ときは矩形の判定のまま当たりとする。 */
     private boolean alphaHit(Entry entry, double localX, double localY) {
-        AlphaMask.Provider provider = alphaProvider;
+        AlphaMaskProvider provider = alphaProvider;
         if (provider == null) return true;
         AlphaMask.Source s = provider.maskFor(entry.element, entry.alphaThreshold);
         return s == null || s.mask().hitsItem(entry.element, localX, localY, s.cssW(), s.cssH());

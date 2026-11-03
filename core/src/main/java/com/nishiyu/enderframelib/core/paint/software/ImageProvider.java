@@ -8,13 +8,12 @@ import com.nishiyu.enderframelib.core.media.NativeVideoApi;
 import com.nishiyu.enderframelib.core.media.VideoPlayer;
 import com.nishiyu.enderframelib.core.net.MediaUrls;
 import com.nishiyu.enderframelib.core.raster.GifAnimation;
+import com.nishiyu.enderframelib.core.raster.ImageDecoder;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.raster.RasterImageStore;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -276,11 +275,9 @@ public interface ImageProvider {
         private Image decodeBitmap(String src) throws IOException {
             byte[] bytes = readBytes(src);
             if (bytes == null) return null;
-            BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (img == null) return null;
-            int w = img.getWidth(), h = img.getHeight();
-            int[] argb = img.getRGB(0, 0, w, h, null, 0, w);
-            return new Image(Pixmap.fromStraightArgb(w, h, argb), w, h);
+            ImageDecoder.Bitmap bmp = ImageDecoder.standard().decode(bytes);
+            if (bmp == null) return null;
+            return new Image(Pixmap.fromStraightArgb(bmp.width(), bmp.height(), bmp.argb()), bmp.width(), bmp.height());
         }
 
         private byte[] readBytes(String src) throws IOException {

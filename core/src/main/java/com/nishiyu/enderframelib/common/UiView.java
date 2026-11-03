@@ -343,9 +343,9 @@ public class UiView implements AutoCloseable {
     }
 
     /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
-    private volatile com.nishiyu.enderframelib.core.paint.AlphaMask.Provider alphaMaskProvider;
+    private volatile com.nishiyu.enderframelib.core.paint.AlphaMaskProvider alphaMaskProvider;
 
-    public void alphaMaskProvider(com.nishiyu.enderframelib.core.paint.AlphaMask.Provider provider) {
+    public void alphaMaskProvider(com.nishiyu.enderframelib.core.paint.AlphaMaskProvider provider) {
         this.alphaMaskProvider = provider;
         HitTestIndex idx = this.hitTestIndex;
         if (idx != null) idx.alphaMaskProvider(provider);

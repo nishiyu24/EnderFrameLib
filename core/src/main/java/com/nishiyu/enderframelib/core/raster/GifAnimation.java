@@ -1,18 +1,7 @@
 package com.nishiyu.enderframelib.core.raster;
 
-import org.w3c.dom.Node;
-
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.metadata.IIOMetadata;
-import javax.imageio.metadata.IIOMetadataNode;
-import javax.imageio.stream.ImageInputStream;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -94,28 +83,19 @@ public final class GifAnimation {
     }
 
     /**
-     * GIF を読む。GIF でない・壊れている・上限を超えるときは null。
+     * GIF を読む（{@link ImageDecoder#standard()} でフレームを取り出して合成する）。
+     * GIF でない・壊れている・上限を超えるときは null。
      */
     public static GifAnimation decode(byte[] bytes) {
-        if (!looksLikeGif(bytes)) return null;
-        ImageReader reader = null;
-        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-            Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName("gif");
-            if (!readers.hasNext()) return null;
-            reader = readers.next();
-            reader.setInput(in, false, false);
-            int count = reader.getNumImages(true);
-            if (count <= 0 || count > MAX_FRAMES) return null;
+        return decode(bytes, ImageDecoder.standard());
+    }
 
-            int[] screen = logicalScreen(reader);
-            int w = screen[0], h = screen[1];
-            // 論理画面の記載が無い／小さすぎるときは先頭フレームの大きさに合わせる
-            if (w <= 0 || h <= 0) {
-                BufferedImage first = reader.read(0);
-                w = first.getWidth();
-                h = first.getHeight();
-            }
-            if (w > Pixmap.MAX_DIMENSION || h > Pixmap.MAX_DIMENSION || (long) w * h * count > MAX_TOTAL_PIXELS) return null;
+    public static GifAnimation decode(byte[] bytes, ImageDecoder decoder) {
+        if (!looksLikeGif(bytes)) return null;
+        try {
+            ImageDecoder.GifStream gif = decoder.decodeGif(bytes, MAX_FRAMES, MAX_TOTAL_PIXELS);
+            if (gif == null || gif.frames().isEmpty()) return null;
+            int w = gif.width(), h = gif.height(), count = gif.frames().size();
 
             int[] canvas = new int[w * h]; // 合成中の非事前乗算 ARGB（初期は透明）
             int[] backup = null;
@@ -125,36 +105,32 @@ public final class GifAnimation {
             int[] prevRect = {0, 0, w, h};
 
             for (int i = 0; i < count; i++) {
+                ImageDecoder.GifFrame f = gif.frames().get(i);
                 // 前のフレームの破棄を、このフレームを描く前に行う
                 if (prevDisposal == 2) clear(canvas, w, h, prevRect);
                 else if (prevDisposal == 3 && backup != null) System.arraycopy(backup, 0, canvas, 0, canvas.length);
+                if (f.disposal() == 3) backup = canvas.clone();
 
-                BufferedImage img = reader.read(i);
-                FrameMeta meta = frameMeta(reader.getImageMetadata(i));
-                if (meta.disposal == 3) backup = canvas.clone();
-
-                int fw = img.getWidth(), fh = img.getHeight();
-                int[] rgb = img.getRGB(0, 0, fw, fh, null, 0, fw);
+                int fw = f.width(), fh = f.height();
+                int[] rgb = f.argb();
                 for (int y = 0; y < fh; y++) {
-                    int cy = y + meta.top;
+                    int cy = y + f.top();
                     if (cy < 0 || cy >= h) continue;
                     for (int x = 0; x < fw; x++) {
-                        int cx = x + meta.left;
+                        int cx = x + f.left();
                         if (cx < 0 || cx >= w) continue;
                         int p = rgb[y * fw + x];
                         if ((p >>> 24) != 0) canvas[cy * w + cx] = p; // 透明な画素は下の内容を残す
                     }
                 }
                 frames.add(Pixmap.fromStraightArgb(w, h, canvas.clone()));
-                delays[i] = meta.delayMs;
-                prevDisposal = meta.disposal;
-                prevRect = new int[]{meta.left, meta.top, fw, fh};
+                delays[i] = f.delayMs() <= 10 ? DEFAULT_DELAY_MS : f.delayMs();
+                prevDisposal = f.disposal();
+                prevRect = new int[]{f.left(), f.top(), fw, fh};
             }
             return new GifAnimation(w, h, frames, delays);
-        } catch (IOException | RuntimeException e) {
+        } catch (RuntimeException e) {
             return null;
-        } finally {
-            if (reader != null) reader.dispose();
         }
     }
 
@@ -162,57 +138,6 @@ public final class GifAnimation {
         int x0 = Math.max(0, rect[0]), y0 = Math.max(0, rect[1]);
         int x1 = Math.min(w, rect[0] + rect[2]), y1 = Math.min(h, rect[1] + rect[3]);
         for (int y = y0; y < y1; y++) Arrays.fill(canvas, y * w + x0, y * w + x1, 0);
-    }
-
-    private record FrameMeta(int left, int top, int delayMs, int disposal) {}
-
-    private static int[] logicalScreen(ImageReader reader) throws IOException {
-        IIOMetadata sm = reader.getStreamMetadata();
-        if (sm == null) return new int[]{0, 0};
-        Node root = sm.getAsTree("javax_imageio_gif_stream_1.0");
-        Node lsd = child(root, "LogicalScreenDescriptor");
-        if (lsd == null) return new int[]{0, 0};
-        return new int[]{intAttr(lsd, "logicalScreenWidth", 0), intAttr(lsd, "logicalScreenHeight", 0)};
-    }
-
-    private static FrameMeta frameMeta(IIOMetadata md) {
-        Node root = md.getAsTree("javax_imageio_gif_image_1.0");
-        Node desc = child(root, "ImageDescriptor");
-        Node gce = child(root, "GraphicControlExtension");
-        int left = desc == null ? 0 : intAttr(desc, "imageLeftPosition", 0);
-        int top = desc == null ? 0 : intAttr(desc, "imageTopPosition", 0);
-        int delay = gce == null ? 0 : intAttr(gce, "delayTime", 0) * 10;
-        if (delay <= 10) delay = DEFAULT_DELAY_MS;
-        int disposal = 0;
-        if (gce != null) {
-            Node d = gce.getAttributes().getNamedItem("disposalMethod");
-            String s = d == null ? "none" : d.getNodeValue();
-            disposal = switch (s) {
-                case "restoreToBackgroundColor" -> 2;
-                case "restoreToPrevious" -> 3;
-                default -> 0;
-            };
-        }
-        return new FrameMeta(left, top, delay, disposal);
-    }
-
-    private static Node child(Node root, String name) {
-        if (root instanceof IIOMetadataNode n) {
-            for (Node c = n.getFirstChild(); c != null; c = c.getNextSibling()) {
-                if (name.equals(c.getNodeName())) return c;
-            }
-        }
-        return null;
-    }
-
-    private static int intAttr(Node n, String name, int fallback) {
-        Node a = n.getAttributes().getNamedItem(name);
-        if (a == null) return fallback;
-        try {
-            return Integer.parseInt(a.getNodeValue());
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
     }
 
     /**
