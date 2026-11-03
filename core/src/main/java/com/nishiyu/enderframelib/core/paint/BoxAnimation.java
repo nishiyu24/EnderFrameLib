@@ -106,12 +106,7 @@ final class BoxAnimation {
         // 描画のたびに全箱の animation を字句解析し直していた（表示リスト作りの 3 割）
         if (NO_MEMO) return resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
         Object memoKey = new AnimKey(keyframes, keyframes.size(), baseW, baseH, baseColor, baseBgColor);
-        Map<Object, Object> memo = style.paintMemo();
-        Object hit = memo.get(memoKey);
-        if (hit != null) return (AnimationSpec) hit;
-        AnimationSpec spec = resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
-        memo.put(memoKey, spec);
-        return spec;
+        return style.paintMemo(memoKey, k -> resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor));
     }
 
     /** 切り分け用: {@code -Denderframe.paint.nomemo=true} でメモを使わない。 */

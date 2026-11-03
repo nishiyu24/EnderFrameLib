@@ -55,7 +55,12 @@ public interface ImageProvider {
     default Image load(com.nishiyu.enderframelib.core.paint.model.DisplayItem item, int boxW, int boxH) {
         // <canvas> の text は要素の id で画像の出所ではない。画素を持つ側（ホスト）が上書きして渡す
         if (item.type() == com.nishiyu.enderframelib.core.paint.model.ElementType.CANVAS) return null;
-        return load(item.text(), boxW, boxH);
+        String src = item.text();
+        if (CropSrc.isCrop(src)) { // 9-slice の区画: 元の画像を引いて一部を切り出す（元の画素ごとに使い回す）
+            String inner = CropSrc.inner(src);
+            return inner == null ? null : CropSrc.crop(src, load(inner, boxW, boxH));
+        }
+        return load(src, boxW, boxH);
     }
 
     /**

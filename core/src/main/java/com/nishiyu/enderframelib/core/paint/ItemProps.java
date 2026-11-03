@@ -165,7 +165,7 @@ final class ItemProps {
             }
         }
         // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
-        String[] styleHandlers = (String[]) box.style.paintMemo().computeIfAbsent(STYLE_HANDLERS, k -> styleHandlersOf(box));
+        String[] styleHandlers = (String[]) box.style.paintMemo(STYLE_HANDLERS, k -> styleHandlersOf(box));
         for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
         String tag = box.node.tag;

@@ -2,11 +2,9 @@ package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
+import com.nishiyu.enderframelib.core.raster.PngEncoder;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -32,19 +30,9 @@ public interface RenderBackend extends AutoCloseable {
     /** 1 CSS px が何画素か。 */
     float devicePixelRatio();
 
-    /** 直近のフレームを {@link BufferedImage}（{@code TYPE_INT_ARGB}、非乗算）に写す。 */
-    default BufferedImage toBufferedImage() {
-        Pixmap p = pixmap();
-        BufferedImage img = new BufferedImage(p.width(), p.height(), BufferedImage.TYPE_INT_ARGB);
-        img.setRGB(0, 0, p.width(), p.height(), p.toStraightArgb(), 0, p.width());
-        return img;
-    }
-
-    /** PNG として書き出す（親のフォルダは作る）。 */
+    /** PNG として書き出す（親のフォルダは作る。AWT を使わない {@link PngEncoder}）。 */
     default void writePng(Path file) throws IOException {
-        Path parent = file.toAbsolutePath().getParent();
-        if (parent != null) Files.createDirectories(parent);
-        ImageIO.write(toBufferedImage(), "png", file.toFile());
+        PngEncoder.write(file, pixmap());
     }
 
     /** 補間状態（CssAnimator）の持ち主の ID。ヒットテストが変形中の要素を引くのに使う。持たない実装は空。 */

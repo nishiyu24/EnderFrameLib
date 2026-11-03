@@ -9,11 +9,13 @@ import com.nishiyu.enderframelib.core.paint.ImagePlacement;
 import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
 
 import com.nishiyu.enderframelib.core.paint.model.ShadowShape;
+import com.nishiyu.enderframelib.core.paint.model.TextureRef;
 
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.paint.BorderPath;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
@@ -43,9 +45,6 @@ import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -102,6 +101,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private int clearColor = 0;
 
     private final Map<GlyphKey, GlyphBitmap> glyphs = new HashMap<>();
+    /** 縁取り用の SDF の字形（{@link #glyphs} と同じ鍵）。 */
+    private final Map<GlyphKey, GlyphBitmap> sdfGlyphs = new HashMap<>();
 
     // 1 フレームの間だけ使う状態
     private GpuSink sink;
@@ -146,22 +147,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     @Override
     public float devicePixelRatio() {
         return dpr;
-    }
-
-    /** 描画先を {@link BufferedImage}（{@code TYPE_INT_ARGB}、非乗算）に写す。Swing や ImageIO にそのまま渡せる。 */
-    @Override
-    public BufferedImage toBufferedImage() {
-        BufferedImage img = new BufferedImage(root.width(), root.height(), BufferedImage.TYPE_INT_ARGB);
-        img.setRGB(0, 0, root.width(), root.height(), root.toStraightArgb(), 0, root.width());
-        return img;
-    }
-
-    /** PNG として書き出す（親のフォルダは作る）。 */
-    @Override
-    public void writePng(Path file) throws IOException {
-        Path parent = file.toAbsolutePath().getParent();
-        if (parent != null) Files.createDirectories(parent);
-        ImageIO.write(toBufferedImage(), "png", file.toFile());
     }
 
     // ------------------------------------------------------------------ フレーム
@@ -977,7 +962,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float textX = el.x() + (field ? 4f : 0f);
 
         int alpha = (int) (((anim.color() >>> 24) & 0xFF));
-        if (alpha < 4) return;
+        Stroke stroke = textStroke(el);
+        if (alpha < 4 && stroke == null) return;
         int argb = (alpha << 24) | (anim.color() & 0x00FFFFFF);
 
         String shown = text;
@@ -986,7 +972,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
             shown = text.substring(0, face.fitChars(text, style, available));
         }
         boolean shadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
-        drawRun(shown, face, style, textX, baseline, argb, shadow, res, clip, opacity);
+        drawRun(shown, face, style, textX, baseline, argb, shadow, res, clip, opacity, alpha >= 4, stroke);
+        if (alpha < 4) return; // 塗りが透明（縁取りだけの文字）なら、下線などは付けない
 
         String deco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
         if (!field && !el.isPart("_ph") && (deco.contains("underline") || deco.contains("line-through"))) {
@@ -1037,15 +1024,144 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 1 行の文字を描く。影があれば 1/9 em ずらして 1/4 の明るさで先に描く（GL 版と同じ）。 */
     private void drawRun(String text, OutlineFontFace face, FontStyle style, float x, float baseline, int argb, boolean shadow,
                          Resolved res, Clip clip, float opacity) {
+        drawRun(text, face, style, x, baseline, argb, shadow, res, clip, opacity, true, null);
+    }
+
+    /**
+     * @param fill   塗りを描くか（縁取りだけの文字では false）
+     * @param stroke 縁取り（幅は CSS px、色は非乗算 ARGB）。null なら縁取りなし。塗りの上に重ねる
+     */
+    private void drawRun(String text, OutlineFontFace face, FontStyle style, float x, float baseline, int argb, boolean shadow,
+                         Resolved res, Clip clip, float opacity, boolean fill, Stroke stroke) {
         if (text == null || text.isEmpty()) return;
         text = BidiText.toVisual(text, null);
         float[] positions = face.positions(text, style);
+        if (!fill) {
+            drawGlyphStrokes(text, positions, face, style, x, baseline, stroke.argb(), stroke.width(), res.pose(), clip, opacity);
+            return;
+        }
         if (shadow) {
             float off = style.fontSizePx() / 9f;
             int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
             drawGlyphs(text, positions, face, style, x + off, baseline + off, shadowColor, res.pose(), clip, opacity);
         }
         drawGlyphs(text, positions, face, style, x, baseline, argb, res.pose(), clip, opacity);
+        if (stroke != null) {
+            drawGlyphStrokes(text, positions, face, style, x, baseline, stroke.argb(), stroke.width(), res.pose(), clip, opacity);
+        }
+    }
+
+    /** {@code text-stroke} イベント（{@code "<幅> <色の 16 進>"}）。無い・幅が 0 以下なら null。 */
+    private record Stroke(float width, int argb) {}
+
+    private static Stroke textStroke(DisplayItem el) {
+        String v = el.events() != null ? el.events().get("text-stroke") : null;
+        if (v == null) return null;
+        int sp = v.indexOf(' ');
+        if (sp < 0) return null;
+        try {
+            float w = Float.parseFloat(v.substring(0, sp));
+            int color = (int) Long.parseLong(v.substring(sp + 1), 16);
+            return w > 0f ? new Stroke(w, color) : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 文字の縁取り。輪郭からの符号付き距離（SDF の字形）が {@code |d| <= 幅/2} の帯を、1 画素の傾斜でなめらかに塗る
+     * （{@code -webkit-text-stroke} と同じ、輪郭の上に中心を置く）。幅は SDF の広がり（{@link LoadedFace#SDF_SPREAD}）で頭打ち。
+     */
+    private void drawGlyphStrokes(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
+                                  int argb, float widthCss, Matrix2D pose, Clip clip, float opacity) {
+        boolean aligned = Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
+        float pixelSize = quantize((float) (style.fontSizePx() * pose.meanScale()));
+        if (pixelSize < 0.5f) return;
+        float half = Math.min(widthCss * (float) pose.meanScale() / 2f, LoadedFace.SDF_SPREAD - 1.5f);
+        if (half <= 0.01f) return;
+        int pm = Pixmap.premultiply(argb);
+        if ((argb >>> 24) < 4) return;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            int n = Character.charCount(cp);
+            if (cp <= 0x20 || cp == 0xA0 || Character.isWhitespace(cp)) {
+                i += n;
+                continue;
+            }
+            OutlineFontFace.GlyphFace gf = face.glyphFace(cp, style);
+            float gx = x + positions[i];
+            if (aligned) {
+                double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
+                double whole = Math.floor(devX);
+                int sub = (int) Math.round((devX - whole) * LoadedFace.SUBPIXEL_STEPS);
+                if (sub == LoadedFace.SUBPIXEL_STEPS) {
+                    whole += 1;
+                    sub = 0;
+                }
+                GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, sub);
+                if (!sdf.isEmpty() && !strokeOnGpu(sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
+                    blitStrokeAligned(sdf, (float) whole, Math.round(devY), half, pm, clip, opacity);
+                }
+            } else {
+                GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, 0);
+                if (!sdf.isEmpty()) blitStrokeTransformed(sdf, gx, baseline, pixelSize / style.fontSizePx(), pose, half, pm, clip, opacity);
+            }
+            i += n;
+        }
+    }
+
+    private boolean strokeOnGpu(GlyphBitmap sdf, float originX, float originY, float half, int argb, Clip clip, float opacity) {
+        if (sink == null) return false;
+        if (opacity <= 0f) return true;
+        GpuSink.Clip[] gc = gpuClips(clip);
+        if (gc == null) return false;
+        return sink.drawGlyphStroke(sdf, Math.round(originX + sdf.left()), Math.round(originY - sdf.top()), half, argb, gc, opacity);
+    }
+
+    private GlyphBitmap sdfGlyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub) {
+        GlyphKey key = new GlyphKey(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, false);
+        GlyphBitmap g = sdfGlyphs.get(key);
+        if (g == null) {
+            g = gf.face().rasterizeSdf(cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub);
+            if (sdfGlyphs.size() >= GLYPH_CACHE_LIMIT) sdfGlyphs.clear();
+            sdfGlyphs.put(key, g);
+        }
+        return g;
+    }
+
+    /** SDF の値（128 = 輪郭、内側が大きい、{@code SDF_SPREAD} 画素で 128 段階）→ 縁取りの被覆率。 */
+    private static float strokeCoverage(float sdfValue, float half) {
+        float d = (sdfValue - 128f) * (LoadedFace.SDF_SPREAD / 128f); // 画素（内側が正）
+        float c = half - Math.abs(d) + 0.5f;
+        return c <= 0f ? 0f : Math.min(1f, c);
+    }
+
+    private void blitStrokeAligned(GlyphBitmap g, float originX, float originY, float half, int pm, Clip clip, float opacity) {
+        float bx = originX + g.left(), by = originY - g.top();
+        paint(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clip, opacity, (lx, ly) -> {
+            int col = (int) Math.floor(lx - bx), row = (int) Math.floor(ly - by);
+            if (col < 0 || row < 0 || col >= g.width() || row >= g.height()) return 0;
+            float cov = strokeCoverage(g.coverageAt(col, row), half);
+            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
+        });
+    }
+
+    private void blitStrokeTransformed(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, float half, int pm, Clip clip, float opacity) {
+        float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
+        float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
+        paint(pose, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, clip, opacity, (lx, ly) -> {
+            float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
+            float cov = strokeCoverage(sampleRaw(g, col, row), half);
+            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
+        });
+    }
+
+    /** 範囲の外は SDF の「遠い外側」（0）として、双一次補間した生の値（0〜255）。 */
+    private static float sampleRaw(GlyphBitmap g, float col, float row) {
+        int c0 = (int) Math.floor(col), r0 = (int) Math.floor(row);
+        float fx = col - c0, fy = row - r0;
+        float v00 = cov(g, c0, r0), v10 = cov(g, c0 + 1, r0), v01 = cov(g, c0, r0 + 1), v11 = cov(g, c0 + 1, r0 + 1);
+        return (v00 * (1 - fx) + v10 * fx) * (1 - fy) + (v01 * (1 - fx) + v11 * fx) * fy;
     }
 
     private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
@@ -1162,6 +1278,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (src == null || src.isEmpty()) return;
         float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
         float scale = (float) res.pose().meanScale();
+        TextureRef texture = sink != null ? TextureRef.parse(src) : null;
+        if (texture != null && drawExternalTexture(el, texture, rx, ry, res, clip, opacity, scale)) return;
         ImageProvider.Image img = images.load(el, (int) Math.ceil(w * scale), (int) Math.ceil(h * scale));
         if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return;
         Pixmap pm = img.pixmap();
@@ -1190,6 +1308,37 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     int c = taps == 1 ? bilinear(pm, u - 0.5f, v - 0.5f) : boxSample(pm, u, v, taps, sx / scale, sy / scale);
                     return c == 0 ? 0 : SoftShapes.scalePremul(c, box);
                 });
+    }
+
+    /**
+     * 外部テクスチャを GPU の受け口へ渡す。貼る範囲（{@code uv}）と上下反転を、{@code drawTexture} の写像
+     * （テクスチャ全体の左上・画素を基準にした {@code px0/py0/sx/sy}）に織り込む。受け口が断る（CPU 版など）ときは false。
+     */
+    private boolean drawExternalTexture(DisplayItem el, TextureRef t, float[] rx, float[] ry, Resolved res, Clip clip, float opacity,
+                                        float scale) {
+        float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
+        float sw = t.regionWidth(), sh = t.regionHeight();
+        String position = el.events() != null ? el.events().get("object-position") : null;
+        float fontPx = el.meta() != null && el.meta().fontHeight() > 0 ? el.meta().fontHeight() : 16f;
+        ImagePlacement pl = ObjectFit.place(el.fitMode(), position, sw, sh, w, h, fontPx);
+        if (!(pl.w() > 0) || !(pl.h() > 0)) return true; // 描くものが無い（画像の項目としては描いたことにする）
+        float px0 = x0 + pl.x(), py0 = y0 + pl.y();
+        float kx = sw / pl.w(), ky = sh / pl.h();           // 局所の 1 単位あたりのテクスチャの画素数
+        float regionX = t.u0() * t.width(), regionY = t.v0() * t.height();
+        float effPx0 = px0 - regionX / kx;                  // 範囲の左上を、貼る位置の左上に合わせる
+        float effPy0, sy;
+        if (t.flipY()) { // 下から上へ並んだテクスチャ: 見た目の上端は、テクスチャの上端（行 height）から下へ数える
+            sy = -ky;
+            effPy0 = py0 + (t.height() - regionY) / ky;
+        } else {
+            sy = ky;
+            effPy0 = py0 - regionY / ky;
+        }
+        float m = 1f / Math.max(scale, 0.01f);
+        GpuSink.Clip[] gc = gpuClips(clip);
+        return gc != null && sink.drawTexture(res.pose(), t.handle(), t.width(), t.height(),
+                Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
+                effPx0, effPy0, kx, sy, x0, y0, x0 + w, y0 + h, rx, ry, gc, opacity);
     }
 
     private static int boxSample(Pixmap pm, float u, float v, int taps, float stepX, float stepY) {

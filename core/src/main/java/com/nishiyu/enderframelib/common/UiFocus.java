@@ -5,7 +5,6 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -124,17 +123,17 @@ public final class UiFocus {
         if (cur == null) return cands.get(0).node();
 
         double cx = centerX(cur.item()), cy = centerY(cur.item());
-        boolean vertical = key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN;
+        boolean vertical = key == Keys.UP || key == Keys.DOWN;
         Candidate best = null;
         double bestScore = Double.MAX_VALUE;
         for (Candidate c : cands) {
             if (c == cur) continue;
             double dx = centerX(c.item()) - cx, dy = centerY(c.item()) - cy;
             boolean ahead = switch (key) {
-                case GLFW.GLFW_KEY_UP -> dy < -2;
-                case GLFW.GLFW_KEY_DOWN -> dy > 2;
-                case GLFW.GLFW_KEY_LEFT -> dx < -2;
-                case GLFW.GLFW_KEY_RIGHT -> dx > 2;
+                case Keys.UP -> dy < -2;
+                case Keys.DOWN -> dy > 2;
+                case Keys.LEFT -> dx < -2;
+                case Keys.RIGHT -> dx > 2;
                 default -> false;
             };
             if (!ahead) continue;

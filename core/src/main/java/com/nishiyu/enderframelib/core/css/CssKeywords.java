@@ -24,14 +24,58 @@ public final class CssKeywords {
         }
     }
 
+    /** 型ごとの「CSS の書き方（小文字・{@code -} 区切り）→ 定数」の表。型ごとに 1 回だけ作る（読み取り専用）。 */
+    private static final ClassValue<java.util.Map<String, Enum<?>>> BY_CSS_NAME = new ClassValue<>() {
+        @Override
+        protected java.util.Map<String, Enum<?>> computeValue(Class<?> type) {
+            java.util.Map<String, Enum<?>> m = new java.util.HashMap<>();
+            for (Object c : type.getEnumConstants()) {
+                Enum<?> e = (Enum<?>) c;
+                m.put(e.name().toLowerCase(Locale.ROOT).replace('_', '-'), e);
+            }
+            return java.util.Collections.unmodifiableMap(m);
+        }
+    };
+
     /** 値の文字列を {@code type} の定数にする。前後の空白と大文字小文字は無視する。知らない値は null。 */
+    @SuppressWarnings("unchecked")
     public static <E extends Enum<E> & Keyword> E parse(Class<E> type, String value) {
         if (value == null) return null;
+        // 近道: すでに「小文字・英数字・区切りは単独の -」だけの普通の書き方なら、表を引くだけ（確保なし）。
+        // 当たらなければ、空白・大文字・safe/unsafe などを含む書き方かもしれないので、従来の正規化で調べ直す
+        if (isPlainKeyword(value)) {
+            Enum<?> hit = BY_CSS_NAME.get(type).get(value);
+            if (hit != null) return (E) hit;
+        }
+        return parseNormalized(type, value);
+    }
+
+    /** 小文字の英数字と、単独の {@code -}（先頭・末尾・連続でない）だけか。 */
+    private static boolean isPlainKeyword(String v) {
+        int n = v.length();
+        if (n == 0) return false;
+        char prev = '-';
+        for (int i = 0; i < n; i++) {
+            char c = v.charAt(i);
+            boolean alnum = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+            if (c == '-') {
+                if (prev == '-') return false; // 先頭か連続
+            } else if (!alnum) {
+                return false;
+            }
+            prev = c;
+        }
+        return prev != '-';
+    }
+
+    private static final java.util.regex.Pattern SEPARATORS = java.util.regex.Pattern.compile("[-\\s]+");
+
+    private static <E extends Enum<E> & Keyword> E parseNormalized(Class<E> type, String value) {
         String text = value.trim().toLowerCase(Locale.ROOT);
         // 揃えの safe / unsafe は位置の扱いの違いで、レイアウトは区別しない（safe center は center）
         if (text.startsWith("safe ")) text = text.substring(5).trim();
         else if (text.startsWith("unsafe ")) text = text.substring(7).trim();
-        String name = text.toUpperCase(Locale.ROOT).replaceAll("[-\\s]+", "_");
+        String name = SEPARATORS.matcher(text.toUpperCase(Locale.ROOT)).replaceAll("_");
         for (E constant : type.getEnumConstants()) {
             if (constant.name().equals(name)) return constant;
         }

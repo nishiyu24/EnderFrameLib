@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.software;
+package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.core.paint.ClipShape;
 import com.nishiyu.enderframelib.core.paint.FilterOp;
@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
 
 /**
- * {@link SoftwareRenderBackend} が「単色の角丸矩形」と「角丸の枠線」を自分で塗る代わりに渡す先。
+ * {@link com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend} が「単色の角丸矩形」と「角丸の枠線」を自分で塗る代わりに渡す先。
  * GPU 版がこれを実装し、図形だけを GPU のシェーダーで描く（文字・画像・グラデーション・影は従来どおり CPU が描き、
  * 描く順は呼び出しの順で保たれる）。
  *
@@ -159,6 +159,26 @@ public interface GpuSink {
                               float px0, float py0, float sx, float sy,
                               float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                               int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+        return false;
+    }
+
+    /**
+     * 字形の縁取りを、デバイス画素の格子に揃えて置く（回転なしの文字）。{@code sdf} は輪郭からの符号付き距離の字形
+     * （128 = 輪郭、内側が大きい、広がり {@code LoadedFace.SDF_SPREAD} 画素で 128 段階）、{@code half} は縁取りの幅の半分（画素）。
+     * 非対応なら {@code false}（CPU が描く）。
+     */
+    default boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+        return false;
+    }
+
+    /**
+     * 外部（ホストが持つ）テクスチャをそのまま貼る（画素の複製・読み戻しなし）。引数の意味は {@link #drawImage} と同じで、
+     * {@code (px0,py0)} と {@code sx/sy} は <b>テクスチャ全体の左上・画素</b>を基準にした写像（範囲指定・上下反転は呼び出し側が織り込み済み。
+     * {@code sy} が負なら上下反転）。{@code (imgW,imgH)} はテクスチャの画素数。非対応なら {@code false}（画像の項目として従来の解決へ退く）。
+     */
+    default boolean drawTexture(Matrix2D pose, long handle, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
+                                float px0, float py0, float sx, float sy,
+                                float x0, float y0, float x1, float y1, float[] rx, float[] ry, Clip[] clips, float opacity) {
         return false;
     }
 

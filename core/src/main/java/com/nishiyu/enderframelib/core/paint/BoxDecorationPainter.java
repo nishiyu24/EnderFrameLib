@@ -396,7 +396,10 @@ public final class BoxDecorationPainter {
             addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
             drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
-            drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
+            // border-image（9-slice）が描ければ、枠線の通常の描画に代わる（枠線の太さは配置にそのまま効く）
+            if (!drawBorderImage(elements, box, id, normalizedClip, passiveBorderEvents, fontHVal, ox, oy)) {
+                drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
+            }
         }
 
         if (box.node.attrs.containsKey("data-ghost-item")) {
@@ -509,6 +512,31 @@ public final class BoxDecorationPainter {
                 }
             }
         }
+    }
+
+    /**
+     * {@code border-image-source}（{@code url()}）があれば、9 つ以内の画像の項目（{@link BorderImage} の区画）として出す。
+     * 画像の大きさが分からない（読み込み前・SVG・失敗）ときは何もせず false（通常の枠線を描く）。
+     * 項目は {@code crop:} の src で元の画像の一部を指すので、どのバックエンドも画像の項目としてそのまま描ける。
+     * {@code border-radius} は枠画像を切らない（仕様どおり）。
+     */
+    private boolean drawBorderImage(List<DisplayItem> elements, LayoutBox box, String id, ClipRect clip, ItemProps events,
+                                    float fontHVal, float ox, float oy) {
+        String url = BorderImage.sourceUrl(box.style);
+        if (url == null || url.isEmpty() || SvgImage.looksLikeSvg(url)) return false;
+        int[] size = PaintServices.imagePixelSize(url);
+        if (size == null || size[0] <= 0 || size[1] <= 0) return false;
+        List<BorderImage.Cell> cells = BorderImage.cells(box.style, size[0], size[1], box.x, box.y, box.w, box.h,
+                new float[]{box.bT, box.bR, box.bB, box.bL});
+        if (cells.isEmpty()) return false;
+        RenderMeta meta = new RenderMeta(clip, null, null, fontHVal, ox, oy, 1, false);
+        int part = 0;
+        for (BorderImage.Cell c : cells) {
+            addElement(elements, id, id + "_bi" + (part++), ElementType.IMAGE, ImageFitMode.FILL, c.dx(), c.dy(), c.dw(), c.dh(),
+                    com.nishiyu.enderframelib.core.paint.software.CropSrc.of(c.sx(), c.sy(), c.sw(), c.sh(), url),
+                    0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+        }
+        return true;
     }
 
     /** 角丸なら枠の領域だけを塗る 1 部品、そうでなければ辺ごとの帯。 */

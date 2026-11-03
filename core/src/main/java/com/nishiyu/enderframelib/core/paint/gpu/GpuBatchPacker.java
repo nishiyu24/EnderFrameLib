@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
-import com.nishiyu.enderframelib.core.paint.software.GpuSink.Clip;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuSink.Clip;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
@@ -31,7 +31,7 @@ public final class GpuBatchPacker {
 
     /** 図形のモード（シェーダーの {@code mode} と同じ値）。 */
     public static final int MODE_FILL = 0, MODE_STROKE = 1, MODE_GRADIENT = 2, MODE_OUTER_SHADOW = 3, MODE_INSET_SHADOW = 4,
-            MODE_GLYPH = 5, MODE_IMAGE = 6, MODE_CIRCLE_BORDER = 8, MODE_GLYPH_TRANSFORMED = 9;
+            MODE_GLYPH = 5, MODE_IMAGE = 6, MODE_CIRCLE_BORDER = 8, MODE_GLYPH_TRANSFORMED = 9, MODE_GLYPH_STROKE = 10;
 
     /** バックエンド側の受け口。 */
     public interface Host {
@@ -75,6 +75,22 @@ public final class GpuBatchPacker {
     /** 溜めた行を捨てる（転送し終わったら呼ぶ）。 */
     public void clear() {
         batchN = 0;
+    }
+
+    /**
+     * 溜めた行を {@code device} へ転送して描き、溜めを空にする。何も溜まっていなければ何もしない。
+     * 順序は固定: 溜めを空にする → {@link BatchDevice#uploadInstances} → {@link BatchDevice#drawInstances}
+     * （行データは次に積むまで書き換わらないので、空にしてから転送してよい）。
+     *
+     * @return 描いたインスタンスの数
+     */
+    public int flushTo(BatchDevice device) {
+        int n = batchN;
+        if (n == 0) return 0;
+        batchN = 0;
+        device.uploadInstances(batch, n);
+        device.drawInstances(n);
+        return n;
     }
 
     /** これまでに積んだ行の総数（{@link #clear} では戻らない）。 */
@@ -197,6 +213,21 @@ public final class GpuBatchPacker {
         return true;
     }
 
+    /**
+     * 字形の縁取り（デバイス画素の格子に揃えた文字）。{@code sdf} は SDF の字形（128 = 輪郭、内側が大きい、
+     * {@code spread} 画素で 128 段階）で、{@code half} は縁取りの幅の半分（画素）。帯は輪郭からの距離 {@code |d| <= half}。
+     */
+    public boolean glyphStroke(GlyphBitmap sdf, int[] slot, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+        if (!beginShapeIn(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height(), clips, opacity)) return false;
+        curMode = MODE_GLYPH_STROKE;
+        put(4, bx, by, bx + sdf.width(), by + sdf.height());
+        put(21, slot[0], slot[1], sdf.width(), sdf.height());
+        put(22, half, 0, 0, 0);
+        setColor(15, argb);
+        commit();
+        return true;
+    }
+
     /** 回転などの姿勢の下の字形。 */
     public boolean glyphTransformed(Matrix2D pose, GlyphBitmap g, int[] slot, float ox, float oy, float s,
                                     float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
@@ -215,13 +246,22 @@ public final class GpuBatchPacker {
                          float px0, float py0, float sx, float sy,
                          float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                          int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+        return image(pose, image.width(), image.height(), bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry,
+                taps, stepX, stepY, clips, opacity);
+    }
+
+    /** 画素の大きさだけを渡す版（画素を持たない外部テクスチャ用）。 */
+    public boolean image(Matrix2D pose, int imageWidth, int imageHeight, float bx0, float by0, float bx1, float by1,
+                         float px0, float py0, float sx, float sy,
+                         float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+                         int taps, float stepX, float stepY, Clip[] clips, float opacity) {
         // 回転の下では、辺の斜めの画素が箱の外側にもはみ出す（CPU 版は外接矩形の全画素を評価する）。1 画素分広げて合わせる
         float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
         if (!beginShapeIn(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, clips, opacity)) return false;
         curMode = MODE_IMAGE;
         setRect(4, rx, ry, x0, y0, x1, y1);
         put(22, px0, py0, sx, sy);
-        put(23, image.width(), image.height(), taps, 0);
+        put(23, imageWidth, imageHeight, taps, 0);
         put(48, stepX, stepY, 0, 0);
         commit();
         return true;

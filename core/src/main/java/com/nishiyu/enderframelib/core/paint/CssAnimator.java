@@ -114,6 +114,19 @@ public class CssAnimator {
         return def;
     }
 
+    /**
+     * {@link #getCurrentValues} と同じ値を、{@code scratch} へ書いて返す（状態が無い項目では確保しない）。ヒットテストが
+     * 候補ごとに呼ぶので、割り当てを避けるための版。状態があるときは補間の結果（新しい {@link AnimatedValues}）を返す。
+     */
+    public static AnimatedValues currentValuesInto(String sessionId, DisplayItem el, AnimatedValues scratch) {
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
+        AnimState state = sessionMap != null ? sessionMap.get(el.id()) : null;
+        if (state != null) return state.getInterpolatedValues(System.currentTimeMillis());
+        scratch.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
+        return scratch;
+    }
+
     private static final Map<String, Long> LAST_CLEANUP = new java.util.concurrent.ConcurrentHashMap<>();
 
     public static void cleanup(String sessionId, List<DisplayItem> currentElements) {

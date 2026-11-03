@@ -84,6 +84,7 @@ public final class PropertyRegistry {
             "background",
             "border", "border-color", "border-width", "border-style",
             "border-top", "border-right", "border-bottom", "border-left", "border-radius",
+            "-webkit-border-image", "border-image", "-webkit-text-stroke",
             "mask", "-webkit-mask", "-webkit-mask-image", "-webkit-mask-position", "-webkit-mask-size", "-webkit-mask-repeat",
             "-webkit-mask-origin", "-webkit-mask-clip", "-webkit-clip-path", "-webkit-backdrop-filter"
     );
@@ -257,6 +258,11 @@ public final class PropertyRegistry {
         // 伝播の仕組みが無いので、ここでは継承で代用している（描画が子のテキストノードで読む）。
         paint("text-decoration", "none", true, ValueType.OTHER, false);
         paint("text-shadow", "none", true, ValueType.LIST, true);
+        // 文字の縁取り（輪郭の上に中心を置いた帯）。描画側が SDF（符号付き距離場）の字形から描く
+        paint("-webkit-text-stroke-width", "0", true, ValueType.OTHER, false);
+        paint("-webkit-text-stroke-color", "currentcolor", true, ValueType.OTHER, false);
+        shorthand("-webkit-text-stroke", Invalidation.PAINT, ShorthandExpanders::textStroke,
+                "-webkit-text-stroke-width", "-webkit-text-stroke-color");
 
         // ---- containment（箱の中身が外へ及ぶ範囲を限る。再レイアウト境界になる）
         layout("contain", "none", false, ValueType.LIST, false);
@@ -289,6 +295,16 @@ public final class PropertyRegistry {
                 "background-color", "background-image", "background-position", "background-size",
                 "background-repeat", "background-clip", "background-origin", "background-attachment");
         paint("box-shadow", "none", false, ValueType.LIST, true);
+        // 9 分割の枠画像（9-slice）。見た目は PaintOrder 前の BorderImagePainter が 9 枚の画像の項目にする
+        paint("border-image-source", "none", false, ValueType.OTHER, false);
+        paint("border-image-slice", "100%", false, ValueType.LIST, false);
+        paint("border-image-width", "1", false, ValueType.LIST, false);
+        paint("border-image-outset", "0", false, ValueType.LIST, false);
+        paint("border-image-repeat", "stretch", false, ValueType.LIST, false);
+        shorthand("border-image", Invalidation.PAINT, ShorthandExpanders::borderImage,
+                "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", "border-image-repeat");
+        shorthand("-webkit-border-image", Invalidation.PAINT, ShorthandExpanders::borderImage,
+                "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", "border-image-repeat");
         paint("opacity", "1", false, ValueType.NUMBER, true);
         paint("transform", "none", false, ValueType.LIST, true);
         paint("transform-origin", "50% 50%", false, ValueType.LIST, true);

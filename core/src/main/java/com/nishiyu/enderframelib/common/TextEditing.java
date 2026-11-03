@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.common;
 
-import org.lwjgl.glfw.GLFW;
 
 /**
  * テキスト欄（{@code input} / {@code textarea}）の編集規則（Minecraft の {@code EditBox} に依存しない純 Java）。
@@ -103,27 +102,27 @@ public final class TextEditing {
      */
     public static Result key(State s, String text, int key, int mods, boolean multiline, Clipboard clipboard) {
         s.clampTo(text);
-        boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
-        boolean word = (mods & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_ALT)) != 0;
-        boolean ctrl = (mods & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
+        boolean shift = (mods & Keys.MOD_SHIFT) != 0;
+        boolean word = (mods & (Keys.MOD_CONTROL | Keys.MOD_ALT)) != 0;
+        boolean ctrl = (mods & (Keys.MOD_CONTROL | Keys.MOD_SUPER)) != 0;
 
         if (ctrl) {
             switch (key) {
-                case GLFW.GLFW_KEY_A -> {
+                case Keys.A -> {
                     s.anchor = 0;
                     s.caret = text.length();
                     return Result.moved(s);
                 }
-                case GLFW.GLFW_KEY_C -> {
+                case Keys.C -> {
                     if (s.hasSelection() && clipboard != null) clipboard.set(s.selected(text));
                     return Result.moved(s);
                 }
-                case GLFW.GLFW_KEY_X -> {
+                case Keys.X -> {
                     if (!s.hasSelection()) return Result.moved(s);
                     if (clipboard != null) clipboard.set(s.selected(text));
                     return replace(s, text, "", "deleteByCut");
                 }
-                case GLFW.GLFW_KEY_V -> {
+                case Keys.V -> {
                     String clip = clipboard != null ? clipboard.get() : null;
                     if (clip == null || clip.isEmpty()) return Result.moved(s);
                     clip = clip.replace("\r\n", "\n").replace('\r', '\n');
@@ -135,34 +134,34 @@ public final class TextEditing {
         }
 
         switch (key) {
-            case GLFW.GLFW_KEY_LEFT -> {
+            case Keys.LEFT -> {
                 if (s.hasSelection() && !shift) s.set(s.start(), false);
                 else s.set(word ? wordStart(text, s.caret) : step(text, s.caret, -1), shift);
                 return Result.moved(s);
             }
-            case GLFW.GLFW_KEY_RIGHT -> {
+            case Keys.RIGHT -> {
                 if (s.hasSelection() && !shift) s.set(s.end(), false);
                 else s.set(word ? wordEnd(text, s.caret) : step(text, s.caret, 1), shift);
                 return Result.moved(s);
             }
-            case GLFW.GLFW_KEY_HOME -> {
+            case Keys.HOME -> {
                 s.set(word || !multiline ? 0 : lineStart(text, s.caret), shift);
                 return Result.moved(s);
             }
-            case GLFW.GLFW_KEY_END -> {
+            case Keys.END -> {
                 s.set(word || !multiline ? text.length() : lineEnd(text, s.caret), shift);
                 return Result.moved(s);
             }
-            case GLFW.GLFW_KEY_UP, GLFW.GLFW_KEY_DOWN -> {
+            case Keys.UP, Keys.DOWN -> {
                 if (!multiline) {
-                    s.set(key == GLFW.GLFW_KEY_UP ? 0 : text.length(), shift);
+                    s.set(key == Keys.UP ? 0 : text.length(), shift);
                     return Result.moved(s);
                 }
-                s.set(verticalMove(text, s.caret, key == GLFW.GLFW_KEY_UP ? -1 : 1), shift);
+                s.set(verticalMove(text, s.caret, key == Keys.UP ? -1 : 1), shift);
                 return Result.moved(s);
             }
-            case GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_KEY_DELETE -> {
-                boolean back = key == GLFW.GLFW_KEY_BACKSPACE;
+            case Keys.BACKSPACE, Keys.DELETE -> {
+                boolean back = key == Keys.BACKSPACE;
                 String type = back ? "deleteContentBackward" : "deleteContentForward";
                 if (s.hasSelection()) return replace(s, text, "", type);
                 int target = back ? (word ? wordStart(text, s.caret) : step(text, s.caret, -1))
@@ -171,7 +170,7 @@ public final class TextEditing {
                 s.anchor = target;
                 return replace(s, text, "", type);
             }
-            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+            case Keys.ENTER, Keys.KP_ENTER -> {
                 return multiline ? replace(s, text, "\n", "insertLineBreak") : Result.IGNORED;
             }
             default -> {

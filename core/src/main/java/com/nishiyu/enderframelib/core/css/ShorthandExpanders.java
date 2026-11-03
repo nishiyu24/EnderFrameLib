@@ -529,6 +529,69 @@ final class ShorthandExpanders {
         return out;
     }
 
+    /**
+     * {@code border-image}: {@code <source> || <slice> [ / <width>? [ / <outset> ]? ]? || <repeat>}。
+     * 語は順不同（スラッシュで区切られた数値の並びは、前から slice・width・outset）。省いた項目は初期値。
+     */
+    static Map<String, String> borderImage(String value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("border-image-source", "none");
+        out.put("border-image-slice", "100%");
+        out.put("border-image-width", "1");
+        out.put("border-image-outset", "0");
+        out.put("border-image-repeat", "stretch");
+        if (value == null || value.isBlank()) return out;
+        List<String> tokens = splitTopLevelTokens(spaceOutSlash(value.trim()));
+        List<String> repeat = new ArrayList<>();
+        StringBuilder[] groups = {new StringBuilder(), new StringBuilder(), new StringBuilder()};
+        int group = 0;
+        for (String token : tokens) {
+            String lower = token.toLowerCase();
+            if ("/".equals(token)) {
+                group = Math.min(2, group + 1);
+            } else if (lower.equals("stretch") || lower.equals("repeat") || lower.equals("round") || lower.equals("space")) {
+                repeat.add(lower);
+            } else if (lower.equals("none") || lower.contains("(") && !lower.startsWith("calc(")) {
+                if (lower.startsWith("url(") || lower.startsWith("image-set(") || lower.startsWith("-webkit-image-set(")
+                        || lower.endsWith("gradient(") || lower.contains("gradient(") || lower.equals("none")) {
+                    out.put("border-image-source", token);
+                } else {
+                    return Map.of(); // 解釈できない関数
+                }
+            } else {
+                if (groups[group].length() > 0) groups[group].append(' ');
+                groups[group].append(token);
+            }
+        }
+        if (groups[0].length() > 0) out.put("border-image-slice", groups[0].toString());
+        if (groups[1].length() > 0) out.put("border-image-width", groups[1].toString());
+        if (groups[2].length() > 0) out.put("border-image-outset", groups[2].toString());
+        if (!repeat.isEmpty()) out.put("border-image-repeat", String.join(" ", repeat));
+        return out;
+    }
+
+    /** {@code -webkit-text-stroke}: {@code <width> || <color>}（順不同）。省いた色は {@code currentcolor}、幅は 0。 */
+    static Map<String, String> textStroke(String value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("-webkit-text-stroke-width", "0");
+        out.put("-webkit-text-stroke-color", "currentcolor");
+        if (value == null || value.isBlank()) return out;
+        boolean width = false, color = false;
+        for (String token : splitTopLevelTokens(value.trim())) {
+            String lower = token.toLowerCase();
+            if (!width && (startsNumeric(lower) || lower.equals("thin") || lower.equals("medium") || lower.equals("thick"))) {
+                out.put("-webkit-text-stroke-width", token);
+                width = true;
+            } else if (!color) {
+                out.put("-webkit-text-stroke-color", token);
+                color = true;
+            } else {
+                return Map.of();
+            }
+        }
+        return out;
+    }
+
     private static boolean isBackgroundSize(String token) {
         String lower = token.toLowerCase();
         return BG_SIZE_KEYWORDS.contains(lower) || startsNumeric(lower) || lower.startsWith("calc(");

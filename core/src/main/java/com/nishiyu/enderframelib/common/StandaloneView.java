@@ -22,7 +22,6 @@ import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -86,7 +85,13 @@ public final class StandaloneView implements AutoCloseable {
             }
             // スクロールだけなら中身は前回と同じ。画面の外の箱は項目を作らない（全件を作るのは再スタイルのとき）。
             // 動いただけの箱は前回の項目を平行移動して使うので、位置が最大 1 画素ずれうる: 止まったら厳密に描き直す
-            List<DisplayItem> items = builder.render(root, scrollOnly);
+            builder.setUseChangeStamps(useChangeStamps());
+            List<DisplayItem> items;
+            try {
+                items = builder.render(root, scrollOnly);
+            } finally {
+                builder.setUseChangeStamps(false);
+            }
             settlePending = scrollOnly && builder.translatedHits() > 0;
             lastScrollPaintAt = lastNow;
             return items;
@@ -136,7 +141,9 @@ public final class StandaloneView implements AutoCloseable {
         this.width = width;
         this.height = height;
         this.fonts = fonts;
+        com.nishiyu.enderframelib.core.paint.software.ImageSizes.installDefault();
         this.ui = new Ui();
+        this.ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(com.nishiyu.enderframelib.core.paint.software.ImageProvider.standard()));
         this.input = new UiInput(ui);
         this.interaction = ui.interactionState();
         long t0 = System.nanoTime();
@@ -216,6 +223,19 @@ public final class StandaloneView implements AutoCloseable {
         com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
         ui.markInvalidation(UiView.InvalidationLevel.RELAYOUT);
         redraw = true;
+    }
+
+    /**
+     * 描画側と同じ画像の読み方を、透過ヒットテスト（{@code <img data-hit-alpha>}）にも使う。既定は {@link com.nishiyu.enderframelib.core.paint.software.ImageProvider#standard()}。
+     */
+    public StandaloneView images(com.nishiyu.enderframelib.core.paint.software.ImageProvider provider) {
+        ui.alphaMaskProvider(com.nishiyu.enderframelib.core.paint.software.AlphaMasks.from(provider));
+        return this;
+    }
+
+    /** 点が対話要素の上にあるか（CSS px）。ゲームが、クリックを UI に渡すか自分で処理するかを決めるのに使う。 */
+    public boolean isPointerOverUi(double x, double y) {
+        return ui.isPointerOverUi(x, y);
     }
 
     /** 外の事情（画像の取得完了など）で描き直したいとき。 */
@@ -522,34 +542,34 @@ public final class StandaloneView implements AutoCloseable {
     public void keyDown(int key, int mods) {
         HtmlNode focused = interaction.focusedNode();
         HtmlNode target = focused != null ? focused : ui.rootNode();
-        boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
-        UIEvents.Keyboard ev = input.keyEvent("keydown", target, key, (mods & GLFW.GLFW_MOD_CONTROL) != 0, shift,
-                (mods & GLFW.GLFW_MOD_ALT) != 0, (mods & GLFW.GLFW_MOD_SUPER) != 0);
+        boolean shift = (mods & Keys.MOD_SHIFT) != 0;
+        UIEvents.Keyboard ev = input.keyEvent("keydown", target, key, (mods & Keys.MOD_CONTROL) != 0, shift,
+                (mods & Keys.MOD_ALT) != 0, (mods & Keys.MOD_SUPER) != 0);
         if (ev == null || ev.isDefaultPrevented()) return;
 
         if (popup.isOpen() && selectKey(key)) return;
-        if (key == GLFW.GLFW_KEY_TAB) {
+        if (key == Keys.TAB) {
             moveFocus(shift ? -1 : 1);
             return;
         }
         if (focused == null) return;
-        boolean enter = key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER;
+        boolean enter = key == Keys.ENTER || key == Keys.KP_ENTER;
         if (isTextControl(focused)) {
             editKey(focused, key, mods, enter, ev);
             return;
         }
         if ("select".equalsIgnoreCase(focused.tag)) {
-            if (enter || key == GLFW.GLFW_KEY_SPACE || key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN) openSelect(focused);
+            if (enter || key == Keys.SPACE || key == Keys.UP || key == Keys.DOWN) openSelect(focused);
             return;
         }
-        if (key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT) {
+        if (key == Keys.UP || key == Keys.DOWN || key == Keys.LEFT || key == Keys.RIGHT) {
             HtmlNode to = UiFocus.spatial(ui, focused, key);
             if (to != null) ui.setFocusedElement(to.getId(), true);
             return;
         }
         String tag = focused.tag != null ? focused.tag.toLowerCase(Locale.ROOT) : "";
         boolean activates = tag.equals("a") ? enter
-                : (tag.equals("button") || isCheckable(focused)) && (enter || key == GLFW.GLFW_KEY_SPACE);
+                : (tag.equals("button") || isCheckable(focused)) && (enter || key == Keys.SPACE);
         if (activates && !focused.attrs.containsKey("disabled")) {
             input.dispatchClick(focused, 0, 0, 0, null, linkSink);
         }
@@ -559,8 +579,8 @@ public final class StandaloneView implements AutoCloseable {
     public void keyUp(int key, int mods) {
         HtmlNode focused = interaction.focusedNode();
         input.keyEvent("keyup", focused != null ? focused : ui.rootNode(), key,
-                (mods & GLFW.GLFW_MOD_CONTROL) != 0, (mods & GLFW.GLFW_MOD_SHIFT) != 0,
-                (mods & GLFW.GLFW_MOD_ALT) != 0, (mods & GLFW.GLFW_MOD_SUPER) != 0);
+                (mods & Keys.MOD_CONTROL) != 0, (mods & Keys.MOD_SHIFT) != 0,
+                (mods & Keys.MOD_ALT) != 0, (mods & Keys.MOD_SUPER) != 0);
     }
 
     /** 文字の入力（Unicode のコードポイント）。フォーカス中のテキスト欄の末尾に足す。入ったか。 */
@@ -636,16 +656,16 @@ public final class StandaloneView implements AutoCloseable {
     private boolean selectKey(int key) {
         redraw = true;
         switch (key) {
-            case GLFW.GLFW_KEY_ESCAPE -> popup.close();
-            case GLFW.GLFW_KEY_UP -> popup.moveHighlight(-1);
-            case GLFW.GLFW_KEY_DOWN -> popup.moveHighlight(1);
-            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER, GLFW.GLFW_KEY_SPACE -> {
+            case Keys.ESCAPE -> popup.close();
+            case Keys.UP -> popup.moveHighlight(-1);
+            case Keys.DOWN -> popup.moveHighlight(1);
+            case Keys.ENTER, Keys.KP_ENTER, Keys.SPACE -> {
                 HtmlNode owner = popup.select();
                 String value = popup.highlightedValue();
                 popup.close();
                 if (value != null) commitSelect(owner, value);
             }
-            case GLFW.GLFW_KEY_TAB -> {
+            case Keys.TAB -> {
                 popup.close();
                 return false;
             }

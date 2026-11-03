@@ -401,7 +401,7 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
      */
     public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
         // スタイルと箱の大きさだけで決まる。呼び出し側が書き換えても壊れないよう、写しを返す
-        return ((float[]) style.paintMemo().computeIfAbsent(new CornerKey(w, h, rootW, rootH),
+        return ((float[]) style.paintMemo(new CornerKey(w, h, rootW, rootH),
                 k -> computeCornerRadiiXY(style, w, h, rootW, rootH))).clone();
     }
 

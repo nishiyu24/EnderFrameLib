@@ -63,6 +63,7 @@ sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
 
 tasks.named('test', Test) {
     useJUnitPlatform()
+    systemProperty 'enderframe.paint.verifystamps', 'true'
     workingDir = rootProject.projectDir
     testLogging { showStandardStreams = true }
     ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->

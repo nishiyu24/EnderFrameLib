@@ -103,6 +103,12 @@ final class ControlPainter {
             imageEvents = mediaEvents.copy();
             imageEvents.put("object-position", position);
         }
+        String hitAlpha = box.node.attrs.get("data-hit-alpha");
+        if (hitAlpha != null && ("img".equals(box.node.tag))) {
+            // 透明な部分のクリックを下へ通す（既定の閾値は半透明 = 128。値で 0〜255 を指定できる）
+            if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
+            imageEvents.put("hit-alpha", hitAlpha.isBlank() ? "128" : hitAlpha.trim());
+        }
         addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 

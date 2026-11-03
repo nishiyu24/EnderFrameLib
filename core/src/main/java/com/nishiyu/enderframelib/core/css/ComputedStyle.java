@@ -45,77 +45,154 @@ public final class ComputedStyle {
     private final float rootFontSize;
 
     // 算出スタイルは要素ごとに作られ、描画に使われない要素（display: none の部分木など）も多い。
-    // 参照キャッシュは最初の参照まで確保しない（要素 1 つあたり ConcurrentHashMap 4 個の即時確保をやめた）
-    /** プロパティ名 -> 単位と数値に分解済みの長さ。参照時に 1 回だけ作る。 */
-    private volatile Map<String, LengthResolver.CompiledLength> lengthCache;
-    /** プロパティ名 -> ARGB。ビューポートに依存しないため値そのものをキャッシュできる。 */
-    private volatile Map<String, Integer> colorCache;
-    /** プロパティ名 -> 数値。同上。 */
-    private volatile Map<String, Float> numberCache;
-    /** プロパティ名 -> キーワードの enum。同上。 */
-    private volatile Map<String, Enum<?>> keywordCache;
+    // 参照結果のキャッシュは最初の参照まで確保しない。ロックも ConcurrentHashMap も使わず、不変の小さな配列を
+    // CAS で差し替える（読み手は配列をなめるだけ。結果は不変の値なので、競って片方の登録が落ちても再計算するだけで正しい）。
+
+    /** 型付き参照（長さ・色・数値・キーワード）の結果。鍵は {@code 添字 * 4 + 種類}。 */
+    private volatile Memo memo;
+
+    private static final int KIND_LENGTH = 0, KIND_COLOR = 1, KIND_NUMBER = 2, KIND_KEYWORD = 3;
+
+    /** 不変の「整数の鍵 → 値」の小さな表。更新は新しい表を作って差し替える。 */
+    private static final class Memo {
+        final int[] keys;
+        final Object[] vals;
+
+        Memo(int[] keys, Object[] vals) {
+            this.keys = keys;
+            this.vals = vals;
+        }
+
+        Object get(int key) {
+            int[] k = keys;
+            for (int i = 0; i < k.length; i++) if (k[i] == key) return vals[i];
+            return null;
+        }
+
+        Memo with(int key, Object val) {
+            int n = keys.length;
+            for (int i = 0; i < n; i++) {
+                if (keys[i] == key) {
+                    Object[] v = vals.clone();
+                    v[i] = val;
+                    return new Memo(keys, v);
+                }
+            }
+            int[] k = java.util.Arrays.copyOf(keys, n + 1);
+            Object[] v = java.util.Arrays.copyOf(vals, n + 1);
+            k[n] = key;
+            v[n] = val;
+            return new Memo(k, v);
+        }
+    }
+
+    private static final java.lang.invoke.VarHandle MEMO;
+    private static final java.lang.invoke.VarHandle PAINT;
+
+    static {
+        try {
+            var lookup = java.lang.invoke.MethodHandles.lookup();
+            MEMO = lookup.findVarHandle(ComputedStyle.class, "memo", Memo.class);
+            PAINT = lookup.findVarHandle(ComputedStyle.class, "paint", Object.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    private Object cached(int id, int kind) {
+        Memo m = memo;
+        return m == null ? null : m.get(id * 4 + kind);
+    }
+
+    private void remember(int id, int kind, Object value) {
+        int key = id * 4 + kind;
+        for (; ; ) {
+            Memo m = memo;
+            Memo n = m == null ? new Memo(new int[]{key}, new Object[]{value}) : m.with(key, value);
+            if (MEMO.compareAndSet(this, m, n)) return;
+        }
+    }
 
     /**
      * 描画側が、この算出スタイルだけから決まる結果（アニメーション定義の解決など）を覚える置き場。
      * スタイルは作り直されるたびに別のインスタンスになるので、スタイルが変われば自然に捨てられる。
-     * キーの作り方と中身は呼び出し側が決める（{@code ConcurrentHashMap} なので読み書きは並行してよい）。
+     * 鍵は {@code equals} / {@code hashCode} を持つ値（record など）。中身は {@link ObjMemo}（小さいうち）か
+     * {@link ConcurrentHashMap}（多くの鍵が溜まる、多数の箱が共有するスタイルだけ）。
      */
-    private volatile Map<Object, Object> paintMemo;
+    private volatile Object paint;
 
-    /** {@link #paintMemo} を返す（最初の参照で作る）。 */
-    public Map<Object, Object> paintMemo() {
-        Map<Object, Object> m = paintMemo;
-        if (m == null) {
-            synchronized (this) {
-                m = paintMemo;
-                if (m == null) paintMemo = m = new ConcurrentHashMap<>(4);
-            }
+    private static final int OBJ_MEMO_LIMIT = 8;
+
+    /** 不変の「鍵 → 値」の小さな表（鍵は {@code equals} で比べる）。 */
+    private static final class ObjMemo {
+        final Object[] keys;
+        final Object[] vals;
+
+        ObjMemo(Object[] keys, Object[] vals) {
+            this.keys = keys;
+            this.vals = vals;
         }
-        return m;
+
+        Object get(Object key) {
+            Object[] k = keys;
+            for (int i = 0; i < k.length; i++) if (k[i] == key || k[i].equals(key)) return vals[i];
+            return null;
+        }
+
+        ObjMemo with(Object key, Object val) {
+            int n = keys.length;
+            Object[] k = java.util.Arrays.copyOf(keys, n + 1);
+            Object[] v = java.util.Arrays.copyOf(vals, n + 1);
+            k[n] = key;
+            v[n] = val;
+            return new ObjMemo(k, v);
+        }
+
+        ConcurrentHashMap<Object, Object> toMap() {
+            ConcurrentHashMap<Object, Object> m = new ConcurrentHashMap<>(keys.length * 4);
+            for (int i = 0; i < keys.length; i++) m.put(keys[i], vals[i]);
+            return m;
+        }
     }
 
-    private static <V> Map<String, V> newCache() {
-        return new ConcurrentHashMap<>(8);
-    }
-
-    private Map<String, LengthResolver.CompiledLength> lengths() {
-        Map<String, LengthResolver.CompiledLength> m = lengthCache;
-        if (m == null) {
-            synchronized (this) {
-                if ((m = lengthCache) == null) lengthCache = m = newCache();
-            }
+    /**
+     * {@code key} の結果を、この算出スタイルに覚える（無ければ {@code compute} で作る。{@code null} は覚えない）。
+     * 競ったときは同じ結果が 2 回計算されうる（結果は同じなので、先に登録されたものを使う）。{@code compute} の中で
+     * 同じスタイルの {@code paintMemo} を呼んでもよい。
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T paintMemo(Object key, java.util.function.Function<Object, T> compute) {
+        Object cur = paint;
+        if (cur instanceof ConcurrentHashMap<?, ?> big) {
+            Object hit = ((ConcurrentHashMap<Object, Object>) big).get(key);
+            if (hit != null) return (T) hit;
+        } else if (cur != null) {
+            Object hit = ((ObjMemo) cur).get(key);
+            if (hit != null) return (T) hit;
         }
-        return m;
-    }
-
-    private Map<String, Integer> colors() {
-        Map<String, Integer> m = colorCache;
-        if (m == null) {
-            synchronized (this) {
-                if ((m = colorCache) == null) colorCache = m = newCache();
+        T value = compute.apply(key);
+        if (value == null) return null;
+        for (; ; ) {
+            cur = paint;
+            if (cur instanceof ConcurrentHashMap<?, ?> big) {
+                Object prev = ((ConcurrentHashMap<Object, Object>) big).putIfAbsent(key, value);
+                return prev != null ? (T) prev : value;
             }
-        }
-        return m;
-    }
-
-    private Map<String, Float> numbers() {
-        Map<String, Float> m = numberCache;
-        if (m == null) {
-            synchronized (this) {
-                if ((m = numberCache) == null) numberCache = m = newCache();
+            ObjMemo m = (ObjMemo) cur;
+            if (m != null) {
+                Object hit = m.get(key);
+                if (hit != null) return (T) hit; // 競った相手が先に登録した
             }
-        }
-        return m;
-    }
-
-    private Map<String, Enum<?>> keywords() {
-        Map<String, Enum<?>> m = keywordCache;
-        if (m == null) {
-            synchronized (this) {
-                if ((m = keywordCache) == null) keywordCache = m = newCache();
+            Object next;
+            if (m != null && m.keys.length >= OBJ_MEMO_LIMIT) {
+                ConcurrentHashMap<Object, Object> map = m.toMap();
+                map.putIfAbsent(key, value);
+                next = map;
+            } else {
+                next = m == null ? new ObjMemo(new Object[]{key}, new Object[]{value}) : m.with(key, value);
             }
+            if (PAINT.compareAndSet(this, cur, next)) return value;
         }
-        return m;
     }
 
     public ComputedStyle(Map<String, String> source, float elementFontSize, float rootFontSize) {
@@ -153,7 +230,10 @@ public final class ComputedStyle {
      */
     private static final class CssPropertyId {
         static final int NONE = -1;
-        private static final Map<String, Integer> IDS;
+        /** 名前 → 添字の、開番地法のハッシュ表（{@code HashMap<String, Integer>} の箱詰めと間接参照を避ける）。起動後は読み取り専用。 */
+        private static final String[] KEYS;
+        private static final int[] VALS;
+        private static final int MASK;
         private static final String[] NAMES;
         /** 添字ごとの、描画だけに効く（再レイアウトが要らない）プロパティか。 */
         private static final boolean[] PAINT_ONLY;
@@ -162,14 +242,23 @@ public final class ComputedStyle {
 
         static {
             var all = PropertyRegistry.all();
-            Map<String, Integer> ids = new java.util.HashMap<>(all.size() * 2);
             String[] names = new String[all.size()];
+            int cap = Integer.highestOneBit(Math.max(8, all.size() * 4 - 1)) << 1;
+            String[] keys = new String[cap];
+            int[] vals = new int[cap];
             int i = 0;
             for (PropertyRegistry.Property p : all) {
-                ids.put(p.name(), i);
-                names[i++] = p.name();
+                String name = p.name();
+                int h = name.hashCode();
+                int at = (h ^ (h >>> 16)) & (cap - 1);
+                while (keys[at] != null) at = (at + 1) & (cap - 1);
+                keys[at] = name;
+                vals[at] = i;
+                names[i++] = name;
             }
-            IDS = ids;
+            KEYS = keys;
+            VALS = vals;
+            MASK = cap - 1;
             NAMES = names;
             PAINT_ONLY = new boolean[names.length];
             INHERITED = new boolean[names.length];
@@ -184,8 +273,16 @@ public final class ComputedStyle {
         }
 
         static int of(String name) {
-            Integer id = IDS.get(name);
-            return id != null ? id : NONE;
+            if (name == null) return NONE;
+            int h = name.hashCode(); // 文字列の定数は intern 済みで、ハッシュはキャッシュ済み
+            int at = (h ^ (h >>> 16)) & MASK;
+            String[] keys = KEYS;
+            for (; ; ) {
+                String k = keys[at];
+                if (k == null) return NONE;
+                if (k == name || (k.hashCode() == h && k.equals(name))) return VALS[at];
+                at = (at + 1) & MASK;
+            }
         }
 
         static String name(int id) {
@@ -453,9 +550,16 @@ public final class ComputedStyle {
      * 結果は丸めない（軸 3: 丸めは描画の 1 箇所だけ）。以前は int に切り捨てていた。
      */
     public float length(String propertyName, float maxPixels, float rootW, float rootH) {
-        String val = properties.get(propertyName);
+        int id = CssPropertyId.of(propertyName);
+        String val = rawAt(id, propertyName);
         if (val == null) return 0;
-        return compiledLength(propertyName, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+        return compiledLength(id, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    }
+
+    /** 添字（{@link CssPropertyId#NONE} なら名前）で宣言を引く。{@link StyleMap#get} と同じ結果。 */
+    private String rawAt(int id, String name) {
+        if (id != CssPropertyId.NONE) return values[id];
+        return extras != null ? extras.get(name) : null;
     }
 
     /** 宣言が無い場合に {@code defaultPixels} を返す {@link #length}。 */
@@ -464,33 +568,34 @@ public final class ComputedStyle {
         return length(propertyName, maxPixels, rootW, rootH);
     }
 
-    private LengthResolver.CompiledLength compiledLength(String propertyName, String value) {
-        Map<String, LengthResolver.CompiledLength> cache = lengths();
-        LengthResolver.CompiledLength cached = cache.get(propertyName);
+    private LengthResolver.CompiledLength compiledLength(int id, String value) {
+        if (id == CssPropertyId.NONE) return LengthResolver.compile(value); // 添字を持たない宣言（--* など）は覚えない
+        LengthResolver.CompiledLength cached = (LengthResolver.CompiledLength) cached(id, KIND_LENGTH);
         if (cached != null) return cached;
         LengthResolver.CompiledLength compiled = LengthResolver.compile(value);
-        cache.put(propertyName, compiled);
+        remember(id, KIND_LENGTH, compiled);
         return compiled;
     }
 
     /** 色を ARGB に解決する。宣言が無ければ {@code defaultColor}。 */
     public int color(String propertyName, int defaultColor) {
-        String val = properties.get(propertyName);
+        int id = CssPropertyId.of(propertyName);
+        String val = rawAt(id, propertyName);
         if (val == null) return defaultColor;
-        Map<String, Integer> cache = colors();
-        Integer cached = cache.get(propertyName);
+        if (id == CssPropertyId.NONE) return ColorParser.parseColor(val);
+        Integer cached = (Integer) cached(id, KIND_COLOR);
         if (cached != null) return cached;
         int parsed = ColorParser.parseColor(val);
-        cache.put(propertyName, parsed);
+        remember(id, KIND_COLOR, parsed);
         return parsed;
     }
 
     /** 単位なしの数値（{@code opacity} / {@code flex-grow} / {@code z-index} など）。 */
     public float number(String propertyName, float defaultValue) {
-        String val = properties.get(propertyName);
+        int id = CssPropertyId.of(propertyName);
+        String val = rawAt(id, propertyName);
         if (val == null) return defaultValue;
-        Map<String, Float> cache = numbers();
-        Float cached = cache.get(propertyName);
+        Float cached = id == CssPropertyId.NONE ? null : (Float) cached(id, KIND_NUMBER);
         if (cached != null) return cached;
         float parsed;
         try {
@@ -498,7 +603,7 @@ public final class ComputedStyle {
         } catch (NumberFormatException e) {
             parsed = defaultValue;
         }
-        cache.put(propertyName, parsed);
+        if (id != CssPropertyId.NONE) remember(id, KIND_NUMBER, parsed);
         return parsed;
     }
 
@@ -507,12 +612,12 @@ public final class ComputedStyle {
      * 書かれていない値・知らない値はそのプロパティの初期値。
      */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
-        Map<String, Enum<?>> cache = keywords();
-        Enum<?> cached = cache.get(propertyName);
+        int id = CssPropertyId.of(propertyName);
+        Object cached = id == CssPropertyId.NONE ? null : cached(id, KIND_KEYWORD);
         if (cached != null && type.isInstance(cached)) return type.cast(cached);
-        E parsed = CssKeywords.parse(type, properties.get(propertyName));
+        E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
         if (parsed == null) parsed = PropertyRegistry.initialKeyword(propertyName, type);
-        cache.put(propertyName, parsed);
+        if (id != CssPropertyId.NONE) remember(id, KIND_KEYWORD, parsed);
         return parsed;
     }
 
