@@ -11,6 +11,7 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.Bindings;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -61,9 +62,24 @@ public class UiView implements AutoCloseable {
         NONE,
         REPAINT,
         REPOSITION,
+        /**
+         * 既存の Text 節の文字だけが変わった（{@link HtmlNode#updateTextContent} / {@code Text.data} など）。箱の木を
+         * 作り直さず、その文字の箱だけ作り直して測り直す。条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
+         */
+        TEXT_PATCH,
         RESTYLE,
         RELAYOUT
     }
+
+    /** TEXT_PATCH の対象にする Text 節の最大数（これを超えたら全体の再レイアウトの方が安い）。 */
+    private static final int TEXT_PATCH_MAX_NODES = 256;
+    /** 次の flush で局所パッチする Text 節（同一性で比べる）。{@code synchronized (pendingTextNodes)} で触る。 */
+    private final Set<HtmlNode> pendingTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** TEXT_PATCH を使うか。false なら文字の変更も全体の再レイアウトにする（切り分け・比較用）。 */
+    public static volatile boolean textPatchEnabled = true;
+    /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
+    public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * 連続したリサイズ中は、直前のレイアウトにかかった時間のこの倍数だけ次のレイアウトを待つ。
@@ -360,6 +376,8 @@ public class UiView implements AutoCloseable {
             }
             if (attributeName != null && isPresentationalAttribute(attributeName)) {
                 requestRestyle();
+            } else if (attributeName == null && textPatchEnabled && node.nodeType == NodeType.TEXT) {
+                requestTextPatch(node);
             } else {
                 requestRender();
             }
@@ -638,6 +656,21 @@ public class UiView implements AutoCloseable {
         invalidated();
     }
 
+    /** 既存の Text 節の文字が変わったことを知らせる（局所パッチの候補。条件に合わなければ flush で全体の再レイアウトにする）。 */
+    private void requestTextPatch(HtmlNode textNode) {
+        boolean overflow;
+        synchronized (pendingTextNodes) {
+            pendingTextNodes.add(textNode);
+            overflow = pendingTextNodes.size() > TEXT_PATCH_MAX_NODES;
+        }
+        if (overflow) {
+            requestRender();
+            return;
+        }
+        markInvalidation(InvalidationLevel.TEXT_PATCH);
+        invalidated();
+    }
+
     /** DOM 変更やビューポート変更に伴う再レイアウトを要求する。 */
     public void requestRender() {
         markInvalidation(InvalidationLevel.RELAYOUT);
@@ -872,6 +905,15 @@ public class UiView implements AutoCloseable {
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
+        if (level != InvalidationLevel.TEXT_PATCH) {
+            // 文字の変更と再スタイルが同じフレームに重なったら、再スタイルの経路は文字の箱を差し替えないので全体にする
+            boolean hadPendingText;
+            synchronized (pendingTextNodes) {
+                hadPendingText = !pendingTextNodes.isEmpty();
+                pendingTextNodes.clear();
+            }
+            if (hadPendingText && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
+        }
         boolean repositionRequested = repositionPending;
         repositionPending = false;
         boolean scrollOnly = !nonScrollRepositionPending;
@@ -887,6 +929,14 @@ public class UiView implements AutoCloseable {
 
         switch (level) {
             case RELAYOUT -> recomputeLayout(rootW, rootH);
+            case TEXT_PATCH -> {
+                if (tryTextPatch()) {
+                    TEXT_PATCH_HITS.incrementAndGet();
+                } else {
+                    TEXT_PATCH_FALLBACKS.incrementAndGet();
+                    recomputeLayout(rootW, rootH);
+                }
+            }
             case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly);
             case REPOSITION -> {
                 if (interactionState.hasDirtyNodes()) {
@@ -899,6 +949,83 @@ public class UiView implements AutoCloseable {
             case NONE -> {
                 if (interactionState.hasDirtyNodes()) restyleAndUpdate(repositionRequested, scrollOnly);
             }
+        }
+    }
+
+    /**
+     * 文字の変更だけを、箱の木を作り直さずに反映する。成功したら true。
+     * 条件に合わないとき（false）は何も変えないので、呼び出し側が全体の再レイアウトに退く。
+     *
+     * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
+     * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
+     */
+    private boolean tryTextPatch() {
+        List<HtmlNode> changed;
+        synchronized (pendingTextNodes) {
+            changed = new ArrayList<>(pendingTextNodes);
+            pendingTextNodes.clear();
+        }
+        Document doc = document;
+        if (changed.isEmpty() || layoutRoot == null || doc == null || doc.root == null || doc.sheet == null) return false;
+        if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
+        if (!interactionState.styleDirtyOnlyIn(changed)) return false;
+
+        Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (HtmlNode n : changed) {
+            if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
+            if (!isPatchableParent(n.parent)) return false;
+            wanted.add(n);
+        }
+        Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
+        collectTextBoxes(layoutRoot, wanted, found, false);
+        if (found.size() != wanted.size() || found.containsValue(null)) return false;
+        for (LayoutBox box : found.values()) {
+            // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
+            if (box.displayText == null || box.displayText.isBlank()) return false;
+        }
+
+        long startedAt = System.nanoTime();
+        for (LayoutBox box : found.values()) box.refreshStyle(box.style);
+        applyOverrides();
+        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver());
+        for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
+        setLayoutRoot(layoutRoot);
+        long layoutDone = System.nanoTime();
+        List<DisplayItem> elements = paintBoxes(layoutRoot, rootW, rootH, false);
+        if (elements == null) elements = new ArrayList<>();
+        lastBreakdown = "text-patch nodes=" + found.size() + " layout=" + (layoutDone - startedAt) / 1_000_000
+                + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+        publishBuilt(elements);
+        applyOverrides();
+        lastLayoutFinishedNanos = System.nanoTime();
+        lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+        return true;
+    }
+
+    /** 文字の箱の親が、局所パッチしてよい要素か（文字が箱の寸法以外の意味を持つ要素を除く）。 */
+    private static boolean isPatchableParent(HtmlNode parent) {
+        if (parent.nodeType != NodeType.ELEMENT) return false;
+        String tag = parent.tag == null ? "" : parent.tag.toLowerCase(Locale.ROOT);
+        return switch (tag) {
+            case "textarea", "select", "option", "optgroup", "style", "script", "title", "noscript", "svg", "template",
+                 "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "button", "label",
+                 "legend", "summary", "details", "pre" -> false;
+            default -> true;
+        };
+    }
+
+    /** {@code wanted} の節が持つ文字の箱（匿名でない）を集める。表の中に入ったら何も集めない（退く）。 */
+    private static void collectTextBoxes(LayoutBox box, Set<HtmlNode> wanted, Map<HtmlNode, LayoutBox> out, boolean inTable) {
+        boolean table = inTable || LayoutBox.isTableBox(box);
+        for (LayoutBox child : box.children) {
+            if (child.node != null && !child.isAnonymous && wanted.contains(child.node)) {
+                if (table) {
+                    out.put(child.node, null); // 大きさを合わせて失敗させる印（null は下で弾く）
+                    continue;
+                }
+                out.put(child.node, child);
+            }
+            collectTextBoxes(child, wanted, out, table);
         }
     }
 

@@ -222,6 +222,25 @@ public class HtmlNode implements Node {
         }
     }
 
+    /**
+     * {@link #setTextContent} と同じ結果の文字にするが、要素の子が空でない Text 1 つだけのときは、その Text の文字を
+     * 書き換えるだけにする（Text 節を作り直さない）。毎フレーム値が変わる HUD の文字やデータバインディング向けで、
+     * 箱の木を作り直さずに文字の部分だけを測り直す高速経路（{@code UiView} の TEXT_PATCH）に乗る。
+     * 文字が同じなら何もしない。MutationObserver には characterData の変化として届く（childList ではない）。
+     */
+    public void updateTextContent(@Nullable String textContent) {
+        String next = textContent != null ? textContent : "";
+        if (nodeType == NodeType.TEXT || nodeType == NodeType.COMMENT) {
+            if (!next.equals(text)) setTextContent(next);
+            return;
+        }
+        if (children.size() == 1 && children.get(0) instanceof HtmlText only && !next.isEmpty() && !only.text.isEmpty()) {
+            if (!next.equals(only.text)) only.setData(next);
+            return;
+        }
+        setTextContent(textContent);
+    }
+
     // ==========================================
     // DOM Standard ツリー操作（事前検証付き）
     // ==========================================

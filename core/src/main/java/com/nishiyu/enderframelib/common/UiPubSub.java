@@ -126,6 +126,9 @@ public class UiPubSub {
         if (vRoot == null) return;
 
         boolean changedAny = false;
+        // 仮想リストは DOM の変更通知を経ない経路があるので明示的に再レイアウトを求める。
+        // 文字・属性のバインディングは DOM の変更通知が無効化を決める（文字だけなら TEXT_PATCH の高速経路に乗る）
+        boolean forceRender = false;
 
         for (VirtualListBinding vBind : view.virtualListBindings()) {
             if (!triggeredChannel.equals(vBind.channel())) continue;
@@ -135,6 +138,7 @@ public class UiPubSub {
             if (Bindings.renderVirtualList(targetNode, vBind.templateNode(), dataList, vBind.itemW(), vBind.itemH(),
                     DEFAULT_CONTAINER_WIDTH, DEFAULT_VISIBLE_ROWS)) {
                 changedAny = true;
+                forceRender = true;
             }
         }
 
@@ -145,7 +149,7 @@ public class UiPubSub {
             String val = getStorageValue(binding.channel(), binding.path());
             if (val != null) {
                 if ("text".equals(binding.targetAttr())) {
-                    targetNode.setTextContent(val);
+                    targetNode.updateTextContent(val);
                 } else {
                     targetNode.setAttribute(binding.targetAttr(), val);
                 }
@@ -153,7 +157,7 @@ public class UiPubSub {
             }
         }
 
-        if (changedAny) {
+        if (changedAny && forceRender) {
             view.requestRender();
         }
     }
