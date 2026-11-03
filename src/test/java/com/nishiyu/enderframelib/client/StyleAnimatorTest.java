@@ -195,7 +195,9 @@ public class StyleAnimatorTest {
 
     @Test
     public void paintOnlyTransitionNeedsNoLayout() {
-        String css = ".box{width:100px;border-top-color:#aa0000;transition:border-top-color 1s linear} .box.hot{border-top-color:#0000aa}";
+        // border-top-color の transition は描画項目側（CssAnimator）が担う（BACKEND_TRANSITION_COLORS）ので、再スタイルでは動かない。
+        // 再スタイルで動く、描画だけに効く色（outline-color）で確かめる
+        String css = ".box{width:100px;outline:2px solid #aa0000;transition:outline-color 1s linear} .box.hot{outline-color:#0000aa}";
         Live live = new Live(page(css), 10_000);
         live.setClass("box", "box hot", 10_000);
         live.restyle(10_000);
@@ -204,7 +206,7 @@ public class StyleAnimatorTest {
             assertTrue(result.styleChanged(), "t=" + t);
             assertFalse(result.layoutRequired(), "色だけの補間で再レイアウトを要求している t=" + t);
         }
-        assertEquals(staticFrame(".box{width:100px;border-top-color:#0000aa}"), live.render());
+        assertEquals(staticFrame(".box{width:100px;outline:2px solid #0000aa}"), live.render());
     }
 
     @Test
