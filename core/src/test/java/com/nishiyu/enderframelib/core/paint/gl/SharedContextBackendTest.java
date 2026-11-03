@@ -73,6 +73,7 @@ class SharedContextBackendTest {
             assertEquals(16, shared.textureHeight());
 
             // ホストのコンテキストから共有テクスチャを直接読む（GL の向き＝下端が先頭）
+            shared.waitForRender();
             int[] raw = new int[8 * 16];
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, shared.colorTexture());
             GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, raw);
@@ -130,5 +131,28 @@ class SharedContextBackendTest {
             GL11.glDeleteTextures(hostTex);
         }
         assertTrue(GLFW.glfwGetCurrentContext() == host.windowHandle());
+    }
+
+    @Test
+    void waitForRenderIsSafeAndPixelsAreCompleteWithoutGlFinish() {
+        requireGl();
+        makeHostCurrent();
+        LwjglGlRenderBackend b = LwjglGlRenderBackend.sharedWith(host.windowHandle(), 8, 16, 1f);
+        try {
+            b.waitForRender(); // 未描画でも無害
+            for (int i = 0; i < 20; i++) { // 毎フレームのフェンス入れ替えでリークや不整合が出ない
+                SoftwareRendering.renderHtml(HTML, 8, 16, 10_000L, b);
+                b.waitForRender();
+                int[] raw = new int[8 * 16];
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, b.colorTexture());
+                GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, raw);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                assertEquals(0xFFFF0000, raw[15 * 8 + 4], "frame " + i);
+                assertEquals(0xFF0000FF, raw[4], "frame " + i);
+            }
+        } finally {
+            b.close();
+        }
+        b.waitForRender(); // close 後も無害
     }
 }
