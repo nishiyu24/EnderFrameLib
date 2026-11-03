@@ -582,12 +582,16 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final Map<String, Integer> uniforms = new HashMap<>();
 
     private static final int ATLAS_SIZE = 1024;
+    /** アトラスを広げる上限（R8 で 4096² = 16MB）。実際は GL の最大テクスチャ寸法と比べて小さい方。 */
+    private static final int ATLAS_MAX_SIZE = 4096;
     private static final int IMAGE_CACHE_LIMIT = 64;
     private static final int STRIDE = GpuBatchPacker.STRIDE;
     private static final int MAX_BATCH = GpuBatchPacker.MAX_BATCH;
     /** 字形アトラス（R8）。棚詰め。満ちたら空にして詰め直す（字形は描く直前に載せるので、すでに描いた分には響かない）。 */
     private int atlasTex;
-    private final AtlasPacker atlas = new AtlasPacker(ATLAS_SIZE);
+    /** {@link #flushBatch} の転送用ネイティブバッファ（遅延確保・使い回し・{@link #close} で解放）。 */
+    private java.nio.FloatBuffer batchBuf;
+    private final AtlasPacker atlas = new AtlasPacker(ATLAS_SIZE, ATLAS_MAX_SIZE);
     private final ImageTextureCache<Pixmap> imageTex = new ImageTextureCache<>(IMAGE_CACHE_LIMIT);
     private long gpuGlyphs, gpuImages;
 
@@ -852,6 +856,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, ATLAS_SIZE, ATLAS_SIZE, 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+        atlas.setMaxSize(Math.min(ATLAS_MAX_SIZE, GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)));
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL20.glUseProgram(shapeProgram);
         GL20.glUniform1i(loc(shapeProgram, "uAtlas"), 1);
@@ -990,16 +995,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (packer.count() == 0) return;
         int n = packer.count();
         packer.clear();
-        java.nio.FloatBuffer fb = MemoryUtil.memAllocFloat(n * STRIDE * 4);
-        try {
-            fb.put(packer.data(), 0, n * STRIDE * 4).flip();
-            GL13.glActiveTexture(GL13.GL_TEXTURE3);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
-            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
-            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, STRIDE, n, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
-        } finally {
-            MemoryUtil.memFree(fb);
-        }
+        // 転送用バッファは使い回す（毎回 memAlloc/memFree しない）。1 バッチの最大サイズで一度だけ確保する。
+        if (batchBuf == null) batchBuf = MemoryUtil.memAllocFloat(MAX_BATCH * STRIDE * 4);
+        java.nio.FloatBuffer fb = batchBuf;
+        fb.clear();
+        fb.put(packer.data(), 0, n * STRIDE * 4).flip();
+        GL13.glActiveTexture(GL13.GL_TEXTURE3);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
+        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, STRIDE, n, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
         if (boundImg != 0) {
             GL13.glActiveTexture(GL13.GL_TEXTURE2);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, boundImg);
@@ -1854,6 +1858,30 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private int[] atlasSlot(GlyphBitmap g) {
         int[] slot = atlas.slot(g, this::flushAll);
         if (!atlas.lastPlacementWasNew()) return slot;
+        if (atlas.lastPlacementGrew()) {
+            growAtlasTexture();
+            return slot; // 新しい字形も含めて全部載せ直した
+        }
+        uploadGlyph(g, slot);
+        return slot;
+    }
+
+    /** アトラスが広がった: 同じテクスチャ名で大きく作り直し（中身は捨てられる）、置いてある全字形を載せ直す。 */
+    /** 字形アトラスの現在の一辺（画素）。テスト用。 */
+    int atlasSize() {
+        return atlas.size();
+    }
+
+    private void growAtlasTexture() {
+        GL13.glActiveTexture(GL13.GL_TEXTURE1);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, atlasTex);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, atlas.size(), atlas.size(), 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        atlas.forEach(this::uploadGlyph);
+    }
+
+    private void uploadGlyph(GlyphBitmap g, int[] slot) {
         ByteBuffer buf = MemoryUtil.memAlloc(g.width() * g.height());
         try {
             buf.put(g.coverage(), 0, g.width() * g.height()).flip();
@@ -1865,7 +1893,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         } finally {
             MemoryUtil.memFree(buf);
         }
-        return slot;
     }
 
     @Override
@@ -2021,6 +2048,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (fboTex != 0) GL11.glDeleteTextures(fboTex);
             if (overlayTex != 0) GL11.glDeleteTextures(overlayTex);
             if (atlasTex != 0) GL11.glDeleteTextures(atlasTex);
+            if (batchBuf != null) {
+                MemoryUtil.memFree(batchBuf);
+                batchBuf = null;
+            }
             if (dataTex != 0) GL11.glDeleteTextures(dataTex);
             for (int t : imageTex.clear()) GL11.glDeleteTextures(t);
             if (vao != 0) GL30.glDeleteVertexArrays(vao);

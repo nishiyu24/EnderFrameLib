@@ -769,4 +769,34 @@ class LwjglGlRenderBackendTest {
                 + "<div style='margin-top:-30px;width:30px;height:30px;isolation:isolate'>"
                 + "<div style='width:30px;height:30px;background:#80c0ff;mix-blend-mode:multiply'></div></div>", 60, 70, 1f, 3);
     }
+
+    @Test
+    void glyphAtlasGrowsPastInitialSizeAndStillMatchesCpu() {
+        requireGl();
+        // 大きさの違う同じ文字は別の字形。1024² を超えるまで積んで、アトラスの拡張（作り直し＋載せ直し）を通す
+        StringBuilder sb = new StringBuilder();
+        for (int px = 40; px <= 100; px += 2) {
+            sb.append("<div style='font:").append(px).append("px sans-serif;color:#102030;height:").append(px + 4)
+                    .append("px;white-space:nowrap'>ABCDEFGHIJKLMNOPQRSTUVWX</div>");
+        }
+        int w = 1800, h = 2400;
+        try (LwjglGlRenderBackend g = gpu(sb.toString(), w, h, 1f)) {
+            assertTrue(g.atlasSize() > 1024, "アトラスが広がっていない: " + g.atlasSize());
+            SoftwareRenderBackend c = cpu(sb.toString(), w, h, 1f);
+            Diff d = diff(g.pixmap(), c.pixmap());
+            assertTrue(d.max() <= 6 || d.over() <= 50, "max channel diff " + d.max() + " (" + d.over() + " pixels > 2)");
+        }
+    }
+
+    @Test
+    void persistentBatchBufferSurvivesManyFlushes() {
+        // 512 を超える図形で複数回バッチを吐く。転送バッファを使い回しても内容が壊れない
+        requireGl();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 1500; i++) {
+            sb.append("<div style='position:absolute;left:").append((i % 50) * 4).append("px;top:").append((i / 50) * 4)
+                    .append("px;width:3px;height:3px;background:#").append(String.format("%06x", (i * 2654435) & 0xFFFFFF)).append("'></div>");
+        }
+        assertMatchesCpu(sb.toString(), 200, 120, 1f, 2);
+    }
 }

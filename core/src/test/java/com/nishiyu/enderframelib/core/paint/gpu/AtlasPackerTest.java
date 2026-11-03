@@ -64,4 +64,57 @@ public class AtlasPackerTest {
         assertFalse(atlas.fits(glyph(4, 17)));
         assertTrue(atlas.fits(glyph(16, 16)));
     }
+
+    @Test
+    public void growsBeforeResettingAndKeepsExistingSlots() {
+        AtlasPacker atlas = new AtlasPacker(16, 32);
+        GlyphBitmap[] g = {glyph(8, 8), glyph(8, 8), glyph(8, 8), glyph(8, 8)};
+        for (GlyphBitmap x : g) atlas.slot(x, null);
+        assertEquals(16, atlas.size());
+        AtomicInteger flushes = new AtomicInteger();
+        GlyphBitmap extra = glyph(8, 8);
+        int[] slot = atlas.slot(extra, flushes::incrementAndGet);
+        assertEquals(1, flushes.get(), "テクスチャを作り直す前に溜めた分を吐かせる");
+        assertTrue(atlas.lastPlacementGrew());
+        assertEquals(32, atlas.size());
+        assertArrayEquals(new int[]{0, 16}, slot, "段が尽きたので広げて次の段に置く");
+        assertEquals(5, atlas.count(), "広げても字形は忘れない");
+        assertArrayEquals(new int[]{8, 8}, atlas.slot(g[3], null), "既存の位置は不変");
+        assertFalse(atlas.lastPlacementGrew());
+        int[] n = {0};
+        atlas.forEach((b, s) -> n[0]++);
+        assertEquals(5, n[0]);
+    }
+
+    @Test
+    public void resetsOnlyAfterReachingMaxSize() {
+        AtlasPacker atlas = new AtlasPacker(8, 16);
+        GlyphBitmap[] g = {glyph(8, 8), glyph(8, 8), glyph(8, 8)};
+        for (GlyphBitmap x : g) atlas.slot(x, null); // 2 つ目の段で 8 → 16 に広がる
+        assertEquals(16, atlas.size());
+        assertEquals(3, atlas.count());
+        AtomicInteger flushes = new AtomicInteger();
+        atlas.slot(glyph(8, 8), flushes::incrementAndGet);
+        assertEquals(1, flushes.get());
+        assertEquals(1, atlas.count(), "上限で満ちたら詰め直し");
+        assertEquals(16, atlas.size());
+    }
+
+    @Test
+    public void wideGlyphGrowsAtlasAndFitsUsesMaxSize() {
+        AtlasPacker atlas = new AtlasPacker(8, 32);
+        assertTrue(atlas.fits(glyph(32, 32)));
+        assertFalse(atlas.fits(glyph(33, 4)));
+        int[] slot = atlas.slot(glyph(20, 4), null);
+        assertTrue(atlas.lastPlacementGrew());
+        assertEquals(32, atlas.size());
+        assertArrayEquals(new int[]{0, 0}, slot);
+    }
+
+    @Test
+    public void maxSizeCanBeLoweredToDeviceLimitButNotBelowCurrent() {
+        AtlasPacker atlas = new AtlasPacker(16, 64);
+        atlas.setMaxSize(8);
+        assertEquals(16, atlas.maxSize());
+    }
 }
