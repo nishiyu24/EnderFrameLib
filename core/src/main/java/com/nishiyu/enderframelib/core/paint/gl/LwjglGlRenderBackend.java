@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
+import com.nishiyu.enderframelib.core.paint.gpu.ImageTextureCache;
 import com.nishiyu.enderframelib.core.paint.software.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -587,7 +588,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** 字形アトラス（R8）。棚詰め。満ちたら空にして詰め直す（字形は描く直前に載せるので、すでに描いた分には響かない）。 */
     private int atlasTex;
     private final AtlasPacker atlas = new AtlasPacker(ATLAS_SIZE);
-    private final Map<Pixmap, int[]> imageTex = new IdentityHashMap<>();
+    private final ImageTextureCache<Pixmap> imageTex = new ImageTextureCache<>(IMAGE_CACHE_LIMIT);
     private long gpuGlyphs, gpuImages;
 
     /** 1 インスタンスのテクセル数（データテクスチャの幅）と、1 回の draw にまとめる最大数（高さ）。 */
@@ -1898,27 +1899,30 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 画像（事前乗算）のテクスチャ。同じ {@link Pixmap} は使い回す（画像の中身は変わらない前提）。 */
     private int imageTexture(Pixmap image) {
-        int[] e = imageTex.get(image);
+        ImageTextureCache.Entry e = imageTex.get(image);
         if (e != null) {
-            if (e[1] != image.version()) {
+            if (e.version != image.version()) {
                 // 同じ Pixmap の中身が書き換わった（動画のフレームなど）。すでに溜めた図形は古い画素で描く
                 flushAll();
                 boundImg = 0;
                 GL13.glActiveTexture(GL13.GL_TEXTURE2);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, e[0]);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, e.texture);
                 GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
                 GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, image.width(), image.height(), GL12.GL_BGRA,
                         GL12.GL_UNSIGNED_INT_8_8_8_8_REV, image.pixels());
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                e[1] = image.version();
+                e.version = image.version();
             }
-            return e[0];
+            return e.texture;
         }
-        if (imageTex.size() >= IMAGE_CACHE_LIMIT) {
-            flushAll();
-            boundImg = 0;
-            for (int[] old : imageTex.values()) GL11.glDeleteTextures(old[0]);
-            imageTex.clear();
+        if (imageTex.isFull()) {
+            // 最も使われていない 1 枚だけ捨てる。溜めた図形が束ねている画像なら先に描き切る
+            ImageTextureCache.Entry old = imageTex.evictOldest();
+            if (old.texture == boundImg) {
+                flushAll();
+                boundImg = 0;
+            }
+            GL11.glDeleteTextures(old.texture);
         }
         int tex = GL11.glGenTextures();
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
@@ -1931,7 +1935,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, image.width(), image.height(), 0, GL12.GL_BGRA,
                 GL12.GL_UNSIGNED_INT_8_8_8_8_REV, image.pixels());
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        imageTex.put(image, new int[]{tex, image.version()});
+        imageTex.put(image, tex, image.version());
         return tex;
     }
 
@@ -2018,8 +2022,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (overlayTex != 0) GL11.glDeleteTextures(overlayTex);
             if (atlasTex != 0) GL11.glDeleteTextures(atlasTex);
             if (dataTex != 0) GL11.glDeleteTextures(dataTex);
-            for (int[] t : imageTex.values()) GL11.glDeleteTextures(t[0]);
-            imageTex.clear();
+            for (int t : imageTex.clear()) GL11.glDeleteTextures(t);
             if (vao != 0) GL30.glDeleteVertexArrays(vao);
             if (renderFence != 0) {
                 GL32.glDeleteSync(renderFence);
