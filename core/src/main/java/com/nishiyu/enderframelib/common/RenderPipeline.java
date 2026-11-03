@@ -192,6 +192,15 @@ public class RenderPipeline {
 
     private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                         ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements) {
+        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, true);
+    }
+
+    /**
+     * @param clearMarks 配置まで終えたあとに、全ての箱の「変わった」印を外す。全体の印付けのあとは、変わった箱もそうでない箱も
+     *                   印が付いたまま残り、次の局所更新（経路だけの印付け）が経路の外の箱を「変わった」と読んで配置を使い回せない
+     */
+    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                        ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements, boolean clearMarks) {
         rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH, devicePixelRatio);
         rootBox.devicePixelRatio = viewport.devicePixelRatio();
@@ -211,6 +220,7 @@ public class RenderPipeline {
         passMeasureMs = (m1 - m0) / 1_000_000;
         passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
         passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
+        if (clearMarks) LayoutBox.clearAllSubtreeMarks(rootBox);
     }
 
     /**
@@ -239,7 +249,7 @@ public class RenderPipeline {
                 ? LayoutBox.markLayoutChangesAlong(rootBox, changed) : null;
         lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
-        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true);
+        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null);
         if (path != null) LayoutBox.clearSubtreeMarks(path);
     }
 

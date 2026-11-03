@@ -36,6 +36,24 @@ public final class PaintServices {
         intrinsicSizes = resolver;
     }
 
+    private static volatile IntrinsicSizeResolver pixelSizeFallback = null;
+
+    /**
+     * 画像の画素数 {@code [w, h]}（{@code border-image} の切り出しに要る）。ホストの {@link #intrinsicSize} があればそれ、
+     * 無ければ {@link #setPixelSizeFallback} の既定。どちらも無い・分からなければ null。
+     * 背景画像の寸法決めには使わない（{@link #intrinsicSize} の挙動を変えないため）。
+     */
+    public static int[] imagePixelSize(String url) {
+        int[] s = intrinsicSize(url);
+        if (s != null) return s;
+        IntrinsicSizeResolver f = pixelSizeFallback;
+        return f == null || url == null ? null : f.getSize(url);
+    }
+
+    public static void setPixelSizeFallback(IntrinsicSizeResolver resolver) {
+        pixelSizeFallback = resolver;
+    }
+
     /** 画像としての SVG（{@code <img src>}・{@code url()}）を引く。読み込み中・失敗は null。 */
     public static SvgImage svg(String src) {
         return svgSource.apply(src);

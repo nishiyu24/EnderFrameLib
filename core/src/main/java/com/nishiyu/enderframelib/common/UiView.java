@@ -266,8 +266,23 @@ public class UiView implements AutoCloseable {
             paintBuilderKeyframes = keyframes;
             paintBuilderScroll = scrollState;
         }
-        return builder.render(root);
+        builder.setUseChangeStamps(useChangeStamps);
+        try {
+            return builder.render(root);
+        } finally {
+            builder.setUseChangeStamps(false);
+        }
     }
+
+    /** 次の {@link #paintBoxes} だけ、箱の変更印で署名の比較を省く（変わった箱が分かっている文字の局所パッチ）。 */
+    private boolean useChangeStamps;
+
+    /** 今の {@link #paintBoxes} が変更印を使ってよいか（文字の局所パッチの描画のとき）。 */
+    protected final boolean useChangeStamps() {
+        return useChangeStamps;
+    }
+    /** 切り分け用: false なら文字の局所パッチでも変更印を使わない。 */
+    public static volatile boolean changeStampsEnabled = !Boolean.getBoolean("enderframe.paint.nostamps");
 
     private com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder;
     private int paintBuilderW, paintBuilderH;
@@ -327,12 +342,27 @@ public class UiView implements AutoCloseable {
         this.hitTestIndex = null;
     }
 
+    /** 画像の透過ヒットテスト（{@code <img data-hit-alpha>}）が不透明度を引く先。ホストが画像の読み方を差し込む。 */
+    private volatile com.nishiyu.enderframelib.core.paint.AlphaMask.Provider alphaMaskProvider;
+
+    public void alphaMaskProvider(com.nishiyu.enderframelib.core.paint.AlphaMask.Provider provider) {
+        this.alphaMaskProvider = provider;
+        HitTestIndex idx = this.hitTestIndex;
+        if (idx != null) idx.alphaMaskProvider(provider);
+    }
+
+    /** 点が対話要素の上にあるか（ゲーム側が、クリックを UI に渡すか自分で処理するかを決めるのに使う）。 */
+    public boolean isPointerOverUi(double pixelX, double pixelY) {
+        return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY);
+    }
+
     public HitTestIndex hitTestIndex() {
         applyPendingPaintOffsets();
         List<DisplayItem> current = this.renderCache;
         HitTestIndex idx = this.hitTestIndex;
         if (idx == null || hitTestIndexSource != current) {
             idx = new HitTestIndex(current);
+            idx.alphaMaskProvider(alphaMaskProvider);
             this.hitTestIndexSource = current;
             this.hitTestIndex = idx;
         }
@@ -992,7 +1022,13 @@ public class UiView implements AutoCloseable {
         for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
         setLayoutRoot(layoutRoot);
         long layoutDone = System.nanoTime();
-        List<DisplayItem> elements = paintBoxes(layoutRoot, rootW, rootH, false);
+        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal;
+        List<DisplayItem> elements;
+        try {
+            elements = paintBoxes(layoutRoot, rootW, rootH, false);
+        } finally {
+            useChangeStamps = false;
+        }
         if (elements == null) elements = new ArrayList<>();
         lastBreakdown = "text-patch nodes=" + found.size() + " layout=" + (layoutDone - startedAt) / 1_000_000
                 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";

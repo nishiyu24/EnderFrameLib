@@ -116,10 +116,11 @@ public final class StandaloneViewer {
         ImageProvider.Web images = ImageProvider.web();
         try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib")) {
             gl.images(images).clearColor(0xFFFFFFFF);
-            StandaloneView view = new StandaloneView(html, w, h);
+            StandaloneView view = new StandaloneView(html, w, h).images(images);
             setup.accept(view);
             long window = gl.windowHandle();
             String session = gl.sessionId();
+            Keys.nameProvider(code -> GLFW.glfwGetKeyName(code, 0)); // 印字キーの表示名は GLFW（配列依存）に聞く
             view.setClipboard(new TextEditing.Clipboard() {
                 @Override
                 public String get() {

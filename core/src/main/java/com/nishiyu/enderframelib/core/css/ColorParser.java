@@ -42,6 +42,12 @@ public class ColorParser {
     /** グラデーションから色を拾えなかったときの代わりの色。 */
     private static final long GRADIENT_FALLBACK = 0xFF555555L;
 
+    /** 近道を使わない {@link #parseColor}（近道と同じ結果になることを確かめるテスト用）。 */
+    static int parseColorSlow(String c) {
+        long parsed = parseSlow(c);
+        return parsed == INVALID ? 0x00000000 : (int) parsed;
+    }
+
     public static int parseColor(String c) {
         long parsed = parse(c);
         return parsed == INVALID ? 0x00000000 : (int) parsed;
@@ -94,7 +100,62 @@ public class ColorParser {
         return (from, to, t) -> mix(Color.fromArgb(from), Color.fromArgb(to), 1 - t, t, interpolation, 1.0).toArgb();
     }
 
+    /** 近道が扱わない書き方（従来の解釈器に任せる）。 */
+    private static final long NOT_FAST = Long.MIN_VALUE + 1;
+
     private static long parse(String c) {
+        if (c == null) return INVALID;
+        long fast = fastRgb(c);
+        return fast != NOT_FAST ? fast : parseSlow(c);
+    }
+
+    /**
+     * 近道: 最もよく書かれる {@code rgb(r, g, b)} / {@code rgba(r, g, b, a)}（小文字・カンマ区切り・符号や指数のない 10 進の数 3〜4 個、
+     * 空白は半角スペースだけ）を、トークナイザを通さずに読む。成分の解釈・丸め・色域の扱いは従来と同じ {@link Color#toArgb}
+     * を通すので結果は同一（{@code ColorParserFastPathTest} が従来の解釈器と突き合わせる）。それ以外の書き方は {@link #NOT_FAST}。
+     */
+    private static long fastRgb(String c) {
+        int n = c.length(), i = 0;
+        while (i < n && c.charAt(i) == ' ') i++;
+        if (c.startsWith("rgba(", i)) i += 5;
+        else if (c.startsWith("rgb(", i)) i += 4;
+        else return NOT_FAST;
+        double r = 0, g = 0, b = 0, a = 1;
+        int count = 0;
+        while (true) {
+            while (i < n && c.charAt(i) == ' ') i++;
+            int start = i;
+            boolean digits = false, dot = false;
+            while (i < n) {
+                char ch = c.charAt(i);
+                if (ch >= '0' && ch <= '9') digits = true;
+                else if (ch == '.' && !dot) dot = true;
+                else break;
+                i++;
+            }
+            if (!digits || i - start > 12 || count == 4) return NOT_FAST;
+            // 「1.」のように小数点で終わる数は、トークナイザの扱いに任せる
+            if (c.charAt(i - 1) == '.') return NOT_FAST;
+            double v = Double.parseDouble(c.substring(start, i));
+            switch (count++) {
+                case 0 -> r = v;
+                case 1 -> g = v;
+                case 2 -> b = v;
+                default -> a = v;
+            }
+            while (i < n && c.charAt(i) == ' ') i++;
+            if (i >= n) return NOT_FAST;
+            char sep = c.charAt(i++);
+            if (sep == ')') break;
+            if (sep != ',') return NOT_FAST;
+        }
+        while (i < n && c.charAt(i) == ' ') i++;
+        if (i != n || count < 3) return NOT_FAST;
+        return new Color(Space.SRGB, r / 255.0, g / 255.0, b / 255.0, a).toArgb() & 0xFFFFFFFFL;
+    }
+
+    /** 従来の解釈（CSS のトークナイザ経由）。近道の検証にも使う。 */
+    static long parseSlow(String c) {
         if (c == null) return INVALID;
         List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(c));
         if (values.isEmpty()) return INVALID;

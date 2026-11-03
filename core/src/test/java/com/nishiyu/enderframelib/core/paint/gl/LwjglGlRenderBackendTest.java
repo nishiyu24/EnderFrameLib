@@ -11,6 +11,8 @@ import java.util.Base64;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -768,6 +770,44 @@ class LwjglGlRenderBackendTest {
         }
     }
 
+    private static final String DEEP_MIX = "<div style='width:30px;height:30px;background:#ff8800'></div>"
+            + "<div style='margin-top:-15px;width:30px;height:30px;background:#4090e0;mix-blend-mode:multiply'></div>"
+            + "<div style='margin-top:10px;width:30px;height:20px;background:#20c040'></div>"
+            + "<div style='margin-top:-10px;width:30px;height:30px;background:rgba(255,255,255,0.1);backdrop-filter:invert(1)'></div>"
+            + "<div style='margin-top:-15px;width:30px;height:30px;background:#2040c0;mix-blend-mode:difference'></div>";
+
+    /** 深い入れ子（旧上限 8 を超える）でも GPU の層のまま描き、読み戻しをせず、CPU と一致する（課題 B）。 */
+    @Test
+    void deepNestingStaysOnGpuWithoutReadbackAndMatchesCpu() {
+        requireGl();
+        for (int depth : new int[]{7, 12, 20}) {
+            String body = deepLayers(depth, DEEP_MIX);
+            try (LwjglGlRenderBackend g = gpu(body, 80, 200, 1f)) {
+                Diff d = diff(g.pixmap(), cpu(body, 80, 200, 1f).pixmap());
+                assertTrue(d.max() <= 4, "depth " + depth + " diff " + d);
+                assertEquals(0L, g.readbackCount(), "depth " + depth + " で読み戻しが起きた");
+            }
+        }
+    }
+
+    /** 層の深さの上限を下げれば従来の読み戻し経路に落ち、そこも CPU と一致する（経路を残している間の回帰防止）。 */
+    @Test
+    void cappedDepthFallsBackToReadbackAndStillMatchesCpu() {
+        requireGl();
+        int saved = LwjglGlRenderBackend.maxLayerDepth;
+        LwjglGlRenderBackend.maxLayerDepth = 8;
+        try {
+            String body = deepLayers(7, DEEP_MIX);
+            try (LwjglGlRenderBackend g = gpu(body, 80, 200, 1f)) {
+                Diff d = diff(g.pixmap(), cpu(body, 80, 200, 1f).pixmap());
+                assertTrue(d.max() <= 4, "diff " + d);
+                assertTrue(g.readbackCount() > 0, "読み戻しの経路を通っていない");
+            }
+        } finally {
+            LwjglGlRenderBackend.maxLayerDepth = saved;
+        }
+    }
+
     @Test
     void backdropFilterBeyondGpuLayerDepthMatchesCpu() {
         requireGl();
@@ -776,6 +816,133 @@ class LwjglGlRenderBackendTest {
         try (LwjglGlRenderBackend g = gpu(body, 80, 80, 1f)) {
             Diff d = diff(g.pixmap(), cpu(body, 80, 80, 1f).pixmap());
             assertTrue(d.max() <= 4, "diff " + d);
+        }
+    }
+
+    /** border-image（9-slice）が GPU でも CPU と一致する（切り出し src の画像 9 枚。等倍と 2 倍）。 */
+    @Test
+    void borderImageNineSliceMatchesCpu() throws Exception {
+        requireGl();
+        String url = com.nishiyu.enderframelib.core.paint.BorderImageTest.nineColorPngDataUrl();
+        for (float dpr : new float[]{1f, 2f}) {
+            for (String slice : new String[]{"4 fill / 1 / 0 stretch", "4 / 1"}) {
+                String body = com.nishiyu.enderframelib.core.paint.BorderImageTest.html(url, slice);
+                try (LwjglGlRenderBackend g = gpu(body, 60, 60, dpr)) {
+                    Diff d = diff(g.pixmap(), cpu(body, 60, 60, dpr).pixmap());
+                    assertTrue(d.max() <= 4, "dpr " + dpr + " " + slice + " diff " + d);
+                    assertTrue(g.gpuImageCount() >= 8, "GPU が画像を描いていない: " + g.gpuImageCount());
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ 外部テクスチャ（D-2）
+
+    /** 4×4 のテクスチャ。画素 (x, y) = (x*60+30, y*60+30, 128)。最初に送る行を y=0 とする（GL の行 0）。 */
+    private static int makeTexture4x4() {
+        java.nio.ByteBuffer buf = org.lwjgl.BufferUtils.createByteBuffer(4 * 4 * 4);
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+                buf.put((byte) (x * 60 + 30)).put((byte) (y * 60 + 30)).put((byte) 128).put((byte) 255);
+            }
+        }
+        buf.flip();
+        int tex = org.lwjgl.opengl.GL11.glGenTextures();
+        org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, tex);
+        // ホストの設定がそのまま使われる（ドット絵のための NEAREST）
+        org.lwjgl.opengl.GL11.glTexParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, org.lwjgl.opengl.GL11.GL_TEXTURE_MIN_FILTER, org.lwjgl.opengl.GL11.GL_NEAREST);
+        org.lwjgl.opengl.GL11.glTexParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, org.lwjgl.opengl.GL11.GL_TEXTURE_MAG_FILTER, org.lwjgl.opengl.GL11.GL_NEAREST);
+        org.lwjgl.opengl.GL11.glTexParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_S, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        org.lwjgl.opengl.GL11.glTexParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        org.lwjgl.opengl.GL11.glPixelStorei(org.lwjgl.opengl.GL11.GL_UNPACK_ALIGNMENT, 1);
+        org.lwjgl.opengl.GL11.glTexImage2D(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_RGBA8, 4, 4, 0,
+                org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buf);
+        return tex;
+    }
+
+    private static void assertTexel(Pixmap p, int px, int py, int tx, int ty, String what) {
+        int c = p.getStraight(px, py);
+        assertEquals(tx * 60 + 30, ch(c, 16), what + " R @" + px + "," + py);
+        assertEquals(ty * 60 + 30, ch(c, 8), what + " G @" + px + "," + py);
+        assertEquals(128, ch(c, 0), what + " B @" + px + "," + py);
+    }
+
+    /** ホストのテクスチャを複製・読み戻しなしでそのまま貼る。範囲（uv）と上下反転も効く。 */
+    @Test
+    void externalTextureIsBoundDirectlyWithUvRegionAndFlip() {
+        requireGl();
+        try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(40, 40, 1f)) {
+            int tex = makeTexture4x4();
+            try {
+                String base = "texture:" + tex + "@4x4";
+                String[] srcs = {base, base + "?uv=0.5,0,1,0.5", base + "&flipy", base + "?uv=0,0.5,1,1&flipy"};
+                for (int k = 0; k < srcs.length; k++) {
+                    String body = "<img src=\"" + srcs[k] + "\" style=\"display:block;width:40px;height:40px\">";
+                    SoftwareRendering.renderHtml(page(body), 40, 40, T0, g);
+                    Pixmap p = g.pixmap();
+                    assertTrue(g.gpuImageCount() > 0, "GPU が外部テクスチャを描いていない: " + srcs[k]);
+                    for (int j = 0; j < 4; j++) {
+                        for (int i = 0; i < 4; i++) {
+                            int px = i * 10 + 5, py = j * 10 + 5;
+                            switch (k) {
+                                case 0 -> assertTexel(p, px, py, i, j, "plain");
+                                case 1 -> assertTexel(p, px, py, 2 + i / 2, j / 2, "uv"); // 右上の 2×2 を 40×40 へ
+                                case 2 -> assertTexel(p, px, py, i, 3 - j, "flip");
+                                default -> assertTexel(p, px, py, i, 1 - j / 2, "uv+flip"); // 見た目の下半分（行 2,3）→ 行 1,0
+                            }
+                        }
+                    }
+                }
+                assertEquals(0L, g.readbackCount(), "外部テクスチャの描画で読み戻しが起きた");
+            } finally {
+                org.lwjgl.opengl.GL11.glDeleteTextures(tex);
+            }
+        }
+    }
+
+    /** 不正な参照（ハンドル 0・範囲外）は描かず、他の描画を壊さない。 */
+    @Test
+    void invalidTextureReferencesAreIgnored() {
+        requireGl();
+        String body = "<div style='width:20px;height:20px;background:#f00'></div>"
+                + "<img src=\"texture:0@4x4\" style=\"display:block;width:20px;height:20px\">"
+                + "<img src=\"texture:5@4x4?uv=0,0,3,1\" style=\"display:block;width:20px;height:20px\">";
+        try (LwjglGlRenderBackend g = gpu(body, 40, 80, 1f)) {
+            assertEquals(0xFFFF0000, g.pixmap().getStraight(5, 5));
+            assertEquals(0, g.pixmap().getStraight(5, 30) >>> 24);
+            assertEquals(0, g.pixmap().getStraight(5, 50) >>> 24);
+        }
+    }
+
+    /** 文字の縁取り（SDF）が GPU の版でも CPU と一致する。塗りは GPU の字形、縁取りは CPU の層で、描く順が保たれる。 */
+    @Test
+    void textStrokeMatchesCpu() {
+        requireGl();
+        Assumptions.assumeTrue(SystemFonts.system().resolve(null) instanceof OutlineFontFace, "no system fonts");
+        for (float dpr : new float[]{1f, 2f}) {
+            for (String css : new String[]{"color:#f00;-webkit-text-stroke:3px #00f", "color:transparent;-webkit-text-stroke:2px #080",
+                    "color:#f00;-webkit-text-stroke:3px #00f;transform:rotate(10deg);transform-origin:0 0"}) {
+                String body = "<div style='padding:6px;font:bold 56px sans-serif;" + css + "'>HIl</div>";
+                try (LwjglGlRenderBackend g = gpu(body, 200, 100, dpr)) {
+                    Diff d = diff(g.pixmap(), cpu(body, 200, 100, dpr).pixmap());
+                    assertTrue(d.max() <= 8 || d.over() <= 40, "dpr " + dpr + " " + css + " diff " + d);
+                }
+            }
+        }
+    }
+
+    /** 回転なしの縁取りは GPU のシェーダー（SDF のモード）で描かれ、CPU の層に落ちない（塗り + 縁取りで字形の命令が 2 倍）。 */
+    @Test
+    void alignedTextStrokeIsDrawnOnTheGpu() {
+        requireGl();
+        Assumptions.assumeTrue(SystemFonts.system().resolve(null) instanceof OutlineFontFace, "no system fonts");
+        String plainBody = "<div style='padding:6px;font:bold 40px sans-serif;color:#f00'>HIl</div>";
+        String strokeBody = "<div style='padding:6px;font:bold 40px sans-serif;color:#f00;-webkit-text-stroke:2px #00f'>HIl</div>";
+        try (LwjglGlRenderBackend plain = gpu(plainBody, 160, 70, 1f); LwjglGlRenderBackend stroke = gpu(strokeBody, 160, 70, 1f)) {
+            assertTrue(plain.gpuGlyphCount() > 0);
+            assertEquals(plain.gpuGlyphCount() * 2, stroke.gpuGlyphCount(), "縁取りの字形も GPU で描く");
+            Diff d = diff(stroke.pixmap(), cpu(strokeBody, 160, 70, 1f).pixmap());
+            assertTrue(d.max() <= 8 || d.over() <= 40, "diff " + d);
         }
     }
 

@@ -559,16 +559,16 @@ class SoftwareRenderBackendTest {
     }
 
     @Test
-    void bufferedImageAndPngExportMatchThePixmap() throws Exception {
+    void pngExportMatchesThePixmap() throws Exception {
         SoftwareRenderBackend s = render("<div style='width:20px;height:20px;background:rgba(255,0,0,0.5)'></div>", 30, 30);
-        BufferedImage img = s.toBufferedImage();
-        assertEquals(30, img.getWidth());
-        assertEquals(px(s, 10, 10), img.getRGB(10, 10));
         Path out = Path.of("build/test-output/software-export.png");
         s.writePng(out);
         BufferedImage back = ImageIO.read(out.toFile());
         assertEquals(30, back.getWidth());
         assertEquals(a(px(s, 10, 10)), back.getRGB(10, 10) >>> 24);
+        // 全画素が、ピクセルマップの非乗算 ARGB と ImageIO の復号で一致する（独自エンコーダの検証）
+        int[] straight = s.pixmap().toStraightArgb();
+        for (int y = 0; y < 30; y++) for (int x = 0; x < 30; x++) assertEquals(straight[y * 30 + x], back.getRGB(x, y), x + "," + y);
     }
 
     @Test

@@ -193,7 +193,7 @@ public final class BoxDecorations {
     public static List<BackgroundLayer> layers(ComputedStyle style, double dppx) {
         // スタイルだけで決まるので、スタイルごとに 1 回だけ解く（描画のたびに全箱の background を字句解析していた）。
         // 呼び出し側が並べ替えても壊れないよう、写しを返す
-        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo().computeIfAbsent(
+        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo(
                 new LayerKey(false, dppx), k -> computeLayers(style, dppx)));
     }
 
@@ -224,7 +224,7 @@ public final class BoxDecorations {
     }
 
     public static List<BackgroundLayer> maskLayers(ComputedStyle style, double dppx) {
-        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo().computeIfAbsent(
+        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo(
                 new LayerKey(true, dppx), k -> computeMaskLayers(style, dppx)));
     }
 
@@ -268,7 +268,7 @@ public final class BoxDecorations {
 
     /** 背景色が塗られる領域を決める箱（最後のレイヤーの {@code background-clip}）。 */
     public static String colorClip(ComputedStyle style) {
-        return (String) style.paintMemo().computeIfAbsent(COLOR_CLIP, k -> computeColorClip(style));
+        return (String) style.paintMemo(COLOR_CLIP, k -> computeColorClip(style));
     }
 
     private static final Object COLOR_CLIP = new Object();

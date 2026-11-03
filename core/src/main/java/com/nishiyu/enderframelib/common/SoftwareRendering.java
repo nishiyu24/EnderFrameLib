@@ -27,6 +27,7 @@ public final class SoftwareRendering {
 
     /** HTML をレイアウトして、ディスプレイリスト（アニメーションの補間前）を得る。 */
     public static List<DisplayItem> displayList(String html, int width, int height, FontResolver fonts) {
+        com.nishiyu.enderframelib.core.paint.software.ImageSizes.installDefault();
         UiDocumentCompiler compiler = new UiDocumentCompiler();
         Document doc = compiler.parseDocument(html, "", width, height);
         ScrollState scroll = new ScrollState();

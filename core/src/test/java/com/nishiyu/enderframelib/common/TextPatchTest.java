@@ -175,6 +175,58 @@ public class TextPatchTest {
         assertTrue(localHits >= ids.length - 1, "局所の印付けで済んだ回数: " + localHits);
     }
 
+    /**
+     * 箱の変更印で署名の比較を省いた結果が、省かない結果と項目ごとに同じで、実際に比較が省かれること。
+     * 高さが変わる更新（後ろの箱が動く）と境界の中だけの更新を混ぜる。検証モード（テストでは常に有効）が、
+     * 「変わっていない」と言った箱の署名の食い違いを例外にする。
+     */
+    @Test
+    public void changeStampsMatchFullSignatureComparison() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0;font-size:12px}.row{margin:2px}</style>"
+                + "<div id=hud style=\"width:120px;height:20px;overflow:hidden\"><span id=hp>0</span></div>"
+                + "<p id=para style=\"width:150px\">short</p>");
+        for (int i = 0; i < 80; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
+        StandaloneView stamped = new StandaloneView(html.toString(), 320, 400, FontResolver.FALLBACK);
+        StandaloneView plain = new StandaloneView(html.toString(), 320, 400, FontResolver.FALLBACK);
+        sigs(stamped);
+        sigs(plain);
+        String[] ids = {"hp", "para", "hp", "para", "para", "hp", "hp", "para"};
+        String[] texts = {"HP 9", "now this paragraph is long enough that it wraps onto several lines in a 150px box",
+                "HP 100 / 100", "tiny", "wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap", "7", "8", "end"};
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum();
+        try {
+            for (int i = 0; i < ids.length; i++) {
+                UiView.changeStampsEnabled = true;
+                ((HtmlText) textChild(stamped, ids[i])).setData(texts[i]);
+                List<String> a = sigs(stamped);
+                UiView.changeStampsEnabled = false;
+                ((HtmlText) textChild(plain, ids[i])).setData(texts[i]);
+                List<String> b = sigs(plain);
+                assertEquals(b, a, "手順 " + i + " (" + ids[i] + ")");
+            }
+        } finally {
+            UiView.changeStampsEnabled = true;
+        }
+        long skipped = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_STAMPED.sum() - before;
+        assertTrue(skipped > 100, "変更印で比較を省いた箱の数: " + skipped);
+    }
+
+    /** 定常の文字パッチ 1 フレームで、描画順の分類用のスタイル値（StyleFacts）を新しく算出しないこと（キャッシュ退行の検出）。 */
+    @Test
+    public void steadyPatchComputesNoStyleFacts() {
+        StringBuilder html = new StringBuilder("<style>body{margin:0;font-size:12px}</style><div id=hud style=\"width:120px;height:20px;overflow:hidden\"><span id=hp>0</span></div>");
+        for (int i = 0; i < 100; i++) html.append("<div class=row><span>item ").append(i).append("</span> <b>x</b></div>");
+        StandaloneView v = new StandaloneView(html.toString(), 320, 400, FontResolver.FALLBACK);
+        v.ui().flushInvalidation();
+        HtmlNode hp = v.root().getNodeById("hp");
+        for (int i = 0; i < 3; i++) { hp.updateTextContent("w" + i); v.ui().flushInvalidation(); }
+        long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.styleFactsComputed();
+        for (int i = 0; i < 5; i++) { hp.updateTextContent("HP " + i); v.ui().flushInvalidation(); }
+        assertTrue(RenderPipeline.lastRelayoutWasLocal);
+        long computed = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.styleFactsComputed() - before;
+        assertTrue(computed < 10, "StyleFacts を算出した回数: " + computed);
+    }
+
     /** 固定サイズの境界の中の更新は、境界の外の箱を測り直さない（測り直した箱の数で固定する）。 */
     @Test
     public void updateInsideBoundaryMeasuresOnlyThePath() {

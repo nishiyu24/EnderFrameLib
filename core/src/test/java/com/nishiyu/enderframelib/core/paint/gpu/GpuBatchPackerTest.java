@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.software.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import org.junit.jupiter.api.Test;
@@ -197,5 +196,54 @@ public class GpuBatchPackerTest {
         }
         assertTrue(modes.contains(GpuBatchPacker.MODE_FILL), "背景の塗りが届く: " + modes);
         assertTrue(modes.contains(GpuBatchPacker.MODE_STROKE), "枠線が届く: " + modes);
+    }
+
+    /** 転送 → 描画の順に、溜めた分だけを渡し、渡したあとは空になる（どの API の BatchDevice でも守る契約）。 */
+    @Test
+    public void flushToUploadsThenDrawsThenEmpties() {
+        RecordingHost host = new RecordingHost();
+        GpuBatchPacker p = newPacker(host);
+        List<String> calls = new ArrayList<>();
+        float[][] seen = new float[1][];
+        BatchDevice device = new BatchDevice() {
+            @Override
+            public void uploadInstances(float[] data, int n) {
+                calls.add("upload" + n);
+                seen[0] = java.util.Arrays.copyOf(data, n * S);
+            }
+
+            @Override
+            public void drawInstances(int n) {
+                calls.add("draw" + n);
+            }
+        };
+        assertEquals(0, p.flushTo(device), "空なら何も呼ばない");
+        assertTrue(calls.isEmpty());
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, NO_CLIPS, 1f);
+        p.fillRoundRect(Matrix2D.IDENTITY, 1, 1, 6, 6, R0, R0, 0xFF445566, NO_CLIPS, 1f);
+        float[] expected = java.util.Arrays.copyOf(p.data(), 2 * S);
+        assertEquals(2, p.flushTo(device));
+        assertEquals(List.of("upload2", "draw2"), calls);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(expected, seen[0]);
+        assertEquals(0, p.count());
+        assertEquals(0, p.flushTo(device), "渡したあとは空");
+    }
+
+    /** 縁取りの字形は、専用のモードで、アトラスの位置・大きさと縁取りの半幅（slot 22）を詰める。 */
+    @Test
+    public void glyphStrokePacksSlotAndHalfWidth() {
+        RecordingHost host = new RecordingHost();
+        GpuBatchPacker p = newPacker(host);
+        com.nishiyu.enderframelib.core.text.font.GlyphBitmap sdf = new com.nishiyu.enderframelib.core.text.font.GlyphBitmap(6, 5, -2, 7, new byte[30]);
+        assertTrue(p.glyphStroke(sdf, new int[]{10, 20}, 100, 50, 1.5f, 0xFF3366FF, NO_CLIPS, 1f));
+        assertEquals(1, p.count());
+        float[] d = p.data();
+        assertEquals(GpuBatchPacker.MODE_GLYPH_STROKE, (int) d[12]);
+        assertEquals(10f, d[21 * 4]);
+        assertEquals(20f, d[21 * 4 + 1]);
+        assertEquals(6f, d[21 * 4 + 2]);
+        assertEquals(5f, d[21 * 4 + 3]);
+        assertEquals(1.5f, d[22 * 4], 1e-6);
+        assertEquals(1, host.before, "描く前に beforeShape が呼ばれる");
     }
 }

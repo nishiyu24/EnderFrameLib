@@ -31,8 +31,23 @@ public record DisplayItem(
         int transitionDuration,
         AnimationSpec animDef,
         ImageFitMode fitMode,
-        RenderMeta meta
+        RenderMeta meta,
+        long key
 ) {
+    /** 互換用: {@code key} を {@link ItemKeys#of(String)} で導く。 */
+    public DisplayItem(String id, String baseNodeId, ElementType type, int x, int y, int width, int height, String text,
+                       int color, int bgColor, Map<String, String> events, int radius, float opacity,
+                       float translateX, float translateY, float scaleX, float scaleY, float rotate,
+                       int transitionDuration, AnimationSpec animDef, ImageFitMode fitMode, RenderMeta meta) {
+        this(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity,
+                translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta, ItemKeys.of(id));
+    }
+
+    /** 正規コンストラクタ。鍵が 0（未割り当て）なら ID から導く。 */
+    public DisplayItem {
+        if (key == 0L) key = ItemKeys.of(id);
+    }
+
     public String baseId() {
         return (baseNodeId != null && !baseNodeId.isEmpty()) ? baseNodeId : id;
     }
@@ -66,10 +81,10 @@ public record DisplayItem(
     }
 
     public DisplayItem withText(String newText) {
-        return new DisplayItem(id, baseNodeId, type, x, y, width, height, newText, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta);
+        return new DisplayItem(id, baseNodeId, type, x, y, width, height, newText, color, bgColor, events, radius, opacity, translateX, translateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta, key);
     }
 
     public DisplayItem withTranslation(float newTranslateX, float newTranslateY) {
-        return new DisplayItem(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity, newTranslateX, newTranslateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta);
+        return new DisplayItem(id, baseNodeId, type, x, y, width, height, text, color, bgColor, events, radius, opacity, newTranslateX, newTranslateY, scaleX, scaleY, rotate, transitionDuration, animDef, fitMode, meta, key);
     }
 }

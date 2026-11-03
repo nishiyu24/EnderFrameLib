@@ -10,7 +10,6 @@ import com.nishiyu.enderframelib.core.event.DefaultActionContext;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -720,22 +719,22 @@ public class UiInput {
 
     public static String glfwKeyToDomKey(int keyCode) {
         return switch (keyCode) {
-            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> "Enter";
-            case GLFW.GLFW_KEY_ESCAPE -> "Escape";
-            case GLFW.GLFW_KEY_BACKSPACE -> "Backspace";
-            case GLFW.GLFW_KEY_TAB -> "Tab";
-            case GLFW.GLFW_KEY_SPACE -> " ";
-            case GLFW.GLFW_KEY_UP -> "ArrowUp";
-            case GLFW.GLFW_KEY_DOWN -> "ArrowDown";
-            case GLFW.GLFW_KEY_LEFT -> "ArrowLeft";
-            case GLFW.GLFW_KEY_RIGHT -> "ArrowRight";
-            case GLFW.GLFW_KEY_PAGE_UP -> "PageUp";
-            case GLFW.GLFW_KEY_PAGE_DOWN -> "PageDown";
-            case GLFW.GLFW_KEY_HOME -> "Home";
-            case GLFW.GLFW_KEY_END -> "End";
-            case GLFW.GLFW_KEY_DELETE -> "Delete";
+            case Keys.ENTER, Keys.KP_ENTER -> "Enter";
+            case Keys.ESCAPE -> "Escape";
+            case Keys.BACKSPACE -> "Backspace";
+            case Keys.TAB -> "Tab";
+            case Keys.SPACE -> " ";
+            case Keys.UP -> "ArrowUp";
+            case Keys.DOWN -> "ArrowDown";
+            case Keys.LEFT -> "ArrowLeft";
+            case Keys.RIGHT -> "ArrowRight";
+            case Keys.PAGE_UP -> "PageUp";
+            case Keys.PAGE_DOWN -> "PageDown";
+            case Keys.HOME -> "Home";
+            case Keys.END -> "End";
+            case Keys.DELETE -> "Delete";
             default -> {
-                String name = GLFW.glfwGetKeyName(keyCode, 0);
+                String name = Keys.nameOf(keyCode);
                 yield (name != null && !name.isEmpty()) ? name : "Unidentified";
             }
         };
@@ -743,32 +742,32 @@ public class UiInput {
 
     public static String glfwKeyToDomCode(int keyCode) {
         return switch (keyCode) {
-            case GLFW.GLFW_KEY_ENTER -> "Enter";
-            case GLFW.GLFW_KEY_KP_ENTER -> "NumpadEnter";
-            case GLFW.GLFW_KEY_ESCAPE -> "Escape";
-            case GLFW.GLFW_KEY_BACKSPACE -> "Backspace";
-            case GLFW.GLFW_KEY_TAB -> "Tab";
-            case GLFW.GLFW_KEY_SPACE -> "Space";
-            case GLFW.GLFW_KEY_UP -> "ArrowUp";
-            case GLFW.GLFW_KEY_DOWN -> "ArrowDown";
-            case GLFW.GLFW_KEY_LEFT -> "ArrowLeft";
-            case GLFW.GLFW_KEY_RIGHT -> "ArrowRight";
-            case GLFW.GLFW_KEY_PAGE_UP -> "PageUp";
-            case GLFW.GLFW_KEY_PAGE_DOWN -> "PageDown";
-            case GLFW.GLFW_KEY_HOME -> "Home";
-            case GLFW.GLFW_KEY_END -> "End";
-            case GLFW.GLFW_KEY_DELETE -> "Delete";
+            case Keys.ENTER -> "Enter";
+            case Keys.KP_ENTER -> "NumpadEnter";
+            case Keys.ESCAPE -> "Escape";
+            case Keys.BACKSPACE -> "Backspace";
+            case Keys.TAB -> "Tab";
+            case Keys.SPACE -> "Space";
+            case Keys.UP -> "ArrowUp";
+            case Keys.DOWN -> "ArrowDown";
+            case Keys.LEFT -> "ArrowLeft";
+            case Keys.RIGHT -> "ArrowRight";
+            case Keys.PAGE_UP -> "PageUp";
+            case Keys.PAGE_DOWN -> "PageDown";
+            case Keys.HOME -> "Home";
+            case Keys.END -> "End";
+            case Keys.DELETE -> "Delete";
             default -> "Key" + keyCode;
         };
     }
 
     public static String editingInputType(int keyCode, int modifiers, boolean multiLine) {
-        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
-        if (keyCode == GLFW.GLFW_KEY_BACKSPACE) return ctrl ? "deleteWordBackward" : "deleteContentBackward";
-        if (keyCode == GLFW.GLFW_KEY_DELETE) return ctrl ? "deleteWordForward" : "deleteContentForward";
-        if (ctrl && keyCode == GLFW.GLFW_KEY_V) return "insertFromPaste";
-        if (ctrl && keyCode == GLFW.GLFW_KEY_X) return "deleteByCut";
-        if (multiLine && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) return "insertLineBreak";
+        boolean ctrl = (modifiers & Keys.MOD_CONTROL) != 0;
+        if (keyCode == Keys.BACKSPACE) return ctrl ? "deleteWordBackward" : "deleteContentBackward";
+        if (keyCode == Keys.DELETE) return ctrl ? "deleteWordForward" : "deleteContentForward";
+        if (ctrl && keyCode == Keys.V) return "insertFromPaste";
+        if (ctrl && keyCode == Keys.X) return "deleteByCut";
+        if (multiLine && (keyCode == Keys.ENTER || keyCode == Keys.KP_ENTER)) return "insertLineBreak";
         return null;
     }
 }

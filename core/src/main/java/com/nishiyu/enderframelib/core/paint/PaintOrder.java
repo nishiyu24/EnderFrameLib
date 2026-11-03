@@ -322,11 +322,15 @@ final class PaintOrder {
      * （算出スタイルは不変で、箱の木が変わっても同じインスタンスなら使い回せる）。
      */
     record StyleFacts(boolean displayNone, boolean zAuto, float opacity, boolean stackingByStyle, boolean hasMask,
-                      String overflowX, String overflowY, boolean scrollbars) {
+                      String overflowX, String overflowY, boolean scrollbars, boolean hasAnimation) {
     }
+
+    /** 診断: {@link StyleFacts} を新しく算出した回数（キャッシュに当たらなかった回数）。 */
+    static final java.util.concurrent.atomic.LongAdder STAT_FACTS_COMPUTED = new java.util.concurrent.atomic.LongAdder();
 
     static StyleFacts factsOf(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (style.derivedFacts() instanceof StyleFacts cached) return cached;
+        STAT_FACTS_COMPUTED.increment();
         String z = style.get(CssProperty.Z_INDEX);
         boolean zAuto = z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
         boolean mask = styleHasMask(style);
@@ -337,7 +341,8 @@ final class PaintOrder {
         String[] overflow = overflowPair(style);
         StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block")), zAuto,
                 style.number(CssProperty.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
-                isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]));
+                isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]),
+                style.get(CssProperty.ANIMATION) != null || style.get(CssProperty.ANIMATION_NAME) != null);
         style.derivedFacts(facts);
         return facts;
     }

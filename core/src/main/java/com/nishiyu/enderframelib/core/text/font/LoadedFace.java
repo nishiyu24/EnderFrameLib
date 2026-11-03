@@ -435,6 +435,23 @@ public final class LoadedFace {
      * 字の原点をピクセルに丸めず端数の位置で描くので、字間が不揃いにならない（Chrome のサブピクセル位置決めと同じ）。
      */
     public GlyphBitmap rasterize(int codePoint, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel) {
+        return render(codePoint, pixelSize, syntheticBold, syntheticItalic, subpixel, FreeType.FT_RENDER_MODE_NORMAL);
+    }
+
+    /**
+     * 輪郭からの符号付き距離場（SDF）で 1 字を描く。{@link #rasterize} と同じ輪郭・位置（端数・擬似太字・擬似斜体）を使い、
+     * 画素の値は「128 = 輪郭、内側ほど大きく外側ほど小さい」、1 画素の値は {@link #SDF_SPREAD} 画素の距離を 128 段階で表す。
+     * 字の外側へ {@link #SDF_SPREAD} 画素ぶん広がるので、{@code left / top / width / height} は通常のものより大きい。
+     * 縁取り（{@code -webkit-text-stroke}）や拡大縮小・回転に強い描画に使う。
+     */
+    public GlyphBitmap rasterizeSdf(int codePoint, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel) {
+        return render(codePoint, pixelSize, syntheticBold, syntheticItalic, subpixel, FreeType.FT_RENDER_MODE_SDF);
+    }
+
+    /** FreeType の SDF の既定の広がり（画素）。 */
+    public static final int SDF_SPREAD = 8;
+
+    private GlyphBitmap render(int codePoint, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel, int mode) {
         synchronized (LOCK) {
             ensureOpen();
             int gi = FreeType.FT_Get_Char_Index(face, codePoint);
@@ -462,7 +479,7 @@ public final class LoadedFace {
                 // Skia の擬似太字と同じ太らせ量（em の 1/24）。送り幅は変えない（Chrome も変えない）
                 FreeType.FT_Outline_Embolden(slot.outline(), Math.max(1, Math.round(pixelSize * 64 / 24f)));
             }
-            if (FreeType.FT_Render_Glyph(slot, FreeType.FT_RENDER_MODE_NORMAL) != 0) return GlyphBitmap.EMPTY;
+            if (FreeType.FT_Render_Glyph(slot, mode) != 0) return GlyphBitmap.EMPTY;
             FT_Bitmap bitmap = slot.bitmap();
             int w = bitmap.width();
             int h = bitmap.rows();

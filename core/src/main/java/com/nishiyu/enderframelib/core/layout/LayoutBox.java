@@ -269,6 +269,51 @@ public class LayoutBox {
     private float cachedMinContentWidth = -1;
     private long cachedMinContentKey = Long.MIN_VALUE;
 
+    // ==========================================
+    // 描画の変更印（paint stamp）
+    // ==========================================
+    //
+    // 箱の「描画に効く入力（位置・大きさ・スタイル・文字）」が書き換わりうる地点で、全体で単調に増える通し番号を書く。
+    // 描画側（DisplayListBuilder）は、記憶を作った時点の通し番号より新しい印が自分にも祖先にも無い箱を「変わっていない」
+    // とみなして、署名の比較を省ける。印は layout の再利用判定（measure を使い回す・配置を飛ばす）と同じ地点で付けるので、
+    // レイアウトが「触っていない」と言う部分木は印も付かない。付け漏れは DisplayListBuilder の検証モードで検出する。
+
+    private static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
+    /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
+    public long paintStamp = PAINT_EPOCH.incrementAndGet();
+    /** 算出スタイル（と文字）が差し替わった時の通し番号。子の描画が祖先から読むのはスタイルだけなので、祖先についてはこちらを見る。 */
+    private long styleStamp = paintStamp;
+    /** 祖先のスタイルの印の最大値の、描画ごとのキャッシュ（{@link #pathPaintStamp}）。 */
+    private long ancestorStyleStampCache;
+    private int ancestorStyleStampSerial = -1;
+
+    /** 現在の通し番号（これ以下の印は、いまの描画に反映済みとみなせる）。 */
+    public static long paintEpoch() {
+        return PAINT_EPOCH.get();
+    }
+
+    /** 描画入力が書き換わりうる地点を通った印を付ける。 */
+    public void touchPaint() {
+        paintStamp = PAINT_EPOCH.incrementAndGet();
+    }
+
+    /**
+     * 自分の印と、祖先のスタイルの印の最大値。祖先の位置や大きさの変化は、子の layout が走る（子の印が付く）か、
+     * クリップの比較に出るので、祖先についてはスタイルだけを見ればよい。{@code serial} が同じ間はキャッシュする。
+     */
+    public long pathPaintStamp(int serial) {
+        return Math.max(paintStamp, parent == null ? 0L : parent.ancestorStyleStamp(serial));
+    }
+
+    private long ancestorStyleStamp(int serial) {
+        if (ancestorStyleStampSerial == serial) return ancestorStyleStampCache;
+        long v = styleStamp;
+        if (parent != null) v = Math.max(v, parent.ancestorStyleStamp(serial));
+        ancestorStyleStampCache = v;
+        ancestorStyleStampSerial = serial;
+        return v;
+    }
+
     public LayoutBox(HtmlNode node, ComputedStyle style) {
         this(node, style, false);
     }
@@ -288,6 +333,8 @@ public class LayoutBox {
      * 算出スタイルを更新する（再スタイル時にジオメトリを保ったまま描画属性だけ差し替える用途を含む）。
      */
     public void updateStyle(ComputedStyle newStyle) {
+        touchPaint();
+        styleStamp = paintStamp;
         this.style = newStyle;
         this.displaySource = node.text;
         this.display = Display.of(node, newStyle).blockified(newStyle);
@@ -501,8 +548,10 @@ public class LayoutBox {
             return;
         }
         MEASUREMENTS_COMPUTED.increment();
+        touchPaint();
         BoxMeasurer.measure(this, space, ctx);
         recordMeasurement(space, ctx);
+        touchPaint();
     }
 
     /**
@@ -601,6 +650,7 @@ public class LayoutBox {
      * 前回の measure の結果は使わせない。
      */
     void invalidateMeasurement() {
+        touchPaint();
         for (LayoutBox b = this; b != null; b = b.parent) {
             b.measurementValid = false;
             b.placementValid = false;
@@ -695,6 +745,7 @@ public class LayoutBox {
     public static void resetPlacements(LayoutBox box, long keepRun) {
         if (keepRun >= 0 && box.canKeepPlacement(keepRun)) return;
         // 配置を捨てた箱は、前回の layout の記録も無効にする（子を飛ばして古い 0,0 のまま残さない）
+        box.touchPaint();
         if (keepRun < 0) {
             box.placementPure = false;
             box.lastLayoutX = Float.NaN;
@@ -849,6 +900,12 @@ public class LayoutBox {
         return path;
     }
 
+    /** 配置まで終えたあと、木全体の「変わった」印を外す（測り直した印の残っていない箱だけ。{@link #clearSubtreeMarks} の全体版）。 */
+    public static void clearAllSubtreeMarks(LayoutBox root) {
+        if (!root.layoutChanged) root.subtreeChanged = false;
+        for (LayoutBox c : root.children) clearAllSubtreeMarks(c);
+    }
+
     /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す（次の全体版が「変化なし」と付けるのと同じ）。 */
     public static void clearSubtreeMarks(List<LayoutBox> path) {
         for (LayoutBox b : path) {
@@ -917,6 +974,7 @@ public class LayoutBox {
             for (LayoutBox child : children) resetPlacements(child, -1);
         }
 
+        touchPaint();
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 

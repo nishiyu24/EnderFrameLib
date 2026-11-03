@@ -81,7 +81,7 @@ public class DisplayListBuilder {
         this.decor = new BoxDecorationPainter(rootW, rootH, fragIds);
         this.controls = new ControlPainter(decor);
         this.order = new PaintOrder(rootW, rootH, scrollState, fragIds, this::drawBoxSelf,
-                box -> (box.style.get(CssProperty.ANIMATION) != null || box.style.get(CssProperty.ANIMATION_NAME) != null)
+                box -> PaintOrder.factsOf(box.style).hasAnimation()
                         && (anim.parseAnimationDef(box.style, box.w, box.h, 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0);
     }
 
@@ -101,6 +101,8 @@ public List<DisplayItem> render(LayoutBox box) {
  */
 public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
     generation++;
+    buildSerial++;
+    buildEpoch = LayoutBox.paintEpoch();
     translating = cullOffscreen && TRANSLATE_ENABLED;
     translatedHits = 0;
     List<DisplayItem> elements = new ArrayList<>();
@@ -231,7 +233,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         return new DisplayItem(anchor.id(), anchor.baseNodeId(), anchor.type(), anchor.x(), anchor.y(), anchor.width(), anchor.height(),
                 anchor.text(), anchor.color(), anchor.bgColor(), anchor.events(), anchor.radius(), anchor.opacity(),
                 anchor.translateX(), anchor.translateY(), anchor.scaleX(), anchor.scaleY(), anchor.rotate(),
-                anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer);
+                anchor.transitionDuration(), anchor.animDef(), anchor.fitMode(), withLayer, anchor.key());
     }
 
     /**
@@ -277,12 +279,33 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         float[] fragNums;
         String[] fragText;
         boolean canvasSource, interactive, suppressShadow;
+        /** 記憶を作った（または変わっていないと確かめた）描画の開始時の通し番号と、そのときの親の箱。 */
+        long epoch;
+        LayoutBox parentBox;
         /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
         boolean translatable;
     }
 
     private final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
     private int generation;
+    /** 変更印で署名の比較を省くか（呼び出し側が、変わった箱が分かっている局所更新のときだけ true にする）。 */
+    private boolean useChangeStamps;
+    private long buildEpoch;
+    private int buildSerial;
+    /** 診断: 変更印で比較を省いた箱の累計。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_STAMPED = new java.util.concurrent.atomic.LongAdder();
+    /** 検証: 変更印が「変わっていない」と言った箱でも署名を比べ、食い違えば例外にする（{@code -Denderframe.paint.verifystamps=true}）。 */
+    public static volatile boolean verifyStamps = Boolean.getBoolean("enderframe.paint.verifystamps");
+
+    /** 診断: 描画順の分類用のスタイル値を新しく算出した回数の累計（キャッシュ退行の検出用）。 */
+    public static long styleFactsComputed() {
+        return PaintOrder.STAT_FACTS_COMPUTED.sum();
+    }
+
+    /** 次の {@link #render} だけ変更印を使う。 */
+    public void setUseChangeStamps(boolean use) {
+        this.useChangeStamps = use;
+    }
     /** 診断: 箱ごとの記憶の使われ方の累計（そのまま・平行移動・新規・不一致）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_EXACT = new java.util.concurrent.atomic.LongAdder(), STAT_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
             STAT_NEW = new java.util.concurrent.atomic.LongAdder(), STAT_MISS = new java.util.concurrent.atomic.LongAdder(), STAT_UNMEMOIZABLE = new java.util.concurrent.atomic.LongAdder();
@@ -365,6 +388,18 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         return out;
     }
 
+    /**
+     * 変更印から、記憶が今の箱にそのまま使えると言えるか。記憶を作った後に、自分にも祖先にもレイアウトが触れておらず
+     * （印が記憶の通し番号以下）、親の箱・クリップ・親の id・描画側の旗が同じ。属性の変更は印に出ないので、
+     * 属性が変わらない更新（文字の局所パッチ）でだけ呼び出し側が有効にする。
+     */
+    private boolean stampClean(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        return m.parentBox == box.parent && box.pathPaintStamp(buildSerial) <= m.epoch
+                && m.canvasSource == (box == canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
+                && m.suppressShadow == suppressTextShadow && sameClip(m.clip, clip)
+                && java.util.Objects.equals(m.parentId, parentId);
+    }
+
     /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
     private float hitDx, hitDy;
 
@@ -435,7 +470,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             }
             out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ix, it.y() + iy, it.width(), it.height(),
                     it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
-                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta));
+                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta, it.key()));
         }
         return out;
     }
@@ -463,6 +498,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
 
     private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
         BoxMemo m = new BoxMemo();
+        m.epoch = buildEpoch;
+        m.parentBox = box.parent;
         m.items = items;
         m.style = box.style;
         m.ancestors = ancestorStyles(box);
@@ -525,10 +562,22 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             return;
         }
         BoxMemo m = boxMemo.get(box);
-        int kind = m == null ? 0 : match(m, box, clipRect, parentId);
+        int kind;
+        if (useChangeStamps && m != null && !translating && stampClean(m, box, clipRect, parentId)) {
+            kind = 1;
+            STAT_STAMPED.increment();
+            if (verifyStamps) {
+                int check = match(m, box, clipRect, parentId);
+                if (check != 1) throw new AssertionError("変更印は変わっていないと言ったが署名が違う: box=" + box.node.tag + "#" + box.node.getId()
+                        + " match=" + check + " stamp=" + box.pathPaintStamp(buildSerial) + " epoch=" + m.epoch);
+            }
+        } else {
+            kind = m == null ? 0 : match(m, box, clipRect, parentId);
+        }
         if (kind == 1) {
             STAT_EXACT.increment();
             m.generation = generation;
+            m.epoch = buildEpoch;
             elements.addAll(m.items);
             return;
         }
@@ -704,6 +753,27 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, meta);
     }
 
+    /** {@code -webkit-text-stroke-width} の CSS px（{@code thin / medium / thick} は 1 / 3 / 5）。無い・0 以下は 0。 */
+    static float textStrokeWidth(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        String v = style.get("-webkit-text-stroke-width");
+        if (v == null) return 0f;
+        v = v.trim().toLowerCase(java.util.Locale.ROOT);
+        try {
+            float w = switch (v) {
+                case "thin" -> 1f;
+                case "medium" -> 3f;
+                case "thick" -> 5f;
+                default -> v.endsWith("rem") ? Float.parseFloat(v.substring(0, v.length() - 3)) * style.rootFontSizePx()
+                        : v.endsWith("em") ? Float.parseFloat(v.substring(0, v.length() - 2)) * style.fontSizePx()
+                        : v.endsWith("px") ? Float.parseFloat(v.substring(0, v.length() - 2))
+                        : Float.parseFloat(v);
+            };
+            return w > 0f && Float.isFinite(w) ? w : 0f;
+        } catch (NumberFormatException e) {
+            return 0f;
+        }
+    }
+
     private void drawTextNodeElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                                      int transDur, AnimationSpec colorAnim) {
@@ -721,6 +791,13 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             if (textShadows.isEmpty() && !suppressTextShadow) baseTextEvents.put("text-shadow", "true");
         }
         putFontEvents(box, baseTextEvents);
+        float strokeWidth = textStrokeWidth(box.style);
+        if (strokeWidth > 0f) {
+            String colorValue = box.style.get("-webkit-text-stroke-color");
+            int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
+                    ? color : ColorParser.parseColor(colorValue);
+            baseTextEvents.put("text-stroke", strokeWidth + " " + Integer.toHexString(strokeColor));
+        }
 
         if (!box.inlineFragments.isEmpty()) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {

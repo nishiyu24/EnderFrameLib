@@ -9,7 +9,8 @@ import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.ImageTextureCache;
-import com.nishiyu.enderframelib.core.paint.software.GpuSink;
+import com.nishiyu.enderframelib.core.paint.gpu.BatchDevice;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -202,6 +203,13 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                     ivec2 gp = ivec2(floor(vLocal - uRect.xy));
                     if (gp.x < 0 || gp.y < 0 || gp.x >= int(uGlyph.z) || gp.y >= int(uGlyph.w)) discard;
                     a = texelFetch(uAtlas, ivec2(uGlyph.xy) + gp, 0).r;
+                } else if (uMode == 10) {
+                    // 文字の縁取り: SDF の字形（128 = 輪郭、内側が大きい、8 画素 = 128 段階）から、輪郭を中心にした帯を描く
+                    ivec2 gp = ivec2(floor(vLocal - uRect.xy));
+                    if (gp.x < 0 || gp.y < 0 || gp.x >= int(uGlyph.z) || gp.y >= int(uGlyph.w)) discard;
+                    float sv = texelFetch(uAtlas, ivec2(uGlyph.xy) + gp, 0).r * 255.0;
+                    float sd = (sv - 128.0) * (8.0 / 128.0);
+                    a = clamp(uImg.x - abs(sd) + 0.5, 0.0, 1.0);
                 } else if (uMode == 9) {
                     vec4 gi = F(22), g2 = F(23);
                     float gcx = (vLocal.x - gi.x) * gi.z - g2.x - 0.5, gcy = (vLocal.y - gi.y) * gi.z + g2.y - 0.5;
@@ -992,18 +1000,31 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 溜めた図形を 1 回のインスタンス描画で描く。 */
     private void flushBatch() {
-        if (packer.count() == 0) return;
-        int n = packer.count();
-        packer.clear();
-        // 転送用バッファは使い回す（毎回 memAlloc/memFree しない）。1 バッチの最大サイズで一度だけ確保する。
-        if (batchBuf == null) batchBuf = MemoryUtil.memAllocFloat(MAX_BATCH * STRIDE * 4);
-        java.nio.FloatBuffer fb = batchBuf;
-        fb.clear();
-        fb.put(packer.data(), 0, n * STRIDE * 4).flip();
-        GL13.glActiveTexture(GL13.GL_TEXTURE3);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
-        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, STRIDE, n, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
+        packer.flushTo(glBatchDevice);
+    }
+
+    /** L3: OpenGL による {@link BatchDevice}。転送 = データテクスチャへの更新、描画 = インスタンス描画。 */
+    private final BatchDevice glBatchDevice = new BatchDevice() {
+        @Override
+        public void uploadInstances(float[] data, int n) {
+            // 転送用バッファは使い回す（毎回 memAlloc/memFree しない）。1 バッチの最大サイズで一度だけ確保する。
+            if (batchBuf == null) batchBuf = MemoryUtil.memAllocFloat(MAX_BATCH * STRIDE * 4);
+            java.nio.FloatBuffer fb = batchBuf;
+            fb.clear();
+            fb.put(data, 0, n * STRIDE * 4).flip();
+            GL13.glActiveTexture(GL13.GL_TEXTURE3);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
+            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, STRIDE, n, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
+        }
+
+        @Override
+        public void drawInstances(int n) {
+            drawBatchInstances(n);
+        }
+    };
+
+    private void drawBatchInstances(int n) {
         if (boundImg != 0) {
             GL13.glActiveTexture(GL13.GL_TEXTURE2);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, boundImg);
@@ -1036,6 +1057,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public Pixmap snapshotTarget(int[] region) {
+        readbacks++;
         flushAll();
         if (!layerStack.isEmpty()) ensureCleared(layerStack.get(layerStack.size() - 1));
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
@@ -1154,7 +1176,21 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
-    private static final int MAX_LAYER_DEPTH = 8;
+    /**
+     * GPU の層を入れ子にできる深さ。超えると CPU の層に落ち、{@code mix-blend-mode} / {@code backdrop-filter} は GPU の描画先を
+     * 読み戻して混ぜる（遅く、コマンドバッファ型 API では不可能な経路）。深さそのものは VRAM（{@link #LAYER_VRAM_BUDGET}）で縛る。
+     * 以前は 8 固定だった。読み戻しの経路を検証するテストは、この値を下げて通す。
+     */
+    public static volatile int maxLayerDepth = 32;
+    /** 層のテクスチャ（1 枚 {@code 幅 × 高さ × 4} バイト）の合計の上限。超える分は CPU の層に落ちる。 */
+    private static final long LAYER_VRAM_BUDGET = 512L * 1024 * 1024;
+    /** 診断: 途中の読み戻し（{@link #snapshotTarget}）の累計回数。 */
+    private long readbacks;
+
+    /** 診断: 描画先を CPU へ読み戻した回数の累計（GPU の層で完結していれば増えない）。 */
+    public long readbackCount() {
+        return readbacks;
+    }
     /** 層の効果を、描いた範囲の中だけに掛けるか。false なら従来どおり画面全体（切り分け用。{@code -Denderframe.gl.fullscreenlayers=true}）。 */
     public static volatile boolean boundedLayers = !Boolean.getBoolean("enderframe.gl.fullscreenlayers");
     private final java.util.ArrayDeque<GpuLayer> layerPool = new java.util.ArrayDeque<>();
@@ -1214,7 +1250,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             return false;
         }
         // マスクの層をいつでも開けるように、1 段空けておく
-        if (layerStack.size() >= MAX_LAYER_DEPTH - 1) return false;
+        if (layerStack.size() >= maxLayerDepth - 1) return false;
+        if (layerPool.isEmpty() && (allLayers.size() + 1L) * width * height * 4L > LAYER_VRAM_BUDGET) return false;
         flushAll(); // 親の層に溜めた分を先に描き切る（描画順）
         GpuLayer l = acquireLayer();
         if (l == null) return false;
@@ -1910,6 +1947,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     @Override
+    public boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+        if (!atlas.fits(sdf)) return false;
+        int[] slot = atlasSlot(sdf);
+        if (packer.glyphStroke(sdf, slot, bx, by, half, argb, clips, opacity)) gpuGlyphs++;
+        return true;
+    }
+
+    @Override
     public boolean drawGlyphTransformed(Matrix2D pose, GlyphBitmap g, float ox, float oy, float s,
                                         float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
         if (!atlas.fits(g)) return false;
@@ -1929,6 +1974,29 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (packer.count() > 0 && boundImg != tex) flushBatch();
         boundImg = tex;
         if (!packer.image(pose, image, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, taps, stepX, stepY, clips, opacity)) {
+            return true;
+        }
+        GL13.glActiveTexture(GL13.GL_TEXTURE2);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        gpuImages++;
+        return true;
+    }
+
+    /**
+     * 外部テクスチャ（{@code handle} = このコンテキストで有効な {@code GL_TEXTURE_2D} の名前）をそのまま貼る。
+     * 画素は触らず、補間・折り返しもホストの設定のまま。すでに溜めた図形とは描画順を保つため、別のテクスチャに切り替わるとき先に描き切る。
+     */
+    @Override
+    public boolean drawTexture(Matrix2D pose, long handle, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
+                               float px0, float py0, float sx, float sy,
+                               float x0, float y0, float x1, float y1, float[] rx, float[] ry, Clip[] clips, float opacity) {
+        if (handle <= 0 || handle > Integer.MAX_VALUE || imgW <= 0 || imgH <= 0 || imgW > 16384 || imgH > 16384) return false;
+        int tex = (int) handle;
+        flushOverlay();
+        if (packer.count() > 0 && boundImg != tex) flushBatch();
+        boundImg = tex;
+        if (!packer.image(pose, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity)) {
             return true;
         }
         GL13.glActiveTexture(GL13.GL_TEXTURE2);

@@ -1,7 +1,10 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.paint.model.ItemKeys;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -55,9 +58,11 @@ public final class PaintSceneDriver {
         void drawItem(DisplayItem el, int index, float flat);
     }
 
+    private static final Long2ObjectOpenHashMap<DisplayItem> EMPTY_BY_KEY = new Long2ObjectOpenHashMap<>(0);
+
     private final String sessionId;
 
-    private final Map<String, Integer> indexOf = new HashMap<>();
+    private final Long2IntOpenHashMap indexOf = new Long2IntOpenHashMap();
     private final List<Integer> fxAnchors = new ArrayList<>();
     private final List<Integer> activeAnchors = new ArrayList<>();
     /** {@link #chainFor} が前へ進める錨の位置。 */
@@ -68,13 +73,13 @@ public final class PaintSceneDriver {
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
     /** 索引（{@link #indexedById}・{@link #indexOf}・{@link #fxAnchors}）を作った時のリスト。 */
     private List<DisplayItem> indexedItems;
-    private Map<String, DisplayItem> indexedById = Map.of();
+    private Long2ObjectOpenHashMap<DisplayItem> indexedById = new Long2ObjectOpenHashMap<>();
     private long generation;
 
     // 1 フレームの間だけ使う状態
     private long now;
     private Matrix2D frame = Matrix2D.IDENTITY;
-    private Map<String, DisplayItem> byId = Map.of();
+    private Long2ObjectOpenHashMap<DisplayItem> byId = EMPTY_BY_KEY;
 
     public PaintSceneDriver(String sessionId) {
         this.sessionId = sessionId;
@@ -92,13 +97,22 @@ public final class PaintSceneDriver {
 
     /** 走査中の、id から項目を引く。 */
     public DisplayItem itemById(String id) {
-        return byId.get(id);
+        return byId.get(ItemKeys.of(id));
+    }
+
+    /** 走査中の、鍵から項目を引く（文字列のハッシュを使わない）。 */
+    public DisplayItem itemByKey(long key) {
+        return byId.get(key);
     }
 
     /** id の項目の位置。無ければ -1。 */
     public int indexOf(String id) {
-        Integer i = indexOf.get(id);
-        return i == null ? -1 : i;
+        return indexOf.getOrDefault(ItemKeys.of(id), -1);
+    }
+
+    /** 鍵の項目の位置。無ければ -1。 */
+    public int indexOfKey(long key) {
+        return indexOf.getOrDefault(key, -1);
     }
 
     /**
@@ -165,19 +179,19 @@ public final class PaintSceneDriver {
             }
             painter.syncLayers(List.of());
         } finally {
-            this.byId = Map.of();
+            this.byId = EMPTY_BY_KEY;
         }
     }
 
     private void rebuildIndex(List<DisplayItem> items) {
-        Map<String, DisplayItem> map = new HashMap<>(items.size() * 2);
-        for (DisplayItem it : items) map.put(it.id(), it);
+        Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(items.size() * 2);
+        for (DisplayItem it : items) map.put(it.key(), it);
         indexedById = map;
         indexOf.clear();
         fxAnchors.clear();
         for (int i = 0; i < items.size(); i++) {
             DisplayItem it = items.get(i);
-            indexOf.put(it.id(), i);
+            indexOf.put(it.key(), i);
             if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
         }
         indexedItems = items;
@@ -185,8 +199,7 @@ public final class PaintSceneDriver {
         parentIdx = new int[n];
         for (int i = 0; i < n; i++) {
             String pid = items.get(i).hints().parentId();
-            Integer pi = pid == null ? null : indexOf.get(pid);
-            parentIdx[i] = pi == null ? -1 : pi;
+            parentIdx[i] = pid == null ? -1 : indexOf.getOrDefault(ItemKeys.of(pid), -1);
         }
         curRes = new Resolved[n];
         prevRes = new Resolved[n];
@@ -211,7 +224,7 @@ public final class PaintSceneDriver {
     private Group groupFor(DisplayItem node, Resolved nr) {
         LayerSpec spec = hasFx(node.hints().layer()) ? node.hints().layer() : null;
         Matrix2D m = nr.pose();
-        return new Group(node.id(), Math.max(0f, nr.anim().opacity()), indexOf.getOrDefault(node.id(), -1), spec,
+        return new Group(node.id(), Math.max(0f, nr.anim().opacity()), indexOf.getOrDefault(node.key(), -1), spec,
                 new double[]{m.a(), m.b(), m.c(), m.d()}, null, m);
     }
 
