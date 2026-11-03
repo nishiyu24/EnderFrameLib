@@ -987,7 +987,8 @@ public class UiView implements AutoCloseable {
         long startedAt = System.nanoTime();
         for (LayoutBox box : found.values()) box.refreshStyle(box.style);
         applyOverrides();
-        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver());
+        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
+                found.values());
         for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
         setLayoutRoot(layoutRoot);
         long layoutDone = System.nanoTime();

@@ -220,8 +220,27 @@ public class RenderPipeline {
      */
     public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                        ScrollState scrollState, FontResolver fonts) {
-        LayoutBox.markLayoutChanges(rootBox);
+        relayoutInPlace(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, null);
+    }
+
+    /** 局所レイアウトを有効にするか。false なら常に木全体の印付けをする（切り分け用。結果は同じでなければならない）。 */
+    public static volatile boolean localRelayout = true;
+
+    /** 直近の {@link #relayoutInPlace} が経路だけの印付け（局所）で済んだか。調べる・テスト用。 */
+    public static volatile boolean lastRelayoutWasLocal;
+
+    /**
+     * @param changed 変わったと分かっている箱（文字の箱）。経路だけの印付けで済むなら木全体の走査を省く。null なら木全体
+     */
+    public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                       ScrollState scrollState, FontResolver fonts,
+                                       java.util.Collection<LayoutBox> changed) {
+        List<LayoutBox> path = localRelayout && changed != null && !changed.isEmpty()
+                ? LayoutBox.markLayoutChangesAlong(rootBox, changed) : null;
+        lastRelayoutWasLocal = path != null;
+        if (path == null) LayoutBox.markLayoutChanges(rootBox);
         runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true);
+        if (path != null) LayoutBox.clearSubtreeMarks(path);
     }
 
     /**

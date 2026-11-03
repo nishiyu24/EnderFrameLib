@@ -347,7 +347,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean viaGpu = false;
         if (rootSink != null && !cpuLayer && spec != null && parent == root
                 && (spec.blend() != BlendMode.NORMAL || spec.hasBackdrop())) {
-            Pixmap snap = rootSink.snapshotTarget();
+            // blend だけなら層の描いた範囲しか背景を読まない。backdrop-filter はぼかしが範囲外を読むので全面
+            Pixmap snap = !spec.hasBackdrop() && any ? rootSink.snapshotTarget(region) : rootSink.snapshotTarget();
             if (snap != null) {
                 parent = snap;
                 viaGpu = true;
