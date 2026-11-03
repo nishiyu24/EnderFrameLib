@@ -113,4 +113,49 @@ public class BoxPaintMemoTest {
         for (DisplayItem i : ui.renderCache()) if (i.baseId().equals("tail") || i.baseId().equals("para")) after.add(i.id());
         assertEquals(before, after, "前に箱が増えても、後ろの箱の部品の ID は変わらない");
     }
+
+    private static final String MEDIA_HTML = """
+            <style>
+              body { margin: 0; font-size: 14px }
+              .hp { width: 120px; height: 12px }
+              .icon { width: 16px; height: 16px }
+            </style>
+            <div id=hud>
+              <progress id=hp class=hp value=30 max=100></progress>
+              <meter id=mp class=hp value=5 min=0 max=10></meter>
+              <img id=ic class=icon src="data:image/png;base64,iVBORw0KGgo=">
+              <mc-fluid id=fl class=icon fluid="minecraft:water"></mc-fluid>
+              <mc-entity id=en class=icon entity="@self"></mc-entity>
+            </div>
+            <div id=after>after</div>
+            """;
+
+    @Test
+    public void mediaBoxesAreMemoizedAndStayCorrectAcrossAttributeChanges() {
+        StandaloneView view = new StandaloneView(MEDIA_HTML, 320, 240, FontResolver.FALLBACK);
+        UiView ui = view.ui();
+        assertSameAsFresh(view, "初回");
+
+        // 属性が変わらない再描画では、media 箱 5 つは記憶からそのまま出る
+        long exact = DisplayListBuilder.STAT_EXACT.sum();
+        view.root().getNodeById("after").updateTextContent("after!"); // 箱を作り直さない局所パッチ
+        ui.flushInvalidation();
+        assertTrue(DisplayListBuilder.STAT_EXACT.sum() - exact >= 5, "progress/meter/img/mc-* が記憶から出る");
+        assertSameAsFresh(view, "無関係な書き換え");
+
+        ((HtmlElement) view.root().getNodeById("hp")).setAttribute("value", "80");
+        assertSameAsFresh(view, "progress value");
+        ((HtmlElement) view.root().getNodeById("hp")).setAttribute("max", "200");
+        assertSameAsFresh(view, "progress max");
+        ((HtmlElement) view.root().getNodeById("mp")).setAttribute("value", "9");
+        assertSameAsFresh(view, "meter value");
+        ((HtmlElement) view.root().getNodeById("ic")).setAttribute("src", "data:image/png;base64,AAAA");
+        assertSameAsFresh(view, "img src");
+        ((HtmlElement) view.root().getNodeById("fl")).setAttribute("fluid", "minecraft:lava");
+        assertSameAsFresh(view, "mc-fluid");
+        ((HtmlElement) view.root().getNodeById("en")).setAttribute("entity", "@target");
+        assertSameAsFresh(view, "mc-entity");
+        ((HtmlElement) view.root().getNodeById("ic")).setAttribute("srcset", "a.png 1x, b.png 2x");
+        assertSameAsFresh(view, "srcset 付き img");
+    }
 }

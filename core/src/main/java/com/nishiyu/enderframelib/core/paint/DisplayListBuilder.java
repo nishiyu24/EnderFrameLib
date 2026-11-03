@@ -258,7 +258,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
     // 親の id・祖先のスタイル（文字色のアニメーションが親を読む）。部品の ID は箱ごとに 0 から数えるので、
     // 他の箱の増減に左右されない。入力が前回と全部同じなら、前回の項目（不変）をそのまま出し、作り直さない。
     // 一致の判定は値の比較（署名のハッシュではない）なので、取り違えは起きない。確実に決まらない箱（表・フォーム部品・
-    // 画像や図など描画側が別の資源を読む箱）は、いつも描き直す。
+    // SVG・srcset 付きの画像・動画など描画側が別の資源を読む箱）は、いつも描き直す。img（点陣画像）・progress・meter・
+    // mc-scene / mc-fluid / mc-entity は属性とスタイルだけで決まるので記憶する。
 
     /** 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。 */
     private static final class BoxMemo {
@@ -299,16 +300,35 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
 
     private static boolean memoizable(LayoutBox box) {
         String tag = box.node.tag;
-        if (tag == null || tag.startsWith("mc-")) return false;
-        switch (tag) {
-            case "img", "video", "audio", "progress", "meter", "svg", "canvas", "textarea", "select", "input", "fieldset",
-                 "legend", "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup" -> {
-                return false;
+        if (tag == null) return false;
+        if (tag.startsWith("mc-")) {
+            // 描画が読むのは属性とスタイルだけ（mc-scene / mc-fluid / mc-entity）。他の mc-* は従来どおり除外する
+            if (!"mc-scene".equals(tag) && !"mc-fluid".equals(tag) && !"mc-entity".equals(tag)) return false;
+        } else {
+            switch (tag) {
+                case "video", "audio", "svg", "canvas", "textarea", "select", "input", "fieldset",
+                     "legend", "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup" -> {
+                    return false;
+                }
+                case "img" -> {
+                    if (!imgMemoizable(box)) return false;
+                }
+                default -> { } // progress / meter は value・min・max（属性）だけで決まるので解禁
             }
-            default -> { }
         }
         if (box.collapsedBorders != null || box.display == null) return false;
         return !String.valueOf(box.display.inner()).startsWith("TABLE");
+    }
+
+    /**
+     * {@code img} の項目が箱の入力（属性・スタイル）だけで決まるか。{@code srcset} / {@code sizes} は表示領域と
+     * 密度で候補を選ぶので記憶の署名に入らない。SVG は読み込みの完了で結果が変わる（届くまでは何も描かない）。
+     */
+    private static boolean imgMemoizable(LayoutBox box) {
+        Map<String, String> attrs = box.node.attrs;
+        if (attrs.containsKey("srcset") || attrs.containsKey("sizes")) return false;
+        String src = box.style.getOrDefault(CssProperty.SRC, attrs.getOrDefault("src", ""));
+        return !com.nishiyu.enderframelib.core.raster.svg.SvgImage.looksLikeSvg(src);
     }
 
     /**
