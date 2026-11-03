@@ -1027,15 +1027,29 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public Pixmap snapshotTarget() {
+        return snapshotTarget(new int[]{0, 0, width, height});
+    }
+
+    /** 読み戻し先。フレーム間・呼び出し間で使い回す（範囲外は前回の残りで不定）。 */
+    private Pixmap snapshotPm;
+    private int[] snapshotRaw = new int[0];
+
+    @Override
+    public Pixmap snapshotTarget(int[] region) {
         flushAll();
         if (!layerStack.isEmpty()) ensureCleared(layerStack.get(layerStack.size() - 1));
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
-        int[] raw = new int[width * height];
+        int x0 = Math.max(0, region[0]), y0 = Math.max(0, region[1]);
+        int x1 = Math.min(width, region[2]), y1 = Math.min(height, region[3]);
+        if (snapshotPm == null) snapshotPm = new Pixmap(width, height);
+        Pixmap pm = snapshotPm;
+        int rw = x1 - x0, rh = y1 - y0;
+        if (rw <= 0 || rh <= 0) return pm;
+        if (snapshotRaw.length < rw * rh) snapshotRaw = new int[rw * rh];
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4);
-        GL11.glReadPixels(0, 0, width, height, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, raw);
-        Pixmap pm = new Pixmap(width, height);
+        GL11.glReadPixels(x0, height - y1, rw, rh, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, snapshotRaw);
         int[] dst = pm.pixels();
-        for (int y = 0; y < height; y++) System.arraycopy(raw, (height - 1 - y) * width, dst, y * width, width);
+        for (int y = 0; y < rh; y++) System.arraycopy(snapshotRaw, (rh - 1 - y) * rw, dst, (y0 + y) * width + x0, rw);
         return pm;
     }
 

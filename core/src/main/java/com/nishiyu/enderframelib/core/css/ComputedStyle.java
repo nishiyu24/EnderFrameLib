@@ -376,6 +376,17 @@ public final class ComputedStyle {
 
     private volatile int containment = -1;
 
+    /** この算出スタイルだけから決まる、利用側（描画順）の派生値の置き場。算出スタイルは不変なので一度作れば使い回せる。 */
+    private volatile Object derivedFacts;
+
+    public Object derivedFacts() {
+        return derivedFacts;
+    }
+
+    public void derivedFacts(Object facts) {
+        this.derivedFacts = facts;
+    }
+
     /**
      * 有効な containment（{@code contain} と {@code content-visibility} の和）。{@code strict} は size layout paint style、
      * {@code content} は layout paint style。{@code content-visibility: hidden} は size layout paint、{@code auto} は layout paint。

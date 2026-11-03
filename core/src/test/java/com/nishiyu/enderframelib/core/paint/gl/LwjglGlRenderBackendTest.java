@@ -752,6 +752,22 @@ class LwjglGlRenderBackendTest {
         }
     }
 
+    /** 範囲限定の読み戻しバッファを使い回しても（別の場所の 2 つの blend、全面読みの backdrop を挟む）CPU と一致する。 */
+    @Test
+    void repeatedRegionReadbackReusesBufferAndMatchesCpu() {
+        requireGl();
+        String body = deepLayers(7, "<div style='width:30px;height:30px;background:#ff8800'></div>"
+                + "<div style='margin-top:-15px;width:30px;height:30px;background:#4090e0;mix-blend-mode:multiply'></div>"
+                + "<div style='margin-top:10px;width:30px;height:20px;background:#20c040'></div>"
+                + "<div style='margin-top:-10px;width:30px;height:30px;background:rgba(255,255,255,0.1);backdrop-filter:invert(1)'></div>"
+                + "<div style='margin-top:10px;width:30px;height:30px;background:#e0e040'></div>"
+                + "<div style='margin-top:-15px;width:30px;height:30px;background:#2040c0;mix-blend-mode:difference'></div>");
+        try (LwjglGlRenderBackend g = gpu(body, 80, 200, 1f)) {
+            Diff d = diff(g.pixmap(), cpu(body, 80, 200, 1f).pixmap());
+            assertTrue(d.max() <= 4, "diff " + d);
+        }
+    }
+
     @Test
     void backdropFilterBeyondGpuLayerDepthMatchesCpu() {
         requireGl();

@@ -76,6 +76,14 @@ public interface GpuSink {
         return null;
     }
 
+    /**
+     * {@link #snapshotTarget()} の範囲限定版。{@code region}（{@code {x0,y0,x1,y1}}）の外の画素は<b>不定</b>（呼び出し側は読まない）。
+     * {@code mix-blend-mode} は層の描いた範囲だけを混ぜるので、全面を読み戻さずに済む。既定は全面版。
+     */
+    default Pixmap snapshotTarget(int[] region) {
+        return snapshotTarget();
+    }
+
     /** {@link #snapshotTarget} で読んだ絵の {@code region}（{@code {x0,y0,x1,y1}}）を、ブレンドなしで現在の描画先へ書き戻す。 */
     default void overwriteTarget(Pixmap pixmap, int[] region) {}
 

@@ -815,6 +815,47 @@ public class LayoutBox {
         return box.isRelayoutBoundary() ? selfChanged : remeasure;
     }
 
+    /**
+     * 変わった箱が分かっているとき（文字の局所パッチ）の {@link #markLayoutChanges(LayoutBox)} の代わり。木全体をたどらず、
+     * 変わった箱から根までの経路だけに印を付ける。印の付け方は全体版と同じ（境界から上へは測り直しを伝えない）。
+     *
+     * <p>経路の祖先の署名・子の並びが変わっていたり、変わった箱が子を持っていたり、根へたどれなかったりして
+     * 経路だけでは決まらないときは null を返す。呼び出し側は {@link #markLayoutChanges(LayoutBox)} に退く
+     * （付けた印は「測り直す」側にしか倒れないので、そのまま全体版で上書きしてよい）。</p>
+     *
+     * @return 印を付けた経路の箱（測り終えたら {@link #clearSubtreeMarks} に渡す）。null なら全体版へ退く
+     */
+    public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed) {
+        List<LayoutBox> path = new java.util.ArrayList<>();
+        for (LayoutBox leaf : changed) {
+            if (leaf == null || !leaf.children.isEmpty() || leaf == root) return null;
+            boolean selfChanged = leaf.selfSignatureChanged();
+            boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
+            leaf.layoutChanged |= remeasure;
+            leaf.subtreeChanged = true;
+            path.add(leaf);
+            boolean affects = leaf.isRelayoutBoundary() ? selfChanged : remeasure;
+            boolean reachedRoot = false;
+            for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
+                if (a.selfSignatureChanged() || a.childListChanged()) return null;
+                a.layoutChanged |= affects;
+                a.subtreeChanged = true;
+                path.add(a);
+                if (a == root) { reachedRoot = true; break; }
+                if (a.isRelayoutBoundary()) affects = false;
+            }
+            if (!reachedRoot) return null;
+        }
+        return path;
+    }
+
+    /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す（次の全体版が「変化なし」と付けるのと同じ）。 */
+    public static void clearSubtreeMarks(List<LayoutBox> path) {
+        for (LayoutBox b : path) {
+            if (!b.layoutChanged) b.subtreeChanged = false;
+        }
+    }
+
     /** 前回の measure の後に、自分か子孫の何かが変わった（境界を越えて伝わる。配置の使い回しの判定に使う）。 */
     private boolean subtreeChanged = true;
     /** 前回の layout の後に、子孫の再測定が起きていない（境界を越えて祖先まで切れる）。 */

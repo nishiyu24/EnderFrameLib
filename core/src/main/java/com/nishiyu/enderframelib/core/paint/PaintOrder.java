@@ -222,8 +222,7 @@ final class PaintOrder {
         }
         for (LayoutBox child : box.children) classify(child, clipForChild(child, childClip), childParent, sc, local);
 
-        String[] overflow = overflowPair(box);
-        boolean scrollbars = isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]);
+        boolean scrollbars = factsOf(box.style).scrollbars();
         if (!"root".equals(tag) && box.w > 0 && box.h > 0 && scrollbars && !isInvisible(box)) {
             local.after.add(new RenderTask(null, elements -> drawScrollbarsIfNeeded(elements, box, clip)));
         }
@@ -250,7 +249,7 @@ final class PaintOrder {
      * 中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
      */
     void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
-        if (box.display.isNone() || "none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
+        if (box.display.isNone() || factsOf(box.style).displayNone()) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
 
         RenderTask self = selfTask(box, clip, parentId);
@@ -315,8 +314,32 @@ final class PaintOrder {
     }
 
     static boolean isZIndexAuto(LayoutBox box) {
-        String z = box.style.get(CssProperty.Z_INDEX);
-        return z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
+        return factsOf(box.style).zAuto();
+    }
+
+    /**
+     * 算出スタイルだけから決まる、描画順の分類に使う値。箱ごとに十数回の文字列引きをしていた所を、スタイルごとに一度で済ませる
+     * （算出スタイルは不変で、箱の木が変わっても同じインスタンスなら使い回せる）。
+     */
+    record StyleFacts(boolean displayNone, boolean zAuto, float opacity, boolean stackingByStyle, boolean hasMask,
+                      String overflowX, String overflowY, boolean scrollbars) {
+    }
+
+    static StyleFacts factsOf(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        if (style.derivedFacts() instanceof StyleFacts cached) return cached;
+        String z = style.get(CssProperty.Z_INDEX);
+        boolean zAuto = z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
+        boolean mask = styleHasMask(style);
+        boolean stacking = !isNone(style.get(CssProperty.TRANSFORM)) || !isNone(style.get("filter"))
+                || !isNone(style.get("clip-path")) || !isNone(style.get("backdrop-filter")) || mask
+                || style.keywordOf("isolation", CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE
+                || !"normal".equals(style.keyword("mix-blend-mode", "normal"));
+        String[] overflow = overflowPair(style);
+        StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block")), zAuto,
+                style.number(CssProperty.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
+                isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]));
+        style.derivedFacts(facts);
+        return facts;
     }
 
     /**
@@ -324,19 +347,16 @@ final class PaintOrder {
      * Compositing 1 / Transforms 1 の追加分）。
      */
     boolean createsStackingContext(LayoutBox box) {
-        boolean zAuto = isZIndexAuto(box);
+        StyleFacts f = factsOf(box.style);
+        boolean zAuto = f.zAuto();
         if (isPositioned(box) && !zAuto) return true;
         if (box.isFixed || box.isSticky) return true;
         if (!zAuto && isFlexOrGridItem(box)) return true;
-        if (box.style.number(CssProperty.OPACITY, 1f) < 1f) return true;
+        if (f.opacity() < 1f) return true;
         // opacity を動かすアニメーションは、静的な値が 1 でも動いている間スタッキングコンテキストを作る（CSS Positioned Layout 3 §2）
         if (animatesOpacity.test(box)) return true;
-        if (!isNone(box.style.get(CssProperty.TRANSFORM))) return true;
-        if (!isNone(box.style.get("filter"))) return true;
-        // clip-path・mask・backdrop-filter もスタッキングコンテキストを作る（CSS Masking 1 §3 / §6、Filter Effects 2 §2）
-        if (!isNone(box.style.get("clip-path")) || !isNone(box.style.get("backdrop-filter")) || hasMask(box)) return true;
-        if (box.style.keywordOf("isolation", CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE) return true;
-        return !"normal".equals(box.style.keyword("mix-blend-mode", "normal"));
+        // transform・filter・clip-path・mask・backdrop-filter・isolation・mix-blend-mode（CSS Masking 1 / Filter Effects 2 / Compositing 1）
+        return f.stackingByStyle();
     }
 
     /**
@@ -386,8 +406,12 @@ final class PaintOrder {
 
     /** {@code mask-image} に画像かグラデーションのレイヤーがあるか。 */
     static boolean hasMask(LayoutBox box) {
-        if (BoxDecorations.clipsText(box.style)) return true; // background-clip: text は文字のアルファを写すマスク
-        for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayers(box.style)) {
+        return factsOf(box.style).hasMask();
+    }
+
+    private static boolean styleHasMask(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        if (BoxDecorations.clipsText(style)) return true; // background-clip: text は文字のアルファを写すマスク
+        for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayers(style)) {
             if (layer.url() != null || layer.isGradient()) return true;
         }
         return false;
@@ -467,9 +491,9 @@ final class PaintOrder {
         if (isRootElement) return parentClip;
 
         boolean panZoom = "true".equalsIgnoreCase(box.node.attrs.get("data-pan-zoom"));
-        String[] overflow = overflowPair(box);
-        boolean clipX = panZoom || !"visible".equals(overflow[0]);
-        boolean clipY = panZoom || !"visible".equals(overflow[1]);
+        StyleFacts facts = factsOf(box.style);
+        boolean clipX = panZoom || !"visible".equals(facts.overflowX());
+        boolean clipY = panZoom || !"visible".equals(facts.overflowY());
         if (!clipX && !clipY) return parentClip;
 
         float minX = clipX ? box.x + box.bL : -UNCLIPPED;
@@ -508,8 +532,13 @@ final class PaintOrder {
      * visible は auto、clip は hidden として扱う（CSS Overflow 3 §3.1）。
      */
     static String[] overflowPair(LayoutBox box) {
-        String x = box.style.overflowX().cssName();
-        String y = box.style.overflowY().cssName();
+        StyleFacts f = factsOf(box.style);
+        return new String[]{f.overflowX(), f.overflowY()};
+    }
+
+    private static String[] overflowPair(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        String x = style.overflowX().cssName();
+        String y = style.overflowY().cssName();
         boolean xPlain = "visible".equals(x) || "clip".equals(x);
         boolean yPlain = "visible".equals(y) || "clip".equals(y);
         if (xPlain != yPlain) {
