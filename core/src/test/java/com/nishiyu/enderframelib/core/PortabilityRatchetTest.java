@@ -20,12 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class PortabilityRatchetTest {
 
-    /** 現状の依存（課題 E 未着手）。{@code common/} は GLFW のキーコード、{@code core/} は AWT の画像型。 */
+    /** 現状の依存。GLFW の窓・GL バックエンド・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
     private static final Set<String> ALLOWED = Set.of(
             "common/StandaloneViewer.java",
             "core/paint/gl/LwjglGlRenderBackend.java",
-            "core/paint/software/ImageProvider.java",
-            "core/raster/GifAnimation.java");
+            "core/raster/awt/AwtImageDecoder.java");
 
     private static final Pattern FORBIDDEN = Pattern.compile("org[.]lwjgl[.](opengl|glfw)|java[.]awt");
 
