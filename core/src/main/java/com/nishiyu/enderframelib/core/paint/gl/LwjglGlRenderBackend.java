@@ -23,6 +23,7 @@ import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL31;
+import org.lwjgl.opengl.GL32;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
@@ -609,6 +610,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private int clearPremul = 0;
     private boolean readbackValid;
     private boolean closed;
+    /** 共有時、直近のフレームの完了を表すフェンス（0 は無し）。{@link #waitForRender} が GPU 側で待つ。 */
+    private long renderFence;
     private long gpuShapes;
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍・見えないウィンドウで作る。GL が使えなければ {@link IllegalStateException}。 */
@@ -714,7 +717,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return height;
     }
 
-    /** 溜まった GL 命令をすべて終わらせる。別のコンテキストが {@link #colorTexture()} を読む前に必要（共有時は {@link #render} が呼ぶ）。 */
+    /** 溜まった GL 命令をすべて終わらせる。別のコンテキストが {@link #colorTexture()} を読む前に CPU を止めて待ちたいときに使う（共有時の {@link #render} はフェンスを置くだけで、ホストは {@link #waitForRender} を呼ぶ）。 */
     public void finish() {
         if (closed) return;
         enter();
@@ -925,7 +928,35 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         while (!layerStack.isEmpty()) endGroup(); // 例外で閉じ損ねた層があっても根の描画先へ戻す
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         flushAll();
-        if (hostManaged) GL11.glFinish();
+        if (hostManaged) publishFrame();
+    }
+
+    /**
+     * 共有時にフレームの書き込みをホストへ引き渡す。{@code glFinish} で CPU を止める代わりに、
+     * {@code glFlush} でコマンドを送り出し、完了フェンスを置く（ホストは {@link #waitForRender} で GPU 側だけ待つ）。
+     * フェンスを使えない GL（3.2 未満）では従来どおり {@code glFinish}。
+     */
+    private void publishFrame() {
+        if (renderFence != 0) {
+            GL32.glDeleteSync(renderFence);
+            renderFence = 0;
+        }
+        if (!myCaps.OpenGL32) {
+            GL11.glFinish();
+            return;
+        }
+        renderFence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        GL11.glFlush(); // フェンスをコマンドキューに確実に流す（流さないと待つ側が永久に待つ）
+    }
+
+    /**
+     * ホストのコンテキストを現在にした状態で、{@link #colorTexture()} を読む命令の直前に呼ぶ。
+     * 直近の {@link #render} の GPU 処理が終わるまで、ホストの GPU コマンドの実行を止める（{@code glWaitSync}）。
+     * CPU スレッドはブロックしない。共有でない場合・フェンスが無い場合は何もしない。
+     */
+    public void waitForRender() {
+        if (closed || renderFence == 0) return;
+        GL32.glWaitSync(renderFence, 0, GL32.GL_TIMEOUT_IGNORED);
     }
 
     /** CPU の層を重ね、続けて溜めた図形を描き切る（描画順は CPU 層 → 図形）。 */
@@ -2160,6 +2191,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             for (int[] t : imageTex.values()) GL11.glDeleteTextures(t[0]);
             imageTex.clear();
             if (vao != 0) GL30.glDeleteVertexArrays(vao);
+            if (renderFence != 0) {
+                GL32.glDeleteSync(renderFence);
+                renderFence = 0;
+            }
             if (hostManaged) GL11.glFinish();
             exit();
             if (!hostManaged) GLFW.glfwMakeContextCurrent(MemoryUtil.NULL);

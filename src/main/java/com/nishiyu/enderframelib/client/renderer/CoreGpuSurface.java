@@ -195,6 +195,7 @@ public final class CoreGpuSurface {
     /** 共有テクスチャ（事前乗算・下端が先頭）を、面の左上を原点とする {@code w × h} の板に貼る。 */
     private static void drawTexture(LwjglGlRenderBackend backend, Matrix4f pose, int w, int h) {
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        backend.waitForRender(); // CPU を止めず、GPU 側で描画完了を待つ
         RenderSystem.setShaderTexture(0, backend.colorTexture());
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         RenderSystem.enableBlend();
