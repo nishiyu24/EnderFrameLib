@@ -176,26 +176,43 @@ public final class BoxMeasurer {
         resolveHeights(box, space, ctx, isBorderBox(box.style), engine);
     }
 
+    // 箱ごとに何度も引くプロパティは、名前ではなく添字で引く（文字列のハッシュと表引きを省く）
+    private static final int ID_MARGIN_TOP = ComputedStyle.idOf(CssProperty.MARGIN_TOP);
+    private static final int ID_MARGIN_RIGHT = ComputedStyle.idOf(CssProperty.MARGIN_RIGHT);
+    private static final int ID_MARGIN_BOTTOM = ComputedStyle.idOf(CssProperty.MARGIN_BOTTOM);
+    private static final int ID_MARGIN_LEFT = ComputedStyle.idOf(CssProperty.MARGIN_LEFT);
+    private static final int ID_PADDING_TOP = ComputedStyle.idOf(CssProperty.PADDING_TOP);
+    private static final int ID_PADDING_RIGHT = ComputedStyle.idOf(CssProperty.PADDING_RIGHT);
+    private static final int ID_PADDING_BOTTOM = ComputedStyle.idOf(CssProperty.PADDING_BOTTOM);
+    private static final int ID_PADDING_LEFT = ComputedStyle.idOf(CssProperty.PADDING_LEFT);
+    private static final int ID_BORDER_TOP_WIDTH = ComputedStyle.idOf(CssProperty.BORDER_TOP_WIDTH);
+    private static final int ID_BORDER_RIGHT_WIDTH = ComputedStyle.idOf(CssProperty.BORDER_RIGHT_WIDTH);
+    private static final int ID_BORDER_BOTTOM_WIDTH = ComputedStyle.idOf(CssProperty.BORDER_BOTTOM_WIDTH);
+    private static final int ID_BORDER_LEFT_WIDTH = ComputedStyle.idOf(CssProperty.BORDER_LEFT_WIDTH);
+    private static final int ID_ROW_GAP = ComputedStyle.idOf(CssProperty.ROW_GAP);
+    private static final int ID_COLUMN_GAP = ComputedStyle.idOf(CssProperty.COLUMN_GAP);
+    private static final int ID_BORDER_COLLAPSE = ComputedStyle.idOf(CssProperty.BORDER_COLLAPSE);
+
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.style;
 
-        box.mT = style.length(CssProperty.MARGIN_TOP, parentW, rootW, rootH);
-        box.mR = style.length(CssProperty.MARGIN_RIGHT, parentW, rootW, rootH);
-        box.mB = style.length(CssProperty.MARGIN_BOTTOM, parentW, rootW, rootH);
-        box.mL = style.length(CssProperty.MARGIN_LEFT, parentW, rootW, rootH);
+        box.mT = style.length(ID_MARGIN_TOP, parentW, rootW, rootH);
+        box.mR = style.length(ID_MARGIN_RIGHT, parentW, rootW, rootH);
+        box.mB = style.length(ID_MARGIN_BOTTOM, parentW, rootW, rootH);
+        box.mL = style.length(ID_MARGIN_LEFT, parentW, rootW, rootH);
         box.ownMarginTop = box.mT;
         box.ownMarginBottom = box.mB;
 
-        box.pT = style.length(CssProperty.PADDING_TOP, parentW, rootW, rootH);
-        box.pR = style.length(CssProperty.PADDING_RIGHT, parentW, rootW, rootH);
-        box.pB = style.length(CssProperty.PADDING_BOTTOM, parentW, rootW, rootH);
-        box.pL = style.length(CssProperty.PADDING_LEFT, parentW, rootW, rootH);
+        box.pT = style.length(ID_PADDING_TOP, parentW, rootW, rootH);
+        box.pR = style.length(ID_PADDING_RIGHT, parentW, rootW, rootH);
+        box.pB = style.length(ID_PADDING_BOTTOM, parentW, rootW, rootH);
+        box.pL = style.length(ID_PADDING_LEFT, parentW, rootW, rootH);
 
 
-        box.bT = style.length(CssProperty.BORDER_TOP_WIDTH, parentH, rootW, rootH);
-        box.bR = style.length(CssProperty.BORDER_RIGHT_WIDTH, parentW, rootW, rootH);
-        box.bB = style.length(CssProperty.BORDER_BOTTOM_WIDTH, parentH, rootW, rootH);
-        box.bL = style.length(CssProperty.BORDER_LEFT_WIDTH, parentW, rootW, rootH);
+        box.bT = style.length(ID_BORDER_TOP_WIDTH, parentH, rootW, rootH);
+        box.bR = style.length(ID_BORDER_RIGHT_WIDTH, parentW, rootW, rootH);
+        box.bB = style.length(ID_BORDER_BOTTOM_WIDTH, parentH, rootW, rootH);
+        box.bL = style.length(ID_BORDER_LEFT_WIDTH, parentW, rootW, rootH);
         if (box.collapsedBorders != null) {
             box.bT = box.collapsedBorders[0];
             box.bR = box.collapsedBorders[1];
@@ -204,12 +221,12 @@ public final class BoxMeasurer {
         }
         // 枠線を重ねる表は padding を持たない（CSS 2.2 §17.6.2）
         if (box.display.inner() == Inner.TABLE
-                && style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE) {
+                && style.keywordOf(ID_BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE) {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 
-        box.rowGap = style.length(CssProperty.ROW_GAP, parentH, rootW, rootH);
-        box.columnGap = style.length(CssProperty.COLUMN_GAP, parentW, rootW, rootH);
+        box.rowGap = style.length(ID_ROW_GAP, parentH, rootW, rootH);
+        box.columnGap = style.length(ID_COLUMN_GAP, parentW, rootW, rootH);
     }
 
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,

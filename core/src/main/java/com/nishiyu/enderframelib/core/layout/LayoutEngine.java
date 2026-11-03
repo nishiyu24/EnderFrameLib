@@ -83,8 +83,10 @@ public abstract class LayoutEngine {
     public abstract void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx);
 
 
+    private static final int ID_DISPLAY = ComputedStyle.idOf(CssProperty.DISPLAY);
+
     protected boolean isDisplayNone(ComputedStyle style) {
-        return "none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"));
+        return "none".equals(style.get(ID_DISPLAY));
     }
 
     protected boolean isBold(ComputedStyle style) {

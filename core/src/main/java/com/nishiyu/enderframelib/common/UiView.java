@@ -1291,8 +1291,10 @@ public class UiView implements AutoCloseable {
                     layoutRoot);
             setLayoutRoot(rootBox);
             long layoutDone = System.nanoTime();
+            long paintAlloc0 = RenderPipeline.trackAllocations ? RenderPipeline.threadAllocatedBytes() : 0;
             List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
-            lastBreakdown = RenderPipeline.lastBuildStats + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+            lastBreakdown = RenderPipeline.lastBuildStats
+                    + (RenderPipeline.trackAllocations ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
             if (elements == null) elements = new ArrayList<>();
             publishBuilt(elements);
             applyOverrides();

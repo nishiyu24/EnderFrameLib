@@ -689,6 +689,8 @@ public class StyleResolver {
         for (String key : new ArrayList<>(style.keySet())) {
             String value = style.get(key);
             if (key.startsWith("--")) {
+                // 参照も登録も無い普通のカスタムプロパティ（継承で大量に届く）は、解いた値が宣言そのもの
+                if (value != null && !value.isBlank() && !value.contains("var(") && registrations.apply(key) == null) continue;
                 String resolved = vars.resolveCustomProperty(key);
                 if (resolved == null) style.remove(key);
                 else style.put(key, resolved);
