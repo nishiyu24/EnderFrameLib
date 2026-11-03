@@ -37,9 +37,19 @@ public record LayoutContext(
         this(viewport, intrinsicResolver, scrollState, fonts, false, 0L, true);
     }
 
+    // テキストの測定ごとに引くプロパティは、名前ではなく添字で引く
+    private static final int ID_FONT_FAMILY = ComputedStyle.idOf(CssProperty.FONT_FAMILY);
+    private static final int ID_FONT_STYLE = ComputedStyle.idOf(CssProperty.FONT_STYLE);
+    private static final int ID_LETTER_SPACING = ComputedStyle.idOf(CssProperty.LETTER_SPACING);
+    private static final int ID_FONT_KERNING = ComputedStyle.idOf(CssProperty.FONT_KERNING);
+    private static final int ID_OVERFLOW_WRAP = ComputedStyle.idOf(CssProperty.OVERFLOW_WRAP);
+    private static final int ID_WHITE_SPACE = ComputedStyle.idOf(CssProperty.WHITE_SPACE);
+    private static final int ID_WORD_BREAK = ComputedStyle.idOf(CssProperty.WORD_BREAK);
+    private static final int ID_TEXT_OVERFLOW = ComputedStyle.idOf(CssProperty.TEXT_OVERFLOW);
+
     /** 算出スタイルの {@code font-family} に対応する書体。 */
     public FontFace faceFor(ComputedStyle style) {
-        return fonts.resolve(style.get(CssProperty.FONT_FAMILY));
+        return fonts.resolve(style.get(ID_FONT_FAMILY));
     }
 
     /** 算出スタイルから測定に必要な指定だけを取り出す。 */
@@ -48,23 +58,28 @@ public record LayoutContext(
         return new FontStyle(
                 style.fontSizePx(),
                 weight >= 600,
-                style.keywordOf(CssProperty.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                style.length(CssProperty.LETTER_SPACING, 0, 0, 0),
+                style.keywordOf(ID_FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
+                style.length(ID_LETTER_SPACING, 0, 0, 0),
                 weight,
-                !"none".equalsIgnoreCase(style.getOrDefault(CssProperty.FONT_KERNING, "auto").trim()));
+                !isNone(style.get(ID_FONT_KERNING)));
+    }
+
+    /** 宣言が {@code none}（前後の空白・大小文字は無視）か。宣言が無ければ偽（既定は auto）。 */
+    private static boolean isNone(String value) {
+        return value != null && "none".equalsIgnoreCase(value.trim());
     }
 
     /** 整形（折り返し・空白・省略）に必要なスタイルをまとめる。 */
     public TextStyle textStyleFor(ComputedStyle style) {
         FontFace face = faceFor(style);
         FontStyle font = fontStyleFor(style);
-        CssKeywords.OverflowWrap overflowWrap = style.keywordOf(CssProperty.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class);
+        CssKeywords.OverflowWrap overflowWrap = style.keywordOf(ID_OVERFLOW_WRAP, CssKeywords.OverflowWrap.class);
         return new TextStyle(
                 font,
-                WhiteSpace.of(style.get(CssProperty.WHITE_SPACE)),
-                WordBreak.of(style.get(CssProperty.WORD_BREAK)),
+                WhiteSpace.of(style.get(ID_WHITE_SPACE)),
+                WordBreak.of(style.get(ID_WORD_BREAK)),
                 overflowWrap != CssKeywords.OverflowWrap.NORMAL,
-                style.keywordOf(CssProperty.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS,
+                style.keywordOf(ID_TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS,
                 LayoutMetrics.lineHeightPx(style, face, font));
     }
 }

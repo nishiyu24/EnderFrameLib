@@ -556,6 +556,37 @@ public final class ComputedStyle {
         return compiledLength(id, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
     }
 
+    /**
+     * プロパティ名の固定の添字（登録に無い名前は -1）。熱い経路は、クラスの初期化で一度だけこれを引いて
+     * {@code static final int} に持ち、名前の代わりに添字を取る {@link #get(int)} / {@link #keywordOf(int, Class)} /
+     * {@link #length(int, float, float, float)} などで引く（文字列のハッシュと表引きを毎回しない）。
+     */
+    public static int idOf(String propertyName) {
+        return CssPropertyId.of(propertyName);
+    }
+
+    /** {@link #idOf} の添字で宣言の文字列を引く。{@code get(name)} と同じ結果。添字は登録済みのものに限る。 */
+    public String get(int id) {
+        return values[id];
+    }
+
+    /** 添字版の {@link #length(String, float, float, float)}。 */
+    public float length(int id, float maxPixels, float rootW, float rootH) {
+        String val = values[id];
+        if (val == null) return 0;
+        return compiledLength(id, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    }
+
+    /** 添字版の {@link #keywordOf(String, Class)}。 */
+    public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(int id, Class<E> type) {
+        Object cached = cached(id, KIND_KEYWORD);
+        if (cached != null && type.isInstance(cached)) return type.cast(cached);
+        E parsed = CssKeywords.parse(type, values[id]);
+        if (parsed == null) parsed = PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
+        remember(id, KIND_KEYWORD, parsed);
+        return parsed;
+    }
+
     /** 添字（{@link CssPropertyId#NONE} なら名前）で宣言を引く。{@link StyleMap#get} と同じ結果。 */
     private String rawAt(int id, String name) {
         if (id != CssPropertyId.NONE) return values[id];

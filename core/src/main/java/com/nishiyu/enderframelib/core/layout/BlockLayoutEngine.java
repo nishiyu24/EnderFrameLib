@@ -168,8 +168,14 @@ public class BlockLayoutEngine extends LayoutEngine {
         return Float.NaN;
     }
 
+    private static boolean isRtl(ComputedStyle style) {
+        String direction = style.get(ID_DIRECTION);
+        return direction != null && "rtl".equalsIgnoreCase(direction.trim());
+    }
+
     private static boolean hasSpecifiedHeight(ComputedStyle style) {
-        return style.containsKey(CssProperty.HEIGHT) && !"auto".equals(style.getOrDefault(CssProperty.HEIGHT, "auto").trim());
+        String height = style.get(ID_HEIGHT);
+        return height != null && !"auto".equals(height.trim());
     }
 
     @Override
@@ -244,7 +250,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
                       java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
         TextAlign textAlign = box.style.keywordOf(CssProperty.TEXT_ALIGN, TextAlign.class)
-                .physical("rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim()));
+                .physical(isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
 
         for (Object item : state.items) {
@@ -334,9 +340,14 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** float かどうか。float はブロックフローの子のときだけ効く（flex / grid アイテムでは無視される）。 */
+    private static final int ID_FLOAT = ComputedStyle.idOf(CssProperty.FLOAT);
+    private static final int ID_DIRECTION = ComputedStyle.idOf(CssProperty.DIRECTION);
+    private static final int ID_TEXT_INDENT = ComputedStyle.idOf(CssProperty.TEXT_INDENT);
+    private static final int ID_HEIGHT = ComputedStyle.idOf(CssProperty.HEIGHT);
+
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
-        if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) == CssKeywords.FloatSide.NONE) return false;
+        if (box.style.keywordOf(ID_FLOAT, CssKeywords.FloatSide.class) == CssKeywords.FloatSide.NONE) return false;
         return LayoutEngine.getEngine(box.parent.display) instanceof BlockLayoutEngine;
     }
 
@@ -573,7 +584,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // text-indent は要素の最初の行だけ。匿名ブロックは持ち主の最初の子のときだけ字下げする
             float indent = 0;
             if (firstRun && (!box.isAnonymous || isFirstFlowChild(box))) {
-                indent = box.style.length(CssProperty.TEXT_INDENT, innerW, ctx.viewport().rootW(), ctx.viewport().rootH());
+                indent = box.style.length(ID_TEXT_INDENT, innerW, ctx.viewport().rootW(), ctx.viewport().rootH());
             }
             firstRun = false;
 

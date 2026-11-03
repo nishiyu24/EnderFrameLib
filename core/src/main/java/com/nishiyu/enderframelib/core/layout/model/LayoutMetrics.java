@@ -71,8 +71,11 @@ public final class LayoutMetrics {
         return Math.clamp(value, 1, 1000);
     }
 
+    private static final int ID_FONT_WEIGHT = ComputedStyle.idOf(CssProperty.FONT_WEIGHT);
+    private static final int ID_LINE_HEIGHT = ComputedStyle.idOf(CssProperty.LINE_HEIGHT);
+
     public static int numericWeight(ComputedStyle style) {
-        return numericWeight(style.getOrDefault(CssProperty.FONT_WEIGHT, ""));
+        return numericWeight(style.get(ID_FONT_WEIGHT));
     }
 
     /**
@@ -103,7 +106,7 @@ public final class LayoutMetrics {
      * 1 行が占める高さ（px）。
      */
     public static float lineHeightPx(ComputedStyle style, FontFace face, FontStyle font) {
-        String raw = style.get(CssProperty.LINE_HEIGHT);
+        String raw = style.get(ID_LINE_HEIGHT);
         if (raw == null) return face.normalLineHeight(font);
 
         String value = raw.trim();

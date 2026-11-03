@@ -112,6 +112,18 @@ public class RenderPipeline {
 
     /** 直近の {@link #layoutDocument} で作った箱の数・スタイルを算出し直した数・前回の箱を使い回した数（調べる用）。 */
     public static volatile String lastBuildStats = "";
+
+    /** 診断用: true の間、各段の割り当て量（KB、呼び出しスレッド）を {@link #lastBuildStats} に足す。既定は false で費用なし。 */
+    public static volatile boolean trackAllocations = false;
+
+    /** 診断用: {@link #trackAllocations} のとき、スタイル解決の段ごとの割り当て（バイト）。 */
+    public static long allocResolve, allocCompute, allocAnimated;
+
+    /** 呼び出しスレッドがこれまでに割り当てたバイト数（{@link #trackAllocations} のときだけ呼ぶ）。 */
+    public static long threadAllocatedBytes() {
+        return ((com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean())
+                .getThreadAllocatedBytes(Thread.currentThread().getId());
+    }
     private static int statBoxes, statRestyled, statReused;
     private static String statPhases = "";
     private static long passMeasureMs, passLayoutMs, passMeasured;
@@ -138,19 +150,26 @@ public class RenderPipeline {
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
             Map<HtmlNode, LayoutBox> reusable = incremental ? LayoutBox.reusableBoxes(rootBox) : null;
             statBoxes = statRestyled = statReused = 0;
+            allocResolve = allocCompute = allocAnimated = 0;
             long tA = System.nanoTime();
+            boolean track = trackAllocations;
+            long aA = track ? threadAllocatedBytes() : 0;
             rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
             long tB = System.nanoTime();
+            long aB = track ? threadAllocatedBytes() : 0;
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
             long tC = System.nanoTime();
+            long aC = track ? threadAllocatedBytes() : 0;
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
             long tD = System.nanoTime();
             runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, incremental);
             long tE = System.nanoTime();
+            long aE = track ? threadAllocatedBytes() : 0;
             statPhases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
-                    + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + passMeasureMs + "/" + passMeasured + "boxes layout=" + passLayoutMs + ")";
+                    + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + passMeasureMs + "/" + passMeasured + "boxes layout=" + passLayoutMs + ")"
+                    + (track ? " allocKB[resolve=" + allocResolve / 1024 + " compute=" + allocCompute / 1024 + " anim=" + allocAnimated / 1024 + " build=" + (aB - aA) / 1024 + " boxTree=" + (aC - aB) / 1024 + " passes=" + (aE - aC) / 1024 + "]" : "");
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
         lastBuildStats = "boxes=" + statBoxes + " restyled=" + statRestyled + " reused=" + statReused + " " + statPhases;
@@ -721,6 +740,8 @@ public class RenderPipeline {
         boolean subtreeDirty = (flags != null && flags.subtreeDirty) || force == FORCE_SUBTREE;
 
         if (needsRestyle) {
+            boolean tk = trackAllocations;
+            long k0 = tk ? threadAllocatedBytes() : 0;
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             Map<String, String> rawStyle = interactionState != null
                     ? styleSet.resolve(interactionState)
@@ -728,13 +749,20 @@ public class RenderPipeline {
             if (node.attrs.containsKey("hidden")) {
                 rawStyle.put(CssProperty.DISPLAY, "none");
             }
+            long k1 = tk ? threadAllocatedBytes() : 0;
 
             ComputedStyle previous = flags != null ? flags.computedStyle : null;
             computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
                     containerFor(node, interactionState));
+            long k2 = tk ? threadAllocatedBytes() : 0;
             computed = animated(node, previous, computed, rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
                     interactionState);
             hasInteractive = styleSet.hasInteractiveRules();
+            if (tk) {
+                allocResolve += k1 - k0;
+                allocCompute += k2 - k1;
+                allocAnimated += threadAllocatedBytes() - k2;
+            }
 
             Propagation propagation = propagationOf(previous, computed);
             childForce = childForceOf(subtreeDirty, propagation, sheet);

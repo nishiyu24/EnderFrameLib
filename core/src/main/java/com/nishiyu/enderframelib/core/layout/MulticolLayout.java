@@ -85,8 +85,10 @@ final class MulticolLayout {
         return v == null || v.isBlank() || "auto".equalsIgnoreCase(v.trim());
     }
 
+    private static final int ID_COLUMN_COUNT = ComputedStyle.idOf(CssProperty.COLUMN_COUNT);
+
     private static int countOf(ComputedStyle style) {
-        String v = style.get(CssProperty.COLUMN_COUNT);
+        String v = style.get(ID_COLUMN_COUNT);
         if (isAuto(v)) return 0;
         try {
             return Math.max(0, Math.min(1000, Integer.parseInt(v.trim())));

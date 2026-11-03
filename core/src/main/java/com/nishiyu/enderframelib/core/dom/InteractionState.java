@@ -129,6 +129,10 @@ public class InteractionState implements StateLookup {
         /** 問い合わせコンテナとして測った内容ボックスの寸法（px）。測っていなければ NaN。 */
         public float containerWidth = Float.NaN;
         public float containerHeight = Float.NaN;
+        /** {@link #containerOf} の結果の使い回し（算出スタイルと寸法が同じ間だけ有効）。 */
+        ComputedStyle containerStyle;
+        float containerBoxW, containerBoxH;
+        ContainerBox containerBox;
     }
 
     /** 再スタイルの走査が、汚れていない部分木を飛ばしてよいか（走査のたびに {@code RenderPipeline} が決める）。 */
@@ -536,6 +540,13 @@ public class InteractionState implements StateLookup {
         StateFlags flags = get(node);
         if (flags == null || flags.computedStyle == null) return null;
         ComputedStyle style = flags.computedStyle;
+        // 祖先をたどる問い合わせのたびに作り直さない（名前の分割・カスタムプロパティの表は、算出スタイルが変わるまで同じ）
+        ContainerBox hit = flags.containerBox;
+        if (hit != null && flags.containerStyle == style
+                && Float.floatToIntBits(flags.containerBoxW) == Float.floatToIntBits(flags.containerWidth)
+                && Float.floatToIntBits(flags.containerBoxH) == Float.floatToIntBits(flags.containerHeight)) {
+            return hit;
+        }
         ContainerType type = switch (style.keyword("container-type", "normal")) {
             case "size" -> ContainerType.SIZE;
             case "inline-size" -> ContainerType.INLINE_SIZE;
@@ -545,8 +556,13 @@ public class InteractionState implements StateLookup {
         for (String name : style.keyword("container-name", "none").split("\s+")) {
             if (!name.isEmpty() && !name.equals("none")) names.add(name);
         }
-        return new ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
+        ContainerBox box = new ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
                 style.customProperties());
+        flags.containerStyle = style;
+        flags.containerBoxW = flags.containerWidth;
+        flags.containerBoxH = flags.containerHeight;
+        flags.containerBox = box;
+        return box;
     }
 
     // ==========================================

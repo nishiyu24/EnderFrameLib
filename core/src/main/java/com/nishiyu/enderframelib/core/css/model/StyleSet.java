@@ -20,7 +20,8 @@ public class StyleSet {
 
     public StyleSet(HtmlNode node, Map<String, String> inheritedStyle, StyleSheet sheet, boolean hasInteractiveRules) {
         this.node = node;
-        this.inheritedStyle = inheritedStyle != null ? new LinkedHashMap<>(inheritedStyle) : Map.of();
+        // 継承元は読み取り専用（親の算出スタイルの表）なので写さない。写すと要素ごとに表を 1 つ丸ごと作ることになる
+        this.inheritedStyle = inheritedStyle != null ? inheritedStyle : Map.of();
         this.sheet = sheet;
         this.hasInteractiveRules = hasInteractiveRules;
     }
