@@ -6,6 +6,8 @@ import com.nishiyu.enderframelib.core.paint.FilterOp;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
+import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
 import com.nishiyu.enderframelib.core.paint.software.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -580,19 +582,37 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     private static final int ATLAS_SIZE = 1024;
     private static final int IMAGE_CACHE_LIMIT = 64;
+    private static final int STRIDE = GpuBatchPacker.STRIDE;
+    private static final int MAX_BATCH = GpuBatchPacker.MAX_BATCH;
     /** 字形アトラス（R8）。棚詰め。満ちたら空にして詰め直す（字形は描く直前に載せるので、すでに描いた分には響かない）。 */
     private int atlasTex;
-    private int atlasX, atlasY, atlasRowH;
-    private final Map<GlyphBitmap, int[]> atlasEntries = new IdentityHashMap<>();
+    private final AtlasPacker atlas = new AtlasPacker(ATLAS_SIZE);
     private final Map<Pixmap, int[]> imageTex = new IdentityHashMap<>();
     private long gpuGlyphs, gpuImages;
 
     /** 1 インスタンスのテクセル数（データテクスチャの幅）と、1 回の draw にまとめる最大数（高さ）。 */
-    private static final int STRIDE = 64;
-    private static final int MAX_BATCH = 512;
-    private final float[] batch = new float[STRIDE * MAX_BATCH * 4];
-    private int batchN;
-    private int base;
+    /** 図形・字形・画像を 64 テクセルのインスタンスデータに詰める（API 非依存）。ここはその転送と描画だけを持つ。 */
+    private final GpuBatchPacker packer = new GpuBatchPacker(new GpuBatchPacker.Host() {
+        @Override
+        public void beforeShape() {
+            flushOverlay();
+        }
+
+        @Override
+        public void flushBatch() {
+            LwjglGlRenderBackend.this.flushBatch();
+        }
+
+        @Override
+        public boolean tracksBounds() {
+            return !layerStack.isEmpty();
+        }
+
+        @Override
+        public void touch(float x0, float y0, float x1, float y1) {
+            LwjglGlRenderBackend.this.touch(x0, y0, x1, y1);
+        }
+    });
     private int dataTex;
     private int boundImg;
     private long drawCalls;
@@ -612,7 +632,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private boolean closed;
     /** 共有時、直近のフレームの完了を表すフェンス（0 は無し）。{@link #waitForRender} が GPU 側で待つ。 */
     private long renderFence;
-    private long gpuShapes;
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍・見えないウィンドウで作る。GL が使えなければ {@link IllegalStateException}。 */
     public LwjglGlRenderBackend(int cssW, int cssH) {
@@ -758,7 +777,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 直近の {@link #render} で GPU が描いた図形（塗り・枠線）の数の累計。CPU に回った分は含まない。 */
     public long gpuShapeCount() {
-        return gpuShapes;
+        return packer.committedTotal() - gpuGlyphs - gpuImages;
     }
 
     /** GPU が描いた字形の数の累計（字形アトラスから引いた分）。 */
@@ -919,7 +938,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
         readbackValid = false;
         cpu.clearDirty();
-        batchN = 0;
+        packer.clear();
         boundImg = 0;
         layerStack.clear();
         layerPool.clear();
@@ -967,12 +986,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 溜めた図形を 1 回のインスタンス描画で描く。 */
     private void flushBatch() {
-        if (batchN == 0) return;
-        int n = batchN;
-        batchN = 0;
+        if (packer.count() == 0) return;
+        int n = packer.count();
+        packer.clear();
         java.nio.FloatBuffer fb = MemoryUtil.memAllocFloat(n * STRIDE * 4);
         try {
-            fb.put(batch, 0, n * STRIDE * 4).flip();
+            fb.put(packer.data(), 0, n * STRIDE * 4).flip();
             GL13.glActiveTexture(GL13.GL_TEXTURE3);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
             GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
@@ -990,23 +1009,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL14Blend.straight();
         GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP, 0, 4, n);
         drawCalls++;
-    }
-
-    private void put(int texel, float x, float y, float z, float w) {
-        int i = base + texel * 4;
-        batch[i] = x;
-        batch[i + 1] = y;
-        batch[i + 2] = z;
-        batch[i + 3] = w;
-    }
-
-    private int curMode, curInnerEmpty, curHole, curClipN;
-    private float curSigma, curRepO, curRepP;
-
-    private void commit() {
-        put(3, curMode, curInnerEmpty, curHole, curClipN);
-        put(16, curSigma, curRepO, curRepP, 0);
-        batchN++;
     }
 
     /** CPU が描いた層のうち、変わった範囲をテクスチャにして重ね、層を空に戻す。 */
@@ -1792,36 +1794,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                  int argb, Clip[] clips, float opacity) {
-        if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
-        mode(0);
-        setRect(rx, ry, x0, y0, x1, y1, "uRect", "uRx", "uRy");
-        setColor("uColor", argb);
-        commit();
-        gpuShapes++;
-        return true;
+        return packer.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
     }
 
     @Override
     public boolean strokeRoundBorder(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                      float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
                                      int[] colors, float[] widths, Clip[] clips, float opacity) {
-        if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
-        mode(1);
-        setRect(rx, ry, x0, y0, x1, y1, "uRect", "uRx", "uRy");
-        setRect(irx, iry, ix0, iy0, ix1, iy1, "uInner", "uIRx", "uIRy");
-        curInnerEmpty = innerEmpty ? 1 : 0;
-        put(10, widths[0], widths[1], widths[2], widths[3]);
-        float[] cs = new float[16];
-        for (int i = 0; i < 4; i++) {
-            cs[i * 4] = ((colors[i] >> 16) & 0xFF) / 255f;
-            cs[i * 4 + 1] = ((colors[i] >> 8) & 0xFF) / 255f;
-            cs[i * 4 + 2] = (colors[i] & 0xFF) / 255f;
-            cs[i * 4 + 3] = ((colors[i] >>> 24) & 0xFF) / 255f;
-        }
-        for (int i = 0; i < 4; i++) put(11 + i, cs[i * 4], cs[i * 4 + 1], cs[i * 4 + 2], cs[i * 4 + 3]);
-        commit();
-        gpuShapes++;
-        return true;
+        return packer.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                colors, widths, clips, opacity);
     }
 
     @Override
@@ -1831,114 +1812,47 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                                       float bx, float by, float cxm, float cym, float[] pcx, float[] pcy,
                                       float period, float dash, boolean round, float thickness,
                                       Clip[] clips, float opacity) {
-        if (!(period > 0f)) return false;
-        long before = gpuShapes;
-        if (!strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                colors, widths, clips, opacity)) return false;
-        if (gpuShapes == before) return true; // 姿勢が壊れていて何も積まれていない
-        // 直前に積んだ行を破線にする
-        base = (batchN - 1) * STRIDE * 4;
-        put(44, bx, by, cxm, cym);
-        put(45, pcx[0], pcx[1], pcx[2], pcx[3]);
-        put(46, pcy[0], pcy[1], pcy[2], pcy[3]);
-        put(47, period, dash, round ? 1f : 0f, thickness);
-        batch[base + 3 * 4 + 2] = 1f; // 破線の印（3 番目のテクセルの穴の欄）
-        return true;
+        return packer.strokeDashedBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                colors, widths, bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness, clips, opacity);
     }
 
     @Override
     public boolean strokeCircleBorder(Matrix2D pose, float cx, float cy, float outerR, float innerR,
                                       float bx0, float by0, float bx1, float by1, int[] colors, Clip[] clips, float opacity) {
-        if (!beginShapeIn(pose, bx0, by0, bx1, by1, clips, opacity)) return true;
-        mode(8);
-        put(4, cx, cy, outerR, innerR);
-        for (int i = 0; i < 4; i++) setColorAt(11 + i, colors[i]);
-        commit();
-        gpuShapes++;
-        return true;
-    }
-
-    private void setColorAt(int t, int argb) {
-        put(t, ((argb >> 16) & 0xFF) / 255f, ((argb >> 8) & 0xFF) / 255f, (argb & 0xFF) / 255f, ((argb >>> 24) & 0xFF) / 255f);
+        return packer.strokeCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, colors, clips, opacity);
     }
 
     @Override
     public boolean fillGradient(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                 ShaderGradient g, Clip[] clips, float opacity) {
-        if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
-        mode(2);
-        setRect(rx, ry, x0, y0, x1, y1, "uRect", "uRx", "uRy");
-        float[] a = g.gradA(), b = g.gradB();
-        put(17, a[0], a[1], a[2], a[3]);
-        put(18, b[0], b[1], b[2], b[3]);
-        curRepO = g.repeatOrigin();
-        curRepP = g.repeatPeriod();
-        setColor("uGC0", g.color0());
-        setColor("uGC1", g.color1());
-        commit();
-        gpuShapes++;
-        return true;
+        return packer.fillGradient(pose, x0, y0, x1, y1, rx, ry, g, clips, opacity);
     }
 
     @Override
     public boolean outerShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
                                float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
-        if (!beginShapeIn(pose, qx0, qy0, qx1, qy1, clips, opacity)) return true;
-        mode(3);
-        setRect(srx, sry, sx0, sy0, sx1, sy1, "uRect", "uRx", "uRy");
-        curSigma = sigma;
-        curHole = hole != null ? 1 : 0;
-        if (hole != null) setRect(hrx, hry, hole[0], hole[1], hole[2], hole[3], "uInner", "uIRx", "uIRy");
-        setColor("uColor", argb);
-        commit();
-        gpuShapes++;
-        return true;
+        return packer.outerShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry, argb, clips, opacity);
     }
 
     @Override
     public boolean insetShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
                                float sigma, float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
-        if (!beginShapeIn(pose, qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1, clips, opacity)) return true;
-        mode(4);
-        setRect(rx, ry, qx0, qy0, qx1, qy1, "uRect", "uRx", "uRy");
-        curSigma = sigma;
-        setRect(hrx, hry, hole[0], hole[1], hole[2], hole[3], "uInner", "uIRx", "uIRy");
-        setColor("uColor", argb);
-        commit();
-        gpuShapes++;
-        return true;
+        return packer.insetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry, argb, clips, opacity);
     }
 
     @Override
     public boolean drawGlyph(GlyphBitmap g, int bx, int by, int argb, Clip[] clips, float opacity) {
-        if (g.width() <= 0 || g.height() <= 0 || g.width() > ATLAS_SIZE || g.height() > ATLAS_SIZE) return false;
+        if (!atlas.fits(g)) return false;
         int[] slot = atlasSlot(g);
-        if (!beginShapeIn(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clips, opacity)) return true;
-        mode(5);
-        put(4, bx, by, bx + g.width(), by + g.height());
-        put(21, slot[0], slot[1], g.width(), g.height());
-        setColor("uColor", argb);
-        commit();
-        gpuGlyphs++;
+        if (packer.glyph(g, slot, bx, by, argb, clips, opacity)) gpuGlyphs++;
         return true;
     }
 
-    /** 字形をアトラスに載せて（まだなら）左上の位置を返す。 */
+    /** 字形をアトラスに載せて（まだなら転送して）左上の位置を返す。置き場所は {@link AtlasPacker} が決める。 */
     private int[] atlasSlot(GlyphBitmap g) {
-        int[] slot = atlasEntries.get(g);
-        if (slot != null) return slot;
-        if (atlasX + g.width() > ATLAS_SIZE) {
-            atlasX = 0;
-            atlasY += atlasRowH;
-            atlasRowH = 0;
-        }
-        if (atlasY + g.height() > ATLAS_SIZE) {
-            flushAll();
-            atlasEntries.clear();
-            atlasX = atlasY = atlasRowH = 0;
-        }
-        slot = new int[]{atlasX, atlasY};
+        int[] slot = atlas.slot(g, this::flushAll);
+        if (!atlas.lastPlacementWasNew()) return slot;
         ByteBuffer buf = MemoryUtil.memAlloc(g.width() * g.height());
         try {
             buf.put(g.coverage(), 0, g.width() * g.height()).flip();
@@ -1950,25 +1864,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         } finally {
             MemoryUtil.memFree(buf);
         }
-        atlasX += g.width();
-        atlasRowH = Math.max(atlasRowH, g.height());
-        atlasEntries.put(g, slot);
         return slot;
     }
 
     @Override
     public boolean drawGlyphTransformed(Matrix2D pose, GlyphBitmap g, float ox, float oy, float s,
                                         float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
-        if (g.width() <= 0 || g.height() <= 0 || g.width() > ATLAS_SIZE || g.height() > ATLAS_SIZE) return false;
+        if (!atlas.fits(g)) return false;
         int[] slot = atlasSlot(g);
-        if (!beginShapeIn(pose, bx0, by0, bx1, by1, clips, opacity)) return true;
-        mode(9);
-        put(21, slot[0], slot[1], g.width(), g.height());
-        put(22, ox, oy, s, 0);
-        put(23, g.left(), g.top(), 0, 0);
-        setColor("uColor", argb);
-        commit();
-        gpuGlyphs++;
+        if (packer.glyphTransformed(pose, g, slot, ox, oy, s, bx0, by0, bx1, by1, argb, clips, opacity)) gpuGlyphs++;
         return true;
     }
 
@@ -1980,20 +1884,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (image.width() > 8192 || image.height() > 8192) return false;
         flushOverlay();
         int tex = imageTexture(image);
-        if (batchN > 0 && boundImg != tex) flushBatch();
+        if (packer.count() > 0 && boundImg != tex) flushBatch();
         boundImg = tex;
-        // 回転の下では、辺の斜めの画素が箱の外側にもはみ出す（CPU 版は外接矩形の全画素を評価する）。1 画素分広げて合わせる
-        float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
-        if (!beginShapeIn(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, clips, opacity)) return true;
+        if (!packer.image(pose, image, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, taps, stepX, stepY, clips, opacity)) {
+            return true;
+        }
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        mode(6);
-        setRect(rx, ry, x0, y0, x1, y1, "uRect", "uRx", "uRy");
-        put(22, px0, py0, sx, sy);
-        put(23, image.width(), image.height(), taps, 0);
-        put(48, stepX, stepY, 0, 0);
-        commit();
         gpuImages++;
         return true;
     }
@@ -2035,74 +1933,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         imageTex.put(image, new int[]{tex, image.version()});
         return tex;
-    }
-
-    /**
-     * 図形を描く共通の準備。先に CPU の層を描き切って順序を守り、変形・クリップ・不透明度を渡す。
-     * 描くものが無い（姿勢が壊れている）なら {@code false}。
-     */
-    private boolean beginShape(Matrix2D pose, float x0, float y0, float x1, float y1, Clip[] clips, float opacity) {
-        float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
-        return beginShapeIn(pose, x0 - m, y0 - m, x1 + m, y1 + m, clips, opacity);
-    }
-
-    /** {@link #beginShape} の、描く範囲（余白込み）を直接渡す版。 */
-    private boolean beginShapeIn(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip[] clips, float opacity) {
-        flushOverlay();
-        if (!pose.isFinite() || pose.invert() == null || opacity <= 0f) return false;
-        if (!layerStack.isEmpty()) { // 層に描く範囲（四隅を姿勢で写した外接矩形）を記録する
-            double ax = pose.applyX(bx0, by0), ay = pose.applyY(bx0, by0), bx = pose.applyX(bx1, by0), by = pose.applyY(bx1, by0);
-            double cx = pose.applyX(bx0, by1), cy = pose.applyY(bx0, by1), dx = pose.applyX(bx1, by1), dy = pose.applyY(bx1, by1);
-            touch((float) Math.min(Math.min(ax, bx), Math.min(cx, dx)), (float) Math.min(Math.min(ay, by), Math.min(cy, dy)),
-                    (float) Math.max(Math.max(ax, bx), Math.max(cx, dx)), (float) Math.max(Math.max(ay, by), Math.max(cy, dy)));
-        }
-        if (batchN == MAX_BATCH) flushBatch();
-        base = batchN * STRIDE * 4;
-        curMode = 0;
-        curInnerEmpty = 0;
-        curHole = 0;
-        curSigma = 0f;
-        curRepO = 0f;
-        curRepP = 0f;
-        put(0, bx0, by0, bx1, by1);
-        put(1, (float) pose.a(), (float) pose.b(), (float) pose.c(), (float) pose.d());
-        put(2, (float) pose.e(), (float) pose.f(), (float) pose.meanScale(), opacity);
-        int n = clips.length;
-        curClipN = n;
-        for (int i = 0; i < n; i++) {
-            Clip c = clips[i];
-            Matrix2D v = c.inv();
-            int t = 24 + i * 5;
-            put(t, (float) v.a(), (float) v.b(), (float) v.c(), (float) v.d());
-            put(t + 1, (float) v.e(), (float) v.f(), c.scale(), 0);
-            put(t + 2, c.x0(), c.y0(), c.x1(), c.y1());
-            put(t + 3, c.rx()[0], c.rx()[1], c.rx()[2], c.rx()[3]);
-            put(t + 4, c.ry()[0], c.ry()[1], c.ry()[2], c.ry()[3]);
-        }
-        return true;
-    }
-
-    private void setRect(float[] rx, float[] ry, float x0, float y0, float x1, float y1, String rect, String nx, String ny) {
-        int t = switch (rect) {
-            case "uRect" -> 4;
-            default -> 7; // uInner
-        };
-        put(t, x0, y0, x1, y1);
-        put(t + 1, rx[0], rx[1], rx[2], rx[3]);
-        put(t + 2, ry[0], ry[1], ry[2], ry[3]);
-    }
-
-    private void setColor(String name, int argb) {
-        int t = switch (name) {
-            case "uGC0" -> 19;
-            case "uGC1" -> 20;
-            default -> 15; // uColor
-        };
-        put(t, ((argb >> 16) & 0xFF) / 255f, ((argb >> 8) & 0xFF) / 255f, (argb & 0xFF) / 255f, ((argb >>> 24) & 0xFF) / 255f);
-    }
-
-    private void mode(int m) {
-        curMode = m;
     }
 
     /** ブレンドの組み合わせ（描き先は事前乗算の画素）。 */

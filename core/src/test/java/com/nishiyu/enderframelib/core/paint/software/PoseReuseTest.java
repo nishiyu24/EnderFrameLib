@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
 import com.nishiyu.enderframelib.common.SoftwareRendering;
+import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 姿勢が動いていない項目の姿勢を、前のフレームから使い回しても（{@link SoftwareRenderBackend#reuseIdlePoses}）、毎フレーム作り直した
+ * 姿勢が動いていない項目の姿勢を、前のフレームから使い回しても（{@link PaintSceneDriver#reuseIdlePoses}）、毎フレーム作り直した
  * ときと同じ絵になること。同じ項目リストを、時刻を進めながら何度も描く（窓の描画と同じ）。色だけの {@code @keyframes}・変形・
  * 不透明度・入れ子（親が動き子の色が動く・親が止まり子が動く）・有限のアニメーションの終わりを含む。
  */
@@ -49,11 +50,11 @@ public class PoseReuseTest {
 
     @AfterEach
     public void restore() {
-        SoftwareRenderBackend.reuseIdlePoses = true;
+        PaintSceneDriver.reuseIdlePoses = true;
     }
 
     private static List<int[]> frames(List<DisplayItem> items, boolean reuse) {
-        SoftwareRenderBackend.reuseIdlePoses = reuse;
+        PaintSceneDriver.reuseIdlePoses = reuse;
         try (SoftwareRenderBackend backend = new SoftwareRenderBackend(240, 180, 1f)) {
             List<int[]> out = new ArrayList<>();
             long t = 50_000;

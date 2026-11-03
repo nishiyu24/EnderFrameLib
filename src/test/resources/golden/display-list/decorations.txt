@@ -13,11 +13,12 @@
 012: [s1] NODE rect=[10,194,162,82] color=#FFFFFFFF radii=[6,6,6,6]
 013: [s1_bg] RECT rect=[10,194,162,82] color=#FFFFFFFF r=6 radii=[6,6,6,6]
 014: [s1_b_round] ROUNDED_BORDER rect=[10,194,162,82] radii=[6,6,6,6] roundedBorder=[w=1.0,1.0,1.0,1.0,c=#FFF9E2AF,#FFF9E2AF,#FFF9E2AF,#FFF9E2AF] dash=dashed
-015: [inner] NODE rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
-016: [inner_bg] RECT rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
-017: [txt_6] NODE rect=[0,0,144,18] color=#FFFFFFFF
-018: [txt_6_txt_0] TEXT rect=[22,12,57,18] color=#FFFFFFFF text="Card "
-019: [txt_6_txt_1] TEXT rect=[79,12,87,18] color=#FFFFFFFF text="content"
-020: [txt_7] NODE rect=[0,0,130,18] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
-021: [txt_7_txt_2] TEXT rect=[11,195,43,18] color=#FFFFFFFF text="Tall " clip=[11.0,195.0,171.0,275.0]
-022: [txt_7_txt_3] TEXT rect=[54,195,87,18] color=#FFFFFFFF text="content" clip=[11.0,195.0,171.0,275.0]
+015: [s1_scrollc] NODE rect=[10,194,162,82] pointer-events=none
+016: [inner] NODE rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+017: [inner_bg] RECT rect=[11,195,160,150] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+018: [txt_6] NODE rect=[0,0,144,18] color=#FFFFFFFF
+019: [txt_6_txt_0] TEXT rect=[22,12,57,18] color=#FFFFFFFF text="Card "
+020: [txt_6_txt_1] TEXT rect=[79,12,87,18] color=#FFFFFFFF text="content"
+021: [txt_7] NODE rect=[0,0,130,18] color=#FFFFFFFF clip=[11.0,195.0,171.0,275.0]
+022: [txt_7_txt_0] TEXT rect=[11,195,43,18] color=#FFFFFFFF text="Tall " clip=[11.0,195.0,171.0,275.0]
+023: [txt_7_txt_1] TEXT rect=[54,195,87,18] color=#FFFFFFFF text="content" clip=[11.0,195.0,171.0,275.0]
