@@ -83,6 +83,8 @@ public class StyleResolver {
                                                    float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
         if (node == null || type == null || sheet == null || parentComputedStyle == null) return null;
         if (node.nodeType != NodeType.ELEMENT || node.isPseudoNode) return null;
+        // ::before / ::after は content を宣言する規則が無ければ生成されない。規則が 1 つも無い文書では、要素ごとにカスケードを解かない
+        if ((type == PseudoType.BEFORE || type == PseudoType.AFTER) && !sheet.index().hasPseudoRules(type)) return null;
         Map<String, String> parent = parentComputedStyle.asMap();
         Map<String, String> raw = resolveDeclarations(node, type, parent, sheet, stateLookup);
         StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;

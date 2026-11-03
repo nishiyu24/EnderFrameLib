@@ -168,8 +168,12 @@ final class LayerFx {
         return pass(mid, sy, false, w, h);
     }
 
+    /** この σ（画素）以上は、ガウスの重みを直に畳む代わりに 3 回のボックスぼかしで近似する（Filter Effects §ぼかし が認める近似）。 */
+    private static final float BOX_SIGMA = 12f;
+
     private static Buf pass(Buf in, float sigma, boolean horizontal, int w, int h) {
         if (sigma < 0.05f) return in;
+        if (sigma >= BOX_SIGMA) return boxPass(in, sigma, horizontal, w, h);
         float step = Math.max(1f, sigma / 12f);
         int taps = (int) Math.min(40, Math.ceil(3f * sigma / step));
         int reach = (int) Math.ceil(taps * step) + 1;
@@ -195,6 +199,61 @@ final class LayerFx {
                     }
                     out.d[o + c] = sum / wsum;
                 }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * σ のガウスぼかしを、幅 d のボックスぼかし 3 回（d = floor(σ·3√(2π)/4 + ½)。偶数なら幅 d を 2 回ずらして 1 回は d+1）で近似する。
+     * 1 画素あたりの手数が σ に依らない（走る和）。作業面の外は透明として扱う。
+     */
+    private static Buf boxPass(Buf in, float sigma, boolean horizontal, int w, int h) {
+        int d = (int) Math.floor(sigma * 3.0 * Math.sqrt(2 * Math.PI) / 4.0 + 0.5);
+        if (d < 2) return in;
+        // 各回の (左へ, 右へ) の広がり。奇数は対称、偶数は片側へずらした 2 回と、反対側へずらした d+1 の 1 回
+        int[][] spans = d % 2 == 1
+                ? new int[][]{{d / 2, d / 2}, {d / 2, d / 2}, {d / 2, d / 2}}
+                : new int[][]{{d / 2, d / 2 - 1}, {d / 2 - 1, d / 2}, {d / 2, d / 2}};
+        int[] widths = d % 2 == 1 ? new int[]{d, d, d} : new int[]{d, d, d + 1};
+        Buf cur = in;
+        for (int k = 0; k < 3; k++) cur = box(cur, spans[k][0], spans[k][1], widths[k], horizontal, w, h);
+        return cur;
+    }
+
+    private static Buf box(Buf in, int left, int right, int width, boolean horizontal, int w, int h) {
+        // 出力 A の値は、入力の [A - right, A + left] の和 / width。非ゼロになるのは [in 始点 - left, in 終点 + right)
+        Buf out = horizontal
+                ? new Buf(Math.max(0, in.x0 - left), in.y0, Math.min(w, in.x1 + right), in.y1)
+                : new Buf(in.x0, Math.max(0, in.y0 - left), in.x1, Math.min(h, in.y1 + right));
+        float inv = 1f / width;
+        int inW = in.w(), outW = out.w();
+        int lines = horizontal ? out.y1 - out.y0 : out.x1 - out.x0;
+        int len = horizontal ? out.x1 - out.x0 : out.y1 - out.y0;
+        int inLen = horizontal ? in.x1 - in.x0 : in.y1 - in.y0;
+        int inOrigin = horizontal ? in.x0 : in.y0, outOrigin = horizontal ? out.x0 : out.y0;
+        for (int ln = 0; ln < lines; ln++) {
+            float sa = 0, sr = 0, sg = 0, sb = 0;
+            // 出力 -1 の窓 [outOrigin-1-right, outOrigin-1+left] の和を先に作る
+            for (int a = outOrigin - 1 - right; a <= outOrigin - 1 + left; a++) {
+                int k = a - inOrigin;
+                if (k < 0 || k >= inLen) continue;
+                int i = horizontal ? (ln * inW + k) * 4 : (k * inW + ln) * 4;
+                sa += in.d[i]; sr += in.d[i + 1]; sg += in.d[i + 2]; sb += in.d[i + 3];
+            }
+            for (int p = 0; p < len; p++) {
+                int addIn = outOrigin + p + left - inOrigin;      // 窓の右端へ入る画素
+                int subIn = outOrigin + p - 1 - right - inOrigin; // 窓の左端から出る画素
+                if (addIn >= 0 && addIn < inLen) {
+                    int i = horizontal ? (ln * inW + addIn) * 4 : (addIn * inW + ln) * 4;
+                    sa += in.d[i]; sr += in.d[i + 1]; sg += in.d[i + 2]; sb += in.d[i + 3];
+                }
+                if (subIn >= 0 && subIn < inLen) {
+                    int i = horizontal ? (ln * inW + subIn) * 4 : (subIn * inW + ln) * 4;
+                    sa -= in.d[i]; sr -= in.d[i + 1]; sg -= in.d[i + 2]; sb -= in.d[i + 3];
+                }
+                int o = horizontal ? (ln * outW + p) * 4 : (p * outW + ln) * 4;
+                out.d[o] = sa * inv; out.d[o + 1] = sr * inv; out.d[o + 2] = sg * inv; out.d[o + 3] = sb * inv;
             }
         }
         return out;

@@ -55,6 +55,25 @@ public final class ComputedStyle {
     /** プロパティ名 -> キーワードの enum。同上。 */
     private volatile Map<String, Enum<?>> keywordCache;
 
+    /**
+     * 描画側が、この算出スタイルだけから決まる結果（アニメーション定義の解決など）を覚える置き場。
+     * スタイルは作り直されるたびに別のインスタンスになるので、スタイルが変われば自然に捨てられる。
+     * キーの作り方と中身は呼び出し側が決める（{@code ConcurrentHashMap} なので読み書きは並行してよい）。
+     */
+    private volatile Map<Object, Object> paintMemo;
+
+    /** {@link #paintMemo} を返す（最初の参照で作る）。 */
+    public Map<Object, Object> paintMemo() {
+        Map<Object, Object> m = paintMemo;
+        if (m == null) {
+            synchronized (this) {
+                m = paintMemo;
+                if (m == null) paintMemo = m = new ConcurrentHashMap<>(4);
+            }
+        }
+        return m;
+    }
+
     private static <V> Map<String, V> newCache() {
         return new ConcurrentHashMap<>(8);
     }

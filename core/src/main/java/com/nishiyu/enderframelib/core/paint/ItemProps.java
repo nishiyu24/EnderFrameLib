@@ -103,6 +103,11 @@ final class ItemProps {
             return this;
         }
 
+        ItemProps skew(float degrees) {
+            hints = hints.withSkew(degrees);
+            return this;
+        }
+
         ItemProps transition(int delayMs, String easing, String property) {
             hints = hints.withTransition(delayMs, easing, property);
             return this;
@@ -112,6 +117,21 @@ final class ItemProps {
             "data-sound", "data-sound-pitch", "draggable", "data-count",
             "data-ghost-slot", "data-pan-zoom", "for", "tabindex"
     };
+
+    private static final Object STYLE_HANDLERS = new Object();
+
+    /** スタイルの {@code on*} の名前（小文字）と値を {@code [名前, 値, 名前, 値, …]} で。 */
+    private static String[] styleHandlersOf(LayoutBox box) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Map.Entry<String, String> entry : box.style.asMap().entrySet()) {
+            String key = entry.getKey().toLowerCase(Locale.ROOT);
+            if (key.startsWith("on")) {
+                out.add(key);
+                out.add(entry.getValue());
+            }
+        }
+        return out.toArray(new String[0]);
+    }
 
     static ItemProps forParts(LayoutBox box, String id, TransitionSpec transSpec) {
         ItemProps partsEvents = new ItemProps();
@@ -144,11 +164,9 @@ final class ItemProps {
                 partsEvents.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
             }
         }
-        for (Map.Entry<String, String> entry : box.style.asMap().entrySet()) {
-            if (entry.getKey().toLowerCase(Locale.ROOT).startsWith("on")) {
-                partsEvents.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
-            }
-        }
+        // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
+        String[] styleHandlers = (String[]) box.style.paintMemo().computeIfAbsent(STYLE_HANDLERS, k -> styleHandlersOf(box));
+        for (int i = 0; i < styleHandlers.length; i += 2) partsEvents.put(styleHandlers[i], styleHandlers[i + 1]);
 
         String tag = box.node.tag;
         if (("button".equals(tag) || "select".equals(tag) || "summary".equals(tag)) && !partsEvents.containsKey("onclick")) {

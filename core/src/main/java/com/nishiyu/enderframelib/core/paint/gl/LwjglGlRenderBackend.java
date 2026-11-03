@@ -358,6 +358,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             uniform float uSigma;
             uniform int uTaps;
             uniform float uStep;
+            uniform vec2 uTexel;   // 層のテクスチャの 1 画素（正規化座標）
+            uniform vec2 uUvScale; // 描画先の正規化座標 → テクスチャの正規化座標（縮小した絵は左下の一部だけを使う）
+            uniform vec2 uUvMax;   // 読んでよい範囲の端（端の画素の中心）
+            uniform int uK;        // 縮小の倍率
             uniform vec2 uShadowOffset;
             uniform vec4 uShadowColor;
             uniform int uMaskMode;
@@ -491,16 +495,35 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             void main() {
                 vec2 uv = gl_FragCoord.xy / uView;
                 if (uMode == 2) {
-                    vec4 sum = texture(uSrc, uv);
+                    vec2 c0 = min(uv * uUvScale, uUvMax);
+                    vec4 sum = texture(uSrc, c0);
                     float wsum = 1.0;
                     for (int i = 1; i <= uTaps; i++) {
                         float d = float(i) * uStep;
                         float w = exp(-0.5 * d * d / (uSigma * uSigma));
-                        vec2 o = uDir / uView * d;
-                        sum += (texture(uSrc, uv + o) + texture(uSrc, uv - o)) * w;
+                        vec2 o = uDir * uTexel * d;
+                        sum += (texture(uSrc, clamp(c0 + o, vec2(0.0), uUvMax)) + texture(uSrc, clamp(c0 - o, vec2(0.0), uUvMax))) * w;
                         wsum += 2.0 * w;
                     }
                     fragColor = sum / wsum;
+                    return;
+                }
+                if (uMode == 7) {
+                    // 縮小: 描画先の 1 画素 = 元の uK x uK 画素の平均（2 x 2 の中心を双一次で引くので、標本は (uK/2)^2 個）
+                    vec2 base = floor(gl_FragCoord.xy) * float(uK) * uTexel;
+                    int n = uK / 2;
+                    vec4 acc = vec4(0.0);
+                    for (int j = 0; j < n; j++) {
+                        for (int i = 0; i < n; i++) {
+                            acc += texture(uSrc, min(base + (vec2(float(i), float(j)) * 2.0 + 1.0) * uTexel, vec2(1.0)));
+                        }
+                    }
+                    fragColor = acc / float(n * n);
+                    return;
+                }
+                if (uMode == 8) {
+                    // 拡大: 縮小した絵（左下の一部）を双一次で引き伸ばす
+                    fragColor = texture(uSrc, min(uv * uUvScale, uUvMax));
                     return;
                 }
                 if (uMode == 3) {
@@ -967,6 +990,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public Pixmap snapshotTarget() {
         flushAll();
+        if (!layerStack.isEmpty()) ensureCleared(layerStack.get(layerStack.size() - 1));
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
         int[] raw = new int[width * height];
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4);
@@ -988,6 +1012,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** {@code src}（全面・左上原点・事前乗算）の {@code b} の範囲をテクスチャにして現在の描画先へ描く。{@code overwrite} ならブレンドなしで上書き。 */
     private void drawPixels(int[] src, int[] b, boolean overwrite) {
+        touch(b[0], b[1], b[2], b[3]);
         int bw = b[2] - b[0], bh = b[3] - b[1];
         IntBuffer buf = MemoryUtil.memAllocInt(bw * bh);
         try {
@@ -1026,9 +1051,60 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GpuLayer mask;
         BlendMode blend = BlendMode.NORMAL;
         GroupExtras extras;
+        /** この層に描いた範囲（デバイス画素 {@code x0, y0, x1, y1}。何も描いていなければ x0 > x1）。層の外は透明。 */
+        float[] bounds = {Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        /** 描いた範囲を追えない描き方（背景のフィルターなど）をした: 効果は画面全体に掛ける。 */
+        boolean unbounded;
+        /** 層を透明で塗り済みか。最初に描くとき（{@link #touch}）まで塗らない: 何も描かない層（画面の外など）の塗りを省く。 */
+        boolean cleared;
+    }
+
+    /** 層を、まだなら透明で塗る。塗ったあとは、その層が描画先として結ばれている。 */
+    private void ensureCleared(Entry e) {
+        if (e.cleared) return;
+        e.cleared = true;
+        clearLayer(e.layer);
+    }
+
+    /**
+     * 今の層（無ければ根）に、デバイス画素の矩形を描いたと記録する。層のフィルターは、描いた範囲（とフィルターの到達距離）の
+     * 中だけに掛ければよい。図形・字形・CPU の層の貼り付けは、すべてここを通す。
+     */
+    private void touch(float x0, float y0, float x1, float y1) {
+        if (layerStack.isEmpty()) return;
+        Entry top = layerStack.get(layerStack.size() - 1);
+        ensureCleared(top); // この層への最初の描画: ここで透明にする（描くものが無い層は塗らない）
+        float[] b = top.bounds;
+        if (x0 < b[0]) b[0] = x0;
+        if (y0 < b[1]) b[1] = y0;
+        if (x1 > b[2]) b[2] = x1;
+        if (y1 > b[3]) b[3] = y1;
+    }
+
+    private void touchUnbounded() {
+        if (!layerStack.isEmpty()) layerStack.get(layerStack.size() - 1).unbounded = true;
+    }
+
+    /** {@code region}（{@code x0, y0, x1, y1}）を画面の内側に収め、整数に丸め広げる。空なら null。 */
+    private int[] clampToScreen(float[] r) {
+        int x0 = Math.max(0, (int) Math.floor(r[0])), y0 = Math.max(0, (int) Math.floor(r[1]));
+        int x1 = Math.min(width, (int) Math.ceil(r[2])), y1 = Math.min(height, (int) Math.ceil(r[3]));
+        return x1 > x0 && y1 > y0 ? new int[]{x0, y0, x1, y1} : null;
+    }
+
+    /** 以降の描画を {@code r}（デバイス画素。上が 0）の中だけに限る。GL の y は上向きなので反転する。 */
+    private void scissorTo(int[] r) {
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(r[0], height - r[3], r[2] - r[0], r[3] - r[1]);
+    }
+
+    private void scissorOff() {
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
     private static final int MAX_LAYER_DEPTH = 8;
+    /** 層の効果を、描いた範囲の中だけに掛けるか。false なら従来どおり画面全体（切り分け用。{@code -Denderframe.gl.fullscreenlayers=true}）。 */
+    public static volatile boolean boundedLayers = !Boolean.getBoolean("enderframe.gl.fullscreenlayers");
     private final java.util.ArrayDeque<GpuLayer> layerPool = new java.util.ArrayDeque<>();
     private final java.util.ArrayList<Entry> layerStack = new java.util.ArrayList<>();
     private final java.util.ArrayList<GpuLayer> allLayers = new java.util.ArrayList<>();
@@ -1052,6 +1128,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         }
         l = new GpuLayer(f, tex);
         allLayers.add(l);
+        // 作りたてのテクスチャの中身は決まっていない（前に使われたメモリが残る）。範囲を限って塗る効果が、塗っていない所を読んでも
+        // 値が揺れないよう、最初に透明で塗っておく
+        GL11.glViewport(0, 0, width, height);
+        GL11.glClearColor(0f, 0f, 0f, 0f);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
         return l;
     }
 
@@ -1095,7 +1176,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         e.blend = blend == null ? BlendMode.NORMAL : blend;
         e.extras = extras;
         layerStack.add(e);
-        clearLayer(l);
         return true;
     }
 
@@ -1110,7 +1190,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         e.opacity = 1f;
         e.isMask = true;
         layerStack.add(e);
-        clearLayer(l);
         return true;
     }
 
@@ -1119,6 +1198,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (layerStack.isEmpty() || !layerStack.get(layerStack.size() - 1).isMask) return;
         flushAll();
         Entry m = layerStack.remove(layerStack.size() - 1);
+        ensureCleared(m); // マスクに何も描かれなくても、合成が読むので透明にしておく
         layerStack.get(layerStack.size() - 1).mask = m.layer;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
     }
@@ -1187,10 +1267,31 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             finalMatrix = last.matrix;
             finalOpacity *= last.opacity;
         }
+        // 描いた範囲が分かる層は、フィルターも合成も、その範囲（とぼかしの到達距離）の中だけに掛ける（全画面を毎回塗らない）
+        // mix-blend-mode も範囲を限れる: 透明な画素は混ぜても背景のまま（CSS Compositing）なので、層の外は何も変わらない
+        boolean bounded = boundedLayers && !e.unbounded && (e.extras == null || e.extras.clip() == null)
+                && stages.size() <= 1;
+        if (!bounded || e.mask != null) ensureCleared(e); // 範囲を限らない合成は層の全面を読むので、描かれていなくても透明にしておく
+        int[] region = bounded ? clampToScreen(e.bounds) : null;
+        boolean hasBackdrop = e.extras != null && e.extras.backdropShape() != null && !e.extras.backdrop().isEmpty();
+        if (bounded && region == null && !hasBackdrop) { // 何も描いていない層
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
+            layerPool.addFirst(e.layer);
+            if (e.mask != null) layerPool.addFirst(e.mask);
+            return;
+        }
         GL11.glDisable(GL11.GL_BLEND);
-        if (e.extras != null && e.extras.backdropShape() != null && !e.extras.backdrop().isEmpty()) applyBackdropFilter(e, temps);
+        if (hasBackdrop) applyBackdropFilter(e, temps);
+        if (bounded && region == null) { // 中身は何も描いていない（背景を加工するだけの箱）: 層の合成は要らない
+            GL11.glEnable(GL11.GL_BLEND);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
+            layerPool.addFirst(e.layer);
+            if (e.mask != null) layerPool.addFirst(e.mask);
+            for (GpuLayer t : temps) layerPool.addFirst(t);
+            return;
+        }
         for (Stage st : stages) {
-            GpuLayer next = runStage(st, cur, e.map, temps);
+            GpuLayer next = runStage(st, cur, e.map, temps, region);
             if (next == null) break; // 層が足りない: 以降の段は諦める
             cur = next;
         }
@@ -1209,7 +1310,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glEnable(GL11.GL_BLEND);
 
         // 最終の合成: マスクと不透明度を掛けて親へ重ねる
-        GpuLayer backdrop = e.blend != BlendMode.NORMAL ? copyBackdrop() : null;
+        GpuLayer backdrop = e.blend != BlendMode.NORMAL ? copyBackdrop(region) : null;
         if (backdrop != null) {
             temps.add(backdrop);
             // 背景を読むので、親の描画先へは「混ぜた結果で上書き」する（ブレンドなし）
@@ -1221,14 +1322,19 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             GL20.glUniform1i(loc(fxProgram, "uMaskMode"), e.mask == null ? 0 : (e.luminance ? 2 : 1));
             GL20.glUniform1i(loc(fxProgram, "uBlend"), e.blend.ordinal());
             setMatrix(finalMatrix);
+            if (region != null) scissorTo(region);
             GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+            if (region != null) scissorOff();
             GL11.glEnable(GL11.GL_BLEND);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            if (region != null) touch(region[0], region[1], region[2], region[3]); // 混ぜた結果で親を上書きした範囲
+            else touch(0, 0, width, height);
             layerPool.addFirst(e.layer);
             if (e.mask != null) layerPool.addFirst(e.mask);
             for (GpuLayer t : temps) layerPool.addFirst(t);
             return;
         }
+        if (!layerStack.isEmpty()) ensureCleared(layerStack.get(layerStack.size() - 1)); // 親へ重ねる前に、親を透明にしておく（描いたあとに塗ると消える）
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
         GL11.glViewport(0, 0, width, height);
         useFx(1, cur, e.mask);
@@ -1236,8 +1342,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL20.glUniform1i(loc(fxProgram, "uMaskMode"), e.mask == null ? 0 : (e.luminance ? 2 : 1));
         setMatrix(finalMatrix);
         GL14Blend.premultiplied();
+        if (region != null) scissorTo(region);
         GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+        if (region != null) scissorOff();
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        // 親の層に、貼った範囲を伝える（フィルターで広がったあとの範囲）
+        if (region != null) touch(region[0], region[1], region[2], region[3]);
+        else if (e.unbounded) touchUnbounded();
+        else touch(0, 0, width, height);
 
         layerPool.addFirst(e.layer);
         if (e.mask != null) layerPool.addFirst(e.mask);
@@ -1285,12 +1397,30 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
      * （層の絵を重ねる前）。ブレンドは切ってある前提（混ぜた結果で上書きする）。
      */
     private void applyBackdropFilter(Entry e, List<GpuLayer> temps) {
-        GpuLayer orig = copyBackdrop();
+        List<Stage> bstages = stages(e.extras.backdrop());
+        // 形（箱）の範囲だけに限る: 範囲の外は、混ぜても元のまま。段が 1 つ（ぼかしか色）のときだけ（段が重なると、前の段の出力を範囲の外まで読む）
+        int[] shape = boundedLayers && bstages.size() == 1 ? backdropDeviceBounds(e) : null;
+        if (shape == OFFSCREEN) return; // 形が画面の外: 何も変わらない
+        int[] copyRegion = null;
+        if (shape != null) {
+            int margin = 0;
+            Stage st = bstages.get(0);
+            if (st.kind != StageKind.COLOR) {
+                float sx = st.sigma * (float) Math.hypot(e.map[0], e.map[1]), sy = st.sigma * (float) Math.hypot(e.map[2], e.map[3]);
+                margin = (int) Math.ceil(3.5f * Math.max(sx, sy)) + 4;
+            }
+            copyRegion = clampTo(new int[]{shape[0] - margin, shape[1] - margin, shape[2] + margin, shape[3] + margin}, width, height);
+        }
+        GpuLayer orig = copyBackdrop(copyRegion);
         if (orig == null) return;
+        if (shape != null) touch(shape[0], shape[1], shape[2], shape[3]);
+        else touchUnbounded(); // 形が分からない: 親の効果は画面全体に掛ける
         temps.add(orig);
         GpuLayer filtered = orig;
-        for (Stage st : stages(e.extras.backdrop())) {
-            GpuLayer next = runStage(st, filtered, e.map, temps);
+        for (Stage st : bstages) {
+            int[] out = shape == null ? null : shape.clone();
+            GpuLayer next = st.kind == StageKind.BLUR ? blur(st.sigma, filtered, e.map, temps, out, false)
+                    : runStage(st, filtered, e.map, temps, out);
             if (next == null) break;
             filtered = next;
         }
@@ -1299,23 +1429,54 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         useFx(6, filtered, null, orig);
         GL20.glUniform1f(loc(fxProgram, "uOpacity"), e.opacity);
         setShapes(e.extras, true);
+        if (shape != null) scissorTo(shape);
         GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+        if (shape != null) scissorOff();
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
 
+    /** {@code backdrop-filter} の形（箱の座標）をデバイス画素の外接矩形にして画面に収める。形が読めなければ null。 */
+    private int[] backdropDeviceBounds(Entry e) {
+        ClipShape shape = e.extras.backdropShape();
+        float[] d = shape == null ? null : shape.data();
+        if (d == null || d.length < 4) return null;
+        Matrix2D pose = e.extras.pose();
+        double[] xs = {d[0], d[2], d[0], d[2]}, ys = {d[1], d[1], d[3], d[3]};
+        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+        for (int i = 0; i < 4; i++) {
+            double x = pose.applyX(xs[i], ys[i]), y = pose.applyY(xs[i], ys[i]);
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        }
+        int[] r = clampToScreen(new float[]{(float) minX - 1, (float) minY - 1, (float) maxX + 1, (float) maxY + 1});
+        return r == null ? OFFSCREEN : r;
+    }
+
+    /** {@link #backdropDeviceBounds} が返す、形が画面の外にあるという印。 */
+    private static final int[] OFFSCREEN = new int[0];
+
     /** 現在の描画先の絵を 1 枚の層に写す（{@code mix-blend-mode} が読む背景）。層が借りられなければ null。 */
     private GpuLayer copyBackdrop() {
+        return copyBackdrop(null);
+    }
+
+    /** {@code region}（デバイス画素）があれば、その範囲だけを写す（範囲の外は、読まれない前提）。 */
+    private GpuLayer copyBackdrop(int[] region) {
         GpuLayer bd = acquireLayer();
         if (bd == null) return null;
+        if (!layerStack.isEmpty()) ensureCleared(layerStack.get(layerStack.size() - 1)); // 読むのは今の描画先: まだ塗っていない層なら先に透明にする
+        int[] g = region == null ? new int[]{0, 0, width, height} : toGl(region);
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, currentFbo());
         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, bd.fbo());
-        GL30.glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+        GL30.glBlitFramebuffer(g[0], g[1], g[2], g[3], g[0], g[1], g[2], g[3], GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
         return bd;
     }
 
     /** フィルターの段を 1 つ実行して結果の層を返す（借りられなければ null）。 */
-    private GpuLayer runStage(Stage st, GpuLayer in, double[] m, List<GpuLayer> temps) {
+    private GpuLayer runStage(Stage st, GpuLayer in, double[] m, List<GpuLayer> temps, int[] region) {
         switch (st.kind) {
             case COLOR -> {
                 GpuLayer out = acquireLayer();
@@ -1331,10 +1492,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 return out;
             }
             case BLUR -> {
-                return blur(st.sigma, in, m, temps);
+                return blur(st.sigma, in, m, temps, region);
             }
             default -> {
-                GpuLayer blurred = blur(st.sigma, in, m, temps);
+                int[] inRegion = region == null ? null : region.clone();
+                GpuLayer blurred = blur(st.sigma, in, m, temps, region);
                 if (blurred == null) return null;
                 GpuLayer out = acquireLayer();
                 if (out == null) return null;
@@ -1348,17 +1510,67 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 GL20.glUniform2f(loc(fxProgram, "uShadowOffset"), ox / width, -oy / height);
                 GL20.glUniform4f(loc(fxProgram, "uShadowColor"), ((st.color >>> 16) & 0xFF) / 255f, ((st.color >>> 8) & 0xFF) / 255f,
                         (st.color & 0xFF) / 255f, ((st.color >>> 24) & 0xFF) / 255f);
+                if (region != null) {
+                    // 影はぼかした範囲を (ox, oy) ずらした所に出る。元の絵の範囲との和
+                    int sx0 = Math.max(0, Math.min(region[0] + Math.round(ox), inRegion[0])), sy0 = Math.max(0, Math.min(region[1] + Math.round(oy), inRegion[1]));
+                    int sx1 = Math.min(width, Math.max(region[2] + Math.round(ox), inRegion[2])), sy1 = Math.min(height, Math.max(region[3] + Math.round(oy), inRegion[3]));
+                    region[0] = sx0;
+                    region[1] = sy0;
+                    region[2] = sx1;
+                    region[3] = sy1;
+                    scissorTo(region);
+                }
                 GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+                if (region != null) scissorOff();
                 return out;
             }
         }
     }
 
-    /** 横・縦の 2 回のガウスぼかし（{@code LayerFx} と同じ標本の取り方）。 */
-    private GpuLayer blur(float sigma, GpuLayer in, double[] m, List<GpuLayer> temps) {
+    /**
+     * 横・縦の 2 回のガウスぼかし（{@code LayerFx} と同じ標本の取り方）。{@code region}（{@code x0, y0, x1, y1}）があれば、
+     * 入力の絵が描かれている範囲で、その外は透明。結果が描かれる範囲（ぼかしの到達距離だけ広げたもの）に書き換え、その中だけを
+     * 塗る。{@code null} なら画面全体を塗る。
+     *
+     * <p>縦のパスは横のパスの出力を縦の到達距離だけ上下に読むので、横のパスは縦の分を 2 倍に広げた範囲まで塗る
+     * （範囲の外には、前に使われたときの絵が残っているので、読まれる所は全部塗っておく）。</p>
+     */
+    private GpuLayer blur(float sigma, GpuLayer in, double[] m, List<GpuLayer> temps, int[] region) {
+        return blur(sigma, in, m, temps, region, true);
+    }
+
+    /**
+     * @param expand true: {@code region} は絵が描かれている範囲（外は透明）で、ぼかしで広がった範囲に書き換える。
+     *               false: {@code region} は欲しい出力の範囲で、入力は全面に有効（背景のコピー）。範囲は変えない
+     */
+    private GpuLayer blur(float sigma, GpuLayer in, double[] m, List<GpuLayer> temps, int[] region, boolean expand) {
         float sx = sigma * (float) Math.hypot(m[0], m[1]);
         float sy = sigma * (float) Math.hypot(m[2], m[3]);
         if (sx < 0.05f && sy < 0.05f) return in;
+        float[] step = new float[2];
+        int[] reach = new int[2];
+        for (int axis = 0; axis < 2; axis++) {
+            float sg = axis == 0 ? sx : sy;
+            if (sg < 0.05f) continue;
+            step[axis] = Math.max(1f, sg / 12f);
+            // +2: 標本は双一次補間で隣の画素まで読む。塗っていない所（前の絵や未初期化の値が残る）を読まないよう、少し広く塗る
+            reach[axis] = (int) Math.ceil(Math.min(40, Math.ceil(3f * sg / step[axis])) * step[axis]) + 2;
+        }
+        if (region != null && downsampledBlur) {
+            float smax = Math.max(sx, sy);
+            int k = 1;
+            while (smax / k > 6f && k < 16) k *= 2;
+            if (k > 1) return blurDownsampled(sx, sy, k, in, temps, region, expand);
+        }
+        int[] first = null, second = null;
+        if (region != null) {
+            int ex = expand ? reach[0] : 0, ey = expand ? reach[1] : 0;
+            second = new int[]{region[0] - ex, region[1] - ey, region[2] + ex, region[3] + ey};
+            first = new int[]{second[0], second[1] - reach[1], second[2], second[3] + reach[1]};
+            first = clampInts(first);
+            second = clampInts(second);
+            if (first == null || second == null) return in;
+        }
         GpuLayer cur = in;
         for (int axis = 0; axis < 2; axis++) {
             float sg = axis == 0 ? sx : sy;
@@ -1369,16 +1581,137 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, out.fbo());
             GL11.glViewport(0, 0, width, height);
             useFx(2, cur, null);
-            float step = Math.max(1f, sg / 12f);
-            int taps = (int) Math.min(40, Math.ceil(3f * sg / step));
+            int taps = (int) Math.min(40, Math.ceil(3f * sg / step[axis]));
             GL20.glUniform2f(loc(fxProgram, "uDir"), axis == 0 ? 1f : 0f, axis == 0 ? 0f : 1f);
             GL20.glUniform1f(loc(fxProgram, "uSigma"), sg);
             GL20.glUniform1i(loc(fxProgram, "uTaps"), taps);
-            GL20.glUniform1f(loc(fxProgram, "uStep"), step);
+            GL20.glUniform1f(loc(fxProgram, "uStep"), step[axis]);
+            if (region != null) scissorTo(axis == 0 && sy >= 0.05f ? first : second);
             GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+            if (region != null) scissorOff();
             cur = out;
         }
+        if (region != null && expand) {
+            region[0] = second[0];
+            region[1] = second[1];
+            region[2] = second[2];
+            region[3] = second[3];
+        }
         return cur;
+    }
+
+    /** 大きな標準偏差のぼかしを縮小して行うか。false なら全解像度（切り分け用。{@code -Denderframe.gl.fullresblur=true}）。 */
+    public static volatile boolean downsampledBlur = !Boolean.getBoolean("enderframe.gl.fullresblur");
+
+    /** デバイス画素（上が 0）の矩形 → GL の画素（下が 0）の矩形。 */
+    private int[] toGl(int[] dev) {
+        return new int[]{dev[0], height - dev[3], dev[2], height - dev[1]};
+    }
+
+    private static int[] clampTo(int[] r, int w, int h) {
+        int x0 = Math.max(0, r[0]), y0 = Math.max(0, r[1]), x1 = Math.min(w, r[2]), y1 = Math.min(h, r[3]);
+        return x1 > x0 && y1 > y0 ? new int[]{x0, y0, x1, y1} : null;
+    }
+
+    private void scissorGl(int[] r) {
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(r[0], r[1], r[2] - r[0], r[3] - r[1]);
+    }
+
+    /** 縮小した絵（層テクスチャの左下 {@code sw x sh}）への描画の準備: 視点・四角・読む範囲を縮小側に合わせる。 */
+    private void smallPass(GpuLayer dst, int mode, GpuLayer src, int sw, int sh, int k) {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, dst.fbo());
+        GL11.glViewport(0, 0, sw, sh);
+        useFx(mode, src, null);
+        GL20.glUniform4f(loc(fxProgram, "uDev"), 0, 0, sw, sh);
+        GL20.glUniform2f(loc(fxProgram, "uView"), sw, sh);
+        GL20.glUniform1i(loc(fxProgram, "uK"), k);
+        GL20.glUniform2f(loc(fxProgram, "uUvScale"), (float) sw / width, (float) sh / height);
+        GL20.glUniform2f(loc(fxProgram, "uUvMax"), (sw - 0.5f) / width, (sh - 0.5f) / height);
+    }
+
+    /**
+     * 標準偏差が大きいぼかしを、{@code k} 分の 1 に縮小して行う（ぼかした絵は滑らかなので、縮小してもほぼ同じに見える）。
+     * 縮小（箱平均）→ 横 → 縦（縮小した絵の上で、標準偏差は {@code 1/k}）→ 双一次で拡大。描画の範囲は縮小側の座標で持ち、
+     * 必要な所（描いた範囲 + ぼかしの到達距離）だけを塗る。縮小した絵の端は読まない（端の画素を伸ばす）ので、画面の端に掛かる絵は
+     * 全解像度のときと同じく端が伸びる。
+     */
+    private GpuLayer blurDownsampled(float sx, float sy, int k, GpuLayer in, List<GpuLayer> temps, int[] region, boolean expand) {
+        int sw = (width + k - 1) / k, sh = (height + k - 1) / k;
+        float[] sg = {sx / k, sy / k};
+        int[] reach = new int[2];
+        float[] step = new float[2];
+        int[] taps = new int[2];
+        for (int axis = 0; axis < 2; axis++) {
+            if (sg[axis] < 0.05f) continue;
+            step[axis] = Math.max(1f, sg[axis] / 12f);
+            taps[axis] = (int) Math.min(40, Math.ceil(3f * sg[axis] / step[axis]));
+            reach[axis] = (int) Math.ceil(taps[axis] * step[axis]) + 2; // +2: 双一次補間の読み出しの余白
+        }
+        int[] g = toGl(region);
+        int[] content = {g[0] / k, g[1] / k, (g[2] + k - 1) / k, (g[3] + k - 1) / k};
+        // 出力の範囲が決まっている（背景のコピー）ときも、拡大で内側へ縮める 1 テクセルの分は広く塗る
+        int ex = expand ? reach[0] : 1, ey = expand ? reach[1] : 1;
+        int[] r2 = clampTo(new int[]{content[0] - ex, content[1] - ey, content[2] + ex, content[3] + ey}, sw, sh);
+        if (r2 == null) return in;
+        int[] r1 = clampTo(new int[]{r2[0], r2[1] - reach[1], r2[2], r2[3] + reach[1]}, sw, sh);
+        int[] dsr = clampTo(new int[]{r1[0] - reach[0], r1[1], r1[2] + reach[0], r1[3]}, sw, sh);
+
+        GpuLayer a = acquireLayer(), b = a == null ? null : acquireLayer(), c = b == null ? null : acquireLayer();
+        GpuLayer out = c == null ? null : acquireLayer();
+        if (out == null) {
+            for (GpuLayer l : new GpuLayer[]{a, b, c}) if (l != null) layerPool.addFirst(l);
+            return null;
+        }
+        temps.add(a);
+        temps.add(b);
+        temps.add(c);
+        temps.add(out);
+
+        smallPass(a, 7, in, sw, sh, k);
+        scissorGl(dsr);
+        GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+
+        GpuLayer cur = a, spare = b;
+        for (int axis = 0; axis < 2; axis++) {
+            if (sg[axis] < 0.05f) continue;
+            GpuLayer dst = axis == 0 ? b : c;
+            smallPass(dst, 2, cur, sw, sh, 1);
+            GL20.glUniform2f(loc(fxProgram, "uDir"), axis == 0 ? 1f : 0f, axis == 0 ? 0f : 1f);
+            GL20.glUniform1f(loc(fxProgram, "uSigma"), sg[axis]);
+            GL20.glUniform1i(loc(fxProgram, "uTaps"), taps[axis]);
+            GL20.glUniform1f(loc(fxProgram, "uStep"), step[axis]);
+            scissorGl(axis == 0 && sg[1] >= 0.05f ? r1 : r2);
+            GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+            cur = dst;
+        }
+
+        // 拡大: 縮小した絵の r2（縮小側の GL 画素）に当たる範囲だけを、全解像度の層へ
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, out.fbo());
+        GL11.glViewport(0, 0, width, height);
+        useFx(8, cur, null);
+        GL20.glUniform2f(loc(fxProgram, "uUvScale"), (float) sw / width, (float) sh / height);
+        GL20.glUniform2f(loc(fxProgram, "uUvMax"), (sw - 0.5f) / width, (sh - 0.5f) / height);
+        // 双一次補間は範囲の外の 1 テクセルまで読む（そこは塗っていない）ので、画面の端でない辺は 1 テクセル内側までを使う
+        int[] up = clampTo(new int[]{(r2[0] > 0 ? r2[0] + 1 : 0) * k, (r2[1] > 0 ? r2[1] + 1 : 0) * k,
+                (r2[2] < sw ? r2[2] - 1 : sw) * k, (r2[3] < sh ? r2[3] - 1 : sh) * k}, width, height);
+        if (up == null) return in;
+        scissorGl(up);
+        GL11.glDrawArrays(GL11.GL_TRIANGLE_STRIP, 0, 4);
+        scissorOff();
+        // 結果の範囲（デバイス画素）。背景のコピーのぼかし（expand = false）は、欲しい範囲のまま
+        if (expand) {
+            region[0] = up[0];
+            region[1] = height - up[3];
+            region[2] = up[2];
+            region[3] = height - up[1];
+        }
+        return out;
+    }
+
+    private int[] clampInts(int[] r) {
+        int x0 = Math.max(0, r[0]), y0 = Math.max(0, r[1]), x1 = Math.min(width, r[2]), y1 = Math.min(height, r[3]);
+        return x1 > x0 && y1 > y0 ? new int[]{x0, y0, x1, y1} : null;
     }
 
     /** 層の合成用シェーダーを選び、入力（単位 0）と補助（単位 4）を結ぶ。 */
@@ -1403,6 +1736,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL20.glUniform1i(loc(fxProgram, "uMode"), mode);
         GL20.glUniform1f(loc(fxProgram, "uOpacity"), 1f);
         GL20.glUniform1i(loc(fxProgram, "uMaskMode"), 0);
+        GL20.glUniform2f(loc(fxProgram, "uTexel"), 1f / width, 1f / height);
+        GL20.glUniform2f(loc(fxProgram, "uUvScale"), 1f, 1f);
+        GL20.glUniform2f(loc(fxProgram, "uUvMax"), 1f, 1f);
+        GL20.glUniform1i(loc(fxProgram, "uK"), 1);
         setMatrix(null);
     }
 
@@ -1682,6 +2019,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private boolean beginShapeIn(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip[] clips, float opacity) {
         flushOverlay();
         if (!pose.isFinite() || pose.invert() == null || opacity <= 0f) return false;
+        if (!layerStack.isEmpty()) { // 層に描く範囲（四隅を姿勢で写した外接矩形）を記録する
+            double ax = pose.applyX(bx0, by0), ay = pose.applyY(bx0, by0), bx = pose.applyX(bx1, by0), by = pose.applyY(bx1, by0);
+            double cx = pose.applyX(bx0, by1), cy = pose.applyY(bx0, by1), dx = pose.applyX(bx1, by1), dy = pose.applyY(bx1, by1);
+            touch((float) Math.min(Math.min(ax, bx), Math.min(cx, dx)), (float) Math.min(Math.min(ay, by), Math.min(cy, dy)),
+                    (float) Math.max(Math.max(ax, bx), Math.max(cx, dx)), (float) Math.max(Math.max(ay, by), Math.max(cy, dy)));
+        }
         if (batchN == MAX_BATCH) flushBatch();
         base = batchN * STRIDE * 4;
         curMode = 0;

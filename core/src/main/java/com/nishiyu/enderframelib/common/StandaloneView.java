@@ -50,6 +50,8 @@ import java.util.function.Consumer;
  */
 public final class StandaloneView implements AutoCloseable {
     private static final float WHEEL_PIXELS = 40f;
+    /** スクロールが止まってから、平行移動で使い回した項目を厳密に作り直すまでの待ち（ms）。 */
+    private static final long SETTLE_DELAY_MS = 120;
 
     /** 窓のための {@link UiView}。フォントと、時計（フレームの時刻）と、画面外の箱を省く描画だけ差し込む。 */
     private final class Ui extends UiView {
@@ -71,19 +73,31 @@ public final class StandaloneView implements AutoCloseable {
         }
 
         @Override
+        protected List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> builtScrollContents() {
+            return builder != null ? builder.scrollContents() : List.of();
+        }
+
+        @Override
         protected List<DisplayItem> paintBoxes(LayoutBox root, int w, int h, boolean scrollOnly) {
             var keyframes = document().sheet.keyframes;
             if (builder == null || builderKeyframes != keyframes) {
                 builder = new DisplayListBuilder(w, h, keyframes, scrollState());
                 builderKeyframes = keyframes;
             }
-            // スクロールだけなら中身は前回と同じ。画面の外の箱は項目を作らない（全件を作るのは再スタイルのとき）
-            return builder.render(root, scrollOnly);
+            // スクロールだけなら中身は前回と同じ。画面の外の箱は項目を作らない（全件を作るのは再スタイルのとき）。
+            // 動いただけの箱は前回の項目を平行移動して使うので、位置が最大 1 画素ずれうる: 止まったら厳密に描き直す
+            List<DisplayItem> items = builder.render(root, scrollOnly);
+            settlePending = scrollOnly && builder.translatedHits() > 0;
+            lastScrollPaintAt = lastNow;
+            return items;
         }
     }
 
     private int width;
     private int height;
+    /** 直近のスクロールの作り直しが前回の項目の平行移動を含む（止まったら厳密に描き直す）。 */
+    private boolean settlePending;
+    private long lastScrollPaintAt;
     private final FontResolver fonts;
     private final Ui ui;
     private final UiInput input;
@@ -189,7 +203,7 @@ public final class StandaloneView implements AutoCloseable {
 
     /** 見た目が変わりうる状態か（入力の反映待ち・アニメーション・タイマー）。false なら描き直さなくてよい。 */
     public boolean needsFrame() {
-        return redraw || animating || lastNow < compositorUntil || !scrollTargets.isEmpty()
+        return redraw || animating || settlePending || lastNow < compositorUntil || !scrollTargets.isEmpty()
                 || ui.invalidationLevel() != UiView.InvalidationLevel.NONE || interaction.hasDirtyNodes()
                 || !ui.timers().isEmpty();
     }
@@ -221,7 +235,12 @@ public final class StandaloneView implements AutoCloseable {
         interaction.setAnimationTime(nowMs);
         ui.timers().runAnimationFrames((double) nowMs);
         ui.timers().runDueTimers();
-        stepScroll();
+        stepScroll(prevNow == 0 ? 16 : nowMs - prevNow);
+        // スクロールが止まって少し経ったら、平行移動で使い回した項目を厳密な位置の項目に作り直す
+        if (settlePending && scrollTargets.isEmpty() && nowMs - lastScrollPaintAt >= SETTLE_DELAY_MS
+                && ui.invalidationLevel() == UiView.InvalidationLevel.NONE) {
+            ui.markInvalidation(UiView.InvalidationLevel.REPAINT);
+        }
 
         List<DisplayItem> before = ui.renderCache();
         long t0 = System.nanoTime();
@@ -231,7 +250,7 @@ public final class StandaloneView implements AutoCloseable {
         boolean running = interaction.animator().isRunning(nowMs);
         if (rebuilt) {
             items = after;
-            timings = "flush=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size();
+            timings = "flush=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size() + " " + ui.lastBreakdown();
             // レイアウト中に新しく走り出したアニメーションも拾う
             compositorUntil = compositorUntil(items, nowMs);
         }
@@ -464,9 +483,11 @@ public final class StandaloneView implements AutoCloseable {
         return false;
     }
 
-    /** スクロール先へ近づける（指数的に減速。1 フレームで残りの 3 割ずつ、近ければ吸着）。 */
-    private void stepScroll() {
-        if (scrollTargets.isEmpty()) return;
+    /** スクロール先へ近づける（指数的に減速。60Hz なら 1 フレームで残りの 3 割ずつ、近ければ吸着）。 */
+    private void stepScroll(long dtMs) {
+        if (scrollTargets.isEmpty() || dtMs <= 0) return; // 時間が進んでいなければ、減速も進めない
+        // 1 フレームで残りの 3 割（60Hz のとき）を、経過時間に直して掛ける: フレームの時間が揺れても速さが揺れない
+        float keep = (float) Math.pow(0.7, Math.min(100, dtMs) / 16.667);
         boolean moved = false;
         var it = scrollTargets.entrySet().iterator();
         while (it.hasNext()) {
@@ -474,15 +495,15 @@ public final class StandaloneView implements AutoCloseable {
             HtmlNode node = e.getKey();
             float[] t = e.getValue();
             float cx = ui.scrollState().getScrollX(node), cy = ui.scrollState().getScrollY(node);
-            float nx = Math.abs(t[0] - cx) < 0.5f ? t[0] : cx + (t[0] - cx) * 0.3f;
-            float ny = Math.abs(t[1] - cy) < 0.5f ? t[1] : cy + (t[1] - cy) * 0.3f;
+            float nx = Math.abs(t[0] - cx) < 0.5f ? t[0] : cx + (t[0] - cx) * (1 - keep);
+            float ny = Math.abs(t[1] - cy) < 0.5f ? t[1] : cy + (t[1] - cy) * (1 - keep);
             if (nx != cx || ny != cy) {
                 ui.scrollState().setScroll(node, nx, ny);
                 moved = true;
             }
             if (nx == t[0] && ny == t[1]) it.remove();
         }
-        if (moved) ui.requestReposition();
+        if (moved) ui.requestScrollReposition();
     }
 
     private static float clamp(float v, float max) {

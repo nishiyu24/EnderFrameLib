@@ -29,6 +29,7 @@ public final class ValueInterpolator {
             case NUMBER -> number(a, b, t, false);
             case INTEGER -> number(a, b, t, true);
             case LENGTH, LENGTH_PERCENTAGE -> length(property, a, b, t);
+            case LIST, OTHER -> CompoundInterpolator.interpolate(property, a, b, t);
             default -> null;
         };
     }

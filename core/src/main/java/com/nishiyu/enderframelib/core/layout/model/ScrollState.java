@@ -31,6 +31,17 @@ public class ScrollState {
         offsetsByNode.put(node, new float[]{x, y});
     }
 
+    /** 今のスクロール位置の写し（節 → {x, y}）。スクロールした節の数だけ。 */
+    public Map<HtmlNode, float[]> snapshot() {
+        Map<HtmlNode, float[]> copy = new java.util.IdentityHashMap<>();
+        synchronized (offsetsByNode) {
+            for (Map.Entry<HtmlNode, float[]> e : offsetsByNode.entrySet()) {
+                if (e.getValue()[0] != 0 || e.getValue()[1] != 0) copy.put(e.getKey(), e.getValue().clone());
+            }
+        }
+        return copy;
+    }
+
     public void clear() {
         offsetsByNode.clear();
     }

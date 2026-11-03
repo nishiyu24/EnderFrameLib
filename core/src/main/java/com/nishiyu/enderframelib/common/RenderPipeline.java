@@ -105,6 +105,18 @@ public class RenderPipeline {
     public static volatile boolean incrementalLayout = true;
 
     /**
+     * 再スタイルの走査で、汚れていない部分木を丸ごと飛ばすか。false なら全ての箱をたどる
+     * （飛ばし方を疑うときの切り分け用。結果は同じでなければならない）。
+     */
+    public static volatile boolean pruneCleanSubtrees = true;
+
+    /** 直近の {@link #layoutDocument} で作った箱の数・スタイルを算出し直した数・前回の箱を使い回した数（調べる用）。 */
+    public static volatile String lastBuildStats = "";
+    private static int statBoxes, statRestyled, statReused;
+    private static String statPhases = "";
+    private static long passMeasureMs, passLayoutMs, passMeasured;
+
+    /**
      * 文書をレイアウトする。{@code previousRoot}（同じ文書の前回の結果）があれば差分レイアウトにする:
      * 箱は DOM の節ごとに使い回し、中身も入力も前回と同じ部分木は measure を飛ばす。
      * 結果は全部を作り直したときと同じ（{@code IncrementalLayoutTest} が確かめる）。
@@ -125,14 +137,23 @@ public class RenderPipeline {
         LayoutBox rootBox = incremental ? previousRoot : null;
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
             Map<HtmlNode, LayoutBox> reusable = incremental ? LayoutBox.reusableBoxes(rootBox) : null;
+            statBoxes = statRestyled = statReused = 0;
+            long tA = System.nanoTime();
             rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
+            long tB = System.nanoTime();
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
+            long tC = System.nanoTime();
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
+            long tD = System.nanoTime();
             runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, incremental);
+            long tE = System.nanoTime();
+            statPhases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
+                    + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + passMeasureMs + "/" + passMeasured + "boxes layout=" + passLayoutMs + ")";
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
+        lastBuildStats = "boxes=" + statBoxes + " restyled=" + statRestyled + " reused=" + statReused + " " + statPhases;
         return rootBox;
     }
 
@@ -178,12 +199,18 @@ public class RenderPipeline {
         LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
 
+        long m0 = System.nanoTime();
+        long measuredBefore = LayoutBox.measurementsComputed();
         for (int pass = 0; pass < LAYOUT_PASSES; pass++) {
             ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, reuseMeasurements, run, pass == 0);
             rootBox.measure(rootW, rootH, fmtCtx, ctx);
         }
+        long m1 = System.nanoTime();
         LayoutBox.resetPlacements(rootBox, reuseMeasurements ? run : -1);
         rootBox.layout(0, 0, rootW, rootH, ctx);
+        passMeasureMs = (m1 - m0) / 1_000_000;
+        passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
+        passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
     }
 
     /**
@@ -356,11 +383,20 @@ public class RenderPipeline {
         return FORCE_NONE;
     }
 
+    /** 正規表現にかける前の足切り: ビューポート依存の書き方（{@code vw} {@code cqw} {@code var(} {@code env(}）は必ず v・q・( のどれかを含む。 */
+    private static boolean mayDependOnViewport(String value) {
+        for (int i = 0, n = value.length(); i < n; i++) {
+            char c = value.charAt(i);
+            if (c == '(' || c == 'v' || c == 'V' || c == 'q' || c == 'Q') return true;
+        }
+        return false;
+    }
+
     private static boolean dependsOnViewport(HtmlNode node, Map<String, String> rawStyle) {
         // ルートはビューポートの寸法を継承元の表として受け取る
         if (node.parent == null) return true;
         for (String value : rawStyle.values()) {
-            if (value != null && VIEWPORT_DEPENDENT_VALUE.matcher(value).find()) return true;
+            if (value != null && mayDependOnViewport(value) && VIEWPORT_DEPENDENT_VALUE.matcher(value).find()) return true;
         }
         return false;
     }
@@ -379,6 +415,7 @@ public class RenderPipeline {
         flags.hasInteractiveRules = hasInteractive;
         flags.isStyleDirty = false;
         flags.subtreeDirty = false;
+        flags.dirtyBelow = false;
         flags.unscoped = false;
         String inlineStyle = node.attrs.get("style");
         flags.inheritsExplicitly = inlineStyle != null && inlineStyle.toLowerCase(java.util.Locale.ROOT).contains("inherit");
@@ -424,6 +461,10 @@ public class RenderPipeline {
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
         interactionState.bindStyleSheet(doc.sheet);
         if (doc.sheet != null && doc.sheet.usesHasSelectors()) interactionState.propagateDirtyToAncestors();
+        // 飛ばしてよいのは、前回の走査と同じビューポートのとき（変わると、飛ばした子孫の vw や var() が古くなる）
+        InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
+        interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
+                && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                 ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                 interactionState, StyleResolver.hasSiblingStateRules(doc.sheet));
@@ -495,6 +536,7 @@ public class RenderPipeline {
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
             flags.subtreeDirty = false;
         }
+        flags.dirtyBelow = false; // 子孫は、このあと必要なものだけ走査して片付ける
 
         float nextParentFontSize = computed.fontSizePx();
         StyleScope childScope = scope.enter(node, computed);
@@ -517,6 +559,9 @@ public class RenderPipeline {
                 InteractionState.StateFlags childFlags = interactionState.get(child.node);
                 if (childFlags != null && childFlags.inheritsExplicitly) forceChild = FORCE_SELF;
             }
+            if (forceChild == FORCE_NONE && interactionState.pruneRestyle && canSkipRestyle(interactionState.get(child.node), nextParentFontSize, childScope)) {
+                continue; // 自分も子孫も汚れていない部分木は、算出し直すものが無い（stateChanged は汚れていなければ false）
+            }
             RestyleResult childRes = restyleBoxRecursive(child, computed.asMap(), sheet, env,
                     forceChild, nextParentFontSize, childScope, interactionState,
                     siblingInvalidation);
@@ -527,6 +572,15 @@ public class RenderPipeline {
         }
 
         return new RestyleResult(styleChanged, layoutRequired, repositionRequired);
+    }
+
+    /**
+     * この箱の部分木を丸ごと飛ばしてよいか: 算出スタイルのキャッシュが有効で、自分にも子孫にも汚れが無い。
+     * ビューポートが変わったとき（子孫の {@code vw} などが古くなる）は走査側が {@code pruneRestyle} を切る。
+     */
+    private static boolean canSkipRestyle(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
+        return flags != null && !flags.isStyleDirty && !flags.subtreeDirty && !flags.dirtyBelow
+                && styleCacheState(flags, parentFontSize, scope) == StyleCache.VALID;
     }
 
     private static boolean isStateDirty(InteractionState interactionState, HtmlNode node) {
@@ -617,6 +671,8 @@ public class RenderPipeline {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
         boolean needsRestyle = cache != StyleCache.VALID;
+        statBoxes++;
+        if (needsRestyle) statRestyled++;
 
         ComputedStyle computed;
         boolean hasInteractive;
@@ -649,6 +705,7 @@ public class RenderPipeline {
             hasInteractive = flags.hasInteractiveRules;
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
             flags.subtreeDirty = false;
+            flags.dirtyBelow = false;
         }
         Map<String, String> childInherited = computed.asMap();
         StyleScope childScope = scope.enter(node, computed);
@@ -661,7 +718,10 @@ public class RenderPipeline {
             box.elementChildren.clear();
             box.refreshStyle(computed);
             if (LayoutBox.isTableBox(box) || box.display.isNone()) box = null;
-            else reusedBox = true;
+            else {
+                reusedBox = true;
+                statReused++;
+            }
         }
         if (box == null) {
             box = new LayoutBox(node, computed);
@@ -686,7 +746,7 @@ public class RenderPipeline {
         if (skipContents) {
             // 子を持たない箱として扱う
         } else if (reusePseudos) {
-            LayoutBox before = previousPseudo(previousChildren, pseudoElementId(node, PseudoType.BEFORE));
+            LayoutBox before = previousPseudo(previousChildren, node, PseudoType.BEFORE);
             if (before != null) box.addElementChild(before);
         } else {
             ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState);
@@ -721,7 +781,7 @@ public class RenderPipeline {
         if (skipContents) {
             // 同上
         } else if (reusePseudos) {
-            LayoutBox after = previousPseudo(previousChildren, pseudoElementId(node, PseudoType.AFTER));
+            LayoutBox after = previousPseudo(previousChildren, node, PseudoType.AFTER);
             if (after != null) box.addElementChild(after);
         } else {
             ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState);
@@ -735,9 +795,12 @@ public class RenderPipeline {
     }
 
     /** 持ち主の前回の子から、id が {@code pseudoId} の疑似要素の箱を探す。無ければ null。 */
-    private static LayoutBox previousPseudo(List<LayoutBox> previousChildren, String pseudoId) {
+    private static LayoutBox previousPseudo(List<LayoutBox> previousChildren, HtmlNode owner, PseudoType type) {
+        String pseudoId = null;
         for (LayoutBox previous : previousChildren) {
-            if (previous.node.isPseudoNode && pseudoId.equals(previous.node.getId())) return previous;
+            if (!previous.node.isPseudoNode) continue;
+            if (pseudoId == null) pseudoId = pseudoElementId(owner, type); // 疑似要素の箱がある要素だけ id を作る
+            if (pseudoId.equals(previous.node.getId())) return previous;
         }
         return null;
     }

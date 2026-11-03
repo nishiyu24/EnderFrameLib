@@ -393,9 +393,14 @@ public class StyleSheet {
         private final Map<String, int[]> byClass = new HashMap<>();
         private final Map<String, int[]> byTag = new HashMap<>();
         private final int[] universal;
+        /** 規則が 1 つでも掛かっている疑似要素の種類（無い種類は、要素ごとに解かなくても結果が決まる）。 */
+        private final java.util.Set<PseudoType> pseudos = java.util.EnumSet.noneOf(PseudoType.class);
 
         private RuleIndex(List<StyleRule> rules) {
             this.rules = List.copyOf(rules);
+            for (StyleRule rule : this.rules) {
+                if (rule.pseudoElement != null) pseudos.add(rule.pseudoElement);
+            }
             Map<String, List<Integer>> ids = new HashMap<>();
             Map<String, List<Integer>> classes = new HashMap<>();
             Map<String, List<Integer>> tags = new HashMap<>();
@@ -416,6 +421,11 @@ public class StyleSheet {
             classes.forEach((k, v) -> byClass.put(k, toArray(v)));
             tags.forEach((k, v) -> byTag.put(k, toArray(v)));
             universal = toArray(rest);
+        }
+
+        /** この種類の疑似要素に掛かる規則があるか。 */
+        public boolean hasPseudoRules(PseudoType type) {
+            return pseudos.contains(type);
         }
 
         static RuleIndex build(List<StyleRule> rules) {

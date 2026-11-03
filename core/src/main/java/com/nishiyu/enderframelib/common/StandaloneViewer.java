@@ -35,6 +35,14 @@ public final class StandaloneViewer {
     private StandaloneViewer() {}
 
     public static void main(String[] args) throws Exception {
+        launch(args, view -> {});
+    }
+
+    /**
+     * {@link #main} と同じ。文書を読み込んだ直後に {@code setup} を 1 度呼ぶので、Java から DOM・タイマー・イベントを仕込める
+     * （窓でも {@code --png} でも呼ばれる）。
+     */
+    public static void launch(String[] args, java.util.function.Consumer<StandaloneView> setup) throws Exception {
         if (args.length < 1) {
             System.err.println("usage: StandaloneViewer <file|url> [width height] [--png out.png] [--after ms]");
             System.exit(2);
@@ -58,6 +66,7 @@ public final class StandaloneViewer {
         FontSources fonts = installFonts(source);
         if (png != null) {
             StandaloneView view = new StandaloneView(html, w, h);
+            setup.accept(view);
             try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f)) {
                 cpu.images(ImageProvider.web());
                 long t0 = System.currentTimeMillis();
@@ -77,7 +86,7 @@ public final class StandaloneViewer {
             System.out.println("wrote " + png);
             return;
         }
-        run(html, w, h, fonts);
+        run(html, w, h, fonts, setup);
     }
 
     /**
@@ -103,11 +112,12 @@ public final class StandaloneViewer {
         return Files.readString(Path.of(source), StandardCharsets.UTF_8);
     }
 
-    private static void run(String html, int w, int h, FontSources fonts) {
+    private static void run(String html, int w, int h, FontSources fonts, java.util.function.Consumer<StandaloneView> setup) {
         ImageProvider.Web images = ImageProvider.web();
         try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib")) {
             gl.images(images).clearColor(0xFFFFFFFF);
             StandaloneView view = new StandaloneView(html, w, h);
+            setup.accept(view);
             long window = gl.windowHandle();
             String session = gl.sessionId();
             view.setClipboard(new TextEditing.Clipboard() {

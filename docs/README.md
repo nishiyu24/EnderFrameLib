@@ -8,7 +8,7 @@
 | [commands-and-devkit.md](commands-and-devkit.md) | EN | `/enderframe` コマンドの要点とブラウザプレビュー（DevKit。全コマンドは [COMMAND_GUIDE.md](../COMMAND_GUIDE.md)） |
 | [migration.md](migration.md) | EN | 移行メモ・破壊的変更 |
 | [standalone-viewer.md](standalone-viewer.md) | JA | Minecraft なしで HTML を窓／PNG に出す（`:core`） |
-| [build-and-run-commands.md](build-and-run-commands.md) | JA | ビルド・テスト・ビューア起動の Gradle コマンド集 |
+| [build-and-run-commands.md](build-and-run-commands.md) | JA | ビルド・テスト・ビューア起動の Gradle コマンド集（テストサイト `runShowcase` を含む） |
 
 ## 読む順の目安
 

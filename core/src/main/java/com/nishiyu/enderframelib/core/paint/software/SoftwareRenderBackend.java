@@ -102,8 +102,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // 1 フレームの間だけ使う状態
     private Map<String, DisplayItem> byId = Map.of();
-    private final Map<String, Resolved> resolved = new HashMap<>();
-    private final Set<String> resolving = new HashSet<>();
     private long now;
     private GpuSink sink;
     private int dirtyX0 = Integer.MAX_VALUE, dirtyY0 = Integer.MAX_VALUE, dirtyX1 = Integer.MIN_VALUE, dirtyY1 = Integer.MIN_VALUE;
@@ -212,31 +210,59 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.target = root;
         this.now = nowMs;
         this.frame = Matrix2D.scale(dpr, dpr);
-        Map<String, DisplayItem> map = new HashMap<>(items.size() * 2);
-        for (DisplayItem it : items) map.put(it.id(), it);
-        this.byId = map;
-        resolved.clear();
-        resolving.clear();
         CssAnimator.cleanup(sessionId, items);
         try {
-            indexOf.clear();
-            fxAnchors.clear();
-            for (int i = 0; i < items.size(); i++) {
-                DisplayItem it = items.get(i);
-                indexOf.put(it.id(), i);
-                if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
+            // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
+            // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
+            if (!(items == indexedItems && isImmutable(items))) {
+                Map<String, DisplayItem> map = new HashMap<>(items.size() * 2);
+                for (DisplayItem it : items) map.put(it.id(), it);
+                indexedById = map;
+                indexOf.clear();
+                fxAnchors.clear();
+                for (int i = 0; i < items.size(); i++) {
+                    DisplayItem it = items.get(i);
+                    indexOf.put(it.id(), i);
+                    if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
+                }
+                indexedItems = items;
+                int n = items.size();
+                parentIdx = new int[n];
+                for (int i = 0; i < n; i++) {
+                    String pid = items.get(i).hints().parentId();
+                    Integer pi = pid == null ? null : indexOf.get(pid);
+                    parentIdx[i] = pi == null ? -1 : pi;
+                }
+                curRes = new Resolved[n];
+                prevRes = new Resolved[n];
+                prevParentRes = new Resolved[n];
+                prevStatic = new boolean[n];
+                prevIdle = new boolean[n];
+                visiting = new boolean[n];
+                states = new CssAnimator.AnimState[n];
+                clipCache = new ClipEntry[n];
             }
+            java.util.Arrays.fill(curRes, null);
+            this.byId = indexedById;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
+            anchorNext = 0;
+            activeAnchors.clear();
             List<List<Group>> chains = new java.util.ArrayList<>(items.size());
-            Map<String, Integer> members = new HashMap<>();
+            // グループに属する描く部品の数。錨の位置（項目の添字）で数える（文字列の表を引かない）
+            int[] members = new int[items.size()];
+            Map<String, Integer> extraMembers = new HashMap<>(); // 錨がリストに無いグループだけ
             for (int i = 0; i < items.size(); i++) {
                 DisplayItem el = items.get(i);
                 List<Group> chain = List.of();
                 if (el.type() != ElementType.NODE) {
-                    Resolved r = resolve(el);
+                    Resolved r = resolveAt(i);
                     if (r.opacity() > 0.005f) {
                         chain = chainFor(items, i, r);
-                        for (Group g : chain) if (g.maskOf() == null) members.merge(g.id(), 1, Integer::sum);
+                        for (Group g : chain) {
+                            if (g.maskOf() != null) continue;
+                            if (g.anchor() >= 0) members[g.anchor()]++;
+                            else extraMembers.merge(g.id(), 1, Integer::sum);
+                        }
                     } else {
                         chain = null;
                     }
@@ -248,17 +274,21 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 if (el.type() == ElementType.NODE) continue;
                 List<Group> chain = chains.get(i);
                 if (chain == null) continue;
-                Resolved r = resolve(el);
+                if (chain.isEmpty()) { // 不透明度のグループの外: 層を開かず、そのまま描く
+                    syncLayers(List.of());
+                    drawItem(el, i, 1f);
+                    continue;
+                }
                 List<Group> layered = new java.util.ArrayList<>(chain.size());
                 float flat = 1f;
                 for (Group g : chain) {
                     // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
                     // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
-                    if (g.spec() != null || g.maskOf() != null || members.getOrDefault(g.id(), 0) > 1) layered.add(g);
+                    if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : extraMembers.getOrDefault(g.id(), 0)) > 1) layered.add(g);
                     else flat *= g.opacity();
                 }
                 syncLayers(layered);
-                drawItem(el, flat);
+                drawItem(el, i, flat);
             }
             syncLayers(List.of());
         } finally {
@@ -271,7 +301,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             this.rootSink = null;
             this.sink = null;
             this.byId = Map.of();
-            resolved.clear();
         }
     }
 
@@ -303,6 +332,28 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private final Map<String, Integer> indexOf = new HashMap<>();
     private final List<Integer> fxAnchors = new java.util.ArrayList<>();
+    /** {@link #chainFor} が前へ進める錨の位置と、いま範囲に入っている錨。 */
+    private int anchorNext;
+    /** 項目ごとの親の位置（無ければ -1）・今のフレームの姿勢・前フレームの姿勢と、そのときの親の姿勢・静止だったか。リストが変わるまで持ち回る。 */
+    /**
+     * 姿勢が動いていない項目の姿勢を、前のフレームのものから使い回すか。false なら毎フレーム作り直す
+     * （疑うときの切り分け用。絵は同じでなければならない）。
+     */
+    public static volatile boolean reuseIdlePoses = true;
+    private int[] parentIdx = new int[0];
+    private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
+    private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
+    private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
+    private ClipEntry[] clipCache = new ClipEntry[0];
+    private final List<Integer> activeAnchors = new java.util.ArrayList<>();
+    /** 索引（{@link #indexedById}・{@link #indexOf}・{@link #fxAnchors}）を作った時のリスト。 */
+    private List<DisplayItem> indexedItems;
+    private Map<String, DisplayItem> indexedById = Map.of();
+
+    /** 中身が変わらないと言えるリストか（{@code List.of} / {@code List.copyOf} / {@code Stream.toList} の結果）。 */
+    private static boolean isImmutable(List<?> list) {
+        return list.getClass().getName().startsWith("java.util.ImmutableCollections$");
+    }
 
     private static boolean hasFx(LayerSpec spec) {
         return spec != null && (!spec.filters().isEmpty() || spec.masked() || spec.blend() != BlendMode.NORMAL || spec.isolate()
@@ -318,14 +369,24 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 項目 {@code i} を含むグループの鎖。親子の鎖に、錨の範囲に入るフィルター・マスクの錨を足して並べ、マスクの項目にはマスクの層を挟む。 */
     private List<Group> chainFor(List<DisplayItem> items, int i, Resolved r) {
-        List<Group> chain = new java.util.ArrayList<>(r.groups());
-        for (int a : fxAnchors) {
+        // 項目は先頭から順に来るので、錨の一覧を前へ進めながら「今の項目を範囲に含む錨」だけを持つ（全錨を毎回なめない）
+        while (anchorNext < fxAnchors.size() && fxAnchors.get(anchorNext) <= i) activeAnchors.add(fxAnchors.get(anchorNext++));
+        for (int k = activeAnchors.size() - 1; k >= 0; k--) {
+            int a = activeAnchors.get(k);
+            if (i >= a + items.get(a).hints().layer().span()) activeAnchors.remove(k);
+        }
+        List<Group> base = r.groups();
+        if (activeAnchors.isEmpty()) {
+            boolean plain = true;
+            for (int k = 0; k < base.size() && plain; k++) plain = base.get(k).spec() == null;
+            if (plain) return base; // フィルター・マスクの層が無ければ、親子の鎖がそのまま答え
+        }
+        List<Group> chain = new java.util.ArrayList<>(base);
+        for (int a : activeAnchors) {
             DisplayItem node = items.get(a);
-            int span = node.hints().layer().span();
-            if (i < a || i >= a + span) continue;
             boolean present = false;
             for (Group g : chain) present |= g.id().equals(node.id());
-            if (!present) chain.add(groupFor(node, resolve(node)));
+            if (!present) chain.add(groupFor(node, resolveAt(a)));
         }
         chain.sort(java.util.Comparator.comparingInt(Group::anchor));
         List<Group> out = new java.util.ArrayList<>(chain.size() + 1);
@@ -339,31 +400,51 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return out;
     }
 
-    private Resolved resolve(DisplayItem el) {
-        Resolved cached = resolved.get(el.id());
-        if (cached != null) return cached;
-        Matrix2D base = frame;
-        float parentOpacity = 1f;
-        float parentResidual = 1f;
-        List<Group> parentGroups = List.of();
-        String parentId = el.hints().parentId();
-        if (parentId != null && !parentId.equals(el.id()) && resolving.add(el.id())) {
-            DisplayItem parent = byId.get(parentId);
-            if (parent != null) {
-                Resolved p = resolve(parent);
-                base = p.pose();
-                parentOpacity = p.opacity();
-                parentResidual = p.residual();
-                parentGroups = p.groups();
-            }
-            resolving.remove(el.id());
+    /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
+    private Resolved resolveAt(int i) {
+        Resolved r = curRes[i];
+        if (r != null) return r;
+        DisplayItem el = indexedItems.get(i);
+        Resolved parent = null;
+        int p = parentIdx[i];
+        if (p >= 0 && p != i && !visiting[p]) {
+            visiting[i] = true; // 親子が輪になっていても止まる
+            parent = resolveAt(p);
+            visiting[i] = false;
         }
-        AnimatedValues anim = CssAnimator.getValuesAt(sessionId, el, now);
+        CssAnimator.AnimState st = states[i];
+        if (st == null) st = states[i] = CssAnimator.stateFor(sessionId, el, now);
+        boolean idle = !st.isActiveAt(now);
+        // 姿勢と不透明度が動いていない（止まっている・色だけが補間される）なら、前回の姿勢をそのまま使う
+        boolean geometryStatic = idle || st.geometryStaticAt(now);
+        Resolved prev = prevRes[i];
+        if (reuseIdlePoses && prev != null && geometryStatic && prevStatic[i] && prevParentRes[i] == parent) {
+            // 自分も親も姿勢は動いていない: 行列の掛け算はしない。補間値（Resolved が持つ共有の同じ実体）は、前回も止まっていて
+            // 確定済みのとき以外は更新する（色が動いている・今のフレームで終わったとき）
+            if (!(idle && prevIdle[i])) st.getInterpolatedValues(now);
+            r = prev;
+        } else {
+            r = build(el, i, parent, st.getInterpolatedValues(now));
+            prevRes[i] = r;
+            prevParentRes[i] = parent;
+            prevStatic[i] = geometryStatic; // 「前回も姿勢が動いていなかった」
+        }
+        prevIdle[i] = idle; // 「前回の補間値は確定済み」
+        curRes[i] = r;
+        return r;
+    }
+
+    private Resolved build(DisplayItem el, int index, Resolved parent, AnimatedValues anim) {
+        Matrix2D base = parent != null ? parent.pose() : frame;
+        float parentOpacity = parent != null ? parent.opacity() : 1f;
+        float parentResidual = parent != null ? parent.residual() : 1f;
+        List<Group> parentGroups = parent != null ? parent.groups() : List.of();
         RenderMeta meta = el.meta();
         float ox = meta != null ? meta.originX() : 0.5f, oy = meta != null ? meta.originY() : 0.5f;
         double cx = el.x() + el.width() * ox, cy = el.y() + el.height() * oy;
         Matrix2D pose = base.multiply(Matrix2D.translate(cx + anim.tx(), cy + anim.ty()));
         if (anim.rot() != 0f) pose = pose.multiply(Matrix2D.rotate(Math.toRadians(anim.rot())));
+        if (anim.skew() != 0f) pose = pose.multiply(new Matrix2D(1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0)); // skewX（回転の後・拡縮の前）
         if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
         pose = pose.multiply(Matrix2D.translate(-cx, -cy));
         boolean fx = el.type() == ElementType.NODE && hasFx(el.hints().layer());
@@ -372,11 +453,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         Resolved r = new Resolved(pose, parentOpacity * anim.opacity(), parentResidual * (group ? 1f : anim.opacity()), groups, anim);
         if (group) {
             groups = new java.util.ArrayList<>(parentGroups);
-            groups.add(new Group(el.id(), Math.max(0f, anim.opacity()), indexOf.getOrDefault(el.id(), -1),
-                    fx ? el.hints().layer() : null, new double[]{pose.a(), pose.b(), pose.c(), pose.d()}, null, pose));
+            groups.add(new Group(el.id(), Math.max(0f, anim.opacity()), index, fx ? el.hints().layer() : null,
+                    new double[]{pose.a(), pose.b(), pose.c(), pose.d()}, null, pose));
             r = new Resolved(pose, r.opacity(), r.residual(), groups, anim);
         }
-        resolved.put(el.id(), r);
         return r;
     }
 
@@ -551,13 +631,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 項目
 
-    private void drawItem(DisplayItem el, float flat) {
-        Resolved res = resolve(el);
+    private void drawItem(DisplayItem el, int index, float flat) {
+        Resolved res = resolveAt(index);
         if (res.opacity() <= 0.005f) return;
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
         AnimatedValues anim = res.anim();
-        Clip clip = buildClip(el, anim);
+        Clip clip = buildClip(index, el, anim);
         if (clip.empty()) return;
 
         float[][] radii = radii(el, anim);
@@ -640,18 +720,43 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
     }
 
-    private Clip buildClip(DisplayItem el, AnimatedValues anim) {
+    /** 項目のクリップの結果と、それを作ったときの前提（描画先の大きさ・持ち主の姿勢）。前提が同じ間は作り直さない。 */
+    private static final class ClipEntry {
+        Clip clip;
+        int[] owner;
+        Resolved[] ownerRes;
+        int w, h;
+    }
+
+    private Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
+        ClipEntry ce = clipCache[index];
+        if (ce != null && ce.w == target.width() && ce.h == target.height()) {
+            boolean same = true;
+            for (int k = 0; k < ce.owner.length && same; k++) {
+                same = (ce.owner[k] < 0 ? null : resolveAt(ce.owner[k])) == ce.ownerRes[k];
+            }
+            if (same) return ce.clip;
+        }
         List<ClipPart> parts = new ArrayList<>(2);
+        List<Integer> owners = new ArrayList<>(2);
+        List<Resolved> ownerRes = new ArrayList<>(2);
         RenderMeta meta = el.meta();
         ClipRect cr = meta != null ? meta.clipRect() : null;
         if (cr != null && !cr.chain().isEmpty()) {
-            for (ClipChainPart p : cr.chain()) addClipPart(parts, p.rect(), p.ownerId());
+            for (ClipChainPart p : cr.chain()) addClipPart(parts, owners, ownerRes, p.rect(), p.ownerId());
         } else if (cr != null) {
-            addClipPart(parts, cr.toArray(), cr.ownerId());
+            addClipPart(parts, owners, ownerRes, cr.toArray(), cr.ownerId());
         } else if (anim.clipData != null) {
-            addClipPart(parts, anim.clipData, null);
+            addClipPart(parts, owners, ownerRes, anim.clipData, null);
         }
-        return finishClip(parts);
+        ce = new ClipEntry();
+        ce.clip = finishClip(parts);
+        ce.owner = owners.stream().mapToInt(Integer::intValue).toArray();
+        ce.ownerRes = ownerRes.toArray(new Resolved[0]);
+        ce.w = target.width();
+        ce.h = target.height();
+        clipCache[index] = ce;
+        return ce.clip;
     }
 
     private Clip finishClip(List<ClipPart> parts) {
@@ -665,13 +770,21 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return new Clip(parts, x0, y0, x1, y1);
     }
 
-    private void addClipPart(List<ClipPart> parts, float[] rect, String ownerId) {
+    private void addClipPart(List<ClipPart> parts, List<Integer> owners, List<Resolved> ownerRes, float[] rect, String ownerId) {
         if (rect == null || rect.length < 4) return;
         Matrix2D pose = frame;
+        int ownerIndex = -1;
+        Resolved owner = null;
         if (ownerId != null) {
-            DisplayItem owner = byId.get(ownerId);
-            if (owner != null) pose = resolve(owner).pose();
+            Integer ix = indexOf.get(ownerId);
+            if (ix != null) {
+                ownerIndex = ix;
+                owner = resolveAt(ix);
+                pose = owner.pose();
+            }
         }
+        owners.add(ownerIndex);
+        ownerRes.add(owner);
         Matrix2D inv = pose.invert();
         if (inv == null) return;
         float[] rx = new float[4], ry = new float[4];
@@ -1095,7 +1208,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (alpha < 4) return;
         // 箱の外へは出さない
         List<ClipPart> parts = new ArrayList<>(clip.parts());
-        addClipPart(parts, new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
+        addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), new float[]{el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), 0, 0, 0, 0}, null);
         Clip boxed = finishClip(parts);
         String[] lines = full.replace("\r\n", "\n").split("\n", -1);
         for (int i = 0; i < lines.length; i++) {

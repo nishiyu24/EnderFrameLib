@@ -26,11 +26,21 @@ public record AnimationTiming(String name, int durationMs, int delayMs, float it
                 AnimationSpec.Direction.fromCss(direction), AnimationSpec.FillMode.fromCss(fillMode), easing);
     }
 
+    /** {@code transition-property} に書かれたショートハンド {@code shorthand} が、ロングハンド {@code property} を含むか（再帰）。 */
+    private static boolean covers(String shorthand, String property) {
+        com.nishiyu.enderframelib.core.css.PropertyRegistry.Property declared = com.nishiyu.enderframelib.core.css.PropertyRegistry.get(shorthand);
+        if (declared == null || !declared.isShorthand()) return false;
+        for (String longhand : declared.longhands()) {
+            if (longhand.equals(property) || covers(longhand, property)) return true;
+        }
+        return false;
+    }
+
     /** {@code property} に効く組。同じプロパティを指す組が複数あれば最後のものが勝つ（CSS Transitions §2）。 */
     public static Transition transitionFor(List<Transition> transitions, String property) {
         for (int i = transitions.size() - 1; i >= 0; i--) {
             Transition t = transitions.get(i);
-            if (t.property().equals(property) || t.property().equals("all")) return t;
+            if (t.property().equals(property) || t.property().equals("all") || covers(t.property(), property)) return t;
         }
         return null;
     }

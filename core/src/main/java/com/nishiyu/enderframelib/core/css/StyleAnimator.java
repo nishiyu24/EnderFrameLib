@@ -36,6 +36,13 @@ public final class StyleAnimator {
             CssProperty.OPACITY, CssProperty.TRANSFORM, "translate", "rotate", "scale",
             CssProperty.COLOR, CssProperty.BACKGROUND_COLOR);
 
+    /**
+     * 描画項目の補間（{@code CssAnimator}）が、{@code transition} のときに担うボーダーの色（ボーダーの部品の色のチャンネルとして
+     * 補間する）。ここでも動かすと二重にかかる。{@code @keyframes} は描画側が担わないので、こちらで動かす。
+     */
+    private static final Set<String> BACKEND_TRANSITION_COLORS = Set.of(
+            "border-top-color", "border-right-color", "border-bottom-color", "border-left-color");
+
     /** 要素ごとの状態。動いているものが無くなれば次の {@link #observe} で捨てる。 */
     private static final class Entry {
         /** 直近の再スタイルで算出した目標値（アニメーションの値を重ねる前）。トランジションの「変化前」の出所。 */
@@ -115,7 +122,7 @@ public final class StyleAnimator {
         Set<String> candidates = new java.util.LinkedHashSet<>(to.asMap().keySet());
         candidates.addAll(from.asMap().keySet());
         for (String property : candidates) {
-            if (!isGenericAnimatable(property)) continue;
+            if (!isGenericAnimatable(property) || BACKEND_TRANSITION_COLORS.contains(property)) continue;
             String before = valueOf(from, property);
             String after = valueOf(to, property);
             Transition running = entry.transitions.get(property);
@@ -163,9 +170,13 @@ public final class StyleAnimator {
         Map<String, List<Stop>> stops = new LinkedHashMap<>();
         for (KeyframeBlock block : source.blocks()) {
             for (Map.Entry<String, String> declaration : block.declarations().entrySet()) {
-                String property = declaration.getKey();
-                if (!isGenericAnimatable(property)) continue;
-                stops.computeIfAbsent(property, k -> new ArrayList<>()).add(new Stop(block.percent(), declaration.getValue().trim()));
+                // ショートハンド（border-radius・margin・outline・inset など）はロングハンドへ展開して、1 つずつ補間する
+                Map<String, String> longhands = new LinkedHashMap<>();
+                expandInto(declaration.getKey(), declaration.getValue().trim(), longhands, 0);
+                for (Map.Entry<String, String> longhand : longhands.entrySet()) {
+                    if (!isGenericAnimatable(longhand.getKey()) && !DISCRETE_KEYFRAME_PROPERTIES.contains(longhand.getKey())) continue;
+                    stops.computeIfAbsent(longhand.getKey(), k -> new ArrayList<>()).add(new Stop(block.percent(), longhand.getValue().trim()));
+                }
             }
         }
         for (List<Stop> list : stops.values()) list.sort(Comparator.comparingDouble(Stop::pct));
@@ -269,6 +280,25 @@ public final class StyleAnimator {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * 補間はできないが、{@code @keyframes} に書かれたら 50% で切り替わる（離散的に動く）プロパティ。
+     * {@code outline: 0 solid} → {@code outline: 6px solid} のように、ショートハンドが運ぶスタイルのキーワードも要る。
+     */
+    private static final Set<String> DISCRETE_KEYFRAME_PROPERTIES = Set.of(
+            "outline-style", "border-top-style", "border-right-style", "border-bottom-style", "border-left-style", "visibility");
+
+    /** ショートハンドを、ロングハンドまで再帰的に展開して {@code out} に入れる。ロングハンド・未知のプロパティはそのまま。 */
+    static void expandInto(String property, String value, Map<String, String> out, int depth) {
+        PropertyRegistry.Property declared = PropertyRegistry.get(property);
+        if (declared == null || !declared.isShorthand() || declared.expander() == null || depth > 4) {
+            out.put(property, value);
+            return;
+        }
+        for (Map.Entry<String, String> part : declared.expander().apply(value).entrySet()) {
+            if (part.getValue() != null) expandInto(part.getKey(), part.getValue(), out, depth + 1);
+        }
+    }
 
     private static boolean isGenericAnimatable(String property) {
         if (CHANNEL_PROPERTIES.contains(property)) return false;

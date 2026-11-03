@@ -458,7 +458,8 @@ matched as in a browser, plus Minecraft's fonts and `@font-face`) `font-weight`
 `font-style` `font-kerning`
 `line-height` `letter-spacing` `text-align` `text-indent` `vertical-align`
 (`baseline` `top` `bottom` `middle` `sub` `super` `text-top` `text-bottom`,
-lengths, `%`) `text-decoration` `text-shadow`
+lengths, `%`) `text-decoration` `text-shadow` (offset, blur radius and colour,
+several shadows; `text-shadow: true` keeps the old dark-copy shadow)
 `text-transform` `white-space` (`normal` `nowrap` `pre` `pre-wrap` `pre-line`)
 `word-break` `overflow-wrap` `text-overflow` `direction`
 
@@ -477,7 +478,9 @@ with `round`, `circle()`, `ellipse()`, `polygon()`, `path()`, with
 `radial-gradient()`, `conic-gradient()` and their `repeating-` forms, with
 colour hints and `in <colorspace>`)
 `background-size` `background-position` `background-repeat` (including
-`space` and `round`) `background-clip` `background-origin`; `box-shadow` `transform`
+`space` and `round`) `background-clip` (including `text`, also as
+`-webkit-background-clip`; images and gradients on inline boxes are drawn per
+line fragment) `background-origin`; `box-shadow` `transform`
 (`translate` `scale` `rotate`) `transform-origin` `transition`
 `transition-delay` `transition-timing-function` `animation` with `@keyframes`
 (lengths, numbers and colours of any animatable property, including
@@ -798,10 +801,12 @@ Layout differences from a real browser are measured, case by case, in
   other non-SDF elements approximate each corner with the smaller of its two
   radii.
 - **Transforms in full.** `transform`, `translate`, `rotate` and `scale` are
-  composed in written order into a 2D matrix, but a box carries only a
-  translation, a rotation and a scale, so the shear of `skew*()` and of a
-  `matrix()` is dropped, and the depth part of 3D functions
-  (`translateZ()`, `rotateX()` / `rotateY()`, `perspective()`) is not drawn.
+  composed in written order into a 2D matrix, and a box carries a translation,
+  a rotation, a `skewX` and a scale (`M = T·R·skewX·S`), so `skew*()` and the
+  shear of a `matrix()` are drawn and animate. 3D functions are projected onto
+  the screen plane: `rotateX()` / `rotateY()` / `rotate3d()` scale the height /
+  width by cos θ (and flip past 90°), but the perspective and depth part
+  (`perspective()`, `translateZ()`) is not drawn.
 - **Clipping under rotation or scaling.** Each ancestor's clip (`overflow`, a
   box's own background) is kept as a chain and converted into the clipped
   item's space one by one, so clips stay correct inside moving rails and under

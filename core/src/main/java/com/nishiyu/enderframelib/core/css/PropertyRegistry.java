@@ -79,7 +79,9 @@ public final class PropertyRegistry {
             "grid-row-gap", "grid-column-gap", "gap", "grid-gap", "grid", "grid-template",
             "flex", "flex-flow", "overflow", "inset",
             "place-content", "place-items", "place-self", "container",
-            "font", "list-style", "outline", "columns", "column-rule", "background",
+            "font", "list-style", "outline", "columns", "column-rule",
+            "-webkit-background-clip", // background ショートハンドの background-clip: border-box より先に（先に入ったものが勝つ）
+            "background",
             "border", "border-color", "border-width", "border-style",
             "border-top", "border-right", "border-bottom", "border-left", "border-radius",
             "mask", "-webkit-mask", "-webkit-mask-image", "-webkit-mask-position", "-webkit-mask-size", "-webkit-mask-repeat",
@@ -294,7 +296,7 @@ public final class PropertyRegistry {
         paint("mix-blend-mode", "normal", false, ValueType.KEYWORD, false);
         keyword("isolation", CssKeywords.Isolation.class, CssKeywords.Isolation.AUTO, false, Invalidation.PAINT);
         // クリップ・マスク・背景のフィルター。どれもスタッキングコンテキストを作り、レイヤーに描いて合成する（LayerCompositor）
-        paint("clip-path", "none", false, ValueType.OTHER, false);
+        paint("clip-path", "none", false, ValueType.OTHER, true);
         paint("backdrop-filter", "none", false, ValueType.LIST, true);
         paint("mask-image", "none", false, ValueType.LIST, false);
         paint("mask-position", "0% 0%", false, ValueType.LIST, false);
@@ -307,6 +309,7 @@ public final class PropertyRegistry {
         shorthand("mask", Invalidation.PAINT, ShorthandExpanders::mask,
                 "mask-image", "mask-position", "mask-size", "mask-repeat", "mask-origin", "mask-clip");
         // -webkit- 付きは別名（広く使われている）
+        shorthand("-webkit-background-clip", Invalidation.PAINT, v -> Map.of("background-clip", v), "background-clip");
         shorthand("-webkit-clip-path", Invalidation.PAINT, v -> Map.of("clip-path", v), "clip-path");
         shorthand("-webkit-backdrop-filter", Invalidation.PAINT, v -> Map.of("backdrop-filter", v), "backdrop-filter");
         shorthand("-webkit-mask", Invalidation.PAINT, ShorthandExpanders::mask,

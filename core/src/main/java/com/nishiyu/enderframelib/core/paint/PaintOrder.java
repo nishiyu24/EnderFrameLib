@@ -57,6 +57,72 @@ final class PaintOrder {
     /** 子孫に {@code mix-blend-mode} を持つ箱がある（スタッキングコンテキストを越えない範囲で）か。 */
     private final Map<LayoutBox, Boolean> blendDescendants = new IdentityHashMap<>();
 
+    /** 描画中のスクロールコンテナ（中身の節を持つもの）。つまみの動きの係数は、つまみを出すときに埋まる。 */
+    static final class ScrollContent {
+        final LayoutBox box;
+        final String contentId;
+        final float sx0, sy0;
+        String thumbVId, thumbHId;
+        float kx, ky;
+
+        ScrollContent(LayoutBox box, String contentId, float sx0, float sy0) {
+            this.box = box;
+            this.contentId = contentId;
+            this.sx0 = sx0;
+            this.sy0 = sy0;
+        }
+    }
+
+    private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
+    private final List<ScrollContent> scrollContents = new ArrayList<>();
+
+    /** 箱が中身の節を持つスクロールコンテナなら、その記録。 */
+    ScrollContent scrollContentOf(LayoutBox box) {
+        return scrollContentOf.get(box);
+    }
+
+    /** 直近の {@link #paintTasks} で中身の節を作ったスクロールコンテナの記録（描いたあとに読む）。 */
+    List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContentInfos() {
+        List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> out = new ArrayList<>(scrollContents.size());
+        for (ScrollContent c : scrollContents) {
+            out.add(new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
+                    c.sx0, c.sy0, c.kx, c.ky));
+        }
+        return out;
+    }
+
+    /**
+     * スクロールするだけで中身が正しく動くコンテナか: スクロールコンテナで、中身に sticky・固定配置・包含ブロックがコンテナの外の
+     * 絶対配置（スクロールに動かされない）が無い。そうした子孫があると、中身の節を動かすと位置が合わないので、従来の作り直しにする。
+     */
+    private static boolean scrollsAsOneNode(LayoutBox box) {
+        if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
+        String tag = box.node.tag;
+        if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return false;
+        return !hasUnscrollableDescendant(box, box);
+    }
+
+    private static boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box) {
+        for (LayoutBox child : box.children) {
+            if (child.display != null && child.display.isNone()) continue;
+            if (child.isFixed || child.isSticky) return true;
+            if (child.isAbsolute) {
+                LayoutBox cb = child.findContainingBlock();
+                if (cb == null) return true;
+                boolean inside = false;
+                for (LayoutBox a = cb; a != null; a = a.parent) {
+                    if (a == container) {
+                        inside = true;
+                        break;
+                    }
+                }
+                if (!inside) return true;
+            }
+            if (hasUnscrollableDescendant(container, child)) return true;
+        }
+        return false;
+    }
+
     PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter,
                Predicate<LayoutBox> animatesOpacity) {
         this.rootW = rootW;
@@ -115,6 +181,8 @@ final class PaintOrder {
      */
     List<RenderTask> paintTasks(LayoutBox root) {
         fragIds.set(0);
+        scrollContentOf.clear();
+        scrollContents.clear();
         contentClips.clear();
         blendDescendants.clear();
         PaintNode top;
@@ -144,6 +212,14 @@ final class PaintOrder {
         contentClips.put(box, childClip);
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
         String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.getId();
+        if (DisplayListBuilder.scrollContentNodes && scrollsAsOneNode(box)) {
+            // 中身は専用の節の下に置く: スクロールではこの節だけを動かせばよい（箱自身の背景・枠・つまみは動かさない）
+            ScrollContent content = new ScrollContent(box, box.node.getId() + "_scrollc",
+                    scrollState.getScrollX(box.node), scrollState.getScrollY(box.node));
+            scrollContentOf.put(box, content);
+            scrollContents.add(content);
+            childParent = content.contentId;
+        }
         for (LayoutBox child : box.children) classify(child, clipForChild(child, childClip), childParent, sc, local);
 
         String[] overflow = overflowPair(box);
@@ -310,6 +386,7 @@ final class PaintOrder {
 
     /** {@code mask-image} に画像かグラデーションのレイヤーがあるか。 */
     static boolean hasMask(LayoutBox box) {
+        if (BoxDecorations.clipsText(box.style)) return true; // background-clip: text は文字のアルファを写すマスク
         for (BoxDecorations.BackgroundLayer layer : BoxDecorations.maskLayers(box.style)) {
             if (layer.url() != null || layer.isGradient()) return true;
         }
@@ -446,6 +523,18 @@ final class PaintOrder {
         return "scroll".equals(overflow) || "auto".equals(overflow);
     }
 
+    /**
+     * 子の項目をまとめて動かすための、見えない節（箱の下に置く。クリックも受けない）。移動量はあとから
+     * {@code UiView#setPaintOffset} で足す。id が持ち主の節の id と違うので、持ち主の節の検索には現れない。
+     */
+    void addMovingNode(List<DisplayItem> elements, String id, LayoutBox box, RenderMeta meta) {
+        ItemProps events = new ItemProps();
+        events.parentId(box.node.getId());
+        events.pointerEventsNone();
+        addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
+                AnimationSpec.NONE, meta == null ? RenderMeta.EMPTY : new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false));
+    }
+
     void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
         if (box.style.keywordOf(CssProperty.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
 
@@ -456,6 +545,7 @@ final class PaintOrder {
 
         ItemProps sbEvents = new ItemProps();
         sbEvents.parentId(box.node.getId());
+        ScrollContent content = scrollContentOf.get(box);
         ClipRect sbClip = clipRect;
         RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, 12.0f, 0.5f, 0.5f, 1, false);
 
@@ -469,7 +559,15 @@ final class PaintOrder {
             float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            ItemProps thumbEvents = sbEvents;
+            if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
+                content.thumbVId = box.node.getId() + "_scrollv";
+                content.ky = (trackH - thumbH) / maxScrollY;
+                addMovingNode(elements, content.thumbVId, box, sbMeta);
+                thumbEvents = new ItemProps();
+                thumbEvents.parentId(content.thumbVId);
+            }
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
             float trackX = box.x + box.bL + 2;
@@ -480,7 +578,15 @@ final class PaintOrder {
             float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
             addElement(elements, box.node.getId(), box.node.getId() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            ItemProps thumbEvents = sbEvents;
+            if (content != null) {
+                content.thumbHId = box.node.getId() + "_scrollh";
+                content.kx = (trackW - thumbW) / maxScrollX;
+                addMovingNode(elements, content.thumbHId, box, sbMeta);
+                thumbEvents = new ItemProps();
+                thumbEvents.parentId(content.thumbHId);
+            }
+            addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
     }
 

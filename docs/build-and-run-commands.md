@@ -41,6 +41,19 @@ GL を作れない環境では `LwjglGlRenderBackendTest` などはスキップ�
 ./gradlew :core:runViewer --args="src/main/resources/data/enderframelib/enderframe_ui/voidwave.html 1280 800"
 ```
 
+## テストサイト（ライブラリだけで動くデモ）
+
+表は多彩な HTML / CSS アニメーション、裏は Java が DOM を操作します（`core/demo/`）。
+Java 側は時計・カウンタ・進捗バー・ログの追加と削除・表の書き換え・フォームのイベント・1 593 セルのグリッドの波を動かします。
+
+```bash
+# 窓で表示（ホイールでスクロール。全面が白・黒・赤に変わる区画あり）
+./gradlew :core:runShowcase
+
+# 窓なしで PNG（先頭に 幅 高さ を付けると縦長に全体を撮れる）
+./gradlew :core:runShowcase --args="1280 7600 --png showcase.png --after 3000"
+```
+
 窓での操作の全体は [standalone-viewer.md](standalone-viewer.md) を参照。主な操作:
 
 | 操作 | 動作 |
