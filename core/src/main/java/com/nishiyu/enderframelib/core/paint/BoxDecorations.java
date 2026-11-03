@@ -191,6 +191,16 @@ public final class BoxDecorations {
 
     /** @param dppx {@code image-set()} の候補を選ぶデバイスピクセル比 */
     public static List<BackgroundLayer> layers(ComputedStyle style, double dppx) {
+        // スタイルだけで決まるので、スタイルごとに 1 回だけ解く（描画のたびに全箱の background を字句解析していた）。
+        // 呼び出し側が並べ替えても壊れないよう、写しを返す
+        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo().computeIfAbsent(
+                new LayerKey(false, dppx), k -> computeLayers(style, dppx)));
+    }
+
+    /** 背景・マスクのレイヤー表のメモのキー。 */
+    private record LayerKey(boolean mask, double dppx) {}
+
+    private static List<BackgroundLayer> computeLayers(ComputedStyle style, double dppx) {
         List<String> images = list(style.get("background-image"), "none");
         List<String> positions = list(style.get("background-position"), "0% 0%");
         List<String> sizes = list(style.get("background-size"), "auto");
@@ -214,6 +224,11 @@ public final class BoxDecorations {
     }
 
     public static List<BackgroundLayer> maskLayers(ComputedStyle style, double dppx) {
+        return new ArrayList<>((List<BackgroundLayer>) style.paintMemo().computeIfAbsent(
+                new LayerKey(true, dppx), k -> computeMaskLayers(style, dppx)));
+    }
+
+    private static List<BackgroundLayer> computeMaskLayers(ComputedStyle style, double dppx) {
         List<String> images = list(style.get("mask-image"), "none");
         List<String> positions = list(style.get("mask-position"), "0% 0%");
         List<String> sizes = list(style.get("mask-size"), "auto");
@@ -243,8 +258,22 @@ public final class BoxDecorations {
         return out;
     }
 
+    /** {@code background-clip: text}（{@code -webkit-} 付きも）のレイヤーがあるか。背景を文字の形で切る（箱の中身を文字のアルファでマスクする）。 */
+    public static boolean clipsText(ComputedStyle style) {
+        String v = style.get("background-clip");
+        if (v == null) return false;
+        for (String clip : CssSyntax.parseCommaList(v)) if ("text".equalsIgnoreCase(clip.trim())) return true;
+        return false;
+    }
+
     /** 背景色が塗られる領域を決める箱（最後のレイヤーの {@code background-clip}）。 */
     public static String colorClip(ComputedStyle style) {
+        return (String) style.paintMemo().computeIfAbsent(COLOR_CLIP, k -> computeColorClip(style));
+    }
+
+    private static final Object COLOR_CLIP = new Object();
+
+    private static String computeColorClip(ComputedStyle style) {
         List<String> clips = list(style.get("background-clip"), "border-box");
         int layerCount = list(style.get("background-image"), "none").size();
         return clips.get((layerCount - 1) % clips.size());

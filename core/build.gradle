@@ -108,3 +108,23 @@ tasks.register('runViewer', JavaExec) {
     mainClass = 'com.nishiyu.enderframelib.common.StandaloneViewer'
     workingDir = rootProject.projectDir
 }
+
+// デモ（公開物には入れない）: ライブラリだけで動くテストサイト。Java が DOM を操作する。
+//   ./gradlew :core:runShowcase                                   窓で表示
+//   ./gradlew :core:runShowcase --args="--png out.png --after 3000"   窓なしで PNG
+sourceSets {
+    demo {
+        java.srcDir 'demo/java'
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + configurations.viewerRuntime
+    }
+}
+tasks.register('runShowcase', JavaExec) {
+    group = 'application'
+    description = 'ライブラリだけで動くテストサイト（Java が DOM を操作）を窓または PNG に出す'
+    classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.demo.ShowcaseApp'
+    if (System.getProperty('showcase.jfr') != null) jvmArgs "-XX:StartFlightRecording=filename=${System.getProperty('showcase.jfr')},settings=profile"
+    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
+    workingDir = rootProject.projectDir
+}

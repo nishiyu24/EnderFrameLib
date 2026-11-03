@@ -116,6 +116,12 @@ public class InteractionState implements StateLookup {
          * （{@code .a:hover .b} のように、祖先の状態・class・属性を読む規則がある）。
          */
         public boolean subtreeDirty = true;
+        /**
+         * 子孫のどこかが再スタイルの対象（{@link #isStyleDirty} / {@link #subtreeDirty}）になっている。汚す側が祖先へ印を付け、
+         * 再スタイルの走査はこれが無く自分も汚れていない部分木を丸ごと飛ばす（ブラウザの dirty-bit と同じ）。
+         * 作りたては安全側に true。
+         */
+        public boolean dirtyBelow = true;
         /** 影響範囲を絞らずに汚した（{@link InteractionState#markDirty}）。祖先も汚し直す必要がある。 */
         public boolean unscoped = true;
         /** style 属性が {@code inherit} を含む。親の非継承プロパティの変化が子へ届く。 */
@@ -124,6 +130,9 @@ public class InteractionState implements StateLookup {
         public float containerWidth = Float.NaN;
         public float containerHeight = Float.NaN;
     }
+
+    /** 再スタイルの走査が、汚れていない部分木を飛ばしてよいか（走査のたびに {@code RenderPipeline} が決める）。 */
+    public boolean pruneRestyle;
 
     public StateFlags getOrCreate(HtmlNode node) {
         if (node == null) return new StateFlags();
@@ -327,6 +336,12 @@ public class InteractionState implements StateLookup {
         flags.isStyleDirty = true;
         flags.subtreeDirty = true;
         flags.unscoped = true;
+        markAncestorsDirtyBelow(node);
+    }
+
+    /** 祖先すべてに「子孫に汚れがある」印を付ける（根まで。深さの分だけで済む）。 */
+    private void markAncestorsDirtyBelow(HtmlNode node) {
+        for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) getOrCreate(cur).dirtyBelow = true;
     }
 
     /** 対話状態（{@code :hover} など）のビットが変わった要素の影響範囲を汚す。 */
@@ -355,6 +370,7 @@ public class InteractionState implements StateLookup {
         }
         StateFlags flags = getOrCreate(node);
         flags.isStyleDirty = true;
+        markAncestorsDirtyBelow(node);
         Set<Relation> relations = EnumSet.noneOf(Relation.class);
         String lower = name.toLowerCase(java.util.Locale.ROOT);
         if (lower.equals("class")) {
@@ -447,6 +463,7 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         flags.isStyleDirty = true;
         if (subtree) flags.subtreeDirty = true;
+        markAncestorsDirtyBelow(node);
     }
 
     private static Set<String> tokens(String classAttribute) {
@@ -462,6 +479,7 @@ public class InteractionState implements StateLookup {
         for (StateFlags flags : flagsByNode.values()) {
             flags.isStyleDirty = true;
             flags.subtreeDirty = true;
+            flags.dirtyBelow = true;
         }
     }
 
@@ -482,7 +500,10 @@ public class InteractionState implements StateLookup {
         for (HtmlNode node : dirty) {
             for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) {
                 StateFlags flags = flagsByNode.get(cur);
-                if (flags != null) flags.isStyleDirty = true;
+                if (flags != null) {
+                    flags.isStyleDirty = true;
+                    flags.dirtyBelow = true;
+                }
             }
         }
     }
@@ -500,6 +521,7 @@ public class InteractionState implements StateLookup {
         if (changed) {
             flags.isStyleDirty = true;
             flags.subtreeDirty = true;
+            markAncestorsDirtyBelow(node);
         }
         return changed;
     }

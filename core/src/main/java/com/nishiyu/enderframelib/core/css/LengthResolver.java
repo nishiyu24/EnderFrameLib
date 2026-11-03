@@ -400,6 +400,14 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
      * どちらかが 0 の角は直角（両方 0）。
      */
     public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
+        // スタイルと箱の大きさだけで決まる。呼び出し側が書き換えても壊れないよう、写しを返す
+        return ((float[]) style.paintMemo().computeIfAbsent(new CornerKey(w, h, rootW, rootH),
+                k -> computeCornerRadiiXY(style, w, h, rootW, rootH))).clone();
+    }
+
+    private record CornerKey(float w, float h, float rootW, float rootH) {}
+
+    private static float[] computeCornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
         String[] values = new String[4];
         String shorthand = null;
         for (int i = 0; i < 4; i++) {

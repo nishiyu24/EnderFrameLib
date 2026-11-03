@@ -80,8 +80,14 @@ final class BoxAnimation {
 
     /** {@code transform} の値を {@code {tx, ty, sx, sy, rot}} にする（既定値は無指定のチャネル用）。 */
     static float[] parseTransformProps(String t, float boxW, float boxH, float defTx, float defTy, float defSx, float defSy, float defRot) {
-        if (t == null || t.isEmpty()) return new float[]{defTx, defTy, defSx, defSy, defRot};
+        if (t == null || t.isEmpty()) return new float[]{defTx, defTy, defSx, defSy, defRot, 0f};
         return Transforms.toTrs(Transforms.parse(t, new Transforms.Context(boxW, boxH, 0f, 0f, 16f, 16f)));
+    }
+
+    /** キーフレームの宣言（{@code transform} と個別の {@code translate} / {@code rotate} / {@code scale}）を {@code {tx, ty, sx, sy, rot, skew}} にする。 */
+    static float[] parseKeyframeTransform(Map<String, String> decls, float boxW, float boxH) {
+        Transforms.Context ctx = new Transforms.Context(boxW, boxH, 0f, 0f, 16f, 16f);
+        return Transforms.toTrs(Transforms.compose(decls.get("translate"), decls.get("rotate"), decls.get("scale"), decls.get(CssProperty.TRANSFORM), ctx));
     }
 
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
@@ -96,6 +102,55 @@ final class BoxAnimation {
      * {@link AnimationSpec} に解決する。
      */
     AnimationSpec parseAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
+        // 結果はスタイルと（@keyframes・基準の大きさと色）だけで決まるので、スタイルの置き場に覚える。
+        // 描画のたびに全箱の animation を字句解析し直していた（表示リスト作りの 3 割）
+        if (NO_MEMO) return resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
+        Object memoKey = new AnimKey(keyframes, keyframes.size(), baseW, baseH, baseColor, baseBgColor);
+        Map<Object, Object> memo = style.paintMemo();
+        Object hit = memo.get(memoKey);
+        if (hit != null) return (AnimationSpec) hit;
+        AnimationSpec spec = resolveAnimationDef(style, baseW, baseH, baseColor, baseBgColor);
+        memo.put(memoKey, spec);
+        return spec;
+    }
+
+    /** 切り分け用: {@code -Denderframe.paint.nomemo=true} でメモを使わない。 */
+    private static final boolean NO_MEMO = Boolean.getBoolean("enderframe.paint.nomemo");
+
+    /** {@link #parseAnimationDef} のメモのキー。{@code @keyframes} の表は同一性で比べる（中身の比較は重い）。 */
+    private static final class AnimKey {
+        private final Object keyframes;
+        private final int keyframeCount;
+        private final float w, h;
+        private final int color, bg;
+
+        AnimKey(Object keyframes, int keyframeCount, float w, float h, int color, int bg) {
+            this.keyframes = keyframes;
+            this.keyframeCount = keyframeCount;
+            this.w = w;
+            this.h = h;
+            this.color = color;
+            this.bg = bg;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof AnimKey k && k.keyframes == keyframes && k.keyframeCount == keyframeCount
+                    && Float.compare(k.w, w) == 0 && Float.compare(k.h, h) == 0 && k.color == color && k.bg == bg;
+        }
+
+        @Override
+        public int hashCode() {
+            int hash = System.identityHashCode(keyframes);
+            hash = 31 * hash + keyframeCount;
+            hash = 31 * hash + Float.floatToIntBits(w);
+            hash = 31 * hash + Float.floatToIntBits(h);
+            hash = 31 * hash + color;
+            return 31 * hash + bg;
+        }
+    }
+
+    private AnimationSpec resolveAnimationDef(ComputedStyle style, float baseW, float baseH, int baseColor, int baseBgColor) {
         AnimationTiming timing = AnimationParser.parse(style, keyframes::containsKey);
         if (timing == null) return AnimationSpec.NONE;
         String name = timing.name();
@@ -108,9 +163,9 @@ final class BoxAnimation {
             Map<String, String> decls = block.declarations();
             int definedChannels = 0;
 
-            float[] tr = new float[]{0f, 0f, 1f, 1f, 0f};
-            if (decls.containsKey(CssProperty.TRANSFORM)) {
-                tr = parseTransformProps(decls.get(CssProperty.TRANSFORM), baseW, baseH, 0f, 0f, 1f, 1f, 0f);
+            float[] tr = new float[]{0f, 0f, 1f, 1f, 0f, 0f};
+            if (decls.containsKey(CssProperty.TRANSFORM) || decls.containsKey("translate") || decls.containsKey("rotate") || decls.containsKey("scale")) {
+                tr = parseKeyframeTransform(decls, baseW, baseH);
                 definedChannels |= AnimationSpec.CH_TRANSFORM;
             }
 
@@ -139,10 +194,32 @@ final class BoxAnimation {
             }
 
             animatedChannels |= definedChannels;
-            frames.add(new AnimationSpec.Keyframe(pct, tr[0], tr[1], tr[2], tr[3], tr[4], op, col, bgCol, definedChannels));
+            frames.add(new AnimationSpec.Keyframe(pct, tr[0], tr[1], tr[2], tr[3], tr[4], tr[5], op, col, bgCol, definedChannels));
         }
 
         if (frames.isEmpty() || animatedChannels == 0) return AnimationSpec.NONE;
+        // 0%（from）か 100%（to）が書かれていなければ、要素自身の元の値がその端（CSS Animations 1 §4.2）。
+        // {@code @keyframes spin { to { transform: rotate(360deg) } }} は、元の姿勢から 360° まで回る
+        boolean hasStart = false, hasEnd = false;
+        for (AnimationSpec.Keyframe f : frames) {
+            hasStart |= f.pct() <= 0f;
+            hasEnd |= f.pct() >= 100f;
+        }
+        if (!hasStart || !hasEnd) {
+            Transforms.Context ctx = new Transforms.Context(baseW, baseH, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
+            float[] base = java.util.Arrays.copyOf(Transforms.toTrs(Transforms.compose(style.get("translate"), style.get("rotate"),
+                    style.get("scale"), style.get(CssProperty.TRANSFORM), ctx)), 6);
+            if (base[2] == 0f && base[3] == 0f) { base[2] = 1f; base[3] = 1f; }
+            float baseOpacity = style.number(CssProperty.OPACITY, 1f);
+            if (!hasStart) {
+                frames.add(new AnimationSpec.Keyframe(0f, base[0], base[1], base[2], base[3], base[4], base[5], baseOpacity,
+                        baseColor, baseBgColor, animatedChannels));
+            }
+            if (!hasEnd) {
+                frames.add(new AnimationSpec.Keyframe(100f, base[0], base[1], base[2], base[3], base[4], base[5], baseOpacity,
+                        baseColor, baseBgColor, animatedChannels));
+            }
+        }
         return new AnimationSpec(timing.durationMs(), timing.delayMs(), timing.iterationCount(), timing.direction(),
                 timing.fillMode(), timing.easing(), animatedChannels, frames);
     }

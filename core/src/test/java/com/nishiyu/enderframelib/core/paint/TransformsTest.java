@@ -97,9 +97,9 @@ public class TransformsTest {
     }
 
     @Test
-    @DisplayName("3D の translateZ・rotateX は 2D に効かない")
+    @DisplayName("3D の translateZ（奥行き）は 2D に効かない。rotateX は高さが cos 倍")
     void threeDimensionalPartsAreIgnored() {
-        assertTrs(trs("translateZ(10px) rotateX(45deg) translateX(3px)"), 3f, 0f, 1f, 1f, 0f);
+        assertTrs(trs("translateZ(10px) rotateX(45deg) translateX(3px)"), 3f, 0f, 1f, (float) Math.cos(Math.toRadians(45)), 0f);
         assertTrs(trs("translate3d(1px, 2px, 3px)"), 1f, 2f, 1f, 1f, 0f);
     }
 
@@ -129,5 +129,31 @@ public class TransformsTest {
     @DisplayName("単位のない角度は度として読む（互換）")
     void unitlessAngleIsDegrees() {
         assertEquals(45f, trs("rotate(45)")[4], EPS);
+    }
+
+    @Test
+    @DisplayName("skewX は skew 成分に分解される（捨てない）")
+    void skewIsKept() {
+        float[] t = trs("skewX(30deg)");
+        assertTrs(t, 0, 0, 1, 1, 0);
+        assertEquals(30f, t[5], 0.01f, "skew");
+        float[] both = trs("rotate(20deg) skewX(25deg) scale(2, 3)");
+        assertEquals(20f, both[4], 0.01f, "rot");
+        assertEquals(25f, both[5], 0.01f, "skew");
+        assertEquals(2f, both[2], 0.01f, "sx");
+        assertEquals(3f, both[3], 0.01f, "sy");
+    }
+
+    @Test
+    @DisplayName("rotateY / rotateX は 2D へ正射影（横幅・高さが cos 倍、90° 越えで裏返る）")
+    void rotate3dIsProjected() {
+        assertTrs(trs("rotateY(60deg)"), 0, 0, 0.5f, 1, 0);
+        assertTrs(trs("rotateX(60deg)"), 0, 0, 1, 0.5f, 0);
+        assertTrs(trs("rotateY(180deg)"), 0, 0, -1, 1, 0);
+        assertTrs(trs("rotateY(180deg) rotateX(40deg)"), 0, 0, -1, (float) Math.cos(Math.toRadians(40)), 0);
+        assertTrs(trs("rotate3d(0, 0, 1, 30deg)"), 0, 0, 1, 1, 30);
+        assertTrs(trs("perspective(600px) rotateY(0deg)"), 0, 0, 1, 1, 0);
+        // 90° ちょうどでも行列が潰れない（描画が NaN にならない）
+        assertTrue(Math.abs(trs("rotateY(90deg)")[2]) > 0f);
     }
 }

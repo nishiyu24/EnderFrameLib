@@ -163,6 +163,7 @@ public class HitTestIndex {
             dx = nx;
             dy = ny;
         }
+        if (anim.skew() != 0.0f) dx -= Math.tan(Math.toRadians(anim.skew())) * dy; // skewX の逆
         if (anim.sx() != 0 && anim.sx() != 1.0f) dx /= anim.sx();
         if (anim.sy() != 0 && anim.sy() != 1.0f) dy /= anim.sy();
 

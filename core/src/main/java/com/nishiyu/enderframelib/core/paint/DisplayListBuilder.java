@@ -90,20 +90,19 @@ public class DisplayListBuilder {
         return order.paintOrder(root);
     }
 
-/** 箱ごとに、直近の全件の描画が使った部品 ID の数（部品の通し番号を、省いた箱の分だけ進めるため）。 */
-private final java.util.IdentityHashMap<LayoutBox, Integer> idsUsed = new java.util.IdentityHashMap<>();
-
 public List<DisplayItem> render(LayoutBox box) {
     return render(box, false);
 }
 
 /**
  * {@code cullOffscreen} が true なら、画面（と余白）の外にある箱の項目は作らない。位置だけが変わるスクロールのように、
- * 直前に全件で描いた木と同じ中身のときに使う（省いた箱の部品 ID の数は直前の値で進めるので、画面内の項目の ID は全件のときと同じ）。
+ * 直前に全件で描いた木と同じ中身のときに使う（部品の ID は箱ごとに数えるので、省いた箱が他の箱の ID に響かない）。
  * 変形・アニメーション・フィルターを持つ祖先の下は、動いて画面に入ってくるので省かない。
  */
 public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
-    if (!cullOffscreen) idsUsed.clear();
+    generation++;
+    translating = cullOffscreen && TRANSLATE_ENABLED;
+    translatedHits = 0;
     List<DisplayItem> elements = new ArrayList<>();
         canvasBackgroundSource = null;
         decor.setDevicePixelRatio(box.devicePixelRatio);
@@ -142,6 +141,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
                     // マスクは、箱の中身を出し終えたあとに足す（描画側は maskFrom 以降をマスク用の描画先へ描く）
                     if (spec.wantsMask()) {
                         int maskFrom = elements.size() - start;
+                        fragIds.set(MASK_ID_BASE); // 箱の本体の部品（0 から）と ID が重ならないように
                         drawMaskItems(elements, layerBox);
                         spec = spec.withMaskFrom(elements.size() - start > maskFrom ? maskFrom : -1);
                     }
@@ -155,17 +155,15 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
                 task.drawAction().accept(elements);
                 continue;
             }
-            if (cullOffscreen) {
-                Integer used = idsUsed.get(owner);
-                if (used != null && !openBoxes.contains(owner) && offscreen(owner)) {
-                    fragIds.addAndGet(used);
-                    continue;
-                }
+            if (cullOffscreen && !openBoxes.contains(owner) && offscreen(owner)) {
+                BoxMemo kept = boxMemo.get(owner);
+                if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
+                continue;
             }
-            int before = fragIds.get();
             task.drawAction().accept(elements);
-            if (!cullOffscreen) idsUsed.put(owner, fragIds.get() - before);
         }
+        // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
+        boxMemo.values().removeIf(m -> m.generation != generation);
         return elements;
     }
 
@@ -198,6 +196,32 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
         float fontHVal = Math.max(1.0f, box.style.fontSizePx());
         decor.drawMaskLayers(elements, box, box.node.getId(), null, radii, border, fontHVal, 0.5f, 0.5f);
+        if (BoxDecorations.clipsText(box.style)) {
+            // background-clip: text: 子孫の文字を白（不透明）で出す。これがマスクになり、箱の背景が文字の形だけに残る
+            ItemProps textEvents = ItemProps.parent(box.node.getId());
+            textEvents.pointerEventsNone();
+            suppressTextShadow = true;
+            try {
+                maskText(elements, box, box.node.getId(), textEvents);
+            } finally {
+                suppressTextShadow = false;
+            }
+        }
+    }
+
+    /** 文字の影を出さない（マスクに影が混ざらないように）。 */
+    private boolean suppressTextShadow;
+
+    private void maskText(List<DisplayItem> elements, LayoutBox box, String id, ItemProps events) {
+        for (LayoutBox child : box.children) {
+            if (child.display.isNone()) continue;
+            if ("#text".equals(child.node.tag)) {
+                float fontH = Math.max(1f, child.style.fontSizePx());
+                drawTextNodeElement(elements, child, id, 0xFFFFFFFF, 0, null, fontH, 0.5f, 0.5f, events, 0, AnimationSpec.NONE);
+            } else {
+                maskText(elements, child, id, events);
+            }
+        }
     }
 
     /** 錨の項目にレイヤーの指定を載せる。 */
@@ -217,7 +241,292 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
      */
     private static final int DEFAULT_CANVAS_COLOR = 0x00000000;
 
+    private static final int MASK_ID_BASE = 1_000_000;
+
+    /**
+     * スクロールコンテナの中身を 1 つの節にまとめるか。まとめると、スクロールだけの更新は表示リストを作り直さず、その節の
+     * 移動量を更新するだけで済む（{@code UiView} が行う）。false なら従来どおり、中身の項目はコンテナの節の直下に並び、
+     * スクロールのたびに作り直す（疑うときの切り分け用。{@code -Denderframe.paint.noscrollnode=true} でも切れる）。結果は同じでなければならない。
+     */
+    public static volatile boolean scrollContentNodes = !Boolean.getBoolean("enderframe.paint.noscrollnode");
+
+    // ==========================================
+    // 箱ごとの記憶（React.memo と同じ考え方）
+    // ==========================================
+    //
+    // 箱の描画結果（表示項目）は、その箱の入力だけで決まる: 算出スタイル・位置と大きさ・文字の断片・属性・クリップ・
+    // 親の id・祖先のスタイル（文字色のアニメーションが親を読む）。部品の ID は箱ごとに 0 から数えるので、
+    // 他の箱の増減に左右されない。入力が前回と全部同じなら、前回の項目（不変）をそのまま出し、作り直さない。
+    // 一致の判定は値の比較（署名のハッシュではない）なので、取り違えは起きない。確実に決まらない箱（表・フォーム部品・
+    // 画像や図など描画側が別の資源を読む箱）は、いつも描き直す。
+
+    /** 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。 */
+    private static final class BoxMemo {
+        int generation;
+        List<DisplayItem> items;
+        com.nishiyu.enderframelib.core.css.ComputedStyle style;
+        com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
+        float[] nums;
+        ClipRect clip;
+        String parentId;
+        Map<String, String> attrs;
+        String displayText;
+        Object shaped;
+        Object[] fragRefs;
+        float[] fragNums;
+        String[] fragText;
+        boolean canvasSource, interactive, suppressShadow;
+        /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
+        boolean translatable;
+    }
+
+    private final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
+    private int generation;
+    /** 診断: 箱ごとの記憶の使われ方の累計（そのまま・平行移動・新規・不一致）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_EXACT = new java.util.concurrent.atomic.LongAdder(), STAT_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
+            STAT_NEW = new java.util.concurrent.atomic.LongAdder(), STAT_MISS = new java.util.concurrent.atomic.LongAdder(), STAT_UNMEMOIZABLE = new java.util.concurrent.atomic.LongAdder();
+    /** 位置だけが変わった作り直し（{@link #render(LayoutBox, boolean)} の {@code cullOffscreen}）か。 */
+    private boolean translating;
+    private int translatedHits;
+
+    /** 直近の描画で、前回の項目を平行移動して使った箱の数（0 でなければ、位置が最大 1 画素ずれうる）。 */
+    public int translatedHits() {
+        return translatedHits;
+    }
+    private static final boolean MEMO_ENABLED = !Boolean.getBoolean("enderframe.paint.nomemo");
+    /** 切り分け用: {@code -Denderframe.paint.notranslate=true} で、位置が動いた箱の項目を平行移動で使い回さない。 */
+    private static final boolean TRANSLATE_ENABLED = !Boolean.getBoolean("enderframe.paint.notranslate");
+
+    private static boolean memoizable(LayoutBox box) {
+        String tag = box.node.tag;
+        if (tag == null || tag.startsWith("mc-")) return false;
+        switch (tag) {
+            case "img", "video", "audio", "progress", "meter", "svg", "canvas", "textarea", "select", "input", "fieldset",
+                 "legend", "table", "caption", "thead", "tbody", "tfoot", "tr", "td", "th", "col", "colgroup" -> {
+                return false;
+            }
+            default -> { }
+        }
+        if (box.collapsedBorders != null || box.display == null) return false;
+        return !String.valueOf(box.display.inner()).startsWith("TABLE");
+    }
+
+    /**
+     * 算出スタイルが値として同じか。再スタイルされた箱は宣言が同じでも新しいインスタンスになるので、同一性だけで比べると
+     * 子孫まで巻き込んで外れる。描画が読むのは宣言と、文字の大きさ（自分とルート）だけ。
+     */
+    private static boolean sameStyle(com.nishiyu.enderframelib.core.css.ComputedStyle a, com.nishiyu.enderframelib.core.css.ComputedStyle b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        return a.fontSizePx() == b.fontSizePx() && a.rootFontSizePx() == b.rootFontSizePx() && com.nishiyu.enderframelib.core.css.ComputedStyle.sameDeclarations(a, b);
+    }
+
+    private static float[] numsOf(LayoutBox b) {
+        return new float[]{b.x, b.y, b.w, b.h, b.pL, b.pT, b.pR, b.pB, b.bL, b.bT, b.bR, b.bB, b.lineHeightPx};
+    }
+
+    private static boolean sameNums(float[] a, float[] b) {
+        if (a.length != b.length) return false;
+        for (int i = 0; i < a.length; i++) if (Float.compare(a[i], b[i]) != 0) return false;
+        return true;
+    }
+
+    /** クリップの値としての一致（連鎖の矩形が配列なので、{@code ClipChainPart} の equals が中身を見る）。 */
+    private static boolean sameClip(ClipRect a, ClipRect b) {
+        return a == b || (a != null && a.equals(b));
+    }
+
+    private static com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestorStyles(LayoutBox box) {
+        int n = 0;
+        for (LayoutBox a = box.parent; a != null; a = a.parent) n++;
+        com.nishiyu.enderframelib.core.css.ComputedStyle[] out = new com.nishiyu.enderframelib.core.css.ComputedStyle[n];
+        int i = 0;
+        for (LayoutBox a = box.parent; a != null; a = a.parent) out[i++] = a.style;
+        return out;
+    }
+
+    /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
+    private float hitDx, hitDy;
+
+    /**
+     * 記憶が今の箱に使えるか。0: 使えない / 1: 項目をそのまま使える / 2: 箱がまるごと {@code (hitDx, hitDy)} だけ動いただけ
+     * （または、クリップだけが違う）なので、前回の項目を平行移動して使える。
+     * 2 を返すのは {@link #translating}（スクロールなど位置だけが変わる作り直し）で、記憶が平行移動に耐える箱のときだけ。
+     */
+    private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
+                || m.suppressShadow != suppressTextShadow) return 0;
+        boolean moveOk = translating && m.translatable;
+        float[] nn = numsOf(box);
+        float dx = nn[0] - m.nums[0], dy = nn[1] - m.nums[1];
+        boolean moved = dx != 0 || dy != 0;
+        if (moved && !moveOk) return 0;
+        for (int i = 2; i < nn.length; i++) if (Float.compare(m.nums[i], nn[i]) != 0) return 0;
+        boolean clipSame = sameClip(m.clip, clip);
+        if (!clipSame && !moveOk) return 0;
+        if (!java.util.Objects.equals(m.parentId, parentId)) return 0;
+        if (!java.util.Objects.equals(m.displayText, box.displayText) || !java.util.Objects.equals(m.shaped, box.shapedLines)) return 0;
+        if (!m.attrs.equals(box.node.attrs)) return 0;
+        int depth = 0;
+        for (LayoutBox a = box.parent; a != null; a = a.parent, depth++) {
+            if (depth >= m.ancestors.length || !sameStyle(m.ancestors[depth], a.style)) return 0;
+        }
+        if (depth != m.ancestors.length) return 0;
+        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
+        if (m.fragText.length != frags.size()) return 0;
+        int r = 0;
+        for (int i = 0; i < frags.size(); i++) {
+            LayoutBox.InlineFragment f = frags.get(i);
+            int n = i * 8;
+            if (!java.util.Objects.equals(m.fragText[i], f.text)) return 0;
+            // 断片の位置は、箱と同じだけ動いていること（動き方が違う断片があれば、平行移動では済まない）
+            if (moved ? (Math.abs(f.x - m.fragNums[n] - dx) > 1e-3f || Math.abs(f.y - m.fragNums[n + 1] - dy) > 1e-3f)
+                    : (Float.compare(m.fragNums[n], f.x) != 0 || Float.compare(m.fragNums[n + 1], f.y) != 0)) return 0;
+            if (Float.compare(m.fragNums[n + 2], f.w) != 0 || Float.compare(m.fragNums[n + 3], f.h) != 0
+                    || Float.compare(m.fragNums[n + 4], f.baseline) != 0 || m.fragNums[n + 5] != (f.startEdge ? 1f : 0f)
+                    || m.fragNums[n + 6] != (f.endEdge ? 1f : 0f) || Float.compare(m.fragNums[n + 7], f.descent) != 0) return 0;
+            if (m.fragRefs[r++] != f.box || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return 0;
+            List<LayoutBox> parents = f.parents;
+            int pn = parents == null ? 0 : parents.size();
+            if (!(m.fragRefs[r++] instanceof Integer count) || count != pn) return 0;
+            for (int k = 0; k < pn; k++) {
+                if (m.fragRefs[r++] != parents.get(k) || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return 0;
+            }
+        }
+        if (!moved && clipSame) return 1;
+        hitDx = dx;
+        hitDy = dy;
+        return 2;
+    }
+
+    /**
+     * 前回の項目を {@code (dx, dy)} を四捨五入した分だけ動かし、クリップを今のものに替えた写し。項目の座標は整数なので、
+     * 位置を整数に丸めたあとの相対関係（箱の中の項目どうしの並び）は崩れない。
+     */
+    private static List<DisplayItem> translated(BoxMemo m, ClipRect newClip, float dx, float dy) {
+        int ix = Math.round(dx), iy = Math.round(dy);
+        List<DisplayItem> out = new ArrayList<>(m.items.size());
+        for (DisplayItem it : m.items) {
+            RenderMeta meta = it.meta();
+            if (meta != null && meta.clipRect() != null) {
+                meta = new RenderMeta(newClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
+                        meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
+                        meta.roundedBorder(), meta.hints());
+            }
+            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ix, it.y() + iy, it.width(), it.height(),
+                    it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta));
+        }
+        return out;
+    }
+
+    /**
+     * 項目が平行移動だけで作り直せるか: 座標を持つのが x・y と（前回のクリップそのものの）クリップだけで、
+     * 箱の座標で決まる図形（影・グラデーション・clip-path・backdrop）や、画面に固定の背景を持たない。
+     */
+    private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items) {
+        String attachment = box.style.get("background-attachment");
+        if (attachment != null && attachment.contains("fixed")) return false;
+        for (DisplayItem it : items) {
+            ElementType t = it.type();
+            if (t != ElementType.NODE && t != ElementType.RECT && t != ElementType.TEXT && t != ElementType.ROUNDED_BORDER) return false;
+            RenderMeta meta = it.meta();
+            if (meta == null) continue;
+            if (meta.clipRect() != null && !sameClip(meta.clipRect(), clip)) return false;
+            RenderHints h = meta.hints();
+            if (h.shadowShape() != null || h.shaderGradient() != null) return false;
+            LayerSpec layer = h.layer();
+            if (layer != null && (layer.clip() != null || layer.backdropShape() != null)) return false;
+        }
+        return true;
+    }
+
+    private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
+        BoxMemo m = new BoxMemo();
+        m.items = items;
+        m.style = box.style;
+        m.ancestors = ancestorStyles(box);
+        m.nums = numsOf(box);
+        m.clip = clip;
+        m.parentId = parentId;
+        m.attrs = new java.util.HashMap<>(box.node.attrs);
+        m.displayText = box.displayText;
+        m.shaped = box.shapedLines == null ? null : List.copyOf(box.shapedLines);
+        List<LayoutBox.InlineFragment> frags = box.inlineFragments;
+        m.fragText = new String[frags.size()];
+        m.fragNums = new float[frags.size() * 8];
+        List<Object> refs = new ArrayList<>();
+        for (int i = 0; i < frags.size(); i++) {
+            LayoutBox.InlineFragment f = frags.get(i);
+            m.fragText[i] = f.text;
+            int n = i * 8;
+            m.fragNums[n] = f.x;
+            m.fragNums[n + 1] = f.y;
+            m.fragNums[n + 2] = f.w;
+            m.fragNums[n + 3] = f.h;
+            m.fragNums[n + 4] = f.baseline;
+            m.fragNums[n + 5] = f.startEdge ? 1f : 0f;
+            m.fragNums[n + 6] = f.endEdge ? 1f : 0f;
+            m.fragNums[n + 7] = f.descent;
+            refs.add(f.box);
+            refs.add(f.box != null ? f.box.style : null);
+            int pn = f.parents == null ? 0 : f.parents.size();
+            refs.add(pn);
+            for (int k = 0; k < pn; k++) {
+                refs.add(f.parents.get(k));
+                refs.add(f.parents.get(k).style);
+            }
+        }
+        m.fragRefs = refs.toArray();
+        m.canvasSource = box == canvasBackgroundSource;
+        m.interactive = box.hasInteractiveRules;
+        m.suppressShadow = suppressTextShadow;
+        m.translatable = survivesTranslation(box, clip, items);
+        m.generation = generation;
+        return m;
+    }
+
+    /** 直近の描画で、中身を 1 つの節にまとめたスクロールコンテナの記録（スクロールだけの更新で、表示リストを作り直さずに済ませる）。 */
+    public List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContents() {
+        return order.scrollContentInfos();
+    }
+
     private void drawBoxSelf(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
+        drawBoxSelfMemo(elements, box, clipRect, parentId);
+        PaintOrder.ScrollContent content = order.scrollContentOf(box);
+        if (content != null) order.addMovingNode(elements, content.contentId, box, null); // 箱の項目のあと・子孫の項目の前
+    }
+
+    private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
+        if (!MEMO_ENABLED || !memoizable(box)) {
+            STAT_UNMEMOIZABLE.increment();
+            fragIds.set(0);
+            drawBoxSelfUncached(elements, box, clipRect, parentId);
+            return;
+        }
+        BoxMemo m = boxMemo.get(box);
+        int kind = m == null ? 0 : match(m, box, clipRect, parentId);
+        if (kind == 1) {
+            STAT_EXACT.increment();
+            m.generation = generation;
+            elements.addAll(m.items);
+            return;
+        }
+        if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
+            m.generation = generation;
+            elements.addAll(translated(m, clipRect, hitDx, hitDy));
+            translatedHits++;
+            STAT_TRANSLATED.increment();
+            return;
+        }
+        (m == null ? STAT_NEW : STAT_MISS).increment();
+        fragIds.set(0); // 部品の ID は箱ごとに数える
+        int start = elements.size();
+        drawBoxSelfUncached(elements, box, clipRect, parentId);
+        boxMemo.put(box, remember(box, clipRect, parentId, List.copyOf(elements.subList(start, elements.size()))));
+    }
+
+    private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
         int[] xy = roundRadii(LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH));
         Corners radii = Corners.ofEllipses(java.util.Arrays.copyOfRange(xy, 0, 4), java.util.Arrays.copyOfRange(xy, 4, 8));
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
@@ -255,6 +564,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         float ox = 0.5f, oy = 0.5f;
         ItemProps anchorEvents = new ItemProps();
         if (parentId != null) anchorEvents.parentId(parentId);
+        if (tr.length > 5 && tr[5] != 0f) anchorEvents.skew(tr[5]);
         applyTransitionEvents(anchorEvents, transSpec);
         if (box.style.containsKey(CssProperty.TRANSFORM_ORIGIN)) {
             List<String> parts = CssSyntax.words(box.style.get(CssProperty.TRANSFORM_ORIGIN).toLowerCase(Locale.ROOT));
@@ -340,6 +650,40 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
     }
 
+    /**
+     * 文字 1 行（断片）を足す。{@code text-shadow} があれば、後ろに書いた影から先に（下に）、ずらした影色の文字を出してから本体を出す。
+     * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
+     * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
+     */
+    private void addTextRun(List<DisplayItem> elements, String id, float x, float y, float w, float h, String text, int color, int bgColor,
+                            ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
+        for (int i = shadows.size() - 1; i >= 0; i--) {
+            BoxDecorations.Shadow sh = shadows.get(i);
+            if ((sh.color() >>> 24) == 0) continue;
+            ItemProps shadowEvents = events.copy();
+            shadowEvents.pointerEventsNone();
+            boolean blurred = sh.blur() > 0f;
+            if (blurred) {
+                String anchorId = id + "_tsh" + fragIds.getAndIncrement();
+                ItemProps anchorEvents = new ItemProps();
+                String owner = events.hints().parentId();
+                if (owner != null) anchorEvents.parentId(owner);
+                anchorEvents.pointerEventsNone();
+                addElement(elements, id, anchorId, ElementType.NODE, x, y, w, h, "", 0, 0, anchorEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                int at = elements.size() - 1;
+                shadowEvents.parentId(anchorId);
+                addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                LayerSpec spec = new LayerSpec(elements.size() - at, 1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
+                elements.set(at, withLayer(elements.get(at), spec));
+            } else {
+                addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+            }
+        }
+        addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, meta);
+    }
+
     private void drawTextNodeElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                                      int transDur, AnimationSpec colorAnim) {
@@ -347,7 +691,15 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         if (box.style.containsKey(CssProperty.FONT_WEIGHT)) baseTextEvents.put("font-weight", box.style.get(CssProperty.FONT_WEIGHT));
         if (box.style.containsKey(CssProperty.FONT_FAMILY)) baseTextEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
         if (box.style.containsKey(CssProperty.TEXT_DECORATION)) baseTextEvents.put("text-decoration", box.style.get(CssProperty.TEXT_DECORATION));
-        if (box.style.containsKey(CssProperty.TEXT_SHADOW) && !"none".equals(box.style.get(CssProperty.TEXT_SHADOW))) baseTextEvents.put("text-shadow", "true");
+        // text-shadow: 「x y [ぼかし] [色]」の並びは本物の影（ずらした色付きの文字。ぼかしがあれば合成レイヤーで）。
+        // 解いて読めない値（旧来の text-shadow:true など）は、従来の「右下に暗い文字を重ねる」影のまま
+        List<BoxDecorations.Shadow> textShadows = List.of();
+        String shadowValue = box.style.get(CssProperty.TEXT_SHADOW);
+        if (shadowValue != null && !shadowValue.isBlank() && !"none".equalsIgnoreCase(shadowValue.trim())) {
+            if (!suppressTextShadow) textShadows = BoxDecorations.parseBoxShadows(shadowValue, color, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx())
+                    .stream().filter(sh -> !sh.inset()).toList();
+            if (textShadows.isEmpty() && !suppressTextShadow) baseTextEvents.put("text-shadow", "true");
+        }
         putFontEvents(box, baseTextEvents);
 
         if (!box.inlineFragments.isEmpty()) {
@@ -355,7 +707,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
                 if (frag.text == null || frag.text.isBlank()) continue;
                 RenderMeta fragMeta = new RenderMeta(
                         normalizedClip, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
-                addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, fragMeta);
+                addTextRun(elements, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, textShadows);
             }
         } else if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
@@ -373,7 +725,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
                     RenderMeta lineMeta = new RenderMeta(
                             normalizedClip, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
-                    addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, lineMeta);
+                    addTextRun(elements, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, textShadows);
                 }
                 lineY += line.height();
             }

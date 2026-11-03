@@ -18,9 +18,12 @@ import java.util.Locale;
  * 関数は左から右へ座標系に積むので、{@code translate(10px) scale(2)} の行列は {@code T · S}（点にはまず {@code scale} が掛かる）、
  * {@code scale(2) translate(10px)} は {@code S · T} で平行移動が 20px になる。
  *
- * <p>LIMITATION(制約): 描画項目は平行移動・回転・拡縮（{@link #toTrs}）しか運べないので、{@code skew*} と {@code matrix()} の
- * せん断は描かれない（行列の回転・拡縮・平行移動の成分だけが効く）。3D の関数（{@code translateZ}・{@code rotateX/Y}・{@code perspective}）の
- * 奥行きの成分も描かれない。README の "Not supported" に対応。
+ * <p>描画項目が運ぶのは 平行移動・回転・せん断（skewX）・拡縮（{@link #toTrs}）。{@code skew*} と {@code matrix()} のせん断は
+ * この 4 つに分解して描く。
+ *
+ * <p>LIMITATION(制約): 3D の関数は 2D へ正射影した近似で描く。{@code rotateX/Y/3d(θ)} は 3D 回転行列の x・y の面（左上 2×2）を使うので、
+ * {@code rotateY} は横幅が cos θ 倍（θ が 90° を越えると裏返る）、{@code rotateX} は高さが cos θ 倍になる。
+ * {@code perspective}・{@code translateZ} の奥行き（遠近）の成分は描かれない。README の "Not supported" に対応。
  */
 public final class Transforms {
     private Transforms() {}
@@ -116,10 +119,14 @@ public final class Transforms {
                 return rotation(angle(args.get(0)));
             }
             case "rotate3d" -> {
-                // z 軸まわりだけが 2D に効く（x・y 軸まわりは奥行きの変化で描かれない）
-                if (args.size() < 4 || number(args.get(0), 0) != 0 || number(args.get(1), 0) != 0) return Affine.IDENTITY;
-                double z = number(args.get(2), 0);
-                return z == 0 ? Affine.IDENTITY : rotation(angle(args.get(3)) * Math.signum(z));
+                if (args.size() < 4) return Affine.IDENTITY;
+                return rotation3d(number(args.get(0), 0), number(args.get(1), 0), number(args.get(2), 0), angle(args.get(3)));
+            }
+            case "rotatex" -> {
+                return rotation3d(1, 0, 0, angle(args.get(0)));
+            }
+            case "rotatey" -> {
+                return rotation3d(0, 1, 0, angle(args.get(0)));
             }
             case "skew" -> {
                 double ax = angle(args.get(0));
@@ -160,11 +167,21 @@ public final class Transforms {
     private static Affine rotateProperty(String value) {
         List<ComponentValue> parts = nonBlank(CssSyntax.parseComponentValues(value));
         if (parts.isEmpty()) return Affine.IDENTITY;
-        // 「軸 角度」の形は z 軸だけを 2D に効かせ、「角度」だけの形は z 軸まわり
+        // 「軸 角度」「x y z 角度」「角度」（z 軸まわり）。x・y 軸は 2D へ正射影（{@link #rotation3d}）
         Token first = CssSyntax.tokenOf(parts.get(0));
         if (first != null && first.type() == Type.IDENT) {
-            String axis = first.value().toLowerCase(Locale.ROOT);
-            return axis.equals("z") && parts.size() > 1 ? rotation(angle(List.of(parts.get(1)))) : Affine.IDENTITY;
+            if (parts.size() < 2) return Affine.IDENTITY;
+            double ang = angle(List.of(parts.get(1)));
+            return switch (first.value().toLowerCase(Locale.ROOT)) {
+                case "x" -> rotation3d(1, 0, 0, ang);
+                case "y" -> rotation3d(0, 1, 0, ang);
+                case "z" -> rotation(ang);
+                default -> Affine.IDENTITY;
+            };
+        }
+        if (parts.size() == 4) {
+            return rotation3d(number(List.of(parts.get(0)), 0), number(List.of(parts.get(1)), 0), number(List.of(parts.get(2)), 0),
+                    angle(List.of(parts.get(3))));
         }
         return rotation(angle(List.of(parts.get(parts.size() - 1))));
     }
@@ -193,6 +210,28 @@ public final class Transforms {
         if (Math.abs(cos) < 1e-12) cos = 0;
         if (Math.abs(sin) < 1e-12) sin = 0;
         return new Affine(cos, sin, -sin, cos, 0, 0, radians);
+    }
+
+    /**
+     * 軸 {@code (x, y, z)} まわりの 3D 回転（ロドリゲスの式）の x・y の面を取った 2D 行列（正射影）。z 軸まわりは普通の 2D 回転。
+     * 90° 付近で行列が潰れて描けなくなるのを避けるため、対角成分の大きさの下限を小さく持たせる。
+     */
+    private static Affine rotation3d(double x, double y, double z, double radians) {
+        double len = Math.sqrt(x * x + y * y + z * z);
+        if (len == 0) return Affine.IDENTITY;
+        x /= len;
+        y /= len;
+        z /= len;
+        if (x == 0 && y == 0) return rotation(radians * Math.signum(z));
+        double c = Math.cos(radians), s = Math.sin(radians), t = 1 - c;
+        double r11 = t * x * x + c, r12 = t * x * y - s * z;
+        double r21 = t * x * y + s * z, r22 = t * y * y + c;
+        return new Affine(minMagnitude(r11), r21, r12, minMagnitude(r22), 0, 0);
+    }
+
+    private static double minMagnitude(double v) {
+        if (Math.abs(v) >= 1e-3) return v;
+        return v < 0 ? -1e-3 : 1e-3;
     }
 
     // ---- 引数 ----
@@ -255,10 +294,11 @@ public final class Transforms {
     /**
      * 行列を、描画項目が運べる 平行移動・拡縮・回転 に分ける（{@code M = T · R · S}。せん断は捨てる）。
      *
-     * @return {@code {translateX, translateY, scaleX, scaleY, rotate(度)}}
+     * @return {@code {translateX, translateY, scaleX, scaleY, rotate(度), skewX(度)}}。{@code M = T · R · skewX · S}
+     *         （CSS Transforms 2 の 2D 行列の分解）。軸平行なら skewX は 0
      */
     public static float[] toTrs(Affine m) {
-        double sx, sy, rot;
+        double sx, sy, rot, skewDeg = 0;
         double spinDeg = Math.toDegrees(m.spin());
         if (m.b() == 0 && m.c() == 0) {
             // 軸平行（負の拡大は反転のまま。回転 180° に化けさせない）
@@ -273,7 +313,12 @@ public final class Transforms {
             rot += 360.0 * Math.round((spinDeg - rot) / 360.0);
             double det = m.a() * m.d() - m.b() * m.c();
             sy = sx == 0 ? Math.hypot(m.c(), m.d()) : det / sx;
+            // 2 列目の、1 列目の向きへの成分が せん断（k·sy）
+            if (sx != 0 && sy != 0) {
+                double ux = m.a() / sx, uy = m.b() / sx;
+                skewDeg = Math.toDegrees(Math.atan((m.c() * ux + m.d() * uy) / sy));
+            }
         }
-        return new float[]{(float) m.e(), (float) m.f(), (float) sx, (float) sy, (float) rot};
+        return new float[]{(float) m.e(), (float) m.f(), (float) sx, (float) sy, (float) rot, (float) skewDeg};
     }
 }

@@ -21,6 +21,7 @@ package com.nishiyu.enderframelib.core.paint.model;
  * @param transitionEasing    {@code transition-timing-function}。既定なら null
  * @param transitionProperty  {@code transition-property}。{@code all} なら null
  * @param layer               この錨の箱をレイヤーに描いて合成する指定。なければ null
+ * @param skew                錨の静的な skewX（度）。{@code M = T · R · skewX · S}。アニメーション中は描画側が値を置き換える
  */
 public record RenderHints(
         String parentId,
@@ -35,44 +36,57 @@ public record RenderHints(
         int transitionDelayMs,
         String transitionEasing,
         String transitionProperty,
-        LayerSpec layer
+        LayerSpec layer,
+        float skew
 ) {
+    /** せん断なし（既存の呼び出し用）。 */
+    public RenderHints(String parentId, String title, boolean scrollable, float scrollWidth, float scrollHeight, float shadowBlur,
+                       ShadowShape shadowShape, ShaderGradient shaderGradient, boolean pointerEventsNone, int transitionDelayMs,
+                       String transitionEasing, String transitionProperty, LayerSpec layer) {
+        this(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone,
+                transitionDelayMs, transitionEasing, transitionProperty, layer, 0f);
+    }
+
     public static final RenderHints NONE = new RenderHints(null, null, false, 0f, 0f, 0f, null, null, false, 0, null, null, null);
 
     public RenderHints withParentId(String v) {
-        return new RenderHints(v, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(v, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withTitle(String v) {
-        return new RenderHints(parentId, v, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, v, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withScroll(float contentWidth, float contentHeight) {
-        return new RenderHints(parentId, title, true, contentWidth, contentHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, title, true, contentWidth, contentHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withShadowBlur(float v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, v, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, v, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withShaderGradient(ShaderGradient v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, v, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, v, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withPointerEventsNone(boolean v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, v, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, v, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withTransition(int delayMs, String easing, String property) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, delayMs, easing, property, layer);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, delayMs, easing, property, layer, skew);
     }
 
     public RenderHints withLayer(LayerSpec v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, v);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, v, skew);
+    }
+
+    public RenderHints withSkew(float v) {
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, v);
     }
 
     public RenderHints withShadowShape(ShadowShape v) {
-        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, v, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer);
+        return new RenderHints(parentId, title, scrollable, scrollWidth, scrollHeight, shadowBlur, v, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
 }

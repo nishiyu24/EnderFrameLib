@@ -137,6 +137,7 @@ public record AnimationSpec(
      * @param sx              X 拡大率
      * @param sy              Y 拡大率
      * @param rot             回転角（度）
+     * @param skew            skewX の角度（度）。{@code M = T · R · skewX · S}
      * @param op              不透明度
      * @param color           文字色（ARGB）
      * @param bgColor         背景色（ARGB）
@@ -149,13 +150,18 @@ public record AnimationSpec(
             float sx,
             float sy,
             float rot,
+            float skew,
             float op,
             int color,
             int bgColor,
             int definedChannels
     ) {
         public Keyframe(float pct, float tx, float ty, float sx, float sy, float rot, float op) {
-            this(pct, tx, ty, sx, sy, rot, op, 0, 0, CH_TRANSFORM | CH_OPACITY);
+            this(pct, tx, ty, sx, sy, rot, 0f, op, 0, 0, CH_TRANSFORM | CH_OPACITY);
+        }
+
+        public Keyframe(float pct, float tx, float ty, float sx, float sy, float rot, float op, int color, int bgColor, int definedChannels) {
+            this(pct, tx, ty, sx, sy, rot, 0f, op, color, bgColor, definedChannels);
         }
     }
 

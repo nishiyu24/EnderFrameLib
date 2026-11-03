@@ -76,15 +76,30 @@ public class CssAnimator {
      * テストやフレーム同期から時刻を明示して補間値を取得する。
      */
     public static AnimatedValues getValuesAt(String sessionId, DisplayItem el, long now) {
+        return stateFor(sessionId, el, now).getInterpolatedValues(now);
+    }
+
+    /**
+     * 項目 {@code el} の補間状態（無ければ作り、項目が前回と変わっていれば目標を更新する）。
+     * 描画側は、同じ項目リストの間はこの状態を持ち回って {@link AnimState#isActiveAt} で静止を見分け、
+     * 動いていない項目の補間と姿勢の計算を飛ばす。
+     */
+    public static AnimState stateFor(String sessionId, DisplayItem el, long now) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, true);
-        AnimState state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
+        AnimState state = sessionMap.get(el.id());
+        if (state == null) state = sessionMap.computeIfAbsent(el.id(), k -> new AnimState(el, now));
 
-        if (state.hasTargetChanged(el)) {
-            state.updateTarget(el, now);
+        // DisplayItem は不変。前回と同じインスタンスなら目標もテキストも変わっていないので、比較（AnimationSpec の
+        // 深い equals を含む）を飛ばす。アニメーションだけが動くフレームは、ほぼ全項目がここを通る
+        if (state.seenItem != el) {
+            if (state.hasTargetChanged(el)) {
+                state.updateTarget(el, now);
+            }
+            state.updateStyleCache(el);
+            state.seenItem = el;
         }
-        state.updateStyleCache(el);
-        return state.getInterpolatedValues(now);
+        return state;
     }
 
     public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
@@ -95,7 +110,7 @@ public class CssAnimator {
             return state.getInterpolatedValues(System.currentTimeMillis());
         }
         AnimatedValues def = new AnimatedValues();
-        def.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.color(), el.bgColor());
+        def.set(el.opacity(), el.translateX(), el.translateY(), el.scaleX(), el.scaleY(), el.rotate(), el.hints().skew(), el.color(), el.bgColor());
         return def;
     }
 
@@ -196,12 +211,15 @@ public class CssAnimator {
 
     public static class AnimState {
         private final AnimatedValues cachedValues = new AnimatedValues();
+        /** 最後に目標と突き合わせた項目（同じインスタンスなら再比較しない）。 */
+        DisplayItem seenItem;
         public float startOpacity, targetOpacity, baseTargetOpacity;
         public float startTx, targetTx, baseTx;
         public float startTy, targetTy, baseTy;
         public float startSx, targetSx, baseSx;
         public float startSy, targetSy, baseSy;
         public float startRot, targetRot, baseRot;
+        public float startSkew, targetSkew, baseSkew;
         public int startColor, targetColor, baseColor;
         public int startBgColor, targetBgColor, baseBgColor;
 
@@ -233,6 +251,7 @@ public class CssAnimator {
             this.targetSx = this.startSx = this.baseSx;
             this.targetSy = this.startSy = this.baseSy;
             this.targetRot = this.startRot = this.baseRot;
+            this.targetSkew = this.startSkew = this.baseSkew;
             this.targetColor = this.startColor = this.baseColor;
             this.targetBgColor = this.startBgColor = this.baseBgColor;
 
@@ -256,6 +275,16 @@ public class CssAnimator {
             return false;
         }
 
+        /**
+         * 今の時刻で、姿勢（変形）と不透明度が動いていないか。色だけが補間される項目（{@code @keyframes} が色のチャンネルだけを持つなど）は
+         * true で、描画側は姿勢の行列を作り直さずに済む。動いているかもしれないなら false。
+         */
+        public boolean geometryStaticAt(long now) {
+            final int geometry = AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM;
+            if (currentAnimDef != null && !currentAnimDef.frames.isEmpty() && (currentAnimDef.animatedChannels & geometry) != 0) return false;
+            return !(durationMs > 0 && transitionMask != 0 && now < startTime + delayMs + durationMs && (transitionMask & geometry) != 0);
+        }
+
         public boolean hasTargetChanged(DisplayItem el) {
             return Float.compare(baseTargetOpacity, el.opacity()) != 0
                     || Float.compare(baseTx, el.translateX()) != 0
@@ -263,6 +292,7 @@ public class CssAnimator {
                     || Float.compare(baseSx, el.scaleX()) != 0
                     || Float.compare(baseSy, el.scaleY()) != 0
                     || Float.compare(baseRot, el.rotate()) != 0
+                    || Float.compare(baseSkew, el.hints().skew()) != 0
                     || baseColor != el.color()
                     || baseBgColor != el.bgColor()
                     || !Objects.equals(el.animDef(), currentAnimSpec);
@@ -275,6 +305,7 @@ public class CssAnimator {
             this.baseSx = el.scaleX();
             this.baseSy = el.scaleY();
             this.baseRot = el.rotate();
+            this.baseSkew = el.hints().skew();
             this.baseColor = el.color();
             this.baseBgColor = el.bgColor();
         }
@@ -338,6 +369,7 @@ public class CssAnimator {
             this.targetSx = el.scaleX();
             this.targetSy = el.scaleY();
             this.targetRot = el.rotate();
+            this.targetSkew = el.hints().skew();
             this.targetColor = el.color();
             this.targetBgColor = el.bgColor();
 
@@ -364,12 +396,14 @@ public class CssAnimator {
                 this.startSx = current.sx();
                 this.startSy = current.sy();
                 this.startRot = current.rot();
+                this.startSkew = current.skew();
             } else {
                 this.startTx = this.targetTx;
                 this.startTy = this.targetTy;
                 this.startSx = this.targetSx;
                 this.startSy = this.targetSy;
                 this.startRot = this.targetRot;
+                this.startSkew = this.targetSkew;
             }
 
             if ((this.transitionMask & AnimationSpec.CH_COLOR) != 0) {
@@ -391,16 +425,16 @@ public class CssAnimator {
         }
 
         public AnimatedValues getInterpolatedValues(long now) {
-            float op, tx, ty, sx, sy, rot;
+            float op, tx, ty, sx, sy, rot, skew;
             int col, bgCol;
 
             if (durationMs <= 0 || transitionMask == 0 || now >= startTime + delayMs + durationMs) {
                 op = targetOpacity; tx = targetTx; ty = targetTy;
-                sx = targetSx; sy = targetSy; rot = targetRot;
+                sx = targetSx; sy = targetSy; rot = targetRot; skew = targetSkew;
                 col = targetColor; bgCol = targetBgColor;
             } else if (now < startTime + delayMs) {
                 op = startOpacity; tx = startTx; ty = startTy;
-                sx = startSx; sy = startSy; rot = startRot;
+                sx = startSx; sy = startSy; rot = startRot; skew = startSkew;
                 col = startColor; bgCol = startBgColor;
             } else {
                 float rawT = (float) (now - (startTime + delayMs)) / durationMs;
@@ -412,6 +446,7 @@ public class CssAnimator {
                 sx = lerp(startSx, targetSx, t);
                 sy = lerp(startSy, targetSy, t);
                 rot = lerp(startRot, targetRot, t);
+                skew = lerp(startSkew, targetSkew, t);
                 col = lerpColor(startColor, targetColor, t);
                 bgCol = lerpColor(startBgColor, targetBgColor, t);
             }
@@ -444,6 +479,7 @@ public class CssAnimator {
                         sx = lerp(f0.sx(), f1.sx(), localT);
                         sy = lerp(f0.sy(), f1.sy(), localT);
                         rot = lerp(f0.rot(), f1.rot(), localT);
+                        skew = lerp(f0.skew(), f1.skew(), localT);
                     }
                     if ((currentAnimDef.animatedChannels & AnimationSpec.CH_COLOR) != 0) {
                         col = lerpColor(f0.color(), f1.color(), localT);
@@ -454,7 +490,7 @@ public class CssAnimator {
                 }
             }
 
-            cachedValues.set(op, tx, ty, sx, sy, rot, col, bgCol);
+            cachedValues.set(op, tx, ty, sx, sy, rot, skew, col, bgCol);
             cachedValues.clipData = this.clipData;
             cachedValues.radiusData = this.radiusData;
             cachedValues.rangeVal = this.rangeVal;

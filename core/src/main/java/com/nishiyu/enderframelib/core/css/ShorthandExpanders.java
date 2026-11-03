@@ -427,7 +427,7 @@ final class ShorthandExpanders {
 
     private static final Set<String> BG_REPEATS = Set.of("repeat-x", "repeat-y", "repeat", "space", "round", "no-repeat");
     private static final Set<String> BG_ATTACHMENTS = Set.of("scroll", "fixed", "local");
-    private static final Set<String> BG_BOXES = Set.of("border-box", "padding-box", "content-box");
+    private static final Set<String> BG_BOXES = Set.of("border-box", "padding-box", "content-box", "text");
     private static final Set<String> BG_POSITION_KEYWORDS = Set.of("left", "center", "right", "top", "bottom");
     private static final Set<String> BG_SIZE_KEYWORDS = Set.of("auto", "cover", "contain");
 

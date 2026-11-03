@@ -100,6 +100,36 @@ public final class TextShaper {
      * @param availableWidth 使える幅（px）。{@code 0} 以下は「制約なし」
      */
     public static List<ShapedLine> shape(String text, FontFace face, TextStyle style, float availableWidth) {
+        if (text == null || face == null) return shapeUncached(text, face, style, availableWidth);
+        // 同じ文字列・書体・スタイル・幅の整形は結果も同じ（書体の面は同一性で見分ける。登録が変われば別のインスタンスになる）。
+        // 再レイアウトは変わらない文字も測り直すことが多いので、整形のやり直しを避ける
+        ShapeKey key = new ShapeKey(text, face, style, availableWidth);
+        List<ShapedLine> hit = SHAPED.get(key);
+        if (hit != null) return hit;
+        List<ShapedLine> lines = List.copyOf(shapeUncached(text, face, style, availableWidth));
+        if (SHAPED.size() >= SHAPED_LIMIT) SHAPED.clear();
+        SHAPED.put(key, lines);
+        return lines;
+    }
+
+    /** 整形結果の記憶の鍵。{@code face} は同一性で比べる。 */
+    private record ShapeKey(String text, FontFace face, TextStyle style, float width) {
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof ShapeKey k && k.face == face && Float.compare(k.width, width) == 0
+                    && k.text.equals(text) && k.style.equals(style);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * (31 * (31 * text.hashCode() + System.identityHashCode(face)) + style.hashCode()) + Float.hashCode(width);
+        }
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<ShapeKey, List<ShapedLine>> SHAPED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int SHAPED_LIMIT = 4096;
+
+    private static List<ShapedLine> shapeUncached(String text, FontFace face, TextStyle style, float availableWidth) {
         Shaping shaping = new Shaping(face, style, availableWidth);
         String normalized = normalize(text, style.whiteSpace());
         if (normalized.isEmpty()) return shaping.lines;

@@ -155,6 +155,7 @@ public final class BoxDecorationPainter {
             RenderMeta meta = new RenderMeta(clip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
             addElement(elements, id, id + "_frag_" + (fragIds.getAndIncrement()), ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
                     "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+            drawFragmentImages(elements, box, id, frag, clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
 
             float[] widths = {box.bT, frag.endEdge ? box.bR : 0, box.bB, frag.startEdge ? box.bL : 0};
             if (widths[0] <= 0 && widths[1] <= 0 && widths[2] <= 0 && widths[3] <= 0) continue;
@@ -169,6 +170,42 @@ public final class BoxDecorationPainter {
                 drawLines(elements, id, "_b_", frag.x, frag.y, frag.w, frag.h, widths, styles, colors, 0,
                         passiveBorderEvents, meta, transDur, true);
             }
+        }
+    }
+
+    /**
+     * インラインボックスの 1 断片に、{@code background-image}（画像・グラデーション）を描く。断片の矩形を箱の大きさとして
+     * 背景のレイヤーを並べる（{@code box-decoration-break: clone} 相当。断片ごとに最初から並べ直す）。
+     * 何が壊れていたか: インラインの箱は背景色の矩形と枠線しか出さず、{@code background-image} と {@code background-clip: text} が効かなかった。
+     */
+    private void drawFragmentImages(List<DisplayItem> elements, LayoutBox box, String id, LayoutBox.InlineFragment frag, ClipRect clip,
+                                    Corners radii, BorderSpec border, ItemProps events, float fontHVal, float ox, float oy) {
+        List<BoxDecorations.BackgroundLayer> layers = BoxDecorations.layers(box.style, devicePixelRatio);
+        boolean any = false;
+        for (BoxDecorations.BackgroundLayer l : layers) any |= l.url() != null || l.isGradient();
+        if (!any) return;
+        float x0 = box.x, y0 = box.y, w0 = box.w, h0 = box.h;
+        float pl = box.pL, pr = box.pR, pt = box.pT, pb = box.pB, bl = box.bL, br = box.bR, bt = box.bT, bb = box.bB;
+        box.x = frag.x;
+        box.y = frag.y;
+        box.w = frag.w;
+        box.h = frag.h;
+        box.pL = box.pR = box.pT = box.pB = box.bL = box.bR = box.bT = box.bB = 0;
+        try {
+            drawImageLayers(elements, box, id, layers, "_f" + fragIds.getAndIncrement() + "_bgl", clip, radii, border, events, fontHVal, ox, oy);
+        } finally {
+            box.x = x0;
+            box.y = y0;
+            box.w = w0;
+            box.h = h0;
+            box.pL = pl;
+            box.pR = pr;
+            box.pT = pt;
+            box.pB = pb;
+            box.bL = bl;
+            box.bR = br;
+            box.bT = bt;
+            box.bB = bb;
         }
     }
 
