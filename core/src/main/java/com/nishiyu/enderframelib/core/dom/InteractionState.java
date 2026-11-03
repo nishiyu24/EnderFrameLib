@@ -584,6 +584,28 @@ public class InteractionState implements StateLookup {
         return animator.isRunning(now);
     }
 
+    /** 再スタイルが必要な印を持つ節が、すべて {@code allowed}（同一性で比べる）に含まれるか。印が無ければ true。 */
+    public boolean styleDirtyOnlyIn(java.util.Collection<HtmlNode> allowed) {
+        Set<HtmlNode> set = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        set.addAll(allowed);
+        for (Map.Entry<HtmlNode, StateFlags> e : flagsByNode.entrySet()) {
+            if (e.getValue().isStyleDirty && !set.contains(e.getKey())) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 文字の節の再スタイルの印を片付ける。文字の節のスタイルは親から継承するだけで、文字が変わっても規則の当たり方は
+     * 変わらないので、箱の文字を差し替えれば済む（祖先の「子孫に汚れがある」印は、次の走査が片付ける）。
+     */
+    public void clearStyleDirty(HtmlNode node) {
+        StateFlags flags = flagsByNode.get(node);
+        if (flags == null) return;
+        flags.isStyleDirty = false;
+        flags.subtreeDirty = false;
+        flags.unscoped = false;
+    }
+
     public boolean hasDirtyNodes() {
         for (StateFlags flags : flagsByNode.values()) {
             if (flags.isStyleDirty) return true;

@@ -193,6 +193,14 @@ flowchart TD
   - `left` / `top` のドラッグ: 再スタイルの後に `layout` だけ。
   - ウィンドウのリサイズ: 文書を保ち、ビューポート単位を使う要素だけ再スタイル。直前のレイアウト時間に応じて間引く
     （`SessionContext.RESIZE_THROTTLE_FACTOR`）。
+  - 文字だけの更新（`InvalidationLevel.TEXT_PATCH`）: 既存の Text 節の文字が変わっただけ（`Text.data`・
+    `HtmlNode.updateTextContent`・`UiPubSub` / `Bindings.applyDataBinding` の `text` バインディング）なら、スタイル解決と
+    `BoxTreeBuilder` を省き、文字の箱の `displayText` だけ差し替えて `RenderPipeline.relayoutInPlace`
+    （`markLayoutChanges` → 測り直し → 配置）を走らせる。次の場合は従来の `RELAYOUT` へ退く: 文字以外の汚れ・同じフレームの
+    属性/子の変更、前後どちらかが空白だけ、コンテナクエリのある文書、表・フォーム部品・`pre`/`button`/`label` などの中、
+    箱が見つからない、1 フレームに 256 節超。`UiView.textPatchEnabled` で切り分けられ、`TEXT_PATCH_HITS` /
+    `TEXT_PATCH_FALLBACKS` で乗った回数を見られる。要素の `setTextContent` は DOM の仕様どおり Text 節を作り直す
+    （childList の変更）ので `RELAYOUT` のまま。毎フレーム書き換える HUD の文字は `updateTextContent` を使う。
 - 正しさは「全部作り直したときと同じディスプレイリストになる」ことで固定する（`IncrementalLayoutTest`・`IncrementalPipelineTest`・
   `ServerClientLayoutParityTest`）。
 

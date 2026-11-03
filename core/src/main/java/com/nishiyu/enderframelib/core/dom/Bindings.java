@@ -152,7 +152,7 @@ public final class Bindings {
             if (!key.isEmpty()) {
                 String tr = i18nResolver.apply(key);
                 if (!Objects.equals(vNode.getTextContent(), tr)) {
-                    vNode.setTextContent(tr);
+                    vNode.updateTextContent(tr);
                     changed = true;
                 }
             }
@@ -502,7 +502,7 @@ public final class Bindings {
 
         if ("text".equals(targetAttr)) {
             if (!Objects.equals(targetNode.getTextContent(), val)) {
-                targetNode.setTextContent(val);
+                targetNode.updateTextContent(val);
                 return true;
             }
         } else if (targetAttr.startsWith("style.")) {
@@ -758,7 +758,7 @@ public final class Bindings {
                     String val = scopeData.get(key);
                     if ("text".equalsIgnoreCase(target)) {
                         if (!Objects.equals(vNode.getTextContent(), val)) {
-                            vNode.setTextContent(val);
+                            vNode.updateTextContent(val);
                             changed = true;
                             layoutTreeChanged = true;
                         }

@@ -214,6 +214,17 @@ public class RenderPipeline {
     }
 
     /**
+     * 箱の木を作り直さずに、前回の箱の木のまま測り直して配置し直す。文字の箱の {@link LayoutBox#refreshStyle} 済みの
+     * 変化だけを入力にする（{@code UiView} の TEXT_PATCH）。スタイルの解決・匿名箱の整形（{@link BoxTreeBuilder}）を省き、
+     * 変わった箱とその祖先（再レイアウト境界まで）だけを測り直す。
+     */
+    public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                       ScrollState scrollState, FontResolver fonts) {
+        LayoutBox.markLayoutChanges(rootBox);
+        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true);
+    }
+
+    /**
      * 測った寸法はそのままに、位置だけを決め直す（measure を飛ばして layout だけ走らせる）。
      *
      * <p>スクロール量や配置済みの箱の {@code top} / {@code left} は寸法に響かず、{@link LayoutBox#layout} の中でしか読まれない。
