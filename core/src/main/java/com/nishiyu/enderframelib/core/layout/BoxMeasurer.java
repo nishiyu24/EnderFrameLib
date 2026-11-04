@@ -84,7 +84,11 @@ public final class BoxMeasurer {
                 ? widthStr.toLowerCase() : null;
         boolean hasWidth = !"auto".equals(widthStr) && intrinsicWidth == null;
         boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && fmtCtx.isShrink();
-        box.establishesBfc = establishesBfc(box, fmtCtx);
+        boolean bfc = establishesBfc(box, fmtCtx);
+        if (box.establishesBfc != bfc) {
+            box.establishesBfc = bfc;
+            LayoutBox.bumpShapeEpoch(); // 親の float メモ（containsFloats）が読む
+        }
 
         resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != null,
                 isPercentWidthAndShrinking, isBorderBox, fmtCtx);

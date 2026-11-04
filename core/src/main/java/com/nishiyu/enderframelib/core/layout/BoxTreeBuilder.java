@@ -110,6 +110,7 @@ public final class BoxTreeBuilder {
         collectItems(box, items);
         LayoutBox legend = takeRenderedLegend(box, items);
         box.children.clear();
+        LayoutBox.bumpShapeEpoch();
         if (legend != null) box.addChild(legend);
         for (LayoutBox child : fixup(box, items)) box.addChild(child);
     }
@@ -119,7 +120,12 @@ public final class BoxTreeBuilder {
      * float でも絶対配置でもないもの。通常フローに入らないので、インラインの並びを包む判断にも加わらない。
      */
     private static LayoutBox takeRenderedLegend(LayoutBox box, List<LayoutBox> items) {
-        for (LayoutBox item : items) item.isRenderedLegend = false;
+        for (LayoutBox item : items) {
+            if (item.isRenderedLegend) {
+                item.isRenderedLegend = false;
+                LayoutBox.bumpShapeEpoch();
+            }
+        }
         if (!"fieldset".equals(box.node.tag)) return null;
         LayoutBox found = null;
         for (LayoutBox item : items) {
@@ -132,7 +138,10 @@ public final class BoxTreeBuilder {
                 || found.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
             return null;
         }
-        found.isRenderedLegend = true;
+        if (!found.isRenderedLegend) {
+            found.isRenderedLegend = true;
+            LayoutBox.bumpShapeEpoch();
+        }
         items.remove(found);
         return found;
     }
@@ -307,6 +316,7 @@ public final class BoxTreeBuilder {
                 && LayoutBox.isReusableShape(reused)) {
             reused.node.parent = parent.node;
             reused.children.clear();
+            LayoutBox.bumpShapeEpoch();
             reused.updateStyle(style);
             return reused;
         }

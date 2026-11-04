@@ -75,6 +75,35 @@ public class LayoutBox {
      */
     public boolean establishesBfc = false;
     /**
+     * 「子孫（同じ BFC の中）に float があるか」の結果のメモ（{@link BlockLayoutEngine#containsFloats}）。
+     * {@link #floatsMemoEpoch} が {@link #shapeEpoch()} と一致するときだけ有効。
+     */
+    int floatsMemoEpoch = -1;
+    boolean floatsMemo;
+
+    /**
+     * 箱の木の「形」（子の並び・親・{@code display}・{@code position}・{@code float}・BFC・rendered legend）の世代。
+     * これらのどれかが変わるたびに進める。float の有無のような部分木の性質のメモは、世代が同じ間だけ使う。
+     * 全体で 1 つの世代なので、どこかが変われば全てのメモが無効になる（保守的）。文字の差し替えのような形を変えない更新では進まない。
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger SHAPE_EPOCH = new java.util.concurrent.atomic.AtomicInteger();
+
+    static void bumpShapeEpoch() {
+        SHAPE_EPOCH.incrementAndGet();
+    }
+
+    static int shapeEpoch() {
+        return SHAPE_EPOCH.get();
+    }
+
+    /** 親リンクを張る。変わるときだけ世代を進める（毎回同じ値を書き直す経路で無効化しないため）。 */
+    private void adopt(LayoutBox child) {
+        if (child.parent != this) {
+            child.parent = this;
+            bumpShapeEpoch();
+        }
+    }
+    /**
      * 親が組んでいる BFC の float の領域と、その中でのこの箱の内容ボックスの原点。
      * BFC を作らないブロックは親の float を避けて行を組み、自分の float を親の領域に置く。
      * {@link BlockLayoutEngine} が子の高さを解き直す直前に入れ、子は読んだら消す
@@ -121,6 +150,7 @@ public class LayoutBox {
         if (child != null) {
             child.parent = this;
             this.children.add(child);
+            bumpShapeEpoch();
         }
     }
 
@@ -129,12 +159,13 @@ public class LayoutBox {
         if (child != null) {
             child.parent = this;
             this.elementChildren.add(child);
+            bumpShapeEpoch();
         }
     }
 
     public void linkParents() {
         for (LayoutBox child : children) {
-            child.parent = this;
+            adopt(child);
             child.linkParents();
         }
     }
@@ -333,6 +364,9 @@ public class LayoutBox {
      * 算出スタイルを更新する（再スタイル時にジオメトリを保ったまま描画属性だけ差し替える用途を含む）。
      */
     public void updateStyle(ComputedStyle newStyle) {
+        // display / position / float が変わりうる。ただし文字ノードの箱は float の有無に影響しない（子を持たず、isFloating は常に false）ので、
+        // 文字の差し替え（TEXT_PATCH が毎フレーム呼ぶ）では世代を進めず、float メモを残す
+        if (node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) bumpShapeEpoch();
         touchPaint();
         styleStamp = paintStamp;
         this.style = newStyle;
@@ -542,7 +576,7 @@ public class LayoutBox {
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
-        for (LayoutBox child : children) child.parent = this;
+        for (LayoutBox child : children) adopt(child);
         if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
             if (subtreeChanged && ctx.firstPass()) remeasureBoundaries(ctx);
             return;
@@ -959,7 +993,7 @@ public class LayoutBox {
     /** 決まった寸法をもとに自分と子の位置を確定する。 */
     public void layout(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if ("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
-        for (LayoutBox child : children) child.parent = this;
+        for (LayoutBox child : children) adopt(child);
         hasFloatChild = false;
         for (LayoutBox child : children) {
             if (child.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {

@@ -351,12 +351,58 @@ public class BlockLayoutEngine extends LayoutEngine {
         return LayoutEngine.getEngine(box.parent.display) instanceof BlockLayoutEngine;
     }
 
-    /** 子孫（同じ BFC の中）に float があるか。あれば親の float 領域の中で高さを解き直す。 */
+    /**
+     * {@link #containsFloats} の結果を箱ごとにメモするか（既定は有効）。切り分け用: {@code -Denderframe.layout.nofloatmemo=true}。
+     * 無効にすると従来どおり毎回子孫を走査する（結果は同じ）。
+     */
+    public static volatile boolean floatMemoEnabled = !Boolean.getBoolean("enderframe.layout.nofloatmemo");
+    /**
+     * 検証モード: メモを使える場面でも走査し直し、メモと食い違えば {@link AssertionError}（無効化の付け漏れの検出）。
+     * {@code -Denderframe.layout.verifyfloats=true}（{@code core/build.gradle} の {@code test} で常時有効）。
+     */
+    public static volatile boolean verifyFloatMemo = Boolean.getBoolean("enderframe.layout.verifyfloats");
+    /** 診断用の計数（メモが使えた回数／走査した回数）。厳密である必要はない。 */
+    public static long floatMemoHits, floatMemoScans;
+
+    /**
+     * 子孫（同じ BFC の中）に float があるか。あれば親の float 領域の中で高さを解き直す。
+     * 結果は箱の木の形（{@link LayoutBox#shapeEpoch()}）が変わらない間は使い回す。
+     * 以前は 1 つのブロックを置くたびに子孫を再帰で走査し、1,500 行の文字 1 か所の更新で CPU の約 15% を占めていた。
+     */
     private static boolean containsFloats(LayoutBox box) {
+        if (!floatMemoEnabled) return scanFloats(box);
+        int epoch = LayoutBox.shapeEpoch();
+        if (box.floatsMemoEpoch == epoch) {
+            floatMemoHits++;
+            if (verifyFloatMemo && box.floatsMemo != scanFloatsUncached(box)) {
+                throw new AssertionError("float メモが古い: 箱 " + box.node.getId() + " メモ=" + box.floatsMemo);
+            }
+            return box.floatsMemo;
+        }
+        floatMemoScans++;
+        boolean found = scanFloats(box);
+        box.floatsMemo = found;
+        box.floatsMemoEpoch = epoch;
+        return found;
+    }
+
+    private static boolean scanFloats(LayoutBox box) {
         for (LayoutBox c : box.children) {
             if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
             if (isFloating(c)) return true;
             if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && containsFloats(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** メモを一切使わない走査（検証モード用）。 */
+    private static boolean scanFloatsUncached(LayoutBox box) {
+        for (LayoutBox c : box.children) {
+            if (c.isAbsolute || c.isRenderedLegend || c.display.isNone()) continue;
+            if (isFloating(c)) return true;
+            if (!c.establishesBfc && LayoutEngine.getEngine(c.display) instanceof BlockLayoutEngine && scanFloatsUncached(c)) {
                 return true;
             }
         }

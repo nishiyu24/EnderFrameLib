@@ -64,6 +64,8 @@ sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
 tasks.named('test', Test) {
     useJUnitPlatform()
     systemProperty 'enderframe.paint.verifystamps', 'true'
+    // float メモ（BlockLayoutEngine.containsFloats）が使える場面でも走査し直し、食い違えば AssertionError（無効化の付け漏れの検出）
+    systemProperty 'enderframe.layout.verifyfloats', 'true'
     workingDir = rootProject.projectDir
     testLogging { showStandardStreams = true }
     ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
