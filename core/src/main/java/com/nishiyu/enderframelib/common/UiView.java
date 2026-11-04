@@ -77,6 +77,12 @@ public class UiView implements AutoCloseable {
     private final Set<HtmlNode> pendingTextNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** TEXT_PATCH を使うか。false なら文字の変更も全体の再レイアウトにする（切り分け・比較用）。 */
     public static volatile boolean textPatchEnabled = true;
+
+    /** 次の flush で「描画だけ」の属性パッチをする節（同一性で比べる）。{@code synchronized (pendingAttrNodes)} で触る。 */
+    private final Set<HtmlNode> pendingAttrNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** 切り分け用: false なら描画だけの属性（progress / meter の value など）も全体の再レイアウトにする。 */
+    public static volatile boolean attrPatchEnabled = true;
+    public static final java.util.concurrent.atomic.AtomicLong ATTR_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     /** 局所パッチが成功した回数 / 全体の再レイアウトへ退いた回数（調べる用）。 */
     public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong TEXT_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
@@ -405,6 +411,11 @@ public class UiView implements AutoCloseable {
                 syncAttributeToInteractionState(node, attributeName, node.attrs.containsKey(attributeName));
             }
             if (attributeName != null && isPresentationalAttribute(attributeName)) {
+                requestRestyle();
+            } else if (attributeName != null && attrPatchEnabled && isPaintOnlyAttribute(node, attributeName)) {
+                synchronized (pendingAttrNodes) {
+                    pendingAttrNodes.add(node);
+                }
                 requestRestyle();
             } else if (attributeName == null && textPatchEnabled && node.nodeType == NodeType.TEXT) {
                 requestTextPatch(node);
@@ -889,7 +900,7 @@ public class UiView implements AutoCloseable {
     }
 
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
-    private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly) {
+    private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes) {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
                 layoutRoot, document,
@@ -902,7 +913,31 @@ public class UiView implements AutoCloseable {
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
         } else if (res.styleChanged()) {
             repaintFromLayout();
+        } else if (!attrNodes.isEmpty()) {
+            repaintAttrPatched(attrNodes);
         }
+    }
+
+    /**
+     * 描画だけに効く属性が変わった節の箱に変更印を付け、印の付いていない箱の署名の比較を省いて表示リストを作り直す。
+     * レイアウトは走らない（箱の位置・大きさは属性に依らない）ので、印の付く箱は変わった節の箱だけ。
+     * 箱の木は触らないため、変更印で省いてよい条件（前回の作り直し以降、レイアウトが箱に触れていない）はここでも成り立つ。
+     */
+    private void repaintAttrPatched(List<HtmlNode> attrNodes) {
+        if (layoutRoot == null || document == null) return;
+        Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
+        wanted.addAll(attrNodes);
+        Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
+        collectTextBoxes(layoutRoot, wanted, found, false);
+        boolean stamps = changeStampsEnabled && !found.containsValue(null);
+        for (LayoutBox box : found.values()) if (box != null) box.touchPaint();
+        useChangeStamps = stamps;
+        try {
+            repaintFromLayout();
+        } finally {
+            useChangeStamps = false;
+        }
+        if (stamps) ATTR_PATCH_HITS.incrementAndGet();
     }
 
     /**
@@ -944,6 +979,11 @@ public class UiView implements AutoCloseable {
             }
             if (hadPendingText && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
         }
+        List<HtmlNode> attrNodes;
+        synchronized (pendingAttrNodes) {
+            attrNodes = pendingAttrNodes.isEmpty() ? List.of() : new ArrayList<>(pendingAttrNodes);
+            pendingAttrNodes.clear();
+        }
         boolean repositionRequested = repositionPending;
         repositionPending = false;
         boolean scrollOnly = !nonScrollRepositionPending;
@@ -967,17 +1007,17 @@ public class UiView implements AutoCloseable {
                     recomputeLayout(rootW, rootH);
                 }
             }
-            case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly);
+            case RESTYLE -> restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
             case REPOSITION -> {
                 if (interactionState.hasDirtyNodes()) {
-                    restyleAndUpdate(true, scrollOnly);
+                    restyleAndUpdate(true, scrollOnly, attrNodes);
                 } else {
                     repositionFromLayout(scrollOnly);
                 }
             }
             case REPAINT -> repaintFromLayout();
             case NONE -> {
-                if (interactionState.hasDirtyNodes()) restyleAndUpdate(repositionRequested, scrollOnly);
+                if (interactionState.hasDirtyNodes()) restyleAndUpdate(repositionRequested, scrollOnly, attrNodes);
             }
         }
     }
@@ -1064,6 +1104,19 @@ public class UiView implements AutoCloseable {
             }
             collectTextBoxes(child, wanted, out, table);
         }
+    }
+
+    /**
+     * 書き換えても、箱の位置・大きさに効かず、その節自身の描画にだけ効く属性か。
+     * 規則の入力になる場合（属性セレクタ）は、再スタイルが見た目の変化として拾う。
+     * {@code progress} / {@code meter} の {@code value} {@code min} {@code max}: 高さは固定で、描画は属性だけで決まる。
+     */
+    private static boolean isPaintOnlyAttribute(HtmlNode node, String name) {
+        if (node.nodeType != NodeType.ELEMENT || node.tag == null) return false;
+        String tag = node.tag.toLowerCase(Locale.ROOT);
+        if (!tag.equals("progress") && !tag.equals("meter")) return false;
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.equals("value") || n.equals("min") || n.equals("max");
     }
 
     /** 書き換えても再スタイルだけで済む属性か（カスケードの入力にしかならない）。 */
