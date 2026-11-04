@@ -41,6 +41,10 @@ public class InteractionState implements StateLookup {
     private StyleSheet sheet;
 
     /** 無効化セットを引くシートを結ぶ。描画のたびに呼んでよい（同じシートなら何もしない）。 */
+    /** 1 回の再スタイル／箱の木の組み立ての間だけ使う、スタイル解決の使い回し表。走査の前後で空にする。 */
+    public final com.nishiyu.enderframelib.core.css.StyleResolver.ShareCache styleShare =
+            new com.nishiyu.enderframelib.core.css.StyleResolver.ShareCache();
+
     public void bindStyleSheet(StyleSheet sheet) {
         this.sheet = sheet;
     }

@@ -154,9 +154,14 @@ public class RenderPipeline {
             long tA = System.nanoTime();
             boolean track = trackAllocations;
             long aA = track ? threadAllocatedBytes() : 0;
-            rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
-                    ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
-                    effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
+            effectiveState.styleShare.clear();
+            try {
+                rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
+                        ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
+                        effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
+            } finally {
+                effectiveState.styleShare.clear();
+            }
             long tB = System.nanoTime();
             long aB = track ? threadAllocatedBytes() : 0;
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
@@ -489,21 +494,17 @@ public class RenderPipeline {
     }
 
     /**
-     * 目標の算出スタイルに、トランジションと {@code @keyframes} の値（{@link StyleAnimator}）を重ねる。
-     * 動いているものが無ければ目標をそのまま返す。{@code opacity} / {@code transform} / 色は描画項目の補間が担うので対象外。
+     * トランジションと {@code @keyframes} の値（{@link StyleAnimator}）。動いているものが無ければ空。
+     * {@code opacity} / {@code transform} / 色は描画項目の補間が担うので対象外。
      */
-    private static ComputedStyle animated(HtmlNode node, ComputedStyle before, ComputedStyle target,
-                                          Map<String, String> rawStyle, Map<String, String> inheritedStyle,
-                                          StyleSheet sheet, Map<String, String> env, float parentFontSize,
-                                          StyleScope scope, InteractionState interactionState) {
-        if (interactionState == null || node.isPseudoNode || sheet == null) return target;
+    private static Map<String, String> animationValues(HtmlNode node, ComputedStyle before, ComputedStyle target,
+                                                       Map<String, String> inheritedStyle, StyleSheet sheet,
+                                                       InteractionState interactionState) {
+        if (interactionState == null || node.isPseudoNode || sheet == null) return Map.of();
         long now = interactionState.animationTimeMs();
         StyleAnimator animator = interactionState.animator();
         animator.observe(node, before, target, inheritedStyle, sheet.keyframes, now);
-        Map<String, String> values = animator.sample(node, now);
-        if (values.isEmpty()) return target;
-        rawStyle.putAll(values);
-        return computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, containerFor(node, interactionState));
+        return animator.sample(node, now);
     }
 
     private static ContainerBox containerFor(HtmlNode node, InteractionState interactionState) {
@@ -524,9 +525,14 @@ public class RenderPipeline {
         InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
         interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
-        return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
-                ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
-                interactionState, StyleResolver.hasSiblingStateRules(doc.sheet));
+        interactionState.styleShare.clear();
+        try {
+            return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
+                    ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
+                    interactionState, StyleResolver.hasSiblingStateRules(doc.sheet));
+        } finally {
+            interactionState.styleShare.clear();
+        }
     }
 
     private static RestyleResult restyleBoxRecursive(LayoutBox box, Map<String, String> inheritedStyle,
@@ -551,15 +557,28 @@ public class RenderPipeline {
 
         if (isDirty) {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
-            Map<String, String> rawStyle = styleSet.resolve(interactionState);
-            if (node.attrs.containsKey("hidden")) {
-                rawStyle.put(CssProperty.DISPLAY, "none");
-            }
             ComputedStyle prevStyle = box.style;
-            computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
-                    containerFor(node, interactionState));
-            computed = animated(node, prevStyle, computed, rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
-                    interactionState);
+            ContainerBox container = containerFor(node, interactionState);
+            StyleResolver.Shared shared = interactionState.styleShare.resolve(node, inheritedStyle, sheet, interactionState,
+                    env, parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
+                    container);
+            Map<String, String> rawStyle;
+            if (shared != null) {
+                rawStyle = shared.raw();
+                computed = shared.computed();
+            } else {
+                rawStyle = styleSet.resolve(interactionState);
+                if (node.attrs.containsKey("hidden")) {
+                    rawStyle.put(CssProperty.DISPLAY, "none");
+                }
+                computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
+            }
+            Map<String, String> animation = animationValues(node, prevStyle, computed, inheritedStyle, sheet, interactionState);
+            if (!animation.isEmpty()) {
+                rawStyle = new java.util.LinkedHashMap<>(rawStyle);
+                rawStyle.putAll(animation);
+                computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
+            }
             boolean hasInteractive = styleSet.hasInteractiveRules();
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
@@ -713,8 +732,13 @@ public class RenderPipeline {
                                             Map<String, String> env, boolean forceDirty,
                                             float parentFontSize, StyleScope scope, InteractionState interactionState,
                                             boolean siblingInvalidation) {
-        return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty ? FORCE_SUBTREE : FORCE_NONE,
-                parentFontSize, scope, interactionState, siblingInvalidation, null);
+        if (interactionState != null) interactionState.styleShare.clear();
+        try {
+            return buildLayoutTree(node, inheritedStyle, sheet, env, forceDirty ? FORCE_SUBTREE : FORCE_NONE,
+                    parentFontSize, scope, interactionState, siblingInvalidation, null);
+        } finally {
+            if (interactionState != null) interactionState.styleShare.clear();
+        }
     }
 
     /**
@@ -743,20 +767,37 @@ public class RenderPipeline {
             boolean tk = trackAllocations;
             long k0 = tk ? threadAllocatedBytes() : 0;
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
-            Map<String, String> rawStyle = interactionState != null
-                    ? styleSet.resolve(interactionState)
-                    : styleSet.resolve(ElementState.NONE);
-            if (node.attrs.containsKey("hidden")) {
-                rawStyle.put(CssProperty.DISPLAY, "none");
-            }
-            long k1 = tk ? threadAllocatedBytes() : 0;
-
+            ContainerBox container = containerFor(node, interactionState);
+            StyleResolver.Shared shared = interactionState != null
+                    ? interactionState.styleShare.resolve(node, inheritedStyle, sheet, interactionState, env,
+                            parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(),
+                            scope.viewportH(), container)
+                    : null;
+            Map<String, String> rawStyle;
             ComputedStyle previous = flags != null ? flags.computedStyle : null;
-            computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
-                    containerFor(node, interactionState));
-            long k2 = tk ? threadAllocatedBytes() : 0;
-            computed = animated(node, previous, computed, rawStyle, inheritedStyle, sheet, env, parentFontSize, scope,
-                    interactionState);
+            long k1;
+            long k2;
+            if (shared != null) {
+                rawStyle = shared.raw();
+                computed = shared.computed();
+                k1 = k2 = tk ? threadAllocatedBytes() : 0;
+            } else {
+                rawStyle = interactionState != null
+                        ? styleSet.resolve(interactionState)
+                        : styleSet.resolve(ElementState.NONE);
+                if (node.attrs.containsKey("hidden")) {
+                    rawStyle.put(CssProperty.DISPLAY, "none");
+                }
+                k1 = tk ? threadAllocatedBytes() : 0;
+                computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
+                k2 = tk ? threadAllocatedBytes() : 0;
+            }
+            Map<String, String> animation = animationValues(node, previous, computed, inheritedStyle, sheet, interactionState);
+            if (!animation.isEmpty()) {
+                rawStyle = new java.util.LinkedHashMap<>(rawStyle);
+                rawStyle.putAll(animation);
+                computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
+            }
             hasInteractive = styleSet.hasInteractiveRules();
             if (tk) {
                 allocResolve += k1 - k0;
