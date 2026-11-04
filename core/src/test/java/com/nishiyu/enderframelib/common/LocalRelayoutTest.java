@@ -91,6 +91,35 @@ public class LocalRelayoutTest {
         assertTrue(taken >= 6, "箱の木を作り直さない経路に乗った回数: " + taken);
     }
 
+    /** 局所あり/なしを 1 フレームごとに交互に切り替えて、CPU 時間で前後比較する（負荷の揺れを相殺する）。 */
+    @Test
+    public void benchmarkInPlaceVsRebuildInterleaved() {
+        java.lang.management.ThreadMXBean mx = java.lang.management.ManagementFactory.getThreadMXBean();
+        for (int round = 0; round < 3; round++) {
+            StandaloneView v = new StandaloneView(html(1500), 800, 600, FontResolver.FALLBACK);
+            v.ui().flushInvalidation();
+            HtmlNode fill = v.root().getNodeById("fill");
+            for (int i = 0; i < 40; i++) {
+                RenderPipeline.inPlaceRestyleRelayout = (i % 2 == 0);
+                fill.setAttribute("style", "width:" + (i % 100) + "%");
+                v.ui().flushInvalidation();
+            }
+            long on = 0, off = 0;
+            int n = 250;
+            for (int i = 0; i < n; i++) {
+                boolean local = (i % 2 == 0);
+                RenderPipeline.inPlaceRestyleRelayout = local;
+                fill.setAttribute("style", "width:" + (i % 100) + "%");
+                long c0 = mx.getCurrentThreadCpuTime();
+                v.ui().flushInvalidation();
+                long d = mx.getCurrentThreadCpuTime() - c0;
+                if (local) on += d; else off += d;
+            }
+            System.out.println("[inplace-vs-rebuild] round " + round + ": in-place=" + on / 1_000_000 + "ms rebuild=" + off / 1_000_000
+                    + "ms (cpu, " + n / 2 + " frames each) ratio=" + String.format("%.2f", (double) on / off));
+        }
+    }
+
     @Test
     public void benchmarkGaugeWidthInLargeDocument() {
         StandaloneView v = new StandaloneView(html(1500), 800, 600, FontResolver.FALLBACK);
