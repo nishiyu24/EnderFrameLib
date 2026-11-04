@@ -297,8 +297,10 @@ public interface ImageProvider {
             if (src.startsWith("classpath:") || src.startsWith("/")) {
                 String path = src.startsWith("classpath:") ? src.substring(10) : src;
                 try (InputStream in = ImageProvider.class.getResourceAsStream(path.startsWith("/") ? path : "/" + path)) {
-                    return in == null ? null : in.readAllBytes();
+                    if (in != null) return in.readAllBytes();
                 }
+                // Linux / macOS の絶対パス（/tmp/a.gif など）も "/" で始まるので、リソースが無ければ実ファイルとして読む
+                if (src.startsWith("classpath:")) return null;
             }
             Path path = src.startsWith("file:") ? Path.of(java.net.URI.create(src)) : Path.of(src);
             return Files.isRegularFile(path) ? Files.readAllBytes(path) : null;
