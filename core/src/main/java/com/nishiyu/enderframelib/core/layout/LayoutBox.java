@@ -879,13 +879,21 @@ public class LayoutBox {
     public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed) {
         List<LayoutBox> path = new java.util.ArrayList<>();
         for (LayoutBox leaf : changed) {
-            if (leaf == null || !leaf.children.isEmpty() || leaf == root) return null;
+            if (leaf == null || leaf == root) return null;
             boolean selfChanged = leaf.selfSignatureChanged();
-            boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
-            leaf.layoutChanged |= remeasure;
-            leaf.subtreeChanged = true;
+            boolean affects;
+            if (leaf.children.isEmpty()) {
+                boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
+                leaf.layoutChanged |= remeasure;
+                leaf.subtreeChanged = true;
+                affects = leaf.isRelayoutBoundary() ? selfChanged : remeasure;
+            } else {
+                // 子を持つ箱（再スタイルで寸法の入力が変わった要素）: 自分の署名が変わったなら全ての子孫を測り直す。
+                // この部分木だけは全体版と同じ印付けをする（部分木の外は経路だけ）
+                affects = markLayoutChanges(leaf, false);
+                leaf.subtreeChanged = true;
+            }
             path.add(leaf);
-            boolean affects = leaf.isRelayoutBoundary() ? selfChanged : remeasure;
             boolean reachedRoot = false;
             for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
                 if (a.selfSignatureChanged() || a.childListChanged()) return null;

@@ -907,7 +907,7 @@ public class UiView implements AutoCloseable {
                 rootW, rootH,
                 env, interactionState);
         if (res.layoutRequired()) {
-            recomputeLayout(rootW, rootH);
+            if (res.structural() || !tryRelayoutInPlace()) recomputeLayout(rootW, rootH);
         } else if (repositionRequested || res.repositionRequired()) {
             // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
@@ -1076,6 +1076,47 @@ public class UiView implements AutoCloseable {
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+        return true;
+    }
+
+    /** 再スタイルで寸法の入力だけが変わったとき、箱の木を作り直さずに測り直した回数（調べる・テスト用）。 */
+    public static final java.util.concurrent.atomic.AtomicLong INPLACE_RELAYOUT_HITS = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * 再スタイル済みの箱の木を、作り直さずに測り直して配置し直す（寸法の入力だけが変わったとき）。成功したら true。
+     * 条件に合わないとき（false）は何も変えないので、呼び出し側が全体の再レイアウトに退く。
+     * 箱の木の形を変える変化（表示の種類・生成内容など）は、呼び出し側が {@link RenderPipeline.RestyleResult#structural()} で除いてある。
+     */
+    private boolean tryRelayoutInPlace() {
+        Document doc = document;
+        if (!RenderPipeline.inPlaceRestyleRelayout || layoutRoot == null || doc == null || doc.root == null
+                || doc.sheet == null) {
+            return false;
+        }
+        if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
+        long startedAt = System.nanoTime();
+        applyOverrides();
+        List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes);
+        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
+                changedBoxes);
+        setLayoutRoot(layoutRoot);
+        long layoutDone = System.nanoTime();
+        // 再スタイルは変わった箱に updateStyle で印を付け、レイアウトは触った箱に印を付ける（検証モードが付け漏れを検出する）
+        useChangeStamps = changeStampsEnabled;
+        List<DisplayItem> elements;
+        try {
+            elements = paintBoxes(layoutRoot, rootW, rootH, false);
+        } finally {
+            useChangeStamps = false;
+        }
+        if (elements == null) elements = new ArrayList<>();
+        lastBreakdown = "inplace-relayout layout=" + (layoutDone - startedAt) / 1_000_000
+                + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+        publishBuilt(elements);
+        applyOverrides();
+        lastLayoutFinishedNanos = System.nanoTime();
+        lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+        INPLACE_RELAYOUT_HITS.incrementAndGet();
         return true;
     }
 

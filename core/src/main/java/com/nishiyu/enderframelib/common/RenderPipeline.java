@@ -274,7 +274,11 @@ public class RenderPipeline {
         lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
         runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null);
-        if (path != null) LayoutBox.clearSubtreeMarks(path);
+        if (path != null) {
+            LayoutBox.clearSubtreeMarks(path);
+            // 子を持つ変更箱の部分木は全体版で印を付けたので、全体版と同じ片付けをする
+            for (LayoutBox c : changed) if (!c.children.isEmpty()) LayoutBox.clearAllSubtreeMarks(c);
+        }
     }
 
     /**
@@ -350,10 +354,50 @@ public class RenderPipeline {
      * 再スタイルの結果。{@code layoutRequired} は寸法から測り直す（measure + layout）、
      * {@code repositionRequired} は寸法は変わらず位置だけ決め直せば足りる（layout のみ）ことを表す。
      */
-    public record RestyleResult(boolean styleChanged, boolean layoutRequired, boolean repositionRequired) {
+    public record RestyleResult(boolean styleChanged, boolean layoutRequired, boolean repositionRequired,
+                                boolean structural) {
         public RestyleResult(boolean styleChanged, boolean layoutRequired) {
-            this(styleChanged, layoutRequired, false);
+            this(styleChanged, layoutRequired, false, layoutRequired);
         }
+
+        public RestyleResult(boolean styleChanged, boolean layoutRequired, boolean repositionRequired) {
+            this(styleChanged, layoutRequired, repositionRequired, layoutRequired);
+        }
+    }
+
+    /**
+     * 直近の {@link #restyleLayoutTree} で、寸法の入力だけが変わった箱（箱の木の形は変わらない）。
+     * {@link #relayoutInPlace} に渡して、印付けを経路だけにする。UI スレッド専用（他の統計と同じ前提）。
+     */
+    static final List<LayoutBox> layoutChangedBoxes = new ArrayList<>();
+
+    /** 局所再レイアウト（箱の木を作り直さない）を有効にするか。false なら常に木を作り直す（切り分け用。結果は同じでなければならない）。 */
+    public static volatile boolean inPlaceRestyleRelayout = true;
+
+    /**
+     * 箱の木の形（匿名箱・生成箱・表示の種類）に響かず、寸法の入力にだけなる非継承プロパティか。
+     * これだけが変わった再スタイルは、箱の木を作り直さず測り直しだけで足りる。
+     */
+    static boolean isGeometryOnlyProperty(String name) {
+        return switch (name) {
+            case CssProperty.WIDTH, CssProperty.HEIGHT, CssProperty.MIN_WIDTH, CssProperty.MAX_WIDTH,
+                 CssProperty.MIN_HEIGHT, CssProperty.MAX_HEIGHT, CssProperty.LEFT, CssProperty.RIGHT,
+                 CssProperty.TOP, CssProperty.BOTTOM, "flex-grow", "flex-shrink", "flex-basis" -> true;
+            default -> name.startsWith("margin-") || name.startsWith("padding-");
+        };
+    }
+
+    private static boolean isGeometryOnlyChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
+        if (oldStyle == null || newStyle == null) return false;
+        if (Float.compare(oldStyle.fontSizePx(), newStyle.fontSizePx()) != 0
+                || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
+            return false;
+        }
+        boolean[] ok = {true};
+        ComputedStyle.diff(oldStyle, newStyle, (name, paintOnly, inherited) -> {
+            if (!paintOnly && (inherited || !isGeometryOnlyProperty(name))) ok[0] = false;
+        });
+        return ok[0];
     }
 
     private record StyleScope(int viewportW, int viewportH, float rootFontSize, float rootLineHeight) {
@@ -526,6 +570,7 @@ public class RenderPipeline {
         interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         interactionState.styleShare.clear();
+        RenderPipeline.layoutChangedBoxes.clear();
         try {
             return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
@@ -548,6 +593,7 @@ public class RenderPipeline {
         boolean styleChanged = false;
         boolean layoutRequired = false;
         boolean repositionRequired = false;
+        boolean structural = false;
         int childForce = FORCE_NONE;
         boolean childForceIfInherits = false;
         ComputedStyle computed;
@@ -588,6 +634,8 @@ public class RenderPipeline {
                         repositionRequired = true;
                     } else {
                         layoutRequired = true;
+                        if (!isGeometryOnlyChange(prevStyle, computed)) structural = true;
+                        else RenderPipeline.layoutChangedBoxes.add(box);
                     }
                 }
             }
@@ -598,6 +646,7 @@ public class RenderPipeline {
                 if (isOpen != wasOpen) {
                     styleChanged = true;
                     layoutRequired = true;
+                    structural = true;
                 }
             }
 
@@ -625,6 +674,7 @@ public class RenderPipeline {
                         interactionState, siblingInvalidation);
                 styleChanged |= pseudoRes.styleChanged();
                 layoutRequired |= pseudoRes.layoutRequired();
+                structural |= pseudoRes.structural();
             }
         }
 
@@ -646,10 +696,11 @@ public class RenderPipeline {
             styleChanged |= childRes.styleChanged();
             layoutRequired |= childRes.layoutRequired();
             repositionRequired |= childRes.repositionRequired();
+            structural |= childRes.structural();
             siblingForceDirty |= stateChanged;
         }
 
-        return new RestyleResult(styleChanged, layoutRequired, repositionRequired);
+        return new RestyleResult(styleChanged, layoutRequired, repositionRequired, structural);
     }
 
     /**
