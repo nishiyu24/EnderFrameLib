@@ -92,9 +92,12 @@ final class LayerFx {
         int w = pm.width(), h = pm.height();
         Buf cur = new Buf(Math.max(0, region[0]), Math.max(0, region[1]), Math.min(w, region[2]), Math.min(h, region[3]));
         int[] px = pm.pixels();
-        for (int y = cur.y0; y < cur.y1; y++) {
-            for (int x = cur.x0; x < cur.x1; x++) unpack(px[y * w + x], cur.d, ((y - cur.y0) * cur.w() + (x - cur.x0)) * 4);
-        }
+        final Buf in0 = cur;
+        Rows.forEach(in0.y0, in0.y1, (long) in0.w() * (in0.y1 - in0.y0), (ya, yb) -> {
+            for (int y = ya; y < yb; y++) {
+                for (int x = in0.x0; x < in0.x1; x++) unpack(px[y * w + x], in0.d, ((y - in0.y0) * in0.w() + (x - in0.x0)) * 4);
+            }
+        });
         for (Stage st : stages(ops)) {
             switch (st.kind) {
                 case COLOR -> color(cur, st);
@@ -103,9 +106,12 @@ final class LayerFx {
             }
         }
         // 領域が広がったぶんも含めて書き戻す
-        for (int y = cur.y0; y < cur.y1; y++) {
-            for (int x = cur.x0; x < cur.x1; x++) px[y * w + x] = pack(cur.d, ((y - cur.y0) * cur.w() + (x - cur.x0)) * 4);
-        }
+        final Buf outB = cur;
+        Rows.forEach(outB.y0, outB.y1, (long) outB.w() * (outB.y1 - outB.y0), (ya, yb) -> {
+            for (int y = ya; y < yb; y++) {
+                for (int x = outB.x0; x < outB.x1; x++) px[y * w + x] = pack(outB.d, ((y - outB.y0) * outB.w() + (x - outB.x0)) * 4);
+            }
+        });
         return new int[]{cur.x0, cur.y0, cur.x1, cur.y1};
     }
 
@@ -232,7 +238,12 @@ final class LayerFx {
         int len = horizontal ? out.x1 - out.x0 : out.y1 - out.y0;
         int inLen = horizontal ? in.x1 - in.x0 : in.y1 - in.y0;
         int inOrigin = horizontal ? in.x0 : in.y0, outOrigin = horizontal ? out.x0 : out.y0;
-        for (int ln = 0; ln < lines; ln++) {
+        if (!horizontal) {
+            boxColumns(in, out, left, right, inv, lines, len, inLen, inOrigin, outOrigin);
+            return out;
+        }
+        Rows.forEach(0, lines, (long) lines * len, (lnA, lnB) -> { // 行ごとに独立
+        for (int ln = lnA; ln < lnB; ln++) {
             float sa = 0, sr = 0, sg = 0, sb = 0;
             // 出力 -1 の窓 [outOrigin-1-right, outOrigin-1+left] の和を先に作る
             for (int a = outOrigin - 1 - right; a <= outOrigin - 1 + left; a++) {
@@ -256,7 +267,42 @@ final class LayerFx {
                 out.d[o] = sa * inv; out.d[o + 1] = sr * inv; out.d[o + 2] = sg * inv; out.d[o + 3] = sb * inv;
             }
         }
+        });
         return out;
+    }
+
+    /**
+     * 縦方向のボックスぼかし。列ごとの走る和を全列ぶん同時に持ち、行を 1 本ずつ連続して読み書きする
+     * （列を 1 本ずつ走るとストライドが大きくキャッシュを外す）。各列の加減算の順は列ごとに走る場合と同じで、結果は同一。
+     */
+    private static void boxColumns(Buf in, Buf out, int left, int right, float inv, int cols, int len, int inLen,
+                                   int inOrigin, int outOrigin) {
+        int inW = in.w(), outW = out.w();
+        // 列の範囲ごとに独立（別々の列しか読み書きしない）
+        Rows.forEach(0, cols, (long) cols * len, (c0, c1) -> {
+            int n = (c1 - c0) * 4, off = c0 * 4;
+            float[] sum = new float[n];
+            for (int a = outOrigin - 1 - right; a <= outOrigin - 1 + left; a++) {
+                int k = a - inOrigin;
+                if (k < 0 || k >= inLen) continue;
+                int base = k * inW * 4 + off;
+                for (int j = 0; j < n; j++) sum[j] += in.d[base + j];
+            }
+            for (int p = 0; p < len; p++) {
+                int addIn = outOrigin + p + left - inOrigin;
+                int subIn = outOrigin + p - 1 - right - inOrigin;
+                if (addIn >= 0 && addIn < inLen) {
+                    int base = addIn * inW * 4 + off;
+                    for (int j = 0; j < n; j++) sum[j] += in.d[base + j];
+                }
+                if (subIn >= 0 && subIn < inLen) {
+                    int base = subIn * inW * 4 + off;
+                    for (int j = 0; j < n; j++) sum[j] -= in.d[base + j];
+                }
+                int ob = p * outW * 4 + off;
+                for (int j = 0; j < n; j++) out.d[ob + j] = sum[j] * inv;
+            }
+        });
     }
 
     /** 軸に沿って {@code d} 画素ずれた位置の線形補間。 */

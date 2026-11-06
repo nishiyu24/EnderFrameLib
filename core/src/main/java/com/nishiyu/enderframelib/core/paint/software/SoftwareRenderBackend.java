@@ -371,16 +371,20 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int[] src = l.pixmap.pixels(), dst = parent.pixels();
         BlendMode blend = spec != null ? spec.blend() : BlendMode.NORMAL;
         if (any) {
-            for (int y = region[1]; y < region[3]; y++) {
-                for (int x = region[0]; x < region[2]; x++) {
-                    int c = src[y * w + x];
-                    if (c == 0) continue;
-                    if (l.group.opacity() < 1f) c = SoftShapes.scalePremul(c, l.group.opacity());
-                    dst[y * w + x] = blend == BlendMode.NORMAL ? SoftShapes.over(c, dst[y * w + x])
-                            : blendPixel(blend, c, dst[y * w + x]);
-                    src[y * w + x] = 0;
+            final float groupOpacity = l.group.opacity();
+            final int cx0 = region[0], cx1 = region[2];
+            Rows.forEach(region[1], region[3], (long) (cx1 - cx0) * (region[3] - region[1]), (ya, yb) -> {
+                for (int y = ya; y < yb; y++) {
+                    for (int x = cx0; x < cx1; x++) {
+                        int c = src[y * w + x];
+                        if (c == 0) continue;
+                        if (groupOpacity < 1f) c = SoftShapes.scalePremul(c, groupOpacity);
+                        dst[y * w + x] = blend == BlendMode.NORMAL ? SoftShapes.over(c, dst[y * w + x])
+                                : blendPixel(blend, c, dst[y * w + x]);
+                        src[y * w + x] = 0;
+                    }
                 }
-            }
+            });
             grow(viaGpu ? gpuArea : null, region);
         }
         if (viaGpu && gpuArea[2] > gpuArea[0] && gpuArea[3] > gpuArea[1]) rootSink.overwriteTarget(parent, gpuArea);
@@ -492,19 +496,23 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** クリップの 1 つ。持ち主の姿勢の逆変換で画素を持ち主の空間へ戻し、角丸矩形の SDF で被覆率を出す。 */
     private record ClipPart(Matrix2D inv, float scale, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                            int bx0, int by0, int bx1, int by1) {
+                            int bx0, int by0, int bx1, int by1, float ix0, float iy0, float ix1, float iy1,
+                            double dix0, double diy0, double dix1, double diy1) {
         float coverage(double dx, double dy) {
             float lx = (float) inv.applyX(dx, dy), ly = (float) inv.applyY(dx, dy);
+            if (lx >= ix0 && lx <= ix1 && ly >= iy0 && ly <= iy1) return 1f; // 角と縁から離れた内側は距離を測らない
             return SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
         }
     }
 
-    private record Clip(List<ClipPart> parts, int x0, int y0, int x1, int y1) {
+    private record Clip(List<ClipPart> parts, int x0, int y0, int x1, int y1,
+                        double ix0, double iy0, double ix1, double iy1) {
         boolean empty() {
             return x1 <= x0 || y1 <= y0;
         }
 
         float coverage(double dx, double dy) {
+            if (dx >= ix0 && dx <= ix1 && dy >= iy0 && dy <= iy1) return 1f; // 全部の内側（軸平行のときだけ非空）
             float c = 1f;
             for (int i = 0; i < parts.size(); i++) {
                 c *= parts.get(i).coverage(dx, dy);
@@ -555,13 +563,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private Clip finishClip(List<ClipPart> parts) {
         int x0 = 0, y0 = 0, x1 = target.width(), y1 = target.height();
+        double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
         for (ClipPart p : parts) {
             x0 = Math.max(x0, p.bx0());
             y0 = Math.max(y0, p.by0());
             x1 = Math.min(x1, p.bx1());
             y1 = Math.min(y1, p.by1());
+            ix0 = Math.max(ix0, p.dix0());
+            iy0 = Math.max(iy0, p.diy0());
+            ix1 = Math.min(ix1, p.dix1());
+            iy1 = Math.min(iy1, p.diy1());
         }
-        return new Clip(parts, x0, y0, x1, y1);
+        return new Clip(parts, x0, y0, x1, y1, ix0, iy0, ix1, iy1);
     }
 
     private void addClipPart(List<ClipPart> parts, List<Integer> owners, List<Resolved> ownerRes, float[] rect, String ownerId) {
@@ -587,8 +600,20 @@ public final class SoftwareRenderBackend implements RenderBackend {
             ry[i] = rect.length >= 12 ? rect[8 + i] : rx[i];
         }
         double[] b = deviceBounds(pose, rect[0], rect[1], rect[2], rect[3]);
-        parts.add(new ClipPart(inv, (float) pose.meanScale(), rect[0], rect[1], rect[2], rect[3], rx, ry,
-                (int) Math.floor(b[0]), (int) Math.floor(b[1]), (int) Math.ceil(b[2]), (int) Math.ceil(b[3])));
+        float scale = (float) pose.meanScale();
+        float reach = 0.5f / Math.max(scale, 0.01f) + 1e-3f;
+        float mrx = maxOf(rx), mry = maxOf(ry);
+        // 端末空間での「被覆率が 1 と分かっている内側」。軸平行の姿勢のときだけ（そうでなければ空）。
+        double[] dev = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY};
+        if (pose.b() == 0.0 && pose.c() == 0.0) {
+            double ax = pose.applyX(rect[0] + mrx + reach, 0), bx = pose.applyX(rect[2] - mrx - reach, 0);
+            double ay = pose.applyY(0, rect[1] + mry + reach), by = pose.applyY(0, rect[3] - mry - reach);
+            dev = new double[]{Math.min(ax, bx) + 1e-3, Math.min(ay, by) + 1e-3, Math.max(ax, bx) - 1e-3, Math.max(ay, by) - 1e-3};
+        }
+        parts.add(new ClipPart(inv, scale, rect[0], rect[1], rect[2], rect[3], rx, ry,
+                (int) Math.floor(b[0]), (int) Math.floor(b[1]), (int) Math.ceil(b[2]), (int) Math.ceil(b[3]),
+                rect[0] + mrx + reach, rect[1] + mry + reach, rect[2] - mrx - reach, rect[3] - mry - reach,
+                dev[0], dev[1], dev[2], dev[3]));
     }
 
     private static double[] deviceBounds(Matrix2D m, double x0, double y0, double x1, double y1) {
@@ -621,14 +646,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (opacity <= 0f || !(bx1 > bx0) || !(by1 > by0)) return;
         Matrix2D inv = pose.invert();
         if (inv == null || !inv.isFinite()) return;
-        double[] b = deviceBounds(pose, bx0, by0, bx1, by1);
-        int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
-        int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
-        if (x1 <= x0 || y1 <= y0) return;
-        dirtyX0 = Math.min(dirtyX0, x0);
-        dirtyY0 = Math.min(dirtyY0, y0);
-        dirtyX1 = Math.max(dirtyX1, x1);
-        dirtyY1 = Math.max(dirtyY1, y1);
+        int[] r = paintRange(pose, bx0, by0, bx1, by1, clip);
+        if (r == null) return;
+        int x0 = r[0], y0 = r[1], x1 = r[2], y1 = r[3];
         int[] px = target.pixels();
         int w = target.width();
         boolean clipped = !clip.parts().isEmpty();
@@ -648,6 +668,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 px[i] = SoftShapes.over(c, px[i]);
             }
         }
+    }
+
+    /** 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。 */
+    private int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
+        double[] b = deviceBounds(pose, bx0, by0, bx1, by1);
+        int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
+        int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
+        if (x1 <= x0 || y1 <= y0) return null;
+        dirtyX0 = Math.min(dirtyX0, x0);
+        dirtyY0 = Math.min(dirtyY0, y0);
+        dirtyX1 = Math.max(dirtyX1, x1);
+        dirtyY1 = Math.max(dirtyY1, y1);
+        return new int[]{x0, y0, x1, y1};
     }
 
     /** 角丸矩形を単色で塗る。 */
@@ -685,6 +718,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         fillRoundRect(pose, x0, y0, x1, y1, ZERO4, ZERO4, argb, clip, opacity);
     }
 
+    private static float maxOf(float[] v) {
+        float m = 0f;
+        for (float f : v) m = Math.max(m, f);
+        return m;
+    }
+
     private static float[] uniform(float r) {
         return new float[]{r, r, r, r};
     }
@@ -712,12 +751,46 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         float scale = (float) res.pose().meanScale();
         float m = 1f / Math.max(scale, 0.01f);
-        paint(res.pose(), x0 - m, y0 - m, x1 + m, y1 + m, clip, opacity, (lx, ly) -> {
-            float cov = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
-            if (cov <= 0f) return 0;
-            Integer c = ShaderGradientEmulator.colorOf(g, lx, ly);
-            if (c == null || (c >>> 24) == 0) return 0;
-            return SoftShapes.scalePremul(Pixmap.premultiply(c), cov);
+        // 角の丸みと縁の半画素から十分に内側なら被覆率は 1（距離の計算を省ける）。
+        float reach = 0.5f / Math.max(scale, 0.01f) + 1e-3f;
+        float ix0 = x0 + maxOf(rx) + reach, ix1 = x1 - maxOf(rx) - reach;
+        float iy0 = y0 + maxOf(ry) + reach, iy1 = y1 - maxOf(ry) - reach;
+        Matrix2D pose = res.pose();
+        if (opacity <= 0f) return;
+        Matrix2D inv = pose.invert();
+        if (inv == null || !inv.isFinite()) return;
+        int[] r = paintRange(pose, x0 - m, y0 - m, x1 + m, y1 + m, clip);
+        if (r == null) return;
+        int[] px = target.pixels();
+        int w = target.width();
+        boolean clipped = !clip.parts().isEmpty();
+        final int rx0 = r[0], rx1 = r[2];
+        final float fIx0 = ix0, fIx1 = ix1, fIy0 = iy0, fIy1 = iy1;
+        // 行は互いに独立（書き込む画素も別）なので、広い面は行のまとまりごとに並列で塗る。
+        Rows.forEach(r[1], r[3], (long) (r[2] - r[0]) * (r[3] - r[1]), (ya, yb) -> {
+            ShaderGradientEmulator.Prepared shader = ShaderGradientEmulator.prepare(g); // 直前の色を覚えるのでスレッドごと
+            for (int y = ya; y < yb; y++) {
+                double dy = y + 0.5;
+                for (int x = rx0; x < rx1; x++) {
+                    double dx = x + 0.5;
+                    float lx = (float) inv.applyX(dx, dy), ly = (float) inv.applyY(dx, dy);
+                    float cov = lx >= fIx0 && lx <= fIx1 && ly >= fIy0 && ly <= fIy1 ? 1f
+                            : SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
+                    if (cov <= 0f) continue;
+                    int c = shader.colorOrZero(lx, ly);
+                    if ((c >>> 24) == 0) continue;
+                    c = SoftShapes.scalePremul(Pixmap.premultiply(c), cov);
+                    if (c == 0) continue;
+                    float k = opacity;
+                    if (clipped) {
+                        k *= clip.coverage(dx, dy);
+                        if (k <= 0f) continue;
+                    }
+                    if (k < 1f) c = SoftShapes.scalePremul(c, k);
+                    int i = y * w + x;
+                    px[i] = SoftShapes.over(c, px[i]);
+                }
+            }
         });
     }
 

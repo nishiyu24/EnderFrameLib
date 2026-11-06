@@ -493,16 +493,19 @@ public final class Gradients {
         return colors[n - 1];
     }
 
+    private static int lerpChannel(int c1, int c2, int s, float a1, float a2, float f, float a) {
+        float v1 = ((c1 >>> s) & 0xFF) * a1, v2 = ((c2 >>> s) & 0xFF) * a2;
+        return Math.clamp(Math.round((v1 + (v2 - v1) * f) / a), 0, 255) << s;
+    }
+
     static int lerpPremultiplied(int c1, int c2, float f) {
         float a1 = (c1 >>> 24) / 255f, a2 = (c2 >>> 24) / 255f;
         float a = a1 + (a2 - a1) * f;
         if (a <= 0) return 0;
-        int[] shifts = {16, 8, 0};
         int out = Math.round(a * 255) << 24;
-        for (int s : shifts) {
-            float v1 = ((c1 >>> s) & 0xFF) * a1, v2 = ((c2 >>> s) & 0xFF) * a2;
-            out |= Math.clamp(Math.round((v1 + (v2 - v1) * f) / a), 0, 255) << s;
-        }
+        out |= lerpChannel(c1, c2, 16, a1, a2, f, a);
+        out |= lerpChannel(c1, c2, 8, a1, a2, f, a);
+        out |= lerpChannel(c1, c2, 0, a1, a2, f, a);
         return out;
     }
 

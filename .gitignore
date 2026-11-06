@@ -27,3 +27,4 @@ hs_err_pid*.log
 
 # IDE のビルド出力
 /out/
+/logs/
