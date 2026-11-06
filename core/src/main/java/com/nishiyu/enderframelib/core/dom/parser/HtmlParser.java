@@ -50,8 +50,16 @@ public class HtmlParser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HtmlParser.class);
 
-    private static final int MAX_NODES = 5000;
-    private static final int MAX_DEPTH = 100;
+    private static volatile ParseLimits defaultLimits = ParseLimits.DEFAULT;
+
+    /** 既定の上限を差し替える（プロセス全体）。個別の呼び出しは {@code limits} 付きの overload を使う。 */
+    public static void setDefaultLimits(ParseLimits limits) {
+        defaultLimits = java.util.Objects.requireNonNull(limits);
+    }
+
+    public static ParseLimits defaultLimits() {
+        return defaultLimits;
+    }
     private static final int MAX_TEXT = 16384;
     private static final int MAX_RAW_TEXT = 1 << 20;
 
@@ -65,12 +73,20 @@ public class HtmlParser {
         return parseFragment(html, "body");
     }
 
+    public static HtmlNode parse(String html, ParseLimits limits) {
+        return parseFragment(html, "body", limits);
+    }
+
     /**
      * 文書として解析する。ルートの子は {@code html} の 1 つだけで、その下に {@code head} と {@code body} がある。
      * 書かれていなければ補う。
      */
     public static HtmlNode parseDocument(String html) {
-        TreeBuilder builder = new TreeBuilder(false, null);
+        return parseDocument(html, defaultLimits);
+    }
+
+    public static HtmlNode parseDocument(String html, ParseLimits limits) {
+        TreeBuilder builder = new TreeBuilder(false, null, limits);
         builder.run(html);
         builder.ensureBody();
         return builder.root;
@@ -82,8 +98,12 @@ public class HtmlParser {
      * 表の部品を最上位に置ける。
      */
     public static HtmlNode parseFragment(String html, String contextTag) {
+        return parseFragment(html, contextTag, defaultLimits);
+    }
+
+    public static HtmlNode parseFragment(String html, String contextTag, ParseLimits limits) {
         String context = contextTag == null || contextTag.isEmpty() ? "body" : contextTag.toLowerCase();
-        TreeBuilder builder = new TreeBuilder(true, context);
+        TreeBuilder builder = new TreeBuilder(true, context, limits);
         builder.run(html);
         return builder.root;
     }
@@ -155,7 +175,11 @@ public class HtmlParser {
         /** active formatting elements（§13.2.4.3）。マーカーは {@link FormatEntry#marker} が true の項目。 */
         final List<FormatEntry> formatting = new ArrayList<>();
 
-        TreeBuilder(boolean fragment, String context) {
+        final ParseLimits limits;
+        boolean depthWarned;
+
+        TreeBuilder(boolean fragment, String context, ParseLimits limits) {
+            this.limits = limits;
             this.fragment = fragment;
             this.context = context;
             this.root = fragment ? new HtmlNode(NodeType.ROOT, "root") : new HtmlDocument();
@@ -167,8 +191,10 @@ public class HtmlParser {
 
         void run(String html) {
             for (HtmlTokenizer.Token token : HtmlTokenizer.tokenize(html)) {
-                if (++nodeCount > MAX_NODES) {
-                    LOGGER.warn("HTML Parser: MAX_NODES ({}) exceeded. Truncating document.", MAX_NODES);
+                if (++nodeCount > limits.maxTokens()) {
+                    String msg = "HTML Parser: token limit (" + limits.maxTokens() + ") exceeded.";
+                    if (limits.strict()) throw new ParseLimits.HtmlLimitExceededException(msg);
+                    LOGGER.warn("{} Truncating document.", msg);
                     break;
                 }
                 process(token);
@@ -325,7 +351,15 @@ public class HtmlParser {
 
         void inBodyStart(HtmlTokenizer.Token t) {
             String tag = t.name;
-            if (stack.size() > MAX_DEPTH && !VoidElements.isVoid(tag)) return;
+            if (stack.size() > limits.maxDepth() && !VoidElements.isVoid(tag)) {
+                String msg = "HTML Parser: nesting depth limit (" + limits.maxDepth() + ") exceeded at <" + tag + ">.";
+                if (limits.strict()) throw new ParseLimits.HtmlLimitExceededException(msg);
+                if (!depthWarned) {
+                    depthWarned = true;
+                    LOGGER.warn("{} Dropping deeper elements.", msg);
+                }
+                return;
+            }
 
             // SVG / MathML の外来要素は、HTML の暗黙終了や要素名の読み替えを受けず、自己終了タグ（{@code <rect/>}）で閉じる
             if (tag.equals("svg") || tag.equals("math") || inForeignContent()) {
