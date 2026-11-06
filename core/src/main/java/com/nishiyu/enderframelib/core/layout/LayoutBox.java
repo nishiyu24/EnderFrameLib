@@ -578,8 +578,16 @@ public class LayoutBox {
     public void measure(ConstraintSpace space, LayoutContext ctx) {
         for (LayoutBox child : children) adopt(child);
         if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
-            if (subtreeChanged && ctx.firstPass()) remeasureBoundaries(ctx);
-            return;
+            if (!(subtreeChanged && ctx.firstPass())) return;
+            int[] depth = DESCENT.get();
+            depth[0]++;
+            try {
+                remeasureChanged(ctx);
+            } finally {
+                depth[0]--;
+            }
+            // 子孫の測り直しの結果が外寸に出て、自分の測定が当てはまらなくなったら、下で測り直す
+            if (measurementValid) return;
         }
         MEASUREMENTS_COMPUTED.increment();
         touchPaint();
@@ -592,13 +600,54 @@ public class LayoutBox {
      * 自分の measure を使い回したが、再レイアウト境界の中だけが変わっている（境界の寸法は変わらないので祖先は使い回せる）。
      * 境界まで降りて、中身だけを前回と同じ制約で測り直す。
      */
-    private void remeasureBoundaries(LayoutContext ctx) {
-        for (LayoutBox child : children) {
+    private void remeasureChanged(LayoutContext ctx) {
+        for (int i = 0; i < children.size(); i++) {
+            LayoutBox child = children.get(i);
             if (!child.subtreeChanged || child.measuredSpace == null) continue;
-            if (child.isRelayoutBoundary()) child.measure(child.measuredSpace, ctx);
-            else child.remeasureBoundaries(ctx);
+            // 境界・外寸の変化を親が吸収できる箱（cutoff）・測り直しの印が付いた箱は、自分で測り直す。
+            // 結果が外寸に出れば直接の親の測定が無効になり、親は呼び出し側（この関数の後）で測り直す
+            if (child.layoutChanged || child.isRelayoutBoundary() || child.isCutoffEligible()) {
+                child.measure(child.measuredSpace, ctx);
+            } else {
+                child.remeasureChanged(ctx);
+                // 降りた先の結果で、この子の測定が当てはまらなくなったなら、ここで測り直す（取り残さない）
+                if (!child.measurementValid) child.measure(child.measuredSpace, ctx);
+            }
         }
     }
+
+    /** 測り直しの結果を、直接の親の無効化だけで伝える下降（{@link #remeasureChanged}）の深さ。スレッドごと。 */
+    private static final ThreadLocal<int[]> DESCENT = ThreadLocal.withInitial(() -> new int[1]);
+
+    /** 切り分け用: false なら外寸が変わらない子の変化を親で吸収しない（従来の祖先まで無効にする動き）。 */
+    public static volatile boolean cutoffEnabled = !Boolean.getBoolean("enderframe.layout.nocutoff");
+
+    /**
+     * 子の中身が変わって測り直しても外寸（幅・高さ・マージン）が前回と同じなら、親の測定はそのまま使える箱か。
+     * 親が子から読むのは外寸だけ（配置・ベースラインは layout で組み直す）という前提が成り立つ場合に限る:
+     * ブロックレベルの流れの子で、親がブロックフロー（表・段組でない）、float・絶対配置・位置指定・上書き寸法が無く、
+     * 祖先のどこでも float が流れの外へ漏れない（float を避ける行・高さの解き直しが親の状態に依るため）。
+     */
+    private boolean isCutoffEligible() {
+        LayoutBox p = parent;
+        if (!cutoffEnabled || p == null || display == null || p.display == null) return false;
+        if (node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT || display.isInlineLevel() || display.isNone()
+                || isAbsolute || isRelative || isSticky || isOutsideMarker || isRenderedLegend
+                || isTableBox(this) || collapsedBorders != null || everLaidOutAsTable || floatSpace != null
+                || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
+            return false;
+        }
+        Display.Inner pi = p.display.inner();
+        if (pi != Display.Inner.FLOW && pi != Display.Inner.FLOW_ROOT) return false;
+        if (isTableBox(p) || MulticolLayout.isMulticol(p) || BlockLayoutEngine.isFloating(this)) return false;
+        for (LayoutBox a = p; a != null; a = a.parent) {
+            if (!a.measuredFlowFloatFree) return false;
+        }
+        return !BlockLayoutEngine.containsFloats(this);
+    }
+
+    /** 測ったとき、どの子も float ではなく、子孫の float が流れに漏れてもいない。{@link #isCutoffEligible} が祖先を通して見る。 */
+    private boolean measuredFlowFloatFree;
 
     private static final java.util.concurrent.atomic.LongAdder MEASUREMENTS_COMPUTED =
             new java.util.concurrent.atomic.LongAdder();
@@ -719,11 +768,29 @@ public class LayoutBox {
         measuredChildren = children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
         measuredFirstFlowChild = BlockLayoutEngine.isFirstFlowChild(this);
         measuredHadFloatChild = hasFloatingChild();
+        boolean floatFree = true;
+        for (int i = 0, n = children.size(); i < n && floatFree; i++) {
+            LayoutBox c = children.get(i);
+            floatFree = !BlockLayoutEngine.isFloating(c) && !BlockLayoutEngine.containsFloats(c);
+        }
+        measuredFlowFloatFree = floatFree;
         layoutChanged = false;
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
         // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す
-        invalidateAncestors(!(outerSizeStable && isRelayoutBoundary()));
+        boolean absorbed = outerSizeStable && (isRelayoutBoundary() || isCutoffEligible());
+        if (DESCENT.get()[0] > 0) invalidateParentOnly(!absorbed);
+        else invalidateAncestors(!(outerSizeStable && isRelayoutBoundary()));
+    }
+
+    /**
+     * 変化を子から親へ 1 段ずつ伝える下降（{@link #remeasureChanged}）の中で測り直したとき。配置の記録は祖先の全てで捨てるが、
+     * 測定が当てはまらなくなるのは外寸が変わったときの直接の親だけ。親は下降の呼び出し元として、戻ってから自分の測定が
+     * 無効になっていれば測り直し、その結果でさらに上へ伝える。
+     */
+    private void invalidateParentOnly(boolean measureAffected) {
+        for (LayoutBox p = parent; p != null; p = p.parent) p.placementValid = false;
+        if (measureAffected && parent != null) parent.measurementValid = false;
     }
 
     /**
@@ -929,13 +996,29 @@ public class LayoutBox {
             }
             path.add(leaf);
             boolean reachedRoot = false;
+            // lazy: 直前の箱が、測り直した外寸が変わらなければ親が吸収できる箱（cutoff）で、結果が出るまで親に印を付けない
+            boolean lazy = affects && leaf.isCutoffEligible();
             for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
                 if (a.selfSignatureChanged() || a.childListChanged()) return null;
-                a.layoutChanged |= affects;
                 a.subtreeChanged = true;
                 path.add(a);
+                if (lazy) {
+                    // 子の結果が外寸に出れば a の測定が無効になり、a は下降（remeasureChanged）の戻りで測り直す。
+                    // a の親がそれを同じように受けられる（a も cutoff）間は、印を付けずに結果を待つ。
+                    // 受けられなければ、a の親を測り直しの対象にして、a はその下で測られる
+                    if (a.isRelayoutBoundary()) {
+                        affects = false;
+                        lazy = false;
+                    } else if (!a.isCutoffEligible()) {
+                        affects = true;
+                        lazy = false;
+                    }
+                } else {
+                    a.layoutChanged |= affects;
+                    if (a.isRelayoutBoundary()) affects = false;
+                    else if (affects && a.isCutoffEligible()) lazy = true;
+                }
                 if (a == root) { reachedRoot = true; break; }
-                if (a.isRelayoutBoundary()) affects = false;
             }
             if (!reachedRoot) return null;
         }
