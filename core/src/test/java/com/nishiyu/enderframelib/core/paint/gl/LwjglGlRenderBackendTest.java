@@ -731,10 +731,12 @@ class LwjglGlRenderBackendTest {
                 + "<div style='margin-top:-20px;width:40px;height:40px;background:#ff2200;opacity:0.6;filter:saturate(1.5);mix-blend-mode:hard-light'></div>", 60, 70, 1f, 4);
     }
 
-    /** 層を {@code depth} 段入れ子にし、最も内側に {@code inner} を置く（各段は filter で層になる）。 */
+    /** 層を {@code depth} 段入れ子にし、最も内側に {@code inner} を置く（各段は filter で層になる）。
+     * 段の filter は {@code invert(1)}（255 - x で丸めが出ない）。{@code brightness(1.01)} のように小数が出る係数だと、
+     * GPU の float→8bit 変換が .5 の少し上で切り下がる実装（NVIDIA で確認）で、毎段同じ向きに 1 ずれて深さ分だけ累積する。 */
     private static String deepLayers(int depth, String inner) {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) sb.append("<div style='width:70px;height:70px;filter:brightness(1.01)'>");
+        for (int i = 0; i < depth; i++) sb.append("<div style='width:70px;height:70px;filter:invert(1)'>");
         sb.append(inner);
         sb.append("</div>".repeat(depth));
         return sb.toString();

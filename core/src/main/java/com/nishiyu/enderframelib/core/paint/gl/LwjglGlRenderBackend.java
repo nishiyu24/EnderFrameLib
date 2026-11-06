@@ -245,7 +245,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                     a = cover(dist - uRect.z, uScale) * (uRect.w > 0.0 ? 1.0 - cover(dist - uRect.w, uScale) : 1.0);
                     if (a <= 0.0) discard;
                     vec2 dd = vLocal - uRect.xy;
-                    int cs = abs(dd.y) >= abs(dd.x) ? (dd.y < 0.0 ? 0 : 2) : (dd.x > 0.0 ? 1 : 3);
+                    // 対角線上（|dy| == |dx|）の画素は上下を優先する（CPU 版と同じ）。vLocal の float 誤差で左右に転ばないよう余裕を持たせる
+                    int cs = abs(dd.y) >= abs(dd.x) - 1e-3 ? (dd.y < 0.0 ? 0 : 2) : (dd.x > 0.0 ? 1 : 3);
                     col = F(11 + cs);
                 } else if (uMode == 3) {
                     a = blurredEdge(sdRR(vLocal, uRect, uRx, uRy), uSigma);
