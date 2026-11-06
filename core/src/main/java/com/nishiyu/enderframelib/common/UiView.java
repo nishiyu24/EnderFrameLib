@@ -447,7 +447,33 @@ public class UiView implements AutoCloseable {
 
     public void setLayoutRoot(LayoutBox layoutRoot) {
         this.layoutRoot = layoutRoot;
+        nodeBoxIndex = null; // 箱の木を作り直したかもしれない。索引は次に要るときに作り直す
         publishLayoutToDom();
+    }
+
+    /**
+     * DOM の節ごとの箱（匿名でない）の索引。文字の局所パッチが変わった節の箱を木全体から探さずに引く。
+     * 箱の木を作る経路（{@link #setLayoutRoot}）で捨てる。文字の局所パッチと、箱の木の形を変えない再レイアウトは捨てない。
+     * 表の中の箱は値が null（局所パッチの対象にしない印）。
+     */
+    private Map<HtmlNode, LayoutBox> nodeBoxIndex;
+
+    private Map<HtmlNode, LayoutBox> nodeBoxIndex() {
+        Map<HtmlNode, LayoutBox> index = nodeBoxIndex;
+        if (index == null) {
+            index = new IdentityHashMap<>();
+            indexBoxes(layoutRoot, index, false);
+            nodeBoxIndex = index;
+        }
+        return index;
+    }
+
+    private static void indexBoxes(LayoutBox box, Map<HtmlNode, LayoutBox> out, boolean inTable) {
+        boolean table = inTable || LayoutBox.isTableBox(box);
+        for (LayoutBox child : box.children) {
+            if (child.node != null && !child.isAnonymous) out.put(child.node, table ? null : child);
+            indexBoxes(child, out, table);
+        }
     }
 
     /** CSSOM View が読む箱の木を差し替え、ResizeObserver / IntersectionObserver へ知らせる。 */
@@ -901,6 +927,7 @@ public class UiView implements AutoCloseable {
 
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
     private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes) {
+        nodeBoxIndex = null; // 再スタイルは箱を作り替えることがある（疑似要素・生成された箱）。索引は保守側に捨てる
         UiDocumentCompiler parser = new UiDocumentCompiler();
         RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
                 layoutRoot, document,
@@ -1047,7 +1074,11 @@ public class UiView implements AutoCloseable {
             wanted.add(n);
         }
         Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
-        collectTextBoxes(layoutRoot, wanted, found, false);
+        Map<HtmlNode, LayoutBox> index = nodeBoxIndex();
+        for (HtmlNode n : wanted) {
+            LayoutBox b = index.get(n);
+            if (b != null || index.containsKey(n)) found.put(n, b);
+        }
         if (found.size() != wanted.size() || found.containsValue(null)) return false;
         for (LayoutBox box : found.values()) {
             // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
@@ -1060,7 +1091,7 @@ public class UiView implements AutoCloseable {
         RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
                 found.values());
         for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
-        setLayoutRoot(layoutRoot);
+        publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
         long layoutDone = System.nanoTime();
         useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal;
         List<DisplayItem> elements;
@@ -1070,9 +1101,10 @@ public class UiView implements AutoCloseable {
             useChangeStamps = false;
         }
         if (elements == null) elements = new ArrayList<>();
-        lastBreakdown = "text-patch nodes=" + found.size() + " layout=" + (layoutDone - startedAt) / 1_000_000
-                + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+        long paintDone = System.nanoTime();
         publishBuilt(elements);
+        lastBreakdown = "text-patch nodes=" + found.size() + " layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -1110,14 +1142,20 @@ public class UiView implements AutoCloseable {
             useChangeStamps = false;
         }
         if (elements == null) elements = new ArrayList<>();
-        lastBreakdown = "inplace-relayout layout=" + (layoutDone - startedAt) / 1_000_000
-                + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+        long paintDone = System.nanoTime();
         publishBuilt(elements);
+        lastBreakdown = "inplace-relayout layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
         INPLACE_RELAYOUT_HITS.incrementAndGet();
         return true;
+    }
+
+    /** 診断表示用: ナノ秒の差をミリ秒（小数 3 桁）で。 */
+    private static String ms(long fromNanos, long toNanos) {
+        return String.format(Locale.ROOT, "%.3f", (toNanos - fromNanos) / 1_000_000.0);
     }
 
     /** 文字の箱の親が、局所パッチしてよい要素か（文字が箱の寸法以外の意味を持つ要素を除く）。 */
@@ -1663,6 +1701,7 @@ public class UiView implements AutoCloseable {
         }
         document = null;
         layoutRoot = null;
+        nodeBoxIndex = null;
         env.clear();
         interactionState.clear();
         invalidationLevel = InvalidationLevel.NONE;

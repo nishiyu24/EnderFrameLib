@@ -83,6 +83,23 @@ public class DisplayListBuilder {
         this.order = new PaintOrder(rootW, rootH, scrollState, fragIds, this::drawBoxSelf,
                 box -> PaintOrder.factsOf(box.style).hasAnimation()
                         && (anim.parseAnimationDef(box.style, box.w, box.h, 0, 0).animatedChannels() & AnimationSpec.CH_OPACITY) != 0);
+        this.order.configureChunks(new PaintOrder.MemoKeeper() {
+            @Override
+            public void owned(LayoutBox box, PaintOrder.Chunk chunk) {
+                BoxMemo m = boxMemo.get(box);
+                if (m != null) m.chunk = chunk;
+            }
+        }, DisplayListBuilder::memoizable);
+    }
+
+    /** 切り分け用: false なら部分木の保持（{@link PaintOrder.Chunk}）を使わない。結果は同じでなければならない。 */
+    public static void setChunksEnabled(boolean enabled) {
+        PaintOrder.chunksEnabled = enabled;
+    }
+
+    /** 診断: 部分木の保持を再利用した回数の累計。 */
+    public static long chunksReplayed() {
+        return PaintOrder.STAT_CHUNK_REPLAYED.sum();
     }
 
     /** 箱を描く順（スタッキングコンテキストの順）に並べた箱。 */
@@ -105,7 +122,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
     buildEpoch = LayoutBox.paintEpoch();
     translating = cullOffscreen && TRANSLATE_ENABLED;
     translatedHits = 0;
-    List<DisplayItem> elements = new ArrayList<>();
+    // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
+    List<DisplayItem> elements = new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
         canvasBackgroundSource = null;
         decor.setDevicePixelRatio(box.devicePixelRatio);
 
@@ -128,6 +146,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         java.util.ArrayDeque<int[]> openLayers = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<LayerSpec> openSpecs = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<LayoutBox> openBoxes = new java.util.ArrayDeque<>();
+        // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
+        order.beginRender(buildSerial, buildEpoch, generation, !translating, useChangeStamps && !translating);
         for (RenderTask task : order.paintTasks(box)) {
             if (task.layerStart() != null) {
                 openLayers.push(new int[]{elements.size()});
@@ -165,8 +185,26 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             task.drawAction().accept(elements);
         }
         // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
-        boxMemo.values().removeIf(m -> m.generation != generation);
+        // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
+        if (generation % PaintOrder.SWEEP_EVERY == 0) {
+            boxMemo.values().removeIf(m -> m.generation != generation && (m.chunk == null || m.chunk.generation != generation));
+        }
+        order.endRender();
+        lastElementCount = elements.size();
         return elements;
+    }
+
+    /** 直近の描画で出した項目の数（次の描画の出力リストの初期容量に使う）。 */
+    private int lastElementCount;
+
+    /** 記憶の項目を出力へ足す。数個なら直接足す（{@code addAll} は毎回 {@code toArray} で写しを作る）。 */
+    static void appendItems(List<DisplayItem> elements, List<DisplayItem> items) {
+        int n = items.size();
+        if (n > 8) {
+            elements.addAll(items);
+        } else {
+            for (int i = 0; i < n; i++) elements.add(items.get(i));
+        }
     }
 
     private static final float CULL_MARGIN = 256f;
@@ -284,6 +322,8 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
         LayoutBox parentBox;
         /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
         boolean translatable;
+        /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
+        PaintOrder.Chunk chunk;
     }
 
     private final java.util.IdentityHashMap<LayoutBox, BoxMemo> boxMemo = new java.util.IdentityHashMap<>();
@@ -340,7 +380,11 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             }
         }
         if (box.collapsedBorders != null || box.display == null) return false;
-        return !String.valueOf(box.display.inner()).startsWith("TABLE");
+        // 表の内側の種類（TABLE / TABLE_*）は記憶しない。名前の文字列を作らず enum で判定する（箱ごとに呼ばれる）
+        return switch (box.display.inner()) {
+            case FLOW, FLOW_ROOT, FLEX, GRID, NONE -> true;
+            case TABLE, TABLE_ROW_GROUP, TABLE_ROW, TABLE_CELL, TABLE_CAPTION, TABLE_COLUMN -> false;
+        };
     }
 
     /**
@@ -578,7 +622,7 @@ public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
             STAT_EXACT.increment();
             m.generation = generation;
             m.epoch = buildEpoch;
-            elements.addAll(m.items);
+            appendItems(elements, m.items);
             return;
         }
         if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）

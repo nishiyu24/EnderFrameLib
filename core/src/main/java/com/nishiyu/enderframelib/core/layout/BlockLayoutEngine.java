@@ -369,7 +369,7 @@ public class BlockLayoutEngine extends LayoutEngine {
      * 結果は箱の木の形（{@link LayoutBox#shapeEpoch()}）が変わらない間は使い回す。
      * 以前は 1 つのブロックを置くたびに子孫を再帰で走査し、1,500 行の文字 1 か所の更新で CPU の約 15% を占めていた。
      */
-    private static boolean containsFloats(LayoutBox box) {
+    static boolean containsFloats(LayoutBox box) {
         if (!floatMemoEnabled) return scanFloats(box);
         int epoch = LayoutBox.shapeEpoch();
         if (box.floatsMemoEpoch == epoch) {

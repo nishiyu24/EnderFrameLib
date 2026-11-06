@@ -52,6 +52,26 @@ final class PaintOrder {
      * 絶対配置の箱は木の親ではなく包含ブロックの値を引く。
      */
     private final Map<LayoutBox, ClipRect> contentClips = new IdentityHashMap<>();
+    /**
+     * 値として等しいクリップを同じ実体にそろえる表。箱ごとの記憶（{@code DisplayListBuilder} の BoxMemo）はクリップを覚えていて、
+     * 次の描画で同じか比べる。クリップする箱は描画のたびに新しい {@link ClipRect} を作るので、そろえないと
+     * 子の箱ごとに連鎖の中身まで比べる（5000 行のリストで描画の 1 割強）。そろえておけば同一性（{@code ==}）で済む。
+     * 描画をまたいで持ち、増えすぎたら捨てる（捨てても結果は変わらず、次の比較が 1 度深くなるだけ）。
+     */
+    private final Map<ClipRect, ClipRect> canonicalClips = new java.util.HashMap<>();
+    private static final int CANONICAL_CLIPS_MAX = 1024;
+
+    private ClipRect canonical(ClipRect clip) {
+        if (clip == null) return null;
+        ClipRect known = canonicalClips.putIfAbsent(clip, clip);
+        if (known != null) return known;
+        if (canonicalClips.size() > CANONICAL_CLIPS_MAX) {
+            canonicalClips.clear();
+            canonicalClips.put(clip, clip);
+        }
+        return clip;
+    }
+
     /** その箱の {@code animation} が {@code opacity} を動かすか（静的な値は 1 でも、動く間はグループとして合成する）。 */
     private final Predicate<LayoutBox> animatesOpacity;
     /** 子孫に {@code mix-blend-mode} を持つ箱がある（スタッキングコンテキストを越えない範囲で）か。 */
@@ -75,6 +95,221 @@ final class PaintOrder {
 
     private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
     private final List<ScrollContent> scrollContents = new ArrayList<>();
+
+    // ==========================================
+    // 部分木の保持（チャンク）
+    // ==========================================
+    //
+    // 描画は毎回、全ての箱を分類して描画順のタスクを作り直す。1 か所の文字を変えただけでも、5000 行のリストなら 5000 行ぶんの
+    // 分類木・タスク・ラムダを作り、箱ごとの記憶（BoxMemo）と突き合わせる（局所更新の約 6 割）。
+    // そこで、小さくて「純粋なフロー」の部分木（スタッキングコンテキスト・位置指定・float・スクロール・アニメーション・表・入力部品を
+    // 含まない）の項目を、層（blocks / inlines）ごとに保持する。部分木のどの箱にも変更印が付いておらず、親・クリップ・親の id・
+    // 箱の数が同じなら、分類も箱の照合も飛ばして、保持した項目をそのまま出す。
+    // 描画順の決まり方は変えない: 部分木の項目は、分類したときと同じ層の同じ位置に出る。
+
+    /** 保持した部分木の項目。{@code blocks} と {@code inlines} は、分類したときに入った層ごとの、描いた順の項目。 */
+    static final class Chunk {
+        final LayoutBox parentBox;
+        final ClipRect clip;
+        final String parentId;
+        final long epoch;
+        final int boxCount;
+        final int interactiveCount;
+        final List<DisplayItem> blockItems = new ArrayList<>();
+        final List<DisplayItem> inlineItems = new ArrayList<>();
+        int created;
+        int executed;
+        int generation;
+        private PaintNode blockNode, inlineNode;
+
+        Chunk(LayoutBox parentBox, ClipRect clip, String parentId, long epoch, int boxCount, int interactiveCount) {
+            this.parentBox = parentBox;
+            this.clip = clip;
+            this.parentId = parentId;
+            this.epoch = epoch;
+            this.boxCount = boxCount;
+            this.interactiveCount = interactiveCount;
+        }
+
+        /** 記録中のタスクが全部走り終えたか（途中で止まった記録は使わない）。 */
+        boolean complete() {
+            return created == executed;
+        }
+
+        PaintNode blockNode() {
+            if (blockNode == null) blockNode = replayNode(blockItems);
+            return blockNode;
+        }
+
+        PaintNode inlineNode() {
+            if (inlineNode == null) inlineNode = replayNode(inlineItems);
+            return inlineNode;
+        }
+
+        private static PaintNode replayNode(List<DisplayItem> items) {
+            return new PaintNode(new RenderTask(null, elements -> DisplayListBuilder.appendItems(elements, items)), false, 0, null);
+        }
+    }
+
+    /** 描画側が持つ箱の記憶との橋渡し。 */
+    interface MemoKeeper {
+        /**
+         * 箱を記録中の部分木の中で描いた直後に呼ぶ。その箱の記憶を {@code chunk} のものとして印を付ける
+         * （記憶の生死は、部分木が再利用されている間は部分木の世代で決まる。箱ごとに世代を書き直さずに済む）。
+         */
+        void owned(LayoutBox box, Chunk chunk);
+    }
+
+    /** 記憶と部分木の掃除は、毎回ではなくこの回数に 1 度（木から消えた箱の分が少し残るだけで、結果には響かない）。 */
+    static final int SWEEP_EVERY = 8;
+
+    /** 切り分け用: false なら部分木の保持を使わない（結果は同じでなければならない。{@code -Denderframe.paint.nochunks=true} でも切れる）。 */
+    static volatile boolean chunksEnabled = !Boolean.getBoolean("enderframe.paint.nochunks");
+    /** 1 つの部分木に含める箱の上限。これを超える部分木は保持せず、子ごとに判断する。 */
+    static final int CHUNK_MAX_BOXES = 128;
+    /** 診断: 部分木を再利用した回数・新しく記録した回数の累計。 */
+    static final java.util.concurrent.atomic.LongAdder STAT_CHUNK_REPLAYED = new java.util.concurrent.atomic.LongAdder(),
+            STAT_CHUNK_RECORDED = new java.util.concurrent.atomic.LongAdder();
+
+    private final Map<LayoutBox, Chunk> chunks = new IdentityHashMap<>();
+    private MemoKeeper memoKeeper;
+    private Predicate<LayoutBox> memoizable = b -> false;
+    private boolean chunksOn, replayAllowed;
+    private int renderSerial, renderGeneration;
+    private long renderEpoch;
+    private Chunk recording;
+    private int scanCount, scanInteractive;
+    private long scanMaxStamp;
+
+    void configureChunks(MemoKeeper keeper, Predicate<LayoutBox> memoizable) {
+        this.memoKeeper = keeper;
+        this.memoizable = memoizable;
+    }
+
+    /**
+     * 次の {@link #paintTasks} で部分木の保持を使うか。{@code enabled} は、描く箱が全件そろう描画のとき（スクロールの平行移動や
+     * 画面外の省略では、項目が欠けたり動いたりするので使わない）。{@code replay} は、変更印で「変わっていない」と言ってよい
+     * 描画のとき（属性の変更は印に出ないので、呼び出し側が有効にする）。
+     */
+    void beginRender(int serial, long epoch, int generation, boolean enabled, boolean replay) {
+        chunksOn = chunksEnabled && enabled;
+        replayAllowed = replay;
+        renderSerial = serial;
+        renderEpoch = epoch;
+        renderGeneration = generation;
+        recording = null;
+    }
+
+    /** 描き終えた。木から消えた箱の部分木は捨てる。 */
+    void endRender() {
+        chunksOn = false;
+        recording = null;
+        if (!chunks.isEmpty() && renderGeneration % SWEEP_EVERY == 0) {
+            int g = renderGeneration;
+            chunks.values().removeIf(c -> c.generation != g);
+        }
+    }
+
+    /**
+     * 部分木 {@code box} の走査。箱の数・変更印の最大値・対話ルールを持つ箱の数を数える。箱が多すぎるか、
+     * {@code full} のとき保持できない箱があれば false。再利用の判定は {@code full=false}（保持できるかは記録時に確かめてある）。
+     */
+    private boolean scan(LayoutBox b, boolean full) {
+        if (++scanCount > CHUNK_MAX_BOXES) return false;
+        if (full && !chunkable(b)) return false;
+        if (b.paintStamp > scanMaxStamp) scanMaxStamp = b.paintStamp;
+        if (b.hasInteractiveRules) scanInteractive++;
+        if (b.display == null || b.display.isNone()) return true;
+        List<LayoutBox> kids = b.children;
+        for (int i = 0, n = kids.size(); i < n; i++) {
+            if (!scan(kids.get(i), full)) return false;
+        }
+        return true;
+    }
+
+    /** 純粋なフローの箱か（保持した項目が、箱の入力だけで決まり、描画順の外へ出ていかない）。 */
+    private boolean chunkable(LayoutBox b) {
+        if (b.display == null || b.style == null || b.node.tag == null) return false;
+        switch (b.node.tag) {
+            case "html", "body", "root", "option", "optgroup", "select", "textarea", "input" -> {
+                return false;
+            }
+            default -> { }
+        }
+        if (!memoizable.test(b)) return false;
+        if (b.display.isNone()) return true;
+        StyleFacts f = factsOf(b.style);
+        if (f.displayNone()) return true;
+        if (f.scrollbars() || f.hasAnimation() || !"visible".equals(f.overflowX()) || !"visible".equals(f.overflowY())) return false;
+        if (createsStackingContext(b) || isPositioned(b) || BlockLayoutEngine.isFloating(b) || isAtomicInline(b)) return false;
+        return !b.node.attrs.containsKey("data-pan-zoom");
+    }
+
+    /**
+     * 部分木を保持した項目で出す（できれば true）。保持が使えなければ、保持できる部分木なら記録しながら通常の分類をして true、
+     * 保持できない部分木は false（呼び出し側が通常の分類をする）。
+     */
+    private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
+        Chunk c = chunks.get(box);
+        if (c != null && c.complete() && replayAllowed) {
+            scanCount = 0;
+            scanMaxStamp = 0;
+            scanInteractive = 0;
+            if (scan(box, false) && c.parentBox == box.parent && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
+                    && scanCount == c.boxCount && scanInteractive == c.interactiveCount
+                    && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
+                if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId);
+                c.generation = renderGeneration;
+                if (!c.blockItems.isEmpty()) local.blocks.add(c.blockNode());
+                if (!c.inlineItems.isEmpty()) local.inlines.add(c.inlineNode());
+                STAT_CHUNK_REPLAYED.increment();
+                return true;
+            }
+        }
+        scanCount = 0;
+        scanMaxStamp = 0;
+        scanInteractive = 0;
+        if (!scan(box, true)) return false;
+        Chunk fresh = new Chunk(box.parent, clip, parentId, renderEpoch, scanCount, scanInteractive);
+        fresh.generation = renderGeneration;
+        chunks.put(box, fresh);
+        recording = fresh;
+        try {
+            classifyPlain(box, clip, parentId, sc, local);
+        } finally {
+            recording = null;
+        }
+        STAT_CHUNK_RECORDED.increment();
+        return true;
+    }
+
+    /** 検証: 保持した項目が、通常の分類で作り直した項目と（層ごとに）同じであること。 */
+    private void verifyChunk(Chunk c, LayoutBox box, ClipRect clip, String parentId) {
+        boolean was = chunksOn;
+        chunksOn = false;
+        PaintLayers tl = new PaintLayers();
+        List<DisplayItem> blocks = new ArrayList<>(), inlines = new ArrayList<>();
+        try {
+            classifyPlain(box, clip, parentId, tl, tl);
+        } finally {
+            chunksOn = was;
+        }
+        if (!tl.negative.isEmpty() || !tl.floats.isEmpty() || !tl.positioned.isEmpty() || !tl.positive.isEmpty() || !tl.after.isEmpty()) {
+            throw new AssertionError("保持した部分木が純粋なフローではない: " + box.node.tag + "#" + box.node.getId());
+        }
+        runTasks(tl.blocks, blocks);
+        runTasks(tl.inlines, inlines);
+        if (!blocks.equals(c.blockItems) || !inlines.equals(c.inlineItems)) {
+            throw new AssertionError("保持した部分木の項目が作り直した項目と違う: " + box.node.tag + "#" + box.node.getId()
+                    + " blocks " + c.blockItems.size() + "/" + blocks.size() + " inlines " + c.inlineItems.size() + "/" + inlines.size());
+        }
+    }
+
+    private static void runTasks(List<PaintNode> nodes, List<DisplayItem> out) {
+        List<RenderTask> tasks = new ArrayList<>();
+        for (PaintNode n : nodes) emit(n, tasks);
+        for (RenderTask t : tasks) t.drawAction().accept(out);
+    }
 
     /** 箱が中身の節を持つスクロールコンテナなら、その記録。 */
     ScrollContent scrollContentOf(LayoutBox box) {
@@ -208,7 +443,9 @@ final class PaintOrder {
         String tag = box.node.tag;
         if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) return;
 
-        ClipRect childClip = computeChildClipRect(box, clip);
+        ClipRect computedClip = computeChildClipRect(box, clip);
+        // 切らない箱は親のクリップをそのまま返す（すでにそろえてある）。新しく作った分だけそろえる
+        ClipRect childClip = computedClip == clip ? clip : canonical(computedClip);
         contentClips.put(box, childClip);
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
         String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.getId();
@@ -251,7 +488,13 @@ final class PaintOrder {
     void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
         if (box.display.isNone() || factsOf(box.style).displayNone()) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
+        // 記録の途中（部分木の中）では、中の箱を別に保持しない
+        if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local)) return;
+        classifyPlain(box, clip, parentId, sc, local);
+    }
 
+    /** {@link #classify} の本体（部分木の保持を試したあとの、通常の分類）。 */
+    private void classifyPlain(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
         RenderTask self = selfTask(box, clip, parentId);
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
@@ -306,7 +549,19 @@ final class PaintOrder {
 
     RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId) {
         if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
-        return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId));
+        Chunk rec = recording;
+        if (rec == null) return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId));
+        // 部分木を記録している間は、描いた項目を（入る層ごとに）保持へ写す。保持できる部分木の箱は全て通常のブロック／インラインの葉
+        boolean inline = box.display.isInlineLevel();
+        rec.created++;
+        return new RenderTask(box, elements -> {
+            int start = elements.size();
+            painter.draw(elements, box, clip, parentId);
+            List<DisplayItem> dst = inline ? rec.inlineItems : rec.blockItems;
+            for (int i = start, n = elements.size(); i < n; i++) dst.add(elements.get(i));
+            if (memoKeeper != null) memoKeeper.owned(box, rec);
+            rec.executed++;
+        });
     }
 
     static boolean isPositioned(LayoutBox box) {

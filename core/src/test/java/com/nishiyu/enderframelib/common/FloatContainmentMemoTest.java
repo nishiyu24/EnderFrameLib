@@ -83,7 +83,8 @@ public class FloatContainmentMemoTest {
         for (int i = 0; i < 50; i++) { hp.updateTextContent("HP " + i); v.ui().flushInvalidation(); }
         long scans = BlockLayoutEngine.floatMemoScans - scans0, hits = BlockLayoutEngine.floatMemoHits - hits0;
         System.out.println("[float-memo] 300 rows, 50 text patches: hits=" + hits + " scans=" + scans);
-        assertTrue(hits > 50 * 100, "毎フレーム多数の箱でメモが使われる: " + hits);
+        // メモを引く回数は、親が子を全部置き直す量に比例する。子の外寸が変わらない更新を親が吸収する（cutoff）ようになり、
+        // 引く回数自体が減った。意図は「走査せずにメモで済む」ことなので、走査の少なさだけを固定する
         assertTrue(scans < 50 * 10, "走査はほとんど起きない: " + scans);
     }
 
