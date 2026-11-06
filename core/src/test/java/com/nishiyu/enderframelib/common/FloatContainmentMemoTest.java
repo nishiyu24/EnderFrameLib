@@ -109,7 +109,7 @@ public class FloatContainmentMemoTest {
     }
 
     /**
-     * 本物の 1,500 行（HTML は {@code HtmlParser.MAX_NODES = 5000} で打ち切られるため DOM API で作る。各要素に一意の ID）。
+     * 本物の 1,500 行（HTML は {@code ParseLimits.DEFAULT} 内でも HTML 経由だと遅いため DOM API で作る。各要素に一意の ID）。
      * 前後比較（CPU 時間、1 フレームごとに交互。表示するだけ）。
      */
     @Test
