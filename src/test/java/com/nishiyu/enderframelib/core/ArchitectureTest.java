@@ -41,7 +41,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * core/ が Minecraft / NeoForge / 上位層に依存しない純 Java のリーフであることを守る番人。
  * これが無いと、次に追加されたコードで MC への import がすぐ戻ってくる。
  *
- * <p>あわせて STRUCTURE_PLAN.md の T0 で決めた管理指標（M1〜M9）を上限値として持つ。
+ * <p>あわせて STRUCTURE_PLAN.md の T0 で決めた管理指標（M1〜M8）を上限値として持つ。
  * ここに書いた数は「今の作業ツリーの実測値」で、フェーズを進めて数を減らしたら
  * 同じコミットで上限も下げる。増えた場合は CI で落ちる。</p>
  */
@@ -69,62 +69,6 @@ public class ArchitectureTest {
     private static final int M7_MAX_CROSS_PACKAGE_NESTED_TYPES = 0; // 2026-11-01: STANDALONE_RENDERING Step 2 で ClipChainPart・ShadowShape・RasterImageEntry・BorderDashPattern・ImagePlacement・AnimatedValues・GlyphBitmap をトップレベルへ出して 0 に戻した
     /** M8: CSS 値を文字列で分割する自前の関数（2026-10-20 時点: 8）。 */
     private static final int M8_MAX_CSS_SPLIT_HELPERS = 9; // 2026-11-03: コア分離（d98249e）以降の実測は 9（CssTokenizer・splitTop・splitAlternatives・splitByCombinators・splitTopLevelTokens・splitArgs・splitTrackList・split・splitTopLevelWhitespace）。増やしたのではなく数え漏れの追随。CssSyntax への統合は未了
-    /**
-     * M9: トップレベルのファイル数（参考値。2026-10-21 時点: 127。SessionInput・EnderScreenHost を追加）。
-     * 2026-10-22: システムの書体で文字を測り描く仕組みとして +5（core/text/font の SystemFonts・LoadedFace・
-     * OutlineFontFace・KerningTable と client/renderer の OutlineTextRenderer）。一覧・照合・総称ファミリ・解決は
-     * SystemFonts に、FreeType の扱いは LoadedFace にまとめ、パッケージをまたいで使う型だけをトップレベルにした。
-     */
-    // 2026-10-23: Headless State フェーズ H1（Headless Server State）の導入に伴い +7。
-    // api/state/UIState, server/state/UIStateImpl, server/state/UIStateManager, StateNbtConverter（2026-10-24 に network/ へ移動）,
-    // network/OpenUiS2CPacket, network/StateDeltaS2CPacket, network/UiActionC2SPacket を追加。
-    // 2026-10-24: Headless State フェーズ H2（Headless State Client Template）の導入に伴い +1。
-    // client/template/ClientTemplateManager を追加。
-    // 2026-10-24: Headless State フェーズ H3（機械向け高水準 API とコンテナ連携）の導入に伴い +1。
-    // client/template/ParsedTemplate を追加（M7 準拠のためトップレベルへ切り出し）。
-    // 2026-10-24: Headless State フェーズ H4（後方互換性アダプタと古い二重経路の整理）の導入に伴い +2。
-    // server/state/UIStateSessionAdapter, server/state/WebSessionUIStateAdapter を追加。
-    // 2026-10-24: 表面描画の整理（SurfaceGeometry / SurfaceHitResolver）と、外部 MOD 向けひな形 API
-    // （api/template の基底クラス、ホログラム、アイテム面の設定）の追加に伴い +12。
-    // 2026-10-25: API の整理（Ui / ClientSession / Surfaces / SurfaceStyle / SurfaceRenderer / Hologram の追加、
-    // EnderScreenClient / EnderScreenItemClient / 互換アダプタ 2 つの削除）で差し引き +1。
-    // 2026-10-25: テンプレートで動く世界内の面（server/SurfaceViewers）の追加で +1。
-    // 2026-10-25: ホログラムの入力対応で SurfaceHit を client/ のトップレベルに出した（M7 準拠）ので +1。
-    // 2026-10-25: Phase 1 / T8 でコマンドクラスから server/HologramRegistry（ホログラム状態）を切り出したので +1。
-    // 2026-10-25: Phase 2 の CSSOM View で +7（api/dom の DOMRect・MediaQueryList・ResizeObserver・IntersectionObserver、
-    // core/dom の LayoutQuery・node/ComputedStyleDeclaration、common/BoxLayoutQuery）。LayoutObserver は Document の入れ子型。
-    // 2026-10-25: Phase 2 の StyleAnimator（再スタイルで動かすトランジション・@keyframes）で +4（core/css の StyleAnimator・
-    // ValueInterpolator・AnimationParser と、core/paint/model の AnimationTiming）。AnimationSpec の入れ子型を core/css から
-    // 参照しない（M7）よう、時間の指定と進行度は paint/model に、CSS の読み取りは core/css に分けた。
-    // 2026-10-26: Phase 3 の RenderKeys 撤去で、型付きの付帯情報 RenderHints と ShaderGradient を追加（RenderKeys 削除で差し引き +1）。
-    // ShaderGradient は core/paint の Gradients と client/renderer の描画の両方が使うのでトップレベル（M7）。
-    // 2026-10-26: Phase 3 の transform の宣言順合成で core/paint/Transforms を追加（+1）。
-    // 2026-10-26: Phase 3 で 1,800 行の DisplayListBuilder と 1,700 行の DisplayItemDrawer を責務ごとに分けた（+9）。
-    // DisplayListBuilder: PaintSupport・BoxAnimation・BoxDecorationPainter・ControlPainter・PaintOrder・ItemProps（+6）。
-    // DisplayItemDrawer: BackgroundRenderer・ControlElementRenderer・MediaElementRenderer・TextElementRenderer（+4。シェーダーの記述の整理で -1）。
-    // 2026-10-26: Phase 4 で +11。フォント: core/text/font の AtlasCache（置き場の破棄）・AtlasSizing（サイズの量子化）・GlyphKey（字形の番号）・
-    // WebFonts（@font-face の登録簿）と core/css の GlyphUnits（ch / ex の源）。国際化: core/text の LineBreaker（UAX #14）・BidiText（UAX #9）。
-    // 選択: api/dom の Range・Selection（公開 API）と core/dom/node の HtmlRange・HtmlSelection。
-    // 2026-10-26: Phase 3b の前提で +2（core/text/font の AtlasFootprint・core/paint/model の VramBudget）。
-    // 2026-10-26: Phase 3b で +7。core/paint の BlendMode・BorderPath（角丸に沿う破線）・ClipShape（clip-path / mask）・FilterOp、
-    // core/paint/model の LayerSpec、client/renderer の LayerCompositor・LayerPool（FBO 合成）。
-    // 2026-10-26: Phase 5 の R8 で +23。core/raster（Canvas 2D のソフトウェア描画: CanvasRenderingContext2D・Path2D・Stroker・Rasterizer・
-    // Pixmap・Paint・CanvasGradient・CanvasPattern・CompositeOp・Matrix2D・ImageData・TextMetrics・SvgPathData と置き場の RasterImageStore）、
-    // core/raster/svg（SvgRenderer・SvgImage・SvgSize）、core/paint の ImageSources・ImageChoice（srcset / image-set）・ObjectFit、
-    // client/renderer の RasterTextures・SvgSources・RasterPainting（SVG・canvas の画素をテクスチャにして置く）。
-    // 2026-10-26: Phase 5 の R9 で +3（core/layout の MulticolLayout、core/css の CounterStyle・CounterStyles）。
-    // 2026-10-26: P0 セキュリティ修正で client/renderer の SafeHttpClient を追加（+1）。DNS 固定接続・
-    // リダイレクト再検証・サイズ上限を WebMediaManager から分離し、取得経路を 1 か所にまとめるためトップレベルに置く。
-    // 2026-10-26: 動画のループバック・リレー VideoStreamServer を追加（+1）。ネイティブへ外部 URL を渡さず、
-    // Range 付きのストリームを中継するための独立コンポーネント。
-    // 2026-10-26: yt-dlp の自動配置 YtDlpProvisioner を追加（+1）。公式 GitHub リリースの取得・
-    // SHA-256 検証・原子的配置を WebMediaManager から分離し、テスト可能にするため。
-    // 2026-10-26: Phase 2（レイヤー FBO の局所化）で core/paint/model に LayerBounds を追加（+1）。外接矩形・滲み・FBO の丸めを
-    // GL を知らない純粋な計算にして、LayerCompositor から分離しテストできるようにするため。
-    // 2026-10-27: クリップを祖先ごとの連鎖にする修正で client/renderer の ClipResolver を追加（+1）。連鎖を項目の空間へ直す
-    // 純粋な行列計算で、DisplayItemDrawer（既に最大級）へ詰め込まずに単体でテストするため。
-    // 2026-10-30: content/（ScreenBlockEntity ほか）と server/ServerHologramManager の追加で +3。
-    private static final int M9_MAX_TOP_LEVEL_FILES = 349; // 2026-11-04: 実測は 346 で既に超えていた（D-2 の BorderImage・TextureRef・ItemKeys、D-3 の AlphaMask、D-1 の BatchDevice・Keys・PngEncoder ほか、機能追加に伴う新設）。さらに AlphaMask.Provider を M7 準拠で AlphaMaskProvider としてトップレベルへ出し（+1）、画像復号の AWT 分離で ImageDecoder・AwtImageDecoder を新設（+2）。実測 349 に合わせた。// 2026-11-03: P1-1 で PaintSceneDriver（走査）・GpuBatchPacker・AtlasPacker（GPU 向けの詰め込み・アトラス配置）を API 非依存の部品として新設（+3。2 つの描画バックエンドから切り出した）。それまでの 330 は、コアの分離（Step 5-x）が積んだ +2 で既に超えていた。// 2026-11-02: Step 5-6 ③ で FontSources をコアへ新設（+1）。// 2026-11-02: Step 5-6 ② で NativeVideoApi・VideoPlayer をコアへ新設（+2）。// 2026-11-02: Step 5-6 ② で GifAnimation をコアへ新設（+1）。// 2026-11-02: Step 5-6 B で FontFaceRules・MediaUrls・YtDlpResolver を新設し、SvgSources・EnderConfigManager をコアへ移した（+3）。// 2026-11-02: Step 5-6 A の残りで RoundedRectGeometry・LocalEnvironment をコアへ追加（+2）。// 2026-11-02: Step 5-6 で UiFocus・TextEditing・SelectPopup をコアへ追加（+3）。// // 2026-11-02: Step 5-3 で UiTimers・UiStateStore・UiPubSub・CanvasSurface をコアへ分離（+4）。// 2026-11-02: Step 5-2 で SessionInput の純 Java 部分を UiInput としてコアへ分離（+1）。// // 2026-11-02: Step 5-1 で SessionContext の純 Java 部分を UiView としてコアへ分離（+1）。// // 2026-11-02: StandardDefaultActions.Context を複数の層から使うため DefaultActionContext としてトップレベルへ出した（+1）。// 2026-11-02: 単体で動かす StandaloneView・StandaloneViewer・HttpImageFetcher を追加（+3）。// 2026-11-02: 画像・動画をコアに渡す McMediaImages を追加（+1）。// 2026-11-02: 描画コアを Minecraft の面に貼る CoreGpuSurface を追加（+1）。// 2026-11-01: グループの filter / mask の CPU 版 LayerFx を追加（+1。ぼかし・影・マスクの画素計算で SoftwareRenderBackend から切り出した）。2026-11-01: Step 3 で RenderBackend・GpuSink・LwjglGlRenderBackend を追加（+3）。2026-11-01: Step 2 でソフトウェア描画バックエンド（SoftwareRenderBackend・SoftShapes・ImageProvider・SoftwareRendering・ShaderGradientEmulator）を追加（+5）、複数パッケージから使う入れ子型 7 つをトップレベルへ出した（+7）
 
     /** M1 拡張: シングルトンの static フィールドに持つ画面・セッション単位のコールバック（Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
@@ -251,7 +195,7 @@ public class ArchitectureTest {
     }
 
     // ------------------------------------------------------------------
-    // T0 のラチェット（M1〜M9）
+    // T0 のラチェット（M1〜M8）
     // ------------------------------------------------------------------
 
     @Test
@@ -491,13 +435,6 @@ public class ArchitectureTest {
         }
         assertAtMost("M8 CSS 値を文字列で分割する関数", M8_MAX_CSS_SPLIT_HELPERS, helpers,
                 "CssSyntax のコンポーネント値に寄せてください（STRUCTURE_PLAN S10）。");
-    }
-
-    @Test
-    public void testM9TopLevelFileCountDoesNotGrow() throws IOException {
-        int count = javaFiles(MAIN).size();
-        assertMetricAtMost("M9 トップレベルのファイル数", M9_MAX_TOP_LEVEL_FILES, count,
-                "ファイルを増やす前に、責務を統合できないか検討してください（STRUCTURE_PLAN S8）。");
     }
 
     // ------------------------------------------------------------------

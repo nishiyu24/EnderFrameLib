@@ -11,7 +11,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 同じ領域の先行 MOD である **ApricityUI**（外部リファレンス）との比較から 1 から練り直した。
 旧計画の各フェーズで何をしたかは git の履歴に残っている。この文書では「出発点」として要約するだけにする。
 
-- システムの全体像・層の規約・管理指標（M1〜M9）: [ARCHITECTURE.md](ARCHITECTURE.md)
+- システムの全体像・層の規約・管理指標（M1〜M8）: [ARCHITECTURE.md](ARCHITECTURE.md)
 - 性能の基準値と実測: [BENCHMARK.md](BENCHMARK.md)
 - ブラウザとの差異の台帳: [FIDELITY.md](FIDELITY.md)
 - 規約（コメントの種類、ゴールデン更新、3 点セット）: [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -33,7 +33,7 @@ EnderFrameLib は NeoForge 1.21.1 向けに、HTML トークナイズ → DOM �
 | R1 | ライブ DOM | 完了（残: バインディング・入力同期での `attrs.put` 直書き撤去 → T8） |
 | R2 | イベントとフォーム | ほぼ完了（残: IME の composition。実機での観測は H の残と一緒に 2026-10-24 に済） |
 | R3 | ハイブリッド実行モデルと宣言的バインディングの載せ替え | ほぼ完了（実機・`WebScreenGameTest` での観測は 2026-10-24 に済。残: 互換 `WebSession` の開き直し無しライブ反映確認・再同期時の節状態引き継ぎ） |
-| T0〜T7 | 構造整理（セッション集約・入力一本化・M1〜M9 ラチェット） | 完了（[ARCHITECTURE.md](ARCHITECTURE.md) §7） |
+| T0〜T7 | 構造整理（セッション集約・入力一本化・M1〜M8 ラチェット） | 完了（[ARCHITECTURE.md](ARCHITECTURE.md) §7） |
 | **T8** | **監査指摘のライフサイクル・入力コールバック・サーバー状態・セキュリティ修正** | **R0+ 直後に着手（Phase 1）** |
 | H0〜H4 | Headless State（サーバーは状態だけ、テンプレートはクライアント） | 完了（番号化・Surface 連携・実機での観測も 2026-10-24〜25 に済。Surface 既知不具合は Phase 1/3 へ統合） |
 | R4 | CSS の構文・カスケード・値の現代化 | ほぼ完了（残: 字形を測った `ch` / `ex`、無効化セットの接続は R5、台帳の `::marker` 8 行） |
@@ -819,7 +819,7 @@ AUI も bidi と UAX #14 は無いので独自に入れる。
 - `WebFidelityTest`: 台帳に無い差は回帰として落ち、台帳にあるのに一致した差は「台帳が古い」として落ちる。
   台帳の行が消えることがフェーズの完了条件。
 - R0 / R0+ で入れる計算値の列・DOM の振る舞いテスト・ディスプレイリストのゴールデン・全文書および差分性能ベンチ。
-- `ArchitectureTest`・`ApiBoundaryTest`（`core` が Minecraft に依存しない・公開 API に内部型が漏れない・M1〜M9 および新規ラチェットが後退しない）。
+- `ArchitectureTest`・`ApiBoundaryTest`（`core` が Minecraft に依存しない・公開 API に内部型が漏れない・M1〜M8 および新規ラチェットが後退しない）。
 - `./gradlew runClient` の実機確認と `gametest/WebScreenGameTest`、および [TEST_SPEC_SURFACE.md](TEST_SPEC_SURFACE.md)・[TEST_SPEC_BLOCKS_ITEMS.md](TEST_SPEC_BLOCKS_ITEMS.md)・[TEST_SPEC_MEDIA.md](TEST_SPEC_MEDIA.md)。
 
 ## 台帳と README の同期
