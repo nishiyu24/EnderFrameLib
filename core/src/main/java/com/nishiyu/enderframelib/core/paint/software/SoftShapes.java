@@ -21,19 +21,24 @@ final class SoftShapes {
         float hx = (x1 - x0) * 0.5f, hy = (y1 - y0) * 0.5f;
         if (rkx <= 0f || rky <= 0f) {
             float dx = Math.abs(px - cx) - hx, dy = Math.abs(py - cy) - hy;
-            return (float) Math.hypot(Math.max(dx, 0f), Math.max(dy, 0f)) + Math.min(Math.max(dx, dy), 0f);
+            return hypot(Math.max(dx, 0f), Math.max(dy, 0f)) + Math.min(Math.max(dx, dy), 0f);
         }
         rkx = Math.min(rkx, hx);
         rky = Math.min(rky, hy);
         float qx = Math.abs(px - cx) - (hx - rkx), qy = Math.abs(py - cy) - (hy - rky);
         if (qx > 0f && qy > 0f) {
             float kx = qx / rkx, ky = qy / rky;
-            float len = (float) Math.hypot(kx, ky);
+            float len = hypot(kx, ky);
             float gx = qx / (rkx * rkx), gy = qy / (rky * rky);
-            float grad = (float) Math.hypot(gx, gy);
+            float grad = hypot(gx, gy);
             return grad <= 0f ? 0f : (len - 1f) * len / grad;
         }
         return Math.max(qx - rkx, qy - rky);
+    }
+
+    /** {@code Math.hypot} の代わり。float 2 つの二乗和は double で正確に持てるので、桁落ちも溢れもなく {@code StrictMath} より速い。 */
+    static float hypot(float x, float y) {
+        return (float) Math.sqrt((double) x * x + (double) y * y);
     }
 
     /** 距離 {@code sd}（レイアウト単位）の縁の被覆率。{@code scale} は 1 単位が何画素か。 */
