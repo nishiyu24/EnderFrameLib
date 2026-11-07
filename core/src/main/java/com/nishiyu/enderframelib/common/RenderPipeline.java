@@ -56,7 +56,7 @@ public class RenderPipeline {
                                 ScrollState scrollState);
     }
 
-    private static final int LAYOUT_PASSES = 2;
+    private static final int LAYOUT_PASSES = 1;
     /** レイアウトの通し番号（{@link LayoutContext#layoutRun()}）。 */
     private static final java.util.concurrent.atomic.AtomicLong LAYOUT_RUNS = new java.util.concurrent.atomic.AtomicLong();
     private static final int MAX_CONTAINER_PASSES = 4;
@@ -968,8 +968,9 @@ public class RenderPipeline {
             previousChildren = new ArrayList<>(box.elementChildren);
             box.elementChildren.clear();
             box.refreshStyle(computed);
-            if (LayoutBox.isTableBox(box) || box.display.isNone()) box = null;
+            if (box.display.isNone()) box = null;
             else {
+                box.resetEngineOutputs();
                 reusedBox = true;
                 statReused++;
             }

@@ -877,7 +877,8 @@ public class LayoutBox {
 
     /**
      * 前回の箱の木から、DOM の節ごとの箱を集める（差分レイアウトで使い回す候補）。
-     * 表とその中は集めない: 表のエンジンが中の箱へ枠線の分担・縦の揃え・行の高さを直接書き込むので、作り直す方が確か。
+     * 表の箱と表だった箱は集める（使い回すときに {@link #resetEngineOutputs} で表のエンジンの書き込みを捨てる）が、その中へは降りない:
+     * 表のエンジンが中の箱（行・セル・キャプション）へ枠線の分担・縦の揃え・行の高さを直接書き込むので、作り直す方が確か。
      */
     public static java.util.Map<HtmlNode, LayoutBox> reusableBoxes(LayoutBox root) {
         java.util.Map<HtmlNode, LayoutBox> out = new java.util.IdentityHashMap<>();
@@ -886,14 +887,30 @@ public class LayoutBox {
     }
 
     private static void collectReusableBoxes(LayoutBox box, java.util.Map<HtmlNode, LayoutBox> out) {
-        if (box.isAnonymous || !isReusableShape(box)) return;
+        if (box.isAnonymous) return;
+        boolean table = isTableBox(box);
+        if (table && box.display.inner() != Display.Inner.TABLE) return;
         out.putIfAbsent(box.node, box);
+        if (table || box.everLaidOutAsTable) return;
         for (LayoutBox child : box.elementChildren) collectReusableBoxes(child, out);
     }
 
-    /** 前回も今も表と関わりの無い箱か（使い回してよい形か）。 */
-    static boolean isReusableShape(LayoutBox box) {
-        return !isTableBox(box) && !box.everLaidOutAsTable && box.collapsedBorders == null;
+    /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱を使い回すかどうかの判断に使う。 */
+    boolean touchedByTableEngine() {
+        return isTableBox(this) || everLaidOutAsTable || collapsedBorders != null;
+    }
+
+    /**
+     * 使い回す箱から、前回の表のエンジンの書き込みを捨てて新しく作った箱と同じ状態に戻す。
+     * 枠線の分担（{@code collapsedBorders}）は BoxMeasurer が measureContent より先に読むので必ず捨てる。
+     * エンジンの状態・縦の揃えは、表だったことのある箱が今は表でないときだけ捨てる:
+     * 表でなかった箱の {@code engineState}（Flex / Grid の測定結果）は、使い回す measure と layout が読むので消してはいけない。
+     */
+    public void resetEngineOutputs() {
+        collapsedBorders = null;
+        if (isTableBox(this) || !everLaidOutAsTable) return;
+        engineState = null;
+        contentOffsetY = 0;
     }
 
     /** 表か、表の中の箱（行・列・セル・行グループ・キャプション）か。 */
