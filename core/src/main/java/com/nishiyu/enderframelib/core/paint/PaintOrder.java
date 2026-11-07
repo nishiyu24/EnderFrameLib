@@ -295,12 +295,12 @@ final class PaintOrder {
             chunksOn = was;
         }
         if (!tl.negative.isEmpty() || !tl.floats.isEmpty() || !tl.positioned.isEmpty() || !tl.positive.isEmpty() || !tl.after.isEmpty()) {
-            throw new AssertionError("保持した部分木が純粋なフローではない: " + box.node.tag + "#" + box.node.getId());
+            throw new AssertionError("保持した部分木が純粋なフローではない: " + box.node.tag + "#" + box.node.key());
         }
         runTasks(tl.blocks, blocks);
         runTasks(tl.inlines, inlines);
         if (!blocks.equals(c.blockItems) || !inlines.equals(c.inlineItems)) {
-            throw new AssertionError("保持した部分木の項目が作り直した項目と違う: " + box.node.tag + "#" + box.node.getId()
+            throw new AssertionError("保持した部分木の項目が作り直した項目と違う: " + box.node.tag + "#" + box.node.key()
                     + " blocks " + c.blockItems.size() + "/" + blocks.size() + " inlines " + c.inlineItems.size() + "/" + inlines.size());
         }
     }
@@ -448,10 +448,10 @@ final class PaintOrder {
         ClipRect childClip = computedClip == clip ? clip : canonical(computedClip);
         contentClips.put(box, childClip);
         // 匿名ボックスは描くものを持たない。子の持ち主は匿名ボックスの外の要素のまま
-        String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.getId();
+        String childParent = "root".equals(tag) ? null : box.isAnonymous ? parentId : box.node.key();
         if (DisplayListBuilder.scrollContentNodes && scrollsAsOneNode(box)) {
             // 中身は専用の節の下に置く: スクロールではこの節だけを動かせばよい（箱自身の背景・枠・つまみは動かさない）
-            ScrollContent content = new ScrollContent(box, box.node.getId() + "_scrollc",
+            ScrollContent content = new ScrollContent(box, box.node.key() + "_scrollc",
                     scrollState.getScrollX(box.node), scrollState.getScrollY(box.node));
             scrollContentOf.put(box, content);
             scrollContents.add(content);
@@ -784,7 +784,7 @@ final class PaintOrder {
         }
         ClipRect merged = ClipRect.fromArray(BoxDecorations.intersectClip(parentClip == null ? null : parentClip.toArray(), own));
         // 合成した矩形に、合成する前のこの箱の矩形を持ち主（この箱）つきで足す。箱が動く（変形する）と、切り口も一緒に動く
-        return merged.withChain(parentClip == null ? List.of(new ClipChainPart(own, box.node.getId())) : parentClip.chainPlus(own, box.node.getId()));
+        return merged.withChain(parentClip == null ? List.of(new ClipChainPart(own, box.node.key())) : parentClip.chainPlus(own, box.node.key()));
     }
 
     /**
@@ -818,7 +818,7 @@ final class PaintOrder {
      */
     void addMovingNode(List<DisplayItem> elements, String id, LayoutBox box, RenderMeta meta) {
         ItemProps events = new ItemProps();
-        events.parentId(box.node.getId());
+        events.parentId(box.node.key());
         events.pointerEventsNone();
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
                 AnimationSpec.NONE, meta == null ? RenderMeta.EMPTY : new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false));
@@ -833,7 +833,7 @@ final class PaintOrder {
         float curY = scrollState.getScrollY(box.node);
 
         ItemProps sbEvents = new ItemProps();
-        sbEvents.parentId(box.node.getId());
+        sbEvents.parentId(box.node.key());
         ScrollContent content = scrollContentOf.get(box);
         ClipRect sbClip = clipRect;
         RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, 12.0f, 0.5f, 0.5f, 1, false);
@@ -847,16 +847,16 @@ final class PaintOrder {
             float maxScrollY = Math.max(1f, scrollH - box.h);
             float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
             ItemProps thumbEvents = sbEvents;
             if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
-                content.thumbVId = box.node.getId() + "_scrollv";
+                content.thumbVId = box.node.key() + "_scrollv";
                 content.ky = (trackH - thumbH) / maxScrollY;
                 addMovingNode(elements, content.thumbVId, box, sbMeta);
                 thumbEvents = new ItemProps();
                 thumbEvents.parentId(content.thumbVId);
             }
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
             float trackX = box.x + box.bL + 2;
@@ -866,16 +866,16 @@ final class PaintOrder {
             float maxScrollX = Math.max(1f, scrollW - box.w);
             float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
             ItemProps thumbEvents = sbEvents;
             if (content != null) {
-                content.thumbHId = box.node.getId() + "_scrollh";
+                content.thumbHId = box.node.key() + "_scrollh";
                 content.kx = (trackW - thumbW) / maxScrollX;
                 addMovingNode(elements, content.thumbHId, box, sbMeta);
                 thumbEvents = new ItemProps();
                 thumbEvents.parentId(content.thumbHId);
             }
-            addElement(elements, box.node.getId(), box.node.getId() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
         }
     }
 

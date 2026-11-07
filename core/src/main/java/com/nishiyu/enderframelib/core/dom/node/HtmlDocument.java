@@ -344,6 +344,13 @@ public class HtmlDocument extends HtmlNode implements Document {
         return true;
     }
 
+    /** 索引に載っている節の数（明示した id を持つ接続中の節だけ。派生鍵の節は含まない）。 */
+    public int indexedNodeCount() {
+        int n = 0;
+        for (List<HtmlNode> same : nodesById.values()) n += same.size();
+        return n;
+    }
+
     /** {@code subtree} の根と子孫を索引に載せる。 */
     void indexSubtree(HtmlNode subtree) {
         index(subtree.getId(), subtree);

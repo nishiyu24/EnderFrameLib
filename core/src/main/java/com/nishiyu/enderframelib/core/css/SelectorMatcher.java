@@ -12,6 +12,8 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.ConstraintValidator;
+import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
+import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -199,6 +201,7 @@ public final class SelectorMatcher {
         // :root は文書要素（ルートの子の html）だけ。W7 までは文書に html が無いことがあったので、
         // パーサの合成ノードにも一致させていた（html を書いた文書では :root の宣言が 2 つの箱に掛かっていた）
         if (token.isRoot && !isDocumentElement(node)) return false;
+        if (bloomRejects(token, node)) return false;
         if (token.id != null && !token.id.equals(node.getId())) return false;
         if (!token.tag.equals("*") && !token.tag.equals(node.tag)) return false;
 
@@ -239,6 +242,7 @@ public final class SelectorMatcher {
     private static boolean matchesHas(List<RelativeSelector> group, HtmlNode anchor, StateLookup lookup) {
         for (RelativeSelector relative : group) {
             Selector selector = relative.selector();
+            if (descendantBloomRejects(relative, anchor)) continue;
             Anchor boundary = new Anchor(anchor, relative.combinator());
             boolean[] found = {false};
             forEachCandidate(anchor, relative.combinator(), candidate -> {
@@ -547,8 +551,36 @@ public final class SelectorMatcher {
         return false;
     }
 
+    /** タグ・id・class の Bloom で、確実に一致しない節を O(1) で棄却する（アリーナに番号がある節だけ）。 */
+    private static boolean bloomRejects(SelectorToken token, HtmlNode node) {
+        if (!node.hasNodeId()) return false;
+        long need = token.requiredBloom();
+        return need != 0L && !AtomTable.mayContain(node.arena().selfBloom(node.nodeId()), need);
+    }
+
+    /** {@code :has(> .x)} / {@code :has(.x)}: 主語の Bloom が子孫 Bloom に含まれなければ、子孫に当たりはない。 */
+    private static boolean descendantBloomRejects(RelativeSelector relative, HtmlNode anchor) {
+        char c = relative.combinator();
+        if (c == '+' || c == '~' || !anchor.hasNodeId()) return false;
+        SelectorToken subject = relative.selector().subject();
+        if (subject == null || !subject.hasSelectors.isEmpty()) return false;
+        long need = subject.requiredBloom();
+        return need != 0L && !AtomTable.mayContain(anchor.arena().subtreeBloom(anchor.nodeId()), need);
+    }
+
+    /** アリーナの兄弟リンクで O(1) に前の兄弟へ。番号の無い節（仮想の節・断片）は子の並びを走査する。 */
     private static HtmlNode previousElementSibling(HtmlNode node) {
         if (node == null || node.parent == null) return null;
+        if (node.hasNodeId()) {
+            DocumentArena a = node.arena();
+            int p = a.parent(node.nodeId());
+            if (p != DocumentArena.NONE && a.owner(p) == node.parent) {
+                for (int s = a.prevSibling(node.nodeId()); s != DocumentArena.NONE; s = a.prevSibling(s)) {
+                    if (a.owner(s) instanceof HtmlNode sib && isCountableElement(sib)) return sib;
+                }
+                return null;
+            }
+        }
         HtmlNode prev = null;
         for (HtmlNode child : node.parent.children) {
             if (child == node) return prev;

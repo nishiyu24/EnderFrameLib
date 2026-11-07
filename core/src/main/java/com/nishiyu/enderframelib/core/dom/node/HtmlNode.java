@@ -24,6 +24,8 @@ import com.nishiyu.enderframelib.api.event.EventListenerOptions;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.event.EventDispatcher.EventListenerEntry;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
+import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
+import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -67,7 +69,28 @@ public class HtmlNode implements Node {
     public HtmlNode parent = null;
     public HtmlDocument ownerDocument = null;
     public boolean isPseudoNode = false;
-    private final List<EventListenerEntry> eventListeners = new CopyOnWriteArrayList<>();
+    /** 登録があるまで作らない（大半の節はリスナーを持たない）。 */
+    private List<EventListenerEntry> eventListeners;
+
+    // ---- Off-Heap アリーナ上の同一性（Milestone 1） ----
+    /** 接続先アリーナ上の番号。まだ振られていなければ -1。 */
+    int nodeId = -1;
+    /** {@link #nodeId} を振ったアリーナ。 */
+    DocumentArena arena;
+    /** この節が木の根のときだけ持つアリーナ（文書は最初の子が付いたとき、断片は鍵を問われたときに作る）。 */
+    private DocumentArena rootArena;
+    /** 明示 id の無い節の鍵（{@code ~番号}）。番号を振り直したら捨てる。 */
+    private String derivedKey;
+    /** class 属性のトークンを atom にしたもの。属性が変わるたびに 1 回だけ作り直す。 */
+    private int[] classAtoms = NO_ATOMS;
+    private static final int[] NO_ATOMS = new int[0];
+    /** 対話状態の持ち主とその実体（{@code InteractionState} が使う。節と一緒に回収される）。 */
+    public Object interactionOwner;
+    public Object interactionFlags;
+    /** 派生鍵の接頭辞。作者の id にまず現れない文字で始める。 */
+    public static final char DERIVED_KEY_PREFIX = '~';
+    /** テキスト節の派生鍵の接頭辞（{@code ~t番号}）。描画では文字の節だけ位置を持たないので、鍵から区別できるようにする。 */
+    public static final String DERIVED_TEXT_KEY_PREFIX = "~t";
 
     // Element ノード用コンストラクタ（"#text" の場合は NodeType.TEXT として扱う）
     public HtmlNode(String tag) {
@@ -217,7 +240,7 @@ public class HtmlNode implements Node {
             HtmlText txtNode = new HtmlText(textContent);
             // 描画要素の id と親子の連鎖（mc-parent）は節の id で引くので、空の id を作らない。
             // 空のままだと同じく空の id の節どうしが取り違えられ、祖先の transform などが掛からない
-            if (!getId().isEmpty()) txtNode.setId(getId() + "_txt");
+            txtNode.setId(key() + "_txt");
             container.appendChild(txtNode);
         }
     }
@@ -452,16 +475,269 @@ public class HtmlNode implements Node {
         return top instanceof HtmlDocument doc ? doc : null;
     }
 
-    /** {@code child} の部分木が、この節の子として加わった。接続中なら id 索引に載せる。 */
+    /** {@code child} の部分木が、この節の子として加わった。接続中なら id 索引に載せ、アリーナへ番号を振る。 */
     private void childAttached(HtmlNode child) {
-        HtmlDocument doc = connectedDocument();
-        if (doc != null && child != null) doc.indexSubtree(child);
+        attachChild(child, true);
     }
 
-    /** {@code child} の部分木が、この節の子から外れた。接続中なら id 索引から外す。 */
-    private void childDetached(HtmlNode child) {
+    private void attachChild(HtmlNode child, boolean relink) {
+        if (child == null) return;
+        child.listed = true;
         HtmlDocument doc = connectedDocument();
-        if (doc != null && child != null) doc.unindexSubtree(child);
+        if (doc != null) doc.indexSubtree(child);
+        DocumentArena a = treeArena(false);
+        if (a == null) return;
+        // 文書の根は最初の子が付いたときにアリーナを持つ。親にも番号が要る
+        if (nodeId < 0 || arena != a || a.owner(nodeId) != this) assignSubtree(this, a, false);
+        assignSubtree(child, a, true);
+        linkSubtree(child, a);
+        if (relink) {
+            linkChildren(a);
+            a.orSubtreeBloomUp(nodeId, a.rebuildSubtreeBloom(child.nodeId)); // :has() 用に祖先の子孫 Bloom へ足す
+        }
+    }
+
+    /** {@code child} の部分木が、この節の子から外れた。接続中なら id 索引から外し、番号を返す。 */
+    private void childDetached(HtmlNode child) {
+        if (child == null) return;
+        child.listed = false;
+        HtmlDocument doc = connectedDocument();
+        if (doc != null) doc.unindexSubtree(child);
+        DocumentArena a = child.arena;
+        if (a != null && child.nodeId >= 0 && a.owner(child.nodeId) == child) {
+            a.detach(child.nodeId);
+            releaseSubtree(child);
+        }
+        relinkIfNumbered();
+    }
+
+    private static void releaseSubtree(HtmlNode n) {
+        DocumentArena a = n.arena;
+        if (a != null && n.nodeId >= 0 && a.owner(n.nodeId) == n) {
+            // 静的領域の番号は nodeId を覚えておく（同じ文書へ戻れば同じ鍵）。動的領域の番号は手放す
+            boolean keep = n.nodeId < a.staticCount();
+            a.free(n.nodeId);
+            n.derivedKey = null;
+            if (!keep) { n.nodeId = -1; n.arena = null; }
+        }
+        for (HtmlNode c : n.children) releaseSubtree(c);
+    }
+
+    /**
+     * 子の並びに本当に載っている節か。描画が作る仮想の節（疑似要素・匿名ボックス・マーカー）は {@code parent} だけを
+     * 持ち、親の {@code children} には載らない。そういう節を親の木のアリーナに数えない。
+     */
+    private boolean listed;
+
+    /** 子の並びを根へ向かって辿った先。仮想の節は自分が根。 */
+    private HtmlNode treeTop() {
+        HtmlNode top = this;
+        while (top.parent != null && top.listed) top = top.parent;
+        return top;
+    }
+
+    /** 描画が作る仮想の節か（{@code parent} は持つが、親の子の並びには載らない）。アリーナの番号は振らない。 */
+    public boolean isVirtualNode() {
+        return parent != null && !listed;
+    }
+
+    /** アリーナ上に番号を持っているか（番号を振らずに調べる）。 */
+    public boolean hasNodeId() {
+        return arena != null && nodeId >= 0 && arena.owner(nodeId) == this;
+    }
+
+    private void relinkIfNumbered() {
+        if (arena != null && nodeId >= 0 && arena.owner(nodeId) == this) linkChildren(arena);
+    }
+
+    /** この節の木（根まで辿った先）のアリーナ。文書の根は常に作る。断片の根は {@code create} のときだけ作り、木ごと番号を振る。 */
+    private DocumentArena treeArena(boolean create) {
+        HtmlNode top = this;
+        top = top.treeTop();
+        if (top.rootArena == null && (create || top instanceof HtmlDocument)) {
+            top.rootArena = new DocumentArena();
+            if (!(top instanceof HtmlDocument)) numberTree(top, top.rootArena);
+        }
+        return top.rootArena;
+    }
+
+    /** 木全体を行きがけ順に番号付けする（既存の番号は捨てて振り直す）。 */
+    private static void numberTree(HtmlNode top, DocumentArena a) {
+        a.reset();
+        assignSubtree(top, a, true);
+        linkSubtree(top, a);
+        a.sealStatic();
+        a.computeSubtreeEnds(top.nodeId);
+        a.rebuildSubtreeBloom(top.nodeId);
+    }
+
+    private static void assignSubtree(HtmlNode n, DocumentArena a, boolean recurse) {
+        if (n.arena == a && n.nodeId >= 0 && (a.owner(n.nodeId) == n || a.reclaimStatic(n.nodeId, n))) {
+            // 取り戻した番号をそのまま使う
+        } else {
+            n.nodeId = a.allocate(n);
+            n.arena = a;
+            n.derivedKey = null;
+        }
+        n.refreshIdentity();
+        if (recurse) for (HtmlNode c : n.children) assignSubtree(c, a, true);
+    }
+
+    /** {@code n} の部分木の中のトポロジーを結ぶ（{@code n} 自身の親との結びは含まない）。 */
+    private static void linkSubtree(HtmlNode n, DocumentArena a) {
+        n.linkChildren(a);
+        for (HtmlNode c : n.children) linkSubtree(c, a);
+    }
+
+    private static final int[] NO_IDS = new int[0];
+
+    /** 子の並びをアリーナのトポロジー列へ写す。末尾への追加は O(1)、それ以外は子の数だけ。 */
+    private void linkChildren(DocumentArena a) {
+        int pid = nodeId;
+        int n = children.size();
+        if (n == 0) { a.relinkChildren(pid, NO_IDS, 0); return; }
+        HtmlNode last = children.get(n - 1);
+        int prevId = n > 1 ? children.get(n - 2).nodeId : DocumentArena.NONE;
+        if (a.parent(last.nodeId) == DocumentArena.NONE && a.lastChild(pid) == prevId) {
+            a.appendChild(pid, last.nodeId); // 末尾への追加
+            return;
+        }
+        int[] ids = new int[n];
+        for (int i = 0; i < n; i++) ids[i] = children.get(i).nodeId;
+        a.relinkChildren(pid, ids, n);
+    }
+
+    /** タグ・id・class から Bloom などを作り直してアリーナへ書く。 */
+    void refreshIdentity() {
+        if (arena == null || nodeId < 0) return;
+        AtomTable atoms = AtomTable.shared();
+        int tagAtom = atoms.intern(tag);
+        String id = attrs.get("id");
+        int idAtom = id == null ? 0 : atoms.intern(id);
+        String cls = attrs.get("class");
+        if (cls == null || cls.isBlank()) {
+            classAtoms = NO_ATOMS;
+        } else {
+            String[] parts = WHITESPACE_SPLIT.split(cls.trim());
+            int[] ids = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) ids[i] = atoms.intern(parts[i]);
+            classAtoms = ids;
+        }
+        long self = AtomTable.bloomBits(tagAtom) | AtomTable.bloomBits(idAtom);
+        for (int c : classAtoms) self |= AtomTable.bloomBits(c);
+        arena.setIdentity(nodeId, nodeType.ordinal(), tagAtom, idAtom, self);
+        arena.orSubtreeBloomUp(nodeId, self);
+    }
+
+    /** class / id 属性が変わった。番号があれば同一性の列だけ書き直す。 */
+    private void identityAttributeChanged() {
+        if (arena != null && nodeId >= 0 && arena.owner(nodeId) == this) refreshIdentity();
+    }
+
+    /** class 属性のトークンの atom（番号が無い節は空）。 */
+    public int[] classAtoms() {
+        return classAtoms;
+    }
+
+    /** アリーナ上の番号。無ければ（切り離された木でも）ここで木ごと番号を振る。 */
+    public int nodeId() {
+        DocumentArena a = arena;
+        if (a != null && nodeId >= 0 && a.owner(nodeId) == this) return nodeId;
+        DocumentArena tree = treeArena(true);
+        if (arena != tree || nodeId < 0 || tree.owner(nodeId) != this) assignSubtree(this, tree, false);
+        return nodeId;
+    }
+
+    /** {@link #nodeId()} を振ったアリーナ。 */
+    public DocumentArena arena() {
+        nodeId();
+        return arena;
+    }
+
+    /**
+     * 描画・ネットワークで節を指す鍵。明示した {@code id} があればそれ、無ければアリーナの番号から導く {@code ~番号}。
+     * 文字列を属性に書き込まない（{@link #getId()} は作者が書いた id だけを返す）。
+     */
+    public String key() {
+        String id = attrs.get("id");
+        if (id != null && !id.isEmpty()) return id;
+        int n = nodeId();
+        String k = derivedKey;
+        if (k == null) derivedKey = k = (nodeType == NodeType.TEXT ? DERIVED_TEXT_KEY_PREFIX : "" + DERIVED_KEY_PREFIX) + n;
+        return k;
+    }
+
+    /** {@code ~番号} の鍵が指す節をこの木のアリーナから引く。鍵が派生鍵の形でなければ null。 */
+    private HtmlNode resolveDerivedKey(String key) {
+        if (key.length() < 2 || key.length() > 12 || key.charAt(0) != DERIVED_KEY_PREFIX) return null;
+        long value = 0;
+        for (int i = key.charAt(1) == 't' ? 2 : 1; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c < '0' || c > '9') return null;
+            value = value * 10 + (c - '0');
+        }
+        if (value > Integer.MAX_VALUE) return null;
+        HtmlNode top = this;
+        top = top.treeTop();
+        DocumentArena a = top.rootArena;
+        return a != null && a.owner((int) value) instanceof HtmlNode found ? found : null;
+    }
+
+    /** 静的領域の大きさ（{@link #sealNodeIds} で閉じた番号の数）。木の根に対して呼ぶ。 */
+    public int staticNodeCount() {
+        nodeId();
+        return arena.staticCount();
+    }
+
+    /**
+     * ネットワーク越しに受け取った番号で、この木の番号を振り直す（サーバーの鍵とクライアントの鍵を揃える）。
+     * {@code idOf} が負を返す節には、空いている番号を新しく振る。
+     */
+    public void restoreNodeIds(java.util.function.ToIntFunction<HtmlNode> idOf, int staticCount) {
+        HtmlNode top = this;
+        top = top.treeTop();
+        DocumentArena a = top.rootArena != null ? top.rootArena : (top.rootArena = new DocumentArena());
+        a.reset();
+        List<HtmlNode> unnumbered = new ArrayList<>();
+        restoreWalk(top, a, idOf, unnumbered);
+        a.finishRestore(staticCount);
+        for (HtmlNode n : unnumbered) {
+            n.nodeId = a.allocate(n);
+            n.arena = a;
+        }
+        refreshAll(top);
+        linkSubtree(top, a);
+        a.computeSubtreeEnds(top.nodeId);
+        a.rebuildSubtreeBloom(top.nodeId);
+    }
+
+    private static void restoreWalk(HtmlNode n, DocumentArena a, java.util.function.ToIntFunction<HtmlNode> idOf,
+                                    List<HtmlNode> unnumbered) {
+        int want = idOf.applyAsInt(n);
+        n.derivedKey = null;
+        if (want >= 0 && (want >= a.highWater() || a.owner(want) == null)) {
+            a.restore(want, n);
+            n.nodeId = want;
+            n.arena = a;
+        } else {
+            n.nodeId = -1;
+            n.arena = null;
+            unnumbered.add(n);
+        }
+        for (HtmlNode c : n.children) restoreWalk(c, a, idOf, unnumbered);
+    }
+
+    private static void refreshAll(HtmlNode n) {
+        n.refreshIdentity();
+        for (HtmlNode c : n.children) refreshAll(c);
+    }
+
+    /** 文書のパースが終わった。番号を行きがけ順に振り直し、静的領域として閉じる（サーバーとクライアントで鍵が揃う）。 */
+    public void sealNodeIds() {
+        HtmlNode top = this;
+        top = top.treeTop();
+        if (top.rootArena == null) top.rootArena = new DocumentArena();
+        numberTree(top, top.rootArena);
     }
 
     /** 自分の {@code id} 属性が変わった。接続中なら id 索引を付け替える。 */
@@ -493,7 +769,8 @@ public class HtmlNode implements Node {
         public boolean addAll(Collection<? extends HtmlNode> nodes) {
             List<HtmlNode> added = new ArrayList<>(nodes);
             boolean changed = super.addAll(added);
-            added.forEach(HtmlNode.this::childAttached);
+            for (HtmlNode n : added) attachChild(n, false);
+            relinkIfNumbered();
             return changed;
         }
 
@@ -501,7 +778,8 @@ public class HtmlNode implements Node {
         public boolean addAll(int index, Collection<? extends HtmlNode> nodes) {
             List<HtmlNode> added = new ArrayList<>(nodes);
             boolean changed = super.addAll(index, added);
-            added.forEach(HtmlNode.this::childAttached);
+            for (HtmlNode n : added) attachChild(n, false);
+            relinkIfNumbered();
             return changed;
         }
 
@@ -579,9 +857,16 @@ public class HtmlNode implements Node {
 
         private <R> R trackingId(Supplier<R> mutation) {
             String before = super.get("id");
+            String classBefore = super.get("class");
             R result = mutation.get();
             String after = super.get("id");
-            if (!Objects.equals(before, after)) idAttributeChanged(before, after);
+            if (!Objects.equals(before, after)) {
+                derivedKey = null;
+                idAttributeChanged(before, after);
+                identityAttributeChanged();
+            } else if (!Objects.equals(classBefore, super.get("class"))) {
+                identityAttributeChanged();
+            }
             return result;
         }
 
@@ -1030,6 +1315,8 @@ public class HtmlNode implements Node {
     private HtmlNode lookupById(String targetId, boolean elementOnly) {
         if (targetId == null || targetId.isEmpty()) return null;
         if (targetId.equals(getId()) && (!elementOnly || this instanceof Element)) return this;
+        HtmlNode derived = resolveDerivedKey(targetId);
+        if (derived != null && (!elementOnly || derived instanceof Element) && this.contains(derived)) return derived;
         HtmlDocument doc = connectedDocument();
         return doc != null ? doc.lookupIndexed(targetId, elementOnly, this) : scanById(this, targetId, elementOnly);
     }
@@ -1096,6 +1383,7 @@ public class HtmlNode implements Node {
         }
 
         // 同一 (type, listener, capture) の重複登録を防止 (§2.7)
+        if (eventListeners == null) eventListeners = new CopyOnWriteArrayList<>();
         for (EventListenerEntry existing : eventListeners) {
             if (existing.type().equalsIgnoreCase(type)
                     && Objects.equals(existing.listener(), listener)
@@ -1116,6 +1404,7 @@ public class HtmlNode implements Node {
     public void removeEventListener(String type, EventListener listener, EventListenerOptions options) {
         if (type == null || type.isEmpty() || listener == null) return;
         boolean capture = options != null && options.isCapture();
+        if (eventListeners == null) return;
         eventListeners.removeIf(entry ->
                 entry.type().equalsIgnoreCase(type)
                         && Objects.equals(entry.listener(), listener)
@@ -1158,6 +1447,6 @@ public class HtmlNode implements Node {
     }
 
     public List<EventListenerEntry> getEventListenersSnapshot() {
-        return new ArrayList<>(eventListeners);
+        return eventListeners == null ? new ArrayList<>() : new ArrayList<>(eventListeners);
     }
 }

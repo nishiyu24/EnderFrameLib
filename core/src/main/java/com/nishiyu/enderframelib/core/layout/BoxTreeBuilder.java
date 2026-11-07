@@ -90,7 +90,7 @@ public final class BoxTreeBuilder {
     private void collectReusableGenerated(LayoutBox box) {
         for (LayoutBox child : box.children) {
             if (child.isAnonymous) {
-                String id = child.node.getId();
+                String id = child.node.key();
                 if (reusableGenerated.putIfAbsent(id, child) != null) ambiguousGeneratedIds.add(id);
             }
             collectReusableGenerated(child);
@@ -308,7 +308,7 @@ public final class BoxTreeBuilder {
     /** 匿名ボックスは親の継承プロパティだけを受け継ぎ、それ以外は初期値になる（CSS 2.2 §9.2.1.1）。 */
     private LayoutBox createAnonymous(LayoutBox parent, String display) {
         int index = anonymousCounts.merge(parent, 1, Integer::sum);
-        String id = parent.node.getId() + "_anon" + index;
+        String id = parent.node.key() + "_anon" + index;
         ComputedStyle style = generatedStyle(parent, Map.of(CssProperty.DISPLAY, display));
         LayoutBox reused = takeReusableGenerated(id);
         // 匿名の表・行・セルは表のエンジンが直接書き込むので作り直す（LayoutBox.reusableBoxes と同じ）
@@ -403,7 +403,7 @@ public final class BoxTreeBuilder {
                 != CssKeywords.ListStylePosition.INSIDE;
 
         // 前回と同じ文字のマーカーは箱ごと使い回す（番号が変わったら作り直す）
-        LayoutBox reused = takeReusableGenerated(listItem.node.getId() + "_marker");
+        LayoutBox reused = takeReusableGenerated(listItem.node.key() + "_marker");
         if (reused != null && reused.node.isPseudoNode && reused.children.size() == 1
                 && text.equals(reused.children.getFirst().node.text)) {
             reused.node.parent = listItem.node;
@@ -416,10 +416,10 @@ public final class BoxTreeBuilder {
         HtmlNode node = new HtmlNode("span");
         node.isPseudoNode = true;
         node.parent = listItem.node;
-        node.setId(listItem.node.getId() + "_marker");
+        node.setId(listItem.node.key() + "_marker");
         HtmlNode textNode = new HtmlText(text);
         textNode.parent = node;
-        textNode.setId(node.getId() + "_txt");
+        textNode.setId(node.key() + "_txt");
 
         // DOM に無い箱なので匿名ボックスとして持つ（描画は中のテキストだけ）
         LayoutBox marker = LayoutBox.anonymous(node, style);
@@ -447,7 +447,7 @@ public final class BoxTreeBuilder {
         boolean outside = listItem.style.keywordOf(CssProperty.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
                 != CssKeywords.ListStylePosition.INSIDE;
 
-        LayoutBox reused = takeReusableGenerated(listItem.node.getId() + "_marker");
+        LayoutBox reused = takeReusableGenerated(listItem.node.key() + "_marker");
         if (reused != null && reused.node.isPseudoNode && reused.children.size() == 2
                 && reused.children.getFirst().node.nodeType == NodeType.ELEMENT
                 && url.equals(reused.children.getFirst().node.attrs.get("src"))) {
@@ -461,16 +461,16 @@ public final class BoxTreeBuilder {
         HtmlNode node = new HtmlNode("span");
         node.isPseudoNode = true;
         node.parent = listItem.node;
-        node.setId(listItem.node.getId() + "_marker");
+        node.setId(listItem.node.key() + "_marker");
         HtmlNode image = new HtmlElement("img");
         image.isPseudoNode = true;
         // 親に繋ぐ前に書く（DOM の観測者には見えない箱なので、属性の変更を通知させない）
         image.setAttribute("src", url);
         image.parent = node;
-        image.setId(node.getId() + "_img");
+        image.setId(node.key() + "_img");
         HtmlNode gap = new HtmlText(" ");
         gap.parent = node;
-        gap.setId(node.getId() + "_txt");
+        gap.setId(node.key() + "_txt");
 
         LayoutBox marker = LayoutBox.anonymous(node, style);
         marker.isOutsideMarker = outside;

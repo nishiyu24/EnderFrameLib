@@ -170,7 +170,7 @@ public final class SelectPopup {
     /** 画面の最前面に重ねる表示項目（枠・背景・行・文字）。閉じていれば空。 */
     public List<DisplayItem> overlay() {
         if (!isOpen()) return List.of();
-        String base = select.getId();
+        String base = select.key();
         String current = select.attrs.getOrDefault("value", "");
         List<DisplayItem> out = new ArrayList<>();
         int total = totalHeight();

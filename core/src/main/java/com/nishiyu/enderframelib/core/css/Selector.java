@@ -239,6 +239,41 @@ public record Selector(
 
         public SelectorToken() {}
 
+        /** 未知の atom を含むときの印。全ビットが立つので、実在する節の Bloom には（ほぼ）含まれず棄却される。 */
+        public static final long UNKNOWN_ATOM = ~0L;
+        private long cachedBloom;
+        private boolean bloomCached;
+
+        /**
+         * タグ・id・class が要求する atom の 64-bit Bloom。{@code NodeArena} 上の節の {@code selfBloom} が
+         * これを含まなければ、この複合セレクタは確実に一致しない（ビット AND 1 回で棄却）。
+         * 要求が無ければ 0。まだ誰も使っていない名前（atom 未登録）を含むなら {@link #UNKNOWN_ATOM}（後で登録されうるのでキャッシュしない）。
+         */
+        public long requiredBloom() {
+            if (bloomCached) return cachedBloom;
+            com.nishiyu.enderframelib.core.kernel.memory.AtomTable atoms =
+                    com.nishiyu.enderframelib.core.kernel.memory.AtomTable.shared();
+            long bits = 0L;
+            if (!"*".equals(tag)) {
+                int a = atoms.lookup(tag);
+                if (a == 0) return UNKNOWN_ATOM;
+                bits |= com.nishiyu.enderframelib.core.kernel.memory.AtomTable.bloomBits(a);
+            }
+            if (id != null && !id.isEmpty()) {
+                int a = atoms.lookup(id);
+                if (a == 0) return UNKNOWN_ATOM;
+                bits |= com.nishiyu.enderframelib.core.kernel.memory.AtomTable.bloomBits(a);
+            }
+            for (String c : classes) {
+                int a = atoms.lookup(c);
+                if (a == 0) return UNKNOWN_ATOM;
+                bits |= com.nishiyu.enderframelib.core.kernel.memory.AtomTable.bloomBits(a);
+            }
+            cachedBloom = bits;
+            bloomCached = true;
+            return bits;
+        }
+
         /** この複合セレクタ（{@code :not()} / {@code :is()} の中も含む）の照合が依存する状態ビット集合。 */
         public int dependentStateMask() {
             int mask = stateFlags | absentStateFlags;

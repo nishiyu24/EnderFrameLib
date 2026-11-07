@@ -739,7 +739,7 @@ public class RenderPipeline {
         String pseudoId = pseudoElementId(owner.node, type);
         LayoutBox existing = null;
         for (LayoutBox child : owner.elementChildren) {
-            if (child.node.isPseudoNode && pseudoId.equals(child.node.getId())) {
+            if (child.node.isPseudoNode && pseudoId.equals(child.node.key())) {
                 existing = child;
                 break;
             }
@@ -974,7 +974,7 @@ public class RenderPipeline {
         for (LayoutBox previous : previousChildren) {
             if (!previous.node.isPseudoNode) continue;
             if (pseudoId == null) pseudoId = pseudoElementId(owner, type); // 疑似要素の箱がある要素だけ id を作る
-            if (pseudoId.equals(previous.node.getId())) return previous;
+            if (pseudoId.equals(previous.node.key())) return previous;
         }
         return null;
     }
@@ -1004,7 +1004,7 @@ public class RenderPipeline {
     }
 
     private static String pseudoElementId(HtmlNode owner, PseudoType type) {
-        return owner.getId() + (type == PseudoType.BEFORE ? "_before" : "_after");
+        return owner.key() + (type == PseudoType.BEFORE ? "_before" : "_after");
     }
 
     private static LayoutBox buildPseudoBox(HtmlNode owner, PseudoType type, ComputedStyle style, boolean ownerInteractive,
@@ -1028,7 +1028,7 @@ public class RenderPipeline {
         LayoutBox box = null;
         if (reusable != null) {
             for (LayoutBox previous : ownerPreviousChildren) {
-                if (previous.node.isPseudoNode && pseudoId.equals(previous.node.getId())
+                if (previous.node.isPseudoNode && pseudoId.equals(previous.node.key())
                         && previous.node.children.size() == 1) {
                     box = previous;
                     break;
@@ -1050,7 +1050,7 @@ public class RenderPipeline {
 
             textNode = new HtmlText("");
             textNode.parent = pseudo;
-            textNode.setId(pseudo.getId() + "_txt");
+            textNode.setId(pseudo.key() + "_txt");
             pseudo.children.add(textNode);
             box = new LayoutBox(pseudo, style);
         }

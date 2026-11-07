@@ -40,7 +40,7 @@ public class SelectorMatchingTest {
     /** マッチしたノードの id を "," 連結で返す */
     private static String ids(HtmlNode root, String selector) {
         List<HtmlNode> found = SelectorEngine.querySelectorAll(root, selector);
-        return found.stream().map(HtmlNode::getId).filter(id -> !id.startsWith("gen_") && !id.startsWith("txt_"))
+        return found.stream().map(HtmlNode::getId).filter(id -> !id.isEmpty())
                 .collect(Collectors.joining(","));
     }
 

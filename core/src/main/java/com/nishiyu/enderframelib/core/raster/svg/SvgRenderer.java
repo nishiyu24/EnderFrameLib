@@ -125,8 +125,6 @@ public final class SvgRenderer {
         if (n.nodeType != NodeType.ELEMENT) return;
         mix(h, n.tag);
         for (Map.Entry<String, String> e : n.attrs.entrySet()) {
-            // パイプラインが振る id（gen_N）は文書ごとに違うだけで描画に関わらない
-            if (e.getKey().equals("id") && e.getValue() != null && e.getValue().startsWith("gen_")) continue;
             mix(h, e.getKey());
             mix(h, e.getValue());
         }

@@ -369,7 +369,7 @@ public class ShowcaseWebComparisonTest {
             RenderResult r = inGame();
             LayoutBox titleBox = r.one("product-title");
             assertTrue(LayoutMetrics.isBold(titleBox.style), "商品名（600）は太字で測る");
-            String textId = titleBox.children.get(0).node.attrs.get("id");
+            String textId = titleBox.children.get(0).node.key();
             List<DisplayItem> words = r.texts().stream().filter(i -> i.id().startsWith(textId)).toList();
             assertFalse(words.isEmpty());
             for (DisplayItem word : words) {

@@ -140,14 +140,14 @@ public class UiInput {
         if (enteredNewTarget) {
             dispatchHoverTransition(previous, next, localX, localY);
             if (mutateDomOnHover()) {
-                if (previous != null && !previous.getId().isEmpty()) {
-                    session.updateNodeAttributeLocally(previous.getId(), "hover", null, true);
+                if (previous != null && !previous.key().isEmpty()) {
+                    session.updateNodeAttributeLocally(previous.key(), "hover", null, true);
                 }
-                if (next != null && !next.getId().isEmpty()) {
-                    session.updateNodeAttributeLocally(next.getId(), "hover", "true", false);
+                if (next != null && !next.key().isEmpty()) {
+                    session.updateNodeAttributeLocally(next.key(), "hover", "true", false);
                 }
             }
-            session.setHoveredElement(next != null ? next.getId() : "");
+            session.setHoveredElement(next != null ? next.key() : "");
         }
 
         long now = System.currentTimeMillis();
@@ -435,12 +435,12 @@ public class UiInput {
             sink.action(action, activeClickedItem, activeClickButton);
         }
         if (action == null || action.isEmpty()) return;
-        triggerLocalEvent(node != null ? node.getId() : "",
+        triggerLocalEvent(node != null ? node.key() : "",
                 "on" + event.getType().toLowerCase(Locale.ROOT), action, inlinePayload(node, event));
     }
 
     public void forwardDeclared(HtmlNode node, Event event, EventForwardDeclaration declaration) {
-        sendUiEvent(node != null ? node.getId() : "", "on" + declaration.eventType(), declaration.action(),
+        sendUiEvent(node != null ? node.key() : "", "on" + declaration.eventType(), declaration.action(),
                 declaredPayload(node, event, declaration.payload()));
     }
 
@@ -451,7 +451,7 @@ public class UiInput {
             case VALUE -> controlValue(target);
             case KEY -> event instanceof UIEvents.Keyboard keyboard ? keyboard.getKey() : "";
             case POINT -> pointPayload(event);
-            case TARGET -> target.getId();
+            case TARGET -> target.key();
             case NONE -> "";
         };
     }
@@ -470,7 +470,7 @@ public class UiInput {
             return switch (type) {
                 case "mouseleave", "pointerleave" -> "";
                 case "click", "dblclick", "auxclick", "contextmenu" ->
-                        target.getId() + "|" + formatPoint(mouse.getClientX(), mouse.getClientY());
+                        target.key() + "|" + formatPoint(mouse.getClientX(), mouse.getClientY());
                 default -> formatPoint(mouse.getClientX(), mouse.getClientY());
             };
         }
@@ -564,11 +564,11 @@ public class UiInput {
         return new DefaultActionContext() {
             @Override
             public void onAttributeChanged(HtmlNode node, String attrName, String attrValue) {
-                session.updateNodeAttributeLocally(node.getId(), attrName, attrValue, attrValue == null);
+                session.updateNodeAttributeLocally(node.key(), attrName, attrValue, attrValue == null);
                 if ("checked".equalsIgnoreCase(attrName)) {
                     String val = Boolean.toString(attrValue != null);
-                    submitInput(node.getId(), val);
-                    if (clickSink != null) clickSink.inputChanged(node.getId(), val);
+                    submitInput(node.key(), val);
+                    if (clickSink != null) clickSink.inputChanged(node.key(), val);
                 }
             }
 
@@ -710,7 +710,7 @@ public class UiInput {
 
     public String hoveredId() {
         HtmlNode hovered = session.interactionState().hoveredNode();
-        return hovered != null ? hovered.getId() : "";
+        return hovered != null ? hovered.key() : "";
     }
 
     // ------------------------------------------------------------------

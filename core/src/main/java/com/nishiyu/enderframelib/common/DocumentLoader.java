@@ -194,6 +194,7 @@ public class DocumentLoader {
 
         HtmlNode htmlRoot = HtmlParser.parseDocument(html == null ? "" : html);
         CustomTagExpander.expand(htmlRoot);
+        if (htmlRoot instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument) htmlRoot.sealNodeIds(); // 展開後の木で番号を確定する
 
         StringBuilder combinedCss = new StringBuilder();
         if (externalCss != null && !externalCss.isEmpty()) {

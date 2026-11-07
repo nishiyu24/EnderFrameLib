@@ -83,8 +83,8 @@ public final class UiFocus {
         if (box != null && box.style != null && "none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
         Integer tab = explicitTabIndex(node);
         boolean focusable = !node.attrs.containsKey("disabled") && (tab != null || isNaturallyFocusable(node));
-        if (box != null && focusable && (tab == null || tab >= 0) && !node.getId().isEmpty()) {
-            out.add(new Candidate(node, items.get(node.getId()), tab != null ? tab : 0, order[0]++));
+        if (box != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {
+            out.add(new Candidate(node, items.get(node.key()), tab != null ? tab : 0, order[0]++));
         }
         String tag = node.tag != null ? node.tag.toLowerCase(Locale.ROOT) : "";
         boolean closedDetails = tag.equals("details") && !node.attrs.containsKey("open");

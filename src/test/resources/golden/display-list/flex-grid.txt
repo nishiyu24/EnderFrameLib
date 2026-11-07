@@ -1,7 +1,7 @@
-000: [gen_1] NODE rect=[0,0,320,91] color=#FF000000
-001: [gen_1_bg] RECT rect=[0,0,320,91] color=#FF000000
-002: [gen_5] NODE rect=[8,8,304,75] color=#FF000000
-003: [gen_5_bg] RECT rect=[8,8,304,75] color=#FF000000
+000: [~1] NODE rect=[0,0,320,91] color=#FF000000
+001: [~1_bg] RECT rect=[0,0,320,91] color=#FF000000
+002: [~5] NODE rect=[8,8,304,75] color=#FF000000
+003: [~5_bg] RECT rect=[8,8,304,75] color=#FF000000
 004: [flex] NODE rect=[8,8,250,40] color=#FF000000
 005: [flex_bg] RECT rect=[8,8,250,40] color=#FF000000
 006: [flex_b_top] RECT rect=[8,8,250,1] bg=#FF333333
@@ -12,17 +12,17 @@
 011: [grid_bg] RECT rect=[8,58,200,25] color=#FF000000
 012: [f1] NODE rect=[13,13,116,30] color=#FF000000 bg=#FF89DCEB
 013: [f1_bg] RECT rect=[13,13,116,30] color=#FF000000 bg=#FF89DCEB
-014: [txt_6] NODE rect=[0,0,25,18] color=#FF000000
-015: [txt_6_txt_0] TEXT rect=[13,13,25,18] color=#FF000000 text="F1"
+014: [~t8] NODE rect=[0,0,25,18] color=#FF000000
+015: [~t8_txt_0] TEXT rect=[13,13,25,18] color=#FF000000 text="F1"
 016: [f2] NODE rect=[137,13,116,30] color=#FF000000 bg=#FF89DCEB
 017: [f2_bg] RECT rect=[137,13,116,30] color=#FF000000 bg=#FF89DCEB
-018: [txt_7] NODE rect=[0,0,25,18] color=#FF000000
-019: [txt_7_txt_0] TEXT rect=[137,13,25,18] color=#FF000000 text="F2"
+018: [~t10] NODE rect=[0,0,25,18] color=#FF000000
+019: [~t10_txt_0] TEXT rect=[137,13,25,18] color=#FF000000 text="F2"
 020: [g1] NODE rect=[8,58,60,25] color=#FF000000 bg=#FFFAB387
 021: [g1_bg] RECT rect=[8,58,60,25] color=#FF000000 bg=#FFFAB387
-022: [txt_8] NODE rect=[0,0,12,18] color=#FF000000
-023: [txt_8_txt_0] TEXT rect=[8,58,12,18] color=#FF000000 text="A"
+022: [~t13] NODE rect=[0,0,12,18] color=#FF000000
+023: [~t13_txt_0] TEXT rect=[8,58,12,18] color=#FF000000 text="A"
 024: [g2] NODE rect=[72,58,136,25] color=#FF000000 bg=#FFFAB387
 025: [g2_bg] RECT rect=[72,58,136,25] color=#FF000000 bg=#FFFAB387
-026: [txt_9] NODE rect=[0,0,12,18] color=#FF000000
-027: [txt_9_txt_0] TEXT rect=[72,58,12,18] color=#FF000000 text="B"
+026: [~t15] NODE rect=[0,0,12,18] color=#FF000000
+027: [~t15_txt_0] TEXT rect=[72,58,12,18] color=#FF000000 text="B"

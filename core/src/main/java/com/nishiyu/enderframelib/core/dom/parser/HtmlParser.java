@@ -17,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * WHATWG HTML のツリー構築（§13.2.6）の主要な規則で DOM を組む。
@@ -89,6 +88,7 @@ public class HtmlParser {
         TreeBuilder builder = new TreeBuilder(false, null, limits);
         builder.run(html);
         builder.ensureBody();
+        builder.root.sealNodeIds(); // 節の鍵は文書順の番号から導く。文字列を属性へ振らない
         return builder.root;
     }
 
@@ -183,8 +183,6 @@ public class HtmlParser {
             this.fragment = fragment;
             this.context = context;
             this.root = fragment ? new HtmlNode(NodeType.ROOT, "root") : new HtmlDocument();
-            // パーサ呼び出しの度にIDカウンタをリセットし、安定したIDを生成する
-            NodeId.resetCounter();
             root.setId("html_root");
             if (fragment) stack.add(root);
         }
@@ -1000,7 +998,6 @@ public class HtmlParser {
                 if (val != null && val.length() > 4096) val = val.substring(0, 4096);
                 node.attrs.put(entry.getKey(), val);
             }
-            if (node.getId().isEmpty()) node.setId(NodeId.generateId());
             return node;
         }
 
@@ -1049,8 +1046,7 @@ public class HtmlParser {
         void mergeAttributes(HtmlNode node, Map<String, String> attrs) {
             if (node == null) return;
             for (var entry : attrs.entrySet()) {
-                boolean autoId = entry.getKey().equals("id") && node.getId().startsWith("gen_");
-                if (autoId || !node.attrs.containsKey(entry.getKey())) node.attrs.put(entry.getKey(), entry.getValue());
+                if (!node.attrs.containsKey(entry.getKey())) node.attrs.put(entry.getKey(), entry.getValue());
             }
         }
 
@@ -1078,7 +1074,6 @@ public class HtmlParser {
                 previous.text = previous.text + text;
             } else {
                 HtmlNode textNode = new HtmlText(text);
-                textNode.setId(NodeId.generateTextId());
                 textNode.parent = parent;
                 parent.children.add(at, textNode);
             }
@@ -1474,27 +1469,6 @@ public class HtmlParser {
 
         public static boolean isVoid(String tagName) {
             return TAGS.contains(tagName != null ? tagName.toLowerCase() : "");
-        }
-    }
-
-    /**
-     * ノードIDの生成と管理。
-     * プロセスグローバルの単調増加をやめ、ドキュメント/セッション内で安定したIDを提供します。
-     */
-    public static class NodeId {
-        // セッションや再パース時にリセットできるローカルカウンタ（パーサのインスタンスに持たせるのが理想ですが、移行用として）
-        private static final ThreadLocal<AtomicInteger> localAutoId = ThreadLocal.withInitial(() -> new AtomicInteger(0));
-
-        public static void resetCounter() {
-            localAutoId.get().set(0);
-        }
-
-        public static String generateId() {
-            return "gen_" + localAutoId.get().incrementAndGet();
-        }
-
-        public static String generateTextId() {
-            return "txt_" + localAutoId.get().incrementAndGet();
         }
     }
 }

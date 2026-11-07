@@ -81,7 +81,7 @@ public class ScrollTranslateTest {
         for (DisplayItem it : current) {
             if (synthetic(it.id())) continue;
             // テキストノードの NODE 項目は位置を持たない（常に 0,0 に出る。文字は親の断片が持つ）ので、比べない
-            if (it.type() == ElementType.NODE && (it.id().startsWith("txt_") || it.id().endsWith("_txt"))) continue;
+            if (it.type() == ElementType.NODE && (it.id().startsWith("~t") || it.id().endsWith("_txt"))) continue;
             float ex = it.x(), ey = it.y();
             String parent = it.hints().parentId();
             for (int guard = 0; parent != null && guard < 64; guard++) {

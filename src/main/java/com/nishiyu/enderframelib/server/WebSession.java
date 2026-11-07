@@ -261,8 +261,8 @@ public class WebSession implements WebSessionHandle {
 
     private static void collectDeclarations(HtmlNode node, Set<String> actions, Set<String> inputs) {
         actions.addAll(EventForwardDeclaration.declaredActionNames(node));
-        if (VALUE_TAGS.contains(node.tag.toLowerCase()) && !node.getId().isEmpty()) {
-            inputs.add(node.getId());
+        if (VALUE_TAGS.contains(node.tag.toLowerCase())) {
+            inputs.add(node.key());
         }
         for (HtmlNode child : node.children) {
             collectDeclarations(child, actions, inputs);

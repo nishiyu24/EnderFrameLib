@@ -357,7 +357,7 @@ public final class Bindings {
                 path = parts[1].trim();
             }
             String channel = resolveChannel(rootNode, path);
-            handler.bindData(rootNode.getId(), channel, path, targetAttr);
+            handler.bindData(rootNode.key(), channel, path, targetAttr);
         }
 
         if (rootNode.attrs.containsKey("data-list")) {
@@ -370,7 +370,7 @@ public final class Bindings {
                 try { itemW = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-width", "36")); } catch (Exception ignored) {}
                 try { itemH = Integer.parseInt(rootNode.attrs.getOrDefault("data-item-height", "36")); } catch (Exception ignored) {}
                 String channel = resolveChannel(rootNode, listPath);
-                handler.bindVirtualList(rootNode.getId(), channel, templateNode, itemW, itemH);
+                handler.bindVirtualList(rootNode.key(), channel, templateNode, itemW, itemH);
             }
         }
 
@@ -381,7 +381,7 @@ public final class Bindings {
                 String[] nbtKeys = rootNode.attrs.get("data-hud-require-nbt").split(",");
                 for (String key : nbtKeys) requireNbt.add(key.trim());
             }
-            handler.bindHud(rootNode.getId(), origDisplay, rootNode, requireNbt);
+            handler.bindHud(rootNode.key(), origDisplay, rootNode, requireNbt);
         }
 
         if (rootNode.attrs.containsKey("data-tracker")) {
@@ -866,12 +866,12 @@ public final class Bindings {
             if (listKey != null && !listKey.isEmpty()) {
                 if (lists.containsKey(listKey)) {
                     List<Map<String, String>> itemDataList = lists.get(listKey);
-                    List<Map<String, String>> lastList = lastRenderedLists.get(vNode.getId());
+                    List<Map<String, String>> lastList = lastRenderedLists.get(vNode.key());
                     if (Objects.equals(itemDataList, lastList)) {
                         return changedSoFar;
                     }
 
-                    List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.getId(), id -> extractTemplateChildren(vNode));
+                    List<HtmlNode> tmplNodes = listTemplates.computeIfAbsent(vNode.key(), id -> extractTemplateChildren(vNode));
                     if (!tmplNodes.isEmpty()) {
                         Map<String, HtmlNode> existingKeyedNodes = new LinkedHashMap<>();
                         List<HtmlNode> nonKeyedNodes = new ArrayList<>();
@@ -932,7 +932,7 @@ public final class Bindings {
 
                         vNode.children.clear();
                         vNode.children.addAll(newChildren);
-                        lastRenderedLists.put(vNode.getId(), new ArrayList<>(itemDataList));
+                        lastRenderedLists.put(vNode.key(), new ArrayList<>(itemDataList));
                         layoutTreeChanged = true;
                         return true;
                     }

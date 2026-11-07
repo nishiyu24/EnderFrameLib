@@ -337,7 +337,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         String baseId = clicked.baseId();
         HtmlNode domNode = session.findInteractiveNode(baseId);
         HtmlNode focusTarget = focusNavigator.findFocusableTarget(domNode);
-        setFocusedDomElement(focusTarget != null ? focusTarget.getId() : "", false);
+        setFocusedDomElement(focusTarget != null ? focusTarget.key() : "", false);
         boolean isSelectElement = clicked.type() == ElementType.SELECT || (domNode != null && "select".equalsIgnoreCase(domNode.tag));
         if (isSelectElement && button == 0) {
             selectWidget.open(baseId, clicked, session.rootNode());
@@ -405,7 +405,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         @Override
         public void clickDelegate(com.nishiyu.enderframelib.common.UiInput input, HtmlNode target, double x, double y, int minecraftButton) {
             SessionContext session = ClientWebManager.getSession(sessionId);
-            DisplayItem targetItem = session != null ? session.elementById(target.getId()) : null;
+            DisplayItem targetItem = session != null ? session.elementById(target.key()) : null;
             input.dispatchClick(target, x, y, minecraftButton, targetItem, this);
         }
 
@@ -740,7 +740,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
                                            BiConsumer<String, String> onInputChanged,
                                            ClientDomEventDispatcher.TriActionCallback onWebAction) {
         SessionContext session = ClientWebManager.getSession(sessionId);
-        DisplayItem el = session != null ? session.elementById(node.getId()) : null;
+        DisplayItem el = session != null ? session.elementById(node.key()) : null;
         if (el != null) {
             ClientScreenInteractionManager.playElementSound(el);
         }
@@ -751,7 +751,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
     private void applyFocusCandidate(Screen screen, WebFocusNavigator.FocusCandidate candidate) {
         unfocusWebInput();
-        String baseId = candidate.node().getId();
+        String baseId = candidate.node().key();
         setFocusedDomElement(baseId, true);
 
         HtmlNode node = candidate.node();
@@ -919,7 +919,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
                 List<String> infoLines = new ArrayList<>();
                 String tagLabel = domNode != null ? "<" + domNode.tag + ">" : "<node>";
-                String idLabel = (domNode != null && !domNode.getId().isEmpty()) ? "#" + domNode.getId() : "#" + targetAnchor.id();
+                String idLabel = (domNode != null && !domNode.key().isEmpty()) ? "#" + domNode.key() : "#" + targetAnchor.id();
                 String clsLabel = (domNode != null && !domNode.getClasses().isEmpty()) ? "." + String.join(".", domNode.getClasses()) : "";
                 infoLines.add("§b" + tagLabel + " §e" + idLabel + "§a" + clsLabel);
                 infoLines.add("§7Rect: §f" + w + "x" + h + " §7at (" + x + ", " + y + ")");
@@ -1237,7 +1237,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
         private final SelectPopup popup = new SelectPopup();
 
         public boolean isOpen() { return popup.isOpen(); }
-        public String openSelectBaseId() { return popup.isOpen() ? popup.select().getId() : ""; }
+        public String openSelectBaseId() { return popup.isOpen() ? popup.select().key() : ""; }
         public int highlightedIndex() { return popup.highlightedIndex(); }
 
         public void setHighlightedIndex(int index) {
@@ -1252,7 +1252,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (!popup.isOpen()) return false;
             String chosenVal = popup.highlightedValue();
             if (chosenVal == null) return false;
-            String baseId = popup.select().getId();
+            String baseId = popup.select().key();
             close();
             if (onSelected != null) onSelected.accept(baseId, chosenVal);
             return true;
@@ -1281,7 +1281,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
             if (!popup.isOpen()) return false;
             boolean withinBounds = popup.contains(webX, webY);
             String chosenVal = popup.valueAt(webX, webY);
-            String baseId = popup.select().getId();
+            String baseId = popup.select().key();
             close();
             if (chosenVal != null) {
                 if (onSelected != null) onSelected.accept(baseId, chosenVal);

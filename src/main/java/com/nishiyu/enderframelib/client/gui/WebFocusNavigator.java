@@ -86,7 +86,7 @@ public class WebFocusNavigator {
 
     private boolean moveTo(SessionContext session, HtmlNode target, Consumer<FocusCandidate> applyCallback) {
         if (target == null) return false;
-        setFocused(target.getId(), true);
+        setFocused(target.key(), true);
         if (applyCallback != null) {
             FocusCandidate chosen = null;
             for (FocusCandidate c : collectFocusableCandidates()) {
