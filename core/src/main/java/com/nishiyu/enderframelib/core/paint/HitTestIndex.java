@@ -8,7 +8,9 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,12 +31,15 @@ public class HitTestIndex {
         public final List<DisplayItem> transformChain; // ルートから自身までの順序
         /** 画像の透過ヒットテストの閾値（0〜255）。-1 なら矩形だけで判定する（{@code data-hit-alpha} のある {@code <img>}）。 */
         public final int alphaThreshold;
+        /** 項目自身が静止している（移動・回転・拡縮・傾き・遷移・アニメが無い）。逆変換が恒等なので、アニメ状態を引かずに済む。 */
+        final boolean selfStatic;
 
         public Entry(DisplayItem element, ClipRect clipRect, List<DisplayItem> transformChain) {
             this.element = element;
             this.clipRect = clipRect;
             this.transformChain = transformChain;
             this.alphaThreshold = alphaThresholdOf(element);
+            this.selfStatic = isStatic(element);
         }
     }
 
@@ -68,8 +73,27 @@ public class HitTestIndex {
     private int[] always = new int[0];
     private final List<Entry> scrollEntries = new ArrayList<>(); // スクロールする箱。z順序の逆順
     private final Long2ObjectOpenHashMap<DisplayItem> elementMap;
+    /**
+     * 描画の上だけで動きうる節（スクロールの中身・つまみ・ドラッグ中のウィンドウ）の鍵。これらは静止とみなさない
+     * （格子に載せない）ので、移動量が変わっても格子は古くならず、{@link #patch} だけで索引を使い回せる。
+     */
+    private final LongOpenHashSet dynamicKeys = new LongOpenHashSet();
+    /** 動きうる節が、どの対話項目（{@link #entryArr} の添字）の連鎖の何番目にあるか（添字と位置の組を平らに並べる）。 */
+    private final Long2ObjectOpenHashMap<IntArrayList> dynamicRefs = new Long2ObjectOpenHashMap<>();
+    /** 対話項目になっている項目の鍵（対話項目そのものを差し替えるときは {@link #patch} は断る）。 */
+    private final LongOpenHashSet entryElementKeys = new LongOpenHashSet();
+    /** スクロールする箱の項目の鍵 → {@link #scrollEntries} の添字（差し替えるときは Entry を作り直す）。 */
+    private final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap scrollEntryAt = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+    private final java.util.Set<String> dynamicIds;
 
     public HitTestIndex(List<DisplayItem> elements) {
+        this(elements, java.util.Set.of());
+    }
+
+    /** {@code dynamicIds} は、描画の上だけで移動量が変わりうる項目の id（{@link #patch} の対象）。 */
+    public HitTestIndex(List<DisplayItem> elements, java.util.Set<String> dynamicIds) {
+        this.dynamicIds = java.util.Set.copyOf(dynamicIds);
+        for (String id : this.dynamicIds) dynamicKeys.add(DisplayItem.keyOf(id));
         if (elements == null || elements.isEmpty()) {
             this.interactiveEntries = Collections.emptyList();
             this.elementMap = new Long2ObjectOpenHashMap<>(0);
@@ -98,6 +122,63 @@ public class HitTestIndex {
         }
         this.interactiveEntries = entries;
         buildGrid();
+        indexDynamicRefs();
+    }
+
+    /** 動きうる節の参照表と、差し替えを断る鍵の集合を作る。 */
+    private void indexDynamicRefs() {
+        for (int i = 0; i < entryArr.length; i++) {
+            Entry e = entryArr[i];
+            entryElementKeys.add(e.element.key());
+            if (dynamicKeys.isEmpty()) continue;
+            List<DisplayItem> chain = e.transformChain;
+            for (int p = 0; p < chain.size(); p++) {
+                long k = chain.get(p).key();
+                if (!dynamicKeys.contains(k)) continue;
+                IntArrayList refs = dynamicRefs.get(k);
+                if (refs == null) dynamicRefs.put(k, refs = new IntArrayList());
+                refs.add(i);
+                refs.add(p);
+            }
+        }
+        for (int i = 0; i < scrollEntries.size(); i++) scrollEntryAt.put(scrollEntries.get(i).element.key(), i);
+    }
+
+    /** この索引が動きうる節として扱っている id。 */
+    public java.util.Set<String> dynamicIds() {
+        return dynamicIds;
+    }
+
+    /**
+     * 動きうる節の項目を、移動量の違う新しいインスタンスに差し替える（索引は作り直さない）。連鎖と id の引き当てだけを書き換える。
+     * 差し替えられない（動きうる節として登録していない・対話項目そのものを差し替える）なら何も変えずに false。
+     *
+     * <p>描画側の状態が無い祖先は、連鎖の中の項目インスタンスの移動量で逆変換されるので、連鎖の側も書き換える。</p>
+     */
+    public boolean patch(List<DisplayItem> changed) {
+        for (int i = 0, n = changed.size(); i < n; i++) {
+            long k = changed.get(i).key();
+            if (!dynamicKeys.contains(k) || entryElementKeys.contains(k)) return false;
+        }
+        for (int i = 0, n = changed.size(); i < n; i++) {
+            DisplayItem item = changed.get(i);
+            long k = item.key();
+            elementMap.put(k, item);
+            IntArrayList refs = dynamicRefs.get(k);
+            if (refs != null) {
+                for (int r = 0, rn = refs.size(); r < rn; r += 2) entryArr[refs.getInt(r)].transformChain.set(refs.getInt(r + 1), item);
+            }
+            for (Entry e : scrollEntries) {
+                List<DisplayItem> chain = e.transformChain;
+                for (int p = 0; p < chain.size(); p++) if (chain.get(p).key() == k) chain.set(p, item);
+            }
+            if (scrollEntryAt.containsKey(k)) { // 動く節がスクロールする箱でもある: 新しい項目で Entry を作り直す
+                int at = scrollEntryAt.get(k);
+                Entry old = scrollEntries.get(at);
+                scrollEntries.set(at, new Entry(item, old.clipRect, old.transformChain));
+            }
+        }
+        return true;
     }
 
     /** 描画側が {@code pointer-events: none} の箱の部品に載せた印（{@link RenderHints#pointerEventsNone()}）。 */
@@ -163,7 +244,7 @@ public class HitTestIndex {
         }
 
         String pid = el.hints().parentId();
-        DisplayItem parentAnchor = pid == null ? null : elementMap.get(ItemKeys.of(pid));
+        DisplayItem parentAnchor = pid == null ? null : elementMap.get(DisplayItem.keyOf(pid));
         return parentAnchor != null && (parentAnchor.hasHover() || parentAnchor.hasPseudo());
     }
 
@@ -173,7 +254,7 @@ public class HitTestIndex {
         while (curr != null) {
             chain.add(curr);
             String parentId = curr.hints().parentId();
-            curr = parentId != null ? map.get(ItemKeys.of(parentId)) : null;
+            curr = parentId != null ? map.get(DisplayItem.keyOf(parentId)) : null;
         }
         Collections.reverse(chain);
         return chain;
@@ -240,24 +321,107 @@ public class HitTestIndex {
         int b = 0;
         AnimatedValues scratch = new AnimatedValues();
         double[] p = new double[2];
+        PrefixCache prefix = new PrefixCache(sessionId, px, py, scratch);
         while (a < aEnd || b < al.length) {
             int idx;
             if (b >= al.length || (a < aEnd && items[a] < al[b])) idx = items[a++];
             else idx = al[b++];
-            if (hits(entryArr[idx], sessionId, px, py, scratch, p, localOut)) return idx;
+            if (hits(entryArr[idx], sessionId, px, py, scratch, p, localOut, prefix)) return idx;
         }
         return -1;
     }
 
+    /**
+     * 1 回の問い合わせの間だけ、祖先の連鎖を点に当てた結果（その祖先までの逆変換後の座標）を覚える。
+     * 動く節（スクロールの中身など）の下の項目は全部が候補になるが、どれも同じ祖先の連鎖を共有するので、
+     * 連鎖の計算（祖先ごとのアニメ状態の引き当てを含む）は祖先の数だけで済み、項目ごとには自分の 1 段だけを当てる。
+     */
+    private static final class PrefixCache {
+        final String sessionId;
+        final double px, py;
+        final AnimatedValues scratch;
+        /** 鍵 → 結果の 2 要素（開地址法。容量は 2 のべき）。 */
+        long[] keys = new long[16];
+        double[] xs = new double[16], ys = new double[16];
+        boolean[] used = new boolean[16];
+        int size;
+        final double[] tmp = new double[2];
+
+        PrefixCache(String sessionId, double px, double py, AnimatedValues scratch) {
+            this.sessionId = sessionId;
+            this.px = px;
+            this.py = py;
+            this.scratch = scratch;
+        }
+
+        /** {@code chain[0..upTo)} を当てた後の座標を {@code out} へ。 */
+        void apply(List<DisplayItem> chain, int upTo, double[] out) {
+            if (upTo == 0) {
+                out[0] = px;
+                out[1] = py;
+                return;
+            }
+            long key = chain.get(upTo - 1).key();
+            int mask = keys.length - 1;
+            int i = (int) ((key * 0x9E3779B97F4A7C15L) >>> 40) & mask;
+            while (used[i]) {
+                if (keys[i] == key) {
+                    out[0] = xs[i];
+                    out[1] = ys[i];
+                    return;
+                }
+                i = (i + 1) & mask;
+            }
+            apply(chain, upTo - 1, out); // 一段手前までの結果
+            DisplayItem ancestor = chain.get(upTo - 1);
+            inverseInto(out[0], out[1], ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratch), tmp);
+            out[0] = tmp[0];
+            out[1] = tmp[1];
+            if (size * 2 >= keys.length) grow();
+            insert(key, out[0], out[1]);
+        }
+
+        private void insert(long key, double x, double y) {
+            int mask = keys.length - 1;
+            int i = (int) ((key * 0x9E3779B97F4A7C15L) >>> 40) & mask;
+            while (used[i]) i = (i + 1) & mask;
+            used[i] = true;
+            keys[i] = key;
+            xs[i] = x;
+            ys[i] = y;
+            size++;
+        }
+
+        private void grow() {
+            long[] ok = keys;
+            double[] ox = xs, oy = ys;
+            boolean[] ou = used;
+            keys = new long[ok.length * 2];
+            xs = new double[ok.length * 2];
+            ys = new double[ok.length * 2];
+            used = new boolean[ok.length * 2];
+            size = 0;
+            for (int i = 0; i < ok.length; i++) if (ou[i]) insert(ok[i], ox[i], oy[i]);
+        }
+    }
+
     private boolean hits(Entry entry, String sessionId, double pixelX, double pixelY,
-                         AnimatedValues scratch, double[] p, double[] localOut) {
+                         AnimatedValues scratch, double[] p, double[] localOut, PrefixCache prefix) {
         DisplayItem el = entry.element;
         if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) return false;
-        double x = pixelX, y = pixelY;
         List<DisplayItem> chain = entry.transformChain;
-        for (int i = 0, n = chain.size(); i < n; i++) {
-            DisplayItem ancestor = chain.get(i);
-            inverseInto(x, y, ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratch), p);
+        prefix.apply(chain, chain.size() - 1, p); // 親までの連鎖は共有して使い回す
+        double x = p[0], y = p[1];
+        if (entry.selfStatic) {
+            // 静止した項目の逆変換は、中心を引いて足し戻すだけ（inverseInto と同じ演算。状態の引き当てを省く）
+            RenderMeta meta = el.meta();
+            double cx = el.x() + el.width() * (meta != null ? meta.originX() : 0.5f);
+            double cy = el.y() + el.height() * (meta != null ? meta.originY() : 0.5f);
+            x = (x - cx) + cx;
+            y = (y - cy) + cy;
+        } else {
+            DisplayItem self = chain.get(chain.size() - 1);
+            inverseInto(x, y, self, CssAnimator.currentValuesInto(sessionId, self, scratch), p);
             x = p[0];
             y = p[1];
         }
@@ -311,7 +475,7 @@ public class HitTestIndex {
             Entry e = entryArr[i];
             boolean ok = true;
             for (DisplayItem c : e.transformChain) {
-                if (!isStatic(c)) {
+                if (!isStatic(c) || dynamicKeys.contains(c.key())) {
                     ok = false;
                     break;
                 }
@@ -452,7 +616,7 @@ public class HitTestIndex {
     }
 
     public DisplayItem getElementById(String id) {
-        return elementMap.get(ItemKeys.of(id));
+        return elementMap.get(DisplayItem.keyOf(id));
     }
 
     public DisplayItem getElementByKey(long key) {

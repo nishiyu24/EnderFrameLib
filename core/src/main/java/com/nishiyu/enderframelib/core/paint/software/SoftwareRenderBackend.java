@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.paint.BorderPath;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
@@ -711,7 +712,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                                int argb, Clip clip, float opacity) {
         if ((argb >>> 24) == 0) return;
         if (sink != null) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             if (gc != null && sink.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, gc, opacity)) return;
         }
         int pm = Pixmap.premultiply(argb);
@@ -724,13 +725,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** GPU へ渡せるクリップの列。多すぎれば {@code null}（CPU が塗る）。 */
-    private static GpuSink.Clip[] gpuClips(Clip clip) {
+    private static GpuClip[] gpuClips(Clip clip) {
         List<ClipPart> parts = clip.parts();
         if (parts.size() > GpuSink.MAX_CLIPS) return null;
-        GpuSink.Clip[] out = new GpuSink.Clip[parts.size()];
+        GpuClip[] out = new GpuClip[parts.size()];
         for (int i = 0; i < out.length; i++) {
             ClipPart p = parts.get(i);
-            out[i] = new GpuSink.Clip(p.inv(), p.scale(), p.x0(), p.y0(), p.x1(), p.y1(), p.rx(), p.ry());
+            out[i] = new GpuClip(p.inv(), p.scale(), p.x0(), p.y0(), p.x1(), p.y1(), p.rx(), p.ry());
         }
         return out;
     }
@@ -769,7 +770,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void drawGradient(ShaderGradient g, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                               Resolved res, Clip clip, float opacity) {
         if (sink != null) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             if (gc != null && sink.fillGradient(res.pose(), x0, y0, x1, y1, rx, ry, g, gc, opacity)) return;
         }
         float scale = (float) res.pose().meanScale();
@@ -836,7 +837,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float[] hrx = {shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()};
             float[] hry = {shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()};
             if (sink != null) {
-                GpuSink.Clip[] gc = gpuClips(clip);
+                GpuClip[] gc = gpuClips(clip);
                 if (gc != null && sink.insetShadow(res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma,
                         new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1()}, hrx, hry, color, gc, opacity)) return;
             }
@@ -866,7 +867,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         final float[] holeRx = hrx, holeRy = hry;
         if (sink != null) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             float[] hole = shape != null ? new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1()} : null;
             if (gc != null && sink.outerShadow(res.pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma,
                     hole, holeRx, holeRy, color, gc, opacity)) return;
@@ -917,7 +918,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         final BorderDashPattern dash = pattern;
         if (sink != null && (dash != null || spec.dashKind() == BorderPath.SOLID)) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             if (gc != null) {
                 int[] straight = {spec.color(0), spec.color(1), spec.color(2), spec.color(3)};
                 if (dash == null) {
@@ -994,7 +995,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float outerR = Math.min(el.width(), el.height()) / 2f;
         float innerR = outerR - thick;
         if (sink != null) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             if (gc != null && sink.strokeCircleBorder(res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
                     el.x() + el.width() + 1, el.y() + el.height() + 1, straightColors, gc, opacity)) return true;
         }
@@ -1253,7 +1254,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean strokeOnGpu(GlyphBitmap sdf, float originX, float originY, float half, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
-        GpuSink.Clip[] gc = gpuClips(clip);
+        GpuClip[] gc = gpuClips(clip);
         if (gc == null) return false;
         return sink.drawGlyphStroke(sdf, Math.round(originX + sdf.left()), Math.round(originY - sdf.top()), half, argb, gc, opacity);
     }
@@ -1363,7 +1364,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean glyphOnGpu(GlyphBitmap g, float originX, float originY, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
-        GpuSink.Clip[] gc = gpuClips(clip);
+        GpuClip[] gc = gpuClips(clip);
         if (gc == null) return false;
         return sink.drawGlyph(g, Math.round(originX + g.left()), Math.round(originY - g.top()), argb, gc, opacity);
     }
@@ -1371,7 +1372,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean glyphTransformedOnGpu(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
-        GpuSink.Clip[] gc = gpuClips(clip);
+        GpuClip[] gc = gpuClips(clip);
         if (gc == null) return false;
         float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
         float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
@@ -1434,7 +1435,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int taps = (int) Math.min(4, Math.max(1, Math.ceil(Math.max(sx, sy) / Math.max(scale, 0.01f))));
         float m = 1f / Math.max(scale, 0.01f);
         if (sink != null) {
-            GpuSink.Clip[] gc = gpuClips(clip);
+            GpuClip[] gc = gpuClips(clip);
             if (gc != null && sink.drawImage(res.pose(), pm, Math.max(x0 - m, px0), Math.max(y0 - m, py0),
                     Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()), px0, py0, sx, sy,
                     x0, y0, x0 + w, y0 + h, rx, ry, taps, sx / scale, sy / scale, gc, opacity)) return;
@@ -1475,7 +1476,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             effPy0 = py0 - regionY / ky;
         }
         float m = 1f / Math.max(scale, 0.01f);
-        GpuSink.Clip[] gc = gpuClips(clip);
+        GpuClip[] gc = gpuClips(clip);
         return gc != null && sink.drawTexture(res.pose(), t.handle(), t.width(), t.height(),
                 Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
                 effPx0, effPy0, kx, sy, x0, y0, x0 + w, y0 + h, rx, ry, gc, opacity);

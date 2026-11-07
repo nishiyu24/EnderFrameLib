@@ -72,7 +72,7 @@ tasks.named('test', Test) {
     systemProperty 'enderframe.layout.verifyfloats', 'true'
     workingDir = rootProject.projectDir
     testLogging { showStandardStreams = true }
-    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs'].each { key ->
+    ['golden.update', 'fidelity.dump', 'fidelity.export', 'benchmark.enforce', 'benchmark.update', 'benchmark.factor', 'benchmark.slackMs', 'enderframe.gl.recttrees'].each { key ->
         def value = System.getProperty(key)
         if (value != null) systemProperty key, value
         inputs.property key, value ?: ''

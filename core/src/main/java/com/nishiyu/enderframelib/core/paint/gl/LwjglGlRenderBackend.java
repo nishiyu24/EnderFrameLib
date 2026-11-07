@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.ImageTextureCache;
 import com.nishiyu.enderframelib.core.paint.gpu.BatchDevice;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -595,6 +596,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final int height;
     private final float dpr;
     private final SoftwareRenderBackend cpu;
+    /** 単色の角丸矩形を Property Tree ＋ 1 回のインスタンス描画で描く新経路（{@link #rectTrees} が false、または作れなければ null）。 */
+    private GlRectStream rects;
+    /**
+     * 新経路を使うか（既定は有効。{@code -Denderframe.gl.recttrees=false} で従来経路だけにする）。
+     * 画素は従来経路と一致し（core の全 GL テスト・ゲーム内の showcase で差 ≤ 2）、GPU へ転送するインスタンスデータは
+     * 定常フレームで 0 バイト（従来は showcase で約 240 KB/フレーム）。バッファテクスチャが使えない環境・
+     * テクスチャユニットが足りない環境では、作成に失敗して従来経路だけで動く。
+     */
+    public static volatile boolean rectTrees = !"false".equals(System.getProperty("enderframe.gl.recttrees"));
     private final Pixmap readback;
     private final Map<String, Integer> uniforms = new HashMap<>();
 
@@ -617,6 +627,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final GpuBatchPacker packer = new GpuBatchPacker(new GpuBatchPacker.Host() {
         @Override
         public void beforeShape() {
+            drainRects(); // 溜めた矩形は、従来経路の図形より先に描く（描画順）
             flushOverlay();
         }
 
@@ -878,7 +889,27 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 直近の {@link #render} で GPU が描いた図形（塗り・枠線）の数の累計。CPU に回った分は含まない。 */
     public long gpuShapeCount() {
-        return packer.committedTotal() - gpuGlyphs - gpuImages;
+        return packer.committedTotal() - gpuGlyphs - gpuImages + (rects != null ? rects.accepted() : 0);
+    }
+
+    /** 新経路（Property Tree）の矩形描画の回数の累計。従来経路は {@link #drawCallCount()}。 */
+    public long rectTreeDrawCalls() {
+        return rects != null ? rects.drawCalls() : 0;
+    }
+
+    /** 新経路に載せた矩形の数の累計。 */
+    public long rectTreeShapes() {
+        return rects != null ? rects.accepted() : 0;
+    }
+
+    /** 診断: 新経路が受け付けなかった矩形の理由別の数（姿勢・格子・角・容量／不透明度）と、クリップで回した数。 */
+    public long[] rectTreeRejects() {
+        long[] r = new long[5];
+        if (rects != null) {
+            System.arraycopy(rects.rejects, 0, r, 0, 4);
+            r[4] = rects.clipRejects;
+        }
+        return r;
     }
 
     /** GPU が描いた字形の数の累計（字形アトラスから引いた分）。 */
@@ -893,6 +924,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** これまでに発行した図形の draw の数（バッチ化で、図形の数よりずっと少なくなる）。CPU 層の転送は含まない。 */
     public long drawCallCount() {
+        return drawCalls + (rects != null ? rects.drawCalls() : 0);
+    }
+
+    /** 従来経路（{@code GpuBatchPacker}）の描画回数だけ。 */
+    public long legacyDrawCallCount() {
         return drawCalls;
     }
 
@@ -998,6 +1034,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         }
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         texProgram = link(TEX_VERT, TEX_FRAG);
+        if (rectTrees) {
+            try {
+                rects = new GlRectStream(4096);
+                org.slf4j.LoggerFactory.getLogger(LwjglGlRenderBackend.class).info(
+                        "GPU プリミティブ経路を使う（永続マップ={}, 容量={}）", rects.isPersistent(), rects.capacity());
+            } catch (RuntimeException | LinkageError e) {
+                rects = null; // 作れない環境（バッファテクスチャ非対応など）は従来経路だけで描く
+            }
+        }
         fxProgram = link(TEX_VERT, FX_FRAG);
     }
 
@@ -1083,10 +1128,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         layerStack.clear();
         layerPool.clear();
         layerPool.addAll(allLayers);
+        if (rects != null) rects.begin();
         cpu.renderOnto(items, nowMs, this);
         while (!layerStack.isEmpty()) endGroup(); // 例外で閉じ損ねた層があっても根の描画先へ戻す
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         flushAll();
+        if (rects != null) rects.end();
         if (hostManaged) publishFrame();
     }
 
@@ -1120,9 +1167,27 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** CPU の層を重ね、続けて溜めた図形を描き切る（描画順は CPU 層 → 図形）。 */
     private void flushAll() {
+        drainRects();
         flushOverlay();
         flushBatch();
     }
+
+    /** 新経路に溜めた矩形を、いまの描画先へ吐く。 */
+    private void drainRects() {
+        if (rects == null || rects.pending() == 0) return;
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
+        GL11.glViewport(0, 0, width, height);
+        if (rectRunImg != 0) { // 溜めた画像のテクスチャを結び直す（imageTexture() が新しい画像でユニット 2 を上書きしていることがある）
+            GL13.glActiveTexture(GL13.GL_TEXTURE2);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rectRunImg);
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        }
+        rects.drain(width, height);
+        rectRunImg = 0;
+    }
+
+    /** 新経路に溜めた矩形のうち、画像が使うテクスチャ（ユニット 2）。0 なら画像は無い。テクスチャを替える前に吐き切る。 */
+    private int rectRunImg;
 
     /** 溜めた図形を 1 回のインスタンス描画で描く。 */
     private void flushBatch() {
@@ -1218,6 +1283,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private void flushOverlay() {
         int[] b = cpu.dirtyBounds();
         if (b == null) return;
+        drainRects(); // 溜めた矩形は、あとから来る CPU の層より先に描く（描画順）
         flushBatch();
         drawPixels(cpu.pixmap().pixels(), b, false);
         cpu.clearDirty();
@@ -2024,16 +2090,52 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     // ------------------------------------------------------------------ GPU の図形
 
+    /**
+     * 新経路に積む前の順序づけ: 先に溜まっている CPU の層・従来経路の図形を描き切り、層に描く範囲を記録する。
+     * 描画順は「他の何かを描く直前に溜めた矩形を吐く」ことで保つ。
+     */
+    private void beforeRectTreeShape(Matrix2D pose, float x0, float y0, float x1, float y1) {
+        if (rects.pending() == 0) {
+            flushOverlay();
+            flushBatch();
+        } else if (cpu.dirtyBounds() != null) {
+            flushOverlay();
+        }
+        if (!layerStack.isEmpty()) { // 層に描く範囲（四隅を姿勢で写した外接矩形）を記録する
+            double ax = pose.applyX(x0, y0), ay = pose.applyY(x0, y0), bx = pose.applyX(x1, y0), by = pose.applyY(x1, y0);
+            double cx = pose.applyX(x0, y1), cy = pose.applyY(x0, y1), dx = pose.applyX(x1, y1), dy = pose.applyY(x1, y1);
+            touch((float) Math.min(Math.min(ax, bx), Math.min(cx, dx)), (float) Math.min(Math.min(ay, by), Math.min(cy, dy)),
+                    (float) Math.max(Math.max(ax, bx), Math.max(cx, dx)), (float) Math.max(Math.max(ay, by), Math.max(cy, dy)));
+        }
+    }
+
+    /** 従来経路の {@code beginShape} と同じ余白（局所の単位）。 */
+    private static float shapeMargin(Matrix2D pose) {
+        return 1f / Math.max((float) pose.meanScale(), 0.01f);
+    }
+
     @Override
     public boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                 int argb, Clip[] clips, float opacity) {
+                                 int argb, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 1) != 0 && rects.accepts(pose, x0, y0, x1, y1, rx, ry, clips, opacity)) {
+            float mg = shapeMargin(pose);
+            beforeRectTreeShape(pose, x0 - mg, y0 - mg, x1 + mg, y1 + mg);
+            rects.push(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
+            return true;
+        }
         return packer.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
     }
 
     @Override
     public boolean strokeRoundBorder(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                      float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
-                                     int[] colors, float[] widths, Clip[] clips, float opacity) {
+                                     int[] colors, float[] widths, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 2) != 0 && rects.accepts(pose, x0, y0, x1, y1, rx, ry, clips, opacity)) {
+            float mg = shapeMargin(pose);
+            beforeRectTreeShape(pose, x0 - mg, y0 - mg, x1 + mg, y1 + mg);
+            rects.pushStroke(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty, colors, widths, clips, opacity);
+            return true;
+        }
         return packer.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                 colors, widths, clips, opacity);
     }
@@ -2044,40 +2146,75 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                                       int[] colors, float[] widths,
                                       float bx, float by, float cxm, float cym, float[] pcx, float[] pcy,
                                       float period, float dash, boolean round, float thickness,
-                                      Clip[] clips, float opacity) {
+                                      GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 1024) != 0 && period > 0f
+                && rects.acceptsWithExt(pose, x0, y0, x1, y1, rx, ry, clips, opacity)) {
+            float mg = shapeMargin(pose);
+            beforeRectTreeShape(pose, x0 - mg, y0 - mg, x1 + mg, y1 + mg);
+            rects.pushStrokeDashed(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty, colors, widths,
+                    bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness, clips, opacity);
+            return true;
+        }
         return packer.strokeDashedBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                 colors, widths, bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness, clips, opacity);
     }
 
     @Override
     public boolean strokeCircleBorder(Matrix2D pose, float cx, float cy, float outerR, float innerR,
-                                      float bx0, float by0, float bx1, float by1, int[] colors, Clip[] clips, float opacity) {
+                                      float bx0, float by0, float bx1, float by1, int[] colors, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 128) != 0 && rects.acceptsPosed(pose, bx0, by0, bx1, by1, clips, opacity)) {
+            beforeRectTreeShape(pose, bx0, by0, bx1, by1);
+            rects.pushCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, colors, clips, opacity);
+            return true;
+        }
         return packer.strokeCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, colors, clips, opacity);
     }
 
     @Override
     public boolean fillGradient(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                ShaderGradient g, Clip[] clips, float opacity) {
+                                ShaderGradient g, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 16) != 0 && rects.acceptsWithExt(pose, x0, y0, x1, y1, rx, ry, clips, opacity)) {
+            float mg = shapeMargin(pose);
+            beforeRectTreeShape(pose, x0 - mg, y0 - mg, x1 + mg, y1 + mg);
+            rects.pushGradient(pose, x0, y0, x1, y1, rx, ry, g, clips, opacity);
+            return true;
+        }
         return packer.fillGradient(pose, x0, y0, x1, y1, rx, ry, g, clips, opacity);
     }
 
     @Override
     public boolean outerShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
-                               float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                               float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 4) != 0 && rects.acceptsOuterShadow(pose, qx0, qy0, qx1, qy1, clips, opacity)) {
+            beforeRectTreeShape(pose, qx0, qy0, qx1, qy1);
+            rects.pushOuterShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry, argb, clips, opacity);
+            return true;
+        }
         return packer.outerShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry, argb, clips, opacity);
     }
 
     @Override
     public boolean insetShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
-                               float sigma, float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                               float sigma, float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
+        if (rects != null && (GlRectStream.opMask & 8) != 0 && rects.acceptsWithExt(pose, qx0, qy0, qx1, qy1, rx, ry, clips, opacity)) {
+            beforeRectTreeShape(pose, qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1);
+            rects.pushInsetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry, argb, clips, opacity);
+            return true;
+        }
         return packer.insetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry, argb, clips, opacity);
     }
 
     @Override
-    public boolean drawGlyph(GlyphBitmap g, int bx, int by, int argb, Clip[] clips, float opacity) {
+    public boolean drawGlyph(GlyphBitmap g, int bx, int by, int argb, GpuClip[] clips, float opacity) {
         if (!atlas.fits(g)) return false;
         int[] slot = atlasSlot(g);
+        if (rects != null && (GlRectStream.opMask & 32) != 0 && rects.acceptsGlyph(bx, by, g.width(), g.height(), clips, opacity)) {
+            beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height());
+            rects.pushGlyph(bx, by, g.width(), g.height(), slot[0], slot[1], argb, clips, opacity);
+            gpuGlyphs++;
+            return true;
+        }
         if (packer.glyph(g, slot, bx, by, argb, clips, opacity)) gpuGlyphs++;
         return true;
     }
@@ -2124,18 +2261,31 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     @Override
-    public boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+    public boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, GpuClip[] clips, float opacity) {
         if (!atlas.fits(sdf)) return false;
         int[] slot = atlasSlot(sdf);
+        if (rects != null && (GlRectStream.opMask & 512) != 0 && rects.acceptsPosed(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height(), clips, opacity)) {
+            beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height());
+            rects.pushGlyphStroke(bx, by, sdf.width(), sdf.height(), slot[0], slot[1], half, argb, clips, opacity);
+            gpuGlyphs++;
+            return true;
+        }
         if (packer.glyphStroke(sdf, slot, bx, by, half, argb, clips, opacity)) gpuGlyphs++;
         return true;
     }
 
     @Override
     public boolean drawGlyphTransformed(Matrix2D pose, GlyphBitmap g, float ox, float oy, float s,
-                                        float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
+                                        float bx0, float by0, float bx1, float by1, int argb, GpuClip[] clips, float opacity) {
         if (!atlas.fits(g)) return false;
         int[] slot = atlasSlot(g);
+        if (rects != null && (GlRectStream.opMask & 256) != 0 && rects.acceptsPosed(pose, bx0, by0, bx1, by1, clips, opacity)) {
+            beforeRectTreeShape(pose, bx0, by0, bx1, by1);
+            rects.pushGlyphTransformed(pose, bx0, by0, bx1, by1, slot[0], slot[1], g.width(), g.height(), ox, oy, s, g.left(), g.top(),
+                    argb, clips, opacity);
+            gpuGlyphs++;
+            return true;
+        }
         if (packer.glyphTransformed(pose, g, slot, ox, oy, s, bx0, by0, bx1, by1, argb, clips, opacity)) gpuGlyphs++;
         return true;
     }
@@ -2144,10 +2294,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public boolean drawImage(Matrix2D pose, Pixmap image, float bx0, float by0, float bx1, float by1,
                              float px0, float py0, float sx, float sy,
                              float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                             int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+                             int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         if (image.width() > 8192 || image.height() > 8192) return false;
         flushOverlay();
         int tex = imageTexture(image);
+        if (tryRectTreeImage(pose, tex, image.width(), image.height(), bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry,
+                taps, stepX, stepY, clips, opacity, 64)) {
+            return true;
+        }
         if (packer.count() > 0 && boundImg != tex) flushBatch();
         boundImg = tex;
         if (!packer.image(pose, image, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, taps, stepX, stepY, clips, opacity)) {
@@ -2167,10 +2321,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public boolean drawTexture(Matrix2D pose, long handle, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
                                float px0, float py0, float sx, float sy,
-                               float x0, float y0, float x1, float y1, float[] rx, float[] ry, Clip[] clips, float opacity) {
+                               float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
         if (handle <= 0 || handle > Integer.MAX_VALUE || imgW <= 0 || imgH <= 0 || imgW > 16384 || imgH > 16384) return false;
         int tex = (int) handle;
         flushOverlay();
+        if (tryRectTreeImage(pose, tex, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f,
+                clips, opacity, 2048)) {
+            return true;
+        }
         if (packer.count() > 0 && boundImg != tex) flushBatch();
         boundImg = tex;
         if (!packer.image(pose, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity)) {
@@ -2179,6 +2337,29 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        gpuImages++;
+        return true;
+    }
+
+    /**
+     * 画像・外部テクスチャを新経路に積む。受け付けなければ false（呼び出し側が従来経路へ回す）。
+     * 画像は 1 回の描画で 1 枚のテクスチャしか引けないので、別のテクスチャへ替わる前に溜めた分を吐き、テクスチャはユニット 2 に結ぶ。
+     */
+    private boolean tryRectTreeImage(Matrix2D pose, int tex, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
+                                     float px0, float py0, float sx, float sy, float x0, float y0, float x1, float y1,
+                                     float[] rx, float[] ry, int taps, float stepX, float stepY, GpuClip[] clips, float opacity, int maskBit) {
+        if (rects == null || (GlRectStream.opMask & maskBit) == 0) return false;
+        float m = 1f / Math.max((float) pose.meanScale(), 0.01f); // 回転の下では斜めの画素が箱の外へはみ出す（従来経路と同じ余白）
+        if (!rects.acceptsImage(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, rx, ry, clips, opacity)) return false;
+        if (rects.pending() > 0 && rectRunImg != 0 && rectRunImg != tex) drainRects();
+        beforeRectTreeShape(pose, bx0 - m, by0 - m, bx1 + m, by1 + m);
+        boundImg = tex;
+        GL13.glActiveTexture(GL13.GL_TEXTURE2);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        rectRunImg = tex;
+        rects.pushImage(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, imgW, imgH,
+                taps, stepX, stepY, clips, opacity);
         gpuImages++;
         return true;
     }
@@ -2295,6 +2476,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         closed = true;
         if (window != MemoryUtil.NULL) {
             enter();
+            if (rects != null) {
+                rects.close();
+                rects = null;
+            }
             if (shapeProgram != 0) GL20.glDeleteProgram(shapeProgram);
             if (texProgram != 0) GL20.glDeleteProgram(texProgram);
             if (fxProgram != 0) GL20.glDeleteProgram(fxProgram);

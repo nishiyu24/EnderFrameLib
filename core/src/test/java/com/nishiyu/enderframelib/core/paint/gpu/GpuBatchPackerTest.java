@@ -19,7 +19,7 @@ public class GpuBatchPackerTest {
 
     private static final int S = GpuBatchPacker.STRIDE * 4;
     private static final float[] R0 = {0, 0, 0, 0};
-    private static final GpuSink.Clip[] NO_CLIPS = new GpuSink.Clip[0];
+    private static final GpuClip[] NO_CLIPS = new GpuClip[0];
 
     private static final class RecordingHost implements GpuBatchPacker.Host {
         int before, flushes, touches;
@@ -118,9 +118,9 @@ public class GpuBatchPackerTest {
     public void clipsAreWrittenFromTexelTwentyFour() {
         RecordingHost host = new RecordingHost();
         GpuBatchPacker p = newPacker(host);
-        GpuSink.Clip clip = new GpuSink.Clip(new Matrix2D(1, 0, 0, 1, 7, 8), 2f, 1, 2, 3, 4,
+        GpuClip clip = new GpuClip(new Matrix2D(1, 0, 0, 1, 7, 8), 2f, 1, 2, 3, 4,
                 new float[]{1, 2, 3, 4}, new float[]{5, 6, 7, 8});
-        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF000000, new GpuSink.Clip[]{clip}, 1f);
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF000000, new GpuClip[]{clip}, 1f);
         float[] d = p.data();
         assertEquals(1f, d[3 * 4 + 3], "クリップ数");
         assertEquals(7f, d[25 * 4]);
@@ -173,7 +173,7 @@ public class GpuBatchPackerTest {
         GpuSink sink = new GpuSink() {
             @Override
             public boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                         int argb, Clip[] clips, float opacity) {
+                                         int argb, GpuClip[] clips, float opacity) {
                 boolean r = p.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
                 modes.add((int) p.data()[(p.count() - 1) * S + 12]);
                 return r;
@@ -182,7 +182,7 @@ public class GpuBatchPackerTest {
             @Override
             public boolean strokeRoundBorder(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                              float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
-                                             int[] colors, float[] widths, Clip[] clips, float opacity) {
+                                             int[] colors, float[] widths, GpuClip[] clips, float opacity) {
                 boolean r = p.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                         colors, widths, clips, opacity);
                 modes.add((int) p.data()[(p.count() - 1) * S + 12]);
@@ -273,8 +273,8 @@ public class GpuBatchPackerTest {
         p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, NO_CLIPS, 1f);
         assertArrayEquals(new int[] {17, 0}, widthsOf(p), "塗りは影・繰り返し（テクセル 16）まで、拡張部は使わない");
 
-        GpuSink.Clip clip = new GpuSink.Clip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
-        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuSink.Clip[] {clip}, 1f);
+        GpuClip clip = new GpuClip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuClip[] {clip}, 1f);
         assertArrayEquals(new int[] {GpuBatchPacker.CORE_TEXELS, 5}, widthsOf(p), "クリップ 1 段 = 拡張部の 5 テクセル");
         assertArrayEquals(new int[] {0, 0}, widthsOf(p), "転送したあとは数え直し（空なら呼ばれず 0 のまま）");
     }
@@ -283,8 +283,8 @@ public class GpuBatchPackerTest {
     @Test
     public void rowsDoNotCarryLeftoversFromEarlierBatches() {
         GpuBatchPacker p = newPacker(new RecordingHost());
-        GpuSink.Clip clip = new GpuSink.Clip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
-        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuSink.Clip[] {clip}, 1f);
+        GpuClip clip = new GpuClip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuClip[] {clip}, 1f);
         p.clear();
         p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, NO_CLIPS, 1f);
         float[] d = p.data();
