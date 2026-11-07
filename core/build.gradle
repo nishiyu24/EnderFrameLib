@@ -41,14 +41,12 @@ dependencies {
     api "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
     api "org.lwjgl:lwjgl-opengl:${lwjglVersion}"
     api "org.lwjgl:lwjgl-freetype:${lwjglVersion}"
-    api "org.lwjgl:lwjgl-harfbuzz:${lwjglVersion}" // 段落シェイパー（Milestone 5）。FreeType とフェイスを共有できる
 
     // ネイティブはテストと、単体で動かすときの実行時に必要（Minecraft 上では本体が持つ）
     testRuntimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
-    testRuntimeOnly "org.lwjgl:lwjgl-harfbuzz::${lwjglNatives}"
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
@@ -56,19 +54,12 @@ dependencies {
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
 }
 
-// エンジン再設計 Milestone 0: JDK 21 の Vector API（インキュベータ）と Panama FFM のネイティブアクセスを解禁する
-// JDK 21 では Panama FFM（java.lang.foreign）がプレビュー API のため --enable-preview も要る。
-// javac はプレビュー API を実際に使ったクラスだけをプレビュー印にするので、他のクラスには影響しない。
-def kernelJvmArgs = ['--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED', '--enable-preview']
-
+// エンジン再設計 Milestone 0: 利用側に JVM の起動フラグ（プレビュー機能・追加モジュール・ネイティブアクセス許可）も
+// 追加ネイティブ依存も要求しない。コンパイルにもテスト実行にも特別なフラグを渡さない（KernelBaselineTest が番をする）。
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.compilerArgs += ['--add-modules', 'jdk.incubator.vector', '--enable-preview']
 }
 
-// Test / JavaExec（runViewer・runShowcase・jmh・profile）すべてに同じフラグを渡す
-tasks.withType(Test).configureEach { jvmArgs kernelJvmArgs }
-tasks.withType(JavaExec).configureEach { jvmArgs kernelJvmArgs }
 
 // テストはリポジトリ直下の src/test/resources（フォント・ゴールデン等）と src/main/resources を相対パスで読む
 sourceSets.test.resources.srcDir rootProject.file('src/test/resources')
@@ -113,7 +104,6 @@ dependencies {
     viewerRuntime "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
     viewerRuntime "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
     viewerRuntime "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
-    viewerRuntime "org.lwjgl:lwjgl-harfbuzz::${lwjglNatives}"
     viewerRuntime 'org.slf4j:slf4j-simple:2.0.9'
 }
 
