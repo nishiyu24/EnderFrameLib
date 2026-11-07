@@ -5,6 +5,8 @@ import com.nishiyu.enderframelib.client.ClientScreenInteractionManager;
 import com.nishiyu.enderframelib.client.ClientWebManager;
 import com.nishiyu.enderframelib.client.SessionContext;
 import com.nishiyu.enderframelib.client.renderer.surface.SurfaceGeometry;
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -71,7 +73,19 @@ public final class SurfaceRenderer {
                 Minecraft.getInstance().level, audio.play(), audio.twoD(), sessionId, audio.pos(),
                 style.flatLayers(), style.screenSpaceText());
         // 試験的: 描画コア（Minecraft 非依存の GPU バックエンド）で描ける面はそちらに任せる
-        if (!CoreGpuSurface.tryDraw(request)) request.render();
+        long tSurface = StageProfiler.begin(PipelineStage.SURFACE);
+        try {
+            if (!CoreGpuSurface.tryDraw(request)) {
+                long tLegacy = StageProfiler.begin(PipelineStage.SURFACE_LEGACY);
+                try {
+                    request.render();
+                } finally {
+                    StageProfiler.end(PipelineStage.SURFACE_LEGACY, tLegacy);
+                }
+            }
+        } finally {
+            StageProfiler.end(PipelineStage.SURFACE, tSurface);
+        }
         return true;
     }
 }

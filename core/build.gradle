@@ -131,3 +131,40 @@ tasks.register('runShowcase', JavaExec) {
     ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
     workingDir = rootProject.projectDir
 }
+
+// ---- 計測（MEASUREMENT.md）----
+// JMH のマイクロベンチと、本番の経路の段別プロファイル。公開物には入れない。
+//   ./gradlew :core:jmh                                   全部（遅い。数分）
+//   ./gradlew :core:jmh -Pjmh.args="PipelineBench.restyle -p doc=showcase -f 1 -wi 2 -i 3 -prof gc"
+//   ./gradlew :core:profile -Pprofile.args="large-list 400 --mutate" [-Pprofile.jfr=build/profile.jfr]
+sourceSets {
+    jmh {
+        java.srcDir 'src/jmh/java'
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + configurations.runtimeClasspath + configurations.viewerRuntime
+    }
+}
+dependencies {
+    jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+tasks.register('jmh', JavaExec) {
+    group = 'verification'
+    description = 'JMH マイクロベンチ（パイプライン各段・CPU ラスタ）'
+    classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
+    mainClass = 'org.openjdk.jmh.Main'
+    workingDir = rootProject.projectDir
+    if (project.hasProperty('jmh.args')) args(project.property('jmh.args').toString().split(' ').findAll { !it.isEmpty() })
+}
+tasks.register('profile', JavaExec) {
+    group = 'verification'
+    description = '本番の経路で段別の所要時間を表にする（PipelineProfileMain）。-Pprofile.jfr=ファイル で JFR も取る'
+    classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
+    workingDir = rootProject.projectDir
+    if (project.hasProperty('profile.jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('profile.jfr')},settings=profile"
+    if (project.hasProperty('profile.args')) args(project.property('profile.args').toString().split(' ').findAll { !it.isEmpty() })
+}
+
+// 計測用のソースが腐らないよう、check でコンパイルだけは通す（実行はしない）
+tasks.named('check') { dependsOn 'compileJmhJava' }

@@ -261,6 +261,17 @@ public final class PaintSceneDriver {
         return out;
     }
 
+    /**
+     * 直近に描いた {@code items} のうち、時刻 {@code nowMs} でまだ補間やキーフレームが動いている項目があるか。
+     * false なら、項目リストが変わらない限り、次の描画も同じ絵になる（再描画を飛ばせる）。
+     */
+    public boolean anyActiveAt(List<DisplayItem> items, long nowMs) {
+        for (DisplayItem el : items) {
+            if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
+        }
+        return false;
+    }
+
     /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     public Resolved resolveAt(int i) {
         Resolved r = curRes[i];
