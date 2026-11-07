@@ -81,11 +81,7 @@ public final class ValueInterpolator {
     /** 小数 4 桁まで、末尾の 0 を落とした文字列（指数表記にしない）。 */
     static String format(double v) {
         if (v == Math.rint(v) && Math.abs(v) < 1e9) return Long.toString((long) v);
-        String s = String.format(Locale.ROOT, "%.4f", v);
-        int end = s.length();
-        while (end > 0 && s.charAt(end - 1) == '0') end--;
-        if (end > 0 && s.charAt(end - 1) == '.') end--;
-        s = s.substring(0, end);
+        String s = CssNumbers.trimmed4(v);
         return s.equals("-0") ? "0" : s;
     }
 

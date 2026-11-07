@@ -652,7 +652,47 @@ public final class Bindings {
                 scopeKeys = changedKeys;
             }
 
-            return applyRecursive(root, values, lists, scopeKeys);
+            boolean result = applyRecursive(root, values, lists, scopeKeys);
+            mirrorToPatchTable(root, values, scopeKeys);
+            return result;
+        }
+
+        private com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable patchTable;
+        private HtmlNode patchRoot;
+
+        /** {@code style="width: {{k}}%"} 等の置換を、アリーナの列へ直接書いた表（最初の同期で木からコンパイルする）。 */
+        public com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable patchTable() {
+            return patchTable;
+        }
+
+        /** 節の「置換前の」style 属性（同期で解決済みになる前のテンプレート文字列）。 */
+        private String templateStyleOf(HtmlNode n) {
+            Map<String, String> orig = originalNodeAttrs.get(n);
+            return orig != null && orig.get("style") != null ? orig.get("style") : n.attrs.get("style");
+        }
+
+        private void mirrorToPatchTable(HtmlNode root, Map<String, String> values, Set<String> scopeKeys) {
+            if (patchTable == null || patchRoot != root) {
+                var arena = root.arena();
+                if (arena == null) return;
+                patchTable = new com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable(arena);
+                patchRoot = root;
+                patchTable.compile(root, this::templateStyleOf);
+                scopeKeys = null; // 初回は全キーを書く
+            }
+            else if (patchTable.compileNewNodes(root, this::templateStyleOf) > 0) {
+                scopeKeys = null; // 後から作られた節（リスト行など）には、すべてのキーの現在値を書く
+            }
+            if (patchTable.patchCount() == 0) return;
+            for (String key : scopeKeys != null ? scopeKeys : patchTable.keys()) {
+                String raw = values.get(key);
+                if (raw == null || !patchTable.hasKey(key)) continue;
+                try {
+                    patchTable.setFloat(key, Float.parseFloat(raw.trim()));
+                } catch (NumberFormatException ignored) {
+                    // 数値でない値（単位つきなど）は従来の属性経路だけが扱う
+                }
+            }
         }
 
         private boolean applyRecursive(HtmlNode vNode, Map<String, String> scopeData,

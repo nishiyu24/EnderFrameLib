@@ -37,6 +37,19 @@ public class PipelineBench {
     private Document document;
     private LayoutBox root;
     private HtmlNode scroller;
+    private InteractionState hoverState;
+    private LayoutBox hoverRoot;
+    private HtmlNode hoverTarget;
+    private boolean hoverOn;
+
+    private static HtmlNode firstButton(HtmlNode n) {
+        if ("button".equals(n.tag)) return n;
+        for (HtmlNode c : n.children) {
+            HtmlNode r = firstButton(c);
+            if (r != null) return r;
+        }
+        return null;
+    }
 
     @Setup(Level.Trial)
     public void setUp() {
@@ -44,6 +57,21 @@ public class PipelineBench {
         scroller = document.root.getElementById("scroller");
         root = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, new InteractionState());
+        hoverState = new InteractionState();
+        hoverRoot = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
+                FontResolver.FALLBACK, hoverState);
+        hoverTarget = firstButton(document.root);
+        // 状態表を温めて、往復の定常状態を測る
+        for (int i = 0; i < 4; i++) hoverToggle();
+    }
+
+    /** :hover を 1 回切り替えて再スタイルする（状態表を引く経路。{@code <button>} が無い文書は何もしない）。 */
+    @Benchmark
+    public Object hoverToggle() {
+        if (hoverTarget == null) return null;
+        hoverOn = !hoverOn;
+        hoverState.setHoveredNode(hoverOn ? hoverTarget : null);
+        return parser.restyleLayoutTree(hoverRoot, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), hoverState);
     }
 
     /** 箱の木を一から作って測り、配置する（差分なし）。 */

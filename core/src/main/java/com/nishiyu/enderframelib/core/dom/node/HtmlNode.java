@@ -853,9 +853,17 @@ public class HtmlNode implements Node {
      * 属性の表。{@code id} の増減だけを見て id 索引を保つ。{@code put} / {@code remove} 以外の
      * 変更（{@code compute} 系・{@code replace} 系）も、前後の {@code id} を比べて同じ扱いにする。
      */
+    private int attrVersion;
+
+    /** 属性を書き換えるたびに増える版番号（属性に依存する算出結果の使い回しの目印）。 */
+    public int attrVersion() {
+        return attrVersion;
+    }
+
     private final class AttributeMap extends LinkedHashMap<String, String> {
 
         private <R> R trackingId(Supplier<R> mutation) {
+            attrVersion++;
             String before = super.get("id");
             String classBefore = super.get("class");
             R result = mutation.get();

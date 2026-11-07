@@ -68,14 +68,8 @@ public class ColorParser {
         int r = (argb >> 16) & 0xFF;
         int g = (argb >> 8) & 0xFF;
         int b = argb & 0xFF;
-        if (a == 0xFF) return String.format(Locale.ROOT, "#%02x%02x%02x", r, g, b);
-        return String.format(Locale.ROOT, "rgba(%d, %d, %d, %s)", r, g, b, trimNumber(a / 255.0));
-    }
-
-    private static String trimNumber(double v) {
-        String s = String.format(Locale.ROOT, "%.4f", v);
-        s = s.replaceAll("0+$", "");
-        return s.endsWith(".") ? s.substring(0, s.length() - 1) : s;
+        if (a == 0xFF) return CssNumbers.hexRgb(r, g, b);
+        return "rgba(" + r + ", " + g + ", " + b + ", " + CssNumbers.trimmed4(a / 255.0) + ")";
     }
 
     /**
