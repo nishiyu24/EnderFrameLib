@@ -277,6 +277,48 @@ public class LocalUpdateTest {
             same(flush(off, false), flush(on, true), "短くする " + id);
         }
     }
+
+    private static final String STRETCH_HTML = """
+            <style>
+              body { margin: 4px; font-size: 13px }
+              .row { display: flex; gap: 4px; align-items: stretch }
+              .row > div { flex: 1 1 0; border: 1px solid #888; padding: 3px }
+              .pct { height: 120px } .pct > div { height: 50%%; background: #eee }
+              .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 3px }
+              table { border-collapse: collapse } td { border: 1px solid #444; padding: 2px }
+            </style>
+            <div class=row id=row><div id=sa>a</div><div id=sb>b b b</div><div id=sc>c</div></div>
+            <div class=pct><div id=pp>pct</div><div id=pq>pct2</div></div>
+            <div class=grid id=grid><div id=ga>g</div><div id=gb>h</div><div id=gc>i</div></div>
+            <table><tr><td id=ta>t1</td><td id=tb>t2 t2</td></tr><tr><td id=tc>t3</td><td id=td>t4</td></tr></table>
+            """;
+
+    /** 2 回目の measure パスで 1 回目に測った箱を使い回しても（stretch・割合の高さ・grid・表）、使い回さないときと同じ。 */
+    @Test
+    public void samePassReuseMatchesFullSecondPass() {
+        String[] ids = {"sa", "sb", "sc", "pp", "pq", "ga", "gb", "gc", "ta", "tb", "tc", "td"};
+        StandaloneView on = new StandaloneView(STRETCH_HTML, 300, 400, FontResolver.FALLBACK);
+        StandaloneView off = new StandaloneView(STRETCH_HTML, 300, 400, FontResolver.FALLBACK);
+        try {
+            LayoutBox.samePassReuse = false;
+            List<DisplayItem> base = flush(off, true);
+            LayoutBox.samePassReuse = true;
+            same(base, flush(on, true), "初回");
+            Random rnd = new Random(5L);
+            for (int step = 0; step < 300; step++) {
+                String id = ids[rnd.nextInt(ids.length)];
+                String text = TEXTS[rnd.nextInt(TEXTS.length)];
+                on.root().getNodeById(id).updateTextContent(text);
+                off.root().getNodeById(id).updateTextContent(text);
+                LayoutBox.samePassReuse = false;
+                List<DisplayItem> expected = flush(off, true);
+                LayoutBox.samePassReuse = true;
+                same(expected, flush(on, true), "手順 " + step + " (" + id + " = '" + text + "')");
+            }
+        } finally {
+            LayoutBox.samePassReuse = true;
+        }
+    }
     }
 
     @Nested

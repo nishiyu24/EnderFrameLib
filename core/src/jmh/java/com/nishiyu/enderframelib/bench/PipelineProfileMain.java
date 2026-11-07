@@ -85,6 +85,13 @@ public final class PipelineProfileMain {
 
     private static HtmlText findText(StandaloneView view, String doc) {
         HtmlNode el = doc.equals(Workloads.LARGE_LIST) ? view.root().getElementById("item-250") : view.root().querySelector("p");
+        if (el == null) {
+            for (String sel : new String[]{"td", "label", "button", "li", "span", "b", "div"}) {
+                for (var c : view.root().querySelectorAll(sel)) {
+                    if (c instanceof HtmlNode hn && !hn.children.isEmpty() && hn.children.get(0) instanceof HtmlText t0 && !t0.getData().isBlank()) return t0;
+                }
+            }
+        }
         if (el == null || el.children.isEmpty() || !(el.children.get(0) instanceof HtmlText t)) return null;
         return t;
     }
