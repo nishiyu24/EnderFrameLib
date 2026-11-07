@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -245,5 +246,48 @@ public class GpuBatchPackerTest {
         assertEquals(5f, d[21 * 4 + 3]);
         assertEquals(1.5f, d[22 * 4], 1e-6);
         assertEquals(1, host.before, "描く前に beforeShape が呼ばれる");
+    }
+
+    private static int[] widthsOf(GpuBatchPacker p) {
+        int[] w = new int[2];
+        p.flushTo(new BatchDevice() {
+            @Override
+            public void uploadInstances(float[] data, int n) {}
+
+            @Override
+            public void uploadInstances(float[] data, int n, int core, int ext) {
+                w[0] = core;
+                w[1] = ext;
+            }
+
+            @Override
+            public void drawInstances(int n) {}
+        });
+        return w;
+    }
+
+    /** 使ったテクセルまでの幅が、共通部（0..23）と拡張部（24..）に分けて渡る。 */
+    @Test
+    public void flushReportsUsedWidthSplitIntoCoreAndExt() {
+        GpuBatchPacker p = newPacker(new RecordingHost());
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, NO_CLIPS, 1f);
+        assertArrayEquals(new int[] {17, 0}, widthsOf(p), "塗りは影・繰り返し（テクセル 16）まで、拡張部は使わない");
+
+        GpuSink.Clip clip = new GpuSink.Clip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuSink.Clip[] {clip}, 1f);
+        assertArrayEquals(new int[] {GpuBatchPacker.CORE_TEXELS, 5}, widthsOf(p), "クリップ 1 段 = 拡張部の 5 テクセル");
+        assertArrayEquals(new int[] {0, 0}, widthsOf(p), "転送したあとは数え直し（空なら呼ばれず 0 のまま）");
+    }
+
+    /** 前のバッチの残りが次の行に持ち越されない（フレーム間の行の比較が内容だけで決まる）。 */
+    @Test
+    public void rowsDoNotCarryLeftoversFromEarlierBatches() {
+        GpuBatchPacker p = newPacker(new RecordingHost());
+        GpuSink.Clip clip = new GpuSink.Clip(Matrix2D.IDENTITY, 1f, 0, 0, 9, 9, R0, R0);
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, new GpuSink.Clip[] {clip}, 1f);
+        p.clear();
+        p.fillRoundRect(Matrix2D.IDENTITY, 0, 0, 5, 5, R0, R0, 0xFF112233, NO_CLIPS, 1f);
+        float[] d = p.data();
+        for (int i = 24 * 4; i < S; i++) assertEquals(0f, d[i], "テクセル " + (i / 4) + " は 0 のまま");
     }
 }
