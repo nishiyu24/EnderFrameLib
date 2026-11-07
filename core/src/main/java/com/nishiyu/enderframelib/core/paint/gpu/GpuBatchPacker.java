@@ -75,6 +75,7 @@ public final class GpuBatchPacker {
     /** 溜めた行を捨てる（転送し終わったら呼ぶ）。 */
     public void clear() {
         batchN = 0;
+        usedMax = -1;
     }
 
     /**
@@ -88,10 +89,20 @@ public final class GpuBatchPacker {
         int n = batchN;
         if (n == 0) return 0;
         batchN = 0;
-        device.uploadInstances(batch, n);
+        int hi = usedMax;
+        usedMax = -1;
+        device.uploadInstances(batch, n, Math.min(hi, CORE_TEXELS - 1) + 1, Math.max(hi - CORE_TEXELS + 1, 0));
         device.drawInstances(n);
         return n;
     }
+
+    /** 共通部（テクセル 0..23）の幅。24 以降（クリップ・破線・画像の標本間隔）は拡張部として別に転送できる。 */
+    public static final int CORE_TEXELS = 24;
+    /** 拡張部（テクセル 24..48）の最大の幅。 */
+    public static final int EXT_TEXELS = 25;
+
+    /** 今のバッチで書いた最大のテクセル番号（空なら -1）。 */
+    private int usedMax = -1;
 
     /** これまでに積んだ行の総数（{@link #clear} では戻らない）。 */
     public long committedTotal() {
@@ -287,6 +298,8 @@ public final class GpuBatchPacker {
         }
         if (batchN == MAX_BATCH) host.flushBatch();
         base = batchN * STRIDE * 4;
+        // 前のバッチの残りを持ち越さない（使わないテクセルが 0 で揃うので、フレーム間の行の比較が内容だけで決まる）
+        java.util.Arrays.fill(batch, base, base + STRIDE * 4, 0f);
         curMode = 0;
         curInnerEmpty = 0;
         curHole = 0;
@@ -329,6 +342,7 @@ public final class GpuBatchPacker {
     }
 
     private void put(int texel, float x, float y, float z, float w) {
+        if (texel > usedMax) usedMax = texel;
         int i = base + texel * 4;
         batch[i] = x;
         batch[i + 1] = y;

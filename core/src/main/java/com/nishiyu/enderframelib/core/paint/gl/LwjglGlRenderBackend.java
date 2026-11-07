@@ -74,16 +74,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             uniform vec2 uView;
             flat out int vInst;
             out vec2 vLocal;
+            uniform int uRowBase;
             void main() {
-                vec4 b = texelFetch(uData, ivec2(0, gl_InstanceID), 0);
-                vec4 pa = texelFetch(uData, ivec2(1, gl_InstanceID), 0);
-                vec4 pt = texelFetch(uData, ivec2(2, gl_InstanceID), 0);
+                vec4 b = texelFetch(uData, ivec2(0, gl_InstanceID + uRowBase), 0);
+                vec4 pa = texelFetch(uData, ivec2(1, gl_InstanceID + uRowBase), 0);
+                vec4 pt = texelFetch(uData, ivec2(2, gl_InstanceID + uRowBase), 0);
                 vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
                 vec2 l = mix(b.xy, b.zw, c);
                 vec2 d = vec2(pa.x * l.x + pa.z * l.y + pt.x, pa.y * l.x + pa.w * l.y + pt.y);
                 gl_Position = vec4(d.x / uView.x * 2.0 - 1.0, 1.0 - d.y / uView.y * 2.0, 0.0, 1.0);
                 vLocal = l;
-                vInst = gl_InstanceID;
+                vInst = gl_InstanceID + uRowBase;
             }
             """;
 
@@ -96,7 +97,9 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             uniform sampler2D uData;
             uniform sampler2D uAtlas;
             uniform sampler2D uImgTex;
+            uniform sampler2D uExt;
             #define F(k) texelFetch(uData, ivec2(k, vInst), 0)
+            #define E(k) texelFetch(uExt, ivec2((k) - 24, vInst), 0)
             out vec4 fragColor;
 
             float erfcf(float x) {
@@ -233,7 +236,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                     if (taps <= 1) {
                         tx = texture(uImgTex, uv / uImgSize);
                     } else {
-                        vec2 stp = F(48).xy;
+                        vec2 stp = E(48).xy;
                         tx = vec4(0.0);
                         for (int j = 0; j < taps; j++) {
                             for (int i = 0; i < taps; i++) {
@@ -305,8 +308,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                     if (side < 0) discard;
                     col = F(11 + side);
                     if (uHole != 0) {
-                        vec4 t44 = F(44), t47 = F(47);
-                        float s = pathParam(vLocal - t44.zw, t44.xy, F(45), F(46));
+                        vec4 t44 = E(44), t47 = E(47);
+                        float s = pathParam(vLocal - t44.zw, t44.xy, E(45), E(46));
                         float period = t47.x;
                         float phase = s - period * floor(s / period);
                         float along = abs(phase - period * 0.5);
@@ -323,10 +326,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 }
                 vec2 dev = vec2(gl_FragCoord.x, uView.y - gl_FragCoord.y);
                 for (int i = 0; i < uClipN; i++) {
-                    vec4 A = F(24 + i * 5);
-                    vec4 T = F(25 + i * 5);
+                    vec4 A = E(24 + i * 5);
+                    vec4 T = E(25 + i * 5);
                     vec2 lp = vec2(A.x * dev.x + A.z * dev.y + T.x, A.y * dev.x + A.w * dev.y + T.y);
-                    a *= cover(sdRR(lp, F(26 + i * 5), F(27 + i * 5), F(28 + i * 5)), T.z);
+                    a *= cover(sdRR(lp, E(26 + i * 5), E(27 + i * 5), E(28 + i * 5)), T.z);
                     if (a <= 0.0) discard;
                 }
                 a *= uOpacity * col.a;
@@ -632,7 +635,21 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             LwjglGlRenderBackend.this.touch(x0, y0, x1, y1);
         }
     });
-    private int dataTex;
+    /** データテクスチャの共通部（テクセル 0..23）と、クリップ・破線などの拡張部（24..48）。 */
+    private int dataTex, extTex;
+    private static final int CORE_W = GpuBatchPacker.CORE_TEXELS, EXT_W = GpuBatchPacker.EXT_TEXELS;
+    /** 各テクスチャの中身の写し（行 × 幅 × 4）。次の転送で、変わっていない行を送らないための比較に使う。 */
+    private float[] shadowCore, shadowExt;
+    /**
+     * データテクスチャは {@code MAX_BATCH} 行の「枠」を {@link #batchSlots} 個並べた高さにする。フレーム内の n 番目のバッチは
+     * n 番目の枠に置くので、次のフレームの同じ順番のバッチと行ごとに比べられる（1 枠だと別のバッチ同士を比べてしまい差分が効かない）。
+     */
+    private static final int MAX_SLOTS = 8;
+    private int batchSlots = 1, slot;
+    /** 転送した float の累計・転送を省いた float の累計（診断用）。 */
+    private long uploadedFloats, skippedFloats;
+    /** 変更行の間がこの行数以下なら 1 回の転送にまとめる。 */
+    private static final int UPLOAD_GAP = 3;
     private int boundImg;
     private long drawCalls;
 
@@ -879,6 +896,16 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return drawCalls;
     }
 
+    /** インスタンスデータとして GPU へ転送した float の累計（差分転送・使用幅の絞り込み後）。 */
+    public long uploadedFloatCount() {
+        return uploadedFloats;
+    }
+
+    /** 前回と同じ・未使用のため転送を省いた float の累計。 */
+    public long skippedFloatCount() {
+        return skippedFloats;
+    }
+
     /** GLFW のウィンドウのハンドル（見えないウィンドウでも有効）。入力のコールバック登録などに使う。 */
     public long windowHandle() {
         return window;
@@ -946,7 +973,29 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, STRIDE, MAX_BATCH, 0, GL11.GL_RGBA, GL11.GL_FLOAT, (java.nio.FloatBuffer) null);
+        // 0 で埋めて作る（前回との差分転送は「GPU の中身 = 影の配列」を前提にするので、未初期化のままにしない）
+        batchSlots = Math.max(1, Math.min(MAX_SLOTS, GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) / MAX_BATCH));
+        int rows = MAX_BATCH * batchSlots;
+        shadowCore = new float[CORE_W * rows * 4];
+        shadowExt = new float[EXT_W * rows * 4];
+        java.nio.FloatBuffer zeros = MemoryUtil.memCallocFloat(CORE_W * rows * 4);
+        try {
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, CORE_W, rows, 0, GL11.GL_RGBA, GL11.GL_FLOAT, zeros);
+        } finally {
+            MemoryUtil.memFree(zeros);
+        }
+        GL20.glUniform1i(loc(shapeProgram, "uExt"), 6);
+        GL13.glActiveTexture(GL13.GL_TEXTURE6);
+        extTex = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, extTex);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        zeros = MemoryUtil.memCallocFloat(EXT_W * rows * 4);
+        try {
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, EXT_W, rows, 0, GL11.GL_RGBA, GL11.GL_FLOAT, zeros);
+        } finally {
+            MemoryUtil.memFree(zeros);
+        }
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         texProgram = link(TEX_VERT, TEX_FRAG);
         fxProgram = link(TEX_VERT, FX_FRAG);
@@ -1029,6 +1078,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         readbackValid = false;
         cpu.clearDirty();
         packer.clear();
+        slot = 0;
         boundImg = 0;
         layerStack.clear();
         layerPool.clear();
@@ -1083,15 +1133,64 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final BatchDevice glBatchDevice = new BatchDevice() {
         @Override
         public void uploadInstances(float[] data, int n) {
+            uploadInstances(data, n, CORE_W, EXT_W);
+        }
+
+        @Override
+        public void uploadInstances(float[] data, int n, int coreTexels, int extTexels) {
             // 転送用バッファは使い回す（毎回 memAlloc/memFree しない）。1 バッチの最大サイズで一度だけ確保する。
             if (batchBuf == null) batchBuf = MemoryUtil.memAllocFloat(MAX_BATCH * STRIDE * 4);
-            java.nio.FloatBuffer fb = batchBuf;
-            fb.clear();
-            fb.put(data, 0, n * STRIDE * 4).flip();
-            GL13.glActiveTexture(GL13.GL_TEXTURE3);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
             GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
-            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, STRIDE, n, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
+            GL11.glPixelStorei(GL12.GL_UNPACK_ROW_LENGTH, STRIDE); // 元の行は 64 テクセル間隔のまま、使った幅だけを送る
+            try {
+                GL13.glActiveTexture(GL13.GL_TEXTURE3);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
+                uploadChanged(data, n, 0, Math.min(coreTexels, CORE_W), CORE_W, shadowCore, slot * MAX_BATCH);
+                if (extTexels > 0) {
+                    GL13.glActiveTexture(GL13.GL_TEXTURE6);
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, extTex);
+                    uploadChanged(data, n, CORE_W, Math.min(extTexels, EXT_W), EXT_W, shadowExt, slot * MAX_BATCH);
+                }
+            } finally {
+                GL11.glPixelStorei(GL12.GL_UNPACK_ROW_LENGTH, 0);
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            }
+        }
+
+        /**
+         * 行ごとに影の配列と比べ、変わった行の連なりだけを {@code glTexSubImage2D} で送る。
+         * 送った範囲だけ影へ写すので、影は常に GPU の中身と一致する（比べる幅が狭い回に触れなかった右側も一致のまま）。
+         * 間が {@link #UPLOAD_GAP} 行以下の変更は 1 回にまとめる（呼び出し回数を抑える）。
+         */
+        private void uploadChanged(float[] data, int n, int firstTexel, int width, int texW, float[] shadow, int rowBase) {
+            if (width <= 0) return;
+            int wf = width * 4, rowSrc = STRIDE * 4, srcOff = firstTexel * 4, rowShadow = texW * 4;
+            int runStart = -1, lastDirty = -1;
+            for (int r = 0; r <= n; r++) {
+                boolean dirty = r < n && java.util.Arrays.mismatch(data, r * rowSrc + srcOff, r * rowSrc + srcOff + wf,
+                        shadow, (rowBase + r) * rowShadow, (rowBase + r) * rowShadow + wf) >= 0;
+                if (dirty) {
+                    if (runStart < 0) runStart = r;
+                    lastDirty = r;
+                } else if (runStart >= 0 && (r == n || r - lastDirty > UPLOAD_GAP)) {
+                    sendRows(data, runStart, lastDirty + 1, firstTexel, width, texW, shadow, rowBase);
+                    runStart = -1;
+                }
+            }
+            skippedFloats += (long) n * wf; // 送った分は sendRows が引く
+        }
+
+        private void sendRows(float[] data, int r0, int r1, int firstTexel, int width, int texW, float[] shadow, int rowBase) {
+            int rowSrc = STRIDE * 4, wf = width * 4, srcOff = firstTexel * 4, rowShadow = texW * 4;
+            java.nio.FloatBuffer fb = batchBuf;
+            // 元の配列の該当行（先頭の texel 位置から始まる）を、行間隔 64 テクセルのまま渡す
+            int from = r0 * rowSrc + srcOff, to = (r1 - 1) * rowSrc + srcOff + wf;
+            fb.clear();
+            fb.put(data, from, to - from).flip();
+            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, rowBase + r0, width, r1 - r0, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
+            for (int r = r0; r < r1; r++) System.arraycopy(data, r * rowSrc + srcOff, shadow, (rowBase + r) * rowShadow, wf);
+            uploadedFloats += (long) (r1 - r0) * wf;
+            skippedFloats -= (long) (r1 - r0) * wf;
         }
 
         @Override
@@ -1108,9 +1207,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL20.glUseProgram(shapeProgram);
         GL20.glUniform2f(loc(shapeProgram, "uView"), width, height);
+        GL20.glUniform1i(loc(shapeProgram, "uRowBase"), slot * MAX_BATCH);
         GL14Blend.straight();
         GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP, 0, 4, n);
         drawCalls++;
+        if (slot < batchSlots - 1) slot++; // 枠が尽きたら最後の枠を使い回す（差分は効かなくなるが正しさは保たれる）
     }
 
     /** CPU が描いた層のうち、変わった範囲をテクスチャにして重ね、層を空に戻す。 */
@@ -2211,6 +2312,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 batchBuf = null;
             }
             if (dataTex != 0) GL11.glDeleteTextures(dataTex);
+            if (extTex != 0) GL11.glDeleteTextures(extTex);
             for (int t : imageTex.clear()) GL11.glDeleteTextures(t);
             if (vao != 0) GL30.glDeleteVertexArrays(vao);
             if (gpuQueries != null) {

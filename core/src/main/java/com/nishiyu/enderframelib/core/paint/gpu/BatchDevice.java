@@ -17,7 +17,19 @@ package com.nishiyu.enderframelib.core.paint.gpu;
 public interface BatchDevice {
 
     /** 転送フェーズ: 先頭 {@code instanceCount} 個分（{@code instanceCount * STRIDE * 4} float）を GPU 側のインスタンスデータへ書く。 */
-    void uploadInstances(float[] data, int instanceCount);
+    default void uploadInstances(float[] data, int instanceCount) {
+        uploadInstances(data, instanceCount, GpuBatchPacker.CORE_TEXELS, GpuBatchPacker.EXT_TEXELS);
+    }
+
+    /**
+     * 使った範囲だけを転送する版。各行のうちテクセル {@code 0 until coreTexels}（共通部）と
+     * {@code CORE_TEXELS until CORE_TEXELS + extTexels}（拡張部。クリップ・破線・画像の標本間隔）だけが有効で、
+     * 残りは読まれない。行の間隔は {@link GpuBatchPacker#STRIDE} テクセルのまま。
+     * 既定は {@link #uploadInstances(float[], int)} へ回す（全域を転送する実装向け）。
+     */
+    default void uploadInstances(float[] data, int instanceCount, int coreTexels, int extTexels) {
+        uploadInstances(data, instanceCount);
+    }
 
     /** 描画フェーズ: 直前に転送したインスタンスを、1 回のインスタンス描画で描く。 */
     void drawInstances(int instanceCount);
