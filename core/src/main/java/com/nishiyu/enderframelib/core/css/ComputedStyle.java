@@ -78,8 +78,10 @@ public final class ComputedStyle {
                     return new Memo(keys, v);
                 }
             }
-            int[] k = java.util.Arrays.copyOf(keys, n + 1);
-            Object[] v = java.util.Arrays.copyOf(vals, n + 1);
+            int[] k = new int[n + 1];
+            Object[] v = new Object[n + 1];
+            System.arraycopy(keys, 0, k, 0, n);
+            System.arraycopy(vals, 0, v, 0, n);
             k[n] = key;
             v[n] = val;
             return new Memo(k, v);
@@ -141,8 +143,10 @@ public final class ComputedStyle {
 
         ObjMemo with(Object key, Object val) {
             int n = keys.length;
-            Object[] k = java.util.Arrays.copyOf(keys, n + 1);
-            Object[] v = java.util.Arrays.copyOf(vals, n + 1);
+            Object[] k = new Object[n + 1];
+            Object[] v = new Object[n + 1];
+            System.arraycopy(keys, 0, k, 0, n);
+            System.arraycopy(vals, 0, v, 0, n);
             k[n] = key;
             v[n] = val;
             return new ObjMemo(k, v);

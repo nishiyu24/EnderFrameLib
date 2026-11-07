@@ -118,35 +118,37 @@ public final class StyleAnimator {
     }
 
     private void startTransitions(Entry entry, ComputedStyle from, ComputedStyle to, Map<String, String> parentStyle, long now) {
-        List<AnimationTiming.Transition> specs = AnimationParser.parseTransitions(to);
-        Set<String> candidates = new java.util.LinkedHashSet<>(to.asMap().keySet());
-        candidates.addAll(from.asMap().keySet());
-        for (String property : candidates) {
-            if (!isGenericAnimatable(property) || BACKEND_TRANSITION_COLORS.contains(property)) continue;
+        // 値が違うプロパティだけを見る（全プロパティの和集合を作らない）。宣言が無いプロパティは初期値と比べる
+        List<AnimationTiming.Transition>[] specs = new List[1];
+        ComputedStyle.diff(from, to, (property, paintOnly, inherited) -> {
+            if (!isGenericAnimatable(property) || BACKEND_TRANSITION_COLORS.contains(property)) return;
             String before = valueOf(from, property);
             String after = valueOf(to, property);
             Transition running = entry.transitions.get(property);
-            if (Objects.equals(before, after)) continue;
-            AnimationTiming.Transition spec = AnimationTiming.transitionFor(specs, property);
+            if (Objects.equals(before, after)) return;
+            if (specs[0] == null) specs[0] = AnimationParser.parseTransitions(to);
+            AnimationTiming.Transition spec = AnimationTiming.transitionFor(specs[0], property);
             if (spec == null || !spec.runs() || before == null || after == null) {
                 entry.transitions.remove(property);
-                continue;
+                return;
             }
             // 親から継承した値が動いているだけなら、子のトランジションにはしない（親のものが子へ流れる）
             if (PropertyRegistry.isInherited(property) && after.equals(parentStyle.get(property))) {
                 entry.transitions.remove(property);
-                continue;
+                return;
             }
             // 動いている最中に目標が変わったときは、いまの値から始める（途中の値を飛び越えない）
             String start = running != null ? running.valueAt(property, now) : before;
             if (Objects.equals(start, after) || ValueInterpolator.interpolate(property, start, after, 0.5) == null) {
                 entry.transitions.remove(property);
-                continue;
+                return;
             }
             entry.transitions.put(property, new Transition(start, after, now, spec.durationMs(), spec.delayMs(), spec.easing()));
-        }
+        });
         // 目標を持たなくなったプロパティのトランジションは捨てる
-        entry.transitions.keySet().removeIf(p -> !candidates.contains(p));
+        if (!entry.transitions.isEmpty()) {
+            entry.transitions.keySet().removeIf(p -> !to.containsKey(p) && !from.containsKey(p));
+        }
     }
 
     private void updateAnimation(Entry entry, ComputedStyle target, Map<String, Keyframes> keyframes, long now) {

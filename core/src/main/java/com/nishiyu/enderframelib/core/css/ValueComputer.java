@@ -360,12 +360,7 @@ final class ValueComputer {
 
     /** px の値を算出値の文字列にする。整数なら小数点を付けない（ゴールデンの差分を読みやすくするため）。 */
     static String px(float value) {
-        float rounded = Math.round(value);
-        if (Math.abs(value - rounded) < 1e-4f) return (long) rounded + "px";
-        String s = String.format(Locale.ROOT, "%.4f", value);
-        s = s.replaceAll("0+$", "");
-        if (s.endsWith(".")) s = s.substring(0, s.length() - 1);
-        return s + "px";
+        return CssNumbers.px(value);
     }
 
     /**

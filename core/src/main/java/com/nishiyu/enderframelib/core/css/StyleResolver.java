@@ -674,18 +674,8 @@ public class StyleResolver {
      * {@code .menu .item:hover} が {@code .menu} の外の {@code .item} でも真になっていた。
      */
     public static boolean hasInteractiveRules(HtmlNode node, StyleSheet sheet) {
-        if (node == null || sheet == null) return false;
-        for (StyleRule rule : sheet.rules) {
-            if ((rule.stateMask & ElementState.INTERACTIVE_MASK) == 0) continue;
-            List<SelectorToken> compounds = rule.parsedSelector().compounds();
-            for (int i = 0; i < compounds.size(); i++) {
-                if ((compounds.get(i).dependentStateMask() & ElementState.INTERACTIVE_MASK) != 0
-                        && SelectorMatcher.matchesPrefixIgnoringState(rule.parsedSelector(), i, node)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        // 対話規則だけの部分集合を見る（シートの全規則は走査しない）。詳細は StyleStateAutomaton
+        return com.nishiyu.enderframelib.core.kernel.compiler.StyleStateAutomaton.interactiveMask(node, sheet) != 0;
     }
 
     /**

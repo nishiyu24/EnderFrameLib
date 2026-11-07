@@ -33,6 +33,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.jetbrains.annotations.ApiStatus;
 
+import com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -503,6 +504,52 @@ public class RenderPipeline {
     }
 
     /** 正規表現にかける前の足切り: ビューポート依存の書き方（{@code vw} {@code cqw} {@code var(} {@code env(}）は必ず v・q・( のどれかを含む。 */
+    private static final String[] VIEWPORT_SUFFIXES = {"w", "h", "i", "b", "min", "max"};
+
+    /** 末尾の単位（w / h / i / b / min / max）が {@code at} から始まり、その直後が英字でないか。 */
+    private static boolean viewportSuffixAt(String v, int at) {
+        for (String suffix : VIEWPORT_SUFFIXES) {
+            int end = at + suffix.length();
+            if (v.regionMatches(true, at, suffix, 0, suffix.length())
+                    && (end >= v.length() || !isAsciiLetter(v.charAt(end)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAsciiLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    /**
+     * 値がビューポート（vw/vh…）・コンテナ（cqw…）の単位、{@code var()}、{@code env()} を含むか。
+     * {@link #VIEWPORT_DEPENDENT_VALUE} と同じ判定を、{@code Matcher} を作らずに行う。
+     */
+    static boolean dependsOnViewportValue(String v) {
+        int n = v.length();
+        for (int i = 0; i < n; i++) {
+            char c = v.charAt(i);
+            if (c == '(' && i >= 3) {
+                if (v.regionMatches(true, i - 3, "var", 0, 3) || v.regionMatches(true, i - 3, "env", 0, 3)) return true;
+            }
+            if (c >= '0' && c <= '9' && i + 1 < n) {
+                int j = i + 1;
+                char d = v.charAt(j);
+                if ((d == 's' || d == 'S' || d == 'l' || d == 'L' || d == 'd' || d == 'D') && j + 1 < n
+                        && (v.charAt(j + 1) == 'v' || v.charAt(j + 1) == 'V') && viewportSuffixAt(v, j + 2)) {
+                    return true;
+                }
+                if ((d == 'v' || d == 'V') && viewportSuffixAt(v, j + 1)) return true;
+                if ((d == 'c' || d == 'C') && j + 1 < n && (v.charAt(j + 1) == 'q' || v.charAt(j + 1) == 'Q')
+                        && viewportSuffixAt(v, j + 2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean mayDependOnViewport(String value) {
         for (int i = 0, n = value.length(); i < n; i++) {
             char c = value.charAt(i);
@@ -515,9 +562,54 @@ public class RenderPipeline {
         // ルートはビューポートの寸法を継承元の表として受け取る
         if (node.parent == null) return true;
         for (String value : rawStyle.values()) {
-            if (value != null && mayDependOnViewport(value) && VIEWPORT_DEPENDENT_VALUE.matcher(value).find()) return true;
+            if (value != null && mayDependOnViewport(value) && dependsOnViewportValue(value)) return true;
         }
         return false;
+    }
+
+    /**
+     * 要素の生宣言と算出スタイル。自身だけの再スタイルで、規則が対象の状態だけを読むなら、状態 → 算出スタイルの表
+     * （{@link StateStyleMemo}）を引く（:hover の往復でセレクタ照合もカスケードもしない）。
+     * 表を使えない／入力が変わったときは、従来どおり（スタイル共有 → カスケード）で作る。
+     */
+    private static StateStyleMemo.Entry styleEntry(HtmlNode node, StyleSet styleSet, Map<String, String> inheritedStyle,
+                                                   StyleSheet sheet, Map<String, String> env, float parentFontSize,
+                                                   StyleScope scope, InteractionState interactionState,
+                                                   ContainerBox container, int force,
+                                                   InteractionState.StateFlags flags) {
+        boolean tableOk = flags != null && container == ContainerBox.NONE_SIZE
+                // FORCE_SELF は「親の算出スタイルが変わった」だけ（兄弟・祖先の変化は FORCE_SUBTREE）。親の値は表の鍵に入っている
+                && (force == FORCE_NONE || force == FORCE_SELF) && sheet != null
+                && !sheet.usesHasSelectors(); // :has() は子孫・後続の兄弟の変化で祖先が汚れる（自身の状態だけでは決まらない）
+        if (!tableOk) {
+            if (flags != null && flags.stateMemo != null) flags.stateMemo.invalidate();
+            return computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope, interactionState,
+                    container, interactionState);
+        }
+        if (flags.stateMemo == null) flags.stateMemo = new StateStyleMemo();
+        return flags.stateMemo.resolve(node, sheet, inheritedStyle, env, parentFontSize, scope.rootFontSize(),
+                scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
+                interactionState.stateOf(node).flags(), true,
+                bits -> computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
+                        interactionState, null,
+                        (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n)));
+    }
+
+    private static StateStyleMemo.Entry computeEntry(HtmlNode node, StyleSet styleSet,
+                                                     Map<String, String> inheritedStyle, StyleSheet sheet,
+                                                     Map<String, String> env, float parentFontSize, StyleScope scope,
+                                                     InteractionState interactionState, ContainerBox container,
+                                                     StateLookup lookup) {
+        StyleResolver.Shared shared = interactionState.styleShare.resolve(node, inheritedStyle, sheet, lookup, env,
+                parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
+                container != null ? container : containerFor(node, interactionState));
+        if (shared != null) return new StateStyleMemo.Entry(shared.raw(), shared.computed());
+        Map<String, String> raw = styleSet.resolve(lookup);
+        if (node.attrs.containsKey("hidden")) {
+            raw.put(CssProperty.DISPLAY, "none");
+        }
+        return new StateStyleMemo.Entry(raw, computeStyle(raw, inheritedStyle, sheet, env, parentFontSize, scope,
+                container != null ? container : containerFor(node, interactionState)));
     }
 
     private static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, Map<String, String> rawStyle,
@@ -619,20 +711,10 @@ public class RenderPipeline {
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             ComputedStyle prevStyle = box.style;
             ContainerBox container = containerFor(node, interactionState);
-            StyleResolver.Shared shared = interactionState.styleShare.resolve(node, inheritedStyle, sheet, interactionState,
-                    env, parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                    container);
-            Map<String, String> rawStyle;
-            if (shared != null) {
-                rawStyle = shared.raw();
-                computed = shared.computed();
-            } else {
-                rawStyle = styleSet.resolve(interactionState);
-                if (node.attrs.containsKey("hidden")) {
-                    rawStyle.put(CssProperty.DISPLAY, "none");
-                }
-                computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
-            }
+            StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
+                    interactionState, container, force, flags);
+            Map<String, String> rawStyle = entry.raw();
+            computed = entry.computed();
             Map<String, String> animation = animationValues(node, prevStyle, computed, inheritedStyle, sheet, interactionState);
             if (!animation.isEmpty()) {
                 rawStyle = new java.util.LinkedHashMap<>(rawStyle);
@@ -833,23 +915,18 @@ public class RenderPipeline {
             long k0 = tk ? threadAllocatedBytes() : 0;
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             ContainerBox container = containerFor(node, interactionState);
-            StyleResolver.Shared shared = interactionState != null
-                    ? interactionState.styleShare.resolve(node, inheritedStyle, sheet, interactionState, env,
-                            parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(),
-                            scope.viewportH(), container)
-                    : null;
             Map<String, String> rawStyle;
             ComputedStyle previous = flags != null ? flags.computedStyle : null;
             long k1;
             long k2;
-            if (shared != null) {
-                rawStyle = shared.raw();
-                computed = shared.computed();
+            if (interactionState != null) {
+                StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
+                        scope, interactionState, container, force, flags);
+                rawStyle = entry.raw();
+                computed = entry.computed();
                 k1 = k2 = tk ? threadAllocatedBytes() : 0;
             } else {
-                rawStyle = interactionState != null
-                        ? styleSet.resolve(interactionState)
-                        : styleSet.resolve(ElementState.NONE);
+                rawStyle = styleSet.resolve(ElementState.NONE);
                 if (node.attrs.containsKey("hidden")) {
                     rawStyle.put(CssProperty.DISPLAY, "none");
                 }

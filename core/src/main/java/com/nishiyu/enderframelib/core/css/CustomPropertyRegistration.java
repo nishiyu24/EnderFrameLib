@@ -433,9 +433,7 @@ public final class CustomPropertyRegistration {
 
     private static String number(double v) {
         if (v == Math.rint(v) && Math.abs(v) < 1e15) return Long.toString((long) v);
-        String s = String.format(Locale.ROOT, "%.6f", v);
-        s = s.replaceAll("0+$", "");
-        return s.endsWith(".") ? s.substring(0, s.length() - 1) : s;
+        return CssNumbers.trimmed(v, 6);
     }
 
     // ==========================================

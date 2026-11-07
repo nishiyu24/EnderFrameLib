@@ -151,6 +151,8 @@ public class InteractionState implements StateLookup {
     public static class StateFlags {
         public boolean isHovered;
         public boolean isFocused;
+        /** 状態 → 算出スタイルの表（自身だけの再スタイルで使い回す）。 */
+        public com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo stateMemo;
         public boolean isFocusVisible;
         public boolean isFocusWithin;
         public boolean isActive;

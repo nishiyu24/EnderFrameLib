@@ -51,6 +51,56 @@ public class StyleSheet {
         return index;
     }
 
+    private StyleRule[] interactiveRules = new StyleRule[0];
+    private int interactiveRulesVersion = -1;
+
+    /**
+     * :hover / :active / :focus* を含む規則だけ。規則が変わったときに 1 回だけ数え直し、
+     * 要素ごとの照合（{@code StyleStateAutomaton}）はシートの全規則ではなくこの部分集合だけを見る。
+     */
+    public StyleRule[] interactiveRules() {
+        int v = rules.version();
+        StyleRule[] cached = interactiveRules;
+        if (interactiveRulesVersion != v) {
+            int n = 0;
+            for (StyleRule r : rules) if ((r.stateMask & ElementState.INTERACTIVE_MASK) != 0) n++;
+            StyleRule[] out = new StyleRule[n];
+            int i = 0;
+            for (StyleRule r : rules) if ((r.stateMask & ElementState.INTERACTIVE_MASK) != 0) out[i++] = r;
+            interactiveRules = cached = out;
+            interactiveRulesVersion = v;
+        }
+        return cached;
+    }
+
+    private boolean stateOnSubjectOnly;
+    private int stateOnSubjectVersion = -1;
+
+    /**
+     * 状態（:hover / :checked …）を読む規則がすべて、末尾（対象）の複合セレクタにだけ状態を持つか。
+     * 真なら、要素の算出スタイルは「その要素自身の状態」だけで決まり、祖先・兄弟の状態には依存しない
+     * （状態の組み合わせごとの算出スタイルを要素に覚えさせてよい）。規則が変わったら数え直す。
+     */
+    public boolean stateOnSubjectOnly() {
+        int v = rules.version();
+        if (stateOnSubjectVersion != v) {
+            boolean ok = true;
+            for (StyleRule r : rules) {
+                if (r.stateMask == 0) continue;
+                if (r.parsedSelector().usesHas()) { ok = false; break; }
+                Selector sel = r.parsedSelector();
+                var compounds = sel.compounds();
+                for (int i = 0; i < compounds.size() - 1 && ok; i++) {
+                    if (compounds.get(i).dependentStateMask() != 0) ok = false;
+                }
+                if (!ok) break;
+            }
+            stateOnSubjectOnly = ok;
+            stateOnSubjectVersion = v;
+        }
+        return stateOnSubjectOnly;
+    }
+
     /** {@code container-type} / {@code container-name} / {@code container} を宣言する規則があるか。あれば、レイアウト後にコンテナの寸法を測る。 */
     public boolean declaresContainers() {
         for (StyleRule rule : rules) {
@@ -66,11 +116,23 @@ public class StyleSheet {
 
     /** {@code :has()} を使う規則があるか。あれば、子孫・後続の兄弟の変化で祖先も再スタイルする。 */
     public boolean usesHasSelectors() {
-        for (StyleRule rule : rules) {
-            if (rule.parsedSelector().usesHas()) return true;
+        int v = rules.version();
+        if (usesHasVersion != v) {
+            boolean found = false;
+            for (StyleRule rule : rules) {
+                if (rule.parsedSelector().usesHas()) {
+                    found = true;
+                    break;
+                }
+            }
+            usesHas = found;
+            usesHasVersion = v;
         }
-        return false;
+        return usesHas;
     }
+
+    private boolean usesHas;
+    private int usesHasVersion = -1;
 
     private boolean usesInherit;
     private int usesInheritVersion = -1;
