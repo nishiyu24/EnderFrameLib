@@ -127,7 +127,7 @@ public class PacketBandwidthTest {
         );
 
         // ベースラインのアサート（Dual DOM は DOM ツリー全体を送るため 4KB 以上）
-        assertEquals(4548, result.initialOpenBytes(), "初回オープンのパケットサイズがベースラインと一致すること");
+        assertEquals(4500, result.initialOpenBytes(), "初回オープンのパケットサイズがベースラインと一致すること");
         assertEquals(166, result.singleMutationBytes(), "単一更新のパケットサイズがベースラインと一致すること");
         assertEquals(16584, result.total100UpdatesBytes(), "100 回更新の総パケットバイト数がベースラインと一致すること");
 

@@ -21,18 +21,84 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.WeakHashMap;
+import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
+import java.util.function.BiConsumer;
 
 /**
  * ビュー単位の対話状態（疑似クラス状態）や算出スタイルキャッシュを管理するクラス。
  *
  * <p>ノードオブジェクト自身（{@link HtmlNode}）が唯一のキー。文字列 ID は、ネットワークと描画の境界で
  * ノードへ解決してから渡す（解決は {@link HtmlNode#getNodeById} の索引が担う）。
- * 持ち主の節が文書から外れたら状態も一緒に回収されるよう、キーは弱参照で持つ。</p>
+ * 状態の実体は節が直接持ち（持ち主の節と一緒に回収される。弱参照の表は使わない）、
+ * 列挙用の表は {@link DocumentArena} のノード番号で引く。擬似状態と汚れの印は、アリーナの
+ * {@code stateBits} / {@code dirtyBits} 列にも書き込む。</p>
  */
 public class InteractionState implements StateLookup {
 
-    private final Map<HtmlNode, StateFlags> flagsByNode = new WeakHashMap<>();
+    /** アリーナごとの列挙用の表。節が文書から外れて番号の世代が進めば、その項は自然に無効になる。 */
+    private record Tab(DocumentArena arena, DocumentArena.NodeSlots<StateFlags> slots) {}
+
+    private final List<Tab> tabs = new ArrayList<>(2);
+    private Tab lastTab;
+    private static final int MAX_TABS = 8;
+    /** {@link #clear} のたびに進む。古い版の状態は節に残っていても無かったことにする。 */
+    private int epoch;
+
+    private Tab tabFor(DocumentArena arena) {
+        Tab t = lastTab;
+        if (t != null && t.arena == arena) return t;
+        for (Tab other : tabs) {
+            if (other.arena == arena) return lastTab = other;
+        }
+        if (tabs.size() >= MAX_TABS) {
+            Tab dropped = tabs.remove(0);
+            dropped.arena.dropSlots(this);
+        }
+        t = new Tab(arena, arena.slots(this));
+        tabs.add(t);
+        return lastTab = t;
+    }
+
+    /** アリーナに載せない節（仮想の節）の一覧。節が回収されれば項は消える。 */
+    private final List<java.lang.ref.WeakReference<HtmlNode>> loose = new ArrayList<>();
+
+    private void forEachFlags(BiConsumer<HtmlNode, StateFlags> visitor) {
+        for (int i = 0; i < loose.size(); i++) {
+            HtmlNode node = loose.get(i).get();
+            StateFlags f = node != null && node.interactionOwner == this ? (StateFlags) node.interactionFlags : null;
+            if (f == null || f.epoch != epoch) {
+                loose.remove(i--);
+                if (f != null) f.loose = false;
+                continue;
+            }
+            visitor.accept(node, f);
+        }
+        for (Tab tab : new ArrayList<>(tabs)) {
+            tab.slots.forEach((id, flags) -> {
+                if (tab.arena.owner(id) instanceof HtmlNode node) visitor.accept(node, flags);
+            });
+        }
+    }
+
+    /** 節の状態がアリーナの現在の番号の表に載っているようにし、擬似状態・汚れの列へ写す。 */
+    private void register(HtmlNode node, StateFlags flags) {
+        if (node.isVirtualNode() && !node.hasNodeId()) {
+            // 疑似要素・匿名ボックスなどの仮想の節は文書のアリーナに数えない。列挙は弱参照の一覧で行う
+            if (!flags.loose) {
+                flags.loose = true;
+                loose.add(new java.lang.ref.WeakReference<>(node));
+            }
+            return;
+        }
+        DocumentArena a = node.arena();
+        int id = node.nodeId();
+        if (flags.mirrorArena == a && flags.mirrorId == id && flags.mirrorGen == a.generation(id)) return;
+        flags.mirrorArena = a;
+        flags.mirrorId = id;
+        flags.mirrorGen = a.generation(id);
+        tabFor(a).slots.put(id, flags);
+        flags.writeMirror();
+    }
 
     /**
      * 無効化セットの出所。結ばれていれば、変化の影響が及ぶ要素だけを汚す。結ばれていない間（最初の描画の前）は、
@@ -115,6 +181,30 @@ public class InteractionState implements StateLookup {
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */
         public boolean isStyleDirty = true;
+        /** アリーナ側の列への写し先（番号の世代が変われば無効）。 */
+        DocumentArena mirrorArena;
+        int mirrorId = -1;
+        int mirrorGen;
+        int epoch;
+        boolean loose;
+
+        /** 擬似状態と汚れの印をアリーナの列へ書く（番号が有効なときだけ）。 */
+        void writeMirror() {
+            DocumentArena a = mirrorArena;
+            if (a == null || mirrorGen != a.generation(mirrorId)) return;
+            int bits = 0;
+            if (isHovered) bits |= DocumentArena.STATE_HOVER;
+            if (isActive) bits |= DocumentArena.STATE_ACTIVE;
+            if (isFocused) bits |= DocumentArena.STATE_FOCUS;
+            if (isFocusVisible) bits |= DocumentArena.STATE_FOCUS_VISIBLE;
+            if (isFocusWithin) bits |= DocumentArena.STATE_FOCUS_WITHIN;
+            if (isChecked != null && isChecked) bits |= DocumentArena.STATE_CHECKED;
+            if (isDisabled != null && isDisabled) bits |= DocumentArena.STATE_DISABLED;
+            if (isIndeterminate != null && isIndeterminate) bits |= DocumentArena.STATE_INDETERMINATE;
+            if (isOpen != null && isOpen) bits |= DocumentArena.STATE_OPEN;
+            a.setStateBits(mirrorId, bits);
+            a.setDirty(mirrorId, DocumentArena.DIRTY_STYLE, isStyleDirty);
+        }
         /** 持ち主。汚れた節の個数（{@link InteractionState#dirtyCount}）を O(1) で保つ。持ち主の無い使い捨てなら null。 */
         private InteractionState owner;
 
@@ -123,6 +213,7 @@ public class InteractionState implements StateLookup {
             if (!isStyleDirty) {
                 isStyleDirty = true;
                 if (owner != null) owner.dirtyCount++;
+                writeMirror();
             }
         }
 
@@ -131,6 +222,7 @@ public class InteractionState implements StateLookup {
             if (isStyleDirty) {
                 isStyleDirty = false;
                 if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
+                writeMirror();
             }
         }
         /**
@@ -162,13 +254,21 @@ public class InteractionState implements StateLookup {
 
     public StateFlags getOrCreate(HtmlNode node) {
         if (node == null) return new StateFlags();
-        return flagsByNode.computeIfAbsent(node, key -> {
-            StateFlags created = new StateFlags(); // 作りたては汚れている
-            created.owner = this;
-            dirtyCount++;
-            unscopedLog.add(key); // 作りたては unscoped
-            return created;
-        });
+        StateFlags found = node.interactionOwner == this ? (StateFlags) node.interactionFlags : null;
+        if (found != null && found.epoch != epoch) found = null; // clear() の前の状態
+        if (found != null) {
+            register(node, found);
+            return found;
+        }
+        StateFlags created = new StateFlags(); // 作りたては汚れている
+        created.owner = this;
+        created.epoch = epoch;
+        dirtyCount++;
+        unscopedLog.add(node); // 作りたては unscoped
+        node.interactionOwner = this;
+        node.interactionFlags = created;
+        register(node, created);
+        return created;
     }
 
     /**
@@ -191,7 +291,11 @@ public class InteractionState implements StateLookup {
     }
 
     public StateFlags get(HtmlNode node) {
-        return node != null ? flagsByNode.get(node) : null;
+        if (node == null || node.interactionOwner != this) return null;
+        StateFlags found = (StateFlags) node.interactionFlags;
+        if (found == null || found.epoch != epoch) return null;
+        register(node, found);
+        return found;
     }
 
     @Override
@@ -398,6 +502,8 @@ public class InteractionState implements StateLookup {
 
     /** 対話状態（{@code :hover} など）のビットが変わった要素の影響範囲を汚す。 */
     public void invalidateState(HtmlNode node, int stateBits) {
+        StateFlags written = get(node);
+        if (written != null) written.writeMirror(); // 擬似状態のビットをアリーナ列へ写す
         InvalidationSets sets = invalidationSets();
         if (sets == null) {
             markDirty(node);
@@ -528,11 +634,11 @@ public class InteractionState implements StateLookup {
     }
 
     public void markAllDirty() {
-        for (StateFlags flags : flagsByNode.values()) {
+        forEachFlags((node, flags) -> {
             flags.markStyleDirty();
             flags.subtreeDirty = true;
             flags.dirtyBelow = true;
-        }
+        });
     }
 
     /**
@@ -543,7 +649,7 @@ public class InteractionState implements StateLookup {
         if (unscopedLog.isEmpty()) return;
         List<HtmlNode> dirty = new ArrayList<>();
         for (HtmlNode node : unscopedLog) {
-            StateFlags flags = flagsByNode.get(node);
+            StateFlags flags = get(node);
             // 影響範囲を絞って汚した要素の祖先は、無効化セットが既に汚している
             if (flags != null && flags.isStyleDirty && flags.unscoped) {
                 dirty.add(node);
@@ -553,7 +659,7 @@ public class InteractionState implements StateLookup {
         unscopedLog.clear();
         for (HtmlNode node : dirty) {
             for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) {
-                StateFlags flags = flagsByNode.get(cur);
+                StateFlags flags = get(cur);
                 if (flags != null) {
                     flags.markStyleDirty();
                     flags.dirtyBelow = true;
@@ -663,15 +769,16 @@ public class InteractionState implements StateLookup {
         // dirtyCount は実数以上なので、allowed の中の汚れた節の数がそれに届けば、外に汚れた節は無い（全走査を省ける）
         int inside = 0;
         for (HtmlNode n : set) {
-            StateFlags f = flagsByNode.get(n);
+            StateFlags f = get(n);
             if (f != null && f.isStyleDirty) inside++;
         }
         if (inside >= dirtyCount) return true;
         // 届かないときは、回収された節の分の過大か、外に本当に汚れた節があるか。確かめる
-        for (Map.Entry<HtmlNode, StateFlags> e : flagsByNode.entrySet()) {
-            if (e.getValue().isStyleDirty && !set.contains(e.getKey())) return false;
-        }
-        return true;
+        boolean[] outside = {false};
+        forEachFlags((node, flags) -> {
+            if (flags.isStyleDirty && !set.contains(node)) outside[0] = true;
+        });
+        return !outside[0];
     }
 
     /**
@@ -679,7 +786,7 @@ public class InteractionState implements StateLookup {
      * 変わらないので、箱の文字を差し替えれば済む（祖先の「子孫に汚れがある」印は、次の走査が片付ける）。
      */
     public void clearStyleDirty(HtmlNode node) {
-        StateFlags flags = flagsByNode.get(node);
+        StateFlags flags = get(node);
         if (flags == null) return;
         flags.clearStyleDirtyFlag();
         flags.subtreeDirty = false;
@@ -688,15 +795,21 @@ public class InteractionState implements StateLookup {
 
     public boolean hasDirtyNodes() {
         if (dirtyCount <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
-        for (StateFlags flags : flagsByNode.values()) {
-            if (flags.isStyleDirty) return true;
-        }
+        boolean[] any = {false};
+        forEachFlags((node, flags) -> {
+            if (flags.isStyleDirty) any[0] = true;
+        });
+        if (any[0]) return true;
         dirtyCount = 0; // 汚れたまま回収された節の分。帳簿を合わせ直す
         return false;
     }
 
     public void clear() {
-        flagsByNode.clear();
+        epoch++;
+        loose.clear();
+        for (Tab tab : tabs) tab.arena.dropSlots(this);
+        tabs.clear();
+        lastTab = null;
         dirtyCount = 0;
         unscopedLog.clear();
         if (animator != null) animator.clear();

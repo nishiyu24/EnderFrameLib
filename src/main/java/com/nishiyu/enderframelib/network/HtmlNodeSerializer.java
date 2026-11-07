@@ -20,7 +20,15 @@ public class HtmlNodeSerializer {
 
     public static CompoundTag serialize(HtmlNode node) {
         if (node == null) return new CompoundTag();
+        CompoundTag tag = serializeNode(node);
+        // 鍵（明示 id の無い節の ~番号）をクライアントでも揃えるため、番号と静的領域の大きさを運ぶ
+        tag.putInt("nstatic", node.staticNodeCount());
+        return tag;
+    }
+
+    private static CompoundTag serializeNode(HtmlNode node) {
         CompoundTag tag = new CompoundTag();
+        tag.putInt("nid", node.nodeId());
         tag.putString("tag", node.tag != null ? node.tag : "");
         tag.putString("id", node.getId() != null ? node.getId() : "");
         tag.putString("text", node.text != null ? node.text : "");
@@ -38,7 +46,7 @@ public class HtmlNodeSerializer {
         ListTag childrenTag = new ListTag();
         HtmlNode childHost = childHost(node);
         for (HtmlNode child : childHost.children) {
-            childrenTag.add(serialize(child));
+            childrenTag.add(serializeNode(child));
         }
         tag.put("children", childrenTag);
 
@@ -51,7 +59,12 @@ public class HtmlNodeSerializer {
     }
 
     public static HtmlNode deserialize(CompoundTag tag, HtmlNode parent) {
-        return deserialize(tag, parent, 0);
+        java.util.Map<HtmlNode, Integer> numbers = new java.util.IdentityHashMap<>();
+        HtmlNode node = deserialize(tag, parent, 0, numbers);
+        if (parent == null && tag.contains("nstatic")) {
+            node.restoreNodeIds(n -> numbers.getOrDefault(n, -1), tag.getInt("nstatic"));
+        }
+        return node;
     }
 
     /**
@@ -62,7 +75,7 @@ public class HtmlNodeSerializer {
         return depth == 0 && parent == null && "root".equals(tagName);
     }
 
-    private static HtmlNode deserialize(CompoundTag tag, HtmlNode parent, int depth) {
+    private static HtmlNode deserialize(CompoundTag tag, HtmlNode parent, int depth, java.util.Map<HtmlNode, Integer> numbers) {
         if (depth > MAX_DEPTH) {
             // 深すぎるネストはスタックオーバーフロー攻撃とみなし、ダミーを返して再帰を打ち切る
             return new HtmlNode("div");
@@ -73,6 +86,7 @@ public class HtmlNodeSerializer {
                 ? new HtmlText(tag.getString("text"))
                 : isDocumentRoot(tagName, parent, depth) ? new HtmlDocument() : new HtmlElement(tagName);
         node.setId(tag.getString("id"));
+        if (tag.contains("nid")) numbers.put(node, tag.getInt("nid"));
         node.text = tag.getString("text");
         node.parent = parent;
 
@@ -89,7 +103,7 @@ public class HtmlNodeSerializer {
         ListTag childrenTag = tag.getList("children", Tag.TAG_COMPOUND);
         HtmlNode childHost = childHost(node);
         for (int i = 0; i < childrenTag.size(); i++) {
-            childHost.children.add(deserialize(childrenTag.getCompound(i), childHost, depth + 1));
+            childHost.children.add(deserialize(childrenTag.getCompound(i), childHost, depth + 1, numbers));
         }
 
         return node;

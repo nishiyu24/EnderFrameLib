@@ -246,14 +246,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int color = box.style.color(CssProperty.COLOR, 0xFF000000);
         BorderSpec border = decor.parseBorderSpec(box, rawRadii, radii, color);
         float fontHVal = Math.max(1.0f, box.style.fontSizePx());
-        decor.drawMaskLayers(elements, box, box.node.getId(), null, radii, border, fontHVal, 0.5f, 0.5f);
+        decor.drawMaskLayers(elements, box, box.node.key(), null, radii, border, fontHVal, 0.5f, 0.5f);
         if (BoxDecorations.clipsText(box.style)) {
             // background-clip: text: 子孫の文字を白（不透明）で出す。これがマスクになり、箱の背景が文字の形だけに残る
-            ItemProps textEvents = ItemProps.parent(box.node.getId());
+            ItemProps textEvents = ItemProps.parent(box.node.key());
             textEvents.pointerEventsNone();
             suppressTextShadow = true;
             try {
-                maskText(elements, box, box.node.getId(), textEvents);
+                maskText(elements, box, box.node.key(), textEvents);
             } finally {
                 suppressTextShadow = false;
             }
@@ -623,7 +623,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             STAT_STAMPED.increment();
             if (verifyStamps) {
                 int check = match(m, box, clipRect, parentId);
-                if (check != 1) throw new AssertionError("変更印は変わっていないと言ったが署名が違う: box=" + box.node.tag + "#" + box.node.getId()
+                if (check != 1) throw new AssertionError("変更印は変わっていないと言ったが署名が違う: box=" + box.node.tag + "#" + box.node.key()
                         + " match=" + check + " stamp=" + box.pathPaintStamp(buildSerial) + " epoch=" + m.epoch);
             }
         } else {
@@ -668,7 +668,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int bgColor = box == canvasBackgroundSource ? 0x00000000
                 : ColorParser.parseColor(box.style.getOrDefault(CssProperty.BACKGROUND_COLOR, "transparent"));
 
-        String id = box.node.getId();
+        String id = box.node.key();
 
         float opacity = box.style.number(CssProperty.OPACITY, 1.0f);
         float[] tr = anim.transformOf(box);

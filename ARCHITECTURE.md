@@ -103,6 +103,8 @@ core/
 ├── dom/      ライブ DOM（node/）、パーサ（parser/: HtmlParser・MarkdownParser）、
 │             Bindings、InteractionState、MutationObserverManager、フォーム（ConstraintValidator など）
 ├── event/    DOM のイベントディスパッチ（EventDispatcher / CoreEvent / StandardDefaultActions）
+├── kernel/   Off-Heap の土台: memory/（DocumentArena・AtomTable・OffHeapColumns）、simd/。
+│             標準 JDK 21 のダイレクト ByteBuffer + VarHandle だけで作り、JVM フラグも追加依存も要らない
 ├── layout/   ボックスツリー（BoxTreeBuilder）と整形コンテキスト（Block / Flex / Grid / Table）、LayoutBox、model/
 ├── paint/    描画モデル（DisplayItem・BoxDecorations・Gradients・AnimationSpec）
 └── text/     テキストの測定（TextShaper）、書体（model/FontFace・BitmapFontFace）、
@@ -112,14 +114,25 @@ core/
 ### ライブ DOM と単一所有権
 - **Single DOM**: 1 つの `HtmlDocument` を Java のクライアントコード・サーバーの変異・宣言的バインディングの全員が同じ API で変える。
 - **オブジェクト同一性**: 対話状態（`:hover` / `:focus` など、`InteractionState`）とスクロール量（`core/layout/model/ScrollState`）は
-  ノードのインスタンスをキー（弱参照）にする。文字列 ID はネットワークと描画の境界でだけ使い、`getNodeById` で解決する。
-- **`getElementById`** は id 索引だけで引く（線形探索のフォールバックは無い）。
+  ノードのインスタンスがキー。`InteractionState` の実体は節が直接持ち（`WeakHashMap` は使わない）、列挙は `DocumentArena` の
+  ノード番号で引く。擬似状態と汚れの印はアリーナの `stateBits` / `dirtyBits` 列にも写る。
+- **ノードの鍵**: `getId()` は作者が書いた id だけ（パーサは `gen_N` / `txt_N` を属性へ振らない）。描画・ネットワークで節を指す
+  文字列は `HtmlNode.key()`（明示 id、無ければアリーナ番号から導く `~N`、テキストは `~tN`）。`getNodeById` が両方を解決する。
+  読み込み後の番号は文書順（行きがけ順）で固定され（静的領域）、シリアライズで番号ごとクライアントへ運ぶので鍵が揃う。
+  読み込み後に増えた節の番号は動的領域で、外れると再利用される。
+- **`DocumentArena`**: 木ごとの SoA 列（親・最初/最後の子・前後の兄弟・部分木終端、タグ/id の atom、自身/子孫の Bloom、
+  状態/汚れビット）。子の並びの変更で自動的に写され、子の追加・削除の整合は `NodeArenaIdentityTest` が守る。
+  描画が作る仮想の節（疑似要素・匿名ボックス・マーカー）は親の `children` に載らないのでアリーナに数えない。
+- **`getElementById`** は id 索引だけで引く（線形探索のフォールバックは無い）。索引に載るのは明示 id だけ。
 
 ### CSS
 - 値は `CssSyntax` のコンポーネント値として読み、正規表現で再パースしない。
 - カスケードは CSS Cascade 5 の順（重要度 → オリジン → レイヤー → 詳細度 → 出現順）。`@layer`・CSS ネスト・`@container`・
   `@property`・`:has()` を含む。対応範囲の一覧は README の "Supported CSS"。
 - 規則は右端の複合セレクタの id / class / tag で振り分けて照合する（`StyleSheet`）。
+- `SelectorMatcher` はアリーナの列を使う: 前の兄弟（`+` / `~`）は兄弟リンクで O(1)、複合セレクタの tag/id/class は節の
+  `selfBloom` との AND 1 回で棄却、`:has()` は子孫 Bloom（`subtreeBloom`）で棄却する。番号を持たない木（断片・仮想の節）は
+  従来どおり子の並びを走査し、結果は同じ（`SelectorArenaMigrationTest` が複製との一致を乱数変異で確かめる）。
 - セレクタから作る無効化セット（`InvalidationSets`）は `StyleSheet.invalidationSets()` で組み、`InteractionState` に接続して、
   状態・属性・子の増減で汚れた要素と関係する要素だけを再スタイルの対象にする。
 

@@ -335,7 +335,7 @@ public abstract class AbstractEnderContainerScreen<T extends AbstractContainerMe
 
             Slot slot = this.menu.slots.get(slotIdx);
             HtmlNode node = entry.getValue();
-            DisplayItem anchor = nodeElements.get(node.getId());
+            DisplayItem anchor = nodeElements.get(node.key());
 
             if (anchor != null && anchor.width() > 0 && anchor.height() > 0 && isNodeVisibleInDom(node)) {
                 int targetX = Math.round(anchor.x() + (anchor.width() - 16.0f) / 2.0f);

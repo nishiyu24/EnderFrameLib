@@ -100,9 +100,10 @@ public class HtmlParserGoldenTest {
         HtmlNode root = HtmlParser.parse("<div id=\"mine\"><span></span></div>");
         HtmlNode div = root.children.get(0);
         assertEquals("mine", div.getId());
-        // 明示 id が無い子には自動採番される
-        assertTrue(div.children.get(0).getId().startsWith("gen_"));
-        assertNotEquals("mine", div.children.get(0).getId());
+        // 明示 id が無い子は id 属性を持たず、鍵だけがアリーナの番号から導かれる
+        assertEquals("", div.children.get(0).getId());
+        assertTrue(div.children.get(0).key().startsWith("~"));
+        assertNotEquals("mine", div.children.get(0).key());
     }
 
     @Test

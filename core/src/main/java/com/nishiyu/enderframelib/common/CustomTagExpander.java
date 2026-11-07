@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.NodeId;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 
@@ -168,7 +167,6 @@ public final class CustomTagExpander {
             span.attrs.put("style", "position:absolute;left:0;top:0;width:100%;height:100%;"
                     + "text-align:center;color:#ffffff;text-shadow:true;font-size:0.75rem;");
             HtmlNode text = new HtmlText(label);
-            text.setId(NodeId.generateTextId());
             appendChild(span, text);
             appendChild(bar, span);
         }
@@ -223,7 +221,6 @@ public final class CustomTagExpander {
      */
     private static HtmlNode element(String tag) {
         HtmlNode node = new HtmlElement(tag);
-        node.setId(NodeId.generateId());
         return node;
     }
 

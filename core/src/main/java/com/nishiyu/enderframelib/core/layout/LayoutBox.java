@@ -1201,7 +1201,7 @@ public class LayoutBox {
     }
 
     public String debugInfo() {
-        return node.tag + "#" + node.getId() + " disp=" + display + " pure=" + placementPure + " lastX=" + lastLayoutX + " lastY=" + lastLayoutY + " x=" + x + " y=" + y + " valid=" + measurementValid + " runM=" + measuredRun + " anon=" + isAnonymous;
+        return node.tag + "#" + node.key() + " disp=" + display + " pure=" + placementPure + " lastX=" + lastLayoutX + " lastY=" + lastLayoutY + " x=" + x + " y=" + y + " valid=" + measurementValid + " runM=" + measuredRun + " anon=" + isAnonymous;
     }
 
     /** 部分木の配置が、この箱の外の状態に依らず親の渡す原点だけで決まる（前回の layout で確かめた）。 */

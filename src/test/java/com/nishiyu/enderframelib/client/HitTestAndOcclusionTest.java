@@ -181,7 +181,7 @@ public class HitTestAndOcclusionTest {
     private static List<String> scrollIds(HitTestIndex index, double x, double y) {
         return index.scrollContainersAt("w12", x, y).stream()
                 .map(h -> h.element().baseId())
-                .filter(id -> !id.startsWith("gen_") && !id.equals("zoom") && !id.equals("frame"))
+                .filter(id -> !id.startsWith("~") && !id.equals("zoom") && !id.equals("frame"))
                 .distinct().toList();
     }
 

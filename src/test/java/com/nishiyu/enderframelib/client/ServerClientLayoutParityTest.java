@@ -266,7 +266,7 @@ public class ServerClientLayoutParityTest {
 
     private static void collectIds(HtmlNode node, List<String> out, boolean inBody) {
         boolean body = inBody || "body".equals(node.tag);
-        if (node.nodeType != NodeType.TEXT && body && node.attrs.containsKey("id") && !node.getId().startsWith("gen_")) {
+        if (node.nodeType != NodeType.TEXT && body && node.attrs.containsKey("id")) {
             out.add(node.getId());
         }
         for (HtmlNode child : node.children) collectIds(child, out, body);

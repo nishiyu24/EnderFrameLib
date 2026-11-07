@@ -316,7 +316,7 @@ public class ModernValuesAndSelectorsTest {
 
     private static String ids(HtmlNode root, String selector) {
         return SelectorEngine.querySelectorAll(root, selector).stream()
-                .map(HtmlNode::getId).filter(id -> !id.startsWith("gen_") && !id.startsWith("txt_"))
+                .map(HtmlNode::getId).filter(id -> !id.isEmpty())
                 .collect(Collectors.joining(","));
     }
 

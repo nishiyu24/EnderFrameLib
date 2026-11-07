@@ -205,7 +205,7 @@ public final class StandaloneView implements AutoCloseable {
     /** フォーカス中の要素の id。無ければ空。 */
     public String focusedId() {
         HtmlNode f = interaction.focusedNode();
-        return f != null ? f.getId() : "";
+        return f != null ? f.key() : "";
     }
 
     /** 見た目が変わりうる状態か（入力の反映待ち・アニメーション・タイマー）。false なら描き直さなくてよい。 */
@@ -361,7 +361,7 @@ public final class StandaloneView implements AutoCloseable {
             HtmlNode target = pressed != null ? pressed.pressedNode() : null;
             HtmlNode focusable = UiFocus.nearestFocusable(target);
             if (focusable != interaction.focusedNode()) {
-                ui.setFocusedElement(focusable != null ? focusable.getId() : "", false);
+                ui.setFocusedElement(focusable != null ? focusable.key() : "", false);
             }
             dragField = null;
             if (focusable != null && isTextControl(focusable)) {
@@ -458,7 +458,7 @@ public final class StandaloneView implements AutoCloseable {
         LayoutBox targetBox = UiFocus.findBox(ui.layoutRoot(), node);
         if (targetBox == null) return false;
         for (HtmlNode p = node.parent; p != null; p = p.parent) {
-            DisplayItem box = scrollers.get(p.getId());
+            DisplayItem box = scrollers.get(p.key());
             if (box == null) continue;
             float limit = Math.max(0, box.hints().scrollHeight() - box.height());
             if (limit <= 0) continue;
@@ -564,7 +564,7 @@ public final class StandaloneView implements AutoCloseable {
         }
         if (key == Keys.UP || key == Keys.DOWN || key == Keys.LEFT || key == Keys.RIGHT) {
             HtmlNode to = UiFocus.spatial(ui, focused, key);
-            if (to != null) ui.setFocusedElement(to.getId(), true);
+            if (to != null) ui.setFocusedElement(to.key(), true);
             return;
         }
         String tag = focused.tag != null ? focused.tag.toLowerCase(Locale.ROOT) : "";
@@ -611,7 +611,7 @@ public final class StandaloneView implements AutoCloseable {
     private void editKey(HtmlNode field, int key, int mods, boolean enter, UIEvents.Keyboard ev) {
         boolean multiline = "textarea".equalsIgnoreCase(field.tag);
         if (enter && !multiline) {
-            input.submitInput(field.getId(), valueOf(field)); // change を送る
+            input.submitInput(field.key(), valueOf(field)); // change を送る
             StandardDefaultActions.execute(ev, new DefaultActionContext() { // 暗黙のフォーム送信
                 @Override
                 public void onAttributeChanged(HtmlNode node, String attrName, String attrValue) {}
@@ -637,7 +637,7 @@ public final class StandaloneView implements AutoCloseable {
     private void openSelect(HtmlNode select) {
         DisplayItem box = null;
         for (DisplayItem it : items) {
-            if (!it.baseId().equals(select.getId()) || it.width() <= 0) continue;
+            if (!it.baseId().equals(select.key()) || it.width() <= 0) continue;
             if (it.type() == ElementType.SELECT) {
                 box = it;
                 break;
@@ -649,7 +649,7 @@ public final class StandaloneView implements AutoCloseable {
 
     private boolean ownerUnderPointer(HtmlNode owner) {
         UIHitResult hit = ui.hitTest(mouseX, mouseY);
-        return owner != null && hit != null && hit.element().baseId().equals(owner.getId());
+        return owner != null && hit != null && hit.element().baseId().equals(owner.key());
     }
 
     /** ポップアップが開いている間のキー。使ったら true（{@code Tab} は閉じるだけで続けてフォーカスを移す）。 */
@@ -677,7 +677,7 @@ public final class StandaloneView implements AutoCloseable {
     /** 選んだ値を反映し、変わっていれば {@code input} と {@code change} を送る。 */
     private void commitSelect(HtmlNode select, String value) {
         if (select == null) return;
-        if (!value.equals(select.attrs.getOrDefault("value", ""))) input.submitInput(select.getId(), value);
+        if (!value.equals(select.attrs.getOrDefault("value", ""))) input.submitInput(select.key(), value);
         redraw = true;
     }
 
@@ -697,7 +697,7 @@ public final class StandaloneView implements AutoCloseable {
 
     /** テキスト欄の表示項目（{@code _input} / {@code _textarea}）。 */
     private DisplayItem fieldItem(HtmlNode field) {
-        String id = field.getId();
+        String id = field.key();
         String part = "textarea".equalsIgnoreCase(field.tag) ? "_textarea" : "_input";
         for (DisplayItem it : items) {
             if (it.baseId().equals(id) && it.isPart(part)) return it;
@@ -791,14 +791,14 @@ public final class StandaloneView implements AutoCloseable {
 
     private static DisplayItem overlayRect(HtmlNode field, String part, float x, float y, float w, float h, int argb) {
         int left = Math.round(x), top = Math.round(y);
-        return new DisplayItem(field.getId() + part, field.getId(), ElementType.RECT, left, top,
+        return new DisplayItem(field.key() + part, field.key(), ElementType.RECT, left, top,
                 Math.max(1, Math.round(x + w) - left), Math.max(1, Math.round(y + h) - top), "", 0, argb,
                 Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, null);
     }
 
     private boolean replaceValue(HtmlNode field, String next, String data, String inputType) {
         if (field.attrs.containsKey("readonly") || field.attrs.containsKey("disabled")) return false;
-        String id = field.getId();
+        String id = field.key();
         if (!input.beginTextEdit(id, data, inputType)) return false; // beforeinput が止めた
         input.commitTextEdit(id, next, data, inputType);
         input.updateInputLocally(id, next);
@@ -827,7 +827,7 @@ public final class StandaloneView implements AutoCloseable {
     /** {@code Tab} 順（{@code tabindex} の正の値が先、続いて文書順）の次／前へ。 */
     private void moveFocus(int step) {
         HtmlNode next = UiFocus.next(ui, interaction.focusedNode(), step);
-        if (next != null) ui.setFocusedElement(next.getId(), true);
+        if (next != null) ui.setFocusedElement(next.key(), true);
     }
 
     @Override

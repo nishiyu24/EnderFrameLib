@@ -375,7 +375,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         if (box.floatsMemoEpoch == epoch) {
             floatMemoHits++;
             if (verifyFloatMemo && box.floatsMemo != scanFloatsUncached(box)) {
-                throw new AssertionError("float メモが古い: 箱 " + box.node.getId() + " メモ=" + box.floatsMemo);
+                throw new AssertionError("float メモが古い: 箱 " + box.node.key() + " メモ=" + box.floatsMemo);
             }
             return box.floatsMemo;
         }

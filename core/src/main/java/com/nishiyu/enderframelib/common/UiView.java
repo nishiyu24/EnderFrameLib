@@ -616,13 +616,13 @@ public class UiView implements AutoCloseable {
     /** 押下中の節の ID。押下中の節は {@link InteractionState} が唯一の持ち主。 */
     public String activePressedId() {
         HtmlNode active = interactionState.activeNode();
-        return active != null ? active.getId() : "";
+        return active != null ? active.key() : "";
     }
 
     /** フォーカス中の節の ID。フォーカス中の節は {@link InteractionState} が唯一の持ち主。 */
     public String focusedId() {
         HtmlNode focused = interactionState.focusedNode();
-        return focused != null ? focused.getId() : "";
+        return focused != null ? focused.key() : "";
     }
 
     public TextSelection textSelection() {
@@ -1342,14 +1342,14 @@ public class UiView implements AutoCloseable {
             HtmlNode focused = interaction.focusedNode();
             boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible;
             HtmlNode hovered = interaction.hoveredNode();
-            return new NodeStateSnapshot(scrolls, focused != null ? focused.getId() : "", visible,
-                    hovered != null ? hovered.getId() : "");
+            return new NodeStateSnapshot(scrolls, focused != null ? focused.key() : "", visible,
+                    hovered != null ? hovered.key() : "");
         }
 
         private static void collectScrolls(HtmlNode node, ScrollState scrollState, Map<String, float[]> out) {
             float x = scrollState.getScrollX(node);
             float y = scrollState.getScrollY(node);
-            if ((x != 0 || y != 0) && !node.getId().isEmpty()) out.put(node.getId(), new float[]{x, y});
+            if ((x != 0 || y != 0) && !node.key().isEmpty()) out.put(node.key(), new float[]{x, y});
             for (HtmlNode child : node.children) collectScrolls(child, scrollState, out);
         }
 
@@ -1373,8 +1373,8 @@ public class UiView implements AutoCloseable {
     private static void collectClientOwnedIslands(HtmlNode node, Map<String, HtmlNode> islands) {
         for (HtmlNode child : node.children) {
             boolean declaredClientOwned = Ownership.parse(child.attrs.get(Ownership.ATTRIBUTE)) == Ownership.CLIENT;
-            if (declaredClientOwned && !child.getId().isEmpty()) {
-                islands.put(child.getId(), child);
+            if (declaredClientOwned && !child.key().isEmpty()) {
+                islands.put(child.key(), child);
             } else {
                 collectClientOwnedIslands(child, islands);
             }
