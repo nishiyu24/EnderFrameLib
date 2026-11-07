@@ -76,6 +76,14 @@ neoForge {
     }
 }
 
+// core の kernel（Vector API / Panama FFM）を使うコードを含むため、コンパイルとテストに同じフラグを渡す
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['--add-modules', 'jdk.incubator.vector', '--enable-preview']
+}
+tasks.withType(Test).configureEach {
+    jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED', '--enable-preview'
+}
+
 configurations {
     runtimeClasspath.extendsFrom localRuntime
     testCompileClasspath.extendsFrom compileClasspath
