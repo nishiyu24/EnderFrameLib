@@ -215,3 +215,11 @@ guidebook 7.9 / 5.7 / 3.4 / 8.0 ms、large-list 19.8 / 9.4 / 9.2 / 13.7 ms。Res
 途中で見つけて直した退行: 行の断片を置くたびに `fontStyleFor`（太さの解析を含む）で書体の descent を引いていて、showcase の Relayout が HEAD の 3 往復すべてより約 40% 遅かった（60 / 37 / 37 ms）。断片を作る時点（書体が手元にある）で descent を持たせる（`InlineFragment.descent`）と HEAD と同じ範囲に戻った。UAX #14 の `LineBreaker` は英字どうし（語の内側）を最初に判定して返すので、文字ごとの分類は語の境目でしか走らない。
 
 字形の置き場（VRAM）: 13px の文字を `scale(1 → 3)` で動かしたときの置き場の種類は、量子化の前 667 フレームで 667 種、後は約 90 種（`AtlasCacheTest`）。同じサイズの `subpixel` × `lightText` は 8 枚のテクスチャから 1 つの `FontSet` になった。置き場ごとの字形面積から VRAM を見積もる `AtlasFootprint` と、文字の置き場（最低 32 MiB 予約・64 MiB 上限）と FBO プール（画面サイズのレイヤー 4〜16 枚分）を全体 192 MiB の枠で配分する `VramBudget` を入れた（`AtlasFootprintTest`：Arial の ASCII + 漢字 400 字 × 3 サイズ × 端数 4 段 = 1,128 字形で 3 枚・192 KiB）。
+
+---
+
+## 計測ガイド（2026-11-07）
+
+JMH・段別プロファイル・GPU タイマークエリの手順と、その道具で取った実測は [core/MEASUREMENT.md](core/MEASUREMENT.md)。
+この文書の JUnit の値は JIT のウォームアップが短く、JMH の定常値より大きく出る段がある（最大で約 4 倍）。回帰判定は従来どおりここ、
+どの段を削るかの判断は MEASUREMENT.md の値を使う。

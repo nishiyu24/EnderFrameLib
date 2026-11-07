@@ -293,7 +293,14 @@ public class WebFontManager {
 
         private final Map<String, FontFace> faces = new ConcurrentHashMap<>();
 
+        /** {@link #clear} のたびに増える。描いた結果を使い回す側が、書体の登録が変わったかを見分ける。 */
+        private static final java.util.concurrent.atomic.AtomicInteger GENERATION = new java.util.concurrent.atomic.AtomicInteger();
+
         private McFontResolver() {}
+
+        public static int generation() {
+            return GENERATION.get();
+        }
 
         @Override
         public FontFace resolve(String fontFamily) {
@@ -303,6 +310,7 @@ public class WebFontManager {
         /** {@code @font-face} の登録などで解決結果が変わったときに捨てる。 */
         public void clear() {
             faces.clear();
+            GENERATION.incrementAndGet();
             // 文字の幅が変わり得るので、差分レイアウトに前回の measure の結果を使わせない
             com.nishiyu.enderframelib.core.layout.LayoutBox.invalidateAllMeasurements();
         }

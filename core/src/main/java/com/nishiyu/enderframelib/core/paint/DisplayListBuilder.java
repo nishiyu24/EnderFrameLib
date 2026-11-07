@@ -42,6 +42,8 @@ import static com.nishiyu.enderframelib.core.paint.PaintSupport.parseFloatAttr;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.putFontEvents;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.resolveLiveInputValue;
 import static com.nishiyu.enderframelib.core.paint.PaintSupport.roundRadii;
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter.BorderSpec;
 import com.nishiyu.enderframelib.core.paint.PaintOrder.RenderTask;
@@ -117,6 +119,15 @@ public List<DisplayItem> render(LayoutBox box) {
  * 変形・アニメーション・フィルターを持つ祖先の下は、動いて画面に入ってくるので省かない。
  */
 public List<DisplayItem> render(LayoutBox box, boolean cullOffscreen) {
+    long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
+    try {
+        return renderUnprofiled(box, cullOffscreen);
+    } finally {
+        StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
+    }
+}
+
+private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen) {
     generation++;
     buildSerial++;
     buildEpoch = LayoutBox.paintEpoch();

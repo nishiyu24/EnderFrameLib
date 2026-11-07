@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.model.*;
 
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.model.ContainerBox;
 import com.nishiyu.enderframelib.core.css.model.ContainerType;
@@ -152,6 +154,7 @@ public class RenderPipeline {
             statBoxes = statRestyled = statReused = 0;
             allocResolve = allocCompute = allocAnimated = 0;
             long tA = System.nanoTime();
+            long profBuild = StageProfiler.begin(PipelineStage.STYLE_BUILD);
             boolean track = trackAllocations;
             long aA = track ? threadAllocatedBytes() : 0;
             effectiveState.styleShare.clear();
@@ -161,10 +164,13 @@ public class RenderPipeline {
                         effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
             } finally {
                 effectiveState.styleShare.clear();
+                StageProfiler.end(PipelineStage.STYLE_BUILD, profBuild);
             }
             long tB = System.nanoTime();
             long aB = track ? threadAllocatedBytes() : 0;
+            long profBox = StageProfiler.begin(PipelineStage.BOX_TREE);
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
+            StageProfiler.end(PipelineStage.BOX_TREE, profBox);
             long tC = System.nanoTime();
             long aC = track ? threadAllocatedBytes() : 0;
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
@@ -241,6 +247,9 @@ public class RenderPipeline {
         long m1 = System.nanoTime();
         LayoutBox.resetPlacements(rootBox, reuseMeasurements ? run : -1);
         rootBox.layout(0, 0, rootW, rootH, ctx);
+        long m2 = System.nanoTime();
+        StageProfiler.record(PipelineStage.LAYOUT_MEASURE, m1 - m0);
+        StageProfiler.record(PipelineStage.LAYOUT_PLACE, m2 - m1);
         passMeasureMs = (m1 - m0) / 1_000_000;
         passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
         passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
@@ -290,8 +299,10 @@ public class RenderPipeline {
     public static void repositionLayout(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
         LayoutContext ctx = new LayoutContext(new Viewport(rootW, rootH, rootBox.devicePixelRatio),
                 effectiveIntrinsicResolver(), scrollState, fonts);
+        long prof = StageProfiler.begin(PipelineStage.REPOSITION);
         LayoutBox.resetPlacements(rootBox);
         rootBox.layout(0, 0, rootW, rootH, ctx);
+        StageProfiler.end(PipelineStage.REPOSITION, prof);
     }
 
     /**
@@ -521,7 +532,7 @@ public class RenderPipeline {
         flags.cachedViewportH = scope.viewportH();
         flags.viewportDependent = dependsOnViewport(node, rawStyle);
         flags.hasInteractiveRules = hasInteractive;
-        flags.isStyleDirty = false;
+        flags.clearStyleDirtyFlag();
         flags.subtreeDirty = false;
         flags.dirtyBelow = false;
         flags.unscoped = false;
@@ -565,18 +576,21 @@ public class RenderPipeline {
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
         interactionState.bindStyleSheet(doc.sheet);
         if (doc.sheet != null && doc.sheet.usesHasSelectors()) interactionState.propagateDirtyToAncestors();
+        else interactionState.discardUnscopedLog();
         // 飛ばしてよいのは、前回の走査と同じビューポートのとき（変わると、飛ばした子孫の vw や var() が古くなる）
         InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
         interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         interactionState.styleShare.clear();
         RenderPipeline.layoutChangedBoxes.clear();
+        long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
             return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     interactionState, StyleResolver.hasSiblingStateRules(doc.sheet));
         } finally {
             interactionState.styleShare.clear();
+            StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);
         }
     }
 

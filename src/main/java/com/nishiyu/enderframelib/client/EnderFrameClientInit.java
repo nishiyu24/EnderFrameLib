@@ -98,6 +98,7 @@ public class EnderFrameClientInit {
         });
 
         EnderFrameClientAPI.setInstance(EnderFrameClientAPIImpl.INSTANCE);
+        InGameProfiler.init();
 
         EnderFrameBuiltInConfig.runtimeApplier = () -> {
             DisplayItemDrawer.useSdfShader = EnderFrameBuiltInConfig.useSdfShader;

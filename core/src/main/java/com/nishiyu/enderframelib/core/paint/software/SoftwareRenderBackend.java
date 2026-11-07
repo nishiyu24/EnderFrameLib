@@ -212,6 +212,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private final PaintSceneDriver driver = new PaintSceneDriver(sessionId);
+
+    /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
+    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
+        return driver.anyActiveAt(items, nowMs);
+    }
     private final PaintSceneDriver.Painter painter = new PaintSceneDriver.Painter() {
         @Override
         public void syncLayers(List<Group> want) {

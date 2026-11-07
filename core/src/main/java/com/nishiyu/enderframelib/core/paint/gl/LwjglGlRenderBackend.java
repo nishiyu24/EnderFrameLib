@@ -28,6 +28,11 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL32;
+import org.lwjgl.opengl.GL33;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.ARBTimerQuery;
+import com.nishiyu.enderframelib.core.diag.PipelineStage;
+import com.nishiyu.enderframelib.core.diag.StageProfiler;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
@@ -644,6 +649,66 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private int clearPremul = 0;
     private boolean readbackValid;
     private boolean closed;
+
+    // ---- GPU の所要時間（タイマークエリ。既定は無効） ----
+    private static final int GPU_QUERY_RING = 4;
+    private int[] gpuQueries;
+    private final boolean[] gpuQueryPending = new boolean[GPU_QUERY_RING];
+    private int gpuQueryNext;
+    private boolean gpuQueryOpen;
+    private volatile double lastGpuMs = -1;
+
+    /**
+     * GPU 側の所要時間の計測を有効にする（{@code GL_TIME_ELAPSED}）。結果は読み戻しを待たず、数フレーム遅れて届き、
+     * {@link #lastGpuMillis} と {@link PipelineStage#GPU} に入る。GL 3.3 か {@code ARB_timer_query} が無いときは false を返し何もしない。
+     * 無効の間は GL を一切呼ばない。ホストが同じ種類のクエリを張っているコンテキストでは使わないこと（入れ子にできない）。
+     */
+    public boolean enableGpuTiming() {
+        if (closed || myCaps == null || !(myCaps.OpenGL33 || myCaps.GL_ARB_timer_query)) return false;
+        if (gpuQueries != null) return true;
+        enter();
+        try {
+            gpuQueries = new int[GPU_QUERY_RING];
+            for (int i = 0; i < GPU_QUERY_RING; i++) gpuQueries[i] = GL15.glGenQueries();
+        } finally {
+            exit();
+        }
+        return true;
+    }
+
+    /** 直近に届いた GPU のフレーム時間（ミリ秒）。まだ無い・無効なら -1。 */
+    public double lastGpuMillis() {
+        return lastGpuMs;
+    }
+
+    /** 終わったクエリの結果を拾う（待たない）。 */
+    private void gpuCollect() {
+        for (int i = 0; i < GPU_QUERY_RING; i++) {
+            if (!gpuQueryPending[i]) continue;
+            if (GL15.glGetQueryObjecti(gpuQueries[i], GL15.GL_QUERY_RESULT_AVAILABLE) == GL11.GL_FALSE) continue;
+            long ns = myCaps.OpenGL33 ? GL33.glGetQueryObjecti64(gpuQueries[i], GL15.GL_QUERY_RESULT)
+                    : ARBTimerQuery.glGetQueryObjecti64(gpuQueries[i], GL15.GL_QUERY_RESULT);
+            gpuQueryPending[i] = false;
+            lastGpuMs = ns / 1e6;
+            StageProfiler.record(PipelineStage.GPU, ns);
+        }
+    }
+
+    private void gpuBegin() {
+        if (gpuQueries == null) return;
+        gpuCollect();
+        if (gpuQueryPending[gpuQueryNext]) return; // 輪が一巡して未回収。このフレームは測らない
+        GL15.glBeginQuery(GL33.GL_TIME_ELAPSED, gpuQueries[gpuQueryNext]);
+        gpuQueryOpen = true;
+    }
+
+    private void gpuEnd() {
+        if (!gpuQueryOpen) return;
+        GL15.glEndQuery(GL33.GL_TIME_ELAPSED);
+        gpuQueryOpen = false;
+        gpuQueryPending[gpuQueryNext] = true;
+        gpuQueryNext = (gpuQueryNext + 1) % GPU_QUERY_RING;
+    }
     /** 共有時、直近のフレームの完了を表すフェンス（0 は無し）。{@link #waitForRender} が GPU 側で待つ。 */
     private long renderFence;
 
@@ -771,6 +836,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public String sessionId() {
         return cpu.sessionId();
+    }
+
+    /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。false なら同じ項目の再描画は同じ絵。 */
+    public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
+        return cpu.hasActiveAnimation(items, nowMs);
     }
 
     public LwjglGlRenderBackend images(ImageProvider provider) {
@@ -933,7 +1003,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (closed) throw new IllegalStateException("closed");
         enter();
         try {
-            renderLocked(items, nowMs);
+            gpuBegin();
+            try {
+                renderLocked(items, nowMs);
+            } finally {
+                gpuEnd();
+            }
         } finally {
             exit();
         }
@@ -2138,6 +2213,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (dataTex != 0) GL11.glDeleteTextures(dataTex);
             for (int t : imageTex.clear()) GL11.glDeleteTextures(t);
             if (vao != 0) GL30.glDeleteVertexArrays(vao);
+            if (gpuQueries != null) {
+                for (int q : gpuQueries) GL15.glDeleteQueries(q);
+                gpuQueries = null;
+            }
             if (renderFence != 0) {
                 GL32.glDeleteSync(renderFence);
                 renderFence = 0;

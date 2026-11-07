@@ -115,6 +115,24 @@ public class InteractionState implements StateLookup {
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */
         public boolean isStyleDirty = true;
+        /** 持ち主。汚れた節の個数（{@link InteractionState#dirtyCount}）を O(1) で保つ。持ち主の無い使い捨てなら null。 */
+        private InteractionState owner;
+
+        /** {@link #isStyleDirty} を立てる。書き込みは必ずここを通す（個数の帳簿が合わなくなる）。 */
+        public void markStyleDirty() {
+            if (!isStyleDirty) {
+                isStyleDirty = true;
+                if (owner != null) owner.dirtyCount++;
+            }
+        }
+
+        /** {@link #isStyleDirty} を下ろす。 */
+        public void clearStyleDirtyFlag() {
+            if (isStyleDirty) {
+                isStyleDirty = false;
+                if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
+            }
+        }
         /**
          * この要素の子孫も、継承元が変わったかどうかによらず再スタイルが要るか
          * （{@code .a:hover .b} のように、祖先の状態・class・属性を読む規則がある）。
@@ -144,8 +162,27 @@ public class InteractionState implements StateLookup {
 
     public StateFlags getOrCreate(HtmlNode node) {
         if (node == null) return new StateFlags();
-        return flagsByNode.computeIfAbsent(node, key -> new StateFlags());
+        return flagsByNode.computeIfAbsent(node, key -> {
+            StateFlags created = new StateFlags(); // 作りたては汚れている
+            created.owner = this;
+            dirtyCount++;
+            unscopedLog.add(key); // 作りたては unscoped
+            return created;
+        });
     }
+
+    /**
+     * {@link StateFlags#isStyleDirty} が立っている節の個数の上限（O(1) の問い合わせ用）。
+     * 0 なら汚れた節は確実に無い。節が回収されると汚れたまま表から消えて実際より大きくなり得るので、
+     * 正の値は「あるかもしれない」で、{@link #hasDirtyNodes} が確かめて数え直す。
+     */
+    private int dirtyCount;
+
+    /**
+     * {@link StateFlags#unscoped} が立った節の記録（{@link #propagateDirtyToAncestors} が全走査せずに済むように）。
+     * 古い記録（その後に片付いた節）が残ってもよい。使う側が印を見直す。使い終わったら空にする。
+     */
+    private final List<HtmlNode> unscopedLog = new ArrayList<>();
 
     /** 確定済みの算出スタイル。まだ再スタイルされていなければ null。 */
     public ComputedStyle computedStyleOf(HtmlNode node) {
@@ -341,13 +378,20 @@ public class InteractionState implements StateLookup {
     public void markDirty(HtmlNode node) {
         if (node == null) return;
         StateFlags flags = getOrCreate(node);
-        flags.isStyleDirty = true;
+        flags.markStyleDirty();
         flags.subtreeDirty = true;
-        flags.unscoped = true;
+        if (!flags.unscoped) {
+            flags.unscoped = true;
+            unscopedLog.add(node);
+        }
         markAncestorsDirtyBelow(node);
     }
 
-    /** 祖先すべてに「子孫に汚れがある」印を付ける（根まで。深さの分だけで済む）。 */
+    /**
+     * 祖先すべてに「子孫に汚れがある」印を付ける（根まで。深さの分だけで済む）。
+     * 印が付いている祖先で止める早期終了は入れない: 「印が付いていれば祖先も付いている」が成り立たない場面がある
+     * （IncrementalLayoutFuzzTest で、印済みの節の祖先が未印の状態が見つかった）。
+     */
     private void markAncestorsDirtyBelow(HtmlNode node) {
         for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) getOrCreate(cur).dirtyBelow = true;
     }
@@ -377,7 +421,7 @@ public class InteractionState implements StateLookup {
             return;
         }
         StateFlags flags = getOrCreate(node);
-        flags.isStyleDirty = true;
+        flags.markStyleDirty();
         markAncestorsDirtyBelow(node);
         Set<Relation> relations = EnumSet.noneOf(Relation.class);
         String lower = name.toLowerCase(java.util.Locale.ROOT);
@@ -469,7 +513,7 @@ public class InteractionState implements StateLookup {
 
     private void dirty(HtmlNode node, boolean subtree) {
         StateFlags flags = getOrCreate(node);
-        flags.isStyleDirty = true;
+        flags.markStyleDirty();
         if (subtree) flags.subtreeDirty = true;
         markAncestorsDirtyBelow(node);
     }
@@ -485,7 +529,7 @@ public class InteractionState implements StateLookup {
 
     public void markAllDirty() {
         for (StateFlags flags : flagsByNode.values()) {
-            flags.isStyleDirty = true;
+            flags.markStyleDirty();
             flags.subtreeDirty = true;
             flags.dirtyBelow = true;
         }
@@ -496,24 +540,31 @@ public class InteractionState implements StateLookup {
      * 子孫の状態が変わったら、{@code :has()} の持ち主になり得る祖先を再スタイルに含める必要がある。
      */
     public void propagateDirtyToAncestors() {
+        if (unscopedLog.isEmpty()) return;
         List<HtmlNode> dirty = new ArrayList<>();
-        for (Map.Entry<HtmlNode, StateFlags> e : flagsByNode.entrySet()) {
-            StateFlags flags = e.getValue();
+        for (HtmlNode node : unscopedLog) {
+            StateFlags flags = flagsByNode.get(node);
             // 影響範囲を絞って汚した要素の祖先は、無効化セットが既に汚している
-            if (flags.isStyleDirty && flags.unscoped) {
-                dirty.add(e.getKey());
+            if (flags != null && flags.isStyleDirty && flags.unscoped) {
+                dirty.add(node);
                 flags.unscoped = false;
             }
         }
+        unscopedLog.clear();
         for (HtmlNode node : dirty) {
             for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) {
                 StateFlags flags = flagsByNode.get(cur);
                 if (flags != null) {
-                    flags.isStyleDirty = true;
+                    flags.markStyleDirty();
                     flags.dirtyBelow = true;
                 }
             }
         }
+    }
+
+    /** {@code :has()} を使わない文書では {@link #propagateDirtyToAncestors} が呼ばれないので、記録が溜まらないよう捨てる。 */
+    public void discardUnscopedLog() {
+        unscopedLog.clear();
     }
 
     /**
@@ -527,7 +578,7 @@ public class InteractionState implements StateLookup {
         flags.containerWidth = width;
         flags.containerHeight = height;
         if (changed) {
-            flags.isStyleDirty = true;
+            flags.markStyleDirty();
             flags.subtreeDirty = true;
             markAncestorsDirtyBelow(node);
         }
@@ -606,8 +657,17 @@ public class InteractionState implements StateLookup {
 
     /** 再スタイルが必要な印を持つ節が、すべて {@code allowed}（同一性で比べる）に含まれるか。印が無ければ true。 */
     public boolean styleDirtyOnlyIn(java.util.Collection<HtmlNode> allowed) {
+        if (dirtyCount <= 0) return true;
         Set<HtmlNode> set = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         set.addAll(allowed);
+        // dirtyCount は実数以上なので、allowed の中の汚れた節の数がそれに届けば、外に汚れた節は無い（全走査を省ける）
+        int inside = 0;
+        for (HtmlNode n : set) {
+            StateFlags f = flagsByNode.get(n);
+            if (f != null && f.isStyleDirty) inside++;
+        }
+        if (inside >= dirtyCount) return true;
+        // 届かないときは、回収された節の分の過大か、外に本当に汚れた節があるか。確かめる
         for (Map.Entry<HtmlNode, StateFlags> e : flagsByNode.entrySet()) {
             if (e.getValue().isStyleDirty && !set.contains(e.getKey())) return false;
         }
@@ -621,20 +681,24 @@ public class InteractionState implements StateLookup {
     public void clearStyleDirty(HtmlNode node) {
         StateFlags flags = flagsByNode.get(node);
         if (flags == null) return;
-        flags.isStyleDirty = false;
+        flags.clearStyleDirtyFlag();
         flags.subtreeDirty = false;
         flags.unscoped = false;
     }
 
     public boolean hasDirtyNodes() {
+        if (dirtyCount <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
         for (StateFlags flags : flagsByNode.values()) {
             if (flags.isStyleDirty) return true;
         }
+        dirtyCount = 0; // 汚れたまま回収された節の分。帳簿を合わせ直す
         return false;
     }
 
     public void clear() {
         flagsByNode.clear();
+        dirtyCount = 0;
+        unscopedLog.clear();
         if (animator != null) animator.clear();
         hoveredChain = new HashSet<>();
         activeChain = new HashSet<>();
