@@ -313,7 +313,7 @@ public final class BoxTreeBuilder {
         LayoutBox reused = takeReusableGenerated(id);
         // 匿名の表・行・セルは表のエンジンが直接書き込むので作り直す（LayoutBox.reusableBoxes と同じ）
         if (reused != null && !reused.node.isPseudoNode && !display.contains("table")
-                && LayoutBox.isReusableShape(reused)) {
+                && !reused.touchedByTableEngine()) {
             reused.node.parent = parent.node;
             reused.children.clear();
             LayoutBox.bumpShapeEpoch();

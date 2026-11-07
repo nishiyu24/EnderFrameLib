@@ -84,6 +84,7 @@ public class TableLayoutEngine extends LayoutEngine {
             state.hSpacing = spacing[0];
             state.vSpacing = spacing[1];
             for (CellSlot slot : state.cells) slot.cell.collapsedBorders = null;
+            box.collapsedBorders = null;
         }
 
         int n = state.columnCount;
