@@ -20,8 +20,13 @@ class InstanceUploadDiffTest {
     private static LwjglGlRenderBackend probe;
     private static String unavailable;
 
+    /** このクラスは従来経路（GpuBatchPacker）の差分転送を検査するので、新経路を切って走らせる。 */
+    private static boolean savedRectTrees;
+
     @BeforeAll
     static void probe() {
+        savedRectTrees = LwjglGlRenderBackend.rectTrees;
+        LwjglGlRenderBackend.rectTrees = false;
         try {
             probe = new LwjglGlRenderBackend(16, 16);
         } catch (Throwable t) {
@@ -31,6 +36,7 @@ class InstanceUploadDiffTest {
 
     @AfterAll
     static void cleanup() {
+        LwjglGlRenderBackend.rectTrees = savedRectTrees;
         if (probe != null) probe.close();
     }
 

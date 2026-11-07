@@ -1,7 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuSink.Clip;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
@@ -112,7 +111,7 @@ public final class GpuBatchPacker {
     // ------------------------------------------------------------------ 図形
 
     public boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                 int argb, Clip[] clips, float opacity) {
+                                 int argb, GpuClip[] clips, float opacity) {
         if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
         curMode = MODE_FILL;
         setRect(4, rx, ry, x0, y0, x1, y1);
@@ -123,7 +122,7 @@ public final class GpuBatchPacker {
 
     public boolean strokeRoundBorder(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                      float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
-                                     int[] colors, float[] widths, Clip[] clips, float opacity) {
+                                     int[] colors, float[] widths, GpuClip[] clips, float opacity) {
         if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
         curMode = MODE_STROKE;
         setRect(4, rx, ry, x0, y0, x1, y1);
@@ -144,7 +143,7 @@ public final class GpuBatchPacker {
                                       int[] colors, float[] widths,
                                       float bx, float by, float cxm, float cym, float[] pcx, float[] pcy,
                                       float period, float dash, boolean round, float thickness,
-                                      Clip[] clips, float opacity) {
+                                      GpuClip[] clips, float opacity) {
         if (!(period > 0f)) return false;
         long before = committed;
         strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty, colors, widths, clips, opacity);
@@ -160,7 +159,7 @@ public final class GpuBatchPacker {
     }
 
     public boolean strokeCircleBorder(Matrix2D pose, float cx, float cy, float outerR, float innerR,
-                                      float bx0, float by0, float bx1, float by1, int[] colors, Clip[] clips, float opacity) {
+                                      float bx0, float by0, float bx1, float by1, int[] colors, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(pose, bx0, by0, bx1, by1, clips, opacity)) return true;
         curMode = MODE_CIRCLE_BORDER;
         put(4, cx, cy, outerR, innerR);
@@ -170,7 +169,7 @@ public final class GpuBatchPacker {
     }
 
     public boolean fillGradient(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                ShaderGradient g, Clip[] clips, float opacity) {
+                                ShaderGradient g, GpuClip[] clips, float opacity) {
         if (!beginShape(pose, x0, y0, x1, y1, clips, opacity)) return true;
         curMode = MODE_GRADIENT;
         setRect(4, rx, ry, x0, y0, x1, y1);
@@ -187,7 +186,7 @@ public final class GpuBatchPacker {
 
     public boolean outerShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
-                               float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                               float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(pose, qx0, qy0, qx1, qy1, clips, opacity)) return true;
         curMode = MODE_OUTER_SHADOW;
         setRect(4, srx, sry, sx0, sy0, sx1, sy1);
@@ -200,7 +199,7 @@ public final class GpuBatchPacker {
     }
 
     public boolean insetShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
-                               float sigma, float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                               float sigma, float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(pose, qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1, clips, opacity)) return true;
         curMode = MODE_INSET_SHADOW;
         setRect(4, rx, ry, qx0, qy0, qx1, qy1);
@@ -214,7 +213,7 @@ public final class GpuBatchPacker {
     // ------------------------------------------------------------------ 字形・画像（積めたら true、描くものが無ければ false）
 
     /** 字形（デバイス画素の格子に揃えた文字）。{@code slot} は {@link AtlasPacker#slot} の結果。 */
-    public boolean glyph(GlyphBitmap g, int[] slot, int bx, int by, int argb, Clip[] clips, float opacity) {
+    public boolean glyph(GlyphBitmap g, int[] slot, int bx, int by, int argb, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clips, opacity)) return false;
         curMode = MODE_GLYPH;
         put(4, bx, by, bx + g.width(), by + g.height());
@@ -228,7 +227,7 @@ public final class GpuBatchPacker {
      * 字形の縁取り（デバイス画素の格子に揃えた文字）。{@code sdf} は SDF の字形（128 = 輪郭、内側が大きい、
      * {@code spread} 画素で 128 段階）で、{@code half} は縁取りの幅の半分（画素）。帯は輪郭からの距離 {@code |d| <= half}。
      */
-    public boolean glyphStroke(GlyphBitmap sdf, int[] slot, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+    public boolean glyphStroke(GlyphBitmap sdf, int[] slot, int bx, int by, float half, int argb, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height(), clips, opacity)) return false;
         curMode = MODE_GLYPH_STROKE;
         put(4, bx, by, bx + sdf.width(), by + sdf.height());
@@ -241,7 +240,7 @@ public final class GpuBatchPacker {
 
     /** 回転などの姿勢の下の字形。 */
     public boolean glyphTransformed(Matrix2D pose, GlyphBitmap g, int[] slot, float ox, float oy, float s,
-                                    float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
+                                    float bx0, float by0, float bx1, float by1, int argb, GpuClip[] clips, float opacity) {
         if (!beginShapeIn(pose, bx0, by0, bx1, by1, clips, opacity)) return false;
         curMode = MODE_GLYPH_TRANSFORMED;
         put(21, slot[0], slot[1], g.width(), g.height());
@@ -256,7 +255,7 @@ public final class GpuBatchPacker {
     public boolean image(Matrix2D pose, Pixmap image, float bx0, float by0, float bx1, float by1,
                          float px0, float py0, float sx, float sy,
                          float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                         int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+                         int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         return image(pose, image.width(), image.height(), bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry,
                 taps, stepX, stepY, clips, opacity);
     }
@@ -265,7 +264,7 @@ public final class GpuBatchPacker {
     public boolean image(Matrix2D pose, int imageWidth, int imageHeight, float bx0, float by0, float bx1, float by1,
                          float px0, float py0, float sx, float sy,
                          float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                         int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+                         int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         // 回転の下では、辺の斜めの画素が箱の外側にもはみ出す（CPU 版は外接矩形の全画素を評価する）。1 画素分広げて合わせる
         float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
         if (!beginShapeIn(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, clips, opacity)) return false;
@@ -281,13 +280,13 @@ public final class GpuBatchPacker {
     // ------------------------------------------------------------------ 詰め方
 
     /** 図形を描く共通の準備（余白を 1 画素ぶん足した版）。描くものが無い（姿勢が壊れている）なら {@code false}。 */
-    private boolean beginShape(Matrix2D pose, float x0, float y0, float x1, float y1, Clip[] clips, float opacity) {
+    private boolean beginShape(Matrix2D pose, float x0, float y0, float x1, float y1, GpuClip[] clips, float opacity) {
         float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
         return beginShapeIn(pose, x0 - m, y0 - m, x1 + m, y1 + m, clips, opacity);
     }
 
     /** {@link #beginShape} の、描く範囲（余白込み）を直接渡す版。 */
-    private boolean beginShapeIn(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip[] clips, float opacity) {
+    private boolean beginShapeIn(Matrix2D pose, float bx0, float by0, float bx1, float by1, GpuClip[] clips, float opacity) {
         host.beforeShape();
         if (!pose.isFinite() || pose.invert() == null || opacity <= 0f) return false;
         if (host.tracksBounds()) { // 層に描く範囲（四隅を姿勢で写した外接矩形）を記録する
@@ -312,7 +311,7 @@ public final class GpuBatchPacker {
         int n = clips.length;
         curClipN = n;
         for (int i = 0; i < n; i++) {
-            Clip c = clips[i];
+            GpuClip c = clips[i];
             Matrix2D v = c.inv();
             int t = 24 + i * 5;
             put(t, (float) v.a(), (float) v.b(), (float) v.c(), (float) v.d());

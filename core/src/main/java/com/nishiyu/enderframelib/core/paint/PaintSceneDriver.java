@@ -4,7 +4,6 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
-import com.nishiyu.enderframelib.core.paint.model.ItemKeys;
 import com.nishiyu.enderframelib.core.paint.model.LayerSpec;
 import com.nishiyu.enderframelib.core.paint.model.RenderMeta;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -39,6 +38,12 @@ public final class PaintSceneDriver {
      * （疑うときの切り分け用。絵は同じでなければならない）。
      */
     public static volatile boolean reuseIdlePoses = true;
+
+    /**
+     * 同じ基底の上で差し替えだけが変わった表示リスト（{@link OffsetItemList}。スクロール・ドラッグ）を、索引を作り直さず
+     * 差し替わった項目だけ更新して走査するか。false なら毎回作り直す（疑うときの切り分け用。絵は同じでなければならない）。
+     */
+    public static volatile boolean patchOffsetLists = true;
 
     /** 項目の姿勢（親から引き継いだ変形）と、祖先の不透明度の積。 */
     public record Resolved(Matrix2D pose, float opacity, float residual, List<Group> groups, AnimatedValues anim) {}
@@ -97,7 +102,7 @@ public final class PaintSceneDriver {
 
     /** 走査中の、id から項目を引く。 */
     public DisplayItem itemById(String id) {
-        return byId.get(ItemKeys.of(id));
+        return byId.get(DisplayItem.keyOf(id));
     }
 
     /** 走査中の、鍵から項目を引く（文字列のハッシュを使わない）。 */
@@ -107,7 +112,7 @@ public final class PaintSceneDriver {
 
     /** id の項目の位置。無ければ -1。 */
     public int indexOf(String id) {
-        return indexOf.getOrDefault(ItemKeys.of(id), -1);
+        return indexOf.getOrDefault(DisplayItem.keyOf(id), -1);
     }
 
     /** 鍵の項目の位置。無ければ -1。 */
@@ -128,7 +133,7 @@ public final class PaintSceneDriver {
         try {
             // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
             // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
-            if (!(items == indexedItems && isImmutable(items))) rebuildIndex(items);
+            if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items)) rebuildIndex(items);
             Arrays.fill(curRes, null);
             this.byId = indexedById;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
@@ -183,6 +188,38 @@ public final class PaintSceneDriver {
         }
     }
 
+    /** 索引を作ったときの基底の表示リスト（{@link OffsetItemList} の差し替えだけが変わるなら、索引は作り直さない）。 */
+    private List<DisplayItem> indexedBase;
+
+    /**
+     * {@code items} が、前回の索引と同じ基底の上の {@link OffsetItemList} なら、差し替わった項目だけを更新して true。
+     * 位置・親子・グループの錨は基底のままなので、id の引き当てと、その項目の補間状態・姿勢の使い回しだけを捨てる
+     * （子孫の姿勢は、親の {@code Resolved} が新しくなるので自動で作り直される）。世代は進めない:
+     * クリップの使い回しは持ち主の {@code Resolved} の同一性で検証されるため、古い結果は返らない。
+     */
+    private boolean patchIndex(List<DisplayItem> items) {
+        OffsetItemList now = items instanceof OffsetItemList o ? o : null;
+        boolean sameBase = now != null ? now.base() == indexedBase : items == indexedBase;
+        if (!patchOffsetLists || !sameBase || indexedItems == null || indexedItems.size() != items.size()) return false;
+        List<DisplayItem> old = indexedItems;
+        // 差し替わりうる位置: 今回の差し替えと、前回の差し替え（外れたものは基底へ戻る）
+        for (int pass = 0; pass < 2; pass++) {
+            OffsetItemList src = pass == 0 ? now : (old instanceof OffsetItemList o ? o : null);
+            if (src == null) continue;
+            for (int k = 0, n = src.overrideCount(); k < n; k++) {
+                int i = src.positionAt(k);
+                DisplayItem was = old.get(i), is = items.get(i);
+                if (was == is) continue;
+                indexedById.put(is.key(), is);
+                states[i] = null;
+                prevRes[i] = null;
+                prevStatic[i] = false;
+            }
+        }
+        indexedItems = items;
+        return true;
+    }
+
     private void rebuildIndex(List<DisplayItem> items) {
         Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(items.size() * 2);
         for (DisplayItem it : items) map.put(it.key(), it);
@@ -195,11 +232,12 @@ public final class PaintSceneDriver {
             if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
         }
         indexedItems = items;
+        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
         int n = items.size();
         parentIdx = new int[n];
         for (int i = 0; i < n; i++) {
             String pid = items.get(i).hints().parentId();
-            parentIdx[i] = pid == null ? -1 : indexOf.getOrDefault(ItemKeys.of(pid), -1);
+            parentIdx[i] = pid == null ? -1 : indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
         }
         curRes = new Resolved[n];
         prevRes = new Resolved[n];

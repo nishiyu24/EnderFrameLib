@@ -93,14 +93,9 @@ public interface GpuSink {
     /** 同時に渡せるクリップの数。これを超える項目は CPU が塗る。 */
     int MAX_CLIPS = 4;
 
-    /**
-     * クリップの 1 つ。{@code inv} はデバイス画素を持ち主の空間へ戻す変換、{@code scale} は持ち主の空間の 1 単位が何画素か。
-     */
-    record Clip(Matrix2D inv, float scale, float x0, float y0, float x1, float y1, float[] rx, float[] ry) {}
-
     /** 角丸矩形を単色（非乗算の ARGB）で塗る。{@code opacity} は 0〜1。 */
     boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                          int argb, Clip[] clips, float opacity);
+                          int argb, GpuClip[] clips, float opacity);
 
     /**
      * 角丸の枠線（外側の角丸矩形から内側を抜いた輪）を塗る。{@code colors} と {@code widths} は上・右・下・左の順。
@@ -108,11 +103,11 @@ public interface GpuSink {
      */
     boolean strokeRoundBorder(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                               float ix0, float iy0, float ix1, float iy1, float[] irx, float[] iry, boolean innerEmpty,
-                              int[] colors, float[] widths, Clip[] clips, float opacity);
+                              int[] colors, float[] widths, GpuClip[] clips, float opacity);
 
     /** 角丸矩形をシェーダーのグラデーション（{@link ShaderGradient} の 1 区間）で塗る。 */
     default boolean fillGradient(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                                 ShaderGradient gradient, Clip[] clips, float opacity) {
+                                 ShaderGradient gradient, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -122,7 +117,7 @@ public interface GpuSink {
      */
     default boolean outerShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1,
                                 float sx0, float sy0, float sx1, float sy1, float[] srx, float[] sry, float sigma,
-                                float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                                float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -130,7 +125,7 @@ public interface GpuSink {
      * 内側のぼかし影。箱 {@code (qx0,qy0)-(qx1,qy1)}（角丸 {@code rx/ry}）の中で、{@code hole} の外側を {@code sigma} でぼかして塗る。
      */
     default boolean insetShadow(Matrix2D pose, float qx0, float qy0, float qx1, float qy1, float[] rx, float[] ry,
-                                float sigma, float[] hole, float[] hrx, float[] hry, int argb, Clip[] clips, float opacity) {
+                                float sigma, float[] hole, float[] hrx, float[] hry, int argb, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -138,7 +133,7 @@ public interface GpuSink {
      * 字形 1 つを、デバイス画素の格子に揃えて置く（回転なしの文字）。{@code (bx, by)} は字形の左上の画素、{@code argb} は非乗算の文字色。
      * GPU 側は字形アトラスに載せて被覆率を引く。クリップは {@code clips}、不透明度は {@code opacity}。
      */
-    default boolean drawGlyph(GlyphBitmap glyph, int bx, int by, int argb, Clip[] clips, float opacity) {
+    default boolean drawGlyph(GlyphBitmap glyph, int bx, int by, int argb, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -148,7 +143,7 @@ public interface GpuSink {
      */
     default boolean drawImage(Matrix2D pose, Pixmap image, float bx0, float by0, float bx1, float by1,
                               float px0, float py0, float sx, float sy,
-                              float x0, float y0, float x1, float y1, float[] rx, float[] ry, Clip[] clips, float opacity) {
+                              float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
         return drawImage(pose, image, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity);
     }
 
@@ -158,7 +153,7 @@ public interface GpuSink {
     default boolean drawImage(Matrix2D pose, Pixmap image, float bx0, float by0, float bx1, float by1,
                               float px0, float py0, float sx, float sy,
                               float x0, float y0, float x1, float y1, float[] rx, float[] ry,
-                              int taps, float stepX, float stepY, Clip[] clips, float opacity) {
+                              int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -167,7 +162,7 @@ public interface GpuSink {
      * （128 = 輪郭、内側が大きい、広がり {@code LoadedFace.SDF_SPREAD} 画素で 128 段階）、{@code half} は縁取りの幅の半分（画素）。
      * 非対応なら {@code false}（CPU が描く）。
      */
-    default boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, Clip[] clips, float opacity) {
+    default boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -178,7 +173,7 @@ public interface GpuSink {
      */
     default boolean drawTexture(Matrix2D pose, long handle, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
                                 float px0, float py0, float sx, float sy,
-                                float x0, float y0, float x1, float y1, float[] rx, float[] ry, Clip[] clips, float opacity) {
+                                float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -187,7 +182,7 @@ public interface GpuSink {
      * {@code (bx0,by0)-(bx1,by1)} が描く範囲（局所）。
      */
     default boolean drawGlyphTransformed(Matrix2D pose, GlyphBitmap glyph, float ox, float oy, float s,
-                                         float bx0, float by0, float bx1, float by1, int argb, Clip[] clips, float opacity) {
+                                         float bx0, float by0, float bx1, float by1, int argb, GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -201,7 +196,7 @@ public interface GpuSink {
                                        int[] colors, float[] widths,
                                        float bx, float by, float cxm, float cym, float[] pcx, float[] pcy,
                                        float period, float dash, boolean round, float thickness,
-                                       Clip[] clips, float opacity) {
+                                       GpuClip[] clips, float opacity) {
         return false;
     }
 
@@ -210,7 +205,7 @@ public interface GpuSink {
      * {@code colors} は上・右・下・左の非乗算 ARGB。{@code (bx0,by0)-(bx1,by1)} が描く範囲。
      */
     default boolean strokeCircleBorder(Matrix2D pose, float cx, float cy, float outerR, float innerR,
-                                       float bx0, float by0, float bx1, float by1, int[] colors, Clip[] clips, float opacity) {
+                                       float bx0, float by0, float bx1, float by1, int[] colors, GpuClip[] clips, float opacity) {
         return false;
     }
 }

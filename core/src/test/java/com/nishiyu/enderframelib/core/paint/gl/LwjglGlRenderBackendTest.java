@@ -689,9 +689,20 @@ class LwjglGlRenderBackendTest {
         }
     }
 
+    /** 従来経路（GpuBatchPacker）の 1 バッチの上限を超えたときの分割を検査する（新経路は上限が大きく分割しない）。 */
     @Test
     void batchOverflowKeepsOrderAndPixels() {
         requireGl();
+        boolean saved = LwjglGlRenderBackend.rectTrees;
+        LwjglGlRenderBackend.rectTrees = false;
+        try {
+            batchOverflowKeepsOrderAndPixelsBody();
+        } finally {
+            LwjglGlRenderBackend.rectTrees = saved;
+        }
+    }
+
+    private void batchOverflowKeepsOrderAndPixelsBody() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 700; i++) {
             sb.append("<div style='position:absolute;left:").append(i % 50).append("px;top:").append(i % 30)

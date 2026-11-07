@@ -23,6 +23,9 @@ class PortabilityRatchetTest {
     /** 現状の依存。GLFW の窓・GL バックエンド・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
     private static final Set<String> ALLOWED = Set.of(
             "common/StandaloneViewer.java",
+            "core/paint/gl/GlRectStream.java", // バックエンドが受けた矩形を GlTreeStore へ流す窓口（L3）
+            "core/paint/gl/GlRectRenderer.java", // GlTreeStore のプリミティブを描く GL 実装（L3）
+            "core/paint/gl/GlVramDevice.java", // kernel/gpu の PersistentVramBuffer.Device の GL 実装（L3）。kernel 側は GL 非依存のまま
             "core/paint/gl/LwjglGlRenderBackend.java",
             "core/raster/awt/AwtImageDecoder.java");
 
