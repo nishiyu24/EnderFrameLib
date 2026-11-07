@@ -707,10 +707,18 @@ public class LayoutBox {
     private boolean measuredFirstFlowChild;
     private boolean measuredHadFloatChild;
 
+    /** 切り分け用: false なら 2 回目の measure パスで、1 回目に測った箱も測り直す（従来の動き）。 */
+    public static volatile boolean samePassReuse = !Boolean.getBoolean("enderframe.layout.nosamerun");
+    /**
+     * 表を含む（自分か子孫が表の箱）か。表は measure の後に行の高さ・列幅を子へ書き戻し、2 回目のパスがそれを入力として
+     * 読み直すので、同じ run の中では表を含む部分木を使い回さない（{@link #samePassReuse}）。測り終えたときに決める。
+     */
+    private boolean measuredHasTable;
+
     private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx) {
         return measurementValid
                 && !layoutChanged
-                && (ctx.firstPass() || measuredRun != ctx.layoutRun())
+                && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
                 && floatSpace == null
                 && collapsedBorders == null
@@ -775,6 +783,9 @@ public class LayoutBox {
         }
         measuredFlowFloatFree = floatFree;
         layoutChanged = false;
+        boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
+        for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
+        measuredHasTable = hasTable;
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
         // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す
