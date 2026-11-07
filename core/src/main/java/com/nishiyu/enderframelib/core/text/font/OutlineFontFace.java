@@ -28,6 +28,9 @@ public final class OutlineFontFace implements FontFace {
     private final List<String> families;
     private final List<String> fallbacks;
     private final String key;
+    private record ChainHit(int key, StyleChain chain) {}
+
+    private volatile ChainHit lastChain;
     private final Map<Integer, StyleChain> chains = new ConcurrentHashMap<>();
 
     /**
@@ -174,10 +177,13 @@ public final class OutlineFontFace implements FontFace {
     private StyleChain chainFor(FontStyle style) {
         int weight = style.weight();
         int styleKey = (weight << 1) | (style.italic() ? 1 : 0);
+        ChainHit hit = lastChain; // 直前と同じ書体なら、Map を引かない（Integer のボクシングも避ける）
+        if (hit != null && hit.key == styleKey) return hit.chain;
         StyleChain chain = chains.get(styleKey);
         if (chain == null) {
             chain = chains.computeIfAbsent(styleKey, k -> buildChain(weight, style.italic()));
         }
+        lastChain = new ChainHit(styleKey, chain);
         return chain;
     }
 

@@ -31,7 +31,12 @@ public final class KerningTable {
     private final ByteBuffer gdef;
     private final float[] normalizedCoords;
     private final int varStore;
-    private final Map<Long, Short> cache = new ConcurrentHashMap<>();
+    /** 字の組の結果の直接写像キャッシュ（ボクシングなし。ぶつかったら上書きするだけで、値は決定的なので競合しても正しい）。 */
+    private record Cached(long key, short value) {}
+
+    private static final int CACHE_SIZE = 4096; // 2 のべき乗
+    private final java.util.concurrent.atomic.AtomicReferenceArray<Cached> cache =
+            new java.util.concurrent.atomic.AtomicReferenceArray<>(CACHE_SIZE);
 
     private KerningTable(ByteBuffer gpos, List<List<Integer>> pairSubtables, ByteBuffer legacyKern,
                          ByteBuffer gdef, float[] normalizedCoords) {
@@ -82,15 +87,16 @@ public final class KerningTable {
     public int adjustment(int firstGlyph, int secondGlyph) {
         if (isEmpty() || firstGlyph == 0 || secondGlyph == 0) return 0;
         long key = ((long) firstGlyph << 32) | (secondGlyph & 0xFFFFFFFFL);
-        Short cached = cache.get(key);
-        if (cached != null) return cached;
+        int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> 52) & (CACHE_SIZE - 1);
+        Cached cached = cache.get(slot);
+        if (cached != null && cached.key() == key) return cached.value();
         int value;
         try {
             value = pairSubtables.isEmpty() ? legacyValue(firstGlyph, secondGlyph) : gposValue(firstGlyph, secondGlyph);
         } catch (RuntimeException e) {
             value = 0;
         }
-        cache.put(key, (short) value);
+        cache.set(slot, new Cached(key, (short) value));
         return value;
     }
 

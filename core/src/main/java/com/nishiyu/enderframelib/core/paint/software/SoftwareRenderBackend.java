@@ -106,6 +106,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // 1 フレームの間だけ使う状態
     private GpuSink sink;
+    /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
+    private final double[] boundsScratch = new double[4];
     private int dirtyX0 = Integer.MAX_VALUE, dirtyY0 = Integer.MAX_VALUE, dirtyX1 = Integer.MIN_VALUE, dirtyY1 = Integer.MIN_VALUE;
     private Matrix2D frame = Matrix2D.IDENTITY;
 
@@ -253,6 +255,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 項目ごとのクリップ。項目の索引が作り直された（{@link PaintSceneDriver#generation}）ら捨てる。 */
     private ClipEntry[] clipCache = new ClipEntry[0];
     private long clipGeneration = -1;
+    private boolean sawUnresolvedOwner;
 
     // ------------------------------------------------------------------ グループの層
 
@@ -432,7 +435,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawItem(DisplayItem el, int index, float flat) {
         if (clipGeneration != driver.generation()) {
-            clipCache = new ClipEntry[frameSize];
+            if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
             clipGeneration = driver.generation();
         }
         Resolved res = driver.resolveAt(index);
@@ -533,17 +536,27 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int[] owner;
         Resolved[] ownerRes;
         int w, h;
+        /** 作ったときの世代と、クリップの元（{@link ClipRect} の同一インスタンス。動くクリップは null）。 */
+        long generation;
+        Object source;
+        /** 持ち主の id があるのに見つからなかった（後から現れると結果が変わるので世代をまたいで使い回さない）。 */
+        boolean unresolvedOwner;
     }
 
     private Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
         ClipEntry ce = clipCache[index];
-        if (ce != null && ce.w == target.width() && ce.h == target.height()) {
+        RenderMeta m0 = el.meta();
+        Object source = m0 != null ? m0.clipRect() : null;
+        // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
+        if (ce != null && ce.w == target.width() && ce.h == target.height()
+                && (ce.generation == clipGeneration || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
                 same = (ce.owner[k] < 0 ? null : driver.resolveAt(ce.owner[k])) == ce.ownerRes[k];
             }
             if (same) return ce.clip;
         }
+        sawUnresolvedOwner = false;
         List<ClipPart> parts = new ArrayList<>(2);
         List<Integer> owners = new ArrayList<>(2);
         List<Resolved> ownerRes = new ArrayList<>(2);
@@ -558,7 +571,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         ce = new ClipEntry();
         ce.clip = finishClip(parts);
-        ce.owner = owners.stream().mapToInt(Integer::intValue).toArray();
+        ce.owner = new int[owners.size()];
+        for (int k = 0; k < ce.owner.length; k++) ce.owner[k] = owners.get(k);
+        ce.generation = clipGeneration;
+        ce.source = source;
+        ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = ownerRes.toArray(new Resolved[0]);
         ce.w = target.width();
         ce.h = target.height();
@@ -593,6 +610,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 ownerIndex = ix;
                 owner = driver.resolveAt(ix);
                 pose = owner.pose();
+            } else {
+                sawUnresolvedOwner = true;
             }
         }
         owners.add(ownerIndex);
@@ -604,7 +623,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             rx[i] = rect.length > 4 + i ? rect[4 + i] : 0f;
             ry[i] = rect.length >= 12 ? rect[8 + i] : rx[i];
         }
-        double[] b = deviceBounds(pose, rect[0], rect[1], rect[2], rect[3]);
+        double[] b = deviceBounds(pose, rect[0], rect[1], rect[2], rect[3], new double[4]);
         float scale = (float) pose.meanScale();
         float reach = 0.5f / Math.max(scale, 0.01f) + 1e-3f;
         float mrx = maxOf(rx), mry = maxOf(ry);
@@ -621,18 +640,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 dev[0], dev[1], dev[2], dev[3]));
     }
 
-    private static double[] deviceBounds(Matrix2D m, double x0, double y0, double x1, double y1) {
-        double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
-        double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY;
-        double[][] corners = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
-        for (double[] c : corners) {
-            double x = m.applyX(c[0], c[1]), y = m.applyY(c[0], c[1]);
-            minX = Math.min(minX, x);
-            maxX = Math.max(maxX, x);
-            minY = Math.min(minY, y);
-            maxY = Math.max(maxY, y);
-        }
-        return new double[]{minX, minY, maxX, maxY};
+    /** 四隅を写した外接矩形 {@code {minX, minY, maxX, maxY}} を {@code out} に書く（割り当てなし）。 */
+    private static double[] deviceBounds(Matrix2D m, double x0, double y0, double x1, double y1, double[] out) {
+        double ax = m.applyX(x0, y0), ay = m.applyY(x0, y0);
+        double bx = m.applyX(x1, y0), by = m.applyY(x1, y0);
+        double cx = m.applyX(x1, y1), cy = m.applyY(x1, y1);
+        double dx = m.applyX(x0, y1), dy = m.applyY(x0, y1);
+        out[0] = Math.min(Math.min(ax, bx), Math.min(cx, dx));
+        out[1] = Math.min(Math.min(ay, by), Math.min(cy, dy));
+        out[2] = Math.max(Math.max(ax, bx), Math.max(cx, dx));
+        out[3] = Math.max(Math.max(ay, by), Math.max(cy, dy));
+        return out;
     }
 
     // ------------------------------------------------------------------ 画素の塗り
@@ -677,7 +695,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。 */
     private int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
-        double[] b = deviceBounds(pose, bx0, by0, bx1, by1);
+        double[] b = deviceBounds(pose, bx0, by0, bx1, by1, boundsScratch);
         int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
         if (x1 <= x0 || y1 <= y0) return null;
@@ -994,7 +1012,51 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 文字
 
-    private record GlyphKey(LoadedFace face, int codePoint, float pixelSize, boolean bold, boolean italic, int subpixel, boolean light) {}
+    /**
+     * 字形キャッシュの鍵。引くときは作業用の 1 個を書き換えて使い回し（字ごとの割り当てを避ける）、登録するときだけ複製する。
+     * 登録済みの鍵は書き換えない。
+     */
+    private static final class GlyphKey {
+        LoadedFace face;
+        int codePoint;
+        float pixelSize;
+        boolean bold, italic, light;
+        int subpixel;
+
+        GlyphKey set(LoadedFace face, int codePoint, float pixelSize, boolean bold, boolean italic, int subpixel, boolean light) {
+            this.face = face;
+            this.codePoint = codePoint;
+            this.pixelSize = pixelSize;
+            this.bold = bold;
+            this.italic = italic;
+            this.subpixel = subpixel;
+            this.light = light;
+            return this;
+        }
+
+        GlyphKey copy() {
+            return new GlyphKey().set(face, codePoint, pixelSize, bold, italic, subpixel, light);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GlyphKey k)) return false;
+            return face.equals(k.face) && codePoint == k.codePoint && Float.compare(pixelSize, k.pixelSize) == 0
+                    && bold == k.bold && italic == k.italic && subpixel == k.subpixel && light == k.light;
+        }
+
+        @Override
+        public int hashCode() {
+            int h = face.hashCode();
+            h = 31 * h + codePoint;
+            h = 31 * h + Float.floatToIntBits(pixelSize);
+            h = 31 * h + (bold ? 1 : 0) + (italic ? 2 : 0) + (light ? 4 : 0);
+            return 31 * h + subpixel;
+        }
+    }
+
+    private final GlyphKey probeKey = new GlyphKey();
 
     private OutlineFontFace faceFor(DisplayItem el) {
         String family = el.events() != null ? el.events().get("font-family") : null;
@@ -1197,12 +1259,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private GlyphBitmap sdfGlyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub) {
-        GlyphKey key = new GlyphKey(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, false);
+        GlyphKey key = probeKey.set(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, false);
         GlyphBitmap g = sdfGlyphs.get(key);
         if (g == null) {
             g = gf.face().rasterizeSdf(cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub);
             if (sdfGlyphs.size() >= GLYPH_CACHE_LIMIT) sdfGlyphs.clear();
-            sdfGlyphs.put(key, g);
+            sdfGlyphs.put(key.copy(), g);
         }
         return g;
     }
@@ -1287,13 +1349,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private GlyphBitmap glyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub, boolean light) {
-        GlyphKey key = new GlyphKey(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, light);
+        GlyphKey key = probeKey.set(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, light);
         GlyphBitmap g = glyphs.get(key);
         if (g == null) {
             g = gf.face().rasterize(cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub);
             if (!g.isEmpty()) g = g.withTextContrast(light);
             if (glyphs.size() >= GLYPH_CACHE_LIMIT) glyphs.clear();
-            glyphs.put(key, g);
+            glyphs.put(key.copy(), g);
         }
         return g;
     }
