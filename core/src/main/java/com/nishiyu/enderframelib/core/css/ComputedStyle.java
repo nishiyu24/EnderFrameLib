@@ -314,12 +314,14 @@ public final class ComputedStyle {
         if (a.extras == null && b.extras == null) return;
         Map<String, String> ex = a.extras != null ? a.extras : Map.of();
         Map<String, String> ey = b.extras != null ? b.extras : Map.of();
-        for (Map.Entry<String, String> e : ex.entrySet()) {
-            if (!java.util.Objects.equals(e.getValue(), ey.get(e.getKey()))) visitor.changed(e.getKey(), false, true);
-        }
-        for (String key : ey.keySet()) {
-            if (!ex.containsKey(key)) visitor.changed(key, false, true);
-        }
+        if (ex == ey) return;
+        // forEach は読み取り専用の包みが項目ごとに作る Map.Entry を介さない
+        ex.forEach((k, v) -> {
+            if (!java.util.Objects.equals(v, ey.get(k))) visitor.changed(k, false, true);
+        });
+        ey.forEach((k, v) -> {
+            if (!ex.containsKey(k)) visitor.changed(k, false, true);
+        });
     }
 
     /** 宣言が全く同じか（フォントサイズは見ない）。 */

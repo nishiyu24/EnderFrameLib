@@ -685,10 +685,7 @@ public class StyleResolver {
      */
     public static boolean hasSiblingStateRules(StyleSheet sheet) {
         if (sheet == null) return false;
-        for (StyleRule rule : sheet.rules) {
-            if (rule.stateMask != 0 && hasSiblingStateRule(rule.parsedSelector())) return true;
-        }
-        return false;
+        return sheet.hasSiblingStateRules(rule -> rule.stateMask != 0 && hasSiblingStateRule(rule.parsedSelector()));
     }
 
     /** {@code :is(input:checked + label) span} のように :is() / :not() の中の兄弟結合子も見る。 */

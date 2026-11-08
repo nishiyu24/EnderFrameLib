@@ -354,6 +354,20 @@ public class RenderPipeline {
         return value == null || value.isBlank() || "auto".equalsIgnoreCase(value.trim());
     }
 
+    private static volatile Object[] rootStyleCache; // {w, h, 読み取り専用の写し}
+
+    /** 再スタイルの走査用: 同じビューポートの間は同じ読み取り専用の写しを使い回す（毎回の HashMap を避ける）。 */
+    private static Map<String, String> cachedRootViewportStyle(int rootW, int rootH) {
+        Object[] c = rootStyleCache;
+        if (c != null && (int) c[0] == rootW && (int) c[1] == rootH) {
+            @SuppressWarnings("unchecked") Map<String, String> m = (Map<String, String>) c[2];
+            return m;
+        }
+        Map<String, String> m = java.util.Collections.unmodifiableMap(rootViewportStyle(rootW, rootH));
+        rootStyleCache = new Object[] {rootW, rootH, m};
+        return m;
+    }
+
     public static Map<String, String> rootViewportStyle(int rootW, int rootH) {
         Map<String, String> rootStyleRaw = new HashMap<>();
         rootStyleRaw.put("width", String.valueOf(rootW));
@@ -368,6 +382,9 @@ public class RenderPipeline {
      */
     public record RestyleResult(boolean styleChanged, boolean layoutRequired, boolean repositionRequired,
                                 boolean structural) {
+        /** 何も変わらなかった結果（不変なので共有する）。 */
+        public static final RestyleResult UNCHANGED = new RestyleResult(false, false, false, false);
+
         public RestyleResult(boolean styleChanged, boolean layoutRequired) {
             this(styleChanged, layoutRequired, false, layoutRequired);
         }
@@ -587,6 +604,10 @@ public class RenderPipeline {
                     container, interactionState);
         }
         if (flags.stateMemo == null) flags.stateMemo = new StateStyleMemo();
+        StateStyleMemo.Entry cached = flags.stateMemo.peek(node, sheet, inheritedStyle, env, parentFontSize,
+                scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
+                interactionState.stateOf(node).flags());
+        if (cached != null) return cached;
         return flags.stateMemo.resolve(node, sheet, inheritedStyle, env, parentFontSize, scope.rootFontSize(),
                 scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
                 interactionState.stateOf(node).flags(), true,
@@ -604,6 +625,7 @@ public class RenderPipeline {
                 parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
                 container != null ? container : containerFor(node, interactionState));
         if (shared != null) return new StateStyleMemo.Entry(shared.raw(), shared.computed());
+        if (styleSet == null) styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
         Map<String, String> raw = styleSet.resolve(lookup);
         if (node.attrs.containsKey("hidden")) {
             raw.put(CssProperty.DISPLAY, "none");
@@ -665,7 +687,7 @@ public class RenderPipeline {
         if (rootBox == null || doc == null || interactionState == null) {
             return new RestyleResult(true, true);
         }
-        Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
+        Map<String, String> rootStyleRaw = cachedRootViewportStyle(rootW, rootH);
         interactionState.bindStyleSheet(doc.sheet);
         if (doc.sheet != null && doc.sheet.usesHasSelectors()) interactionState.propagateDirtyToAncestors();
         else interactionState.discardUnscopedLog();
@@ -708,10 +730,10 @@ public class RenderPipeline {
         boolean subtreeDirty = flags.subtreeDirty || force == FORCE_SUBTREE;
 
         if (isDirty) {
-            StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             ComputedStyle prevStyle = box.style;
             ContainerBox container = containerFor(node, interactionState);
-            StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
+            // StyleSet は表を引けなかったとき（computeEntry）だけ作る
+            StateStyleMemo.Entry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
                     interactionState, container, force, flags);
             Map<String, String> rawStyle = entry.raw();
             computed = entry.computed();
@@ -721,7 +743,7 @@ public class RenderPipeline {
                 rawStyle.putAll(animation);
                 computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
             }
-            boolean hasInteractive = styleSet.hasInteractiveRules();
+            boolean hasInteractive = StyleResolver.hasInteractiveRules(node, sheet);
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
                 styleChanged = true;
@@ -765,7 +787,8 @@ public class RenderPipeline {
         StyleScope childScope = scope.enter(node, computed);
 
         if (isDirty && !computed.skipsContents()) {
-            for (PseudoType type : PseudoType.GENERATED) {
+            for (int pi = 0; pi < GENERATED_PSEUDOS.length; pi++) {
+                PseudoType type = GENERATED_PSEUDOS[pi];
                 RestyleResult pseudoRes = restylePseudoElement(box, type, computed, sheet, env, childScope,
                         interactionState, siblingInvalidation);
                 styleChanged |= pseudoRes.styleChanged();
@@ -775,7 +798,9 @@ public class RenderPipeline {
         }
 
         boolean siblingForceDirty = false;
-        for (LayoutBox child : box.elementChildren) {
+        List<LayoutBox> kids = box.elementChildren;
+        for (int ci = 0; ci < kids.size(); ci++) {
+            LayoutBox child = kids.get(ci);
             if (child.node.isPseudoNode) continue;
             boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child.node);
             int forceChild = siblingForceDirty ? FORCE_SUBTREE : childForce;
@@ -796,8 +821,11 @@ public class RenderPipeline {
             siblingForceDirty |= stateChanged;
         }
 
+        if (!styleChanged && !layoutRequired && !repositionRequired && !structural) return RestyleResult.UNCHANGED;
         return new RestyleResult(styleChanged, layoutRequired, repositionRequired, structural);
     }
+
+    private static final PseudoType[] GENERATED_PSEUDOS = PseudoType.GENERATED.toArray(new PseudoType[0]);
 
     /**
      * この箱の部分木を丸ごと飛ばしてよいか: 算出スタイルのキャッシュが有効で、自分にも子孫にも汚れが無い。
@@ -818,16 +846,18 @@ public class RenderPipeline {
                                                       StyleSheet sheet,
                                                       Map<String, String> env, StyleScope scope,
                                                       InteractionState interactionState, boolean siblingInvalidation) {
-        String pseudoId = pseudoElementId(owner.node, type);
+        String ownerKey = owner.node.key();
+        String suffix = type == PseudoType.BEFORE ? "_before" : "_after";
         LayoutBox existing = null;
-        for (LayoutBox child : owner.elementChildren) {
-            if (child.node.isPseudoNode && pseudoId.equals(child.node.key())) {
+        for (int ci = 0, cn = owner.elementChildren.size(); ci < cn; ci++) {
+            LayoutBox child = owner.elementChildren.get(ci);
+            if (child.node.isPseudoNode && isPseudoKey(child.node.key(), ownerKey, suffix)) {
                 existing = child;
                 break;
             }
         }
         ComputedStyle next = resolvePseudoStyle(owner.node, type, ownerStyle, sheet, env, scope, interactionState);
-        if (existing == null && next == null) return new RestyleResult(false, false);
+        if (existing == null && next == null) return RestyleResult.UNCHANGED;
 
         if (existing == null || next == null) {
             if (existing != null) {
@@ -849,7 +879,8 @@ public class RenderPipeline {
         existing.updateStyle(next);
         existing.hasInteractiveRules = owner.hasInteractiveRules;
         BoxTreeBuilder.restyleGeneratedBoxes(existing);
-        for (LayoutBox text : existing.elementChildren) {
+        for (int ti = 0; ti < existing.elementChildren.size(); ti++) {
+            LayoutBox text = existing.elementChildren.get(ti);
             RestyleResult textRes = restyleBoxRecursive(text, next.asMap(), sheet, env, FORCE_SUBTREE, next.fontSizePx(),
                     scope, interactionState, siblingInvalidation);
             styleChanged |= textRes.styleChanged();
@@ -1079,6 +1110,12 @@ public class RenderPipeline {
                 interactionState != null ? interactionState : SelectorMatcher.STATIC_ATTRIBUTES;
         return StyleResolver.resolvePseudoStyle(owner, type, sheet, lookup, ownerStyle, env,
                 scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH());
+    }
+
+    /** {@code key.equals(ownerKey + suffix)} を文字列を作らずに判定する。 */
+    private static boolean isPseudoKey(String key, String ownerKey, String suffix) {
+        return key != null && key.length() == ownerKey.length() + suffix.length()
+                && key.startsWith(ownerKey) && key.endsWith(suffix);
     }
 
     private static String pseudoElementId(HtmlNode owner, PseudoType type) {
