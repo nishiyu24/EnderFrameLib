@@ -1423,6 +1423,22 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `Milestone4GateTest.simdTileSoftwareRendererStaysTestOnly`（本番側にファイルが無い = 復活防止）。`GlRectRendererTest` / `Milestone4RasterTest`（クラスは同パッケージのままなので無修正）を含む `:core:test`・ルート `:test` 全件緑。
 - **これで**: §9.2.6 項3 のうち「CPU タイルラスタライザの重複」は解消（本番は `TileQueue` に一本化）。残るのは `LayerPool` / `LayerAtlas` / `DualKawase` の統合。
 
+### 9.5.22 調査記録：本流未接続のカーネル 8 クラスは「差し替え」では接続できない（2026-11-09・コード変更なし）
+
+撤去・移動した重複（`StyleStructs` §9.5.8、`SimdTileSoftwareRenderer` §9.5.21）と違い、残る 8 クラスは設計書が「本流に載せる部品」と位置づけたもので、方針は「1 クラスずつ接続」（2026-11-09 決定）。接続の入口を調べた結果、**どれも既存の部品と 1 対 1 で置き換わる形ではない**と分かった。以下は着手前の見積もり。
+
+| クラス | 本流側の相手 | 差し替えできない理由 | 接続の最小単位（案） |
+| :--- | :--- | :--- | :--- |
+| `FenwickVirtualList` | `BlockLayoutEngine` の子の配置、`DisplayListBuilder.offscreen` | ブロックの子の y はマージン相殺・float・相対位置で決まり、行高の単純な累積和ではない。画面外の省略は既に箱ごとの O(1) 判定で、行の特定を O(log N) にしても支配項（§4 表の「後続行の `DisplayItem` 平行移動複製」）は消えない | 「単純な縦積み（相殺なし・float なし・同一種の行）」と証明できるコンテナだけに行インデックスを持たせ、`HitTestIndex` と省略の可視範囲に使う。先に `large-list` でどこに時間がかかるかを実測してから |
+| `LayoutResultCache` | `LayoutBox.Tentative` / `BoxOutputs` | カーネル側の結果は `(w, h, contentW, contentH, baseline)` の 5 値。本流の仮測定は 14 個の箱寸法 + 子の寸法配列 + 制約・ビューポート・フォント・内在サイズ解決器・世代で照合しており、情報量が足りない | 結果型を `BoxOutputs` 相当に広げ、鍵に `epoch`・ビューポート・フォントを含める。`LayoutBox` のフィールド群（`measured*`）を表へ寄せる大改修 |
+| `SimdLayoutKernel` | `BoxMeasurer` / `BlockLayoutEngine` | 深さ順の SoA 配列を前提にする（`LayoutBox` はオブジェクト木）。木を平坦化する層が先に要る | `DocumentArena` のトポロジー列を読む平坦化（§9.2.1 項1 の読み手を作る作業とセット） |
+| `SimdHitTester` | `HitTestIndex` | `SimdBackend.hitTestLast` の薄い包み（22 行）。`HitTestIndex` は変形・角丸・クリップ・pointer-events を扱い、箱の矩形の包含判定だけでは足りない | `HitTestIndex` の最初の粗い絞り込み（矩形の包含）にだけ `hitTestLast` を使う |
+| `GpuAnimation` / `GpuSceneSync` | `CssAnimator` / `PaintSceneDriver` | 補間をシェーダーへ移す前提。現行は CPU が合成行列を作り `GlRectStream.decompose` で分解して `PropertyTrees` に詰める（§9.2.5）。Step 4 が先 | Step 4（階層のまま `PropertyTrees` に保持）→ 変形のアニメーションだけ GPU 補間 |
+| `LayerAtlas` / `DualKawase` | `LwjglGlRenderBackend` の層（フル画面 FBO）とブラー | GL 上の見た目の変更。画素一致テストの基準もブラーの方式（現行は別の実装）に依存する | ブラーだけ `DualKawase` に置き換え、既存の GL 画素テストの許容差と合わせて検証 |
+
+- **結論**: 8 クラスの接続は、いずれも「計測 → 入口の抽象を先に作る → 置き換え」の 3 段になる。最も効果が見えやすいのは `large-list` の実測（どの段が支配的か）で、その結果で `FenwickVirtualList` を続けるか `Tentative` の改修を先にするかが決まる。
+- **次の一歩**: `PerformanceBenchmarkTest` / JMH の `large-list` で、行挿入・削除 2.6 ms の内訳（レイアウト・`DisplayItem` 複製・ヒットテスト）を取る。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1435,6 +1451,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
 | Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に、§9.5.20 で命令の型とタイル実行を `Op` / `TileQueue` に集約、§9.5.21 で孤立した `SimdTileSoftwareRenderer` をテスト側の基準実装へ移動（タイルラスタライザの重複は解消）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
+| 未接続カーネル 8 クラス | ⏳ | §9.5.22 に接続の入口と見積もり。まず `large-list` の内訳を実測 |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。§9.5.17 で走査 7 箇所のリスト生成も除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 
