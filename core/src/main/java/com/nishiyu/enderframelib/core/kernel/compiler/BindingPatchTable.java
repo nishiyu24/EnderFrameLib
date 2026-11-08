@@ -17,7 +17,7 @@ import java.util.Map;
  * <p>実行時に {@link #setFloat} を呼ぶと、DOM の属性も CSS のパースも通らず、アリーナと同じ添字（nodeId）の
  * オフヒープ float 列に値が書かれ、その節に再スタイル／レイアウトの汚れが立つ。ホットパスは割り当てなし。</p>
  */
-public final class BindingPatchTable {
+public final class BindingPatchTable implements com.nishiyu.enderframelib.core.dom.node.InlineStyleOverlay {
 
     /** 書き込み先の欄。 */
     public static final int F_WIDTH_PCT = 0, F_WIDTH_PX = 1, F_HEIGHT_PCT = 2, F_HEIGHT_PX = 3,
@@ -43,6 +43,9 @@ public final class BindingPatchTable {
             columns[f].fill(Float.NaN);
         }
     }
+
+    /** この表が {@code a} の添字で作られたものか。 */
+    public boolean isFor(DocumentArena a) { return arena == a; }
 
     /** 登録済みのパッチ数。 */
     public int patchCount() { return patchCount; }
@@ -112,6 +115,72 @@ public final class BindingPatchTable {
             }
         }
         for (HtmlNode child : node.children) scan(child, styleSource);
+    }
+
+    /** style 属性の 1 宣言から読み取った、直接書き込みの対象。 */
+    public record Patch(String prop, String key, int field) {}
+
+    /**
+     * {@code prop: {{key}}unit} の形の 1 宣言を読む。直接書き込みに向かない宣言（式の中の置換・{@code !important}・
+     * 未対応の単位や属性）は null。
+     */
+    public static Patch parsePatch(String decl) {
+        int colon = decl.indexOf(':');
+        if (colon < 0) return null;
+        String prop = decl.substring(0, colon).trim().toLowerCase(java.util.Locale.ROOT);
+        String val = decl.substring(colon + 1).trim();
+        if (!val.startsWith("{{")) return null;
+        int close = val.indexOf("}}");
+        if (close < 0 || val.indexOf("{{", close) >= 0) return null;
+        String key = val.substring(2, close).trim();
+        int field = fieldFor(prop, val.substring(close + 2).trim());
+        if (field < 0 || key.isEmpty() || key.startsWith("@") || key.contains(":")) return null;
+        return new Patch(prop, key, field);
+    }
+
+    /**
+     * 1 つの節の 1 つの欄へ値を直接書く。{@code NaN} は「書かれていない」に戻す。値が変わったときだけ汚して true。
+     */
+    public boolean set(int nodeId, int field, float value) {
+        if (nodeId < 0 || field < 0 || field >= FIELD_COUNT) throw new IllegalArgumentException();
+        if (nodeId >= columnLength) {
+            if (Float.isNaN(value)) return false;
+            ensureCapacity(nodeId);
+        }
+        OffHeapColumns.Floats col = columns[field];
+        if (Float.floatToRawIntBits(col.get(nodeId)) == Float.floatToRawIntBits(value)) return false;
+        col.set(nodeId, value);
+        if (arena.isLive(nodeId)) {
+            arena.setDirty(nodeId, DocumentArena.DIRTY_STYLE | (isLayoutField(field) ? DocumentArena.DIRTY_LAYOUT
+                    : DocumentArena.DIRTY_PAINT), true);
+        }
+        return true;
+    }
+
+    /** すべての欄を「書かれていない」に戻す（バインダーの作り直し用）。 */
+    public void clearValues() {
+        for (int f = 0; f < FIELD_COUNT; f++) columns[f].fill(Float.NaN);
+    }
+
+    @Override
+    public void overlayInline(HtmlNode node, Map<String, String> inline) {
+        int id = node.hasNodeId() ? node.nodeId() : -1;
+        if (id < 0 || id >= columnLength) return;
+        float v;
+        if (!Float.isNaN(v = columns[F_WIDTH_PCT].get(id))) inline.put("width", css(v) + "%");
+        if (!Float.isNaN(v = columns[F_WIDTH_PX].get(id))) inline.put("width", css(v) + "px");
+        if (!Float.isNaN(v = columns[F_HEIGHT_PCT].get(id))) inline.put("height", css(v) + "%");
+        if (!Float.isNaN(v = columns[F_HEIGHT_PX].get(id))) inline.put("height", css(v) + "px");
+        if (!Float.isNaN(v = columns[F_OPACITY].get(id))) inline.put("opacity", css(v));
+        if (!Float.isNaN(v = columns[F_FLEX_GROW].get(id))) inline.put("flex-grow", css(v));
+        if (!Float.isNaN(v = columns[F_FONT_SIZE_PX].get(id))) inline.put("font-size", css(v) + "px");
+    }
+
+    /** CSS に書ける数値の文字列（指数表記にしない）。 */
+    static String css(float v) {
+        if (v == (long) v) return Long.toString((long) v);
+        String s = Float.toString(v);
+        return s.indexOf('E') < 0 ? s : new java.math.BigDecimal(s).toPlainString();
     }
 
     private static int fieldFor(String prop, String unit) {

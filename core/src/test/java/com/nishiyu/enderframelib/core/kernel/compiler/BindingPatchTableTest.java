@@ -123,8 +123,20 @@ class BindingPatchTableTest {
         assertSame(patched.box, t.overlay(base, d.getElementById("two").nodeId()).box, "同じ値の構造体は畳まれる");
     }
 
+    private static final java.util.Set<String> ALL =
+            java.util.Set.of(com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps.ALWAYS);
+
+    private static String inlineOf(HtmlNode n) {
+        java.util.Map<String, String> m = new java.util.TreeMap<>();
+        for (var decl : com.nishiyu.enderframelib.core.css.CssSyntax.parseDeclarationList(n.attrs.getOrDefault("style", ""))) {
+            m.put(decl.name(), decl.valueText());
+        }
+        if (n.inlineOverlay != null) n.inlineOverlay.overlayInline(n, m);
+        return m.toString();
+    }
+
     @Test
-    void reactiveBinderMirrorsNumericValuesIntoTheTable() {
+    void numericBindingsGoToTheTableAndNeverRewriteTheStyleAttribute() {
         HtmlDocument d = doc();
         var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
         java.util.Map<String, String> values = new java.util.HashMap<>();
@@ -133,41 +145,107 @@ class BindingPatchTableTest {
         values.put("fs", "12");
         values.put("grow", "2");
         values.put("a", "5");
-        binder.sync(d, values, java.util.Map.of(), java.util.Set.of(com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps.ALWAYS));
+        assertTrue(binder.sync(d, values, java.util.Map.of(), ALL));
         var table = binder.patchTable();
         assertNotNull(table);
-        assertEquals(30f, table.get(BindingPatchTable.F_WIDTH_PCT, d.getElementById("bar").nodeId()));
+        HtmlNode bar = d.getElementById("bar");
+        assertEquals(30f, table.get(BindingPatchTable.F_WIDTH_PCT, bar.nodeId()));
         assertEquals(0.75f, table.get(BindingPatchTable.F_OPACITY, d.getElementById("fade").nodeId()));
         assertEquals(12f, table.get(BindingPatchTable.F_FONT_SIZE_PX, d.getElementById("size").nodeId()));
-        // 従来の属性経路も同じ値になっている（両者が食い違わない）
-        assertTrue(d.getElementById("bar").attrs.get("style").contains("width: 30%"));
+
+        // 属性には数値バインディングの宣言が残らない（文字列置換＋再パースの二重コストを払わない）
+        assertEquals("height: 4px", bar.attrs.get("style").trim());
+        assertEquals("", d.getElementById("two").attrs.get("style").trim());
+        // 式の中の置換は従来の属性経路
+        assertTrue(d.getElementById("mixed").attrs.get("style").contains("calc(5% - 2px)"));
+        // スタイル解決が読む宣言（属性＋重ね書き）には値が揃っている
+        assertEquals("{height=4px, width=30%}", inlineOf(bar));
+        assertEquals("{opacity=0.75}", inlineOf(d.getElementById("fade")));
+        assertEquals("{flex-grow=2, font-size=12px}", inlineOf(d.getElementById("size")));
 
         values.put("hp_pct", "55");
-        binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct"));
+        assertTrue(binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct")));
         assertEquals(55f, table.get(BindingPatchTable.F_WIDTH_PCT, d.getElementById("two").nodeId()));
-        assertTrue(d.getElementById("bar").attrs.get("style").contains("width: 55%"));
+        assertEquals("{height=4px, width=55%}", inlineOf(bar));
     }
 
     @Test
-    void nodesAddedLaterAreCompiledOnTheNextSync() {
+    void changedPatchedNodesAreReportedAndBumpTheAttributeVersion() {
         HtmlDocument d = doc();
         var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
-        java.util.Map<String, String> values = new java.util.HashMap<>();
-        values.put("hp_pct", "30");
-        values.put("late", "12");
-        var all = java.util.Set.of(com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps.ALWAYS);
-        binder.sync(d, values, java.util.Map.of(), all);
-        assertFalse(binder.patchTable().hasKey("late"));
+        java.util.Map<String, String> values = new java.util.HashMap<>(java.util.Map.of("hp_pct", "30", "alpha", "1",
+                "fs", "10", "grow", "1", "a", "1"));
+        binder.sync(d, values, java.util.Map.of(), ALL);
+        binder.drainChangedNodes();
+        HtmlNode bar = d.getElementById("bar");
+        int version = bar.attrVersion();
 
-        HtmlDocument scratch = (HtmlDocument) HtmlParser.parseDocument("<div id=\"row\" style=\"width: {{late}}px\"></div>");
-        HtmlNode row = scratch.getElementById("row");
-        d.getElementById("hud").appendChild(row);
-        binder.sync(d, values, java.util.Map.of(), all);
-        assertTrue(binder.patchTable().hasKey("late"), "追加された節も登録される");
-        assertEquals(12f, binder.patchTable().get(BindingPatchTable.F_WIDTH_PX, row.nodeId()));
+        values.put("hp_pct", "31");
+        assertTrue(binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct")));
+        var changed = binder.drainChangedNodes();
+        assertTrue(changed.contains(bar), "再スタイルの印を付ける対象に載る");
+        assertTrue(changed.contains(d.getElementById("two")));
+        assertFalse(changed.contains(d.getElementById("fade")), "無関係の節は載らない");
+        assertTrue(bar.attrVersion() > version, "属性に依存するメモを捨てさせる");
+        assertFalse(binder.drainLayoutTreeChanged(), "見た目だけの更新は箱の木を作り直さない");
 
-        int patches = binder.patchTable().patchCount();
-        binder.sync(d, values, java.util.Map.of(), all);
-        assertEquals(patches, binder.patchTable().patchCount(), "同じ節を二重に登録しない");
+        assertFalse(binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct")), "同じ値なら何も変えない");
+    }
+
+    @Test
+    void nonNumericValueFallsBackToTheAttributePathAndBack() {
+        HtmlDocument d = doc();
+        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        java.util.Map<String, String> values = new java.util.HashMap<>(java.util.Map.of("hp_pct", "30", "alpha", "1",
+                "fs", "10", "grow", "1", "a", "1"));
+        binder.sync(d, values, java.util.Map.of(), ALL);
+        HtmlNode bar = d.getElementById("bar");
+
+        values.put("hp_pct", "auto");
+        binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct"));
+        assertTrue(Float.isNaN(binder.patchTable().get(BindingPatchTable.F_WIDTH_PCT, bar.nodeId())),
+                "数値でなくなったら直接書き込みを取り消す");
+        assertEquals("{height=4px, width=auto%}", inlineOf(bar), "従来の属性経路に戻る（値は利用側が弾く）");
+
+        values.put("hp_pct", "40");
+        binder.sync(d, values, java.util.Map.of(), java.util.Set.of("hp_pct"));
+        assertEquals("{height=4px, width=40%}", inlineOf(bar));
+        assertEquals("height: 4px", bar.attrs.get("style").trim());
+    }
+
+    @Test
+    void duplicatedPropertyInOneStyleStaysOnTheAttributePath() {
+        HtmlDocument d = (HtmlDocument) HtmlParser.parseDocument(
+                "<div id=\"x\" style=\"width: {{k}}px; width: 5px\"></div>");
+        var binder = new com.nishiyu.enderframelib.core.dom.Bindings.ReactiveDomBinder();
+        binder.sync(d, new java.util.HashMap<>(java.util.Map.of("k", "9")), java.util.Map.of(), ALL);
+        HtmlNode x = d.getElementById("x");
+        assertNull(x.inlineOverlay, "後ろの width が勝つ宣言順を壊さない");
+        assertTrue(x.attrs.get("style").contains("width: 9px"));
+    }
+
+    @Test
+    void cssNumberFormattingNeverUsesExponentNotation() {
+        assertEquals("30", BindingPatchTable.css(30f));
+        assertEquals("0.75", BindingPatchTable.css(0.75f));
+        assertEquals("-2", BindingPatchTable.css(-2f));
+        assertFalse(BindingPatchTable.css(0.00001f).contains("E"));
+        assertFalse(BindingPatchTable.css(1.0e10f + 0.5f).contains("E"));
+    }
+
+    @Test
+    void directSetClearsWithNaNAndOnlyDirtiesOnChange() {
+        HtmlDocument d = doc();
+        HtmlNode bar = d.getElementById("bar");
+        BindingPatchTable t = new BindingPatchTable(bar.arena());
+        int id = bar.nodeId();
+        assertTrue(t.set(id, BindingPatchTable.F_WIDTH_PCT, 10f));
+        assertFalse(t.set(id, BindingPatchTable.F_WIDTH_PCT, 10f));
+        assertTrue(t.set(id, BindingPatchTable.F_WIDTH_PCT, Float.NaN));
+        assertTrue(Float.isNaN(t.get(BindingPatchTable.F_WIDTH_PCT, id)));
+        assertFalse(t.set(id + 5000, BindingPatchTable.F_OPACITY, Float.NaN), "未確保の添字へ NaN は書かない");
+        assertNull(BindingPatchTable.parsePatch("width: calc({{a}}% - 2px)"));
+        assertNull(BindingPatchTable.parsePatch("opacity: {{a}} !important"));
+        assertEquals("hp", BindingPatchTable.parsePatch(" Width : {{ hp }}% ").key());
     }
 }

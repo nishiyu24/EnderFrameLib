@@ -169,6 +169,48 @@ public class ReactiveStateStoreTest {
         }
     }
 
+    /**
+     * 数値のスタイルバインディングは style 属性を書き換えず BindingPatchTable の列へ直接書かれ、
+     * それでも実際のレイアウトに反映され続けること（初回・更新・数値でない値への退避と復帰）。
+     */
+    @Test
+    public void testNumericStyleBindingsReachLayoutThroughThePatchTable() {
+        com.nishiyu.enderframelib.common.RenderPipeline.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer;
+        com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) ->
+                new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        try {
+            String html = "<style>#bar{position:absolute;left:0;top:0;height:10px;background:red}"
+                    + "#pct{position:absolute;left:0;top:20px;height:10px;background:blue}</style>"
+                    + "<div id='bar' style='width: {{w}}px'></div>"
+                    + "<div id='pct' style='width: {{p}}%'></div>";
+            session().loadLocalHtml(html, 200, 200);
+            ReactiveStateStore store = new ReactiveStateStore(SESSION_ID);
+            store.set("w", "30").set("p", "25");
+            store.syncToDom();
+            assertEquals(30, itemById("bar").width(), "初回の値が反映される");
+            assertEquals(50, itemById("pct").width(), "% も反映される（200 の 25%）");
+            HtmlNode bar = session().rootNode().getElementById("bar");
+            assertTrue(bar.attrs.get("style").isBlank(), "属性には書き戻さない: " + bar.attrs.get("style"));
+            assertNotNull(bar.inlineOverlay);
+
+            for (int w = 31; w <= 60; w += 7) {
+                store.set("w", String.valueOf(w));
+                store.syncToDom();
+                assertEquals(w, itemById("bar").width(), "更新ごとに追随する w=" + w);
+            }
+            store.set("p", "50");
+            store.syncToDom();
+            assertEquals(100, itemById("pct").width());
+            assertEquals(59, itemById("bar").width(), "無関係のキーの更新で他の値は変わらない");
+
+            store.set("w", "80");
+            store.syncToDom();
+            assertEquals(80, itemById("bar").width());
+        } finally {
+            com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = prev;
+        }
+    }
+
     private static com.nishiyu.enderframelib.core.paint.model.DisplayItem itemById(String id) {
         return session().elements().stream().filter(i -> id.equals(i.id())).findFirst().orElse(null);
     }

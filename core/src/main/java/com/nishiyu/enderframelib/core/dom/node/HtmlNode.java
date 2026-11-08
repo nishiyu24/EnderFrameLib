@@ -855,6 +855,14 @@ public class HtmlNode implements Node {
      */
     private int attrVersion;
 
+    /** 数値バインディングの直接書き込み値を持つ節の重ね先（無ければ null）。 */
+    public InlineStyleOverlay inlineOverlay;
+
+    /** 直接書き込み値が変わった。属性は変わらないが、属性に依存する算出結果の使い回しは捨てさせる。 */
+    public void touchInlineOverlay() {
+        attrVersion++;
+    }
+
     /** 属性を書き換えるたびに増える版番号（属性に依存する算出結果の使い回しの目印）。 */
     public int attrVersion() {
         return attrVersion;

@@ -244,7 +244,8 @@ public class StyleResolver {
                               Map<String, String> env, float parentFontSize, float rootFontSize, float rootLineHeight,
                               int viewportW, int viewportH, ContainerBox container) {
             if (!enabled || node == null || sheet == null || lookup == null || parent == null) return null;
-            if (node.attrs.containsKey("style") || node.attrs.containsKey("hidden") || "input".equals(node.tag)) return null;
+            if (node.attrs.containsKey("style") || node.inlineOverlay != null || node.attrs.containsKey("hidden")
+                    || "input".equals(node.tag)) return null;
             int version = sheet.rules.version();
             // 再スタイルをまたいで残すので、シート・環境・規則の版が変わったら捨てる。件数にも上限を置く
             if (this.sheet != sheet || this.env != env || this.sheetVersion != version || map.size() >= MAX_ENTRIES) {
@@ -391,14 +392,19 @@ public class StyleResolver {
         Map<String, String> inlineNormal = Map.of();
         Map<String, String> inlineImportant = Map.of();
         // インラインスタイルは要素自身にだけ掛かる
-        if (pseudo == null && node != null && node.attrs.containsKey("style")) {
+        if (pseudo == null && node != null && (node.attrs.containsKey("style") || node.inlineOverlay != null)) {
             inlineNormal = new LinkedHashMap<>();
             inlineImportant = new LinkedHashMap<>();
-            for (Declaration decl : CssSyntax.parseDeclarationList(node.attrs.get("style"))) {
-                Map<String, String> target = decl.important() ? inlineImportant : inlineNormal;
-                target.remove(decl.name());
-                target.put(decl.name(), decl.valueText());
+            String styleText = node.attrs.get("style");
+            if (styleText != null) {
+                for (Declaration decl : CssSyntax.parseDeclarationList(styleText)) {
+                    Map<String, String> target = decl.important() ? inlineImportant : inlineNormal;
+                    target.remove(decl.name());
+                    target.put(decl.name(), decl.valueText());
+                }
             }
+            // 属性の文字列を経由しない数値バインディング（BindingPatchTable）の値を重ねる
+            if (node.inlineOverlay != null) node.inlineOverlay.overlayInline(node, inlineNormal);
         }
 
         // revert の巻き戻し先。UA オリジンの宣言だけでカスケードした結果（継承値を含む）と、それにユーザーオリジンを足した結果。

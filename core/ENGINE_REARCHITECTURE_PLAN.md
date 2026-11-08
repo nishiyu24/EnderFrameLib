@@ -1104,7 +1104,7 @@ flowchart TB
 
 ---
 
-#### 9.2.3 【データバインディング層 (Milestone 2)】`ReactiveDomBinder` の文字列 DOM 書き換えと `BindingPatchTable` の二重実行（Type A）
+#### 9.2.3 【データバインディング層 (Milestone 2)】`ReactiveDomBinder` の文字列 DOM 書き換えと `BindingPatchTable` の二重実行（Type A）— ✅ **解消済み（2026-11-08, §9.5.4）**
 
 - **箇所**: [`Bindings.java:643-696`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L643-L696) および [`BindingPatchTable.java:1-219`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java#L1-L219)
 - **構造**:
@@ -1177,7 +1177,7 @@ flowchart TB
 | `kernel.memory` | [`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java) | ✅ **稼働中** | `HtmlNode`（タグ/ID/クラスの intern）、`SelectorMatcher`（セレクタ側 `SelectorToken.classAtoms()` と節の `classAtoms` を整数比較）、`HtmlNode.hasClass`（番号を持つ節は atom 経路）で使用 |
 | `kernel.memory` | [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) | 🔶 **Type A（トポロジーのみ残存）** | `SelectorMatcher` が `prevSibling` と Bloom 列を読む。`stateBits` 列は撤去済み（対話状態は `StateFlags.state` に一本化）。`dirtyBits` 列は `BindingPatchTable` が layout/paint の要求を立てる用途だけが残る。ツリー走査は依然 `HtmlNode.children` が主 |
 | `kernel.compiler` | [`StyleStateAutomaton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StyleStateAutomaton.java)<br/>[`StateStyleMemo`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StateStyleMemo.java) | ✅ **稼働中** | `StyleResolver` および `RenderPipeline`（`:hover` 等の状態遷移 $O(1)$ スワップ）で本流稼働 |
-| `kernel.compiler` | [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) | ❌ **Type A（書込のみ）** | `Bindings.ReactiveDomBinder.mirrorToPatchTable()` が値を書き込むが、**レイアウト・描画のどこからも読まれていない** |
+| `kernel.compiler` | [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) | ✅ **稼働中** | `ReactiveDomBinder` が数値の style バインディングをここへ直接書き（`set`）、`StyleResolver` が `InlineStyleOverlay`（`HtmlNode.inlineOverlay`）経由で読む。`style` 属性は書き換えない |
 | `kernel.style` | [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java)<br/>[`StyleStructs`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java) | ❌ **Type C（本流未接続）** | `BindingPatchTable` と単体テストのみが参照。**`ComputedStyle` / `StyleFacts` / `BoxMeasurer` からは未参照** |
 | `kernel.layout` | [`SimdLayoutKernel`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdLayoutKernel.java)<br/>[`LayoutResultCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/LayoutResultCache.java)<br/>[`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)<br/>[`SimdHitTester`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdHitTester.java) | ❌ **Type C（本流未接続）** | **4 クラスとも単体テストからのみ参照**。本流の `core/layout/*` や `HitTestIndex` からは 1 箇所も呼ばれていない |
 | `kernel.gpu` | [`PersistentVramBuffer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PersistentVramBuffer.java)<br/>[`GpuPrimitivePacker`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuPrimitivePacker.java)<br/>[`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) | ✅ **稼働中（一部 Type B）** | `GlVramDevice`, `GlTreeStore`, `GlRectStream`, `GlRectRenderer` で本流稼働。ただし `PropertyTrees` は親子階層を使わず毎フレーム `decompose(pose)` でフラット格納 |
@@ -1191,7 +1191,7 @@ flowchart TB
 
 #### Step 1：DOM 状態・クラス照合・バインディングの「二重書き込み（Type A）」の解消
 
-> **進捗（2026-11-08）**: 1-①対話状態 ✅（向きを変えて実施）／1-②`hasClass` ✅／1-③`ReactiveDomBinder` ⏳ 未着手。詳細は §9.5。
+> **進捗（2026-11-08）**: 1-①対話状態 ✅（向きを変えて実施）／1-②`hasClass` ✅／1-③`ReactiveDomBinder` ✅（読み側は `StyleFacts` ではなく `StyleResolver` のインライン宣言への重ね書きで接続）。Step 1 は完了。詳細は §9.5。
 1. **（当初案・実施せず）`InteractionState.StateFlags` の廃止と `DocumentArena` 一本化**: ※実際は §9.5 の通り、逆向き（`StateFlags` 側へ一本化しアリーナ側の写しを撤去）で二重構造を解消した。
    - [`HtmlNode.interactionFlags`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L77)（ヒープオブジェクト `StateFlags`）を削除し、`InteractionState` の全読み書きを `node.documentArena()` の `stateBits` 列（`STATE_HOVER | STATE_ACTIVE | STATE_FOCUS | STATE_CHECKED | STATE_DISABLED`）と `dirtyBits` 列（`DIRTY_STYLE | DIRTY_SUBTREE | DIRTY_UNSCOPED`）に対する直接ビット演算に置き換える。
    - これにより要素ごとの `StateFlags` インスタンス生成と `writeMirror()` の二重書き込みが完全に消滅する。
@@ -1262,11 +1262,20 @@ flowchart TB
 
 - `:core:test` 全件緑、ルート `:test` は `ArchitectureTest` M7（入れ子型の跨ぎ参照）を 1 件踏んだがコメント参照の削除で解消、再実行で緑。
 
+#### 9.5.4 `ReactiveDomBinder` → `BindingPatchTable` の配線（§9.2.3・Step 1-③）
+
+- **データフロー（変更後）**: `style="width: {{k}}%"` のうち数値に解けるものは、`applyAttributePlaceholders` → `resolveInlineStyle` が **`style` 属性へ書かず** `BindingPatchTable.set(nodeId, field, value)` でアリーナと同じ添字の float 列へ書く。節には `HtmlNode.inlineOverlay`（= 表）を結ぶ。スタイル解決（`StyleResolver` のインライン宣言の収集直後）が `InlineStyleOverlay.overlayInline` で `width: 30%` などを重ねる。以前の「正規表現の文字列置換 → 属性更新 → `style` の再パース」と「使われない列へのミラー」の二重実行がなくなり、`mirrorToPatchTable()` は削除した。
+- **属性経路に残すもの**（`resolveInlineStyle` が自動で振り分け）: ① 数値でない値（`auto` など。直接書き込みは `NaN` に戻し、宣言は文字列に解く／数値に戻れば再び直接書き込み）、② 式の中の置換（`calc({{a}}% - 2px)`）、③ 同じ style 内で同じ属性が 2 回現れる宣言（後勝ちの宣言順を壊さない）、④ 局所スコープ（リスト行など。`scopeData` が根の値の表と同一のときだけ直接書き込み）。
+- **無効化**: 値が変わった節は `changedNodes` に載り（`UiStateStore` が `markDirty` → `requestRestyle`）、`HtmlNode.touchInlineOverlay()` で `attrVersion` を進めて `StateStyleMemo` / `ShareCache` の使い回しを捨てさせる（`inlineOverlay` を持つ節は `ShareCache` の対象外）。見た目のみの更新なので `layoutTreeChanged` は立てない。
+- **API 変更（破壊的）**: `BindingPatchTable.compile/compileNewNodes` は本流から呼ばれなくなった（テスト・外部用に残置）。本流は節ごとの `set()` を使う。`ReactiveDomBinder.patchTable()` は最初に数値バインディングを解いたときに作られる。`style` 属性に数値バインディング分の宣言が残らなくなった。
+- **検証**: `BindingPatchTableTest`（属性に宣言が残らない／重ね書きの結果が `width=30%` 等／更新・無関係な節は載らない・`attrVersion` 増加・同値で変化なし／数値↔非数値の往復／宣言重複は属性経路／CSS 数値表記が指数表記にならない／`set` の NaN 解除・`parsePatch`）、`ReactiveStateStoreTest.testNumericStyleBindingsReachLayoutThroughThePatchTable`（実パイプラインで `px`・`%` の幅がレイアウトに反映され続け、属性が空のまま）。`:core:test`・ルート `:test` 全件緑。
+- **未達（正直な評価）**: 読み側は `StyleFacts` / `PackedCssValue` までは降りておらず、重ね書きは「CSS 文字列 → 既存の最終化」を通る（値を文字列に整形して再度パース）。再スタイル自体は節ごとに走る。ホットパスの確保 0 と `BindingPatchTable.overlay(StyleStructs, id)`（`StyleStructs` 直結）は、`StyleFacts` の `PackedCssValue` 化（Step 2）とセットで接続する。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
 | :--- | :---: | :--- |
-| 1-③ `ReactiveDomBinder` → `BindingPatchTable` のダイレクトパッチ化 | ⏳ | `BindingPatchTable` は今も書込のみ。`StyleFacts` / `PaintSceneDriver` が読むオーバーレイ配線が要る。配線せず書込だけを止めると Type C に変わるだけなので、配線とセットで行う |
+| 1-③ `ReactiveDomBinder` → `BindingPatchTable` のダイレクトパッチ化 | ✅ | §9.5.4。残りは読み側の `StyleFacts`/`PackedCssValue` 直結（Step 2 とセット）で、文字列整形＋再パースを省く |
 | 汚れ印（`isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped`）の整数ビット化 | ⏳ | 今回は `state` のみ整数化。4 つの `boolean` を `DIRTY_*` ビットの 1 本にまとめ、`RenderPipeline` の読み出しも `StyleFacts` 化と一緒に直す |
 | アリーナ列を状態の正本にする案 | ⏳ | §9.5.1 の (a) 仮想の節の番号方針、(b) 取り外し時の状態退避が前提 |
 | Step 2（`ComputedStyle` 4 重表現の圧縮） | ⏳ | 未着手 |
