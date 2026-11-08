@@ -49,9 +49,20 @@ class Milestone2GateTest {
     @Test
     void kernelClassesExist() {
         for (String f : new String[]{"kernel/style/PackedCssValue.java", "kernel/style/CalcProgram.java",
-                "kernel/style/StyleStructs.java", "kernel/compiler/StyleStateAutomaton.java",
+                "kernel/compiler/StyleStateAutomaton.java",
                 "kernel/compiler/BindingPatchTable.java"}) {
             assertTrue(Files.exists(MAIN.resolve("core").resolve(f)), f);
+        }
+    }
+
+    @Test
+    void styleStructsDuplicateLayerStaysRemoved() throws IOException {
+        assertFalse(Files.exists(MAIN.resolve("core/kernel/style/StyleStructs.java")),
+                "StyleStructs は本流から未参照の重複層だったので撤去した（§9.5.8）。復活させない");
+        try (var files = Files.walk(MAIN)) {
+            for (var f : (Iterable<java.nio.file.Path>) files.filter(x -> x.toString().endsWith(".java"))::iterator) {
+                assertFalse(Files.readString(f).contains("StyleStructs"), f + " が StyleStructs を参照している");
+            }
         }
     }
 }

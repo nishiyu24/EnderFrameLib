@@ -57,8 +57,8 @@ public class LayoutMetricsTest {
 
         LayoutContext ctx = new LayoutContext(new Viewport(1920, 1080), src -> new int[]{32, 32},
                 new ScrollState(), FontResolver.FALLBACK);
-        plain.measure(800, 600, new FormattingContext("block", "stretch", false), ctx);
-        upper.measure(800, 600, new FormattingContext("block", "stretch", false), ctx);
+        plain.measure(800, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
+        upper.measure(800, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
 
         // FontFace.FALLBACK では 'i' は 3px、'I' は 7px 扱い。変換後の幅で測れていれば広くなる。
         // 幅は送り幅そのもの（W2 で切り上げをやめた。丸めは描画の 1 箇所だけ）

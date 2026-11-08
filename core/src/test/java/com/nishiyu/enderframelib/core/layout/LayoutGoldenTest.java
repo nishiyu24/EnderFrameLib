@@ -42,7 +42,7 @@ public class LayoutGoldenTest {
     }
 
     private static FormattingContext blockRoot() {
-        return new FormattingContext("block", "stretch", false);
+        return new FormattingContext(FormattingContext.Display.BLOCK, true, false);
     }
 
     private static ComputedStyle style(String... keyValues) {

@@ -106,9 +106,9 @@ class PackedCssValueTest {
         CalcProgram.Table t = new CalcProgram.Table();
         long v = parse("calc(100% - 20px)", t);
         assertEquals(PackedCssValue.K_CALC, PackedCssValue.kind(v));
-        StyleStructs.CalcResolver r = new StyleStructs.CalcResolver(t);
-        assertEquals(180f, StyleStructs.resolve(v, 200, 16, 16, 0, 0, r));
-        assertTrue(Float.isNaN(StyleStructs.resolve(v, 200, 16, 16, 0, 0, null)));
+        CalcProgram.Resolver r = new CalcProgram.Resolver(t);
+        assertEquals(180f, PackedCssValue.resolve(v, 200, 16, 16, 0, 0, r));
+        assertTrue(Float.isNaN(PackedCssValue.resolve(v, 200, 16, 16, 0, 0, null)));
     }
 
     @Test

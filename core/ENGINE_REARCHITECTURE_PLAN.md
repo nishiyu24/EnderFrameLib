@@ -223,11 +223,11 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 │   ├── style/                        [Milestone 2: 実装済・部分配線]
 │   │   ├── PackedCssValue.java       // 64-bit long タグ付き CSS プリミティブ値
 │   │   ├── CalcProgram.java          // calc()/min()/max()/clamp() の RPN バイトコード & ゼロ確保評価器
-│   │   └── StyleStructs.java         // Font/Text/Box/Surround/Paint の 5 分割不変構造体（intern 共有つき）
+│   │   └── （StyleStructs は 2026-11-09 に撤去。§9.5.8）
 │   ├── compiler/                     [Milestone 2: 実装・本流配線済]
 │   │   ├── StyleStateAutomaton.java  // 要素別対話状態マスク & O(1) 状態遷移テーブル (StateTable)
 │   │   ├── StateStyleMemo.java       // 4枠フレーム保持・peek ゼロ確保の要素別状態スタイルメモ
-│   │   └── BindingPatchTable.java    // {{key}} バインディング → オフヒープ列直結 & StyleStructs オーバーレイ
+│   │   └── BindingPatchTable.java    // {{key}} バインディング → オフヒープ列直結 & InlineStyleOverlay（StyleStructs オーバーレイは撤去）
 │   ├── layout/                       [Milestone 3: カーネル実装済・本流未接続]
 │   │   ├── SimdLayoutKernel.java     // SimdBackend 経由の Edge 合算・クランプ・Level-Order 座標スイープ
 │   │   ├── LayoutResultCache.java    // MIN/MAX/TENTATIVE/FINAL の 4 スロット結果キャッシュ
@@ -1100,7 +1100,7 @@ flowchart TB
 | **第 1 層（正本）**<br/>文字列配列 | [`ComputedStyle.java:39-43`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L39-L43)<br/>`String[] values` + `Map<String, String> extras` | [`StyleResolver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleResolver.java) と [`ValueComputer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ValueComputer.java) が `Map<String, String>` 上でカスケード・継承・`var()` 解決を行い、最終的に全既知プロパティの `String[]` を生成。 | 初回（コールド）解決時に文字列の格納・ハッシュ計算・マップ操作が走る。 |
 | **第 2 層（遅延辞書）**<br/>CAS メモ表 | [`ComputedStyle.java:52-116, 618-697`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L52-L116)<br/>`volatile Memo memo` (`int[] keys` + `Object[] vals`) | `length(prop)` / `color(prop)` / `number(prop)` / `keywordOf(prop)` が呼ばれるたび、`String[] values` をパースして `CompiledLength` やボクシングされた `Integer` / `Float` / `Enum` を `Memo` に追記（毎回 `new int[n+1]`, `new Object[n+1]` をコピー）。 | プロパティ初回参照ごとに配列再確保とボクシングが発生。 |
 | **第 3 層（実用バイパス）**<br/>レイアウト事実キャッシュ | [`StyleFacts.java:6-141`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java#L6-L141)<br/>[`ComputedStyle.java:722-830`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L722-L830) | レイアウトエンジンが `Memo` と文字列比較を回避するために新設された構造体。`String[] values` を再パースして `display`, `position`, 4辺の `CompiledLength[] edges` 等を保持。ただし内部に `widthStr`, `heightStr`, `alignItemsWord` 等の正規化済み `String` も抱える。 | `ComputedStyle.Memo` と `LengthResolver.CompiledLength` のキャッシュが二重化。 |
-| **第 4 層（未接続カーネル）**<br/>オフヒープ SoA 構造体 | [`StyleStructs.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java)<br/>[`PackedCssValue.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java) | 本来 `ComputedStyle.String[]` を置き換えるために作られた 64-bit 即値列（`Box`, `Flex`, `Text`, `Visual`）と RPN `calc()` 評価器。 | **Type C（本流未接続）**: `core/css`・`core/layout`・`core/paint` から **1 箇所も参照されていない**（`BindingPatchTable` の単体テストのみが使用）。本流は依然として [`LengthResolver.CompiledLength`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/LengthResolver.java) を使用。 |
+| **第 4 層（未接続カーネル）**<br/>オフヒープ SoA 構造体 | [`StyleStructs.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java)<br/>[`PackedCssValue.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java) | 本来 `ComputedStyle.String[]` を置き換えるために作られた 64-bit 即値列（`Box`, `Flex`, `Text`, `Visual`）と RPN `calc()` 評価器。 | **Type C（本流未接続）**: `core/css`・`core/layout`・`core/paint` から **1 箇所も参照されていない**（`BindingPatchTable` の単体テストのみが使用）。本流は依然として [`LengthResolver.CompiledLength`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/LengthResolver.java) を使用。<br/>✅ **【2026-11-09】`StyleStructs` は撤去済み（§9.5.8）。`PackedCssValue` / `CalcProgram` のみ残る。** |
 
 ---
 
@@ -1201,11 +1201,13 @@ flowchart TB
    - バインディング対象が数値スタイル（`width`, `height`, `opacity`, `transform`, `background-color` 等）である場合、`ReactiveDomBinder.sync()` で `vNode.attrs` の文字列を正規表現で書き換える旧経路を止め、[`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) の値を [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java) / [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) が直接オーバーレイ参照するように配線する。
 
 #### Step 2：`ComputedStyle` の「4 重表現」を `StyleFacts` + `PackedCssValue` の 2 層へ圧縮
+
+> **進捗（2026-11-09）**: 2-② ✅（`StyleFacts` の `widthStr`/`heightStr`/`intrinsicWidth`/`alignItemsWord`/`alignSelfWord` を数値・列挙化。§9.5.5）／2-① ✅（`Memo` を全スタイル共有の `TypedValueCache` へ。§9.5.7）／2-③ ✅（`StyleStructs` 撤去。§9.5.8）。
 1. **`ComputedStyle.Memo` と `StyleFacts` の統合**:
    - `ComputedStyle` 内の汎用ボクシング辞書 `Memo`（`int[] keys` + `Object[] vals`）を廃止し、よく使われるすべての数値・長さ・色・キーワードを [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java)（または [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java) のプリミティブ配列）に統合する。
 2. **`StyleFacts` 内の残存文字列フィールドの数値化**:
    - `StyleFacts` に残っている `widthStr`, `heightStr`, `minWidthStr`, `maxWidthStr`, `alignItemsWord`, `alignSelfWord` を `LengthResolver.CompiledLength`（または `PackedCssValue` 64-bit 即値）と `byte` enum に置き換え、`BoxMeasurer` 内の `.equals("auto")` / `.endsWith("%")` 文字列比較をゼロにする。
-3. **`StyleStructs` の整理**:
+3. **`StyleStructs` の整理**: ✅ 【2026-11-09】`StyleStructs` は吸収ではなく**撤去**を選んだ（§9.5.8）。
    - `StyleFacts` が実質的にオンヒープ版の `StyleStructs` として本流で機能しているため、`StyleFacts` のバックエンドとして `PackedCssValue` / `CalcProgram` を採用するか、あるいは重複する `StyleStructs` を `StyleFacts` へ吸収統合する。
 
 #### Step 3：`LwjglGlRenderBackend` の「3 系統パイプライン」整理と `SoftwareRenderBackend` からの完全分離
@@ -1271,6 +1273,47 @@ flowchart TB
 - **検証**: `BindingPatchTableTest`（属性に宣言が残らない／重ね書きの結果が `width=30%` 等／更新・無関係な節は載らない・`attrVersion` 増加・同値で変化なし／数値↔非数値の往復／宣言重複は属性経路／CSS 数値表記が指数表記にならない／`set` の NaN 解除・`parsePatch`）、`ReactiveStateStoreTest.testNumericStyleBindingsReachLayoutThroughThePatchTable`（実パイプラインで `px`・`%` の幅がレイアウトに反映され続け、属性が空のまま）。`:core:test`・ルート `:test` 全件緑。
 - **未達（正直な評価）**: 読み側は `StyleFacts` / `PackedCssValue` までは降りておらず、重ね書きは「CSS 文字列 → 既存の最終化」を通る（値を文字列に整形して再度パース）。再スタイル自体は節ごとに走る。ホットパスの確保 0 と `BindingPatchTable.overlay(StyleStructs, id)`（`StyleStructs` 直結）は、`StyleFacts` の `PackedCssValue` 化（Step 2）とセットで接続する。
 
+### 9.5.5 実施記録：Step 2-② `StyleFacts` の文字列フィールドの数値化（2026-11-09）
+
+**破壊的変更**（`StyleFacts` の公開フィールド削除）。呼び出し側は `BoxMeasurer` / `FlexLayoutEngine` のみで載せ替え済み。
+
+- **削除**: `widthStr` / `heightStr`（宣言の文字列。性質は `widthAuto` / `heightAuto` / `widthPercent` / `heightPercent` が既に持っていた）、`intrinsicWidth`（`String`）、`alignItemsWord` / `alignSelfWord`（`String`）。
+- **置換**:
+  - 内在サイズ: `byte intrinsicWidthKind`（`IW_NONE` / `IW_MIN_CONTENT` / `IW_MAX_CONTENT` / `IW_FIT_CONTENT` / `IW_FIT_CONTENT_FN`）＋ `fitContentArg`（`fit-content(<長さ>)` の引数だけ。閉じ括弧が無い形は null＝以前と同じく何もしない）＋ `hasIntrinsicWidth()`。`BoxMeasurer` の `"max-content".equals(..)` / `startsWith("fit-content(")` / `"min-content".equals(..)` の文字列比較が消えた。
+  - 揃え: `CssKeywords.Alignment alignItems, alignSelf`（`StyleFacts.flexAlignment` で normal/auto/legacy→STRETCH、first/last baseline→BASELINE に寄せ済み）。`FlexLayoutEngine` の `"stretch".equals` / `"baseline".equals` / 文字列 `switch` を列挙の `==` / `switch` に置換し、`alignmentWord(..)` を削除。`FormattingContext`（`String` の record）へは `cssName()`（列挙ごとに 1 回だけ作る定数）を渡す。
+  - `resolveIntrinsicHeight` は `heightStr.equals("auto")` をやめ `facts.heightAuto`（boolean）を受ける。
+- **検証**: `StyleFactsTest`（4,000 通りのランダムな宣言を置き換え前の語・文字列の求め方と突き合わせる既存テストを、種類・引数・列挙の `cssName()` との照合に付け替え）、新規 `intrinsicWidthKeywordsAndFitContentArgument`（大文字小文字・前後空白・閉じ括弧欠落・`auto`/`%`/長さ）、新規 `flexAlignmentFoldsNormalAndBaselineVariants`（全 19 値が旧 `alignmentWord` と一致し、畳み込みが不動点）。`:core:test`・ルート `:test` 全件緑（Flex/Grid/WPT/Golden を含む既存のレイアウト回帰がそのまま通ることで挙動不変を確認）。
+- **未達**: `ComputedStyle.Memo`（第 2 層）の廃止と `StyleStructs`/`PackedCssValue` の吸収（Step 2-①③）は未着手。`StyleFacts` はまだ `String[] values` を再パースして作る。`FormattingContext` の `String parentDisplay/alignItems` と Grid 側の `selfAlignment` の文字列も残る。
+
+### 9.5.6 実施記録：`FormattingContext` の列挙化（2026-11-09）
+
+**破壊的変更**: `FormattingContext(String parentDisplay, String alignItems, boolean isShrink)` → `FormattingContext(Display parentDisplay, boolean stretch, boolean isShrink)`。
+
+- `Display`（`BLOCK` / `GRID` / `LEGEND` / `ROW` / `ROW_REVERSE` / `COLUMN` / `COLUMN_REVERSE`）の列挙にし、`isFlexRow()`（旧 `startsWith("row")`）などと `isBlock()` / `isGrid()` を列挙の比較にした。`BoxMeasurer` の `"block".equals(..)` / `"grid".equals(..)` が消えた。
+- 揃えは当初 `CssKeywords.Alignment` で持たせたが、`ArchitectureTest` M7（2 つ以上のパッケージから参照される入れ子型 = 0）に `Alignment` / `FlexDirection` が掛かった（`layout.model` → `css`）。**子の測定が読むのは「stretch か」だけ**（`BoxMeasurer` の 1 箇所）なので `boolean stretch` に縮約した。Flex/Grid 側の揃えの列挙（`Alignment`）は各エンジン内に留まる。
+- `FlexLayoutEngine` は `FlexDirection` → `Display` を自前の `displayOf` で写す（`cssName()` の文字列生成が消えた）。`GridLayoutEngine` の `selfAlignment` / `alignWithin` も `Alignment` を返す・受ける形に変え、文字列 `switch` を廃止した。Grid の `justify` は auto マージンで stretch 不成立でも「値が STRETCH か」を渡す（旧挙動を保存）。
+- **検証**: 新規 `FormattingContextKindTest`（7 値の `Display` と `isFlexRow/Column/Block/Grid` の対応、`FlexDirection` の行・列の意味の保存、`BLOCK` 定数）。既存の Flex/Grid/Block/Table/WPT/Golden の回帰と生成箇所約 10 のテストを載せ替えて `:core:test`・ルート `:test`（`ArchitectureTest` 含む）全件緑。
+
+### 9.5.7 実施記録：Step 2-① `ComputedStyle.Memo`（第 2 層）の廃止（2026-11-09）
+
+**破壊的変更**（`ComputedStyle` 内部の `Memo` / `cached` / `remember` / `KIND_*` / `MEMO` の削除。公開 API は不変）。
+
+- **何が問題だったか**: 第 2 層は要素（`ComputedStyle`）ごとに `int[] keys` + `Object[] vals` を持ち、プロパティを初めて型付きで引くたびに配列を 1 要素ぶん大きくして作り直し（CAS）、`Integer` / `Float` を箱詰めしていた。値の解析結果は**文字列だけで決まる不変の値**なのに、同じ `16px` を要素の数だけ解析・保持していた。
+- **置換**: 新設 [`TypedValueCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/TypedValueCache.java)（文字列 → `CompiledLength` / 色 / 数値を **全スタイルで共有**する `ConcurrentHashMap`。読み取りはロック無し・ヒット時の確保なし、4,096 件で全消去）。キーワードは `CssKeywords.parse`（普通の書き方は確保なしの表引き）で都度解き、宣言が無いときの初期値だけ `INITIAL_KEYWORDS[id]`（添字ごとに 1 回、全スタイルで共有）に持つ。解けない数値（`z-index: auto` など）も「解けない」と覚える。
+- **効果**: 要素ごとの記憶表（`int[]` + `Object[]` の成長コピーと CAS）が消え、スタイルが共有するのは解析結果になった。`ComputedStyle` の寿命と無関係に長さ・色の解析は文字列ごとに 1 回で済む。
+- **検証**: 新規 `TypedValueCacheTest`（別インスタンスの同じ宣言が 1 件を共有／色・数値が各パーサと一致し繰り返しても不変／解けない数値の既定値は呼び出しごと／`NaN` は解けた値・前後の空白／宣言なしは表に触れない／上限を超えても正しく有界／キーワードの初期値・知らない値・型の保持・添字版との一致）。`:core:test`・ルート `:test` 全件緑。
+- **未達**: `StyleFacts` は依然 `String[] values` を再パースして作る（第 1 層 → 第 3 層）。ヒット時も `String` のハッシュ表引きは走る（`StyleFacts` に載らないプロパティの経路）。`CssKeywords.parse` の非標準書き（`safe center` や大文字）は確保が残る。第 4 層 `StyleStructs` の吸収（Step 2-③）は未着手。
+
+### 9.5.8 実施記録：Step 2-③ `StyleStructs`（第 4 層）の撤去（2026-11-09）
+
+**破壊的変更**（`StyleStructs` クラスと、それを使う API の削除）。
+
+- **調査結果**: `StyleStructs`（`Compiler` / 5 つの `*Struct` record / intern プール / `CalcResolver` / `resolve`）を本流（`core/css`・`layout`・`paint`・`dom`）から参照している箇所は**ゼロ**。唯一の利用者は `BindingPatchTable.overlay(StyleStructs, nodeId)` で、これも §9.5.4 で本流が `InlineStyleOverlay` に切り替えて以降は呼ばれていなかった。`StyleFacts` が既にレイアウトの読む型付き事実を担っており、`StyleStructs` は `ComputedStyle` から作る**第 3 の派生ビュー**でしかなかったため、「`StyleFacts` に吸収」ではなく**撤去**を選んだ（吸収しても `StyleFacts` に載らない 60 超の long 列と intern プールが残るだけで、読み手がいない）。
+- **削除**: `StyleStructs.java`・`StyleStructsTest`・`BindingPatchTable.overlay` と `withWidth/withHeight`、`BindingPatchTableTest.overlayPatchesStyleStructsWithoutTouchingOthers`。`Milestone2GateTest.kernelClassesExist` の対象から外した。
+- **残したもの（Type C のまま）**: `PackedCssValue` / `CalcProgram`。`StyleStructs` に同居していた `resolve(long, ...)` を `PackedCssValue.resolve` に、`CalcResolver` を `CalcProgram.Resolver` に移し、`StyleStructs` なしで単体として使えるようにした（`PackedCssValueTest` を付け替え）。
+- **検証**: `Milestone2GateTest.styleStructsDuplicateLayerStaysRemoved`（ファイルが無いこと、`core/src/main` のどのソースにも `StyleStructs` が現れないこと = 復活防止のラチェット）、`PackedCssValueTest.calcViaPackedValueUsesTable`（`PackedCssValue.resolve` + `CalcProgram.Resolver`）。`:core:test`・ルート `:test` 全件緑。
+- **未達**: 第 4 層の目的だった「`ComputedStyle.String[]` を 64-bit 即値で置き換える」は未実施。第 1 層（`String[] values`）は残り、`StyleFacts` はそこから再パースして作る。次にやるなら `StyleFacts` の `CompiledLength[] edges` を `PackedCssValue` の `long[]` にして `PackedCssValue` / `CalcProgram` を初めて本流へ接続する（`edgeLength` の熱い経路）。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1278,7 +1321,9 @@ flowchart TB
 | 1-③ `ReactiveDomBinder` → `BindingPatchTable` のダイレクトパッチ化 | ✅ | §9.5.4。残りは読み側の `StyleFacts`/`PackedCssValue` 直結（Step 2 とセット）で、文字列整形＋再パースを省く |
 | 汚れ印（`isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped`）の整数ビット化 | ⏳ | 今回は `state` のみ整数化。4 つの `boolean` を `DIRTY_*` ビットの 1 本にまとめ、`RenderPipeline` の読み出しも `StyleFacts` 化と一緒に直す |
 | アリーナ列を状態の正本にする案 | ⏳ | §9.5.1 の (a) 仮想の節の番号方針、(b) 取り外し時の状態退避が前提 |
-| Step 2（`ComputedStyle` 4 重表現の圧縮） | ⏳ | 未着手 |
+| Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
+| Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
+| Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
 | Step 3（GL 3 系統の整理） | ⏳ | `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | Step 4 / 5 | ⏳ | 未着手 |
 

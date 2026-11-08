@@ -57,7 +57,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         InlineWidth line = new InlineWidth();
 
         float childParentH = childPercentageBase(box, space.percentageBlockSize(), ctx);
-        FormattingContext childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
+        FormattingContext childCtx = new FormattingContext(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
 
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.isRenderedLegend || isDisplayNone(child.style)) continue;
@@ -282,7 +282,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 外側のマーカーを測るときの文脈。折り返さず、内容の幅に縮む。 */
-    private static final FormattingContext MARKER_CONTEXT = new FormattingContext("block", "stretch", true);
+    private static final FormattingContext MARKER_CONTEXT = new FormattingContext(FormattingContext.Display.BLOCK, true, true);
 
     /**
      * 外側の {@code ::marker} を、リスト項目の境界ボックスの左外に、最初の行のベースラインに揃えて置く。
@@ -465,7 +465,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
             box.floatSpace = null;
             this.childPercentBase = childPercentageBase(box, space.percentageBlockSize(), ctx);
-            this.childCtx = new FormattingContext("block", "stretch", box.sizingMode == SizingMode.SHRINK_TO_FIT);
+            this.childCtx = new FormattingContext(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             this.collapseTop = collapsesThroughTop(box);
         }
 

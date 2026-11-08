@@ -3,8 +3,6 @@ package com.nishiyu.enderframelib.core.kernel.compiler;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import com.nishiyu.enderframelib.core.kernel.memory.OffHeapColumns;
-import com.nishiyu.enderframelib.core.kernel.style.PackedCssValue;
-import com.nishiyu.enderframelib.core.kernel.style.StyleStructs;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -227,51 +225,6 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
 
     public static String fieldName(int field) { return FIELD_NAMES[field]; }
 
-    /**
-     * 構造体に、直接書かれたバインディング値を重ねる。パッチが無ければ {@code base} をそのまま返す。
-     * 幅・高さ（%/px）・opacity・flex-grow・font-size。重ねた結果は {@link StyleStructs#intern} で畳む。
-     */
-    public StyleStructs overlay(StyleStructs base, int nodeId) {
-        if (nodeId < 0 || nodeId >= columnLength) return base;
-        var box = base.box;
-        var paint = base.paint;
-        var font = base.font;
-        float v;
-        if (!Float.isNaN(v = columns[F_WIDTH_PCT].get(nodeId))) box = withWidth(box, PackedCssValue.length(v, PackedCssValue.U_PERCENT));
-        if (!Float.isNaN(v = columns[F_WIDTH_PX].get(nodeId))) box = withWidth(box, PackedCssValue.length(v, PackedCssValue.U_PX));
-        if (!Float.isNaN(v = columns[F_HEIGHT_PCT].get(nodeId))) box = withHeight(box, PackedCssValue.length(v, PackedCssValue.U_PERCENT));
-        if (!Float.isNaN(v = columns[F_HEIGHT_PX].get(nodeId))) box = withHeight(box, PackedCssValue.length(v, PackedCssValue.U_PX));
-        if (!Float.isNaN(v = columns[F_FLEX_GROW].get(nodeId))) {
-            box = new StyleStructs.BoxGeometryStruct(box.width(), box.height(), box.minWidth(), box.maxWidth(),
-                    box.minHeight(), box.maxHeight(), box.aspectRatio(), v, box.flexShrink(), box.flexBasis(),
-                    box.displayAtom(), box.positionAtom(), box.boxSizing(), box.overflowX(), box.overflowY());
-        }
-        if (!Float.isNaN(v = columns[F_OPACITY].get(nodeId))) {
-            paint = new StyleStructs.PaintEffectStruct(v, paint.bgColorArgb(), paint.zIndex(), paint.transformOpId(),
-                    paint.filterOpId(), paint.transitionId(), paint.animationId());
-        }
-        if (!Float.isNaN(v = columns[F_FONT_SIZE_PX].get(nodeId))) {
-            font = new StyleStructs.InheritedFontStruct(v, font.lineHeightPx(), font.fontWeight(), font.fontStyleAtom(),
-                    font.fontFamilyAtom());
-        }
-        if (box == base.box && paint == base.paint && font == base.font) return base;
-        return StyleStructs.of(StyleStructs.intern(font), base.text, StyleStructs.intern(box), base.surround,
-                StyleStructs.intern(paint));
-    }
-
-    private static StyleStructs.BoxGeometryStruct withWidth(StyleStructs.BoxGeometryStruct b, long w) {
-        return new StyleStructs.BoxGeometryStruct(w, b.height(), b.minWidth(), b.maxWidth(), b.minHeight(), b.maxHeight(),
-                b.aspectRatio(), b.flexGrow(), b.flexShrink(), b.flexBasis(), b.displayAtom(), b.positionAtom(),
-                b.boxSizing(), b.overflowX(), b.overflowY());
-    }
-
-    private static StyleStructs.BoxGeometryStruct withHeight(StyleStructs.BoxGeometryStruct b, long h) {
-        return new StyleStructs.BoxGeometryStruct(b.width(), h, b.minWidth(), b.maxWidth(), b.minHeight(), b.maxHeight(),
-                b.aspectRatio(), b.flexGrow(), b.flexShrink(), b.flexBasis(), b.displayAtom(), b.positionAtom(),
-                b.boxSizing(), b.overflowX(), b.overflowY());
-    }
-
-    /** 登録されたキーの一覧（診断用）。 */
     public List<String> keys() { return new ArrayList<>(patchesByKey.keySet()); }
 
     private void ensureCapacity(int nodeId) {

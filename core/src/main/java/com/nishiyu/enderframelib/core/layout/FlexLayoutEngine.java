@@ -49,13 +49,13 @@ public class FlexLayoutEngine extends LayoutEngine {
         float tentativeInnerW = space.availableInlineSize();
         float parentH = itemPercentageBase(box, space, ctx);
         Axes axes = Axes.of(box.style);
-        String alignItems = alignItemsOf(box.style);
+        CssKeywords.Alignment alignItems = alignItemsOf(box.style);
 
         float maxChildW = 0, sumChildW = 0;
         int count = 0;
         for (LayoutBox child : box.getFlowChildren()) {
-            String childAlign = alignSelfOf(child, alignItems);
-            FormattingContext childCtx = new FormattingContext(axes.direction, childAlign, box.sizingMode == SizingMode.SHRINK_TO_FIT);
+            CssKeywords.Alignment childAlign = alignSelfOf(child, alignItems);
+            FormattingContext childCtx = new FormattingContext(axes.direction, childAlign == CssKeywords.Alignment.STRETCH, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             ConstraintSpace itemSpace = new ConstraintSpace(tentativeInnerW, parentH, childCtx);
             // 確定の測り直し（行方向は contentBlockSize、列方向は finishLayout）は、来なかった項目を settle で本当に測る。
             // 中身が変わっていない項目は、仮の測定を前回の産物で済ませる
@@ -199,7 +199,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             if (extra > 0) for (FlexLine line : state.lines) line.cross += extra / lineCount;
         }
 
-        String alignItems = alignItemsOf(box.style);
+        CssKeywords.Alignment alignItems = alignItemsOf(box.style);
         for (FlexLine line : state.lines) stretchItems(box, line, axes, alignItems, space, ctx);
 
         // 行の交差軸の位置（align-content）。wrap-reverse は求めた位置を交差軸で裏返す
@@ -348,7 +348,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         child.overrideWidth = width;
         child.overrideHeight = height;
         try {
-            FormattingContext childCtx = new FormattingContext(axes.direction, "stretch", false);
+            FormattingContext childCtx = new FormattingContext(axes.direction, true, false);
             child.measure(new ConstraintSpace(width, itemPercentageBase(child.parent, space, ctx), childCtx), ctx);
         } finally {
             child.overrideWidth = Float.NaN;
@@ -374,7 +374,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (FlexItem item : line.items) {
             LayoutBox b = item.box;
             float outer = axes.row ? b.h + b.mT + b.mB : b.w + b.mL + b.mR;
-            if (axes.row && "baseline".equals(alignSelfOf(b, alignItemsOf(b.parent.style))) && !hasAutoCrossMargin(b, true)) {
+            if (axes.row && alignSelfOf(b, alignItemsOf(b.parent.style)) == CssKeywords.Alignment.BASELINE && !hasAutoCrossMargin(b, true)) {
                 float baseline = b.mT + itemBaseline(b);
                 above = Math.max(above, baseline);
                 below = Math.max(below, outer - baseline);
@@ -393,11 +393,11 @@ public class FlexLayoutEngine extends LayoutEngine {
      * 何が壊れていたか: 以前は行方向で高さだけを書き換えて解き直していたので、stretch されたアイテムの
      * 中の {@code height: 100%} が 0 のままだった。
      */
-    private static void stretchItems(LayoutBox box, FlexLine line, Axes axes, String alignItems,
+    private static void stretchItems(LayoutBox box, FlexLine line, Axes axes, CssKeywords.Alignment alignItems,
                                      ConstraintSpace space, LayoutContext ctx) {
         for (FlexItem item : line.items) {
             LayoutBox b = item.box;
-            if (!"stretch".equals(alignSelfOf(b, alignItems)) || hasAutoCrossMargin(b, axes.row)) continue;
+            if (alignSelfOf(b, alignItems) != CssKeywords.Alignment.STRETCH || hasAutoCrossMargin(b, axes.row)) continue;
             if (axes.row) {
                 if (hasSize(b.style, CssProperty.HEIGHT)) continue;
                 float target = line.cross - b.mT - b.mB;
@@ -412,7 +412,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     /** 1 行のアイテムの位置（マージンボックスの左上、内容ボックス相対）を決める。 */
     private static void placeLineItems(LayoutBox box, FlexLine line, Axes axes, float innerMain, float mainGap,
-                                       float lineStart, String alignItems) {
+                                       float lineStart, CssKeywords.Alignment alignItems) {
         List<FlexItem> items = line.items;
         float used = mainGap * Math.max(0, items.size() - 1);
         int autoMargins = 0;
@@ -455,7 +455,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     /** 行の中での交差軸の位置。auto マージンは align-self より先に余りを吸う。 */
-    private static float crossOffset(LayoutBox b, FlexLine line, Axes axes, String alignItems) {
+    private static float crossOffset(LayoutBox b, FlexLine line, Axes axes, CssKeywords.Alignment alignItems) {
         float outer = axes.row ? b.h + b.mT + b.mB : b.w + b.mL + b.mR;
         String startSide = axes.row ? CssProperty.MARGIN_TOP : CssProperty.MARGIN_LEFT;
         String endSide = axes.row ? CssProperty.MARGIN_BOTTOM : CssProperty.MARGIN_RIGHT;
@@ -474,14 +474,15 @@ public class FlexLayoutEngine extends LayoutEngine {
             }
             return 0;
         }
-        float offset = switch (alignSelfOf(b, alignItems)) {
-            case "center" -> (line.cross - outer) / 2;
-            case "flex-end", "end", "self-end" -> line.cross - outer;
-            case "baseline" -> axes.row ? line.baseline - (b.mT + itemBaseline(b)) : 0;
+        CssKeywords.Alignment align = alignSelfOf(b, alignItems);
+        float offset = switch (align) {
+            case CENTER -> (line.cross - outer) / 2;
+            case FLEX_END, END, SELF_END -> line.cross - outer;
+            case BASELINE -> axes.row ? line.baseline - (b.mT + itemBaseline(b)) : 0;
             default -> 0;
         };
         // wrap-reverse では交差軸の始点が行の下（右）になる
-        return axes.wrapReverse && !"baseline".equals(alignSelfOf(b, alignItems)) ? line.cross - outer - offset : offset;
+        return axes.wrapReverse && align != CssKeywords.Alignment.BASELINE ? line.cross - outer - offset : offset;
     }
 
     // ==========================================
@@ -621,25 +622,17 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     /** {@code align-items} の {@code normal} は flex では stretch。 */
-    private static String alignItemsOf(ComputedStyle style) {
-        return style.layoutFacts().alignItemsWord;
-    }
-
-    static String alignSelfOf(LayoutBox child, String alignItems) {
-        StyleFacts facts = child.style.layoutFacts();
-        return facts.alignSelfAuto ? alignItems : facts.alignSelfWord;
+    private static CssKeywords.Alignment alignItemsOf(ComputedStyle style) {
+        return style.layoutFacts().alignItems;
     }
 
     /**
-     * 揃えの値を配置の語にする。{@code normal} は flex では stretch、{@code first baseline} は baseline
-     * （{@code safe center} の safe は {@link CssKeywords#parse} が落とし済み）。
+     * 項目の交差軸の揃え。{@code normal} は flex では stretch、{@code first baseline} は baseline に
+     * {@link StyleFacts} が寄せ済み（{@code safe center} の safe は {@link CssKeywords#parse} が落とし済み）。
      */
-    private static String alignmentWord(CssKeywords.Alignment v) {
-        return switch (v) {
-            case NORMAL, AUTO, LEGACY -> "stretch";
-            case FIRST_BASELINE, LAST_BASELINE -> "baseline";
-            default -> v.cssName();
-        };
+    static CssKeywords.Alignment alignSelfOf(LayoutBox child, CssKeywords.Alignment alignItems) {
+        StyleFacts facts = child.style.layoutFacts();
+        return facts.alignSelfAuto ? alignItems : facts.alignSelf;
     }
 
     /**
@@ -670,12 +663,21 @@ public class FlexLayoutEngine extends LayoutEngine {
         };
     }
 
+    private static FormattingContext.Display displayOf(CssKeywords.FlexDirection dir) {
+        return switch (dir) {
+            case ROW -> FormattingContext.Display.ROW;
+            case ROW_REVERSE -> FormattingContext.Display.ROW_REVERSE;
+            case COLUMN -> FormattingContext.Display.COLUMN;
+            case COLUMN_REVERSE -> FormattingContext.Display.COLUMN_REVERSE;
+        };
+    }
+
     /** 主軸と交差軸の向き。 */
-    private record Axes(String direction, boolean row, boolean reverse, boolean wrap, boolean wrapReverse) {
+    private record Axes(FormattingContext.Display direction, boolean row, boolean reverse, boolean wrap, boolean wrapReverse) {
         static Axes of(ComputedStyle style) {
             CssKeywords.FlexDirection dir = style.keywordOf(CssProperty.FLEX_DIRECTION, CssKeywords.FlexDirection.class);
             CssKeywords.FlexWrap wrap = style.keywordOf(CssProperty.FLEX_WRAP, CssKeywords.FlexWrap.class);
-            return new Axes(dir.cssName(), dir.isRow(), dir.isReverse(),
+            return new Axes(displayOf(dir), dir.isRow(), dir.isReverse(),
                     wrap != CssKeywords.FlexWrap.NOWRAP, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
         }
     }

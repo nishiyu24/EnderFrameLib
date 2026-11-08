@@ -79,7 +79,7 @@ public class InlineLayoutConsistencyTest {
         pBox.children.add(textBox);
 
         LayoutContext ctx = newContext();
-        pBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        pBox.measure(400, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
         pBox.layout(0, 0, 400, 600, ctx);
 
         assertTrue(textBox.inlineFragments.size() > 1, "折り返しが起きていない");
@@ -108,7 +108,7 @@ public class InlineLayoutConsistencyTest {
         }
 
         LayoutContext ctx = newContext();
-        divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        divBox.measure(400, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
         divBox.layout(0, 0, 400, 600, ctx);
 
         // a / 空行 / b の 3 行分
@@ -134,7 +134,7 @@ public class InlineLayoutConsistencyTest {
         spanBox.children.add(textBox);
 
         LayoutContext ctx = newContext();
-        spanBox.measure(0, 600, new FormattingContext("block", "stretch", true), ctx);
+        spanBox.measure(0, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, true), ctx);
         spanBox.layout(0, 0, 0, 600, ctx);
 
         int lineCount = countDistinctLines(textBox);
@@ -161,7 +161,7 @@ public class InlineLayoutConsistencyTest {
         }
 
         LayoutContext ctx = newContext();
-        divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        divBox.measure(400, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
         divBox.layout(0, 0, 400, 600, ctx);
 
         // 1行目: "Hello " + "bold" + " and " + "inline"、2行目: "next line" の 2 行
@@ -196,7 +196,7 @@ public class InlineLayoutConsistencyTest {
         }
 
         LayoutContext ctx = newContext();
-        divBox.measure(400, 600, new FormattingContext("block", "stretch", false), ctx);
+        divBox.measure(400, 600, new FormattingContext(FormattingContext.Display.BLOCK, true, false), ctx);
         divBox.layout(0, 0, 400, 600, ctx);
 
         // 幅 400px なら 1 行に収まる

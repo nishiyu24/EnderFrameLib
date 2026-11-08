@@ -44,77 +44,6 @@ public final class ComputedStyle {
     private final float elementFontSize;
     private final float rootFontSize;
 
-    // 算出スタイルは要素ごとに作られ、描画に使われない要素（display: none の部分木など）も多い。
-    // 参照結果のキャッシュは最初の参照まで確保しない。ロックも ConcurrentHashMap も使わず、不変の小さな配列を
-    // CAS で差し替える（読み手は配列をなめるだけ。結果は不変の値なので、競って片方の登録が落ちても再計算するだけで正しい）。
-
-    /** 型付き参照（長さ・色・数値・キーワード）の結果。鍵は {@code 添字 * 4 + 種類}。 */
-    private volatile Memo memo;
-
-    private static final int KIND_LENGTH = 0, KIND_COLOR = 1, KIND_NUMBER = 2, KIND_KEYWORD = 3;
-
-    /** 不変の「整数の鍵 → 値」の小さな表。更新は新しい表を作って差し替える。 */
-    private static final class Memo {
-        final int[] keys;
-        final Object[] vals;
-
-        Memo(int[] keys, Object[] vals) {
-            this.keys = keys;
-            this.vals = vals;
-        }
-
-        Object get(int key) {
-            int[] k = keys;
-            for (int i = 0; i < k.length; i++) if (k[i] == key) return vals[i];
-            return null;
-        }
-
-        Memo with(int key, Object val) {
-            int n = keys.length;
-            for (int i = 0; i < n; i++) {
-                if (keys[i] == key) {
-                    Object[] v = vals.clone();
-                    v[i] = val;
-                    return new Memo(keys, v);
-                }
-            }
-            int[] k = new int[n + 1];
-            Object[] v = new Object[n + 1];
-            System.arraycopy(keys, 0, k, 0, n);
-            System.arraycopy(vals, 0, v, 0, n);
-            k[n] = key;
-            v[n] = val;
-            return new Memo(k, v);
-        }
-    }
-
-    private static final java.lang.invoke.VarHandle MEMO;
-    private static final java.lang.invoke.VarHandle PAINT;
-
-    static {
-        try {
-            var lookup = java.lang.invoke.MethodHandles.lookup();
-            MEMO = lookup.findVarHandle(ComputedStyle.class, "memo", Memo.class);
-            PAINT = lookup.findVarHandle(ComputedStyle.class, "paint", Object.class);
-        } catch (ReflectiveOperationException e) {
-            throw new ExceptionInInitializerError(e);
-        }
-    }
-
-    private Object cached(int id, int kind) {
-        Memo m = memo;
-        return m == null ? null : m.get(id * 4 + kind);
-    }
-
-    private void remember(int id, int kind, Object value) {
-        int key = id * 4 + kind;
-        for (; ; ) {
-            Memo m = memo;
-            Memo n = m == null ? new Memo(new int[]{key}, new Object[]{value}) : m.with(key, value);
-            if (MEMO.compareAndSet(this, m, n)) return;
-        }
-    }
-
     /**
      * 描画側が、この算出スタイルだけから決まる結果（アニメーション定義の解決など）を覚える置き場。
      * スタイルは作り直されるたびに別のインスタンスになるので、スタイルが変われば自然に捨てられる。
@@ -122,6 +51,19 @@ public final class ComputedStyle {
      * {@link ConcurrentHashMap}（多くの鍵が溜まる、多数の箱が共有するスタイルだけ）。
      */
     private volatile Object paint;
+
+    private static final java.lang.invoke.VarHandle PAINT;
+
+    static {
+        try {
+            PAINT = java.lang.invoke.MethodHandles.lookup().findVarHandle(ComputedStyle.class, "paint", Object.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    /** 添字ごとの、宣言が無いときのキーワード（初期値）。全スタイルで共有する。競って 2 回計算しても同じ値。 */
+    private static final Object[] INITIAL_KEYWORDS = new Object[CssPropertyId.count()];
 
     private static final int OBJ_MEMO_LIMIT = 8;
 
@@ -623,12 +565,17 @@ public final class ComputedStyle {
 
     /** 添字版の {@link #keywordOf(String, Class)}。 */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(int id, Class<E> type) {
-        Object cached = cached(id, KIND_KEYWORD);
-        if (cached != null && type.isInstance(cached)) return type.cast(cached);
         E parsed = CssKeywords.parse(type, values[id]);
-        if (parsed == null) parsed = PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
-        remember(id, KIND_KEYWORD, parsed);
-        return parsed;
+        return parsed != null ? parsed : initialKeyword(id, type);
+    }
+
+    /** 宣言が無い（または知らない値の）ときの初期値。添字ごとに 1 回だけ解いて全スタイルで共有する。 */
+    private static <E extends Enum<E> & CssKeywords.Keyword> E initialKeyword(int id, Class<E> type) {
+        Object hit = INITIAL_KEYWORDS[id];
+        if (hit != null && type.isInstance(hit)) return type.cast(hit);
+        E initial = PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
+        INITIAL_KEYWORDS[id] = initial;
+        return initial;
     }
 
     /** 添字（{@link CssPropertyId#NONE} なら名前）で宣言を引く。{@link StyleMap#get} と同じ結果。 */
@@ -644,12 +591,7 @@ public final class ComputedStyle {
     }
 
     private LengthResolver.CompiledLength compiledLength(int id, String value) {
-        if (id == CssPropertyId.NONE) return LengthResolver.compile(value); // 添字を持たない宣言（--* など）は覚えない
-        LengthResolver.CompiledLength cached = (LengthResolver.CompiledLength) cached(id, KIND_LENGTH);
-        if (cached != null) return cached;
-        LengthResolver.CompiledLength compiled = LengthResolver.compile(value);
-        remember(id, KIND_LENGTH, compiled);
-        return compiled;
+        return TypedValueCache.length(value);
     }
 
     /** 色を ARGB に解決する。宣言が無ければ {@code defaultColor}。 */
@@ -657,12 +599,7 @@ public final class ComputedStyle {
         int id = CssPropertyId.of(propertyName);
         String val = rawAt(id, propertyName);
         if (val == null) return defaultColor;
-        if (id == CssPropertyId.NONE) return ColorParser.parseColor(val);
-        Integer cached = (Integer) cached(id, KIND_COLOR);
-        if (cached != null) return cached;
-        int parsed = ColorParser.parseColor(val);
-        remember(id, KIND_COLOR, parsed);
-        return parsed;
+        return TypedValueCache.color(val);
     }
 
     /** 単位なしの数値（{@code opacity} / {@code flex-grow} / {@code z-index} など）。 */
@@ -670,16 +607,7 @@ public final class ComputedStyle {
         int id = CssPropertyId.of(propertyName);
         String val = rawAt(id, propertyName);
         if (val == null) return defaultValue;
-        Float cached = id == CssPropertyId.NONE ? null : (Float) cached(id, KIND_NUMBER);
-        if (cached != null) return cached;
-        float parsed;
-        try {
-            parsed = Float.parseFloat(val.trim());
-        } catch (NumberFormatException e) {
-            parsed = defaultValue;
-        }
-        if (id != CssPropertyId.NONE) remember(id, KIND_NUMBER, parsed);
-        return parsed;
+        return TypedValueCache.number(val, defaultValue);
     }
 
     /**
@@ -688,15 +616,12 @@ public final class ComputedStyle {
      */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
         int id = CssPropertyId.of(propertyName);
-        Object cached = id == CssPropertyId.NONE ? null : cached(id, KIND_KEYWORD);
-        if (cached != null && type.isInstance(cached)) return type.cast(cached);
         E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
-        if (parsed == null) parsed = PropertyRegistry.initialKeyword(propertyName, type);
-        if (id != CssPropertyId.NONE) remember(id, KIND_KEYWORD, parsed);
-        return parsed;
+        if (parsed != null) return parsed;
+        return id == CssPropertyId.NONE ? PropertyRegistry.initialKeyword(propertyName, type) : initialKeyword(id, type);
     }
 
-    /** 記憶表に載せずにキーワードを解く（事実の算出用。記憶表を何度も作り直さない）。{@link #keywordOf(String, Class)} と同じ値。 */
+    /** {@link #keywordOf(String, Class)} と同じ値（事実の算出用の別名。以前は記憶表を避けるために分けていた）。 */
     <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(String propertyName, Class<E> type) {
         int id = CssPropertyId.of(propertyName);
         E parsed = CssKeywords.parse(type, rawAt(id, propertyName));

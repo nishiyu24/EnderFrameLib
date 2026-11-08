@@ -114,4 +114,19 @@ public final class PackedCssValue {
             default -> f;
         };
     }
+
+    /**
+     * 詰めた長さ値を px にする。K_CALC は {@code calcs}（スタック付き）が要る。キーワード・未指定は NaN。
+     */
+    public static float resolve(long v, float percentBase, float fontSize, float rootFontSize, float vw, float vh,
+                                CalcProgram.Resolver calcs) {
+        switch (kind(v)) {
+            case K_LENGTH, K_NUMBER:
+                return resolveLength(v, percentBase, fontSize, rootFontSize, vw, vh);
+            case K_CALC:
+                return calcs == null ? Float.NaN : calcs.eval(payload(v), percentBase, fontSize, rootFontSize, vw, vh);
+            default:
+                return Float.NaN;
+        }
+    }
 }
