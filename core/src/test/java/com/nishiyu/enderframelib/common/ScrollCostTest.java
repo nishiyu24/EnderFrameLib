@@ -251,5 +251,64 @@ class ScrollCostTest {
         assertTrue(cpuMs[1] < cpuMs[0], "保持した層のほうが遅い: " + cpuMs[1] + " ms / 保持なし " + cpuMs[0] + " ms");
     }
 
+    /** 診断: 保持した層を使うスクロールで、どこに時間がかかるかをスタックの標本化で出す。 */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "EFL_PROFILE", matches = ".+")
+    void sampleWhereRetainedScrollTimeGoes() throws Exception {
+        try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
+        } catch (Throwable t) {
+            org.junit.jupiter.api.Assumptions.abort("OpenGL を使えない: " + t);
+        }
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < 200; i++) rows.append("<div class=\"row\" id=\"r").append(i).append("\">row ").append(i).append(" some text</div>");
+        String html = "<style>body{margin:0;font-size:13px;background:#123}.row{height:26px;margin:2px;padding:2px 6px;background:#eef;border:1px solid #99a}"
+                + "#outer{position:absolute;left:100px;top:150px;width:300px;height:230px;overflow-y:auto;border:2px solid #333;border-radius:8px}</style>"
+                + "<div id=\"outer\">" + rows + "</div>";
+        StandaloneView view = new StandaloneView(html, 520, 520, FontResolver.FALLBACK);
+        try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(520, 520)) {
+            long[] nowBox = {1000};
+            view.frame(nowBox[0], backend, true);
+            String sid = backend.sessionId();
+            view.mouseMove(200, 250, sid);
+            for (int i = 0; i < 600; i++) { view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); }
+            Thread worker = Thread.currentThread();
+            java.util.Map<String, Integer> self = new java.util.HashMap<>(), incl = new java.util.HashMap<>();
+            int[] samples = {0};
+            boolean[] stop = {false};
+            Thread sampler = new Thread(() -> {
+                while (!stop[0]) {
+                    StackTraceElement[] st = worker.getStackTrace();
+                    if (st.length > 0) {
+                        samples[0]++;
+                        String first = null;
+                        java.util.Set<String> seen = new java.util.HashSet<>();
+                        for (StackTraceElement e : st) {
+                            if (!e.getClassName().startsWith("com.nishiyu")) continue;
+                            String k = e.getClassName().substring(e.getClassName().lastIndexOf('.') + 1) + "." + e.getMethodName();
+                            if (first == null) first = k;
+                            if (seen.add(k)) incl.merge(k, 1, Integer::sum);
+                        }
+                        if (first != null) self.merge(first, 1, Integer::sum);
+                    }
+                    try { Thread.sleep(0, 200_000); } catch (InterruptedException ex) { return; }
+                }
+            });
+            sampler.setDaemon(true);
+            sampler.start();
+            for (int i = 0; i < 6000; i++) { view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); }
+            stop[0] = true;
+            sampler.join();
+            StringBuilder sb = new StringBuilder("SCROLL-PROFILE-RETAINED samples=" + samples[0] + "\n  self:");
+            self.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(12)
+                    .forEach(e -> sb.append(String.format("\n    %5.1f%% %s", 100.0 * e.getValue() / samples[0], e.getKey())));
+            sb.append("\n  inclusive:");
+            incl.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).limit(24)
+                    .forEach(e -> sb.append(String.format("\n    %5.1f%% %s", 100.0 * e.getValue() / samples[0], e.getKey())));
+            System.out.println(sb);
+        } finally {
+            view.close();
+        }
+    }
+
     private static long cpuStart, allocStart, wall;
 }

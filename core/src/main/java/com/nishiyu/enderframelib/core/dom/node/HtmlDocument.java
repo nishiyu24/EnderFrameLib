@@ -255,6 +255,11 @@ public class HtmlDocument extends HtmlNode implements Document {
     }
 
     /** レイアウトまたはスクロールが確定したときに呼ぶ。ResizeObserver / IntersectionObserver の通知を出す。 */
+    /** レイアウトの観測者（ResizeObserver / IntersectionObserver など）がいるか。 */
+    public boolean hasLayoutObservers() {
+        return !layoutObservers.isEmpty();
+    }
+
     public void notifyLayoutObservers() {
         if (deliveringLayoutObservers || layoutObservers.isEmpty()) return;
         deliveringLayoutObservers = true;

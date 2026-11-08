@@ -457,7 +457,10 @@ public class UiView implements AutoCloseable {
         if (document == null || !(document.root instanceof HtmlDocument liveDocument)) return;
         liveDocument.setDefaultOwnership(serverManaged ? Ownership.SERVER : Ownership.CLIENT);
         liveDocument.setInteractionState(interactionState);
-        if (boxLayoutQuery == null) boxLayoutQuery = new BoxLayoutQuery(scrollState, this::requestReposition);
+        if (boxLayoutQuery == null) {
+            boxLayoutQuery = new BoxLayoutQuery(scrollState, this::requestReposition);
+            boxLayoutQuery.freshener(this::ensureLayoutFresh);
+        }
         liveDocument.setLayoutQuery(boxLayoutQuery);
         // DOM の操作（クライアントのスクリプト・サーバーの変異・バインディング）は、文書が汚れの印を付けて知らせてくる。
         // どの経路から変えても同じ無効化になるよう、属性なら対話状態（checked / open など）もここで合わせる。
@@ -498,11 +501,26 @@ public class UiView implements AutoCloseable {
     }
 
     public LayoutBox layoutRoot() {
+        ensureLayoutFresh();
         return layoutRoot;
+    }
+
+    /**
+     * スクロールだけの更新で、箱の位置の決め直しを後回しにしているか。表示リストはスクロール量の差し替えだけで動くので、
+     * 箱の位置を読む側（描き直し・CSSOM・スクロールバーの操作）が現れるまで決め直さなくてよい。
+     */
+    private boolean layoutStale;
+
+    /** 後回しにした位置の決め直しがあれば済ませる。箱の位置を読む前に呼ぶ。 */
+    private void ensureLayoutFresh() {
+        if (!layoutStale) return;
+        layoutStale = false;
+        if (layoutRoot != null) RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
     }
 
     public void setLayoutRoot(LayoutBox layoutRoot) {
         this.layoutRoot = layoutRoot;
+        layoutStale = false; // 渡された木は、位置が決まったもの（同じ木の再設定でも、後回しにした分は呼び出し側が済ませてから渡す）
         nodeBoxIndex = null; // 箱の木を作り直したかもしれない。索引は次に要るときに作り直す
         publishLayoutToDom();
     }
@@ -905,6 +923,7 @@ public class UiView implements AutoCloseable {
     }
 
     private void repaintFromLayout(boolean scrollOnly) {
+        ensureLayoutFresh();
         if (layoutRoot == null || document == null) return;
         List<DisplayItem> elements = paintBoxes(layoutRoot, rootW, rootH, scrollOnly);
         if (elements == null) return;
@@ -967,9 +986,20 @@ public class UiView implements AutoCloseable {
         return true;
     }
 
+    /** スクロールだけの更新で箱の位置の決め直しを後回しにするか（切り分け用。見た目は変わらない）。 */
+    public static volatile boolean deferScrollLayout = true;
+
     /** 寸法はそのままに位置だけを決め直し、描画要素リストを作り直す（measure と箱の木の作り直しを省く）。 */
     private void repositionFromLayout(boolean scrollOnly) {
         if (layoutRoot == null || document == null) return;
+        // スクロール量だけの更新で、観測者がいなければ、箱の位置の決め直しは後回しにする（箱の位置を読む側が現れたときに済ませる）
+        boolean observed = document.root instanceof HtmlDocument live && live.hasLayoutObservers();
+        if (scrollOnly && deferScrollLayout && !observed && tryScrollTranslate()) {
+            layoutStale = true;
+            STAT_SCROLL_TRANSLATED.increment();
+            return;
+        }
+        ensureLayoutFresh();
         RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
         // スクロール量だけが変わったなら、表示リストは作り直さない（レイアウトは上で最新にしてある）
         if (scrollOnly && tryScrollTranslate()) {
@@ -1074,6 +1104,11 @@ public class UiView implements AutoCloseable {
         if (layoutRoot == null) {
             level = InvalidationLevel.RELAYOUT;
             interactionState.markAllDirty();
+        }
+        // 後回しにした位置の決め直しは、スクロールだけの更新以外の経路に入る前に済ませる
+        if (layoutStale && (resize || level != InvalidationLevel.REPOSITION || !scrollOnly || interactionState.hasDirtyNodes()
+                || !attrNodes.isEmpty())) {
+            ensureLayoutFresh();
         }
         if (resize) {
             recomputeLayout(pendingResizeW, pendingResizeH);
@@ -1591,6 +1626,7 @@ public class UiView implements AutoCloseable {
         boolean isHThumb = clickedEl.isPart(SB_H_THUMB);
         if (!isVTrack && !isHTrack && !isVThumb && !isHThumb) return false;
 
+        ensureLayoutFresh();
         if (layoutRoot == null) return false;
 
         HtmlNode scrollNode = findNode(clickedEl.baseId());
@@ -1638,6 +1674,7 @@ public class UiView implements AutoCloseable {
         boolean isHThumb = part.equals(SB_H_THUMB) || part.equals(SB_H_TRACK);
         if (!isVThumb && !isHThumb) return false;
 
+        ensureLayoutFresh();
         if (layoutRoot == null) return false;
 
         HtmlNode scrollNode = findNode(nodeId);

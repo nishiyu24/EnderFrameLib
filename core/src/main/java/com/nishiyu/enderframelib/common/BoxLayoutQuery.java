@@ -34,6 +34,13 @@ public final class BoxLayoutQuery implements LayoutQuery {
         this.onScrollChanged = onScrollChanged;
     }
 
+    /** 箱を読む前に呼ぶ。位置の決め直しを後回しにしているとき、ここで済ませる。 */
+    private Runnable freshener = () -> { };
+
+    public void freshener(Runnable freshener) {
+        this.freshener = freshener;
+    }
+
     public void update(LayoutBox root, StyleSheet sheet, int viewportW, int viewportH) {
         this.root = root;
         this.sheet = sheet;
@@ -43,6 +50,7 @@ public final class BoxLayoutQuery implements LayoutQuery {
     }
 
     private LayoutBox boxOf(HtmlNode node) {
+        freshener.run();
         if (root == null || node == null) return null;
         if (index == null) {
             Map<HtmlNode, LayoutBox> built = new IdentityHashMap<>();

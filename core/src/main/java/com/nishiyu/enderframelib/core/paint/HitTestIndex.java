@@ -319,9 +319,9 @@ public class HitTestIndex {
         }
         int[] al = always;
         int b = 0;
-        AnimatedValues scratch = new AnimatedValues();
-        double[] p = new double[2];
-        PrefixCache prefix = new PrefixCache(sessionId, px, py, scratch);
+        PrefixCache prefix = PREFIX.get().reset(sessionId, px, py); // スレッドごとに使い回す（問い合わせごとの表の拡張と割り当てを省く）
+        AnimatedValues scratch = prefix.scratch;
+        double[] p = prefix.pt;
         while (a < aEnd || b < al.length) {
             int idx;
             if (b >= al.length || (a < aEnd && items[a] < al[b])) idx = items[a++];
@@ -336,10 +336,13 @@ public class HitTestIndex {
      * 動く節（スクロールの中身など）の下の項目は全部が候補になるが、どれも同じ祖先の連鎖を共有するので、
      * 連鎖の計算（祖先ごとのアニメ状態の引き当てを含む）は祖先の数だけで済み、項目ごとには自分の 1 段だけを当てる。
      */
+    private static final ThreadLocal<PrefixCache> PREFIX = ThreadLocal.withInitial(PrefixCache::new);
+
     private static final class PrefixCache {
-        final String sessionId;
-        final double px, py;
-        final AnimatedValues scratch;
+        String sessionId;
+        double px, py;
+        final AnimatedValues scratch = new AnimatedValues();
+        final double[] pt = new double[2];
         /** 鍵 → 結果の 2 要素（開地址法。容量は 2 のべき）。 */
         long[] keys = new long[16];
         double[] xs = new double[16], ys = new double[16];
@@ -347,11 +350,15 @@ public class HitTestIndex {
         int size;
         final double[] tmp = new double[2];
 
-        PrefixCache(String sessionId, double px, double py, AnimatedValues scratch) {
+        PrefixCache reset(String sessionId, double px, double py) {
             this.sessionId = sessionId;
             this.px = px;
             this.py = py;
-            this.scratch = scratch;
+            if (size > 0) {
+                java.util.Arrays.fill(used, false);
+                size = 0;
+            }
+            return this;
         }
 
         /** {@code chain[0..upTo)} を当てた後の座標を {@code out} へ。 */
