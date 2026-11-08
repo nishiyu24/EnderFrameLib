@@ -1396,6 +1396,14 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `DirtyRectTest`（空から始まり外接矩形に広がる／幅 0 の範囲は空のまま／空を含む保存・復元の往復と復元後の追加が前の値に引きずられない／ランダム 200 通りが手書きの 4 本の `int` と一致／`SoftwareRenderBackend` に `dirtyX0` 等が戻っていない番人）。層の合成を通る GL の画素一致（`LwjglGlRenderBackendTest` ほか）と `SoftwareRenderBackendTest` を含む `:core:test`・ルート `:test` 全件緑。
 - **次の一歩**: 残りは描画先（`target` / `rootPixmap` / `layerPool`）と `Op` 群・`flushPending`（タイル実行）。これらは `driver`・`frame`・`sink` に依存するため、`CpuRaster` に移すときは依存を引数で渡す形にする。
 
+### 9.5.19 実施記録：Step 3 — 層用 `Pixmap` の貸し借りを `PixmapPool` に集約（2026-11-09）
+
+- **背景**: §9.5.18 の続き（描画先まわりの切り出し）。`SoftwareRenderBackend` は層・マスク・背景複写用の `Pixmap` を `ArrayDeque` で自前に回し、「`pollFirst()` が null なら `new Pixmap(rootW, rootH)`」を 2 箇所、`addFirst` を 6 箇所に手書きしていた。大きさの不変条件（全部 `rootW × rootH`）はどこにも書かれていなかった。
+- **実施（挙動不変・内部型のみ）**: 新設 `PixmapPool`（`take` / `give` / `idleCount` / `createdCount`）。返却時に大きさを検査する（違えば `IllegalArgumentException`）。返す画素は透明に戻してから返す約束を型のコメントに明記（従来どおり呼び出し側が戻す）。後入れ先出しで、直近に返した画素から再利用する従来の順序も保存。`SoftwareRenderBackend` の `layerPool` は `final` になった。
+- **検証**: 新規 `PixmapPoolTest`（空なら作る・後入れ先出しの再利用／別の大きさの返却を拒否／50 フレームの入れ子の層の開閉で作るのは 2 枚だけ／`SoftwareRenderBackend` に `layerPool.pollFirst/addFirst` が戻っていない番人）。入れ子の層・マスク・背景ぼかしの画素一致を含む `LwjglGlRenderBackendTest` / `SoftwareRenderBackendTest` / `LayerFxBlurTest` と、`:core:test`・ルート `:test` 全件緑。
+- **正直な評価**: 二重構造の解消というより、`CpuRaster` 切り出し前に「描画先」の持ち物を減らす整理。速度は測っていない。
+- **次の一歩**: 根の `Pixmap`（`rootPixmap` / `root()` / `target`）と `Op` 群・`flushPending`。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1406,7 +1414,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に集約。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に集約。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。§9.5.17 で走査 7 箇所のリスト生成も除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
