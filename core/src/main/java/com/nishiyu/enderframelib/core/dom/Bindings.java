@@ -626,6 +626,9 @@ public final class Bindings {
         }
 
         public void clear() {
+            if (patchTable != null) patchTable.clearValues();
+            patchTable = null;
+            patchRoot = null;
             originalNodeTexts.clear();
             originalNodeAttrs.clear();
             originalShowDisplay.clear();
@@ -652,47 +655,97 @@ public final class Bindings {
                 scopeKeys = changedKeys;
             }
 
-            boolean result = applyRecursive(root, values, lists, scopeKeys);
-            mirrorToPatchTable(root, values, scopeKeys);
-            return result;
+            patchRoot = root;
+            rootValues = values;
+            try {
+                return applyRecursive(root, values, lists, scopeKeys);
+            } finally {
+                rootValues = null;
+            }
         }
 
         private com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable patchTable;
         private HtmlNode patchRoot;
+        /** 実行中の {@link #sync} が根のスコープとして受け取った値の表（局所スコープの値とは別物）。 */
+        private Map<String, String> rootValues;
 
-        /** {@code style="width: {{k}}%"} 等の置換を、アリーナの列へ直接書いた表（最初の同期で木からコンパイルする）。 */
+        /**
+         * 数値のスタイルバインディング（{@code style="width: {{k}}%"} など）を、属性の文字列を書き換えずに直接書いた表。
+         * スタイル解決は {@link InlineStyleOverlay} を通してこの値を読む。最初に必要になるまで作らない。
+         */
         public com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable patchTable() {
             return patchTable;
+        }
+
+        private com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable tableFor(HtmlNode vNode) {
+            if (patchRoot == null) return null;
+            var arena = patchRoot.arena();
+            if (arena == null || !vNode.hasNodeId() || vNode.arena() != arena) return null;
+            if (patchTable == null || !patchTable.isFor(arena)) {
+                patchTable = new com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable(arena);
+            }
+            return patchTable;
+        }
+
+        /** 有限の数値（CSS にそのまま書ける形）だけを読む。それ以外は NaN（従来の属性経路が扱う）。 */
+        private static float finiteNumber(String raw) {
+            if (raw == null) return Float.NaN;
+            String t = raw.trim();
+            if (t.isEmpty()) return Float.NaN;
+            for (int i = 0; i < t.length(); i++) {
+                char c = t.charAt(i);
+                if (!(c >= '0' && c <= '9') && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E') return Float.NaN;
+            }
+            try {
+                float f = Float.parseFloat(t);
+                return Float.isFinite(f) ? f : Float.NaN;
+            } catch (NumberFormatException e) {
+                return Float.NaN;
+            }
+        }
+
+        /**
+         * style 属性のテンプレートを解く。数値の {@code prop: {{key}}unit} は属性に書かず {@link #patchTable} の列へ直接書き、
+         * それ以外の宣言（数値でない値・式・同じ属性の重複）は従来どおり文字列に解く。
+         *
+         * @param patchChanged 直接書き込みの値が変わったら [0] を true にする
+         */
+        private String resolveInlineStyle(HtmlNode vNode, String rawStyle, Map<String, String> scopeData,
+                                          boolean[] patchChanged) {
+            var table = scopeData == rootValues ? tableFor(vNode) : null;
+            if (table == null) return resolve(rawStyle, scopeData, null);
+            String[] decls = rawStyle.split(";", -1);
+            Map<String, Integer> propCount = new HashMap<>();
+            for (String decl : decls) {
+                int colon = decl.indexOf(':');
+                if (colon > 0) propCount.merge(decl.substring(0, colon).trim().toLowerCase(Locale.ROOT), 1, Integer::sum);
+            }
+            int id = vNode.nodeId();
+            StringBuilder kept = new StringBuilder();
+            boolean armed = false;
+            for (String decl : decls) {
+                var patch = com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable.parsePatch(decl);
+                if (patch != null && propCount.get(patch.prop()) == 1) {
+                    float v = finiteNumber(scopeData.get(patch.key()));
+                    if (table.set(id, patch.field(), v)) patchChanged[0] = true;
+                    if (!Float.isNaN(v)) {
+                        armed = true;
+                        continue; // 属性には書かない
+                    }
+                }
+                if (decl.isBlank()) continue;
+                if (kept.length() > 0) kept.append(';');
+                kept.append(decl);
+            }
+            if (armed && vNode.inlineOverlay != table) vNode.inlineOverlay = table;
+            if (patchChanged[0]) vNode.touchInlineOverlay();
+            return resolve(kept.toString(), scopeData, null);
         }
 
         /** 節の「置換前の」style 属性（同期で解決済みになる前のテンプレート文字列）。 */
         private String templateStyleOf(HtmlNode n) {
             Map<String, String> orig = originalNodeAttrs.get(n);
             return orig != null && orig.get("style") != null ? orig.get("style") : n.attrs.get("style");
-        }
-
-        private void mirrorToPatchTable(HtmlNode root, Map<String, String> values, Set<String> scopeKeys) {
-            if (patchTable == null || patchRoot != root) {
-                var arena = root.arena();
-                if (arena == null) return;
-                patchTable = new com.nishiyu.enderframelib.core.kernel.compiler.BindingPatchTable(arena);
-                patchRoot = root;
-                patchTable.compile(root, this::templateStyleOf);
-                scopeKeys = null; // 初回は全キーを書く
-            }
-            else if (patchTable.compileNewNodes(root, this::templateStyleOf) > 0) {
-                scopeKeys = null; // 後から作られた節（リスト行など）には、すべてのキーの現在値を書く
-            }
-            if (patchTable.patchCount() == 0) return;
-            for (String key : scopeKeys != null ? scopeKeys : patchTable.keys()) {
-                String raw = values.get(key);
-                if (raw == null || !patchTable.hasKey(key)) continue;
-                try {
-                    patchTable.setFloat(key, Float.parseFloat(raw.trim()));
-                } catch (NumberFormatException ignored) {
-                    // 数値でない値（単位つきなど）は従来の属性経路だけが扱う
-                }
-            }
         }
 
         private boolean applyRecursive(HtmlNode vNode, Map<String, String> scopeData,
@@ -742,7 +795,11 @@ public final class Bindings {
                 String k = entry.getKey();
                 String rawVal = entry.getValue();
                 if (rawVal != null && rawVal.contains("{{") && !rawVal.contains("{{@")) {
-                    String resolved = resolve(rawVal, scopeData, null);
+                    boolean[] patchChanged = {false};
+                    String resolved = "style".equalsIgnoreCase(k)
+                            ? resolveInlineStyle(vNode, rawVal, scopeData, patchChanged)
+                            : resolve(rawVal, scopeData, null);
+                    if (patchChanged[0]) changed = true; // 属性は変わらなくても、見た目は変わった
                     if (!Objects.equals(resolved, vNode.attrs.get(k))) {
                         DomUtils.updateAttribute(vNode, k, resolved, false);
                         changed = true;
