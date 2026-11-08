@@ -99,7 +99,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** いま描いている先（グループの層の中なら、その層）。根を指すときは {@link #rootPixmap}（未確保なら null）。 */
     private Pixmap target;
     private final java.util.ArrayList<Layer> layers = new java.util.ArrayList<>();
-    private final java.util.ArrayDeque<Pixmap> layerPool = new java.util.ArrayDeque<>();
+    private final PixmapPool layerPool;
     private GpuSink rootSink;
     private final float dpr;
     private final String sessionId;
@@ -145,6 +145,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.dpr = devicePixelRatio;
         this.rootW = Math.max(1, Math.round(cssW * devicePixelRatio));
         this.rootH = Math.max(1, Math.round(cssH * devicePixelRatio));
+        this.layerPool = new PixmapPool(rootW, rootH);
     }
 
     /** 根の描画先。初めて必要になったときに確保する。 */
@@ -256,8 +257,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
             pending.clear(); // 例外のときは捨てる（描画先は不定）
             while (!layers.isEmpty()) {
                 Layer l = layers.remove(layers.size() - 1);
-                if (l.pixmap != null) layerPool.addFirst(l.pixmap);
-                if (l.maskPixmap != null) layerPool.addFirst(l.maskPixmap);
+                if (l.pixmap != null) layerPool.give(l.pixmap);
+                if (l.maskPixmap != null) layerPool.give(l.maskPixmap);
             }
             this.target = rootPixmap;
             this.rootSink = null;
@@ -442,8 +443,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 return;
             }
         }
-        Pixmap pm = layerPool.pollFirst();
-        if (pm == null) pm = new Pixmap(rootW, rootH);
+        Pixmap pm = layerPool.take();
         layers.add(new Layer(g, pm, dirty.toArray()));
         dirty.reset();
         target = pm;
@@ -480,7 +480,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 owner.maskPixmap = l.pixmap;
                 owner.maskRegion = region;
             } else {
-                layerPool.addFirst(l.pixmap);
+                layerPool.give(l.pixmap);
             }
             return;
         }
@@ -510,11 +510,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
             LayerFx.clip(l.pixmap, region, spec.clip(), l.group.pose());
         }
         if (spec != null && spec.hasBackdrop()) {
-            Pixmap scratch = layerPool.pollFirst();
-            if (scratch == null) scratch = new Pixmap(rootW, rootH);
+            Pixmap scratch = layerPool.take();
             int[] area = LayerFx.backdrop(parent, scratch, spec.backdrop(), l.group.map(), l.group.pose(), spec.backdropShape(),
                     spec.clip(), l.group.opacity());
-            layerPool.addFirst(scratch);
+            layerPool.give(scratch);
             if (area != null) grow(viaGpu ? gpuArea : null, area);
         }
         if (any && l.maskPixmap != null) {
@@ -524,7 +523,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             int[] mr = l.maskRegion;
             int[] mp = l.maskPixmap.pixels();
             for (int y = mr[1]; y < mr[3]; y++) java.util.Arrays.fill(mp, y * w + mr[0], y * w + mr[2], 0);
-            layerPool.addFirst(l.maskPixmap);
+            layerPool.give(l.maskPixmap);
         }
         int[] src = l.pixmap.pixels(), dst = parent.pixels();
         BlendMode blend = spec != null ? spec.blend() : BlendMode.NORMAL;
@@ -546,7 +545,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             grow(viaGpu ? gpuArea : null, region);
         }
         if (viaGpu && gpuArea[2] > gpuArea[0] && gpuArea[3] > gpuArea[1]) rootSink.overwriteTarget(parent, gpuArea);
-        layerPool.addFirst(l.pixmap);
+        layerPool.give(l.pixmap);
     }
 
     /** {@code into} （null なら CPU の dirty 範囲）を {@code r} の分だけ広げる。 */
