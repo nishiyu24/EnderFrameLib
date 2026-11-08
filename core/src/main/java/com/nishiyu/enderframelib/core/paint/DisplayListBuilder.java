@@ -434,9 +434,22 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return a.fontSizePx() == b.fontSizePx() && a.rootFontSizePx() == b.rootFontSizePx() && com.nishiyu.enderframelib.core.css.ComputedStyle.sameDeclarations(a, b);
     }
 
-    private static float[] numsOf(LayoutBox b) {
+    static float[] numsOf(LayoutBox b) {
         return new float[]{b.x, b.y, b.w, b.h, b.pL, b.pT, b.pR, b.pB, b.bL, b.bT, b.bR, b.bB, b.lineHeightPx};
     }
+
+    /** {@link #numsOf} の i 番目を、配列を作らずに返す（{@link #match} が箱ごとに配列を確保しないため）。 */
+    static float numAt(LayoutBox b, int i) {
+        return switch (i) {
+            case 0 -> b.x; case 1 -> b.y; case 2 -> b.w; case 3 -> b.h;
+            case 4 -> b.pL; case 5 -> b.pT; case 6 -> b.pR; case 7 -> b.pB;
+            case 8 -> b.bL; case 9 -> b.bT; case 10 -> b.bR; case 11 -> b.bB;
+            case 12 -> b.lineHeightPx;
+            default -> throw new IndexOutOfBoundsException(i);
+        };
+    }
+
+    static final int NUMS_LENGTH = 13;
 
     private static boolean sameNums(float[] a, float[] b) {
         if (a.length != b.length) return false;
@@ -482,8 +495,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
         if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return 0;
-        float[] nn = numsOf(box);
-        float dx = nn[0] - m.nums[0], dy = nn[1] - m.nums[1];
+        float dx = box.x - m.nums[0], dy = box.y - m.nums[1];
         // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
         // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
         // 箱の位置で置かれる NODE の項目は動かさず、断片の位置で置かれる TEXT の項目だけを動かす（hitFragmentsOnly）
@@ -499,7 +511,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         boolean moveOk = m.translatable && (translating
                 || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && dx == Math.rint(dx) && dy == Math.rint(dy)));
         if (moved && !moveOk) return 0;
-        for (int i = 2; i < nn.length; i++) if (Float.compare(m.nums[i], nn[i]) != 0) return 0;
+        if (m.nums.length != NUMS_LENGTH) return 0;
+        for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return 0;
         boolean clipSame = sameClip(m.clip, clip);
         if (!clipSame && !moveOk) return 0;
         if (!java.util.Objects.equals(m.parentId, parentId)) return 0;
