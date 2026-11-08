@@ -14,14 +14,12 @@ class DocumentArenaTest {
             owners[i] = new Object();
             int id = a.allocate(owners[i]);
             assertEquals(i, id);
-            a.setDirtyBits(id, i * 3);
             a.setIdentity(id, 1, 7, i, 0xF0F0L + i);
         }
         assertTrue(a.capacity() >= 1000);
         assertTrue(a.isAligned());
         for (int i = 0; i < owners.length; i++) {
             assertSame(owners[i], a.owner(i));
-            assertEquals(i * 3, a.dirtyBits(i));
             assertEquals(i, a.idAtom(i));
             assertEquals(0xF0F0L + i, a.selfBloom(i));
             assertEquals(DocumentArena.packTagAndType(1, 7), a.tagAndType(i));
@@ -168,8 +166,36 @@ class DocumentArenaTest {
     private static void cycle(DocumentArena a, Object owner) {
         for (int i = 0; i < 4000; i++) {
             int id = a.allocate(owner);
-            a.setDirty(id, DocumentArena.DIRTY_STYLE, true);
+            a.setIdentity(id, 1, 7, i, 1L);
         }
         for (int i = 0; i < 4000; i++) a.free(i);
+    }
+
+    @Test
+    void dirtyColumnStaysRemoved() {
+        // 書かれるだけで誰も読まない写しだった汚れ列（§9.5.15）。復活させない
+        for (var m : DocumentArena.class.getDeclaredMethods()) {
+            assertFalse(m.getName().toLowerCase().contains("dirty"), "汚れ列の API が戻っている: " + m);
+        }
+        for (var f : DocumentArena.class.getDeclaredFields()) {
+            assertFalse(f.getName().toLowerCase().contains("dirty"), "汚れ列が戻っている: " + f);
+        }
+    }
+
+    @Test
+    void freedIdsComeBackCleanAfterReuse() {
+        DocumentArena a = new DocumentArena(16);
+        Object o = new Object();
+        int x = a.allocate(o);
+        a.setIdentity(x, 1, 7, 9, 0xFFL);
+        a.sealStatic();
+        int d = a.allocate(o);
+        a.setIdentity(d, 1, 7, 9, 0xFFL);
+        a.free(d);
+        int again = a.allocate(o);
+        assertEquals(d, again, "動的領域の番号は再利用される");
+        assertEquals(0, a.idAtom(again));
+        assertEquals(0L, a.selfBloom(again));
+        assertEquals(DocumentArena.NONE, a.parent(again));
     }
 }

@@ -1175,7 +1175,7 @@ flowchart TB
 | :--- | :--- | :---: | :--- |
 | `kernel.memory` | [`OffHeapColumns`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/OffHeapColumns.java) | ✅ **稼働中** | `DocumentArena`, `PropertyTrees`, `GlTreeStore` 等すべての基盤として稼働 |
 | `kernel.memory` | [`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java) | ✅ **稼働中** | `HtmlNode`（タグ/ID/クラスの intern）、`SelectorMatcher`（セレクタ側 `SelectorToken.classAtoms()` と節の `classAtoms` を整数比較）、`HtmlNode.hasClass`（番号を持つ節は atom 経路）で使用 |
-| `kernel.memory` | [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) | 🔶 **Type A（トポロジーのみ残存）** | `SelectorMatcher` が `prevSibling` と Bloom 列を読む。`stateBits` 列は撤去済み（対話状態は `StateFlags.state` に一本化）。`dirtyBits` 列は `BindingPatchTable` が layout/paint の要求を立てる用途だけが残る。ツリー走査は依然 `HtmlNode.children` が主 |
+| `kernel.memory` | [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) | 🔶 **Type A（トポロジーのみ残存）** | `SelectorMatcher` が `prevSibling` と Bloom 列を読む。`stateBits` 列は撤去済み（対話状態は `StateFlags.state` に一本化）。`dirtyBits` 列は 2026-11-09 に撤去（§9.5.15）。ツリー走査は依然 `HtmlNode.children` が主 |
 | `kernel.compiler` | [`StyleStateAutomaton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StyleStateAutomaton.java)<br/>[`StateStyleMemo`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StateStyleMemo.java) | ✅ **稼働中** | `StyleResolver` および `RenderPipeline`（`:hover` 等の状態遷移 $O(1)$ スワップ）で本流稼働 |
 | `kernel.compiler` | [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) | ✅ **稼働中** | `ReactiveDomBinder` が数値の style バインディングをここへ直接書き（`set`）、`StyleResolver` が `InlineStyleOverlay`（`HtmlNode.inlineOverlay`）経由で読む。`style` 属性は書き換えない |
 | `kernel.style` | [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java)<br/>[`StyleStructs`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java) | ❌ **Type C（本流未接続）** | `BindingPatchTable` と単体テストのみが参照。**`ComputedStyle` / `StyleFacts` / `BoxMeasurer` からは未参照** |
@@ -1365,6 +1365,15 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `CpuRasterPartsTest`（空クリップ=被覆率1・交わらない2片は空／2万点で `Clip`・`ClipPart` の被覆率が `sdRoundRect` からの直接計算と一致／2片の積と0での打ち切り／`Fast.roundSpan` が返す区間の内側が必ず被覆率1／非円の角は内側矩形に退避・領域数の上限／`Scratch` の大きさ・`maxOf`／移した型が元のクラスに戻っていないことの番人）。GL の画素一致（`LwjglGlRenderBackendTest` ほか）を含む `:core:test`・ルート `:test` 全件緑。
 - **次の一歩**: 描画先と汚れ範囲（`target` / `dirty*` / `paintRange`）、`Op` 群と `flushPending`（タイル実行）を `CpuRaster` に移し、図形側は `raster.paint(..)` を呼ぶだけにする。その後に図形を ① 単色角丸 ② 影 ③ 枠線 ④ 字形 ⑤ 画像の順に「GPU 試行」と「CPU 命令の生成」に分ける。
 
+### 9.5.15 実施記録：`DocumentArena.dirtyBits` 列の撤去（2026-11-09）
+
+**破壊的変更**（`DocumentArena` の `dirtyBits()` / `setDirtyBits()` / `setDirty()` と `DIRTY_*` 6 定数の削除）。
+
+- **調査結果**: アリーナの `dirtyBits` 列を書くのは `BindingPatchTable.set/setFloat` だけで、**本流（`core/css`・`layout`・`paint`・`dom`）に読む箇所はゼロ**だった（読むのはテストのみ）。再スタイルの要求は §9.5.4 以降 `changedNodes` → `UiStateStore.markDirty` が担っており、この列は「書かれるだけで誰も読まない写し」= Type A の最後の残骸。`DIRTY_STYLE/SUBTREE/BELOW/UNSCOPED` は `StateFlags.dirty` と名前が重複していて紛らわしかった。
+- **削除**: 列本体・`clearNode`/`free` の初期化・`grow` の複製対象・`isAligned` の判定、`BindingPatchTable` の `setDirty` 呼び出しと `isLayoutField`。`set()` / `setFloat()` の戻り値（値が変わったか／変わった欄の数）は不変。
+- **検証**: 新規 `DocumentArenaTest.dirtyColumnStaysRemoved`（クラスに `dirty` を含む API・フィールドが無い = 復活防止）、`freedIdsComeBackCleanAfterReuse`（動的領域で再利用された番号に前の持ち主の識別・Bloom・親子が残らない）。`BindingPatchTableTest` は汚れ列の検査を外し「同値は数えない／変わった欄だけ数える」に付け替え（`opacityIsPaintOnly` は汚れ列専用だったため削除）、`NodeArenaIdentityTest` / `DocumentArenaTest` の汚れ列参照も除去。`:core:test`・ルート `:test` 全件緑。
+- **これで `DocumentArena` に残るもの**: トポロジー（`parent/firstChild/lastChild/prevSibling/nextSibling/subtreeEnd`）・識別（`tagAndType/idAtom`）・Bloom・世代・`NodeSlots`。このうち本流が読むのは `prevSibling`・Bloom・`lastChild`（`linkChildren` の末尾追加判定）で、`subtreeEnd`（`computeSubtreeEnds` が番号振りのたびに O(N) で再計算）は**テストしか読まない**。次の候補（読み手が付くまで計算を止めるか、`HitTestIndex` / 走査の読み手を付ける）。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1376,6 +1385,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
 | Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。次は `subtreeEnd`（テストしか読まない）の扱い |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 
