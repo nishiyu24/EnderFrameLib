@@ -57,6 +57,12 @@ public final class ShaderGradientEmulator {
             bl1 = (c1 & 0xFF) * alpha1; bl2 = (c2 & 0xFF) * alpha2;
         }
 
+        /** 線形で、色が x に依らない（行の中で一定）。 */
+        public boolean constantAlongRows() { return kind == ShaderGradient.LINEAR && a0 == 0f; }
+
+        /** 線形で、色が y に依らない（列の中で一定）。 */
+        public boolean constantAlongColumns() { return kind == ShaderGradient.LINEAR && a1 == 0f; }
+
         /** 局所座標 {@code (x, y)} の色（捨てる点は 0）。 */
         public int colorOrZero(float x, float y) {
             float u;

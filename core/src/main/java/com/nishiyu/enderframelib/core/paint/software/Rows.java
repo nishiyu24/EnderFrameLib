@@ -32,5 +32,5 @@ final class Rows {
     }
 
     /** 検証用に止められる（{@code -Denderframe.raster.serial}）。 */
-    private static final boolean PARALLEL = System.getProperty("enderframe.raster.serial") == null;
+    static final boolean PARALLEL = System.getProperty("enderframe.raster.serial") == null;
 }
