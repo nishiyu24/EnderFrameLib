@@ -30,8 +30,9 @@ import java.util.function.BiConsumer;
  * <p>ノードオブジェクト自身（{@link HtmlNode}）が唯一のキー。文字列 ID は、ネットワークと描画の境界で
  * ノードへ解決してから渡す（解決は {@link HtmlNode#getNodeById} の索引が担う）。
  * 状態の実体は節が直接持ち（持ち主の節と一緒に回収される。弱参照の表は使わない）、
- * 列挙用の表は {@link DocumentArena} のノード番号で引く。擬似状態と汚れの印は、アリーナの
- * {@code stateBits} / {@code dirtyBits} 列にも書き込む。</p>
+ * 列挙用の表は {@link DocumentArena} のノード番号で引く。擬似状態は {@link StateFlags#state} の 1 本の整数
+ * （{@link ElementState} のビット）が唯一の記憶で、アリーナの列へ写し書きはしない
+ * （写しは誰にも読まれず、書くだけの二重コストだった）。</p>
  */
 public class InteractionState implements StateLookup {
 
@@ -80,7 +81,7 @@ public class InteractionState implements StateLookup {
         }
     }
 
-    /** 節の状態がアリーナの現在の番号の表に載っているようにし、擬似状態・汚れの列へ写す。 */
+    /** 節の状態がアリーナの現在の番号の列挙用の表に載っているようにする。 */
     private void register(HtmlNode node, StateFlags flags) {
         if (node.isVirtualNode() && !node.hasNodeId()) {
             // 疑似要素・匿名ボックスなどの仮想の節は文書のアリーナに数えない。列挙は弱参照の一覧で行う
@@ -92,12 +93,11 @@ public class InteractionState implements StateLookup {
         }
         DocumentArena a = node.arena();
         int id = node.nodeId();
-        if (flags.mirrorArena == a && flags.mirrorId == id && flags.mirrorGen == a.generation(id)) return;
-        flags.mirrorArena = a;
-        flags.mirrorId = id;
-        flags.mirrorGen = a.generation(id);
+        if (flags.slotArena == a && flags.slotId == id && flags.slotGen == a.generation(id)) return;
+        flags.slotArena = a;
+        flags.slotId = id;
+        flags.slotGen = a.generation(id);
         tabFor(a).slots.put(id, flags);
-        flags.writeMirror();
     }
 
     /**
@@ -149,17 +149,15 @@ public class InteractionState implements StateLookup {
     }
 
     public static class StateFlags {
-        public boolean isHovered;
-        public boolean isFocused;
+        /**
+         * 明示された対話状態。{@link ElementState} のビット（HOVER / ACTIVE / FOCUS / FOCUS_VISIBLE / FOCUS_WITHIN /
+         * CHECKED / DISABLED / INDETERMINATE / OPEN）が唯一の記憶。
+         */
+        public int state;
+        /** {@link #state} のうち CHECKED / DISABLED / INDETERMINATE / OPEN は 3 値（未指定・真・偽）。指定済みのビット。 */
+        public int overridden;
         /** 状態 → 算出スタイルの表（自身だけの再スタイルで使い回す）。 */
         public com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo stateMemo;
-        public boolean isFocusVisible;
-        public boolean isFocusWithin;
-        public boolean isActive;
-        public Boolean isChecked;
-        public Boolean isDisabled;
-        public Boolean isIndeterminate;
-        public Boolean isOpen;
 
         /** カスケード解決後の生宣言キャッシュ。 */
         public Map<String, String> computedStyleCache;
@@ -183,30 +181,45 @@ public class InteractionState implements StateLookup {
         public boolean hasInteractiveRules;
         /** スタイル再計算が必要かどうかのフラグ。 */
         public boolean isStyleDirty = true;
-        /** アリーナ側の列への写し先（番号の世代が変われば無効）。 */
-        DocumentArena mirrorArena;
-        int mirrorId = -1;
-        int mirrorGen;
+        /** 列挙用の表に載せたときの番号（番号の世代が変われば載せ直す）。 */
+        DocumentArena slotArena;
+        int slotId = -1;
+        int slotGen;
         int epoch;
         boolean loose;
 
-        /** 擬似状態と汚れの印をアリーナの列へ書く（番号が有効なときだけ）。 */
-        void writeMirror() {
-            DocumentArena a = mirrorArena;
-            if (a == null || mirrorGen != a.generation(mirrorId)) return;
-            int bits = 0;
-            if (isHovered) bits |= DocumentArena.STATE_HOVER;
-            if (isActive) bits |= DocumentArena.STATE_ACTIVE;
-            if (isFocused) bits |= DocumentArena.STATE_FOCUS;
-            if (isFocusVisible) bits |= DocumentArena.STATE_FOCUS_VISIBLE;
-            if (isFocusWithin) bits |= DocumentArena.STATE_FOCUS_WITHIN;
-            if (isChecked != null && isChecked) bits |= DocumentArena.STATE_CHECKED;
-            if (isDisabled != null && isDisabled) bits |= DocumentArena.STATE_DISABLED;
-            if (isIndeterminate != null && isIndeterminate) bits |= DocumentArena.STATE_INDETERMINATE;
-            if (isOpen != null && isOpen) bits |= DocumentArena.STATE_OPEN;
-            a.setStateBits(mirrorId, bits);
-            a.setDirty(mirrorId, DocumentArena.DIRTY_STYLE, isStyleDirty);
+        public boolean isHovered() { return (state & ElementState.HOVER) != 0; }
+        public boolean isActive() { return (state & ElementState.ACTIVE) != 0; }
+        public boolean isFocused() { return (state & ElementState.FOCUS) != 0; }
+        public boolean isFocusVisible() { return (state & ElementState.FOCUS_VISIBLE) != 0; }
+        public boolean isFocusWithin() { return (state & ElementState.FOCUS_WITHIN) != 0; }
+
+        /** 2 値のビットを書く。変わったら true。 */
+        boolean setBit(int bit, boolean on) {
+            int next = on ? (state | bit) : (state & ~bit);
+            if (next == state) return false;
+            state = next;
+            return true;
         }
+
+        /** 3 値のビット（未指定は null）。 */
+        public Boolean tri(int bit) {
+            return (overridden & bit) == 0 ? null : (state & bit) != 0;
+        }
+
+        /** 3 値のビットを書く。変わったら true。 */
+        boolean setTri(int bit, Boolean value) {
+            if (java.util.Objects.equals(tri(bit), value)) return false;
+            if (value == null) {
+                overridden &= ~bit;
+                state &= ~bit;
+            } else {
+                overridden |= bit;
+                state = value ? (state | bit) : (state & ~bit);
+            }
+            return true;
+        }
+
         /** 持ち主。汚れた節の個数（{@link InteractionState#dirtyCount}）を O(1) で保つ。持ち主の無い使い捨てなら null。 */
         private InteractionState owner;
 
@@ -215,7 +228,6 @@ public class InteractionState implements StateLookup {
             if (!isStyleDirty) {
                 isStyleDirty = true;
                 if (owner != null) owner.dirtyCount++;
-                writeMirror();
             }
         }
 
@@ -224,7 +236,6 @@ public class InteractionState implements StateLookup {
             if (isStyleDirty) {
                 isStyleDirty = false;
                 if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
-                writeMirror();
             }
         }
         /**
@@ -306,32 +317,20 @@ public class InteractionState implements StateLookup {
     }
 
     /** {@link #stateOf} のビット集合そのもの（値オブジェクトを作らない）。 */
+    private static final int TRI_MASK = ElementState.CHECKED | ElementState.DISABLED
+            | ElementState.INDETERMINATE | ElementState.OPEN;
+
     public int stateBitsOf(HtmlNode node) {
         if (node == null) return 0;
         int bits = ElementState.fromNodeAttributes(node).flags();
         StateFlags flags = get(node);
         if (flags != null) {
-            if (flags.isHovered) bits |= ElementState.HOVER;
-            if (flags.isActive) bits |= ElementState.ACTIVE;
-            if (flags.isFocused) bits |= ElementState.FOCUS;
-            if (flags.isFocusVisible) bits |= ElementState.FOCUS_VISIBLE;
-            if (flags.isFocusWithin || flags.isFocused) bits |= ElementState.FOCUS_WITHIN;
-            if (flags.isChecked != null) {
-                if (flags.isChecked) bits |= ElementState.CHECKED;
-                else bits &= ~ElementState.CHECKED;
-            }
-            if (flags.isDisabled != null) {
-                if (flags.isDisabled) bits |= ElementState.DISABLED;
-                else bits &= ~ElementState.DISABLED;
-            }
-            if (flags.isIndeterminate != null) {
-                if (flags.isIndeterminate) bits |= ElementState.INDETERMINATE;
-                else bits &= ~ElementState.INDETERMINATE;
-            }
-            if (flags.isOpen != null) {
-                if (flags.isOpen) bits |= ElementState.OPEN;
-                else bits &= ~ElementState.OPEN;
-            }
+            int explicit = flags.state;
+            int over = flags.overridden;
+            // 2 値のビットは足し、3 値のビットは指定があれば属性から決まる値を上書きする
+            bits |= explicit & ~TRI_MASK;
+            if ((explicit & ElementState.FOCUS) != 0) bits |= ElementState.FOCUS_WITHIN;
+            bits = (bits & ~over) | (explicit & over);
         }
         return bits;
     }
@@ -339,8 +338,7 @@ public class InteractionState implements StateLookup {
     public boolean setHovered(HtmlNode node, boolean hovered) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (flags.isHovered == hovered) return false;
-        flags.isHovered = hovered;
+        if (!flags.setBit(ElementState.HOVER, hovered)) return false;
         invalidateState(node, ElementState.HOVER);
         return true;
     }
@@ -365,8 +363,7 @@ public class InteractionState implements StateLookup {
     public boolean setActive(HtmlNode node, boolean active) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (flags.isActive == active) return false;
-        flags.isActive = active;
+        if (!flags.setBit(ElementState.ACTIVE, active)) return false;
         invalidateState(node, ElementState.ACTIVE);
         return true;
     }
@@ -392,10 +389,11 @@ public class InteractionState implements StateLookup {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
         boolean nextVisible = focused && focusVisible;
-        if (flags.isFocused == focused && flags.isFocusVisible == nextVisible) return false;
-        flags.isFocused = focused;
-        flags.isFocusVisible = nextVisible;
-        flags.isFocusWithin = focused;
+        boolean changed = flags.setBit(ElementState.FOCUS, focused);
+        changed |= flags.setBit(ElementState.FOCUS_VISIBLE, nextVisible);
+        // 旧実装は focused/visible が変わらなければ FOCUS_WITHIN も触らずに戻った。その挙動を保つ
+        if (!changed) return false;
+        flags.setBit(ElementState.FOCUS_WITHIN, focused);
         invalidateState(node, ElementState.FOCUS | ElementState.FOCUS_VISIBLE | ElementState.FOCUS_WITHIN);
         return true;
     }
@@ -410,9 +408,7 @@ public class InteractionState implements StateLookup {
         if (focusedNode != target) {
             if (focusedNode != null) {
                 StateFlags oldFlags = getOrCreate(focusedNode);
-                if (oldFlags.isFocused || oldFlags.isFocusVisible) {
-                    oldFlags.isFocused = false;
-                    oldFlags.isFocusVisible = false;
+                if (oldFlags.setBit(ElementState.FOCUS | ElementState.FOCUS_VISIBLE, false)) {
                     invalidateState(focusedNode, ElementState.FOCUS | ElementState.FOCUS_VISIBLE);
                     changed = true;
                 }
@@ -428,16 +424,14 @@ public class InteractionState implements StateLookup {
         for (HtmlNode left : focusWithinChain) {
             if (nextChain.contains(left)) continue;
             StateFlags flags = getOrCreate(left);
-            if (flags.isFocusWithin) {
-                flags.isFocusWithin = false;
+            if (flags.setBit(ElementState.FOCUS_WITHIN, false)) {
                 invalidateState(left, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
         }
         for (HtmlNode entered : nextChain) {
             StateFlags flags = getOrCreate(entered);
-            if (!flags.isFocusWithin) {
-                flags.isFocusWithin = true;
+            if (flags.setBit(ElementState.FOCUS_WITHIN, true)) {
                 invalidateState(entered, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
@@ -449,8 +443,7 @@ public class InteractionState implements StateLookup {
     public boolean setChecked(HtmlNode node, Boolean checked) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (Objects.equals(flags.isChecked, checked)) return false;
-        flags.isChecked = checked;
+        if (!flags.setTri(ElementState.CHECKED, checked)) return false;
         invalidateState(node, ElementState.CHECKED);
         return true;
     }
@@ -458,8 +451,7 @@ public class InteractionState implements StateLookup {
     public boolean setDisabled(HtmlNode node, Boolean disabled) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (Objects.equals(flags.isDisabled, disabled)) return false;
-        flags.isDisabled = disabled;
+        if (!flags.setTri(ElementState.DISABLED, disabled)) return false;
         invalidateState(node, ElementState.DISABLED);
         return true;
     }
@@ -467,8 +459,7 @@ public class InteractionState implements StateLookup {
     public boolean setIndeterminate(HtmlNode node, Boolean indeterminate) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (Objects.equals(flags.isIndeterminate, indeterminate)) return false;
-        flags.isIndeterminate = indeterminate;
+        if (!flags.setTri(ElementState.INDETERMINATE, indeterminate)) return false;
         invalidateState(node, ElementState.INDETERMINATE);
         return true;
     }
@@ -476,8 +467,7 @@ public class InteractionState implements StateLookup {
     public boolean setOpen(HtmlNode node, Boolean open) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
-        if (Objects.equals(flags.isOpen, open)) return false;
-        flags.isOpen = open;
+        if (!flags.setTri(ElementState.OPEN, open)) return false;
         invalidateState(node, ElementState.OPEN);
         return true;
     }
@@ -509,8 +499,6 @@ public class InteractionState implements StateLookup {
 
     /** 対話状態（{@code :hover} など）のビットが変わった要素の影響範囲を汚す。 */
     public void invalidateState(HtmlNode node, int stateBits) {
-        StateFlags written = get(node);
-        if (written != null) written.writeMirror(); // 擬似状態のビットをアリーナ列へ写す
         InvalidationSets sets = invalidationSets();
         if (sets == null) {
             markDirty(node);

@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import com.nishiyu.enderframelib.core.css.model.ElementState;
 import org.junit.jupiter.api.Test;
 
 /** Milestone 1: 節の同一性（鍵）・トポロジー・擬似状態はアリーナの列に載り、文字列 id を属性へ振らない。 */
@@ -205,7 +206,7 @@ class NodeArenaIdentityTest {
 
         InteractionState state = new InteractionState();
         state.setHovered(pseudo, true);
-        assertTrue(state.get(pseudo).isHovered);
+        assertTrue(state.get(pseudo).isHovered());
         assertEquals(live, a.liveCount(), "仮想の節の状態でアリーナの番号を消費しない");
         state.markAllDirty(); // 仮想の節も列挙に含まれる
         assertTrue(state.get(pseudo).isStyleDirty);
@@ -241,30 +242,71 @@ class NodeArenaIdentityTest {
     }
 
     @Test
-    void interactionStateWritesPseudoStateAndDirtyBitsIntoTheArena() {
+    void interactionStateKeepsPseudoStateInOneStoreOnly() {
         HtmlDocument d = doc(PAGE);
-        DocumentArena arena = d.arena();
         HtmlNode b = d.getElementById("bold");
         InteractionState state = new InteractionState();
 
         assertTrue(state.setHovered(b, true));
-        assertTrue((arena.stateBits(b.nodeId()) & DocumentArena.STATE_HOVER) != 0);
+        assertFalse(state.setHovered(b, true), "同じ値の再設定は変化なし");
+        assertTrue((state.stateBitsOf(b) & ElementState.HOVER) != 0);
         assertTrue(state.setActive(b, true));
-        assertTrue((arena.stateBits(b.nodeId()) & DocumentArena.STATE_ACTIVE) != 0);
+        assertTrue((state.stateBitsOf(b) & ElementState.ACTIVE) != 0);
         state.setHovered(b, false);
-        assertEquals(0, arena.stateBits(b.nodeId()) & DocumentArena.STATE_HOVER);
+        assertEquals(0, state.stateBitsOf(b) & ElementState.HOVER);
+        assertTrue((state.stateBitsOf(b) & ElementState.ACTIVE) != 0, "別のビットは残る");
 
         state.setChecked(b, true);
         state.setDisabled(b, true);
-        assertTrue((arena.stateBits(b.nodeId()) & (DocumentArena.STATE_CHECKED | DocumentArena.STATE_DISABLED))
-                == (DocumentArena.STATE_CHECKED | DocumentArena.STATE_DISABLED));
+        int both = ElementState.CHECKED | ElementState.DISABLED;
+        assertEquals(both, state.stateBitsOf(b) & both);
 
-        // 汚れの印: 作りたては汚れ、片付けると下りる
-        assertTrue((arena.dirtyBits(b.nodeId()) & DocumentArena.DIRTY_STYLE) != 0);
+        // アリーナには対話状態を写さない（二重書き込みの撤去）。汚れの印は StateFlags だけが持つ
+        assertEquals(0, d.arena().dirtyBits(b.nodeId()), "InteractionState はアリーナの汚れ列に書かない");
+        assertTrue(state.get(b).isStyleDirty, "作りたては汚れ");
         state.clearStyleDirty(b);
-        assertEquals(0, arena.dirtyBits(b.nodeId()) & DocumentArena.DIRTY_STYLE);
+        assertFalse(state.get(b).isStyleDirty);
         state.markDirty(b);
-        assertTrue((arena.dirtyBits(b.nodeId()) & DocumentArena.DIRTY_STYLE) != 0);
+        assertTrue(state.get(b).isStyleDirty);
+        assertEquals(0, d.arena().dirtyBits(b.nodeId()));
+    }
+
+    @Test
+    void triStateOverridesAttributeDerivedBitsAndNullRestoresThem() {
+        HtmlDocument d = doc("<input id='i' checked disabled>");
+        HtmlNode i = d.getElementById("i");
+        InteractionState state = new InteractionState();
+        int both = ElementState.CHECKED | ElementState.DISABLED;
+        assertEquals(both, state.stateBitsOf(i), "属性から決まる値");
+        state.setChecked(i, false);
+        assertEquals(ElementState.DISABLED, state.stateBitsOf(i) & both, "偽の指定は属性由来の checked を打ち消す");
+        state.setDisabled(i, true);
+        state.setChecked(i, null);
+        assertEquals(both, state.stateBitsOf(i) & both, "null で属性由来に戻る");
+        assertFalse(state.setChecked(i, null), "未指定→未指定は変化なし");
+        state.setOpen(i, true);
+        state.setIndeterminate(i, true);
+        assertEquals(ElementState.OPEN | ElementState.INDETERMINATE,
+                state.stateBitsOf(i) & (ElementState.OPEN | ElementState.INDETERMINATE));
+        assertFalse(state.setOpen(i, true));
+        assertTrue(state.setOpen(i, false));
+    }
+
+    @Test
+    void focusBitsKeepFocusWithinSemantics() {
+        HtmlDocument d = doc(PAGE);
+        HtmlNode b = d.getElementById("bold");
+        InteractionState state = new InteractionState();
+        assertTrue(state.setFocusedNode(b, true));
+        int bits = state.stateBitsOf(b);
+        assertTrue((bits & ElementState.FOCUS) != 0);
+        assertTrue((bits & ElementState.FOCUS_VISIBLE) != 0);
+        assertTrue((bits & ElementState.FOCUS_WITHIN) != 0);
+        assertTrue((state.stateBitsOf(b.parent) & ElementState.FOCUS_WITHIN) != 0, "祖先は focus-within");
+        assertEquals(0, state.stateBitsOf(b.parent) & ElementState.FOCUS);
+        assertTrue(state.setFocusedNode(null, false));
+        assertEquals(0, state.stateBitsOf(b) & (ElementState.FOCUS | ElementState.FOCUS_VISIBLE | ElementState.FOCUS_WITHIN));
+        assertEquals(0, state.stateBitsOf(b.parent) & ElementState.FOCUS_WITHIN);
     }
 
     @Test
@@ -277,8 +319,7 @@ class NodeArenaIdentityTest {
 
         d.querySelector("ul").appendChild(b); // 移動（取り外し→取り付け）
         assertSame(flags, state.get(b), "移動しても状態は節に付いてくる");
-        assertTrue(state.get(b).isHovered);
-        assertTrue((d.arena().stateBits(b.nodeId()) & DocumentArena.STATE_HOVER) != 0);
+        assertTrue(state.get(b).isHovered());
 
         HtmlElement temp = new HtmlElement("em");
         d.querySelector("ul").appendChild(temp);
@@ -289,7 +330,7 @@ class NodeArenaIdentityTest {
         d.querySelector("ul").appendChild(other);
         assertEquals(tempId, other.nodeId(), "番号は再利用される");
         assertNull(state.get(other), "再利用された番号に前の持ち主の状態は見えない");
-        assertEquals(0, d.arena().stateBits(other.nodeId()));
+        assertEquals(0, state.stateBitsOf(other) & ElementState.INTERACTIVE_MASK);
     }
 
     @Test

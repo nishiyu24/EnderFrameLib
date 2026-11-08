@@ -31,7 +31,7 @@ class UiInputTest {
 
     private static boolean checked(UiView v, HtmlNode n) {
         var st = v.interactionState().get(n);
-        return st != null && Boolean.TRUE.equals(st.isChecked);
+        return st != null && Boolean.TRUE.equals(st.tri(com.nishiyu.enderframelib.core.css.model.ElementState.CHECKED));
     }
 
     @Test

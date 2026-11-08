@@ -16,18 +16,8 @@ import java.util.Map;
 public final class DocumentArena {
     public static final int NONE = -1;
 
-    // ---- stateBits ----
-    public static final int STATE_HOVER = 1;
-    public static final int STATE_ACTIVE = 1 << 1;
-    public static final int STATE_FOCUS = 1 << 2;
-    public static final int STATE_CHECKED = 1 << 3;
-    public static final int STATE_DISABLED = 1 << 4;
-    public static final int STATE_OPEN = 1 << 5;
-    public static final int STATE_FOCUS_VISIBLE = 1 << 6;
-    public static final int STATE_FOCUS_WITHIN = 1 << 7;
-    public static final int STATE_INDETERMINATE = 1 << 8;
-
-    // ---- dirtyBits ----
+    // ---- dirtyBits ---- （対話状態の擬似クラスとスタイルの汚れは対話状態の側が唯一の記憶。
+    // ここは BindingPatchTable が layout / paint の再計算要求を立てる列）
     public static final int DIRTY_STYLE = 1;
     public static final int DIRTY_SUBTREE = 1 << 1;
     public static final int DIRTY_LAYOUT = 1 << 2;
@@ -47,8 +37,8 @@ public final class DocumentArena {
     // Identity & Bloom
     private OffHeapColumns.Ints tagAndType, idAtom;
     private OffHeapColumns.Longs selfBloom, subtreeBloom;
-    // State & Dirty
-    private OffHeapColumns.Ints stateBits, dirtyBits;
+    // Dirty
+    private OffHeapColumns.Ints dirtyBits;
     // 世代（解放のたびに +1）と、空きリストの次/使用中フラグ
     private OffHeapColumns.Ints generation, nextFree;
     private Object[] owners;
@@ -75,7 +65,6 @@ public final class DocumentArena {
         idAtom = new OffHeapColumns.Ints(cap);
         selfBloom = new OffHeapColumns.Longs(cap);
         subtreeBloom = new OffHeapColumns.Longs(cap);
-        stateBits = new OffHeapColumns.Ints(cap);
         dirtyBits = new OffHeapColumns.Ints(cap);
         generation = new OffHeapColumns.Ints(cap);
         nextFree = new OffHeapColumns.Ints(cap);
@@ -84,13 +73,13 @@ public final class DocumentArena {
 
     private void grow() {
         OffHeapColumns.Ints[] ints = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
-                tagAndType, idAtom, stateBits, dirtyBits, generation, nextFree};
+                tagAndType, idAtom, dirtyBits, generation, nextFree};
         OffHeapColumns.Longs[] longs = {selfBloom, subtreeBloom};
         Object[] oldOwners = owners;
         int oldCap = capacity;
         allocateColumns(oldCap * 2);
         OffHeapColumns.Ints[] now = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
-                tagAndType, idAtom, stateBits, dirtyBits, generation, nextFree};
+                tagAndType, idAtom, dirtyBits, generation, nextFree};
         for (int c = 0; c < ints.length; c++) {
             for (int i = 0; i < oldCap; i++) now[c].set(i, ints[c].get(i));
         }
@@ -132,7 +121,6 @@ public final class DocumentArena {
         idAtom.set(id, 0);
         selfBloom.set(id, 0L);
         subtreeBloom.set(id, 0L);
-        stateBits.set(id, 0);
         dirtyBits.set(id, 0);
         nextFree.set(id, NONE);
     }
@@ -157,7 +145,6 @@ public final class DocumentArena {
         lastChild.set(id, NONE);
         prevSibling.set(id, NONE);
         nextSibling.set(id, NONE);
-        stateBits.set(id, 0);
         dirtyBits.set(id, 0);
     }
 
@@ -235,7 +222,7 @@ public final class DocumentArena {
     public int liveCount() { return live; }
     public int epoch() { return epoch; }
     public int generation(int id) { return generation.get(id); }
-    public boolean isAligned() { return parent.isAligned() && selfBloom.isAligned() && stateBits.isAligned(); }
+    public boolean isAligned() { return parent.isAligned() && selfBloom.isAligned() && dirtyBits.isAligned(); }
 
     // ------------------------------------------------------------------
     // Topology
@@ -366,15 +353,8 @@ public final class DocumentArena {
     // State & Dirty
     // ------------------------------------------------------------------
 
-    public int stateBits(int id) { return stateBits.get(id); }
-    public void setStateBits(int id, int bits) { stateBits.set(id, bits); }
     public int dirtyBits(int id) { return dirtyBits.get(id); }
     public void setDirtyBits(int id, int bits) { dirtyBits.set(id, bits); }
-
-    public void setState(int id, int mask, boolean on) {
-        int b = stateBits.get(id);
-        stateBits.set(id, on ? (b | mask) : (b & ~mask));
-    }
 
     public void setDirty(int id, int mask, boolean on) {
         int b = dirtyBits.get(id);
