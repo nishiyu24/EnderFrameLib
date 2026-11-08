@@ -51,6 +51,49 @@ public final class TextShaper {
     public static String normalize(String text, WhiteSpace whiteSpace) {
         if (text == null || text.isEmpty()) return "";
         if (isAlreadyNormal(text, whiteSpace)) return text; // 正規表現（Matcher の生成）を避ける
+        String result = text.indexOf('\r') >= 0 ? text.replace("\r\n", "\n").replace('\r', '\n') : text;
+        if (!whiteSpace.preservesNewlines()) result = collapseRuns(result, true);
+        if (result.indexOf('\t') >= 0) result = result.replace("\t", TAB_SPACES);
+        if (whiteSpace.collapses()) result = collapseRuns(result, false);
+        return result;
+    }
+
+    /**
+     * 改行の連続（{@code newlines}）または空白の連続を空白 1 つに置き換える。{@link #normalizeWithRegex} の
+     * {@code [\r\n]+} / {@code [ \t]+}（タブは直前に空白へ開いてある）の置換と同じ結果を、Matcher を作らずに出す。
+     * 書き換えが要らなければ同じ文字列を返す。
+     */
+    private static String collapseRuns(String text, boolean newlines) {
+        int n = text.length();
+        int first = -1;
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            // 改行は 1 つでも空白に置き換わる。空白は 2 つ続くときだけ変わる
+            if (newlines ? (c == '\n' || c == '\r') : (c == ' ' && i + 1 < n && text.charAt(i + 1) == ' ')) {
+                first = i;
+                break;
+            }
+        }
+        if (first < 0) return text;
+        StringBuilder sb = new StringBuilder(n);
+        sb.append(text, 0, first);
+        boolean inRun = false;
+        for (int i = first; i < n; i++) {
+            char c = text.charAt(i);
+            if (newlines ? (c == '\n' || c == '\r') : c == ' ') {
+                if (!inRun) sb.append(' ');
+                inRun = true;
+            } else {
+                sb.append(c);
+                inRun = false;
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 検証用: 正規表現による元の実装。 */
+    static String normalizeWithRegex(String text, WhiteSpace whiteSpace) {
+        if (text == null || text.isEmpty()) return "";
         String result = text.replace("\r\n", "\n").replace('\r', '\n');
         if (!whiteSpace.preservesNewlines()) {
             result = LINE_BREAKS.matcher(result).replaceAll(" ");
