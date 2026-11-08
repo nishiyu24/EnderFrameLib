@@ -80,6 +80,8 @@ public class HitTestIndex {
     private final LongOpenHashSet dynamicKeys = new LongOpenHashSet();
     /** 動きうる節が、どの対話項目（{@link #entryArr} の添字）の連鎖の何番目にあるか（添字と位置の組を平らに並べる）。 */
     private final Long2ObjectOpenHashMap<IntArrayList> dynamicRefs = new Long2ObjectOpenHashMap<>();
+    /** 動きうる節が、どのスクロールする箱（{@link #scrollEntries} の添字）の連鎖の何番目にあるか（{@link #dynamicRefs} と同じ並び）。 */
+    private final Long2ObjectOpenHashMap<IntArrayList> scrollRefs = new Long2ObjectOpenHashMap<>();
     /** 対話項目になっている項目の鍵（対話項目そのものを差し替えるときは {@link #patch} は断る）。 */
     private final LongOpenHashSet entryElementKeys = new LongOpenHashSet();
     /** スクロールする箱の項目の鍵 → {@link #scrollEntries} の添字（差し替えるときは Entry を作り直す）。 */
@@ -141,7 +143,19 @@ public class HitTestIndex {
                 refs.add(p);
             }
         }
-        for (int i = 0; i < scrollEntries.size(); i++) scrollEntryAt.put(scrollEntries.get(i).element.key(), i);
+        for (int i = 0; i < scrollEntries.size(); i++) {
+            scrollEntryAt.put(scrollEntries.get(i).element.key(), i);
+            if (dynamicKeys.isEmpty()) continue;
+            List<DisplayItem> chain = scrollEntries.get(i).transformChain;
+            for (int p = 0; p < chain.size(); p++) {
+                long k = chain.get(p).key();
+                if (!dynamicKeys.contains(k)) continue;
+                IntArrayList refs = scrollRefs.get(k);
+                if (refs == null) scrollRefs.put(k, refs = new IntArrayList());
+                refs.add(i);
+                refs.add(p);
+            }
+        }
     }
 
     /** この索引が動きうる節として扱っている id。 */
@@ -168,9 +182,9 @@ public class HitTestIndex {
             if (refs != null) {
                 for (int r = 0, rn = refs.size(); r < rn; r += 2) entryArr[refs.getInt(r)].transformChain.set(refs.getInt(r + 1), item);
             }
-            for (Entry e : scrollEntries) {
-                List<DisplayItem> chain = e.transformChain;
-                for (int p = 0; p < chain.size(); p++) if (chain.get(p).key() == k) chain.set(p, item);
+            IntArrayList srefs = scrollRefs.get(k);
+            if (srefs != null) {
+                for (int r = 0, rn = srefs.size(); r < rn; r += 2) scrollEntries.get(srefs.getInt(r)).transformChain.set(srefs.getInt(r + 1), item);
             }
             if (scrollEntryAt.containsKey(k)) { // 動く節がスクロールする箱でもある: 新しい項目で Entry を作り直す
                 int at = scrollEntryAt.get(k);
