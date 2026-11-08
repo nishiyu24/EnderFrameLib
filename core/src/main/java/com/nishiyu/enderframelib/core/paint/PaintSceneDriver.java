@@ -118,6 +118,9 @@ public final class PaintSceneDriver {
     private List<Group>[] chainBuf = new List[0];
     private int[] membersBuf = new int[0];
     private RetainPlan[] planBuf = new RetainPlan[0];
+    /** 今のフレームで {@link #curRes} が有効な項目の印（フレーム番号と一致するときだけ有効。フレームごとの O(N) の消去を避ける）。 */
+    private int[] curStamp = new int[0];
+    private int frameStamp;
     private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
     private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
@@ -179,7 +182,7 @@ public final class PaintSceneDriver {
             // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
             // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
             if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items)) rebuildIndex(items);
-            Arrays.fill(curRes, null);
+            if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
             this.byId = indexedById;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
             anchorNext = 0;
@@ -442,6 +445,7 @@ public final class PaintSceneDriver {
         }
         computeRetainRanges(items);
         curRes = new Resolved[n];
+        curStamp = new int[n];
         prevRes = new Resolved[n];
         prevParentRes = new Resolved[n];
         prevStatic = new boolean[n];
@@ -514,8 +518,8 @@ public final class PaintSceneDriver {
 
     /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     public Resolved resolveAt(int i) {
-        Resolved r = curRes[i];
-        if (r != null) return r;
+        Resolved r;
+        if (curStamp[i] == frameStamp && (r = curRes[i]) != null) return r;
         DisplayItem el = indexedItems.get(i);
         Resolved parent = null;
         int p = parentIdx[i];
@@ -543,6 +547,7 @@ public final class PaintSceneDriver {
         }
         prevIdle[i] = idle; // 「前回の補間値は確定済み」
         curRes[i] = r;
+        curStamp[i] = frameStamp;
         return r;
     }
 

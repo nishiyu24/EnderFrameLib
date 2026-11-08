@@ -581,7 +581,14 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 - **`GlRectRenderer.draw` 冒頭の状態保存の実測（2026-11-08・見送り）**: `glIsEnabled` ×1 + `glGetInteger` ×4 を 2 万回 × 3 組で測定（`GlRectRendererTest.measureBlendStateQueryCost`）し、
   **約 2.7 µs/draw**（静止フレーム約 250 µs の約 1%）。ブレンド状態は `LwjglGlRenderBackend` の十数か所で変更されるため、追跡に置き換えると状態の食い違い（描画の崩れ）を招く危険のほうが大きく、
   得られる時間に見合わないので**変更しない**。`enter()` の `glfwGetCurrentContext` も同種の安価な呼び出しで、同様に対象外。
-- **次の作業（< 0.01 ms へ）**: 静止フレームの固定費の残りは薄く広く、個別の削減では < 0.01 ms に届かない。`curRes` の初期化を SKIP の範囲で省く・画面より大きい層・
+- **`PaintSceneDriver` の姿勢の表の消去をフレーム印に（2026-11-08・達成／時間の効果は判別できず）**: 毎フレーム `Arrays.fill(curRes, null)`（O(全項目)）していたのを、
+  `curStamp[i] == frameStamp` のときだけ `curRes[i]` を有効とする方式にして、フレームごとの O(N) の消去を無くした（印が一周して 0 に戻るときだけ全消去）。
+  検証: `PaintSceneDriverFrameStampTest`（1 つのドライバを大きさの違う 3 つのリストで 60 回使い回し、毎回新しいドライバと各項目の姿勢・不透明度が完全一致）、既存の `PaintSceneDriver*Test`・`RetainedScrollTest`・
+  `ScrollCostTest`。全体（root + core）通過。
+  **測定**（`ScrollCostTest` ペース付き・3 回）: 静止フレーム中央値 0.263 / 0.234 / 0.233 ms（変更前 0.229〜0.265 ms）、スクロール＋フレーム 0.72 / 0.66 / 0.63 ms。**差は揺れの範囲**
+  （この項目数では memset が小さく、確保も元から 0）。大きな文書ほど効く構造的な削減としてのみ扱う。
+  発見: 静止した姿勢の再利用（`reuseIdlePoses`）は**フレーム変換が一定**であることを前提にしている（親の無い項目は前回の姿勢をそのまま返す）。ドライバをフレーム変換の違う描画に使い回すときは新しく作ること。
+- **次の作業（< 0.01 ms へ）**: 静止フレームの固定費の残りは薄く広く、個別の削減では < 0.01 ms に届かない。画面より大きい層・
   GPU を意図的に遅らせた状態での CPU 待ち時間の測定。根本的には「変化が無い画面は GL へ何も発行しない」（前フレームの合成結果の再利用）が必要。`draw` 冒頭の状態クエリの除去、`curRes` の初期化を SKIP の範囲で省く、画面より大きい層、GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
