@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
@@ -112,6 +113,60 @@ public final class TextShaper {
         return lines;
     }
 
+    /**
+     * 幅に依存しない段落の下ごしらえ: 折り返し候補の断片・段落内の開始位置・断片ごとの幅（末尾の空白あり／なし）。
+     * 幅が変わる（ウィンドウのリサイズ・flex の再測定）たびに UAX #14 の判定と語ごとの測定をやり直さず、
+     * 行の分割はこの数値だけで行う。
+     */
+    record Segmented(String[] segs, int[] offsets, float[] fullW, float[] trimmedW, float[] joinW) {}
+
+    private record SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof SegKey k && k.face == face && k.wordBreak == wordBreak
+                    && k.font.equals(font) && k.paragraph.equals(paragraph);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * (31 * (31 * paragraph.hashCode() + System.identityHashCode(face)) + font.hashCode()) + wordBreak.ordinal();
+        }
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<SegKey, Segmented> SEGMENTED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger SEGMENTED_BUILDS = new AtomicInteger();
+
+    /** 段落の下ごしらえの作成回数（テスト用）。 */
+    static int segmentedBuilds() { return SEGMENTED_BUILDS.get(); }
+
+    static Segmented segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        SegKey key = new SegKey(paragraph, face, font, wordBreak);
+        Segmented hit = SEGMENTED.get(key);
+        if (hit != null) return hit;
+        List<String> list = segments(paragraph, wordBreak);
+        int n = list.size();
+        String[] segs = list.toArray(new String[0]);
+        int[] offsets = new int[n];
+        float[] full = new float[n];
+        float[] trimmed = new float[n];
+        float[] joins = new float[n];
+        int offset = 0;
+        for (int i = 0; i < n; i++) {
+            offsets[i] = offset;
+            // 行は断片を続けて足すので、行の末尾の文字は直前の断片の末尾と同じ。境目の詰めも幅に依存しない
+            joins[i] = i == 0 ? 0 : kerningBetween(face, font, segs[i - 1], segs[i]);
+            offset += segs[i].length();
+            full[i] = segs[i].isEmpty() ? 0 : face.advance(segs[i], font);
+            String t = stripTrailingBlanks(segs[i]);
+            trimmed[i] = t.isEmpty() ? 0 : (t.length() == segs[i].length() ? full[i] : face.advance(t, font));
+        }
+        Segmented made = new Segmented(segs, offsets, full, trimmed, joins);
+        SEGMENTED_BUILDS.incrementAndGet();
+        if (SEGMENTED.size() >= SHAPED_LIMIT) SEGMENTED.clear();
+        SEGMENTED.put(key, made);
+        return made;
+    }
+
     /** 整形結果の記憶の鍵。{@code face} は同一性で比べる。 */
     private record ShapeKey(String text, FontFace face, TextStyle style, float width) {
         @Override
@@ -198,10 +253,9 @@ public final class TextShaper {
                 return;
             }
 
-            int offset = from;
-            for (String segment : segments(paragraph, style.wordBreak())) {
-                append(segment, offset);
-                offset += segment.length();
+            Segmented seg = segmented(paragraph, face, style.font(), style.wordBreak());
+            for (int i = 0; i < seg.segs.length; i++) {
+                append(seg.segs[i], from + seg.offsets[i], seg.trimmedW[i], seg.fullW[i], seg.joinW[i]);
             }
             flush(to, true);
         }
@@ -215,9 +269,8 @@ public final class TextShaper {
          * あると和の方が max-content より広くなり、内容幅ちょうどの flex アイテムで
          * {@code two-viewers} が {@code two-} の後で折り返していた（実機で確認）。
          */
-        void append(String segment, int offset) {
-            float trimmedWidth = widthOf(stripTrailingBlanks(segment));
-            float join = line.isEmpty() ? 0 : kerningBetween(face, style.font(), line, segment);
+        void append(String segment, int offset, float trimmedWidth, float fullWidth, float segJoin) {
+            float join = line.isEmpty() ? 0 : segJoin;
             if (bounded && lineWidth + join + trimmedWidth > available + WRAP_TOLERANCE) {
                 boolean breakAll = style.wordBreak() == WordBreak.BREAK_ALL;
                 boolean tooLongAlone = trimmedWidth > available + WRAP_TOLERANCE;
@@ -234,7 +287,7 @@ public final class TextShaper {
                 }
             }
             line.append(segment);
-            lineWidth += join + widthOf(segment);
+            lineWidth += join + fullWidth;
         }
 
         /** 1 行に収まらない語を文字単位で割る。 */
