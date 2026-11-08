@@ -36,40 +36,21 @@ class BindingPatchTableTest {
     }
 
     @Test
-    void setFloatWritesArenaColumnAndMarksDirty() {
+    void setFloatWritesColumnAndCountsOnlyChanges() {
         HtmlDocument d = doc();
         HtmlNode bar = d.getElementById("bar");
         HtmlNode two = d.getElementById("two");
         DocumentArena arena = bar.arena();
         BindingPatchTable t = new BindingPatchTable(arena);
         t.compile(d);
-        arena.setDirty(bar.nodeId(), DocumentArena.DIRTY_STYLE | DocumentArena.DIRTY_LAYOUT, false);
-        arena.setDirty(two.nodeId(), DocumentArena.DIRTY_STYLE | DocumentArena.DIRTY_LAYOUT, false);
 
         assertTrue(Float.isNaN(t.get(BindingPatchTable.F_WIDTH_PCT, bar.nodeId())));
-        assertEquals(2, t.setFloat("hp_pct", 75f), "2 つの節が汚れる");
+        assertEquals(2, t.setFloat("hp_pct", 75f), "2 つの欄が変わる");
         assertEquals(75f, t.get(BindingPatchTable.F_WIDTH_PCT, bar.nodeId()));
         assertEquals(75f, t.get(BindingPatchTable.F_WIDTH_PCT, two.nodeId()));
-        assertNotEquals(0, arena.dirtyBits(bar.nodeId()) & DocumentArena.DIRTY_LAYOUT);
 
-        arena.setDirty(bar.nodeId(), DocumentArena.DIRTY_STYLE | DocumentArena.DIRTY_LAYOUT, false);
-        assertEquals(0, t.setFloat("hp_pct", 75f), "同じ値なら何も汚さない");
-        assertEquals(0, arena.dirtyBits(bar.nodeId()) & DocumentArena.DIRTY_LAYOUT);
+        assertEquals(0, t.setFloat("hp_pct", 75f), "同じ値なら何も変わらない");
         assertEquals(0, t.setFloat("unknown", 1f));
-    }
-
-    @Test
-    void opacityIsPaintOnly() {
-        HtmlDocument d = doc();
-        HtmlNode fade = d.getElementById("fade");
-        DocumentArena arena = fade.arena();
-        BindingPatchTable t = new BindingPatchTable(arena);
-        t.compile(d);
-        arena.setDirty(fade.nodeId(), DocumentArena.DIRTY_STYLE | DocumentArena.DIRTY_LAYOUT | DocumentArena.DIRTY_PAINT, false);
-        assertEquals(1, t.setFloat("alpha", 0.25f));
-        assertEquals(0.25f, t.get(BindingPatchTable.F_OPACITY, fade.nodeId()));
-        assertEquals(0, arena.dirtyBits(fade.nodeId()) & DocumentArena.DIRTY_LAYOUT);
-        assertNotEquals(0, arena.dirtyBits(fade.nodeId()) & DocumentArena.DIRTY_PAINT);
     }
 
     @Test

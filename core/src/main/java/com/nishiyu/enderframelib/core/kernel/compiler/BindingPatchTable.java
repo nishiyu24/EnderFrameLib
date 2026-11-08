@@ -137,7 +137,7 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     }
 
     /**
-     * 1 つの節の 1 つの欄へ値を直接書く。{@code NaN} は「書かれていない」に戻す。値が変わったときだけ汚して true。
+     * 1 つの節の 1 つの欄へ値を直接書く。{@code NaN} は「書かれていない」に戻す。値が変わったときだけ true（再スタイルの要求は呼び出し側が changedNodes で行う）。
      */
     public boolean set(int nodeId, int field, float value) {
         if (nodeId < 0 || field < 0 || field >= FIELD_COUNT) throw new IllegalArgumentException();
@@ -148,10 +148,6 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
         OffHeapColumns.Floats col = columns[field];
         if (Float.floatToRawIntBits(col.get(nodeId)) == Float.floatToRawIntBits(value)) return false;
         col.set(nodeId, value);
-        if (arena.isLive(nodeId)) {
-            arena.setDirty(nodeId, DocumentArena.DIRTY_STYLE | (isLayoutField(field) ? DocumentArena.DIRTY_LAYOUT
-                    : DocumentArena.DIRTY_PAINT), true);
-        }
         return true;
     }
 
@@ -193,9 +189,9 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
     }
 
     /**
-     * キーに結ばれたすべての欄へ値を直接書く。値が変わった欄の節だけ汚す。
+     * キーに結ばれたすべての欄へ値を直接書く。値が変わった欄だけ数える。
      *
-     * @return 値が変わって汚れた節の数（結ばれていないキーは 0）
+     * @return 値が変わった欄の数（結ばれていないキーは 0）
      */
     public int setFloat(String key, float value) {
         int[] patches = patchesByKey.get(key);
@@ -207,16 +203,10 @@ public final class BindingPatchTable implements com.nishiyu.enderframelib.core.d
             OffHeapColumns.Floats col = columns[field];
             if (Float.floatToRawIntBits(col.get(node)) == Float.floatToRawIntBits(value)) continue;
             col.set(node, value);
-            if (arena.isLive(node)) {
-                arena.setDirty(node, DocumentArena.DIRTY_STYLE | (isLayoutField(field) ? DocumentArena.DIRTY_LAYOUT
-                        : DocumentArena.DIRTY_PAINT), true);
-            }
             changed++;
         }
         return changed;
     }
-
-    private static boolean isLayoutField(int field) { return field != F_OPACITY; }
 
     /** 欄の現在値。まだ書かれていなければ NaN。 */
     public float get(int field, int nodeId) {

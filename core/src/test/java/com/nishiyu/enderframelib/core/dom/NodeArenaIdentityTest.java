@@ -262,13 +262,11 @@ class NodeArenaIdentityTest {
         assertEquals(both, state.stateBitsOf(b) & both);
 
         // アリーナには対話状態を写さない（二重書き込みの撤去）。汚れの印は StateFlags だけが持つ
-        assertEquals(0, d.arena().dirtyBits(b.nodeId()), "InteractionState はアリーナの汚れ列に書かない");
         assertTrue(state.get(b).isStyleDirty(), "作りたては汚れ");
         state.clearStyleDirty(b);
         assertFalse(state.get(b).isStyleDirty());
         state.markDirty(b);
         assertTrue(state.get(b).isStyleDirty());
-        assertEquals(0, d.arena().dirtyBits(b.nodeId()));
     }
 
     @Test

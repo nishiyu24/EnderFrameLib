@@ -16,15 +16,6 @@ import java.util.Map;
 public final class DocumentArena {
     public static final int NONE = -1;
 
-    // ---- dirtyBits ---- （対話状態の擬似クラスとスタイルの汚れは対話状態の側が唯一の記憶。
-    // ここは BindingPatchTable が layout / paint の再計算要求を立てる列）
-    public static final int DIRTY_STYLE = 1;
-    public static final int DIRTY_SUBTREE = 1 << 1;
-    public static final int DIRTY_LAYOUT = 1 << 2;
-    public static final int DIRTY_PAINT = 1 << 3;
-    public static final int DIRTY_BELOW = 1 << 4;
-    public static final int DIRTY_UNSCOPED = 1 << 5;
-
     private int capacity;
     private int highWater; // 次に新規確保する ID
     private int staticCount; // sealStatic 時点の highWater
@@ -37,8 +28,6 @@ public final class DocumentArena {
     // Identity & Bloom
     private OffHeapColumns.Ints tagAndType, idAtom;
     private OffHeapColumns.Longs selfBloom, subtreeBloom;
-    // Dirty
-    private OffHeapColumns.Ints dirtyBits;
     // 世代（解放のたびに +1）と、空きリストの次/使用中フラグ
     private OffHeapColumns.Ints generation, nextFree;
     private Object[] owners;
@@ -65,7 +54,6 @@ public final class DocumentArena {
         idAtom = new OffHeapColumns.Ints(cap);
         selfBloom = new OffHeapColumns.Longs(cap);
         subtreeBloom = new OffHeapColumns.Longs(cap);
-        dirtyBits = new OffHeapColumns.Ints(cap);
         generation = new OffHeapColumns.Ints(cap);
         nextFree = new OffHeapColumns.Ints(cap);
         owners = new Object[cap];
@@ -73,13 +61,13 @@ public final class DocumentArena {
 
     private void grow() {
         OffHeapColumns.Ints[] ints = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
-                tagAndType, idAtom, dirtyBits, generation, nextFree};
+                tagAndType, idAtom, generation, nextFree};
         OffHeapColumns.Longs[] longs = {selfBloom, subtreeBloom};
         Object[] oldOwners = owners;
         int oldCap = capacity;
         allocateColumns(oldCap * 2);
         OffHeapColumns.Ints[] now = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
-                tagAndType, idAtom, dirtyBits, generation, nextFree};
+                tagAndType, idAtom, generation, nextFree};
         for (int c = 0; c < ints.length; c++) {
             for (int i = 0; i < oldCap; i++) now[c].set(i, ints[c].get(i));
         }
@@ -121,7 +109,6 @@ public final class DocumentArena {
         idAtom.set(id, 0);
         selfBloom.set(id, 0L);
         subtreeBloom.set(id, 0L);
-        dirtyBits.set(id, 0);
         nextFree.set(id, NONE);
     }
 
@@ -145,7 +132,6 @@ public final class DocumentArena {
         lastChild.set(id, NONE);
         prevSibling.set(id, NONE);
         nextSibling.set(id, NONE);
-        dirtyBits.set(id, 0);
     }
 
     /** 静的ノードを同じ番号で取り戻す（文書から外れた静的ノードが同じ文書へ戻るとき）。 */
@@ -222,7 +208,7 @@ public final class DocumentArena {
     public int liveCount() { return live; }
     public int epoch() { return epoch; }
     public int generation(int id) { return generation.get(id); }
-    public boolean isAligned() { return parent.isAligned() && selfBloom.isAligned() && dirtyBits.isAligned(); }
+    public boolean isAligned() { return parent.isAligned() && selfBloom.isAligned(); }
 
     // ------------------------------------------------------------------
     // Topology
@@ -347,18 +333,6 @@ public final class DocumentArena {
         for (int c = firstChild.get(id); c != NONE; c = nextSibling.get(c)) bits |= rebuildSubtreeBloom(c);
         subtreeBloom.set(id, bits);
         return bits;
-    }
-
-    // ------------------------------------------------------------------
-    // State & Dirty
-    // ------------------------------------------------------------------
-
-    public int dirtyBits(int id) { return dirtyBits.get(id); }
-    public void setDirtyBits(int id, int bits) { dirtyBits.set(id, bits); }
-
-    public void setDirty(int id, int mask, boolean on) {
-        int b = dirtyBits.get(id);
-        dirtyBits.set(id, on ? (b | mask) : (b & ~mask));
     }
 
     // ------------------------------------------------------------------
