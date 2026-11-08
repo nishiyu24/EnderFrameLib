@@ -276,20 +276,26 @@ class ScrollCostTest {
             view.mouseMove(200, 250, sid);
             var mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
             long tid = Thread.currentThread().getId();
-            int warm = 200, n = 400;
-            long cpu0 = 0, alloc0 = 0;
+            int warm = 200, n = 600;
+            long[] frameNs = new long[n];
+            long alloc0 = 0;
             for (int i = 0; i < warm + n; i++) {
-                if (i == warm) { cpu0 = mx.getThreadCpuTime(tid); alloc0 = mx.getThreadAllocatedBytes(tid); }
+                if (i == warm) alloc0 = mx.getThreadAllocatedBytes(tid);
+                long t0 = System.nanoTime();
                 view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid);
                 now += 16;
                 view.frame(now, backend, true);
+                long dt = System.nanoTime() - t0;
+                if (i >= warm) frameNs[i - warm] = dt;
                 Thread.sleep(4);
             }
-            double cpuMs = (mx.getThreadCpuTime(tid) - cpu0) / 1e6 / n;
+            // 平均は省電力状態・キャッシュの冷え方の外れ値に支配されるので、フレームごとの壁時計時間（休みを除く）の中央値と p90 を見る
+            java.util.Arrays.sort(frameNs);
+            double medianMs = frameNs[n / 2] / 1e6, p90Ms = frameNs[n * 9 / 10] / 1e6;
             double kb = (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n;
             assertTrue(backend.scrollLayersSkipped() > backend.scrollLayersRecorded() * 10, "保持した層が使われていない");
-            System.out.println(String.format("SCROLL-PACED cpu %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態)", cpuMs, kb));
-            assertTrue(cpuMs < 3.0, "休みを入れたスクロール 1 回の CPU が大きすぎる: " + cpuMs);
+            System.out.println(String.format("SCROLL-PACED median %.3f ms, p90 %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態・壁時計)", medianMs, p90Ms, kb));
+            assertTrue(medianMs < 3.0, "休みを入れたスクロール 1 回の中央値が大きすぎる: " + medianMs);
         } finally {
             view.close();
         }
