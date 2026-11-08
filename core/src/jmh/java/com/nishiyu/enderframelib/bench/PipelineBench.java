@@ -81,6 +81,13 @@ public class PipelineBench {
                 FontResolver.FALLBACK, new InteractionState());
     }
 
+    /** 同じ {@link InteractionState} を使い続けて箱の木を組み直す（実際の画面の定常。節ごとの算出スタイルが有効）。 */
+    @Benchmark
+    public LayoutBox fullLayoutWarm() {
+        return parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
+                FontResolver.FALLBACK, hoverState);
+    }
+
     @Benchmark
     public Object restyle() {
         return parser.restyleLayoutTree(root, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new InteractionState());
