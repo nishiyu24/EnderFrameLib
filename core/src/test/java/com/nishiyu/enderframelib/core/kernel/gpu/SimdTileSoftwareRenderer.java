@@ -3,10 +3,13 @@ package com.nishiyu.enderframelib.core.kernel.gpu;
 import java.util.Arrays;
 
 /**
- * 64×64 画素のタイル単位で塗る、CPU のソフトウェア合成器（角丸矩形の塗り）。
+ * <b>テスト専用の基準実装</b>（§9.5.21 で本番コードから移した。本流は {@code SoftwareRenderBackend} + {@code TileQueue}）。
+ * GL 経路（{@code GlRectRenderer}）の画素を CPU で突き合わせる照合基準。
+ *
+ * <p>64×64 画素のタイル単位で塗る、CPU のソフトウェア合成器（角丸矩形の塗り）。
  * 命令は先にタイルへ振り分け（計数ソート）、タイルごとに「命令の順」で塗る。1 タイル = 16 KB（64×64×4 B）で L1 に収まり、
  * 行内の塗りは分岐の無い数え上げループなので C2 の SuperWord が自動ベクトル化できる（JVM フラグ不要）。
- * タイル同士は独立（{@link #renderTile}）なので、呼び出し側が並列に回してもよい。
+ * タイル同士は独立（{@link #renderTile}）なので、呼び出し側が並列に回してもよい。</p>
  *
  * <p>描画先は <b>プリマルチプライド ARGB</b> の {@code int[]}。入力の色はストレート ARGB。
  * 合成は {@code out = src*a + dst*(1-a)}（a = 色の不透明度 × 不透明度 × 角の被覆率）。</p>

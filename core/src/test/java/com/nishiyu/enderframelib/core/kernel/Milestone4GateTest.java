@@ -55,4 +55,10 @@ class Milestone4GateTest {
         }
         assertTrue(Files.readString(MAIN.resolve("core/paint/model/DisplayItem.java")).contains("AtomTable.shared().intern(id)"));
     }
+
+    @Test
+    void simdTileSoftwareRendererStaysTestOnly() {
+        // 本流から呼ばれない第二のタイルラスタライザだったので、照合基準としてテスト側へ移した（§9.5.21）。本番へ戻さない
+        assertFalse(Files.exists(MAIN.resolve("core/kernel/gpu/SimdTileSoftwareRenderer.java")));
+    }
 }
