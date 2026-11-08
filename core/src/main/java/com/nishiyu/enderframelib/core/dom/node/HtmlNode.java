@@ -1130,9 +1130,27 @@ public class HtmlNode implements Node {
         return new ArrayList<>(Arrays.asList(WHITESPACE_SPLIT.split(classStr.trim())));
     }
 
+    private static boolean isClassSpace(char c) {
+        return c == ' ' || (c >= 9 && c <= 13); // タブ・改行・垂直タブ・改ページ・復帰（正規表現の空白と同じ集合）
+    }
+
     public boolean hasClass(String className) {
         if (className == null) return false;
-        return getClasses().contains(className.trim());
+        String classStr = attrs.get("class");
+        if (classStr == null) return false;
+        String wanted = className.trim();
+        int w = wanted.length();
+        if (w == 0) return false;
+        // 配列も正規表現も作らずに、空白で区切られた語を 1 つずつ比べる（セレクタ照合のたびに呼ばれる）
+        int n = classStr.length();
+        int i = 0;
+        while (i < n) {
+            while (i < n && isClassSpace(classStr.charAt(i))) i++;
+            int start = i;
+            while (i < n && !isClassSpace(classStr.charAt(i))) i++;
+            if (i - start == w && classStr.startsWith(wanted, start)) return true;
+        }
+        return false;
     }
 
     public void addClass(String... classNames) {
