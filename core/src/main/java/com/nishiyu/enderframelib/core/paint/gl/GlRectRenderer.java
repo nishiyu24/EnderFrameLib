@@ -55,8 +55,24 @@ public final class GlRectRenderer implements AutoCloseable {
         return s;
     }
 
-    private void sampler(String name, int unit) {
-        GL20.glUniform1i(GL20.glGetUniformLocation(program, name), unit);
+    /** サンプラー名とユニット（プログラムに固定。値は最初の描画で 1 回だけ設定する。プログラムの uniform は結び直しても保たれる）。 */
+    private static final String[] SAMPLER_NAMES = {"uAtlas", "uImgTex", "uPrF", "uPrI", "uPrH", "uOrder", "uTrF", "uTrI", "uScroll", "uCurves", "uEfF", "uEfI", "uClF", "uClH"};
+    private static final int[] SAMPLER_UNITS = {1, 2, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
+    private final int[] samplerLocs = new int[SAMPLER_NAMES.length];
+    private boolean samplersSet;
+    /** 設定したサンプラーの数（テスト用: 描画を重ねても増えない）。 */
+    private int samplerSetCount;
+
+    int samplerSetCount() { return samplerSetCount; }
+
+    private void setSamplersOnce() {
+        if (samplersSet) return;
+        for (int i = 0; i < samplerLocs.length; i++) {
+            samplerLocs[i] = GL20.glGetUniformLocation(program, SAMPLER_NAMES[i]);
+            GL20.glUniform1i(samplerLocs[i], SAMPLER_UNITS[i]);
+            samplerSetCount++;
+        }
+        samplersSet = true;
     }
 
     /**
@@ -77,20 +93,19 @@ public final class GlRectRenderer implements AutoCloseable {
         int srcRgb = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), dstRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
         int srcA = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), dstA = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
         GL20.glUseProgram(program);
-        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uAtlas"), 1);   // 字形アトラス（従来のバックエンドがユニット 1 に結ぶ）
-        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uImgTex"), 2);  // 画像（同 2）
-        store.primitives.bindFloatView(16);   sampler("uPrF", 16);
-        store.primitives.bindIntView(17);     sampler("uPrI", 17);
-        store.primitives.bindHalfView(18);    sampler("uPrH", 18);
-        store.order.bindIntView(19);          sampler("uOrder", 19);
-        store.transforms.bindFloatView(20);   sampler("uTrF", 20);
-        store.transforms.bindIntView(21);     sampler("uTrI", 21);
-        store.scrolls.bindFloatView(22);      sampler("uScroll", 22);
-        store.curves.bindFloatView(23);       sampler("uCurves", 23);
-        store.effects.bindFloatView(24);      sampler("uEfF", 24);
-        store.effects.bindIntView(25);        sampler("uEfI", 25);
-        store.clips.bindFloatView(26);       sampler("uClF", 26);
-        store.clips.bindHalfView(27);        sampler("uClH", 27);
+        setSamplersOnce(); // 字形アトラス = ユニット 1・画像 = 2（従来のバックエンドが結ぶ）。バッファテクスチャは 16 番以降
+        store.primitives.bindFloatView(16);
+        store.primitives.bindIntView(17);
+        store.primitives.bindHalfView(18);
+        store.order.bindIntView(19);
+        store.transforms.bindFloatView(20);
+        store.transforms.bindIntView(21);
+        store.scrolls.bindFloatView(22);
+        store.curves.bindFloatView(23);
+        store.effects.bindFloatView(24);
+        store.effects.bindIntView(25);
+        store.clips.bindFloatView(26);
+        store.clips.bindHalfView(27);
         GL20.glUniform2f(locView, viewW, viewH);
         GL20.glUniform1f(locTime, frameMs);
         GL20.glUniform1i(locBase, first);

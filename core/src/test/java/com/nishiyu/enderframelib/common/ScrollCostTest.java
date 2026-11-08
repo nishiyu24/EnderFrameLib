@@ -277,24 +277,27 @@ class ScrollCostTest {
             var mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
             long tid = Thread.currentThread().getId();
             int warm = 200, n = 600;
-            long[] frameNs = new long[n];
+            long[] frameNs = new long[n], scrollNs = new long[n];
             long alloc0 = 0;
             for (int i = 0; i < warm + n; i++) {
                 if (i == warm) alloc0 = mx.getThreadAllocatedBytes(tid);
                 long t0 = System.nanoTime();
                 view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid);
+                long t1 = System.nanoTime();
                 now += 16;
                 view.frame(now, backend, true);
                 long dt = System.nanoTime() - t0;
-                if (i >= warm) frameNs[i - warm] = dt;
+                if (i >= warm) { frameNs[i - warm] = dt; scrollNs[i - warm] = t1 - t0; }
                 Thread.sleep(4);
             }
             // 平均は省電力状態・キャッシュの冷え方の外れ値に支配されるので、フレームごとの壁時計時間（休みを除く）の中央値と p90 を見る
             java.util.Arrays.sort(frameNs);
+            java.util.Arrays.sort(scrollNs);
+            double scrollMedianMs = scrollNs[n / 2] / 1e6;
             double medianMs = frameNs[n / 2] / 1e6, p90Ms = frameNs[n * 9 / 10] / 1e6;
             double kb = (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n;
             assertTrue(backend.scrollLayersSkipped() > backend.scrollLayersRecorded() * 10, "保持した層が使われていない");
-            System.out.println(String.format("SCROLL-PACED median %.3f ms, p90 %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態・壁時計)", medianMs, p90Ms, kb));
+            System.out.println(String.format("SCROLL-PACED (scroll %.3f ms + frame) median %.3f ms, p90 %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態・壁時計)", scrollMedianMs, medianMs, p90Ms, kb));
             assertTrue(medianMs < 3.0, "休みを入れたスクロール 1 回の中央値が大きすぎる: " + medianMs);
         } finally {
             view.close();
