@@ -318,11 +318,12 @@ public class UiView implements AutoCloseable {
     public void setPaintOffset(String elementId, float dx, float dy) {
         if (elementId == null || elementId.isEmpty()) return;
         float[] prev = paintOffsets.put(elementId, new float[]{dx, dy});
+        if (prev == null) paintKeysVersion.incrementAndGet();
         if (prev == null || prev[0] != dx || prev[1] != dy) paintOffsetsDirty = true;
     }
 
     public void clearPaintOffset(String elementId) {
-        if (elementId != null && paintOffsets.remove(elementId) != null) paintOffsetsDirty = true;
+        if (elementId != null && paintOffsets.remove(elementId) != null) { paintKeysVersion.incrementAndGet(); paintOffsetsDirty = true; }
     }
 
     private void applyPendingPaintOffsets() {
@@ -365,14 +366,30 @@ public class UiView implements AutoCloseable {
      * （基底を作った時点で分かっている。まだ動いていなくても、次のスクロールで動くので最初から動きうる節として扱う）。
      */
     private java.util.Set<String> dynamicNodeIds() {
+        // 移動量を持つ節の集合（値でなく鍵）と scrollBase が変わらない限り、同じ不変の集合を返す（スクロールのたびに作らない。
+        // HitTestIndex が Set.copyOf で持つので、同一インスタンスなら包含の検査も省ける）
+        int version = paintKeysVersion.get();
+        java.util.Set<String> cached = dynamicIdsCache;
+        List<ScrollContentInfo> base = scrollBase;
+        if (cached != null && dynamicIdsVersion == version && dynamicIdsBase == base) return cached;
         java.util.Set<String> ids = new java.util.HashSet<>(paintOffsets.keySet());
-        for (ScrollContentInfo info : scrollBase) {
+        for (ScrollContentInfo info : base) {
             ids.add(info.contentId());
             if (info.thumbVId() != null) ids.add(info.thumbVId());
             if (info.thumbHId() != null) ids.add(info.thumbHId());
         }
-        return ids;
+        cached = java.util.Set.copyOf(ids);
+        dynamicIdsCache = cached;
+        dynamicIdsVersion = version;
+        dynamicIdsBase = base;
+        return cached;
     }
+
+    /** {@link #paintOffsets} の鍵が増減するたびに増える（値の更新では増えない）。 */
+    private final java.util.concurrent.atomic.AtomicInteger paintKeysVersion = new java.util.concurrent.atomic.AtomicInteger();
+    private java.util.Set<String> dynamicIdsCache;
+    private int dynamicIdsVersion;
+    private List<ScrollContentInfo> dynamicIdsBase;
 
     /** 基底リストの id → 位置。基底が変わるまで使い回す（スクロールのたびには作らない）。 */
     private Map<String, Integer> baseIndexById(List<DisplayItem> base) {
@@ -411,7 +428,7 @@ public class UiView implements AutoCloseable {
         if (idx != null && hitTestIndexSource == current) return idx;
         // 同じ基底の上で、描画の上だけ動く節の移動量が変わっただけなら、索引は作り直さず該当の節だけを差し替える
         java.util.Set<String> dynamic = dynamicNodeIds();
-        if (idx != null && hitTestIndexBase == baseRenderCache && idx.dynamicIds().containsAll(dynamic)) {
+        if (idx != null && hitTestIndexBase == baseRenderCache && (idx.dynamicIds() == dynamic || idx.dynamicIds().containsAll(dynamic))) {
             Map<String, Integer> byId = baseIndexById(baseRenderCache);
             List<DisplayItem> now = new ArrayList<>(idx.dynamicIds().size());
             for (String id : idx.dynamicIds()) {
@@ -1787,6 +1804,7 @@ public class UiView implements AutoCloseable {
         renderCache = Collections.emptyList();
         baseRenderCache = Collections.emptyList();
         paintOffsets.clear();
+        paintKeysVersion.incrementAndGet();
         paintOffsetsDirty = false;
         hitTestIndex = null;
         if (document != null && document.root instanceof HtmlDocument liveDocument) {

@@ -251,6 +251,50 @@ class ScrollCostTest {
         assertTrue(cpuMs[1] < cpuMs[0], "保持した層のほうが遅い: " + cpuMs[1] + " ms / 保持なし " + cpuMs[0] + " ms");
     }
 
+    /**
+     * フレームの間に休みを入れて GPU が追いついた状態で測る（休み無しの連続実行は GPU 律速になり、フェンス待ちのドライバのスピンが
+     * CPU 時間に混ざる）。実ゲームの 1 フレームの CPU 負荷に近い。
+     */
+    @Test
+    void measureScrollWithRetainedLayersWhenTheGpuKeepsUp() throws Exception {
+        try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
+        } catch (Throwable t) {
+            org.junit.jupiter.api.Assumptions.abort("OpenGL を使えない: " + t);
+        }
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < 200; i++) rows.append("<div class=\"row\" id=\"r").append(i).append("\">row ").append(i).append(" some text</div>");
+        String html = "<style>body{margin:0;font-size:13px;background:#123}.row{height:26px;margin:2px;padding:2px 6px;background:#eef;border:1px solid #99a}"
+                + "#outer{position:absolute;left:100px;top:150px;width:300px;height:230px;overflow-y:auto;border:2px solid #333;border-radius:8px}</style>"
+                + "<div id=\"outer\">" + rows + "</div>";
+        com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = true;
+        com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.retainedScroll = true;
+        StandaloneView view = new StandaloneView(html, 520, 520, FontResolver.FALLBACK);
+        try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(520, 520)) {
+            long now = 1000;
+            view.frame(now, backend, true);
+            String sid = backend.sessionId();
+            view.mouseMove(200, 250, sid);
+            var mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+            long tid = Thread.currentThread().getId();
+            int warm = 200, n = 400;
+            long cpu0 = 0, alloc0 = 0;
+            for (int i = 0; i < warm + n; i++) {
+                if (i == warm) { cpu0 = mx.getThreadCpuTime(tid); alloc0 = mx.getThreadAllocatedBytes(tid); }
+                view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid);
+                now += 16;
+                view.frame(now, backend, true);
+                Thread.sleep(4);
+            }
+            double cpuMs = (mx.getThreadCpuTime(tid) - cpu0) / 1e6 / n;
+            double kb = (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n;
+            assertTrue(backend.scrollLayersSkipped() > backend.scrollLayersRecorded() * 10, "保持した層が使われていない");
+            System.out.println(String.format("SCROLL-PACED cpu %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態)", cpuMs, kb));
+            assertTrue(cpuMs < 3.0, "休みを入れたスクロール 1 回の CPU が大きすぎる: " + cpuMs);
+        } finally {
+            view.close();
+        }
+    }
+
     /** 診断: 保持した層を使うスクロールで、どこに時間がかかるかをスタックの標本化で出す。 */
     @Test
     @EnabledIfEnvironmentVariable(named = "EFL_PROFILE", matches = ".+")
@@ -295,7 +339,8 @@ class ScrollCostTest {
             });
             sampler.setDaemon(true);
             sampler.start();
-            for (int i = 0; i < 6000; i++) { view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); }
+            boolean pace = System.getenv("EFL_PACE") != null;
+            for (int i = 0; i < (pace ? 1500 : 6000); i++) { view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); if (pace) Thread.sleep(4); }
             stop[0] = true;
             sampler.join();
             StringBuilder sb = new StringBuilder("SCROLL-PROFILE-RETAINED samples=" + samples[0] + "\n  self:");

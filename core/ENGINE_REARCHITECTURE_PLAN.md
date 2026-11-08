@@ -536,8 +536,19 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   既存の `PaintSceneDriver*Test`・`RetainedScrollTest`。全体（root + core）通過。
   **測定**（`ScrollCostTest`・GL・保持あり）: ヒープ **31.7 → 5.8 KB**/スクロール＋描画（保持なしの経路は 718 KB で不変）。CPU は 0.130 ms で変化なし
   （確保が減っただけで、時間の支配要因は別。`curRes` の `Arrays.fill` はまだ O(N) の memset として残る）。
-- **次の作業（< 0.01 ms へ）**: 時間の標本の再取得（`UiView` のスクロール更新・`HitTestIndex.find`・GL 側の固定費のどれが残るか）・`curRes` の初期化を SKIP の範囲で省く・
-  画面より大きい層（描画先の座標のずらし）。GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
+- **時間の標本の取り直しとヒットテスト経路の確保削減（2026-11-08・達成）**: 休み無しの連続実行（`measureScrollWithRetainedLayers`）は GPU 律速で、標本の約 19% が
+  `GlVramDevice.awaitSegment`（GPU の完了待ちのスピンが CPU 時間に混ざる）だった。そこで `ScrollCostTest.measureScrollWithRetainedLayersWhenTheGpuKeepsUp`
+  （フレーム間に 4 ms 休む＝GPU が追いついた状態）を追加し、実ゲームの 1 フレームに近い CPU を測るようにした（`EFL_PROFILE` の標本化も `EFL_PACE=1` で同じ条件にできる）。
+  休みを入れた標本では GL 側はほぼ現れず、`UiView.hitTest` 経路が支配的だった（`HitTestIndex.patch` 15%・`CssAnimator.currentValuesInto` 12%・`UiView.dynamicNodeIds` 9%・`hitTestIndex` 7%）。
+  `UiView.dynamicNodeIds` は毎回 `HashSet` を作っていたので、移動量の鍵の増減（`paintKeysVersion`）と `scrollBase` が変わらない間は同じ不変の集合を返すようにした
+  （`HitTestIndex` が `Set.copyOf` で持つので同一インスタンスなら包含検査も省く）。
+  検証: `PaintOffsetHitTestCacheTest`（鍵の追加で集合・索引が変わる／値だけの更新では索引を使い回し表示リストは最新の移動量／鍵の解除後も古い移動量が残らない）、
+  既存の `ScrollIndexReuseTest` / `ScrollTranslateTest` ほか。全体（root + core）通過。
+  **測定**: 休みを入れたスクロール＋描画 1 回の CPU **1.52 → 0.82 ms**（ノイズ大・1 回ずつの測定）。休み無しの連続実行は 0.13 ms で変化なし。
+  休みを入れると連続実行より重い（0.13 → 約 1 ms）のは、冷えたキャッシュ・JIT の状態によるもので、連続実行の値は「実フレームの値」ではなく下限に近い。
+  注: `NoDraw` バックエンドでは描画側の姿勢状態が作られず、`UiView` 単体で移動量を足した結果のヒット位置は検証できていない（上のテストは集合と索引の契約のみ）。
+- **次の作業（< 0.01 ms へ）**: 休みを入れた条件で再び標本化（残りの `HitTestIndex.patch`〔変更ごとに全スクロール節の連鎖を走査〕・`CssAnimator.currentValuesInto`・`find`）・
+  `curRes` の初期化を SKIP の範囲で省く・画面より大きい層（描画先の座標のずらし）。GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
 
