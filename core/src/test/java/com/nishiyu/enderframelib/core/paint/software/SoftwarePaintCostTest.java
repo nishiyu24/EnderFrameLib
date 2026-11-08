@@ -34,9 +34,9 @@ class SoftwarePaintCostTest {
     }
 
     private static int[] render(List<DisplayItem> items, int w, int h, boolean fast, boolean tiled) {
-        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = SoftwareRenderBackend.tiled;
+        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = TileQueue.tiled;
         SoftwareRenderBackend.fastSolid = fast;
-        SoftwareRenderBackend.tiled = tiled;
+        TileQueue.tiled = tiled;
         try {
             SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f);
             try {
@@ -47,7 +47,7 @@ class SoftwarePaintCostTest {
             }
         } finally {
             SoftwareRenderBackend.fastSolid = savedFast;
-            SoftwareRenderBackend.tiled = savedTiled;
+            TileQueue.tiled = savedTiled;
         }
     }
 
@@ -125,7 +125,7 @@ class SoftwarePaintCostTest {
             // 命令の置き場を使い回す（2 フレーム目以降は前のフレームの命令を再利用する）。何度目のフレームも毎回新しく作った基準と一致する
             int[] base = render(its, 640, 480, false, false);
             SoftwareRenderBackend.fastSolid = true;
-            SoftwareRenderBackend.tiled = true;
+            TileQueue.tiled = true;
             SoftwareRenderBackend reuse = new SoftwareRenderBackend(640, 480, 1f);
             try {
                 for (int frame = 0; frame < 4; frame++) {
@@ -162,9 +162,9 @@ class SoftwarePaintCostTest {
     }
 
     private static double frameMs(List<DisplayItem> items, boolean fast, boolean tiled) {
-        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = SoftwareRenderBackend.tiled;
+        boolean savedFast = SoftwareRenderBackend.fastSolid, savedTiled = TileQueue.tiled;
         SoftwareRenderBackend.fastSolid = fast;
-        SoftwareRenderBackend.tiled = tiled;
+        TileQueue.tiled = tiled;
         SoftwareRenderBackend cpu = new SoftwareRenderBackend(800, 600, 1f);
         try {
             long now = 1000;
@@ -177,7 +177,7 @@ class SoftwarePaintCostTest {
         } finally {
             cpu.close();
             SoftwareRenderBackend.fastSolid = savedFast;
-            SoftwareRenderBackend.tiled = savedTiled;
+            TileQueue.tiled = savedTiled;
         }
     }
 }

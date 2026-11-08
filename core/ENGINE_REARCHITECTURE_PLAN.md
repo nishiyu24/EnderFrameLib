@@ -1404,6 +1404,16 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **正直な評価**: 二重構造の解消というより、`CpuRaster` 切り出し前に「描画先」の持ち物を減らす整理。速度は測っていない。
 - **次の一歩**: 根の `Pixmap`（`rootPixmap` / `root()` / `target`）と `Op` 群・`flushPending`。
 
+### 9.5.20 実施記録：Step 3 — 画素を書く命令の型とタイル実行を `Op` / `TileQueue` に分離（2026-11-09）
+
+**破壊的変更**（内部型のみ。`SoftwareRenderBackend.tiled` → `TileQueue.tiled`、`TILE` も `TileQueue` へ。システムプロパティ `enderframe.soft.notiled` は不変）。
+
+- **依存の洗い出し（§9.5.19 の予告どおり）**: 実行機構（`pending` / `submit` / `flushPending` / `releaseAll` / `scratch`）が触るのは `Op` の公開フィールド（`px, w, x0..y1`）と `run()` だけで、`driver` / `frame` / `sink` には依存していなかった。依存するのは、実行し終えた命令の手放し（`release`。型ごとの置き場 `freePaint` など）だけ。そこで `release` はコールバックで受け、置き場は図形側に残した。
+- **実施**: `Op`（命令の抽象型）と `TileQueue`（`submit` / `flush` / `discard` / `isEmpty` / `size`。64×64 のタイル振り分けと並列実行、順序は命令順）を独立ファイルへ。`SoftwareRenderBackend` は 2,178 行から 2,091 行。`PaintOp` / `GradientOp` / `GlyphOp`（図形ごとの命令）と置き場は、図形の分離（§9.5.14 の ①〜⑤）と一緒に動かすので残置。
+- **検証**: 新規 `TileQueueTest`（60 命令・面積がしきい値超の**並列経路**で、順序に敏感な命令の結果が逐次の基準と画素単位で完全一致し、全命令が手放される／小さな作業の逐次経路も一致／即時実行の命令は先に溜めた分を先に実行／描画先が変わると古い描画先の分を先に書き切る／`discard` は実行も手放しもしない／`SoftwareRenderBackend` に `flushPending` / `parallel()` / `abstract static class Op` が戻っていない番人）。`SoftwarePaintCostTest` の決定性（`tiledRenderIsDeterministic`）と GL の画素一致を含む `:core:test`・ルート `:test` 全件緑。
+- **意味**: `kernel/gpu/SimdTileSoftwareRenderer`（§9.2.6 の孤立クラス）とタイル振り分けのコードが二重に存在する状態は残る。`TileQueue` が本流の実装として独立したので、次は `SimdTileSoftwareRenderer` の照合基準（`GlRectRendererTest` / `Milestone4RasterTest`）を `TileQueue` 側へ付け替えて統合するのが道筋（§9.4 Step 3 の訂正に沿う）。
+- **次の一歩**: 根の `Pixmap`（`rootPixmap` / `root()` / `target`）、図形ごとの命令（`PaintOp` 等）と GPU 試行の分離。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1414,7 +1424,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に集約。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に、§9.5.20 で命令の型とタイル実行を `Op` / `TileQueue` に集約。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。§9.5.17 で走査 7 箇所のリスト生成も除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |

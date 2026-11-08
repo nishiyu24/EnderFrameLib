@@ -252,9 +252,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は PaintSceneDriver が受け持ち、ここは画素を塗るだけ
             driver.run(items, nowMs, frame, painter);
-            flushPending(); // 開いたままの層の中身も、層を捨てる前に書き切る
+            queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
         } finally {
-            pending.clear(); // 例外のときは捨てる（描画先は不定）
+            queue.discard(); // 例外のときは捨てる（描画先は不定）
             while (!layers.isEmpty()) {
                 Layer l = layers.remove(layers.size() - 1);
                 if (l.pixmap != null) layerPool.give(l.pixmap);
@@ -423,7 +423,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private void openLayer(Group g) {
-        flushPending(); // 描画先が変わる前に、溜めた分を今の描画先へ
+        queue.flush(); // 描画先が変わる前に、溜めた分を今の描画先へ
         Layer top = layers.isEmpty() ? null : layers.get(layers.size() - 1);
         if (g.maskOf() != null) {
             // マスクの層。親（中身の層）が GPU の層なら GPU で、そうでなければ CPU で描く
@@ -452,7 +452,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 一番内側の層を閉じる。中身の層は、フィルター → マスク → 不透明度を掛けて親へ重ねる。マスクの層は親の層に預ける。 */
     private void closeLayer() {
-        flushPending(); // 層を読んで合成する前に、層へ溜めた分を書き切る
+        queue.flush(); // 層を読んで合成する前に、層へ溜めた分を書き切る
         Layer l = layers.remove(layers.size() - 1);
         if (l.pixmap == null) {
             if (l.isMask()) sink.endMask();
@@ -792,27 +792,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 画素を書く命令とタイル実行
 
-    /**
-     * 画素を書く命令。記録（姿勢・クリップ・範囲の決定。描画先の範囲の更新もここ）は呼び出しスレッドで順に行い、画素への書き込みは
-     * {@link #flushPending} が 64×64 のタイルごとに（並列に）、命令の順で実行する。命令同士は同じ画素を触るときだけ順序が効く。
-     * 命令は不変の値と純粋な関数だけを持つ（記録後に書き換わる状態を読まない）。
-     */
-    private abstract static class Op {
-        int[] px;
-        int w;
-        /** 書く範囲（描画先の画素。x1・y1 は含まない）。 */
-        int x0, y0, x1, y1;
-
-        /** 範囲 {@code [ax0,ax1) × [ay0,ay1)}（この命令の範囲に収まる）の画素を書く。 */
-        abstract void run(int ax0, int ay0, int ax1, int ay1, Scratch s);
-    }
-
-    /** タイル単位の遅延実行を使うか（{@code -Denderframe.soft.notiled=true} で無効＝命令ごとにその場で全範囲を実行）。 */
-    static volatile boolean tiled = !Boolean.getBoolean("enderframe.soft.notiled");
-    static final int TILE = 64;
-
-    private final java.util.ArrayList<Op> pending = new java.util.ArrayList<>();
-    private final Scratch scratch = new Scratch();
+    private final TileQueue queue = new TileQueue(this::release);
     // 実行し終えた命令の置き場（次のフレームの命令に作り直さず使う。記録中の命令はどこにも載っていない）
     private final java.util.ArrayDeque<PaintOp> freePaint = new java.util.ArrayDeque<>();
     private final java.util.ArrayDeque<GradientOp> freeGradient = new java.util.ArrayDeque<>();
@@ -846,72 +826,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             g.g = null; g.lut = null; g.clip = null;
             freeGlyph.addLast(g);
         }
-    }
-
-    /** {@code defer} の命令は溜めてタイルで実行。そうでなければ、溜めた分を先に実行してからその場で全範囲を実行（順序を守る）。 */
-    private void submit(Op op, boolean defer) {
-        if (defer && tiled) {
-            if (!pending.isEmpty() && pending.get(0).px != op.px) flushPending();
-            pending.add(op);
-            return;
-        }
-        flushPending();
-        op.run(op.x0, op.y0, op.x1, op.y1, scratch);
-        release(op);
-    }
-
-    /** 溜めた命令を実行して空にする。描画先を読む・切り替える処理、フレームの終わりの前に必ず呼ぶ。 */
-    private void flushPending() {
-        int n = pending.size();
-        if (n == 0) return;
-        Op first = pending.get(0);
-        int w = first.w, h = first.px.length / w;
-        long area = 0;
-        for (int i = 0; i < n; i++) {
-            Op o = pending.get(i);
-            area += (long) (o.x1 - o.x0) * (o.y1 - o.y0);
-        }
-        if (n == 1 || Runtime.getRuntime().availableProcessors() < 2 || area < Rows.PARALLEL_MIN_PIXELS || !Rows.PARALLEL) {
-            for (int i = 0; i < n; i++) {
-                Op o = pending.get(i);
-                o.run(o.x0, o.y0, o.x1, o.y1, scratch);
-            }
-            releaseAll();
-            return;
-        }
-        int tilesX = (w + TILE - 1) / TILE, tilesY = (h + TILE - 1) / TILE;
-        int[] start = new int[tilesX * tilesY + 1];
-        for (int i = 0; i < n; i++) {
-            Op o = pending.get(i);
-            for (int ty = o.y0 / TILE; ty <= (o.y1 - 1) / TILE; ty++)
-                for (int tx = o.x0 / TILE; tx <= (o.x1 - 1) / TILE; tx++) start[ty * tilesX + tx + 1]++;
-        }
-        for (int t = 0; t < tilesX * tilesY; t++) start[t + 1] += start[t];
-        int[] fill = java.util.Arrays.copyOf(start, tilesX * tilesY);
-        int[] list = new int[start[tilesX * tilesY]];
-        for (int i = 0; i < n; i++) { // 命令の順に入れるので、タイルの中でも命令の順
-            Op o = pending.get(i);
-            for (int ty = o.y0 / TILE; ty <= (o.y1 - 1) / TILE; ty++)
-                for (int tx = o.x0 / TILE; tx <= (o.x1 - 1) / TILE; tx++) list[fill[ty * tilesX + tx]++] = i;
-        }
-        final java.util.ArrayList<Op> ops = pending;
-        java.util.stream.IntStream.range(0, tilesX * tilesY).parallel().forEach(t -> {
-            if (start[t] == start[t + 1]) return;
-            Scratch s = new Scratch();
-            int tx0 = (t % tilesX) * TILE, ty0 = (t / tilesX) * TILE;
-            int tx1 = Math.min(w, tx0 + TILE), ty1 = Math.min(h, ty0 + TILE);
-            for (int k = start[t]; k < start[t + 1]; k++) {
-                Op o = ops.get(list[k]);
-                int ax0 = Math.max(o.x0, tx0), ay0 = Math.max(o.y0, ty0), ax1 = Math.min(o.x1, tx1), ay1 = Math.min(o.y1, ty1);
-                if (ax1 > ax0 && ay1 > ay0) o.run(ax0, ay0, ax1, ay1, s);
-            }
-        });
-        releaseAll();
-    }
-
-    private void releaseAll() {
-        for (int i = 0, n = pending.size(); i < n; i++) release(pending.get(i));
-        pending.clear();
     }
 
     /** 形の塗り（シェーダー＋近道の領域）の命令。 */
@@ -1009,7 +923,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         System.arraycopy(fastDx0, 0, op.dx0, 0, nr); System.arraycopy(fastDx1, 0, op.dx1, 0, nr);
         System.arraycopy(fastDy0, 0, op.dy0, 0, nr); System.arraycopy(fastDy1, 0, op.dy1, 0, nr);
         System.arraycopy(fastCol, 0, op.col, 0, nr);
-        submit(op, fast != null);
+        queue.submit(op, fast != null);
     }
 
     /** 局所の矩形の内側の画素の範囲を作業表の {@code slot} に書く。空なら false。色つきの領域はクリップの被覆率 1 の内側に限る。 */
@@ -1194,7 +1108,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
         }
         op.spLo = lo; op.spHi = hi;
-        submit(op, true); // 行は互いに独立（書き込む画素も別）。タイルごとに並列で塗る
+        queue.submit(op, true); // 行は互いに独立（書き込む画素も別）。タイルごとに並列で塗る
     }
 
     /** グラデーションで形を塗る命令。 */
@@ -1927,7 +1841,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         op.w = target.width();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
-        submit(op, true);
+        queue.submit(op, true);
     }
 
     /** 回転などの姿勢の下で、字形を双一次補間で貼る。{@code s} は 1 レイアウト単位あたりの字形の画素数。 */
