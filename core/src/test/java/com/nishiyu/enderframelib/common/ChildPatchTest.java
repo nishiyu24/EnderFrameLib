@@ -220,4 +220,53 @@ class ChildPatchTest {
     void siblingRulesMakeThePatchStepBackAndStillMatch() {
         run("", true, 4, false);
     }
+
+    /**
+     * 文字の箱は自分の位置を持たず断片だけが置かれるので、後続の行が整数ぶんずれるときも箱は動かず断片だけが動く。
+     * その箱が毎回「不一致」で描き直しにならず、断片の動きで平行移動して使い回されること（結果は描き直しと完全に同じ）。
+     * 折り返す長い文・入れ子の span・複数の文字の塊を含む行で確かめる。
+     */
+    @Test
+    void textBoxesOfFollowingRowsAreTranslatedNotRedrawn() {
+        var sb = new StringBuilder("<style>.row { height: 48px; border-bottom: 1px solid #ccc; line-height: 20px; font-size: 16px; padding: 0 4px }</style><div id=list>");
+        for (int i = 0; i < 120; i++) {
+            sb.append("<div class=row>Row ").append(i).append(" some wrapped description text that goes on and on <span>inner ")
+                    .append(i).append("</span> tail</div>");
+        }
+        sb.append("</div>");
+        String doc = sb.toString();
+        StandaloneView off = new StandaloneView(doc, 300, 2000, FontResolver.FALLBACK);
+        StandaloneView on = new StandaloneView(doc, 300, 2000, FontResolver.FALLBACK);
+        sameItems(flush(off, false), flush(on, true), "初回");
+        var stMiss = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_MISS;
+        var stTr = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_TRANSLATED;
+        long miss = 0, translated = 0; // 数えるのは局所パッチ側（on）の更新だけ。off は毎回の全再構築の基準
+        int steps = 20;
+        Random r = new Random(11);
+        for (int step = 0; step < steps; step++) {
+            int at = 10 + r.nextInt(20);
+            boolean remove = step % 3 == 2;
+            for (StandaloneView v : new StandaloneView[]{off, on}) {
+                UiView.childPatchEnabled = true;
+                HtmlNode list = v.root().getNodeById("list");
+                if (remove) {
+                    list.removeChild(list.children.get(at));
+                } else {
+                    HtmlElement row = new HtmlElement("div");
+                    row.setAttribute("class", "row");
+                    row.updateTextContent("new " + step);
+                    list.insertBefore(row, list.children.get(at));
+                }
+            }
+            List<DisplayItem> expected = flush(off, false);
+            long m0 = stMiss.sum(), t0 = stTr.sum();
+            List<DisplayItem> actual = flush(on, true);
+            miss += stMiss.sum() - m0;
+            translated += stTr.sum() - t0;
+            sameItems(expected, actual, "手順 " + step);
+        }
+        // 1 更新で動く後続の行は 100 以上。文字の箱が描き直しになると、不一致が 1 更新あたり 100 を超える
+        assertTrue(translated > steps * 100L, "後続の行の項目を平行移動して使い回している: " + translated);
+        assertTrue(miss < steps * 30L, "文字の箱が不一致で描き直しになっていない(1 更新 30 未満): " + miss);
+    }
 }
