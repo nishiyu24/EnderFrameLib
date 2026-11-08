@@ -422,6 +422,15 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   発見: 全体実行で 6〜7 KB に見えていたのは、別のテストが `StageProfiler` を有効のまま残していたため（測定自体が確保）。テストは測定の間だけ切る。番人は 2 KB 未満。
   （以下は 2.4 KB 時点の残り）`StyleScope.enter`（節ごと）・変化した節の `RestyleResult`・`StyleAnimator.observe`・`computed.asMap()`。ゲート（`0 B/op`・`< 0.005 ms`）には届いていない。
 
+**全要素の再スタイル（`PipelineBench.restyle` 相当）の調査（2026-11-08）** — `FullRestyleCostTest`（showcase・毎回新しい `InteractionState`）
+- 着手前 **約 6.1 ms・4.9 MB/回**（163 要素、1 要素あたり約 30 KB）。標本は `computeEntry` → `ShareCache.resolve` → `finalizeComputedStyle`（77/193）と `resolveDeclarations`（43/193）に集まり、
+  ショートハンド展開（`PropertyRegistry.expandShorthands` 32/193）が最大の単独項目だった。
+- **ショートハンド展開の記憶**: 展開は文字列だけで決まる純関数なので、（プロパティ名, 値）ごとに結果を覚える（読み取り専用、名前ごと 2,048 件で打ち切り）。**約 6.1 → 4.3〜5.5 ms、4.9 → 4.0 MB**（測定の揺れが大きい）。
+- 残りの標本は 1 か所に集中せず薄く広い（`CssWideKeyword.of`・`StyleMap.equals`・`RuleIndex.candidates`・`substituteVariables` など各 2〜4%）。個別の削減では `< 0.10 ms` に届かないため、
+  必要なのは計画書の本来の方針（ロード時に静的なカスケードを解決して焼き付ける AOT）。`ShareCache` を再スタイルをまたいで保持する案は、鍵に入っていない入力
+  （コンテナのカスタムプロパティなど）が古くなる危険があり、鍵の洗い出しなしには行わない。
+- 注意: `HoverToggleCostTest` の確保量は、全体実行では JIT の状態（先に走ったテストが呼び出し先の型を汚す）で 6 KB まで増えるため番人から外し、数値表示のみにした（単独実行は約 0.9 KB）。
+
 **未達（次の作業）**
 - `ComputedStyle` 本体は `String[] values` のまま（`StyleStructs` は派生ビュー）。`BoxMeasurer` 等が文字列経路を読むため、置き換えは
   Milestone 3 の入力切替（`ConstraintSpace` / `LayoutResult`）と同時でないと破壊的になる。
