@@ -17,6 +17,17 @@ class HoverToggleCostTest {
 
     @Test
     void measureHoverToggle() {
+        // 他のテストが段別プロファイラを有効のまま残すと、測定自体が確保する。この測定の間だけ切る
+        boolean wasProfiling = com.nishiyu.enderframelib.core.diag.StageProfiler.enabled();
+        com.nishiyu.enderframelib.core.diag.StageProfiler.enable(false);
+        try {
+            measure();
+        } finally {
+            com.nishiyu.enderframelib.core.diag.StageProfiler.enable(wasProfiling);
+        }
+    }
+
+    private void measure() {
         StringBuilder sb = new StringBuilder("<style>body{margin:0}.b{padding:4px;background:#ccc}.b:hover{background:#eee}</style><div>");
         for (int i = 0; i < 40; i++) sb.append("<div class=\"card\"><span>label ").append(i).append("</span><button class=\"b\" id=\"b").append(i).append("\">go</button></div>");
         sb.append("</div>");
@@ -43,7 +54,13 @@ class HoverToggleCostTest {
             ms = Math.min(ms, (mx.getThreadCpuTime(tid) - cpu0) / 1e6 / n);
             bytes = Math.min(bytes, (mx.getThreadAllocatedBytes(tid) - a0) / (double) n);
         }
-        assertTrue(bytes < 4000, "hover 往復 1 回のヒープ確保が増えた（着手前は約 5.9 KB、現在は約 2.5 KB）: " + bytes + " B");
+        assertTrue(bytes < 2000, "hover 往復 1 回のヒープ確保が増えた（着手前は約 5.9 KB、現在は約 0.9 KB）: " + bytes + " B");
+        long b0 = mx.getThreadAllocatedBytes(tid);
+        for (int i = 0; i < 2000; i++) { on = !on; state.setHoveredNode(on ? target : null); parser.restyleLayoutTree(root, doc, W, H, Map.of(), state); }
+        long b1 = mx.getThreadAllocatedBytes(tid);
+        for (int i = 0; i < 2000; i++) { on = !on; state.setHoveredNode(on ? target : null); }
+        long b2 = mx.getThreadAllocatedBytes(tid);
+        System.out.println("HOVER-SPLIT total " + (b1 - b0) / 2000 + " B, setHoveredNode alone " + (b2 - b1) / 2000 + " B");
         System.out.println("HOVER-COST per toggle: cpu " + String.format("%.4f", ms) + " ms, alloc " + String.format("%.0f", bytes) + " B");
     }
 }

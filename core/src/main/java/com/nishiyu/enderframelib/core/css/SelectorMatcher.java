@@ -205,8 +205,9 @@ public final class SelectorMatcher {
         if (token.id != null && !token.id.equals(node.getId())) return false;
         if (!token.tag.equals("*") && !token.tag.equals(node.tag)) return false;
 
-        for (String c : token.classes) {
-            if (!node.hasClass(c)) return false;
+        // 添字ループ: 拡張 for は項目のある一覧ごとに反復子を作る（照合は再スタイルのたびに大量に走る）
+        for (int i = 0, n = token.classes.size(); i < n; i++) {
+            if (!node.hasClass(token.classes.get(i))) return false;
         }
 
         if (token.isEmpty && hasContent(node)) return false;
@@ -215,17 +216,18 @@ public final class SelectorMatcher {
         if ((token.isRequired || token.isOptional) && !isRequirable(node)) return false;
         if (token.isRequired && !node.attrs.containsKey("required")) return false;
         if (token.isOptional && node.attrs.containsKey("required")) return false;
-        for (AttrMatcher m : token.attrMatchers) {
+        for (int i = 0, n = token.attrMatchers.size(); i < n; i++) {
+            AttrMatcher m = token.attrMatchers.get(i);
             if (!m.matches(node.attrs.get(m.name()))) return false;
         }
-        for (DocumentPseudoClass pseudo : token.documentPseudoClasses) {
-            if (!matchesDocumentPseudoClass(pseudo, node)) return false;
+        for (int i = 0, n = token.documentPseudoClasses.size(); i < n; i++) {
+            if (!matchesDocumentPseudoClass(token.documentPseudoClasses.get(i), node)) return false;
         }
-        for (List<String> ranges : token.langRanges) {
-            if (!matchesLanguage(ranges, languageOf(node))) return false;
+        for (int i = 0, n = token.langRanges.size(); i < n; i++) {
+            if (!matchesLanguage(token.langRanges.get(i), languageOf(node))) return false;
         }
-        for (String direction : token.directions) {
-            if (!direction.equals(directionOf(node))) return false;
+        for (int i = 0, n = token.directions.size(); i < n; i++) {
+            if (!token.directions.get(i).equals(directionOf(node))) return false;
         }
         if (!matchesStructuralPosition(token, node, lookup)) return false;
         if (evaluateHas) {

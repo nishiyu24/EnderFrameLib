@@ -302,7 +302,12 @@ public class InteractionState implements StateLookup {
 
     @Override
     public ElementState stateOf(HtmlNode node) {
-        if (node == null) return ElementState.NONE;
+        return ElementState.of(stateBitsOf(node));
+    }
+
+    /** {@link #stateOf} のビット集合そのもの（値オブジェクトを作らない）。 */
+    public int stateBitsOf(HtmlNode node) {
+        if (node == null) return 0;
         int bits = ElementState.fromNodeAttributes(node).flags();
         StateFlags flags = get(node);
         if (flags != null) {
@@ -328,7 +333,7 @@ public class InteractionState implements StateLookup {
                 else bits &= ~ElementState.OPEN;
             }
         }
-        return bits == 0 ? ElementState.NONE : new ElementState(bits);
+        return bits;
     }
 
     public boolean setHovered(HtmlNode node, boolean hovered) {
@@ -715,9 +720,15 @@ public class InteractionState implements StateLookup {
             case "inline-size" -> ContainerType.INLINE_SIZE;
             default -> ContainerType.NORMAL;
         };
-        List<String> names = new ArrayList<>();
-        for (String name : style.keyword("container-name", "none").split("\s+")) {
-            if (!name.isEmpty() && !name.equals("none")) names.add(name);
+        String nameList = style.keyword("container-name", "none");
+        List<String> names;
+        if (nameList.equals("none") || nameList.isEmpty()) {
+            names = List.of(); // 正規表現の分割を避ける（大半の要素は名前を持たない）
+        } else {
+            names = new ArrayList<>();
+            for (String name : nameList.split("\s+")) {
+                if (!name.isEmpty() && !name.equals("none")) names.add(name);
+            }
         }
         ContainerBox box = new ContainerBox(flags.containerWidth, flags.containerHeight, type, names,
                 style.customProperties());
