@@ -495,7 +495,7 @@ public class RenderPipeline {
 
     private static StyleCache styleCacheState(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
         if (flags == null
-                || flags.isStyleDirty
+                || flags.isStyleDirty()
                 || flags.computedStyle == null
                 || Float.compare(flags.cachedParentFontSize, parentFontSize) != 0
                 || Float.compare(flags.cachedRootFontSize, scope.rootFontSize()) != 0
@@ -683,9 +683,9 @@ public class RenderPipeline {
         flags.viewportDependent = dependsOnViewport(node, rawStyle);
         flags.hasInteractiveRules = hasInteractive;
         flags.clearStyleDirtyFlag();
-        flags.subtreeDirty = false;
-        flags.dirtyBelow = false;
-        flags.unscoped = false;
+        flags.clearSubtreeDirty();
+        flags.clearDirtyBelow();
+        flags.clearUnscoped();
         String inlineStyle = node.attrs.get("style");
         flags.inheritsExplicitly = inlineStyle != null && inlineStyle.toLowerCase(java.util.Locale.ROOT).contains("inherit");
     }
@@ -763,7 +763,7 @@ public class RenderPipeline {
         ComputedStyle computed;
         // 要素自身が子孫の規則の入力になる変化（祖先の状態・class を読む規則）。算出値が変わらなくても子孫を算出し直す。
         // 祖先から受けた FORCE_SUBTREE も、さらに下の子孫まで続ける
-        boolean subtreeDirty = flags.subtreeDirty || force == FORCE_SUBTREE;
+        boolean subtreeDirty = flags.subtreeDirty() || force == FORCE_SUBTREE;
 
         if (isDirty) {
             ComputedStyle prevStyle = box.style;
@@ -815,9 +815,9 @@ public class RenderPipeline {
         } else {
             computed = flags.computedStyle;
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
-            flags.subtreeDirty = false;
+            flags.clearSubtreeDirty();
         }
-        flags.dirtyBelow = false; // 子孫は、このあと必要なものだけ走査して片付ける
+        flags.clearDirtyBelow(); // 子孫は、このあと必要なものだけ走査して片付ける
 
         float nextParentFontSize = computed.fontSizePx();
         StyleScope childScope = scope.enter(node, computed);
@@ -868,14 +868,14 @@ public class RenderPipeline {
      * ビューポートが変わったとき（子孫の {@code vw} などが古くなる）は走査側が {@code pruneRestyle} を切る。
      */
     private static boolean canSkipRestyle(InteractionState.StateFlags flags, float parentFontSize, StyleScope scope) {
-        return flags != null && !flags.isStyleDirty && !flags.subtreeDirty && !flags.dirtyBelow
+        return flags != null && !flags.isStyleDirty() && !flags.subtreeDirty() && !flags.dirtyBelow()
                 && styleCacheState(flags, parentFontSize, scope) == StyleCache.VALID;
     }
 
     private static boolean isStateDirty(InteractionState interactionState, HtmlNode node) {
         if (interactionState == null) return false;
         InteractionState.StateFlags flags = interactionState.get(node);
-        return flags == null || flags.isStyleDirty;
+        return flags == null || flags.isStyleDirty();
     }
 
     private static RestyleResult restylePseudoElement(LayoutBox owner, PseudoType type, ComputedStyle ownerStyle,
@@ -975,7 +975,7 @@ public class RenderPipeline {
         boolean hasInteractive;
         int childForce = FORCE_NONE;
         boolean childForceIfInherits = false;
-        boolean subtreeDirty = (flags != null && flags.subtreeDirty) || force == FORCE_SUBTREE;
+        boolean subtreeDirty = (flags != null && flags.subtreeDirty()) || force == FORCE_SUBTREE;
 
         if (needsRestyle) {
             boolean tk = trackAllocations;
@@ -1022,8 +1022,8 @@ public class RenderPipeline {
             computed = flags.computedStyle;
             hasInteractive = flags.hasInteractiveRules;
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
-            flags.subtreeDirty = false;
-            flags.dirtyBelow = false;
+            flags.clearSubtreeDirty();
+            flags.clearDirtyBelow();
         }
         Map<String, String> childInherited = computed.asMap();
         StyleScope childScope = scope.enter(node, computed);
