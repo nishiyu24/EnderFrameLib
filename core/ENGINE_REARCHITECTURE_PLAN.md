@@ -547,14 +547,16 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   **測定**: 休みを入れたスクロール＋描画 1 回の CPU **1.52 → 0.82 ms**（ノイズ大・1 回ずつの測定）。休み無しの連続実行は 0.13 ms で変化なし。
   休みを入れると連続実行より重い（0.13 → 約 1 ms）のは、冷えたキャッシュ・JIT の状態によるもので、連続実行の値は「実フレームの値」ではなく下限に近い。
   注: `NoDraw` バックエンドでは描画側の姿勢状態が作られず、`UiView` 単体で移動量を足した結果のヒット位置は検証できていない（上のテストは集合と索引の契約のみ）。
-- **`HitTestIndex.patch` の参照表（2026-11-08・達成）**: 変更した節ごとに全スクロール箱の連鎖を走査していたのをやめ、対話項目の `dynamicRefs` と同じ形の `scrollRefs`
-  （節の鍵 → スクロール箱の添字と連鎖内の位置）をロード時に作って引く。`patch` は O(変更した節 × その節を連鎖に含む箱) になる。
-  検証: `ScrollContainerPatchTest`（入れ子のスクロール箱で 100 ステップ、patch した索引の `scrollContainersAt` / `hitTest` が毎回作り直した索引と全点で一致、索引の使い回しは 50 回超）、
-  既存の `ScrollIndexReuseTest`。全体（root + core）通過。
-  **測定**: ペース付きのスクロール＋描画は 3 回走らせて **0.117 / 0.703 / 1.094 ms** と**ばらつきが 10 倍近く**あり、この変更の効果は数値では判別できない
-  （休みを入れた測定は CPU の省電力状態・キャッシュの冷え方に支配される。判断には複数回の中央値か、サンプル数を増やした測定が要る）。
-- **次の作業（< 0.01 ms へ）**: 休みを入れた測定の安定化（複数回の中央値・CPU 時間でなく命令数に近い指標）と、その上での再標本化（`CssAnimator.currentValuesInto`・`find`）・
-  `curRes` の初期化を SKIP の範囲で省く・画面より大きい層（描画先の座標のずらし）。GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
+- **`HitTestIndex.patch` を O(変更した節) に（2026-11-08・達成）**: スクロールの中身の節は**全項目の連鎖に入っている**ので、連鎖の書き換え（最初に試した参照表 `scrollRefs` を含む）では
+  patch が O(全項目) のままだった（標本で patch が作業の約 36%）。連鎖を書き換えるのをやめ、読む側（`PrefixCache.apply`・`hits` の自身・`hitTest` の低速経路・`scrollContainersAt`）が
+  動きうる節だけ `live()` で `elementMap` の最新の項目を引く方式にした。patch は `elementMap` の差し替えと、動く節がスクロールする箱でもある場合の `Entry` の作り直しだけ。
+  検証: `ScrollContainerPatchTest`（入れ子のスクロール箱で 100 ステップ、patch した索引の `scrollContainersAt` / `hitTest` が毎回作り直した索引と全点で一致、索引の使い回し 50 回超）、
+  既存の `ScrollIndexReuseTest` / `ScrollTranslateTest` / `DeferredScrollLayoutTest`。全体（root + core）通過。
+  **測定の安定化**: ペース付きの測定を、フレームごとの壁時計時間（休みを除く）の**中央値と p90**に変更（平均は省電力状態の外れ値で 0.1〜1.1 ms と 10 倍ぶれた）。
+  3 回の中央値 **0.480 / 0.493 / 0.479 ms**（p90 約 0.8 ms）。標本（休み中を除く作業の内訳）では `HitTestIndex.patch` が 22% → 0.6%、残りは `CssAnimator.currentValuesInto`（約 5%）・
+  `hitTestIndex`・`find`。ゲート（< 0.01 ms）にはまだ遠く、残りは `UiView.scroll` → ヒットテストの経路と GL 側の固定費。
+- **次の作業（< 0.01 ms へ）**: ペース付きの条件でフェーズ別の時間（ヒットテスト・`UiView` のスクロール更新・描画）を分けて測る、`curRes` の初期化を SKIP の範囲で省く、
+  画面より大きい層（描画先の座標のずらし）。GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
 

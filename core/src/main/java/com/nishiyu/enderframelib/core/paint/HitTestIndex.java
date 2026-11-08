@@ -78,10 +78,6 @@ public class HitTestIndex {
      * （格子に載せない）ので、移動量が変わっても格子は古くならず、{@link #patch} だけで索引を使い回せる。
      */
     private final LongOpenHashSet dynamicKeys = new LongOpenHashSet();
-    /** 動きうる節が、どの対話項目（{@link #entryArr} の添字）の連鎖の何番目にあるか（添字と位置の組を平らに並べる）。 */
-    private final Long2ObjectOpenHashMap<IntArrayList> dynamicRefs = new Long2ObjectOpenHashMap<>();
-    /** 動きうる節が、どのスクロールする箱（{@link #scrollEntries} の添字）の連鎖の何番目にあるか（{@link #dynamicRefs} と同じ並び）。 */
-    private final Long2ObjectOpenHashMap<IntArrayList> scrollRefs = new Long2ObjectOpenHashMap<>();
     /** 対話項目になっている項目の鍵（対話項目そのものを差し替えるときは {@link #patch} は断る）。 */
     private final LongOpenHashSet entryElementKeys = new LongOpenHashSet();
     /** スクロールする箱の項目の鍵 → {@link #scrollEntries} の添字（差し替えるときは Entry を作り直す）。 */
@@ -127,35 +123,22 @@ public class HitTestIndex {
         indexDynamicRefs();
     }
 
-    /** 動きうる節の参照表と、差し替えを断る鍵の集合を作る。 */
+    /** 差し替えを断る鍵の集合と、スクロールする箱の引き当てを作る。 */
     private void indexDynamicRefs() {
-        for (int i = 0; i < entryArr.length; i++) {
-            Entry e = entryArr[i];
-            entryElementKeys.add(e.element.key());
-            if (dynamicKeys.isEmpty()) continue;
-            List<DisplayItem> chain = e.transformChain;
-            for (int p = 0; p < chain.size(); p++) {
-                long k = chain.get(p).key();
-                if (!dynamicKeys.contains(k)) continue;
-                IntArrayList refs = dynamicRefs.get(k);
-                if (refs == null) dynamicRefs.put(k, refs = new IntArrayList());
-                refs.add(i);
-                refs.add(p);
-            }
-        }
-        for (int i = 0; i < scrollEntries.size(); i++) {
-            scrollEntryAt.put(scrollEntries.get(i).element.key(), i);
-            if (dynamicKeys.isEmpty()) continue;
-            List<DisplayItem> chain = scrollEntries.get(i).transformChain;
-            for (int p = 0; p < chain.size(); p++) {
-                long k = chain.get(p).key();
-                if (!dynamicKeys.contains(k)) continue;
-                IntArrayList refs = scrollRefs.get(k);
-                if (refs == null) scrollRefs.put(k, refs = new IntArrayList());
-                refs.add(i);
-                refs.add(p);
-            }
-        }
+        for (int i = 0; i < entryArr.length; i++) entryElementKeys.add(entryArr[i].element.key());
+        for (int i = 0; i < scrollEntries.size(); i++) scrollEntryAt.put(scrollEntries.get(i).element.key(), i);
+    }
+
+    /**
+     * 連鎖の中の項目を、動きうる節なら {@link #elementMap} の最新のインスタンスに置き換えて返す。
+     * 連鎖そのものは書き換えない（スクロールの中身の節は全項目の連鎖に入っているので、書き換えると {@link #patch} が O(全項目) になる）。
+     */
+    private DisplayItem live(DisplayItem a) {
+        if (dynamicKeys.isEmpty()) return a;
+        long k = a.key();
+        if (!dynamicKeys.contains(k)) return a;
+        DisplayItem r = elementMap.get(k);
+        return r != null ? r : a;
     }
 
     /** この索引が動きうる節として扱っている id。 */
@@ -167,7 +150,8 @@ public class HitTestIndex {
      * 動きうる節の項目を、移動量の違う新しいインスタンスに差し替える（索引は作り直さない）。連鎖と id の引き当てだけを書き換える。
      * 差し替えられない（動きうる節として登録していない・対話項目そのものを差し替える）なら何も変えずに false。
      *
-     * <p>描画側の状態が無い祖先は、連鎖の中の項目インスタンスの移動量で逆変換されるので、連鎖の側も書き換える。</p>
+     * <p>描画側の状態が無い祖先は、連鎖の中の項目インスタンスの移動量で逆変換されるので、読む側が {@link #live} で最新の項目を引く
+     * （連鎖は書き換えない。patch は変更した節の数に比例する）。</p>
      */
     public boolean patch(List<DisplayItem> changed) {
         for (int i = 0, n = changed.size(); i < n; i++) {
@@ -178,14 +162,6 @@ public class HitTestIndex {
             DisplayItem item = changed.get(i);
             long k = item.key();
             elementMap.put(k, item);
-            IntArrayList refs = dynamicRefs.get(k);
-            if (refs != null) {
-                for (int r = 0, rn = refs.size(); r < rn; r += 2) entryArr[refs.getInt(r)].transformChain.set(refs.getInt(r + 1), item);
-            }
-            IntArrayList srefs = scrollRefs.get(k);
-            if (srefs != null) {
-                for (int r = 0, rn = srefs.size(); r < rn; r += 2) scrollEntries.get(srefs.getInt(r)).transformChain.set(srefs.getInt(r + 1), item);
-            }
             if (scrollEntryAt.containsKey(k)) { // 動く節がスクロールする箱でもある: 新しい項目で Entry を作り直す
                 int at = scrollEntryAt.get(k);
                 Entry old = scrollEntries.get(at);
@@ -333,7 +309,7 @@ public class HitTestIndex {
         }
         int[] al = always;
         int b = 0;
-        PrefixCache prefix = PREFIX.get().reset(sessionId, px, py); // スレッドごとに使い回す（問い合わせごとの表の拡張と割り当てを省く）
+        PrefixCache prefix = PREFIX.get().reset(this, sessionId, px, py); // スレッドごとに使い回す（問い合わせごとの表の拡張と割り当てを省く）
         AnimatedValues scratch = prefix.scratch;
         double[] p = prefix.pt;
         while (a < aEnd || b < al.length) {
@@ -353,6 +329,7 @@ public class HitTestIndex {
     private static final ThreadLocal<PrefixCache> PREFIX = ThreadLocal.withInitial(PrefixCache::new);
 
     private static final class PrefixCache {
+        HitTestIndex owner;
         String sessionId;
         double px, py;
         final AnimatedValues scratch = new AnimatedValues();
@@ -364,7 +341,8 @@ public class HitTestIndex {
         int size;
         final double[] tmp = new double[2];
 
-        PrefixCache reset(String sessionId, double px, double py) {
+        PrefixCache reset(HitTestIndex owner, String sessionId, double px, double py) {
+            this.owner = owner;
             this.sessionId = sessionId;
             this.px = px;
             this.py = py;
@@ -394,7 +372,7 @@ public class HitTestIndex {
                 i = (i + 1) & mask;
             }
             apply(chain, upTo - 1, out); // 一段手前までの結果
-            DisplayItem ancestor = chain.get(upTo - 1);
+            DisplayItem ancestor = owner.live(chain.get(upTo - 1));
             inverseInto(out[0], out[1], ancestor, CssAnimator.currentValuesInto(sessionId, ancestor, scratch), tmp);
             out[0] = tmp[0];
             out[1] = tmp[1];
@@ -441,7 +419,7 @@ public class HitTestIndex {
             x = (x - cx) + cx;
             y = (y - cy) + cy;
         } else {
-            DisplayItem self = chain.get(chain.size() - 1);
+            DisplayItem self = live(chain.get(chain.size() - 1));
             inverseInto(x, y, self, CssAnimator.currentValuesInto(sessionId, self, scratch), p);
             x = p[0];
             y = p[1];
@@ -582,7 +560,8 @@ public class HitTestIndex {
 
             double px = pixelX;
             double py = pixelY;
-            for (DisplayItem ancestor : entry.transformChain) {
+            for (DisplayItem chained : entry.transformChain) {
+                DisplayItem ancestor = live(chained);
                 AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
                 double[] p = inverseTransform(px, py, ancestor, anim);
                 px = p[0];
@@ -609,7 +588,8 @@ public class HitTestIndex {
         for (Entry entry : scrollEntries) {
             if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) continue;
             double px = pixelX, py = pixelY;
-            for (DisplayItem ancestor : entry.transformChain) {
+            for (DisplayItem chained : entry.transformChain) {
+                DisplayItem ancestor = live(chained);
                 double[] p = inverseTransform(px, py, ancestor, CssAnimator.getCurrentValues(sessionId, ancestor));
                 px = p[0];
                 py = p[1];
