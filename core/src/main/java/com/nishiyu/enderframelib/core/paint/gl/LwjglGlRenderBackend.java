@@ -17,7 +17,6 @@ import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.PaintResources;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
-import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
@@ -54,9 +53,9 @@ import java.util.Map;
  * <p><b>何を GPU が描くか</b>: 単色の角丸矩形（背景・進捗バー・つまみなど。楕円の角を含む）と角丸の枠線を、
  * SDF のフラグメントシェーダー 1 本で描く（クリップの連鎖・変形・不透明度は GPU 側で掛ける）。
  * グラデーション・影・字形（回転なし）・画像（縮小でなければ）も GPU が描く。
- * 回転した文字・縮小した画像・破線の枠線などは {@link SoftwareRenderBackend} が CPU で描いた層を、
+ * 回転した文字・縮小した画像・破線の枠線などは {@link CpuLayerFallback} 越しに CPU が描いた層を、
  * 描画順を保ったままテクスチャとして重ねる（変わった範囲だけを転送する）。したがって画は
- * {@link SoftwareRenderBackend} と同じで、図形の多いページほど CPU の仕事が減る。
+ * CPU 描画と同じで、図形の多いページほど CPU の仕事が減る。
  *
  * <p>GL のコンテキストは作ったスレッドに結び付く。{@link #render}・{@link #pixmap}・{@link #close} はそのスレッドから呼ぶ。
  * Minecraft の中（すでに GL が初期化された JVM）では使わないこと。
@@ -604,7 +603,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final String sessionId;
     /** 文字・画像の供給元。保険の {@link #cpu} と共有し、差し替えはここに 1 回書く（CPU 描画器へ転送しない）。 */
     private final PaintResources resources = new PaintResources();
-    private final SoftwareRenderBackend cpu;
+    private final CpuLayerFallback cpu;
     /** 単色の角丸矩形を Property Tree ＋ 1 回のインスタンス描画で描く新経路（{@link #rectTrees} が false、または作れなければ null）。 */
     private GlRectStream rects;
     /**
@@ -787,7 +786,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         this.width = Math.max(1, Math.round(cssW * devicePixelRatio));
         this.height = Math.max(1, Math.round(cssH * devicePixelRatio));
         this.sessionId = "gl-" + SESSIONS.incrementAndGet();
-        this.cpu = new SoftwareRenderBackend(cssW, cssH, devicePixelRatio, sessionId, resources);
+        this.cpu = new CpuLayerFallback(cssW, cssH, devicePixelRatio, sessionId, resources);
         this.readback = new Pixmap(width, height);
         long outerContext = GLFW.glfwGetCurrentContext();
         GLCapabilities outerCaps = currentCaps();
@@ -1329,7 +1328,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** CPU が描いた層のうち、変わった範囲をテクスチャにして重ね、層を空に戻す。 */
     /** CPU の根の画素（画面サイズ）を確保済みか。図形が全部 GPU に受け取られている間は false のまま（テスト用）。 */
     boolean cpuPixelsAllocated() {
-        return cpu.isRootAllocated();
+        return cpu.isAllocated();
     }
 
     /** CPU 層の重ね用テクスチャを確保済みか（テスト用）。 */
@@ -1342,7 +1341,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (b == null) return;
         drainRects(); // 溜めた矩形は、あとから来る CPU の層より先に描く（描画順）
         flushBatch();
-        drawPixels(cpu.pixmap().pixels(), b, false);
+        drawPixels(cpu.pixels(), b, false);
         cpu.clearDirty();
     }
 
