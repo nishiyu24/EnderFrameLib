@@ -206,8 +206,16 @@ public final class SelectorMatcher {
         if (!token.tag.equals("*") && !token.tag.equals(node.tag)) return false;
 
         // 添字ループ: 拡張 for は項目のある一覧ごとに反復子を作る（照合は再スタイルのたびに大量に走る）
-        for (int i = 0, n = token.classes.size(); i < n; i++) {
-            if (!node.hasClass(token.classes.get(i))) return false;
+        int[] wantedClasses = token.classes.isEmpty() ? null : token.classAtoms();
+        if (wantedClasses != null && node.hasNodeId()) {
+            // 整数の比較だけで済ませる（節の classAtoms は属性が変わるたびに作り直されている）
+            for (int atom : wantedClasses) {
+                if (!node.hasClassAtom(atom)) return false;
+            }
+        } else {
+            for (int i = 0, n = token.classes.size(); i < n; i++) {
+                if (!node.hasClass(token.classes.get(i))) return false;
+            }
         }
 
         if (token.isEmpty && hasContent(node)) return false;

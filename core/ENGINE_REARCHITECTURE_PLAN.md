@@ -189,46 +189,59 @@ Minecraft のワールド内 Surface（ブロック面・ホログラム・手�
 
 ---
 
-## 4. 現行 vs. 新アーキテクチャ (EnderKernel) の性能比較予測
+## 4. 初期ベースライン vs. 現在の到達値（2026-11-08） vs. 最終目標値 (EnderKernel)
 
-| 指標 (`showcase.html` 163要素 / `large-list` 500行) | 現行 `:core` (JMH 実測) | 一般的な Web エンジン (Blink/CEF) | **新設計「EnderKernel」目標値** | 改善倍率 |
-| :--- | :---: | :---: | :---: | :---: |
-| **1フレームの GC ヒープ確保量** | **5.3 MB 〜 14.6 MB / frame** | 数百 KB (C++ 側) + JNI コピー | **`0 Byte / frame` (完全 Zero-GC)** | **$\infty$（GC 停止消滅）** |
-| **状態変更 / `:hover` 時のスタイル更新** | 0.30 ms 〜 4.25 ms | 0.20 ms 〜 1.50 ms | **`< 0.005 ms` (5 マイクロ秒)** | **約 100〜800 倍** |
-| **全文書レイアウト (`fullLayout`)** | 12.48 ms | 1.50 ms 〜 3.00 ms | **`< 0.25 ms` (SIMD 1パス)** | **約 50 倍** |
-| **スクロール / アニメーション 1 フレーム** | 0.50 ms 〜 8.59 ms | 0.20 ms 〜 1.00 ms | **`< 0.01 ms` (GPU 側で 100% 完結)** | **約 100〜850 倍** |
-| **DisplayList 構築・GPU 転送** | 0.58 ms 〜 2.12 ms | 0.30 ms 〜 0.80 ms | **`0.00 ms` (Persistent Mapped VRAM 直書き)** | **完全ゼロ化** |
-| **CPU ソフトウェア描画 (`softwarePaint`)** | 43.30 ms | 8.00 ms 〜 15.00 ms | **`< 3.00 ms` (64×64 Tile + AVX2 SIMD)** | **約 15 倍** |
-| **3D ワールド内 Surface (100面同時描画)** | 数十 ms（FBO 切替・アトラス再生成） | 不可（CEF は 1 インスタンス数十MB） | **`< 0.30 ms` (Single Indirect Draw + GPU 曲線)** | **ゲーム内大量配置が可能に** |
+| 指標 (`showcase.html` 163要素 / `large-list` 500行) | 初期ベースライン (着手前) | **現在の到達値 (2026-11-08 実測)** | **最終設計「EnderKernel」目標値** | 現在の達成度・評価 |
+| :--- | :---: | :---: | :---: | :--- |
+| **静止フレーム (Idle Frame) コスト** | 毎フレーム走査・確保発生 | **CPU 無効化処理 Skip (`isIdleFrame`) / アニメ確保 `0 B`**<br/>(GL 描画込み壁時計 `~0.24 ms`) | **`0.00 ms / 0 Byte`** | **◎ ほぼ達成**（GL 側の前フレーム合成再利用のみ残存） |
+| **状態変更 / `:hover` 往復 1 回** | `0.097〜4.25 ms`<br/>`217 KB/op` | **`0.006〜0.009 ms` (`StateTable` 単体 `~10 ns`)**<br/>**`0.9 KB/op`** (うち `setHoveredNode` 0.47 KB) | **`< 0.005 ms` / `0 B/op`** | **◎ 25〜240倍削減**（ゲートまで残り数 µs・0.9 KB） |
+| **全文書レイアウト (`fullLayout` / `relayout`)** | `12.48〜12.97 ms` (`9.27 MB`)<br/>`relayout`: `6.39 ms` | 初回: **`8.76 ms`** / 定常 (`fullLayoutWarm`): **`2.1〜3.0 ms`**<br/>`relayout` (showcase): **`2.41 ms` (−62%)** / (large-list): **`0.96 ms` (−52%)** | **`< 0.30 ms` (SIMD 1パス)** | **○ 単一パス化 (`LAYOUT_PASSES=1`)・`StyleFacts` で大幅短縮**（SoA 測定への全面切替が残課題） |
+| **Flex / Grid 部分文字変更時の再測定箱数** | Flex: `361〜386 箱`<br/>Grid: `421 箱` | **Flex 行: `13 箱` / Flex 列: `29 箱`**<br/>**Grid: `15 箱`** (`Tentative` 3スロット再利用) | **変更要素＋親のみ (`< 15 箱`)** | **★ 完了（約 28 倍削減）** |
+| **ウィンドウ幅のみリサイズ時の再測定** | 固定幅カード 200枚: `1,004 回` (`1.50 ms`) | **`4 回` (`0.82 ms`)** (`measuredWidthFree` 部分木再利用) | **幅非依存部分木の再測定 `0 回`** | **★ 完了（測定回数 99.6% 削減）** |
+| **リスト行挿入＋削除 (500行・2回更新)** | `5.75 ms` (`6.9 MB`)<br/>(1回あたり `~2.9 ms`) | **整数行: `2.60 ms` (`3.6 MB`) / 小数行: `3.67 ms`**<br/>(うちレイアウト配置は **`0.25〜0.40 ms`** に短縮) | **`< 0.05 ms` ($O(\log N)$ 仮想化)** | **△ `CHILD_PATCH` 局所更新で配置は高速化**（後続行の `DisplayItem` 平行移動複製が支配的） |
+| **スクロール + GL 描画 1 フレーム** | GL 新経路初期 `9.97 ms` / 従来 `1.41 ms`<br/>ヒープ **`2,000 KB/frame`** | **連続: `0.130 ms` / 4ms ペース中央値: `0.48 ms`**<br/>**ヒープ `5.8 KB/frame` (−99.7% 削減！)** | **`< 0.01 ms` / `0 B/frame`** | **◎ GPU スクロール層保持 + 3面 VRAM リング + `HitTestIndex.patch` $O(1)$ 化で劇的改善** |
+| **DisplayList 構築 (`PipelineBench.displayList`)** | `5.33 MB/op` | **`0.71 ms/op`・`1.23 MB/op`** (スクロール時は [`OffsetItemList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/OffsetItemList.java) で全複製ゼロ) | **`0 B/op` (VRAM 直書き)** | **○ 約 1/4 に削減**（完全ゼロ化には `DisplayItem` を経由しない直接記録が必要） |
+| **CPU ソフトウェア描画 (`softwarePaint`)** | `43.30 ms` | **`1.11〜1.18 ms` (約 37 倍高速化！)**<br/>(Fast 解析領域 + 64×64 タイル遅延並列 + 命令プール) | **`< 3.50 ms`** | **★ ゲート大幅達成（目標の 3 倍高速）** |
 
 ---
 
-## 5. 実装モジュール構成案（`core/kernel` パッケージの新設）
+## 5. 実装モジュール構成（`core/kernel` パッケージの実装状況）
 
-既存の 1,229 個のテストと互換性を保ちながら一気に載せ替えるため、`core/` 内に以下の新カーネル層を構築し、既存の DOM/CSS/RenderPipeline API をそのフロントエンド（コンパイラ＆ハンドル）として再配線します。
+既存の全テスト（root + core 計 1,980 件超）と互換性を保ちながら段階的に載せ替えるため、`core/` 内に以下の新カーネル層を構築し、既存の DOM/CSS/RenderPipeline/Paint API と接続しています。
 
 ```text
 core/src/main/java/com/nishiyu/enderframelib/core/
 ├── kernel/
-│   ├── memory/
-│   │   ├── DocumentArena.java        // Panama FFM MemorySegment による 64B 整列 SoA アリーナ
-│   │   ├── AtomTable.java            // 文字列 → 32-bit 整数 ID のロックフリー辞書
-│   │   └── SpscMutationRing.java     // キャッシュラインパディング済み Wait-Free リングバッファ
-│   ├── compiler/
-│   │   ├── UiAotCompiler.java        // HTML + CSS → 静的カスケード解決 & SoA 初期イメージ生成
-│   │   ├── StyleStateAutomaton.java  // :hover/:active/class トグル → O(1) 遷移テーブル生成
-│   │   └── BindingPatchTable.java    // {{key}} → Arena / VRAM オフセット直結テーブル
-│   ├── layout/
-│   │   ├── SimdLayoutKernel.java     // Vector API (FloatVector) による Level-Order 1パスレイアウト
-│   │   ├── FenwickVirtualList.java   // O(log N) 累積和木による巨大スクロールリスト高速配置
-│   │   └── SimdHitTester.java        // 8-wide SIMD 空間ヒットテスト (< 1μs)
-│   ├── text/
-│   │   ├── HarfBuzzShaper.java       // mmap フォント + OpenType GSUB/GPOS 段落シェイパー
-│   │   └── GpuBezierGlyphCompiler.java // グリフ輪郭の GPU ベジェ曲線 / MSDF バッファ変換
-│   └── gpu/
-│       ├── PersistentVramBuffer.java // glMapBufferRange (PERSISTENT | COHERENT) ゼロコピー管理
-│       ├── GpuComputeCompositor.java // アニメーション評価 + 16x16 タイルビニング + Indirect Draw
-│       └── SimdTileSoftwareRenderer.java // 64x64 L1キャッシュ完結型 Vector API ソフトウェア描画
+│   ├── memory/                       [Milestone 0 & 1: 実装・配線済]
+│   │   ├── OffHeapColumns.java       // Direct ByteBuffer + VarHandle による 64B 整列オフヒープ列（JVMフラグ不要）
+│   │   ├── DocumentArena.java        // 静的領域 + 動的フリーリスト + 世代管理つき SoA アリーナ
+│   │   └── AtomTable.java            // 文字列 ↔ 32-bit 整数 Atom ID + 64-bit Bloom ハッシュ辞書
+│   ├── simd/                         [Milestone 0: 実装済]
+│   │   ├── SimdBackend.java          // ベクトル演算抽象インターフェース
+│   │   ├── ScalarSimd.java           // HotSpot C2 SuperWord 自動ベクトル化向け分岐なしループ実装
+│   │   └── SimdBackends.java         // 実行時バックエンド選択窓口
+│   ├── style/                        [Milestone 2: 実装済・部分配線]
+│   │   ├── PackedCssValue.java       // 64-bit long タグ付き CSS プリミティブ値
+│   │   ├── CalcProgram.java          // calc()/min()/max()/clamp() の RPN バイトコード & ゼロ確保評価器
+│   │   └── StyleStructs.java         // Font/Text/Box/Surround/Paint の 5 分割不変構造体（intern 共有つき）
+│   ├── compiler/                     [Milestone 2: 実装・本流配線済]
+│   │   ├── StyleStateAutomaton.java  // 要素別対話状態マスク & O(1) 状態遷移テーブル (StateTable)
+│   │   ├── StateStyleMemo.java       // 4枠フレーム保持・peek ゼロ確保の要素別状態スタイルメモ
+│   │   └── BindingPatchTable.java    // {{key}} バインディング → オフヒープ列直結 & StyleStructs オーバーレイ
+│   ├── layout/                       [Milestone 3: カーネル実装済・本流未接続]
+│   │   ├── SimdLayoutKernel.java     // SimdBackend 経由の Edge 合算・クランプ・Level-Order 座標スイープ
+│   │   ├── LayoutResultCache.java    // MIN/MAX/TENTATIVE/FINAL の 4 スロット結果キャッシュ
+│   │   ├── FenwickVirtualList.java   // O(log N) Fenwick 木による仮想リスト行高・可視範囲管理
+│   │   └── SimdHitTester.java        // 空間ヒットテストカーネル
+│   └── gpu/                          [Milestone 4 & 5: 実装・GL 配線済]
+│       ├── PersistentVramBuffer.java // CPU シャドウつき Write-Only 永続マップ / 3面リング対応 VRAM バッファ
+│       ├── PropertyTrees.java        // Transform(64B) / Clip(64B) / Effect(32B) / Primitive(128B) ツリー
+│       ├── GpuAnimation.java         // GPU 側アニメーション・イージング補間データ構造
+│       ├── GpuRectShader.java        // GLSL 1.50 Uber-Shader (角丸矩形・枠線・影・グラデ・字形・クリップ評価)
+│       ├── GpuSceneSync.java         // シーン差分同期ヘルパー
+│       ├── LayerAtlas.java           // 2048×2048 共有レンダーターゲットアトラス管理
+│       ├── DualKawase.java           // Dual-Kawase 2パス高速ブラーシェーダー定義
+│       └── SimdTileSoftwareRenderer.java // 64×64 タイル単位の CPU ラスタライザカーネル
 ```
 
 ---
@@ -635,6 +648,35 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   - **割り当ての小さな削減**: 産物の記録（`Tentative`・`BoxOutputs`）を、親が flex/grid の箱だけに限定（block の子は使わないため）。`fullLayout` showcase 9.39 → 9.27 MB、large-list 5.24 → 5.04 MB、
     `relayout` showcase 4.40 → 4.30 MB（時間は誤差の範囲）。
   - 追加: `core/src/jmh/.../IncrementalBench.java`（`./gradlew :core:jmh -Pjmh.args="IncrementalBench -f 1 -wi 3 -i 5 -prof gc"`）。ゲート「リスト 1 行挿入」の測定窓口。
+  - *(注: M5 ゲート達成後に実施した `fullLayout` / `fullLayoutWarm` の再プロファイルおよび「幅だけが変わるときの測定の使い回し (`measuredWidthFree`)」の記録は Milestone 5 末尾の追記も参照)*
+
+---
+
+### Milestone 4：`PersistentVramBuffer` と GPU-Driven コンポジタの実装（所要：Phase 4）
+
+**目的**: 毎フレーム 5.33 MB アロケートされる `List<DisplayItem>` を消滅させ、アニメーション・スクロール・レイヤー合成を 100% GPU 主導にする。
+
+#### Step 4-1: 4 つの Property Tree と `PersistentVramBuffer` (1プリミティブ＝128 Bytes)
+- [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java) レコード・[`ItemProps`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/ItemProps.java)・`ItemKeys` を廃止し、GPU の Persistent Mapped Buffer（GL 4.4 `glBufferStorage`、非対応環境はオフヒープ Direct `ByteBuffer` + `glBufferSubData`）上に以下の固定長構造体配列を直接構築する：
+  - **`TransformTreeBuffer`** (`64 bytes / node`): ローカル行列 `mat3x2`、親 Transform ID、スクロールオフセット ID、GPU アニメーション補間パラメータ `(startTransform, targetTransform, startTimeMs, durationMs, easingType)`。
+  - **`ClipTreeBuffer`** (`64 bytes / node`): 角丸矩形 `(x, y, w, h, radii)`、所属 `transformId`、親 `clipId`。
+  - **`EffectTreeBuffer`** (`32 bytes / node`): `opacity`, `blendMode`, `filterType`, `blurSigma`, 親 `effectId`, キャッシュ済み Atlas UV。
+  - **`PrimitiveBuffer`** (`128 bytes / primitive`): `[opcode, transformId, clipId, effectId]`, `rect(x, y, w, h)`, `radii(tl, tr, br, bl)`, `borderWidths`, `colors`, `atlasUv`。
+
+#### Step 4-2: GPU シェーダー内アニメーション & スクロール評価
+- Vertex / Fragment シェーダーの先頭で、`uFrameTimeMs` と `TransformTreeBuffer` のアニメーションパラメータから現在時刻の進行度 $t = \text{clamp}((uFrameTimeMs - startTime) / duration, 0, 1)$ を計算し、GPU 上で行列と不透明度を補間する。
+- **効果**: スクロール時や `@keyframes` / `transition` 再生中、CPU は `uFrameTimeMs`（または `ScrollTree` の `float scrollY` 1 個）を更新して Draw Call を 1 回呼ぶだけになり、**アニメーション中の CPU 時間は 0.00 ms、GC 確保は 0 Byte** になる。
+
+#### Step 4-3: [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) の独立化と Tight FBO Atlas 接続
+1. `LwjglGlRenderBackend` から `SoftwareRenderBackend cpu` フィールドと `overlayTex` / `glReadPixels` を完全削除する。
+2. 未使用だった [`LayerPool`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/LayerPool.java) と [`LayerBounds`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/LayerBounds.java) を接続し、フル画面 FBO 確保を廃止。小〜中規模レイヤーは共有の `2048×2048` Render Target Atlas のサブ矩形で合成し、ブラーは Dual-Kawase 2 パスシェーダーで高速処理する。
+3. CPU 専用の [`SoftwareRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) は、画面を `64×64` ピクセルタイルに分割して L1 キャッシュ内合成を行うタイル並列ラスタライザに刷新する。
+
+#### 実装状況（Milestone 4 部分完了・2026-11-08）
+
+> [!NOTE]
+> GPU 主導の描画（Milestone 4）を、GL に触れないデータ層（`core/kernel/gpu`: [`PersistentVramBuffer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PersistentVramBuffer.java) / [`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) / [`GpuAnimation`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimation.java) / [`GpuRectShader`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuRectShader.java) / [`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java) / [`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java) / [`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java)）と OpenGL 実装（`core/paint/gl`: [`GlVramDevice`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlVramDevice.java) / [`GlFenceRing`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlFenceRing.java) / [`GlTreeStore`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlTreeStore.java) / [`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java) / [`GlRectRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectRenderer.java)）に分けて実装し、既定で有効化した（`-Denderframe.gl.recttrees=false` で従来経路）。`ItemKeys` は廃止し [`DisplayItem.keyOf`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java)（[`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java)）へ統合済み。
+
 - **JMH 実測（2026-11-08・showcase・1 fork・3 warmup / 4 iteration・`-prof gc`）**: `displayList` は **0.71 ms/op・1.23 MB/op**（基準 5.33 MB/op から約 1/4。ゲート 0 B/op には `DisplayItem` を作らない入口が要る）。
   `scrollStep`（5.5 ms/op・5.4 MB/op）は**古い全再構築の経路**を測っており、実際のクライアントのスクロール（節の移動）の代表ではない。
 
@@ -765,13 +807,6 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   GPU を意図的に遅らせた状態での CPU 待ち時間の測定。根本的には「変化が無い画面は GL へ何も発行しない」（前フレームの合成結果の再利用）が必要。`draw` 冒頭の状態クエリの除去、`curRes` の初期化を SKIP の範囲で省く、画面より大きい層、GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
-
----
-
-#### Step 4-3: [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) の独立化と Tight FBO Atlas 接続
-1. `LwjglGlRenderBackend` から `SoftwareRenderBackend cpu` フィールドと `overlayTex` / `glReadPixels` を完全削除する。
-2. 未使用だった [`LayerPool`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/LayerPool.java) と [`LayerBounds`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/LayerBounds.java) を接続し、フル画面 FBO 確保を廃止。小〜中規模レイヤーは共有の `2048×2048` Render Target Atlas のサブ矩形で合成し、ブラーは Dual-Kawase 2 パスシェーダーで高速処理する。
-3. CPU 専用の [`SoftwareRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) は、画面を `64×64` ピクセルタイルに分割して `IntVector` / `FloatVector` で L1 キャッシュ内合成を行う `SimdTileSoftwareRenderer` に刷新する。
 
 ---
 
@@ -957,15 +992,284 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 ---
 
-## 7. 各マイルストーンの完了判定ゲート（番人ラチェット & ベンチマーク閾値）
+## 7. 各マイルストーンの完了判定ゲート（番人ラチェット & ベンチマーク閾値）と達成状況
 
-[`ArchitectureTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/ARCHITECTURE.md#L221) と [`PipelineBench`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/jmh/java/com/nishiyu/enderframelib/bench/PipelineBench.java) に以下の機械的ゲートを設定し、1 つでも下回ればビルドを落とします。
+[`ArchitectureTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/ARCHITECTURE.md#L221)・各 [`Milestone1GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone1GateTest.java)〜[`Milestone4GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone4GateTest.java) と [`PipelineBench`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/jmh/java/com/nishiyu/enderframelib/bench/PipelineBench.java) / [`IncrementalBench`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/jmh/java/com/nishiyu/enderframelib/bench/IncrementalBench.java) の機械的ゲートおよび **2026-11-08 時点の達成状況** です。
 
-| マイルストーン | `ArchitectureTest` ラチェット条件 | JMH ベンチマーク完了閾値 (`showcase` / `large-list`) |
-| :--- | :--- | :--- |
-| **Milestone 1**<br/>(`DocumentArena`) | ・`HtmlParser` 内の `"gen_"` / `"txt_"` 生成箇所 = `0`<br/>・`InteractionState` 内の `WeakHashMap` = `0` | ・DOM 構築時の `HtmlDocument.nodesById` 登録数が明示 `id` 要素数と完全一致<br/>・全 1,229 テスト通過 |
-| **Milestone 2**<br/>(`StyleStateAutomaton`) | ・`StyleResolver` / `ValueComputer` 内の `String.format` = `0`<br/>・`ComputedStyle` 内の `String[]` / `Arrays.copyOf` = `0` | ・`PipelineBench.restyle`: **< 0.10 ms**（現行 4.25 ms）<br/>・`:hover` トグル 1 回: **< 0.005 ms** / アロケーション **0 B/op** |
-| **Milestone 3**<br/>(`SimdLayoutKernel`) | ・`RenderPipeline.LAYOUT_PASSES` = `1`<br/>・`LayoutBox.isReusableShape` の Table 除外分岐 = `0` | ・`PipelineBench.fullLayout`: **< 0.30 ms**（現行 12.48 ms）<br/>・リスト 1 行挿入: **< 0.05 ms**（現行 3.2〜4.4 ms） |
-| **Milestone 4**<br/>(`PersistentVramBuffer`) | ・`LwjglGlRenderBackend` から `SoftwareRenderBackend` への参照 = `0`<br/>・`ItemKeys` クラスの完全削除 | ・`PipelineBench.displayList` アロケーション: **`0 B/op`**（現行 5.33 MB/op）<br/>・`PipelineBench.scrollStep`: **< 0.01 ms**（現行 8.59 ms） |
-| **Milestone 5**<br/>(`HarfBuzz` & `Slug` & `SIMD Tile`) | ・`TextShaper.ShapeKey` の `availableWidth` フィールド = `0` | ・`PaintBench.softwarePaint` (`showcase`): **< 3.5 ms**（現行 43.3 ms）<br/>・OpenType 合字・絵文字 ZWJ・インライン跨ぎ Bidi テスト全件通過 |
+| マイルストーン | `ArchitectureTest` / GateTest ラチェット条件 | JMH / 実測ベンチマーク完了閾値 (`showcase` / `large-list`) | **現在の達成状況 (2026-11-08 時点)** |
+| :--- | :--- | :--- | :--- |
+| **Milestone 1**<br/>([`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java)) | ・`HtmlParser` 内の `"gen_"` / `"txt_"` 生成箇所 = `0`<br/>・`InteractionState` 内の `WeakHashMap` = `0` | ・DOM 構築時の `HtmlDocument.nodesById` 登録数が明示 `id` 要素数と完全一致<br/>・全テスト通過 | **✅ 完全達成**<br/>・[`Milestone1GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone1GateTest.java) / [`NodeArenaIdentityTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/dom/NodeArenaIdentityTest.java) 全通過<br/>・`prevSibling` $O(1)$ / `selfBloom` & `subtreeBloom` 棄却 / `hasClass` 0B 化完了 |
+| **Milestone 2**<br/>([`StyleStateAutomaton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StyleStateAutomaton.java)) | ・`core/css` 内の `String.format` = `0` (**✅ 達成**)<br/>・`ComputedStyle` 内の `Arrays.copyOf` = `0` (**✅ 達成**)<br/>・`ComputedStyle` 内の `String[]` = `0` (**🔶 未達**: 派生 [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java) / [`StyleStructs`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java) を並置) | ・`PipelineBench.restyle`: **< 0.10 ms**（初期 6.1 ms）<br/>・`:hover` トグル 1 回: **< 0.005 ms** / アロケーション **0 B/op** | **🔶 75% 達成**<br/>・[`Milestone2GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone2GateTest.java) 通過<br/>・`:hover` 往復: **`0.006〜0.009 ms` / `0.9 KB`**（`StateTable` 単体は `~10 ns / 0 B`）<br/>・`ShareCache` パス間保持により定常時の再解決は `0 回`（新規状態のコールド全要素 restyle は `4.0〜5.2 ms`） |
+| **Milestone 3**<br/>([`SimdLayoutKernel`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdLayoutKernel.java)) | ・`RenderPipeline.LAYOUT_PASSES` = `1` (**✅ 達成**)<br/>・`LayoutBox.isReusableShape` の Table 除外分岐 = `0` (**✅ 達成**) | ・`PipelineBench.fullLayout`: **< 0.30 ms**（初期 12.97 ms）<br/>・リスト 1 行挿入: **< 0.05 ms**（初期 2.9〜4.4 ms） | **🔶 65% 達成（ラチェット全達成）**<br/>・[`Milestone3GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone3GateTest.java) 通過<br/>・Flex/Grid 部分変更の再測定 **`361/421 → 13/15 箱`**、幅のみ変更 **`1,004 → 4 回`**<br/>・`relayout` **`6.39 → 2.41 ms`** / 定常 `fullLayoutWarm` **`2.1〜3.0 ms`**<br/>・行挿入の配置自体は **`0.25〜0.40 ms`**（残り約 `1.4 ms` は後続行の `DisplayItem` 平行移動コピー） |
+| **Milestone 4**<br/>([`PersistentVramBuffer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PersistentVramBuffer.java)) | ・`ItemKeys` クラスの完全削除 (**✅ 達成**)<br/>・`kernel/gpu` の GL/Preview 非依存 (**✅ 達成**)<br/>・`LwjglGlRenderBackend` から `SoftwareRenderBackend` への参照 = `0` (**🔶 未達**) | ・`PipelineBench.displayList` アロケーション: **`0 B/op`**（初期 5.33 MB/op）<br/>・`PipelineBench.scrollStep`: **< 0.01 ms**（初期 8.59 ms） | **🔶 80% 達成**<br/>・[`Milestone4GateTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/Milestone4GateTest.java) 通過<br/>・3面 VRAM リング + `GlFenceRing` + GPU スクロール層保持 + `HitTestIndex.patch` $O(1)$ 化により、GL スクロール 1 フレーム **CPU `0.13 ms` (連続) / `0.48 ms` (ペース付)、ヒープ `2,000 KB → 5.8 KB` (−99.7%)**<br/>・静止フレーム無効化 Skip & アニメ確保 `0 B` |
+| **Milestone 5**<br/>(`TextShaper` & `Tile Raster`) | ・`TextShaper.ShapeKey` の `availableWidth` フィールド = `0` (**🔶 未達**: 下ごしらえ [`ParagraphSegments`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/ParagraphSegments.java) を幅非依存で分離し、`ShapeKey` は同一幅即命中用に保持) | ・`PaintBench.softwarePaint` (`showcase`): **< 3.5 ms**（初期 43.3 ms）<br/>・OpenType 合字・絵文字 ZWJ・インライン跨ぎ Bidi テスト全件通過 | **✅ ソフトウェア描画ゲート大幅達成（`1.11〜1.18 ms` = 約 37 倍高速化）**<br/>・[`ParagraphSegments`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/ParagraphSegments.java) 幅非依存キャッシュ & `normalize` 正規表現廃止 & ローカル `@font-face` パス直登録完了<br/>・OpenType `GSUB` / Bidi / GPU ベジェ曲線テキストは未着手 |
+
+---
+
+## 8. 現在の総合評価と次フェーズ（Phase 2）の最優先ロードマップ
+
+### 8.1 ここまでの実装に対する技術評価
+
+1. **無破壊・ゼロ依存での劇的なホットパス改善（1,980 件超のテスト全通過）**
+   - 外部ライブラリ・ネイティブ DLL・JVM フラグ（`--enable-preview` / `--add-modules`）を一切追加せず、すべての変更に「乱数入力による旧実装とのビット／ピクセル単位の等価性テスト」と「故意に条件を外して失敗を確認するミューテーション検証」を伴わせたことで、**1 件の退行も起こさずにエンジン中核の刷新が進んでいる**。
+   - 特に以下の 5 点は、実用ゲーム UI における体感を決定づける本質的なブレイクスルーである：
+     - **CPU ソフトウェア描画 37 倍高速化（`43.3 ms → 1.11 ms`）**: 解析的 Fast 領域＋64×64 タイル遅延並列実行＋命令オブジェクト再利用により、GPU なしでも 800×600 画面が 1 ms 台で描画可能になった。
+     - **GL スクロール時のヒープ確保 99.7% 削減（`2,000 KB → 5.8 KB`）・CPU `0.13 ms`**: Write-Combined VRAM の CPU Read 罠の解消、3 面リング＋共有フェンス、[`OffsetItemList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/OffsetItemList.java)、[`HitTestIndex.patch`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/HitTestIndex.java) の $O(\text{変更節})$ 化、`repositionLayout` の遅延化、GPU スクロール層保持（`RetainPlan.SKIP`）が一気通貫で噛み合った成果。
+     - **`:hover` 往復の $O(1)$ テーブル化（`217 KB → 0.9 KB`、`0.006 ms`）**: [`StateStyleMemo`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StateStyleMemo.java) の 4 枠保持と `peek` により、ホバー時のセレクタ照合・カスケードが消滅した。
+     - **Flex/Grid 仮測定再利用（再測定 `361/421 → 13/15 箱`）と幅のみリサイズ再利用（`1,004 → 4 回`）**: 単一スロット上書きによるキャッシュスラッシングを [`LayoutBox.Tentative`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java)（3 制約スロット）で解決し、部分更新時の無駄な再測定を 96% 以上排除した。
+     - **`LAYOUT_PASSES = 1` と `StyleFacts` + `ParagraphSegments` による全測定コスト 62% 削減（`relayout` `6.39 → 2.41 ms`）**。
+
+2. **計測手法の成熟（セーフポイントバイアスと Write-Combined VRAM 罠の発見）**
+   - `Thread.getStackTrace()` によるサンプリングが `ThreadLocal` や `ConcurrentHashMap.get` 等のセーフポイントに偏る問題を見抜き、A/B 実測で効果のない変更を取り下げた判断、および別テストが `StageProfiler` を有効のまま残していたことによるアロケーション計測汚染の発見など、計測の信頼性が極めて高い。
+
+---
+
+### 8.2 未達ゲートの構造的原因と「次に打つべき 4 つの高レバレッジ施策」
+
+プロファイリングが示す通り、残る未達ゲート（`fullLayout < 0.30 ms`、リスト 1 行挿入 `< 0.05 ms`、スクロール/静止フレーム `< 0.01 ms`、DisplayList `0 B/op`）は、個別の「1〜3% の薄いホットスポット削り」では到達できず、以下の **4 つの構造的ステップ** が必要十分条件となります。
+
+| 優先度 | 対象ゲート | 現在のボトルネック（実測による支配項） | 次に実装すべき構造的解決策 |
+| :---: | :--- | :--- | :--- |
+| **Priority 1** | **Milestone 4**<br/>静止・スクロール<br/>`< 0.01 ms` | スクロール更新自体は軽量化されたが、何も変わらない静止フレームでも `view.frame` が GL 状態保存・描画で **約 `0.25 ms` の固定費** を払っており、また画面いっぱいのスクロール層は画面外にはみ出すと再記録される。 | **① 静止フレームの最終 FBO テクスチャ再利用（Frame Output Retain）**:<br/>`UiView.isIdleFrame` かつ進行中の GPU/CSS アニメーションが無く、スクロールオフセットも変化していないフレームでは、`PaintSceneDriver` の走査とプリミティブ再描画を丸ごとスキップし、前フレームの最終合成テクスチャを 1 枚の Quad で貼るだけにする。<br/>**② オーバースキャン付きスクロール保持層**:<br/>保持 FBO にコンテナ境界＋上下オーバースキャン領域を持たせ、画面端にかかるコンテナでも再記録なしで `SKIP` を維持する。 |
+| **Priority 2** | **Milestone 3 & 4**<br/>リスト 1 行挿入<br/>`< 0.05 ms` | [`CHILD_PATCH`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) によりレイアウト配置は **`0.25〜0.40 ms`** まで縮んだが、後続 250 行の `BoxMemo` 照合と `DisplayItem.translated`（整数の絶対座標の複製）に **`1.2〜1.8 ms`** かかっている。 | **① 表示リストのグループ相対オフセット化（Subtree Offset Node）またはスクロールコンテナ内仮想化**:<br/>後続行の `DisplayItem` を 1 個ずつ複製（`translated`）する代わりに、移動した兄弟群または行グループに対するオフセット参照（[`OffsetItemList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/OffsetItemList.java) の範囲シフト拡張）で $O(1)$ 化する。<br/>**② `content-visibility: auto` 相当の画面外行スキップ + [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java) 接続**:<br/>スクロールコンテナ内の画面外行は測定・`DisplayItem` 生成を省略し、累積和木でスクロール高さを維持する。 |
+| **Priority 3** | **Milestone 2 & 3**<br/>`fullLayoutWarm`<br/>`< 0.30 ms` | 定常 `fullLayoutWarm`（`2.1〜3.0 ms`）はカスケード 0 回になったが、`buildLayoutTree` が毎回 `LayoutBox` 木と `flowChildren` / `flattenInlines` を走査・再構築している。 | **① `LayoutBox` 木の In-Place 差分維持と [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java) 完全移行**:<br/>DOM 構造が変わらない再レイアウトでは `buildLayoutTree` で箱の親子リストや `flowChildren` を再生成せず既存の箱木をそのまま走査する。<br/>**② [`ComputedStyle`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java) の主要幾何プロパティの `PackedCssValue` 直格納**:<br/>`BoxMeasurer.resolveWidth/Heights` 等に残る文字列比較（`auto` / `%`）を `StyleFacts` のビットフラグに統一する。 |
+| **Priority 4** | **Milestone 4 & 5**<br/>GL 完全独立化 &<br/>OpenType `GSUB` | `LwjglGlRenderBackend` が図形分解のために `SoftwareRenderBackend` インスタンスを保持している。また [`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java) / [`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java) が本流のレイヤー合成に未接続。 | **① 「`DisplayItem` → `GpuSink` 図形分解器」の `SoftwareRenderBackend` からの分離**:<br/>図形エミッタを純粋なディスチャージャとして切り出し、`LwjglGlRenderBackend` から `SoftwareRenderBackend` フィールドを完全除去する。<br/>**② `LayerAtlas` / `DualKawase` の GL レイヤー合成への接続**。<br/>**③ [`KerningTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/KerningTable.java) を拡張した純 Java OpenType `GSUB`（合字・ZWJ）テーブルシェイパーの実装**。 |
+
+---
+
+## 9. 旧世代オブジェクト層と新世代カーネル層の「二重構造・未接続クラス」完全精査と解消設計（2026-11-08 全コード監査）
+
+`core/src/main/java` 全体（`dom` / `css` / `layout` / `paint` / `text` / `kernel`）の参照グラフとデータフローを全件監査した結果、現在のエンジンには **「無破壊で 1,980 件超の既存テストを通しながら高速化を進めるために導入された、旧オブジェクト層と新カーネル層の二重構造」** が **全 7 領域（3 類型）** にわたって存在しています。
+
+本章では、それらの正確な発生箇所（ファイル・行番号）、発生しているメモリ／CPU の二重コスト、および二重構造を撤去して新カーネル層へ一本化（Single Source of Truth 化）するための具体的な解消手順を定義します。
+
+---
+
+### 9.1 二重構造の 3 類型（Type A / Type B / Type C）
+
+```mermaid
+flowchart TB
+    subgraph TypeA["Type A: 二重書き込み・ミラーリング（Dual-Write Mirror）"]
+        A_Old["旧ヒープオブジェクト（正本）<br/>HtmlNode.children / StateFlags / vNode.attrs"]
+        A_New["新オフヒープ列（ミラー）<br/>DocumentArena / BindingPatchTable"]
+        A_Read["本流パイプライン（RenderPipeline / BoxMeasurer）"]
+        A_Old -->|"変更ごとに writeMirror() / setFloat()"| A_New
+        A_Old -->|"実際に読まれている経路"| A_Read
+        A_New -.->|"一部のみ参照 or 未参照"| A_Read
+    end
+
+    subgraph TypeB["Type B: 旧主記憶 ＋ 多段派生キャッシュ・逆変換往復"]
+        B_Old["旧表現（正本）<br/>ComputedStyle.String[] / LayoutBox / Matrix2D pose"]
+        B_Mid["中間キャッシュ<br/>Memo / measured* + Tentative[] / PaintSceneDriver"]
+        B_New["高速バイパス層 / GPU 列<br/>StyleFacts /GlRectStream.decompose() → PropertyTrees"]
+        B_Old --> B_Mid --> B_New
+    end
+
+    subgraph TypeC["Type C: 新カーネル単体実装・本流未接続（Standalone Unwired）"]
+        C_New["core/kernel/* の完成クラス（11 クラス）<br/>StyleStructs / SimdLayoutKernel / LayoutResultCache /<br/>SimdHitTester / FenwickVirtualList / GpuAnimation /<br/>GpuSceneSync / LayerAtlas / DualKawase / SimdTileSoftwareRenderer"]
+        C_Test["単体テスト（Milestone*GateTest 等）からのみ呼出"]
+        C_New --> C_Test
+    end
+```
+
+---
+
+### 9.2 サブシステム別・全 7 領域のコードレベル精査
+
+#### 9.2.1 【DOM & 対話状態層 (Milestone 1)】`HtmlNode` ポインタ木 / `StateFlags` と `DocumentArena` の二重管理（Type A）
+
+1. **DOM トポロジーの二重保持（ヒープ `ArrayList` ＋ オフヒープ `DocumentArena`）**
+   - **箇所**: [`HtmlNode.java:67-70, 595-615`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L595-L615)
+   - **構造**: `HtmlNode` は依然としてヒープ上の `HtmlNode parent` と `ChildList children`（`ArrayList<HtmlNode>` のサブクラス）を**正本**として保持し、子の追加・削除のたびに `linkChildren(DocumentArena)` を呼んでオフヒープ [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) の `parent` / `firstChild` / `lastChild` / `prevSibling` / `nextSibling` 列へミラー書き込みしている。
+   - **利用実態**: アリーナのトポロジー列を読んでいるのは [`SelectorMatcher`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/SelectorMatcher.java)（`prevSibling` による隣接・兄弟結合子と `selfBloom` / `subtreeBloom` 判定）のみで、[`RenderPipeline`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/RenderPipeline.java)・[`Bindings`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java)・[`InteractionState`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/InteractionState.java) のツリー走査はすべて旧来の `node.getChildren()` (`ArrayList`) を辿っている。
+2. **`class` 属性の二重表現（`int[] classAtoms` ＋ 生 `String` 走査）** — ✅ **解消済み（2026-11-08, §9.5）**
+   - **箇所**: [`HtmlNode.java:85, 617-625, 1137-1154`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L1137-L1154)
+   - **構造**: `rebuildArenaSelf()` でクラス名を [`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java) の `int[] classAtoms` に変換し `selfBloom` を計算しているが、肝心の `HtmlNode.hasClass(String)` は `classAtoms` を使わず、`attrs.get("class")` の文字列を毎回 `regionMatches` で線形走査している。
+3. **対話状態・ダーティビットの二重保持（`StateFlags` オブジェクト ＋ `DocumentArena.stateBits / dirtyBits`）** — ✅ **解消済み（2026-11-08, §9.5。ただし一本化の向きは当初案と逆）**
+   - **箇所**: [`InteractionState.java:151-244, 309-337`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/InteractionState.java#L151-L244)
+   - **構造**: `WeakHashMap` は撤去されたものの、各 `HtmlNode` のフィールド [`node.interactionFlags`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L77) にヒープオブジェクト `InteractionState.StateFlags`（10 個の `boolean` フィールドを持つオブジェクト）を割り当てて**正本**としている。状態変更のたびに [`StateFlags.writeMirror()`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/InteractionState.java#L194-L209) が `DocumentArena.setStateBits()` と `markDirty(id, DIRTY_STYLE)` にミラー書き込みしているが、実際に `InteractionState.stateBitsOf(node)` や `RenderPipeline` が読んでいるのはすべて `StateFlags` の `boolean` フィールドであり、**`DocumentArena` の `stateBits` / `dirtyBits` 列は書き込まれるだけで本流から読まれていない**。
+
+---
+
+#### 9.2.2 【CSS & スタイル層 (Milestone 2)】`ComputedStyle` 内の「4 重表現」と `StyleStructs` の孤立（Type B + Type C）
+
+現在、1 つの要素の算出スタイルを巡って **4 つの表現層** が並存しています。
+
+| 層 | 実装クラス・フィールド | 役割と現在の使われ方 | 二重構造によるコスト |
+| :--- | :--- | :--- | :--- |
+| **第 1 層（正本）**<br/>文字列配列 | [`ComputedStyle.java:39-43`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L39-L43)<br/>`String[] values` + `Map<String, String> extras` | [`StyleResolver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleResolver.java) と [`ValueComputer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ValueComputer.java) が `Map<String, String>` 上でカスケード・継承・`var()` 解決を行い、最終的に全既知プロパティの `String[]` を生成。 | 初回（コールド）解決時に文字列の格納・ハッシュ計算・マップ操作が走る。 |
+| **第 2 層（遅延辞書）**<br/>CAS メモ表 | [`ComputedStyle.java:52-116, 618-697`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L52-L116)<br/>`volatile Memo memo` (`int[] keys` + `Object[] vals`) | `length(prop)` / `color(prop)` / `number(prop)` / `keywordOf(prop)` が呼ばれるたび、`String[] values` をパースして `CompiledLength` やボクシングされた `Integer` / `Float` / `Enum` を `Memo` に追記（毎回 `new int[n+1]`, `new Object[n+1]` をコピー）。 | プロパティ初回参照ごとに配列再確保とボクシングが発生。 |
+| **第 3 層（実用バイパス）**<br/>レイアウト事実キャッシュ | [`StyleFacts.java:6-141`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java#L6-L141)<br/>[`ComputedStyle.java:722-830`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L722-L830) | レイアウトエンジンが `Memo` と文字列比較を回避するために新設された構造体。`String[] values` を再パースして `display`, `position`, 4辺の `CompiledLength[] edges` 等を保持。ただし内部に `widthStr`, `heightStr`, `alignItemsWord` 等の正規化済み `String` も抱える。 | `ComputedStyle.Memo` と `LengthResolver.CompiledLength` のキャッシュが二重化。 |
+| **第 4 層（未接続カーネル）**<br/>オフヒープ SoA 構造体 | [`StyleStructs.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java)<br/>[`PackedCssValue.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java) | 本来 `ComputedStyle.String[]` を置き換えるために作られた 64-bit 即値列（`Box`, `Flex`, `Text`, `Visual`）と RPN `calc()` 評価器。 | **Type C（本流未接続）**: `core/css`・`core/layout`・`core/paint` から **1 箇所も参照されていない**（`BindingPatchTable` の単体テストのみが使用）。本流は依然として [`LengthResolver.CompiledLength`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/LengthResolver.java) を使用。 |
+
+---
+
+#### 9.2.3 【データバインディング層 (Milestone 2)】`ReactiveDomBinder` の文字列 DOM 書き換えと `BindingPatchTable` の二重実行（Type A）
+
+- **箇所**: [`Bindings.java:643-696`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L643-L696) および [`BindingPatchTable.java:1-219`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java#L1-L219)
+- **構造**:
+  1. `ReactiveDomBinder.sync()` が呼ばれると、まず `applyRecursive(vRoot)` が走り、`{{hp}}` などのプレースホルダを含む DOM ノードの `style` 属性やテキストを **正規表現 (`PLACEHOLDER_PATTERN`) で文字列置換**し、DOM の属性変更（→ スタイル汚損 → CSS 再パース）を発火させる。
+  2. その直後に [`mirrorToPatchTable()`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L653-L690) が呼ばれ、同じバインディング値を [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) のオフヒープ float 列（7 本の `OffHeapColumns.Floats`）へ `setFloat()` で書き込む。
+- **問題点**: 下流のレイアウト（`BoxMeasurer`）も描画（`DisplayListBuilder` / `GlRectStream`）も **`BindingPatchTable` を一切読んでいない**。そのため、現在は「旧来の重い文字列置換＋CSS 再計算」と「使われないオフヒープ列への書き込み」の両方のコストを毎回の `sync()` で二重に払っている。
+
+---
+
+#### 9.2.4 【レイアウト層 (Milestone 3)】`LayoutBox` 可変オブジェクト木の多段キャッシュと `core/kernel/layout/*` 4 クラスの完全未接続（Type B + Type C）
+
+1. **`core/kernel/layout/*` の全 4 クラスが本流に未接続（Type C）**
+   - コードベース全体の参照検索により、以下の 4 クラスは `core/layout/` や `core/paint/` から **1 箇所も呼ばれていない** ことが確認された：
+     - [`SimdLayoutKernel`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdLayoutKernel.java)（SoA ブロック幅・マージン相殺・Flex 伸縮率の配列一括計算）
+     - [`LayoutResultCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/LayoutResultCache.java)（ノードあたり 4 スロットのオフヒープ測定キャッシュ）
+     - [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)（Binary Indexed Tree による $O(\log N)$ 可変高リスト仮想化）
+     - [`SimdHitTester`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdHitTester.java)（逆変換＋SDF 角丸の配列バッチヒットテスト。本流は [`HitTestIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/HitTestIndex.java) を使用）
+2. **`LayoutBox` 内の子リスト 4 重保持と測定結果 3 段保持（Type B）**
+   - **子リストの重複** ([`LayoutBox.java:54-61, 315-349, 942`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java#L54-L61)):
+     1 つの `LayoutBox` が `List<LayoutBox> children`（匿名ブロックを含む整形ツリー）、`List<LayoutBox> elementChildren`（DOM 1:1 ツリー）、`LayoutBox[] measuredChildren`（測定時点の子配列スナップショット）、および `getFlowChildren()` が呼び出しのたびに `new ArrayList<>()` で生成するフロー子リストを抱えている。
+   - **測定結果の 3 段スナップショット** ([`LayoutBox.java:63-74, 921-988`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java#L921-L988)):
+     `LayoutResultCache`（オフヒープ）を使う代わりに、`LayoutBox` 自身が ① 直接の可変フィールド (`w, h, mT..bL`)、② 単一測定キャッシュ (`measuredW, measuredH, measuredSpace...`)、③ Flex/Grid 仮測定用の `Tentative[] tentatives`（[`BoxOutputs`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java#L955) ヒープオブジェクトに自身と直接の子の寸法配列を退避・復元する仕組み）の 3 段構造で状態をやりくりしている。
+
+---
+
+#### 9.2.5 【表示リスト & シーン解決層 (Milestone 4)】`DisplayItem` ヒープ生成と `PaintSceneDriver` ⇄ `PropertyTrees` の「行列分解往復」（Type B + Type C）
+
+1. **`DisplayItem` 不変オブジェクト群の生成（Type B）**
+   - [`DisplayListBuilder`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java) は `LayoutBox` ごとに [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java)（および `ItemProps`, `ClipRect`, `Corners`, `RenderMeta`）をヒープ上に構築し、`BoxMemo` に `List<DisplayItem>` として保持する。`displayList` ベンチマークで残る `1.23 MB/op` のアロケーションの主因。
+2. **CPU で合成した `Matrix2D` を GPU 入力直前に `decompose` で逆分解する往復構造（Type B）**
+   - **箇所**: [`PaintSceneDriver.java:155-248`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java#L155-L248) → [`GlRectStream.java:117-132, 216-232`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java#L117-L132)
+   - **構造**:
+     - 本来 [`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) は、親子の `Transform` / `Clip` / `Effect` / `Scroll` 木を保持し、[`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java) と [`GpuAnimation`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimation.java) でオフヒープ更新するためのシーングラフとして設計された。
+     - しかし現在の本流では、[`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) が CPU 上で [`CssAnimator`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java) を回して親子関係をすべて掛け合わせた完成済みの `Matrix2D pose` と `Clip` 鎖を作り、それを受け取った [`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java) が **`decompose(pose)`（`hypot` や `atan2` を伴う行列分解）で `(tx, ty, sx, sy, rot)` に逆分解し、`PropertyTrees` のフラットなスロット `k`（`parent = NONE`）に毎描画ごと詰め直している**。
+     - 結果として、[`GpuAnimation`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimation.java) と [`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java) は本流から一切呼ばれない孤立クラス（Type C）になっている。
+
+---
+
+#### 9.2.6 【GPU / CPU レンダラ層 (Milestone 4 & 5)】`LwjglGlRenderBackend` 内の「3 系統パイプライン並存」と `SoftwareRenderBackend` 依存（Type B + Type C）
+
+1. **`LwjglGlRenderBackend` が `SoftwareRenderBackend` インスタンスを所有・常時経由**
+   - **箇所**: [`LwjglGlRenderBackend.java:63, 1089, 1171`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java#L1171)
+   - **構造**: `LwjglGlRenderBackend` は `private final SoftwareRenderBackend cpu = new SoftwareRenderBackend()` をフィールドに持ち、毎フレーム `cpu.renderOnto(items, nowMs, this)` を呼び出す。これは「`DisplayItem` を解釈して `GpuSink` の `fillRoundRect` / `strokeRoundRect` / `drawGradient` / `blitGlyph` を呼ぶ図形分解ロジック」が [`SoftwareRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) の内部に密結合されているためである。その副作用として、GPU 描画であっても画面サイズの CPU `Pixmap` と `overlayTex` が確保・維持される。
+2. **`LwjglGlRenderBackend` 内部における「3 系統の描画パイプライン」の同時稼働**
+   - **箇所**: [`LwjglGlRenderBackend.java:74-260, 1232-1365`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java#L1232-L1365)
+   - 現在、`LwjglGlRenderBackend` の中には **3 世代の描画機構** が同居しており、`flushAll()` のたびに 3 系統すべてのフラッシュ判定（`drainRects()` + `flushOverlay()` + `flushBatch()`）が走る：
+     1. **第 3 世代（新カーネル経路）**: [`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java) + [`GlTreeStore`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlTreeStore.java) (`PersistentVramBuffer` 3 面リング) + [`GlRectRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectRenderer.java)。
+     2. **第 2 世代（旧 GPU バッチ経路）**: [`GpuBatchPacker`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/GpuBatchPacker.java) + 2D データテクスチャ (`dataTex`, `extTex`, `shadowCore`, `shadowExt`) + 旧シェーダー (`SHAPE_VERT` / `SHAPE_FRAG`, `shapeProgram`)。`GlRectStream.accepts()` が拒否するケース（非等方スケールを伴う角丸、せん断変形、5 段以上のクリップ鎖など）を処理するために丸ごと残存している。
+     3. **第 1 世代（CPU フォールバック経路）**: `SoftwareRenderBackend` の CPU `Pixmap` ラスタライズ + `overlayTex` (`glTexSubImage2D`) 転送。
+3. **レイヤー管理クラスとタイルラスタライザの重複（Type C）**
+   - **レイヤー管理の 3 重存在**: `LwjglGlRenderBackend` 内の独自 `layerPool`（フル画面 FBO リスト）と `scrollLayers`（最大 3 枚のフル画面 FBO）が使われており、[`core/paint/LayerPool.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/LayerPool.java)（汎用プール）および新カーネルの [`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java) / [`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java) は本流に未接続。
+   - **CPU タイルラスタライザの重複**: [`SoftwareRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) 内に直接 `PaintOp` / `GradientOp` / `GlyphOp` の 64×64 タイル遅延キューが実装されたため、[`core/kernel/gpu/SimdTileSoftwareRenderer.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/SimdTileSoftwareRenderer.java) は本流から呼ばれない孤立クラスとなっている。
+
+---
+
+#### 9.2.7 【テキスト層 (Milestone 5)】`TextShaper` の 2 段キャッシュ（Type B）
+
+- **箇所**: [`TextShaper.java:160-247`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/TextShaper.java#L160-L247)
+- **構造**: 幅非依存の [`ParagraphSegments`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/ParagraphSegments.java) をキャッシュする `SEGMENTED` (`ConcurrentHashMap<SegKey, ParagraphSegments>`) と、折り返し後の行リストを幅つきでキャッシュする `SHAPED` (`ConcurrentHashMap<ShapeKey, List<ShapedLine>>`) の 2 段構成。どちらも 4,096 件到達時に `clear()` で全消去する簡易キャッシュであり、`ShapeKey` のハッシュ計算と `ConcurrentHashMap.get` が定常レイアウト (`fullLayoutWarm`) で毎回走る。
+
+---
+
+### 9.3 本流未接続（Type C）および片方向ミラー（Type A）クラス全件リスト
+
+全コードベースの参照監査（`import com.nishiyu.enderframelib.core.kernel.*` の全検索）による、`core/kernel` パッケージ内全クラスの接続状況一覧です。
+
+| パッケージ | クラス名 | 現在の接続状態 | 本流 (`dom`/`css`/`layout`/`paint`) での利用箇所 |
+| :--- | :--- | :---: | :--- |
+| `kernel.memory` | [`OffHeapColumns`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/OffHeapColumns.java) | ✅ **稼働中** | `DocumentArena`, `PropertyTrees`, `GlTreeStore` 等すべての基盤として稼働 |
+| `kernel.memory` | [`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java) | ✅ **稼働中** | `HtmlNode`（タグ/ID/クラスの intern）、`SelectorMatcher`（セレクタ側 `SelectorToken.classAtoms()` と節の `classAtoms` を整数比較）、`HtmlNode.hasClass`（番号を持つ節は atom 経路）で使用 |
+| `kernel.memory` | [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) | 🔶 **Type A（トポロジーのみ残存）** | `SelectorMatcher` が `prevSibling` と Bloom 列を読む。`stateBits` 列は撤去済み（対話状態は `StateFlags.state` に一本化）。`dirtyBits` 列は `BindingPatchTable` が layout/paint の要求を立てる用途だけが残る。ツリー走査は依然 `HtmlNode.children` が主 |
+| `kernel.compiler` | [`StyleStateAutomaton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StyleStateAutomaton.java)<br/>[`StateStyleMemo`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StateStyleMemo.java) | ✅ **稼働中** | `StyleResolver` および `RenderPipeline`（`:hover` 等の状態遷移 $O(1)$ スワップ）で本流稼働 |
+| `kernel.compiler` | [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) | ❌ **Type A（書込のみ）** | `Bindings.ReactiveDomBinder.mirrorToPatchTable()` が値を書き込むが、**レイアウト・描画のどこからも読まれていない** |
+| `kernel.style` | [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)<br/>[`CalcProgram`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java)<br/>[`StyleStructs`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/StyleStructs.java) | ❌ **Type C（本流未接続）** | `BindingPatchTable` と単体テストのみが参照。**`ComputedStyle` / `StyleFacts` / `BoxMeasurer` からは未参照** |
+| `kernel.layout` | [`SimdLayoutKernel`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdLayoutKernel.java)<br/>[`LayoutResultCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/LayoutResultCache.java)<br/>[`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)<br/>[`SimdHitTester`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdHitTester.java) | ❌ **Type C（本流未接続）** | **4 クラスとも単体テストからのみ参照**。本流の `core/layout/*` や `HitTestIndex` からは 1 箇所も呼ばれていない |
+| `kernel.gpu` | [`PersistentVramBuffer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PersistentVramBuffer.java)<br/>[`GpuPrimitivePacker`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuPrimitivePacker.java)<br/>[`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) | ✅ **稼働中（一部 Type B）** | `GlVramDevice`, `GlTreeStore`, `GlRectStream`, `GlRectRenderer` で本流稼働。ただし `PropertyTrees` は親子階層を使わず毎フレーム `decompose(pose)` でフラット格納 |
+| `kernel.gpu` | [`GpuAnimation`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimation.java)<br/>[`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java)<br/>[`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java)<br/>[`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java)<br/>[`SimdTileSoftwareRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/SimdTileSoftwareRenderer.java) | ❌ **Type C（本流未接続）** | **5 クラスとも単体テストからのみ参照**。本流は `CssAnimator`, `PaintSceneDriver`, `LwjglGlRenderBackend.layerPool`, `SoftwareRenderBackend` 内の独自タイルキューを使用 |
+
+---
+
+### 9.4 二重構造を撤去し「真の単一カーネル」へ統合する 5 段階の解消設計
+
+既存 1,980 件超のテストを一度も壊さずに二重構造を解消するため、**「① 読み取り側の切り替え → ② 旧フィールド／ミラー書き込みの削除 → ③ 重複クラスの統合または廃止」** の順で以下の 5 ステップを実施します。
+
+#### Step 1：DOM 状態・クラス照合・バインディングの「二重書き込み（Type A）」の解消
+
+> **進捗（2026-11-08）**: 1-①対話状態 ✅（向きを変えて実施）／1-②`hasClass` ✅／1-③`ReactiveDomBinder` ⏳ 未着手。詳細は §9.5。
+1. **（当初案・実施せず）`InteractionState.StateFlags` の廃止と `DocumentArena` 一本化**: ※実際は §9.5 の通り、逆向き（`StateFlags` 側へ一本化しアリーナ側の写しを撤去）で二重構造を解消した。
+   - [`HtmlNode.interactionFlags`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L77)（ヒープオブジェクト `StateFlags`）を削除し、`InteractionState` の全読み書きを `node.documentArena()` の `stateBits` 列（`STATE_HOVER | STATE_ACTIVE | STATE_FOCUS | STATE_CHECKED | STATE_DISABLED`）と `dirtyBits` 列（`DIRTY_STYLE | DIRTY_SUBTREE | DIRTY_UNSCOPED`）に対する直接ビット演算に置き換える。
+   - これにより要素ごとの `StateFlags` インスタンス生成と `writeMirror()` の二重書き込みが完全に消滅する。
+2. **`HtmlNode.hasClass(String)` の `classAtoms` 化**:
+   - [`HtmlNode.hasClass(String)`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/HtmlNode.java#L1137-L1154)（および `SelectorMatcher` のクラス照合）を、`AtomTable.lookup(className)` で引いた `int atomId` と `node.classAtoms` 配列の整数比較（`selfBloom` 通過後の $O(k)$ `int` 比較）に統一し、文字列走査を廃止する。
+3. **`ReactiveDomBinder` のダイレクトパッチ化**:
+   - バインディング対象が数値スタイル（`width`, `height`, `opacity`, `transform`, `background-color` 等）である場合、`ReactiveDomBinder.sync()` で `vNode.attrs` の文字列を正規表現で書き換える旧経路を止め、[`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) の値を [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java) / [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) が直接オーバーレイ参照するように配線する。
+
+#### Step 2：`ComputedStyle` の「4 重表現」を `StyleFacts` + `PackedCssValue` の 2 層へ圧縮
+1. **`ComputedStyle.Memo` と `StyleFacts` の統合**:
+   - `ComputedStyle` 内の汎用ボクシング辞書 `Memo`（`int[] keys` + `Object[] vals`）を廃止し、よく使われるすべての数値・長さ・色・キーワードを [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java)（または [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java) のプリミティブ配列）に統合する。
+2. **`StyleFacts` 内の残存文字列フィールドの数値化**:
+   - `StyleFacts` に残っている `widthStr`, `heightStr`, `minWidthStr`, `maxWidthStr`, `alignItemsWord`, `alignSelfWord` を `LengthResolver.CompiledLength`（または `PackedCssValue` 64-bit 即値）と `byte` enum に置き換え、`BoxMeasurer` 内の `.equals("auto")` / `.endsWith("%")` 文字列比較をゼロにする。
+3. **`StyleStructs` の整理**:
+   - `StyleFacts` が実質的にオンヒープ版の `StyleStructs` として本流で機能しているため、`StyleFacts` のバックエンドとして `PackedCssValue` / `CalcProgram` を採用するか、あるいは重複する `StyleStructs` を `StyleFacts` へ吸収統合する。
+
+#### Step 3：`LwjglGlRenderBackend` の「3 系統パイプライン」整理と `SoftwareRenderBackend` からの完全分離
+1. **図形エミッタ（`DisplayItemEmitter`）の切り出し**:
+   - [`SoftwareRenderBackend.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) から「`PaintSceneDriver.Painter` を実装し、`DisplayItem` を解釈して `GpuSink` へプリミティブを送るディスパッチ処理」を独立したクラス（例：`ScenePrimitiveDispatcher`）へ抽出する。
+   - これにより [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) から `private final SoftwareRenderBackend cpu` フィールドを完全に削除し、Milestone 4 の最後のラチェット条件（`LwjglGlRenderBackend` から `SoftwareRenderBackend` への参照 = `0`）を達成する。
+2. **`GlRectStream.accepts()` のカバレッジ 100% 化と旧 `GpuBatchPacker`（第 2 世代）の撤去**:
+   - 現在 [`GlRectStream.accepts()`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java#L75-L115) が拒否して旧 `GpuBatchPacker` に流している「非等方スケール＋角丸」「せん断変形（2×2 線形変換行列）」を `PropertyTrees` の Transform スロット（`m00, m01, m10, m11, tx, ty`）と `GlRectRenderer` のシェーダーで直接扱えるように拡張する。
+   - その上で、`LwjglGlRenderBackend` から旧 `GpuBatchPacker`・`dataTex`・`extTex`・`SHAPE_VERT`/`SHAPE_FRAG`（約 400 行）を完全撤去し、GPU パイプラインを `GlRectStream` + `GlRectRenderer` の **1 系統に統一**する。
+3. **重複するタイルラスタライザ / レイヤープールの整理**:
+   - 本流の `SoftwareRenderBackend` 内の 64×64 タイル遅延エンジンが M5 ゲート（`1.11 ms`）を達成したため、本流から未接続の [`SimdTileSoftwareRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/SimdTileSoftwareRenderer.java) は廃止（または `SoftwareRenderBackend` のタイルカーネルの内部ヘルパーへ統合）する。**【2026-11-08 訂正】**ただし `GlRectRendererTest`（GL 経路の画素を CPU で突き合わせる基準）と `Milestone4RasterTest` が使っているため、単純削除は不可。廃止するなら先に照合基準を `SoftwareRenderBackend` 側のラスタへ付け替える。
+   - レイヤー管理も [`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java) / [`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java) を `LwjglGlRenderBackend.openLayer/closeLayer` に接続し、~~未使用の~~ [`core/paint/LayerPool.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/LayerPool.java) を撤去する。**【2026-11-08 訂正】**`LayerPool` は未使用ではなく、ルートの `client/renderer/LayerCompositor`（FBO プール）が使用中。撤去ではなく `LayerAtlas` との統合として扱う。
+
+#### Step 4：`PaintSceneDriver` と `PropertyTrees` の統合（毎フレームの `decompose(pose)` 廃止）
+- `PaintSceneDriver` が CPU 上で合成行列 `Matrix2D` を作って `GlRectStream` が `decompose(pose)` で逆分解する現在の往復構造をやめ、`PaintSceneDriver` のノード索引（親子・スクロール節・アニメ値）をそのまま [`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) の階層ノードとして保持させる。
+- スクロールや CSS トランジションが起きたフレームでは、該当ノードの `PropertyTrees` スロットだけを [`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java) で更新し、プリミティブの再パック自体を不要にする。
+
+#### Step 5：`LayoutBox` の軽量化と `FenwickVirtualList` / `LayoutResultCache` の本流接続
+- `LayoutBox.getFlowChildren()` の毎回のアロケーションをキャッシュ化し、`LayoutBox.Tentative`（ヒープ上の `BoxOutputs` 配列コピー）を [`LayoutResultCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/LayoutResultCache.java) のオフヒープスロット参照に統合する。
+- スクロールコンテナ（`overflow: auto | scroll`）のブロックレイアウトに [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java) を接続し、大量リストの行挿入・スクロール時の画面外レイアウトと `DisplayItem` 生成を $O(\log N)$ に短縮する。
+
+---
+
+### 9.5 実施記録：Step 1（Type A）の解消（2026-11-08）
+
+**破壊的変更を伴う実装**（`StateFlags` の公開フィールド削除・`DocumentArena` API の削除）。既存の呼び出し側とテストは新 API へ載せ替え済み。
+
+#### 9.5.1 対話状態の二重書き込みの撤去（§9.2.1 項3）— 当初案と逆向きで一本化
+
+- **何をしたか**: `InteractionState.StateFlags` の 9 個の `boolean` / `Boolean`（`isHovered` …`isOpen`）を、[`ElementState`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/model/ElementState.java) のビットを使った **`int state` ＋ `int overridden`（3 値の指定済みマスク）** の 2 本に集約。`writeMirror()`・`mirrorArena/mirrorId/mirrorGen` を削除し、`DocumentArena` の `stateBits` 列と `STATE_*` 定数・`stateBits()/setStateBits()/setState()` を削除した。`stateBitsOf()` は `bits = (attrBits & ~overridden) | (state & overridden)` の 1 式で `ElementState` ビットを返す（ブール分岐の列挙を廃止）。
+- **なぜ当初案（アリーナを正本にする）にしなかったか**: 実装の過程で、アリーナを正本にすると次の 3 点で健全に動かないと判明した。
+  1. 動的領域の節は取り外し（`free`）で `stateBits/dirtyBits` が 0 に戻る。取り外して付け直した節の `:hover` や「汚れ」が消え、再スタイルが漏れる（現行は `StateFlags` が節に付いてくるので保たれる）。
+  2. 疑似要素・匿名ボックスなどの**仮想の節は番号を持たない**（`isVirtualNode()`）。状態を持つ必要はあるので、結局アリーナ外の保管先が要り、二重構造が別の形で残る。
+  3. `StateFlags` は算出スタイルのキャッシュ（`computedStyle` など）も抱えるため、節ごとのオブジェクト自体は当面なくせない。
+  - 結論として「書かれるだけで誰も読まない写し」を消す方向で単一化した。アリーナ列を正本にする案は、(a) 仮想の節への番号付与方針、(b) 取り外し時の状態退避、を決めた上で再検討する（§9.6 の残課題）。
+- **効果**: 状態変更ごとの 2 列への書き込み（`setStateBits` / `setDirty`）と `register()` 内の世代照合の写し直しが消えた。`StateFlags` から 9 フィールド＋3 フィールド（ミラー先）が減った。
+- **API 変更**: `StateFlags.isHovered` 等のフィールド → `isHovered()` / `isActive()` / `isFocused()` / `isFocusVisible()` / `isFocusWithin()` と `tri(bit)`（3 値）。
+
+#### 9.5.2 `hasClass` の文字列走査の撤去（§9.2.1 項2）
+
+- 番号を持つ節の `HtmlNode.hasClass(String)` は `AtomTable.lookup` → `classAtoms` の整数比較に変更（辞書に無い名前は即 `false`）。`HtmlNode.hasClassAtom(int)` を追加。
+- `SelectorMatcher.matchesCompoundWithoutInteractiveState` は、`SelectorToken.classAtoms()`（セレクタ側を 1 回だけ atom 化してキャッシュ。未登録名を含むときは `null`）と節の `classAtoms` を整数で比べる。文字列経路は**番号を持たない節（断片・仮想の節）専用**にだけ残る。
+
+#### 9.5.3 検証（追加・更新したテスト）
+
+| テスト | 内容 |
+| :--- | :--- |
+| `NodeArenaIdentityTest.interactionStateKeepsPseudoStateInOneStoreOnly` | 状態の読み書きが `stateBitsOf` だけで完結し、アリーナの `dirtyBits` へ書き込まれない（二重書き込みの再発防止） |
+| `NodeArenaIdentityTest.triStateOverridesAttributeDerivedBitsAndNullRestoresThem` | `checked/disabled` 属性由来の値を `false` 指定で打ち消し、`null` で戻る。`open` / `indeterminate` の 3 値 |
+| `NodeArenaIdentityTest.focusBitsKeepFocusWithinSemantics` | `:focus` / `:focus-visible` / 祖先の `:focus-within` の付け外し |
+| `NodeArenaIdentityTest.interactionStateSurvivesMovesAndDiesWithRemovedNodes`（更新） | 移動で状態が付いてくる／再利用された番号に前の持ち主の状態が見えない |
+| `HasClassTest.numberedNodesUseAtomsAndStayInSyncWithTheAttribute` | 文書に接続した節で 3,000 通りのランダムな `class` を文字列定義と突き合わせ。`addClass/removeClass` への追随、辞書に無い名前 |
+| `DocumentArenaTest`（更新） | `stateBits` API 削除に伴い列の保持検証を `dirtyBits` に付け替え |
+
+- `:core:test` 全件緑、ルート `:test` は `ArchitectureTest` M7（入れ子型の跨ぎ参照）を 1 件踏んだがコメント参照の削除で解消、再実行で緑。
+
+### 9.6 残課題（Step 1 の未了と次の着手候補）
+
+| 項目 | 状態 | メモ |
+| :--- | :---: | :--- |
+| 1-③ `ReactiveDomBinder` → `BindingPatchTable` のダイレクトパッチ化 | ⏳ | `BindingPatchTable` は今も書込のみ。`StyleFacts` / `PaintSceneDriver` が読むオーバーレイ配線が要る。配線せず書込だけを止めると Type C に変わるだけなので、配線とセットで行う |
+| 汚れ印（`isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped`）の整数ビット化 | ⏳ | 今回は `state` のみ整数化。4 つの `boolean` を `DIRTY_*` ビットの 1 本にまとめ、`RenderPipeline` の読み出しも `StyleFacts` 化と一緒に直す |
+| アリーナ列を状態の正本にする案 | ⏳ | §9.5.1 の (a) 仮想の節の番号方針、(b) 取り外し時の状態退避が前提 |
+| Step 2（`ComputedStyle` 4 重表現の圧縮） | ⏳ | 未着手 |
+| Step 3（GL 3 系統の整理） | ⏳ | `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 4 / 5 | ⏳ | 未着手 |
 

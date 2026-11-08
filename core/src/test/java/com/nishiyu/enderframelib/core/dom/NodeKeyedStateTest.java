@@ -58,7 +58,7 @@ public class NodeKeyedStateTest {
 
         assertTrue(state.setHovered(first, true));
 
-        assertTrue(state.get(first).isHovered);
+        assertTrue(state.get(first).isHovered());
         assertNull(state.get(second));
         assertNotSame(state.getOrCreate(first), state.getOrCreate(second));
     }

@@ -1712,7 +1712,7 @@ public class UiView implements AutoCloseable {
             Map<String, float[]> scrolls = new LinkedHashMap<>();
             collectScrolls(root, scrollState, scrolls);
             HtmlNode focused = interaction.focusedNode();
-            boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible;
+            boolean visible = focused != null && interaction.get(focused) != null && interaction.get(focused).isFocusVisible();
             HtmlNode hovered = interaction.hoveredNode();
             return new NodeStateSnapshot(scrolls, focused != null ? focused.key() : "", visible,
                     hovered != null ? hovered.key() : "");

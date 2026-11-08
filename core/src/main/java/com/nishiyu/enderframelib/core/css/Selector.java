@@ -274,6 +274,27 @@ public record Selector(
             return bits;
         }
 
+        private int[] cachedClassAtoms;
+
+        /**
+         * {@link #classes} を atom にしたもの（節の {@code classAtoms} と整数で比べるため）。
+         * まだ誰も使っていない名前を含むなら null（後で登録されうるのでキャッシュしない。呼び出し側は文字列で比べる）。
+         */
+        public int[] classAtoms() {
+            int[] cached = cachedClassAtoms;
+            if (cached != null) return cached;
+            com.nishiyu.enderframelib.core.kernel.memory.AtomTable atoms =
+                    com.nishiyu.enderframelib.core.kernel.memory.AtomTable.shared();
+            int n = classes.size();
+            int[] out = new int[n];
+            for (int i = 0; i < n; i++) {
+                int a = atoms.lookup(classes.get(i));
+                if (a == 0) return null;
+                out[i] = a;
+            }
+            return cachedClassAtoms = out;
+        }
+
         /** この複合セレクタ（{@code :not()} / {@code :is()} の中も含む）の照合が依存する状態ビット集合。 */
         public int dependentStateMask() {
             int mask = stateFlags | absentStateFlags;

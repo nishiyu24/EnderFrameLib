@@ -14,14 +14,14 @@ class DocumentArenaTest {
             owners[i] = new Object();
             int id = a.allocate(owners[i]);
             assertEquals(i, id);
-            a.setStateBits(id, i * 3);
+            a.setDirtyBits(id, i * 3);
             a.setIdentity(id, 1, 7, i, 0xF0F0L + i);
         }
         assertTrue(a.capacity() >= 1000);
         assertTrue(a.isAligned());
         for (int i = 0; i < owners.length; i++) {
             assertSame(owners[i], a.owner(i));
-            assertEquals(i * 3, a.stateBits(i));
+            assertEquals(i * 3, a.dirtyBits(i));
             assertEquals(i, a.idAtom(i));
             assertEquals(0xF0F0L + i, a.selfBloom(i));
             assertEquals(DocumentArena.packTagAndType(1, 7), a.tagAndType(i));
@@ -168,7 +168,6 @@ class DocumentArenaTest {
     private static void cycle(DocumentArena a, Object owner) {
         for (int i = 0; i < 4000; i++) {
             int id = a.allocate(owner);
-            a.setState(id, DocumentArena.STATE_HOVER, true);
             a.setDirty(id, DocumentArena.DIRTY_STYLE, true);
         }
         for (int i = 0; i < 4000; i++) a.free(i);

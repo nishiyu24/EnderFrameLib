@@ -1134,8 +1134,24 @@ public class HtmlNode implements Node {
         return c == ' ' || (c >= 9 && c <= 13); // タブ・改行・垂直タブ・改ページ・復帰（正規表現の空白と同じ集合）
     }
 
+    /** class 属性のトークンに {@code atom} があるか（番号を持つ節の {@link #classAtoms} との整数比較）。 */
+    public boolean hasClassAtom(int atom) {
+        int[] atoms = classAtoms;
+        for (int i = 0; i < atoms.length; i++) {
+            if (atoms[i] == atom) return true;
+        }
+        return false;
+    }
+
     public boolean hasClass(String className) {
         if (className == null) return false;
+        if (hasNodeId()) {
+            // 番号を持つ節は classAtoms が正本。辞書に無い名前は、どの節にも付いていない
+            String wanted = className.trim();
+            int atom = AtomTable.shared().lookup(wanted);
+            return atom != 0 && hasClassAtom(atom);
+        }
+        // 番号の無い節（断片・仮想の節）だけ属性の文字列を直接走査する
         String classStr = attrs.get("class");
         if (classStr == null) return false;
         String wanted = className.trim();
