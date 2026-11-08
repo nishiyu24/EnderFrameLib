@@ -1090,6 +1090,24 @@ public class UiView implements AutoCloseable {
         return true;
     }
 
+    /** 何も無効化されていなかったために早期に返したフレームの数（診断・テスト用）。 */
+    static final java.util.concurrent.atomic.AtomicLong IDLE_FRAMES = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * 静止フレームか。リサイズ・無効化・保留中の文字/属性・位置の決め直し・汚れた節・後回しの配置のどれも無く、
+     * 箱の木もある（初回の構築ではない）。このとき以降の処理はすべて何もしないので、省いても結果は変わらない。
+     */
+    private boolean isIdleFrame(boolean resize, InvalidationLevel level) {
+        if (resize || level != InvalidationLevel.NONE || layoutRoot == null || layoutStale
+                || repositionPending || nonScrollRepositionPending || interactionState.hasDirtyNodes()) return false;
+        synchronized (pendingTextNodes) {
+            if (!pendingTextNodes.isEmpty()) return false;
+        }
+        synchronized (pendingAttrNodes) {
+            return pendingAttrNodes.isEmpty();
+        }
+    }
+
     /** 描画キューから呼ばれる、このセッション 1 回分の無効化処理。 */
     public void flushInvalidation() {
         if (document == null || document.root == null) return;
@@ -1100,6 +1118,10 @@ public class UiView implements AutoCloseable {
 
         boolean resize = resizeDue();
         InvalidationLevel level = consumeInvalidationLevel();
+        if (isIdleFrame(resize, level)) {
+            IDLE_FRAMES.incrementAndGet();
+            return;
+        }
         if (level != InvalidationLevel.TEXT_PATCH) {
             // 文字の変更と再スタイルが同じフレームに重なったら、再スタイルの経路は文字の箱を差し替えないので全体にする
             boolean hadPendingText;
