@@ -34,6 +34,9 @@ public final class OffsetItemList extends AbstractList<DisplayItem> implements R
     /** {@code k} 番目（位置の昇順）の差し替えの位置。 */
     public int positionAt(int k) { return positions[k]; }
 
+    /** {@code k} 番目（位置の昇順）の差し替えの項目。 */
+    public DisplayItem replacementAt(int k) { return replacements[k]; }
+
     @Override
     public DisplayItem get(int index) {
         int lo = 0, hi = positions.length - 1;

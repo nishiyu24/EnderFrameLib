@@ -61,7 +61,41 @@ public final class PaintSceneDriver {
          * （姿勢などは {@link PaintSceneDriver#resolveAt} で引く）。
          */
         void drawItem(DisplayItem el, int index, float flat);
+
+        /**
+         * スクロールコンテナの中身（節 {@code node} の子孫の項目 {@code [from, to)}。表示リスト上で連続している）を、保持した層として扱うかを決める。
+         * 既定は {@link RetainPlan#NONE}（ふつうに 1 項目ずつ描く）。層を保持できる描画側（GPU）だけが上書きする。
+         *
+         * <p>呼ぶのは、節の祖先にグループ（不透明度・フィルター）が無いときだけ。{@link RetainPlan#SKIP} を返したら、描画側は
+         * 保持済みの層を {@link #drawRetained} で重ねるので、ドライバは範囲の項目を走査しない。{@link RetainPlan#RECORD} なら、
+         * 範囲の先頭で {@link #beginRetained}、末尾の後で {@link #endRetained} を呼ぶ（その間の項目は層へ描く）。</p>
+         */
+        default RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
+            return RetainPlan.NONE;
+        }
+
+        /** {@link RetainPlan#SKIP}: 保持済みの層を今の位置で重ねる。 */
+        default void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {}
+
+        /** {@link RetainPlan#RECORD}: 範囲の項目を、保持する層へ描き始める。 */
+        default void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {}
+
+        /**
+         * {@link RetainPlan#RECORD}: 範囲を描き終えた。層を保存して重ねたら true。保持できなかった（描き方が層に向かない）なら、層を捨てて false を返す。
+         * false のとき、ドライバは同じ範囲をふつうに描き直す。
+         */
+        default boolean endRetained(DisplayItem node, int nodeIndex) {
+            return true;
+        }
     }
+
+    /**
+     * スクロール層の保持を描画側へ問い合わせるか。false なら問い合わせず、毎フレーム全部走査する（疑うときの切り分け用。絵は同じでなければならない）。
+     */
+    public static volatile boolean retainScrollLayers = true;
+
+    /** スクロール節（{@code _scrollc}）の id の接尾辞。 */
+    public static final String SCROLL_CONTENT_SUFFIX = "_scrollc";
 
     private static final Long2ObjectOpenHashMap<DisplayItem> EMPTY_BY_KEY = new Long2ObjectOpenHashMap<>(0);
 
@@ -73,6 +107,12 @@ public final class PaintSceneDriver {
     /** {@link #chainFor} が前へ進める錨の位置。 */
     private int anchorNext;
     private int[] parentIdx = new int[0];
+    /** スクロール節の添字 → 中身の範囲 {@code [from, to)}（表示リスト上で連続しているものだけ。無ければ from = -1）。 */
+    private int[] retainFrom = new int[0], retainTo = new int[0];
+    /** 範囲の先頭の添字 → その範囲のスクロール節の添字（無ければ -1）。 */
+    private int[] retainNodeAt = new int[0];
+    /** スクロール節の添字（外側の節が先）。無ければ空。 */
+    private int[] retainNodes = new int[0];
     private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
     private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
@@ -143,7 +183,20 @@ public final class PaintSceneDriver {
             // グループに属する描く部品の数。錨の位置（項目の添字）で数える（文字列の表を引かない）
             int[] members = new int[items.size()];
             Map<String, Integer> extraMembers = new HashMap<>(); // 錨がリストに無いグループだけ
+            // スクロール層: 保持できる範囲を先に決める（SKIP の範囲は、グループの鎖も姿勢の計算も要らない）
+            RetainPlan[] plan = planRetained(items, painter);
+            int skipTo = 0;
             for (int i = 0; i < items.size(); i++) {
+                if (i < skipTo) {
+                    chains.add(null);
+                    continue;
+                }
+                int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
+                if (rn >= 0 && plan != null && plan[rn] == RetainPlan.SKIP) {
+                    skipTo = retainTo[rn];
+                    chains.add(null);
+                    continue;
+                }
                 DisplayItem el = items.get(i);
                 List<Group> chain = List.of();
                 if (el.type() != ElementType.NODE) {
@@ -161,31 +214,170 @@ public final class PaintSceneDriver {
                 }
                 chains.add(chain);
             }
+            int[] open = new int[4]; // 記録中の保持層の節の添字（入れ子の順）
+            int openN = 0;
             for (int i = 0; i < items.size(); i++) {
-                DisplayItem el = items.get(i);
-                if (el.type() == ElementType.NODE) continue;
-                List<Group> chain = chains.get(i);
-                if (chain == null) continue;
-                if (chain.isEmpty()) { // 不透明度のグループの外: 層を開かず、そのまま描く
+                int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
+                if (rn >= 0 && plan != null && plan[rn] != null && plan[rn] != RetainPlan.NONE) {
+                    DisplayItem node = items.get(rn);
                     painter.syncLayers(List.of());
-                    painter.drawItem(el, i, 1f);
-                    continue;
+                    if (plan[rn] == RetainPlan.SKIP) {
+                        painter.drawRetained(node, rn, retainFrom[rn], retainTo[rn]);
+                        i = retainTo[rn] - 1;
+                        continue;
+                    }
+                    painter.beginRetained(node, rn, retainFrom[rn], retainTo[rn]);
+                    if (openN == open.length) open = java.util.Arrays.copyOf(open, openN * 2);
+                    open[openN++] = rn;
                 }
-                List<Group> layered = new ArrayList<>(chain.size());
-                float flat = 1f;
-                for (Group g : chain) {
-                    // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
-                    // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
-                    if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : extraMembers.getOrDefault(g.id(), 0)) > 1) layered.add(g);
-                    else flat *= g.opacity();
+                DisplayItem el = items.get(i);
+                if (el.type() != ElementType.NODE) {
+                    List<Group> chain = chains.get(i);
+                    if (chain != null) {
+                        if (chain.isEmpty()) { // 不透明度のグループの外: 層を開かず、そのまま描く
+                            painter.syncLayers(List.of());
+                            painter.drawItem(el, i, 1f);
+                        } else {
+                            List<Group> layered = new ArrayList<>(chain.size());
+                            float flat = 1f;
+                            for (Group g : chain) {
+                                // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
+                                // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
+                                if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : extraMembers.getOrDefault(g.id(), 0)) > 1) layered.add(g);
+                                else flat *= g.opacity();
+                            }
+                            painter.syncLayers(layered);
+                            painter.drawItem(el, i, flat);
+                        }
+                    }
                 }
-                painter.syncLayers(layered);
-                painter.drawItem(el, i, flat);
+                // 記録中の保持層の範囲の終わり: 層を保存して重ねる。保持できなければ、範囲をふつうに描き直す
+                while (openN > 0 && retainTo[open[openN - 1]] == i + 1) {
+                    int node = open[--openN];
+                    painter.syncLayers(List.of());
+                    if (!painter.endRetained(items.get(node), node)) {
+                        plan[node] = RetainPlan.NONE;
+                        i = retainFrom[node] - 1;
+                        openN = 0;
+                        break;
+                    }
+                }
             }
             painter.syncLayers(List.of());
         } finally {
             this.byId = EMPTY_BY_KEY;
         }
+    }
+
+    /**
+     * 保持できるスクロール層の扱いを、描画側へ問い合わせて決める。節の祖先にグループ（不透明度・フィルター）がある・
+     * フィルターの錨の範囲に入っているときは問い合わせない（描画側の保持はグループの外でだけ成り立つ）。
+     * 外側の範囲の中にある入れ子の節は問い合わせない（外側が NONE のときだけ、内側を問い合わせる）。
+     */
+    private RetainPlan[] planRetained(List<DisplayItem> items, Painter painter) {
+        if (!retainScrollLayers || retainNodes.length == 0) return null;
+        RetainPlan[] plan = null;
+        int coveredUntil = 0;
+        for (int c : retainNodes) {
+            int from = retainFrom[c], to = retainTo[c];
+            if (from < coveredUntil) continue;
+            if (insideFxAnchor(items, c)) continue;
+            Resolved r = resolveAt(c);
+            if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
+            RetainPlan decision = painter.planRetained(items.get(c), c, from, to);
+            if (decision == RetainPlan.NONE) continue;
+            if (plan == null) plan = new RetainPlan[items.size()];
+            plan[c] = decision;
+            coveredUntil = to;
+        }
+        return plan;
+    }
+
+    private boolean insideFxAnchor(List<DisplayItem> items, int index) {
+        for (int k = 0; k < fxAnchors.size(); k++) {
+            int a = fxAnchors.get(k);
+            if (a < index && index < a + items.get(a).hints().layer().span()) return true;
+        }
+        return false;
+    }
+
+    /** スクロール節ごとの中身の範囲（子孫の添字の最小〜最大。個数と一致して連続しているものだけ）を求める。 */
+    private void computeRetainRanges(List<DisplayItem> items) {
+        int n = items.size();
+        IntArrayListLite nodes = new IntArrayListLite();
+        for (int i = 0; i < n; i++) {
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) nodes.add(i);
+        }
+        retainFrom = new int[n];
+        retainTo = new int[n];
+        retainNodeAt = new int[n];
+        java.util.Arrays.fill(retainFrom, -1);
+        java.util.Arrays.fill(retainNodeAt, -1);
+        if (nodes.size == 0) {
+            retainNodes = new int[0];
+            return;
+        }
+        boolean[] candidate = new boolean[n];
+        for (int k = 0; k < nodes.size; k++) candidate[nodes.a[k]] = true;
+        int[] min = new int[n], max = new int[n], count = new int[n];
+        java.util.Arrays.fill(min, Integer.MAX_VALUE);
+        java.util.Arrays.fill(max, -1);
+        for (int j = 0; j < n; j++) {
+            int p = parentIdx[j];
+            for (int guard = 0; p >= 0 && guard < 128; guard++) {
+                if (candidate[p]) {
+                    if (j < min[p]) min[p] = j;
+                    if (j > max[p]) max[p] = j;
+                    count[p]++;
+                }
+                p = parentIdx[p];
+            }
+        }
+        IntArrayListLite valid = new IntArrayListLite();
+        for (int k = 0; k < nodes.size; k++) {
+            int c = nodes.a[k];
+            if (count[c] == 0 || max[c] - min[c] + 1 != count[c]) continue; // 連続していない（範囲を飛ばせない）
+            retainFrom[c] = min[c];
+            retainTo[c] = max[c] + 1;
+            valid.add(c);
+        }
+        // 範囲の先頭 → 節。同じ先頭を持つ入れ子は外側（範囲が大きい方）を採る
+        for (int k = 0; k < valid.size; k++) {
+            int c = valid.a[k];
+            int at = retainFrom[c];
+            int other = retainNodeAt[at];
+            if (other < 0 || retainTo[c] > retainTo[other]) retainNodeAt[at] = c;
+        }
+        // 問い合わせは外側の節が先（範囲の先頭の昇順、同じなら範囲の大きい方）
+        Integer[] order = new Integer[valid.size];
+        for (int k = 0; k < valid.size; k++) order[k] = valid.a[k];
+        java.util.Arrays.sort(order, (x, y) -> retainFrom[x] != retainFrom[y] ? Integer.compare(retainFrom[x], retainFrom[y]) : Integer.compare(retainTo[y], retainTo[x]));
+        retainNodes = new int[order.length];
+        for (int k = 0; k < order.length; k++) retainNodes[k] = order[k];
+    }
+
+    /** 小さな int の可変配列（fastutil を引かずに済ませる）。 */
+    private static final class IntArrayListLite {
+        int[] a = new int[8];
+        int size;
+        void add(int v) {
+            if (size == a.length) a = java.util.Arrays.copyOf(a, size * 2);
+            a[size++] = v;
+        }
+    }
+
+    /** 走査中の、いまの表示リスト。 */
+    public List<DisplayItem> items() {
+        return indexedItems;
+    }
+
+    /**
+     * 中身の同一性の印。同じ印の間は、差し替え（{@link OffsetItemList}）を除いて表示リストの中身は同じ。
+     * スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う。
+     */
+    public Object contentToken() {
+        return indexedBase;
     }
 
     /** 索引を作ったときの基底の表示リスト（{@link OffsetItemList} の差し替えだけが変わるなら、索引は作り直さない）。 */
@@ -239,6 +431,7 @@ public final class PaintSceneDriver {
             String pid = items.get(i).hints().parentId();
             parentIdx[i] = pid == null ? -1 : indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
         }
+        computeRetainRanges(items);
         curRes = new Resolved[n];
         prevRes = new Resolved[n];
         prevParentRes = new Resolved[n];

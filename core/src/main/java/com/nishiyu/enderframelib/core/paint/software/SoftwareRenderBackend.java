@@ -16,11 +16,13 @@ import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
 import com.nishiyu.enderframelib.core.paint.BorderPath;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
+import com.nishiyu.enderframelib.core.paint.RetainPlan;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Group;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver.Resolved;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
@@ -199,6 +201,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.target = root;
         this.frame = Matrix2D.scale(dpr, dpr);
         this.frameSize = items.size();
+        this.retainInfo.clear();
+        this.recordOwner = null;
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は PaintSceneDriver が受け持ち、ここは画素を塗るだけ
             driver.run(items, nowMs, frame, painter);
@@ -230,7 +234,109 @@ public final class SoftwareRenderBackend implements RenderBackend {
         public void drawItem(DisplayItem el, int index, float flat) {
             SoftwareRenderBackend.this.drawItem(el, index, flat);
         }
+
+        @Override
+        public RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
+            return SoftwareRenderBackend.this.planRetained(node, nodeIndex, from, to);
+        }
+
+        @Override
+        public void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {
+            GpuScrollLayer l = retainInfo.get(nodeIndex);
+            if (l != null && sink != null) sink.drawScrollLayer(l);
+        }
+
+        @Override
+        public void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {
+            GpuScrollLayer l = retainInfo.get(nodeIndex);
+            if (l == null || sink == null) return;
+            recordOwner = ownerKeyOf(node);
+            sink.beginScrollLayer(l);
+        }
+
+        @Override
+        public boolean endRetained(DisplayItem node, int nodeIndex) {
+            GpuScrollLayer l = retainInfo.get(nodeIndex);
+            recordOwner = null;
+            return l == null || sink == null || sink.endScrollLayer(l);
+        }
     };
+
+    // ------------------------------------------------------------------ スクロール層の保持
+
+    /** 節の添字 → 保持する層の情報（このフレームで問い合わせたもの）。 */
+    private final java.util.HashMap<Integer, GpuScrollLayer> retainInfo = new java.util.HashMap<>();
+    /** 保持する層へ記録している間の、コンテナ（スクロール節の持ち主）の鍵。クリップの部品のうち、これが持ち主のものは外す。 */
+    private String recordOwner;
+    /** 中身が保持に向くかの判定の覚え（基底の表示リストと節が同じなら同じ答え）。 */
+    private Object eligibleToken;
+    private int eligibleNode = -1;
+    private boolean eligibleVerdict;
+
+    private static String ownerKeyOf(DisplayItem node) {
+        String id = node.id();
+        return id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? id.substring(0, id.length() - PaintSceneDriver.SCROLL_CONTENT_SUFFIX.length()) : id;
+    }
+
+    private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
+        GpuSink s = sink;
+        if (s == null || recordOwner != null) return RetainPlan.NONE;
+        Object token = driver.contentToken();
+        if (!(eligibleToken == token && eligibleNode == nodeIndex)) {
+            eligibleVerdict = rangeIsRetainable(driver.items(), from, to);
+            eligibleToken = token;
+            eligibleNode = nodeIndex;
+        }
+        if (!eligibleVerdict) return RetainPlan.NONE;
+        GpuScrollLayer info = scrollLayerInfo(node, nodeIndex, from, to, token);
+        if (info == null) return RetainPlan.NONE;
+        RetainPlan r = s.planScrollLayer(info);
+        if (r != RetainPlan.NONE) retainInfo.put(nodeIndex, info);
+        return r;
+    }
+
+    /**
+     * 範囲の項目が、保持した層に向くか: 時間や外部の状態で見た目が変わるもの（画像の読み込み・動画・キャンバス・入力欄のカーソル・
+     * 動くアニメーション）を含まないこと。どれも、表示リストが変わらないまま見た目だけが変わりうるので、層が古くなる。
+     */
+    private static boolean rangeIsRetainable(List<DisplayItem> items, int from, int to) {
+        for (int i = from; i < to; i++) {
+            DisplayItem it = items.get(i);
+            switch (it.type()) {
+                case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS -> {
+                    return false;
+                }
+                default -> { }
+            }
+            if (it.transitionDuration() > 0 || (it.animDef() != null && !it.animDef().isEmpty())) return false;
+        }
+        return true;
+    }
+
+    /** 層の情報。コンテナの切り取りは、中身の項目の切り取りの鎖のうち、持ち主がコンテナのもの。 */
+    private GpuScrollLayer scrollLayerInfo(DisplayItem node, int nodeIndex, int from, int to, Object token) {
+        String owner = ownerKeyOf(node);
+        List<DisplayItem> items = driver.items();
+        List<ClipPart> parts = new ArrayList<>(1);
+        for (int i = from; i < to && parts.isEmpty(); i++) {
+            RenderMeta meta = items.get(i).meta();
+            ClipRect cr = meta != null ? meta.clipRect() : null;
+            if (cr == null) continue;
+            if (!cr.chain().isEmpty()) {
+                for (ClipChainPart p : cr.chain()) {
+                    if (owner.equals(p.ownerId())) addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), p.rect(), p.ownerId());
+                }
+            } else if (owner.equals(cr.ownerId())) {
+                addClipPart(parts, new ArrayList<>(1), new ArrayList<>(1), cr.toArray(), cr.ownerId());
+            }
+        }
+        if (parts.isEmpty()) return null;
+        Clip c = finishClip(parts);
+        GpuClip[] gc = gpuClips(c);
+        if (gc == null || c.x1() <= c.x0() || c.y1() <= c.y0()) return null;
+        return new GpuScrollLayer(node.id(), token, driver.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
+    }
+
     /** 開いている層。{@code parentDirty} は層を開く前の（親の）描いた範囲。GPU の層は {@code pixmap} が null。 */
     private static final class Layer {
         final Group group;
@@ -549,7 +655,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         RenderMeta m0 = el.meta();
         Object source = m0 != null ? m0.clipRect() : null;
         // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
-        if (ce != null && ce.w == target.width() && ce.h == target.height()
+        boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
+        if (!recording && ce != null && ce.w == target.width() && ce.h == target.height()
                 && (ce.generation == clipGeneration || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
@@ -564,9 +671,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         RenderMeta meta = el.meta();
         ClipRect cr = meta != null ? meta.clipRect() : null;
         if (cr != null && !cr.chain().isEmpty()) {
-            for (ClipChainPart p : cr.chain()) addClipPart(parts, owners, ownerRes, p.rect(), p.ownerId());
+            for (ClipChainPart p : cr.chain()) {
+                if (recording && recordOwner.equals(p.ownerId())) continue;
+                addClipPart(parts, owners, ownerRes, p.rect(), p.ownerId());
+            }
         } else if (cr != null) {
-            addClipPart(parts, owners, ownerRes, cr.toArray(), cr.ownerId());
+            if (!(recording && recordOwner.equals(cr.ownerId()))) addClipPart(parts, owners, ownerRes, cr.toArray(), cr.ownerId());
         } else if (anim.clipData != null) {
             addClipPart(parts, owners, ownerRes, anim.clipData, null);
         }
@@ -580,7 +690,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ce.ownerRes = ownerRes.toArray(new Resolved[0]);
         ce.w = target.width();
         ce.h = target.height();
-        clipCache[index] = ce;
+        if (!recording) clipCache[index] = ce;
         return ce.clip;
     }
 

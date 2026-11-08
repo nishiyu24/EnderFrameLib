@@ -201,5 +201,55 @@ class ScrollCostTest {
         assertTrue(cpuMs[1] < cpuMs[0] * 3 + 2.0, "新経路の CPU が従来経路に比べて大きく悪化している: 従来 " + cpuMs[0] + " ms / 新 " + cpuMs[1] + " ms");
     }
 
+    /** 診断: 画面の中に収まるスクロールコンテナで、スクロール層の保持あり / なしの CPU 時間とヒープ（フレームの描画まで）。 */
+    @Test
+    void measureScrollWithRetainedLayers() {
+        try (var probe = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(8, 8)) {
+        } catch (Throwable t) {
+            org.junit.jupiter.api.Assumptions.abort("OpenGL を使えない: " + t);
+        }
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < 200; i++) rows.append("<div class=\"row\" id=\"r").append(i).append("\">row ").append(i).append(" some text</div>");
+        String html = "<style>body{margin:0;font-size:13px;background:#123}.row{height:26px;margin:2px;padding:2px 6px;background:#eef;border:1px solid #99a}"
+                + "#outer{position:absolute;left:100px;top:150px;width:300px;height:230px;overflow-y:auto;border:2px solid #333;border-radius:8px}</style>"
+                + "<div id=\"outer\">" + rows + "</div>";
+        StringBuilder out = new StringBuilder("SCROLL-RETAIN");
+        double[] cpuMs = new double[2];
+        for (int mode = 0; mode < 2; mode++) {
+            boolean retain = mode == 1;
+            com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = retain;
+            com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend.retainedScroll = true;
+            StandaloneView view = new StandaloneView(html, 520, 520, FontResolver.FALLBACK);
+            try (var backend = new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(520, 520)) {
+                long now = 1000;
+                view.frame(now, backend, true);
+                String sid = backend.sessionId();
+                view.mouseMove(200, 250, sid);
+                var mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+                long tid = Thread.currentThread().getId();
+                int warm = 300, n = 600;
+                long cpu0 = 0, alloc0 = 0;
+                for (int i = 0; i < warm + n; i++) {
+                    if (i == warm) { cpu0 = mx.getThreadCpuTime(tid); alloc0 = mx.getThreadAllocatedBytes(tid); }
+                    view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); // 3 px ずつ往復
+                    now += 16;
+                    view.frame(now, backend, true);
+                }
+                cpuMs[mode] = (mx.getThreadCpuTime(tid) - cpu0) / 1e6 / n;
+                if (retain) {
+                    assertTrue(backend.scrollLayersSkipped() > backend.scrollLayersRecorded() * 10, "保持した層が使われていない（毎フレーム記録し直している）: skipped "
+                            + backend.scrollLayersSkipped() + " recorded " + backend.scrollLayersRecorded());
+                }
+                out.append(String.format(" | retain=%b: cpu %.3f ms, alloc %.1f KB per scroll+frame (skipped %d, recorded %d)", retain, cpuMs[mode],
+                        (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n, backend.scrollLayersSkipped(), backend.scrollLayersRecorded()));
+            } finally {
+                view.close();
+                com.nishiyu.enderframelib.core.paint.PaintSceneDriver.retainScrollLayers = true;
+            }
+        }
+        System.out.println(out);
+        assertTrue(cpuMs[1] < cpuMs[0], "保持した層のほうが遅い: " + cpuMs[1] + " ms / 保持なし " + cpuMs[0] + " ms");
+    }
+
     private static long cpuStart, allocStart, wall;
 }

@@ -93,6 +93,26 @@ public interface GpuSink {
     /** 同時に渡せるクリップの数。これを超える項目は CPU が塗る。 */
     int MAX_CLIPS = 4;
 
+    /**
+     * スクロールコンテナの中身を保持した層として扱うかを決める（の受け皿（描画側の保持するスクロール層））。
+     * 既定は NONE。{@code SKIP} は保持済みの層を {@link #drawScrollLayer} で重ねる、{@code RECORD} は {@link #beginScrollLayer} 〜
+     * {@link #endScrollLayer} の間に描いた内容を層に保持する。
+     */
+    default com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayer(GpuScrollLayer layer) {
+        return com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
+    }
+
+    /** 保持済みの層を、今の節の位置に合わせて（整数画素にずらして）重ねる。 */
+    default void drawScrollLayer(GpuScrollLayer layer) {}
+
+    /** 以降の描画を、保持する層へ入れる。 */
+    default void beginScrollLayer(GpuScrollLayer layer) {}
+
+    /** 保持する層への描画を終え、層を保存して重ねる。保持できなければ層を捨てて false。 */
+    default boolean endScrollLayer(GpuScrollLayer layer) {
+        return true;
+    }
+
     /** 角丸矩形を単色（非乗算の ARGB）で塗る。{@code opacity} は 0〜1。 */
     boolean fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                           int argb, GpuClip[] clips, float opacity);
