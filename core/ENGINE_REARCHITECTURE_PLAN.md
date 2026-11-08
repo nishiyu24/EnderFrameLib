@@ -575,8 +575,10 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 - **静止フレームの `StyleAnimator.advance` の確保削減（2026-11-08・達成／時間の効果は未測定）**: 動いているものが無いとき（`entries` が空）は、一覧も `WeakHashMap` の反復子も作らず
   共有の `List.of()` を返す。動いているときも、変化があった最初の 1 件までは一覧を作らない。
   検証: `StyleAnimatorIdleTest`（空の結果が共有インスタンス・10 万回で 1 B/call 以下＝割り当て 0）、既存のトランジション/アニメーション/`InvalidationPipelineTest`。全体（root + core）通過。
-- **次の作業（< 0.01 ms へ）**: 静止フレームの固定費を、変化が無いときに省く設計にする（`enter` の状態保存を呼び出し側の追跡に・`flushInvalidation` を
-  何も動いていなければ早期に返す。`advance` は上記で済み）。`draw` 冒頭の状態クエリの除去、`curRes` の初期化を SKIP の範囲で省く、画面より大きい層、GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
+- **`UiView.flushInvalidation` の静止フレーム早期リターン（2026-11-08・達成／時間の効果は未測定）**: リサイズ・無効化・保留中の文字/属性・位置の決め直し・汚れた節・後回しの配置が
+  どれも無く箱の木もあるとき（`isIdleFrame`）、以降の分岐を通らず返す（アニメの進行は先に済ませる）。省いた分は何もしない経路なので結果は変わらない。
+  検証: `IdleFrameTest`（変化なし 10 フレームは全て省く・属性変更のフレームは省かず表示リストが変わる・反映後はまた省く）。全体（root + core）通過。
+- **次の作業（< 0.01 ms へ）**: 静止フレームの固定費を、変化が無いときに省く設計にする（`enter` の状態保存を呼び出し側の追跡に。`advance` と `flushInvalidation` は上記で済み）。`draw` 冒頭の状態クエリの除去、`curRes` の初期化を SKIP の範囲で省く、画面より大きい層、GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
 
