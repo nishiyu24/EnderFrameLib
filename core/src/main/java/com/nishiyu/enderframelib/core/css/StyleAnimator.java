@@ -238,7 +238,9 @@ public final class StyleAnimator {
      * 時刻を進める。値が変わった（動いている）要素と、動き終えて最終値に戻す要素を返す。呼び出し側はそれらを再スタイルに回す。
      */
     public List<HtmlNode> advance(long now) {
-        List<HtmlNode> changed = new ArrayList<>();
+        // 何も動いていない（静止フレーム）なら、一覧も反復子も作らずに返す
+        if (entries.isEmpty()) return List.of();
+        List<HtmlNode> changed = null;
         for (Map.Entry<HtmlNode, Entry> e : entries.entrySet()) {
             Entry entry = e.getValue();
             boolean running = false;
@@ -262,9 +264,12 @@ public final class StyleAnimator {
                     finishedNow = true;
                 }
             }
-            if (running || finishedNow) changed.add(e.getKey());
+            if (running || finishedNow) {
+                if (changed == null) changed = new ArrayList<>();
+                changed.add(e.getKey());
+            }
         }
-        return changed;
+        return changed == null ? List.of() : changed;
     }
 
     /** 時刻とともに値が変わるものが残っているか（次のフレームを要求し続けるか）。 */
