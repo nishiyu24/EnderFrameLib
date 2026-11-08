@@ -10,7 +10,9 @@ import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.ImageTextureCache;
 import com.nishiyu.enderframelib.core.paint.gpu.BatchDevice;
+import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
@@ -857,6 +859,14 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     // ------------------------------------------------------------------ 設定
 
     public LwjglGlRenderBackend fonts(FontResolver resolver) {
+        if (!retained.isEmpty()) { // 文字の形が変わるので、保持した層は使えない
+            enter();
+            try {
+                releaseRetained();
+            } finally {
+                exit();
+            }
+        }
         cpu.fonts(resolver);
         return this;
     }
@@ -1108,7 +1118,36 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         }
     }
 
+    /**
+     * スクロール節（{@code _scrollc}）の移動量を、デバイス画素の整数に丸める。スクロールを層の貼り付け位置の移動で済ませる経路
+     * （{@link #retainedScroll}）と、毎フレーム描き直す経路が、同じ位置に描くようにする（保持した層は整数画素だけずらせる）。
+     * 差し替えの表（{@link OffsetItemList}）の中の節だけを見る（基底の節の移動量は 0）。
+     */
+    private List<DisplayItem> snapScrollNodes(List<DisplayItem> items) {
+        if (!retainedScroll || !(items instanceof OffsetItemList ol)) return items;
+        float dpr = devicePixelRatio();
+        DisplayItem[] repl = null;
+        int n = ol.overrideCount();
+        for (int k = 0; k < n; k++) {
+            DisplayItem it = ol.replacementAt(k);
+            if (it.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.NODE
+                    || !it.id().endsWith(com.nishiyu.enderframelib.core.paint.PaintSceneDriver.SCROLL_CONTENT_SUFFIX)) continue;
+            float tx = Math.round(it.translateX() * dpr) / dpr, ty = Math.round(it.translateY() * dpr) / dpr;
+            if (tx == it.translateX() && ty == it.translateY()) continue;
+            if (repl == null) {
+                repl = new DisplayItem[n];
+                for (int j = 0; j < n; j++) repl[j] = ol.replacementAt(j);
+            }
+            repl[k] = it.withTranslation(tx, ty);
+        }
+        if (repl == null) return items;
+        int[] pos = new int[n];
+        for (int k = 0; k < n; k++) pos[k] = ol.positionAt(k);
+        return new OffsetItemList(ol.base(), pos, repl);
+    }
+
     private void renderLocked(List<DisplayItem> items, long nowMs) {
+        items = snapScrollNodes(items);
         GL30.glBindVertexArray(vao);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL11.glViewport(0, 0, width, height);
@@ -1374,6 +1413,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         boolean unbounded;
         /** 層を透明で塗り済みか。最初に描くとき（{@link #touch}）まで塗らない: 何も描かない層（画面の外など）の塗りを省く。 */
         boolean cleared;
+        /** 保持するスクロール層への記録なら、その鍵。通常の層のようには合成せず、{@link #endScrollLayer} が保存して重ねる。 */
+        String retainKey;
     }
 
     /** 層を、まだなら透明で塗る。塗ったあとは、その層が描画先として結ばれている。 */
@@ -1444,6 +1485,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private GpuLayer acquireLayer() {
         GpuLayer l = layerPool.pollFirst();
         if (l != null) return l;
+        return createLayer(true);
+    }
+
+    /** 画面と同じ大きさの描画先を作る。{@code pooled} なら毎フレーム返される層の表に載せる（保持する層は載せない）。 */
+    private GpuLayer createLayer(boolean pooled) {
+        GpuLayer l;
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         int tex = newTexture(null);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
@@ -1458,7 +1505,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             return null;
         }
         l = new GpuLayer(f, tex);
-        allLayers.add(l);
+        if (pooled) allLayers.add(l);
         // 作りたてのテクスチャの中身は決まっていない（前に使われたメモリが残る）。範囲を限って塗る効果が、塗っていない所を読んでも
         // 値が揺れないよう、最初に透明で塗っておく
         GL11.glViewport(0, 0, width, height);
@@ -2314,6 +2361,148 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return true;
     }
 
+    // ------------------------------------------------------------------ 保持するスクロール層
+
+    /** 保持したスクロール層。鍵 = スクロール節の項目 id。 */
+    private static final class Retained {
+        GpuLayer layer;
+        Object token;
+        Matrix2D pose;
+    }
+
+    private static final int MAX_RETAINED = 3;
+    private final java.util.LinkedHashMap<String, Retained> retained = new java.util.LinkedHashMap<>(8, 0.75f, true);
+
+    /**
+     * スクロールコンテナの中身を GPU の層に保持し、スクロールでは層の貼り付け位置だけを動かすか
+     * （既定は有効。{@code -Denderframe.gl.retainscroll=false} で無効）。節の移動量は整数画素の差だけずらすので、
+     * 小数のスクロール量では保持した層と描き直しの文字の位置が最大 0.5 画素ずれうる（再記録のたびに合う）。
+     */
+    public static volatile boolean retainedScroll = !"false".equals(System.getProperty("enderframe.gl.retainscroll"));
+
+    /** 保持した層を使っているスクロール層の数（診断用）。 */
+    public int retainedLayerCount() {
+        return retained.size();
+    }
+
+    /** 保持する前に見たスクロール節の姿勢と中身の印（動いたかの判定用）。 */
+    private final java.util.HashMap<String, Matrix2D> seenScrollPose = new java.util.HashMap<>();
+    private final java.util.HashMap<String, Object> seenScrollToken = new java.util.HashMap<>();
+    private long scrollLayersSkipped, scrollLayersRecorded;
+
+    /** 保持した層を重ねて項目の走査を省いた回数と、層を記録した回数（診断用）。 */
+    public long scrollLayersSkipped() { return scrollLayersSkipped; }
+    public long scrollLayersRecorded() { return scrollLayersRecorded; }
+
+    private void releaseRetained() {
+        for (Retained r : retained.values()) deleteLayer(r.layer);
+        retained.clear();
+        seenScrollPose.clear();
+        seenScrollToken.clear();
+    }
+
+    private static void deleteLayer(GpuLayer l) {
+        if (l == null) return;
+        GL30.glDeleteFramebuffers(l.fbo());
+        GL11.glDeleteTextures(l.tex());
+    }
+
+    @Override
+    public com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayer(GpuScrollLayer l) {
+        var NONE = com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
+        if (!retainedScroll || rects == null || closed || !layerStack.isEmpty()) return NONE;
+        Retained r = retained.get(l.key());
+        if (r == null) {
+            // スクロールが実際に起きるまでは保持しない（静止した文書の見た目を変えない）: 節の位置が前フレームから動いたときに記録を始める
+            Matrix2D was = seenScrollPose.get(l.key());
+            Object wasToken = seenScrollToken.get(l.key());
+            seenScrollPose.put(l.key(), l.pose());
+            seenScrollToken.put(l.key(), l.token());
+            boolean moved = was != null && wasToken == l.token() && (was.e() != l.pose().e() || was.f() != l.pose().f());
+            if (!moved) return NONE;
+        }
+        if (r != null && r.token == l.token() && samePose(r.pose, l.pose())) {
+            int dx = (int) Math.round(l.pose().e() - r.pose.e()), dy = (int) Math.round(l.pose().f() - r.pose.f());
+            int[] b = l.bounds();
+            // 重ねる範囲を、保持した層の同じ範囲から取れるか（層は画面と同じ範囲。画面の外へ出る分は層に無い）
+            if (b[0] - dx >= 0 && b[1] - dy >= 0 && b[2] - dx <= width && b[3] - dy <= height) return com.nishiyu.enderframelib.core.paint.RetainPlan.SKIP;
+        }
+        if (r == null) {
+            while (retained.size() >= MAX_RETAINED) { // 最も使っていない層を捨てる
+                String oldest = retained.keySet().iterator().next();
+                deleteLayer(retained.remove(oldest).layer);
+            }
+            enter();
+            GpuLayer layer;
+            try {
+                layer = createLayer(false);
+            } finally {
+                GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo()); // 作った層が結ばれたままにしない
+                exit();
+            }
+            if (layer == null) return NONE;
+            r = new Retained();
+            r.layer = layer;
+            retained.put(l.key(), r);
+        }
+        r.token = null; // 記録が終わるまで使わせない
+        return com.nishiyu.enderframelib.core.paint.RetainPlan.RECORD;
+    }
+
+    private static boolean samePose(Matrix2D a, Matrix2D b) {
+        return a != null && a.a() == b.a() && a.b() == b.b() && a.c() == b.c() && a.d() == b.d();
+    }
+
+    @Override
+    public void beginScrollLayer(GpuScrollLayer l) {
+        Retained r = retained.get(l.key());
+        if (r == null) return;
+        flushAll(); // 親の描画先に溜めた分を先に描き切る（描画順）
+        Entry e = new Entry();
+        e.layer = r.layer;
+        e.opacity = 1f;
+        e.retainKey = l.key();
+        layerStack.add(e);
+    }
+
+    @Override
+    public boolean endScrollLayer(GpuScrollLayer l) {
+        if (layerStack.isEmpty() || !l.key().equals(layerStack.get(layerStack.size() - 1).retainKey)) return false;
+        flushAll();
+        Entry e = layerStack.remove(layerStack.size() - 1);
+        ensureCleared(e); // 何も描かなかった層も、前の内容を残さない
+        Retained r = retained.get(l.key());
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, currentFbo());
+        GL11.glViewport(0, 0, width, height);
+        if (r == null) return false;
+        r.token = l.token();
+        r.pose = l.pose();
+        scrollLayersRecorded++;
+        compositeRetained(r, 0, 0, l);
+        return true;
+    }
+
+    @Override
+    public void drawScrollLayer(GpuScrollLayer l) {
+        Retained r = retained.get(l.key());
+        if (r == null || r.token == null) return;
+        scrollLayersSkipped++;
+        compositeRetained(r, (int) Math.round(l.pose().e() - r.pose.e()), (int) Math.round(l.pose().f() - r.pose.f()), l);
+    }
+
+    /**
+     * 保持した層を {@code (dx, dy)} だけずらして、コンテナの切り取りで切って重ねる。層は画面と同じ範囲の FBO なので、
+     * 外部テクスチャとして同じ画像の経路（クリップ・描画順の処理を含む）で描く。FBO の行は下から数えるので上下を反転して引く。
+     */
+    private void compositeRetained(Retained r, int dx, int dy, GpuScrollLayer l) {
+        int[] b = l.bounds();
+        float x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), x1 = Math.min(width, b[2]), y1 = Math.min(height, b[3]);
+        if (x1 <= x0 || y1 <= y0) return;
+        float[] zero = new float[4];
+        drawTexture(Matrix2D.IDENTITY, r.layer.tex(), width, height, x0, y0, x1, y1,
+                dx, dy + height, 1f, -1f, x0, y0, x1, y1, zero, zero, l.clip(), 1f);
+    }
+
     /**
      * 外部テクスチャ（{@code handle} = このコンテキストで有効な {@code GL_TEXTURE_2D} の名前）をそのまま貼る。
      * 画素は触らず、補間・折り返しもホストの設定のまま。すでに溜めた図形とは描画順を保つため、別のテクスチャに切り替わるとき先に描き切る。
@@ -2476,6 +2665,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         closed = true;
         if (window != MemoryUtil.NULL) {
             enter();
+            releaseRetained();
             if (rects != null) {
                 rects.close();
                 rects = null;
