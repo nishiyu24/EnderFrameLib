@@ -416,7 +416,11 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   ルートのビューポート用 `HashMap` はビューポートが同じ間は読み取り専用の写しを使い回し、`hasSiblingStateRules` は版番号でキャッシュ、
   `ComputedStyle.diff` の extras は `forEach`（読み取り専用の包みが項目ごとに作る `Map.Entry` を避ける）、`TextShaper.normalize` は書き換えが要らない文字列で正規表現を使わない。
 - **測定**: 往復 1 回 **5.9 KB → 2.4 KB、CPU 0.0156 → 0.006〜0.012 ms**（揺れあり）。全体実行ではJITの状態で確保が増えるので、テストは 3 回測って最小を採り、4 KB 未満を番人にした。
-  残りは `StyleScope.enter`（節ごと）・変化した節の `RestyleResult`・`StyleAnimator.observe`・`computed.asMap()`。ゲート（`0 B/op`・`< 0.005 ms`）には届いていない。
+- **続き（同日）**: 後半の標本（暖機後）で、`SelectorMatcher.matchesCompoundWithoutInteractiveState` の拡張 for（項目のある一覧ごとの反復子）を添字ループに、
+  `InteractionState.containerOf` の `split` の正規表現（名前なしが大半）を `List.of()` の近道に、`stateOf(...).flags()` を値オブジェクトを作らない `stateBitsOf` に、
+  `StyleScope.initial/enter` を直前と同じ値なら同一インスタンスに。**往復 1 回 2.4 KB → 0.9 KB**（うち `setHoveredNode` が約 0.47 KB）。
+  発見: 全体実行で 6〜7 KB に見えていたのは、別のテストが `StageProfiler` を有効のまま残していたため（測定自体が確保）。テストは測定の間だけ切る。番人は 2 KB 未満。
+  （以下は 2.4 KB 時点の残り）`StyleScope.enter`（節ごと）・変化した節の `RestyleResult`・`StyleAnimator.observe`・`computed.asMap()`。ゲート（`0 B/op`・`< 0.005 ms`）には届いていない。
 
 **未達（次の作業）**
 - `ComputedStyle` 本体は `String[] values` のまま（`StyleStructs` は派生ビュー）。`BoxMeasurer` 等が文字列経路を読むため、置き換えは

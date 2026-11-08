@@ -430,14 +430,23 @@ public class RenderPipeline {
     }
 
     private record StyleScope(int viewportW, int viewportH, float rootFontSize, float rootLineHeight) {
+        // 不変なので、直前と同じ値なら同じインスタンスを返す（再スタイルのたびに作らない）
+        private static volatile StyleScope lastInitial, lastEntered;
+
         static StyleScope initial(int viewportW, int viewportH) {
-            return new StyleScope(viewportW, viewportH, ComputedStyle.DEFAULT_FONT_SIZE, Float.NaN);
+            StyleScope c = lastInitial;
+            if (c != null && c.viewportW == viewportW && c.viewportH == viewportH) return c;
+            return lastInitial = new StyleScope(viewportW, viewportH, ComputedStyle.DEFAULT_FONT_SIZE, Float.NaN);
         }
 
         StyleScope enter(HtmlNode node, ComputedStyle computed) {
-            return "html".equalsIgnoreCase(node.tag)
-                    ? new StyleScope(viewportW, viewportH, computed.fontSizePx(), computed.lineHeightPx())
-                    : this;
+            if (!"html".equalsIgnoreCase(node.tag)) return this;
+            StyleScope c = lastEntered;
+            float fs = computed.fontSizePx(), lh = computed.lineHeightPx();
+            if (c != null && c.viewportW == viewportW && c.viewportH == viewportH
+                    && Float.floatToIntBits(c.rootFontSize) == Float.floatToIntBits(fs)
+                    && Float.floatToIntBits(c.rootLineHeight) == Float.floatToIntBits(lh)) return c;
+            return lastEntered = new StyleScope(viewportW, viewportH, fs, lh);
         }
     }
 
@@ -606,11 +615,11 @@ public class RenderPipeline {
         if (flags.stateMemo == null) flags.stateMemo = new StateStyleMemo();
         StateStyleMemo.Entry cached = flags.stateMemo.peek(node, sheet, inheritedStyle, env, parentFontSize,
                 scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                interactionState.stateOf(node).flags());
+                interactionState.stateBitsOf(node));
         if (cached != null) return cached;
         return flags.stateMemo.resolve(node, sheet, inheritedStyle, env, parentFontSize, scope.rootFontSize(),
                 scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                interactionState.stateOf(node).flags(), true,
+                interactionState.stateBitsOf(node), true,
                 bits -> computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
                         interactionState, null,
                         (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n)));
