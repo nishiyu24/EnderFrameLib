@@ -90,9 +90,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 文字の字形キャッシュの上限。 */
     private static final int GLYPH_CACHE_LIMIT = 4096;
 
-    /** 最終の描画先。 */
-    private final Pixmap root;
-    /** いま描いている先（グループの層の中なら、その層）。 */
+    /**
+     * 最終の描画先。<b>CPU が実際に画素を塗るまで確保しない</b>（GPU 版が {@link #renderOnto} で使うとき、図形が全部 GPU に
+     * 受け取られれば画面サイズの CPU 画素は要らない）。大きさは {@link #rootW} × {@link #rootH}。
+     */
+    private Pixmap rootPixmap;
+    private final int rootW, rootH;
+    /** いま描いている先（グループの層の中なら、その層）。根を指すときは {@link #rootPixmap}（未確保なら null）。 */
     private Pixmap target;
     private final java.util.ArrayList<Layer> layers = new java.util.ArrayList<>();
     private final java.util.ArrayDeque<Pixmap> layerPool = new java.util.ArrayDeque<>();
@@ -123,8 +127,34 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio) {
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
         this.dpr = devicePixelRatio;
-        this.root = new Pixmap(Math.max(1, Math.round(cssW * devicePixelRatio)), Math.max(1, Math.round(cssH * devicePixelRatio)));
-        this.target = root;
+        this.rootW = Math.max(1, Math.round(cssW * devicePixelRatio));
+        this.rootH = Math.max(1, Math.round(cssH * devicePixelRatio));
+    }
+
+    /** 根の描画先。初めて必要になったときに確保する。 */
+    private Pixmap root() {
+        Pixmap r = rootPixmap;
+        if (r == null) rootPixmap = r = new Pixmap(rootW, rootH);
+        return r;
+    }
+
+    /** 根の画素を確保済みか（診断・テスト用）。 */
+    public boolean isRootAllocated() {
+        return rootPixmap != null;
+    }
+
+    /** いまの描画先。根を指していて未確保なら、ここで確保する（画素を書く直前に呼ぶ）。 */
+    private Pixmap target() {
+        Pixmap t = target;
+        return t != null ? t : (target = root());
+    }
+
+    private int targetWidth() {
+        return target != null ? target.width() : rootW;
+    }
+
+    private int targetHeight() {
+        return target != null ? target.height() : rootH;
     }
 
     public SoftwareRenderBackend fonts(FontResolver resolver) {
@@ -146,7 +176,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 描画先（事前乗算の ARGB）。 */
     @Override
     public Pixmap pixmap() {
-        return root;
+        return root();
     }
 
     @Override
@@ -166,7 +196,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     @Override
     public void render(List<DisplayItem> items, long nowMs) {
-        java.util.Arrays.fill(root.pixels(), clearColor);
+        java.util.Arrays.fill(root().pixels(), clearColor);
         drawFrame(items, nowMs, null);
     }
 
@@ -187,8 +217,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public void clearDirty() {
         int[] b = dirtyBounds();
         if (b != null) {
-            int[] px = root.pixels();
-            for (int y = b[1]; y < b[3]; y++) java.util.Arrays.fill(px, y * root.width() + b[0], y * root.width() + b[2], 0);
+            int[] px = root().pixels();
+            for (int y = b[1]; y < b[3]; y++) java.util.Arrays.fill(px, y * rootW + b[0], y * rootW + b[2], 0);
         }
         dirtyX0 = dirtyY0 = Integer.MAX_VALUE;
         dirtyX1 = dirtyY1 = Integer.MIN_VALUE;
@@ -198,7 +228,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (items == null || items.isEmpty()) return;
         this.sink = gpu;
         this.rootSink = gpu;
-        this.target = root;
+        this.target = rootPixmap;
         this.frame = Matrix2D.scale(dpr, dpr);
         this.frameSize = items.size();
         this.retainInfo.clear();
@@ -214,7 +244,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 if (l.pixmap != null) layerPool.addFirst(l.pixmap);
                 if (l.maskPixmap != null) layerPool.addFirst(l.maskPixmap);
             }
-            this.target = root;
+            this.target = rootPixmap;
             this.rootSink = null;
             this.sink = null;
         }
@@ -398,7 +428,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
         }
         Pixmap pm = layerPool.pollFirst();
-        if (pm == null) pm = new Pixmap(root.width(), root.height());
+        if (pm == null) pm = new Pixmap(rootW, rootH);
         layers.add(new Layer(g, pm, new int[]{dirtyX0, dirtyY0, dirtyX1, dirtyY1}));
         dirtyX0 = dirtyY0 = Integer.MAX_VALUE;
         dirtyX1 = dirtyY1 = Integer.MIN_VALUE;
@@ -416,7 +446,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         Layer owner = l.isMask() ? layers.get(layers.size() - 1) : null;
-        Pixmap parent = root;
+        Pixmap parent = root();
         for (int i = layers.size() - 1; i >= 0; i--) {
             if (layers.get(i).pixmap != null) {
                 parent = layers.get(i).pixmap;
@@ -445,11 +475,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         LayerSpec spec = l.group.spec();
-        int w = root.width(), h = root.height();
+        int w = rootW, h = rootH;
         // GPU の層が足りず CPU の層に落ちたとき、背景（混合・backdrop-filter が読む絵）は GPU 側にある。
         // 描画先を読み戻して CPU で混ぜ、結果を GPU の描画先へ書き戻す。
         boolean viaGpu = false;
-        if (rootSink != null && !cpuLayer && spec != null && parent == root
+        if (rootSink != null && !cpuLayer && spec != null && parent == rootPixmap
                 && (spec.blend() != BlendMode.NORMAL || spec.hasBackdrop())) {
             // blend だけなら層の描いた範囲しか背景を読まない。backdrop-filter はぼかしが範囲外を読むので全面
             Pixmap snap = !spec.hasBackdrop() && any ? rootSink.snapshotTarget(region) : rootSink.snapshotTarget();
@@ -472,7 +502,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         if (spec != null && spec.hasBackdrop()) {
             Pixmap scratch = layerPool.pollFirst();
-            if (scratch == null) scratch = new Pixmap(root.width(), root.height());
+            if (scratch == null) scratch = new Pixmap(rootW, rootH);
             int[] area = LayerFx.backdrop(parent, scratch, spec.backdrop(), l.group.map(), l.group.pose(), spec.backdropShape(),
                     spec.clip(), l.group.opacity());
             layerPool.addFirst(scratch);
@@ -660,7 +690,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         Object source = m0 != null ? m0.clipRect() : null;
         // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
         boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
-        if (!recording && ce != null && ce.w == target.width() && ce.h == target.height()
+        if (!recording && ce != null && ce.w == targetWidth() && ce.h == targetHeight()
                 && (ce.generation == clipGeneration || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
@@ -692,14 +722,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = ownerRes.toArray(new Resolved[0]);
-        ce.w = target.width();
-        ce.h = target.height();
+        ce.w = targetWidth();
+        ce.h = targetHeight();
         if (!recording) clipCache[index] = ce;
         return ce.clip;
     }
 
     private Clip finishClip(List<ClipPart> parts) {
-        int x0 = 0, y0 = 0, x1 = target.width(), y1 = target.height();
+        int x0 = 0, y0 = 0, x1 = targetWidth(), y1 = targetHeight();
         double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
         for (ClipPart p : parts) {
             x0 = Math.max(x0, p.bx0());
@@ -1057,7 +1087,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         PaintOp op = acquirePaint();
         op.nr = 0;
         op.nRound = 0;
-        op.px = target.pixels();
+        op.px = target().pixels();
         op.w = target.width();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.pose = pose; op.inv = inv; op.clip = clip; op.opacity = opacity; op.shader = shader; op.fast = fast;
@@ -1237,7 +1267,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (inv == null || !inv.isFinite()) return;
         int[] r = paintRange(pose, x0 - m, y0 - m, x1 + m, y1 + m, clip);
         if (r == null) return;
-        int[] px = target.pixels();
+        int[] px = target().pixels();
         int w = target.width();
         boolean clipped = !clip.parts().isEmpty();
         final int rx0 = r[0], rx1 = r[2], ry0 = r[1];
@@ -2005,7 +2035,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             covLutColor = pm;
         }
         GlyphOp op = acquireGlyph();
-        op.px = target.pixels();
+        op.px = target().pixels();
         op.w = target.width();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
