@@ -675,7 +675,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private int enterDepth;
     private long prevContext;
     private GLCapabilities prevCaps;
-    private int fbo, fboTex, overlayTex, vao, shapeProgram, texProgram;
+    private int fbo, fboTex, overlayTex /* 遅延確保 */, vao, shapeProgram, texProgram;
     private int clearPremul = 0;
     private boolean readbackValid;
     private boolean closed;
@@ -992,7 +992,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL30.glBindVertexArray(vao);
 
         fboTex = newTexture(null);
-        overlayTex = newTexture(null);
+        // overlayTex は CPU が実際に画素を塗った最初の描画（drawPixels）まで作らない
         fbo = GL30.glGenFramebuffers();
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, fboTex, 0);
@@ -1319,6 +1319,16 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     /** CPU が描いた層のうち、変わった範囲をテクスチャにして重ね、層を空に戻す。 */
+    /** CPU の根の画素（画面サイズ）を確保済みか。図形が全部 GPU に受け取られている間は false のまま（テスト用）。 */
+    boolean cpuPixelsAllocated() {
+        return cpu.isRootAllocated();
+    }
+
+    /** CPU 層の重ね用テクスチャを確保済みか（テスト用）。 */
+    boolean overlayTextureAllocated() {
+        return overlayTex != 0;
+    }
+
     private void flushOverlay() {
         int[] b = cpu.dirtyBounds();
         if (b == null) return;
@@ -1375,6 +1385,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             for (int y = 0; y < bh; y++) buf.put(src, (b[1] + y) * width + b[0], bw);
             buf.flip();
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            if (overlayTex == 0) overlayTex = newTexture(null); // 初めて CPU の層を重ねるときに確保
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, overlayTex);
             GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
             GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, b[0], b[1], bw, bh, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);

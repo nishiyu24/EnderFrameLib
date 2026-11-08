@@ -1314,6 +1314,17 @@ flowchart TB
 - **検証**: `Milestone2GateTest.styleStructsDuplicateLayerStaysRemoved`（ファイルが無いこと、`core/src/main` のどのソースにも `StyleStructs` が現れないこと = 復活防止のラチェット）、`PackedCssValueTest.calcViaPackedValueUsesTable`（`PackedCssValue.resolve` + `CalcProgram.Resolver`）。`:core:test`・ルート `:test` 全件緑。
 - **未達**: 第 4 層の目的だった「`ComputedStyle.String[]` を 64-bit 即値で置き換える」は未実施。第 1 層（`String[] values`）は残り、`StyleFacts` はそこから再パースして作る。次にやるなら `StyleFacts` の `CompiledLength[] edges` を `PackedCssValue` の `long[]` にして `PackedCssValue` / `CalcProgram` を初めて本流へ接続する（`edgeLength` の熱い経路）。
 
+### 9.5.9 実施記録：Step 3（GL 3 系統）の第一歩 — CPU 画素と重ね用テクスチャの遅延確保（2026-11-09）
+
+Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切り出し、`LwjglGlRenderBackend` の `cpu` フィールドを 0 にする）は、調査の結果**今回は着手しなかった**。理由と、代わりに実施した小さく検証可能な一歩を記す。
+
+- **着手しなかった理由（調査結果）**: `SoftwareRenderBackend`（2,259 行）は、`PaintSceneDriver.Painter` の実装（図形ディスパッチ）と CPU ラスタ（`PaintOp`/`GradientOp`/`GlyphOp`、字形ビットマップ、画像サンプリング、層合成 `LayerFx`）が `sink` の有無で分岐しながら 1 クラスに織り込まれている。`LwjglGlRenderBackend` は `cpu` を、フォント解決（`fonts`）・画像供給（`images`）・`sessionId`・`hasActiveAnimation`・`renderOnto`・`dirtyBounds`/`pixmap`/`clearDirty` の 7 経路で使う。ディスパッチの切り出しは両クラスの契約を同時に組み替える作業で、GL 経路の画素一致テスト（`LwjglGlRenderBackendTest` 86 件）を安全網にしても 1 コミットで終える規模ではない。段階を分けて進める。
+- **実測で分かったこと**: GL モードで CPU に落ちる描き方を探したところ、傾き・縁取り文字・破線枠・`clip-path`・`filter: blur`・`mask-image`・回転文字・`mix-blend-mode` の**いずれも CPU に落ちない**（第 2 世代 `GpuBatchPacker` と GPU 層が受ける）。CPU に落ちるのは実質「GPU の層の深さ上限（`maxLayerDepth`）超過」と「層テクスチャの VRAM 予算超過」だけ。つまり GL モードの CPU 経路は**例外的な保険**で、通常は使われない。
+- **実施**: ① `SoftwareRenderBackend` の根の `Pixmap`（画面サイズ × 4 バイト。1920×1080 で約 8 MB）を、CPU が実際に画素を塗る最初の瞬間まで確保しない遅延確保にした（`root()` / `target()`。クリップの寸法参照は確保せずに根の寸法で答える）。② `LwjglGlRenderBackend` の `overlayTex`（CPU 層を重ねる画面サイズのテクスチャ）も、最初の `drawPixels` まで作らない。
+- **効果**: 図形だけのページを GL で描く間、CPU の画面サイズの画素も重ね用テクスチャも**確保されない**。1920×1080 で CPU 側 約 8 MB + VRAM 側 約 8 MB の常駐を削減。
+- **検証**: 新規 `LazyCpuLayerTest`（矩形だけのページで両方とも未確保のまま GPU が描く／`maxLayerDepth` を絞って入れ子の不透明度を CPU の層に落とすと両方とも確保され、CPU 版と画素差 ≤ 3／`SoftwareRenderBackend` の初回利用で確保）。GL を実際に動かす既存の `LwjglGlRenderBackendTest`（86 件）・`GlRectRendererTest`・`GlVramDeviceTest` を含む `:core:test`・ルート `:test` 全件緑。
+- **次の一歩（提案）**: 7 経路のうち依存の軽いものから外す。(a) `fonts`/`images`/`sessionId` は GL 側が自前で持てる（CPU は保険経路用に遅延生成）。(b) `hasActiveAnimation` は `PaintSceneDriver` を直接使う。(c) 残る `renderOnto` と `dirtyBounds` 系は、保険経路を「`CpuFallbackLayer`（遅延生成）」に隔離する。(d) 第 2 世代 `GpuBatchPacker` は今回の実測で多くの描き方を受けているため、撤去には `GlRectStream.accepts()` の 100% 化（非等方スケール＋角丸・せん断のシェーダー拡張）が先に要る。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1324,6 +1335,6 @@ flowchart TB
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | ⏳ | `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | Step 4 / 5 | ⏳ | 未着手 |
 
