@@ -1414,6 +1414,15 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **意味**: `kernel/gpu/SimdTileSoftwareRenderer`（§9.2.6 の孤立クラス）とタイル振り分けのコードが二重に存在する状態は残る。`TileQueue` が本流の実装として独立したので、次は `SimdTileSoftwareRenderer` の照合基準（`GlRectRendererTest` / `Milestone4RasterTest`）を `TileQueue` 側へ付け替えて統合するのが道筋（§9.4 Step 3 の訂正に沿う）。
 - **次の一歩**: 根の `Pixmap`（`rootPixmap` / `root()` / `target`）、図形ごとの命令（`PaintOp` 等）と GPU 試行の分離。
 
+### 9.5.21 実施記録：Step 3 — 孤立していた `SimdTileSoftwareRenderer` を本番コードからテスト側へ移動（2026-11-09）
+
+**破壊的変更**（`core/kernel/gpu/SimdTileSoftwareRenderer` を `src/main` から削除。パッケージ名・API は同一のまま `src/test` へ）。
+
+- **調査結果**: 本番コード（`src/main`・ルート `src`）からの参照は**ゼロ**。使うのは `GlRectRendererTest`（GL 経路の画素を CPU で突き合わせる基準）と `Milestone4RasterTest` だけ。機能も「角丸矩形の塗りのみ」の 182 行で、本流の `SoftwareRenderBackend` とは被覆率の式（`0.5 - d`）や合成の丸めが別実装。§9.4 Step 3 の訂正（単純削除不可）どおり、照合基準を `SoftwareRenderBackend` に付け替えると GL 側の期待画素の意味が変わり、基準のずれを個別に潰すことになるため、**基準実装としてテスト側へ移す**のが最小で正確と判断した。
+- **実施**: `git mv` のみ（中身は説明文を「テスト専用の基準実装」へ更新）。`TileQueue`（§9.5.20）が本流のタイル実行として独立したので、本番にはタイル振り分けの実装が 1 つになった。
+- **検証**: 新規 `Milestone4GateTest.simdTileSoftwareRendererStaysTestOnly`（本番側にファイルが無い = 復活防止）。`GlRectRendererTest` / `Milestone4RasterTest`（クラスは同パッケージのままなので無修正）を含む `:core:test`・ルート `:test` 全件緑。
+- **これで**: §9.2.6 項3 のうち「CPU タイルラスタライザの重複」は解消（本番は `TileQueue` に一本化）。残るのは `LayerPool` / `LayerAtlas` / `DualKawase` の統合。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1424,7 +1433,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に、§9.5.20 で命令の型とタイル実行を `Op` / `TileQueue` に集約。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）、§9.5.18 で汚れ範囲を `DirtyRect` に、§9.5.19 で層用 `Pixmap` の貸し借りを `PixmapPool` に、§9.5.20 で命令の型とタイル実行を `Op` / `TileQueue` に集約、§9.5.21 で孤立した `SimdTileSoftwareRenderer` をテスト側の基準実装へ移動（タイルラスタライザの重複は解消）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。§9.5.17 で走査 7 箇所のリスト生成も除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
