@@ -1392,7 +1392,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 ### 9.5.18 実施記録：Step 3 — 汚れ範囲を `DirtyRect` に集約（2026-11-09）
 
 - **背景**: §9.5.14 の「次の一歩」にある描画先・汚れ範囲の切り出しの最初の部分。`SoftwareRenderBackend` は「CPU が塗った範囲」を 4 本の `int`（`dirtyX0/Y0/X1/Y1`）で持ち、空への初期化 4 行を 4 箇所、層を開く／閉じるときの `int[4]` への保存・復元、`grow` と `paintRange` での最小・最大の手書きが散らばっていた（同じ外接矩形の演算が 3 通りの書き方）。
-- **実施（挙動不変・内部型のみの変更）**: 新設 `DirtyRect`（`reset` / `isEmpty` / `add` / `toArray` / `set` / `bounds`）に集約。`SoftwareRenderBackend` は 2,190 行から 2,174 行になり、4 本の `int` と手書きの初期化がなくなった。層ごとの `parentDirty`（`int[4]`）は `toArray()` / `set()` の往復で、空の状態も含めて元に戻る。公開の `dirtyBounds()` / `clearDirty()` は不変。
+- **実施（挙動不変・内部型のみの変更）**: 新設 `DirtyRect`（`reset` / `isEmpty` / `add` / `toArray` / `set` / `bounds`）に集約。`SoftwareRenderBackend` は 2,190 行から 2,178 行になり、4 本の `int` と手書きの初期化がなくなった。層ごとの `parentDirty`（`int[4]`）は `toArray()` / `set()` の往復で、空の状態も含めて元に戻る。公開の `dirtyBounds()` / `clearDirty()` は不変。
 - **検証**: 新規 `DirtyRectTest`（空から始まり外接矩形に広がる／幅 0 の範囲は空のまま／空を含む保存・復元の往復と復元後の追加が前の値に引きずられない／ランダム 200 通りが手書きの 4 本の `int` と一致／`SoftwareRenderBackend` に `dirtyX0` 等が戻っていない番人）。層の合成を通る GL の画素一致（`LwjglGlRenderBackendTest` ほか）と `SoftwareRenderBackendTest` を含む `:core:test`・ルート `:test` 全件緑。
 - **次の一歩**: 残りは描画先（`target` / `rootPixmap` / `layerPool`）と `Op` 群・`flushPending`（タイル実行）。これらは `driver`・`frame`・`sink` に依存するため、`CpuRaster` に移すときは依存を引数で渡す形にする。
 
