@@ -221,6 +221,33 @@ public class BoxTreeTest {
     }
 
     @Test
+    public void hasFlowChildrenAgreesWithTheListForEveryBoxInATree() {
+        LayoutBox root = layout("""
+                <div id="a"><span style="position:absolute">abs</span></div>
+                <div id="b"><span style="display:none">none</span></div>
+                <div id="c"><span style="position:absolute">abs</span><p>flow</p></div>
+                <div id="d"></div>
+                <ul><li id="e">x</li></ul>
+                <ul style="list-style-position: inside;"><li id="f">x</li></ul>
+                <fieldset id="g"><legend>l</legend></fieldset>
+                <fieldset id="h"><legend>l</legend>body</fieldset>
+                """);
+        int[] visited = {0};
+        check(root, visited);
+        assertTrue(visited[0] > 15, "visited=" + visited[0]);
+        assertFalse(findElement(root, "a").hasFlowChildren(), "絶対配置だけ");
+        assertFalse(findElement(root, "b").hasFlowChildren(), "display:none だけ");
+        assertTrue(findElement(root, "c").hasFlowChildren());
+        assertFalse(findElement(root, "d").hasFlowChildren());
+    }
+
+    private static void check(LayoutBox box, int[] visited) {
+        visited[0]++;
+        assertEquals(!box.getFlowChildren().isEmpty(), box.hasFlowChildren(), "tag=" + box.node.tag);
+        for (LayoutBox c : box.children) check(c, visited);
+    }
+
+    @Test
     public void testInsideMarkerIsInlineContent() {
         LayoutBox root = layout("""
                 <ul style="list-style-position: inside;"><li id="li">text</li></ul>
