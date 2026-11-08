@@ -30,6 +30,18 @@ public final class PersistentVramBuffer {
 
         /** フォールバック: {@code [offset, offset+length)} を GPU 側へ転送する。{@code src} は呼び出しの間だけ読む。 */
         void subData(ByteBuffer src, int offset, int length);
+
+        /** 永続マップの面の数（リング）。2 以上なら書き込みは {@link #currentSegment()} の面だけへ行う。既定は 1 面。 */
+        default int segmentCount() { return 1; }
+
+        /** {@code i} 面目の永続マップ（0 面目は {@link #mapPersistent} の戻り値と同じ）。 */
+        default ByteBuffer persistentSegment(int i) { throw new UnsupportedOperationException(); }
+
+        /** 次に書く面。フレームの終わり（フェンスを置いた後）に進む。 */
+        default int currentSegment() { return 0; }
+
+        /** {@code i} 面目を GPU がまだ読んでいるなら読み終えるまで待つ（CPU が書く直前に呼ぶ）。 */
+        default void awaitSegment(int i) { }
     }
 
     private static final VarHandle INTS = MethodHandles.byteBufferViewVarHandle(int[].class, ByteOrder.nativeOrder());
@@ -43,13 +55,16 @@ public final class PersistentVramBuffer {
     private final ByteBuffer data;
     /** 永続マップした GPU メモリ。書き込み専用（読んではならない）。マップしていなければ null。 */
     private final ByteBuffer gpu;
+    /** 3 面リングなどの面（2 面以上のとき）。書き込みは影だけに行い、{@link #flush()} が現在の面へ汚れた範囲を写す。1 面なら null。 */
+    private final ByteBuffer[] ring;
     private final boolean persistent;
     private final int[] freeStack;
     private int freeTop;
     private int highWater;
-    private int dirtyLo = Integer.MAX_VALUE;
-    private int dirtyHi = -1;
+    /** 面ごとの未反映の範囲（1 面・フォールバックでは長さ 1）。 */
+    private final int[] segLo, segHi;
     private long uploadedBytes;
+    private long ringCopiedBytes;
 
     public PersistentVramBuffer(int stride, int capacity, Device device) {
         if (stride <= 0 || (stride & 3) != 0) throw new IllegalArgumentException("stride: " + stride);
@@ -64,6 +79,18 @@ public final class PersistentVramBuffer {
         this.data = raw.slice(off, (int) bytes).order(ByteOrder.nativeOrder());
         this.gpu = mapped == null ? null : mapped.order(ByteOrder.nativeOrder());
         this.persistent = mapped != null;
+        int n = mapped == null ? 1 : Math.max(1, device.segmentCount());
+        if (n > 1) {
+            ring = new ByteBuffer[n];
+            ring[0] = this.gpu;
+            for (int i = 1; i < n; i++) ring[i] = device.persistentSegment(i).order(ByteOrder.nativeOrder());
+        } else {
+            ring = null;
+        }
+        segLo = new int[n];
+        segHi = new int[n];
+        java.util.Arrays.fill(segLo, Integer.MAX_VALUE);
+        java.util.Arrays.fill(segHi, -1);
         this.freeStack = new int[capacity];
     }
 
@@ -76,6 +103,10 @@ public final class PersistentVramBuffer {
     public int highWater() { return highWater; }
     /** 累計の転送バイト数（永続マップでは常に 0）。 */
     public long uploadedBytes() { return uploadedBytes; }
+    /** リング面へ写した累計バイト数（GPU への転送ではなくマップしたメモリへの書き込み。リングでなければ 0）。 */
+    public long ringCopiedBytes() { return ringCopiedBytes; }
+    /** 永続マップの面の数。 */
+    public int segments() { return ring == null ? 1 : ring.length; }
 
     /** スロットを 1 つ確保する。空きが無ければ -1。解放済みの番号を先に再利用する。 */
     public int allocate() {
@@ -95,7 +126,7 @@ public final class PersistentVramBuffer {
         int at = at(slot, byteOffset, 4);
         if ((int) INTS.get(data, at) == v) return;
         INTS.set(data, at, v);
-        if (gpu != null) INTS.set(gpu, at, v);
+        if (gpu != null && ring == null) INTS.set(gpu, at, v);
         touch(slot);
     }
 
@@ -103,7 +134,7 @@ public final class PersistentVramBuffer {
         int at = at(slot, byteOffset, 4);
         if (Float.floatToRawIntBits((float) FLOATS.get(data, at)) == Float.floatToRawIntBits(v)) return;
         FLOATS.set(data, at, v);
-        if (gpu != null) FLOATS.set(gpu, at, v);
+        if (gpu != null && ring == null) FLOATS.set(gpu, at, v);
         touch(slot);
     }
 
@@ -113,7 +144,7 @@ public final class PersistentVramBuffer {
         short bits = Float.floatToFloat16(v);
         if ((short) SHORTS.get(data, at) == bits) return;
         SHORTS.set(data, at, bits);
-        if (gpu != null) SHORTS.set(gpu, at, bits);
+        if (gpu != null && ring == null) SHORTS.set(gpu, at, bits);
         touch(slot);
     }
 
@@ -121,7 +152,7 @@ public final class PersistentVramBuffer {
         int at = at(slot, byteOffset, 2);
         if ((short) SHORTS.get(data, at) == (short) v) return;
         SHORTS.set(data, at, (short) v);
-        if (gpu != null) SHORTS.set(gpu, at, (short) v);
+        if (gpu != null && ring == null) SHORTS.set(gpu, at, (short) v);
         touch(slot);
     }
 
@@ -131,7 +162,7 @@ public final class PersistentVramBuffer {
     public int getShort(int slot, int byteOffset) { return (short) SHORTS.get(data, at(slot, byteOffset, 2)) & 0xFFFF; }
 
     /** 汚れたスロットがあるか。 */
-    public boolean isDirty() { return dirtyHi >= 0; }
+    public boolean isDirty() { return segHi[ring == null ? 0 : device.currentSegment()] >= 0; }
 
     /**
      * 汚れた範囲を GPU へ送る。永続マップなら転送は無く（コヒーレントなので）範囲を捨てるだけ。
@@ -139,22 +170,39 @@ public final class PersistentVramBuffer {
      * @return 今回転送したバイト数
      */
     public int flush() {
-        if (dirtyHi < 0) return 0;
+        if (ring != null) return flushRing();
+        if (segHi[0] < 0) return 0;
         int sent = 0;
         if (!persistent && device != null) {
-            int off = dirtyLo * stride;
-            sent = (dirtyHi - dirtyLo + 1) * stride;
+            int off = segLo[0] * stride;
+            sent = (segHi[0] - segLo[0] + 1) * stride;
             device.subData(data.duplicate().order(ByteOrder.nativeOrder()), off, sent);
             uploadedBytes += sent;
         }
-        dirtyLo = Integer.MAX_VALUE;
-        dirtyHi = -1;
+        segLo[0] = Integer.MAX_VALUE;
+        segHi[0] = -1;
         return sent;
     }
 
+    /** リング: 現在の面の未反映の範囲を影から写す（GPU がその面を読み終えるのを待ってから。割り当て 0）。 */
+    private int flushRing() {
+        int seg = device.currentSegment();
+        if (segHi[seg] < 0) return 0;
+        device.awaitSegment(seg);
+        int off = segLo[seg] * stride;
+        int len = (segHi[seg] - segLo[seg] + 1) * stride;
+        ring[seg].put(off, data, off, len);
+        ringCopiedBytes += len;
+        segLo[seg] = Integer.MAX_VALUE;
+        segHi[seg] = -1;
+        return 0;
+    }
+
     private void touch(int slot) {
-        if (slot < dirtyLo) dirtyLo = slot;
-        if (slot > dirtyHi) dirtyHi = slot;
+        for (int i = 0; i < segLo.length; i++) {
+            if (slot < segLo[i]) segLo[i] = slot;
+            if (slot > segHi[i]) segHi[i] = slot;
+        }
     }
 
     private void check(int slot) {

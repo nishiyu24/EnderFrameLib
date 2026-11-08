@@ -99,6 +99,7 @@ class GlVramDeviceTest {
     /** 全スロットの世界行列を GPU で計算して読み戻す: スロットごとに {@code [a b c d tx ty]}。 */
     private static float[][] gpuWorldMatrices(GlTreeStore store, float frameMs) {
         store.beginFrame();
+        store.flush(); // リングでは現在の面へ写すのは beginFrame の後（先に済んでいれば 0 バイトで戻る）
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL11.glViewport(0, 0, SLOTS * 2, 1);
         GL20.glUseProgram(program);
@@ -201,6 +202,104 @@ class GlVramDeviceTest {
             assertEquals(PropertyTrees.NONE, gpu.getInt(s * 64));
             assertEquals(0, store.flush(), "変更が無ければ転送 0");
         }
+    }
+
+    @Test
+    void ringOfThreeSegmentsStaysCorrectWhileValuesChangeEveryFrame() {
+        requireGl();
+        Assumptions.assumeTrue(GlVramDevice.supportsPersistentMapping(), "永続マップ非対応");
+        try (GlTreeStore store = new GlTreeStore(64, 8, 8, 64)) {
+            assertEquals(3, store.transforms.segmentCount(), "既定は 3 面");
+            PropertyTrees t = store.trees;
+            buildScene(t, new Random(5));
+            Random r = new Random(77);
+            // 正規の形 beginFrame → 書き込み → flush → 描画 → endFrame を、リングが何周もするまで繰り返す
+            for (int frame = 0; frame < 20; frame++) {
+                store.beginFrame();
+                t.setScrollOffset(1 + (frame % 3) * 3, r.nextFloat() * 50, r.nextFloat() * 50);
+                if (frame % 4 == 0) t.startTransformAnimation(2 + frame % 5, 0, 0, 1.5f, 1.5f, 0.5f, 50f, 120f, PropertyTrees.EASE_OUT);
+                assertEquals(0, store.flush());
+                float ms = 40f * frame;
+                // gpuWorldMatrices は beginFrame を内部で呼ぶ。ここでは書いた後なので描画だけを行う形に揃える
+                assertMatchesCpu(t, drawOnlyWorldMatrices(store, ms), ms, "ring frame " + frame);
+            }
+            assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
+        }
+    }
+
+    @Test
+    void everyRingSegmentConvergesToTheSameContentAfterACycle() {
+        requireGl();
+        Assumptions.assumeTrue(GlVramDevice.supportsPersistentMapping(), "永続マップ非対応");
+        try (GlTreeStore store = new GlTreeStore(64, 8, 8, 64)) {
+            PropertyTrees t = store.trees;
+            buildScene(t, new Random(9));
+            for (int frame = 0; frame < 3; frame++) {
+                store.beginFrame();
+                if (frame == 1) t.setScrollOffset(1, 11f, 22f);
+                store.flush();
+                drawOnlyWorldMatrices(store, 0f);
+            }
+            // 3 フレームで全面が現在になった: どの面の GPU 側も CPU の影と同じ
+            for (int seg = 0; seg < 3; seg++) {
+                ByteBuffer gpu = store.transforms.readBack(seg).order(ByteOrder.nativeOrder());
+                for (int slot = 0; slot < SLOTS; slot++) {
+                    for (int off = 0; off < PropertyTrees.TRANSFORM_STRIDE; off += 4) {
+                        assertEquals(t.transforms.getInt(slot, off), gpu.getInt(slot * PropertyTrees.TRANSFORM_STRIDE + off),
+                                "seg " + seg + " slot " + slot + " off " + off);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void ringDoesNotStallWhenTheGpuIsStillBusyWithThePreviousFrame() {
+        requireGl();
+        Assumptions.assumeTrue(GlVramDevice.supportsPersistentMapping(), "永続マップ非対応");
+        // 1 面と 3 面で、前フレームの描画を glFinish せずに続けて回しても 3 面のほうが待ち回数が少ない（フェンスが未了のまま書ける）。
+        try (GlTreeStore ring = new GlTreeStore(64, 8, 8, 64)) {
+            buildScene(ring.trees, new Random(3));
+            for (int frame = 0; frame < 12; frame++) {
+                ring.beginFrame();
+                ring.trees.setScrollOffset(1, frame, frame);
+                ring.flush();
+                drawOnlyWorldMatrices(ring, frame * 10f);
+            }
+            assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
+            // 最後のフレームの結果も CPU と一致（リングで取り違えていない）
+            ring.beginFrame();
+            ring.flush();
+            assertMatchesCpu(ring.trees, drawOnlyWorldMatrices(ring, 500f), 500f, "after-ring");
+        }
+    }
+
+    /** 書き込み・flush は呼び出し側が済ませた後に、描画して読み戻す（beginFrame / flush は呼ばない）。 */
+    private static float[][] drawOnlyWorldMatrices(GlTreeStore store, float frameMs) {
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
+        GL11.glViewport(0, 0, SLOTS * 2, 1);
+        GL20.glUseProgram(program);
+        store.transforms.bindFloatView(0);
+        store.transforms.bindIntView(1);
+        store.scrolls.bindFloatView(2);
+        store.curves.bindFloatView(3);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTrF"), 0);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTrI"), 1);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uScroll"), 2);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "uCurves"), 3);
+        GL20.glUniform1f(GL20.glGetUniformLocation(program, "uFrameTimeMs"), frameMs);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+        store.endFrame();
+        FloatBuffer px = BufferUtils.createFloatBuffer(SLOTS * 2 * 4);
+        GL11.glReadPixels(0, 0, SLOTS * 2, 1, GL11.GL_RGBA, GL11.GL_FLOAT, px);
+        assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
+        float[][] out = new float[SLOTS][6];
+        for (int s = 0; s < SLOTS; s++) {
+            out[s][0] = px.get(s * 8); out[s][1] = px.get(s * 8 + 1); out[s][2] = px.get(s * 8 + 2); out[s][3] = px.get(s * 8 + 3);
+            out[s][4] = px.get(s * 8 + 4); out[s][5] = px.get(s * 8 + 5);
+        }
+        return out;
     }
 
     @Test
