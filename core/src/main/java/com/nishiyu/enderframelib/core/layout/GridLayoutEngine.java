@@ -535,7 +535,7 @@ public class GridLayoutEngine extends LayoutEngine {
                 && !LayoutMetrics.isIntrinsicSizeKeyword(width)) {
             return b.w + margins;
         }
-        boolean hasContent = b.node.nodeType == NodeType.TEXT || !b.getFlowChildren().isEmpty() || isReplaced(b);
+        boolean hasContent = b.node.nodeType == NodeType.TEXT || b.hasFlowChildren() || isReplaced(b);
         return (hasContent ? b.getMinContentWidth(ctx) : b.horizontalDecoration()) + margins;
     }
 

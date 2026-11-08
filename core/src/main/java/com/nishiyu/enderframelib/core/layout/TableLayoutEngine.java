@@ -450,7 +450,7 @@ public class TableLayoutEngine extends LayoutEngine {
             cell.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, SHRINK_CELL), ctx);
             boolean hasWidth = fixedWidth(cell.style, rootW, rootH) != null;
             float cellMax = cell.w;
-            boolean hasContent = cell.node.nodeType == NodeType.TEXT || !cell.getFlowChildren().isEmpty();
+            boolean hasContent = cell.node.nodeType == NodeType.TEXT || cell.hasFlowChildren();
             float cellMin = hasContent ? cell.getMinContentWidth(ctx) : cell.horizontalDecoration();
             if (hasWidth) cellMin = Math.max(cellMin, cell.w);
             slot.minWidth = cellMin;

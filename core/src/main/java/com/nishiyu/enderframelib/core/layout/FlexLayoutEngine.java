@@ -533,11 +533,11 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float content;
         if (row) {
-            boolean hasContent = child.node.nodeType == NodeType.TEXT || child.getFlowChildren().size() > 0
+            boolean hasContent = child.node.nodeType == NodeType.TEXT || child.hasFlowChildren()
                     || isReplaced(child);
             content = hasContent ? child.getMinContentWidth(ctx) : decoration;
         } else {
-            boolean hasFlow = child.node.nodeType != NodeType.TEXT && !child.getFlowChildren().isEmpty();
+            boolean hasFlow = child.node.nodeType != NodeType.TEXT && child.hasFlowChildren();
             // 指定の高さより内容が低ければ、内容の高さまで縮められる（Flexbox §4.5）
             content = hasFlow ? child.contentBlockExtent
                     : hasSize(child.style, sizeProp) ? decoration : child.h;

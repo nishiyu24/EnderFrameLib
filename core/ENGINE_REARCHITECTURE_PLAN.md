@@ -1351,6 +1351,13 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `PaintResourcesTest`（`null` で既定へ戻る・チェーン／2 つの描画器が供給元を共有し、供給元への 1 回の差し替えが両方の描画に効く／`null` の供給元は拒否）、`LazyCpuLayerTest` の構造の番人に `cpu.fonts(` / `cpu.images(` の復活禁止を追加。GL を動かす `DynamicImageTest` / `LwjglGlRenderBackendTest` を含む `:core:test`・ルート `:test` 全件緑。
 - **次の一歩**: 図形を 1 種類ずつ「GPU 試行」と「CPU 命令の生成」に分ける。依存の軽い順に ① 単色の角丸矩形（`fillRoundRect` → `fillRect`）、② 影、③ 枠線、④ 字形、⑤ 画像。1 種類ごとに GL の画素一致テストで保護する。
 
+### 9.5.13 実施記録：Step 5 の入口 — 「フロー子はいるか」を確保なしで問う（2026-11-09）
+
+- **調査結果**: `LayoutBox.getFlowChildren()` は呼ぶたびに `ArrayList` を作る。うち 4 箇所（`TableLayoutEngine` の セル内容判定、`FlexLayoutEngine` の行/列の最小寸法判定 2 箇所、`GridLayoutEngine` の内容判定）は**中身を使わず空かどうかを見るだけ**で、測定のたびにリストを作って捨てていた。`children` は `public final List` で外から変更できるため、リストのキャッシュ化は無効化の取りこぼしが怖く今回は見送った。
+- **実施**: 判定本体を `participatesInFlow()` に切り出し（`getFlowChildren` もこれを使う = 判定の実装は 1 つ）、`hasFlowChildren()` を追加。上記 4 箇所を載せ替えた。**破壊的変更なし**（追加のみ）。
+- **検証**: 新規 `BoxTreeTest.hasFlowChildrenAgreesWithTheListForEveryBoxInATree`（絶対配置のみ／`display:none` のみ／混在／空／外側・内側マーカー／fieldset+legend を含む木の**全ボックス**で `!getFlowChildren().isEmpty()` と一致）。Flex/Grid/Table を含む `:core:test`・ルート `:test` 全件緑。
+- **未達**: `getFlowChildren()` 自体の確保（Flex の `items` 生成・Grid の `new ArrayList<>(..)` コピー・min-content の走査）と `LayoutBox.Tentative` の `LayoutResultCache` 統合、`FenwickVirtualList` 接続は未着手。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1362,5 +1369,6 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
 | Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
-| Step 4 / 5 | ⏳ | 未着手 |
+| Step 4 | ⏳ | 未着手 |
+| Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 

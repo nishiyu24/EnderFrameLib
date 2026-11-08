@@ -411,11 +411,22 @@ public class LayoutBox {
     public List<LayoutBox> getFlowChildren() {
         List<LayoutBox> list = new ArrayList<>();
         for (LayoutBox c : children) {
-            if (!c.isAbsolute && !c.isOutsideMarker && !c.isRenderedLegend && !c.style.facts().displayNone) {
-                list.add(c);
-            }
+            if (c.participatesInFlow()) list.add(c);
         }
         return list;
+    }
+
+    /** 通常フローに参加するか（{@link #getFlowChildren} の判定そのもの。リストを作らずに問える）。 */
+    boolean participatesInFlow() {
+        return !isAbsolute && !isOutsideMarker && !isRenderedLegend && !style.facts().displayNone;
+    }
+
+    /** 通常フローの子が 1 つでもあるか。{@code !getFlowChildren().isEmpty()} と同じ答えを、確保なしで返す。 */
+    public boolean hasFlowChildren() {
+        for (int i = 0, n = children.size(); i < n; i++) {
+            if (children.get(i).participatesInFlow()) return true;
+        }
+        return false;
     }
 
     /**
