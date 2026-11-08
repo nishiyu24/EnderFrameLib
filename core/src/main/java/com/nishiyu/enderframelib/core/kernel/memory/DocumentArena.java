@@ -24,7 +24,7 @@ public final class DocumentArena {
     private int epoch;
 
     // Topology
-    private OffHeapColumns.Ints parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd;
+    private OffHeapColumns.Ints parent, firstChild, lastChild, prevSibling, nextSibling;
     // Identity & Bloom
     private OffHeapColumns.Ints tagAndType, idAtom;
     private OffHeapColumns.Longs selfBloom, subtreeBloom;
@@ -49,7 +49,6 @@ public final class DocumentArena {
         lastChild = new OffHeapColumns.Ints(cap);
         prevSibling = new OffHeapColumns.Ints(cap);
         nextSibling = new OffHeapColumns.Ints(cap);
-        subtreeEnd = new OffHeapColumns.Ints(cap);
         tagAndType = new OffHeapColumns.Ints(cap);
         idAtom = new OffHeapColumns.Ints(cap);
         selfBloom = new OffHeapColumns.Longs(cap);
@@ -60,13 +59,13 @@ public final class DocumentArena {
     }
 
     private void grow() {
-        OffHeapColumns.Ints[] ints = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
+        OffHeapColumns.Ints[] ints = {parent, firstChild, lastChild, prevSibling, nextSibling,
                 tagAndType, idAtom, generation, nextFree};
         OffHeapColumns.Longs[] longs = {selfBloom, subtreeBloom};
         Object[] oldOwners = owners;
         int oldCap = capacity;
         allocateColumns(oldCap * 2);
-        OffHeapColumns.Ints[] now = {parent, firstChild, lastChild, prevSibling, nextSibling, subtreeEnd,
+        OffHeapColumns.Ints[] now = {parent, firstChild, lastChild, prevSibling, nextSibling,
                 tagAndType, idAtom, generation, nextFree};
         for (int c = 0; c < ints.length; c++) {
             for (int i = 0; i < oldCap; i++) now[c].set(i, ints[c].get(i));
@@ -104,7 +103,6 @@ public final class DocumentArena {
         lastChild.set(id, NONE);
         prevSibling.set(id, NONE);
         nextSibling.set(id, NONE);
-        subtreeEnd.set(id, id + 1);
         tagAndType.set(id, 0);
         idAtom.set(id, 0);
         selfBloom.set(id, 0L);
@@ -219,8 +217,6 @@ public final class DocumentArena {
     public int lastChild(int id) { return lastChild.get(id); }
     public int prevSibling(int id) { return prevSibling.get(id); }
     public int nextSibling(int id) { return nextSibling.get(id); }
-    /** 部分木の終端（部分木に含まれる最大の ID + 1）。{@link #computeSubtreeEnds} を呼んだ後に有効。 */
-    public int subtreeEnd(int id) { return subtreeEnd.get(id); }
 
     /** {@code child} を {@code parentId} の最後の子として結ぶ。child は親・兄弟を持っていないこと。 */
     public void appendChild(int parentId, int child) {
@@ -259,40 +255,6 @@ public final class DocumentArena {
         parent.set(child, NONE);
         prevSibling.set(child, NONE);
         nextSibling.set(child, NONE);
-    }
-
-    /** {@code root} 以下の {@link #subtreeEnd} を計算する（深さ優先、再帰なし）。ID が行きがけ順なら連続区間になる。 */
-    public void computeSubtreeEnds(int root) {
-        if (!isLive(root)) return;
-        int cur = root;
-        int[] maxStack = new int[16];
-        int depth = 0;
-        maxStack[0] = root + 1;
-        while (true) {
-            int c = firstChild.get(cur);
-            if (c != NONE) {
-                cur = c;
-                if (++depth == maxStack.length) maxStack = java.util.Arrays.copyOf(maxStack, depth * 2);
-                maxStack[depth] = cur + 1;
-                continue;
-            }
-            while (true) {
-                int end = maxStack[depth];
-                subtreeEnd.set(cur, end);
-                if (cur == root) return;
-                int n = nextSibling.get(cur);
-                int p = parent.get(cur);
-                depth--;
-                if (maxStack[depth] < end) maxStack[depth] = end;
-                if (n != NONE) {
-                    cur = n;
-                    depth++;
-                    maxStack[depth] = cur + 1;
-                    break;
-                }
-                cur = p;
-            }
-        }
     }
 
     // ------------------------------------------------------------------

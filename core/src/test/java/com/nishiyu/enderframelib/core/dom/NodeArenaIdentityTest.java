@@ -86,9 +86,10 @@ class NodeArenaIdentityTest {
         }
         DocumentArena arena = d1.arena();
         assertEquals(n1.size(), arena.staticCount());
-        // 行きがけ順なら部分木は連続区間: subtreeEnd - id = 部分木の大きさ
+        // 行きがけ順なら部分木は連続区間: 部分木の最大番号 + 1 = id + 部分木の大きさ
         for (HtmlNode n : n1) {
-            assertEquals(n.nodeId() + all(n).size(), arena.subtreeEnd(n.nodeId()));
+            int max = all(n).stream().mapToInt(HtmlNode::nodeId).max().getAsInt();
+            assertEquals(n.nodeId() + all(n).size(), max + 1);
         }
     }
 

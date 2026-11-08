@@ -1374,6 +1374,14 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `DocumentArenaTest.dirtyColumnStaysRemoved`（クラスに `dirty` を含む API・フィールドが無い = 復活防止）、`freedIdsComeBackCleanAfterReuse`（動的領域で再利用された番号に前の持ち主の識別・Bloom・親子が残らない）。`BindingPatchTableTest` は汚れ列の検査を外し「同値は数えない／変わった欄だけ数える」に付け替え（`opacityIsPaintOnly` は汚れ列専用だったため削除）、`NodeArenaIdentityTest` / `DocumentArenaTest` の汚れ列参照も除去。`:core:test`・ルート `:test` 全件緑。
 - **これで `DocumentArena` に残るもの**: トポロジー（`parent/firstChild/lastChild/prevSibling/nextSibling/subtreeEnd`）・識別（`tagAndType/idAtom`）・Bloom・世代・`NodeSlots`。このうち本流が読むのは `prevSibling`・Bloom・`lastChild`（`linkChildren` の末尾追加判定）で、`subtreeEnd`（`computeSubtreeEnds` が番号振りのたびに O(N) で再計算）は**テストしか読まない**。次の候補（読み手が付くまで計算を止めるか、`HitTestIndex` / 走査の読み手を付ける）。
 
+### 9.5.16 実施記録：`DocumentArena.subtreeEnd` 列と `computeSubtreeEnds` の撤去（2026-11-09）
+
+**破壊的変更**（`subtreeEnd(int)` / `computeSubtreeEnds(int)` の削除）。
+
+- **調査結果**: `subtreeEnd` は `HtmlNode` が番号を振る／復元するたび（`numberTree` と復元経路の 2 箇所）に `computeSubtreeEnds` で O(N) 再計算（作業スタックの確保つき）していたが、**読むのはテストだけ**だった。子の並びから導ける派生値を、読み手がいないまま毎回作り直していた二重構造。設計書 §3 改革①の「部分木スキップ」は、読み手（走査・ヒットテスト）を付けるときに必要になった時点で、変更時に差分更新できる形で再導入する。
+- **削除**: 列・`clearNode` の初期化・`grow` の複製対象・API 2 つ、`HtmlNode` の呼び出し 2 箇所。
+- **検証**: 新規 `DocumentArenaTest.unreadDerivedColumnsStayRemoved`（復活防止）。行きがけ順の番号が部分木を連続区間にする性質は、`NodeArenaIdentityTest` で木そのもの（子孫の最大番号 + 1 = 自身の番号 + 部分木の大きさ）から検証する形に付け替えて保持。`:core:test`・ルート `:test` 全件緑。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1385,7 +1393,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
 | Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
-| `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。次は `subtreeEnd`（テストしか読まない）の扱い |
+| `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 
