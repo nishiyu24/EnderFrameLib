@@ -114,7 +114,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private GpuSink sink;
     /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
     private final double[] boundsScratch = new double[4];
-    private int dirtyX0 = Integer.MAX_VALUE, dirtyY0 = Integer.MAX_VALUE, dirtyX1 = Integer.MIN_VALUE, dirtyY1 = Integer.MIN_VALUE;
+    /** CPU が塗った範囲（層の中では層ごとに追い、閉じるときに親の分へ戻す）。 */
+    private final DirtyRect dirty = new DirtyRect();
     private Matrix2D frame = Matrix2D.IDENTITY;
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
@@ -225,7 +226,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
     public int[] dirtyBounds() {
-        return dirtyX1 <= dirtyX0 || dirtyY1 <= dirtyY0 ? null : new int[]{dirtyX0, dirtyY0, dirtyX1, dirtyY1};
+        return dirty.bounds();
     }
 
     /** 描いた範囲を透明に戻し、{@link #dirtyBounds} を空にする。 */
@@ -235,8 +236,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             int[] px = root().pixels();
             for (int y = b[1]; y < b[3]; y++) java.util.Arrays.fill(px, y * rootW + b[0], y * rootW + b[2], 0);
         }
-        dirtyX0 = dirtyY0 = Integer.MAX_VALUE;
-        dirtyX1 = dirtyY1 = Integer.MIN_VALUE;
+        dirty.reset();
     }
 
     private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
@@ -444,9 +444,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         Pixmap pm = layerPool.pollFirst();
         if (pm == null) pm = new Pixmap(rootW, rootH);
-        layers.add(new Layer(g, pm, new int[]{dirtyX0, dirtyY0, dirtyX1, dirtyY1}));
-        dirtyX0 = dirtyY0 = Integer.MAX_VALUE;
-        dirtyX1 = dirtyY1 = Integer.MIN_VALUE;
+        layers.add(new Layer(g, pm, dirty.toArray()));
+        dirty.reset();
         target = pm;
         sink = null; // CPU の層の中は CPU が描く
     }
@@ -468,13 +467,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 break;
             }
         }
-        int[] region = {dirtyX0, dirtyY0, dirtyX1, dirtyY1};
-        boolean any = region[2] > region[0] && region[3] > region[1];
-        int[] pd = l.parentDirty;
-        dirtyX0 = pd[0];
-        dirtyY0 = pd[1];
-        dirtyX1 = pd[2];
-        dirtyY1 = pd[3];
+        int[] region = dirty.toArray();
+        boolean any = !dirty.isEmpty();
+        dirty.set(l.parentDirty);
         boolean cpuLayer = false;
         for (Layer o : layers) cpuLayer |= o.pixmap != null;
         target = parent;
@@ -506,8 +501,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int[] gpuArea = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
         if (viaGpu) {
             // 読み戻しで親の溜めた分が GPU へ流れた。以降の dirty は親の描いた範囲ではなく書き戻しの範囲だけを追う
-            dirtyX0 = dirtyY0 = Integer.MAX_VALUE;
-            dirtyX1 = dirtyY1 = Integer.MIN_VALUE;
+            dirty.reset();
         }
         if (any && spec != null && !spec.filters().isEmpty()) {
             region = LayerFx.filter(l.pixmap, region, spec.filters(), l.group.map());
@@ -564,10 +558,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             into[3] = Math.max(into[3], r[3]);
             return;
         }
-        dirtyX0 = Math.min(dirtyX0, r[0]);
-        dirtyY0 = Math.min(dirtyY0, r[1]);
-        dirtyX1 = Math.max(dirtyX1, r[2]);
-        dirtyY1 = Math.max(dirtyY1, r[3]);
+        dirty.add(r[0], r[1], r[2], r[3]);
     }
 
     /** {@code mix-blend-mode} の合成。{@code src}・{@code dst} は事前乗算の ARGB で、結果も事前乗算。 */
@@ -1086,10 +1077,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
         if (x1 <= x0 || y1 <= y0) return null;
-        dirtyX0 = Math.min(dirtyX0, x0);
-        dirtyY0 = Math.min(dirtyY0, y0);
-        dirtyX1 = Math.max(dirtyX1, x1);
-        dirtyY1 = Math.max(dirtyY1, y1);
+        dirty.add(x0, y0, x1, y1);
         return new int[]{x0, y0, x1, y1};
     }
 
