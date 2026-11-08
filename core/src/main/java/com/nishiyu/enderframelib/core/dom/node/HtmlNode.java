@@ -567,7 +567,6 @@ public class HtmlNode implements Node {
         assignSubtree(top, a, true);
         linkSubtree(top, a);
         a.sealStatic();
-        a.computeSubtreeEnds(top.nodeId);
         a.rebuildSubtreeBloom(top.nodeId);
     }
 
@@ -707,7 +706,6 @@ public class HtmlNode implements Node {
         }
         refreshAll(top);
         linkSubtree(top, a);
-        a.computeSubtreeEnds(top.nodeId);
         a.rebuildSubtreeBloom(top.nodeId);
     }
 

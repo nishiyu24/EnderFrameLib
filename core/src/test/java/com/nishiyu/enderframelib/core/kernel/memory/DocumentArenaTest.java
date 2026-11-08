@@ -53,7 +53,7 @@ class DocumentArenaTest {
     }
 
     @Test
-    void topologyAppendDetachRelinkAndSubtreeEnds() {
+    void topologyAppendDetachRelink() {
         DocumentArena a = new DocumentArena();
         int root = a.allocate("root");
         int c1 = a.allocate("c1");
@@ -71,11 +71,6 @@ class DocumentArenaTest {
         assertEquals(c2, a.nextSibling(c1));
         assertEquals(c1, a.prevSibling(c2));
         assertEquals(DocumentArena.NONE, a.nextSibling(c3));
-
-        a.computeSubtreeEnds(root);
-        assertEquals(c3 + 1, a.subtreeEnd(root), "行きがけ順の ID なら部分木は連続区間");
-        assertEquals(g1 + 1, a.subtreeEnd(c1), "c1 の部分木は c1..g1 で終わる");
-        assertEquals(c2 + 1, a.subtreeEnd(c2));
 
         a.detach(c2);
         assertEquals(c3, a.nextSibling(c1));
@@ -169,6 +164,13 @@ class DocumentArenaTest {
             a.setIdentity(id, 1, 7, i, 1L);
         }
         for (int i = 0; i < 4000; i++) a.free(i);
+    }
+
+    @Test
+    void unreadDerivedColumnsStayRemoved() {
+        for (var m : DocumentArena.class.getDeclaredMethods()) {
+            assertFalse(m.getName().toLowerCase().contains("subtreeend"), "読み手のない部分木終端が戻っている: " + m);
+        }
     }
 
     @Test
