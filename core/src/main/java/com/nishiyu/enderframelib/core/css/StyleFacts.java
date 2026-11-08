@@ -57,6 +57,14 @@ public final class StyleFacts {
     public boolean alignSelfAuto;
     /** 独立した整形コンテキストを、スタイルだけで作るか（float・layout/paint containment・スクロールコンテナ）。 */
     public boolean bfcByStyle;
+    /** 値のどれかがビューポート／コンテナ基準の単位を使う。 */
+    public boolean usesViewportUnits;
+    /**
+     * 箱自身の横方向の寸法が、親の幅・ビューポートの幅に依らない: {@code width} が % でない確定した長さ、{@code min/max-width}・
+     * 余白・パディング・オフセットに % がなく、横の余白も {@code auto} でない。
+     */
+    public boolean horizontalFixed;
+
     /** 整形に使う、スタイルだけで決まる値。 */
     public com.nishiyu.enderframelib.core.text.model.WhiteSpace whiteSpace;
     public com.nishiyu.enderframelib.core.text.model.WordBreak wordBreak;
@@ -88,6 +96,18 @@ public final class StyleFacts {
         autoMarginR = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_RIGHT, "0").trim());
         autoMarginB = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_BOTTOM, "0").trim());
         autoMarginL = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_LEFT, "0").trim());
+        usesViewportUnits = s.usesViewportUnits();
+        String wm = s.get("writing-mode");
+        horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidth == null && !usesViewportUnits
+                && !marginLeftAuto && !marginRightAuto && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
+                && (wm == null || wm.trim().startsWith("horizontal"))
+                && noPercent(s, CssProperty.MIN_WIDTH) && noPercent(s, CssProperty.MAX_WIDTH)
+                && noPercent(s, CssProperty.MARGIN_LEFT) && noPercent(s, CssProperty.MARGIN_RIGHT)
+                && noPercent(s, CssProperty.MARGIN_TOP) && noPercent(s, CssProperty.MARGIN_BOTTOM)
+                && noPercent(s, CssProperty.PADDING_LEFT) && noPercent(s, CssProperty.PADDING_RIGHT)
+                && noPercent(s, CssProperty.PADDING_TOP) && noPercent(s, CssProperty.PADDING_BOTTOM)
+                && noPercent(s, CssProperty.LEFT) && noPercent(s, CssProperty.RIGHT)
+                && noPercent(s, CssProperty.TOP) && noPercent(s, CssProperty.BOTTOM);
         rtl = "rtl".equalsIgnoreCase(s.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
         bfcByStyle = floating || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
                 || overflowX.scrolls() || overflowY.scrolls();
@@ -103,6 +123,11 @@ public final class StyleFacts {
                 s.length(CssProperty.LETTER_SPACING, 0, 0, 0),
                 fontWeight,
                 !(kerning != null && "none".equalsIgnoreCase(kerning.trim())));
+    }
+
+    private static boolean noPercent(ComputedStyle s, String property) {
+        String v = s.get(property);
+        return v == null || v.indexOf('%') < 0;
     }
 
     /** 揃えの値を flex の配置の語にする（{@code normal} は stretch、{@code first/last baseline} は baseline）。 */

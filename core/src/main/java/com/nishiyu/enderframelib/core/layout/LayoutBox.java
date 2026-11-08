@@ -840,6 +840,41 @@ public class LayoutBox {
      */
     private boolean measuredHasTable;
 
+    /**
+     * 幅だけが変わった（親が渡す使える幅・ビューポートの幅）ときに、前回の測定を使い回してよいか。箱自身の横の寸法が確定した長さで
+     * （{@link com.nishiyu.enderframelib.core.css.StyleFacts#horizontalFixed}）、子孫に箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を
+     * 読むものが無い（{@link #measuredWidthFree}）なら、測定の結果は幅に依らない。
+     * 切り分け用: {@code -Denderframe.layout.nowidthreuse=true} で無効。
+     */
+    public static volatile boolean widthIndependentReuse = !Boolean.getBoolean("enderframe.layout.nowidthreuse");
+
+    /** この箱の測定が、親の使える幅とビューポートの幅に依らない（前回の測定を記録した時点）。 */
+    private boolean measuredWidthFree;
+    /** この部分木が、箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を読まない。幅に依らない測定の判定の材料。 */
+    private boolean measuredOutsideFree;
+
+    private boolean widthOnlyChange(ConstraintSpace space, LayoutContext ctx) {
+        if (!widthIndependentReuse || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
+        Viewport vp = ctx.viewport(), old = measuredViewport;
+        return Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize())
+                && space.parent().equals(measuredSpace.parent())
+                && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
+    }
+
+    private void recordWidthIndependence() {
+        StyleFacts f = style.layoutFacts();
+        boolean outside = !isAbsolute && !f.usesViewportUnits;
+        for (int i = 0, n = children.size(); outside && i < n; i++) {
+            LayoutBox c = children.get(i);
+            outside = c.style.facts().displayNone || c.measuredOutsideFree;
+        }
+        measuredOutsideFree = outside;
+        boolean free = outside && f.horizontalFixed && !isFixed && node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                && !measuredHasTable && !isTableBox(this)
+                && (!display.isInlineLevel() || BlockLayoutEngine.isAtomicInline(this));
+        measuredWidthFree = free;
+    }
+
     private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx) {
         return measurementValid
                 && !layoutChanged
@@ -847,10 +882,9 @@ public class LayoutBox {
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
                 && floatSpace == null
                 && collapsedBorders == null
-                && space.equals(measuredSpace)
+                && ((space.equals(measuredSpace) && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
-                && ctx.viewport().equals(measuredViewport)
                 && ctx.fonts() == measuredFonts
                 && ctx.intrinsicResolver() == measuredIntrinsics
                 && w == measuredW && h == measuredH
@@ -938,6 +972,7 @@ public class LayoutBox {
         boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
         for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
         measuredHasTable = hasTable;
+        recordWidthIndependence();
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
         // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す

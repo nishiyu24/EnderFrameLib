@@ -571,6 +571,44 @@ public final class ComputedStyle {
         return CssPropertyId.of(propertyName);
     }
 
+    /**
+     * どれかの値が、ビューポート（{@code vw vh vi vb vmin vmax} とその {@code s/l/d} 版）またはコンテナ（{@code cqw cqh cqi cqb cqmin cqmax}）
+     * 基準の単位を使っているか。レイアウトが箱の外の寸法を読む可能性があるかの、保守的な判定（数値の直後の単位だけを見る）。
+     */
+    public boolean usesViewportUnits() {
+        for (String v : values) if (v != null && hasRelativeUnit(v)) return true;
+        if (extras != null) for (String v : extras.values()) if (v != null && hasRelativeUnit(v)) return true;
+        return false;
+    }
+
+    private static boolean hasRelativeUnit(String v) {
+        int n = v.length();
+        for (int i = 0; i < n; i++) {
+            char c = v.charAt(i);
+            if (c < '0' || c > '9') continue;
+            // 数値（整数・小数・指数の手前まで）を読み飛ばし、直後の英字の並びを単位として見る
+            int j = i + 1;
+            while (j < n && ((v.charAt(j) >= '0' && v.charAt(j) <= '9') || v.charAt(j) == '.')) j++;
+            int k = j;
+            while (k < n && Character.isLetter(v.charAt(k))) k++;
+            if (k > j && isRelativeUnit(v, j, k)) return true;
+            i = Math.max(i, k - 1);
+        }
+        return false;
+    }
+
+    private static boolean isRelativeUnit(String v, int from, int to) {
+        String u = v.substring(from, to).toLowerCase(java.util.Locale.ROOT);
+        return switch (u) {
+            case "vw", "vh", "vi", "vb", "vmin", "vmax",
+                 "svw", "svh", "svi", "svb", "svmin", "svmax",
+                 "lvw", "lvh", "lvi", "lvb", "lvmin", "lvmax",
+                 "dvw", "dvh", "dvi", "dvb", "dvmin", "dvmax",
+                 "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax" -> true;
+            default -> false;
+        };
+    }
+
     /** {@link #idOf} の添字で宣言の文字列を引く。{@code get(name)} と同じ結果。添字は登録済みのものに限る。 */
     public String get(int id) {
         return values[id];
