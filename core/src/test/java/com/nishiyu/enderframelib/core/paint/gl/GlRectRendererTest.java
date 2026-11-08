@@ -229,4 +229,22 @@ class GlRectRendererTest {
             assertArrayEquals(first, drawGpu(rr, st, n, 16f));
         }
     }
+
+    /** draw 冒頭の状態保存（glIsEnabled ×1 + glGetInteger ×4）の実コストの測定。省く価値があるかの判断材料。 */
+    @Test
+    void measureBlendStateQueryCost() {
+        requireGl();
+        int n = 20_000;
+        long sink = 0;
+        for (int w = 0; w < 3; w++) {
+            long t0 = System.nanoTime();
+            for (int i = 0; i < n; i++) {
+                sink += GL11.glIsEnabled(GL11.GL_BLEND) ? 1 : 0;
+                sink += GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_SRC_RGB) + GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_DST_RGB);
+                sink += GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_SRC_ALPHA) + GL11.glGetInteger(org.lwjgl.opengl.GL14.GL_BLEND_DST_ALPHA);
+            }
+            double us = (System.nanoTime() - t0) / 1000.0 / n;
+            System.out.println("[blend-state-query] " + us + " us/draw (sink=" + sink + ")");
+        }
+    }
 }
