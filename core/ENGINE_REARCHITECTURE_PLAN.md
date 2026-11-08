@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去反映・全章統合整理版）
+**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・全章統合整理版）
 
 ---
 
@@ -43,7 +43,7 @@ Chrome (Blink) や Firefox (Gecko) は「未知の Web ページを CPU のポ�
 | **Flex / Grid 部分文字変更の再測定箱数** | Flex: `361〜386 箱`<br/>Grid: `421 箱` | **Flex 行: `13 箱` / 列: `29 箱`**<br/>**Grid: `15 箱`** | `< 15〜40 箱` | **✅ 完全達成（約 28 倍削減）**（`LayoutBox.Tentative` 3制約スロット再利用） |
 | **幅のみリサイズ時の再測定回数** | 固定幅カード 200枚:<br/>`1,004 回` (`1.50 ms`) | **`4 回` (`0.82 ms`)** | 幅非依存部分木 `0 回` | **✅ 完全達成（測定回数 99.6% 削減）**（`measuredWidthFree` 部分木再利用） |
 | **全測定レイアウト (`relayout` / `fullLayout`)** | `relayout`: `6.39 ms`<br/>`fullLayout`: `12.97 ms` | **`relayout`: `2.41 ms` (−62%)**<br/>**定常 `fullLayoutWarm`: `2.1〜3.0 ms`**<br/>(初回コールド `8.76 ms`) | `< 0.30 ms` | **🔶 半分以上短縮**（`LAYOUT_PASSES=1` + [`StyleFacts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java) 数値化 + [`ParagraphSegments`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/ParagraphSegments.java) + `getFlowChildren` 確保撤去） |
-| **リスト行挿入＋削除 (500行・2回更新)** | `5.75 ms` (`6.9 MB`) | **整数行: `2.60 ms` (`3.6 MB`)**<br/>(うちレイアウト配置は **`0.25〜0.40 ms`**) | `< 0.05 ms` | **🔶 配置自体は高速化完了**（`CHILD_PATCH` 局所更新。残る `1.4 ms` は後続 250 行の `DisplayItem` 平行移動複製） |
+| **リスト行挿入＋削除 (500行・2回更新)** | `5.75 ms` (`6.9 MB`) | **整数行: `0.76 ms` (`1.3 MB`)**<br/>(Phase B-1 前 `1.42 ms` / `3.5 MB`)<br/>小数行: `2.09 ms` (`5.6 MB`・未改善) | `< 0.05 ms` | **🔶 整数行は半減**（`CHILD_PATCH` 局所更新＋文字箱の断片平行移動。実測で支配項は `DisplayItem` 複製ではなく文字箱の描き直しだったと判明。残りは §6 Phase B-1 参照） |
 | **DisplayList 構築 (`displayList`)** | `5.33 MB/op` | **`0.71 ms/op`・`1.23 MB/op`** | `0 B/op` | **🔶 約 1/4 に削減**（完全 0B 化には `DisplayItem` を作らない直接送出が必要） |
 
 ---
@@ -236,6 +236,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 | **スタイルの 4 重表現**<br/>(Step 2-①②③) | ① `String[]` ② 要素別 `Memo` ③ 文字列入り `StyleFacts` ④ 未接続 `StyleStructs` | 要素別 `Memo` を全要素共有 [`TypedValueCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/TypedValueCache.java) へ置換。`StyleFacts` と `FormattingContext` の文字列を全廃（数値・列挙化）。未参照の `StyleStructs` を完全撤去 | `TypedValueCacheTest`<br/>`StyleFactsTest`<br/>`FormattingContextKindTest`<br/>`Milestone2GateTest.styleStructsDuplicateLayerStaysRemoved` |
 | **GL 内の CPU 常駐と転送**<br/>(Step 3 前半) | GL 描画でも画面サイズの CPU `Pixmap` と `overlayTex` を常時確保し、7 経路で `cpu` に依存 | CPU `Pixmap` と `overlayTex` を遅延確保化（通常 GL 描画では確保ゼロ）。セッション名・アニメ判定・[`PaintResources`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/PaintResources.java) を切り離し `cpu` 依存を 3 経路へ削減 | `LazyCpuLayerTest`<br/>`PaintResourcesTest` |
 | **CPU ラスタの重複と肥大化**<br/>(Step 3 中盤) | `SoftwareRenderBackend` に全部品が密結合し、未参照の `SimdTileSoftwareRenderer` が本番に並存 | [`Clip`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/Clip.java), [`Fast`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/Fast.java), [`DirtyRect`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/DirtyRect.java), [`PixmapPool`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/PixmapPool.java), [`Op`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/Op.java), [`TileQueue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/TileQueue.java) を独立分離。`SimdTileSoftwareRenderer` を `src/test` へ移動 | `CpuRasterPartsTest`, `DirtyRectTest`, `PixmapPoolTest`, `TileQueueTest`, `Milestone4GateTest` |
+| **後続行の文字箱の描き直し**<br/>(Phase B-1) | 行挿入で後続の行が整数ぶんずれるとき、文字箱（`#text`）は自位置を持たず断片だけが動くため `match` が「箱は不動なのに断片が動いた」と不一致にし、1更新あたり約 253 箱（実測）を毎回 `drawBoxSelfUncached` で描き直していた | 箱が不動で断片が全て同量動いたとき、断片の移動量を箱の移動量とみなして前回の項目を平行移動（NODE は箱位置のまま・TEXT のみ移動。項目が NODE/TEXT 以外を含む箱は従来どおり描き直し）。不一致 253→約 6 箱/更新、DisplayList 構築 `0.60→0.33 ms`・`1.8→0.6 MB` | `ChildPatchTest.textBoxesOfFollowingRowsAreTranslatedNotRedrawn`<br/>`ChildPatchTest`（乱数50手順×全再構築との項目完全一致）|
 | **測定時の `getFlowChildren()` 確保**<br/>(Step 5 前半) | 空判定 4 箇所と測定走査 7 箇所で毎回 `new ArrayList<>()` を生成 | `hasFlowChildren()` と `participatesInFlow()` による `children` 直接走査に置換し、測定経路のリスト生成を全廃 | `BoxTreeTest`<br/>`FlowChildrenAllocationGateTest` |
 | **`SimdHitTester` 1行ラッパー**<br/>(Type C 整理) | `SimdBackend.hitTestLast` を呼ぶだけの22行クラスが本番から未参照のまま並存（`HitTestIndex` は2D逆変換・角丸SDF・クリップ鎖・動的節を持ち矩形包含だけでは代替不能） | クラスを撤去。矩形列の包含判定が必要な箇所は `SimdBackends.current().hitTestLast` を直接呼ぶ。乱数1000矩形×2000点の素朴実装との一致テストは `Milestone3KernelTest` が `SimdBackend` 直で維持 | `Milestone4GateTest.simdHitTesterWrapperStaysRemoved`<br/>`Milestone3KernelTest.hitTesterReturnsTopmostAndMatchesNaive`<br/>`SimdBackendTest` |
 
@@ -269,7 +270,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
    - 非等方スケール角丸・せん断変形を `GlRectStream` + `GlRectRenderer` で受けられるようにし、`LwjglGlRenderBackend` から旧 `GpuBatchPacker` と `dataTex` / `extTex` を撤去して GPU パイプラインを 1 系統に統一する。
 
 ### Phase B：2D 残存ボトルネックの突破（任意・高レバレッジ項目）
-1. **リスト行挿入 `< 0.05 ms`**: [`OffsetItemList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/OffsetItemList.java) を「特定インデックス以降の連続範囲に対する一括 Y オフセットシフト」に対応させ、`CHILD_PATCH` 時に後続 250 行の `DisplayItem.translated` を 1 個ずつ複製する `1.4 ms` のコストを $O(1)$ に消滅させる。
+1. **リスト行挿入 `< 0.05 ms`**（✅ 一部実施・2026-11-09）: 当初想定の「`DisplayItem.translated` の `1.4 ms`」は **誤り**。整数行 500 行の実測では `translated` は 1 更新 `18 µs`・`146 KB`（375 項目）にすぎず、支配項は **後続行の文字箱が `match` で不一致になり毎回描き直されていたこと**（不一致 253 箱/更新、DisplayList 構築 `0.60 ms`・`1.8 MB`）だった。文字箱の断片平行移動（§5.1 参照）で `1.42→0.76 ms`、`3.5→1.3 MB`。**残課題**: ① 小数行（`fractional`）は箱が整数ずれにならず平行移動できないため `2.09 ms` のまま ② 残りの DisplayList 構築（`0.33 ms`）は `appendItems` による 625 箱ぶんの記憶項目の再収集と `numsOf`/`remember` 確保 ③ `LAYOUT_MEASURE 0.12 ms + LAYOUT_PLACE 0.07 ms`。`OffsetItemList` の範囲一括シフト化は、`translated` が `18 µs` と判明したため **優先度を下げる**（やるなら ② の再収集を範囲参照にする形）。
 2. **静止フレーム `< 0.01 ms`**: `UiView.isIdleFrame` かつ進行中のアニメーションが無いフレームでは、前フレームの最終描画結果をそのまま保持して GL 側の固定費（約 `0.24 ms`）をスキップする。
 
 ### Phase C：Three.js 型 3D シーングラフの実装（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)）

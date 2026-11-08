@@ -334,6 +334,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         LayoutBox parentBox;
         /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
         boolean translatable;
+        /** 項目が NODE（箱の位置）と TEXT（断片の位置）だけ。箱が動かず断片だけが動くとき、TEXT だけを動かせば済む形。 */
+        boolean nodeAndTextOnly;
         /** 項目が中身の大きさ（スクロール量）を持つ。中身が変わると、箱が動いただけでは使い回せない。 */
         boolean carriesContentExtent;
         /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
@@ -470,6 +472,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
     private float hitDx, hitDy;
+    private boolean hitFragmentsOnly;
 
     /**
      * 記憶が今の箱に使えるか。0: 使えない / 1: 項目をそのまま使える / 2: 箱がまるごと {@code (hitDx, hitDy)} だけ動いただけ
@@ -481,6 +484,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 || m.suppressShadow != suppressTextShadow) return 0;
         float[] nn = numsOf(box);
         float dx = nn[0] - m.nums[0], dy = nn[1] - m.nums[1];
+        // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
+        // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
+        // 箱の位置で置かれる NODE の項目は動かさず、断片の位置で置かれる TEXT の項目だけを動かす（hitFragmentsOnly）
+        boolean fragmentsOnly = false;
+        if (dx == 0 && dy == 0 && m.nodeAndTextOnly && m.fragNums.length >= 2 && !box.inlineFragments.isEmpty()) {
+            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
+            dx = f0.x - m.fragNums[0];
+            dy = f0.y - m.fragNums[1];
+            fragmentsOnly = dx != 0 || dy != 0;
+        }
         boolean moved = dx != 0 || dy != 0;
         // スクロールの作り直しは丸めて動かす。子の増減では、整数ぶんだけ動いた箱に限って厳密に動かす（丸めが入らない）
         boolean moveOk = m.translatable && (translating
@@ -521,6 +534,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (!moved && clipSame) return 1;
         hitDx = dx;
         hitDy = dy;
+        hitFragmentsOnly = fragmentsOnly;
         return 2;
     }
 
@@ -528,17 +542,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 前回の項目を {@code (dx, dy)} を四捨五入した分だけ動かし、クリップを今のものに替えた写し。項目の座標は整数なので、
      * 位置を整数に丸めたあとの相対関係（箱の中の項目どうしの並び）は崩れない。
      */
-    private static List<DisplayItem> translated(BoxMemo m, ClipRect newClip, float dx, float dy) {
+    private static List<DisplayItem> translated(BoxMemo m, ClipRect newClip, float dx, float dy, boolean textOnly) {
         int ix = Math.round(dx), iy = Math.round(dy);
         List<DisplayItem> out = new ArrayList<>(m.items.size());
         for (DisplayItem it : m.items) {
+            int ox = textOnly && it.type() != ElementType.TEXT ? 0 : ix, oy = textOnly && it.type() != ElementType.TEXT ? 0 : iy;
             RenderMeta meta = it.meta();
             if (meta != null && meta.clipRect() != null) {
                 meta = new RenderMeta(newClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
                         meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
                         meta.roundedBorder(), meta.hints());
             }
-            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ix, it.y() + iy, it.width(), it.height(),
+            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ox, it.y() + oy, it.width(), it.height(),
                     it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta, it.key()));
         }
@@ -556,6 +571,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (meta != null && meta.hints() != null && meta.hints().scrollable()) return true;
         }
         return false;
+    }
+
+    private static boolean onlyNodeAndText(List<DisplayItem> items) {
+        for (DisplayItem it : items) {
+            if (it.type() != ElementType.NODE && it.type() != ElementType.TEXT) return false;
+        }
+        return true;
     }
 
     private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items) {
@@ -619,6 +641,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         m.suppressShadow = suppressTextShadow;
         m.translatable = survivesTranslation(box, clip, items);
         m.carriesContentExtent = carriesContentExtent(items);
+        m.nodeAndTextOnly = onlyNodeAndText(items);
         m.generation = generation;
         return m;
     }
@@ -663,7 +686,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
             m.generation = generation;
-            elements.addAll(translated(m, clipRect, hitDx, hitDy));
+            elements.addAll(translated(m, clipRect, hitDx, hitDy, hitFragmentsOnly));
             translatedHits++;
             STAT_TRANSLATED.increment();
             return;
