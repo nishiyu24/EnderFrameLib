@@ -204,7 +204,7 @@ class Milestone3KernelTest {
         assertEquals(n, starts[maxDepth + 1]);
     }
 
-    // ---- SimdHitTester ----
+    // ---- SimdBackend.hitTestLast（旧 SimdHitTester ラッパーは撤去済み） ----
 
     @Test
     void hitTesterReturnsTopmostAndMatchesNaive() {
@@ -217,15 +217,15 @@ class Milestone3KernelTest {
             w[i] = 1 + rnd.nextInt(80);
             h[i] = 1 + rnd.nextInt(80);
         }
-        SimdHitTester t = new SimdHitTester();
+        var t = com.nishiyu.enderframelib.core.kernel.simd.SimdBackends.current();
         for (int q = 0; q < 2000; q++) {
             float px = rnd.nextInt(600), py = rnd.nextInt(600);
             int expected = -1;
             for (int i = 0; i < n; i++) {
                 if (px >= x[i] && px < x[i] + w[i] && py >= y[i] && py < y[i] + h[i]) expected = i;
             }
-            assertEquals(expected, t.hit(x, y, w, h, n, px, py));
+            assertEquals(expected, t.hitTestLast(x, y, w, h, n, px, py));
         }
-        assertEquals(-1, t.hit(x, y, w, h, 0, 1f, 1f));
+        assertEquals(-1, t.hitTestLast(x, y, w, h, 0, 1f, 1f));
     }
 }
