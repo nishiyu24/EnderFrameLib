@@ -1325,6 +1325,13 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `LazyCpuLayerTest`（矩形だけのページで両方とも未確保のまま GPU が描く／`maxLayerDepth` を絞って入れ子の不透明度を CPU の層に落とすと両方とも確保され、CPU 版と画素差 ≤ 3／`SoftwareRenderBackend` の初回利用で確保）。GL を実際に動かす既存の `LwjglGlRenderBackendTest`（86 件）・`GlRectRendererTest`・`GlVramDeviceTest` を含む `:core:test`・ルート `:test` 全件緑。
 - **次の一歩（提案）**: 7 経路のうち依存の軽いものから外す。(a) `fonts`/`images`/`sessionId` は GL 側が自前で持てる（CPU は保険経路用に遅延生成）。(b) `hasActiveAnimation` は `PaintSceneDriver` を直接使う。(c) 残る `renderOnto` と `dirtyBounds` 系は、保険経路を「`CpuFallbackLayer`（遅延生成）」に隔離する。(d) 第 2 世代 `GpuBatchPacker` は今回の実測で多くの描き方を受けているため、撤去には `GlRectStream.accepts()` の 100% 化（非等方スケール＋角丸・せん断のシェーダー拡張）が先に要る。
 
+### 9.5.10 実施記録：Step 3 の次の一歩 — セッション名とアニメーション問い合わせを CPU 描画器から切り離す（2026-11-09）
+
+- **実施**: `LwjglGlRenderBackend` が自前のセッション名（`gl-N`）を持ち、`sessionId()` と `hasActiveAnimation()` が `cpu` を介さなくなった。保険の `SoftwareRenderBackend` には新設の 4 引数コンストラクタ（`sessionId` 指定）で**同じ名前**を渡す（アニメーション状態は `CssAnimator` がセッションごとに持つため、描く側と問う側で名前が揃う必要がある）。`PaintSceneDriver.anyActiveAt(sessionId, items, nowMs)` を静的に切り出し、描画器を持たない呼び出し側が直接問える。
+- **`cpu` への残る依存（5 経路）**: `fonts` / `images`（保険経路の字形・画像の解決。ただし**図形ディスパッチ自体が `SoftwareRenderBackend` 内にある**ので、GL 側の文字・画像もここを通る = ディスパッチ切り出しまで外せない）、`renderOnto`（ディスパッチ本体）、`dirtyBounds` / `pixmap` / `clearDirty`（保険経路の重ね）。
+- **検証**: `LazyCpuLayerTest` に追加 — セッション名が `gl-` で 2 つのバックエンドが別名／`hasActiveAnimation` が静止ページで false・無限アニメーションで true／ソース上 `cpu.sessionId(` と `cpu.hasActiveAnimation(` が戻っていないこと（構造の番人）。`:core:test`・ルート `:test` 全件緑。
+- **見積もりの訂正**: §9.5.9 は `fonts` / `images` も「GL 側が自前で持てる」と書いたが誤り。GL の文字・画像描画は `SoftwareRenderBackend` のディスパッチ（`drawText` / `drawImage`）が `fonts` / `images` を引いて `GpuSink` へ流す構造のため、フォント／画像の持ち主はディスパッチと一緒にしか動かせない。次の本丸は**ディスパッチ（`PaintSceneDriver.Painter` 実装）の分離**で、CPU ラスタ（`PaintOp` 等）と `GpuSink` 送出を `sink` の分岐から切り分けること。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |

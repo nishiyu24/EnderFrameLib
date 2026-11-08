@@ -510,6 +510,14 @@ public final class PaintSceneDriver {
      * false なら、項目リストが変わらない限り、次の描画も同じ絵になる（再描画を飛ばせる）。
      */
     public boolean anyActiveAt(List<DisplayItem> items, long nowMs) {
+        return anyActiveAt(sessionId, items, nowMs);
+    }
+
+    /**
+     * セッション {@code sessionId} の状態で、{@code items} に時刻 {@code nowMs} でまだ動いているアニメーションがあるか。
+     * 描画器を持たない呼び出し側（GPU 版）が、CPU 版を介さずに問える。
+     */
+    public static boolean anyActiveAt(String sessionId, List<DisplayItem> items, long nowMs) {
         for (DisplayItem el : items) {
             if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
         }
