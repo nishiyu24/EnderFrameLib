@@ -81,9 +81,8 @@ public final class BoxMeasurer {
         boolean isBorderBox = isBorderBox(style);
 
         // min-content / max-content / fit-content は長さではなく内容から決まる（W2 以前は 0 px に解けていた）
-        String widthStr = facts.widthStr;
-        String intrinsicWidth = facts.intrinsicWidth;
-        boolean hasWidth = !facts.widthAuto && intrinsicWidth == null;
+        byte intrinsicWidth = facts.intrinsicWidthKind;
+        boolean hasWidth = !facts.widthAuto && intrinsicWidth == StyleFacts.IW_NONE;
         boolean isPercentWidthAndShrinking = hasWidth && facts.widthPercent && fmtCtx.isShrink();
         boolean bfc = establishesBfc(box, fmtCtx);
         if (box.establishesBfc != bfc) {
@@ -91,7 +90,7 @@ public final class BoxMeasurer {
             LayoutBox.bumpShapeEpoch(); // 親の float メモ（containsFloats）が読む
         }
 
-        resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != null,
+        resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != StyleFacts.IW_NONE,
                 isPercentWidthAndShrinking, isBorderBox, fmtCtx);
 
         applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
@@ -103,7 +102,7 @@ public final class BoxMeasurer {
         }
 
         float engineInnerW;
-        if ("max-content".equals(intrinsicWidth)) {
+        if (intrinsicWidth == StyleFacts.IW_MAX_CONTENT) {
             // 折り返さずに並べたときの幅が max-content
             engineInnerW = LayoutMetrics.UNBOUNDED_WIDTH;
         } else if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
@@ -126,14 +125,14 @@ public final class BoxMeasurer {
             box.w = (box.containsInlineSize() ? 0 : contentW) + box.horizontalDecoration();
         }
 
-        if (intrinsicWidth != null && !overridden) {
-            resolveIntrinsicWidth(box, ctx, intrinsicWidth, parentW, rootW, rootH, isBorderBox);
+        if (intrinsicWidth != StyleFacts.IW_NONE && !overridden) {
+            resolveIntrinsicWidth(box, ctx, facts, parentW, rootW, rootH, isBorderBox);
         }
 
         if (!overridden) applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
 
         // auto マージンで中央に寄せるのはブロックフローだけ。flex / grid は自分の揃えで auto マージンを解く
-        if (!box.isAbsolute && "block".equals(fmtCtx.parentDisplay())) {
+        if (!box.isAbsolute && fmtCtx.isBlock()) {
             if (autoLeft && autoRight) {
                 box.mL = Math.max(0, (parentW - box.w) / 2);
                 box.mR = Math.max(0, parentW - box.w - box.mL);
@@ -154,7 +153,7 @@ public final class BoxMeasurer {
     }
 
     /** fieldset の legend の幅は fit-content（HTML §15.3.13）。auto マージンは置くときに解く。 */
-    private static final FormattingContext LEGEND_CONTEXT = new FormattingContext("legend", "stretch", false);
+    private static final FormattingContext LEGEND_CONTEXT = new FormattingContext(FormattingContext.Display.LEGEND, true, false);
 
     private static void measureLegend(LayoutBox legend, float fieldsetInnerW, LayoutContext ctx) {
         legend.measure(new ConstraintSpace(fieldsetInnerW, Float.NaN, LEGEND_CONTEXT), ctx);
@@ -274,7 +273,7 @@ public final class BoxMeasurer {
             // インラインレベルの箱・float・表・fieldset の legend は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
-        } else if (fmtCtx.isFlexColumn() && !"stretch".equals(fmtCtx.alignItems())) {
+        } else if (fmtCtx.isFlexColumn() && !fmtCtx.stretch()) {
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else {
@@ -315,12 +314,12 @@ public final class BoxMeasurer {
      *   <li>{@code fit-content(<長さ>)}: min(max-content, max(min-content, 長さ))</li>
      * </ul>
      */
-    private static void resolveIntrinsicWidth(LayoutBox box, LayoutContext ctx, String keyword,
+    private static void resolveIntrinsicWidth(LayoutBox box, LayoutContext ctx, StyleFacts facts,
                                               float parentW, float rootW, float rootH, boolean isBorderBox) {
-        if ("min-content".equals(keyword)) {
+        if (facts.intrinsicWidthKind == StyleFacts.IW_MIN_CONTENT) {
             box.w = box.getMinContentWidth(ctx);
-        } else if (keyword.startsWith("fit-content(") && keyword.endsWith(")")) {
-            String arg = keyword.substring("fit-content(".length(), keyword.length() - 1).trim();
+        } else if (facts.intrinsicWidthKind == StyleFacts.IW_FIT_CONTENT_FN && facts.fitContentArg != null) {
+            String arg = facts.fitContentArg;
             float limit = toBorderBox(LengthResolver.parseDim(arg, parentW, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx()), box.horizontalDecoration(), isBorderBox);
             box.w = Math.max(box.getMinContentWidth(ctx), Math.min(box.w, limit));
@@ -383,7 +382,6 @@ public final class BoxMeasurer {
         float rootH = ctx.viewport().rootH();
 
         StyleFacts facts = style.layoutFacts();
-        String heightStr = facts.heightStr;
         // 基準の高さが不定（NaN）なら % の高さは auto（CSS 2.2 §10.5）。グリッドの行の大きさを決める段階がこれを使う
         boolean hasHeight = facts.hasHeightDeclaration && !facts.heightAuto
                 && !(Float.isNaN(parentH) && facts.heightPercent);
@@ -404,7 +402,7 @@ public final class BoxMeasurer {
         } else if (style.containsKey(CssProperty.ASPECT_RATIO) && box.w > 0) {
             applyAspectRatio(box);
         } else {
-            resolveIntrinsicHeight(box, ctx, heightStr);
+            resolveIntrinsicHeight(box, ctx, facts.heightAuto);
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う
@@ -471,7 +469,7 @@ public final class BoxMeasurer {
      * 新しい置換要素（カスタム要素）を足す場合はここが拡張点になる。
      * サイズの実体は {@link IntrinsicSizeResolver} が外（クライアント側）から供給する。
      */
-    private static void resolveIntrinsicHeight(LayoutBox box, LayoutContext ctx, String heightStr) {
+    private static void resolveIntrinsicHeight(LayoutBox box, LayoutContext ctx, boolean heightAuto) {
         String tag = box.node.tag;
 
         if (box.node.nodeType == NodeType.TEXT) {
@@ -494,7 +492,7 @@ public final class BoxMeasurer {
         if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);
             if (intrinsic != null && intrinsic[0] > 0 && intrinsic[1] > 0) {
-                boolean heightIsAuto = !box.style.containsKey(CssProperty.HEIGHT) || heightStr.equals("auto");
+                boolean heightIsAuto = !box.style.containsKey(CssProperty.HEIGHT) || heightAuto;
                 if (box.w > 0 && heightIsAuto) {
                     float innerW = Math.max(0, box.w - box.horizontalDecoration());
                     box.h = (innerW * ((float) intrinsic[1] / intrinsic[0])) + box.verticalDecoration();
@@ -622,7 +620,7 @@ public final class BoxMeasurer {
         StyleFacts facts = box.style.layoutFacts();
         if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
-        if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;
+        if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || fmtCtx.isGrid()) return true;
         // layout / paint containment は独立した整形コンテキストを作る（CSS Containment 2）
         // visible と clip 以外の overflow も BFC を作る（clip はスクロールコンテナにならない）
         return facts.bfcByStyle;

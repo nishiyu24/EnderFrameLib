@@ -54,7 +54,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 public class GridLayoutEngine extends LayoutEngine {
 
     /** 列の寸法を測るための文脈。内容の寸法に縮む。 */
-    private static final FormattingContext CONTRIBUTION_CONTEXT = new FormattingContext("grid", "start", true);
+    private static final FormattingContext CONTRIBUTION_CONTEXT = new FormattingContext(FormattingContext.Display.GRID, false, true);
 
     @Override
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
@@ -552,9 +552,10 @@ public class GridLayoutEngine extends LayoutEngine {
     /** アイテムを列の幅で測る。stretch なら領域の幅いっぱい、それ以外は内容の幅に縮む。 */
     private void measureInArea(LayoutBox box, GridState gs, GridItem item, float parentH, LayoutContext ctx) {
         float areaW = span(gs.colSizes, item.colStart, item.colSpan, box.columnGap);
-        String justify = selfAlignment(item.box, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
-        boolean stretch = "stretch".equals(justify) && !hasAutoMargin(item.box, true);
-        FormattingContext childCtx = new FormattingContext("grid", stretch ? "stretch" : justify, !stretch);
+        CssKeywords.Alignment justify = selfAlignment(item.box, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
+        boolean stretch = justify == CssKeywords.Alignment.STRETCH && !hasAutoMargin(item.box, true);
+        FormattingContext childCtx = new FormattingContext(FormattingContext.Display.GRID,
+                justify == CssKeywords.Alignment.STRETCH, !stretch);
         // % の高さの子は、行の大きさがまだ決まっていない段階では auto として測る（呼び出し側が NaN を渡す）。
         // 行が決まった後に alignItems が領域の高さで測り直す
         // 行を決めたあとの alignItems が、stretch・% の高さの測り直しをするか、settleTentative で本当に測る
@@ -581,8 +582,8 @@ public class GridLayoutEngine extends LayoutEngine {
             float areaW = colOffsets[item.colStart + item.colSpan] - areaX - gapAfter(gs.colSizes, item.colStart + item.colSpan, box.columnGap, colOffsets);
             float areaH = rowOffsets[item.rowStart + item.rowSpan] - areaY - gapAfter(gs.rowSizes, item.rowStart + item.rowSpan, box.rowGap, rowOffsets);
 
-            String alignSelf = selfAlignment(b, CssProperty.ALIGN_SELF, box.style, CssProperty.ALIGN_ITEMS);
-            if ("stretch".equals(alignSelf) && !hasAutoMargin(b, false) && !hasSize(b.style, CssProperty.HEIGHT)) {
+            CssKeywords.Alignment alignSelf = selfAlignment(b, CssProperty.ALIGN_SELF, box.style, CssProperty.ALIGN_ITEMS);
+            if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.style, CssProperty.HEIGHT)) {
                 float target = areaH - b.mT - b.mB;
                 // 行が内容より低いとき（min-height: 0 やスクロールコンテナ）は縮めて領域に合わせる
                 if (Math.abs(b.h - target) > 0.01f) {
@@ -591,7 +592,7 @@ public class GridLayoutEngine extends LayoutEngine {
                     b.overrideWidth = b.w;
                     b.overrideHeight = Math.max(0, target);
                     try {
-                        b.measure(new ConstraintSpace(areaW, parentH, new FormattingContext("grid", alignSelf, false)), ctx);
+                        b.measure(new ConstraintSpace(areaW, parentH, new FormattingContext(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
                     } finally {
                         b.overrideWidth = Float.NaN;
                         b.overrideHeight = Float.NaN;
@@ -601,19 +602,19 @@ public class GridLayoutEngine extends LayoutEngine {
                 // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。
                 // 以前はグリッドコンテナの基準で解いていたので、height: 100% の子が領域を越えて伸びていた。
                 // 同じ基準で測り済み（行が 1 つで領域 = グリッドの高さ）なら測り直さない
-                b.measure(new ConstraintSpace(areaW, areaH, new FormattingContext("grid", alignSelf, false)), ctx);
+                b.measure(new ConstraintSpace(areaW, areaH, new FormattingContext(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
                 item.percentBase = areaH;
             }
             // 測り直しが来なかった項目の仮の産物を終わらせる（以降の alignWithin は auto マージンを書き換える）
             b.settleTentative();
-            String justifySelf = selfAlignment(b, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
+            CssKeywords.Alignment justifySelf = selfAlignment(b, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
             item.x = areaX + alignWithin(b, true, areaW, justifySelf);
             item.y = areaY + alignWithin(b, false, areaH, alignSelf);
         }
     }
 
     /** 領域の中での位置（マージンボックスの始点の、領域の始点からのずれ）。auto マージンが先に余りを吸う。 */
-    private static float alignWithin(LayoutBox b, boolean inline, float area, String alignment) {
+    private static float alignWithin(LayoutBox b, boolean inline, float area, CssKeywords.Alignment alignment) {
         String startProp = inline ? CssProperty.MARGIN_LEFT : CssProperty.MARGIN_TOP;
         String endProp = inline ? CssProperty.MARGIN_RIGHT : CssProperty.MARGIN_BOTTOM;
         boolean autoStart = isAuto(b.style, startProp), autoEnd = isAuto(b.style, endProp);
@@ -632,8 +633,8 @@ public class GridLayoutEngine extends LayoutEngine {
             return 0;
         }
         return switch (alignment) {
-            case "center" -> free / 2;
-            case "end", "flex-end", "self-end", "right" -> free;
+            case CENTER -> free / 2;
+            case END, FLEX_END, SELF_END, RIGHT -> free;
             default -> 0;
         };
     }
@@ -680,15 +681,15 @@ public class GridLayoutEngine extends LayoutEngine {
      * アイテムの揃え。{@code *-self} が auto ならコンテナの {@code *-items}、{@code normal} / {@code legacy} は
      * 置換要素でなければ stretch。
      */
-    private static String selfAlignment(LayoutBox b, String selfProp, ComputedStyle container, String itemsProp) {
+    private static CssKeywords.Alignment selfAlignment(LayoutBox b, String selfProp, ComputedStyle container, String itemsProp) {
         CssKeywords.Alignment v = b.style.keywordOf(selfProp, CssKeywords.Alignment.class);
         if (v == CssKeywords.Alignment.AUTO) v = container.keywordOf(itemsProp, CssKeywords.Alignment.class);
         if (v == CssKeywords.Alignment.NORMAL || v == CssKeywords.Alignment.LEGACY || v == CssKeywords.Alignment.AUTO) {
             boolean sized = hasSize(b.style, CssProperty.JUSTIFY_SELF.equals(selfProp) ? CssProperty.WIDTH : CssProperty.HEIGHT);
-            return isReplaced(b) || sized ? "start" : "stretch";
+            return isReplaced(b) || sized ? CssKeywords.Alignment.START : CssKeywords.Alignment.STRETCH;
         }
         // first baseline / last baseline は baseline（safe / unsafe は読み取りで落とし済み）
-        return v == CssKeywords.Alignment.FIRST_BASELINE || v == CssKeywords.Alignment.LAST_BASELINE ? "baseline" : v.cssName();
+        return v == CssKeywords.Alignment.FIRST_BASELINE || v == CssKeywords.Alignment.LAST_BASELINE ? CssKeywords.Alignment.BASELINE : v;
     }
 
     private static boolean hasAutoMargin(LayoutBox b, boolean inline) {

@@ -130,15 +130,17 @@ class StyleFactsTest {
             // 測定・整形が読む宣言（元の「宣言を直接引く」書き方と照らし合わせる）
             String widthStr = s.getOrDefault(CssProperty.WIDTH, "auto").trim();
             String heightStr = s.getOrDefault(CssProperty.HEIGHT, "auto").trim();
-            assertEquals(widthStr, f.widthStr, at);
-            assertEquals(heightStr, f.heightStr, at);
             assertEquals("auto".equals(widthStr), f.widthAuto, at);
             assertEquals("auto".equals(heightStr), f.heightAuto, at);
             assertEquals(widthStr.contains("%"), f.widthPercent, at);
             assertEquals(heightStr.contains("%"), f.heightPercent, at);
             assertEquals(s.containsKey(CssProperty.HEIGHT), f.hasHeightDeclaration, at);
             String intrinsic = !"auto".equals(widthStr) && LayoutMetrics.isIntrinsicSizeKeyword(widthStr) ? widthStr.toLowerCase() : null;
-            assertEquals(intrinsic, f.intrinsicWidth, at);
+            assertEquals(legacyIntrinsicKind(intrinsic), f.intrinsicWidthKind, at);
+            assertEquals(intrinsic != null, f.hasIntrinsicWidth(), at);
+            String fitArg = intrinsic != null && intrinsic.startsWith("fit-content(") && intrinsic.endsWith(")")
+                    ? intrinsic.substring("fit-content(".length(), intrinsic.length() - 1).trim() : null;
+            assertEquals(fitArg, f.fitContentArg, at);
             assertEquals("auto".equals(s.get(CssProperty.MARGIN_LEFT)), f.marginLeftAuto, at);
             assertEquals("auto".equals(s.get(CssProperty.MARGIN_RIGHT)), f.marginRightAuto, at);
             assertEquals("auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_TOP, "0").trim()), f.autoMarginT, at);
@@ -164,10 +166,10 @@ class StyleFactsTest {
                     !(kerning != null && "none".equalsIgnoreCase(kerning.trim()))), f.fontStyle, at);
 
             assertEquals(s.keywordOf(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX, f.borderBox, at);
-            assertEquals(legacyAlignmentWord(s.keywordOf(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class)), f.alignItemsWord, at);
+            assertEquals(legacyAlignmentWord(s.keywordOf(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class)), f.alignItems.cssName(), at);
             CssKeywords.Alignment self = s.keywordOf(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
             assertEquals(self == CssKeywords.Alignment.AUTO, f.alignSelfAuto, at);
-            assertEquals(legacyAlignmentWord(self), f.alignSelfWord, at);
+            assertEquals(legacyAlignmentWord(self), f.alignSelf.cssName(), at);
 
             String[] edgeNames = {CssProperty.MARGIN_TOP, CssProperty.MARGIN_RIGHT, CssProperty.MARGIN_BOTTOM,
                     CssProperty.MARGIN_LEFT, CssProperty.PADDING_TOP, CssProperty.PADDING_RIGHT, CssProperty.PADDING_BOTTOM,
@@ -222,6 +224,47 @@ class StyleFactsTest {
         }
         for (CssKeywords.Alignment a : CssKeywords.Alignment.values()) {
             assertEquals(a.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-'), a.cssName());
+        }
+    }
+
+    /** 置き換え前の文字列（{@code intrinsicWidth}、小文字）から種類を決める。 */
+    private static byte legacyIntrinsicKind(String intrinsic) {
+        if (intrinsic == null) return StyleFacts.IW_NONE;
+        if (intrinsic.equals("min-content")) return StyleFacts.IW_MIN_CONTENT;
+        if (intrinsic.equals("max-content")) return StyleFacts.IW_MAX_CONTENT;
+        if (intrinsic.startsWith("fit-content(")) return StyleFacts.IW_FIT_CONTENT_FN;
+        return StyleFacts.IW_FIT_CONTENT;
+    }
+
+    @Test
+    void intrinsicWidthKeywordsAndFitContentArgument() {
+        Object[][] cases = {
+                {"min-content", StyleFacts.IW_MIN_CONTENT, null},
+                {"MAX-Content", StyleFacts.IW_MAX_CONTENT, null},
+                {"fit-content", StyleFacts.IW_FIT_CONTENT, null},
+                {"fit-content( 120PX )", StyleFacts.IW_FIT_CONTENT_FN, "120px"},
+                {"fit-content(50%)", StyleFacts.IW_FIT_CONTENT_FN, "50%"},
+                {"fit-content(10px", StyleFacts.IW_FIT_CONTENT_FN, null},
+                {"auto", StyleFacts.IW_NONE, null},
+                {"100px", StyleFacts.IW_NONE, null},
+                {"50%", StyleFacts.IW_NONE, null},
+        };
+        for (Object[] c : cases) {
+            Map<String, String> p = new HashMap<>();
+            p.put(CssProperty.WIDTH, (String) c[0]);
+            StyleFacts f = ComputedStyle.of(p, 16f, 16f).layoutFacts();
+            assertEquals((byte) c[1], f.intrinsicWidthKind, (String) c[0]);
+            assertEquals(c[2], f.fitContentArg, (String) c[0]);
+        }
+    }
+
+    @Test
+    void flexAlignmentFoldsNormalAndBaselineVariants() {
+        for (CssKeywords.Alignment a : CssKeywords.Alignment.values()) {
+            CssKeywords.Alignment folded = StyleFacts.flexAlignment(a);
+            assertEquals(legacyAlignmentWord(a), folded.cssName(), a.name());
+            // 畳んだ値は不動点（二度畳んでも変わらない）で、元の語に normal / auto / legacy / *-baseline は残らない
+            assertEquals(folded, StyleFacts.flexAlignment(folded), a.name());
         }
     }
 

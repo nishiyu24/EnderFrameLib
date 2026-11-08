@@ -37,13 +37,21 @@ public final class StyleFacts {
 
     // ---- 測定・整形が箱ごとに読む宣言の、前もって解いた値（文字列を読み直さない）----
 
-    /** {@code width} / {@code height} の宣言（前後の空白を除く。無ければ {@code auto}）と、その性質。 */
-    public String widthStr, heightStr;
+    /** {@code width} / {@code height} の宣言（前後の空白を除く。無ければ {@code auto}）の性質。宣言の文字列自体は持たない。 */
     public boolean widthAuto, heightAuto, widthPercent, heightPercent;
     /** {@code height} の宣言があるか（{@code auto} の明示も含む）。 */
     public boolean hasHeightDeclaration;
-    /** {@code width} が {@code min-content} などの内在サイズのキーワードなら、その小文字。そうでなければ null。 */
-    public String intrinsicWidth;
+    /** {@code width} の内在サイズのキーワードの種類（{@code IW_*}）。キーワードでなければ {@link #IW_NONE}。 */
+    public byte intrinsicWidthKind;
+    /** {@code width: fit-content(<長さ>)} の引数（前後の空白を除く小文字）。その形でなければ null。 */
+    public String fitContentArg;
+
+    public static final byte IW_NONE = 0, IW_MIN_CONTENT = 1, IW_MAX_CONTENT = 2, IW_FIT_CONTENT = 3, IW_FIT_CONTENT_FN = 4;
+
+    /** {@code width} が内容から決まるキーワード（{@code min-content} / {@code max-content} / {@code fit-content}）か。 */
+    public boolean hasIntrinsicWidth() {
+        return intrinsicWidthKind != IW_NONE;
+    }
     /** {@code margin-left} / {@code margin-right} が {@code auto}。 */
     public boolean marginLeftAuto, marginRightAuto;
     /** 四辺の余白が {@code auto}（前後の空白と大小文字を無視。flex が読む）。 */
@@ -52,8 +60,11 @@ public final class StyleFacts {
     public boolean rtl;
     /** {@code box-sizing: border-box}。 */
     public boolean borderBox;
-    /** flex の揃えの語（{@code align-items} / {@code align-self}。normal は stretch、baseline 系は baseline）。{@code align-self: auto} のときは {@link #alignSelfAuto}。 */
-    public String alignItemsWord, alignSelfWord;
+    /**
+     * flex の揃え（{@code align-items} / {@code align-self}）。normal・auto・legacy は {@link CssKeywords.Alignment#STRETCH}、
+     * first/last baseline は {@link CssKeywords.Alignment#BASELINE} に寄せてある。{@code align-self: auto} のときは {@link #alignSelfAuto}。
+     */
+    public CssKeywords.Alignment alignItems, alignSelf;
     public boolean alignSelfAuto;
     /** 独立した整形コンテキストを、スタイルだけで作るか（float・layout/paint containment・スクロールコンテナ）。 */
     public boolean bfcByStyle;
@@ -76,29 +87,39 @@ public final class StyleFacts {
     volatile boolean extrasReady;
 
     void fillExtras(ComputedStyle s) {
-        widthStr = s.getOrDefault(CssProperty.WIDTH, "auto").trim();
-        heightStr = s.getOrDefault(CssProperty.HEIGHT, "auto").trim();
+        String widthStr = s.getOrDefault(CssProperty.WIDTH, "auto").trim();
+        String heightStr = s.getOrDefault(CssProperty.HEIGHT, "auto").trim();
         widthAuto = "auto".equals(widthStr);
         heightAuto = "auto".equals(heightStr);
         widthPercent = widthStr.contains("%");
         heightPercent = heightStr.contains("%");
         hasHeightDeclaration = s.containsKey(CssProperty.HEIGHT);
-        intrinsicWidth = !widthAuto && com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)
-                ? widthStr.toLowerCase() : null;
+        intrinsicWidthKind = IW_NONE;
+        fitContentArg = null;
+        if (!widthAuto && com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)) {
+            String kw = widthStr.toLowerCase();
+            if (kw.equals("min-content")) intrinsicWidthKind = IW_MIN_CONTENT;
+            else if (kw.equals("max-content")) intrinsicWidthKind = IW_MAX_CONTENT;
+            else if (kw.startsWith("fit-content(")) {
+                intrinsicWidthKind = IW_FIT_CONTENT_FN;
+                // 閉じ括弧が無い形は引数を持たない（以前の resolveIntrinsicWidth と同じく何もしない）
+                if (kw.endsWith(")")) fitContentArg = kw.substring("fit-content(".length(), kw.length() - 1).trim();
+            } else intrinsicWidthKind = IW_FIT_CONTENT;
+        }
         marginLeftAuto = "auto".equals(s.get(CssProperty.MARGIN_LEFT));
         marginRightAuto = "auto".equals(s.get(CssProperty.MARGIN_RIGHT));
         borderBox = s.keywordFresh(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
-        alignItemsWord = alignmentWord(s.keywordFresh(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class));
+        alignItems = flexAlignment(s.keywordFresh(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class));
         CssKeywords.Alignment self = s.keywordFresh(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
         alignSelfAuto = self == CssKeywords.Alignment.AUTO;
-        alignSelfWord = alignmentWord(self);
+        alignSelf = flexAlignment(self);
         autoMarginT = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_TOP, "0").trim());
         autoMarginR = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_RIGHT, "0").trim());
         autoMarginB = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_BOTTOM, "0").trim());
         autoMarginL = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_LEFT, "0").trim());
         usesViewportUnits = s.usesViewportUnits();
         String wm = s.get("writing-mode");
-        horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidth == null && !usesViewportUnits
+        horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE &&!usesViewportUnits
                 && !marginLeftAuto && !marginRightAuto && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
                 && (wm == null || wm.trim().startsWith("horizontal"))
                 && noPercent(s, CssProperty.MIN_WIDTH) && noPercent(s, CssProperty.MAX_WIDTH)
@@ -130,12 +151,12 @@ public final class StyleFacts {
         return v == null || v.indexOf('%') < 0;
     }
 
-    /** 揃えの値を flex の配置の語にする（{@code normal} は stretch、{@code first/last baseline} は baseline）。 */
-    private static String alignmentWord(CssKeywords.Alignment v) {
+    /** 揃えの値を flex の配置に寄せる（{@code normal} は stretch、{@code first/last baseline} は baseline）。 */
+    static CssKeywords.Alignment flexAlignment(CssKeywords.Alignment v) {
         return switch (v) {
-            case NORMAL, AUTO, LEGACY -> "stretch";
-            case FIRST_BASELINE, LAST_BASELINE -> "baseline";
-            default -> v.cssName();
+            case NORMAL, AUTO, LEGACY -> CssKeywords.Alignment.STRETCH;
+            case FIRST_BASELINE, LAST_BASELINE -> CssKeywords.Alignment.BASELINE;
+            default -> v;
         };
     }
 }

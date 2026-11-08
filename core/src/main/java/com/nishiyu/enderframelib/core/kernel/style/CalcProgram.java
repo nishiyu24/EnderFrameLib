@@ -240,4 +240,18 @@ public final class CalcProgram {
             emit(PUSH | (unit << 8) | ((consts.size() - 1) << 16));
         }
     }
+
+    /** K_CALC を解く側。スタック配列を持ち回って割り当てを避ける。 */
+    public static final class Resolver {
+        private final Table table;
+        private float[] stack = new float[16];
+
+        public Resolver(Table table) { this.table = table; }
+
+        public float eval(int index, float percentBase, float fontSize, float rootFontSize, float vw, float vh) {
+            CalcProgram p = table.get(index);
+            if (stack.length < p.stackSize()) stack = new float[p.stackSize()];
+            return p.eval(stack, percentBase, fontSize, rootFontSize, vw, vh);
+        }
+    }
 }

@@ -59,7 +59,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 public class TableLayoutEngine extends LayoutEngine {
 
     /** セルの max-content を測る文脈。内容の幅に縮む。 */
-    private static final FormattingContext SHRINK_CELL = new FormattingContext("block", "stretch", true);
+    private static final FormattingContext SHRINK_CELL = new FormattingContext(FormattingContext.Display.BLOCK, true, true);
     private static final FormattingContext FIXED_CELL = FormattingContext.BLOCK;
 
     @Override

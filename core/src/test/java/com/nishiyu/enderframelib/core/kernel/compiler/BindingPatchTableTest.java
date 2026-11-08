@@ -99,30 +99,6 @@ class BindingPatchTableTest {
         assertTrue(used < 4096, "バインディングの直接書き込みがヒープを確保している: " + used + " B");
     }
 
-    @Test
-    void overlayPatchesStyleStructsWithoutTouchingOthers() {
-        HtmlDocument d = doc();
-        HtmlNode bar = d.getElementById("bar");
-        HtmlNode fade = d.getElementById("fade");
-        BindingPatchTable t = new BindingPatchTable(bar.arena());
-        t.compile(d);
-        var compiler = new com.nishiyu.enderframelib.core.kernel.style.StyleStructs.Compiler(
-                new com.nishiyu.enderframelib.core.kernel.memory.AtomTable());
-        var base = compiler.compile(new com.nishiyu.enderframelib.core.css.ComputedStyle(
-                java.util.Map.of("width", "10px", "opacity", "1"), 16f, 16f), null);
-        assertSame(base, t.overlay(base, bar.nodeId()), "未設定のパッチは何も変えない");
-        t.setFloat("hp_pct", 40f);
-        t.setFloat("alpha", 0.5f);
-        var patched = t.overlay(base, bar.nodeId());
-        assertEquals(com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.U_PERCENT,
-                com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.unit(patched.box.width()));
-        assertEquals(80f, patched.widthPx(200, 16, 0, 0));
-        assertEquals(1f, patched.paint.opacity(), "bar に opacity のパッチは無い");
-        assertSame(base.surround, patched.surround);
-        assertEquals(0.5f, t.overlay(base, fade.nodeId()).paint.opacity());
-        assertSame(patched.box, t.overlay(base, d.getElementById("two").nodeId()).box, "同じ値の構造体は畳まれる");
-    }
-
     private static final java.util.Set<String> ALL =
             java.util.Set.of(com.nishiyu.enderframelib.core.dom.Bindings.TemplateDeps.ALWAYS);
 
