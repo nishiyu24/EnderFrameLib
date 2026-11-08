@@ -431,6 +431,13 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   （コンテナのカスタムプロパティなど）が古くなる危険があり、鍵の洗い出しなしには行わない。
 - 注意: `HoverToggleCostTest` の確保量は、全体実行では JIT の状態（先に走ったテストが呼び出し先の型を汚す）で 6 KB まで増えるため番人から外し、数値表示のみにした（単独実行は約 0.9 KB）。
 
+- **`ShareCache` を再スタイルをまたいで保持（2026-11-08・達成）**: 上で見送った案を、鍵の洗い出しをしてから実施。鍵は 親の算出表の**同一性**（鍵が強参照で持つので別物と取り違えない）・
+  掛かった規則の列（同一性）・フォントサイズ・ビューポート・コンテナの幅高で、結果が読む入力（`cascadeMatched` は親の表・シート・規則、`finalizeComputedStyle` は
+  シート・環境・親・各寸法・コンテナの幅高）はすべて鍵かシート／環境の検査に入っている。再スタイル／ビルドの前後の `clear()` をやめ、`ShareCache` 自身がシート・環境・規則の版が変わったとき
+  と 4,096 件に達したときに捨てる。class の付け外しの往復（前に解いた規則の組へ戻る）は解き直しなしで済む。
+  検証: `StyleShareAcrossPassesTest`（class を 3 周往復し、毎手の表示リストが使い回し無しと一致・戻りで 20 回超の使い回し）、既存の `StyleShareTest`・乱数変異の `InvalidationPipelineTest`。全体通過。
+  注: 結果の `raw` 表は共有・不変として扱う（アニメーション値を重ねるときは複製する既存の経路）。
+
 **未達（次の作業）**
 - `ComputedStyle` 本体は `String[] values` のまま（`StyleStructs` は派生ビュー）。`BoxMeasurer` 等が文字列経路を読むため、置き換えは
   Milestone 3 の入力切替（`ConstraintSpace` / `LayoutResult`）と同時でないと破壊的になる。

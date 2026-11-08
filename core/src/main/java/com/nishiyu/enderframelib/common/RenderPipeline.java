@@ -158,13 +158,12 @@ public class RenderPipeline {
             long profBuild = StageProfiler.begin(PipelineStage.STYLE_BUILD);
             boolean track = trackAllocations;
             long aA = track ? threadAllocatedBytes() : 0;
-            effectiveState.styleShare.clear();
+            // 共有した結果は残す（restyleLayoutTree と同じ理由。シート・環境・版が変われば ShareCache が捨てる）
             try {
                 rootBox = buildLayoutTree(doc.root, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                         ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                         effectiveState, StyleResolver.hasSiblingStateRules(doc.sheet), reusable);
             } finally {
-                effectiveState.styleShare.clear();
                 StageProfiler.end(PipelineStage.STYLE_BUILD, profBuild);
             }
             long tB = System.nanoTime();
@@ -704,7 +703,8 @@ public class RenderPipeline {
         InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
         interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
-        interactionState.styleShare.clear();
+        // 共有の結果は再スタイルをまたいで残す（鍵は親の算出表の同一性・掛かった規則・数値の入力。シートの版・環境が変われば ShareCache が捨てる）。
+        // 親が変わらない要素の「前に解いた規則の組」へ戻る往復（class の付け外しなど）が、解き直しなしで済む
         RenderPipeline.layoutChangedBoxes.clear();
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
@@ -712,7 +712,6 @@ public class RenderPipeline {
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     interactionState, StyleResolver.hasSiblingStateRules(doc.sheet));
         } finally {
-            interactionState.styleShare.clear();
             StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);
         }
     }

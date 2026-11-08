@@ -217,6 +217,8 @@ public class StyleResolver {
         private StyleSheet sheet;
         private Map<String, String> env;
         private int hits, misses;
+        private int sheetVersion = -1;
+        private static final int MAX_ENTRIES = 4096;
         /** 切り分け用: false なら使い回さず従来の経路で解く（結果は同じになるはず）。 */
         public static volatile boolean enabled = true;
         private static final java.util.concurrent.atomic.AtomicLong TOTAL_HITS = new java.util.concurrent.atomic.AtomicLong();
@@ -243,10 +245,13 @@ public class StyleResolver {
                               int viewportW, int viewportH, ContainerBox container) {
             if (!enabled || node == null || sheet == null || lookup == null || parent == null) return null;
             if (node.attrs.containsKey("style") || node.attrs.containsKey("hidden") || "input".equals(node.tag)) return null;
-            if (this.sheet != sheet || this.env != env) {
+            int version = sheet.rules.version();
+            // 再スタイルをまたいで残すので、シート・環境・規則の版が変わったら捨てる。件数にも上限を置く
+            if (this.sheet != sheet || this.env != env || this.sheetVersion != version || map.size() >= MAX_ENTRIES) {
                 map.clear();
                 this.sheet = sheet;
                 this.env = env;
+                this.sheetVersion = version;
             }
             List<StyleRule> candidates = sheet.index().candidates(node);
             ShareKey key = probe;
