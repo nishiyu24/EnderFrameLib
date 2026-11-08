@@ -13,6 +13,8 @@ public final class GlTreeStore implements AutoCloseable {
     public final PropertyTrees trees;
     public final GlVramDevice transforms, clips, effects, primitives, scrolls, curves, order;
     private final List<GlVramDevice> all = new ArrayList<>(6);
+    /** 7 本のバッファが共有するフェンス（待つ・置く GL 呼び出しはフレームにつき 1 回）。 */
+    private final GlFenceRing fences = new GlFenceRing();
 
     public GlTreeStore(int transformCap, int clipCap, int effectCap, int primitiveCap) {
         this(transformCap, clipCap, effectCap, primitiveCap, true);
@@ -20,7 +22,7 @@ public final class GlTreeStore implements AutoCloseable {
 
     public GlTreeStore(int transformCap, int clipCap, int effectCap, int primitiveCap, boolean allowPersistent) {
         this.trees = new PropertyTrees(transformCap, clipCap, effectCap, primitiveCap, () -> {
-            GlVramDevice d = new GlVramDevice(allowPersistent);
+            GlVramDevice d = new GlVramDevice(allowPersistent, GlVramDevice.DEFAULT_RING, fences);
             all.add(d);
             return d;
         });
@@ -35,13 +37,17 @@ public final class GlTreeStore implements AutoCloseable {
 
     public boolean isPersistent() { return transforms.isPersistent(); }
 
-    public void beginFrame() { for (GlVramDevice d : all) d.beginFrame(); }
+    public void beginFrame() { fences.await(fences.current()); }
 
     /** CPU の書き込みを GPU へ反映する。送ったバイト数（永続マップでは 0）。 */
     public int flush() { return trees.flush(); }
 
-    public void endFrame() { for (GlVramDevice d : all) d.endFrame(); }
+    public void endFrame() { fences.end(); }
+
+    /** 待った回数と置いたフェンスの数（テスト・診断用）。 */
+    int fenceWaits() { return fences.waits(); }
+    int fencesPlaced() { return fences.fencesPlaced(); }
 
     @Override
-    public void close() { for (GlVramDevice d : all) d.close(); }
+    public void close() { for (GlVramDevice d : all) d.close(); fences.close(); }
 }

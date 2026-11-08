@@ -274,6 +274,37 @@ class GlVramDeviceTest {
         }
     }
 
+    @Test
+    void sevenBuffersShareOneFencePerFrame() {
+        requireGl();
+        Assumptions.assumeTrue(GlVramDevice.supportsPersistentMapping(), "永続マップ非対応");
+        try (GlTreeStore store = new GlTreeStore(64, 8, 8, 64)) {
+            buildScene(store.trees, new Random(2));
+            int frames = 12;
+            for (int f = 0; f < frames; f++) {
+                store.beginFrame();
+                store.trees.setScrollOffset(1, f, f);
+                store.flush();
+                assertMatchesCpu(store.trees, drawOnlyWorldMatrices(store, f * 10f), f * 10f, "shared fence frame " + f);
+            }
+            assertEquals(frames, store.fencesPlaced(), "フェンスはフレームにつき 1 つ（バッファ 7 本ぶんではない）");
+            assertTrue(store.fenceWaits() <= frames, "待ち（フェンスがあった回数）もフレームにつき高々 1 回: " + store.fenceWaits());
+            // 書き込み前の待ちは現在の面に限られ、3 面のどのバッファも取り違えない（全面が影と一致）
+            for (int f = 0; f < 3; f++) {
+                store.beginFrame();
+                store.flush();
+                drawOnlyWorldMatrices(store, 0f);
+            }
+            for (int seg = 0; seg < 3; seg++) {
+                ByteBuffer gpu = store.transforms.readBack(seg).order(ByteOrder.nativeOrder());
+                for (int slot = 0; slot < SLOTS; slot++) {
+                    assertEquals(store.trees.transforms.getInt(slot, 0), gpu.getInt(slot * PropertyTrees.TRANSFORM_STRIDE), "seg " + seg + " slot " + slot);
+                }
+            }
+            assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
+        }
+    }
+
     /** 書き込み・flush は呼び出し側が済ませた後に、描画して読み戻す（beginFrame / flush は呼ばない）。 */
     private static float[][] drawOnlyWorldMatrices(GlTreeStore store, float frameMs) {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
