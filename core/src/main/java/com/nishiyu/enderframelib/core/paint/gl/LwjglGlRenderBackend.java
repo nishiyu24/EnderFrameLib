@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
@@ -597,6 +598,9 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private final int width;
     private final int height;
     private final float dpr;
+    private static final java.util.concurrent.atomic.AtomicInteger SESSIONS = new java.util.concurrent.atomic.AtomicInteger();
+    /** アニメーション状態のセッション名。CPU 描画器（保険）にも同じ名前を使わせる。 */
+    private final String sessionId;
     private final SoftwareRenderBackend cpu;
     /** 単色の角丸矩形を Property Tree ＋ 1 回のインスタンス描画で描く新経路（{@link #rectTrees} が false、または作れなければ null）。 */
     private GlRectStream rects;
@@ -779,7 +783,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         this.dpr = devicePixelRatio;
         this.width = Math.max(1, Math.round(cssW * devicePixelRatio));
         this.height = Math.max(1, Math.round(cssH * devicePixelRatio));
-        this.cpu = new SoftwareRenderBackend(cssW, cssH, devicePixelRatio);
+        this.sessionId = "gl-" + SESSIONS.incrementAndGet();
+        this.cpu = new SoftwareRenderBackend(cssW, cssH, devicePixelRatio, sessionId);
         this.readback = new Pixmap(width, height);
         long outerContext = GLFW.glfwGetCurrentContext();
         GLCapabilities outerCaps = currentCaps();
@@ -873,12 +878,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public String sessionId() {
-        return cpu.sessionId();
+        return sessionId;
     }
 
     /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。false なら同じ項目の再描画は同じ絵。 */
     public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
-        return cpu.hasActiveAnimation(items, nowMs);
+        return PaintSceneDriver.anyActiveAt(sessionId, items, nowMs);
     }
 
     public LwjglGlRenderBackend images(ImageProvider provider) {

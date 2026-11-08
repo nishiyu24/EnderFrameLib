@@ -75,4 +75,43 @@ class LazyCpuLayerTest {
         assertTrue(painted.isRootAllocated());
         assertEquals(0xFFFF0000, painted.pixmap().get(2, 2));
     }
+
+    @Test
+    void sessionAndAnimationQueriesDoNotGoThroughTheCpuRenderer() throws Exception {
+        LwjglGlRenderBackend a = render("<div style='width:10px;height:10px;background:#f00'></div>");
+        LwjglGlRenderBackend b = render("<div style='width:10px;height:10px;background:#0f0'></div>");
+        try {
+            assertTrue(a.sessionId().startsWith("gl-"), a.sessionId());
+            assertNotEquals(a.sessionId(), b.sessionId());
+        } finally {
+            a.close();
+            b.close();
+        }
+        // 構造の番人: GPU 版が CPU 描画器へ問い合わせてよいのは、描画（renderOnto）・重ね（dirtyBounds/pixmap/clearDirty）・
+        // フォント／画像の受け渡しだけ。セッション名とアニメーションの問い合わせは自前
+        String src = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java"));
+        for (String banned : new String[]{"cpu.sessionId(", "cpu.hasActiveAnimation("}) {
+            assertFalse(src.contains(banned), banned + " が戻っている");
+        }
+    }
+
+    @Test
+    void animationQueryUsesTheBackendsOwnSession() {
+        LwjglGlRenderBackend still = render("<div style='width:10px;height:10px;background:#f00'></div>");
+        LwjglGlRenderBackend moving = render("<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
+                + "<div style='width:10px;height:10px;background:#f00;animation:s 1s linear infinite'></div>");
+        try {
+            var itemsStill = SoftwareRendering.displayList(HEAD + "<div style='width:10px;height:10px;background:#f00'></div></body></html>", 64, 64);
+            assertFalse(still.hasActiveAnimation(itemsStill, 10_000L));
+            var itemsMoving = SoftwareRendering.displayList(HEAD + "<style>@keyframes s{from{opacity:0}to{opacity:1}}</style>"
+                    + "<div style='width:10px;height:10px;background:#f00;animation:s 1s linear infinite'></div></body></html>", 64, 64);
+            // 描いたあとの同じバックエンドで、動いている項目を動いていると答える
+            moving.render(itemsMoving, 10_000L);
+            assertTrue(moving.hasActiveAnimation(itemsMoving, 10_500L));
+        } finally {
+            still.close();
+            moving.close();
+        }
+    }
 }

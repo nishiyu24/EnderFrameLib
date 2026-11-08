@@ -102,7 +102,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final java.util.ArrayDeque<Pixmap> layerPool = new java.util.ArrayDeque<>();
     private GpuSink rootSink;
     private final float dpr;
-    private final String sessionId = "software-" + SESSIONS.incrementAndGet();
+    private final String sessionId;
     private FontResolver fonts = SystemFonts.system();
     private ImageProvider images = ImageProvider.standard();
     private int clearColor = 0;
@@ -125,6 +125,16 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** CSS px の大きさ {@code cssW × cssH}、1 CSS px が {@code devicePixelRatio} 画素の描画先を作る。 */
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio) {
+        this(cssW, cssH, devicePixelRatio, "software-" + SESSIONS.incrementAndGet());
+    }
+
+    /**
+     * セッション名を指定して作る。GPU 版が、保険の CPU 描画器にも自分と同じセッションを使わせる（アニメーションの
+     * 状態は {@link CssAnimator} がセッションごとに持つので、描く側と問う側で名前が揃っている必要がある）。
+     */
+    public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId) {
+        this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
+        this.driver = new PaintSceneDriver(sessionId);
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
         this.dpr = devicePixelRatio;
         this.rootW = Math.max(1, Math.round(cssW * devicePixelRatio));
@@ -250,7 +260,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
     }
 
-    private final PaintSceneDriver driver = new PaintSceneDriver(sessionId);
+    private final PaintSceneDriver driver;
 
     /** 直近に描いた {@code items} に、時刻 {@code nowMs} でまだ動いているアニメーションがあるか。 */
     public boolean hasActiveAnimation(List<DisplayItem> items, long nowMs) {
