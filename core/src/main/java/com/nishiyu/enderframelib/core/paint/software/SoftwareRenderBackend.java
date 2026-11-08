@@ -103,8 +103,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private GpuSink rootSink;
     private final float dpr;
     private final String sessionId;
-    private FontResolver fonts = SystemFonts.system();
-    private ImageProvider images = ImageProvider.standard();
+    private final PaintResources resources;
     private int clearColor = 0;
 
     private final Map<GlyphKey, GlyphBitmap> glyphs = new HashMap<>();
@@ -133,6 +132,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 状態は {@link CssAnimator} がセッションごとに持つので、描く側と問う側で名前が揃っている必要がある）。
      */
     public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId) {
+        this(cssW, cssH, devicePixelRatio, sessionId, new PaintResources());
+    }
+
+    /** 文字・画像の供給元を共有して作る（GPU 版が自分の持ち物を保険の CPU 描画器にも使わせる）。 */
+    public SoftwareRenderBackend(int cssW, int cssH, float devicePixelRatio, String sessionId, PaintResources resources) {
+        this.resources = java.util.Objects.requireNonNull(resources, "resources");
         this.sessionId = java.util.Objects.requireNonNull(sessionId, "sessionId");
         this.driver = new PaintSceneDriver(sessionId);
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
@@ -168,12 +173,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     public SoftwareRenderBackend fonts(FontResolver resolver) {
-        this.fonts = resolver == null ? SystemFonts.system() : resolver;
+        resources.fonts(resolver);
         return this;
     }
 
     public SoftwareRenderBackend images(ImageProvider provider) {
-        this.images = provider == null ? ImageProvider.standard() : provider;
+        resources.images(provider);
         return this;
     }
 
@@ -1662,7 +1667,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private OutlineFontFace faceFor(DisplayItem el) {
         String family = el.events() != null ? el.events().get("font-family") : null;
-        FontFace f = fonts.resolve(family);
+        FontFace f = resources.fonts().resolve(family);
         if (f instanceof OutlineFontFace o) return o;
         f = SystemFonts.system().resolve(family);
         return f instanceof OutlineFontFace o ? o : null;
@@ -2083,7 +2088,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float scale = (float) res.pose().meanScale();
         TextureRef texture = sink != null ? TextureRef.parse(src) : null;
         if (texture != null && drawExternalTexture(el, texture, rx, ry, res, clip, opacity, scale)) return;
-        ImageProvider.Image img = images.load(el, (int) Math.ceil(w * scale), (int) Math.ceil(h * scale));
+        ImageProvider.Image img = resources.images().load(el, (int) Math.ceil(w * scale), (int) Math.ceil(h * scale));
         if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return;
         Pixmap pm = img.pixmap();
         float iw = img.cssW() > 0 ? img.cssW() : pm.width(), ih = img.cssH() > 0 ? img.cssH() : pm.height();

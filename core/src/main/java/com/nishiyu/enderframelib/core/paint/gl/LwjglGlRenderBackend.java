@@ -15,6 +15,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.software.ImageProvider;
+import com.nishiyu.enderframelib.core.paint.software.PaintResources;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.raster.Matrix2D;
@@ -601,6 +602,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private static final java.util.concurrent.atomic.AtomicInteger SESSIONS = new java.util.concurrent.atomic.AtomicInteger();
     /** アニメーション状態のセッション名。CPU 描画器（保険）にも同じ名前を使わせる。 */
     private final String sessionId;
+    /** 文字・画像の供給元。保険の {@link #cpu} と共有し、差し替えはここに 1 回書く（CPU 描画器へ転送しない）。 */
+    private final PaintResources resources = new PaintResources();
     private final SoftwareRenderBackend cpu;
     /** 単色の角丸矩形を Property Tree ＋ 1 回のインスタンス描画で描く新経路（{@link #rectTrees} が false、または作れなければ null）。 */
     private GlRectStream rects;
@@ -784,7 +787,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         this.width = Math.max(1, Math.round(cssW * devicePixelRatio));
         this.height = Math.max(1, Math.round(cssH * devicePixelRatio));
         this.sessionId = "gl-" + SESSIONS.incrementAndGet();
-        this.cpu = new SoftwareRenderBackend(cssW, cssH, devicePixelRatio, sessionId);
+        this.cpu = new SoftwareRenderBackend(cssW, cssH, devicePixelRatio, sessionId, resources);
         this.readback = new Pixmap(width, height);
         long outerContext = GLFW.glfwGetCurrentContext();
         GLCapabilities outerCaps = currentCaps();
@@ -872,7 +875,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 exit();
             }
         }
-        cpu.fonts(resolver);
+        resources.fonts(resolver);
         return this;
     }
 
@@ -887,7 +890,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     public LwjglGlRenderBackend images(ImageProvider provider) {
-        cpu.images(provider);
+        resources.images(provider);
         return this;
     }
 

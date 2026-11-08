@@ -1332,16 +1332,35 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: `LazyCpuLayerTest` に追加 — セッション名が `gl-` で 2 つのバックエンドが別名／`hasActiveAnimation` が静止ページで false・無限アニメーションで true／ソース上 `cpu.sessionId(` と `cpu.hasActiveAnimation(` が戻っていないこと（構造の番人）。`:core:test`・ルート `:test` 全件緑。
 - **見積もりの訂正**: §9.5.9 は `fonts` / `images` も「GL 側が自前で持てる」と書いたが誤り。GL の文字・画像描画は `SoftwareRenderBackend` のディスパッチ（`drawText` / `drawImage`）が `fonts` / `images` を引いて `GpuSink` へ流す構造のため、フォント／画像の持ち主はディスパッチと一緒にしか動かせない。次の本丸は**ディスパッチ（`PaintSceneDriver.Painter` 実装）の分離**で、CPU ラスタ（`PaintOp` 等）と `GpuSink` 送出を `sink` の分岐から切り分けること。
 
+### 9.5.11 実施記録：汚れ印 4 つの `boolean` を整数ビット 1 本へ（2026-11-09）
+
+**破壊的変更**（`StateFlags` の公開フィールド `isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped` の削除）。
+
+- **何をしたか**: 4 つの `boolean` フィールドを `private int dirty`（`DIRTY_STYLE=1` / `DIRTY_SUBTREE=2` / `DIRTY_BELOW=4` / `DIRTY_UNSCOPED=8`）に集約。読みは `isStyleDirty()` / `subtreeDirty()` / `dirtyBelow()` / `unscoped()`、書きは `markSubtreeDirty()` / `clearSubtreeDirty()` / `markDirtyBelow()` / `clearDirtyBelow()` / `clearUnscoped()`（`markUnscoped()` はパッケージ内）。`DIRTY_STYLE` の立て下ろしは従来どおり `markStyleDirty()` / `clearStyleDirtyFlag()` だけが行い、`dirtyCount` の帳簿を保つ。作りたては 4 ビットすべて立つ（安全側）。`InteractionState` と `RenderPipeline` の読み書き約 40 箇所を載せ替えた。
+- **効果**: 汚れ印が 1 語に載り、`RenderPipeline` の「全部きれいか」の判定が将来 `dirty == 0` の 1 比較にできる。今回は意味を変えない整理で、速度の変化は測っていない。
+- **検証**: 新規 `NodeArenaIdentityTest.dirtyMarksLiveInOneIntAndStayIndependent`（作りたては 4 ビット全部／1 ビットを動かしても他は不変／`clearStyleDirty` は style・subtree・unscoped を下ろし below は残す／`markDirty` で子は style+subtree+unscoped・親は below のみ／`hasDirtyNodes` の帳簿）。既存の `InvalidationPipelineTest`・`NodeArenaIdentityTest` を新 API に付け替え。`:core:test`・ルート `:test` 全件緑。
+- **未達**: 値の置き場はまだ `StateFlags`（アリーナの `dirtyBits` 列ではない）。アリーナ正本化は §9.5.1 の (a)(b) が前提のまま。
+
+### 9.5.12 実施記録：Step 3 — 文字・画像の供給元を `PaintResources` に独立（2026-11-09）
+
+**破壊的変更**（`SoftwareRenderBackend` の `fonts` / `images` フィールドを `PaintResources` へ移動。公開の `fonts(..)` / `images(..)` は互換のため残置）。
+
+- **調査結果（ディスパッチ全体の切り出しを今回も見送った理由）**: `SoftwareRenderBackend` の図形は 1 つ 1 つが「`sink` に渡せれば GPU、断られたら同じ関数内で CPU ラスタ」という形（`fillRoundRect` / `fillGradient` / `insetShadow` / `outerShadow` / `strokeRoundBorder` / `drawGlyph` / `drawImage` など 約 15 箇所）で、GPU 送出と CPU 描画が関数単位で織り込まれている。ディスパッチだけを別クラスに出すには、各図形を「GPU 試行 → 失敗時に CPU 命令を返す」へ分解し直す必要があり、1 コミットで安全に終える規模ではない。段階を分ける。
+- **実施**: 新設 [`PaintResources`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/PaintResources.java)（`FontResolver` と `ImageProvider` の持ち主。`null` は既定へ戻す）。`LwjglGlRenderBackend` が 1 つ持ち、保険の `SoftwareRenderBackend` へ 5 引数コンストラクタで**共有**する。GL 側の `fonts(..)` / `images(..)` は供給元へ 1 回書くだけで、`cpu.fonts(..)` / `cpu.images(..)` の転送は消えた。`cpu` への依存は 7 経路 → **3 経路**（`renderOnto`、`dirtyBounds` / `pixmap` / `clearDirty`、`isRootAllocated`）。
+- **意味**: 文字・画像の「持ち主」がラスタ器から外れたので、ディスパッチを切り出すとき、フォント／画像の解決を GL 側のディスパッチ・CPU ラスタの双方が同じ実体から引ける（§9.5.10 の「フォント／画像の持ち主はディスパッチと一緒にしか動かせない」を、先に持ち主だけ切り離す形で緩めた）。
+- **検証**: 新規 `PaintResourcesTest`（`null` で既定へ戻る・チェーン／2 つの描画器が供給元を共有し、供給元への 1 回の差し替えが両方の描画に効く／`null` の供給元は拒否）、`LazyCpuLayerTest` の構造の番人に `cpu.fonts(` / `cpu.images(` の復活禁止を追加。GL を動かす `DynamicImageTest` / `LwjglGlRenderBackendTest` を含む `:core:test`・ルート `:test` 全件緑。
+- **次の一歩**: 図形を 1 種類ずつ「GPU 試行」と「CPU 命令の生成」に分ける。依存の軽い順に ① 単色の角丸矩形（`fillRoundRect` → `fillRect`）、② 影、③ 枠線、④ 字形、⑤ 画像。1 種類ごとに GL の画素一致テストで保護する。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
 | :--- | :---: | :--- |
 | 1-③ `ReactiveDomBinder` → `BindingPatchTable` のダイレクトパッチ化 | ✅ | §9.5.4。残りは読み側の `StyleFacts`/`PackedCssValue` 直結（Step 2 とセット）で、文字列整形＋再パースを省く |
-| 汚れ印（`isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped`）の整数ビット化 | ⏳ | 今回は `state` のみ整数化。4 つの `boolean` を `DIRTY_*` ビットの 1 本にまとめ、`RenderPipeline` の読み出しも `StyleFacts` 化と一緒に直す |
+| 汚れ印（`isStyleDirty` / `subtreeDirty` / `dirtyBelow` / `unscoped`）の整数ビット化 | ✅ | §9.5.11。`StateFlags.dirty`（`DIRTY_*` ビット）1 本に集約。アリーナ列への移管は別課題 |
 | アリーナ列を状態の正本にする案 | ⏳ | §9.5.1 の (a) 仮想の節の番号方針、(b) 取り外し時の状態退避が前提 |
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | Step 4 / 5 | ⏳ | 未着手 |
 
