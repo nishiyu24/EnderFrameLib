@@ -410,6 +410,14 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 ゲートには**あと一歩で未達**（時間は約 2 倍、割り当ては残り 5.4 KB）。残りは `animationValues`（`StyleAnimator.observe` の状態管理）・
 `containerFor`（`InteractionState.containerOf`）・疑似要素の再スタイル・`RestyleResult`/ラムダ生成。
 
+**:hover 往復の割り当て削減（2026-11-08・達成／ゲートは未達）** — JFR の割り当て標本で支配項を特定して削った（`HoverToggleCostTest`、40 カード・往復 5,000 回）
+- `StateStyleMemo.peek`: 解決済みなら**クロージャを作らず**に結果を返す（未解決のときだけ従来の `resolve`）。`StyleSet` は表を引けなかったときだけ作る（`computeEntry` で遅延生成）。
+- 再スタイルの走査: `ImmutableCollections` / `ArrayList` の反復子を添字ループに、変化なしの `RestyleResult` は共有の `UNCHANGED`、疑似要素の鍵は文字列連結せず比較、
+  ルートのビューポート用 `HashMap` はビューポートが同じ間は読み取り専用の写しを使い回し、`hasSiblingStateRules` は版番号でキャッシュ、
+  `ComputedStyle.diff` の extras は `forEach`（読み取り専用の包みが項目ごとに作る `Map.Entry` を避ける）、`TextShaper.normalize` は書き換えが要らない文字列で正規表現を使わない。
+- **測定**: 往復 1 回 **5.9 KB → 2.4 KB、CPU 0.0156 → 0.006〜0.012 ms**（揺れあり）。全体実行ではJITの状態で確保が増えるので、テストは 3 回測って最小を採り、4 KB 未満を番人にした。
+  残りは `StyleScope.enter`（節ごと）・変化した節の `RestyleResult`・`StyleAnimator.observe`・`computed.asMap()`。ゲート（`0 B/op`・`< 0.005 ms`）には届いていない。
+
 **未達（次の作業）**
 - `ComputedStyle` 本体は `String[] values` のまま（`StyleStructs` は派生ビュー）。`BoxMeasurer` 等が文字列経路を読むため、置き換えは
   Milestone 3 の入力切替（`ConstraintSpace` / `LayoutResult`）と同時でないと破壊的になる。

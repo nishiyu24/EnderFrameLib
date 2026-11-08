@@ -131,6 +131,23 @@ public class StyleSheet {
         return usesHas;
     }
 
+    private boolean siblingState;
+    private int siblingStateVersion = -1;
+
+    /** 状態つきの兄弟結合子の規則があるか（版番号でキャッシュ。再スタイルのたびに全規則を走査しない）。 */
+    public boolean hasSiblingStateRules(java.util.function.Predicate<StyleRule> test) {
+        int v = rules.version();
+        if (siblingStateVersion != v) {
+            boolean found = false;
+            for (StyleRule rule : rules) {
+                if (test.test(rule)) { found = true; break; }
+            }
+            siblingState = found;
+            siblingStateVersion = v;
+        }
+        return siblingState;
+    }
+
     private boolean usesHas;
     private int usesHasVersion = -1;
 

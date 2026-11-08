@@ -68,6 +68,26 @@ public final class StateStyleMemo {
      * @param stateBits 要素自身の現在の状態（{@code ElementState} のビット）
      * @param compute  状態ビットから、通常の経路で {@link Entry} を作る関数
      */
+    /**
+     * 解決済みの結果があればそれを返し、無ければ（計算が要るなら）null。クロージャを作らず割り当て 0 で引くための入口で、
+     * 返したときは {@link #resolve} と同じ結果・同じ統計（{@link #hits}）になる。
+     */
+    public Entry peek(HtmlNode node, StyleSheet sheet, Map<String, String> inherited, Map<String, String> env,
+                      float parentFontSize, float rootFontSize, float rootLineHeight, int viewportW, int viewportH,
+                      int stateBits) {
+        if (sheet == null) return null;
+        for (Frame c : frames) {
+            if (c != null && c.matches(node, sheet, inherited, env, parentFontSize, rootFontSize, rootLineHeight,
+                    viewportW, viewportH, stateBits)) {
+                if (c.blocked) return null;
+                Entry e = c.mask == 0 ? c.single : (Entry) c.table.attachment(stateBits);
+                if (e != null) hits++;
+                return e;
+            }
+        }
+        return null;
+    }
+
     public Entry resolve(HtmlNode node, StyleSheet sheet, Map<String, String> inherited, Map<String, String> env,
                          float parentFontSize, float rootFontSize, float rootLineHeight, int viewportW, int viewportH,
                          int stateBits, boolean eligible, IntFunction<Entry> compute) {

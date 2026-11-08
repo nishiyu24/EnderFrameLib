@@ -50,6 +50,7 @@ public final class TextShaper {
     /** {@code white-space} に従ってテキストを整える。以降の処理はこの結果だけを見る。 */
     public static String normalize(String text, WhiteSpace whiteSpace) {
         if (text == null || text.isEmpty()) return "";
+        if (isAlreadyNormal(text, whiteSpace)) return text; // 正規表現（Matcher の生成）を避ける
         String result = text.replace("\r\n", "\n").replace('\r', '\n');
         if (!whiteSpace.preservesNewlines()) {
             result = LINE_BREAKS.matcher(result).replaceAll(" ");
@@ -59,6 +60,19 @@ public final class TextShaper {
             result = BLANK_RUN.matcher(result).replaceAll(" ");
         }
         return result;
+    }
+
+    /** 改行・タブが無く、（畳むなら）空白の連続も無い: 何も書き換わらない文字列。 */
+    private static boolean isAlreadyNormal(String text, WhiteSpace whiteSpace) {
+        boolean collapses = whiteSpace.collapses();
+        char prev = 0;
+        for (int i = 0, n = text.length(); i < n; i++) {
+            char c = text.charAt(i);
+            if (c == '\r' || c == '\n' || c == '\t') return false;
+            if (collapses && c == ' ' && prev == ' ') return false;
+            prev = c;
+        }
+        return true;
     }
 
     // ==========================================
