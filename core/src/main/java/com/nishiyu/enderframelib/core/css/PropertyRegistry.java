@@ -476,6 +476,24 @@ public final class PropertyRegistry {
      * 何が壊れていたか: 以前は書かれなかったロングハンドを入れなかったので、継承するロングハンドが
      * 親の値のまま残り得た。{@code var()} が無効なショートハンドはロングハンドが 1 つも入らなかった。
      */
+    /**
+     * ショートハンドの展開は文字列だけで決まる純関数なので、（名前, 値）ごとに結果を覚える。要素ごとの再スタイルが
+     * 同じ宣言（{@code border: 1px solid #ccc} など）を毎回トークン分割し直さない。返す表は読み取り専用。
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>>
+            EXPANSIONS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int EXPANSIONS_LIMIT = 2048;
+
+    private static Map<String, String> expandCached(String name, Property p, String value) {
+        var perName = EXPANSIONS.computeIfAbsent(name, k -> new java.util.concurrent.ConcurrentHashMap<>());
+        Map<String, String> hit = perName.get(value);
+        if (hit != null) return hit;
+        Map<String, String> parts = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(p.expander().apply(value)));
+        if (perName.size() >= EXPANSIONS_LIMIT) perName.clear();
+        perName.put(value, parts);
+        return parts;
+    }
+
     public static void expandShorthands(Map<String, String> style) {
         for (String name : EXPANSION_ORDER) {
             String value = style.get(name);
@@ -485,7 +503,7 @@ public final class PropertyRegistry {
                 for (String l : p.longhands()) style.putIfAbsent(l, value.trim());
                 continue;
             }
-            Map<String, String> parts = p.expander().apply(value.trim());
+            Map<String, String> parts = expandCached(name, p, value.trim());
             if (parts.isEmpty()) {
                 for (String l : p.longhands()) style.putIfAbsent(l, "unset");
                 continue;
