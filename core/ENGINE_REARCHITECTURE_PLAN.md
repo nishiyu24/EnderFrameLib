@@ -511,8 +511,16 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   CPU の残りは UiView のスクロール更新（ヒットテスト・`repositionLayout`・ドライバの O(N) 配列）で、`< 0.01 ms` のゲートにはまだ届かない。
 - **制約**: 層は画面と同じ範囲なので、コンテナを動かした重ね範囲が画面の外へ出る（画面いっぱいのコンテナなど）ときは保持できず再記録する（正しさは保たれる）。
   小数のスクロール量では、保持した層と描き直しの文字の位置が最大 0.5 画素ずれうる（再記録のたびに合う）。画面より大きい層（コンテナ ＋ オーバースキャン）は未対応。
-- **次の作業（保持から < 0.01 ms へ）**: `repositionLayout` を保持した範囲では省く・ドライバの O(N) 配列（`curRes` の初期化・`chains` の構築）を SKIP の範囲で省く・
-  画面より大きい層（描画先の座標のずらし）。
+- **位置の決め直しの後回し（達成）**: スクロールだけの更新（`tryScrollTranslate` が成り立ち、レイアウトの観測者がいない）では `RenderPipeline.repositionLayout` を走らせず、
+  `UiView.layoutStale` を立てるだけにする。箱の位置を読む側（`layoutRoot()`・CSSOM の `BoxLayoutQuery`・描き直し・スクロールバー操作・スクロール以外の無効化）が現れる前に `ensureLayoutFresh()` で済ませる。
+  `UiView.deferScrollLayout=false` で無効。`DeferredScrollLayoutTest`: 後回しの有無で、読んだときの全箱の位置と、スクロール後に行の高さを変えた表示リストが一致する。
+  **測定**: UiView のスクロール 0.18 → 0.109 ms、保持した層のスクロール＋描画 0.18 → **0.130 ms**、ヒープ 137 → 82 KB。標本化では `repositionLayout` が消え、残りは
+  GL 側（`GlVramDevice.beginFrame` 約 25%・描画 18%）とヒットテスト（`HitTestIndex.find` 約 21%）。
+- **ヒットテストの作業表の使い回し（達成）**: `HitTestIndex.find` の `PrefixCache`（祖先の連鎖の結果の表）と `AnimatedValues` を問い合わせごとに作らず、スレッドごとに使い回す。
+  ヒープ 82 → 32 KB（スクロール＋描画）。CPU は誤差の範囲（0.13 ms）。マウス位置が同じでも、スクロールで下の要素が変わるため、答えそのものの使い回しはしない。
+  残りの `GlVramDevice.beginFrame` は直前のフレームのフェンス待ち（1 面のバッファのため）で、3 面リングで消える。
+- **次の作業（< 0.01 ms へ）**: 3 面リング（`beginFrame` の待ちをなくす）・ドライバの O(N) 配列（`curRes` の初期化・`chains` の構築）を SKIP の範囲で省く・
+  `beginFrame` の待ち（フェンス）の見直し・画面より大きい層（描画先の座標のずらし）。
 
 - 3 面リング。`LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
 
