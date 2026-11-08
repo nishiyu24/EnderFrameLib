@@ -88,4 +88,11 @@ final class SoftShapes {
     private static int div255(int v) {
         return ((v + 128) * 257) >> 16;
     }
+
+    /** 配列の最大値（空・全て負なら 0）。 */
+    static float maxOf(float[] v) {
+        float m = 0f;
+        for (float f : v) m = Math.max(m, f);
+        return m;
+    }
 }

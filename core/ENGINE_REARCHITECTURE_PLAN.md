@@ -1358,6 +1358,13 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **検証**: 新規 `BoxTreeTest.hasFlowChildrenAgreesWithTheListForEveryBoxInATree`（絶対配置のみ／`display:none` のみ／混在／空／外側・内側マーカー／fieldset+legend を含む木の**全ボックス**で `!getFlowChildren().isEmpty()` と一致）。Flex/Grid/Table を含む `:core:test`・ルート `:test` 全件緑。
 - **未達**: `getFlowChildren()` 自体の確保（Flex の `items` 生成・Grid の `new ArrayList<>(..)` コピー・min-content の走査）と `LayoutBox.Tentative` の `LayoutResultCache` 統合、`FenwickVirtualList` 接続は未着手。
 
+### 9.5.14 実施記録：Step 3 — 図形分離の足場：`SoftwareRenderBackend` から状態を持たない部品を独立（2026-11-09）
+
+- **方針の確認**: 調査の結果、「単色の角丸矩形だけを先に分離」は成り立たないと分かった。角丸矩形の CPU 側は `paint()`・`Fast`・`Clip`・`Shader`・描いた範囲の記録を使い、これらが 約15種の図形すべての共通部品だから。図形を1つ動かす前に、**共通部品のうち状態を持たないものを外へ出す**のが先（図形を動かしたとき、移し先が元のクラスの private 型を参照できずに行き詰まるのを避ける）。
+- **実施（挙動不変・破壊的変更は内部型のみ）**: `ClipPart` / `Clip`（クリップの被覆率）、`Fast`（距離を測らず済む領域）、`Shader`、`Scratch`（タイル実行の作業表）を同パッケージの独立ファイルへ、`maxOf` を `SoftShapes` へ移した。`SoftwareRenderBackend` は 2,259 → 2,190 行。`paint()` / `Op` 群 / `addClipPart`（`driver`・`frame` に依存）は状態を持つので今回は移していない。
+- **検証**: 新規 `CpuRasterPartsTest`（空クリップ=被覆率1・交わらない2片は空／2万点で `Clip`・`ClipPart` の被覆率が `sdRoundRect` からの直接計算と一致／2片の積と0での打ち切り／`Fast.roundSpan` が返す区間の内側が必ず被覆率1／非円の角は内側矩形に退避・領域数の上限／`Scratch` の大きさ・`maxOf`／移した型が元のクラスに戻っていないことの番人）。GL の画素一致（`LwjglGlRenderBackendTest` ほか）を含む `:core:test`・ルート `:test` 全件緑。
+- **次の一歩**: 描画先と汚れ範囲（`target` / `dirty*` / `paintRange`）、`Op` 群と `flushPending`（タイル実行）を `CpuRaster` に移し、図形側は `raster.paint(..)` を呼ぶだけにする。その後に図形を ① 単色角丸 ② 影 ③ 枠線 ④ 字形 ⑤ 画像の順に「GPU 試行」と「CPU 命令の生成」に分ける。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1368,7 +1375,7 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 2-②（`StyleFacts` の文字列フィールド数値化） | ✅ | §9.5.5。`FormattingContext` / Grid の揃え文字列も §9.5.6 で列挙化済み |
 | Step 2-①（`Memo` 廃止） | ✅ | §9.5.7。全スタイル共有の `TypedValueCache` に置換 |
 | Step 2-③（`StyleStructs` の整理） | ✅ | §9.5.8。本流未参照の重複層なので撤去。`PackedCssValue` / `CalcProgram` は残置（`StyleFacts` の数値バックエンド化は未着手） |
-| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
+| Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | Step 4 | ⏳ | 未着手 |
 | Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 
