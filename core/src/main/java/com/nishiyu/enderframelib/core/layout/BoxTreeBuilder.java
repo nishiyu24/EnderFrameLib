@@ -86,6 +86,86 @@ public final class BoxTreeBuilder {
         root.linkParents();
     }
 
+    // ==========================================
+    // 子の増減の局所パッチ（箱の木全体を組み直さずに、1 つの親の子の並びだけを直す）
+    // ==========================================
+
+    /** 局所パッチの対象にしてよい {@code list-style-type}（番号を使わない = 兄弟の数に依らない）。 */
+    private static boolean unnumberedListStyle(LayoutBox box) {
+        String type = box.style.getOrDefault(CssProperty.LIST_STYLE_TYPE, "disc").trim().toLowerCase(Locale.ROOT);
+        return type.equals("none") || type.equals("disc") || type.equals("circle") || type.equals("square");
+    }
+
+    /**
+     * 親の子の並びを局所パッチで直してよいか（親の側の条件）。組み立て済みの {@link LayoutBox#children} が要素ツリーの
+     * ブロックレベルの子の並びそのもの（匿名ボックス・疑似要素・マーカーが挟まらない）で、{@link #fixup} が何も変えない形だけを通す。
+     */
+    public static boolean canPatchChildren(LayoutBox parent) {
+        LayoutBox.Display d = parent.display;
+        if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.listItem()) return false;
+        if (d.inner() != Inner.FLOW && d.inner() != Inner.FLOW_ROOT) return false;
+        if (parent.isAnonymous || parent.node == null || parent.node.isPseudoNode || LayoutBox.isTableBox(parent)) return false;
+        if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()) return false;
+        String tag = parent.node.tag == null ? "" : parent.node.tag.toLowerCase(Locale.ROOT);
+        if (tag.equals("ol") || tag.equals("fieldset") || tag.equals("details") || tag.equals("textarea")
+                || tag.equals("svg") || tag.equals("select") || tag.equals("button")) {
+            return false;
+        }
+        if (!WhiteSpace.of(parent.style.get(CssProperty.WHITE_SPACE)).collapses()) return false;
+        boolean anyBlock = false;
+        for (LayoutBox c : parent.children) {
+            if (c.isAnonymous || c.node == null || c.node.isPseudoNode || c.isOutsideMarker || c.isRenderedLegend) return false;
+            if (c.display.isContents() || c.display.isInlineLevel()) return false;
+            if (c.display.isTableInternal()) return false;
+            anyBlock = true;
+        }
+        return anyBlock;
+    }
+
+    /**
+     * 新しい子の箱（要素ツリーに加え済み）が、局所パッチで差し込める形か（子の側の条件）。
+     * ブロックレベルで、番号を使うマーカーを持たず、表の内部・{@code display: contents} ・{@code display: none}・fieldset の legend でない。
+     */
+    public static boolean canInsertBuiltChild(LayoutBox parent, LayoutBox added) {
+        LayoutBox.Display d = added.display;
+        if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.isTableInternal()) return false;
+        Inner inner = d.inner();
+        if (inner != Inner.FLOW && inner != Inner.FLOW_ROOT && inner != Inner.FLEX && inner != Inner.GRID) return false;
+        if (added.isAnonymous || added.node.isPseudoNode || added.isOutsideMarker) return false;
+        if ("legend".equals(added.node.tag)) return false;
+        if (d.listItem() && !unnumberedListStyle(added)) return false;
+        return true;
+    }
+
+    /**
+     * 組み立て済みの子の並びに、新しい子の箱を差し込む。{@code added} の部分木（マーカー・子の匿名ボックス）はここで組む。
+     *
+     * @param after {@code parent.children} の中で直前になる箱。先頭に入れるなら null
+     */
+    public static void insertBuiltChild(LayoutBox parent, LayoutBox after, LayoutBox added, CounterStyles counterStyles) {
+        BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
+        builder.counters.apply(added);
+        builder.buildBox(added);
+        int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
+        parent.children.add(index, added);
+        added.parent = parent;
+        added.linkParents();
+        LayoutBox.bumpShapeEpoch();
+    }
+
+    /** 組み立て済みの子の並びから、箱を外す。並びに無ければ何もしない。 */
+    public static void removeBuiltChild(LayoutBox parent, LayoutBox removed) {
+        int index = indexOfBox(parent.children, removed);
+        if (index >= 0) parent.children.remove(index);
+        LayoutBox.bumpShapeEpoch();
+    }
+
+    /** 同一性で探した位置。無ければ -1。 */
+    public static int indexOfBox(List<LayoutBox> boxes, LayoutBox box) {
+        for (int i = 0; i < boxes.size(); i++) if (boxes.get(i) == box) return i;
+        return -1;
+    }
+
     /** 前回の箱の木（{@link LayoutBox#children}）にある匿名ボックスとマーカーを集める。新しく作った木なら何も無い。 */
     private void collectReusableGenerated(LayoutBox box) {
         for (LayoutBox child : box.children) {
@@ -135,7 +215,7 @@ public final class BoxTreeBuilder {
             }
         }
         if (found == null || found.isAbsolute || found.display.isNone()
-                || found.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+                || found.style.facts().floating) {
             return null;
         }
         if (!found.isRenderedLegend) {

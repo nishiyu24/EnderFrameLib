@@ -278,16 +278,44 @@ public class RenderPipeline {
     public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                        ScrollState scrollState, FontResolver fonts,
                                        java.util.Collection<LayoutBox> changed) {
+        relayoutInPlace(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, changed, java.util.Set.of());
+    }
+
+    /**
+     * @param shallow {@code changed} のうち、子の並びだけが変わった箱（子の箱自体は前回のまま）。部分木を全体版で
+     *                印付けせず、片付けもしない（{@link LayoutBox#markLayoutChangesAlong}）
+     */
+    public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                       ScrollState scrollState, FontResolver fonts,
+                                       java.util.Collection<LayoutBox> changed, java.util.Set<LayoutBox> shallow) {
         List<LayoutBox> path = localRelayout && changed != null && !changed.isEmpty()
-                ? LayoutBox.markLayoutChangesAlong(rootBox, changed) : null;
+                ? LayoutBox.markLayoutChangesAlong(rootBox, changed, shallow) : null;
         lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
         runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null);
         if (path != null) {
             LayoutBox.clearSubtreeMarks(path);
             // 子を持つ変更箱の部分木は全体版で印を付けたので、全体版と同じ片付けをする
-            for (LayoutBox c : changed) if (!c.children.isEmpty()) LayoutBox.clearAllSubtreeMarks(c);
+            for (LayoutBox c : changed) if (!c.children.isEmpty() && !shallow.contains(c)) LayoutBox.clearAllSubtreeMarks(c);
         }
+    }
+
+    /**
+     * 局所パッチ（子の増減）: {@code node} の箱の部分木を、親の箱の下に単独で組む。親・祖先・兄弟には触れない。
+     * 箱は要素ツリーの箱（{@link LayoutBox#elementChildren} に入れる単位）で、{@link BoxTreeBuilder} の組み立ては呼び出し側が行う。
+     * スタイルは親の算出スタイルを継承元に、全体の組み立て（{@link #layoutDocument}）と同じ規則で解く。
+     */
+    public static LayoutBox buildDetachedBox(HtmlNode node, LayoutBox parentBox, StyleSheet sheet, Map<String, String> env,
+                                             int rootW, int rootH, InteractionState interactionState) {
+        ArrayList<LayoutBox> chain = new ArrayList<>();
+        for (LayoutBox b = parentBox; b != null; b = b.parent) chain.add(b);
+        StyleScope scope = StyleScope.initial(rootW, rootH);
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            LayoutBox b = chain.get(i);
+            if (!b.isAnonymous && b.node != null) scope = scope.enter(b.node, b.style);
+        }
+        return buildLayoutTree(node, parentBox.style.asMap(), sheet, env, FORCE_SUBTREE, parentBox.style.fontSizePx(), scope,
+                interactionState, StyleResolver.hasSiblingStateRules(sheet), null);
     }
 
     /**

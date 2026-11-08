@@ -14,6 +14,8 @@ import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
 import com.nishiyu.enderframelib.core.dom.node.Ownership;
+import com.nishiyu.enderframelib.core.css.CounterStyles;
+import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
@@ -68,6 +70,11 @@ public class UiView implements AutoCloseable {
          * 作り直さず、その文字の箱だけ作り直して測り直す。条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
          */
         TEXT_PATCH,
+        /**
+         * 要素の子が増減した（{@code appendChild} / {@code removeChild} など）。箱の木を作り直さず、その親の子の並びだけを直す。
+         * 条件に合わなければ {@link #RELAYOUT} と同じ処理になる。
+         */
+        CHILD_PATCH,
         RESTYLE,
         RELAYOUT
     }
@@ -274,15 +281,23 @@ public class UiView implements AutoCloseable {
             paintBuilderScroll = scrollState;
         }
         builder.setUseChangeStamps(useChangeStamps);
+        builder.setExactTranslation(exactTranslation);
         try {
             return builder.render(root);
         } finally {
             builder.setUseChangeStamps(false);
+            builder.setExactTranslation(false);
         }
     }
 
     /** 次の {@link #paintBoxes} だけ、箱の変更印で署名の比較を省く（変わった箱が分かっている文字の局所パッチ）。 */
     private boolean useChangeStamps;
+    /** 次の {@link #paintBoxes} だけ、整数ぶん動いた箱の項目を厳密に平行移動して使い回す（子の増減の局所パッチ）。 */
+    private boolean exactTranslation;
+
+    protected final boolean exactTranslation() {
+        return exactTranslation;
+    }
 
     /** 今の {@link #paintBoxes} が変更印を使ってよいか（文字の局所パッチの描画のとき）。 */
     protected final boolean useChangeStamps() {
@@ -495,6 +510,8 @@ public class UiView implements AutoCloseable {
                 requestRestyle();
             } else if (attributeName == null && textPatchEnabled && node.nodeType == NodeType.TEXT) {
                 requestTextPatch(node);
+            } else if (attributeName == null && childPatchEnabled && node.nodeType == NodeType.ELEMENT) {
+                requestChildPatch(node);
             } else {
                 requestRender();
             }
@@ -1131,6 +1148,15 @@ public class UiView implements AutoCloseable {
             }
             if (hadPendingText && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
         }
+        if (level != InvalidationLevel.CHILD_PATCH) {
+            // 子の増減と再スタイルが同じフレームに重なったら、再スタイルの経路は箱を増減しないので全体にする
+            boolean hadPendingChildren;
+            synchronized (pendingChildParents) {
+                hadPendingChildren = !pendingChildParents.isEmpty();
+                pendingChildParents.clear();
+            }
+            if (hadPendingChildren && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
+        }
         List<HtmlNode> attrNodes;
         synchronized (pendingAttrNodes) {
             attrNodes = pendingAttrNodes.isEmpty() ? List.of() : new ArrayList<>(pendingAttrNodes);
@@ -1161,6 +1187,14 @@ public class UiView implements AutoCloseable {
                     TEXT_PATCH_HITS.incrementAndGet();
                 } else {
                     TEXT_PATCH_FALLBACKS.incrementAndGet();
+                    recomputeLayout(rootW, rootH);
+                }
+            }
+            case CHILD_PATCH -> {
+                if (tryChildPatch(attrNodes, repositionRequested)) {
+                    CHILD_PATCH_HITS.incrementAndGet();
+                } else {
+                    CHILD_PATCH_FALLBACKS.incrementAndGet();
                     recomputeLayout(rootW, rootH);
                 }
             }
@@ -1239,6 +1273,214 @@ public class UiView implements AutoCloseable {
         lastLayoutFinishedNanos = System.nanoTime();
         lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
         return true;
+    }
+
+
+    // ==========================================
+    // 子の増減の局所パッチ
+    // ==========================================
+
+    /** false なら子の増減は常に全体の再レイアウトにする（切り分け用。結果は同じでなければならない）。 */
+    public static volatile boolean childPatchEnabled = !Boolean.getBoolean("enderframe.ui.nochildpatch");
+    public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
+    /** 1 回の局所パッチで直す親の最大数・親ごとに増減できる子の最大数（超えたら全体の再レイアウトの方が安い）。 */
+    private static final int CHILD_PATCH_MAX_PARENTS = 4;
+    private static final int CHILD_PATCH_MAX_CHANGES = 16;
+
+    /** 子の並びが変わった親（同一性で比べる）。{@code synchronized (pendingChildParents)} で触る。 */
+    private final Set<HtmlNode> pendingChildParents = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    private void requestChildPatch(HtmlNode parent) {
+        boolean overflow;
+        synchronized (pendingChildParents) {
+            pendingChildParents.add(parent);
+            overflow = pendingChildParents.size() > CHILD_PATCH_MAX_PARENTS;
+        }
+        if (overflow) {
+            requestRender();
+            return;
+        }
+        markInvalidation(InvalidationLevel.CHILD_PATCH);
+        invalidated();
+    }
+
+    /** 1 つの親の子の増減の計画（読むだけ。適用は全ての親の計画が通ってから）。 */
+    private record ChildPlan(HtmlNode parent, LayoutBox parentBox, List<LayoutBox> removed, List<HtmlNode> added,
+                             HtmlNode previousNode) {}
+
+    /** 文書のこの子が、要素ツリーの箱になるか（{@link RenderPipeline#buildLayoutTree} の子の走査と同じ条件）。 */
+    private static boolean hasElementBox(HtmlNode child) {
+        return !(child.tag.equals("#text") && child.text.isEmpty());
+    }
+
+    private static boolean isBlankText(HtmlNode n) {
+        return n.nodeType == NodeType.TEXT && n.text != null && n.text.isBlank();
+    }
+
+    private ChildPlan planChildPatch(HtmlNode parent, Map<HtmlNode, LayoutBox> index) {
+        if (parent.nodeType != NodeType.ELEMENT || !parent.isConnected()) return null;
+        LayoutBox pb = index.get(parent);
+        if (pb == null || !BoxTreeBuilder.canPatchChildren(pb)) return null;
+        List<HtmlNode> dom = new ArrayList<>(parent.children.size());
+        for (HtmlNode c : parent.children) if (hasElementBox(c)) dom.add(c);
+        List<LayoutBox> old = pb.elementChildren;
+        for (LayoutBox b : old) if (b.node == null || b.node.isPseudoNode) return null;
+        int n = dom.size(), m = old.size();
+        int prefix = 0;
+        while (prefix < n && prefix < m && old.get(prefix).node == dom.get(prefix)) prefix++;
+        int suffix = 0;
+        while (suffix < n - prefix && suffix < m - prefix && old.get(m - 1 - suffix).node == dom.get(n - 1 - suffix)) suffix++;
+        int removedCount = m - prefix - suffix, addedCount = n - prefix - suffix;
+        if (removedCount + addedCount == 0 || removedCount + addedCount > CHILD_PATCH_MAX_CHANGES) return null;
+        List<LayoutBox> removed = new ArrayList<>(old.subList(prefix, m - suffix));
+        List<HtmlNode> added = new ArrayList<>(dom.subList(prefix, n - suffix));
+        // 移動（同じ節が削除側と追加側の両方にいる）は箱を使い回す必要があるので扱わない
+        for (LayoutBox r : removed) for (HtmlNode a : added) if (r.node == a) return null;
+        for (HtmlNode a : added) {
+            if (a.nodeType == NodeType.ELEMENT) continue;
+            if (!isBlankText(a)) return null; // 文字は匿名ブロック・行の高さに響く: 全体に任せる
+        }
+        for (LayoutBox r : removed) {
+            if (r.node.nodeType != NodeType.ELEMENT && !isBlankText(r.node)) return null;
+        }
+        return new ChildPlan(parent, pb, removed, added, prefix > 0 ? dom.get(prefix - 1) : null);
+    }
+
+    private static void collectDescendants(HtmlNode n, Set<HtmlNode> out) {
+        out.add(n);
+        for (HtmlNode c : n.children) collectDescendants(c, out);
+    }
+
+    private static void unindexBoxes(LayoutBox box, Map<HtmlNode, LayoutBox> index) {
+        if (box.node != null && !box.isAnonymous) index.remove(box.node);
+        for (LayoutBox c : box.children) unindexBoxes(c, index);
+    }
+
+    /**
+     * 子の増減だけを、箱の木を作り直さずに反映する。成功したら true。条件に合わないとき（false）は何も変えないので、
+     * 呼び出し側が全体の再レイアウトに退く。
+     *
+     * <p>条件: 文字・属性・その他の汚れが無い・コンテナクエリとカウンタが無い・親の箱がブロックの並びで（匿名ボックス・疑似要素・
+     * マーカーが挟まらない）、増える子がブロックレベルの要素で、再スタイルが要る節が親と増えた子の部分木だけ
+     * （兄弟の規則に当たる節が無い）。</p>
+     */
+    /** 診断用: 直近の局所パッチを断った理由（成功したら "ok"）。 */
+    public static volatile String lastChildPatchRejection = "";
+
+    private boolean tryChildPatch(List<HtmlNode> attrNodes, boolean repositionRequested) {
+        String why = tryChildPatchReason(attrNodes, repositionRequested);
+        lastChildPatchRejection = why == null ? "ok" : why;
+        return why == null;
+    }
+
+    private String tryChildPatchReason(List<HtmlNode> attrNodes, boolean repositionRequested) {
+        List<HtmlNode> parents;
+        synchronized (pendingChildParents) {
+            parents = new ArrayList<>(pendingChildParents);
+            pendingChildParents.clear();
+        }
+        Document doc = document;
+        if (!childPatchEnabled || parents.isEmpty() || !attrNodes.isEmpty() || repositionRequested || layoutRoot == null
+                || doc == null || doc.root == null || doc.sheet == null) {
+            return "preconditions";
+        }
+        if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return "containers";
+        if (doc.authorCss != null && doc.authorCss.contains("counter")) return "counters";
+
+        Map<HtmlNode, LayoutBox> index = nodeBoxIndex();
+        List<ChildPlan> plans = new ArrayList<>();
+        Set<HtmlNode> allowed = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (HtmlNode p : parents) {
+            ChildPlan plan = planChildPatch(p, index);
+            if (plan == null) return "plan:" + p.getId();
+            plans.add(plan);
+            allowed.add(p);
+            for (HtmlNode a : plan.added()) collectDescendants(a, allowed);
+        }
+        if (!interactionState.styleDirtyOnlyIn(allowed)) return "otherDirty";
+
+        long startedAt = System.nanoTime();
+        // 1. 増える子の箱を単独で組む。差し込めない形ならここで退く（まだ木には触れていない）
+        List<List<LayoutBox>> built = new ArrayList<>();
+        for (ChildPlan plan : plans) {
+            List<LayoutBox> boxes = new ArrayList<>();
+            boolean ok = true;
+            for (HtmlNode a : plan.added()) {
+                LayoutBox box = RenderPipeline.buildDetachedBox(a, plan.parentBox(), doc.sheet, env, rootW, rootH, interactionState);
+                boxes.add(box);
+                if (a.nodeType == NodeType.ELEMENT && !BoxTreeBuilder.canInsertBuiltChild(plan.parentBox(), box)) ok = false;
+            }
+            built.add(boxes);
+            if (!ok) {
+                // 組んだ節の印は全体の組み立てで読み直させる
+                for (List<LayoutBox> bs : built) for (LayoutBox b : bs) interactionState.markDirty(b.node);
+                return "notInsertable";
+            }
+        }
+        // 2. 木へ差し込む
+        CounterStyles counterStyles = CounterStyles.of(doc.sheet.counterStyles);
+        List<LayoutBox> changedParents = new ArrayList<>();
+        for (int i = 0; i < plans.size(); i++) {
+            ChildPlan plan = plans.get(i);
+            LayoutBox pb = plan.parentBox();
+            for (LayoutBox r : plan.removed()) {
+                int at = BoxTreeBuilder.indexOfBox(pb.elementChildren, r);
+                if (at >= 0) pb.elementChildren.remove(at);
+                BoxTreeBuilder.removeBuiltChild(pb, r);
+                unindexBoxes(r, index);
+                index.remove(r.node);
+            }
+            LayoutBox previous = null;
+            if (plan.previousNode() != null) {
+                for (LayoutBox b : pb.elementChildren) if (b.node == plan.previousNode()) { previous = b; break; }
+            }
+            List<LayoutBox> boxes = built.get(i);
+            for (LayoutBox box : boxes) {
+                int at = previous == null ? 0 : BoxTreeBuilder.indexOfBox(pb.elementChildren, previous) + 1;
+                pb.elementChildren.add(at, box);
+                box.parent = pb;
+                if (box.node.nodeType == NodeType.ELEMENT) {
+                    // 直前の箱のうち、組み立て済みの子の並びに入っているもの（空白の文字の箱は入っていない）
+                    LayoutBox after = null;
+                    for (int k = at - 1; k >= 0 && after == null; k--) {
+                        LayoutBox cand = pb.elementChildren.get(k);
+                        if (BoxTreeBuilder.indexOfBox(pb.children, cand) >= 0) after = cand;
+                    }
+                    BoxTreeBuilder.insertBuiltChild(pb, after, box, counterStyles);
+                    index.put(box.node, box);
+                    indexBoxes(box, index, false);
+                }
+                previous = box;
+            }
+            changedParents.add(pb);
+        }
+        for (HtmlNode n : allowed) interactionState.clearStyleDirty(n);
+        applyOverrides();
+        // 3. 変わった親だけを測り直して配置し直す
+        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
+                changedParents, new java.util.HashSet<>(changedParents));
+        publishLayoutToDom();
+        long layoutDone = System.nanoTime();
+        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal;
+        // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
+        exactTranslation = true;
+        List<DisplayItem> elements;
+        try {
+            elements = paintBoxes(layoutRoot, rootW, rootH, false);
+        } finally {
+            useChangeStamps = false;
+            exactTranslation = false;
+        }
+        if (elements == null) elements = new ArrayList<>();
+        long paintDone = System.nanoTime();
+        publishBuilt(elements);
+        lastBreakdown = "child-patch parents=" + plans.size() + " layout=" + ms(startedAt, layoutDone)
+                + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
+        applyOverrides();
+        lastLayoutFinishedNanos = System.nanoTime();
+        lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+        return null;
     }
 
     /** 再スタイルで寸法の入力だけが変わったとき、箱の木を作り直さずに測り直した回数（調べる・テスト用）。 */
@@ -1512,6 +1754,11 @@ public class UiView implements AutoCloseable {
     }
 
     private String lastBreakdown = "";
+
+    /** 診断・テスト用: 直近の更新の段ごとの内訳。 */
+    public String lastBreakdownForTest() {
+        return lastBreakdown;
+    }
 
     /** 直近の全レイアウトの内訳（調べる用）。 */
     public String lastBreakdown() {

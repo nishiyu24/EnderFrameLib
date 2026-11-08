@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -54,14 +55,7 @@ public record LayoutContext(
 
     /** 算出スタイルから測定に必要な指定だけを取り出す。 */
     public FontStyle fontStyleFor(ComputedStyle style) {
-        int weight = LayoutMetrics.numericWeight(style);
-        return new FontStyle(
-                style.fontSizePx(),
-                weight >= 600,
-                style.keywordOf(ID_FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                style.length(ID_LETTER_SPACING, 0, 0, 0),
-                weight,
-                !isNone(style.get(ID_FONT_KERNING)));
+        return style.layoutFacts().fontStyle;
     }
 
     /** 宣言が {@code none}（前後の空白・大小文字は無視）か。宣言が無ければ偽（既定は auto）。 */
@@ -72,14 +66,9 @@ public record LayoutContext(
     /** 整形（折り返し・空白・省略）に必要なスタイルをまとめる。 */
     public TextStyle textStyleFor(ComputedStyle style) {
         FontFace face = faceFor(style);
-        FontStyle font = fontStyleFor(style);
-        CssKeywords.OverflowWrap overflowWrap = style.keywordOf(ID_OVERFLOW_WRAP, CssKeywords.OverflowWrap.class);
-        return new TextStyle(
-                font,
-                WhiteSpace.of(style.get(ID_WHITE_SPACE)),
-                WordBreak.of(style.get(ID_WORD_BREAK)),
-                overflowWrap != CssKeywords.OverflowWrap.NORMAL,
-                style.keywordOf(ID_TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS,
+        StyleFacts facts = style.layoutFacts();
+        FontStyle font = facts.fontStyle;
+        return new TextStyle(font, facts.whiteSpace, facts.wordBreak, facts.overflowWrapBreaks, facts.ellipsis,
                 LayoutMetrics.lineHeightPx(style, face, font));
     }
 }

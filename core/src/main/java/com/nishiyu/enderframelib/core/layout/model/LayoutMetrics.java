@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
+import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.*;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
@@ -75,7 +76,7 @@ public final class LayoutMetrics {
     private static final int ID_LINE_HEIGHT = ComputedStyle.idOf(CssProperty.LINE_HEIGHT);
 
     public static int numericWeight(ComputedStyle style) {
-        return numericWeight(style.get(ID_FONT_WEIGHT));
+        return style.facts().fontWeight;
     }
 
     /**
@@ -106,26 +107,12 @@ public final class LayoutMetrics {
      * 1 行が占める高さ（px）。
      */
     public static float lineHeightPx(ComputedStyle style, FontFace face, FontStyle font) {
-        String raw = style.get(ID_LINE_HEIGHT);
-        if (raw == null) return face.normalLineHeight(font);
-
-        String value = raw.trim();
-        if (value.isEmpty() || value.equalsIgnoreCase("normal")) return face.normalLineHeight(font);
-
-        try {
-            if (value.endsWith("px")) {
-                return Float.parseFloat(value.substring(0, value.length() - 2).trim());
-            }
-            if (value.endsWith("%")) {
-                return Float.parseFloat(value.substring(0, value.length() - 1).trim()) / 100f * font.fontSizePx();
-            }
-            if (value.endsWith("em")) {
-                return Float.parseFloat(value.substring(0, value.length() - 2).trim()) * font.fontSizePx();
-            }
-            return Float.parseFloat(value) * font.fontSizePx();
-        } catch (NumberFormatException e) {
-            return face.normalLineHeight(font);
-        }
+        StyleFacts facts = style.facts();
+        return switch (facts.lineHeightKind) {
+            case ComputedStyle.LH_PX -> facts.lineHeightValue;
+            case ComputedStyle.LH_PERCENT, ComputedStyle.LH_EM, ComputedStyle.LH_NUMBER -> facts.lineHeightValue * font.fontSizePx();
+            default -> face.normalLineHeight(font);
+        };
     }
 
     /**

@@ -81,6 +81,18 @@ public final class FontSources implements FontFaceRules.FontReader {
         return Files.readAllBytes(path);
     }
 
+    /** ローカルのファイルならそのパス（上限以内の通常ファイルだけ）。それ以外（data: / classpath: / http）は null。 */
+    @Override
+    public Path locate(String source) throws IOException {
+        if (source == null || source.isBlank()) return null;
+        String src = source.trim();
+        if (src.startsWith("data:") || src.startsWith("classpath:")) return null;
+        String resolved = resolve(src);
+        if (resolved == null || resolved.startsWith("http://") || resolved.startsWith("https://")) return null;
+        Path path = resolved.startsWith("file:") ? Path.of(URI.create(resolved)) : Path.of(resolved);
+        return Files.isRegularFile(path) && Files.size(path) <= MAX_BYTES ? path : null;
+    }
+
     /** {@code src} を絶対の場所にする。絶対でなければ基準からの相対。 */
     String resolve(String src) {
         if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file:")) return src;

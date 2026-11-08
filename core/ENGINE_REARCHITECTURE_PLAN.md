@@ -494,6 +494,147 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   単一スロット（`measuredSpace` ほか）で、`w` / `h` / `x` / `y` を直接書く。`LayoutResultCache` は部品として用意しただけで未配線。
 - **`SimdLayoutKernel` / `SimdHitTester` / `FenwickVirtualList` の本流への接続**: いまのレイアウトは `LayoutBox` 木を読むため、
   SoA 列（`DocumentArena` のレイアウト入出力スラブ）へ流し込む経路が無い。`HitTestIndex` の置換、リスト行の仮想化もこれに依存。
+- **入出力分離（`LayoutBox` → `LayoutResult`）の調査（2026-11-08・コード変更なし／測定テストのみ追加）**: `RemeasureCostTest`（30 項目の 1 つの文字を変えたとき測り直す箱の数）。
+  **block 3 箱／flex 361 箱／grid 421 箱**。原因は `LayoutBox.measuredSpace` の単一スロット: flex の子は「仮の測定（利用可能幅）→ 確定幅で測り直し（`overrideWidth` つき）」の
+  2 つの制約で測られ、次のレイアウトの最初の仮の測定が前回の確定測定を追い出すため、中身が同じ項目まで毎回 2 回測り直す。
+  `LayoutResultCache`（4 スロット）を `measure` に直結しても直らない: `measure` の産物は 5 個の数値ではなく**部分木全体の可変状態**（子の x/y/w/h・`inlineFragments`・`engineState`・
+  `floatSpace` など）で、別の制約の結果を戻すには部分木の複製か復元が要る。仮の測定を「寸法だけ返す仮想の測定」にして飛ばす案も、間の `flexBaseSize` / `minMainSize` / `hypotheticalMain` が
+  子の寸法以外（最小内容幅のメモ・行の断片）を読むため、読む欄の洗い出し無しには安全でない。
+  次の作業の設計案: ① 仮の測定の産物（`w,h,mT,mR,mB,mL,sizingMode` と最小内容幅のメモ）だけを `LayoutResult` として `TENTATIVE` スロットに持つ ② flex/grid が仮の測定の後に読む欄を洗い出して
+  この集合に収める ③ 仮の測定を飛ばした子は、確定の測り直しを必ず走らせる（飛ばした状態で終えない）。検証は `InvalidationPipelineTest`（乱数変異）と本テストの数値で行う。
+  `RemeasureCostTest` の上限（flex ≤ 450・grid ≤ 520）は退行の番人で、この作業で下げる。
+- **flex の仮の測定の産物の再利用（2026-11-08・達成／行方向のみ）**: 上の設計案の ①〜③ を実装。洗い出し結果 — flex が仮の測定（`measureContent` の `child.measure`）の後・確定の測り直し
+  （`setMainSize` → `remeasure`）の前に子から読む欄は `w, h, mL/mR/mT/mB`（`flexBaseSize`・`mainMargins`）、`pL/pR/bL/bR`（`horizontalDecoration`）、`contentBlockExtent`（列の `min-height:auto`）、
+  `sizingMode`（`setMainSize`）、最小内容幅のメモ（測定のたびに無効化される）と、子の `style`・`getFlowChildren()`（測定で変わらない）。箱モデルの縦（`pT/pB/bT/bB/legendSpill`）・`ownMargin*` も
+  測定が書くので産物に含めた。部分木の状態（孫の位置・行の断片・`engineState`）は読まれない。
+  実装: `LayoutBox.BoxOutputs`（産物）／`Tentative`（上書き寸法なしで測った産物＋入力の署名）。`measureTentatively` は中身が変わっていない（`measurementValid && !layoutChanged && !subtreeChanged`、
+  表を含まない、世代・ビューポート・書体・制約が同じ）ときだけ、産物を前回の値に差し替え、差し替え前の産物を退避する。`measure` の入口で退避を戻すので、確定の測り直しは従来の再利用判定にそのまま乗る。
+  確定の測り直しが来なかった項目は `FlexLayoutEngine.resolveFlexibleLengths` の末尾で `settleTentative`（本当に測る）。エンジンが通らない経路は、親の `measure` の末尾と `layout` の入口で確定させる。
+  中身が変わった箱（`layoutChanged`）の測定では産物を捨てる。`-Denderframe.layout.notentative=true` で無効。
+  **効果**: 30 項目の 1 つの文字を変えたときの測り直し **flex 361 → 13 箱**（`RemeasureCostTest`、上限を 40 に締めた）。
+  検証: `TentativeMeasureReuseTest`（flex の行・折り返し・中央揃え・逆向き・列、flex-grow/shrink・auto マージン・baseline・入れ子を含む文書で、文字・class・style・コンテナ幅・項目の追加削除を
+  12 シード × 60 手ランダムに行い、毎回の表示リストが「仮の測定を毎回本当に測る」場合と完全一致。産物の `pL` を故意に外すと失敗することを確認）。全体（root + core）通過。
+  未対応: `LayoutResultCache` の直接の配線（産物の保持は `LayoutBox` 内の配列で、型は別）。列方向は下の項で対応。
+- **grid への適用（2026-11-08・達成）**: 洗い出し — grid の項目は最大 3 段で測られる。① 寄与の測定（`measure(UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT)`、内容依存の列だけ）→ 後で読むのは
+  `w, mL, mR`（`maxContribution`）と `minContentContribution`（`w`・`mL/mR`・最小内容幅のメモ・`horizontalDecoration`）② 列幅での測定（`measureInArea`、全項目）→ 行の寄与で
+  `h, mT, mB, verticalDecoration, isScrollContainer`、`alignItems` が `h, w, sizingMode` ③ 必要なら stretch / % の高さで上書き寸法つきの測り直し。読む欄は flex の産物（`BoxOutputs`）に収まる。
+  ①は②が全項目で必ず直後に測り直すので、確定の手当ては不要（`measure` の入口で退避を戻す）。②は③が来なければ状態が足りないので、`alignItems` の項目ごとに `settleTentative`
+  （`alignWithin` が auto マージンを書き換える前）。上書きなしの測定が 2 種類（①②）あるため、産物の保持を 1 スロットから**最大 3 制約の配列**に拡張（同じ制約は置換、満杯なら最古を捨てる）。
+  **効果**: 30 項目の 1 つの文字を変えたときの測り直し **grid 421 → 15 箱**（`RemeasureCostTest` の上限を flex・grid とも 40 に締めた）。
+  検証: `TentativeMeasureReuseTest` に grid 4 種（`auto 1fr 80px`・`repeat(auto-fill, minmax)`・`grid-auto-rows` 固定・`minmax` の行＋高さ固定の stretch＋`align-items: center`）を追加
+  （合計 10 コンテナ × 12 シード × 60 手で、仮の測定を毎回本当に測る場合と表示リストが完全一致）。`alignItems` の `settleTentative` を故意に外すと失敗することを確認。全体（root + core）通過。
+- **列方向の flex への適用（2026-11-08・達成）**: 行方向限定のガード（`axes.row &&`）を外しただけ。洗い出し — 列方向は仮の測定（`measureContent`）の後、`contentBlockSize`（`columnLines` →
+  `hypotheticalMain`: `h`・`contentBlockExtent`・`getMinContentWidth`・`mT/mB`）、`BoxMeasurer.resolveHeights`（コンテナ自身の高さ）、`finishLayout` → `layoutLines` → `buildLines`
+  （`flexBaseSize`: `h`）と読み、確定の測り直しは `resolveFlexibleLengths` の `setMainSize`（`|h - target|` が大きいときだけ）。読む欄は行方向と同じ産物に収まり、確定させる位置も
+  既存の `resolveFlexibleLengths` 末尾の `settleTentative`（`computeLineCross`・`stretchItems`・`placeLineItems` が寸法を書き換える前）でそのまま成り立つ。コンテナが高さを測らない経路は、親の `measure` 末尾の確定が受ける。
+  **効果の見え方**: 項目が伸びも縮みもしない列方向は、確定の測り直しが無く仮の測定がそのまま最後の測定になるので、もともと再利用できていた（無効でも 4〜12 箱）。効くのは項目が `flex-grow` などで
+  伸縮して確定の測り直しが起きる列方向で、`flex:1 1 0` の項目・高さ 300px・`align-items:flex-start` で **386 → 29 箱**（高さ 2000px は 209 → 122）。`RemeasureCostTest` に列方向の番人（≤ 60）を追加。
+  検証: `TentativeMeasureReuseTest` の文書に列方向 3 種（高さ auto・折り返し＋中央揃え・`column-reverse`）を加え（13 コンテナ × 12 シード × 60 手）、毎回の表示リストが無効時と完全一致。
+  `resolveFlexibleLengths` 末尾の `settleTentative` を故意に外すと失敗することを確認。全体（root + core）通過。
+- **M3 ゲートの JMH 実測（2026-11-08・1〜2 fork・`-prof gc`）** — 入出力分離の途中経過を、本物のゲートに対して測った結果。**ゲートはどれも未達**で、何が足りないかが分かった。
+
+  | 指標 | 実測 | 基準（計画書） | ゲート |
+  | :--- | :---: | :---: | :---: |
+  | `fullLayout` showcase | 12.97 ms・9.27 MB | 12.48 ms | < 0.30 ms |
+  | `fullLayout` large-list | 5.55 ms・5.04 MB | － | < 0.30 ms |
+  | `relayout`（measure 全部、再利用なし）showcase | 6.39 ms・4.30 MB | － | － |
+  | `relayout` large-list | 2.01 ms・2.22 MB | － | － |
+  | 文字を同じ大きさで差し替え（`IncrementalBench.textSameSize`、500 行） | 0.257 ms・107 KB | － | － |
+  | 行の挿入＋削除（`IncrementalBench.insertAndRemoveRow`、2 回の更新） | 5.75 ms・6.9 MB（1 回 約 2.9 ms・3.5 MB） | 3.2〜4.4 ms | < 0.05 ms |
+
+  - **差分レイアウトの効きと、それが届かない所**: 今回の仮の測定の再利用は、flex/grid の「中身が同じ項目の再測定」（361/421 → 13/15 箱）を消したが、`fullLayout`・`relayout` の時間には出ない
+    （どちらも再利用なしの全測定で、項目の再測定は 1 回ずつしか起きない）。効くのは差分更新の経路（変更が flex/grid の中で起きたとき）。
+  - **`relayout` showcase の標本は薄く広い**（上位でも各 1〜3%）: 算出スタイルの文字列読み（`StringLatin1.toLowerCase`・`overflowAxis`・`FloatingDecimal.readJavaFormatString`・`equalsIgnoreCase`）、
+    `recordMeasurement` の記録、`hasFloatingChild`・`containsInlineSize`・`isRelayoutBoundary` の毎回の再計算。1 箱あたり約 37 µs で、`< 0.30 ms` には**測定の入力を文字列でなく型付きの値（`StyleStructs`）にする**
+    （M2 の未達項目）しか道が無い。個別のホットスポット削りでは桁が違う。
+  - **行の挿入が遅い原因（標本で確認）**: 構造変更（子の追加・削除）には局所更新の経路が無い。文字の差し替えは `tryTextPatch`（箱の木を作り直さず `relayoutInPlace`・変更印つき描画）で 0.26 ms だが、
+    子の増減は `RELAYOUT` → `UiView.recomputeLayout` に落ち、`RenderPipeline.buildLayoutTree` が 1,005 個の箱を全部走査して再利用し（`restyled=3 reused=1005`）、`BoxTreeBuilder`・印付け・配置・
+    表示リスト（`paintBoxes`）が全箱に O(N) で走る。測り直すのは 9 箱だけ（`measure` は差分化済み）で、**残りは測定でなく O(N) の走査・配置・描画**。
+    必要なのは「子の増減の局所パッチ」（新しい節だけ箱を作って親の `children` に差し込み、後続の兄弟の再スタイル（`:nth-child`・`+`・`~`・`:first-child`・`counter`・`ol` の番号）を必要な分だけ行い、
+    `relayoutInPlace` と変更印つき描画に載せる）と、後続の行の座標を書き直さない相対座標＋`FenwickVirtualList` の接続（M3 Step 3-3）。どちらも未着手。
+  - **子の増減の局所パッチ（2026-11-08・達成／ゲートは未達）**: 上の「必要なのは〜」の前半を実装。
+    - **経路**: DOM の子の増減（`appendChild` / `insertBefore` / `removeChild` / `innerHTML` など）は、文字の差し替え（`TEXT_PATCH`）と同じく新しい無効化レベル `CHILD_PATCH` で受ける
+      （親を `pendingChildParents` に集める）。flush で `tryChildPatch` が、親の箱の `elementChildren` と DOM の子の並びを同一性で突き合わせ（先頭・末尾の共通部分を除いた中間が増減）、
+      増えた節の箱を `RenderPipeline.buildDetachedBox`（親の算出スタイルを継承元に単独で組む）で作り、`BoxTreeBuilder.insertBuiltChild` / `removeBuiltChild` で組み立て済みの
+      `children` に差し込む。測り直しは `relayoutInPlace` に親の箱だけを「浅い変更」（`markLayoutChangesAlong` の `shallow`: 子の箱自体は前回のままなので部分木を全体版で印付けしない）として渡す。
+      節→箱の索引は増減ぶんだけ更新。再スタイルが要る節が親と増えた子の部分木だけであること（`styleDirtyOnlyIn`）で、兄弟の規則（`:nth-child`・`+`・`~`・`:first-child` など）が
+      当たる文書は自動的に退く（`InvalidationSets.forStructureChange` が兄弟を汚す）。
+    - **退く条件**（`lastChildPatchRejection` に理由）: コンテナクエリ・カウンタ（`counter` を含む CSS）・文字の子の増減（空白だけは可）・移動（削除と追加に同じ節）・一度に 16 個超・親が 4 個超・
+      親がブロックの並びでない（`ol`・`display:list-item`・表・段組・flex/grid・`fieldset` など、匿名ボックス・疑似要素・マーカーが挟まる）・増える子がブロックレベルの要素でない
+      （`display:none`/`contents`/インライン/表の内部/番号つきマーカー）・同じフレームの属性・再スタイル（`RESTYLE` は箱を増減しないので全体の再レイアウトへ格上げ）。
+    - **気づいた不具合（修正済み）**: `CHILD_PATCH` を `RESTYLE` より下に置くと、同じフレームの class 切り替えで `RESTYLE` が勝ち、子の追加が反映されなかった（等価性テストが検出）。重なったら `RELAYOUT` へ格上げする。
+    - **描画側**: 後続の行がずれる分は、既存の箱ごとの記憶（`BoxMemo`）の平行移動で使い回す。スクロール用（丸めて最大 1 画素ずれる）とは別に、**整数ぶん動いた箱に限る厳密な平行移動**
+      （`DisplayListBuilder.setExactTranslation`）を追加。スクロール量（中身の大きさ）を持つ項目（スクロールコンテナ自身）は対象外（中身が変わると古い値が残るため、等価性テストが検出した）。
+    - **検証**: `ChildPatchTest` — 11 種の親（通常・スクロール・`ul`/`ol`・兄弟の規則つき・文字混在・入れ子・flex）に、追加・途中挿入・削除・置換・連続追加・class 切り替えとの重なりをランダムに行い
+      （空白の文字が子の間にある文書とない文書、各 10 シード × 50 手）、毎回の表示リストがパッチを切った全体の再レイアウトと完全一致。兄弟の規則つき文書では全部退いて一致。
+      整数の行の高さの文書で、後続の行の項目が平行移動で使い回される（> 200 項目）ことと完全一致。差し込み位置を故意にずらすと失敗することを確認。全体（root + core）通過。
+    - **実測（`IncrementalBench.insertAndRemoveRow`、500 行、挿入＋削除の 2 回の更新）**: 行の高さが小数（line-height 由来）**5.75 → 4.54 ms**・6.9 → 5.7 MB、整数 **3.15 ms**・3.6 MB。
+      内訳（`lastBreakdownForTest`）: 配置 0.25 ms（挿入）／0.95 ms（削除）に対し**表示リスト 3.4〜3.9 ms**。配置・箱の木の部分は全体の組み直し（約 3 ms）から大きく減ったが、ゲート（< 0.05 ms）には遠い。
+    - **残る支配要因＝描画**: 挿入で後続の約 250 行が下へずれ、その行ごとに記憶の照合（`match`）と項目の複製（`translated`）が走る。小数の動きは厳密には平行移動できない（項目の座標は丸めた整数で、
+      丸める前の小数が項目に残っていない）ので描き直しになる。**ゲートに届くには、座標を親からの相対にして後続の行を書き直さない（M3 Step 3-3 の相対座標＋`FenwickVirtualList` の接続）、
+      または表示リストが親ごとの平行移動を持つ形（`OffsetItemList` を静的な構造にも広げる）が要る**。どちらも未着手。
+  - **相対座標と `FenwickVirtualList` の接続の調査（2026-11-08・コードの大改造は見送り／小さな削減のみ）**: 着手前に実測と読解で前提を確かめた。
+    - **配置側はすでに親相対**: ブロックの流れ（`BlockLayoutEngine.arrangeFlow`）は、測定時に作った `FlowState` の親相対のずれ（`Placement.x()/y()`・`InlineLine.left()/top()`）を使い、
+      子を `innerY + p.y()` で置く。ずれた行の再配置は、原点が変わった子の `layout` を呼び直すだけで、1 行あたり約 1.6 µs（挿入 1 回の配置は 250 行ずれて **0.35〜0.45 ms**）。
+      「箱の座標を相対にする」改造で縮められる配置の費用は、もう小さい（`layout` の中身は `parentX + 相対` の式で、ビット単位で全体の組み直しと同じ値になる）。
+      親の原点だけが変わった部分木を剛体として足し算で動かす案（`applyRelativeOffset` 型）は、`(a + 相対) + d` と `a + d + 相対` が浮動小数の丸めで 1 ulp ずれうるため、
+      「毎回組み直した場合と完全一致」を保てない（整数の高さの行以外では丸めの境目で食い違いうる）ので採らない。
+    - **支配要因は表示リスト**（ウォーム時の `lastBreakdownForTest`、挿入 1 回）: 整数の行 配置 0.40 ms／**描画 1.2〜1.4 ms**、小数の行 配置 0.35 ms／**描画 1.8 ms**。表示リストの項目は
+      丸めた整数の絶対座標で、ずれた約 250 行ぶんの項目を行ごとに照合（`match`）して複製（`translated`）している。座標が整数に丸められた後は、小数のずれを厳密には平行移動できない
+      （丸める前の小数が項目に残らない）。これを根本的に変えるには、項目が親相対の小数座標＋変換を持ち、描画側（`SoftwareRenderBackend`・GL・ヒットテスト）が最後に解く形にする必要がある
+      （M4/M5 の GPU 駆動の方向。`DisplayItem` の座標型と全描画経路が変わる）。
+    - **`FenwickVirtualList` の取り付け先は、いまは無い**: 通常の流れの子は、マージン相殺・float・行の高さに依って連続して置かれ、行の高さの累積和だけで位置が決まる形ではない。
+      累積和木が効くのは「行の箱を作らない仮想化」（画面外の行は高さの見積りだけを木に持ち、箱も項目も作らない。`contain-intrinsic-size` / `content-visibility: auto` 型）の中。
+      その形にして初めて「リスト 1 行挿入」は 画面内の十数行の再レイアウト ＋ 木の更新（O(log N)）で済む（< 0.05 ms を狙える唯一の道）が、画面外の行が箱を持たないので DOM の問い合わせ・
+      CSSOM・ヒットテスト・`WebFidelityTest` の挙動に及ぶ機能の追加で、増減の局所パッチとは別の設計になる。
+    - **実施した小さな削減**: 箱ごとの描画の記憶（`BoxMemo`）が属性の写し（`HashMap`）を作って `equals` していたのを、`HtmlNode.attrVersion()` の版番号の比較に置換（写しの割り当てと比較を無くした）。
+      `IncrementalBench`（500 行）: 挿入＋削除 小数 4.54 → **3.67 ms**、整数 3.15 → **2.60 ms**、文字の差し替え 0.24 → **0.20 ms**。全体（root + core）通過。
+  - **型付きの入力への切り替え（第 1 段・2026-11-08）**: `ComputedStyle` の `String[]` そのものを置き換える全面の破壊的変更の前に、**実測で上限を見積もり**、レイアウトが箱ごと・測定ごとに
+    繰り返し読む値を「算出スタイルごとに一度だけ作る型付きの事実」にした。
+    - **見積り**: `relayout` showcase の実働のうち、文字列の算出スタイルを読み直すコスト（`ComputedStyle`・`String`・`FloatingDecimal`・`Matcher`）は約 4 分の 1。全部を型付きにしても
+      6.0 ms → 3.8 ms 前後が上限で、**ゲート（`fullLayout` < 0.30 ms）は型付き化だけでは届かない**（残りは文字の測定・折り返し・箱の木の走査・記録）。
+    - **実装**: `StyleFacts`（`css` 内の独立クラス。入れ子型にすると `ArchitectureTest` M7 が落ちる）を `ComputedStyle.facts()` で最初の参照で作る（算出スタイルは不変）。内容: `overflowX/Y`・
+      スクロールコンテナ・`font-weight` の数値・`line-height` の種類と数値（`LH_*`）・`contain`/`container-type` による横/縦の size containment・`float`・`display:none`・
+      `width`/`height` が確定した長さか・箱の縁 14 個（margin/padding/border-width 各 4 辺・row/column-gap）のコンパイル済みの長さ（`edgeLength`）。
+      置換した読み手: `ComputedStyle.overflowX/Y`（毎回の分割・正規化を廃止）、`LayoutMetrics.numericWeight(style)`・`lineHeightPx`（`parseFloat` を廃止）、`LayoutBox.isScrollContainer`・
+      `containsInlineSize/BlockSize`・`isRelayoutBoundary`・`hasFloatingChild`・`getFlowChildren`、レイアウト全体の `display:none`/`float` の判定（13 か所）、`BoxMeasurer.resolveBoxEdges`
+      （箱ごとに 14 回の記憶表の線形走査を廃止）、`CssKeywords.Keyword.cssName()`（毎回の `toLowerCase` を列挙型ごとの表に）。
+    - **検証**: `StyleFactsTest` — 乱数 4,000 件の宣言の組み合わせ（overflow のショートハンド・不正値・`paint` containment、line-height の 12 種、font-weight、width/height の内在サイズ・%・calc、
+      contain・container-type、float、display、縁の長さ）で、元の「宣言を直接引く」経路と全項目が一致（ビット単位）。`cssName` は元の式と一致。式を故意に壊すと失敗することを確認。
+      全体（root + core）通過（`ArchitectureTest` の M7 は `StyleFacts` の独立で解消）。
+    - **実測**（JMH・2 fork）: `relayout` showcase **6.39 → 4.35 ms（−32%）**・4.30 → 3.41 MB、large-list 2.01 → 1.93 ms。`fullLayout` showcase 12.97 → 約 10.4〜11.1 ms（揺れあり）、
+      large-list 5.55 → 5.19 ms。
+    - **第 2 段（2026-11-08・達成）**: 再プロファイル（`relayout` showcase の呼び出し元別）で上位だった、測定・整形が箱ごとに読む宣言を `StyleFacts` に追加した。
+      追加した内容: `width`/`height` の宣言（トリム済み文字列・`auto`・%・宣言の有無）と内在サイズのキーワード、`margin-left/right` の `auto`、flex が読む四辺の `auto`（大小文字・空白を無視）、
+      `direction: rtl`、独立した整形コンテキストをスタイルだけで作るか（float・layout/paint containment・スクロール）、`white-space`/`word-break`/`overflow-wrap`/`text-overflow`、
+      文字の測定に使う `FontStyle`（不変の値を共有）。置換した読み手: `BoxMeasurer.measure`/`resolveHeights`/`establishesBfc`、`BlockLayoutEngine.FlowBuilder`（`direction`）、
+      `LayoutContext.fontStyleFor`/`textStyleFor`（毎回のパースと `FontStyle` の確保を廃止）、`FlexLayoutEngine.isAuto`（余白の四辺は定数の `==` で事実へ）。
+      加えて `LayoutBox.recordMeasurement` の確保を削減（子の並びの配列は同じなら作り直さない）、`contentHash` の属性ハッシュを `attrVersion` で使い回し。
+      検証: `StyleFactsTest` を拡張（上記の全項目を乱数 4,000 件で元の書き方と照合。`FontStyle` は値の等価）。全体（root + core）通過。
+    - **実測**（JMH・2 fork）: `relayout` showcase **4.35 → 2.78 ms**（第 1 段前 6.39 ms から −57%）・3.41 → 3.29 MB、large-list 1.93 → 1.64 ms。`fullLayout` showcase **約 11.1 → 9.0 ms**
+      （基準 12.97 から −31%）・large-list 5.19 → 4.47 ms。M3 ゲート（`fullLayout` < 0.30 ms）にはまだ約 30 倍遠い。`relayout` は箱の木の再利用なしの全測定で、残りは文字の測定・折り返し
+      （`LineBuilder.addText`・`TextShaper.segments`・`LineBreaker.classify`）、`invalidateAncestors`、`flattenInlines` の確保。
+    - **第 3 段: 文字の測定・折り返し（2026-11-08・達成）**: 再プロファイル（呼び出し元の鎖）で、文字まわりの上位は ①`TextShaper.segments`（`LineBreaker.classify` を毎回、`addText` と
+      `computeMinContentWidth` の両方から）②断片ごとの `face.advance` 2 回と `stripTrailing`、③境目の詰め `kerningBetween` の `StringBuilder` 2 つ、④min-content の語ごとの `strip`+`advance`。
+      これらはすべて「文字列・書体・折り返しの規則」だけで決まり、幅にも依らないので、すでにあった段落の下ごしらえ（`Segmented`）を共有して使う形にした。
+      - `Segmented` を独立クラス `ParagraphSegments` に（公開しても `ArchitectureTest` M7 に触れない）。`strippedTrailingW`（`stripTrailing` の幅 = インライン整形が行末の空白を数えない幅）と
+        `strippedW`（`strip` の幅 = min-content の語の幅）を追加。
+      - `BlockLayoutEngine.addText`: 断片・幅・境目の詰めを `TextShaper.segmented(...)` から読む（直前が断片の並びの隣なら下ごしらえの `joinW`、空の断片を挟んだときだけ測る）。
+        `LayoutBox.computeMinContentWidth`: 語の幅の最大値を `strippedW` から。
+      - ほか: 箱の事実に `box-sizing`・flex の `align-items`/`align-self` の語を追加（`isBorderBox`・`alignItemsOf`・`alignSelfOf`）、`markContent` の反復子を添字ループに。
+      - **番人への影響と対処**: `StyleFacts` を重くした結果、`ComputedStyleFootprintTest`（算出スタイル 1 つあたりの確保 < 4,500 B）が 5,240 B で落ちた。原因は `overflowX()` の最初の参照が
+        余白 14 個のコンパイルと十数回の `keywordOf`（記憶表を新しい鍵のたびに作り直す）を一度に走らせたこと。**基本の事実（overflow・float・containment など）と、測定・整形用の値
+        （`layoutFacts()`）を分け**、後者と縁の長さは最初に使うときまで作らない・キーワードは記憶表に載せない `keywordFresh` で解く、に変更 → 3,664 B。
+      - **検証**: `ParagraphSegmentsTest`（和文・空白・タブ・全角空白・ハイフン・字詰めのある文字の乱数 1,500 件で、`fullW`/`strippedTrailingW`/`strippedW`/`joinW` が以前に断片ごとに測っていた値とビット単位で
+        一致。同じ段落は同じインスタンス）、`StyleFactsTest`（`borderBox`・揃えの語を追加）。全体（root + core）通過。
+      - **実測**（JMH・2 fork、第 1 段前 → 今回）: `relayout` showcase 6.39 → **2.41 ms**（−62%）・large-list 2.01 → **0.96 ms**（−52%）・割り当て 2.24 → 1.33 MB。
+        `fullLayout` showcase 12.97 → **8.76 ms**（−32%）・large-list 5.55 → **4.55 ms**（−18%）。
+    - **未達（第 4 段以降）**: `ComputedStyle` 本体の `String[] values` は残っている（`Facts` は派生の読み取りビュー）。次に削れるのは、`BoxMeasurer.resolveWidth/resolveHeights` の `width`/`height`/`min-*`/`max-*`
+      の文字列判定（`trim`・`equals("auto")`・`contains("%")`）、`FlexLayoutEngine` の揃えの語（`alignItemsOf`・`alignSelfOf` が文字列を返し `equals` で比べる）、`LayoutBox.recordMeasurement`
+      の記録（`measuredChildren` の配列・`contentHash` の属性走査）、`TextShaper`/`LineBuilder` の文字列の組み立て。いずれも薄く広く、1 つあたり 1〜3%。
+  - **割り当ての小さな削減**: 産物の記録（`Tentative`・`BoxOutputs`）を、親が flex/grid の箱だけに限定（block の子は使わないため）。`fullLayout` showcase 9.39 → 9.27 MB、large-list 5.24 → 5.04 MB、
+    `relayout` showcase 4.40 → 4.30 MB（時間は誤差の範囲）。
+  - 追加: `core/src/jmh/.../IncrementalBench.java`（`./gradlew :core:jmh -Pjmh.args="IncrementalBench -f 1 -wi 3 -i 5 -prof gc"`）。ゲート「リスト 1 行挿入」の測定窓口。
 - **JMH 実測（2026-11-08・showcase・1 fork・3 warmup / 4 iteration・`-prof gc`）**: `displayList` は **0.71 ms/op・1.23 MB/op**（基準 5.33 MB/op から約 1/4。ゲート 0 B/op には `DisplayItem` を作らない入口が要る）。
   `scrollStep`（5.5 ms/op・5.4 MB/op）は**古い全再構築の経路**を測っており、実際のクライアントのスクロール（節の移動）の代表ではない。
 
@@ -662,6 +803,14 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 **検証**: `WidthIndependentShapingTest`（幅を 80 通り変えても下ごしらえは 1 回／乱数 40 文 × 全幅で、行をつなぐと元の文・複数語の行は幅に収まる・同じ幅の 2 回目は同一結果）、
 既存の `TextShaperTest`・`WebFidelityTest` ほか。全体通過。
+
+- **`@font-face` のローカルファイルをパスのまま登録（2026-11-08・達成）**: `FontReader.locate(source)`（既定 null）を追加し、`FontSources` はローカルの通常ファイル（上限以内）のパスを返す。
+  `FontFaceRules.registerOutline` はまず `locate` を試し、あれば `WebFonts.registerFile` で `SystemFonts.Face(path, …)` として登録（FreeType の `FT_New_Face` が OS のメモリマップで読むので、
+  `byte[]` の読み込みも `memAlloc` への写しも作らない。上限 20 MB の書体 1 つ分のヒープ＋native が不要）。開けない・拡大縮小できない書体は登録せず、バイト列の経路へ戻る。
+  data: / classpath: / http(s) は従来どおりバイト列。設計書の「`FileChannel.map` + `MemorySegment`」ではなく FreeType 自身のマップに任せた（JVM フラグ不要・追加の依存なし）。
+  検証: `FontSourcesTest.localFileIsRegisteredByPathWithoutCopyingBytes`（パス登録で `data()==null`、同じバイト列から作った登録と寸法が完全一致）・`unreadableFileIsNotRegisteredByPath`、
+  既存の `FontLifecycleTest` / `StandaloneFontFaceTest`。全体（root + core）通過。
+  未対応: OS の書体（`SystemFonts`）は元からパス経由。HarfBuzz 側へ同じマップを渡す経路（HarfBuzz 自体が未導入）。
 
 **未達（次の作業）**
 - ゲート「`ShapeKey` の `availableWidth` = 0」は未達（上記の理由で幅つきの記憶を残している）。行の分割を二分探索（`prefixAdvances`）にするのは見送り: 断片ごとの数値がすでに割り当て・測定なしの加算になっており、累積和の差は浮動小数の丸めが逐次加算と変わって折り返しの境界（許容 1/64px）の結果を動かしうるため。やるなら、

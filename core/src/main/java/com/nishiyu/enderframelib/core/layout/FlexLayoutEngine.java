@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
@@ -55,7 +56,10 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (LayoutBox child : box.getFlowChildren()) {
             String childAlign = alignSelfOf(child, alignItems);
             FormattingContext childCtx = new FormattingContext(axes.direction, childAlign, box.sizingMode == SizingMode.SHRINK_TO_FIT);
-            child.measure(new ConstraintSpace(tentativeInnerW, parentH, childCtx), ctx);
+            ConstraintSpace itemSpace = new ConstraintSpace(tentativeInnerW, parentH, childCtx);
+            // 確定の測り直し（行方向は contentBlockSize、列方向は finishLayout）は、来なかった項目を settle で本当に測る。
+            // 中身が変わっていない項目は、仮の測定を前回の産物で済ませる
+            if (!child.measureTentatively(itemSpace, ctx)) child.measure(itemSpace, ctx);
 
             float outerW = axes.row
                     ? hypotheticalMain(child, true, tentativeInnerW, ctx) + mainMargins(child, true)
@@ -318,6 +322,8 @@ public class FlexLayoutEngine extends LayoutEngine {
         }
 
         for (FlexItem item : items) setMainSize(item.box, axes, item.target, space, ctx);
+        // 確定の測り直しが来なかった項目の、仮の産物のままの状態をここで終わらせる（以降は寸法を書き換える）
+        for (FlexItem item : items) item.box.settleTentative();
     }
 
     /** 凍結したアイテムは決まった寸法、それ以外は flex base size で数えた外側の寸法の和。 */
@@ -582,6 +588,11 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isAuto(ComputedStyle style, String prop) {
+        // 余白の四辺は事実から引く（定数の文字列は同一のインスタンスなので == で当たる）。それ以外の宣言は従来どおり読む
+        if (prop == CssProperty.MARGIN_TOP) return style.layoutFacts().autoMarginT;
+        if (prop == CssProperty.MARGIN_RIGHT) return style.layoutFacts().autoMarginR;
+        if (prop == CssProperty.MARGIN_BOTTOM) return style.layoutFacts().autoMarginB;
+        if (prop == CssProperty.MARGIN_LEFT) return style.layoutFacts().autoMarginL;
         return "auto".equalsIgnoreCase(style.getOrDefault(prop, "0").trim());
     }
 
@@ -611,12 +622,12 @@ public class FlexLayoutEngine extends LayoutEngine {
 
     /** {@code align-items} の {@code normal} は flex では stretch。 */
     private static String alignItemsOf(ComputedStyle style) {
-        return alignmentWord(style.keywordOf(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class));
+        return style.layoutFacts().alignItemsWord;
     }
 
     static String alignSelfOf(LayoutBox child, String alignItems) {
-        CssKeywords.Alignment v = child.style.keywordOf(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
-        return v == CssKeywords.Alignment.AUTO ? alignItems : alignmentWord(v);
+        StyleFacts facts = child.style.layoutFacts();
+        return facts.alignSelfAuto ? alignItems : facts.alignSelfWord;
     }
 
     /**

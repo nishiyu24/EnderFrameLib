@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.text.font;
 
 import com.nishiyu.enderframelib.core.net.HttpPolicy;
 import com.nishiyu.enderframelib.core.net.SafeHttpClient;
+import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -52,6 +53,37 @@ class FontSourcesTest {
         FontFaceRules.extractAndRegister("@font-face{font-family:'Local One';src:url(fonts/a.ttf)}", null);
         assertTrue(WebFonts.has("local one"));
         assertNull(src.read("fonts/missing.ttf"));
+    }
+
+    @Test
+    void localFileIsRegisteredByPathWithoutCopyingBytes(@TempDir Path dir) throws Exception {
+        Files.write(dir.resolve("a.ttf"), ttf);
+        FontSources src = new FontSources(null).setBase(dir.toString());
+        assertEquals(dir.resolve("a.ttf"), src.locate("a.ttf"));
+        assertNull(src.locate("missing.ttf"));
+        assertNull(src.locate("data:font/ttf;base64,AAAA"));
+        assertNull(src.locate("http://example.test/a.ttf"));
+
+        FontFaceRules.setFontReader(src);
+        FontFaceRules.extractAndRegister("@font-face{font-family:ByPath;src:url(a.ttf)}", null);
+        SystemFonts.Face face = WebFonts.family("bypath").get(0);
+        assertNotNull(face.path(), "パスで登録される");
+        assertNull(face.data(), "バイト列の写しは持たない");
+
+        // 同じバイト列から作った登録と、寸法が完全に一致する
+        assertTrue(WebFonts.register("ByBytes", ttf, 400, false));
+        SystemFonts system = SystemFonts.system();
+        FontStyle style = new FontStyle(16f, false, false, 0f, 400, true);
+        String text = "Hamburgefonstiv 0123 Wi";
+        assertEquals(system.resolve("'ByBytes'").advance(text, style), system.resolve("'ByPath'").advance(text, style), 0f);
+    }
+
+    @Test
+    void unreadableFileIsNotRegisteredByPath(@TempDir Path dir) throws Exception {
+        Files.write(dir.resolve("bad.ttf"), new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+        assertFalse(WebFonts.registerFile("Bad", dir.resolve("bad.ttf"), 400, false));
+        assertFalse(WebFonts.has("bad"));
+        assertFalse(WebFonts.registerFile("Gone", dir.resolve("none.ttf"), 400, false));
     }
 
     @Test

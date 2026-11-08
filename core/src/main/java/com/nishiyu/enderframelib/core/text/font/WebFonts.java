@@ -7,6 +7,7 @@ import org.lwjgl.util.freetype.FT_Face;
 import org.lwjgl.util.freetype.FreeType;
 
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +47,28 @@ public final class WebFonts {
                 Math.clamp(weight, 1, 1000), italic, 5, new SystemFonts.MemoryFont(data));
         List<SystemFonts.Face> faces = BY_FAMILY.computeIfAbsent(name, k -> new CopyOnWriteArrayList<>());
         // 同じ太さ・斜体の再登録は置き換える（ホットリロードで同じ @font-face が何度も来る）
+        faces.removeIf(f -> f.weight() == face.weight() && f.italic() == face.italic());
+        faces.add(face);
+        version++;
+        return true;
+    }
+
+    /**
+     * 書体ファイルをパスのまま登録する（{@link #register(String, byte[], int, boolean)} のメモリ写しを作らない版）。
+     * FreeType がファイルを OS のメモリマップで読むので、ヒープにも malloc にもバイト列の写しが残らない。
+     * 開けない・拡大縮小できない書体は登録せず false。
+     */
+    public static boolean registerFile(String family, Path file, int weight, boolean italic) {
+        if (family == null || family.isBlank() || file == null) return false;
+        FT_Face probe = LoadedFace.openFace(file.toAbsolutePath(), 0);
+        if (probe == null) return false;
+        boolean scalable = (probe.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0;
+        LoadedFace.closeFace(probe);
+        if (!scalable) return false;
+        String name = family.trim().toLowerCase(Locale.ROOT);
+        SystemFonts.Face face = new SystemFonts.Face(file.toAbsolutePath(), 0, Set.of(name), family.trim() + " (web)",
+                Math.clamp(weight, 1, 1000), italic, 5);
+        List<SystemFonts.Face> faces = BY_FAMILY.computeIfAbsent(name, k -> new CopyOnWriteArrayList<>());
         faces.removeIf(f -> f.weight() == face.weight() && f.italic() == face.italic());
         faces.add(face);
         version++;
