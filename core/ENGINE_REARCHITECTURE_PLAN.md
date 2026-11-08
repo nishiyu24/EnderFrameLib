@@ -438,6 +438,10 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   検証: `StyleShareAcrossPassesTest`（class を 3 周往復し、毎手の表示リストが使い回し無しと一致・戻りで 20 回超の使い回し）、既存の `StyleShareTest`・乱数変異の `InvalidationPipelineTest`。全体通過。
   注: 結果の `raw` 表は共有・不変として扱う（アニメーション値を重ねるときは複製する既存の経路）。
 
+- **`HtmlNode.hasClass` の割り当て除去（2026-11-08・達成）**: セレクタの class 照合のたびに `getClasses()`（正規表現の分割＋`ArrayList` の複製）を作っていたので、
+  `class` 属性を走査して語を 1 つずつ比べる方式に（配列・正規表現なし）。検証: `HasClassTest`（乱数 3,000 文字列 × 10 語で、従来の定義＝空白で分けた語に含まれるか、と一致）。
+  全要素の再スタイル 約 5.2 ms・3.99 MB/回（変化は揺れの範囲だが、確保は 4.05 → 3.99 MB）。
+
 **未達（次の作業）**
 - `ComputedStyle` 本体は `String[] values` のまま（`StyleStructs` は派生ビュー）。`BoxMeasurer` 等が文字列経路を読むため、置き換えは
   Milestone 3 の入力切替（`ConstraintSpace` / `LayoutResult`）と同時でないと破壊的になる。
