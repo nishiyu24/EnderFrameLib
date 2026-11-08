@@ -179,8 +179,6 @@ public class InteractionState implements StateLookup {
         public boolean viewportDependent = true;
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
-        /** スタイル再計算が必要かどうかのフラグ。 */
-        public boolean isStyleDirty = true;
         /** 列挙用の表に載せたときの番号（番号の世代が変われば載せ直す）。 */
         DocumentArena slotArena;
         int slotId = -1;
@@ -223,34 +221,54 @@ public class InteractionState implements StateLookup {
         /** 持ち主。汚れた節の個数（{@link InteractionState#dirtyCount}）を O(1) で保つ。持ち主の無い使い捨てなら null。 */
         private InteractionState owner;
 
-        /** {@link #isStyleDirty} を立てる。書き込みは必ずここを通す（個数の帳簿が合わなくなる）。 */
-        public void markStyleDirty() {
-            if (!isStyleDirty) {
-                isStyleDirty = true;
-                if (owner != null) owner.dirtyCount++;
-            }
-        }
-
-        /** {@link #isStyleDirty} を下ろす。 */
-        public void clearStyleDirtyFlag() {
-            if (isStyleDirty) {
-                isStyleDirty = false;
-                if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
-            }
-        }
+        /** 自身の再スタイルが必要。 */
+        public static final int DIRTY_STYLE = 1;
         /**
          * この要素の子孫も、継承元が変わったかどうかによらず再スタイルが要るか
          * （{@code .a:hover .b} のように、祖先の状態・class・属性を読む規則がある）。
          */
-        public boolean subtreeDirty = true;
+        public static final int DIRTY_SUBTREE = 2;
         /**
-         * 子孫のどこかが再スタイルの対象（{@link #isStyleDirty} / {@link #subtreeDirty}）になっている。汚す側が祖先へ印を付け、
+         * 子孫のどこかが再スタイルの対象（{@link #DIRTY_STYLE} / {@link #DIRTY_SUBTREE}）になっている。汚す側が祖先へ印を付け、
          * 再スタイルの走査はこれが無く自分も汚れていない部分木を丸ごと飛ばす（ブラウザの dirty-bit と同じ）。
-         * 作りたては安全側に true。
          */
-        public boolean dirtyBelow = true;
+        public static final int DIRTY_BELOW = 4;
         /** 影響範囲を絞らずに汚した（{@link InteractionState#markDirty}）。祖先も汚し直す必要がある。 */
-        public boolean unscoped = true;
+        public static final int DIRTY_UNSCOPED = 8;
+
+        /** 汚れ印（{@code DIRTY_*} のビット）の唯一の記憶。作りたては安全側にすべて立つ。 */
+        private int dirty = DIRTY_STYLE | DIRTY_SUBTREE | DIRTY_BELOW | DIRTY_UNSCOPED;
+
+        /** 汚れ印の生のビット（検査・テスト用）。 */
+        public int dirtyBits() { return dirty; }
+
+        public boolean isStyleDirty() { return (dirty & DIRTY_STYLE) != 0; }
+        public boolean subtreeDirty() { return (dirty & DIRTY_SUBTREE) != 0; }
+        public boolean dirtyBelow() { return (dirty & DIRTY_BELOW) != 0; }
+        public boolean unscoped() { return (dirty & DIRTY_UNSCOPED) != 0; }
+
+        public void markSubtreeDirty() { dirty |= DIRTY_SUBTREE; }
+        public void clearSubtreeDirty() { dirty &= ~DIRTY_SUBTREE; }
+        public void markDirtyBelow() { dirty |= DIRTY_BELOW; }
+        public void clearDirtyBelow() { dirty &= ~DIRTY_BELOW; }
+        void markUnscoped() { dirty |= DIRTY_UNSCOPED; }
+        public void clearUnscoped() { dirty &= ~DIRTY_UNSCOPED; }
+
+        /** {@link #DIRTY_STYLE} を立てる。書き込みは必ずここを通す（個数の帳簿が合わなくなる）。 */
+        public void markStyleDirty() {
+            if ((dirty & DIRTY_STYLE) == 0) {
+                dirty |= DIRTY_STYLE;
+                if (owner != null) owner.dirtyCount++;
+            }
+        }
+
+        /** {@link #DIRTY_STYLE} を下ろす。 */
+        public void clearStyleDirtyFlag() {
+            if ((dirty & DIRTY_STYLE) != 0) {
+                dirty &= ~DIRTY_STYLE;
+                if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
+            }
+        }
         /** style 属性が {@code inherit} を含む。親の非継承プロパティの変化が子へ届く。 */
         public boolean inheritsExplicitly;
         /** 問い合わせコンテナとして測った内容ボックスの寸法（px）。測っていなければ NaN。 */
@@ -480,9 +498,9 @@ public class InteractionState implements StateLookup {
         if (node == null) return;
         StateFlags flags = getOrCreate(node);
         flags.markStyleDirty();
-        flags.subtreeDirty = true;
-        if (!flags.unscoped) {
-            flags.unscoped = true;
+        flags.markSubtreeDirty();
+        if (!flags.unscoped()) {
+            flags.markUnscoped();
             unscopedLog.add(node);
         }
         markAncestorsDirtyBelow(node);
@@ -494,7 +512,7 @@ public class InteractionState implements StateLookup {
      * （IncrementalLayoutFuzzTest で、印済みの節の祖先が未印の状態が見つかった）。
      */
     private void markAncestorsDirtyBelow(HtmlNode node) {
-        for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) getOrCreate(cur).dirtyBelow = true;
+        for (HtmlNode cur = node.parent; cur != null; cur = cur.parent) getOrCreate(cur).markDirtyBelow();
     }
 
     /** 対話状態（{@code :hover} など）のビットが変わった要素の影響範囲を汚す。 */
@@ -615,7 +633,7 @@ public class InteractionState implements StateLookup {
     private void dirty(HtmlNode node, boolean subtree) {
         StateFlags flags = getOrCreate(node);
         flags.markStyleDirty();
-        if (subtree) flags.subtreeDirty = true;
+        if (subtree) flags.markSubtreeDirty();
         markAncestorsDirtyBelow(node);
     }
 
@@ -631,8 +649,8 @@ public class InteractionState implements StateLookup {
     public void markAllDirty() {
         forEachFlags((node, flags) -> {
             flags.markStyleDirty();
-            flags.subtreeDirty = true;
-            flags.dirtyBelow = true;
+            flags.markSubtreeDirty();
+            flags.markDirtyBelow();
         });
     }
 
@@ -646,9 +664,9 @@ public class InteractionState implements StateLookup {
         for (HtmlNode node : unscopedLog) {
             StateFlags flags = get(node);
             // 影響範囲を絞って汚した要素の祖先は、無効化セットが既に汚している
-            if (flags != null && flags.isStyleDirty && flags.unscoped) {
+            if (flags != null && flags.isStyleDirty() && flags.unscoped()) {
                 dirty.add(node);
-                flags.unscoped = false;
+                flags.clearUnscoped();
             }
         }
         unscopedLog.clear();
@@ -657,7 +675,7 @@ public class InteractionState implements StateLookup {
                 StateFlags flags = get(cur);
                 if (flags != null) {
                     flags.markStyleDirty();
-                    flags.dirtyBelow = true;
+                    flags.markDirtyBelow();
                 }
             }
         }
@@ -680,7 +698,7 @@ public class InteractionState implements StateLookup {
         flags.containerHeight = height;
         if (changed) {
             flags.markStyleDirty();
-            flags.subtreeDirty = true;
+            flags.markSubtreeDirty();
             markAncestorsDirtyBelow(node);
         }
         return changed;
@@ -771,13 +789,13 @@ public class InteractionState implements StateLookup {
         int inside = 0;
         for (HtmlNode n : set) {
             StateFlags f = get(n);
-            if (f != null && f.isStyleDirty) inside++;
+            if (f != null && f.isStyleDirty()) inside++;
         }
         if (inside >= dirtyCount) return true;
         // 届かないときは、回収された節の分の過大か、外に本当に汚れた節があるか。確かめる
         boolean[] outside = {false};
         forEachFlags((node, flags) -> {
-            if (flags.isStyleDirty && !set.contains(node)) outside[0] = true;
+            if (flags.isStyleDirty() && !set.contains(node)) outside[0] = true;
         });
         return !outside[0];
     }
@@ -790,15 +808,15 @@ public class InteractionState implements StateLookup {
         StateFlags flags = get(node);
         if (flags == null) return;
         flags.clearStyleDirtyFlag();
-        flags.subtreeDirty = false;
-        flags.unscoped = false;
+        flags.clearSubtreeDirty();
+        flags.clearUnscoped();
     }
 
     public boolean hasDirtyNodes() {
         if (dirtyCount <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
         boolean[] any = {false};
         forEachFlags((node, flags) -> {
-            if (flags.isStyleDirty) any[0] = true;
+            if (flags.isStyleDirty()) any[0] = true;
         });
         if (any[0]) return true;
         dirtyCount = 0; // 汚れたまま回収された節の分。帳簿を合わせ直す

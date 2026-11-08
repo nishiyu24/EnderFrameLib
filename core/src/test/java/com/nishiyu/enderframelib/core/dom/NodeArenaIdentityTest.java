@@ -209,7 +209,7 @@ class NodeArenaIdentityTest {
         assertTrue(state.get(pseudo).isHovered());
         assertEquals(live, a.liveCount(), "仮想の節の状態でアリーナの番号を消費しない");
         state.markAllDirty(); // 仮想の節も列挙に含まれる
-        assertTrue(state.get(pseudo).isStyleDirty);
+        assertTrue(state.get(pseudo).isStyleDirty());
     }
 
     @Test
@@ -263,12 +263,53 @@ class NodeArenaIdentityTest {
 
         // アリーナには対話状態を写さない（二重書き込みの撤去）。汚れの印は StateFlags だけが持つ
         assertEquals(0, d.arena().dirtyBits(b.nodeId()), "InteractionState はアリーナの汚れ列に書かない");
-        assertTrue(state.get(b).isStyleDirty, "作りたては汚れ");
+        assertTrue(state.get(b).isStyleDirty(), "作りたては汚れ");
         state.clearStyleDirty(b);
-        assertFalse(state.get(b).isStyleDirty);
+        assertFalse(state.get(b).isStyleDirty());
         state.markDirty(b);
-        assertTrue(state.get(b).isStyleDirty);
+        assertTrue(state.get(b).isStyleDirty());
         assertEquals(0, d.arena().dirtyBits(b.nodeId()));
+    }
+
+    @Test
+    void dirtyMarksLiveInOneIntAndStayIndependent() {
+        HtmlDocument d = doc("<div id='p'><span id='c'></span></div>");
+        HtmlNode p = d.getElementById("p");
+        HtmlNode c = d.getElementById("c");
+        InteractionState state = new InteractionState();
+        InteractionState.StateFlags f = state.getOrCreate(p);
+        int all = InteractionState.StateFlags.DIRTY_STYLE | InteractionState.StateFlags.DIRTY_SUBTREE
+                | InteractionState.StateFlags.DIRTY_BELOW | InteractionState.StateFlags.DIRTY_UNSCOPED;
+        assertEquals(all, f.dirtyBits(), "作りたては安全側に 4 ビットすべて");
+        assertTrue(state.hasDirtyNodes());
+
+        f.clearSubtreeDirty();
+        assertEquals(all & ~InteractionState.StateFlags.DIRTY_SUBTREE, f.dirtyBits(), "他のビットは動かない");
+        assertTrue(f.isStyleDirty() && f.dirtyBelow() && f.unscoped() && !f.subtreeDirty());
+        f.markSubtreeDirty();
+        assertEquals(all, f.dirtyBits());
+
+        // style ビットを下ろす（subtree / unscoped も下りる）。below は別に下ろす
+        state.clearStyleDirty(p);
+        assertFalse(f.isStyleDirty() || f.subtreeDirty() || f.unscoped());
+        assertTrue(f.dirtyBelow(), "below は clearStyleDirty では動かない");
+        f.clearDirtyBelow();
+        assertEquals(0, f.dirtyBits());
+        state.getOrCreate(c); // 子の印も作りたて（汚れ）なので、先に作って下ろす
+        state.clearStyleDirty(c);
+        assertFalse(state.hasDirtyNodes(), "style ビットが全部下りたら汚れた節は無い");
+
+        // 子を汚すと、子は style/subtree/unscoped、親は below だけが立つ
+        state.markDirty(c);
+        InteractionState.StateFlags pf = state.get(p);
+        assertTrue(state.get(c).isStyleDirty() && state.get(c).subtreeDirty() && state.get(c).unscoped());
+        assertTrue(pf.dirtyBelow());
+        assertFalse(pf.isStyleDirty());
+        assertFalse(pf.subtreeDirty());
+        assertTrue(state.hasDirtyNodes());
+        state.clearStyleDirty(c);
+        assertFalse(state.get(c).isStyleDirty());
+        assertTrue(state.hasDirtyNodes(), "祖先の印は markDirty が作りたて（汚れ）で作るので残る");
     }
 
     @Test

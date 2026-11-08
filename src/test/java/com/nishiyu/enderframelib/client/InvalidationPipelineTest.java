@@ -217,12 +217,12 @@ public class InvalidationPipelineTest {
         InteractionState.StateFlags parent = state.get(doc.root.getElementById("p"));
         InteractionState.StateFlags child = state.get(doc.root.getElementById("c1"));
         InteractionState.StateFlags grandchild = state.get(doc.root.getElementById("c2"));
-        assertTrue(parent.isStyleDirty, "class を変えた要素自身は再スタイルする");
-        assertFalse(child.isStyleDirty, "子孫を読む規則が無いので、子は汚さない");
-        assertFalse(grandchild.isStyleDirty);
+        assertTrue(parent.isStyleDirty(), "class を変えた要素自身は再スタイルする");
+        assertFalse(child.isStyleDirty(), "子孫を読む規則が無いので、子は汚さない");
+        assertFalse(grandchild.isStyleDirty());
 
         COMPILER.restyleLayoutTree(root, doc, W, H, Map.of(), state);
-        assertFalse(parent.isStyleDirty);
+        assertFalse(parent.isStyleDirty());
     }
 
     @Test
@@ -235,7 +235,7 @@ public class InvalidationPipelineTest {
         COMPILER.layoutDocument(doc, W, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
 
         doc.root.getElementById("p").toggleClass("on");
-        assertTrue(state.get(doc.root.getElementById("p")).subtreeDirty,
+        assertTrue(state.get(doc.root.getElementById("p")).subtreeDirty(),
                 "祖先の class を読む規則があるので、子孫を算出し直す");
     }
 
@@ -251,11 +251,11 @@ public class InvalidationPipelineTest {
         InteractionState.StateFlags r1 = state.get(doc.root.getElementById("r1"));
         InteractionState.StateFlags r2 = state.get(doc.root.getElementById("r2"));
         assertNotNull(r1);
-        assertFalse(r1.isStyleDirty, "初回の描画で確定済み");
+        assertFalse(r1.isStyleDirty(), "初回の描画で確定済み");
         state.setHoveredNode(doc.root.getElementById("r1"));
-        assertTrue(r1.isStyleDirty);
-        assertFalse(r2.isStyleDirty, "兄弟の行はホバーの影響を受けない");
-        assertFalse(r1.subtreeDirty, ":hover を子孫の規則が読まないなら、子孫は巻き込まない");
+        assertTrue(r1.isStyleDirty());
+        assertFalse(r2.isStyleDirty(), "兄弟の行はホバーの影響を受けない");
+        assertFalse(r1.subtreeDirty(), ":hover を子孫の規則が読まないなら、子孫は巻き込まない");
     }
 
     @Test
