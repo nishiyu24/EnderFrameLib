@@ -53,7 +53,8 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float maxChildW = 0, sumChildW = 0;
         int count = 0;
-        for (LayoutBox child : box.getFlowChildren()) {
+        for (LayoutBox child : box.children) {
+            if (!child.participatesInFlow()) continue;
             CssKeywords.Alignment childAlign = alignSelfOf(child, alignItems);
             FormattingContext childCtx = new FormattingContext(axes.direction, childAlign == CssKeywords.Alignment.STRETCH, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             ConstraintSpace itemSpace = new ConstraintSpace(tentativeInnerW, parentH, childCtx);
@@ -238,7 +239,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 通常フローのアイテムを {@code order} の昇順に（同値は文書順）。 */
     private static List<FlexItem> orderedItems(LayoutBox box) {
         List<FlexItem> items = new ArrayList<>();
-        for (LayoutBox child : box.getFlowChildren()) items.add(new FlexItem(child));
+        for (LayoutBox child : box.children) if (child.participatesInFlow()) items.add(new FlexItem(child));
         items.sort(Comparator.comparingInt(item -> (int) item.box.style.number(CssProperty.ORDER, 0f)));
         return items;
     }

@@ -509,7 +509,8 @@ public class LayoutBox {
         boolean sumItems = display != null && display.inner() == Display.Inner.FLEX && isSingleLineRowFlex();
         float max = 0, sum = 0;
         int count = 0;
-        for (LayoutBox c : getFlowChildren()) {
+        for (LayoutBox c : children) {
+            if (!c.participatesInFlow()) continue;
             float contribution = c.minContentContribution(ctx) + c.mL + c.mR;
             max = Math.max(max, contribution);
             sum += contribution;

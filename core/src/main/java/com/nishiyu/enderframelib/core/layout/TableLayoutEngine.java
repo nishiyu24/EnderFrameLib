@@ -229,7 +229,8 @@ public class TableLayoutEngine extends LayoutEngine {
     /** 子をキャプション・列・行に分ける。行は thead の行を先頭、tfoot の行を末尾に並べる（CSS 2.2 §17.2）。 */
     private static void collectStructure(LayoutBox table, TableState state) {
         List<LayoutBox> header = new ArrayList<>(), body = new ArrayList<>(), footer = new ArrayList<>();
-        for (LayoutBox child : table.getFlowChildren()) {
+        for (LayoutBox child : table.children) {
+            if (!child.participatesInFlow()) continue;
             switch (child.display.inner()) {
                 case TABLE_CAPTION -> state.captions.add(child);
                 case TABLE_COLUMN -> state.columns.add(child);
@@ -252,8 +253,8 @@ public class TableLayoutEngine extends LayoutEngine {
                     state.rows.add(item);
                     state.rowGroups.add(null);
                 } else {
-                    for (LayoutBox row : item.getFlowChildren()) {
-                        if (row.display.inner() != Inner.TABLE_ROW) continue;
+                    for (LayoutBox row : item.children) {
+                        if (!row.participatesInFlow() || row.display.inner() != Inner.TABLE_ROW) continue;
                         state.rows.add(row);
                         state.rowGroups.add(item);
                     }
@@ -283,8 +284,8 @@ public class TableLayoutEngine extends LayoutEngine {
         for (int r = 0; r < state.rows.size(); r++) {
             LayoutBox row = state.rows.get(r);
             int c = 0;
-            for (LayoutBox cell : row.getFlowChildren()) {
-                if (cell.display.inner() != Inner.TABLE_CELL) continue;
+            for (LayoutBox cell : row.children) {
+                if (!cell.participatesInFlow() || cell.display.inner() != Inner.TABLE_CELL) continue;
                 while (isOccupied(occupied, r, c)) c++;
                 int colSpan = spanAttr(cell, "colspan", 1000);
                 int rowSpan = spanAttr(cell, "rowspan", 65534);
@@ -314,9 +315,8 @@ public class TableLayoutEngine extends LayoutEngine {
     private static List<LayoutBox> expandColumns(List<LayoutBox> columns) {
         List<LayoutBox> out = new ArrayList<>();
         for (LayoutBox col : columns) {
-            List<LayoutBox> inner = col.getFlowChildren();
-            if (!inner.isEmpty()) {
-                out.addAll(expandColumns(inner));
+            if (col.hasFlowChildren()) {
+                out.addAll(expandColumns(col.getFlowChildren()));
             } else {
                 int span = spanAttr(col, "span", 1000);
                 for (int i = 0; i < Math.max(1, span); i++) out.add(col);

@@ -188,7 +188,8 @@ public class GridLayoutEngine extends LayoutEngine {
         boolean columnFlow = flow.contains("column");
         boolean dense = flow.contains("dense");
 
-        List<LayoutBox> children = new ArrayList<>(box.getFlowChildren());
+        List<LayoutBox> children = new ArrayList<>(box.children.size());
+        for (LayoutBox c : box.children) if (c.participatesInFlow()) children.add(c);
         children.sort(Comparator.comparingInt(c -> (int) c.style.number(CssProperty.ORDER, 0f)));
 
         int explicitCols = Math.max(gs.columns.tracks.size(), areas.columns);

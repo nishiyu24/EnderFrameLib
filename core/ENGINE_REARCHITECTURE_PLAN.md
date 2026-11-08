@@ -1382,6 +1382,13 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 - **削除**: 列・`clearNode` の初期化・`grow` の複製対象・API 2 つ、`HtmlNode` の呼び出し 2 箇所。
 - **検証**: 新規 `DocumentArenaTest.unreadDerivedColumnsStayRemoved`（復活防止）。行きがけ順の番号が部分木を連続区間にする性質は、`NodeArenaIdentityTest` で木そのもの（子孫の最大番号 + 1 = 自身の番号 + 部分木の大きさ）から検証する形に付け替えて保持。`:core:test`・ルート `:test` 全件緑。
 
+### 9.5.17 実施記録：Step 5 — 測定経路の `getFlowChildren()` リスト生成を撤去（2026-11-09）
+
+- **何をしたか**: §9.5.13 は「空判定」の 4 箇所だけを外した。今回は**中身を使う走査**のうち、リストを作らなくてよい箇所を `children` の直接走査 + `participatesInFlow()` に置き換えた。対象は `FlexLayoutEngine` 2 箇所（`measureAndFinish` 相当の子の測定ループと `orderedItems`）、`GridLayoutEngine`（`new ArrayList<>(getFlowChildren())` の二重コピーを 1 回の収集に）、`TableLayoutEngine` 3 箇所（構造収集・行群の行・行のセル）と入れ子列群の展開（`hasFlowChildren()` で空なら一覧を作らない）、`LayoutBox` の min-content 走査。判定の実装は `participatesInFlow()` の 1 つのまま。**破壊的変更なし**（公開 API は不変、`getFlowChildren()` も残置）。
+- **キャッシュ化しなかった理由**: `children` は `public final List` で外から変更できるため、無効化の取りこぼしが起きうる。確保そのものをなくす方が安全で、無効化の設計が要らない。
+- **検証**: 新規 `FlowChildrenAllocationGateTest`（測定経路が `getFlowChildren(` を呼ばない。残るのは `LayoutBox` の定義と `TableLayoutEngine` の入れ子列群展開の各 1 箇所 = 復活防止）。挙動の同一性は既存の Flex / Grid / Table / WPT / Golden 回帰と `BoxTreeTest.hasFlowChildrenAgreesWithTheListForEveryBoxInATree` が担保。`:core:test`・ルート `:test` 全件緑。
+- **未達**: 速度・確保量の実測は取っていない（ベンチは未実行）。`FlexItem` の生成、Grid の並べ替え用リスト、`LayoutBox.Tentative`（`BoxOutputs` 配列コピー）の `LayoutResultCache` 統合、`FenwickVirtualList` 接続は未着手。
+
 ### 9.6 残課題（Step 1 の未了と次の着手候補）
 
 | 項目 | 状態 | メモ |
@@ -1395,5 +1402,5 @@ Step 3 の本丸（`SoftwareRenderBackend` から図形ディスパッチを切�
 | Step 3（GL 3 系統の整理） | 🔶 | §9.5.9 で CPU 画素・重ね用テクスチャを遅延確保化、§9.5.12 で文字・画像の供給元を `PaintResources` に独立（`cpu` 依存 7→3 経路）。§9.5.14 で図形分離の足場（状態を持たない部品の独立）。ディスパッチ切り出し・`GpuBatchPacker` 撤去は未着手。 `LayerPool` / `SimdTileSoftwareRenderer` は未使用ではない（§9.4 Step 3 の訂正参照） |
 | `DocumentArena.dirtyBits` 列 | ✅ | §9.5.15。読み手ゼロの写しを撤去。`subtreeEnd` は §9.5.16 で撤去 |
 | Step 4 | ⏳ | 未着手 |
-| Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
+| Step 5 | 🔶 | §9.5.13 で `hasFlowChildren()` を追加し空判定 4 箇所の確保を除去。§9.5.17 で走査 7 箇所のリスト生成も除去。`Tentative` 統合・`FenwickVirtualList` 接続は未着手 |
 
