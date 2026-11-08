@@ -113,6 +113,11 @@ public final class PaintSceneDriver {
     private int[] retainNodeAt = new int[0];
     /** スクロール節の添字（外側の節が先）。無ければ空。 */
     private int[] retainNodes = new int[0];
+    /** {@link #run} の作業表（使い回し）。 */
+    @SuppressWarnings("unchecked")
+    private List<Group>[] chainBuf = new List[0];
+    private int[] membersBuf = new int[0];
+    private RetainPlan[] planBuf = new RetainPlan[0];
     private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
     private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
@@ -179,22 +184,22 @@ public final class PaintSceneDriver {
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
             anchorNext = 0;
             activeAnchors.clear();
-            List<List<Group>> chains = new ArrayList<>(items.size());
+            // 作業表は使い回す（フレームごとの O(N) の確保をしない）
+            int total = items.size();
+            if (chainBuf.length < total) { chainBuf = new List[Math.max(total, chainBuf.length * 2)]; membersBuf = new int[chainBuf.length]; }
+            else { Arrays.fill(chainBuf, 0, total, null); Arrays.fill(membersBuf, 0, total, 0); }
+            List<Group>[] chains = chainBuf;
             // グループに属する描く部品の数。錨の位置（項目の添字）で数える（文字列の表を引かない）
-            int[] members = new int[items.size()];
+            int[] members = membersBuf;
             Map<String, Integer> extraMembers = new HashMap<>(); // 錨がリストに無いグループだけ
             // スクロール層: 保持できる範囲を先に決める（SKIP の範囲は、グループの鎖も姿勢の計算も要らない）
             RetainPlan[] plan = planRetained(items, painter);
             int skipTo = 0;
             for (int i = 0; i < items.size(); i++) {
-                if (i < skipTo) {
-                    chains.add(null);
-                    continue;
-                }
+                if (i < skipTo) continue;
                 int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
                 if (rn >= 0 && plan != null && plan[rn] == RetainPlan.SKIP) {
                     skipTo = retainTo[rn];
-                    chains.add(null);
                     continue;
                 }
                 DisplayItem el = items.get(i);
@@ -212,7 +217,7 @@ public final class PaintSceneDriver {
                         chain = null;
                     }
                 }
-                chains.add(chain);
+                chains[i] = chain;
             }
             int[] open = new int[4]; // 記録中の保持層の節の添字（入れ子の順）
             int openN = 0;
@@ -232,7 +237,7 @@ public final class PaintSceneDriver {
                 }
                 DisplayItem el = items.get(i);
                 if (el.type() != ElementType.NODE) {
-                    List<Group> chain = chains.get(i);
+                    List<Group> chain = chains[i];
                     if (chain != null) {
                         if (chain.isEmpty()) { // 不透明度のグループの外: 層を開かず、そのまま描く
                             painter.syncLayers(List.of());
@@ -286,7 +291,11 @@ public final class PaintSceneDriver {
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
             RetainPlan decision = painter.planRetained(items.get(c), c, from, to);
             if (decision == RetainPlan.NONE) continue;
-            if (plan == null) plan = new RetainPlan[items.size()];
+            if (plan == null) {
+                if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];
+                else Arrays.fill(planBuf, 0, items.size(), null);
+                plan = planBuf;
+            }
             plan[c] = decision;
             coveredUntil = to;
         }

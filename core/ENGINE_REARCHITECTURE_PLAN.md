@@ -530,7 +530,13 @@ core/src/main/java/com/nishiyu/enderframelib/core/
   **測定**: `ScrollCostTest`（GL・保持あり）は **0.130 ms → 0.130 ms で変化なし**。この環境の GPU ではフェンスが 1 フレーム内に終わっていて、`beginFrame` の待ちは実際には
   ほとんど発生しておらず（標本化の 25% は待ちではなく同期呼び出しの固定費だった可能性）、**CPU 時間の改善としては確認できていない**。リングの価値は GPU が遅れている（低性能 GPU・重い
   フレーム）ときに CPU が止まらないことで、この環境ではその状況を作る測定をまだしていない。
-- **次の作業（< 0.01 ms へ）**: `GlVramDevice.beginFrame` の標本の再取得（リング後に何が残るか）・ドライバの O(N) 配列（`curRes` の初期化・`chains` の構築）を SKIP の範囲で省く・
+- **ドライバの作業表の使い回し（2026-11-08・達成）**: `PaintSceneDriver.run` が毎フレーム作っていた O(N) の `chains`（`ArrayList`）・`members`・`plan` を、フィールドの作業表
+  （`chainBuf` / `membersBuf` / `planBuf`。足りないときだけ倍々で拡張、それ以外は範囲を `Arrays.fill`）に置換。SKIP の範囲は鎖を作らず null のまま。
+  検証: `PaintSceneDriverScratchReuseTest`（1 つのドライバを大きさ・グループの有無・NONE/SKIP/RECORD を乱数で替えて 60 回使い、毎回新しいドライバの走査記録と完全一致）、
+  既存の `PaintSceneDriver*Test`・`RetainedScrollTest`。全体（root + core）通過。
+  **測定**（`ScrollCostTest`・GL・保持あり）: ヒープ **31.7 → 5.8 KB**/スクロール＋描画（保持なしの経路は 718 KB で不変）。CPU は 0.130 ms で変化なし
+  （確保が減っただけで、時間の支配要因は別。`curRes` の `Arrays.fill` はまだ O(N) の memset として残る）。
+- **次の作業（< 0.01 ms へ）**: 時間の標本の再取得（`UiView` のスクロール更新・`HitTestIndex.find`・GL 側の固定費のどれが残るか）・`curRes` の初期化を SKIP の範囲で省く・
   画面より大きい層（描画先の座標のずらし）。GPU を意図的に遅らせた状態での CPU 待ち時間の測定。
 
 - `LayerAtlas` / `DualKawase` を使うレイヤー合成への切り替え。
