@@ -26,6 +26,7 @@ class PortabilityRatchetTest {
             "core/paint/gl/GlRectStream.java", // バックエンドが受けた矩形を GlTreeStore へ流す窓口（L3）
             "core/paint/gl/GlRectRenderer.java", // GlTreeStore のプリミティブを描く GL 実装（L3）
             "core/paint/gl/GlVramDevice.java", // kernel/gpu の PersistentVramBuffer.Device の GL 実装（L3）。kernel 側は GL 非依存のまま
+            "core/paint/gl/GlFenceRing.java", // GlVramDevice 群が共有するフェンス（GL 同期オブジェクト）。L3 の GL 実装の一部
             "core/paint/gl/LwjglGlRenderBackend.java",
             "core/raster/awt/AwtImageDecoder.java");
 

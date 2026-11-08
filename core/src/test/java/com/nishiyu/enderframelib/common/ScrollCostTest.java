@@ -73,7 +73,7 @@ class ScrollCostTest {
             Thread sampler = new Thread(() -> {
                 while (!stop[0]) {
                     StackTraceElement[] st = worker.getStackTrace();
-                    if (st.length > 0) {
+                    if (st.length > 0 && !(st[0].getMethodName().equals("sleep") || st[0].getMethodName().equals("sleep0"))) { // 休み中は数えない
                         samples[0]++;
                         String first = null;
                         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -127,7 +127,7 @@ class ScrollCostTest {
             Thread sampler = new Thread(() -> {
                 while (!stop[0]) {
                     StackTraceElement[] st = worker.getStackTrace();
-                    if (st.length > 0) {
+                    if (st.length > 0 && !(st[0].getMethodName().equals("sleep") || st[0].getMethodName().equals("sleep0"))) { // 休み中は数えない
                         samples[0]++;
                         String first = null;
                         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -290,6 +290,18 @@ class ScrollCostTest {
                 if (i >= warm) { frameNs[i - warm] = dt; scrollNs[i - warm] = t1 - t0; }
                 Thread.sleep(4);
             }
+            // 固定費の切り分け: スクロールせずにフレームだけを回した中央値（保持した層を貼り直すだけの静止フレームか、何も変わらないフレーム）
+            long[] idleNs = new long[200];
+            for (int i = 0; i < 100 + idleNs.length; i++) {
+                long t0 = System.nanoTime();
+                now += 16;
+                view.frame(now, backend, true);
+                long dt = System.nanoTime() - t0;
+                if (i >= 100) idleNs[i - 100] = dt;
+                Thread.sleep(4);
+            }
+            java.util.Arrays.sort(idleNs);
+            double idleMs = idleNs[idleNs.length / 2] / 1e6;
             // 平均は省電力状態・キャッシュの冷え方の外れ値に支配されるので、フレームごとの壁時計時間（休みを除く）の中央値と p90 を見る
             java.util.Arrays.sort(frameNs);
             java.util.Arrays.sort(scrollNs);
@@ -297,7 +309,7 @@ class ScrollCostTest {
             double medianMs = frameNs[n / 2] / 1e6, p90Ms = frameNs[n * 9 / 10] / 1e6;
             double kb = (mx.getThreadAllocatedBytes(tid) - alloc0) / 1024.0 / n;
             assertTrue(backend.scrollLayersSkipped() > backend.scrollLayersRecorded() * 10, "保持した層が使われていない");
-            System.out.println(String.format("SCROLL-PACED (scroll %.3f ms + frame) median %.3f ms, p90 %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態・壁時計)", scrollMedianMs, medianMs, p90Ms, kb));
+            System.out.println(String.format("SCROLL-PACED idle-frame median %.3f ms; (scroll %.3f ms + frame) median %.3f ms, p90 %.3f ms, alloc %.1f KB per scroll+frame (GPU が追いついた状態・壁時計)", idleMs, scrollMedianMs, medianMs, p90Ms, kb));
             assertTrue(medianMs < 3.0, "休みを入れたスクロール 1 回の中央値が大きすぎる: " + medianMs);
         } finally {
             view.close();
@@ -331,7 +343,7 @@ class ScrollCostTest {
             Thread sampler = new Thread(() -> {
                 while (!stop[0]) {
                     StackTraceElement[] st = worker.getStackTrace();
-                    if (st.length > 0) {
+                    if (st.length > 0 && !(st[0].getMethodName().equals("sleep") || st[0].getMethodName().equals("sleep0"))) { // 休み中は数えない
                         samples[0]++;
                         String first = null;
                         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -349,7 +361,8 @@ class ScrollCostTest {
             sampler.setDaemon(true);
             sampler.start();
             boolean pace = System.getenv("EFL_PACE") != null;
-            for (int i = 0; i < (pace ? 1500 : 6000); i++) { view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); if (pace) Thread.sleep(4); }
+            boolean idle = System.getenv("EFL_IDLE") != null; // 静止フレームだけ（スクロールしない）
+            for (int i = 0; i < (pace ? 1500 : 6000); i++) { if (!idle) view.scroll(0, (i & 1) == 0 ? -0.1 : 0.1, sid); nowBox[0] += 16; view.frame(nowBox[0], backend, true); if (pace) Thread.sleep(4); }
             stop[0] = true;
             sampler.join();
             StringBuilder sb = new StringBuilder("SCROLL-PROFILE-RETAINED samples=" + samples[0] + "\n  self:");
