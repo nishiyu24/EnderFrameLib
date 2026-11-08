@@ -158,6 +158,22 @@ class GlRectRendererTest {
     }
 
     @Test
+    void samplerUnitsAreSetOnceAndRepeatedDrawsStayIdentical() {
+        requireGl();
+        try (GlTreeStore st = store(true); GlRectRenderer rr = new GlRectRenderer()) {
+            GpuSceneSync sync = new GpuSceneSync(st.trees);
+            int n = sync.sync(new ArrayList<>(List.of(
+                    item("a", 20, 20, 80, 60, 0xFFFF0000, 6, 1f, 0, 0, 1, 1, 0),
+                    item("b", 50, 40, 80, 60, 0xFF0000FF, 0, 0.5f, 25, 10, 1, 1, 0))));
+            int[] first = drawGpu(rr, st, n, 0f);
+            assertEquals(14, rr.samplerSetCount(), "サンプラーは最初の描画で 14 個");
+            for (int i = 0; i < 5; i++) assertArrayEquals(first, drawGpu(rr, st, n, 0f), "描画 " + i);
+            assertEquals(14, rr.samplerSetCount(), "重ねて描いても設定し直さない");
+            assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
+        }
+    }
+
+    @Test
     void scaleAndRotationPivotAroundTheCenter() {
         requireGl();
         try (GlTreeStore st = store(true); GlRectRenderer rr = new GlRectRenderer()) {
