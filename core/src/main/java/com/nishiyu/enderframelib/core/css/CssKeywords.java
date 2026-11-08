@@ -18,11 +18,25 @@ public final class CssKeywords {
 
     /** CSS のキーワード 1 つ。 */
     public interface Keyword {
-        /** CSS の書き方（小文字、{@code -} 区切り）。 */
+        /** CSS の書き方（小文字、{@code -} 区切り）。列挙型ごとに 1 回だけ作る。 */
         default String cssName() {
-            return ((Enum<?>) this).name().toLowerCase(Locale.ROOT).replace('_', '-');
+            Enum<?> e = (Enum<?>) this;
+            return CSS_NAMES.get(e.getDeclaringClass())[e.ordinal()];
         }
     }
+
+    /** 型ごとの、定数の序数 → CSS の書き方の表。 */
+    private static final ClassValue<String[]> CSS_NAMES = new ClassValue<>() {
+        @Override
+        protected String[] computeValue(Class<?> type) {
+            Object[] constants = type.getEnumConstants();
+            String[] names = new String[constants.length];
+            for (int i = 0; i < names.length; i++) {
+                names[i] = ((Enum<?>) constants[i]).name().toLowerCase(Locale.ROOT).replace('_', '-');
+            }
+            return names;
+        }
+    };
 
     /** 型ごとの「CSS の書き方（小文字・{@code -} 区切り）→ 定数」の表。型ごとに 1 回だけ作る（読み取り専用）。 */
     private static final ClassValue<java.util.Map<String, Enum<?>>> BY_CSS_NAME = new ClassValue<>() {

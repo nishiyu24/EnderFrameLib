@@ -86,11 +86,13 @@ public final class StandaloneView implements AutoCloseable {
             // スクロールだけなら中身は前回と同じ。画面の外の箱は項目を作らない（全件を作るのは再スタイルのとき）。
             // 動いただけの箱は前回の項目を平行移動して使うので、位置が最大 1 画素ずれうる: 止まったら厳密に描き直す
             builder.setUseChangeStamps(useChangeStamps());
+            builder.setExactTranslation(exactTranslation());
             List<DisplayItem> items;
             try {
                 items = builder.render(root, scrollOnly);
             } finally {
                 builder.setUseChangeStamps(false);
+                builder.setExactTranslation(false);
             }
             settlePending = scrollOnly && builder.translatedHits() > 0;
             lastScrollPaintAt = lastNow;

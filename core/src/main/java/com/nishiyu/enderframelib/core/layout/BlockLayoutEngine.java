@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.text.model.FontFace;
@@ -452,7 +453,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.ctx = ctx;
             this.children = children;
             this.innerW = Float.isNaN(innerWOverride) ? Math.max(0, box.w - box.horizontalDecoration()) : innerWOverride;
-            this.rtl = "rtl".equalsIgnoreCase(box.style.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
+            this.rtl = box.style.layoutFacts().rtl;
             if (!box.establishesBfc && box.floatSpace != null) {
                 floats = box.floatSpace;
                 ox = box.floatSpaceX;
@@ -1061,7 +1062,7 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         /** 開いている箱に中身が置かれた。 */
         private void markContent() {
-            for (OpenBox ob : open) ob.hasContent = true;
+            for (int i = 0, n = open.size(); i < n; i++) open.get(i).hasContent = true;
         }
 
         private void openBox(FlatRun run) {
@@ -1110,25 +1111,30 @@ public class BlockLayoutEngine extends LayoutEngine {
                     newLine(runH, baseline, false);
                     ensureLine();
                 }
-                List<String> segments = TextShaper.segments(paragraphs[p], textStyle.wordBreak());
+                // 断片・幅・境目の詰めは文字列・書体・折り返しの規則だけで決まるので、同じ段落なら測り直さない（幅にも依らない）
+                ParagraphSegments prepared = TextShaper.segmented(paragraphs[p], face, font, textStyle.wordBreak());
+                String[] segments = prepared.segs();
                 // 入るかどうかは語の幅の和に境目の詰め（TextShaper.kerningBetween）を足した幅、つまり続けて測った幅で
                 // 見る（TextShaper と同じ。max-content もこの測り方）。kerned はこの run が今の行で詰めた量の合計。
                 // 何が壊れていたか: 和だけで見ていたため、語の境目に詰め（- と v など）があると max-content ちょうどの
                 // flex アイテムで "two-viewers" が "two-" の後で折り返していた（実機で確認）。
                 String previousOnLine = null;
                 float kerned = 0;
-                int lastSegment = segments.size() - 1;
-                while (lastSegment >= 0 && segments.get(lastSegment).isEmpty()) lastSegment--;
-                for (int s = 0; s < segments.size(); s++) {
-                    String segment = segments.get(s);
+                int lastSegment = segments.length - 1;
+                while (lastSegment >= 0 && segments[lastSegment].isEmpty()) lastSegment--;
+                for (int s = 0; s < segments.length; s++) {
+                    String segment = segments[s];
                     if (segment.isEmpty()) continue;
-                    float advance = face.advance(segment, font);
+                    float advance = prepared.fullW()[s];
                     // 行末の空白は幅に数えない（CSS と同じ）
-                    float trimmedW = face.advance(segment.stripTrailing(), font);
+                    float trimmedW = prepared.strippedTrailingW()[s];
                     // 最後の語は、直後に閉じる箱の終了端の装飾と一緒に行に入らないといけない
                     float edges = p == paragraphs.length - 1 && s == lastSegment ? closing : 0;
 
-                    float join = previousOnLine == null ? 0 : TextShaper.kerningBetween(face, font, previousOnLine, segment);
+                    // 直前の断片との境目の詰め（直前が断片の並びの隣なら下ごしらえの値、空の断片を挟んだときだけ測る）
+                    float join = previousOnLine == null ? 0
+                            : s > 0 && previousOnLine == segments[s - 1] ? prepared.joinW()[s]
+                            : TextShaper.kerningBetween(face, font, previousOnLine, segment);
                     if (textStyle.whiteSpace().wraps() && !segment.isBlank()) {
                         if (needsWrap(lineX + kerned + join + trimmedW + edges)) {
                             newLine(runH, baseline, true);

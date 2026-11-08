@@ -87,7 +87,9 @@ public class GridLayoutEngine extends LayoutEngine {
         List<TrackDef> colDefs = gs.trackDefs(true);
         for (GridItem item : gs.items) {
             if (spansIntrinsic(colDefs, item.colStart, item.colSpan)) {
-                item.box.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT), ctx);
+                // 寄与の測定は寸法を読むだけで、直後の measureInArea が必ず測り直す。中身が同じなら前回の産物で済ませる
+                ConstraintSpace contribution = new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT);
+                if (!item.box.measureTentatively(contribution, ctx)) item.box.measure(contribution, ctx);
                 item.maxContribution = item.box.w + item.box.mL + item.box.mR;
                 item.minContribution = minContentContribution(item.box, ctx);
             }
@@ -555,7 +557,9 @@ public class GridLayoutEngine extends LayoutEngine {
         FormattingContext childCtx = new FormattingContext("grid", stretch ? "stretch" : justify, !stretch);
         // % の高さの子は、行の大きさがまだ決まっていない段階では auto として測る（呼び出し側が NaN を渡す）。
         // 行が決まった後に alignItems が領域の高さで測り直す
-        item.box.measure(new ConstraintSpace(areaW, parentH, childCtx), ctx);
+        // 行を決めたあとの alignItems が、stretch・% の高さの測り直しをするか、settleTentative で本当に測る
+        ConstraintSpace inArea = new ConstraintSpace(areaW, parentH, childCtx);
+        if (!item.box.measureTentatively(inArea, ctx)) item.box.measure(inArea, ctx);
         item.percentBase = parentH;
     }
 
@@ -600,6 +604,8 @@ public class GridLayoutEngine extends LayoutEngine {
                 b.measure(new ConstraintSpace(areaW, areaH, new FormattingContext("grid", alignSelf, false)), ctx);
                 item.percentBase = areaH;
             }
+            // 測り直しが来なかった項目の仮の産物を終わらせる（以降の alignWithin は auto マージンを書き換える）
+            b.settleTentative();
             String justifySelf = selfAlignment(b, CssProperty.JUSTIFY_SELF, box.style, CssProperty.JUSTIFY_ITEMS);
             item.x = areaX + alignWithin(b, true, areaW, justifySelf);
             item.y = areaY + alignWithin(b, false, areaH, alignSelf);

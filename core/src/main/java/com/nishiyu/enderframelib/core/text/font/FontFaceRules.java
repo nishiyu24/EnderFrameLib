@@ -29,6 +29,15 @@ public final class FontFaceRules {
     @FunctionalInterface
     public interface FontReader {
         byte[] read(String source) throws Exception;
+
+        /**
+         * 出所が OS のファイルとして直接開けるなら、そのパス。あれば {@link FontFaceRules} はバイト列を読まず、
+         * FreeType にファイルをそのまま渡す（OS のメモリマップ。ヒープにも malloc にも写しを作らない）。
+         * 既定は null（バイト列の経路）。
+         */
+        default java.nio.file.Path locate(String source) throws Exception {
+            return null;
+        }
     }
 
     private static final Pattern FONT_FACE_PATTERN = Pattern.compile("(?is)@font-face\\s*\\{([^}]+)}");
@@ -167,6 +176,8 @@ public final class FontFaceRules {
                 ? src.substring(0, colon + 1) + "font/" + src.substring(colon + 1) : null;
         for (String candidate : alt == null ? List.of(src) : List.of(src, alt)) {
             try {
+                java.nio.file.Path file = reader.locate(candidate);
+                if (file != null && WebFonts.registerFile(source.family(), file, source.weight(), source.italic())) return true;
                 byte[] bytes = reader.read(candidate);
                 if (bytes == null) continue;
                 return WebFonts.register(source.family(), bytes, source.weight(), source.italic());

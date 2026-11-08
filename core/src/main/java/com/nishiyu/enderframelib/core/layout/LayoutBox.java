@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.text.ParagraphSegments;
+import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.text.model.FontFace;
@@ -409,8 +411,7 @@ public class LayoutBox {
     public List<LayoutBox> getFlowChildren() {
         List<LayoutBox> list = new ArrayList<>();
         for (LayoutBox c : children) {
-            if (!c.isAbsolute && !c.isOutsideMarker && !c.isRenderedLegend
-                    && !"none".equals(c.style.getOrDefault(CssProperty.DISPLAY, "block"))) {
+            if (!c.isAbsolute && !c.isOutsideMarker && !c.isRenderedLegend && !c.style.facts().displayNone) {
                 list.add(c);
             }
         }
@@ -481,10 +482,9 @@ public class LayoutBox {
                 }
                 return maxWordW;
             }
-            for (String segment : TextShaper.segments(this.displayText, textStyle.wordBreak())) {
-                String word = segment.strip();
-                if (!word.isEmpty()) maxWordW = Math.max(maxWordW, face.advance(word, font));
-            }
+            // 語の幅は段落の下ごしらえ（キャッシュ）の値。前後の空白を除いた語が空なら 0 で、最大値には響かない
+            float[] wordWidths = TextShaper.segmented(this.displayText, face, font, textStyle.wordBreak()).strippedW();
+            for (float wordW : wordWidths) maxWordW = Math.max(maxWordW, wordW);
             return maxWordW;
         }
 
@@ -576,6 +576,7 @@ public class LayoutBox {
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
+        restoreTentativeStash();
         for (LayoutBox child : children) adopt(child);
         if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
             if (!(subtreeChanged && ctx.firstPass())) return;
@@ -590,10 +591,134 @@ public class LayoutBox {
             if (measurementValid) return;
         }
         MEASUREMENTS_COMPUTED.increment();
+        if (layoutChanged) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
         touchPaint();
         BoxMeasurer.measure(this, space, ctx);
+        // エンジンが確定させ損ねた子（高さを測らない箱など）を、親が測り終える前に必ず確定させる
+        if (hasTentativeChildren) settleTentativeChildren();
         recordMeasurement(space, ctx);
         touchPaint();
+    }
+
+    // ==========================================
+    // 仮の測定の産物の再利用（flex の 2 段の測定）
+    // ==========================================
+    //
+    // flex の項目は「仮の測定（利用可能幅）→ 確定幅での測り直し」の 2 つの制約で測られる。測定の結果を 1 つしか持たないので、
+    // 次のレイアウトの最初の仮の測定が前回の確定測定を追い出し、中身が同じ項目まで毎回 2 回測り直していた。
+    // 仮の測定が親に渡すのは箱自身の寸法・余白・装飾・sizingMode・内容の高さだけなので、中身が変わっていなければ
+    // その産物だけを前回の値に差し替え（部分木は確定測定の状態のまま触らない）、確定の測り直しが来れば元に戻して使い回す。
+    // 確定の測り直しが来なかった子は、親が settleTentative で本当に測る（部分木を仮の測定の状態で終えない）。
+
+    /** 仮の測定が親へ渡す産物。 */
+    private record BoxOutputs(float w, float h, float mT, float mR, float mB, float mL,
+                              float pT, float pR, float pB, float pL, float bT, float bR, float bB, float bL,
+                              float legendSpill, float contentBlockExtent, float ownMarginTop, float ownMarginBottom,
+                              SizingMode sizingMode) {
+        static BoxOutputs capture(LayoutBox b) {
+            return new BoxOutputs(b.w, b.h, b.mT, b.mR, b.mB, b.mL, b.pT, b.pR, b.pB, b.pL, b.bT, b.bR, b.bB, b.bL,
+                    b.legendSpill, b.contentBlockExtent, b.ownMarginTop, b.ownMarginBottom, b.sizingMode);
+        }
+
+        void apply(LayoutBox b) {
+            b.w = w; b.h = h; b.mT = mT; b.mR = mR; b.mB = mB; b.mL = mL;
+            b.pT = pT; b.pR = pR; b.pB = pB; b.pL = pL; b.bT = bT; b.bR = bR; b.bB = bB; b.bL = bL;
+            b.legendSpill = legendSpill; b.contentBlockExtent = contentBlockExtent;
+            b.ownMarginTop = ownMarginTop; b.ownMarginBottom = ownMarginBottom; b.sizingMode = sizingMode;
+        }
+    }
+
+    /** 上書き寸法なしで測った結果の産物と、その入力。 */
+    private record Tentative(ConstraintSpace space, Viewport viewport, FontResolver fonts,
+                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs) {}
+
+    /** 上書き寸法なしの制約ごとの産物（最大 {@link #MAX_TENTATIVES}。grid は寄与の測定と列幅での測定の 2 種類を持つ）。 */
+    private Tentative[] tentatives;
+    private static final int MAX_TENTATIVES = 3;
+    /** 仮の産物に差し替えている間、差し替える前（確定測定の状態）の産物。null なら差し替えていない。 */
+    private BoxOutputs tentativeStash;
+    private ConstraintSpace tentativeSpace;
+    private LayoutContext tentativeCtx;
+    /** 子に差し替え中の箱がある（親が測り終える前に確定させるための印）。 */
+    private boolean hasTentativeChildren;
+
+    /** 切り分け用: false なら仮の測定を常に本当に測る。 */
+    public static volatile boolean tentativeReuse = !Boolean.getBoolean("enderframe.layout.notentative");
+    private static final java.util.concurrent.atomic.LongAdder TENTATIVE_SKIPPED =
+            new java.util.concurrent.atomic.LongAdder();
+
+    /** 仮の測定を飛ばした回数（効き具合を測るテスト・診断用）。 */
+    public static long tentativeSkipped() {
+        return TENTATIVE_SKIPPED.sum();
+    }
+
+    /**
+     * {@code space} での測定を、前回の産物で済ませられるなら済ませて true。済ませた箱は、親が {@link #settleTentative} するか
+     * 確定の {@link #measure} が来るまで、産物だけが仮の値になっている（部分木は前回の確定測定のまま）。
+     * 前提は {@link #canReuseMeasurement} と同じで、制約と上書き寸法の比べ方だけが違う（上書きなしで測った産物と比べる）。
+     */
+    boolean measureTentatively(ConstraintSpace space, LayoutContext ctx) {
+        restoreTentativeStash();
+        Tentative[] all = tentatives;
+        if (!tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
+        Tentative t = null;
+        for (Tentative candidate : all) {
+            if (candidate != null && space.equals(candidate.space())) {
+                t = candidate;
+                break;
+            }
+        }
+        if (t == null) return false;
+        if (!Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) return false;
+        if (!measurementValid || layoutChanged || subtreeChanged || measuredHasTable) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
+        if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
+                || floatSpace != null || collapsedBorders != null
+                || !space.equals(t.space())
+                || !ctx.viewport().equals(t.viewport()) || ctx.fonts() != t.fonts()
+                || ctx.intrinsicResolver() != t.intrinsics()) {
+            return false;
+        }
+        for (LayoutBox child : children) adopt(child);
+        tentativeStash = BoxOutputs.capture(this);
+        tentativeSpace = space;
+        tentativeCtx = ctx;
+        t.outputs().apply(this);
+        invalidateMinContentCache();
+        parent.hasTentativeChildren = true;
+        TENTATIVE_SKIPPED.increment();
+        return true;
+    }
+
+    /** 仮の測定を使う親（flex / grid）の子か。それ以外の箱は産物を記録しない（割り当てを増やさない）。 */
+    private boolean parentUsesTentatives() {
+        if (parent == null || parent.display == null) return false;
+        Display.Inner inner = parent.display.inner();
+        return inner == Display.Inner.FLEX || inner == Display.Inner.GRID;
+    }
+
+    /** 差し替えた産物を確定測定の状態に戻す。 */
+    private void restoreTentativeStash() {
+        BoxOutputs stash = tentativeStash;
+        if (stash == null) return;
+        tentativeStash = null;
+        tentativeCtx = null;
+        stash.apply(this);
+        invalidateMinContentCache();
+    }
+
+    /** 仮の産物のままの箱を、本当に測って確定させる（確定の測り直しが来なかった項目）。 */
+    void settleTentative() {
+        if (tentativeStash == null) return;
+        ConstraintSpace s = tentativeSpace;
+        LayoutContext c = tentativeCtx;
+        restoreTentativeStash();
+        measure(s, c);
+    }
+
+    private void settleTentativeChildren() {
+        hasTentativeChildren = false;
+        for (int i = 0; i < children.size(); i++) children.get(i).settleTentative();
     }
 
     /**
@@ -748,6 +873,13 @@ public class LayoutBox {
         }
     }
 
+    /** 記録済みの子の並び（配列）が、今の子と同じ箱を同じ順に並べているか（同じなら配列を作り直さない）。 */
+    private boolean sameChildren(LayoutBox[] recorded) {
+        if (recorded == null || recorded.length != children.size()) return false;
+        for (int i = 0; i < recorded.length; i++) if (recorded[i] != children.get(i)) return false;
+        return true;
+    }
+
     private void recordMeasurement(ConstraintSpace space, LayoutContext ctx) {
         // 再レイアウト境界が中身だけを測り直し、外から見える寸法が前回と同じなら、祖先の測定は無効にならない
         boolean outerSizeStable = measuredStyle != null && w == measuredW && h == measuredH
@@ -773,7 +905,8 @@ public class LayoutBox {
         measuredOutsideMarker = isOutsideMarker;
         measuredRenderedLegend = isRenderedLegend;
         everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
-        measuredChildren = children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
+        measuredChildren = sameChildren(measuredChildren) ? measuredChildren
+                : children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
         measuredFirstFlowChild = BlockLayoutEngine.isFirstFlowChild(this);
         measuredHadFloatChild = hasFloatingChild();
         boolean floatFree = true;
@@ -783,6 +916,25 @@ public class LayoutBox {
         }
         measuredFlowFloatFree = floatFree;
         layoutChanged = false;
+        if (tentativeReuse && parentUsesTentatives() && Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight)
+                && floatSpace == null && collapsedBorders == null) {
+            Tentative fresh = new Tentative(space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(), measuredEpoch,
+                    BoxOutputs.capture(this));
+            if (tentatives == null) tentatives = new Tentative[MAX_TENTATIVES];
+            int slot = -1;
+            for (int i = 0; i < tentatives.length; i++) {
+                Tentative old = tentatives[i];
+                if (old == null || space.equals(old.space())) {
+                    slot = i;
+                    break;
+                }
+            }
+            if (slot < 0) { // 空きも同じ制約も無い: 一番古い（先頭）を捨てて詰める
+                System.arraycopy(tentatives, 1, tentatives, 0, tentatives.length - 1);
+                slot = tentatives.length - 1;
+            }
+            tentatives[slot] = fresh;
+        }
         boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
         for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
         measuredHasTable = hasTable;
@@ -823,15 +975,27 @@ public class LayoutBox {
      * measure が読む、スタイルと子の箱以外の中身（属性・フォーム部品の中身）。
      * style / class はカスケードを通して算出スタイルに出るので数えない（描画だけの変化で測り直さないため）。
      */
+    /** 属性（style / class を除く）のハッシュ。属性の版番号が同じ間は使い回す。 */
+    private int attrHash;
+    private int attrHashVersion = -1;
+    private HtmlNode attrHashNode;
+
     private int contentHash() {
         if (node == null) return 0;
-        int hash = 1;
-        for (java.util.Map.Entry<String, String> attr : node.attrs.entrySet()) {
-            String key = attr.getKey();
-            if ("style".equals(key) || "class".equals(key)) continue;
-            hash = 31 * hash + key.hashCode();
-            hash = 31 * hash + java.util.Objects.hashCode(attr.getValue());
+        int version = node.attrVersion();
+        if (attrHashVersion != version || attrHashNode != node) {
+            int hash = 1;
+            for (java.util.Map.Entry<String, String> attr : node.attrs.entrySet()) {
+                String key = attr.getKey();
+                if ("style".equals(key) || "class".equals(key)) continue;
+                hash = 31 * hash + key.hashCode();
+                hash = 31 * hash + java.util.Objects.hashCode(attr.getValue());
+            }
+            attrHash = hash;
+            attrHashVersion = version;
+            attrHashNode = node;
         }
+        int hash = attrHash;
         // 文字を子の箱に持たないフォーム部品は、DOM の中身から測る
         String tag = node.tag;
         if ("textarea".equals(tag) || "select".equals(tag) || "option".equals(tag)) {
@@ -946,7 +1110,7 @@ public class LayoutBox {
 
     private boolean hasFloatingChild() {
         for (LayoutBox child : children) {
-            if (child.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
+            if (child.style.facts().floating) return true;
         }
         return false;
     }
@@ -1006,12 +1170,21 @@ public class LayoutBox {
      * @return 印を付けた経路の箱（測り終えたら {@link #clearSubtreeMarks} に渡す）。null なら全体版へ退く
      */
     public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed) {
+        return markLayoutChangesAlong(root, changed, java.util.Set.of());
+    }
+
+    /**
+     * @param shallow {@code changed} のうち、子の並びだけが変わった箱（子の箱自体は前回のまま）。子を持っていても、部分木を全体版で
+     *                印付けせず、葉と同じ扱い（自分の測り直しだけ）にする。新しく入った子は未測定なので測られる
+     */
+    public static List<LayoutBox> markLayoutChangesAlong(LayoutBox root, java.util.Collection<LayoutBox> changed,
+                                                         java.util.Set<LayoutBox> shallow) {
         List<LayoutBox> path = new java.util.ArrayList<>();
         for (LayoutBox leaf : changed) {
             if (leaf == null || leaf == root) return null;
             boolean selfChanged = leaf.selfSignatureChanged();
             boolean affects;
-            if (leaf.children.isEmpty()) {
+            if (leaf.children.isEmpty() || shallow.contains(leaf)) {
                 boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
                 leaf.layoutChanged |= remeasure;
                 leaf.subtreeChanged = true;
@@ -1080,14 +1253,8 @@ public class LayoutBox {
         if (parent == null || display == null || display.isInlineLevel() || isTableBox(this) || !establishesBfc) return false;
         if (containsInlineSize() && containsBlockSize()) return true;
         if (!isScrollContainer()) return false;
-        return hasDefiniteLength(CssProperty.WIDTH) && hasDefiniteLength(CssProperty.HEIGHT);
-    }
-
-    private boolean hasDefiniteLength(String property) {
-        String value = style.get(property);
-        if (value == null) return false;
-        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
-        return !v.isEmpty() && !v.equals("auto") && !v.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(v);
+        StyleFacts facts = style.facts();
+        return facts.definiteWidth && facts.definiteHeight;
     }
 
     /** {@link #measure(ConstraintSpace, LayoutContext)} の制約を個別に渡す形（テストと HUD の入口）。 */
@@ -1103,11 +1270,13 @@ public class LayoutBox {
 
     /** 決まった寸法をもとに自分と子の位置を確定する。 */
     public void layout(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
-        if ("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
+        if (style.facts().displayNone) return;
+        settleTentative();
+        if (hasTentativeChildren) settleTentativeChildren();
         for (LayoutBox child : children) adopt(child);
         hasFloatChild = false;
         for (LayoutBox child : children) {
-            if (child.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+            if (child.style.facts().floating) {
                 hasFloatChild = true;
                 break;
             }
@@ -1180,7 +1349,7 @@ public class LayoutBox {
         engine.arrangeChildren(this, innerX, innerY, ctx);
 
         for (LayoutBox child : children) {
-            if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block"))) continue;
+            if (child.style.facts().displayNone) continue;
             if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
         }
         LayoutBox legend = renderedLegend();
@@ -1241,11 +1410,11 @@ public class LayoutBox {
     private boolean subtreeIsSelfContained() {
         if (isAbsolute || isFixed || isRelative || isSticky || isScrollContainer() || floatSpace != null
                 || isTableBox(this) || collapsedBorders != null
-                || style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) {
+                || style.facts().floating) {
             return false;
         }
         for (LayoutBox child : children) {
-            if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block"))) continue;
+            if (child.style.facts().displayNone) continue;
             boolean laidOutByLayout = !Float.isNaN(child.lastLayoutX);
             if (laidOutByLayout ? !child.placementPure : !child.subtreeIsSelfContained()) return false;
         }
@@ -1364,19 +1533,17 @@ public class LayoutBox {
      * shrink-to-fit の幅や min-content の幅に中身は寄与しない（CSS Containment 3 §3）。
      */
     public boolean containsInlineSize() {
-        return (style.containment() & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_INLINE_SIZE)) != 0
-                || style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize();
+        return style.facts().containsInlineSize;
     }
 
     /** 縦方向の size containment（{@code container-type: size}）。高さが {@code auto} でも中身の高さは寄与しない。 */
     public boolean containsBlockSize() {
-        return (style.containment() & ComputedStyle.CONTAIN_SIZE) != 0
-                || style.keywordOf(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize();
+        return style.facts().containsBlockSize;
     }
 
     /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
     public boolean isScrollContainer() {
-        return style.overflowX().scrolls() || style.overflowY().scrolls();
+        return style.facts().scrollContainer;
     }
 
     private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
@@ -1405,14 +1572,14 @@ public class LayoutBox {
         LayoutBox lastInFlow = null;
         if (marginEscapes) {
             for (LayoutBox child : children) {
-                if (!"none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) && !child.isAbsolute
+                if (!child.style.facts().displayNone && !child.isAbsolute
                         && !child.display.isInlineLevel()) {
                     lastInFlow = child;
                 }
             }
         }
         for (LayoutBox child : children) {
-            if ("none".equals(child.style.getOrDefault(CssProperty.DISPLAY, "block")) || child.isAbsolute) continue;
+            if (child.style.facts().displayNone || child.isAbsolute) continue;
             if (child.node != null && child.node.nodeType == NodeType.TEXT) {
                 // 文字の塊の箱は位置を持たない（x / y は 0 のまま。置かれるのは断片）。箱の x / y / h を読むと、相対配置・sticky で
                 // 祖先が動いたとき（その分だけ箱も平行移動される）スクロール範囲にそのずれが入り、sticky ではスクロールするほど
@@ -1604,7 +1771,7 @@ public class LayoutBox {
             if (outer != Outer.INLINE) return this;
             CssKeywords.Position position = style.keywordOf(CssProperty.POSITION, CssKeywords.Position.class);
             boolean outOfFlow = position == CssKeywords.Position.ABSOLUTE || position == CssKeywords.Position.FIXED
-                    || style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE;
+                    || style.facts().floating;
             return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;
         }
 

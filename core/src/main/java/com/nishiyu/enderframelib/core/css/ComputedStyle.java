@@ -658,22 +658,147 @@ public final class ComputedStyle {
         return parsed;
     }
 
+    /** 記憶表に載せずにキーワードを解く（事実の算出用。記憶表を何度も作り直さない）。{@link #keywordOf(String, Class)} と同じ値。 */
+    <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(String propertyName, Class<E> type) {
+        int id = CssPropertyId.of(propertyName);
+        E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
+        return parsed != null ? parsed : PropertyRegistry.initialKeyword(propertyName, type);
+    }
+
     /** {@code box-sizing: border-box} か。 */
     public boolean isBorderBox() {
-        return keywordOf(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
+        return layoutFacts().borderBox;
+    }
+
+    // ==========================================
+    // 型付きの事実（算出スタイルごとに一度だけ決まる値）
+    // ==========================================
+    //
+    // レイアウトが箱ごと・測定ごとに繰り返し読む値を、文字列を読み直さず（分割・小文字化・パースをせず）に引けるようにする。
+    // 算出スタイルは不変なので、最初の参照で作った値を使い回してよい。
+
+    /** 行の高さの指定の種類。 */
+    public static final byte LH_NORMAL = 0, LH_PX = 1, LH_PERCENT = 2, LH_EM = 3, LH_NUMBER = 4;
+
+
+    private volatile StyleFacts facts;
+
+    /** 型付きの事実。最初の参照で作る（競って 2 回作っても同じ値）。 */
+    public StyleFacts facts() {
+        StyleFacts f = facts;
+        if (f == null) {
+            f = buildFacts();
+            facts = f;
+        }
+        return f;
+    }
+
+    /**
+     * 型付きの事実に、測定・整形が読む宣言の値（{@link StyleFacts#widthStr} など）まで揃えて返す。
+     * 重いので、overflow などの基本の事実（{@link #facts()}）だけで足りる読み手は呼ばない。
+     */
+    public StyleFacts layoutFacts() {
+        StyleFacts f = facts();
+        if (!f.extrasReady) {
+            f.fillExtras(this);
+            f.extrasReady = true;
+        }
+        return f;
+    }
+
+    private StyleFacts buildFacts() {
+        String raw = get(CssProperty.LINE_HEIGHT);
+        byte kind = LH_NORMAL;
+        float value = 0f;
+        if (raw != null) {
+            String v = raw.trim();
+            if (!v.isEmpty() && !v.equalsIgnoreCase("normal")) {
+                try {
+                    if (v.endsWith("px")) {
+                        value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
+                        kind = LH_PX;
+                    } else if (v.endsWith("%")) {
+                        value = Float.parseFloat(v.substring(0, v.length() - 1).trim()) / 100f;
+                        kind = LH_PERCENT;
+                    } else if (v.endsWith("em")) {
+                        value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
+                        kind = LH_EM;
+                    } else {
+                        value = Float.parseFloat(v);
+                        kind = LH_NUMBER;
+                    }
+                } catch (NumberFormatException e) {
+                    kind = LH_NORMAL;
+                }
+            }
+        }
+        StyleFacts built = new StyleFacts(computeOverflowAxis(CssProperty.OVERFLOW_X, 0), computeOverflowAxis(CssProperty.OVERFLOW_Y, 1),
+                com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.numericWeight(get(CssProperty.FONT_WEIGHT)),
+                kind, value,
+                (containment() & (CONTAIN_SIZE | CONTAIN_INLINE_SIZE)) != 0
+                        || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize(),
+                (containment() & CONTAIN_SIZE) != 0
+                        || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
+                keywordFresh(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
+                "none".equals(getOrDefault(CssProperty.DISPLAY, "block")),
+                definiteLength(get(CssProperty.WIDTH)), definiteLength(get(CssProperty.HEIGHT)));
+        return built;
     }
 
     /** 横方向の {@code overflow}。{@code overflow-x} が無ければショートハンド {@code overflow} の最初の値。 */
     public Overflow overflowX() {
-        return overflowAxis(CssProperty.OVERFLOW_X, 0);
+        return facts().overflowX;
     }
 
     /** 縦方向の {@code overflow}。{@code overflow-y} が無ければショートハンドの 2 つ目（1 つなら同じ値）。 */
     public Overflow overflowY() {
-        return overflowAxis(CssProperty.OVERFLOW_Y, 1);
+        return facts().overflowY;
     }
 
-    private Overflow overflowAxis(String property, int shorthandIndex) {
+    /** {@link #edgeLength} の添字: margin（上右下左）・padding（上右下左）・border-width（上右下左）・row-gap・column-gap。 */
+    public static final int EDGE_MARGIN_T = 0, EDGE_MARGIN_R = 1, EDGE_MARGIN_B = 2, EDGE_MARGIN_L = 3,
+            EDGE_PADDING_T = 4, EDGE_PADDING_R = 5, EDGE_PADDING_B = 6, EDGE_PADDING_L = 7,
+            EDGE_BORDER_T = 8, EDGE_BORDER_R = 9, EDGE_BORDER_B = 10, EDGE_BORDER_L = 11,
+            EDGE_ROW_GAP = 12, EDGE_COLUMN_GAP = 13;
+
+    private static final int[] EDGE_IDS = {
+            idOf(CssProperty.MARGIN_TOP), idOf(CssProperty.MARGIN_RIGHT), idOf(CssProperty.MARGIN_BOTTOM), idOf(CssProperty.MARGIN_LEFT),
+            idOf(CssProperty.PADDING_TOP), idOf(CssProperty.PADDING_RIGHT), idOf(CssProperty.PADDING_BOTTOM), idOf(CssProperty.PADDING_LEFT),
+            idOf(CssProperty.BORDER_TOP_WIDTH), idOf(CssProperty.BORDER_RIGHT_WIDTH), idOf(CssProperty.BORDER_BOTTOM_WIDTH),
+            idOf(CssProperty.BORDER_LEFT_WIDTH), idOf(CssProperty.ROW_GAP), idOf(CssProperty.COLUMN_GAP)};
+
+    private LengthResolver.CompiledLength[] compileEdges() {
+        LengthResolver.CompiledLength[] out = new LengthResolver.CompiledLength[EDGE_IDS.length];
+        for (int i = 0; i < out.length; i++) {
+            String val = values[EDGE_IDS[i]];
+            out[i] = val == null ? null : LengthResolver.compile(val);
+        }
+        return out;
+    }
+
+    /**
+     * 箱の縁の長さ（{@code EDGE_*}）を px にする。{@link #length(int, float, float, float)} と同じ結果を、
+     * 記憶表を引かずに返す。宣言が無ければ 0。
+     */
+    public float edgeLength(int edge, float maxPixels, float rootW, float rootH) {
+        StyleFacts f = facts();
+        LengthResolver.CompiledLength[] edges = f.edges;
+        if (edges == null) {
+            edges = compileEdges();
+            f.edges = edges;
+        }
+        LengthResolver.CompiledLength c = edges[edge];
+        return c == null ? 0 : c.resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    }
+
+    private static boolean definiteLength(String value) {
+        if (value == null) return false;
+        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return !v.isEmpty() && !v.equals("auto") && !v.contains("%")
+                && !com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(v);
+    }
+
+    private Overflow computeOverflowAxis(String property, int shorthandIndex) {
         Overflow declared = declaredOverflowAxis(property, shorthandIndex);
         // paint containment は中身を padding box で切る（overflow: clip と同じ。スクロールコンテナにはならない）
         if (declared == Overflow.VISIBLE && (containment() & CONTAIN_PAINT) != 0) return Overflow.CLIP;
@@ -681,7 +806,7 @@ public final class ComputedStyle {
     }
 
     private Overflow declaredOverflowAxis(String property, int shorthandIndex) {
-        if (properties.containsKey(property)) return keywordOf(property, Overflow.class);
+        if (properties.containsKey(property)) return keywordFresh(property, Overflow.class);
         String shorthand = properties.get(CssProperty.OVERFLOW);
         if (shorthand == null) return Overflow.VISIBLE;
         String[] parts = shorthand.trim().split("\\s+");

@@ -132,7 +132,6 @@ public final class TextShaper {
      * 幅が変わる（ウィンドウのリサイズ・flex の再測定）たびに UAX #14 の判定と語ごとの測定をやり直さず、
      * 行の分割はこの数値だけで行う。
      */
-    record Segmented(String[] segs, int[] offsets, float[] fullW, float[] trimmedW, float[] joinW) {}
 
     private record SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
         @Override
@@ -147,15 +146,15 @@ public final class TextShaper {
         }
     }
 
-    private static final java.util.concurrent.ConcurrentHashMap<SegKey, Segmented> SEGMENTED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<SegKey, ParagraphSegments> SEGMENTED = new java.util.concurrent.ConcurrentHashMap<>();
     private static final AtomicInteger SEGMENTED_BUILDS = new AtomicInteger();
 
     /** 段落の下ごしらえの作成回数（テスト用）。 */
     static int segmentedBuilds() { return SEGMENTED_BUILDS.get(); }
 
-    static Segmented segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+    public static ParagraphSegments segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
         SegKey key = new SegKey(paragraph, face, font, wordBreak);
-        Segmented hit = SEGMENTED.get(key);
+        ParagraphSegments hit = SEGMENTED.get(key);
         if (hit != null) return hit;
         List<String> list = segments(paragraph, wordBreak);
         int n = list.size();
@@ -164,6 +163,8 @@ public final class TextShaper {
         float[] full = new float[n];
         float[] trimmed = new float[n];
         float[] joins = new float[n];
+        float[] strippedTrailing = new float[n];
+        float[] stripped = new float[n];
         int offset = 0;
         for (int i = 0; i < n; i++) {
             offsets[i] = offset;
@@ -173,8 +174,12 @@ public final class TextShaper {
             full[i] = segs[i].isEmpty() ? 0 : face.advance(segs[i], font);
             String t = stripTrailingBlanks(segs[i]);
             trimmed[i] = t.isEmpty() ? 0 : (t.length() == segs[i].length() ? full[i] : face.advance(t, font));
+            String st = segs[i].stripTrailing();
+            strippedTrailing[i] = st.isEmpty() ? 0 : (st.length() == segs[i].length() ? full[i] : face.advance(st, font));
+            String sp = segs[i].strip();
+            stripped[i] = sp.isEmpty() ? 0 : (sp.length() == segs[i].length() ? full[i] : face.advance(sp, font));
         }
-        Segmented made = new Segmented(segs, offsets, full, trimmed, joins);
+        ParagraphSegments made = new ParagraphSegments(segs, offsets, full, trimmed, joins, strippedTrailing, stripped);
         SEGMENTED_BUILDS.incrementAndGet();
         if (SEGMENTED.size() >= SHAPED_LIMIT) SEGMENTED.clear();
         SEGMENTED.put(key, made);
@@ -267,9 +272,9 @@ public final class TextShaper {
                 return;
             }
 
-            Segmented seg = segmented(paragraph, face, style.font(), style.wordBreak());
-            for (int i = 0; i < seg.segs.length; i++) {
-                append(seg.segs[i], from + seg.offsets[i], seg.trimmedW[i], seg.fullW[i], seg.joinW[i]);
+            ParagraphSegments seg = segmented(paragraph, face, style.font(), style.wordBreak());
+            for (int i = 0; i < seg.segs().length; i++) {
+                append(seg.segs()[i], from + seg.offsets()[i], seg.trimmedW()[i], seg.fullW()[i], seg.joinW()[i]);
             }
             flush(to, true);
         }

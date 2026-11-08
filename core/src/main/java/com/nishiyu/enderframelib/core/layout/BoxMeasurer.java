@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
@@ -74,16 +75,16 @@ public final class BoxMeasurer {
 
         resolveBoxEdges(box, parentW, parentH, rootW, rootH);
 
-        boolean autoLeft = "auto".equals(style.get(CssProperty.MARGIN_LEFT));
-        boolean autoRight = "auto".equals(style.get(CssProperty.MARGIN_RIGHT));
+        StyleFacts facts = style.layoutFacts();
+        boolean autoLeft = facts.marginLeftAuto;
+        boolean autoRight = facts.marginRightAuto;
         boolean isBorderBox = isBorderBox(style);
 
-        String widthStr = style.getOrDefault(CssProperty.WIDTH, "auto").trim();
         // min-content / max-content / fit-content は長さではなく内容から決まる（W2 以前は 0 px に解けていた）
-        String intrinsicWidth = !"auto".equals(widthStr) && LayoutMetrics.isIntrinsicSizeKeyword(widthStr)
-                ? widthStr.toLowerCase() : null;
-        boolean hasWidth = !"auto".equals(widthStr) && intrinsicWidth == null;
-        boolean isPercentWidthAndShrinking = hasWidth && widthStr.contains("%") && fmtCtx.isShrink();
+        String widthStr = facts.widthStr;
+        String intrinsicWidth = facts.intrinsicWidth;
+        boolean hasWidth = !facts.widthAuto && intrinsicWidth == null;
+        boolean isPercentWidthAndShrinking = hasWidth && facts.widthPercent && fmtCtx.isShrink();
         boolean bfc = establishesBfc(box, fmtCtx);
         if (box.establishesBfc != bfc) {
             box.establishesBfc = bfc;
@@ -200,23 +201,23 @@ public final class BoxMeasurer {
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.style;
 
-        box.mT = style.length(ID_MARGIN_TOP, parentW, rootW, rootH);
-        box.mR = style.length(ID_MARGIN_RIGHT, parentW, rootW, rootH);
-        box.mB = style.length(ID_MARGIN_BOTTOM, parentW, rootW, rootH);
-        box.mL = style.length(ID_MARGIN_LEFT, parentW, rootW, rootH);
+        box.mT = style.edgeLength(ComputedStyle.EDGE_MARGIN_T, parentW, rootW, rootH);
+        box.mR = style.edgeLength(ComputedStyle.EDGE_MARGIN_R, parentW, rootW, rootH);
+        box.mB = style.edgeLength(ComputedStyle.EDGE_MARGIN_B, parentW, rootW, rootH);
+        box.mL = style.edgeLength(ComputedStyle.EDGE_MARGIN_L, parentW, rootW, rootH);
         box.ownMarginTop = box.mT;
         box.ownMarginBottom = box.mB;
 
-        box.pT = style.length(ID_PADDING_TOP, parentW, rootW, rootH);
-        box.pR = style.length(ID_PADDING_RIGHT, parentW, rootW, rootH);
-        box.pB = style.length(ID_PADDING_BOTTOM, parentW, rootW, rootH);
-        box.pL = style.length(ID_PADDING_LEFT, parentW, rootW, rootH);
+        box.pT = style.edgeLength(ComputedStyle.EDGE_PADDING_T, parentW, rootW, rootH);
+        box.pR = style.edgeLength(ComputedStyle.EDGE_PADDING_R, parentW, rootW, rootH);
+        box.pB = style.edgeLength(ComputedStyle.EDGE_PADDING_B, parentW, rootW, rootH);
+        box.pL = style.edgeLength(ComputedStyle.EDGE_PADDING_L, parentW, rootW, rootH);
 
 
-        box.bT = style.length(ID_BORDER_TOP_WIDTH, parentH, rootW, rootH);
-        box.bR = style.length(ID_BORDER_RIGHT_WIDTH, parentW, rootW, rootH);
-        box.bB = style.length(ID_BORDER_BOTTOM_WIDTH, parentH, rootW, rootH);
-        box.bL = style.length(ID_BORDER_LEFT_WIDTH, parentW, rootW, rootH);
+        box.bT = style.edgeLength(ComputedStyle.EDGE_BORDER_T, parentH, rootW, rootH);
+        box.bR = style.edgeLength(ComputedStyle.EDGE_BORDER_R, parentW, rootW, rootH);
+        box.bB = style.edgeLength(ComputedStyle.EDGE_BORDER_B, parentH, rootW, rootH);
+        box.bL = style.edgeLength(ComputedStyle.EDGE_BORDER_L, parentW, rootW, rootH);
         if (box.collapsedBorders != null) {
             box.bT = box.collapsedBorders[0];
             box.bR = box.collapsedBorders[1];
@@ -229,8 +230,8 @@ public final class BoxMeasurer {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 
-        box.rowGap = style.length(ID_ROW_GAP, parentH, rootW, rootH);
-        box.columnGap = style.length(ID_COLUMN_GAP, parentW, rootW, rootH);
+        box.rowGap = style.edgeLength(ComputedStyle.EDGE_ROW_GAP, parentH, rootW, rootH);
+        box.columnGap = style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, parentW, rootW, rootH);
     }
 
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
@@ -381,10 +382,11 @@ public final class BoxMeasurer {
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
-        String heightStr = style.getOrDefault(CssProperty.HEIGHT, "auto").trim();
+        StyleFacts facts = style.layoutFacts();
+        String heightStr = facts.heightStr;
         // 基準の高さが不定（NaN）なら % の高さは auto（CSS 2.2 §10.5）。グリッドの行の大きさを決める段階がこれを使う
-        boolean hasHeight = style.containsKey(CssProperty.HEIGHT) && !"auto".equals(heightStr)
-                && !(Float.isNaN(parentH) && heightStr.contains("%"));
+        boolean hasHeight = facts.hasHeightDeclaration && !facts.heightAuto
+                && !(Float.isNaN(parentH) && facts.heightPercent);
         boolean overridden = !Float.isNaN(box.overrideHeight);
 
         if (overridden) {
@@ -617,13 +619,13 @@ public final class BoxMeasurer {
         if (MulticolLayout.isMulticol(box)) return true;
         // fieldset と、その描画される legend は独立した整形コンテキストを作る（HTML §15.3.13）
         if (box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
-        if (box.style.keywordOf(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE) return true;
+        StyleFacts facts = box.style.layoutFacts();
+        if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || "grid".equals(fmtCtx.parentDisplay())) return true;
         // layout / paint containment は独立した整形コンテキストを作る（CSS Containment 2）
-        if ((box.style.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0) return true;
-        // visible と clip 以外の overflow は BFC を作る（clip はスクロールコンテナにならない）
-        return box.style.overflowX().scrolls() || box.style.overflowY().scrolls();
+        // visible と clip 以外の overflow も BFC を作る（clip はスクロールコンテナにならない）
+        return facts.bfcByStyle;
     }
 
     /** 両側の inset が auto でないか（絶対配置の寸法を inset から決められるか）。 */
@@ -642,6 +644,6 @@ public final class BoxMeasurer {
 
 
     private static boolean isDisplayNone(ComputedStyle style) {
-        return "none".equals(style.getOrDefault(CssProperty.DISPLAY, "block"));
+        return style.layoutFacts().displayNone;
     }
 }

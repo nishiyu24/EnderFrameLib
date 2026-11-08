@@ -321,7 +321,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         float[] nums;
         ClipRect clip;
         String parentId;
-        Map<String, String> attrs;
+        /** 記憶を作ったときの属性の版番号（属性の写しを持たずに、書き換えがあったかを見分ける）。 */
+        int attrVersion;
         String displayText;
         Object shaped;
         Object[] fragRefs;
@@ -333,6 +334,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         LayoutBox parentBox;
         /** 位置だけが変わった作り直し（スクロール）で、項目を平行移動して使い回せる箱か。 */
         boolean translatable;
+        /** 項目が中身の大きさ（スクロール量）を持つ。中身が変わると、箱が動いただけでは使い回せない。 */
+        boolean carriesContentExtent;
         /** この箱を含む、保持された部分木。再利用されている間は、箱ごとに世代を書かなくても記憶は捨てられない。 */
         PaintOrder.Chunk chunk;
     }
@@ -354,6 +357,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     /** 次の {@link #render} だけ変更印を使う。 */
+    /**
+     * 次の {@link #render} だけ、整数ぶんだけ動いた箱の項目を厳密に平行移動して使い回す（子の増減で後続の行が下へずれるとき）。
+     * スクロール用の平行移動（{@link #translating}）と違って丸めず、動きが整数でない箱は使い回さない（結果は描き直しと完全に同じ）。
+     */
+    public void setExactTranslation(boolean exact) {
+        this.exactTranslation = exact;
+    }
+
+    private boolean exactTranslation;
+
     public void setUseChangeStamps(boolean use) {
         this.useChangeStamps = use;
     }
@@ -466,17 +479,19 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
         if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return 0;
-        boolean moveOk = translating && m.translatable;
         float[] nn = numsOf(box);
         float dx = nn[0] - m.nums[0], dy = nn[1] - m.nums[1];
         boolean moved = dx != 0 || dy != 0;
+        // スクロールの作り直しは丸めて動かす。子の増減では、整数ぶんだけ動いた箱に限って厳密に動かす（丸めが入らない）
+        boolean moveOk = m.translatable && (translating
+                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && dx == Math.rint(dx) && dy == Math.rint(dy)));
         if (moved && !moveOk) return 0;
         for (int i = 2; i < nn.length; i++) if (Float.compare(m.nums[i], nn[i]) != 0) return 0;
         boolean clipSame = sameClip(m.clip, clip);
         if (!clipSame && !moveOk) return 0;
         if (!java.util.Objects.equals(m.parentId, parentId)) return 0;
         if (!java.util.Objects.equals(m.displayText, box.displayText) || !java.util.Objects.equals(m.shaped, box.shapedLines)) return 0;
-        if (!m.attrs.equals(box.node.attrs)) return 0;
+        if (m.attrVersion != box.node.attrVersion()) return 0;
         int depth = 0;
         for (LayoutBox a = box.parent; a != null; a = a.parent, depth++) {
             if (depth >= m.ancestors.length || !sameStyle(m.ancestors[depth], a.style)) return 0;
@@ -534,6 +549,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 項目が平行移動だけで作り直せるか: 座標を持つのが x・y と（前回のクリップそのものの）クリップだけで、
      * 箱の座標で決まる図形（影・グラデーション・clip-path・backdrop）や、画面に固定の背景を持たない。
      */
+    /** 項目のどれかがスクロールの大きさ（中身の幅・高さ）を持つか。 */
+    private static boolean carriesContentExtent(List<DisplayItem> items) {
+        for (DisplayItem it : items) {
+            RenderMeta meta = it.meta();
+            if (meta != null && meta.hints() != null && meta.hints().scrollable()) return true;
+        }
+        return false;
+    }
+
     private static boolean survivesTranslation(LayoutBox box, ClipRect clip, List<DisplayItem> items) {
         String attachment = box.style.get("background-attachment");
         if (attachment != null && attachment.contains("fixed")) return false;
@@ -561,7 +585,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         m.nums = numsOf(box);
         m.clip = clip;
         m.parentId = parentId;
-        m.attrs = new java.util.HashMap<>(box.node.attrs);
+        m.attrVersion = box.node.attrVersion();
         m.displayText = box.displayText;
         m.shaped = box.shapedLines == null ? null : List.copyOf(box.shapedLines);
         List<LayoutBox.InlineFragment> frags = box.inlineFragments;
@@ -594,6 +618,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         m.interactive = box.hasInteractiveRules;
         m.suppressShadow = suppressTextShadow;
         m.translatable = survivesTranslation(box, clip, items);
+        m.carriesContentExtent = carriesContentExtent(items);
         m.generation = generation;
         return m;
     }
