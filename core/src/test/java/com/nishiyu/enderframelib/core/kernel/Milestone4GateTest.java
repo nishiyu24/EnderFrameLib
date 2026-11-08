@@ -61,4 +61,15 @@ class Milestone4GateTest {
         // 本流から呼ばれない第二のタイルラスタライザだったので、照合基準としてテスト側へ移した（§9.5.21）。本番へ戻さない
         assertFalse(Files.exists(MAIN.resolve("core/kernel/gpu/SimdTileSoftwareRenderer.java")));
     }
+
+    @Test
+    void simdHitTesterWrapperStaysRemoved() throws IOException {
+        assertFalse(Files.exists(MAIN.resolve("core/kernel/layout/SimdHitTester.java")),
+                "SimdHitTester は SimdBackend.hitTestLast を呼ぶだけの1行ラッパーだったので撤去済み。直接 SimdBackend を使う");
+        try (var files = Files.walk(MAIN)) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                assertFalse(Files.readString(p).contains("SimdHitTester"), p + " が SimdHitTester を参照している");
+            }
+        }
+    }
 }
