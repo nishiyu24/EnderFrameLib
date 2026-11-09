@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・Phase A-2 層（グループ・マスク・スクロール層）の GPU 問い合わせを `GpuLayerAttempt` へ集約し `SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロ化・Phase A-3 旧 `GpuBatchPacker` 経路の撤去（GPU 経路を 1 系統に統一）・Phase A-1 字形キャッシュと被覆率部品の `GlyphCache` 分離・Phase A 試行の向きの反転ステップ ① 角丸枠線・外側影・円枠線・画像・字形の置き方の幾何を `ShapeGeometry` へ分離（完了）・Phase B-2 静止フレームの描き直し省略判定を `StaticFrameGate` として core へ切り出し・二重構造の撤去 `LayoutResultCache`（`LayoutBox.Tentative` を正本化）・`PackedCssValue` を縁の長さへ接続し `CalcProgram` を撤去・`GpuSceneSync` をテスト側へ移動（PropertyTrees の書き手を `GlRectStream` の 1 系統へ）・SIMD 島（`kernel/simd`・`FenwickVirtualList`・`SimdLayoutKernel`）をテスト側へ移動・`GpuAnimation` の Java 参照実装をテスト側へ分離（本番は GLSL のみ）・数値バインディングの往復を実測し見送り（二重構造の解消は完了）・全章統合整理版）
+**最終更新**: 2026-11-10（Milestone 0〜5 実装 ＋ 二重構造解消完了 ＋ Wave 1 着手（`ReplacedElements` 台帳）＋ **第 7 章：`:core` 全 225 ファイル精査による現状評価・他 UI ライブラリ比較・汎用 Web/UI エンジンとしての課題と超克ロードマップ** を追加）
 
 ---
 
@@ -314,3 +314,145 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 ### Phase C：Three.js 型 3D シーングラフの実装（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)）
 - Phase A で独立したディスパッチャの `case SCENE ->` フックに [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) の **`Scene3DArena` / `GlScene3DRenderer` / `SoftwareScene3DRasterizer`（Milestone 3D-1〜3D-5）** を接続し、2D HTML/CSS と 3D 空間が双方向に融合したフルゲームエンジンへと進化させる。
+
+---
+
+## 7. `:core` 全ファイル精査による現状評価と「他 UI ライブラリを超える汎用 Web/UI エンジン」への課題総覧
+
+`:core` 配下の全本番コード（**225 Java ファイル**：`api` 27 / `client.template` 2 / `common` 23 / `core` 173）およびテストスイート（**234 テストファイル・1,666 テストケース**）を精査し、既存の Java / Web / ゲーム系 UI ライブラリと比較した現在地の客観的評価と、それらを決定的に凌駕するための技術課題を整理します。
+
+---
+
+### 7.1 競合 UI ライブラリとの比較と `:core` の現在の到達点
+
+| 比較軸 | JavaFX / Swing | JCEF / Ultralight (WebView 系) | Dear ImGui / Compose / ModernUI | **EnderFrameLib `:core`（現在地）** | **評価** |
+| :--- | :--- | :--- | :--- | :--- | :---: |
+| **配布サイズ・外部依存** | JDK 外モジュール / レガシー AWT 依存 | 100MB 級の C++ バイナリ・別プロセス・JNI 必須 | 軽量だが独自 DSL / 独自レイアウトの習得が必要 | **純 Java + 標準 LWJGL のみ**（追加 DLL ゼロ・JVM フラグ不要：[`KernelBaselineTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/KernelBaselineTest.java)） | **◎ 圧倒的優位** |
+| **HTML / CSS 標準準拠度** | 独自 CSS 風サブセットのみ（Flex/Grid なし） | フルブラウザ相当（ただし重厚） | なし（コード駆動 UI） | **WHATWG HTML5 パーサ + CSS Cascade 5 / Selectors 4 (`:has`, `@layer`, `@container`, `@scope`) + Block/Flex/Grid/Table/Multicol** | **◎ 純 Java 最高峰** |
+| **ヘッドレス CI・CPU/GPU 等価性** | 画面無し CI やソフトウェア描画での画素保証が困難 | GPU コンテキスト共有・オフスクリーン転送が重い | GPU 前提（CPU 単独ラスタなし） | **64×64 タイル並列 [`SoftwareRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) (`1.11ms`) と 3 面 VRAM リング [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) が画素単位で一致** | **◎ 独自性・完成度ともに極高** |
+| **フレーム予算（144〜240fps 耐性）** | リ플ロー・GC スパイクが発生しやすい | IPC / テクスチャコピーがボトルネック | Immediate Mode は毎フレーム CPU 構築コストが比例 | **静止 Skip / `:hover` `~10ns` / GL スクロール `0.13ms` / `TEXT_PATCH` / `CHILD_PATCH`** | **○ 定常時は極速、コールド時・確保量に改善余地** |
+| **汎用 API・拡張性・エコシステム** | 成熟した公開 API・IME・アクセシビリティ完備 | Web エコシステムそのまま | 豊富なウィジェット・デバッグツール完備 | **`api` と `common`/`core` の境界が発展途上、Minecraft 固有概念の一部残存、IME 未対応** | **△ 汎用エンジン化の主課題** |
+
+---
+
+### 7.2 サブシステム別・コード精査による現状評価（強みと成熟度）
+
+1. **DOM & パーサ層（`core/dom`, `api/dom` — 42 ファイル）**: **【評価：A】**
+   - [`HtmlParser`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/parser/HtmlParser.java)（1,337 行）は WHATWG HTML5 の Tree Construction・Foster Parenting・Foreign Content（SVG/MathML）・文字参照展開を実装し、WPT テスト（[`WptDomBehaviorTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/wpt/WptDomBehaviorTest.java)）で検証されている。
+   - [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) と [`AtomTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/AtomTable.java) により、ノード ID・親子兄弟トポロジー・64-bit Bloom Filter・クラス Atom 配列がオフヒープ連携しており、[`MutationObserverManager`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/MutationObserverManager.java)・[`FormController`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/FormController.java)・[`ConstraintValidator`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/ConstraintValidator.java) まで揃っている。
+2. **CSS 解決・カスケード層（`core/css`, `core/kernel/style`, `core/kernel/compiler` — 41 ファイル）**: **【評価：A+】**
+   - 純 Java 実装として類を見ない仕様網羅性を持つ。[`ColorParser`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ColorParser.java)（`oklch`, `oklab`, `color-mix`, `light-dark` 対応）、[`LengthResolver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/LengthResolver.java)（CSS Values 4 数学関数 `calc/min/max/clamp/round/mod/rem/sin/cos/pow`、コンテナ単位 `cqw/cqh/cqi/cqb`、動的ビューポート単位 `svh/lvh/dvh`）、[`AtRuleProcessor`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/AtRuleProcessor.java)（`@layer`, `@container`, `@scope`, `@property`, `@counter-style`, `@ supports`）、[`InvalidationSets`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/InvalidationSets.java) が稼働している。
+3. **レイアウトエンジン層（`core/layout` — 16 ファイル）**: **【評価：A】**
+   - [`BlockLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java)（BFC・Float・マージン相殺・インライン整形）、[`FlexLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/FlexLayoutEngine.java)、[`GridLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/GridLayoutEngine.java)（`grid-template-areas`, `auto-fit`/`auto-fill`, `minmax`, `span`）、[`TableLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/TableLayoutEngine.java)（`border-collapse`, `colspan`/`rowspan`, 匿名表ボックス）、[`MulticolLayout`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/MulticolLayout.java) の 5 大レイアウトモードを完備。
+4. **テキスト・フォント層（`core/text` — 22 ファイル）**: **【評価：B+】**
+   - FreeType による Chrome (DirectWrite/GDI) 互換メトリクス算出（[`LoadedFace`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/LoadedFace.java)）、UAX #14 改行規則（[`LineBreaker`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/LineBreaker.java)）、純 Java OpenType [`GsubTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/GsubTable.java) / [`KerningTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/KerningTable.java)、幅非依存の [`ParagraphSegments`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/ParagraphSegments.java) を実装。
+5. **ペイント・GPU/CPU レンダリング・ラスタ層（`core/paint`, `core/raster`, `core/kernel/gpu` — 105 ファイル）**: **【評価：A】**
+   - CSS Stacking Context 準拠の [`PaintOrder`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintOrder.java)（部分木 `Chunk` メモ付き）、[`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java) + [`GpuRectShader`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuRectShader.java) の単一 Uber-Shader インスタンス描画、64×64 タイル並列 [`TileQueue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/TileQueue.java)、さらに HTML5 [`CanvasRenderingContext2D`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/CanvasRenderingContext2D.java) と [`SvgRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java) を備える。
+   - プラットフォーム依存は [`PortabilityRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/PortabilityRatchetTest.java) により 7 ファイルのみに厳格隔離されている。
+
+---
+
+### 7.3 他の UI ライブラリを超えるために解決すべき「6 大課題領域」
+
+コードベース全体の精査により特定された、汎用エンジンとしての具体的なボトルネック・仕様ギャップ・設計課題は以下の 6 領域に集約されます。
+
+---
+
+#### 課題領域 1：公開 API 設計の整備とホスト（Minecraft）固有概念の完全分離
+
+汎用 Java UI ライブラリとして外部開発者が利用する際、現在のパッケージ構成と拡張ポイントには以下の障壁があります。
+
+1. **公開 API（`api`）とランタイム実装（`common` / `core`）のギャップ**:
+   - [`WebDocument.java:16-34`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/WebDocument.java#L16-L34) は `authorCss()`, `hasElement()`, `tagOf()`, `attributeOf()` の 4 メソッドしか公開しておらず、一方で [`api.dom.Document`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/dom/Document.java) / [`api.dom.Element`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/dom/Element.java) と、画面ライフサイクルを担う [`UiView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) / [`StandaloneView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java) が `common` パッケージに分かれている。
+   - **対策**: エンジンを数行で組み込める統合エントリーポイント（例：`EnderEngine` / `WebViewSurface`）を `api` に定義し、GLFW ウィンドウ・オフスクリーン FBO・ヘッドレス `Pixmap`・カスタムホストへのマウントを統一 API で提供する。
+2. **コア層に残存する Minecraft 固有タグ・命名のプラグイン SPI 化**:
+   - [`DisplayListBuilder.java:54-57`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java#L54-L57) の `NON_FRAGMENT_TAGS` に `"mc-fluid"`, `"mc-entity"`, `"mc-scene"` がハードコードされており、[`ElementType.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ElementType.java) にも `ITEM`, `ENTITY`, `FLUID` 等のゲーム固有列挙が固定されている。また [`UiInput.java:109-116`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiInput.java#L109-L116) の引数名にも `minecraftButton` が残っている。
+   - **対策**: 置換要素（Replaced Element）の採寸・描画・ヒットテストを外部から登録できる **`CustomElementPainter` / `ReplacedElementRegistry` SPI** を導入し、`<mc-*>` は Minecraft ホスト側のプラグインとして注入する構造へ純化する。
+   - **✅ 一部実施（2026-11-10）**: タグ台帳 [`ReplacedElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/ReplacedElements.java)（`register(tag, Kind)` / `isHost` / `isReplacedTag`、不変スナップショット参照で読み取りは確保ゼロ）を導入し、`LayoutBox.Display` / `Block・Flex・GridLayoutEngine.isReplaced` / `BoxMeasurer.isReplacedImage` / `DisplayListBuilder`（`NON_FRAGMENT_TAGS`・`memoizable`）に直書きされていた `mc-fluid` / `mc-entity` / `mc-scene` を台帳経由に置換。守護: [`ReplacedElementsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/ReplacedElementsTest.java)（既定の挙動維持・ホスト登録タグが inline 置換要素として振る舞うこと・上記 5 ファイル＋`DisplayListBuilder` への直書き復活の禁止）。core 全テスト成功。**残課題**: ① `BoxMeasurer` の `mc-scene` 採寸分岐・`ControlPainter` の `fluid:`/`entity:` 接頭辞・`DisplayListBuilder` の描画ディスパッチ（`case "mc-scene"` 等）・`HtmlParser.VoidElements` はまだ具体名を持つ（採寸／描画を差し込める `CustomElementPainter` が必要）② `ElementType` の `ITEM/ENTITY/FLUID` 列挙 ③ `UiInput` の `minecraftButton` 命名 ④ static グローバル（`RenderPipeline`・`Bindings`）の `EngineContext` 化は未着手。
+3. **static グローバル状態の排除（マルチインスタンス・マルチスレッド対応）**:
+   - [`RenderPipeline.java:64-65, 428`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/RenderPipeline.java#L64-L65) の `clientBoxRenderer` / `intrinsicSizeResolver` / `layoutChangedBoxes`、および [`Bindings.java:28-31`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L28-L31) の `i18nResolver` / `i18nFormatter` / `jsonListParser` がプロセス全体の `static` フィールドになっている。
+   - **対策**: 複数ウィンドウやサーバー・クライアント同時実行で競合しないよう、これらを `EngineContext`（または `UiView` インスタンス）スコープへ移動する。
+
+---
+
+#### 課題領域 2：真の Zero-GC 達成に向けたメモリ・データ構造の残存ボトルネック
+
+定常時のスクロールや `:hover` は極限まで高速化されましたが、動的 DOM 構築やフルレイアウト（`relayout` `2.41 ms` / `displayList` `0.71 ms`・`1.23 MB/op`）には以下のヒープ確保が残っています。
+
+1. **`ComputedStyle` の第 1 層 `String[] values` とカスケード時の `Map<String, String>` 生成（Milestone 2 の残り 1/4）**:
+   - [`ComputedStyle.java:39, 151-167`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java#L39) は全登録プロパティ数の `String[] values` を保持し、[`StyleResolver.resolveDeclarations`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleResolver.java#L48-L51) は `Map<String, String>` を経由している。また [`StyleFacts.java:149-152`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java#L149-L152) の `noPercent` のように `StyleFacts` 構築時に 14 プロパティの文字列検索が走る。
+   - さらに `StyleFacts.edges`（margin/padding/border 14 個）は [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java) (`long[]`) 化されたが、`width`, `height`, `min-width`, `max-width`, `min-height`, `max-height`, `top`, `right`, `bottom`, `left`, `flex-basis`, `row-gap`, `column-gap` は未接続のまま残っている。
+   - **対策**: CSS パース時（[`CssSyntax.Declaration`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssSyntax.java)）に宣言値を `CssPropertyId`（整数添字）＋ [`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java) へ事前コンパイルし、カスケードも `Map<String, String>` ではなく固定長配列／ビットマスク上で直接解決する。`StyleFacts` の寸法・inset 系プロパティもすべて `PackedCssValue` に統一する。
+2. **`DisplayItem` ヒープ生成（`1.23 MB/op`）と `Matrix2D` 逆分解（`GlRectStream.decompose`）の解消**:
+   - [`DisplayListBuilder.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java) は箱ごとに不変オブジェクト [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java)、[`ItemProps`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/ItemProps.java)、[`ClipRect`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ClipRect.java) を生成している。
+   - さらに描画時には [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) が親子の `Matrix2D` を掛け合わせた後、[`GlRectStream.decompose(pose)`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java#L116-L131) が `Math.hypot` / `Math.atan2` / `Math.cos` / `Math.sin` で毎フレーム TRS に逆分解して [`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) にフラット格納している。
+   - **対策**: `PropertyTrees` 本来の設計どおり、Transform / Clip / Effect の親子階層を `PropertyTrees` 上に保持して `decompose` を廃し、将来的には `DisplayList` 自体もオフヒープ（またはプリミティブ配列）コマンドバッファ化して `displayList` のヒープ確保 `1.23 MB → 0 B` を達成する。
+
+---
+
+#### 課題領域 3：レンダリングパイプライン（GPU / CPU / Canvas / SVG）の表現力と構造課題
+
+1. **GPU / CPU の呼び出し方向の反転完遂（Phase A ステップ ②・③）**:
+   - [`LwjglGlRenderBackend.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) から `SoftwareRenderBackend` の型参照は [`CpuLayerFallback`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/CpuLayerFallback.java) で遮断されたが、実行フローとしては依然として `LwjglGlRenderBackend` → `CpuLayerFallback.renderOnto` → `SoftwareRenderBackend.drawFrame` → `PaintSceneDriver.run` → [`GpuAttempt`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/GpuAttempt.java) という「CPU 側が走査を主導して GPU に伺いを立てる」向きになっている。
+   - **対策**: §6 Phase A の設計メモどおり、`PaintSceneDriver` の走査と [`ShapeGeometry`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/ShapeGeometry.java) によるディスパッチを共通ドライバ（または GL 側主導）へ引き上げ、GPU が拒否したプリミティブのみ `CpuLayerFallback` へ記録する真の GPU ファースト構造へ反転させる。
+2. **非等方スケール角丸・せん断変形（`skewX` / `skewY`）の GPU シェーダー対応**:
+   - [`GlRectStream.java:108-109, 124`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java#L108-L109) では、せん断を含む変形や縦横比の異なるスケール下の角丸矩形を拒否し、CPU フォールバックへ回している。
+   - **対策**: [`PropertyTrees`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/PropertyTrees.java) の Transform レコード（64B = 16 floats）に 2D アフィン（または 3D 4×4 行列）を保持可能にし、[`GpuRectShader`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuRectShader.java) の角丸 SDF をスクリーン空間勾配（または逆変換後の楕円 SDF）で評価することで、2D プリミティブの CPU フォールバック率を 0% にする。
+3. **`<canvas>` と `<svg>` の GPU アクセラレーションおよび機能拡張**:
+   - [`CanvasRenderingContext2D.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/CanvasRenderingContext2D.java)（813 行）と [`SvgRenderer.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java)（662 行）は現在 CPU の `Pixmap` ラスタライザ上で動作している。また `CanvasRenderingContext2D` は回転・せん断時のテキスト変形や `strokeText`、フィルタに未対応（[27-28行目](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/CanvasRenderingContext2D.java#L27-L28)）であり、`SvgRenderer` はページ側 `<style>` 規則の適用や `<mask>` / `<filter>` / `<pattern>` / `<marker>` / `<textPath>` に未対応（[36-38行目](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/svg/SvgRenderer.java#L36-L38)）。
+   - **対策**: SVG 要素に [`StyleResolver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleResolver.java) の CSS カスケードを接続して CSS 変数や `:hover` アニメーションを SVG 内部パーツに効かせるとともに、頻出パス描画の GPU インスタンス／ステンシル描画へのオフロードを行えるようにする。
+
+---
+
+#### 課題領域 4：テキスト・フォント・国際化（IME / 複雑文字 / マルチスレッド）の課題
+
+1. **`LoadedFace.LOCK`（プロセス単一グローバルロック）の細粒度化**:
+   - [`LoadedFace.java:38`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/LoadedFace.java#L38) では `public static final Object LOCK = new Object()` により、すべての書体のメトリクス取得・カーニング・グリフラスタライズが 1 つのロックで直列化されている。
+   - **対策**: FreeType は別々の `FT_Library` インスタンス（または Face ごとのロック＋`FT_New_Memory_Face` 複製）であれば並列実行可能であるため、ロックを `LoadedFace` インスタンス単位（またはスレッドローカル Face プール）へ分離し、マルチスレッド測定・描画のロック競合を排除する。
+2. **IME（かな漢字変換・インライン Preedit Composition）への対応**:
+   - [`TextEditing.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/TextEditing.java) および [`StandaloneView.java:45-47`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java#L45-L47) は物理キー（`keyDown`）と確定文字入力（`charTyped`）のみを扱っており、日本語・中国語・韓国語入力に不可欠な **IME 未確定文字列（Preedit / Composition 文節下線表示、変換候補ウィンドウの表示位置通知、DOM `compositionstart` / `compositionupdate` / `compositionend` イベント）** が未実装である。
+   - **対策**: `TextEditing.State` に `compositionText` / `compositionStart` / `compositionTarget` を追加し、キャレット矩形をホストウィンドウ（GLFW / OS IME API）へ返す `getImeCursorRect()` フックを [`UiView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) に設ける。またアイドル時の省電力を保ったまま点滅するスマートキャレットタイマーを導入する。
+3. **インライン跨ぎ Bidi・文脈依存 GSUB/GPOS・カラー絵文字（`COLR`/`CPAL`）**:
+   - [`BidiText.java:11-13`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/BidiText.java#L11-L13) に明記されているとおり、現在の双方向テキスト処理は単一テキストノード内に閉じており、複数の `<span>` を跨ぐ段落全体の Bidi 並べ替えやアラビア語の語頭・語中・語末連結形選択（Contextual GSUB Type 5/6/8）に未対応である。またカラー絵文字（`COLR` v0/v1, `CBDT`）が白黒アウトラインになる。
+   - **対策**: [`GsubTable.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/GsubTable.java) に Lookup Type 5/6（文脈依存置換）とアラビア語 `init`/`medi`/`fina`/`isol` 特性を追加し、FreeType のカラービットマップ／レイヤー取得（`FT_LOAD_COLOR`）を [`GlyphBitmap`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/GlyphBitmap.java) と GPU アトラスでサポートする。
+
+---
+
+#### 課題領域 5：レイアウトエンジンの CSS 仕様ギャップと大規模リスト仮想化
+
+1. **既存レイアウトエンジンの明示的 LIMITATION の解消**:
+   - **縦書き（`writing-mode: vertical-rl / vertical-lr`）**: 和風ゲーム UI・ノベルゲーム・縦書き見出しで差別化要素となるが、現在は [`StyleFacts.java:121-124`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleFacts.java#L121-L124) を含め横書き前提となっている。
+   - **Grid レイアウトの高度化（[`GridLayoutEngine.java:49-52`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/GridLayoutEngine.java#L49-L52)）**: `subgrid`（CSS Grid Level 2：カードのタイトル・本文・フッターの高さを親グリッドと揃える必須機能）、複数トラック跨ぎアイテムの厳密な内在サイズ分配、Grid 内の `baseline` 揃え。
+   - **Flexbox の細部精度（[`FlexLayoutEngine.java:40-43`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/FlexLayoutEngine.java#L40-L43)）**: 列方向アイテムの `min-height: auto` 厳密化と `last baseline` 対応。
+   - **CSS Anchor Positioning & Top Layer（`<dialog>`, `popover`）**: ツールチップ・コンテキストメニュー・ドロップダウンを `overflow: hidden` の親クリップを突き抜けてターゲット要素に自動追従・画面端反転させる最新 CSS 仕様（`anchor-name`, `position-anchor`, `position-try`）。現在は [`SelectPopup`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/SelectPopup.java) のみが専用特別扱いになっているが、これを汎用 Top Layer + Anchor Positioning としてエンジン標準機能に昇華させる。
+2. **標準 CSS `content-visibility: auto` と `FenwickVirtualList` による自動仮想スクロール**:
+   - 現在 `src/test` に待機させている [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)（$O(\log N)$ 累積高さインデックス）を、特別な `data-virtual-for` 属性なしでも標準 CSS の `content-visibility: auto` + `contain-intrinsic-size` と連動させ、10,000〜100,000 件の DOM 子要素を持つコンテナでもビューポート内の数十件だけをレイアウト・描画する自動仮想化を [`BlockLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java) に組み込む。
+
+---
+
+#### 課題領域 6：開発体験（DX）・型安全リアクティブ・組み込み DevTools
+
+他のすべての UI ライブラリ（React / Vue / JavaFX / ImGui）を開発体験で超えるための課題です。
+
+1. **文字列・正規表現バインディングから「事前コンパイル済み型安全 Signal / Record バインディング」への進化**:
+   - [`Bindings.java:22-26, 99-140`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L22-L26) と [`UiStateStore.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiStateStore.java) は、現在 `Map<String, String>` と正規表現マッチャーを中心に動作している。
+   - **対策**:
+     - ① HTML テンプレート読み込み時に `{{...}}` や `data-if` / `data-for` を一度だけパースして **コンパイル済みバインディングノード（AST / 直結パッチ関数）** を生成し、更新時の正規表現走査をゼロにする。
+     - ② Java 21 の `Record` やプリミティブ `Signal<T>` (`IntSignal`, `FloatSignal`, `BooleanSignal`, `ListSignal<T>`) を `Map<String, String>` への文字列変換なしで直接 DOM・[`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) に結線できる型安全 Java API を提供する。
+2. **スコープ付き Web Components（Shadow DOM / `<slot>` 相当）**:
+   - [`CustomTagExpander.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/CustomTagExpander.java) を拡張し、コンポーネント定義ごとに CSS の `@scope` 隔離と複数名前付き `<slot name="...">`、および Java 側のコンポーネントコントローラを紐付けられる再利用可能な UI コンポーネントシステムを確立する。
+3. **エンジン自身で描画する組み込み「EnderDevTools（インスペクタ & プロファイラ）」**:
+   - すでに `:core` には [`StageProfiler`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/diag/StageProfiler.java)、[`RenderPipeline.lastBuildStats`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/RenderPipeline.java#L117)、[`HitTestIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/HitTestIndex.java) が揃っている。
+   - **対策**: `F12` キー（または API 呼び出し）1 つで画面上にオーバーレイ表示される組み込みインスペクタ（① マウスホバーでの Margin/Border/Padding/Content ボックスモデル可視化、② DOM ツリーと適用済み CSS ルール・算出値のライブ編集、③ [`StageProfiler`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/diag/StageProfiler.java) のフレームタイム内訳グラフと Dirty 矩形フラッシュ表示、④ ローカル HTML/CSS ファイル保存時の即時ホットリロード）を `:core` 標準機能として同梱する。
+
+---
+
+### 7.4 「他の UI ライブラリを超える」ための統合ロードマップ（優先度順）
+
+| フェーズ | テーマ | 主要アクション項目 | 達成時のインパクト（到達指標） |
+| :--- | :--- | :--- | :--- |
+| **Wave 1**<br/>（基盤純化 & Zero-GC 完遂） | **汎用 API 確立・ホスト分離・スタイル/描画の完全数値化** | 1. `<mc-*>` / `ElementType` の `ReplacedElementRegistry` SPI 化と `RenderPipeline` / `Bindings` の脱 `static` 化<br/>2. `ComputedStyle` の脱 `String[]`（宣言アリーナの `PackedCssValue` 直結）と `StyleFacts` 全寸法 `long[]` 化<br/>3. Phase A 完結（GPU/CPU 走査方向の反転 + 非等方角丸・せん断の GPU シェーダー化）<br/>4. `LoadedFace.LOCK` の Face 単位ロック分離 | ・Minecraft 非依存の完全汎用 JAR として単体配布可能<br/>・フルレイアウト `< 0.50 ms`、2D の CPU フォールバック率 `0%` |
+| **Wave 2**<br/>（2D/3D 空間融合） | **Three.js 型 3D シーングラフ統合（Phase C）** | [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) の Milestone 3D-1〜3D-5 実装（`Scene3DArena`, `GlScene3DRenderer`, `SoftwareScene3DRasterizer`, `InstancedBatcher`, `GltfBinaryLoader`, `Raycaster3D`, `HTMLMesh`） | ・**ブラウザ (Three.js) でも JavaFX でも不可能な「HTML/CSS と 3D の単一パイプライン・ゼロコピー双方向融合」** を実現 |
+| **Wave 3**<br/>（レイアウト & 国際化完成） | **最新 CSS レイアウト・自動仮想化・IME 完備** | 1. CSS `subgrid`、Anchor Positioning + Top Layer（`<dialog>` / `popover`）、縦書き（`writing-mode: vertical-*`）実装<br/>2. `content-visibility: auto` + `FenwickVirtualList` による 10 万行リスト自動仮想化<br/>3. `TextEditing` の IME Preedit / Composition 対応とカラー絵文字・文脈依存 GSUB 対応 | ・10 万要素の大規模テーブル／リストでも `< 0.2 ms` で動作<br/>・日本語・多言語デスクトップ UI として JavaFX / Swing を完全に代替可能 |
+| **Wave 4**<br/>（DX & エコシステム） | **コンパイル済み型安全リアクティブ & 組み込み DevTools** | 1. テンプレートの事前コンパイル（正規表現ゼロ化）と Java 21 `Record` / `Signal<T>` 直結バインディング<br/>2. スコープ付きコンポーネント（`@scope` + `<slot>`）<br/>3. `F12` 組み込み **EnderDevTools**（ボックスハイライト・CSS ライブ編集・フレームプロファイラ・ホットリロード） | ・開発生産性と実行性能の双方で Web フロントエンドおよび既存 Java UI ライブラリを凌駕 |
+

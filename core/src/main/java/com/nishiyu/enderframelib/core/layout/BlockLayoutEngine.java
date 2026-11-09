@@ -1458,9 +1458,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         // 以前は inline-block だけを見ていて、inline-flex の子がインライン内容として平坦化されていた
         if (b.display.isInlineLevel() && b.display.inner() != Inner.FLOW) return true;
         String tag = b.node.tag;
-        return tag.equals("img") || tag.equals("canvas") || tag.equals("svg") || tag.equals("input") || tag.equals("button")
-                || tag.equals("select") || tag.equals("progress")
-                || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("mc-scene");
+        return ReplacedElements.isReplacedTag(tag);
     }
 
     private static void clearFragmentsRecursively(LayoutBox box) {
