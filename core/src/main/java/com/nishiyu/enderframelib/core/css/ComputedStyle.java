@@ -730,11 +730,12 @@ public final class ComputedStyle {
             idOf(CssProperty.BORDER_TOP_WIDTH), idOf(CssProperty.BORDER_RIGHT_WIDTH), idOf(CssProperty.BORDER_BOTTOM_WIDTH),
             idOf(CssProperty.BORDER_LEFT_WIDTH), idOf(CssProperty.ROW_GAP), idOf(CssProperty.COLUMN_GAP)};
 
-    private LengthResolver.CompiledLength[] compileEdges() {
-        LengthResolver.CompiledLength[] out = new LengthResolver.CompiledLength[EDGE_IDS.length];
+    private long[] compileEdges() {
+        long[] out = new long[EDGE_IDS.length];
         for (int i = 0; i < out.length; i++) {
             String val = values[EDGE_IDS[i]];
-            out[i] = val == null ? null : LengthResolver.compile(val);
+            out[i] = val == null ? com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE
+                    : PackedLengths.pack(LengthResolver.compile(val));
         }
         return out;
     }
@@ -745,13 +746,12 @@ public final class ComputedStyle {
      */
     public float edgeLength(int edge, float maxPixels, float rootW, float rootH) {
         StyleFacts f = facts();
-        LengthResolver.CompiledLength[] edges = f.edges;
+        long[] edges = f.edges;
         if (edges == null) {
             edges = compileEdges();
             f.edges = edges;
         }
-        LengthResolver.CompiledLength c = edges[edge];
-        return c == null ? 0 : c.resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+        return PackedLengths.resolve(edges[edge], maxPixels, rootW, rootH, elementFontSize, rootFontSize);
     }
 
     private static boolean definiteLength(String value) {

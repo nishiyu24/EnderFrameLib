@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・Phase A-2 層（グループ・マスク・スクロール層）の GPU 問い合わせを `GpuLayerAttempt` へ集約し `SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロ化・Phase A-3 旧 `GpuBatchPacker` 経路の撤去（GPU 経路を 1 系統に統一）・Phase A-1 字形キャッシュと被覆率部品の `GlyphCache` 分離・Phase A 試行の向きの反転ステップ ① 角丸枠線・外側影・円枠線・画像・字形の置き方の幾何を `ShapeGeometry` へ分離（完了）・Phase B-2 静止フレームの描き直し省略判定を `StaticFrameGate` として core へ切り出し・全章統合整理版）
+**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・Phase A-2 層（グループ・マスク・スクロール層）の GPU 問い合わせを `GpuLayerAttempt` へ集約し `SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロ化・Phase A-3 旧 `GpuBatchPacker` 経路の撤去（GPU 経路を 1 系統に統一）・Phase A-1 字形キャッシュと被覆率部品の `GlyphCache` 分離・Phase A 試行の向きの反転ステップ ① 角丸枠線・外側影・円枠線・画像・字形の置き方の幾何を `ShapeGeometry` へ分離（完了）・Phase B-2 静止フレームの描き直し省略判定を `StaticFrameGate` として core へ切り出し・二重構造の撤去 `LayoutResultCache`（`LayoutBox.Tentative` を正本化）・`PackedCssValue` を縁の長さへ接続し `CalcProgram` を撤去・全章統合整理版）
 
 ---
 
@@ -76,16 +76,15 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 │   │   ├── SimdBackend.java          // ベクトル演算抽象インターフェース
 │   │   ├── ScalarSimd.java           // HotSpot C2 SuperWord 自動ベクトル化向け分岐なしループ実装
 │   │   └── SimdBackends.java         // 実行時バックエンド選択窓口
-│   ├── style/                        [単体実装済・本流未接続（Type C）]
-│   │   ├── PackedCssValue.java       // 64-bit long タグ付き CSS 即値 & resolve()
-│   │   └── CalcProgram.java          // calc()/min()/max()/clamp() の RPN バイトコード & ゼロ確保評価器
+│   ├── style/                        [本流稼働中（箱の縁 14 個）]
+│   │   └── PackedCssValue.java       // 64-bit long タグ付き CSS 即値（長さ 8 単位・K_CALC は css.PackedLengths の式表の添字）。css を知らない
 │   ├── compiler/                     [本流稼働中]
 │   │   ├── StyleStateAutomaton.java  // 要素別対話状態マスク & O(1) 状態遷移テーブル (StateTable)
 │   │   ├── StateStyleMemo.java       // 4枠フレーム保持・peek ゼロ確保の要素別状態スタイルメモ
 │   │   └── BindingPatchTable.java    // {{key}} 数値 style バインディングのオフヒープ列保持 & InlineStyleOverlay 実装
 │   ├── layout/                       [単体実装済・本流未接続（Type C）]
 │   │   ├── SimdLayoutKernel.java     // SimdBackend 経由の Edge 合算・クランプ・Level-Order 座標スイープ
-│   │   ├── LayoutResultCache.java    // MIN/MAX/TENTATIVE/FINAL の 4 スロット結果キャッシュ
+│   │   (LayoutResultCache は LayoutBox.Tentative と同役の未接続重複だったため撤去。正本は LayoutBox.Tentative)
 │   │   ├── FenwickVirtualList.java   // O(log N) Fenwick 木による仮想リスト行高・可視範囲管理
 │   │   (SimdHitTester は1行ラッパーだったため撤去。呼び出しは SimdBackend.hitTestLast を直接使う)
 │   └── gpu/                          [GL 本流稼働中（※一部未接続クラスあり）]
@@ -93,7 +92,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 │       ├── PropertyTrees.java        // Transform(64B) / Clip(64B) / Effect(32B) / Primitive(128B) ツリー [稼働中]
 │       ├── GpuPrimitivePacker.java   // プリミティブバッファへのパッキング [稼働中]
 │       ├── GpuRectShader.java        // GLSL 1.50 Uber-Shader (角丸矩形・枠線・影・グラデ・字形・クリップ評価) [稼働中]
-│       ├── GpuAnimation.java         // GPU 側アニメーション・イージング補間データ構造 [未接続: Type C]
+│       ├── GpuAnimation.java         // GPU 側アニメーション・イージング補間。GLSL 定数は GpuRectShader が使用中、Java 側の補間は未接続 [一部接続: Type C]
 │       ├── GpuSceneSync.java         // シーン差分同期ヘルパー [未接続: Type C]
 │       ├── LayerAtlas.java           // 2048×2048 共有レンダーターゲットアトラス管理 [未接続: Type C]
 │       └── DualKawase.java           // Dual-Kawase 2パス高速ブラーシェーダー定義 [未接続: Type C]
@@ -107,7 +106,8 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 ├── css/                              [Step 2 解消済]
 │   ├── ComputedStyle.java            // 第1層 String[] values + 全要素共有 TypedValueCache + 遅延 StyleFacts
 │   ├── TypedValueCache.java          // 全スタイルで共有する文字列→CompiledLength/色/数値の不変キャッシュ（旧 Memo を置換）
-│   ├── StyleFacts.java               // レイアウト用型付き事実（文字列フィールド全廃・IntrinsicWidthKind/Alignment列挙化済）
+│   ├── StyleFacts.java               // レイアウト用型付き事実（文字列フィールド全廃・IntrinsicWidthKind/Alignment列挙化済・縁 14 個は long[] で保持）
+│   ├── PackedLengths.java            // CompiledLength ⇔ PackedCssValue の窓口（式だけ式表経由で本流の LengthResolver が評価）
 │   └── CssNumbers.java               // String.format を全廃した整数ベース高速数値フォーマッタ
 │
 ├── layout/                           [Step 5 前半反映済]
@@ -262,19 +262,21 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 | **GL → `SoftwareRenderBackend` 具体型依存**<br/>(Phase A-2) | `LwjglGlRenderBackend` が `SoftwareRenderBackend` を直接保持し、`renderOnto` / `dirtyBounds`+`pixmap`+`clearDirty` / `isRootAllocated` の 3 経路で CPU ラスタ内部（`Pixmap` 配置）を知っていた | 窓口 `CpuLayerFallback`（package-private）を新設し、GL 側が使う 5 操作だけを公開。`pixmap().pixels()` は `pixels()` に畳み、GL 側の import・javadoc 参照も撤去。挙動は変更なし（CPU 保険層の画素一致は既存テストが保証） | `Milestone4GateTest.glBackendDoesNotKnowTheCpuRasterType`<br/>`LazyCpuLayerTest`（保険層の画素一致・遅延確保）<br/>全 1587 テスト緑 |
 | **静止フレーム判定のホスト内同居**<br/>(Phase B-2) | 「同じ項目が同じ順で、アニメ停止・フォント世代同じなら前回のテクスチャを貼る」判定が、Minecraft 依存の `CoreGpuSurface` 内（`Painted` / `sameItems` / `timeDependent`）にあり、単体テストできず、描くたびに `items.toArray()` を確保していた | core に `StaticFrameGate`（`canSkip` / `painted` / `invalidate` / `timeDependent`）を新設して判定を移し、控えは使い回す配列に書き込む（成長時のみ確保・短くなったぶんの参照は手放す）。ホストは `gate.canSkip(...)` と `gate.painted(...)` を呼ぶだけ。挙動不変 | `StaticFrameGateTest`（未描画は描く・同一項目＋同フォント世代は何度でも飛ばす・別インスタンス／フォント世代違い／項目数違い／順序違いは描く・アニメ中と無効化時は飛ばさない・画像は時間依存で落ち着かない・`invalidate` 後は描く・乱数 400 手順が素朴なモデルと一致・番人: ホストに `sameItems(` / `items.toArray()` / `timeDependent(` が戻ると失敗）<br/>全 1661 テスト緑（スキップ 3 は環境依存） |
 | **測定時の `getFlowChildren()` 確保**<br/>(Step 5 前半) | 空判定 4 箇所と測定走査 7 箇所で毎回 `new ArrayList<>()` を生成 | `hasFlowChildren()` と `participatesInFlow()` による `children` 直接走査に置換し、測定経路のリスト生成を全廃 | `BoxTreeTest`<br/>`FlowChildrenAllocationGateTest` |
+| **長さの二重表現（`CompiledLength[]` と未接続 `PackedCssValue`＋`CalcProgram`）**<br/>(Type C 接続) | 箱の縁 14 個は `StyleFacts.edges` が `CompiledLength[]`（オブジェクト＋生文字列＋式の構文木）で持ち、別に 64-bit 即値 `PackedCssValue` と、`LengthResolver`（CSS Values 4・型検査つき）より機能の少ない数式評価器 `CalcProgram` が未接続で並存。`CalcProgram` は `round/mod/sin/pow`・`vmin/vmax`・型の検査を持たず、そのまま接続すると結果が変わる | `StyleFacts.edges` を `long[]` に置換（`ComputedStyle.compileEdges` が `PackedLengths.pack`、`edgeLength` が `PackedLengths.resolve`）。単位つきの長さは `long` 1 個（`vmin/vmax` 単位を追加）。**式だけは数式評価器を二つ持たない**ため `K_CALC` を式表（`PackedLengths`）の添字とし、評価は本流の `LengthResolver` 1 つに集約。弱い複製 `CalcProgram` と、本流から使われない `PackedCssValue.parse`（`kernel.style→css` の循環の元）を撤去。結果は旧経路とビット同一 | `PackedLengthsTest`（35 種の文字列（全単位・`calc/min/max/clamp/round`・0 除算・不正値）×200 乱数で `CompiledLength.resolve` とビット一致・宣言なし＝NONE＝0・同一式は同一スロット・式表の増設・縁 14 個が汎用 `length` 経路と一致・解決の確保ゼロ・番人: `CompiledLength[]` / `CalcProgram` / `kernel.style→css` 参照が戻ると失敗）<br/>`StyleFactsTest`（縁 14 個を乱数スタイルで旧経路と一致）<br/>`PackedCssValueTest`<br/>全 1663 テスト緑（スキップ 3 は環境依存） |
+| **仮測定結果キャッシュの二重化**<br/>(Type C 整理・`LayoutResultCache`) | 本流の `LayoutBox.Tentative`（3 制約スロット・14 箱寸法＋子寸法＋制約／ビューポート／フォント署名）と別に、`kernel/layout/LayoutResultCache`（制約→5 値の 4 スロット）が本番から未参照のまま並存。カーネル側は 5 値しか持てず、実際の再利用に必要な署名を表せないため接続不能だった | `LayoutResultCache` を撤去し、`LayoutBox.Tentative` を仮測定再利用の唯一の正本にした（破壊的変更・本番参照ゼロのため挙動不変）。同クラス専用の単体テストも削除 | `Milestone4GateTest.layoutResultCacheDuplicateStaysRemoved`（ファイル不在＋main 全体に語が戻ると失敗）<br/>`Milestone3KernelTest`（Fenwick・SIMD 演算は維持）<br/>`LayoutBox.Tentative` の既存テスト（仮測定箱数 Flex13／Grid15 など）<br/>全 1661 テスト緑（スキップ 3 は環境依存） |
 | **`SimdHitTester` 1行ラッパー**<br/>(Type C 整理) | `SimdBackend.hitTestLast` を呼ぶだけの22行クラスが本番から未参照のまま並存（`HitTestIndex` は2D逆変換・角丸SDF・クリップ鎖・動的節を持ち矩形包含だけでは代替不能） | クラスを撤去。矩形列の包含判定が必要な箇所は `SimdBackends.current().hitTestLast` を直接呼ぶ。乱数1000矩形×2000点の素朴実装との一致テストは `Milestone3KernelTest` が `SimdBackend` 直で維持 | `Milestone4GateTest.simdHitTesterWrapperStaysRemoved`<br/>`Milestone3KernelTest.hitTesterReturnsTopmostAndMatchesNaive`<br/>`SimdBackendTest` |
 
 ---
 
-### 5.2 本流未接続のカーネル 7 クラス（Type C）の接続条件と設計判断マトリクス
+### 5.2 本流未接続のカーネル 5 クラス（Type C）の接続条件と設計判断マトリクス（`LayoutResultCache` 撤去・`PackedCssValue` 接続・`CalcProgram` 撤去済み）
 
-調査の結果、残る `core/kernel` 内の未接続 7 クラスはいずれも「既存クラスの単純な 1 対 1 差し替え」では接続できず、以下の **前提条件または設計判断** とセットで進める必要があります。
+調査の結果、残る `core/kernel` 内の未接続（一部接続の `GpuAnimation` を含む）5 クラス前後（`FenwickVirtualList` / `SimdLayoutKernel` / `GpuSceneSync` / `DualKawase` / `LayerAtlas`）はいずれも「既存クラスの単純な 1 対 1 差し替え」では接続できず、以下の **前提条件または設計判断** とセットで進める必要があります。
 
 | 未接続クラス | 本流の対応箇所 | 単純差し替えができない理由（調査結果） | 接続するための前提条件・設計判断 |
 | :--- | :--- | :--- | :--- |
-| **[`PackedCssValue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/PackedCssValue.java)**<br/>**[`CalcProgram`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/CalcProgram.java)** | `StyleFacts.edges` (`CompiledLength[]`) / `InlineStyleOverlay` | 本流は `LengthResolver.CompiledLength`（オブジェクト）を使用しており、`BindingPatchTable` の重ね書きも一度 CSS 文字列に戻している。 | `StyleFacts` の 14 個の縁長さを `CompiledLength[]` から `long[]`（`PackedCssValue`）に置き換え、`BindingPatchTable` の値を文字列化せず直接数値オーバーレイする。 |
+| ~~`PackedCssValue` / `CalcProgram`~~（接続済み・2026-11-09） | `StyleFacts.edges` | `CompiledLength` と式評価器の二重だった。 | 縁 14 個を `long[]`（`PackedCssValue`）へ接続し、式は `LengthResolver` に一本化して `CalcProgram` を撤去（§5.1 参照）。**残課題（任意）**: `BindingPatchTable` の値を CSS 文字列へ戻さず直接重ねる（現状は数値 style バインディングが一度文字列化される）、`width`/`height`/`min-*`/`max-*` など縁以外の長さの詰め替え。 |
 | **[`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)** | `BlockLayoutEngine` / `DisplayListBuilder` | 通常のブロック配置はマージン相殺や float があり単純累積和ではない。また行挿入の支配項（`1.4 ms`）は後続 250 行の `DisplayItem`（整数の絶対座標）の平行移動複製にある。 | ① 表示リストに「親・範囲単位のオフセット（`OffsetItemList` の拡張）」を導入して後続行の項目複製をなくすか、② 画面外行の箱を作らない `content-visibility: auto` モードを導入した箇所に適用する。 |
-| **[`LayoutResultCache`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/LayoutResultCache.java)** | `LayoutBox.Tentative` (`BoxOutputs`) | カーネル側は 5 値のみだが、実際の仮測定再利用には 14 個の箱寸法＋子の寸法配列＋制約・ビューポート・フォント・世代の署名が必要。 | すでに本流の `LayoutBox.Tentative`（3 制約スロット）が同等の役割を果たして再測定を 1/28 に削減済み。統合するなら `LayoutResultCache` 側を `BoxOutputs` スキーマに合わせるか、`Tentative` を正本として `LayoutResultCache` を整理する。 |
+| ~~`LayoutResultCache`~~（撤去済み・2026-11-09） | `LayoutBox.Tentative` (`BoxOutputs`) | カーネル側は 5 値のみで、仮測定再利用に必要な署名を表せなかった。 | 本流の `LayoutBox.Tentative` が再測定を 1/28 に削減済みのため **`Tentative` を正本として `LayoutResultCache` を撤去**した（§5.1 参照）。 |
 | **[`SimdLayoutKernel`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/layout/SimdLayoutKernel.java)** | `BoxMeasurer` / `BlockLayoutEngine` | 深さ順の SoA 配列を前提とするが、本流は `LayoutBox` オブジェクト木を走査している。 | `LayoutBox` 木を深さ順インデックス配列へ平坦化するステージを作るか、または 3D エンジン側の [`Scene3DArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) の階層スイープで活用する。 |
 | **[`GpuAnimation`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimation.java)**<br/>**[`GpuSceneSync`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java)** | [`CssAnimator`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/CssAnimator.java) / [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) / [`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java) | 現在は `PaintSceneDriver` が CPU で合成行列 `Matrix2D` を計算し、`GlRectStream.decompose(pose)` で逆分解して `PropertyTrees` にフラット格納している。 | **Step 4**: `PaintSceneDriver` の親子・スクロール節をそのまま `PropertyTrees` の階層ノードとして保持させ、`decompose` を廃止した上で変形・不透明度アニメを GPU 補間に載せる。 |
 | **[`DualKawase`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/DualKawase.java)**<br/>**[`LayerAtlas`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/LayerAtlas.java)** | `LwjglGlRenderBackend` の `blur` / `layerPool` | 現行の `LwjglGlRenderBackend.blur` は厳密な 2 パス分離ガウスブラーであり、CPU 側ガウスブラーとの画素一致テスト（`LayerFxBlurTest`）の基準になっている。`DualKawase` は近似ブラーのため、そのまま差し替えると CPU 基準と画素が食い違う。 | 2D CSS の `filter: blur()` は既存の分離ガウスブラーを維持して CPU/GL の画素一致を守り、`DualKawase` と `LayerAtlas` は **3D シーンのポストプロセス（Bloom 発光）および 2D-in-3D の `HTMLMesh` アトラス（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)）** に接続する。 |
@@ -303,7 +305,14 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 ### Phase B：2D 残存ボトルネックの突破（任意・高レバレッジ項目）
 1. **リスト行挿入 `< 0.05 ms`**（✅ 一部実施・2026-11-09）: 当初想定の「`DisplayItem.translated` の `1.4 ms`」は **誤り**。整数行 500 行の実測では `translated` は 1 更新 `18 µs`・`146 KB`（375 項目）にすぎず、支配項は **後続行の文字箱が `match` で不一致になり毎回描き直されていたこと**（不一致 253 箱/更新、DisplayList 構築 `0.60 ms`・`1.8 MB`）だった。文字箱の断片平行移動（§5.1 参照）で `1.42→0.76 ms`、`3.5→1.3 MB`。**追加実施（2026-11-09）**: `DisplayListBuilder.match` が箱ごとに `numsOf` で 13 要素の `float[]` を確保していたのを、`numAt(box, i)` による直接比較に置換（一致判定の結果は不変・判定ごとの確保ゼロ。記憶時のみ `numsOf`）。守護: `DisplayListBuilderNumsTest`（乱数 50 回で `numAt`＝`numsOf` をビット単位で全 13 要素検証）＋既存 `ChildPatchTest`（全再構築との項目完全一致）。**残課題**: ① 小数行（`fractional`）は箱が整数ずれにならず平行移動できないため `2.09 ms` のまま ② 残りの DisplayList 構築（`0.33 ms`）は `appendItems` による 625 箱ぶんの記憶項目の再収集と `remember` 確保（`match` 側の `numsOf` 確保は撤去済み） ③ `LAYOUT_MEASURE 0.12 ms + LAYOUT_PLACE 0.07 ms`。`OffsetItemList` の範囲一括シフト化は、`translated` が `18 µs` と判明したため **優先度を下げる**（やるなら ② の再収集を範囲参照にする形）。
-2. **静止フレーム `< 0.01 ms`**（✅ 判定の整理・検証は 2026-11-09 完了）: 調査の結果、前フレームの出力テクスチャを貼って GL の描画を飛ばす仕組み自体は、ホスト（`CoreGpuSurface`）に既にあった（`-Denderframe.core.noskip=true` で切り分け可）。判定が Minecraft 依存クラスに埋まりテストが無く、描画のたびに `items.toArray()` を確保していたため、`StaticFrameGate` として core へ切り出した（§5.1 参照）。**残課題**: ① GL 固定費 `~0.24 ms` の実測値は、ホスト内の飛ばしを含まない単体バックエンド計測の値で、実ゲーム内の飛ばし後のコスト（`SURFACE_CORE_SKIPPED` / `SURFACE_CORE_BLIT`）は未計測 ② `StandaloneViewer` 側の同様の飛ばしは `StandaloneView.frame` の `drawn` 判定で別実装のまま（統合するなら `StaticFrameGate` を使う形にできるが、窓の再描画要求・アニメ窓 `compositorUntil` を持つため別途検討）。
+2. **静止フレーム `< 0.01 ms`**（✅ 判定の整理・検証は 2026-11-09 完了）: 調査の結果、前フレームの出力テクスチャを貼って GL の描画を飛ばす仕組み自体は、ホスト（`CoreGpuSurface`）に既にあった（`-Denderframe.core.noskip=true` で切り分け可）。判定が Minecraft 依存クラスに埋まりテストが無く、描画のたびに `items.toArray()` を確保していたため、`StaticFrameGate` として core へ切り出した（§5.1 参照）。**残課題**: ① GL 固定費 `~0.24 ms` の実測値は、ホスト内の飛ばしを含まない単体バックエンド計測の値で、実ゲーム内の飛ばし後のコスト（`SURFACE_CORE_SKIPPED` / `SURFACE_CORE_BLIT`）は未計測（Minecraft 実機での計測が必要）。
+
+3. **Phase B 残項目の再検討結果（2026-11-09・コード調査。実装は見送り）**:
+   - **B-1② 記憶項目の再収集**: 行挿入の局所パッチ（`UiView` の `CHILD_PATCH` 経路）は既に変更印（`useChangeStamps`）と厳密平行移動（`exactTranslation`）を有効にしており、変更のない箱は `match` を通らず `appendItems` だけで済む。残るのは `remember` 時の `List.copyOf`（1 回コピー）程度で、削れる確保は小さく、A/B で差が出る見込みが薄いため見送り（§4.3 5. の「差が出ない変更は取り下げる」方針）。
+   - **B-1① 小数行**: 項目の座標は整数に丸められるため、小数ずれの箱を整数の平行移動で使い回すと全再構築と丸めが食い違いうる（`ChildPatchTest` の完全一致を満たせない）。厳密に行うには箱の小数位置から項目座標を再導出する必要があり、`match` の設計変更になる。必要になるまで `2.09 ms` のまま。
+   - **B-1③ レイアウト** `LAYOUT_MEASURE 0.12 ms + LAYOUT_PLACE 0.07 ms` は合計 `0.19 ms` で、`relayout` 全体の目標（`< 0.30 ms`）側の課題として §2.1 に残す。
+   - **B-2② `StandaloneView` の飛ばし判定の `StaticFrameGate` への統合**: `StandaloneView` は `rebuilt = before != after` の O(1) 参照比較で飛ばしており、`StaticFrameGate.canSkip` は項目を走査する O(N) のため、統合すると退行する。窓の再描画要求・アニメ窓（`compositorUntil`）も持つので別実装のままにする。
+   - したがって **Phase B は、実装可能で効果が確かめられる項目は完了**。以降の短縮は Phase B ではなく、レイアウト（`< 0.30 ms`）側と Phase C（3D）へ進む。
 
 ### Phase C：Three.js 型 3D シーングラフの実装（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)）
 - Phase A で独立したディスパッチャの `case SCENE ->` フックに [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) の **`Scene3DArena` / `GlScene3DRenderer` / `SoftwareScene3DRasterizer`（Milestone 3D-1〜3D-5）** を接続し、2D HTML/CSS と 3D 空間が双方向に融合したフルゲームエンジンへと進化させる。

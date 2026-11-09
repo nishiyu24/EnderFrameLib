@@ -15,8 +15,8 @@ public final class StyleFacts {
     public final boolean floating, displayNone, scrollContainer;
     /** {@code width} / {@code height} が確定した長さ（auto・%・内在サイズのキーワードでない）。 */
     public final boolean definiteWidth, definiteHeight;
-    /** 箱の縁の長さ（{@code EDGE_*} の順）。宣言が無いものは null（0 px）。 */
-    volatile LengthResolver.CompiledLength[] edges;
+    /** 箱の縁の長さ（{@code EDGE_*} の順）を {@link com.nishiyu.enderframelib.core.kernel.style.PackedCssValue} に詰めたもの。宣言が無いものは NONE（0 px）。 */
+    volatile long[] edges;
 
     StyleFacts(Overflow overflowX, Overflow overflowY, int fontWeight, byte lineHeightKind, float lineHeightValue,
           boolean containsInlineSize, boolean containsBlockSize, boolean floating, boolean displayNone,
