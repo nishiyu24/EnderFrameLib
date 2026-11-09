@@ -143,10 +143,10 @@ class Milestone4KernelTest {
 
     @Test
     void progressClampsAndZeroDurationIsDone() {
-        assertEquals(0f, GpuAnimation.progress(50f, 100f, 200f));
-        assertEquals(0.5f, GpuAnimation.progress(200f, 100f, 200f));
-        assertEquals(1f, GpuAnimation.progress(900f, 100f, 200f));
-        assertEquals(1f, GpuAnimation.progress(0f, 100f, 0f));
+        assertEquals(0f, GpuAnimationReference.progress(50f, 100f, 200f));
+        assertEquals(0.5f, GpuAnimationReference.progress(200f, 100f, 200f));
+        assertEquals(1f, GpuAnimationReference.progress(900f, 100f, 200f));
+        assertEquals(1f, GpuAnimationReference.progress(0f, 100f, 0f));
     }
 
     @Test
@@ -156,7 +156,7 @@ class Milestone4KernelTest {
         for (int k = 0; k < names.length; k++) {
             for (int i = 0; i <= 200; i++) {
                 float x = i / 200f;
-                assertEquals(EasingFunction.apply(x, names[k]), GpuAnimation.ease(t, k, x), 2e-3f, names[k] + " @" + x);
+                assertEquals(EasingFunction.apply(x, names[k]), GpuAnimationReference.ease(t, k, x), 2e-3f, names[k] + " @" + x);
             }
         }
         int custom = t.registerCurve(0.68f, -0.55f, 0.27f, 1.55f);
@@ -164,7 +164,7 @@ class Milestone4KernelTest {
         assertEquals(1, t.curveCount());
         for (int i = 0; i <= 200; i++) {
             float x = i / 200f;
-            assertEquals(EasingFunction.cubicBezier(x, 0.68f, -0.55f, 0.27f, 1.55f), GpuAnimation.ease(t, custom, x), 2e-3f, "custom @" + x);
+            assertEquals(EasingFunction.cubicBezier(x, 0.68f, -0.55f, 0.27f, 1.55f), GpuAnimationReference.ease(t, custom, x), 2e-3f, "custom @" + x);
         }
     }
 
@@ -174,14 +174,14 @@ class Milestone4KernelTest {
         int s = t.addTransform(PropertyTrees.NONE, 100, 0, 1, 1, 0);
         t.startTransformAnimation(s, 0, 0, 1, 1, 0, 1000f, 200f, PropertyTrees.EASE_LINEAR);
         float[] out = new float[5];
-        GpuAnimation.evalTrs(t, s, 900f, out);
+        GpuAnimationReference.evalTrs(t, s, 900f, out);
         assertEquals(0f, out[0], 1e-4f);
-        GpuAnimation.evalTrs(t, s, 1100f, out);
+        GpuAnimationReference.evalTrs(t, s, 1100f, out);
         assertEquals(50f, out[0], 1e-3f);
-        GpuAnimation.evalTrs(t, s, 5000f, out);
+        GpuAnimationReference.evalTrs(t, s, 5000f, out);
         assertEquals(100f, out[0], 1e-4f);
         int still = t.addTransform(PropertyTrees.NONE, 7, 8, 1, 1, 0);
-        GpuAnimation.evalTrs(t, still, 12345f, out);
+        GpuAnimationReference.evalTrs(t, still, 12345f, out);
         assertEquals(7f, out[0]);
     }
 
@@ -189,7 +189,7 @@ class Milestone4KernelTest {
     private static void applyChain(PropertyTrees t, int slot, float frameMs, float[] p) {
         float[] trs = new float[5];
         for (int n = slot; n >= 0; n = t.transforms.getInt(n, PropertyTrees.T_PARENT)) {
-            GpuAnimation.evalTrs(t, n, frameMs, trs);
+            GpuAnimationReference.evalTrs(t, n, frameMs, trs);
             float x = p[0] * trs[2], y = p[1] * trs[3];
             float c = (float) Math.cos(trs[4]), s = (float) Math.sin(trs[4]);
             float rx = c * x - s * y, ry = s * x + c * y;
@@ -215,7 +215,7 @@ class Milestone4KernelTest {
         }
         float[] m = new float[6], scratch = new float[17];
         for (float frame : new float[]{0f, 30f, 100f, 400f}) {
-            GpuAnimation.worldMatrix(t, chain[5], frame, m, scratch);
+            GpuAnimationReference.worldMatrix(t, chain[5], frame, m, scratch);
             for (int k = 0; k < 20; k++) {
                 float px = r.nextFloat() * 10, py = r.nextFloat() * 10;
                 float[] expect = {px, py};
@@ -234,12 +234,12 @@ class Milestone4KernelTest {
         t.setScroll(content, 3);
         float[] m = new float[6], sc = new float[17];
         t.setScrollOffset(3, 0, 0);
-        GpuAnimation.worldMatrix(t, content, 0f, m, sc);
+        GpuAnimationReference.worldMatrix(t, content, 0f, m, sc);
         assertEquals(10f, m[5], 1e-5f);
         t.setScrollOffset(3, 0, 120f);
-        GpuAnimation.worldMatrix(t, content, 0f, m, sc);
+        GpuAnimationReference.worldMatrix(t, content, 0f, m, sc);
         assertEquals(-110f, m[5], 1e-4f);
-        GpuAnimation.worldMatrix(t, root, 0f, m, sc);
+        GpuAnimationReference.worldMatrix(t, root, 0f, m, sc);
         assertEquals(10f, m[5], 1e-5f, "親は動かない");
     }
 
@@ -248,13 +248,13 @@ class Milestone4KernelTest {
         PropertyTrees t = trees(null);
         int parent = t.addEffect(PropertyTrees.NONE, 0.5f, 0, 0, 0f);
         int child = t.addEffect(parent, 0.8f, 0, 0, 0f);
-        assertEquals(0.4f, GpuAnimation.effectiveOpacity(t, child, 0f), 1e-6f);
+        assertEquals(0.4f, GpuAnimationReference.effectiveOpacity(t, child, 0f), 1e-6f);
         int timing = t.addTransform(PropertyTrees.NONE, 0, 0, 1, 1, 0);
         t.startTransformAnimation(timing, 0, 0, 1, 1, 0, 0f, 100f, PropertyTrees.EASE_LINEAR);
         t.startOpacityAnimation(child, 0f, timing);
-        assertEquals(0f, GpuAnimation.effectiveOpacity(t, child, 0f), 1e-6f);
-        assertEquals(0.5f * 0.4f, GpuAnimation.effectiveOpacity(t, child, 50f), 1e-5f);
-        assertEquals(0.4f, GpuAnimation.effectiveOpacity(t, child, 1000f), 1e-6f);
+        assertEquals(0f, GpuAnimationReference.effectiveOpacity(t, child, 0f), 1e-6f);
+        assertEquals(0.5f * 0.4f, GpuAnimationReference.effectiveOpacity(t, child, 50f), 1e-5f);
+        assertEquals(0.4f, GpuAnimationReference.effectiveOpacity(t, child, 1000f), 1e-6f);
     }
 
     @Test
