@@ -90,16 +90,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 文字の字形キャッシュの上限。 */
     private static final int GLYPH_CACHE_LIMIT = 4096;
 
-    /**
-     * 最終の描画先。<b>CPU が実際に画素を塗るまで確保しない</b>（GPU 版が {@link #renderOnto} で使うとき、図形が全部 GPU に
-     * 受け取られれば画面サイズの CPU 画素は要らない）。大きさは {@link #rootW} × {@link #rootH}。
-     */
-    private Pixmap rootPixmap;
-    private final int rootW, rootH;
-    /** いま描いている先（グループの層の中なら、その層）。根を指すときは {@link #rootPixmap}（未確保なら null）。 */
-    private Pixmap target;
-    private final java.util.ArrayList<Layer> layers = new java.util.ArrayList<>();
-    private final PixmapPool layerPool;
+    /** 画素の置き場（根・描画先・層のスタック・汚れ範囲・層の合成）。根は CPU が実際に塗るまで確保しない。 */
+    private final CpuRaster raster;
     private GpuSink rootSink;
     private final float dpr;
     private final String sessionId;
@@ -114,8 +106,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private GpuSink sink;
     /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
     private final double[] boundsScratch = new double[4];
-    /** CPU が塗った範囲（層の中では層ごとに追い、閉じるときに親の分へ戻す）。 */
-    private final DirtyRect dirty = new DirtyRect();
     private Matrix2D frame = Matrix2D.IDENTITY;
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
@@ -143,35 +133,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.driver = new PaintSceneDriver(sessionId);
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
         this.dpr = devicePixelRatio;
-        this.rootW = Math.max(1, Math.round(cssW * devicePixelRatio));
-        this.rootH = Math.max(1, Math.round(cssH * devicePixelRatio));
-        this.layerPool = new PixmapPool(rootW, rootH);
-    }
-
-    /** 根の描画先。初めて必要になったときに確保する。 */
-    private Pixmap root() {
-        Pixmap r = rootPixmap;
-        if (r == null) rootPixmap = r = new Pixmap(rootW, rootH);
-        return r;
+        this.raster = new CpuRaster(Math.max(1, Math.round(cssW * devicePixelRatio)), Math.max(1, Math.round(cssH * devicePixelRatio)));
     }
 
     /** 根の画素を確保済みか（診断・テスト用）。 */
     public boolean isRootAllocated() {
-        return rootPixmap != null;
-    }
-
-    /** いまの描画先。根を指していて未確保なら、ここで確保する（画素を書く直前に呼ぶ）。 */
-    private Pixmap target() {
-        Pixmap t = target;
-        return t != null ? t : (target = root());
-    }
-
-    private int targetWidth() {
-        return target != null ? target.width() : rootW;
-    }
-
-    private int targetHeight() {
-        return target != null ? target.height() : rootH;
+        return raster.isRootAllocated();
     }
 
     public SoftwareRenderBackend fonts(FontResolver resolver) {
@@ -193,7 +160,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 描画先（事前乗算の ARGB）。 */
     @Override
     public Pixmap pixmap() {
-        return root();
+        return raster.root();
     }
 
     @Override
@@ -213,7 +180,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     @Override
     public void render(List<DisplayItem> items, long nowMs) {
-        java.util.Arrays.fill(root().pixels(), clearColor);
+        java.util.Arrays.fill(raster.root().pixels(), clearColor);
         drawFrame(items, nowMs, null);
     }
 
@@ -227,24 +194,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
     public int[] dirtyBounds() {
-        return dirty.bounds();
+        return raster.dirtyBounds();
     }
 
     /** 描いた範囲を透明に戻し、{@link #dirtyBounds} を空にする。 */
     public void clearDirty() {
-        int[] b = dirtyBounds();
-        if (b != null) {
-            int[] px = root().pixels();
-            for (int y = b[1]; y < b[3]; y++) java.util.Arrays.fill(px, y * rootW + b[0], y * rootW + b[2], 0);
-        }
-        dirty.reset();
+        raster.clearDirty();
     }
 
     private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
         if (items == null || items.isEmpty()) return;
         this.sink = gpu;
         this.rootSink = gpu;
-        this.target = rootPixmap;
+        raster.beginFrame();
         this.frame = Matrix2D.scale(dpr, dpr);
         this.frameSize = items.size();
         this.retainInfo.clear();
@@ -255,12 +217,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             queue.flush(); // 開いたままの層の中身も、層を捨てる前に書き切る
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
-            while (!layers.isEmpty()) {
-                Layer l = layers.remove(layers.size() - 1);
-                if (l.pixmap != null) layerPool.give(l.pixmap);
-                if (l.maskPixmap != null) layerPool.give(l.maskPixmap);
-            }
-            this.target = rootPixmap;
+            raster.endFrame();
             this.rootSink = null;
             this.sink = null;
         }
@@ -385,26 +342,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return new GpuScrollLayer(node.id(), token, driver.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
     }
 
-    /** 開いている層。{@code parentDirty} は層を開く前の（親の）描いた範囲。GPU の層は {@code pixmap} が null。 */
-    private static final class Layer {
-        final Group group;
-        final Pixmap pixmap;
-        final int[] parentDirty;
-        Pixmap maskPixmap;
-        int[] maskRegion;
-        boolean maskOnGpu;
-
-        Layer(Group group, Pixmap pixmap, int[] parentDirty) {
-            this.group = group;
-            this.pixmap = pixmap;
-            this.parentDirty = parentDirty;
-        }
-
-        boolean isMask() {
-            return group.maskOf() != null;
-        }
-    }
-
     /** 今のフレームの項目数。 */
     private int frameSize;
     /** 項目ごとのクリップ。項目の索引が作り直された（{@link PaintSceneDriver#generation}）ら捨てる。 */
@@ -417,18 +354,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 開いている層を、項目の祖先のグループ {@code want} に合わせる（共通の手前までを残し、残りを閉じて重ね、足りない分を開く）。 */
     private void syncLayers(List<Group> want) {
         int common = 0;
-        while (common < layers.size() && common < want.size() && layers.get(common).group.id().equals(want.get(common).id())) common++;
-        while (layers.size() > common) closeLayer();
+        while (common < raster.depth() && common < want.size() && raster.layerAt(common).group.id().equals(want.get(common).id())) common++;
+        while (raster.depth() > common) closeLayer();
         for (int i = common; i < want.size(); i++) openLayer(want.get(i));
     }
 
     private void openLayer(Group g) {
         queue.flush(); // 描画先が変わる前に、溜めた分を今の描画先へ
-        Layer top = layers.isEmpty() ? null : layers.get(layers.size() - 1);
+        CpuRaster.Layer top = raster.top();
         if (g.maskOf() != null) {
             // マスクの層。親（中身の層）が GPU の層なら GPU で、そうでなければ CPU で描く
             if (top != null && top.pixmap == null && sink != null && sink.beginMask()) {
-                layers.add(new Layer(g, null, null));
+                raster.pushGpuLayer(g);
                 return;
             }
         } else if (sink != null) {
@@ -439,142 +376,26 @@ public final class SoftwareRenderBackend implements RenderBackend {
             if (sink.beginGroup(g.opacity(), spec != null ? spec.filters() : List.of(), g.map(),
                     spec != null && spec.masked(), spec != null && spec.maskLuminance(),
                     spec != null ? spec.blend() : BlendMode.NORMAL, extras)) {
-                layers.add(new Layer(g, null, null)); // GPU の層（画素は持たない）
+                raster.pushGpuLayer(g); // GPU の層（画素は持たない）
                 return;
             }
         }
-        Pixmap pm = layerPool.take();
-        layers.add(new Layer(g, pm, dirty.toArray()));
-        dirty.reset();
-        target = pm;
+        raster.pushCpuLayer(g);
         sink = null; // CPU の層の中は CPU が描く
     }
 
-    /** 一番内側の層を閉じる。中身の層は、フィルター → マスク → 不透明度を掛けて親へ重ねる。マスクの層は親の層に預ける。 */
+    /** 一番内側の層を閉じる。GPU の層は {@code sink} に閉じさせ、CPU の層の合成は {@link CpuRaster#closeCpuLayer}。 */
     private void closeLayer() {
         queue.flush(); // 層を読んで合成する前に、層へ溜めた分を書き切る
-        Layer l = layers.remove(layers.size() - 1);
+        CpuRaster.Layer l = raster.popLayer();
         if (l.pixmap == null) {
             if (l.isMask()) sink.endMask();
             else sink.endGroup();
             return;
         }
-        Layer owner = l.isMask() ? layers.get(layers.size() - 1) : null;
-        Pixmap parent = root();
-        for (int i = layers.size() - 1; i >= 0; i--) {
-            if (layers.get(i).pixmap != null) {
-                parent = layers.get(i).pixmap;
-                break;
-            }
-        }
-        int[] region = dirty.toArray();
-        boolean any = !dirty.isEmpty();
-        dirty.set(l.parentDirty);
-        boolean cpuLayer = false;
-        for (Layer o : layers) cpuLayer |= o.pixmap != null;
-        target = parent;
+        boolean cpuLayer = raster.hasCpuLayer();
         if (!cpuLayer) sink = rootSink;
-        if (l.isMask()) {
-            // マスクは合成せず、中身の層に預ける（描かれていなければ、マスクなしと同じ）
-            if (any) {
-                owner.maskPixmap = l.pixmap;
-                owner.maskRegion = region;
-            } else {
-                layerPool.give(l.pixmap);
-            }
-            return;
-        }
-        LayerSpec spec = l.group.spec();
-        int w = rootW, h = rootH;
-        // GPU の層が足りず CPU の層に落ちたとき、背景（混合・backdrop-filter が読む絵）は GPU 側にある。
-        // 描画先を読み戻して CPU で混ぜ、結果を GPU の描画先へ書き戻す。
-        boolean viaGpu = false;
-        if (rootSink != null && !cpuLayer && spec != null && parent == rootPixmap
-                && (spec.blend() != BlendMode.NORMAL || spec.hasBackdrop())) {
-            // blend だけなら層の描いた範囲しか背景を読まない。backdrop-filter はぼかしが範囲外を読むので全面
-            Pixmap snap = !spec.hasBackdrop() && any ? rootSink.snapshotTarget(region) : rootSink.snapshotTarget();
-            if (snap != null) {
-                parent = snap;
-                viaGpu = true;
-            }
-        }
-        int[] gpuArea = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
-        if (viaGpu) {
-            // 読み戻しで親の溜めた分が GPU へ流れた。以降の dirty は親の描いた範囲ではなく書き戻しの範囲だけを追う
-            dirty.reset();
-        }
-        if (any && spec != null && !spec.filters().isEmpty()) {
-            region = LayerFx.filter(l.pixmap, region, spec.filters(), l.group.map());
-        }
-        if (any && spec != null && spec.clip() != null) {
-            LayerFx.clip(l.pixmap, region, spec.clip(), l.group.pose());
-        }
-        if (spec != null && spec.hasBackdrop()) {
-            Pixmap scratch = layerPool.take();
-            int[] area = LayerFx.backdrop(parent, scratch, spec.backdrop(), l.group.map(), l.group.pose(), spec.backdropShape(),
-                    spec.clip(), l.group.opacity());
-            layerPool.give(scratch);
-            if (area != null) grow(viaGpu ? gpuArea : null, area);
-        }
-        if (any && l.maskPixmap != null) {
-            LayerFx.mask(l.pixmap, region, l.maskPixmap, l.maskRegion, spec.maskLuminance());
-        }
-        if (l.maskPixmap != null) {
-            int[] mr = l.maskRegion;
-            int[] mp = l.maskPixmap.pixels();
-            for (int y = mr[1]; y < mr[3]; y++) java.util.Arrays.fill(mp, y * w + mr[0], y * w + mr[2], 0);
-            layerPool.give(l.maskPixmap);
-        }
-        int[] src = l.pixmap.pixels(), dst = parent.pixels();
-        BlendMode blend = spec != null ? spec.blend() : BlendMode.NORMAL;
-        if (any) {
-            final float groupOpacity = l.group.opacity();
-            final int cx0 = region[0], cx1 = region[2];
-            Rows.forEach(region[1], region[3], (long) (cx1 - cx0) * (region[3] - region[1]), (ya, yb) -> {
-                for (int y = ya; y < yb; y++) {
-                    for (int x = cx0; x < cx1; x++) {
-                        int c = src[y * w + x];
-                        if (c == 0) continue;
-                        if (groupOpacity < 1f) c = SoftShapes.scalePremul(c, groupOpacity);
-                        dst[y * w + x] = blend == BlendMode.NORMAL ? SoftShapes.over(c, dst[y * w + x])
-                                : blendPixel(blend, c, dst[y * w + x]);
-                        src[y * w + x] = 0;
-                    }
-                }
-            });
-            grow(viaGpu ? gpuArea : null, region);
-        }
-        if (viaGpu && gpuArea[2] > gpuArea[0] && gpuArea[3] > gpuArea[1]) rootSink.overwriteTarget(parent, gpuArea);
-        layerPool.give(l.pixmap);
-    }
-
-    /** {@code into} （null なら CPU の dirty 範囲）を {@code r} の分だけ広げる。 */
-    private void grow(int[] into, int[] r) {
-        if (into != null) {
-            into[0] = Math.min(into[0], r[0]);
-            into[1] = Math.min(into[1], r[1]);
-            into[2] = Math.max(into[2], r[2]);
-            into[3] = Math.max(into[3], r[3]);
-            return;
-        }
-        dirty.add(r[0], r[1], r[2], r[3]);
-    }
-
-    /** {@code mix-blend-mode} の合成。{@code src}・{@code dst} は事前乗算の ARGB で、結果も事前乗算。 */
-    private static int blendPixel(BlendMode mode, int src, int dst) {
-        float as = (src >>> 24) / 255f, ab = (dst >>> 24) / 255f;
-        if (as <= 0f) return dst;
-        float[] cs = unpremul(src, as), cb = ab > 0f ? unpremul(dst, ab) : new float[3];
-        float[] o = BlendMode.composite(mode, cb, ab, cs, as);
-        int a = Math.round(Math.min(1f, o[3]) * 255f);
-        int r = Math.round(Math.min(1f, Math.max(0f, o[0])) * 255f);
-        int g = Math.round(Math.min(1f, Math.max(0f, o[1])) * 255f);
-        int b = Math.round(Math.min(1f, Math.max(0f, o[2])) * 255f);
-        return (a << 24) | (Math.min(r, a) << 16) | (Math.min(g, a) << 8) | Math.min(b, a);
-    }
-
-    private static float[] unpremul(int pm, float a) {
-        return new float[]{((pm >> 16) & 0xFF) / 255f / a, ((pm >> 8) & 0xFF) / 255f / a, (pm & 0xFF) / 255f / a};
+        raster.closeCpuLayer(l, rootSink, cpuLayer);
     }
 
     // ------------------------------------------------------------------ 項目
@@ -667,7 +488,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         Object source = m0 != null ? m0.clipRect() : null;
         // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
         boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
-        if (!recording && ce != null && ce.w == targetWidth() && ce.h == targetHeight()
+        if (!recording && ce != null && ce.w == raster.targetWidth() && ce.h == raster.targetHeight()
                 && (ce.generation == clipGeneration || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
@@ -699,14 +520,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = ownerRes.toArray(new Resolved[0]);
-        ce.w = targetWidth();
-        ce.h = targetHeight();
+        ce.w = raster.targetWidth();
+        ce.h = raster.targetHeight();
         if (!recording) clipCache[index] = ce;
         return ce.clip;
     }
 
     private Clip finishClip(List<ClipPart> parts) {
-        int x0 = 0, y0 = 0, x1 = targetWidth(), y1 = targetHeight();
+        int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
         for (ClipPart p : parts) {
             x0 = Math.max(x0, p.bx0());
@@ -810,8 +631,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         PixelOps.PaintOp op = pool.acquirePaint();
         op.nr = 0;
         op.nRound = 0;
-        op.px = target().pixels();
-        op.w = target.width();
+        op.px = raster.target().pixels();
+        op.w = raster.targetWidth();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.pose = pose; op.inv = inv; op.clip = clip; op.opacity = opacity; op.shader = shader; op.fast = fast;
         op.clipped = !clip.parts().isEmpty();
@@ -869,7 +690,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
         if (x1 <= x0 || y1 <= y0) return null;
-        dirty.add(x0, y0, x1, y1);
+        raster.dirty().add(x0, y0, x1, y1);
         return new int[]{x0, y0, x1, y1};
     }
 
@@ -942,8 +763,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (inv == null || !inv.isFinite()) return;
         int[] r = paintRange(pose, x0 - m, y0 - m, x1 + m, y1 + m, clip);
         if (r == null) return;
-        int[] px = target().pixels();
-        int w = target.width();
+        int[] px = raster.target().pixels();
+        int w = raster.targetWidth();
         boolean clipped = !clip.parts().isEmpty();
         final int rx0 = r[0], rx1 = r[2], ry0 = r[1];
         // 軸平行の姿勢では局所の x は列だけ、y は行だけで決まる（逆変換を画素ごとにしない）。被覆率 1 の内側の列の範囲 [spLo, spHi) と、
@@ -1556,8 +1377,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
             covLutColor = pm;
         }
         PixelOps.GlyphOp op = pool.acquireGlyph();
-        op.px = target().pixels();
-        op.w = target.width();
+        op.px = raster.target().pixels();
+        op.w = raster.targetWidth();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
         queue.submit(op, true);

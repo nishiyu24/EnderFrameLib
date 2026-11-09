@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・全章統合整理版）
+**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・全章統合整理版）
 
 ---
 
@@ -130,6 +130,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 │       ├── Fast.java / Clip.java / ClipPart.java / Shader.java / Scratch.java / SoftShapes.java
 │       ├── PixelOps.java             // 画素を書く命令 PaintOp / GradientOp / GlyphOp の本体と行ごとの塗り部品（旧 SoftwareRenderBackend 内）
 │       ├── GpuAttempt.java           // 図形ごとの「GPU へ渡せるか」の試行窓口（現在は単色角丸矩形・外側／内側の影・実線／破線／円の枠線・字形（通常／縁取り／変形）・画像・外部テクスチャ・グラデーション + クリップ変換）。渡せたら true
+│       ├── CpuRaster.java            // 描画先の状態（遅延確保の根 Pixmap・いまの描画先・層スタック・DirtyRect・層用 PixmapPool）と層の合成（フィルター→クリップ→backdrop→マスク→不透明度・混合）。GpuSink を知るのは GPU 背景の読み戻し時だけ
 │       ├── OpPool.java               // 実行済み命令の置き場（参照を手放して再利用）
 │       ├── DirtyRect.java            // 汚れ外接矩形の集約・保存・復元
 │       ├── PixmapPool.java           // 層用 Pixmap のサイズ検証付き LIFO プール
@@ -248,6 +249,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 | **字形の GPU 試行と CPU 貼り付けの混在**<br/>(Phase A-2 第4弾) | バックエンド内の private メソッド `glyphOnGpu` / `strokeOnGpu` / `glyphTransformedOnGpu` が、`sink` 問い合わせ・原点の四捨五入・変形時の描画範囲計算・クリップ変換を持ち、CPU の `blit*` と同じ型に同居 | 3 メソッドを `GpuAttempt.glyph` / `glyphStroke` / `glyphTransformed` へ移動（不透明度 0 は「描くものなし＝処理済み」として true、`sink` なしは常に false という意味も維持）。バックエンドは false のときだけ CPU の貼り付けへ進む。挙動不変 | `GlyphAttemptTest`（原点の四捨五入・変形範囲＝局所外接矩形+1・不透明度 0 は GPU に聞かず true・`sink` なし／断る／クリップ過多は false・通常／縁取り／回転の字が対応する GPU 経路へ届き受け取れば CPU は塗らない・断られた 3 種の画素が `sink` なしと完全一致（システムフォント無しの環境では skip）・番人）<br/>全 1615 テスト緑 |
 | **画像・外部テクスチャの GPU 試行と CPU 標本化の混在**<br/>(Phase A-2 第5弾) | `drawImage` が描画範囲の計算・`sink.drawImage` 呼び出し・CPU の標本化シェーダーを、`drawExternalTexture` が uv／上下反転の写像計算と `sink.drawTexture` 呼び出しを、それぞれバックエンド内に持っていた | `GpuAttempt.image`（箱＋余白と画像範囲の交わり）と `GpuAttempt.externalTexture`（範囲 uv・flipY の写像。貼る大きさ 0 は処理済みで true）へ移動。バックエンドは false のときだけ CPU の標本化（`bilinear` / `boxSample`）へ進み、外部テクスチャを断られたら従来どおり画像として解決。挙動不変 | `ImageAttemptTest`（描画範囲の算出・`sink` なし／断る／クリップ過多は false・デコードした画像が GPU に届き受け取れば CPU は塗らない・断られた画素が `sink` なしと完全一致・範囲 uv の写像と flipY の符号・断られたテクスチャも最初に聞く・番人）<br/>全 1621 テスト緑 |
 | **グラデーションの GPU 試行と CPU 命令記録の混在**<br/>(Phase A-2 第6弾・図形の分離は完了) | `drawGradient` が `sink.fillGradient` の問い合わせと CPU の列・行事前計算付き命令記録を 1 メソッドに持っていた | `GpuAttempt.gradient` へ試行を分離、バックエンドは `recordGradient` が CPU 命令の記録だけを担当。これで図形の GPU 試行は全て `GpuAttempt` に集約され、バックエンドに残る `sink.` 呼び出しは層（グループ・マスク・スクロール層）の制御だけになった | `GradientAttemptTest`（`sink` なし／断る／クリップ過多は false・線形（2色・3色）・円形が GPU に届き受け取れば CPU は塗らず層も未確保・断られた画素が `sink` なしと完全一致・番人: バックエンド内の `sink.` 呼び出しが層制御以外に戻ると失敗）<br/>全 1625 テスト緑 |
+| **描画先状態と層合成の `SoftwareRenderBackend` 内同居**<br/>(Phase A-1 第2弾) | `rootPixmap` / `target` / `layers`（`Layer`）/ `DirtyRect` / `layerPool` と、層を閉じるときの合成（フィルター・クリップ・backdrop・マスク・不透明度・`blendPixel`）が、記録を行うバックエンドに同居していた | 新設 `CpuRaster` に集約（根の遅延確保・描画先切替・層の開閉スタック・汚れ範囲・合成を移動。コードは不変の移動）。バックエンドは `sink` への問い合わせ（GPU の層を開けるか）と `raster.pushCpuLayer` / `closeCpuLayer` の呼び出しだけを行う。`SoftwareRenderBackend` 1858→1595 行 | `CpuRasterTest`（根の遅延確保・CPU 層の描画先切替と汚れ範囲の親への加算・乱数 20 回の層合成が画素ごとの参照実装（不透明度＋`over`）と一致し層が 0 に戻る・空の層は親に触れない・マスクは描かれたときだけ中身の層へ預ける・GPU の層は画素を確保させない・`endFrame` が層を返す・`clearDirty` は汚れ行のみ・`blendPixel` の恒等性・番人: 描画先状態がバックエンドに戻ると失敗）<br/>全 1635 テスト緑 |
 | **GL → `SoftwareRenderBackend` 具体型依存**<br/>(Phase A-2) | `LwjglGlRenderBackend` が `SoftwareRenderBackend` を直接保持し、`renderOnto` / `dirtyBounds`+`pixmap`+`clearDirty` / `isRootAllocated` の 3 経路で CPU ラスタ内部（`Pixmap` 配置）を知っていた | 窓口 `CpuLayerFallback`（package-private）を新設し、GL 側が使う 5 操作だけを公開。`pixmap().pixels()` は `pixels()` に畳み、GL 側の import・javadoc 参照も撤去。挙動は変更なし（CPU 保険層の画素一致は既存テストが保証） | `Milestone4GateTest.glBackendDoesNotKnowTheCpuRasterType`<br/>`LazyCpuLayerTest`（保険層の画素一致・遅延確保）<br/>全 1587 テスト緑 |
 | **測定時の `getFlowChildren()` 確保**<br/>(Step 5 前半) | 空判定 4 箇所と測定走査 7 箇所で毎回 `new ArrayList<>()` を生成 | `hasFlowChildren()` と `participatesInFlow()` による `children` 直接走査に置換し、測定経路のリスト生成を全廃 | `BoxTreeTest`<br/>`FlowChildrenAllocationGateTest` |
 | **`SimdHitTester` 1行ラッパー**<br/>(Type C 整理) | `SimdBackend.hitTestLast` を呼ぶだけの22行クラスが本番から未参照のまま並存（`HitTestIndex` は2D逆変換・角丸SDF・クリップ鎖・動的節を持ち矩形包含だけでは代替不能） | クラスを撤去。矩形列の包含判定が必要な箇所は `SimdBackends.current().hitTestLast` を直接呼ぶ。乱数1000矩形×2000点の素朴実装との一致テストは `Milestone3KernelTest` が `SimdBackend` 直で維持 | `Milestone4GateTest.simdHitTesterWrapperStaysRemoved`<br/>`Milestone3KernelTest.hitTesterReturnsTopmostAndMatchesNaive`<br/>`SimdBackendTest` |
@@ -274,14 +276,14 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 現在のコードベースは、不要な写しや重複クラスが掃除され、モジュール境界が非常にクリーンな状態にあります。次に進めるべき作業は以下の順序で直結しています。
 
 ### Phase A：`SoftwareRenderBackend` と `LwjglGlRenderBackend` の完全分離（Step 3 の完結 = Milestone 3D-0）
-1. **残る内部状態の `CpuRaster` への集約**（🔶 一部実施・2026-11-09）:
+1. **残る内部状態の `CpuRaster` への集約**（✅ 完了・2026-11-09）:
    - ✅ `PaintOp` / `GradientOp` / `GlyphOp` と画素塗り部品を `PixelOps`、フリーリストを `OpPool` へ分離済み（§5.1 参照）。
-   - **未了**: `rootPixmap` / `target` / `Layer` スタック（グループの層）/ `DirtyRect` 保持を束ねる `CpuRaster` 構造への集約。層の開閉（`openLayer` / `closeLayer`）が `sink` と `target` の両方を切り替えるため、先に ② の `GpuSink` 分離の方針を決めてから進める。
+   - ✅ `rootPixmap` / `target` / `Layer` スタック / `DirtyRect` / `PixmapPool` と層の合成を `CpuRaster` へ集約（§5.1 参照）。層の開閉は「`sink` に GPU の層を開けるか聞く」部分だけをバックエンドに残し、CPU 層の積み・合成は `CpuRaster` に委ねる形に分けた。GPU 背景の読み戻し（blend / backdrop-filter が GPU 層から落ちたとき）のみ `closeCpuLayer` が `GpuSink` を引数で受ける。
 2. **図形ごとの「GPU 送出試行 (`GpuSink`)」と「CPU 命令生成」の分離**（✅ 依存の窓口化は 2026-11-09 完了）:
    - [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) から `SoftwareRenderBackend` への直接依存（残り 3 経路）は `CpuLayerFallback` 窓口に集約してゼロにした（`Milestone4GateTest` の最後のラチェット達成）。
    - ✅ **単色角丸矩形**は試行を `GpuAttempt`、CPU 命令の記録を `recordFillRoundRect` に分離済み（2026-11-09）。影・枠線・字形・画像・グラデーションも完了。残りの図形も同じ形（`GpuAttempt.xxx` が boolean を返し、false なら `recordXxx`）で順に移す。
-   - **未了**: `SoftwareRenderBackend` 側が `GpuSink` を受けて自ら「GPU に渡せるか」を判断する構造（`renderOnto(items, now, sink)`）は残っている。図形ごとの試行と CPU 命令生成を `PaintSceneDriver.Painter` 側へ完全に剥がすのは、次の作業（図形ごとの試行の分離は全種完了。残るのは下記の層制御と `Painter` 側への剥がし）。`CpuLayerFallback` の 5 操作が、その分離後に CPU 側へ残すべき最小インターフェースになる。
-3. **`GlRectStream.accepts()` の拡張による旧 `GpuBatchPacker`（第 2 世代）の撤去**:
+   - **未了**（層の開閉の `sink` 問い合わせは `openLayer` / `closeLayer` に残る）: `SoftwareRenderBackend` 側が `GpuSink` を受けて自ら「GPU に渡せるか」を判断する構造（`renderOnto(items, now, sink)`）は残っている。図形ごとの試行と CPU 命令生成を `PaintSceneDriver.Painter` 側へ完全に剥がすのは、次の作業（図形ごとの試行の分離は全種完了。残るのは下記の層制御と `Painter` 側への剥がし）。`CpuLayerFallback` の 5 操作が、その分離後に CPU 側へ残すべき最小インターフェースになる。
+3. **`GlRectStream.accepts()` の拡張による旧 `GpuBatchPacker`（第 2 世代）の撤去**（⏳ 未着手。`LwjglGlRenderBackend`（2737 行）の `packer`/`dataTex`/`extTex` と、`InstanceUploadDiffTest` / `RectTreesBackendTest` 等の旧経路テストが絡むため、独立した作業として別途進める）:
    - 非等方スケール角丸・せん断変形を `GlRectStream` + `GlRectRenderer` で受けられるようにし、`LwjglGlRenderBackend` から旧 `GpuBatchPacker` と `dataTex` / `extTex` を撤去して GPU パイプラインを 1 系統に統一する。
 
 ### Phase B：2D 残存ボトルネックの突破（任意・高レバレッジ項目）
