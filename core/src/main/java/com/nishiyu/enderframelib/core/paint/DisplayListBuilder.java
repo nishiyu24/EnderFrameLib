@@ -8,6 +8,7 @@ import com.nishiyu.enderframelib.core.css.CssSyntax;
 import com.nishiyu.enderframelib.core.css.LengthResolver;
 import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
+import com.nishiyu.enderframelib.core.layout.ReplacedElements;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
@@ -52,7 +53,7 @@ public class DisplayListBuilder {
     // 単位なしの 0（例: translate(-50%, 0)）も受け付けるため単位は省略可能（省略時は px 扱い）
 
     private static final Set<String> NON_FRAGMENT_TAGS = Set.of(
-            "#text", "img", "mc-fluid", "mc-entity", "mc-scene",
+            "#text", "img",
             "input", "select", "progress", "meter", "textarea", "canvas", "svg"
     );
 
@@ -392,7 +393,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (tag == null) return false;
         if (tag.startsWith("mc-")) {
             // 描画が読むのは属性とスタイルだけ（mc-scene / mc-fluid / mc-entity）。他の mc-* は従来どおり除外する
-            if (!"mc-scene".equals(tag) && !"mc-fluid".equals(tag) && !"mc-entity".equals(tag)) return false;
+            if (!ReplacedElements.isHost(tag)) return false;
         } else {
             switch (tag) {
                 case "video", "audio", "svg", "canvas", "textarea", "select", "input", "fieldset",
@@ -785,7 +786,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
         RenderMeta baseMeta = new RenderMeta(normalizedClip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
 
-        if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
+        if (!box.inlineFragments.isEmpty() && !NON_FRAGMENT_TAGS.contains(box.node.tag) && !ReplacedElements.isHost(box.node.tag) && !BlockLayoutEngine.isAtomicInline(box)) {
             decor.drawInlineFragments(elements, box, id, color, bgColor, rawRadii, normalizedClip, fontHVal, ox, oy, itemCount, interactive,
                     partsEvents, passiveBorderEvents, transDur, colorBgAnim);
             return;

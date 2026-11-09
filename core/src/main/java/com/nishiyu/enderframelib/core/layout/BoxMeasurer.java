@@ -535,7 +535,7 @@ public final class BoxMeasurer {
     }
 
     private static boolean isReplacedImage(String tag) {
-        return tag.equals("img") || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("canvas") || tag.equals("svg");
+        return tag.equals("img") || ReplacedElements.isHostImageLike(tag) || tag.equals("canvas") || tag.equals("svg");
     }
 
     /**

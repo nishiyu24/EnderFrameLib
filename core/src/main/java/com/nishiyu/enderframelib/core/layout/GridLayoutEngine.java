@@ -541,9 +541,7 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isReplaced(LayoutBox b) {
-        String tag = b.node.tag;
-        return tag.equals("img") || tag.equals("canvas") || tag.equals("svg") || tag.equals("input") || tag.equals("select") || tag.equals("button")
-                || tag.equals("progress") || tag.equals("mc-fluid") || tag.equals("mc-entity") || tag.equals("mc-scene");
+        return ReplacedElements.isReplacedTag(b.node.tag);
     }
 
     // ==========================================
