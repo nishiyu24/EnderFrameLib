@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.nishiyu.enderframelib.EnderFrameLib;
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
 import com.nishiyu.enderframelib.core.diag.StageProfiler;
+import com.nishiyu.enderframelib.core.paint.StaticFrameGate;
 import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import net.minecraft.client.Minecraft;
@@ -52,46 +53,16 @@ public final class CoreGpuSurface {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /**
-     * バックエンドが直前に描いた内容。項目は不変で、変わるときは別のインスタンスになるので、同じ項目が並んでいて
-     * アニメーションも動いていなければ、描き直しても同じ絵になる。
+     * バックエンドごとの「直前に描いた内容」の判定（core の {@link StaticFrameGate}。項目は不変で、変わるときは別の
+     * インスタンスになるので、同じ項目が並んでいてアニメーションも動いていなければ描き直しても同じ絵になる）。
      */
-    private static final class Painted {
-        Object[] items;
-        int fontGeneration;
-        boolean settled;
-    }
-
-    private static final Map<LwjglGlRenderBackend, Painted> PAINTED =
+    private static final Map<LwjglGlRenderBackend, StaticFrameGate> PAINTED =
             new java.util.IdentityHashMap<>();
 
     /** 面の再描画を飛ばせるか。既定は有効。切り分け用に {@code -Denderframe.core.noskip=true} で止められる。 */
     private static final boolean SKIP_STATIC = !Boolean.getBoolean("enderframe.core.noskip");
 
     private CoreGpuSurface() {}
-
-    /** 前回と同じ項目が同じ順に並んでいるか（同一インスタンスの比較。リストが別でも中身が同じなら true）。 */
-    private static boolean sameItems(Object[] prev, List<DisplayItem> items) {
-        if (prev == null || prev.length != items.size()) return false;
-        int i = 0;
-        for (DisplayItem it : items) {
-            if (prev[i++] != it) return false;
-        }
-        return true;
-    }
-
-    /** 時刻や外の事情（読み込み中の画像・動画・キャンバス）で絵が変わりうる項目を含むか。 */
-    private static boolean timeDependent(List<DisplayItem> items) {
-        for (DisplayItem it : items) {
-            switch (it.type()) {
-                case IMAGE, VIDEO, CANVAS, SCENE -> {
-                    return true;
-                }
-                default -> {
-                }
-            }
-        }
-        return false;
-    }
 
     /** 設定の反映側から有効・無効を切り替える。無効にしたら共有テクスチャを持つバックエンドを閉じる。 */
     public static void setEnabled(boolean value) {
@@ -128,11 +99,9 @@ public final class CoreGpuSurface {
             backend.images(McMediaImages.INSTANCE);
             // 計測が有効なら GPU のタイマークエリも張る（面ごとに 1 度。無効の間は GL を呼ばない）
             if (StageProfiler.enabled() && GPU_TIMED.add(backend)) backend.enableGpuTiming();
-            Painted painted = PAINTED.computeIfAbsent(backend, b -> new Painted());
+            StaticFrameGate gate = PAINTED.computeIfAbsent(backend, b -> new StaticFrameGate(SKIP_STATIC));
             int fontGen = WebFontManager.McFontResolver.generation();
-            boolean skip = SKIP_STATIC && painted.settled && painted.fontGeneration == fontGen
-                    && sameItems(painted.items, items);
-            if (skip) {
+            if (gate.canSkip(items, fontGen)) {
                 // 変化もアニメも無い: 前回描いたテクスチャをそのまま貼る（GPU の描画も CPU 側の組み立ても無し）
                 StageProfiler.end(PipelineStage.SURFACE_CORE_SKIPPED, StageProfiler.begin(PipelineStage.SURFACE_CORE_SKIPPED));
             } else {
@@ -140,9 +109,7 @@ public final class CoreGpuSurface {
                 try {
                     long now = net.minecraft.Util.getMillis();
                     backend.render(items, now);
-                    painted.items = items.toArray();
-                    painted.fontGeneration = fontGen;
-                    painted.settled = SKIP_STATIC && !timeDependent(items) && !backend.hasActiveAnimation(items, now);
+                    gate.painted(items, fontGen, backend.hasActiveAnimation(items, now));
                 } finally {
                     StageProfiler.end(PipelineStage.SURFACE_CORE_RENDER, tRender);
                 }
