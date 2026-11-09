@@ -380,7 +380,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         if (parts.isEmpty()) return null;
         Clip c = finishClip(parts);
-        GpuClip[] gc = gpuClips(c);
+        GpuClip[] gc = GpuAttempt.gpuClips(c);
         if (gc == null || c.x1() <= c.x0() || c.y1() <= c.y0()) return null;
         return new GpuScrollLayer(node.id(), token, driver.resolveAt(nodeIndex).pose(), gc, new int[]{c.x0(), c.y0(), c.x1(), c.y1()});
     }
@@ -792,96 +792,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 画素を書く命令とタイル実行
 
-    private final TileQueue queue = new TileQueue(this::release);
-    // 実行し終えた命令の置き場（次のフレームの命令に作り直さず使う。記録中の命令はどこにも載っていない）
-    private final java.util.ArrayDeque<PaintOp> freePaint = new java.util.ArrayDeque<>();
-    private final java.util.ArrayDeque<GradientOp> freeGradient = new java.util.ArrayDeque<>();
-    private final java.util.ArrayDeque<GlyphOp> freeGlyph = new java.util.ArrayDeque<>();
-
-    private PaintOp acquirePaint() {
-        PaintOp o = freePaint.pollLast();
-        return o != null ? o : new PaintOp();
-    }
-
-    private GradientOp acquireGradient() {
-        GradientOp o = freeGradient.pollLast();
-        return o != null ? o : new GradientOp();
-    }
-
-    private GlyphOp acquireGlyph() {
-        GlyphOp o = freeGlyph.pollLast();
-        return o != null ? o : new GlyphOp();
-    }
-
-    /** 実行し終えた命令を、掴んでいる参照（描画先・クリップなど）を手放して置き場へ戻す。 */
-    private void release(Op op) {
-        op.px = null;
-        if (op instanceof PaintOp p) {
-            p.clip = null; p.shader = null; p.fast = null; p.pose = null; p.inv = null;
-            freePaint.addLast(p);
-        } else if (op instanceof GradientOp g) {
-            g.clip = null; g.inv = null; g.g = null; g.rx = null; g.ry = null;
-            freeGradient.addLast(g);
-        } else if (op instanceof GlyphOp g) {
-            g.g = null; g.lut = null; g.clip = null;
-            freeGlyph.addLast(g);
-        }
-    }
-
-    /** 形の塗り（シェーダー＋近道の領域）の命令。 */
-    private static final class PaintOp extends Op {
-        Matrix2D pose, inv;
-        Clip clip;
-        boolean clipped;
-        float opacity;
-        Shader shader;
-        Fast fast;
-        int nr, nRound;
-        final int[] dx0 = new int[Fast.MAX], dx1 = new int[Fast.MAX], dy0 = new int[Fast.MAX], dy1 = new int[Fast.MAX], col = new int[Fast.MAX];
-        final int[] roundColor = new int[Fast.MAX_ROUND];
-
-        @Override
-        void run(int ax0, int ay0, int ax1, int ay1, Scratch s) {
-            boolean any = nr > 0 || nRound > 0;
-            for (int y = ay0; y < ay1; y++) {
-                double dy = y + 0.5;
-                if (!any) {
-                    paintPixels(px, w, y, dy, ax0, ax1, inv, clip, clipped, opacity, shader);
-                    continue;
-                }
-                // この行の「塗りだけ／飛ばす」区間 [a, b) と色 c（0 は飛ばす）
-                int ns = 0;
-                for (int k = 0; k < nr; k++) {
-                    if (y < dy0[k] || y >= dy1[k]) continue;
-                    s.a[ns] = dx0[k]; s.b[ns] = dx1[k]; s.c[ns] = col[k]; ns++;
-                }
-                for (int k = 0; k < nRound; k++) {
-                    if (roundRow(pose, inv, clip, clipped && roundColor[k] != 0, dy, ax0, ax1, fast, k, s.a, s.b, ns, s.out)) {
-                        s.c[ns] = roundColor[k]; ns++;
-                    }
-                }
-                for (int i = 1; i < ns; i++) { // 開始位置の昇順（区間は多くて数個）
-                    int a = s.a[i], b = s.b[i], c = s.c[i], j = i - 1;
-                    while (j >= 0 && s.a[j] > a) { s.a[j + 1] = s.a[j]; s.b[j + 1] = s.b[j]; s.c[j + 1] = s.c[j]; j--; }
-                    s.a[j + 1] = a; s.b[j + 1] = b; s.c[j + 1] = c;
-                }
-                int cur = ax0;
-                int base = y * w;
-                for (int i = 0; i < ns; i++) {
-                    int a = Math.max(s.a[i], cur), b = Math.min(s.b[i], ax1);
-                    if (b <= a) continue;
-                    if (a > cur) paintPixels(px, w, y, dy, cur, a, inv, clip, clipped, opacity, shader);
-                    int c = s.c[i];
-                    if (c != 0) {
-                        if ((c >>> 24) == 255) java.util.Arrays.fill(px, base + a, base + b, c);
-                        else for (int x = a; x < b; x++) px[base + x] = SoftShapes.over(c, px[base + x]);
-                    }
-                    cur = b;
-                }
-                if (cur < ax1) paintPixels(px, w, y, dy, cur, ax1, inv, clip, clipped, opacity, shader);
-            }
-        }
-    }
+    private final OpPool pool = new OpPool();
+    private final TileQueue queue = new TileQueue(pool::release);
 
     /**
      * 同上。{@code fast} の領域は、軸平行の姿勢のとき距離の計算なしに行ごとの塗り（または省略）で済ませる（結果は画素ごとの評価と同じ）。
@@ -895,7 +807,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (inv == null || !inv.isFinite()) return;
         int[] r = paintRange(pose, bx0, by0, bx1, by1, clip);
         if (r == null) return;
-        PaintOp op = acquirePaint();
+        PixelOps.PaintOp op = pool.acquirePaint();
         op.nr = 0;
         op.nRound = 0;
         op.px = target().pixels();
@@ -946,43 +858,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return true;
     }
 
-    /** 1 行ぶんの角丸矩形の内側の画素区間を {@code a[ns], b[ns]} に書く。無ければ false。 */
-    private static boolean roundRow(Matrix2D pose, Matrix2D inv, Clip clip, boolean clipped, double dy, int x0, int x1, Fast fast, int k,
-                                    int[] a, int[] b, int ns, double[] out) {
-        double ly = inv.applyY(x0 + 0.5, dy);
-        if (!fast.roundSpan(k, ly, out)) return false;
-        double p = pose.applyX(out[0], 0), q = pose.applyX(out[1], 0);
-        double lo = Math.min(p, q) + 1e-3, hi = Math.max(p, q) - 1e-3;
-        if (clipped) {
-            if (dy < clip.iy0() || dy > clip.iy1()) return false;
-            lo = Math.max(lo, clip.ix0()); hi = Math.min(hi, clip.ix1());
-        }
-        if (hi < lo) return false;
-        int s = Math.max(x0, (int) Math.ceil(lo - 0.5)), e = Math.min(x1, (int) Math.floor(hi - 0.5) + 1);
-        if (e <= s) return false;
-        a[ns] = s; b[ns] = e;
-        return true;
-    }
 
     /** 照合・切り分け用: false なら {@link #paint} の行ごとの塗りを使わず、全画素を評価する。 */
     static volatile boolean fastSolid = !Boolean.getBoolean("enderframe.soft.nofastsolid");
 
-    private static void paintPixels(int[] px, int w, int y, double dy, int xa, int xb, Matrix2D inv, Clip clip, boolean clipped,
-                                    float opacity, Shader shader) {
-        for (int x = xa; x < xb; x++) {
-            double dx = x + 0.5;
-            int c = shader.shade((float) inv.applyX(dx, dy), (float) inv.applyY(dx, dy));
-            if (c == 0) continue;
-            float k = opacity;
-            if (clipped) {
-                k *= clip.coverage(dx, dy);
-                if (k <= 0f) continue;
-            }
-            if (k < 1f) c = SoftShapes.scalePremul(c, k);
-            int i = y * w + x;
-            px[i] = SoftShapes.over(c, px[i]);
-        }
-    }
 
     /** 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。 */
     private int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
@@ -998,10 +877,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                int argb, Clip clip, float opacity) {
         if ((argb >>> 24) == 0) return;
-        if (sink != null) {
-            GpuClip[] gc = gpuClips(clip);
-            if (gc != null && sink.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, gc, opacity)) return;
-        }
+        if (GpuAttempt.fillRoundRect(sink, pose, x0, y0, x1, y1, rx, ry, argb, clip, opacity)) return;
+        recordFillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clip, opacity);
+    }
+
+    /** 単色の角丸矩形の CPU 命令を記録する（GPU に渡せなかったときだけ）。 */
+    private void recordFillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+                                     int argb, Clip clip, float opacity) {
         int pm = Pixmap.premultiply(argb);
         float scale = (float) pose.meanScale();
         float m = 1f / Math.max(scale, 0.01f);
@@ -1012,18 +894,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float cov = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
         }, fast);
-    }
-
-    /** GPU へ渡せるクリップの列。多すぎれば {@code null}（CPU が塗る）。 */
-    private static GpuClip[] gpuClips(Clip clip) {
-        List<ClipPart> parts = clip.parts();
-        if (parts.size() > GpuSink.MAX_CLIPS) return null;
-        GpuClip[] out = new GpuClip[parts.size()];
-        for (int i = 0; i < out.length; i++) {
-            ClipPart p = parts.get(i);
-            out[i] = new GpuClip(p.inv(), p.scale(), p.x0(), p.y0(), p.x1(), p.y1(), p.rx(), p.ry());
-        }
-        return out;
     }
 
     private static final float[] ZERO4 = new float[4];
@@ -1053,10 +923,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawGradient(ShaderGradient g, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                               Resolved res, Clip clip, float opacity) {
-        if (sink != null) {
-            GpuClip[] gc = gpuClips(clip);
-            if (gc != null && sink.fillGradient(res.pose(), x0, y0, x1, y1, rx, ry, g, gc, opacity)) return;
-        }
+        if (GpuAttempt.gradient(sink, res.pose(), x0, y0, x1, y1, rx, ry, g, clip, opacity)) return;
+        recordGradient(g, x0, y0, x1, y1, rx, ry, res, clip, opacity);
+    }
+
+    /** シェーダーのグラデーションの CPU 命令を記録する（GPU に渡せなかったときだけ）。 */
+    private void recordGradient(ShaderGradient g, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
+                                Resolved res, Clip clip, float opacity) {
         float scale = (float) res.pose().meanScale();
         float m = 1f / Math.max(scale, 0.01f);
         // 角の丸みと縁の半画素から十分に内側なら被覆率は 1（距離の計算を省ける）。
@@ -1075,7 +948,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         final int rx0 = r[0], rx1 = r[2], ry0 = r[1];
         // 軸平行の姿勢では局所の x は列だけ、y は行だけで決まる（逆変換を画素ごとにしない）。被覆率 1 の内側の列の範囲 [spLo, spHi) と、
         // 内側の行（行ごとに判定）を作り、その中は被覆率・クリップの計算を省く。範囲の外と姿勢が斜めのときは従来の画素ごとの経路。
-        GradientOp op = acquireGradient();
+        PixelOps.GradientOp op = pool.acquireGradient();
         op.hasCol = false;
         op.spLo = op.spHi = 0;
         op.px = px; op.w = w;
@@ -1104,97 +977,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 ShaderGradientEmulator.Prepared sh0 = ShaderGradientEmulator.prepare(g);
                 if (op.colFinal == null || op.colFinal.length < hi - lo) op.colFinal = new int[hi - lo];
                 op.hasCol = true;
-                for (int x = lo; x < hi; x++) op.colFinal[x - lo] = spanColor(sh0.colorOrZero(lxs[x - rx0], lys[0]), opacity);
+                for (int x = lo; x < hi; x++) op.colFinal[x - lo] = PixelOps.spanColor(sh0.colorOrZero(lxs[x - rx0], lys[0]), opacity);
             }
         }
         op.spLo = lo; op.spHi = hi;
         queue.submit(op, true); // 行は互いに独立（書き込む画素も別）。タイルごとに並列で塗る
     }
 
-    /** グラデーションで形を塗る命令。 */
-    private static final class GradientOp extends Op {
-        Matrix2D inv;
-        Clip clip;
-        boolean clipped, axis;
-        float opacity, sx0, sy0, sx1, sy1, scale, fIx0, fIx1, fIy0, fIy1;
-        ShaderGradient g;
-        float[] rx, ry, lxs, lys;
-        int spLo, spHi;
-        int[] colFinal;
-        boolean hasCol;
 
-        @Override
-        void run(int ax0, int ay0, int ax1, int ay1, Scratch s) {
-            ShaderGradientEmulator.Prepared shader = ShaderGradientEmulator.prepare(g); // 直前の色を覚えるのでスレッドごと
-            boolean rowConst = axis && shader.constantAlongRows();
-            int a = Math.max(ax0, Math.min(ax1, spLo)), b = Math.max(ax0, Math.min(ax1, spHi)); // 内側の列の範囲をタイルに収める
-            for (int y = ay0; y < ay1; y++) {
-                double dy = y + 0.5;
-                if (axis && spHi > spLo) {
-                    float lyRow = lys[y - y0];
-                    if (lyRow >= fIy0 && lyRow <= fIy1 && (!clipped || (dy >= clip.iy0() && dy <= clip.iy1()))) {
-                        int base = y * w;
-                        paintGradientPixels(px, w, y, dy, ax0, a, inv, clip, clipped, opacity, shader, sx0, sy0, sx1, sy1, rx, ry, scale, fIx0, fIx1, fIy0, fIy1);
-                        if (hasCol) {
-                            for (int x = a; x < b; x++) {
-                                int c = colFinal[x - spLo];
-                                if (c != 0) px[base + x] = SoftShapes.over(c, px[base + x]);
-                            }
-                        } else if (rowConst) {
-                            if (b > a) {
-                                int c = spanColor(shader.colorOrZero(lxs[a - x0], lyRow), opacity);
-                                if (c != 0) {
-                                    if ((c >>> 24) == 255) java.util.Arrays.fill(px, base + a, base + b, c);
-                                    else for (int x = a; x < b; x++) px[base + x] = SoftShapes.over(c, px[base + x]);
-                                }
-                            }
-                        } else {
-                            for (int x = a; x < b; x++) {
-                                int c = spanColor(shader.colorOrZero(lxs[x - x0], lyRow), opacity);
-                                if (c != 0) px[base + x] = SoftShapes.over(c, px[base + x]);
-                            }
-                        }
-                        paintGradientPixels(px, w, y, dy, b, ax1, inv, clip, clipped, opacity, shader, sx0, sy0, sx1, sy1, rx, ry, scale, fIx0, fIx1, fIy0, fIy1);
-                        continue;
-                    }
-                }
-                paintGradientPixels(px, w, y, dy, ax0, ax1, inv, clip, clipped, opacity, shader, sx0, sy0, sx1, sy1, rx, ry, scale, fIx0, fIx1, fIy0, fIy1);
-            }
-        }
-    }
 
-    /** 被覆率 1・クリップ 1 の画素の最終の色（事前乗算・不透明度込み）。0 は塗らない。画素ごとの経路と同じ式。 */
-    private static int spanColor(int straight, float opacity) {
-        if ((straight >>> 24) == 0) return 0;
-        int c = SoftShapes.scalePremul(Pixmap.premultiply(straight), 1f);
-        if (c == 0) return 0;
-        return opacity < 1f ? SoftShapes.scalePremul(c, opacity) : c;
-    }
-
-    private static void paintGradientPixels(int[] px, int w, int y, double dy, int xa, int xb, Matrix2D inv, Clip clip, boolean clipped,
-                                            float opacity, ShaderGradientEmulator.Prepared shader,
-                                            float x0, float y0, float x1, float y1, float[] rx, float[] ry, float scale,
-                                            float ix0, float ix1, float iy0, float iy1) {
-        for (int x = xa; x < xb; x++) {
-            double dx = x + 0.5;
-            float lx = (float) inv.applyX(dx, dy), ly = (float) inv.applyY(dx, dy);
-            float cov = lx >= ix0 && lx <= ix1 && ly >= iy0 && ly <= iy1 ? 1f
-                    : SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
-            if (cov <= 0f) continue;
-            int c = shader.colorOrZero(lx, ly);
-            if ((c >>> 24) == 0) continue;
-            c = SoftShapes.scalePremul(Pixmap.premultiply(c), cov);
-            if (c == 0) continue;
-            float k = opacity;
-            if (clipped) {
-                k *= clip.coverage(dx, dy);
-                if (k <= 0f) continue;
-            }
-            if (k < 1f) c = SoftShapes.scalePremul(c, k);
-            int i = y * w + x;
-            px[i] = SoftShapes.over(c, px[i]);
-        }
-    }
 
     /**
      * ぼかした影。要素の矩形は影が消える所までの広さで、外側の影はそこから {@link BoxDecorationPainter#SHADOW_REACH} ×
@@ -1212,13 +1003,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ShadowShape shape = hints.shadowShape();
 
         if (shape != null && shape.inset()) {
-            float[] hrx = {shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()};
-            float[] hry = {shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()};
-            if (sink != null) {
-                GpuClip[] gc = gpuClips(clip);
-                if (gc != null && sink.insetShadow(res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma,
-                        new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1()}, hrx, hry, color, gc, opacity)) return;
-            }
+            float[] hrx = GpuAttempt.shapeRx(shape);
+            float[] hry = GpuAttempt.shapeRy(shape);
+            if (GpuAttempt.insetShadow(sink, res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma, shape, color, clip, opacity)) return;
             paint(res.pose(), qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1, clip, opacity, (lx, ly) -> {
                 float inRect = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, qx0, qy0, qx1, qy1, rx, ry), scale);
                 if (inRect <= 0f) return 0;
@@ -1240,16 +1027,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
         float[] hrx = null, hry = null;
         if (shape != null) {
-            hrx = new float[]{shape.rTL(), shape.rTR(), shape.rBR(), shape.rBL()};
-            hry = new float[]{shape.rTLv(), shape.rTRv(), shape.rBRv(), shape.rBLv()};
+            hrx = GpuAttempt.shapeRx(shape);
+            hry = GpuAttempt.shapeRy(shape);
         }
         final float[] holeRx = hrx, holeRy = hry;
-        if (sink != null) {
-            GpuClip[] gc = gpuClips(clip);
-            float[] hole = shape != null ? new float[]{shape.x0(), shape.y0(), shape.x1(), shape.y1()} : null;
-            if (gc != null && sink.outerShadow(res.pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma,
-                    hole, holeRx, holeRy, color, gc, opacity)) return;
-        }
+        if (GpuAttempt.outerShadow(sink, res.pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, shape, color, clip, opacity)) return;
         paint(res.pose(), qx0, qy0, qx1, qy1, clip, opacity, (lx, ly) -> {
             float a = SoftShapes.blurredEdge(SoftShapes.sdRoundRect(lx, ly, sx0, sy0, sx1, sy1, srx, sry), sigma);
             if (a <= 0f) return 0;
@@ -1295,17 +1077,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
             pattern = BorderPath.pattern(spec.dashKind(), wt, BorderPath.length(bx, by, pcx, pcy));
         }
         final BorderDashPattern dash = pattern;
-        if (sink != null && (dash != null || spec.dashKind() == BorderPath.SOLID)) {
-            GpuClip[] gc = gpuClips(clip);
-            if (gc != null) {
-                int[] straight = {spec.color(0), spec.color(1), spec.color(2), spec.color(3)};
-                if (dash == null) {
-                    if (sink.strokeRoundBorder(res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                            straight, widths, gc, opacity)) return;
-                } else if (sink.strokeDashedBorder(res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                        straight, widths, bx, by, cxm, cym, pcx, pcy, dash.period(), dash.dash(), dash.round(), wt,
-                        gc, opacity)) return;
-            }
+        if (dash != null || spec.dashKind() == BorderPath.SOLID) {
+            boolean taken = dash == null
+                    ? GpuAttempt.roundBorder(sink, res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                            spec, widths, clip, opacity)
+                    : GpuAttempt.dashedBorder(sink, res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                            spec, widths, bx, by, cxm, cym, pcx, pcy, dash, wt, clip, opacity);
+            if (taken) return;
         }
         final float fbx = bx, fby = by;
         final float thickness = wt;
@@ -1387,11 +1165,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float cx = el.x() + el.width() / 2f, cy = el.y() + el.height() / 2f;
         float outerR = Math.min(el.width(), el.height()) / 2f;
         float innerR = outerR - thick;
-        if (sink != null) {
-            GpuClip[] gc = gpuClips(clip);
-            if (gc != null && sink.strokeCircleBorder(res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
-                    el.x() + el.width() + 1, el.y() + el.height() + 1, straightColors, gc, opacity)) return true;
-        }
+        if (GpuAttempt.circleBorder(sink, res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
+                el.x() + el.width() + 1, el.y() + el.height() + 1, straightColors, clip, opacity)) return true;
         float scale = (float) res.pose().meanScale();
         paint(res.pose(), el.x() - 1, el.y() - 1, el.x() + el.width() + 1, el.y() + el.height() + 1, clip, opacity, (lx, ly) -> {
             float dx = lx - cx, dy = ly - cy;
@@ -1633,7 +1408,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     sub = 0;
                 }
                 GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, sub);
-                if (!sdf.isEmpty() && !strokeOnGpu(sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
+                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(sink, sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
                     blitStrokeAligned(sdf, (float) whole, Math.round(devY), half, pm, clip, opacity);
                 }
             } else {
@@ -1642,14 +1417,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
             i += n;
         }
-    }
-
-    private boolean strokeOnGpu(GlyphBitmap sdf, float originX, float originY, float half, int argb, Clip clip, float opacity) {
-        if (sink == null) return false;
-        if (opacity <= 0f) return true;
-        GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        return sink.drawGlyphStroke(sdf, Math.round(originX + sdf.left()), Math.round(originY - sdf.top()), half, argb, gc, opacity);
     }
 
     private GlyphBitmap sdfGlyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub) {
@@ -1725,12 +1492,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 }
                 float originY = Math.round(devY);
                 GlyphBitmap bmp = glyph(gf, cp, pixelSize, sub, light);
-                if (!bmp.isEmpty() && !glyphOnGpu(bmp, (float) whole, originY, argb, clip, opacity)) {
+                if (!bmp.isEmpty() && !GpuAttempt.glyph(sink, bmp, (float) whole, originY, argb, clip, opacity)) {
                     blitAligned(bmp, (float) whole, originY, pm, clip, opacity);
                 }
             } else {
                 GlyphBitmap bmp = glyph(gf, cp, pixelSize, 0, light);
-                if (!bmp.isEmpty() && !glyphTransformedOnGpu(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
+                if (!bmp.isEmpty() && !GpuAttempt.glyphTransformed(sink, bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
                     blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
                 }
             }
@@ -1754,24 +1521,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return g;
     }
 
-    private boolean glyphOnGpu(GlyphBitmap g, float originX, float originY, int argb, Clip clip, float opacity) {
-        if (sink == null) return false;
-        if (opacity <= 0f) return true;
-        GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        return sink.drawGlyph(g, Math.round(originX + g.left()), Math.round(originY - g.top()), argb, gc, opacity);
-    }
-
-    private boolean glyphTransformedOnGpu(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int argb, Clip clip, float opacity) {
-        if (sink == null) return false;
-        if (opacity <= 0f) return true;
-        GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
-        float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
-        return sink.drawGlyphTransformed(pose, g, ox, oy, s, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, argb, gc, opacity);
-    }
-
     /** デバイス画素の格子にそのまま置く（原点 {@code (originX, originY)}）。 */
     private void blitAligned(GlyphBitmap g, float originX, float originY, int pm, Clip clip, float opacity) {
         float bx = originX + g.left(), by = originY - g.top();
@@ -1791,36 +1540,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private int[] covLut;
     private int covLutColor;
 
-    /** 字形を画素の格子に貼る命令。 */
-    private static final class GlyphOp extends Op {
-        GlyphBitmap g;
-        int bx, by;
-        int[] lut;
-        Clip clip;
-        boolean clipped;
-        float opacity;
-
-        @Override
-        void run(int ax0, int ay0, int ax1, int ay1, Scratch s) {
-            for (int y = ay0; y < ay1; y++) {
-                double dy = y + 0.5;
-                int row = y - by, base = y * w;
-                for (int x = ax0; x < ax1; x++) {
-                    int cov = g.coverageAt(x - bx, row);
-                    if (cov == 0) continue;
-                    int c = lut[cov];
-                    if (c == 0) continue;
-                    float k = opacity;
-                    if (clipped) {
-                        k *= clip.coverage(x + 0.5, dy);
-                        if (k <= 0f) continue;
-                    }
-                    if (k < 1f) c = SoftShapes.scalePremul(c, k);
-                    px[base + x] = SoftShapes.over(c, px[base + x]);
-                }
-            }
-        }
-    }
 
     /**
      * 字形の左上が画素の格子に載るとき（原点・左・上が整数）の貼り付け。恒等の姿勢の {@code paint} と同じ画素を同じ式で重ねるが、
@@ -1836,7 +1555,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             covLut = lut;
             covLutColor = pm;
         }
-        GlyphOp op = acquireGlyph();
+        PixelOps.GlyphOp op = pool.acquireGlyph();
         op.px = target().pixels();
         op.w = target.width();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
@@ -1874,7 +1593,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
         float scale = (float) res.pose().meanScale();
         TextureRef texture = sink != null ? TextureRef.parse(src) : null;
-        if (texture != null && drawExternalTexture(el, texture, rx, ry, res, clip, opacity, scale)) return;
+        if (texture != null && GpuAttempt.externalTexture(sink, el, texture, rx, ry, res.pose(), clip, opacity, scale)) return;
         ImageProvider.Image img = resources.images().load(el, (int) Math.ceil(w * scale), (int) Math.ceil(h * scale));
         if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return;
         Pixmap pm = img.pixmap();
@@ -1888,12 +1607,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         // 縮小するときは対象の画素の中を複数点で標本化して、折り返しの粗さを抑える
         int taps = (int) Math.min(4, Math.max(1, Math.ceil(Math.max(sx, sy) / Math.max(scale, 0.01f))));
         float m = 1f / Math.max(scale, 0.01f);
-        if (sink != null) {
-            GpuClip[] gc = gpuClips(clip);
-            if (gc != null && sink.drawImage(res.pose(), pm, Math.max(x0 - m, px0), Math.max(y0 - m, py0),
-                    Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()), px0, py0, sx, sy,
-                    x0, y0, x0 + w, y0 + h, rx, ry, taps, sx / scale, sy / scale, gc, opacity)) return;
-        }
+        if (GpuAttempt.image(sink, res.pose(), pm, x0, y0, w, h, px0, py0, pl.w(), pl.h(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
         paint(res.pose(), Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
                 clip, opacity, (lx, ly) -> {
                     float box = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x0 + w, y0 + h, rx, ry), scale);
@@ -1903,37 +1617,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     int c = taps == 1 ? bilinear(pm, u - 0.5f, v - 0.5f) : boxSample(pm, u, v, taps, sx / scale, sy / scale);
                     return c == 0 ? 0 : SoftShapes.scalePremul(c, box);
                 });
-    }
-
-    /**
-     * 外部テクスチャを GPU の受け口へ渡す。貼る範囲（{@code uv}）と上下反転を、{@code drawTexture} の写像
-     * （テクスチャ全体の左上・画素を基準にした {@code px0/py0/sx/sy}）に織り込む。受け口が断る（CPU 版など）ときは false。
-     */
-    private boolean drawExternalTexture(DisplayItem el, TextureRef t, float[] rx, float[] ry, Resolved res, Clip clip, float opacity,
-                                        float scale) {
-        float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
-        float sw = t.regionWidth(), sh = t.regionHeight();
-        String position = el.events() != null ? el.events().get("object-position") : null;
-        float fontPx = el.meta() != null && el.meta().fontHeight() > 0 ? el.meta().fontHeight() : 16f;
-        ImagePlacement pl = ObjectFit.place(el.fitMode(), position, sw, sh, w, h, fontPx);
-        if (!(pl.w() > 0) || !(pl.h() > 0)) return true; // 描くものが無い（画像の項目としては描いたことにする）
-        float px0 = x0 + pl.x(), py0 = y0 + pl.y();
-        float kx = sw / pl.w(), ky = sh / pl.h();           // 局所の 1 単位あたりのテクスチャの画素数
-        float regionX = t.u0() * t.width(), regionY = t.v0() * t.height();
-        float effPx0 = px0 - regionX / kx;                  // 範囲の左上を、貼る位置の左上に合わせる
-        float effPy0, sy;
-        if (t.flipY()) { // 下から上へ並んだテクスチャ: 見た目の上端は、テクスチャの上端（行 height）から下へ数える
-            sy = -ky;
-            effPy0 = py0 + (t.height() - regionY) / ky;
-        } else {
-            sy = ky;
-            effPy0 = py0 - regionY / ky;
-        }
-        float m = 1f / Math.max(scale, 0.01f);
-        GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.drawTexture(res.pose(), t.handle(), t.width(), t.height(),
-                Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
-                effPx0, effPy0, kx, sy, x0, y0, x0 + w, y0 + h, rx, ry, gc, opacity);
     }
 
     private static int boxSample(Pixmap pm, float u, float v, int taps, float stepX, float stepY) {
