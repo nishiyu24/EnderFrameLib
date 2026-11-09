@@ -724,11 +724,22 @@ public final class ComputedStyle {
             EDGE_BORDER_T = 8, EDGE_BORDER_R = 9, EDGE_BORDER_B = 10, EDGE_BORDER_L = 11,
             EDGE_ROW_GAP = 12, EDGE_COLUMN_GAP = 13;
 
+    /**
+     * 縁と同じ {@code long[]} に詰める、寸法・オフセット系の宣言の添字（{@link #edgeLength} / {@link #edgeHasPercent} に渡す）。
+     * 宣言が無ければ NONE。{@code auto} / {@code none} / 内在サイズのキーワードは 0 px に詰まる（% を含まない）。
+     */
+    public static final int DIM_WIDTH = 14, DIM_HEIGHT = 15, DIM_MIN_WIDTH = 16, DIM_MAX_WIDTH = 17,
+            DIM_MIN_HEIGHT = 18, DIM_MAX_HEIGHT = 19, DIM_LEFT = 20, DIM_RIGHT = 21, DIM_TOP = 22, DIM_BOTTOM = 23,
+            DIM_FLEX_BASIS = 24;
+
     private static final int[] EDGE_IDS = {
             idOf(CssProperty.MARGIN_TOP), idOf(CssProperty.MARGIN_RIGHT), idOf(CssProperty.MARGIN_BOTTOM), idOf(CssProperty.MARGIN_LEFT),
             idOf(CssProperty.PADDING_TOP), idOf(CssProperty.PADDING_RIGHT), idOf(CssProperty.PADDING_BOTTOM), idOf(CssProperty.PADDING_LEFT),
             idOf(CssProperty.BORDER_TOP_WIDTH), idOf(CssProperty.BORDER_RIGHT_WIDTH), idOf(CssProperty.BORDER_BOTTOM_WIDTH),
-            idOf(CssProperty.BORDER_LEFT_WIDTH), idOf(CssProperty.ROW_GAP), idOf(CssProperty.COLUMN_GAP)};
+            idOf(CssProperty.BORDER_LEFT_WIDTH), idOf(CssProperty.ROW_GAP), idOf(CssProperty.COLUMN_GAP),
+            idOf(CssProperty.WIDTH), idOf(CssProperty.HEIGHT), idOf(CssProperty.MIN_WIDTH), idOf(CssProperty.MAX_WIDTH),
+            idOf(CssProperty.MIN_HEIGHT), idOf(CssProperty.MAX_HEIGHT), idOf(CssProperty.LEFT), idOf(CssProperty.RIGHT),
+            idOf(CssProperty.TOP), idOf(CssProperty.BOTTOM), idOf(CssProperty.FLEX_BASIS)};
 
     private long[] compileEdges() {
         long[] out = new long[EDGE_IDS.length];
@@ -745,13 +756,22 @@ public final class ComputedStyle {
      * 記憶表を引かずに返す。宣言が無ければ 0。
      */
     public float edgeLength(int edge, float maxPixels, float rootW, float rootH) {
+        return PackedLengths.resolve(packedEdges()[edge], maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    }
+
+    /** 縁・寸法の宣言（{@code EDGE_*} / {@code DIM_*}）が % を含むか。文字列を探さず、詰めた値の単位（式は式表の原文）で答える。 */
+    boolean edgeHasPercent(int edge) {
+        return PackedLengths.hasPercent(packedEdges()[edge]);
+    }
+
+    private long[] packedEdges() {
         StyleFacts f = facts();
         long[] edges = f.edges;
         if (edges == null) {
             edges = compileEdges();
             f.edges = edges;
         }
-        return PackedLengths.resolve(edges[edge], maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+        return edges;
     }
 
     private static boolean definiteLength(String value) {

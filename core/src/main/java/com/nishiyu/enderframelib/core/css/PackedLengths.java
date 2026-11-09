@@ -43,6 +43,18 @@ final class PackedLengths {
         return exprCount++;
     }
 
+    /** 詰めた長さが % を含むか。単位が % のもの、または式の原文に % を含むもの（宣言なしは false）。 */
+    static boolean hasPercent(long v) {
+        return switch (PackedCssValue.kind(v)) {
+            case PackedCssValue.K_LENGTH -> PackedCssValue.unit(v) == PackedCssValue.U_PERCENT;
+            case PackedCssValue.K_CALC -> {
+                String raw = exprs[PackedCssValue.payload(v)].raw();
+                yield raw != null && raw.indexOf('%') >= 0;
+            }
+            default -> false;
+        };
+    }
+
     /** {@link LengthResolver.CompiledLength#resolve} と同じ結果（宣言なしは 0）。 */
     static float resolve(long v, float maxPixels, float rootW, float rootH, float elementFontSize, float rootFontSize) {
         return switch (PackedCssValue.kind(v)) {
