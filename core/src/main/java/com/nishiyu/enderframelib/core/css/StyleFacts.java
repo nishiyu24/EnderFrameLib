@@ -122,13 +122,13 @@ public final class StyleFacts {
         horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE &&!usesViewportUnits
                 && !marginLeftAuto && !marginRightAuto && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
                 && (wm == null || wm.trim().startsWith("horizontal"))
-                && noPercent(s, CssProperty.MIN_WIDTH) && noPercent(s, CssProperty.MAX_WIDTH)
-                && noPercent(s, CssProperty.MARGIN_LEFT) && noPercent(s, CssProperty.MARGIN_RIGHT)
-                && noPercent(s, CssProperty.MARGIN_TOP) && noPercent(s, CssProperty.MARGIN_BOTTOM)
-                && noPercent(s, CssProperty.PADDING_LEFT) && noPercent(s, CssProperty.PADDING_RIGHT)
-                && noPercent(s, CssProperty.PADDING_TOP) && noPercent(s, CssProperty.PADDING_BOTTOM)
-                && noPercent(s, CssProperty.LEFT) && noPercent(s, CssProperty.RIGHT)
-                && noPercent(s, CssProperty.TOP) && noPercent(s, CssProperty.BOTTOM);
+                && !s.edgeHasPercent(ComputedStyle.DIM_MIN_WIDTH) && !s.edgeHasPercent(ComputedStyle.DIM_MAX_WIDTH)
+                && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_L) && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_R)
+                && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_T) && !s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_B)
+                && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_L) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_R)
+                && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
+                && !s.edgeHasPercent(ComputedStyle.DIM_LEFT) && !s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
+                && !s.edgeHasPercent(ComputedStyle.DIM_TOP) && !s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
         rtl = "rtl".equalsIgnoreCase(s.getOrDefault(CssProperty.DIRECTION, "ltr").trim());
         bfcByStyle = floating || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
                 || overflowX.scrolls() || overflowY.scrolls();
@@ -144,11 +144,6 @@ public final class StyleFacts {
                 s.length(CssProperty.LETTER_SPACING, 0, 0, 0),
                 fontWeight,
                 !(kerning != null && "none".equalsIgnoreCase(kerning.trim())));
-    }
-
-    private static boolean noPercent(ComputedStyle s, String property) {
-        String v = s.get(property);
-        return v == null || v.indexOf('%') < 0;
     }
 
     /** 揃えの値を flex の配置に寄せる（{@code normal} は stretch、{@code first/last baseline} は baseline）。 */
