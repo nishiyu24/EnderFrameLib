@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・Phase A-2 層（グループ・マスク・スクロール層）の GPU 問い合わせを `GpuLayerAttempt` へ集約し `SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロ化・Phase A-3 旧 `GpuBatchPacker` 経路の撤去（GPU 経路を 1 系統に統一）・Phase A-1 字形キャッシュと被覆率部品の `GlyphCache` 分離・Phase A 試行の向きの反転ステップ ① 角丸枠線・外側影・円枠線・画像・字形の置き方の幾何を `ShapeGeometry` へ分離（完了）・Phase B-2 静止フレームの描き直し省略判定を `StaticFrameGate` として core へ切り出し・二重構造の撤去 `LayoutResultCache`（`LayoutBox.Tentative` を正本化）・`PackedCssValue` を縁の長さへ接続し `CalcProgram` を撤去・`GpuSceneSync` をテスト側へ移動（PropertyTrees の書き手を `GlRectStream` の 1 系統へ）・SIMD 島（`kernel/simd`・`FenwickVirtualList`・`SimdLayoutKernel`）をテスト側へ移動・`GpuAnimation` の Java 参照実装をテスト側へ分離（本番は GLSL のみ）・全章統合整理版）
+**最終更新**: 2026-11-09（Milestone 0〜5 実装 ＋ 二重構造解消 Step 1〜5 反映・`SimdHitTester` 撤去・Phase B-1 実測訂正と文字箱の平行移動反映・Phase A-2 GL→CPU ラスタ具体型依存の窓口化・Phase A-1 画素命令の `PixelOps`/`OpPool` 分離・Phase A-2 全図形（単色角丸矩形・影・枠線・字形・画像・グラデーション）の GPU 試行を `GpuAttempt` へ分離・Phase A-1 描画先状態と層合成の `CpuRaster` 集約・Phase A-2 層（グループ・マスク・スクロール層）の GPU 問い合わせを `GpuLayerAttempt` へ集約し `SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロ化・Phase A-3 旧 `GpuBatchPacker` 経路の撤去（GPU 経路を 1 系統に統一）・Phase A-1 字形キャッシュと被覆率部品の `GlyphCache` 分離・Phase A 試行の向きの反転ステップ ① 角丸枠線・外側影・円枠線・画像・字形の置き方の幾何を `ShapeGeometry` へ分離（完了）・Phase B-2 静止フレームの描き直し省略判定を `StaticFrameGate` として core へ切り出し・二重構造の撤去 `LayoutResultCache`（`LayoutBox.Tentative` を正本化）・`PackedCssValue` を縁の長さへ接続し `CalcProgram` を撤去・`GpuSceneSync` をテスト側へ移動（PropertyTrees の書き手を `GlRectStream` の 1 系統へ）・SIMD 島（`kernel/simd`・`FenwickVirtualList`・`SimdLayoutKernel`）をテスト側へ移動・`GpuAnimation` の Java 参照実装をテスト側へ分離（本番は GLSL のみ）・数値バインディングの往復を実測し見送り（二重構造の解消は完了）・全章統合整理版）
 
 ---
 
@@ -270,7 +270,7 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 | 未接続クラス | 本流の対応箇所 | 単純差し替えができない理由（調査結果） | 接続するための前提条件・設計判断 |
 | :--- | :--- | :--- | :--- |
-| ~~`PackedCssValue` / `CalcProgram`~~（接続済み・2026-11-09） | `StyleFacts.edges` | `CompiledLength` と式評価器の二重だった。 | 縁 14 個を `long[]`（`PackedCssValue`）へ接続し、式は `LengthResolver` に一本化して `CalcProgram` を撤去（§5.1 参照）。**残課題（任意）**: `BindingPatchTable` の値を CSS 文字列へ戻さず直接重ねる（現状は数値 style バインディングが一度文字列化される）、`width`/`height`/`min-*`/`max-*` など縁以外の長さの詰め替え。 |
+| ~~`PackedCssValue` / `CalcProgram`~~（接続済み・2026-11-09） | `StyleFacts.edges` | `CompiledLength` と式評価器の二重だった。 | 縁 14 個を `long[]`（`PackedCssValue`）へ接続し、式は `LengthResolver` に一本化して `CalcProgram` を撤去（§5.1 参照）。**実測で見送り（2026-11-10）**: `BindingPatchTable` の数値が「数値→文字列→再解析」を経る往復は、バインディング値が毎回変わる場合と一定の場合の差が **0.04 µs/op・55 B/op**（バインディング付き要素のスタイル解決 1 回 約 1.3 µs・4.7 KB の約 3%）で支配項ではない（`TypedValueCache` は 4096 件で全消去されるため増え続けもしない）。型付き入口は `width`/`height`/`opacity`/`flex-grow`/`font-size` の読み手すべてに及ぶ大きな変更に見合わないため実装しない（§4.3 5. の実測優先方針）。縁以外の長さ（`width`/`height`/`min-*`/`max-*`）の詰め替えも、必要になるまで `CompiledLength` のまま。 |
 | ~~`FenwickVirtualList`~~（テスト側へ移動済み・2026-11-10） | — | 本流の箱木レイアウトと並存する未接続の複製だった。 | 本流へ接続するなら、先に `LayoutBox` 木を深さ順配列へ平坦化するステージ（``content-visibility: auto` 行の仮想化と組み合わせる`）を作り、その上で本番へ戻す。 |
 | ~~`LayoutResultCache`~~（撤去済み・2026-11-09） | `LayoutBox.Tentative` (`BoxOutputs`) | カーネル側は 5 値のみで、仮測定再利用に必要な署名を表せなかった。 | 本流の `LayoutBox.Tentative` が再測定を 1/28 に削減済みのため **`Tentative` を正本として `LayoutResultCache` を撤去**した（§5.1 参照）。 |
 | ~~`SimdLayoutKernel`~~（テスト側へ移動済み・2026-11-10） | — | 本流の箱木レイアウトと並存する未接続の複製だった。 | 本流へ接続するなら、先に `LayoutBox` 木を深さ順配列へ平坦化するステージ（`SimdLayoutKernel の入力`）を作り、その上で本番へ戻す。 |
@@ -280,6 +280,8 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 ---
 
 ## 6. 次フェーズの具体的なアクションプラン（Step 3 完結 〜 3D エンジン統合へ）
+
+> **二重構造の解消は完了（2026-11-10）**: 本番コードに残る二重は、実測で支配項でないと確かめた数値バインディングの往復（§5.2）だけで、意図的に残す。以降は Phase C（3D）、およびレイアウト `< 0.30 ms`（§2.1）側へ進む。
 
 現在のコードベースは、不要な写しや重複クラスが掃除され、モジュール境界が非常にクリーンな状態にあります。次に進めるべき作業は以下の順序で直結しています。
 
