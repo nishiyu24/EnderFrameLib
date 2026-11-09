@@ -247,23 +247,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
         @Override
         public void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            GpuScrollLayer l = retainInfo.get(nodeIndex);
-            if (l != null && sink != null) sink.drawScrollLayer(l);
+            GpuLayerAttempt.drawScroll(sink, retainInfo.get(nodeIndex));
         }
 
         @Override
         public void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            GpuScrollLayer l = retainInfo.get(nodeIndex);
-            if (l == null || sink == null) return;
-            recordOwner = ownerKeyOf(node);
-            sink.beginScrollLayer(l);
+            if (GpuLayerAttempt.beginScroll(sink, retainInfo.get(nodeIndex))) recordOwner = ownerKeyOf(node);
         }
 
         @Override
         public boolean endRetained(DisplayItem node, int nodeIndex) {
-            GpuScrollLayer l = retainInfo.get(nodeIndex);
             recordOwner = null;
-            return l == null || sink == null || sink.endScrollLayer(l);
+            return GpuLayerAttempt.endScroll(sink, retainInfo.get(nodeIndex));
         }
     };
 
@@ -295,7 +290,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (!eligibleVerdict) return RetainPlan.NONE;
         GpuScrollLayer info = scrollLayerInfo(node, nodeIndex, from, to, token);
         if (info == null) return RetainPlan.NONE;
-        RetainPlan r = s.planScrollLayer(info);
+        RetainPlan r = GpuLayerAttempt.planScroll(s, info);
         if (r != RetainPlan.NONE) retainInfo.put(nodeIndex, info);
         return r;
     }
@@ -364,33 +359,24 @@ public final class SoftwareRenderBackend implements RenderBackend {
         CpuRaster.Layer top = raster.top();
         if (g.maskOf() != null) {
             // マスクの層。親（中身の層）が GPU の層なら GPU で、そうでなければ CPU で描く
-            if (top != null && top.pixmap == null && sink != null && sink.beginMask()) {
+            if (top != null && top.pixmap == null && GpuLayerAttempt.beginMask(sink)) {
                 raster.pushGpuLayer(g);
                 return;
             }
-        } else if (sink != null) {
-            LayerSpec spec = g.spec();
-            GpuSink.GroupExtras extras = spec != null && (spec.clip() != null || spec.hasBackdrop())
-                    ? new GpuSink.GroupExtras(g.pose(), spec.clip(), spec.hasBackdrop() ? spec.backdrop() : List.of(),
-                    spec.hasBackdrop() ? spec.backdropShape() : null) : null;
-            if (sink.beginGroup(g.opacity(), spec != null ? spec.filters() : List.of(), g.map(),
-                    spec != null && spec.masked(), spec != null && spec.maskLuminance(),
-                    spec != null ? spec.blend() : BlendMode.NORMAL, extras)) {
-                raster.pushGpuLayer(g); // GPU の層（画素は持たない）
-                return;
-            }
+        } else if (GpuLayerAttempt.beginGroup(sink, g)) {
+            raster.pushGpuLayer(g); // GPU の層（画素は持たない）
+            return;
         }
         raster.pushCpuLayer(g);
         sink = null; // CPU の層の中は CPU が描く
     }
 
-    /** 一番内側の層を閉じる。GPU の層は {@code sink} に閉じさせ、CPU の層の合成は {@link CpuRaster#closeCpuLayer}。 */
+    /** 一番内側の層を閉じる。GPU の層は {@link GpuLayerAttempt} 経由で閉じさせ、CPU の層の合成は {@link CpuRaster#closeCpuLayer}。 */
     private void closeLayer() {
         queue.flush(); // 層を読んで合成する前に、層へ溜めた分を書き切る
         CpuRaster.Layer l = raster.popLayer();
         if (l.pixmap == null) {
-            if (l.isMask()) sink.endMask();
-            else sink.endGroup();
+            GpuLayerAttempt.end(sink, l.isMask());
             return;
         }
         boolean cpuLayer = raster.hasCpuLayer();
