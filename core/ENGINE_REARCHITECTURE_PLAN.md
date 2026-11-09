@@ -286,7 +286,8 @@ core/src/main/java/com/nishiyu/enderframelib/core/
    - [`LwjglGlRenderBackend`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java) から `SoftwareRenderBackend` への直接依存（残り 3 経路）は `CpuLayerFallback` 窓口に集約してゼロにした（`Milestone4GateTest` の最後のラチェット達成）。
    - ✅ **単色角丸矩形**は試行を `GpuAttempt`、CPU 命令の記録を `recordFillRoundRect` に分離済み（2026-11-09）。影・枠線・字形・画像・グラデーションも完了。残りの図形も同じ形（`GpuAttempt.xxx` が boolean を返し、false なら `recordXxx`）で順に移す。
    - ✅ 層（グループ・マスク・スクロール保持層）の GPU 問い合わせも `GpuLayerAttempt` へ集約し、`SoftwareRenderBackend` の `GpuSink` 直接呼び出しをゼロにした（2026-11-09）。
-   - **未了（任意）**: `renderOnto(items, now, sink)` の形で `sink` をバックエンドが保持する構造そのものを `PaintSceneDriver.Painter` 側へ剥がす（バックエンドが `sink` フィールドを持たず、GL 側が試行→失敗時だけ CPU 記録を呼ぶ）。現状は試行が全て 2 つの窓口に閉じているため、この剥がしは機械的な付け替えで済む。`CpuLayerFallback` の 5 操作が、剥がした後に CPU 側へ残す最小インターフェースになる。
+   - ✅ `sink` / `rootSink` フィールドを `GpuRoute`（根の先・現在の先・CPU 層の出入り）へ移し、バックエンドは `GpuSink` を保持しなくなった（`GpuRouteTest`＋番人、全 1635 テスト緑）。
+   - **未了（任意）**: 試行の向きそのものの反転（GL 側が先に試行し、失敗時だけ CPU 記録を呼ぶ）と、せん断・非等方角丸の GPU 描画。`CpuLayerFallback` の 5 操作が、反転後に CPU 側へ残す最小インターフェースになる。
 3. **旧 `GpuBatchPacker`（第 2 世代）の撤去**（✅ 完了・2026-11-09）:
    - 当初案は「`GlRectStream.accepts()` を拡張して非等方スケール角丸・せん断も新経路で受ける」だったが、変換レコードが TRS（平行移動・拡縮・回転）で GPU アニメと一体、角丸の距離が局所単位の単一スケールで測られるため、せん断・非等方の対応は変換構造とシェーダー、`GpuAnimation` の GLSL／Java 参照の変更を伴い大きい。showcase の旧経路描画が 0 回・新経路の拒否が 0 件という計測から、**稀な図形は CPU に回す**方針を採った（ユーザー判断）。
    - 旧経路（`GpuBatchPacker`・`BatchDevice`・旧 SHAPE シェーダー・データテクスチャ・差分転送）を撤去し、`GlRectStream` の 1 系統に統一。画像・字形・影・グラデーション・枠線は新経路が全て受け、受けない場合のみ CPU へ回る（§5.1 参照）。

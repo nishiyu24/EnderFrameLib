@@ -92,7 +92,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 画素の置き場（根・描画先・層のスタック・汚れ範囲・層の合成）。根は CPU が実際に塗るまで確保しない。 */
     private final CpuRaster raster;
-    private GpuSink rootSink;
+    private final GpuRoute route = new GpuRoute();
     private final float dpr;
     private final String sessionId;
     private final PaintResources resources;
@@ -103,7 +103,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final Map<GlyphKey, GlyphBitmap> sdfGlyphs = new HashMap<>();
 
     // 1 フレームの間だけ使う状態
-    private GpuSink sink;
     /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
     private final double[] boundsScratch = new double[4];
     private Matrix2D frame = Matrix2D.IDENTITY;
@@ -206,8 +205,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
         if (items == null || items.isEmpty()) return;
-        this.sink = gpu;
-        this.rootSink = gpu;
+        route.begin(gpu);
         raster.beginFrame();
         this.frame = Matrix2D.scale(dpr, dpr);
         this.frameSize = items.size();
@@ -220,8 +218,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         } finally {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
             raster.endFrame();
-            this.rootSink = null;
-            this.sink = null;
+            route.end();
         }
     }
 
@@ -249,18 +246,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
         @Override
         public void drawRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            GpuLayerAttempt.drawScroll(sink, retainInfo.get(nodeIndex));
+            GpuLayerAttempt.drawScroll(route.current(), retainInfo.get(nodeIndex));
         }
 
         @Override
         public void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            if (GpuLayerAttempt.beginScroll(sink, retainInfo.get(nodeIndex))) recordOwner = ownerKeyOf(node);
+            if (GpuLayerAttempt.beginScroll(route.current(), retainInfo.get(nodeIndex))) recordOwner = ownerKeyOf(node);
         }
 
         @Override
         public boolean endRetained(DisplayItem node, int nodeIndex) {
             recordOwner = null;
-            return GpuLayerAttempt.endScroll(sink, retainInfo.get(nodeIndex));
+            return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
         }
     };
 
@@ -281,8 +278,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
-        GpuSink s = sink;
-        if (s == null || recordOwner != null) return RetainPlan.NONE;
+        if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
         Object token = driver.contentToken();
         if (!(eligibleToken == token && eligibleNode == nodeIndex)) {
             eligibleVerdict = rangeIsRetainable(driver.items(), from, to);
@@ -292,7 +288,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (!eligibleVerdict) return RetainPlan.NONE;
         GpuScrollLayer info = scrollLayerInfo(node, nodeIndex, from, to, token);
         if (info == null) return RetainPlan.NONE;
-        RetainPlan r = GpuLayerAttempt.planScroll(s, info);
+        RetainPlan r = GpuLayerAttempt.planScroll(route.current(), info);
         if (r != RetainPlan.NONE) retainInfo.put(nodeIndex, info);
         return r;
     }
@@ -361,16 +357,16 @@ public final class SoftwareRenderBackend implements RenderBackend {
         CpuRaster.Layer top = raster.top();
         if (g.maskOf() != null) {
             // マスクの層。親（中身の層）が GPU の層なら GPU で、そうでなければ CPU で描く
-            if (top != null && top.pixmap == null && GpuLayerAttempt.beginMask(sink)) {
+            if (top != null && top.pixmap == null && GpuLayerAttempt.beginMask(route.current())) {
                 raster.pushGpuLayer(g);
                 return;
             }
-        } else if (GpuLayerAttempt.beginGroup(sink, g)) {
+        } else if (GpuLayerAttempt.beginGroup(route.current(), g)) {
             raster.pushGpuLayer(g); // GPU の層（画素は持たない）
             return;
         }
         raster.pushCpuLayer(g);
-        sink = null; // CPU の層の中は CPU が描く
+        route.enterCpuLayer(); // CPU の層の中は CPU が描く
     }
 
     /** 一番内側の層を閉じる。GPU の層は {@link GpuLayerAttempt} 経由で閉じさせ、CPU の層の合成は {@link CpuRaster#closeCpuLayer}。 */
@@ -378,12 +374,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         queue.flush(); // 層を読んで合成する前に、層へ溜めた分を書き切る
         CpuRaster.Layer l = raster.popLayer();
         if (l.pixmap == null) {
-            GpuLayerAttempt.end(sink, l.isMask());
+            GpuLayerAttempt.end(route.current(), l.isMask());
             return;
         }
         boolean cpuLayer = raster.hasCpuLayer();
-        if (!cpuLayer) sink = rootSink;
-        raster.closeCpuLayer(l, rootSink, cpuLayer);
+        route.leaveCpuLayer(cpuLayer);
+        raster.closeCpuLayer(l, route.root(), cpuLayer);
     }
 
     // ------------------------------------------------------------------ 項目
@@ -686,7 +682,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void fillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                int argb, Clip clip, float opacity) {
         if ((argb >>> 24) == 0) return;
-        if (GpuAttempt.fillRoundRect(sink, pose, x0, y0, x1, y1, rx, ry, argb, clip, opacity)) return;
+        if (GpuAttempt.fillRoundRect(route.current(), pose, x0, y0, x1, y1, rx, ry, argb, clip, opacity)) return;
         recordFillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clip, opacity);
     }
 
@@ -732,7 +728,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawGradient(ShaderGradient g, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                               Resolved res, Clip clip, float opacity) {
-        if (GpuAttempt.gradient(sink, res.pose(), x0, y0, x1, y1, rx, ry, g, clip, opacity)) return;
+        if (GpuAttempt.gradient(route.current(), res.pose(), x0, y0, x1, y1, rx, ry, g, clip, opacity)) return;
         recordGradient(g, x0, y0, x1, y1, rx, ry, res, clip, opacity);
     }
 
@@ -814,7 +810,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (shape != null && shape.inset()) {
             float[] hrx = GpuAttempt.shapeRx(shape);
             float[] hry = GpuAttempt.shapeRy(shape);
-            if (GpuAttempt.insetShadow(sink, res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma, shape, color, clip, opacity)) return;
+            if (GpuAttempt.insetShadow(route.current(), res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma, shape, color, clip, opacity)) return;
             paint(res.pose(), qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1, clip, opacity, (lx, ly) -> {
                 float inRect = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, qx0, qy0, qx1, qy1, rx, ry), scale);
                 if (inRect <= 0f) return 0;
@@ -840,7 +836,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             hry = GpuAttempt.shapeRy(shape);
         }
         final float[] holeRx = hrx, holeRy = hry;
-        if (GpuAttempt.outerShadow(sink, res.pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, shape, color, clip, opacity)) return;
+        if (GpuAttempt.outerShadow(route.current(), res.pose(), qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, shape, color, clip, opacity)) return;
         paint(res.pose(), qx0, qy0, qx1, qy1, clip, opacity, (lx, ly) -> {
             float a = SoftShapes.blurredEdge(SoftShapes.sdRoundRect(lx, ly, sx0, sy0, sx1, sy1, srx, sry), sigma);
             if (a <= 0f) return 0;
@@ -888,9 +884,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         final BorderDashPattern dash = pattern;
         if (dash != null || spec.dashKind() == BorderPath.SOLID) {
             boolean taken = dash == null
-                    ? GpuAttempt.roundBorder(sink, res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                    ? GpuAttempt.roundBorder(route.current(), res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                             spec, widths, clip, opacity)
-                    : GpuAttempt.dashedBorder(sink, res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                    : GpuAttempt.dashedBorder(route.current(), res.pose(), x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                             spec, widths, bx, by, cxm, cym, pcx, pcy, dash, wt, clip, opacity);
             if (taken) return;
         }
@@ -974,7 +970,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float cx = el.x() + el.width() / 2f, cy = el.y() + el.height() / 2f;
         float outerR = Math.min(el.width(), el.height()) / 2f;
         float innerR = outerR - thick;
-        if (GpuAttempt.circleBorder(sink, res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
+        if (GpuAttempt.circleBorder(route.current(), res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
                 el.x() + el.width() + 1, el.y() + el.height() + 1, straightColors, clip, opacity)) return true;
         float scale = (float) res.pose().meanScale();
         paint(res.pose(), el.x() - 1, el.y() - 1, el.x() + el.width() + 1, el.y() + el.height() + 1, clip, opacity, (lx, ly) -> {
@@ -1217,7 +1213,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     sub = 0;
                 }
                 GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, sub);
-                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(sink, sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
+                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(route.current(), sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
                     blitStrokeAligned(sdf, (float) whole, Math.round(devY), half, pm, clip, opacity);
                 }
             } else {
@@ -1301,12 +1297,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 }
                 float originY = Math.round(devY);
                 GlyphBitmap bmp = glyph(gf, cp, pixelSize, sub, light);
-                if (!bmp.isEmpty() && !GpuAttempt.glyph(sink, bmp, (float) whole, originY, argb, clip, opacity)) {
+                if (!bmp.isEmpty() && !GpuAttempt.glyph(route.current(), bmp, (float) whole, originY, argb, clip, opacity)) {
                     blitAligned(bmp, (float) whole, originY, pm, clip, opacity);
                 }
             } else {
                 GlyphBitmap bmp = glyph(gf, cp, pixelSize, 0, light);
-                if (!bmp.isEmpty() && !GpuAttempt.glyphTransformed(sink, bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
+                if (!bmp.isEmpty() && !GpuAttempt.glyphTransformed(route.current(), bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
                     blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
                 }
             }
@@ -1401,8 +1397,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (src == null || src.isEmpty()) return;
         float x0 = el.x(), y0 = el.y(), w = el.width(), h = el.height();
         float scale = (float) res.pose().meanScale();
-        TextureRef texture = sink != null ? TextureRef.parse(src) : null;
-        if (texture != null && GpuAttempt.externalTexture(sink, el, texture, rx, ry, res.pose(), clip, opacity, scale)) return;
+        TextureRef texture = route.current() != null ? TextureRef.parse(src) : null;
+        if (texture != null && GpuAttempt.externalTexture(route.current(), el, texture, rx, ry, res.pose(), clip, opacity, scale)) return;
         ImageProvider.Image img = resources.images().load(el, (int) Math.ceil(w * scale), (int) Math.ceil(h * scale));
         if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return;
         Pixmap pm = img.pixmap();
@@ -1416,7 +1412,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         // 縮小するときは対象の画素の中を複数点で標本化して、折り返しの粗さを抑える
         int taps = (int) Math.min(4, Math.max(1, Math.ceil(Math.max(sx, sy) / Math.max(scale, 0.01f))));
         float m = 1f / Math.max(scale, 0.01f);
-        if (GpuAttempt.image(sink, res.pose(), pm, x0, y0, w, h, px0, py0, pl.w(), pl.h(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
+        if (GpuAttempt.image(route.current(), res.pose(), pm, x0, y0, w, h, px0, py0, pl.w(), pl.h(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
         paint(res.pose(), Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
                 clip, opacity, (lx, ly) -> {
                     float box = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x0 + w, y0 + h, rx, ry), scale);
