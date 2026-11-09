@@ -87,8 +87,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class SoftwareRenderBackend implements RenderBackend {
 
     private static final AtomicInteger SESSIONS = new AtomicInteger();
-    /** 文字の字形キャッシュの上限。 */
-    private static final int GLYPH_CACHE_LIMIT = 4096;
 
     /** 画素の置き場（根・描画先・層のスタック・汚れ範囲・層の合成）。根は CPU が実際に塗るまで確保しない。 */
     private final CpuRaster raster;
@@ -98,9 +96,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final PaintResources resources;
     private int clearColor = 0;
 
-    private final Map<GlyphKey, GlyphBitmap> glyphs = new HashMap<>();
-    /** 縁取り用の SDF の字形（{@link #glyphs} と同じ鍵）。 */
-    private final Map<GlyphKey, GlyphBitmap> sdfGlyphs = new HashMap<>();
+    private final GlyphCache glyphCache = new GlyphCache();
 
     // 1 フレームの間だけ使う状態
     /** {@link #paintRange} の作業用（描画は 1 スレッドで、使い終えてから次を呼ぶ）。 */
@@ -986,52 +982,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 文字
 
-    /**
-     * 字形キャッシュの鍵。引くときは作業用の 1 個を書き換えて使い回し（字ごとの割り当てを避ける）、登録するときだけ複製する。
-     * 登録済みの鍵は書き換えない。
-     */
-    private static final class GlyphKey {
-        LoadedFace face;
-        int codePoint;
-        float pixelSize;
-        boolean bold, italic, light;
-        int subpixel;
-
-        GlyphKey set(LoadedFace face, int codePoint, float pixelSize, boolean bold, boolean italic, int subpixel, boolean light) {
-            this.face = face;
-            this.codePoint = codePoint;
-            this.pixelSize = pixelSize;
-            this.bold = bold;
-            this.italic = italic;
-            this.subpixel = subpixel;
-            this.light = light;
-            return this;
-        }
-
-        GlyphKey copy() {
-            return new GlyphKey().set(face, codePoint, pixelSize, bold, italic, subpixel, light);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof GlyphKey k)) return false;
-            return face.equals(k.face) && codePoint == k.codePoint && Float.compare(pixelSize, k.pixelSize) == 0
-                    && bold == k.bold && italic == k.italic && subpixel == k.subpixel && light == k.light;
-        }
-
-        @Override
-        public int hashCode() {
-            int h = face.hashCode();
-            h = 31 * h + codePoint;
-            h = 31 * h + Float.floatToIntBits(pixelSize);
-            h = 31 * h + (bold ? 1 : 0) + (italic ? 2 : 0) + (light ? 4 : 0);
-            return 31 * h + subpixel;
-        }
-    }
-
-    private final GlyphKey probeKey = new GlyphKey();
-
     private OutlineFontFace faceFor(DisplayItem el) {
         String family = el.events() != null ? el.events().get("font-family") : null;
         FontFace f = resources.fonts().resolve(family);
@@ -1130,11 +1080,6 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
     }
 
-    private static boolean isLight(int argb) {
-        float luma = (0.2126f * ((argb >>> 16) & 0xFF) + 0.7152f * ((argb >>> 8) & 0xFF) + 0.0722f * (argb & 0xFF)) / 255f;
-        return luma >= 0.4f;
-    }
-
     /** 1 行の文字を描く。影があれば 1/9 em ずらして 1/4 の明るさで先に描く（GL 版と同じ）。 */
     private void drawRun(String text, OutlineFontFace face, FontStyle style, float x, float baseline, int argb, boolean shadow,
                          Resolved res, Clip clip, float opacity) {
@@ -1189,7 +1134,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void drawGlyphStrokes(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
                                   int argb, float widthCss, Matrix2D pose, Clip clip, float opacity) {
         boolean aligned = Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
-        float pixelSize = quantize((float) (style.fontSizePx() * pose.meanScale()));
+        float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
         if (pixelSize < 0.5f) return;
         float half = Math.min(widthCss * (float) pose.meanScale() / 2f, LoadedFace.SDF_SPREAD - 1.5f);
         if (half <= 0.01f) return;
@@ -1212,34 +1157,16 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     whole += 1;
                     sub = 0;
                 }
-                GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, sub);
+                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, sub);
                 if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(route.current(), sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
                     blitStrokeAligned(sdf, (float) whole, Math.round(devY), half, pm, clip, opacity);
                 }
             } else {
-                GlyphBitmap sdf = sdfGlyph(gf, cp, pixelSize, 0);
+                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, 0);
                 if (!sdf.isEmpty()) blitStrokeTransformed(sdf, gx, baseline, pixelSize / style.fontSizePx(), pose, half, pm, clip, opacity);
             }
             i += n;
         }
-    }
-
-    private GlyphBitmap sdfGlyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub) {
-        GlyphKey key = probeKey.set(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, false);
-        GlyphBitmap g = sdfGlyphs.get(key);
-        if (g == null) {
-            g = gf.face().rasterizeSdf(cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub);
-            if (sdfGlyphs.size() >= GLYPH_CACHE_LIMIT) sdfGlyphs.clear();
-            sdfGlyphs.put(key.copy(), g);
-        }
-        return g;
-    }
-
-    /** SDF の値（128 = 輪郭、内側が大きい、{@code SDF_SPREAD} 画素で 128 段階）→ 縁取りの被覆率。 */
-    private static float strokeCoverage(float sdfValue, float half) {
-        float d = (sdfValue - 128f) * (LoadedFace.SDF_SPREAD / 128f); // 画素（内側が正）
-        float c = half - Math.abs(d) + 0.5f;
-        return c <= 0f ? 0f : Math.min(1f, c);
     }
 
     private void blitStrokeAligned(GlyphBitmap g, float originX, float originY, float half, int pm, Clip clip, float opacity) {
@@ -1247,7 +1174,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         paint(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height(), clip, opacity, (lx, ly) -> {
             int col = (int) Math.floor(lx - bx), row = (int) Math.floor(ly - by);
             if (col < 0 || row < 0 || col >= g.width() || row >= g.height()) return 0;
-            float cov = strokeCoverage(g.coverageAt(col, row), half);
+            float cov = GlyphCache.strokeCoverage(g.coverageAt(col, row), half);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
         }, Fast.PURE);
     }
@@ -1257,26 +1184,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
         paint(pose, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, clip, opacity, (lx, ly) -> {
             float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
-            float cov = strokeCoverage(sampleRaw(g, col, row), half);
+            float cov = GlyphCache.strokeCoverage(GlyphCache.sampleRaw(g, col, row), half);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
         }, Fast.PURE);
-    }
-
-    /** 範囲の外は SDF の「遠い外側」（0）として、双一次補間した生の値（0〜255）。 */
-    private static float sampleRaw(GlyphBitmap g, float col, float row) {
-        int c0 = (int) Math.floor(col), r0 = (int) Math.floor(row);
-        float fx = col - c0, fy = row - r0;
-        float v00 = cov(g, c0, r0), v10 = cov(g, c0 + 1, r0), v01 = cov(g, c0, r0 + 1), v11 = cov(g, c0 + 1, r0 + 1);
-        return (v00 * (1 - fx) + v10 * fx) * (1 - fy) + (v01 * (1 - fx) + v11 * fx) * fy;
     }
 
     private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
                             int argb, Matrix2D pose, Clip clip, float opacity) {
         // 回転・せん断・縦横で違う拡縮が無ければ、字をデバイス画素の格子に揃えて置く（サブピクセル位置は 1/4 画素）
         boolean aligned = Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
-        float pixelSize = quantize((float) (style.fontSizePx() * pose.meanScale()));
+        float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
         if (pixelSize < 0.5f) return;
-        boolean light = isLight(argb);
+        boolean light = GlyphCache.isLight(argb);
         int pm = Pixmap.premultiply(argb);
         for (int i = 0; i < text.length(); ) {
             int cp = text.codePointAt(i);
@@ -1296,34 +1215,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     sub = 0;
                 }
                 float originY = Math.round(devY);
-                GlyphBitmap bmp = glyph(gf, cp, pixelSize, sub, light);
+                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, sub, light);
                 if (!bmp.isEmpty() && !GpuAttempt.glyph(route.current(), bmp, (float) whole, originY, argb, clip, opacity)) {
                     blitAligned(bmp, (float) whole, originY, pm, clip, opacity);
                 }
             } else {
-                GlyphBitmap bmp = glyph(gf, cp, pixelSize, 0, light);
+                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, 0, light);
                 if (!bmp.isEmpty() && !GpuAttempt.glyphTransformed(route.current(), bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, argb, clip, opacity)) {
                     blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
                 }
             }
             i += n;
         }
-    }
-
-    private static float quantize(float px) {
-        return Math.round(px * 16f) / 16f;
-    }
-
-    private GlyphBitmap glyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub, boolean light) {
-        GlyphKey key = probeKey.set(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, light);
-        GlyphBitmap g = glyphs.get(key);
-        if (g == null) {
-            g = gf.face().rasterize(cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub);
-            if (!g.isEmpty()) g = g.withTextContrast(light);
-            if (glyphs.size() >= GLYPH_CACHE_LIMIT) glyphs.clear();
-            glyphs.put(key.copy(), g);
-        }
-        return g;
     }
 
     /** デバイス画素の格子にそのまま置く（原点 {@code (originX, originY)}）。 */
@@ -1374,20 +1277,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
         paint(pose, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, clip, opacity, (lx, ly) -> {
             float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
-            float cov = sampleCoverage(g, col, row);
+            float cov = GlyphCache.sampleCoverage(g, col, row);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
         }, Fast.PURE);
-    }
-
-    private static float sampleCoverage(GlyphBitmap g, float col, float row) {
-        int c0 = (int) Math.floor(col), r0 = (int) Math.floor(row);
-        float fx = col - c0, fy = row - r0;
-        float v00 = cov(g, c0, r0), v10 = cov(g, c0 + 1, r0), v01 = cov(g, c0, r0 + 1), v11 = cov(g, c0 + 1, r0 + 1);
-        return ((v00 * (1 - fx) + v10 * fx) * (1 - fy) + (v01 * (1 - fx) + v11 * fx) * fy) / 255f;
-    }
-
-    private static float cov(GlyphBitmap g, int c, int r) {
-        return c < 0 || r < 0 || c >= g.width() || r >= g.height() ? 0f : g.coverageAt(c, r);
     }
 
     // ------------------------------------------------------------------ 画像
