@@ -922,29 +922,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 円の枠線（円の外半径 = 短い辺の半分、4 方向で色が違ってよい）。描いたら true。 */
     private boolean drawCircleBorder(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        CircleBorderSpec cb = el.meta() != null ? el.meta().circleBorder() : null;
-        if (cb == null && anim.circleColors == null) return false;
-        int[] colors = new int[4];
-        float thick;
-        if (cb != null) {
-            colors[0] = cb.colorTop();
-            colors[1] = cb.colorRight();
-            colors[2] = cb.colorBottom();
-            colors[3] = cb.colorLeft();
-            thick = cb.thickness();
-        } else {
-            System.arraycopy(anim.circleColors, 0, colors, 0, 4);
-            thick = anim.circleThickness;
-        }
-        int[] straightColors = colors.clone();
-        for (int i = 0; i < 4; i++) colors[i] = Pixmap.premultiply(colors[i]);
-        float cx = el.x() + el.width() / 2f, cy = el.y() + el.height() / 2f;
-        float outerR = Math.min(el.width(), el.height()) / 2f;
-        float innerR = outerR - thick;
-        if (GpuAttempt.circleBorder(route.current(), res.pose(), cx, cy, outerR, innerR, el.x() - 1, el.y() - 1,
-                el.x() + el.width() + 1, el.y() + el.height() + 1, straightColors, clip, opacity)) return true;
+        ShapeGeometry.Circle c = ShapeGeometry.circle(el, anim);
+        if (c == null) return false;
+        int[] colors = c.premul();
+        float cx = c.cx(), cy = c.cy(), outerR = c.outerR(), innerR = c.innerR();
+        if (GpuAttempt.circleBorder(route.current(), res.pose(), cx, cy, outerR, innerR, c.bx0(), c.by0(), c.bx1(), c.by1(),
+                c.straight(), clip, opacity)) return true;
         float scale = (float) res.pose().meanScale();
-        paint(res.pose(), el.x() - 1, el.y() - 1, el.x() + el.width() + 1, el.y() + el.height() + 1, clip, opacity, (lx, ly) -> {
+        paint(res.pose(), c.bx0(), c.by0(), c.bx1(), c.by1(), clip, opacity, (lx, ly) -> {
             float dx = lx - cx, dy = ly - cy;
             float dist = (float) Math.hypot(dx, dy);
             float cov = SoftShapes.coverage(dist - outerR, scale) * (innerR > 0f ? 1f - SoftShapes.coverage(dist - innerR, scale) : 1f);
@@ -1108,7 +1093,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     private void drawGlyphStrokes(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
                                   int argb, float widthCss, Matrix2D pose, Clip clip, float opacity) {
-        boolean aligned = Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
+        boolean aligned = ShapeGeometry.glyphAxisAligned(pose);
         float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
         if (pixelSize < 0.5f) return;
         float half = Math.min(widthCss * (float) pose.meanScale() / 2f, LoadedFace.SDF_SPREAD - 1.5f);
@@ -1126,15 +1111,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float gx = x + positions[i];
             if (aligned) {
                 double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-                double whole = Math.floor(devX);
-                int sub = (int) Math.round((devX - whole) * LoadedFace.SUBPIXEL_STEPS);
-                if (sub == LoadedFace.SUBPIXEL_STEPS) {
-                    whole += 1;
-                    sub = 0;
-                }
-                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, sub);
-                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(route.current(), sdf, (float) whole, Math.round(devY), half, argb, clip, opacity)) {
-                    blitStrokeAligned(sdf, (float) whole, Math.round(devY), half, pm, clip, opacity);
+                float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
+                GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, ShapeGeometry.glyphSubpixel(devX));
+                if (!sdf.isEmpty() && !GpuAttempt.glyphStroke(route.current(), sdf, originX, originY, half, argb, clip, opacity)) {
+                    blitStrokeAligned(sdf, originX, originY, half, pm, clip, opacity);
                 }
             } else {
                 GlyphBitmap sdf = glyphCache.sdfGlyph(gf, cp, pixelSize, 0);
@@ -1155,9 +1135,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private void blitStrokeTransformed(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, float half, int pm, Clip clip, float opacity) {
-        float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
-        float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
-        paint(pose, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, clip, opacity, (lx, ly) -> {
+        float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
+        paint(pose, lb[0], lb[1], lb[2], lb[3], clip, opacity, (lx, ly) -> {
             float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
             float cov = GlyphCache.strokeCoverage(GlyphCache.sampleRaw(g, col, row), half);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
@@ -1167,7 +1146,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
                             int argb, Matrix2D pose, Clip clip, float opacity) {
         // 回転・せん断・縦横で違う拡縮が無ければ、字をデバイス画素の格子に揃えて置く（サブピクセル位置は 1/4 画素）
-        boolean aligned = Math.abs(pose.b()) < 1e-9 && Math.abs(pose.c()) < 1e-9 && pose.a() > 0 && Math.abs(pose.a() - pose.d()) < 1e-6;
+        boolean aligned = ShapeGeometry.glyphAxisAligned(pose);
         float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
         if (pixelSize < 0.5f) return;
         boolean light = GlyphCache.isLight(argb);
@@ -1183,16 +1162,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float gx = x + positions[i];
             if (aligned) {
                 double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
-                double whole = Math.floor(devX);
-                int sub = (int) Math.round((devX - whole) * LoadedFace.SUBPIXEL_STEPS);
-                if (sub == LoadedFace.SUBPIXEL_STEPS) {
-                    whole += 1;
-                    sub = 0;
-                }
-                float originY = Math.round(devY);
-                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, sub, light);
-                if (!bmp.isEmpty() && !GpuAttempt.glyph(route.current(), bmp, (float) whole, originY, argb, clip, opacity)) {
-                    blitAligned(bmp, (float) whole, originY, pm, clip, opacity);
+                float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
+                GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, ShapeGeometry.glyphSubpixel(devX), light);
+                if (!bmp.isEmpty() && !GpuAttempt.glyph(route.current(), bmp, originX, originY, argb, clip, opacity)) {
+                    blitAligned(bmp, originX, originY, pm, clip, opacity);
                 }
             } else {
                 GlyphBitmap bmp = glyphCache.glyph(gf, cp, pixelSize, 0, light);
@@ -1248,9 +1221,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 回転などの姿勢の下で、字形を双一次補間で貼る。{@code s} は 1 レイアウト単位あたりの字形の画素数。 */
     private void blitTransformed(GlyphBitmap g, float ox, float oy, float s, Matrix2D pose, int pm, Clip clip, float opacity) {
-        float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
-        float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
-        paint(pose, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, clip, opacity, (lx, ly) -> {
+        float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
+        paint(pose, lb[0], lb[1], lb[2], lb[3], clip, opacity, (lx, ly) -> {
             float col = (lx - ox) * s - g.left() - 0.5f, row = (ly - oy) * s + g.top() - 0.5f;
             float cov = GlyphCache.sampleCoverage(g, col, row);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
@@ -1270,17 +1242,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (img == null || img.pixmap().width() <= 0 || img.pixmap().height() <= 0) return;
         Pixmap pm = img.pixmap();
         float iw = img.cssW() > 0 ? img.cssW() : pm.width(), ih = img.cssH() > 0 ? img.cssH() : pm.height();
-        String position = el.events() != null ? el.events().get("object-position") : null;
-        float fontPx = el.meta() != null && el.meta().fontHeight() > 0 ? el.meta().fontHeight() : 16f;
-        ImagePlacement pl = ObjectFit.place(el.fitMode(), position, iw, ih, w, h, fontPx);
-        if (!(pl.w() > 0) || !(pl.h() > 0)) return;
-        float px0 = x0 + pl.x(), py0 = y0 + pl.y();
-        float sx = pm.width() / pl.w(), sy = pm.height() / pl.h();
-        // 縮小するときは対象の画素の中を複数点で標本化して、折り返しの粗さを抑える
-        int taps = (int) Math.min(4, Math.max(1, Math.ceil(Math.max(sx, sy) / Math.max(scale, 0.01f))));
-        float m = 1f / Math.max(scale, 0.01f);
-        if (GpuAttempt.image(route.current(), res.pose(), pm, x0, y0, w, h, px0, py0, pl.w(), pl.h(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
-        paint(res.pose(), Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
+        ShapeGeometry.Image gi = ShapeGeometry.image(el, iw, ih, pm.width(), pm.height(), scale);
+        if (gi == null) return;
+        float px0 = gi.px0(), py0 = gi.py0(), sx = gi.sx(), sy = gi.sy();
+        int taps = gi.taps();
+        if (GpuAttempt.image(route.current(), res.pose(), pm, x0, y0, w, h, px0, py0, gi.plW(), gi.plH(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
+        paint(res.pose(), gi.bx0(), gi.by0(), gi.bx1(), gi.by1(),
                 clip, opacity, (lx, ly) -> {
                     float box = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x0 + w, y0 + h, rx, ry), scale);
                     if (box <= 0f) return 0;

@@ -143,9 +143,8 @@ final class GpuAttempt {
         if (opacity <= 0f) return true;
         GpuClip[] gc = gpuClips(clip);
         if (gc == null) return false;
-        float lx0 = ox + g.left() / s, ly0 = oy - g.top() / s;
-        float lx1 = ox + (g.left() + g.width()) / s, ly1 = oy + (g.height() - g.top()) / s;
-        return sink.drawGlyphTransformed(pose, g, ox, oy, s, lx0 - 1, ly0 - 1, lx1 + 1, ly1 + 1, argb, gc, opacity);
+        float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
+        return sink.drawGlyphTransformed(pose, g, ox, oy, s, lb[0], lb[1], lb[2], lb[3], argb, gc, opacity);
     }
 
     /**
