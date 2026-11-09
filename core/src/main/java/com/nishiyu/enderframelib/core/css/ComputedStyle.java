@@ -704,7 +704,7 @@ public final class ComputedStyle {
                         || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
                 keywordFresh(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
                 "none".equals(getOrDefault(CssProperty.DISPLAY, "block")),
-                definiteLength(get(CssProperty.WIDTH)), definiteLength(get(CssProperty.HEIGHT)));
+                definiteDimension(DIM_WIDTH, CssProperty.WIDTH), definiteDimension(DIM_HEIGHT, CssProperty.HEIGHT));
         return built;
     }
 
@@ -746,6 +746,7 @@ public final class ComputedStyle {
         for (int i = 0; i < out.length; i++) {
             String val = values[EDGE_IDS[i]];
             out[i] = val == null ? com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE
+                    : "auto".equalsIgnoreCase(val.trim()) ? PackedLengths.AUTO
                     : PackedLengths.pack(LengthResolver.compile(val));
         }
         return out;
@@ -764,14 +765,28 @@ public final class ComputedStyle {
         return PackedLengths.hasPercent(packedEdges()[edge]);
     }
 
+    long packedEdge(int edge) {
+        return packedEdges()[edge];
+    }
+
+    /** 縁・寸法を詰めた列。{@link #facts()} を組む途中でも引けるよう、事実の外（このスタイル）に持つ。競って 2 回作っても同じ値。 */
+    private volatile long[] packedEdges;
+
     private long[] packedEdges() {
-        StyleFacts f = facts();
-        long[] edges = f.edges;
+        long[] edges = packedEdges;
         if (edges == null) {
             edges = compileEdges();
-            f.edges = edges;
+            packedEdges = edges;
         }
         return edges;
+    }
+
+    /** {@code width} / {@code height} が確定した長さか。詰めた値で決め、0 px に潰れた値と式（内在サイズのキーワードを含む）だけ原文で判る。 */
+    private boolean definiteDimension(int edge, String property) {
+        long v = packedEdge(edge);
+        if (v == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(v)) return false;
+        if (PackedLengths.isZeroPx(v) || PackedLengths.isExpression(v)) return definiteLength(get(property));
+        return !PackedLengths.hasPercent(v);
     }
 
     private static boolean definiteLength(String value) {
