@@ -19,10 +19,12 @@ class Milestone3GateTest {
         assertFalse(src.contains("LAYOUT_PASSES = 2"));
     }
 
+    /** 本流の箱木・DOM を知らない純粋な数値カーネル（テスト側へ移した SIMD 島）。依存が混ざると島でなくなる。 */
     @Test
-    void kernelLayoutPackageDoesNotDependOnLayoutBoxOrDom() throws IOException {
-        try (var files = Files.list(MAIN.resolve("core/kernel/layout"))) {
-            for (Path p : files.toList()) {
+    void movedKernelLayoutIslandDoesNotDependOnLayoutBoxOrDom() throws IOException {
+        try (var files = Files.list(Path.of("core/src/test/java/com/nishiyu/enderframelib/core/kernel/layout"))) {
+            for (Path p : files.filter(f -> f.getFileName().toString().startsWith("Fenwick")
+                    || f.getFileName().toString().startsWith("SimdLayoutKernel")).toList()) {
                 String s = Files.readString(p);
                 assertFalse(s.contains("import com.nishiyu.enderframelib.core.layout"), p.toString());
                 assertFalse(s.contains("import com.nishiyu.enderframelib.core.dom"), p.toString());
