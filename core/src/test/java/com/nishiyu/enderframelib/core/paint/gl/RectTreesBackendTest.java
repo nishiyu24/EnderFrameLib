@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
- * バックエンドの新経路（矩形を Property Tree で描く）と従来経路（{@code GpuBatchPacker}）を、同じ文書で比べる。
+ * バックエンドの GPU 経路（図形を Property Tree で描く）と、図形を全て CPU が描く経路（{@code rectTrees = false}）を、同じ文書で比べる。
  * 画素が（誤差内で）一致すること、新経路が実際に使われること、描画回数の収支を確かめる。
  */
 class RectTreesBackendTest {
@@ -35,7 +35,7 @@ class RectTreesBackendTest {
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(w, h, dpr)) {
             SoftwareRendering.renderHtml(html, w, h, T0, g);
             if (stats != null) {
-                stats[0] = g.legacyDrawCallCount();
+                stats[0] = 0; // 旧経路は撤去済み。CPU 経路との比較なので GPU の旧描画は常に 0
                 stats[1] = g.rectTreeDrawCalls();
                 stats[2] = g.rectTreeShapes();
                 stats[3] = g.gpuShapeCount();
@@ -64,7 +64,7 @@ class RectTreesBackendTest {
     }
 
     @Test
-    void mixedDocumentMatchesTheLegacyPath() {
+    void mixedDocumentMatchesTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -90,7 +90,7 @@ class RectTreesBackendTest {
             + "</body></html>";
 
     @Test
-    void bordersMatchTheLegacyPath() {
+    void bordersMatchTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -114,7 +114,7 @@ class RectTreesBackendTest {
             + "</body></html>";
 
     @Test
-    void clippedShapesMatchTheLegacyPath() {
+    void clippedShapesMatchTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -152,7 +152,7 @@ class RectTreesBackendTest {
             + "</body></html>";
 
     @Test
-    void gradientsMatchTheLegacyPath() {
+    void gradientsMatchTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -164,7 +164,7 @@ class RectTreesBackendTest {
     }
 
     @Test
-    void shadowsMatchTheLegacyPath() {
+    void shadowsMatchTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -185,7 +185,7 @@ class RectTreesBackendTest {
             + "</body></html>";
 
     @Test
-    void dashedBordersMatchTheLegacyPath() {
+    void dashedBordersMatchTheCpuPath() {
         requireGl();
         for (float dpr : new float[]{1f, 2f}) {
             long[] st = new long[4];
@@ -197,7 +197,7 @@ class RectTreesBackendTest {
     }
 
     @Test
-    void showcaseMatchesTheLegacyPath() throws Exception {
+    void showcaseMatchesTheCpuPath() throws Exception {
         requireGl();
         String html = showcase();
         long[] on = new long[4], off = new long[4];
@@ -205,6 +205,7 @@ class RectTreesBackendTest {
         int[] b = render(html, 900, 700, 1f, false, off);
         System.out.println("RECT-TREES showcase: rects on trees=" + on[2] + ", draws legacy-path " + on[0] + " + tree " + on[1]
                 + " (all-legacy draws " + off[0] + ", shapes " + off[3] + ", glyphs/images n/a), rejects[pose,grid,corner,cap]=" + java.util.Arrays.toString(REJ) + " clip=" + REJ[4] + ", maxDiff=" + maxDiff(a, b));
+        try {
         for (int bit = 0; bit < 12; bit++) {
             GlRectStream.opMask = 1 << bit;
             int[] only = render(html, 900, 700, 1f, true, null);
@@ -216,9 +217,12 @@ class RectTreesBackendTest {
                 w = Math.max(w, dm);
             }
             System.out.println("RECT-TREES op" + bit + " only: worst " + w + ", pixels>2 " + n);
-            assertTrue(w <= 2 && n == 0, "図形の種類 " + bit + " だけを新経路にした差: worst " + w + ", pixels>2 " + n);
+            // 残りは CPU が描く。GPU と CPU の層を重ねるたびの 8 bit の丸めで、影のぼかしなどで少数の画素が 3〜4 になりうる（全種類のときの上限と同じ）
+            assertTrue(w <= 4 && n <= 200, "図形の種類 " + bit + " だけを GPU にした差: worst " + w + ", pixels>2 " + n);
         }
-        GlRectStream.opMask = 0xFFF;
+        } finally {
+            GlRectStream.opMask = 0xFFF; // 途中で失敗しても、他のテストへ残さない
+        }
         int worst = 0, wi = -1, bad = 0;
         for (int i = 0; i < a.length; i++) {
             int dmax = 0;
@@ -228,35 +232,32 @@ class RectTreesBackendTest {
         }
         System.out.println("RECT-TREES worst diff " + worst + " at (" + wi % 900 + "," + wi / 900 + ") trees=" + Integer.toHexString(a[wi])
                 + " legacy=" + Integer.toHexString(b[wi]) + " pixels>2: " + bad);
-        // 全種類を新経路にすると、層を重ねるたびの 8 bit の丸めが新旧で違うところに累積し、ごく少数の画素が 3 になる
-        assertTrue(worst <= 4 && bad <= 200, "全種類の差: worst " + worst + ", 2 超の画素 " + bad);
+        // 全種類を GPU にすると、CPU 描画との間で影のぼかし・層ごとの 8 bit の丸めが違い、約 0.1%（630,000 画素中 500 前後）の画素が 3〜4 になる
+        assertTrue(worst <= 4 && bad <= 800, "全種類の差: worst " + worst + ", 2 超の画素 " + bad);
     }
 
-    /** 定常状態のフレーム（同じ文書を描き直す）の CPU 時間と GPU への転送量を、新旧で比べて出す（診断。数値は環境による）。 */
+    /** 定常状態のフレーム（同じ文書を描き直す）の CPU 時間と GPU への転送量を、CPU 経路と GPU 経路で比べて出す（診断。数値は環境による）。 */
     @Test
-    void steadyFrameCostComparedWithTheLegacyPath() throws Exception {
+    void steadyFrameCostComparedWithTheCpuPath() throws Exception {
         requireGl();
         String html = showcase();
         double[] ms = new double[2];
-        long[] uploaded = new long[2];
         for (int mode = 0; mode < 2; mode++) {
             boolean saved = LwjglGlRenderBackend.rectTrees;
             LwjglGlRenderBackend.rectTrees = mode == 1;
             try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(900, 700)) {
                 for (int i = 0; i < 30; i++) SoftwareRendering.renderHtml(html, 900, 700, T0, g);
-                long before = g.uploadedFloatCount();
                 long t0 = System.nanoTime();
                 int n = 100;
                 for (int i = 0; i < n; i++) SoftwareRendering.renderHtml(html, 900, 700, T0, g);
                 g.pixmap(); // GPU の仕事の完了まで含める
                 ms[mode] = (System.nanoTime() - t0) / 1e6 / n;
-                uploaded[mode] = (g.uploadedFloatCount() - before) * 4 / n;
             } finally {
                 LwjglGlRenderBackend.rectTrees = saved;
             }
         }
-        System.out.println("RECT-TREES frame: legacy " + String.format("%.2f", ms[0]) + " ms, " + uploaded[0] + " B/frame uploaded; trees "
-                + String.format("%.2f", ms[1]) + " ms, " + uploaded[1] + " B/frame (instance data; persistent mapping writes in place)");
+        System.out.println("RECT-TREES frame: cpu " + String.format("%.2f", ms[0]) + " ms; gpu trees "
+                + String.format("%.2f", ms[1]) + " ms (instance data is written in place by the persistent mapping)");
     }
 
     @Test

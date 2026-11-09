@@ -194,6 +194,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}（x1・y1 は含まない）。何も描いていなければ {@code null}。 */
     public int[] dirtyBounds() {
+        // 範囲を聞く側（GPU 版）はこの後に画素を読む。フレームの途中でも、溜めた命令を先に書き切る
+        queue.flush();
         return raster.dirtyBounds();
     }
 
