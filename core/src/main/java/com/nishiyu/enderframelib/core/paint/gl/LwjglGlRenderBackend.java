@@ -7,9 +7,7 @@ import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
 import com.nishiyu.enderframelib.core.paint.gpu.AtlasPacker;
-import com.nishiyu.enderframelib.core.paint.gpu.GpuBatchPacker;
 import com.nishiyu.enderframelib.core.paint.gpu.ImageTextureCache;
-import com.nishiyu.enderframelib.core.paint.gpu.BatchDevice;
 import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
@@ -64,283 +62,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     private static int liveInstances = 0;
     private static GLFWErrorCallback errorCallback;
-
-    /**
-     * 図形 1 つ分のパラメータは「データテクスチャ」の 1 行（{@link #STRIDE} テクセル）に詰め、
-     * インスタンス描画で 1 回の draw にまとめる。頂点シェーダーはインスタンス番号で行を引く。
-     * テクセルの並び: 0 範囲 / 1 姿勢 a,b,c,d / 2 姿勢 e,f,拡大率,不透明度 / 3 モード,内側空,穴,クリップ数 /
-     * 4 矩形 / 5,6 rx,ry / 7 内側矩形 / 8,9 内側 rx,ry / 10 枠幅 / 11-14 枠色 / 15 色 / 16 σ,繰り返し原点,周期 /
-     * 17,18 グラデ A,B / 19,20 グラデ色 / 21 字形 / 22 画像 / 23 画像寸法 / 24-43 クリップ 4 段 × 5。
-     */
-    private static final String SHAPE_VERT = """
-            #version 150
-            uniform sampler2D uData;
-            uniform vec2 uView;
-            flat out int vInst;
-            out vec2 vLocal;
-            uniform int uRowBase;
-            void main() {
-                vec4 b = texelFetch(uData, ivec2(0, gl_InstanceID + uRowBase), 0);
-                vec4 pa = texelFetch(uData, ivec2(1, gl_InstanceID + uRowBase), 0);
-                vec4 pt = texelFetch(uData, ivec2(2, gl_InstanceID + uRowBase), 0);
-                vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-                vec2 l = mix(b.xy, b.zw, c);
-                vec2 d = vec2(pa.x * l.x + pa.z * l.y + pt.x, pa.y * l.x + pa.w * l.y + pt.y);
-                gl_Position = vec4(d.x / uView.x * 2.0 - 1.0, 1.0 - d.y / uView.y * 2.0, 0.0, 1.0);
-                vLocal = l;
-                vInst = gl_InstanceID + uRowBase;
-            }
-            """;
-
-    /** 角丸矩形の符号付き距離と被覆率は {@code SoftShapes} と同じ式（CPU 版と画素を揃えるため）。 */
-    private static final String SHAPE_FRAG = """
-            #version 150
-            in vec2 vLocal;
-            flat in int vInst;
-            uniform vec2 uView;
-            uniform sampler2D uData;
-            uniform sampler2D uAtlas;
-            uniform sampler2D uImgTex;
-            uniform sampler2D uExt;
-            #define F(k) texelFetch(uData, ivec2(k, vInst), 0)
-            #define E(k) texelFetch(uExt, ivec2((k) - 24, vInst), 0)
-            out vec4 fragColor;
-
-            float erfcf(float x) {
-                float z = abs(x);
-                float t = 1.0 / (1.0 + 0.3275911 * z);
-                float poly = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
-                float r = poly * exp(-z * z);
-                return x >= 0.0 ? r : 2.0 - r;
-            }
-
-            float blurredEdge(float sd, float sigma) {
-                if (sigma <= 0.0) return sd <= 0.0 ? 1.0 : 0.0;
-                return 0.5 * erfcf(sd / (sigma * 1.41421356));
-            }
-
-            float sdRR(vec2 p, vec4 r, vec4 rx, vec4 ry) {
-                vec2 c = (r.xy + r.zw) * 0.5;
-                vec2 h = (r.zw - r.xy) * 0.5;
-                bool right = p.x > c.x;
-                bool bottom = p.y > c.y;
-                int k = bottom ? (right ? 2 : 3) : (right ? 1 : 0);
-                float rkx = rx[k];
-                float rky = ry[k];
-                if (rkx <= 0.0 || rky <= 0.0) {
-                    vec2 d = abs(p - c) - h;
-                    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
-                }
-                rkx = min(rkx, h.x);
-                rky = min(rky, h.y);
-                vec2 rk = vec2(rkx, rky);
-                vec2 q = abs(p - c) - (h - rk);
-                if (q.x > 0.0 && q.y > 0.0) {
-                    float len = length(q / rk);
-                    float grad = length(q / (rk * rk));
-                    return grad <= 0.0 ? 0.0 : (len - 1.0) * len / grad;
-                }
-                return max(q.x - rkx, q.y - rky);
-            }
-
-            float quarterArc(float rx, float ry) {
-                if (rx <= 0.0 || ry <= 0.0) return 0.0;
-                return 0.25 * 3.14159265 * (3.0 * (rx + ry) - sqrt((3.0 * rx + ry) * (rx + 3.0 * ry)));
-            }
-
-            // BorderPath.param と同じ: 中心線上の最も近い位置（箱の中心が原点）
-            float pathParam(vec2 p, vec2 b, vec4 rx, vec4 ry) {
-                float lt = 2.0 * b.x - rx[0] - rx[1];
-                float lr = 2.0 * b.y - ry[1] - ry[2];
-                float lb = 2.0 * b.x - rx[2] - rx[3];
-                float ll = 2.0 * b.y - ry[3] - ry[0];
-                float aTR = quarterArc(rx[1], ry[1]), aBR = quarterArc(rx[2], ry[2]);
-                float aBL = quarterArc(rx[3], ry[3]), aTL = quarterArc(rx[0], ry[0]);
-                float sTR = lt, sR = sTR + aTR, sBR = sR + lr, sB = sBR + aBR, sBL = sB + lb, sL = sBL + aBL, sTL = sL + ll;
-                float hp = 1.57079633;
-                float px = p.x, py = p.y;
-                if (py < 0.0) {
-                    if (px >= 0.0) {
-                        float cx = b.x - rx[1], cy = -(b.y - ry[1]);
-                        if (px > cx && py < cy) return sTR + atan((px - cx) / max(rx[1], 1e-4), (cy - py) / max(ry[1], 1e-4)) / hp * aTR;
-                        if (px <= cx) return px + b.x - rx[0];
-                        return sR + (py + b.y - ry[1]);
-                    }
-                    float cx = -(b.x - rx[0]), cy = -(b.y - ry[0]);
-                    if (px < cx && py < cy) return sTL + atan((cy - py) / max(ry[0], 1e-4), (cx - px) / max(rx[0], 1e-4)) / hp * aTL;
-                    if (px >= cx) return px + b.x - rx[0];
-                    return sL + (b.y - ry[3] - py);
-                }
-                if (px >= 0.0) {
-                    float cx = b.x - rx[2], cy = b.y - ry[2];
-                    if (px > cx && py > cy) return sBR + atan((py - cy) / max(ry[2], 1e-4), (px - cx) / max(rx[2], 1e-4)) / hp * aBR;
-                    if (py <= cy) return sR + (py + b.y - ry[1]);
-                    return sB + (b.x - rx[2] - px);
-                }
-                float cx = -(b.x - rx[3]), cy = b.y - ry[3];
-                if (px < cx && py > cy) return sBL + atan((cx - px) / max(rx[3], 1e-4), (py - cy) / max(ry[3], 1e-4)) / hp * aBL;
-                if (px >= cx) return sB + (b.x - rx[2] - px);
-                return sL + (b.y - ry[3] - py);
-            }
-
-            float glyphCov(ivec2 c, vec4 gl) {
-                if (c.x < 0 || c.y < 0 || c.x >= int(gl.z) || c.y >= int(gl.w)) return 0.0;
-                return texelFetch(uAtlas, ivec2(gl.xy) + c, 0).r;
-            }
-
-            float cover(float sd, float scale) {
-                return clamp(0.5 - sd * scale, 0.0, 1.0);
-            }
-
-            void main() {
-                vec4 t2 = F(2), t3 = F(3), t16 = F(16);
-                float uScale = t2.z;
-                float uOpacity = t2.w;
-                int uMode = int(t3.x + 0.5);
-                int uInnerEmpty = int(t3.y + 0.5);
-                int uHole = int(t3.z + 0.5);
-                int uClipN = int(t3.w + 0.5);
-                vec4 uRect = F(4), uRx = F(5), uRy = F(6);
-                vec4 uInner = F(7), uIRx = F(8), uIRy = F(9);
-                vec4 uWidths = F(10);
-                vec4 uColor = F(15);
-                float uSigma = t16.x;
-                vec2 uRep = t16.yz;
-                vec4 uGradA = F(17), uGradB = F(18), uGC0 = F(19), uGC1 = F(20);
-                vec4 uGlyph = F(21), uImg = F(22);
-                vec2 uImgSize = F(23).xy;
-                float a;
-                vec4 col = uColor;
-                if (uMode == 5) {
-                    ivec2 gp = ivec2(floor(vLocal - uRect.xy));
-                    if (gp.x < 0 || gp.y < 0 || gp.x >= int(uGlyph.z) || gp.y >= int(uGlyph.w)) discard;
-                    a = texelFetch(uAtlas, ivec2(uGlyph.xy) + gp, 0).r;
-                } else if (uMode == 10) {
-                    // 文字の縁取り: SDF の字形（128 = 輪郭、内側が大きい、8 画素 = 128 段階）から、輪郭を中心にした帯を描く
-                    ivec2 gp = ivec2(floor(vLocal - uRect.xy));
-                    if (gp.x < 0 || gp.y < 0 || gp.x >= int(uGlyph.z) || gp.y >= int(uGlyph.w)) discard;
-                    float sv = texelFetch(uAtlas, ivec2(uGlyph.xy) + gp, 0).r * 255.0;
-                    float sd = (sv - 128.0) * (8.0 / 128.0);
-                    a = clamp(uImg.x - abs(sd) + 0.5, 0.0, 1.0);
-                } else if (uMode == 9) {
-                    vec4 gi = F(22), g2 = F(23);
-                    float gcx = (vLocal.x - gi.x) * gi.z - g2.x - 0.5, gcy = (vLocal.y - gi.y) * gi.z + g2.y - 0.5;
-                    ivec2 c0 = ivec2(floor(vec2(gcx, gcy)));
-                    vec2 fr = vec2(gcx, gcy) - vec2(c0);
-                    float v00 = glyphCov(c0, uGlyph), v10 = glyphCov(c0 + ivec2(1, 0), uGlyph);
-                    float v01 = glyphCov(c0 + ivec2(0, 1), uGlyph), v11 = glyphCov(c0 + ivec2(1, 1), uGlyph);
-                    a = (v00 * (1.0 - fr.x) + v10 * fr.x) * (1.0 - fr.y) + (v01 * (1.0 - fr.x) + v11 * fr.x) * fr.y;
-                } else if (uMode == 6) {
-                    a = cover(sdRR(vLocal, uRect, uRx, uRy), uScale);
-                    if (a <= 0.0) discard;
-                    vec2 uv = (vLocal - uImg.xy) * uImg.zw;
-                    if (uv.x < -0.5 || uv.y < -0.5 || uv.x > uImgSize.x + 0.5 || uv.y > uImgSize.y + 0.5) discard;
-                    vec4 tx;
-                    int taps = int(F(23).z + 0.5);
-                    if (taps <= 1) {
-                        tx = texture(uImgTex, uv / uImgSize);
-                    } else {
-                        vec2 stp = E(48).xy;
-                        tx = vec4(0.0);
-                        for (int j = 0; j < taps; j++) {
-                            for (int i = 0; i < taps; i++) {
-                                vec2 off = (vec2(float(i), float(j)) + 0.5) / float(taps) - 0.5;
-                                tx += texture(uImgTex, (uv + off * stp) / uImgSize);
-                            }
-                        }
-                        tx /= float(taps * taps);
-                    }
-                    if (tx.a <= 0.0) discard;
-                    col = vec4(tx.rgb / tx.a, tx.a);
-                } else if (uMode == 8) {
-                    float dist = length(vLocal - uRect.xy);
-                    a = cover(dist - uRect.z, uScale) * (uRect.w > 0.0 ? 1.0 - cover(dist - uRect.w, uScale) : 1.0);
-                    if (a <= 0.0) discard;
-                    vec2 dd = vLocal - uRect.xy;
-                    // 対角線上（|dy| == |dx|）の画素は上下を優先する（CPU 版と同じ）。vLocal の float 誤差で左右に転ばないよう余裕を持たせる
-                    int cs = abs(dd.y) >= abs(dd.x) - 1e-3 ? (dd.y < 0.0 ? 0 : 2) : (dd.x > 0.0 ? 1 : 3);
-                    col = F(11 + cs);
-                } else if (uMode == 3) {
-                    a = blurredEdge(sdRR(vLocal, uRect, uRx, uRy), uSigma);
-                    if (a <= 0.0) discard;
-                    if (uHole != 0) a *= 1.0 - cover(sdRR(vLocal, uInner, uIRx, uIRy), uScale);
-                } else if (uMode == 4) {
-                    a = cover(sdRR(vLocal, uRect, uRx, uRy), uScale);
-                    if (a <= 0.0) discard;
-                    a *= blurredEdge(-sdRR(vLocal, uInner, uIRx, uIRy), uSigma);
-                } else {
-                    a = cover(sdRR(vLocal, uRect, uRx, uRy), uScale);
-                }
-                if (a <= 0.0) discard;
-                if (uMode == 2) {
-                    int g = int(floor(uGradA.w + 0.5));
-                    int kind = g % 10;
-                    int bounds = g / 10;
-                    float u;
-                    if (kind == 1) {
-                        u = vLocal.x * uGradA.x + vLocal.y * uGradA.y + uGradA.z;
-                    } else if (kind == 2) {
-                        u = length(vec2((vLocal.x - uGradA.x) * uGradA.z, (vLocal.y - uGradA.y) * uGradB.x));
-                    } else {
-                        float v = atan(vLocal.x - uGradA.x, -(vLocal.y - uGradA.y)) * 0.15915494 - uGradA.z;
-                        u = v - floor(v);
-                    }
-                    if (uRep.y > 0.0) {
-                        float d = u - uRep.x;
-                        u = uRep.x + (d - uRep.y * floor(d / uRep.y));
-                    }
-                    float t = (u - uGradB.y) * uGradB.z;
-                    if (((bounds & 1) != 0 && t < -0.001) || ((bounds & 2) != 0 && t > 1.001)) discard;
-                    t = clamp(t, 0.0, 1.0);
-                    if (uGradB.w != 1.0) t = pow(t, uGradB.w);
-                    float ga = mix(uGC0.a, uGC1.a, t);
-                    if (ga <= 0.0) discard;
-                    col = vec4(mix(uGC0.rgb * uGC0.a, uGC1.rgb * uGC1.a, t) / ga, ga);
-                }
-                if (uMode == 1) {
-                    float inner = uInnerEmpty != 0 ? 0.0 : cover(sdRR(vLocal, uInner, uIRx, uIRy), uScale);
-                    a *= 1.0 - inner;
-                    if (a <= 0.0) discard;
-                    float d[4] = float[4](vLocal.y - uRect.y, uRect.z - vLocal.x, uRect.w - vLocal.y, vLocal.x - uRect.x);
-                    int side = -1;
-                    float best = 3.4e38;
-                    for (int s = 0; s < 4; s++) {
-                        if (uWidths[s] <= 0.0) continue;
-                        float v = d[s] / uWidths[s];
-                        if (v < best) { best = v; side = s; }
-                    }
-                    if (side < 0) discard;
-                    col = F(11 + side);
-                    if (uHole != 0) {
-                        vec4 t44 = E(44), t47 = E(47);
-                        float s = pathParam(vLocal - t44.zw, t44.xy, E(45), E(46));
-                        float period = t47.x;
-                        float phase = s - period * floor(s / period);
-                        float along = abs(phase - period * 0.5);
-                        float on;
-                        if (t47.z > 0.5) {
-                            float perp = abs(sdRR(vLocal, uRect, uRx, uRy) + t47.w * 0.5);
-                            on = clamp(t47.y * 0.5 - length(vec2(along, perp)) + 0.5, 0.0, 1.0);
-                        } else {
-                            on = clamp(t47.y * 0.5 - along + 0.5, 0.0, 1.0);
-                        }
-                        a *= on;
-                        if (a <= 0.0) discard;
-                    }
-                }
-                vec2 dev = vec2(gl_FragCoord.x, uView.y - gl_FragCoord.y);
-                for (int i = 0; i < uClipN; i++) {
-                    vec4 A = E(24 + i * 5);
-                    vec4 T = E(25 + i * 5);
-                    vec2 lp = vec2(A.x * dev.x + A.z * dev.y + T.x, A.y * dev.x + A.w * dev.y + T.y);
-                    a *= cover(sdRR(lp, E(26 + i * 5), E(27 + i * 5), E(28 + i * 5)), T.z);
-                    if (a <= 0.0) discard;
-                }
-                a *= uOpacity * col.a;
-                if (a <= 0.0) discard;
-                fragColor = vec4(col.rgb, a);
-            }
-            """;
 
     private static final String TEX_VERT = """
             #version 150
@@ -604,13 +325,13 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** 文字・画像の供給元。保険の {@link #cpu} と共有し、差し替えはここに 1 回書く（CPU 描画器へ転送しない）。 */
     private final PaintResources resources = new PaintResources();
     private final CpuLayerFallback cpu;
-    /** 単色の角丸矩形を Property Tree ＋ 1 回のインスタンス描画で描く新経路（{@link #rectTrees} が false、または作れなければ null）。 */
+    /** 図形を Property Tree ＋ 1 回のインスタンス描画で描く GPU 経路（{@link #rectTrees} が false、または作れなければ null。そのときは全て CPU が描く）。 */
     private GlRectStream rects;
     /**
-     * 新経路を使うか（既定は有効。{@code -Denderframe.gl.recttrees=false} で従来経路だけにする）。
-     * 画素は従来経路と一致し（core の全 GL テスト・ゲーム内の showcase で差 ≤ 2）、GPU へ転送するインスタンスデータは
-     * 定常フレームで 0 バイト（従来は showcase で約 240 KB/フレーム）。バッファテクスチャが使えない環境・
-     * テクスチャユニットが足りない環境では、作成に失敗して従来経路だけで動く。
+     * GPU 経路を使うか（既定は有効。{@code -Denderframe.gl.recttrees=false} で図形を全て CPU 描画にする）。
+     * GPU が受けない図形（せん断の姿勢・縦横比の違う拡縮の角丸・容量／クリップの超過）は、CPU が描いた層を描画順を保って重ねる。
+     * GPU へ転送するインスタンスデータは定常フレームで 0 バイト。バッファテクスチャが使えない環境・
+     * テクスチャユニットが足りない環境では、作成に失敗して CPU 描画だけで動く。旧バッチ（データテクスチャ）経路は撤去済み。
      */
     public static volatile boolean rectTrees = !"false".equals(System.getProperty("enderframe.gl.recttrees"));
     private final Pixmap readback;
@@ -620,57 +341,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** アトラスを広げる上限（R8 で 4096² = 16MB）。実際は GL の最大テクスチャ寸法と比べて小さい方。 */
     private static final int ATLAS_MAX_SIZE = 4096;
     private static final int IMAGE_CACHE_LIMIT = 64;
-    private static final int STRIDE = GpuBatchPacker.STRIDE;
-    private static final int MAX_BATCH = GpuBatchPacker.MAX_BATCH;
     /** 字形アトラス（R8）。棚詰め。満ちたら空にして詰め直す（字形は描く直前に載せるので、すでに描いた分には響かない）。 */
     private int atlasTex;
-    /** {@link #flushBatch} の転送用ネイティブバッファ（遅延確保・使い回し・{@link #close} で解放）。 */
-    private java.nio.FloatBuffer batchBuf;
     private final AtlasPacker atlas = new AtlasPacker(ATLAS_SIZE, ATLAS_MAX_SIZE);
     private final ImageTextureCache<Pixmap> imageTex = new ImageTextureCache<>(IMAGE_CACHE_LIMIT);
     private long gpuGlyphs, gpuImages;
 
-    /** 1 インスタンスのテクセル数（データテクスチャの幅）と、1 回の draw にまとめる最大数（高さ）。 */
-    /** 図形・字形・画像を 64 テクセルのインスタンスデータに詰める（API 非依存）。ここはその転送と描画だけを持つ。 */
-    private final GpuBatchPacker packer = new GpuBatchPacker(new GpuBatchPacker.Host() {
-        @Override
-        public void beforeShape() {
-            drainRects(); // 溜めた矩形は、従来経路の図形より先に描く（描画順）
-            flushOverlay();
-        }
-
-        @Override
-        public void flushBatch() {
-            LwjglGlRenderBackend.this.flushBatch();
-        }
-
-        @Override
-        public boolean tracksBounds() {
-            return !layerStack.isEmpty();
-        }
-
-        @Override
-        public void touch(float x0, float y0, float x1, float y1) {
-            LwjglGlRenderBackend.this.touch(x0, y0, x1, y1);
-        }
-    });
-    /** データテクスチャの共通部（テクセル 0..23）と、クリップ・破線などの拡張部（24..48）。 */
-    private int dataTex, extTex;
-    private static final int CORE_W = GpuBatchPacker.CORE_TEXELS, EXT_W = GpuBatchPacker.EXT_TEXELS;
-    /** 各テクスチャの中身の写し（行 × 幅 × 4）。次の転送で、変わっていない行を送らないための比較に使う。 */
-    private float[] shadowCore, shadowExt;
-    /**
-     * データテクスチャは {@code MAX_BATCH} 行の「枠」を {@link #batchSlots} 個並べた高さにする。フレーム内の n 番目のバッチは
-     * n 番目の枠に置くので、次のフレームの同じ順番のバッチと行ごとに比べられる（1 枠だと別のバッチ同士を比べてしまい差分が効かない）。
-     */
-    private static final int MAX_SLOTS = 8;
-    private int batchSlots = 1, slot;
-    /** 転送した float の累計・転送を省いた float の累計（診断用）。 */
-    private long uploadedFloats, skippedFloats;
-    /** 変更行の間がこの行数以下なら 1 回の転送にまとめる。 */
-    private static final int UPLOAD_GAP = 3;
-    private int boundImg;
-    private long drawCalls;
 
     private long window;
     /** 0 でなければ、この GL コンテキストとオブジェクト（テクスチャ）を共有して作った（ホストのウィンドウ）。 */
@@ -681,7 +357,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private int enterDepth;
     private long prevContext;
     private GLCapabilities prevCaps;
-    private int fbo, fboTex, overlayTex /* 遅延確保 */, vao, shapeProgram, texProgram;
+    private int fbo, fboTex, overlayTex /* 遅延確保 */, vao, texProgram;
     private int clearPremul = 0;
     private boolean readbackValid;
     private boolean closed;
@@ -906,10 +582,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** 直近の {@link #render} で GPU が描いた図形（塗り・枠線）の数の累計。CPU に回った分は含まない。 */
     public long gpuShapeCount() {
-        return packer.committedTotal() - gpuGlyphs - gpuImages + (rects != null ? rects.accepted() : 0);
+        return rects != null ? rects.accepted() - gpuGlyphs - gpuImages : 0;
     }
 
-    /** 新経路（Property Tree）の矩形描画の回数の累計。従来経路は {@link #drawCallCount()}。 */
+    /** 新経路（Property Tree）の矩形描画の回数の累計。 */
     public long rectTreeDrawCalls() {
         return rects != null ? rects.drawCalls() : 0;
     }
@@ -941,22 +617,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     /** これまでに発行した図形の draw の数（バッチ化で、図形の数よりずっと少なくなる）。CPU 層の転送は含まない。 */
     public long drawCallCount() {
-        return drawCalls + (rects != null ? rects.drawCalls() : 0);
-    }
-
-    /** 従来経路（{@code GpuBatchPacker}）の描画回数だけ。 */
-    public long legacyDrawCallCount() {
-        return drawCalls;
-    }
-
-    /** インスタンスデータとして GPU へ転送した float の累計（差分転送・使用幅の絞り込み後）。 */
-    public long uploadedFloatCount() {
-        return uploadedFloats;
-    }
-
-    /** 前回と同じ・未使用のため転送を省いた float の累計。 */
-    public long skippedFloatCount() {
-        return skippedFloats;
+        return rects != null ? rects.drawCalls() : 0;
     }
 
     /** GLFW のウィンドウのハンドル（見えないウィンドウでも有効）。入力のコールバック登録などに使う。 */
@@ -1007,7 +668,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
             throw new IllegalStateException("フレームバッファが不完全: 0x" + Integer.toHexString(status));
         }
-        shapeProgram = link(SHAPE_VERT, SHAPE_FRAG);
         GL13.glActiveTexture(GL13.GL_TEXTURE1);
         atlasTex = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, atlasTex);
@@ -1016,39 +676,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, ATLAS_SIZE, ATLAS_SIZE, 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
         atlas.setMaxSize(Math.min(ATLAS_MAX_SIZE, GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)));
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL20.glUseProgram(shapeProgram);
-        GL20.glUniform1i(loc(shapeProgram, "uAtlas"), 1);
-        GL20.glUniform1i(loc(shapeProgram, "uImgTex"), 2);
-        GL20.glUniform1i(loc(shapeProgram, "uData"), 3);
-        GL13.glActiveTexture(GL13.GL_TEXTURE3);
-        dataTex = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        // 0 で埋めて作る（前回との差分転送は「GPU の中身 = 影の配列」を前提にするので、未初期化のままにしない）
-        batchSlots = Math.max(1, Math.min(MAX_SLOTS, GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) / MAX_BATCH));
-        int rows = MAX_BATCH * batchSlots;
-        shadowCore = new float[CORE_W * rows * 4];
-        shadowExt = new float[EXT_W * rows * 4];
-        java.nio.FloatBuffer zeros = MemoryUtil.memCallocFloat(CORE_W * rows * 4);
-        try {
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, CORE_W, rows, 0, GL11.GL_RGBA, GL11.GL_FLOAT, zeros);
-        } finally {
-            MemoryUtil.memFree(zeros);
-        }
-        GL20.glUniform1i(loc(shapeProgram, "uExt"), 6);
-        GL13.glActiveTexture(GL13.GL_TEXTURE6);
-        extTex = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, extTex);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        zeros = MemoryUtil.memCallocFloat(EXT_W * rows * 4);
-        try {
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, EXT_W, rows, 0, GL11.GL_RGBA, GL11.GL_FLOAT, zeros);
-        } finally {
-            MemoryUtil.memFree(zeros);
-        }
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         texProgram = link(TEX_VERT, TEX_FRAG);
         if (rectTrees) {
@@ -1168,9 +795,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
         readbackValid = false;
         cpu.clearDirty();
-        packer.clear();
-        slot = 0;
-        boundImg = 0;
         layerStack.clear();
         layerPool.clear();
         layerPool.addAll(allLayers);
@@ -1215,7 +839,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     private void flushAll() {
         drainRects();
         flushOverlay();
-        flushBatch();
     }
 
     /** 新経路に溜めた矩形を、いまの描画先へ吐く。 */
@@ -1235,96 +858,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** 新経路に溜めた矩形のうち、画像が使うテクスチャ（ユニット 2）。0 なら画像は無い。テクスチャを替える前に吐き切る。 */
     private int rectRunImg;
 
-    /** 溜めた図形を 1 回のインスタンス描画で描く。 */
-    private void flushBatch() {
-        packer.flushTo(glBatchDevice);
-    }
-
-    /** L3: OpenGL による {@link BatchDevice}。転送 = データテクスチャへの更新、描画 = インスタンス描画。 */
-    private final BatchDevice glBatchDevice = new BatchDevice() {
-        @Override
-        public void uploadInstances(float[] data, int n) {
-            uploadInstances(data, n, CORE_W, EXT_W);
-        }
-
-        @Override
-        public void uploadInstances(float[] data, int n, int coreTexels, int extTexels) {
-            // 転送用バッファは使い回す（毎回 memAlloc/memFree しない）。1 バッチの最大サイズで一度だけ確保する。
-            if (batchBuf == null) batchBuf = MemoryUtil.memAllocFloat(MAX_BATCH * STRIDE * 4);
-            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
-            GL11.glPixelStorei(GL12.GL_UNPACK_ROW_LENGTH, STRIDE); // 元の行は 64 テクセル間隔のまま、使った幅だけを送る
-            try {
-                GL13.glActiveTexture(GL13.GL_TEXTURE3);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, dataTex);
-                uploadChanged(data, n, 0, Math.min(coreTexels, CORE_W), CORE_W, shadowCore, slot * MAX_BATCH);
-                if (extTexels > 0) {
-                    GL13.glActiveTexture(GL13.GL_TEXTURE6);
-                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, extTex);
-                    uploadChanged(data, n, CORE_W, Math.min(extTexels, EXT_W), EXT_W, shadowExt, slot * MAX_BATCH);
-                }
-            } finally {
-                GL11.glPixelStorei(GL12.GL_UNPACK_ROW_LENGTH, 0);
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            }
-        }
-
-        /**
-         * 行ごとに影の配列と比べ、変わった行の連なりだけを {@code glTexSubImage2D} で送る。
-         * 送った範囲だけ影へ写すので、影は常に GPU の中身と一致する（比べる幅が狭い回に触れなかった右側も一致のまま）。
-         * 間が {@link #UPLOAD_GAP} 行以下の変更は 1 回にまとめる（呼び出し回数を抑える）。
-         */
-        private void uploadChanged(float[] data, int n, int firstTexel, int width, int texW, float[] shadow, int rowBase) {
-            if (width <= 0) return;
-            int wf = width * 4, rowSrc = STRIDE * 4, srcOff = firstTexel * 4, rowShadow = texW * 4;
-            int runStart = -1, lastDirty = -1;
-            for (int r = 0; r <= n; r++) {
-                boolean dirty = r < n && java.util.Arrays.mismatch(data, r * rowSrc + srcOff, r * rowSrc + srcOff + wf,
-                        shadow, (rowBase + r) * rowShadow, (rowBase + r) * rowShadow + wf) >= 0;
-                if (dirty) {
-                    if (runStart < 0) runStart = r;
-                    lastDirty = r;
-                } else if (runStart >= 0 && (r == n || r - lastDirty > UPLOAD_GAP)) {
-                    sendRows(data, runStart, lastDirty + 1, firstTexel, width, texW, shadow, rowBase);
-                    runStart = -1;
-                }
-            }
-            skippedFloats += (long) n * wf; // 送った分は sendRows が引く
-        }
-
-        private void sendRows(float[] data, int r0, int r1, int firstTexel, int width, int texW, float[] shadow, int rowBase) {
-            int rowSrc = STRIDE * 4, wf = width * 4, srcOff = firstTexel * 4, rowShadow = texW * 4;
-            java.nio.FloatBuffer fb = batchBuf;
-            // 元の配列の該当行（先頭の texel 位置から始まる）を、行間隔 64 テクセルのまま渡す
-            int from = r0 * rowSrc + srcOff, to = (r1 - 1) * rowSrc + srcOff + wf;
-            fb.clear();
-            fb.put(data, from, to - from).flip();
-            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, rowBase + r0, width, r1 - r0, GL11.GL_RGBA, GL11.GL_FLOAT, fb);
-            for (int r = r0; r < r1; r++) System.arraycopy(data, r * rowSrc + srcOff, shadow, (rowBase + r) * rowShadow, wf);
-            uploadedFloats += (long) (r1 - r0) * wf;
-            skippedFloats -= (long) (r1 - r0) * wf;
-        }
-
-        @Override
-        public void drawInstances(int n) {
-            drawBatchInstances(n);
-        }
-    };
-
-    private void drawBatchInstances(int n) {
-        if (boundImg != 0) {
-            GL13.glActiveTexture(GL13.GL_TEXTURE2);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, boundImg);
-        }
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL20.glUseProgram(shapeProgram);
-        GL20.glUniform2f(loc(shapeProgram, "uView"), width, height);
-        GL20.glUniform1i(loc(shapeProgram, "uRowBase"), slot * MAX_BATCH);
-        GL14Blend.straight();
-        GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP, 0, 4, n);
-        drawCalls++;
-        if (slot < batchSlots - 1) slot++; // 枠が尽きたら最後の枠を使い回す（差分は効かなくなるが正しさは保たれる）
-    }
-
     /** CPU が描いた層のうち、変わった範囲をテクスチャにして重ね、層を空に戻す。 */
     /** CPU の根の画素（画面サイズ）を確保済みか。図形が全部 GPU に受け取られている間は false のまま（テスト用）。 */
     boolean cpuPixelsAllocated() {
@@ -1340,7 +873,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         int[] b = cpu.dirtyBounds();
         if (b == null) return;
         drainRects(); // 溜めた矩形は、あとから来る CPU の層より先に描く（描画順）
-        flushBatch();
         drawPixels(cpu.pixels(), b, false);
         cpu.clearDirty();
     }
@@ -2156,13 +1688,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     // ------------------------------------------------------------------ GPU の図形
 
     /**
-     * 新経路に積む前の順序づけ: 先に溜まっている CPU の層・従来経路の図形を描き切り、層に描く範囲を記録する。
+     * 新経路に積む前の順序づけ: 先に溜まっている CPU の層を重ね、層に描く範囲を記録する。
      * 描画順は「他の何かを描く直前に溜めた矩形を吐く」ことで保つ。
      */
     private void beforeRectTreeShape(Matrix2D pose, float x0, float y0, float x1, float y1) {
         if (rects.pending() == 0) {
             flushOverlay();
-            flushBatch();
         } else if (cpu.dirtyBounds() != null) {
             flushOverlay();
         }
@@ -2188,7 +1719,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.push(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
             return true;
         }
-        return packer.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2201,8 +1732,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.pushStroke(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty, colors, widths, clips, opacity);
             return true;
         }
-        return packer.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                colors, widths, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2220,8 +1750,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                     bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness, clips, opacity);
             return true;
         }
-        return packer.strokeDashedBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                colors, widths, bx, by, cxm, cym, pcx, pcy, period, dash, round, thickness, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2232,7 +1761,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.pushCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, colors, clips, opacity);
             return true;
         }
-        return packer.strokeCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, colors, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2244,7 +1773,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.pushGradient(pose, x0, y0, x1, y1, rx, ry, g, clips, opacity);
             return true;
         }
-        return packer.fillGradient(pose, x0, y0, x1, y1, rx, ry, g, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2256,7 +1785,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.pushOuterShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry, argb, clips, opacity);
             return true;
         }
-        return packer.outerShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma, hole, hrx, hry, argb, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
@@ -2267,20 +1796,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             rects.pushInsetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry, argb, clips, opacity);
             return true;
         }
-        return packer.insetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma, hole, hrx, hry, argb, clips, opacity);
+        return false; // 新経路が受けない図形は CPU が描く
     }
 
     @Override
     public boolean drawGlyph(GlyphBitmap g, int bx, int by, int argb, GpuClip[] clips, float opacity) {
-        if (!atlas.fits(g)) return false;
+        if (rects == null || (GlRectStream.opMask & 32) == 0 || !atlas.fits(g)
+                || !rects.acceptsGlyph(bx, by, g.width(), g.height(), clips, opacity)) return false;
         int[] slot = atlasSlot(g);
-        if (rects != null && (GlRectStream.opMask & 32) != 0 && rects.acceptsGlyph(bx, by, g.width(), g.height(), clips, opacity)) {
-            beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height());
-            rects.pushGlyph(bx, by, g.width(), g.height(), slot[0], slot[1], argb, clips, opacity);
-            gpuGlyphs++;
-            return true;
-        }
-        if (packer.glyph(g, slot, bx, by, argb, clips, opacity)) gpuGlyphs++;
+        beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + g.width(), by + g.height());
+        rects.pushGlyph(bx, by, g.width(), g.height(), slot[0], slot[1], argb, clips, opacity);
+        gpuGlyphs++;
         return true;
     }
 
@@ -2327,31 +1853,25 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public boolean drawGlyphStroke(GlyphBitmap sdf, int bx, int by, float half, int argb, GpuClip[] clips, float opacity) {
-        if (!atlas.fits(sdf)) return false;
+        if (rects == null || (GlRectStream.opMask & 512) == 0 || !atlas.fits(sdf)
+                || !rects.acceptsPosed(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height(), clips, opacity)) return false;
         int[] slot = atlasSlot(sdf);
-        if (rects != null && (GlRectStream.opMask & 512) != 0 && rects.acceptsPosed(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height(), clips, opacity)) {
-            beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height());
-            rects.pushGlyphStroke(bx, by, sdf.width(), sdf.height(), slot[0], slot[1], half, argb, clips, opacity);
-            gpuGlyphs++;
-            return true;
-        }
-        if (packer.glyphStroke(sdf, slot, bx, by, half, argb, clips, opacity)) gpuGlyphs++;
+        beforeRectTreeShape(Matrix2D.IDENTITY, bx, by, bx + sdf.width(), by + sdf.height());
+        rects.pushGlyphStroke(bx, by, sdf.width(), sdf.height(), slot[0], slot[1], half, argb, clips, opacity);
+        gpuGlyphs++;
         return true;
     }
 
     @Override
     public boolean drawGlyphTransformed(Matrix2D pose, GlyphBitmap g, float ox, float oy, float s,
                                         float bx0, float by0, float bx1, float by1, int argb, GpuClip[] clips, float opacity) {
-        if (!atlas.fits(g)) return false;
+        if (rects == null || (GlRectStream.opMask & 256) == 0 || !atlas.fits(g)
+                || !rects.acceptsPosed(pose, bx0, by0, bx1, by1, clips, opacity)) return false;
         int[] slot = atlasSlot(g);
-        if (rects != null && (GlRectStream.opMask & 256) != 0 && rects.acceptsPosed(pose, bx0, by0, bx1, by1, clips, opacity)) {
-            beforeRectTreeShape(pose, bx0, by0, bx1, by1);
-            rects.pushGlyphTransformed(pose, bx0, by0, bx1, by1, slot[0], slot[1], g.width(), g.height(), ox, oy, s, g.left(), g.top(),
-                    argb, clips, opacity);
-            gpuGlyphs++;
-            return true;
-        }
-        if (packer.glyphTransformed(pose, g, slot, ox, oy, s, bx0, by0, bx1, by1, argb, clips, opacity)) gpuGlyphs++;
+        beforeRectTreeShape(pose, bx0, by0, bx1, by1);
+        rects.pushGlyphTransformed(pose, bx0, by0, bx1, by1, slot[0], slot[1], g.width(), g.height(), ox, oy, s, g.left(), g.top(),
+                argb, clips, opacity);
+        gpuGlyphs++;
         return true;
     }
 
@@ -2361,21 +1881,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                              float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                              int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
         if (image.width() > 8192 || image.height() > 8192) return false;
+        if (!acceptsRectImage(pose, bx0, by0, bx1, by1, rx, ry, clips, opacity, 64)) return false;
         flushOverlay();
         int tex = imageTexture(image);
-        if (tryRectTreeImage(pose, tex, image.width(), image.height(), bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry,
-                taps, stepX, stepY, clips, opacity, 64)) {
-            return true;
-        }
-        if (packer.count() > 0 && boundImg != tex) flushBatch();
-        boundImg = tex;
-        if (!packer.image(pose, image, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, taps, stepX, stepY, clips, opacity)) {
-            return true;
-        }
-        GL13.glActiveTexture(GL13.GL_TEXTURE2);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        gpuImages++;
+        pushRectImage(pose, tex, image.width(), image.height(), bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry,
+                taps, stepX, stepY, clips, opacity);
         return true;
     }
 
@@ -2531,36 +2041,30 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                                float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
         if (handle <= 0 || handle > Integer.MAX_VALUE || imgW <= 0 || imgH <= 0 || imgW > 16384 || imgH > 16384) return false;
         int tex = (int) handle;
+        if (!acceptsRectImage(pose, bx0, by0, bx1, by1, rx, ry, clips, opacity, 2048)) return false;
         flushOverlay();
-        if (tryRectTreeImage(pose, tex, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f,
-                clips, opacity, 2048)) {
-            return true;
-        }
-        if (packer.count() > 0 && boundImg != tex) flushBatch();
-        boundImg = tex;
-        if (!packer.image(pose, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity)) {
-            return true;
-        }
-        GL13.glActiveTexture(GL13.GL_TEXTURE2);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        gpuImages++;
+        pushRectImage(pose, tex, imgW, imgH, bx0, by0, bx1, by1, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity);
         return true;
     }
 
+    /** 画像・外部テクスチャを新経路で描けるか（積みはしない）。 */
+    private boolean acceptsRectImage(Matrix2D pose, float bx0, float by0, float bx1, float by1, float[] rx, float[] ry,
+                                     GpuClip[] clips, float opacity, int maskBit) {
+        if (rects == null || (GlRectStream.opMask & maskBit) == 0) return false;
+        float m = 1f / Math.max((float) pose.meanScale(), 0.01f); // 回転の下では斜めの画素が箱の外へはみ出す分の余白
+        return rects.acceptsImage(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, rx, ry, clips, opacity);
+    }
+
     /**
-     * 画像・外部テクスチャを新経路に積む。受け付けなければ false（呼び出し側が従来経路へ回す）。
+     * 画像・外部テクスチャを新経路に積む（{@link #acceptsRectImage} が true のとき）。
      * 画像は 1 回の描画で 1 枚のテクスチャしか引けないので、別のテクスチャへ替わる前に溜めた分を吐き、テクスチャはユニット 2 に結ぶ。
      */
-    private boolean tryRectTreeImage(Matrix2D pose, int tex, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
-                                     float px0, float py0, float sx, float sy, float x0, float y0, float x1, float y1,
-                                     float[] rx, float[] ry, int taps, float stepX, float stepY, GpuClip[] clips, float opacity, int maskBit) {
-        if (rects == null || (GlRectStream.opMask & maskBit) == 0) return false;
-        float m = 1f / Math.max((float) pose.meanScale(), 0.01f); // 回転の下では斜めの画素が箱の外へはみ出す（従来経路と同じ余白）
-        if (!rects.acceptsImage(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, rx, ry, clips, opacity)) return false;
+    private void pushRectImage(Matrix2D pose, int tex, int imgW, int imgH, float bx0, float by0, float bx1, float by1,
+                               float px0, float py0, float sx, float sy, float x0, float y0, float x1, float y1,
+                               float[] rx, float[] ry, int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
+        float m = 1f / Math.max((float) pose.meanScale(), 0.01f);
         if (rects.pending() > 0 && rectRunImg != 0 && rectRunImg != tex) drainRects();
         beforeRectTreeShape(pose, bx0 - m, by0 - m, bx1 + m, by1 + m);
-        boundImg = tex;
         GL13.glActiveTexture(GL13.GL_TEXTURE2);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -2568,7 +2072,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         rects.pushImage(pose, bx0 - m, by0 - m, bx1 + m, by1 + m, px0, py0, sx, sy, x0, y0, x1, y1, rx, ry, imgW, imgH,
                 taps, stepX, stepY, clips, opacity);
         gpuImages++;
-        return true;
     }
 
     /** 画像（事前乗算）のテクスチャ。同じ {@link Pixmap} は使い回す（画像の中身は変わらない前提）。 */
@@ -2578,7 +2081,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (e.version != image.version()) {
                 // 同じ Pixmap の中身が書き換わった（動画のフレームなど）。すでに溜めた図形は古い画素で描く
                 flushAll();
-                boundImg = 0;
                 GL13.glActiveTexture(GL13.GL_TEXTURE2);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, e.texture);
                 GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
@@ -2592,10 +2094,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         if (imageTex.isFull()) {
             // 最も使われていない 1 枚だけ捨てる。溜めた図形が束ねている画像なら先に描き切る
             ImageTextureCache.Entry old = imageTex.evictOldest();
-            if (old.texture == boundImg) {
-                flushAll();
-                boundImg = 0;
-            }
+            if (old.texture == rectRunImg) flushAll();
             GL11.glDeleteTextures(old.texture);
         }
         int tex = GL11.glGenTextures();
@@ -2688,7 +2187,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
                 rects.close();
                 rects = null;
             }
-            if (shapeProgram != 0) GL20.glDeleteProgram(shapeProgram);
             if (texProgram != 0) GL20.glDeleteProgram(texProgram);
             if (fxProgram != 0) GL20.glDeleteProgram(fxProgram);
             for (GpuLayer l : allLayers) {
@@ -2700,12 +2198,6 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (fboTex != 0) GL11.glDeleteTextures(fboTex);
             if (overlayTex != 0) GL11.glDeleteTextures(overlayTex);
             if (atlasTex != 0) GL11.glDeleteTextures(atlasTex);
-            if (batchBuf != null) {
-                MemoryUtil.memFree(batchBuf);
-                batchBuf = null;
-            }
-            if (dataTex != 0) GL11.glDeleteTextures(dataTex);
-            if (extTex != 0) GL11.glDeleteTextures(extTex);
             for (int t : imageTex.clear()) GL11.glDeleteTextures(t);
             if (vao != 0) GL30.glDeleteVertexArrays(vao);
             if (gpuQueries != null) {
