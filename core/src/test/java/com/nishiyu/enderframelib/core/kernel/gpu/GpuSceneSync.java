@@ -5,7 +5,10 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import java.util.List;
 
 /**
- * 表示項目の並びを {@link PropertyTrees} へ流し込む。{@code DisplayItem.key()} → プリミティブのスロットを覚え、
+ * 【テスト専用】表示項目の並び（矩形だけ）を {@link PropertyTrees} へ流し込む。本番の書き手は {@code GlRectStream} の 1 系統で、
+ * これは PropertyTrees のカーネル・GL 描画器を単体で検証するための道具（番人: {@code Milestone4GateTest.gpuSceneSyncStaysTestOnly}）。
+ *
+ * <p>{@code DisplayItem.key()} → プリミティブのスロットを覚え、
  * 前のフレームと同じ項目は同じスロットの同じバイトに書くだけ（変化がなければ汚れも立たない）。
  * 消えた項目のスロットは次の {@link #sync} で解放される。定常状態の呼び出しは割り当て 0。
  *
