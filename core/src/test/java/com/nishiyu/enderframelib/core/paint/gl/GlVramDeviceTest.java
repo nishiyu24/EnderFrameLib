@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.paint.gl;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.GpuAnimation;
+import com.nishiyu.enderframelib.core.kernel.gpu.GpuAnimationReference;
 import com.nishiyu.enderframelib.core.kernel.gpu.PropertyTrees;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -145,7 +146,7 @@ class GlVramDeviceTest {
     private static void assertMatchesCpu(PropertyTrees t, float[][] gpu, float frameMs, String msg) {
         float[] m = new float[6], scratch = new float[17];
         for (int s = 0; s < SLOTS; s++) {
-            GpuAnimation.worldMatrix(t, s, frameMs, m, scratch);
+            GpuAnimationReference.worldMatrix(t, s, frameMs, m, scratch);
             for (int k = 0; k < 6; k++) {
                 float tol = 2e-3f * Math.max(1f, Math.abs(m[k]));
                 assertEquals(m[k], gpu[s][k], tol, msg + " slot " + s + " comp " + k + " @" + frameMs);

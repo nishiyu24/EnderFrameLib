@@ -136,4 +136,21 @@ class Milestone4GateTest {
             }
         }
     }
+
+    @Test
+    void gpuAnimationJavaReferenceStaysTestOnly() throws IOException {
+        // GPU のアニメ・スクロール評価は本番では GLSL（GpuAnimation.GLSL）だけが行う。同じ数学の Java 版は照合の正解としてテスト側へ移した
+        String src = Files.readString(MAIN.resolve("core/kernel/gpu/GpuAnimation.java"));
+        assertTrue(src.contains("GLSL"));
+        for (String m : new String[]{"static float progress(", "static float ease(", "static void evalTrs(",
+                "static void worldMatrix(", "static float effectiveOpacity("}) {
+            assertFalse(src.contains(m), "本番の GpuAnimation に Java 参照実装 " + m + " が戻っている");
+        }
+        assertTrue(Files.exists(Path.of("core/src/test/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuAnimationReference.java")));
+        try (var files = Files.walk(MAIN)) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                assertFalse(Files.readString(p).contains("GpuAnimationReference"), p + " がテスト専用の参照実装を参照している");
+            }
+        }
+    }
 }
