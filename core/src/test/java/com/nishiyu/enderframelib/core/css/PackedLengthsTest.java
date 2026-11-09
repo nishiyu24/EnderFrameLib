@@ -102,7 +102,7 @@ class PackedLengthsTest {
     void edgesStayPackedAndCalcProgramStaysRemoved() throws Exception {
         Path main = Path.of("core/src/main/java/com/nishiyu/enderframelib/core");
         String facts = Files.readString(main.resolve("css/StyleFacts.java"));
-        assertTrue(facts.contains("volatile long[] edges;"));
+        assertTrue(Files.readString(main.resolve("css/ComputedStyle.java")).contains("volatile long[] packedEdges;"));
         assertFalse(facts.contains("CompiledLength[]"));
         assertFalse(Files.readString(main.resolve("css/ComputedStyle.java")).contains("CompiledLength[]"));
         assertFalse(Files.exists(main.resolve("kernel/style/CalcProgram.java")), "数式の評価器は LengthResolver だけ");

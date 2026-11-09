@@ -43,6 +43,23 @@ final class PackedLengths {
         return exprCount++;
     }
 
+    /** {@code auto} を詰めた値（キーワード種別。{@link #resolve} は 0 px に解くので、旧 {@code ZERO} と同じ寸法になる）。 */
+    static final long AUTO = PackedCssValue.keyword(1);
+
+    static boolean isAuto(long v) {
+        return v == AUTO;
+    }
+
+    /** 詰めた値が「0 px の長さ」か（{@code 0} のほか、解釈できない値・{@code fit-content(..)} などが潰れた形）。 */
+    static boolean isZeroPx(long v) {
+        return PackedCssValue.kind(v) == PackedCssValue.K_LENGTH && PackedCssValue.unit(v) == PackedCssValue.U_PX
+                && PackedCssValue.floatPayload(v) == 0f;
+    }
+
+    static boolean isExpression(long v) {
+        return PackedCssValue.kind(v) == PackedCssValue.K_CALC;
+    }
+
     /** 詰めた長さが % を含むか。単位が % のもの、または式の原文に % を含むもの（宣言なしは false）。 */
     static boolean hasPercent(long v) {
         return switch (PackedCssValue.kind(v)) {
@@ -58,7 +75,7 @@ final class PackedLengths {
     /** {@link LengthResolver.CompiledLength#resolve} と同じ結果（宣言なしは 0）。 */
     static float resolve(long v, float maxPixels, float rootW, float rootH, float elementFontSize, float rootFontSize) {
         return switch (PackedCssValue.kind(v)) {
-            case PackedCssValue.K_NONE -> 0f;
+            case PackedCssValue.K_NONE, PackedCssValue.K_KEYWORD -> 0f;
             case PackedCssValue.K_CALC ->
                     exprs[PackedCssValue.payload(v)].resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
             default -> PackedCssValue.resolveLength(v, maxPixels, elementFontSize, rootFontSize, rootW, rootH);

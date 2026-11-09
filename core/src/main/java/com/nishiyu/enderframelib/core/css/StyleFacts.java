@@ -15,8 +15,6 @@ public final class StyleFacts {
     public final boolean floating, displayNone, scrollContainer;
     /** {@code width} / {@code height} が確定した長さ（auto・%・内在サイズのキーワードでない）。 */
     public final boolean definiteWidth, definiteHeight;
-    /** 箱の縁の長さ（{@code EDGE_*} の順）を {@link com.nishiyu.enderframelib.core.kernel.style.PackedCssValue} に詰めたもの。宣言が無いものは NONE（0 px）。 */
-    volatile long[] edges;
 
     StyleFacts(Overflow overflowX, Overflow overflowY, int fontWeight, byte lineHeightKind, float lineHeightValue,
           boolean containsInlineSize, boolean containsBlockSize, boolean floating, boolean displayNone,
@@ -87,36 +85,42 @@ public final class StyleFacts {
     volatile boolean extrasReady;
 
     void fillExtras(ComputedStyle s) {
-        String widthStr = s.getOrDefault(CssProperty.WIDTH, "auto").trim();
-        String heightStr = s.getOrDefault(CssProperty.HEIGHT, "auto").trim();
-        widthAuto = "auto".equals(widthStr);
-        heightAuto = "auto".equals(heightStr);
-        widthPercent = widthStr.contains("%");
-        heightPercent = heightStr.contains("%");
-        hasHeightDeclaration = s.containsKey(CssProperty.HEIGHT);
+        long w = s.packedEdge(ComputedStyle.DIM_WIDTH), h = s.packedEdge(ComputedStyle.DIM_HEIGHT);
+        // 詰めた値で決まる（文字列を読まない）のは、auto・宣言なし・0 px 以外の単位つき長さ。0 px に潰れた値（0・解釈不能）と式（fit-content(..) を含む）だけ原文を読む
+        widthAuto = w == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(w);
+        heightAuto = h == com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE || PackedLengths.isAuto(h);
+        widthPercent = PackedLengths.hasPercent(w);
+        heightPercent = PackedLengths.hasPercent(h);
+        hasHeightDeclaration = h != com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE;
         intrinsicWidthKind = IW_NONE;
         fitContentArg = null;
-        if (!widthAuto && com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)) {
-            String kw = widthStr.toLowerCase();
-            if (kw.equals("min-content")) intrinsicWidthKind = IW_MIN_CONTENT;
-            else if (kw.equals("max-content")) intrinsicWidthKind = IW_MAX_CONTENT;
-            else if (kw.startsWith("fit-content(")) {
-                intrinsicWidthKind = IW_FIT_CONTENT_FN;
-                // 閉じ括弧が無い形は引数を持たない（以前の resolveIntrinsicWidth と同じく何もしない）
-                if (kw.endsWith(")")) fitContentArg = kw.substring("fit-content(".length(), kw.length() - 1).trim();
-            } else intrinsicWidthKind = IW_FIT_CONTENT;
+        if (PackedLengths.isZeroPx(w) || PackedLengths.isExpression(w)) {
+            String widthStr = s.getOrDefault(CssProperty.WIDTH, "auto").trim();
+            widthPercent = widthStr.contains("%");
+            if (com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)) {
+                String kw = widthStr.toLowerCase();
+                if (kw.equals("min-content")) intrinsicWidthKind = IW_MIN_CONTENT;
+                else if (kw.equals("max-content")) intrinsicWidthKind = IW_MAX_CONTENT;
+                else if (kw.startsWith("fit-content(")) {
+                    intrinsicWidthKind = IW_FIT_CONTENT_FN;
+                    // 閉じ括弧が無い形は引数を持たない（以前の resolveIntrinsicWidth と同じく何もしない）
+                    if (kw.endsWith(")")) fitContentArg = kw.substring("fit-content(".length(), kw.length() - 1).trim();
+                } else intrinsicWidthKind = IW_FIT_CONTENT;
+            }
         }
-        marginLeftAuto = "auto".equals(s.get(CssProperty.MARGIN_LEFT));
-        marginRightAuto = "auto".equals(s.get(CssProperty.MARGIN_RIGHT));
+        if (PackedLengths.isZeroPx(h) || PackedLengths.isExpression(h)) heightPercent = s.getOrDefault(CssProperty.HEIGHT, "auto").trim().contains("%");
+        autoMarginT = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_T));
+        autoMarginR = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_R));
+        autoMarginB = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_B));
+        autoMarginL = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_L));
+        // 左右の auto だけは旧来どおり大小文字・空白を区別する（auto と判った時だけ原文を見る）
+        marginLeftAuto = autoMarginL && "auto".equals(s.get(CssProperty.MARGIN_LEFT));
+        marginRightAuto = autoMarginR && "auto".equals(s.get(CssProperty.MARGIN_RIGHT));
         borderBox = s.keywordFresh(CssProperty.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
         alignItems = flexAlignment(s.keywordFresh(CssProperty.ALIGN_ITEMS, CssKeywords.Alignment.class));
         CssKeywords.Alignment self = s.keywordFresh(CssProperty.ALIGN_SELF, CssKeywords.Alignment.class);
         alignSelfAuto = self == CssKeywords.Alignment.AUTO;
         alignSelf = flexAlignment(self);
-        autoMarginT = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_TOP, "0").trim());
-        autoMarginR = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_RIGHT, "0").trim());
-        autoMarginB = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_BOTTOM, "0").trim());
-        autoMarginL = "auto".equalsIgnoreCase(s.getOrDefault(CssProperty.MARGIN_LEFT, "0").trim());
         usesViewportUnits = s.usesViewportUnits();
         String wm = s.get("writing-mode");
         horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE &&!usesViewportUnits
