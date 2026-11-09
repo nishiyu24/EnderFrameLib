@@ -98,4 +98,17 @@ class Milestone4GateTest {
             }
         }
     }
+
+    @Test
+    void gpuSceneSyncStaysTestOnly() throws IOException {
+        // 表示項目 → PropertyTrees の本流の書き手は GlRectStream の 1 系統。矩形しか扱えない第二の書き手 GpuSceneSync は、
+        // カーネル／GL 単体テストの道具としてテスト側へ移した。本番へ戻さない
+        assertFalse(Files.exists(MAIN.resolve("core/kernel/gpu/GpuSceneSync.java")));
+        try (var files = Files.walk(MAIN)) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                assertFalse(Files.readString(p).contains("GpuSceneSync"), p + " が GpuSceneSync を参照している");
+            }
+        }
+        assertTrue(Files.exists(Path.of("core/src/test/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuSceneSync.java")));
+    }
 }
