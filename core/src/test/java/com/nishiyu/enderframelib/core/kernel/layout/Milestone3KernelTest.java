@@ -2,11 +2,10 @@ package com.nishiyu.enderframelib.core.kernel.layout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.kernel.layout.LayoutResultCache.LayoutResult;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
-/** Milestone 3: Fenwick 仮想リスト・4 スロットキャッシュ・SIMD レイアウト演算・ヒットテスト。 */
+/** Milestone 3: Fenwick 仮想リスト・SIMD レイアウト演算・ヒットテスト。 */
 class Milestone3KernelTest {
 
     // ---- FenwickVirtualList ----
@@ -101,28 +100,6 @@ class Milestone3KernelTest {
         long after = mx.getThreadAllocatedBytes(id);
         assertTrue(sink != 0);
         assertTrue(after - before < 4096, "allocated " + (after - before));
-    }
-
-    // ---- LayoutResultCache ----
-
-    @Test
-    void cacheSlotsAreIndependent() {
-        LayoutResultCache<String> c = new LayoutResultCache<>();
-        LayoutResult a = new LayoutResult(1, 2, 3, 4, 5);
-        LayoutResult b = new LayoutResult(6, 7, 8, 9, 10);
-        c.put(LayoutResultCache.MIN_CONTENT, "min", a);
-        c.put(LayoutResultCache.FINAL, "final", b);
-        // 別条件で別スロットに書いても、他のスロットは壊れない（単一スロットなら min が消える）
-        c.put(LayoutResultCache.TENTATIVE, "probe", a);
-        assertSame(a, c.get(LayoutResultCache.MIN_CONTENT, "min"));
-        assertSame(b, c.get(LayoutResultCache.FINAL, "final"));
-        assertNull(c.get(LayoutResultCache.FINAL, "other"));
-        assertNull(c.get(LayoutResultCache.MAX_CONTENT, "min"));
-        c.invalidate(LayoutResultCache.FINAL);
-        assertNull(c.get(LayoutResultCache.FINAL, "final"));
-        assertSame(a, c.get(LayoutResultCache.TENTATIVE, "probe"));
-        c.invalidateAll();
-        assertNull(c.get(LayoutResultCache.MIN_CONTENT, "min"));
     }
 
     // ---- SimdLayoutKernel ----

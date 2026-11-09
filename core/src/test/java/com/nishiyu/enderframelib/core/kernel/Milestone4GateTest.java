@@ -87,4 +87,15 @@ class Milestone4GateTest {
             }
         }
     }
+
+    @Test
+    void layoutResultCacheDuplicateStaysRemoved() throws IOException {
+        assertFalse(Files.exists(MAIN.resolve("core/kernel/layout/LayoutResultCache.java")),
+                "LayoutResultCache は LayoutBox.Tentative（3 制約スロット）と同じ役割の未接続の重複だったので撤去済み。正本は LayoutBox.Tentative");
+        try (var files = Files.walk(MAIN)) {
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                assertFalse(Files.readString(p).contains("LayoutResultCache"), p + " が LayoutResultCache を参照している");
+            }
+        }
+    }
 }
