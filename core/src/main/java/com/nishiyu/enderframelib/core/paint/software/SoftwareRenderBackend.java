@@ -817,15 +817,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
 
-        float reach = BoxDecorationPainter.SHADOW_REACH * blur;
-        float sx0 = qx0 + reach, sy0 = qy0 + reach, sx1 = qx1 - reach, sy1 = qy1 - reach;
-        if (sx1 <= sx0 || sy1 <= sy0) return;
-        float limit = Math.min(sx1 - sx0, sy1 - sy0) / 2f;
-        float[] srx = new float[4], sry = new float[4];
-        for (int i = 0; i < 4; i++) {
-            srx[i] = Math.min(rx[i], limit);
-            sry[i] = Math.min(ry[i], limit);
-        }
+        ShapeGeometry.OuterShadow os = ShapeGeometry.outerShadow(qx0, qy0, qx1, qy1, blur, rx, ry);
+        if (os == null) return;
+        float sx0 = os.sx0(), sy0 = os.sy0(), sx1 = os.sx1(), sy1 = os.sy1();
+        float[] srx = os.srx(), sry = os.sry();
         float[] hrx = null, hry = null;
         if (shape != null) {
             hrx = GpuAttempt.shapeRx(shape);
@@ -848,35 +843,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawRoundedBorder(DisplayItem el, RoundedBorderSpec spec, float[] rx, float[] ry,
                                    Resolved res, Clip clip, float opacity) {
-        float x0 = el.x(), y0 = el.y(), x1 = el.x() + el.width(), y1 = el.y() + el.height();
-        float wt = spec.widthTop(), wr = spec.widthRight(), wb = spec.widthBottom(), wl = spec.widthLeft();
-        float ix0 = x0 + wl, iy0 = y0 + wt, ix1 = x1 - wr, iy1 = y1 - wb;
-        boolean innerEmpty = ix1 <= ix0 || iy1 <= iy0;
-        float[] irx = new float[4], iry = new float[4];
-        float[] sideH = {wl, wr, wr, wl}, sideV = {wt, wt, wb, wb};
-        for (int i = 0; i < 4; i++) {
-            irx[i] = Math.max(0f, rx[i] - sideH[i]);
-            iry[i] = Math.max(0f, ry[i] - sideV[i]);
-            if (irx[i] <= 0f || iry[i] <= 0f) irx[i] = iry[i] = 0f;
-        }
-        int[] colors = new int[4];
-        for (int i = 0; i < 4; i++) colors[i] = Pixmap.premultiply(spec.color(i));
-        float[] widths = {wt, wr, wb, wl};
-
-        // 破線・点線は 4 辺が同じ太さのときだけ（GL 版と同じ）
-        BorderDashPattern pattern = null;
-        float bx = 0, by = 0, cxm = (x0 + x1) / 2f, cym = (y0 + y1) / 2f;
-        float[] pcx = new float[4], pcy = new float[4];
-        if (spec.dashKind() != BorderPath.SOLID && wt > 0f && wt == wr && wr == wb && wb == wl) {
-            bx = Math.max(0.001f, el.width() / 2f - wt / 2f);
-            by = Math.max(0.001f, el.height() / 2f - wt / 2f);
-            for (int i = 0; i < 4; i++) {
-                pcx[i] = Math.min(Math.max(rx[i] - wt / 2f, 0f), bx);
-                pcy[i] = Math.min(Math.max(ry[i] - wt / 2f, 0f), by);
-                if (pcx[i] <= 0f || pcy[i] <= 0f) pcx[i] = pcy[i] = 0f;
-            }
-            pattern = BorderPath.pattern(spec.dashKind(), wt, BorderPath.length(bx, by, pcx, pcy));
-        }
+        ShapeGeometry.Border g = ShapeGeometry.border(el.x(), el.y(), el.width(), el.height(), spec, rx, ry);
+        float x0 = g.x0(), y0 = g.y0(), x1 = g.x1(), y1 = g.y1();
+        float ix0 = g.ix0(), iy0 = g.iy0(), ix1 = g.ix1(), iy1 = g.iy1();
+        boolean innerEmpty = g.innerEmpty();
+        float[] irx = g.irx(), iry = g.iry(), widths = g.widths(), pcx = g.pcx(), pcy = g.pcy();
+        int[] colors = g.colors();
+        float wt = widths[0], wr = widths[1], wb = widths[2], wl = widths[3];
+        float bx = g.bx(), by = g.by(), cxm = g.cxm(), cym = g.cym();
+        BorderDashPattern pattern = g.dash();
         final BorderDashPattern dash = pattern;
         if (dash != null || spec.dashKind() == BorderPath.SOLID) {
             boolean taken = dash == null
