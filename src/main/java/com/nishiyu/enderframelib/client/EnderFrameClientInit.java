@@ -156,14 +156,14 @@ public class EnderFrameClientInit {
             return AbstractEnderScreen.findHtmlResource(loc).orElse("");
         };
 
-        Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
-        Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
+        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = ClientLocalEnvProvider::translateKey;
+        com.nishiyu.enderframelib.core.EngineContext.global().i18nFormatter = ClientLocalEnvProvider::translateKey;
         ClientTemplateManager.clearSources();
         ClientTemplateManager.addSource(id -> {
             ResourceLocation loc = ResourceLocation.tryParse(id);
             return loc == null ? null : AbstractEnderScreen.findHtmlResource(loc).orElse(null);
         });
-        Bindings.jsonListParser = jsonStr -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().jsonListParser = jsonStr -> {
             try {
                 com.google.gson.JsonElement parsedJson = com.google.gson.JsonParser.parseString(jsonStr);
                 List<Map<String, String>> result = new ArrayList<>();
@@ -202,7 +202,7 @@ public class EnderFrameClientInit {
         };
 
         DomUtils.innerHtmlParser = UiDocumentCompiler.INNER_HTML_PARSER;
-        UiDocumentCompiler.intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
+        com.nishiyu.enderframelib.core.EngineContext.global().intrinsicSizeResolver = ClientImageRegistry.RESOLVER_ADAPTER;
         PaintServices.setIntrinsicSizeResolver(ClientImageRegistry.RESOLVER_ADAPTER);
 
         ClientImageRegistry.addReflowListener(ClientWebManager::recomputeAllLayouts);

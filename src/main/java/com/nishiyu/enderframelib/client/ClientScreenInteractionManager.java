@@ -378,8 +378,8 @@ public class ClientScreenInteractionManager {
         return handleClick(sessionId, pixelX, pixelY, 0);
     }
 
-    public static void dispatchPress(String sessionId, HtmlNode target, double x, double y, int minecraftButton) {
-        ClientWebManager.getOrCreateSession(sessionId).input().dispatchPress(target, x, y, minecraftButton);
+    public static void dispatchPress(String sessionId, HtmlNode target, double x, double y, int hostButton) {
+        ClientWebManager.getOrCreateSession(sessionId).input().dispatchPress(target, x, y, hostButton);
     }
 
     public static DisplayItem handleClick(String sessionId, double pixelX, double pixelY, int button) {
@@ -408,9 +408,9 @@ public class ClientScreenInteractionManager {
         handleRelease(sessionId, state.hoverX, state.hoverY, state.pressedButton, true);
     }
 
-    public static void handleRelease(String sessionId, double pixelX, double pixelY, int minecraftButton, boolean synthesizeClick) {
+    public static void handleRelease(String sessionId, double pixelX, double pixelY, int hostButton, boolean synthesizeClick) {
         ClientWebManager.getOrCreateSession(sessionId).input()
-                .release(pixelX, pixelY, minecraftButton, synthesizeClick, SessionInput.ClickSink.NONE);
+                .release(pixelX, pixelY, hostButton, synthesizeClick, SessionInput.ClickSink.NONE);
     }
 
     public static boolean handleScroll(String sessionId, double pixelX, double pixelY, double deltaX, double deltaY) {

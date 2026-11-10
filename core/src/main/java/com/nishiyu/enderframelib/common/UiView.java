@@ -1500,7 +1500,7 @@ public class UiView implements AutoCloseable {
         if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
         long startedAt = System.nanoTime();
         applyOverrides();
-        List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes);
+        List<LayoutBox> changedBoxes = new ArrayList<>(RenderPipeline.layoutChangedBoxes());
         RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
                 changedBoxes);
         setLayoutRoot(layoutRoot);

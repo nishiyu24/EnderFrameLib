@@ -32,7 +32,7 @@ public final class AnimationParser {
      * @return 適用するアニメーション。名前が無い・{@code none}・該当する {@code @keyframes} が無いときは null
      */
     public static AnimationTiming parse(ComputedStyle style, Predicate<String> knownKeyframes) {
-        String shorthand = style.get(CssProperty.Id.ANIMATION);
+        String shorthand = style.get(CssPropertyIndex.ANIMATION);
         String name = "";
         int duration = 1000;
         int delay = 0;
@@ -70,16 +70,16 @@ public final class AnimationParser {
             }
         }
 
-        String nameProp = style.get(CssProperty.Id.ANIMATION_NAME);
+        String nameProp = style.get(CssPropertyIndex.ANIMATION_NAME);
         if (nameProp != null && !nameProp.isBlank()) name = nameProp.trim();
         if (name.isEmpty() || "none".equalsIgnoreCase(name) || !knownKeyframes.test(name)) return null;
 
-        int ms = timeMs(style.get(CssProperty.Id.ANIMATION_DURATION));
+        int ms = timeMs(style.get(CssPropertyIndex.ANIMATION_DURATION));
         if (ms != NOT_A_TIME) duration = ms;
-        ms = timeMs(style.get(CssProperty.Id.ANIMATION_DELAY));
+        ms = timeMs(style.get(CssPropertyIndex.ANIMATION_DELAY));
         if (ms != NOT_A_TIME) delay = ms;
 
-        String iterProp = style.get(CssProperty.Id.ANIMATION_ITERATION_COUNT);
+        String iterProp = style.get(CssPropertyIndex.ANIMATION_ITERATION_COUNT);
         if (iterProp != null && !iterProp.isBlank()) {
             String trimmed = iterProp.trim().toLowerCase(Locale.ROOT);
             if (trimmed.equals("infinite")) {
@@ -92,11 +92,11 @@ public final class AnimationParser {
                 }
             }
         }
-        String dirProp = style.get(CssProperty.Id.ANIMATION_DIRECTION);
+        String dirProp = style.get(CssPropertyIndex.ANIMATION_DIRECTION);
         if (dirProp != null && !dirProp.isBlank()) direction = dirProp.trim().toLowerCase(Locale.ROOT);
-        String fillProp = style.get(CssProperty.Id.ANIMATION_FILL_MODE);
+        String fillProp = style.get(CssPropertyIndex.ANIMATION_FILL_MODE);
         if (fillProp != null && !fillProp.isBlank()) fill = fillProp.trim().toLowerCase(Locale.ROOT);
-        String timing = style.get(CssProperty.Id.ANIMATION_TIMING_FUNCTION);
+        String timing = style.get(CssPropertyIndex.ANIMATION_TIMING_FUNCTION);
         if (timing != null && !timing.isBlank()) easing = timing.trim();
 
         return AnimationTiming.of(name, duration, delay, iterations, direction, fill, easing);
@@ -112,7 +112,7 @@ public final class AnimationParser {
         List<Integer> delays = new ArrayList<>();
         List<String> easings = new ArrayList<>();
 
-        String shorthand = style.get(CssProperty.Id.TRANSITION);
+        String shorthand = style.get(CssPropertyIndex.TRANSITION);
         if (shorthand != null && !shorthand.isBlank()) {
             if (shorthand.trim().equalsIgnoreCase("none")) {
                 properties.add("none");
@@ -147,22 +147,22 @@ public final class AnimationParser {
             }
         }
 
-        String propertyList = style.get(CssProperty.Id.TRANSITION_PROPERTY);
+        String propertyList = style.get(CssPropertyIndex.TRANSITION_PROPERTY);
         if (propertyList != null && !propertyList.isBlank()) {
             properties.clear();
             for (String p : CssSyntax.parseCommaList(propertyList)) properties.add(p.toLowerCase(Locale.ROOT));
         }
-        String durationList = style.get(CssProperty.Id.TRANSITION_DURATION);
+        String durationList = style.get(CssPropertyIndex.TRANSITION_DURATION);
         if (durationList != null && !durationList.isBlank()) {
             durations.clear();
             for (String t : CssSyntax.parseCommaList(durationList)) durations.add(Math.max(0, orZero(timeMs(t))));
         }
-        String delayList = style.get(CssProperty.Id.TRANSITION_DELAY);
+        String delayList = style.get(CssPropertyIndex.TRANSITION_DELAY);
         if (delayList != null && !delayList.isBlank()) {
             delays.clear();
             for (String t : CssSyntax.parseCommaList(delayList)) delays.add(orZero(timeMs(t)));
         }
-        String easingList = style.get(CssProperty.Id.TRANSITION_TIMING_FUNCTION);
+        String easingList = style.get(CssPropertyIndex.TRANSITION_TIMING_FUNCTION);
         if (easingList != null && !easingList.isBlank()) {
             easings.clear();
             for (String t : CssSyntax.parseCommaList(easingList)) easings.add(t.toLowerCase(Locale.ROOT));

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
@@ -181,21 +182,21 @@ public final class BoxMeasurer {
     }
 
     // 箱ごとに何度も引くプロパティは、名前ではなく添字で引く（文字列のハッシュと表引きを省く）
-    private static final int ID_MARGIN_TOP = CssProperty.Id.MARGIN_TOP;
-    private static final int ID_MARGIN_RIGHT = CssProperty.Id.MARGIN_RIGHT;
-    private static final int ID_MARGIN_BOTTOM = CssProperty.Id.MARGIN_BOTTOM;
-    private static final int ID_MARGIN_LEFT = CssProperty.Id.MARGIN_LEFT;
-    private static final int ID_PADDING_TOP = CssProperty.Id.PADDING_TOP;
-    private static final int ID_PADDING_RIGHT = CssProperty.Id.PADDING_RIGHT;
-    private static final int ID_PADDING_BOTTOM = CssProperty.Id.PADDING_BOTTOM;
-    private static final int ID_PADDING_LEFT = CssProperty.Id.PADDING_LEFT;
-    private static final int ID_BORDER_TOP_WIDTH = CssProperty.Id.BORDER_TOP_WIDTH;
-    private static final int ID_BORDER_RIGHT_WIDTH = CssProperty.Id.BORDER_RIGHT_WIDTH;
-    private static final int ID_BORDER_BOTTOM_WIDTH = CssProperty.Id.BORDER_BOTTOM_WIDTH;
-    private static final int ID_BORDER_LEFT_WIDTH = CssProperty.Id.BORDER_LEFT_WIDTH;
-    private static final int ID_ROW_GAP = CssProperty.Id.ROW_GAP;
-    private static final int ID_COLUMN_GAP = CssProperty.Id.COLUMN_GAP;
-    private static final int ID_BORDER_COLLAPSE = CssProperty.Id.BORDER_COLLAPSE;
+    private static final int ID_MARGIN_TOP = CssPropertyIndex.MARGIN_TOP;
+    private static final int ID_MARGIN_RIGHT = CssPropertyIndex.MARGIN_RIGHT;
+    private static final int ID_MARGIN_BOTTOM = CssPropertyIndex.MARGIN_BOTTOM;
+    private static final int ID_MARGIN_LEFT = CssPropertyIndex.MARGIN_LEFT;
+    private static final int ID_PADDING_TOP = CssPropertyIndex.PADDING_TOP;
+    private static final int ID_PADDING_RIGHT = CssPropertyIndex.PADDING_RIGHT;
+    private static final int ID_PADDING_BOTTOM = CssPropertyIndex.PADDING_BOTTOM;
+    private static final int ID_PADDING_LEFT = CssPropertyIndex.PADDING_LEFT;
+    private static final int ID_BORDER_TOP_WIDTH = CssPropertyIndex.BORDER_TOP_WIDTH;
+    private static final int ID_BORDER_RIGHT_WIDTH = CssPropertyIndex.BORDER_RIGHT_WIDTH;
+    private static final int ID_BORDER_BOTTOM_WIDTH = CssPropertyIndex.BORDER_BOTTOM_WIDTH;
+    private static final int ID_BORDER_LEFT_WIDTH = CssPropertyIndex.BORDER_LEFT_WIDTH;
+    private static final int ID_ROW_GAP = CssPropertyIndex.ROW_GAP;
+    private static final int ID_COLUMN_GAP = CssPropertyIndex.COLUMN_GAP;
+    private static final int ID_BORDER_COLLAPSE = CssPropertyIndex.BORDER_COLLAPSE;
 
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.style;
@@ -244,13 +245,13 @@ public final class BoxMeasurer {
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;
         } else if (hasWidth && !isPercentWidthAndShrinking) {
-            box.w = toBorderBox(style.length(CssProperty.Id.WIDTH, parentW, rootW, rootH),
+            box.w = toBorderBox(style.length(CssPropertyIndex.WIDTH, parentW, rootW, rootH),
                     box.horizontalDecoration(), isBorderBox);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.node.nodeType == NodeType.TEXT) {
             measureTextWidth(box, ctx, parentW, rootW, rootH);
-        } else if (tag.equals("mc-scene")) {
-            box.w = Math.max(64, parentW - box.mL - box.mR);
+        } else if (ReplacedElements.isHostScene(tag)) {
+            box.w = Math.max(ReplacedElements.painterOf(tag).sceneMinWidth(), parentW - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);
@@ -261,11 +262,11 @@ public final class BoxMeasurer {
         } else if (tag.equals("input") || tag.equals("select") || tag.equals("progress")) {
             box.w = box.getMinContentWidth(ctx);
             box.sizingMode = SizingMode.DEFINITE;
-        } else if (box.isAbsolute && hasBothInsets(style, CssProperty.Id.LEFT, CssProperty.Id.RIGHT)) {
+        } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)) {
             // left と right の両方があれば width: auto は間の幅（CSS 2.2 §10.3.7）。
             // 以前は shrink-to-fit にしていて、内容の無い箱は幅 0 になっていた
-            float insets = style.length(CssProperty.Id.LEFT, parentW, rootW, rootH)
-                    + style.length(CssProperty.Id.RIGHT, parentW, rootW, rootH);
+            float insets = style.length(CssPropertyIndex.LEFT, parentW, rootW, rootH)
+                    + style.length(CssPropertyIndex.RIGHT, parentW, rootW, rootH);
             box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
@@ -287,8 +288,8 @@ public final class BoxMeasurer {
         ComputedStyle style = box.style;
 
         float limitW = parentW;
-        if (style.containsKey(CssProperty.Id.MAX_WIDTH)) {
-            float mw = style.length(CssProperty.Id.MAX_WIDTH, parentW, rootW, rootH);
+        if (style.containsKey(CssPropertyIndex.MAX_WIDTH)) {
+            float mw = style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH);
             if (mw > 0) limitW = Math.min(limitW, mw);
         }
         if (limitW <= 0) limitW = LayoutMetrics.UNBOUNDED_WIDTH;
@@ -344,7 +345,7 @@ public final class BoxMeasurer {
         ComputedStyle style = box.style;
         if (box.sizingMode != SizingMode.DEFINITE) return;
 
-        String maxWStr = style.get(CssProperty.Id.MAX_WIDTH);
+        String maxWStr = style.get(CssPropertyIndex.MAX_WIDTH);
         if (maxWStr != null) {
             if (LayoutMetrics.isIntrinsicSizeKeyword(maxWStr)) {
                 // max-content / fit-content / auto は上限を課さない。min-content だけが上限になる。
@@ -352,13 +353,13 @@ public final class BoxMeasurer {
                     box.w = Math.min(box.w, box.getMinContentWidth(ctx));
                 }
             } else if (!(maxWStr.contains("%") && isPercentWidthAndShrinking)) {
-                float maxW = toBorderBox(style.length(CssProperty.Id.MAX_WIDTH, parentW, rootW, rootH),
+                float maxW = toBorderBox(style.length(CssPropertyIndex.MAX_WIDTH, parentW, rootW, rootH),
                         box.horizontalDecoration(), isBorderBox);
                 box.w = Math.min(box.w, maxW);
             }
         }
 
-        String minWStr = style.get(CssProperty.Id.MIN_WIDTH);
+        String minWStr = style.get(CssPropertyIndex.MIN_WIDTH);
         if (minWStr != null) {
             if (LayoutMetrics.isIntrinsicSizeKeyword(minWStr)) {
                 // min-content / fit-content / auto はいずれも「内容がこれ以上縮まない幅」が下限。
@@ -367,7 +368,7 @@ public final class BoxMeasurer {
                     box.w = Math.max(box.w, box.getMinContentWidth(ctx));
                 }
             } else {
-                float minW = toBorderBox(style.length(CssProperty.Id.MIN_WIDTH, parentW, rootW, rootH),
+                float minW = toBorderBox(style.length(CssPropertyIndex.MIN_WIDTH, parentW, rootW, rootH),
                         box.horizontalDecoration(), isBorderBox);
                 box.w = Math.max(box.w, minW);
             }
@@ -391,15 +392,15 @@ public final class BoxMeasurer {
             box.h = box.overrideHeight;
             hasHeight = true;
         } else if (hasHeight) {
-            box.h = toBorderBox(style.length(CssProperty.Id.HEIGHT, parentH, rootW, rootH),
+            box.h = toBorderBox(style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH),
                     specifiedDecoration(box, isBorderBox), isBorderBox);
-        } else if (box.isAbsolute && hasBothInsets(style, CssProperty.Id.TOP, CssProperty.Id.BOTTOM)) {
+        } else if (box.isAbsolute && hasBothInsets(style, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
             // top と bottom の両方があれば height: auto は間の高さ（CSS 2.2 §10.6.4）
-            float insets = style.length(CssProperty.Id.TOP, parentH, rootW, rootH)
-                    + style.length(CssProperty.Id.BOTTOM, parentH, rootW, rootH);
+            float insets = style.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
+                    + style.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
             box.h = Math.max(box.verticalDecoration(), parentH - insets - box.mT - box.mB);
             hasHeight = true;
-        } else if (style.containsKey(CssProperty.Id.ASPECT_RATIO) && box.w > 0) {
+        } else if (style.containsKey(CssPropertyIndex.ASPECT_RATIO) && box.w > 0) {
             applyAspectRatio(box);
         } else {
             resolveIntrinsicHeight(box, ctx, facts.heightAuto);
@@ -419,19 +420,19 @@ public final class BoxMeasurer {
         engine.finishLayout(box, space, ctx);
         if (overridden) return;
 
-        if (style.containsKey(CssProperty.Id.MAX_HEIGHT)) {
-            String maxHStr = style.get(CssProperty.Id.MAX_HEIGHT).trim();
+        if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {
+            String maxHStr = style.get(CssPropertyIndex.MAX_HEIGHT).trim();
             if (!"none".equals(maxHStr) && !maxHStr.isEmpty()) {
-                float maxH = style.length(CssProperty.Id.MAX_HEIGHT, parentH, rootW, rootH);
+                float maxH = style.length(CssPropertyIndex.MAX_HEIGHT, parentH, rootW, rootH);
                 if (maxH > 0) {
                     maxH = toBorderBox(maxH, specifiedDecoration(box, isBorderBox), isBorderBox);
                     box.h = Math.min(box.h, maxH);
                 }
             }
         }
-        if (style.containsKey(CssProperty.Id.MIN_HEIGHT)) {
+        if (style.containsKey(CssPropertyIndex.MIN_HEIGHT)) {
             // B-5 修正済み: ここは縦方向なので verticalDecoration（以前は横を足していた）
-            float minH = toBorderBox(style.length(CssProperty.Id.MIN_HEIGHT, parentH, rootW, rootH),
+            float minH = toBorderBox(style.length(CssPropertyIndex.MIN_HEIGHT, parentH, rootW, rootH),
                     specifiedDecoration(box, isBorderBox), isBorderBox);
             box.h = Math.max(box.h, minH);
         }
@@ -447,7 +448,7 @@ public final class BoxMeasurer {
 
     private static void applyAspectRatio(LayoutBox box) {
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
-        String ratioStr = box.style.get(CssProperty.Id.ASPECT_RATIO);
+        String ratioStr = box.style.get(CssPropertyIndex.ASPECT_RATIO);
         try {
             if (ratioStr.contains("/")) {
                 String[] parts = ratioStr.split("/");
@@ -484,15 +485,15 @@ public final class BoxMeasurer {
             return;
         }
 
-        if (tag.equals("mc-scene")) {
-            box.h = 120 + box.verticalDecoration();
+        if (ReplacedElements.isHostScene(tag)) {
+            box.h = ReplacedElements.painterOf(tag).sceneHeight() + box.verticalDecoration();
             return;
         }
 
         if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);
             if (intrinsic != null && intrinsic[0] > 0 && intrinsic[1] > 0) {
-                boolean heightIsAuto = !box.style.containsKey(CssProperty.Id.HEIGHT) || heightAuto;
+                boolean heightIsAuto = !box.style.containsKey(CssPropertyIndex.HEIGHT) || heightAuto;
                 if (box.w > 0 && heightIsAuto) {
                     float innerW = Math.max(0, box.w - box.horizontalDecoration());
                     box.h = (innerW * ((float) intrinsic[1] / intrinsic[0])) + box.verticalDecoration();

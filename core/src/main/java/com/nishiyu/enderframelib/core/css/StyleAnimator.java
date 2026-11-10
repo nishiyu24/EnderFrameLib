@@ -96,8 +96,8 @@ public final class StyleAnimator {
     public void observe(HtmlNode node, ComputedStyle before, ComputedStyle target, Map<String, String> parentStyle,
                         Map<String, Keyframes> keyframes, long now) {
         Entry entry = entries.get(node);
-        boolean hasTransitionSpec = hasValue(target.get(CssProperty.Id.TRANSITION)) || hasValue(target.get(CssProperty.Id.TRANSITION_DURATION));
-        boolean hasAnimationSpec = hasValue(target.get(CssProperty.Id.ANIMATION)) || hasValue(target.get(CssProperty.Id.ANIMATION_NAME));
+        boolean hasTransitionSpec = hasValue(target.get(CssPropertyIndex.TRANSITION)) || hasValue(target.get(CssPropertyIndex.TRANSITION_DURATION));
+        boolean hasAnimationSpec = hasValue(target.get(CssPropertyIndex.ANIMATION)) || hasValue(target.get(CssPropertyIndex.ANIMATION_NAME));
         if (entry == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
         ComputedStyle changeFrom = entry != null && entry.target != null ? entry.target : before;

@@ -106,14 +106,14 @@ public class UiInput {
         default void inputChanged(String elementId, String value) {}
 
         /** 既定動作が別の要素のクリックを要求したとき（label など）。 */
-        default void clickDelegate(UiInput input, HtmlNode target, double x, double y, int minecraftButton) {
-            input.dispatchClick(target, x, y, minecraftButton, null, this);
+        default void clickDelegate(UiInput input, HtmlNode target, double x, double y, int hostButton) {
+            input.dispatchClick(target, x, y, hostButton, null, this);
         }
     }
 
     /** 押下の結果。{@code consumed} はスクロールバーなど、ホスト側の追加処理が不要な操作。 */
     public record PressResult(DisplayItem element, UIHitResult hit, HtmlNode pressedNode,
-                              int minecraftButton, boolean consumed) {
+                              int hostButton, boolean consumed) {
     }
 
     private UiView.InputSessionState state() {
@@ -159,7 +159,7 @@ public class UiInput {
         return currentHitId;
     }
 
-    public PressResult press(double pixelX, double pixelY, int minecraftButton, Host host) {
+    public PressResult press(double pixelX, double pixelY, int hostButton, Host host) {
         UIHitResult hit = session.hitTest(pixelX, pixelY);
         if (hit == null) {
             session.setActivePressedId("");
@@ -171,7 +171,7 @@ public class UiInput {
 
         if (clickedEl.isPart(UiView.SB_V_TRACK) || clickedEl.isPart(UiView.SB_H_TRACK)) {
             session.handleScrollbarClick(clickedEl, pixelX, pixelY);
-            PressResult result = new PressResult(clickedEl, hit, null, minecraftButton, true);
+            PressResult result = new PressResult(clickedEl, hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         } else if (clickedEl.isPart(UiView.SB_V_THUMB) || clickedEl.isPart(UiView.SB_H_THUMB)) {
@@ -179,7 +179,7 @@ public class UiInput {
             state.draggingScrollbarPart = clickedEl.partSuffix();
             state.lastSentX = hit.localX();
             state.lastSentY = hit.localY();
-            PressResult result = new PressResult(clickedEl, hit, null, minecraftButton, true);
+            PressResult result = new PressResult(clickedEl, hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         }
@@ -191,11 +191,11 @@ public class UiInput {
 
         HtmlNode pressed = session.findInteractiveNode(baseId);
         if (pressed != null) {
-            dispatchPress(pressed, hit.localX(), hit.localY(), minecraftButton);
+            dispatchPress(pressed, hit.localX(), hit.localY(), hostButton);
         }
 
         startDragInteraction(session, hit, pressed);
-        PressResult result = new PressResult(clickedEl, hit, pressed, minecraftButton, false);
+        PressResult result = new PressResult(clickedEl, hit, pressed, hostButton, false);
         if (host != null) host.pressed(result);
         return result;
     }
@@ -236,11 +236,11 @@ public class UiInput {
         return true;
     }
 
-    public void release(double pixelX, double pixelY, int minecraftButton) {
-        release(pixelX, pixelY, minecraftButton, true, ClickSink.NONE);
+    public void release(double pixelX, double pixelY, int hostButton) {
+        release(pixelX, pixelY, hostButton, true, ClickSink.NONE);
     }
 
-    public void release(double pixelX, double pixelY, int minecraftButton, boolean synthesizeClick, ClickSink clickSink) {
+    public void release(double pixelX, double pixelY, int hostButton, boolean synthesizeClick, ClickSink clickSink) {
         UiView.InputSessionState state = state();
         // 押下中の節は InteractionState が持つ。解除する前に読み、クリック合成に使う。
         HtmlNode pressed = session.interactionState().activeNode();
@@ -251,7 +251,7 @@ public class UiInput {
         HtmlNode released = hit != null
                 ? session.findInteractiveNode(baseIdOf(hit.element()))
                 : null;
-        int button = domButton(minecraftButton);
+        int button = domButton(hostButton);
         if (released != null) {
             released.dispatchEvent(CoreEvent.pointer("pointerup", hit.localX(), hit.localY(), button, 0, false, false, false, false, null));
             released.dispatchEvent(CoreEvent.mouse("mouseup", hit.localX(), hit.localY(), button, 0, false, false, false, false, null));
@@ -262,16 +262,16 @@ public class UiInput {
         if (synthesizeClick && pressed != null && released != null) {
             HtmlNode target = nearestCommonAncestor(pressed, released);
             if (target != null) {
-                dispatchClick(target, hit.localX(), hit.localY(), minecraftButton, pressedElement, clickSink);
+                dispatchClick(target, hit.localX(), hit.localY(), hostButton, pressedElement, clickSink);
             }
         }
         state.pressedElement = null;
     }
 
-    public void dispatchPress(HtmlNode target, double x, double y, int minecraftButton) {
+    public void dispatchPress(HtmlNode target, double x, double y, int hostButton) {
         if (target == null) return;
-        state().pressedButton = minecraftButton;
-        int button = domButton(minecraftButton);
+        state().pressedButton = hostButton;
+        int button = domButton(hostButton);
         target.dispatchEvent(CoreEvent.pointer("pointerdown", x, y, button, buttonsMask(button), false, false, false, false, null));
         target.dispatchEvent(CoreEvent.mouse("mousedown", x, y, button, buttonsMask(button), false, false, false, false, null));
     }
@@ -281,7 +281,7 @@ public class UiInput {
      * 呼び出し中だけ {@code clickSink} を文書のインラインアクション受け皿に結び、GUI の
      * {@code onWebAction} にも同じアクション名を届ける。
      */
-    public void dispatchClick(HtmlNode target, double x, double y, int minecraftButton,
+    public void dispatchClick(HtmlNode target, double x, double y, int hostButton,
                               DisplayItem clickedItem, ClickSink clickSink) {
         if (target == null) return;
 
@@ -290,13 +290,13 @@ public class UiInput {
         int previousButton = activeClickButton;
         activeClickSink = clickSink != null ? clickSink : ClickSink.NONE;
         activeClickedItem = clickedItem;
-        activeClickButton = minecraftButton;
+        activeClickButton = hostButton;
         try {
-            int button = domButton(minecraftButton);
+            int button = domButton(hostButton);
             if (button == 0) {
                 UIEvents.Mouse click = CoreEvent.click(x, y, 0);
                 target.dispatchEvent(click, event -> StandardDefaultActions.execute(
-                        event, createClickDefaults(x, y, clickedItem, minecraftButton, activeClickSink)));
+                        event, createClickDefaults(x, y, clickedItem, hostButton, activeClickSink)));
                 dispatchDoubleClickIfRepeated(target, x, y);
                 return;
             }
@@ -493,11 +493,11 @@ public class UiInput {
         return String.format(Locale.US, "%.1f,%.1f", x, y);
     }
 
-    public static int domButton(int minecraftButton) {
-        return switch (minecraftButton) {
+    public static int domButton(int hostButton) {
+        return switch (hostButton) {
             case 1 -> 2;
             case 2 -> 1;
-            default -> minecraftButton;
+            default -> hostButton;
         };
     }
 

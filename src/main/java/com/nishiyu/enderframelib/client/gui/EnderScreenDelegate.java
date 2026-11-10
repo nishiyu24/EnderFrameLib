@@ -262,12 +262,12 @@ public class EnderScreenDelegate implements SessionInput.Host {
         if (result.consumed()) return true;
         return switch (result.element().type()) {
             case SCENE, TEXTAREA, INPUT, SELECT, RANGE -> true;
-            default -> hasActionFor(result.pressedNode(), result.minecraftButton());
+            default -> hasActionFor(result.pressedNode(), result.hostButton());
         };
     }
 
-    private static boolean hasActionFor(HtmlNode node, int minecraftButton) {
-        int domButton = SessionInput.domButton(minecraftButton);
+    private static boolean hasActionFor(HtmlNode node, int hostButton) {
+        int domButton = SessionInput.domButton(hostButton);
         String attribute = domButton == 0 ? "onclick" : (domButton == 2 ? "oncontextmenu" : "onauxclick");
         String eventType = domButton == 0 ? "click" : (domButton == 2 ? "contextmenu" : "auxclick");
         for (HtmlNode current = node; current != null; current = current.parent) {
@@ -289,7 +289,7 @@ public class EnderScreenDelegate implements SessionInput.Host {
 
         DisplayItem clicked = result.element();
         UIHitResult hit = result.hit();
-        int button = result.minecraftButton();
+        int button = result.hostButton();
 
         if (clicked.type() == ElementType.SCENE) {
             unfocusWebInput();
@@ -403,10 +403,10 @@ public class EnderScreenDelegate implements SessionInput.Host {
         }
 
         @Override
-        public void clickDelegate(com.nishiyu.enderframelib.common.UiInput input, HtmlNode target, double x, double y, int minecraftButton) {
+        public void clickDelegate(com.nishiyu.enderframelib.common.UiInput input, HtmlNode target, double x, double y, int hostButton) {
             SessionContext session = ClientWebManager.getSession(sessionId);
             DisplayItem targetItem = session != null ? session.elementById(target.key()) : null;
-            input.dispatchClick(target, x, y, minecraftButton, targetItem, this);
+            input.dispatchClick(target, x, y, hostButton, targetItem, this);
         }
 
         private boolean invoked() {

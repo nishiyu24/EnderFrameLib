@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -137,8 +138,8 @@ final class ItemProps {
         ItemProps partsEvents = new ItemProps();
         partsEvents.parentId(id);
         applyTransitionEvents(partsEvents, transSpec);
-        if (box.style.containsKey(CssProperty.Id.FONT_FAMILY)) {
-            partsEvents.put("font-family", box.style.get(CssProperty.Id.FONT_FAMILY));
+        if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) {
+            partsEvents.put("font-family", box.style.get(CssPropertyIndex.FONT_FAMILY));
         }
         putFontEvents(box, partsEvents);
         if (box.node.attrs.containsKey("title")) partsEvents.title(box.node.attrs.get("title"));

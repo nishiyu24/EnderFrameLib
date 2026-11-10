@@ -20,24 +20,52 @@ public final class ReplacedElements {
         SCENE
     }
 
-    private static volatile Map<String, Kind> host = defaults();
+    private static volatile Map<String, CustomElementPainter> host = defaults();
 
     private ReplacedElements() {}
 
-    private static Map<String, Kind> defaults() {
-        Map<String, Kind> m = new HashMap<>();
-        m.put("mc-fluid", Kind.IMAGE_LIKE);
-        m.put("mc-entity", Kind.IMAGE_LIKE);
-        m.put("mc-scene", Kind.SCENE);
+    /** 性質だけを持つ最小の差し込み（参照先の書き換え・寸法は既定）。 */
+    private record Plain(Kind kind) implements CustomElementPainter {}
+
+    /** {@code <mc-fluid fluid="...">} → {@code fluid:...}。 */
+    private static CustomElementPainter prefixed(String prefix, String attr, String emptyDefault) {
+        return new CustomElementPainter() {
+            @Override public Kind kind() { return Kind.IMAGE_LIKE; }
+            @Override public String resolveSrc(Map<String, String> attrs, String src) {
+                if (src.startsWith(prefix)) return src;
+                return prefix + attrs.getOrDefault(attr, src.isEmpty() ? emptyDefault : src);
+            }
+        };
+    }
+
+    private static Map<String, CustomElementPainter> defaults() {
+        Map<String, CustomElementPainter> m = new HashMap<>();
+        // 流体は属性が無いときだけ src を使う（空なら空のまま）
+        m.put("mc-fluid", prefixed("fluid:", "fluid", ""));
+        m.put("mc-entity", prefixed("entity:", "entity", "@self"));
+        m.put("mc-scene", new Plain(Kind.SCENE));
         return Map.copyOf(m);
     }
 
-    /** ホスト置換要素を登録する（同名は上書き）。 */
-    public static synchronized void register(String tag, Kind kind) {
-        if (tag == null || tag.isEmpty() || kind == null) throw new IllegalArgumentException("tag/kind");
-        Map<String, Kind> m = new HashMap<>(host);
-        m.put(tag, kind);
+    /** ホスト置換要素を性質だけで登録する（同名は上書き）。 */
+    public static void register(String tag, Kind kind) {
+        if (kind == null) throw new IllegalArgumentException("tag/kind");
+        register(tag, new Plain(kind));
+    }
+
+    /** ホスト置換要素を採寸・描画の差し込み付きで登録する（同名は上書き）。 */
+    public static synchronized void register(String tag, CustomElementPainter painter) {
+        if (tag == null || tag.isEmpty() || painter == null || painter.kind() == null) {
+            throw new IllegalArgumentException("tag/painter");
+        }
+        Map<String, CustomElementPainter> m = new HashMap<>(host);
+        m.put(tag, painter);
         host = Map.copyOf(m);
+    }
+
+    /** 登録された差し込み。無ければ null。 */
+    public static CustomElementPainter painterOf(String tag) {
+        return host.get(tag);
     }
 
     /** 既定（Minecraft 3 種）へ戻す。テストの後始末用。 */
@@ -52,11 +80,13 @@ public final class ReplacedElements {
 
     /** ホスト置換要素のうち画像として採寸されるもの。 */
     public static boolean isHostImageLike(String tag) {
-        return host.get(tag) == Kind.IMAGE_LIKE;
+        CustomElementPainter p = host.get(tag);
+        return p != null && p.kind() == Kind.IMAGE_LIKE;
     }
 
     public static boolean isHostScene(String tag) {
-        return host.get(tag) == Kind.SCENE;
+        CustomElementPainter p = host.get(tag);
+        return p != null && p.kind() == Kind.SCENE;
     }
 
     /** 置換要素として箱を作るタグか（HTML 標準のフォーム部品・画像類 ＋ ホスト登録分）。 */

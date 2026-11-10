@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 
@@ -25,7 +26,7 @@ public final class BorderImage {
 
     /** {@code border-image-source} が {@code url()} ならその URL。無い・{@code none}・画像でなければ null。 */
     public static String sourceUrl(ComputedStyle style) {
-        String v = style.get(CssProperty.Id.BORDER_IMAGE_SOURCE);
+        String v = style.get(CssPropertyIndex.BORDER_IMAGE_SOURCE);
         if (v == null) return null;
         return new BoxDecorations.BackgroundLayer(v, "", "", "", "", "", 1.0).url();
     }
@@ -44,7 +45,7 @@ public final class BorderImage {
         // slice: 上・右・下・左（画像の画素。% は縦横それぞれの画像の大きさに対して）
         boolean fill = false;
         List<String> sliceTokens = new ArrayList<>();
-        for (String t : split(style.getOrDefault(CssProperty.Id.BORDER_IMAGE_SLICE, "100%"))) {
+        for (String t : split(style.getOrDefault(CssPropertyIndex.BORDER_IMAGE_SLICE, "100%"))) {
             if ("fill".equalsIgnoreCase(t)) fill = true;
             else sliceTokens.add(t);
         }
@@ -59,7 +60,7 @@ public final class BorderImage {
         float[] sliceCss = {st, sr, sb, sl};
         float fontPx = style.fontSizePx();
         float[] bw = new float[4];
-        List<String> widthTokens = split(style.getOrDefault(CssProperty.Id.BORDER_IMAGE_WIDTH, "1"));
+        List<String> widthTokens = split(style.getOrDefault(CssPropertyIndex.BORDER_IMAGE_WIDTH, "1"));
         for (int i = 0; i < 4; i++) {
             String tok = widthTokens.isEmpty() ? "1" : widthTokens.get(sideIndex(widthTokens.size(), i));
             bw[i] = widthOf(tok, border[i], sliceCss[i], (i % 2 == 0) ? boxH : boxW, fontPx);

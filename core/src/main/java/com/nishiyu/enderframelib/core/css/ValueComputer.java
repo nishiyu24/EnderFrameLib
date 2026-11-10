@@ -108,19 +108,19 @@ final class ValueComputer {
         resolveCssWideKeywords(style, ctx);
         CssValue[] v = style.values;
 
-        String fontSize = style.textById(CssProperty.Id.FONT_SIZE);
+        String fontSize = style.textById(CssPropertyIndex.FONT_SIZE);
         float ownFontSize = ctx.parentFontSize();
         if (fontSize != null) {
             ownFontSize = resolveFontSize(fontSize, ctx);
-            style.putById(CssProperty.Id.FONT_SIZE, px(ownFontSize));
+            style.putById(CssPropertyIndex.FONT_SIZE, px(ownFontSize));
         }
 
-        if (KeywordMatch.is(style.textById(CssProperty.Id.COLOR), "currentcolor")) {
-            putInheritedOrInitial(style, CssProperty.Id.COLOR, ctx);
+        if (KeywordMatch.is(style.textById(CssPropertyIndex.COLOR), "currentcolor")) {
+            putInheritedOrInitial(style, CssPropertyIndex.COLOR, ctx);
         }
-        String color = style.textById(CssProperty.Id.COLOR);
-        if (color == null) color = ComputedStyle.parentValue(ctx.parent(), CssProperty.Id.COLOR);
-        if (color == null) color = ComputedStyle.initialOf(CssProperty.Id.COLOR);
+        String color = style.textById(CssPropertyIndex.COLOR);
+        if (color == null) color = ComputedStyle.parentValue(ctx.parent(), CssPropertyIndex.COLOR);
+        if (color == null) color = ComputedStyle.initialOf(CssPropertyIndex.COLOR);
 
         Metrics metrics = unitMetrics(style, ctx, ownFontSize);
 
@@ -131,8 +131,8 @@ final class ValueComputer {
         int candidateCount = 0;
         for (int id = 0; id < v.length; id++) {
             CssValue cv = v[id];
-            if (cv == null || id == CssProperty.Id.FONT_SIZE) continue;
-            String done = finishValue(cv, id == CssProperty.Id.LINE_HEIGHT, id == CssProperty.Id.COLOR, OPAQUE_BY_ID[id],
+            if (cv == null || id == CssPropertyIndex.FONT_SIZE) continue;
+            String done = finishValue(cv, id == CssPropertyIndex.LINE_HEIGHT, id == CssPropertyIndex.COLOR, OPAQUE_BY_ID[id],
                     ownFontSize, metrics, color);
             if (done != cv.text) {
                 cv = CssValue.of(done); // 書き換わった値だけ正規の値にする（同じ文字列なら元の値のまま）
@@ -216,7 +216,7 @@ final class ValueComputer {
             String value = cv.text;
             if (KeywordMatch.is(value, "min-content") || KeywordMatch.is(value, "max-content")
                     || KeywordMatch.is(value, "fit-content") || KeywordMatch.trimmedStartsWithIgnoreCase(value, "fit-content(")) {
-                v[id] = id == CssProperty.Id.MAX_HEIGHT ? V_NONE : V_AUTO;
+                v[id] = id == CssPropertyIndex.MAX_HEIGHT ? V_NONE : V_AUTO;
             }
         }
     }
@@ -224,15 +224,15 @@ final class ValueComputer {
     private static final CssValue V_NONE = CssValue.of("none"), V_AUTO = CssValue.of("auto"), V_ZERO = CssValue.of("0"),
             V_1PX = CssValue.of("1px"), V_3PX = CssValue.of("3px"), V_5PX = CssValue.of("5px");
 
-    private static final int[] BLOCK_SIZE_IDS = {CssProperty.Id.HEIGHT, CssProperty.Id.MIN_HEIGHT, CssProperty.Id.MAX_HEIGHT};
+    private static final int[] BLOCK_SIZE_IDS = {CssPropertyIndex.HEIGHT, CssPropertyIndex.MIN_HEIGHT, CssPropertyIndex.MAX_HEIGHT};
 
     /**
      * 値の中の単位を px にするときの基準。{@code lh} はこの要素の行の高さ（数値なら font-size 倍、{@code normal} は
      * ビットマップフォントの行間込みの高さ）、{@code rlh} はルートの {@code normal}。
      */
     private static Metrics unitMetrics(StyleTable style, Context ctx, float ownFontSize) {
-        String declared = trimmed(style.textById(CssProperty.Id.LINE_HEIGHT));
-        if (declared == null) declared = trimmed(ComputedStyle.parentValue(ctx.parent(), CssProperty.Id.LINE_HEIGHT));
+        String declared = trimmed(style.textById(CssPropertyIndex.LINE_HEIGHT));
+        if (declared == null) declared = trimmed(ComputedStyle.parentValue(ctx.parent(), CssPropertyIndex.LINE_HEIGHT));
         float lineHeight = lineHeightPx(declared, ownFontSize, ctx.rootFontSize(), ctx.viewportW(), ctx.viewportH());
         return new Metrics(0, ctx.viewportW(), ctx.viewportH(), ownFontSize, ctx.rootFontSize(), lineHeight,
                 ctx.rootLineHeightPx(), ctx.containerW(), ctx.containerH(),
@@ -260,12 +260,12 @@ final class ValueComputer {
 
     /** 線種と幅の添字の組: 四辺の枠線・アウトライン・段の区切り線。 */
     private static final int[][] LINE_PAIRS = {
-            {CssProperty.Id.BORDER_TOP_STYLE, CssProperty.Id.BORDER_TOP_WIDTH},
-            {CssProperty.Id.BORDER_RIGHT_STYLE, CssProperty.Id.BORDER_RIGHT_WIDTH},
-            {CssProperty.Id.BORDER_BOTTOM_STYLE, CssProperty.Id.BORDER_BOTTOM_WIDTH},
-            {CssProperty.Id.BORDER_LEFT_STYLE, CssProperty.Id.BORDER_LEFT_WIDTH},
-            {CssProperty.Id.OUTLINE_STYLE, CssProperty.Id.OUTLINE_WIDTH},
-            {CssProperty.Id.COLUMN_RULE_STYLE, CssProperty.Id.COLUMN_RULE_WIDTH}};
+            {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_TOP_WIDTH},
+            {CssPropertyIndex.BORDER_RIGHT_STYLE, CssPropertyIndex.BORDER_RIGHT_WIDTH},
+            {CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_BOTTOM_WIDTH},
+            {CssPropertyIndex.BORDER_LEFT_STYLE, CssPropertyIndex.BORDER_LEFT_WIDTH},
+            {CssPropertyIndex.OUTLINE_STYLE, CssPropertyIndex.OUTLINE_WIDTH},
+            {CssPropertyIndex.COLUMN_RULE_STYLE, CssPropertyIndex.COLUMN_RULE_WIDTH}};
 
     /**
      * {@code border-*-width} / {@code outline-width} の算出値。線種が {@code none} / {@code hidden} なら 0、

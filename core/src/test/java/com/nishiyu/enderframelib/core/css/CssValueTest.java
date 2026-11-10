@@ -30,7 +30,7 @@ class CssValueTest {
         ComputedStyle a = ComputedStyle.of(m, 16f, 16f);
         ComputedStyle b = ComputedStyle.of(new HashMap<>(m), 16f, 16f);
         assertTrue(ComputedStyle.sameDeclarations(a, b));
-        assertEquals("12px", a.get(CssProperty.Id.WIDTH));
+        assertEquals("12px", a.get(CssPropertyIndex.WIDTH));
         assertEquals(a.asMap(), b.asMap());
         Map<String, String> m2 = new HashMap<>(m);
         m2.put("height", "13px");
@@ -46,15 +46,15 @@ class CssValueTest {
         for (int i = 0; i < 500; i++) {
             String l = lengths[rnd.nextInt(lengths.length)], c = colors[rnd.nextInt(colors.length)], n = numbers[rnd.nextInt(numbers.length)];
             ComputedStyle s = ComputedStyle.of(Map.of("width", l, "color", c, "opacity", n), 16f, 16f);
-            assertEquals(LengthResolver.compile(l).resolve(100f, 800f, 600f, 16f, 16f), s.length(CssProperty.Id.WIDTH, 100f, 800f, 600f), 0f, l);
-            assertEquals(ColorParser.parseColor(c), s.color(CssProperty.Id.COLOR, 0), c);
+            assertEquals(LengthResolver.compile(l).resolve(100f, 800f, 600f, 16f, 16f), s.length(CssPropertyIndex.WIDTH, 100f, 800f, 600f), 0f, l);
+            assertEquals(ColorParser.parseColor(c), s.color(CssPropertyIndex.COLOR, 0), c);
             float expected;
             try {
                 expected = Float.parseFloat(n.trim());
             } catch (NumberFormatException e) {
                 expected = 42f;
             }
-            assertEquals(expected, s.number(CssProperty.Id.OPACITY, 42f), 0f, n);
+            assertEquals(expected, s.number(CssPropertyIndex.OPACITY, 42f), 0f, n);
         }
     }
 
@@ -62,10 +62,10 @@ class CssValueTest {
     void keywordMemoGivesTheRightAnswerForEachRequestedType() {
         ComputedStyle s = ComputedStyle.of(Map.of("overflow-x", "hidden", "display", "none", "float", "none"), 16f, 16f);
         for (int i = 0; i < 3; i++) {
-            assertEquals(Overflow.HIDDEN, s.keywordOf(CssProperty.Id.OVERFLOW_X, Overflow.class));
-            assertEquals(CssKeywords.FloatSide.NONE, s.keywordOf(CssProperty.Id.FLOAT, CssKeywords.FloatSide.class));
+            assertEquals(Overflow.HIDDEN, s.keywordOf(CssPropertyIndex.OVERFLOW_X, Overflow.class));
+            assertEquals(CssKeywords.FloatSide.NONE, s.keywordOf(CssPropertyIndex.FLOAT, CssKeywords.FloatSide.class));
             // 同じ文字列（none）を別の列挙型で続けて読んでも、型ごとの正しい結果
-            assertEquals(Overflow.VISIBLE, s.keywordOf(CssProperty.Id.OVERFLOW_Y, Overflow.class), "宣言なしは初期値");
+            assertEquals(Overflow.VISIBLE, s.keywordOf(CssPropertyIndex.OVERFLOW_Y, Overflow.class), "宣言なしは初期値");
         }
         CssValue none = CssValue.of("none");
         assertEquals(CssKeywords.FloatSide.NONE, none.keyword(CssKeywords.FloatSide.class));
