@@ -44,7 +44,7 @@ public final class FineProfileMain {
         boolean cpu = backendName.equals("cpu");
         int warmup = scenario.equals("open") ? 300 : 600;
         String html = Workloads.html(doc);
-        if (scenario.equals("hover") && Workloads.isList(doc)) html = html.replace("</style>", " li:hover { background: #eef; }</style>");
+        if ((scenario.equals("hover") || scenario.equals("scrollhover")) && Workloads.isList(doc)) html = html.replace("</style>", " li:hover { background: #eef; }</style>");
 
         try (RenderBackend backend = switch (backendName) {
             case "cpu" -> new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
@@ -90,6 +90,9 @@ public final class FineProfileMain {
             System.out.println("DOM elements=" + countElements(view[0].root()));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (backend instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " per-frame frames=" + (frames + warmup));
+            System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
+                    + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
+                    + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
             System.out.print(StageProfiler.report());
         }
     }
@@ -112,6 +115,12 @@ public final class FineProfileMain {
             case "idle" -> { }
             case "hover" -> {
                 v.ui().setHoveredElement(t.hoverIds[i & 1]);
+            }
+            case "scrollhover" -> {
+                // スクロールを 1 度起こして保持層を作らせたあと、画面外の項目の :hover を往復する（記録フレームの走査コスト）
+                if (i == -600) v.mouseMove(t.scrollPoint[0], t.scrollPoint[1], backend.sessionId());
+                if (i == -599 || i == -598) v.scroll(0, -1, backend.sessionId()); // 負が下方向（先頭では上へは動かない）
+                if (i >= -597) v.ui().setHoveredElement(t.hoverIds[i & 1]);
             }
             case "scroll" -> {
                 if (i == -600) v.mouseMove(t.scrollPoint[0], t.scrollPoint[1], backend.sessionId());

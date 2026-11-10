@@ -87,6 +87,162 @@ public final class PaintSceneDriver {
         default boolean endRetained(DisplayItem node, int nodeIndex) {
             return true;
         }
+
+        /**
+         * {@link RetainPlan#RECORD} の範囲の項目のうち、描かれないと分かっている縦の区間（デバイス画素）。{@code {y0, y1, pad}} を返す:
+         * 項目の箱の下端 + {@code pad} + 項目の高さが {@code y0} より上、または上端 − {@code pad} − 項目の高さが {@code y1} より下なら、
+         * その項目は何も描かない（描画側の画面外判定と同じ式）。ドライバはこの区間に確実に入る先頭・末尾の連続区間だけを走査から外す。
+         * 既定は null（外さない）。
+         */
+        default double[] cullWindow(DisplayItem node, int nodeIndex) {
+            return null;
+        }
+    }
+
+    /**
+     * 記録する保持層の範囲のうち、描かれないと確実に言える先頭・末尾の区間を走査から外すか。false なら全項目を走査する
+     * （疑うときの切り分け用。絵は同じでなければならない）。
+     */
+    public static volatile boolean cullRecordedRanges = !Boolean.getBoolean("enderframe.paint.nocullrange");
+
+    /**
+     * スクロール範囲の項目の縦の範囲の索引。範囲の全項目が「変形なし・不透明度 1・グループなし」（姿勢がスクロール節と同じ）のときだけ作る。
+     * {@code prefBottom[j]} は先頭から j 番目までの下端（CSS px）の最大、{@code sufTop[j]} は j 番目から末尾までの上端の最小。どちらも単調なので、
+     * 画面外の先頭・末尾の区間は二分探索で正確に求まる（項目が縦に整列している仮定は要らない）。
+     */
+    private static final class RangeBounds {
+        boolean valid;
+        boolean eligible;
+        /** 項目ごとの下端・上端・高さ（CSS px）。節（NODE）は下端 −∞・上端 +∞（何も描かないので判定に影響しない）。 */
+        double[] bottom = new double[0], top = new double[0], height = new double[0];
+        /**
+         * 倍率 {@code keyScale} でのブロック（{@link #BLOCK} 項目ずつ）の鍵: ブロック内の {@code scale*下端 + 高さ} の最大（全項目が上へ外れているかの判定）、
+         * {@code scale*上端 − 高さ} の最小（全項目が下へ外れているかの判定）。表示リストは描画順（背景 → 文字）で並び、縦位置は整列していないので、
+         * 範囲全体の二分探索ではなくブロック単位で判定する。
+         */
+        double[] blockMax = new double[0], blockMin = new double[0];
+        double keyScale = Double.NaN;
+        /** このフレームで項目を走査してよいブロック（{@link #planWindow} が決める）。 */
+        boolean[] keep = new boolean[0];
+
+        void ensureKeys(double scale) {
+            if (keyScale == scale) return;
+            int n = bottom.length, nb = (n + BLOCK - 1) / BLOCK;
+            if (blockMax.length != nb) { blockMax = new double[nb]; blockMin = new double[nb]; keep = new boolean[nb]; }
+            for (int b = 0; b < nb; b++) {
+                double mx = Double.NEGATIVE_INFINITY, mn = Double.POSITIVE_INFINITY;
+                for (int j = b * BLOCK, e = Math.min(n, j + BLOCK); j < e; j++) {
+                    if (bottom[j] != Double.NEGATIVE_INFINITY) mx = Math.max(mx, scale * bottom[j] + height[j]);
+                    if (top[j] != Double.POSITIVE_INFINITY) mn = Math.min(mn, scale * top[j] - height[j]);
+                }
+                blockMax[b] = mx;
+                blockMin[b] = mn;
+            }
+            keyScale = scale;
+        }
+    }
+
+    private static final int BLOCK_SHIFT = 6;
+    private static final int BLOCK = 1 << BLOCK_SHIFT;
+
+    private final HashMap<Integer, RangeBounds> rangeBounds = new HashMap<>();
+    /** 項目の状態（{@link CssAnimator.AnimState}）が「姿勢は中立」と確かめ済みの印。項目が差し替わる・索引を作り直すと外れる。 */
+    private boolean[] stateVerified = new boolean[0];
+    /** このフレームの、走査から外すブロックのある RECORD の節 → その範囲の索引（{@link RangeBounds#keep} が走査するブロック）。 */
+    private final HashMap<Integer, RangeBounds> windows = new HashMap<>();
+    /** 診断・テスト用: 走査から外した項目の数（累計）。 */
+    private long rangeCulledItems;
+
+    /** 診断用: 全ドライバの合計（計測ハーネスが読む）。 */
+    public static final java.util.concurrent.atomic.AtomicLong RANGE_CULLED_TOTAL = new java.util.concurrent.atomic.AtomicLong();
+    /** 診断用: 記録（RECORD）の範囲を計画した回数と、窓を出せず・条件を満たさず外せなかった回数。 */
+    public static final java.util.concurrent.atomic.AtomicLong RANGE_PLANNED = new java.util.concurrent.atomic.AtomicLong(), RANGE_INELIGIBLE = new java.util.concurrent.atomic.AtomicLong();
+
+    public long rangeCulledItems() {
+        return rangeCulledItems;
+    }
+
+    private void invalidateRangeBounds() {
+        for (RangeBounds rb : rangeBounds.values()) rb.valid = false;
+    }
+
+    /** {@link #isNeutral} が、項目の状態（動いている・目標が中立でない）を理由に false を返した（項目の中身のせいではない）。 */
+    private boolean stateBlocked;
+
+    private boolean isNeutral(DisplayItem el, int i) {
+        if (el.translateX() != 0f || el.translateY() != 0f || el.scaleX() != 1f || el.scaleY() != 1f || el.rotate() != 0f
+                || el.opacity() != 1f || el.hints().skew() != 0f) return false;
+        if (el.animDef() != null && !com.nishiyu.enderframelib.core.css.model.AnimationSpec.NONE.equals(el.animDef())) return false;
+        if (el.type() == ElementType.NODE && hasFx(el.hints().layer())) return false;
+        if (el.type() == ElementType.SCENE) return false;
+        if (i < stateVerified.length && !stateVerified[i]) {
+            CssAnimator.AnimState st = states[i] != null ? states[i] : CssAnimator.peekState(sessionId, el.id());
+            if (st != null && !st.isNeutralGeometryAt(now)) {
+                stateBlocked = true; // 時間で変わる理由: 判定を覚えず、次のフレームでもう一度確かめる
+                return false;
+            }
+            stateVerified[i] = true;
+        }
+        return true;
+    }
+
+    /** 節 {@code c} の範囲の縦の範囲の索引。条件を満たさなければ null（範囲を飛ばせない）。 */
+    private RangeBounds boundsFor(List<DisplayItem> items, int c) {
+        RangeBounds rb = rangeBounds.computeIfAbsent(c, k -> new RangeBounds());
+        if (rb.valid) return rb.eligible ? rb : null;
+        rb.valid = true;
+        rb.eligible = false;
+        int from = retainFrom[c], to = retainTo[c], n = to - from;
+        if (n <= 0) return null;
+        for (int k : retainNodes) { // 入れ子のスクロール節は姿勢が中立でない（スクロール量を持つ）ので対象外
+            if (k != c && retainFrom[k] >= from && retainFrom[k] < to) return null;
+        }
+        if (rb.bottom.length != n) {
+            rb.bottom = new double[n]; rb.top = new double[n]; rb.height = new double[n];
+        }
+        rb.keyScale = Double.NaN;
+        for (int j = 0; j < n; j++) {
+            DisplayItem el = items.get(from + j);
+            if (!isNeutral(el, from + j)) {
+                if (stateBlocked) { rb.valid = false; stateBlocked = false; }
+                return null;
+            }
+            boolean node = el.type() == ElementType.NODE;
+            rb.bottom[j] = node ? Double.NEGATIVE_INFINITY : el.y() + (double) el.height();
+            rb.top[j] = node ? Double.POSITIVE_INFINITY : el.y();
+            rb.height[j] = node ? 0 : el.height();
+        }
+        rb.eligible = true;
+        return rb;
+    }
+
+    /** RECORD の節 {@code c} について、走査から外せる先頭・末尾の区間を求めて {@link #windows} に入れる（外せなければ入れない）。 */
+    private void planWindow(List<DisplayItem> items, int c, Painter painter) {
+        if (!cullRecordedRanges) return;
+        RANGE_PLANNED.incrementAndGet();
+        RangeBounds rb = boundsFor(items, c);
+        if (rb == null) { RANGE_INELIGIBLE.incrementAndGet(); return; }
+        Matrix2D m = resolveAt(c).pose();
+        if (!m.isFinite() || m.b() != 0 || m.c() != 0 || !(m.d() > 0)) return;
+        double[] w = painter.cullWindow(items.get(c), c);
+        if (w == null || w.length < 3) return;
+        rb.ensureKeys(m.d());
+        final double eps = 2; // 丸め・判定の端の余裕（デバイス画素）。外す側を狭める向き
+        // 項目の下端（デバイス）= d*下端 + f。下へ外れる条件: d*下端 + f + pad + 高さ < y0。上は d*上端 + f − pad − 高さ > y1
+        double thrTop = w[0] - eps - w[2] - m.f();
+        double thrBot = w[1] + eps + w[2] - m.f();
+        int n = retainTo[c] - retainFrom[c];
+        int skipped = 0;
+        for (int b = 0; b < rb.keep.length; b++) {
+            // ブロックの全項目が上へ外れている（鍵の最大が閾値未満）か、全項目が下へ外れている（鍵の最小が閾値超）
+            boolean out = rb.blockMax[b] < thrTop || rb.blockMin[b] > thrBot;
+            rb.keep[b] = !out;
+            if (out) skipped += Math.min(n, (b + 1) * BLOCK) - b * BLOCK;
+        }
+        if (skipped == 0) return;
+        windows.put(c, rb);
+        rangeCulledItems += skipped;
+        RANGE_CULLED_TOTAL.addAndGet(skipped);
     }
 
     /**
@@ -211,14 +367,25 @@ public final class PaintSceneDriver {
             int[] members = membersBuf;
             Map<String, Integer> extraMembers = new HashMap<>(); // 錨がリストに無いグループだけ
             // スクロール層: 保持できる範囲を先に決める（SKIP の範囲は、グループの鎖も姿勢の計算も要らない）
+            windows.clear();
             RetainPlan[] plan = planRetained(items, painter);
             int skipTo = 0;
+            RangeBounds win = null; // 記録する範囲で、走査から外すブロックを持つもの
+            int winFrom = 0, winTo = 0;
             for (int i = 0; i < items.size(); i++) {
                 if (i < skipTo) continue;
                 int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
                 if (rn >= 0 && plan != null && plan[rn] == RetainPlan.SKIP) {
                     skipTo = retainTo[rn];
                     continue;
+                }
+                if (rn >= 0 && plan != null && plan[rn] == RetainPlan.RECORD) {
+                    win = windows.isEmpty() ? null : windows.get(rn);
+                    if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
+                }
+                if (win != null && i < winTo) {
+                    int blk = (i - winFrom) >> BLOCK_SHIFT;
+                    if (!win.keep[blk]) { i = Math.min(winTo, winFrom + ((blk + 1) << BLOCK_SHIFT)) - 1; continue; }
                 }
                 DisplayItem el = items.get(i);
                 List<Group> chain = List.of();
@@ -237,6 +404,8 @@ public final class PaintSceneDriver {
                 }
                 chains[i] = chain;
             }
+            win = null;
+            winFrom = winTo = 0;
             int[] open = new int[4]; // 記録中の保持層の節の添字（入れ子の順）
             int openN = 0;
             for (int i = 0; i < items.size(); i++) {
@@ -252,9 +421,16 @@ public final class PaintSceneDriver {
                     painter.beginRetained(node, rn, retainFrom[rn], retainTo[rn]);
                     if (openN == open.length) open = java.util.Arrays.copyOf(open, openN * 2);
                     open[openN++] = rn;
+                    win = plan[rn] == RetainPlan.RECORD && !windows.isEmpty() ? windows.get(rn) : null;
+                    if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
                 }
-                DisplayItem el = items.get(i);
-                if (el.type() != ElementType.NODE) {
+                boolean culledRun = false;
+                if (win != null && i < winTo) {
+                    int blk = (i - winFrom) >> BLOCK_SHIFT;
+                    if (!win.keep[blk]) { i = Math.min(winTo, winFrom + ((blk + 1) << BLOCK_SHIFT)) - 1; culledRun = true; }
+                }
+                DisplayItem el = culledRun ? null : items.get(i);
+                if (el != null && el.type() != ElementType.NODE) {
                     List<Group> chain = chains[i];
                     if (chain != null) {
                         if (chain.isEmpty()) { // 不透明度のグループの外: 層を開かず、そのまま描く
@@ -282,6 +458,7 @@ public final class PaintSceneDriver {
                         plan[node] = RetainPlan.NONE;
                         i = retainFrom[node] - 1;
                         openN = 0;
+                        win = null; // 描き直しは通常の走査（外した項目は鎖が無いので描かれない）
                         break;
                     }
                 }
@@ -315,6 +492,7 @@ public final class PaintSceneDriver {
                 plan = planBuf;
             }
             plan[c] = decision;
+            if (decision == RetainPlan.RECORD) planWindow(items, c, painter);
             coveredUntil = to;
         }
         return plan;
@@ -421,6 +599,7 @@ public final class PaintSceneDriver {
         boolean sameBase = now != null ? now.base() == indexedBase : items == indexedBase;
         if (!patchOffsetLists || !sameBase || indexedItems == null || indexedItems.size() != items.size()) return false;
         List<DisplayItem> old = indexedItems;
+        boolean changed = false;
         // 差し替わりうる位置: 今回の差し替えと、前回の差し替え（外れたものは基底へ戻る）
         for (int pass = 0; pass < 2; pass++) {
             OffsetItemList src = pass == 0 ? now : (old instanceof OffsetItemList o ? o : null);
@@ -433,8 +612,11 @@ public final class PaintSceneDriver {
                 states[i] = null;
                 prevRes[i] = null;
                 prevStatic[i] = false;
+                stateVerified[i] = false;
+                changed = true;
             }
         }
+        if (changed) invalidateRangeBounds();
         indexedItems = items;
         return true;
     }
@@ -468,7 +650,9 @@ public final class PaintSceneDriver {
             prevRes[i] = null;
             prevStatic[i] = false;
             itemVersion[i]++;
+            stateVerified[i] = false;
         }
+        if (count > 0) invalidateRangeBounds();
         indexedItems = items;
         // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
         indexedBase = items instanceof OffsetItemList o ? o.base() : items;
@@ -518,6 +702,8 @@ public final class PaintSceneDriver {
         visiting = new boolean[n];
         states = new CssAnimator.AnimState[n];
         itemVersion = new int[n];
+        stateVerified = new boolean[n];
+        rangeBounds.clear();
         generation++;
     }
 

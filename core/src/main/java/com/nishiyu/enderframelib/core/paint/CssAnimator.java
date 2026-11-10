@@ -103,6 +103,13 @@ public class CssAnimator {
         return state;
     }
 
+    /** 状態を作らずに引く。無ければ null。 */
+    public static AnimState peekState(String sessionId, String id) {
+        String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
+        Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
+        return sessionMap != null ? sessionMap.get(id) : null;
+    }
+
     public static AnimatedValues getCurrentValues(String sessionId, DisplayItem el) {
         String safeSessionId = (sessionId != null && !sessionId.isEmpty()) ? sessionId : "unknown";
         Map<String, AnimState> sessionMap = store.mapFor(safeSessionId, false);
@@ -297,6 +304,15 @@ public class CssAnimator {
             final int geometry = AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM;
             if (currentAnimDef != null && !currentAnimDef.frames.isEmpty() && (currentAnimDef.animatedChannels & geometry) != 0) return false;
             return !(durationMs > 0 && transitionMask != 0 && now < startTime + delayMs + durationMs && (transitionMask & geometry) != 0);
+        }
+
+        /**
+         * 今の時刻の姿勢が「変形なし・不透明度 1」で、かつ動いていないと言えるか（目標が中立で、姿勢のトランジション・キーフレームが動いていない）。
+         * 色だけが動いていてもよい。
+         */
+        public boolean isNeutralGeometryAt(long now) {
+            return geometryStaticAt(now) && targetTx == 0f && targetTy == 0f && targetSx == 1f && targetSy == 1f
+                    && targetRot == 0f && targetSkew == 0f && targetOpacity == 1f;
         }
 
         public boolean hasTargetChanged(DisplayItem el) {

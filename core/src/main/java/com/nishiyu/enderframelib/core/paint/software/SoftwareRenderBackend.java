@@ -251,6 +251,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         }
 
         @Override
+        public double[] cullWindow(DisplayItem node, int nodeIndex) {
+            // 記録中も通常描画でも、項目のクリップは描画先 [0, 高さ] に収まる。その外へ CULL_PAD + 項目の高さ以上離れた項目は塗られない（outsideBox と同じ式）
+            return cullOffscreen ? new double[]{0, raster.targetHeight(), CULL_PAD} : null;
+        }
+
+        @Override
         public boolean endRetained(DisplayItem node, int nodeIndex) {
             recordOwner = null;
             return GpuLayerAttempt.endScroll(route.current(), retainInfo.get(nodeIndex));
@@ -396,7 +402,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 影の部品の矩形は、ぼかしが消える所までの広さを既に含む。シーン（3D）は箱の外へ描きうるので省かない。
      */
     private boolean outsideClip(DisplayItem el, Matrix2D pose, Clip clip) {
-        if (recordOwner != null) {
+        if (recordOwner != null) { // 記録中は clip を見ない（null 可）
             // 保持する層への記録中はコンテナの切り取りを外しているので、層の実体（描画先と同じ大きさ）の範囲で判定する（段階 1b）
             return outsideBox(el, pose, 0, 0, raster.targetWidth(), raster.targetHeight());
         }
@@ -431,6 +437,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float opacity = res.residual() * flat;
         if (opacity <= 0.005f) return;
         AnimatedValues anim = res.anim();
+        // 保持層への記録中の判定は層の実体の範囲だけで決まりクリップを要さない。記録中の buildClip は使い回しの覚えが無く
+        // 毎回作り直す（確保が出る）ので、画面外項目はその前に捨てる
+        if (cullOffscreen && recordOwner != null && outsideClip(el, res.pose(), null)) {
+            culledItems++;
+            return;
+        }
         Clip clip = buildClip(index, el, anim);
         if (clip.empty()) return;
         if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
