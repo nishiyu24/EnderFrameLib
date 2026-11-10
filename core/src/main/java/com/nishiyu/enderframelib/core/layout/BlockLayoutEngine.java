@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
@@ -157,13 +158,13 @@ public class BlockLayoutEngine extends LayoutEngine {
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
         if (hasSpecifiedHeight(box.style)) {
-            float resolvedH = box.style.length(CssProperty.Id.HEIGHT, parentH, rootW, rootH);
+            float resolvedH = box.style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
             boolean isBorderBox = box.style.isBorderBox();
             return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
         }
-        if (box.isAbsolute && BoxMeasurer.hasBothInsets(box.style, CssProperty.Id.TOP, CssProperty.Id.BOTTOM)) {
-            float insets = box.style.length(CssProperty.Id.TOP, parentH, rootW, rootH)
-                    + box.style.length(CssProperty.Id.BOTTOM, parentH, rootW, rootH);
+        if (box.isAbsolute && BoxMeasurer.hasBothInsets(box.style, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
+            float insets = box.style.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
+                    + box.style.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
             return Math.max(0, parentH - insets - box.mT - box.mB - box.verticalDecoration());
         }
         return Float.NaN;
@@ -207,7 +208,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.isOutsideMarker || child.isRenderedLegend || child.display.isNone()
                     || isInlineBox(child) || isFloating(child) || child.node.nodeType == NodeType.TEXT) continue;
-            if (!"auto".equals(child.style.getOrDefault(CssProperty.Id.WIDTH, "auto").trim())) continue;
+            if (!"auto".equals(child.style.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim())) continue;
             if (Math.abs(child.w + child.mL + child.mR - innerW) <= 0.01f) continue;
             child.measure(new ConstraintSpace(innerW, base, FormattingContext.BLOCK), ctx);
         }
@@ -250,7 +251,7 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     float arrangeFlow(LayoutBox box, FlowState state, float innerX, float innerY, float innerW,
                       java.util.Map<Object, float[]> shifts, LayoutContext ctx) {
-        TextAlign textAlign = box.style.keywordOf(CssProperty.Id.TEXT_ALIGN, TextAlign.class)
+        TextAlign textAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class)
                 .physical(isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
 
@@ -327,7 +328,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     /** 末子の下マージンが親を貫通するか。高さ・min-height の指定・下パディング・下ボーダー・BFC が断つ。 */
     private static boolean collapsesThroughBottom(LayoutBox box) {
         return !box.establishesBfc && box.pB == 0 && box.bB == 0 && !hasSpecifiedHeight(box.style)
-                && box.style.length(CssProperty.Id.MIN_HEIGHT, 0, 0, 0) <= 0;
+                && box.style.length(CssPropertyIndex.MIN_HEIGHT, 0, 0, 0) <= 0;
     }
 
     /**
@@ -341,10 +342,10 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** float かどうか。float はブロックフローの子のときだけ効く（flex / grid アイテムでは無視される）。 */
-    private static final int ID_FLOAT = CssProperty.Id.FLOAT;
-    private static final int ID_DIRECTION = CssProperty.Id.DIRECTION;
-    private static final int ID_TEXT_INDENT = CssProperty.Id.TEXT_INDENT;
-    private static final int ID_HEIGHT = CssProperty.Id.HEIGHT;
+    private static final int ID_FLOAT = CssPropertyIndex.FLOAT;
+    private static final int ID_DIRECTION = CssPropertyIndex.DIRECTION;
+    private static final int ID_TEXT_INDENT = CssPropertyIndex.TEXT_INDENT;
+    private static final int ID_HEIGHT = CssPropertyIndex.HEIGHT;
 
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
@@ -548,7 +549,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             float x = 0;
             if (child.establishesBfc && !floats.isEmpty()) {
                 // BFC の border box は float と重ならない。横の残り幅に入らなければ float の下へ下げる
-                boolean autoWidth = "auto".equals(child.style.getOrDefault(CssProperty.Id.WIDTH, "auto").trim());
+                boolean autoWidth = "auto".equals(child.style.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim());
                 for (int guard = 0; guard < 256; guard++) {
                     float left = floats.leftEdge(oy + y, child.h, ox) - ox;
                     float right = floats.rightEdge(oy + y, child.h, ox + innerW) - ox;
@@ -581,26 +582,26 @@ public class BlockLayoutEngine extends LayoutEngine {
          */
         private float startOffsetForDirection(LayoutBox child) {
             if (!rtl || child.isAbsolute) return 0;
-            if ("auto".equals(child.style.getOrDefault(CssProperty.Id.MARGIN_RIGHT, "").trim())) return 0;
+            if ("auto".equals(child.style.getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) return 0;
             return Math.max(0, innerW - (child.w + child.mL + child.mR));
         }
 
         /** {@code clear} を持つ箱を、その側の float の下端まで下げた位置。 */
         private float clearedY(LayoutBox child, float y) {
-            CssKeywords.Clear clear = child.style.keywordOf(CssProperty.Id.CLEAR, CssKeywords.Clear.class);
+            CssKeywords.Clear clear = child.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
             if (clear == CssKeywords.Clear.NONE || floats.isEmpty()) return y;
             return Math.max(y, floats.clearance(clear) - oy);
         }
 
         /** float を置き、領域に登録する。{@code minY} は置ける最も上の位置（内容ボックス相対）。 */
         void placeFloat(LayoutBox f, float minY) {
-            CssKeywords.FloatSide side = f.style.keywordOf(CssProperty.Id.FLOAT, CssKeywords.FloatSide.class);
+            CssKeywords.FloatSide side = f.style.keywordOf(CssPropertyIndex.FLOAT, CssKeywords.FloatSide.class);
             boolean left = side != CssKeywords.FloatSide.RIGHT && side != CssKeywords.FloatSide.INLINE_END;
             float w = f.w + f.mL + f.mR;
             float h = f.h + f.mT + f.mB;
             // float の上端は先に置いた float より上にはならない（CSS 2.2 §9.5.1 の規則 5）
             float y = Math.max(oy + minY, floats.lastTop());
-            CssKeywords.Clear clear = f.style.keywordOf(CssProperty.Id.CLEAR, CssKeywords.Clear.class);
+            CssKeywords.Clear clear = f.style.keywordOf(CssPropertyIndex.CLEAR, CssKeywords.Clear.class);
             if (clear != CssKeywords.Clear.NONE) y = Math.max(y, floats.clearance(clear));
             float x;
             for (int guard = 0; ; guard++) {
@@ -1177,7 +1178,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // 折り返せるかは不可分なインラインを含む側（親）の white-space で決まる。
             // 以前は見ておらず、nowrap の行でもインラインブロックが折り返していた
             ComputedStyle around = run.inlineParents.isEmpty() ? flow.box.style : run.inlineParents.getLast().style;
-            if (WhiteSpace.of(around.get(CssProperty.Id.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
+            if (WhiteSpace.of(around.get(CssPropertyIndex.WHITE_SPACE)).wraps() && needsWrap(lineX + boxOuterW + closing)) {
                 newLine(0, 0, true);
                 ensureLine();
             }
@@ -1254,7 +1255,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             float raise = 0;
             VAlign align = VAlign.BASELINE;
             for (LayoutBox el : chain) {
-                String v = el.style.keyword(CssProperty.Id.VERTICAL_ALIGN, "baseline");
+                String v = el.style.keyword(CssPropertyIndex.VERTICAL_ALIGN, "baseline");
                 LayoutBox parentBox = el.parent != null ? el.parent : flow.box;
                 FontFace face = ctx.faceFor(parentBox.style);
                 FontStyle font = ctx.fontStyleFor(parentBox.style);
@@ -1271,7 +1272,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     case "super" -> raise += parentFont / 3 + 1;
                     case "text-top" -> raise += face.ascent(font) - above;
                     case "text-bottom" -> raise += (height - above) - face.descent(font);
-                    default -> raise += el.style.length(CssProperty.Id.VERTICAL_ALIGN, el.lineHeightPx,
+                    default -> raise += el.style.length(CssPropertyIndex.VERTICAL_ALIGN, el.lineHeightPx,
                             ctx.viewport().rootW(), ctx.viewport().rootH());
                 }
             }

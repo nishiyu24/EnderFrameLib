@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
@@ -62,14 +63,13 @@ public class RenderPipeline {
     private static final int MAX_CONTAINER_PASSES = 4;
 
     public static ILayoutBoxRenderer clientBoxRenderer = null;
-    public static IntrinsicSizeResolver intrinsicSizeResolver = null;
 
     private static ILayoutBoxRenderer effectiveRenderer() {
         return clientBoxRenderer != null ? clientBoxRenderer : UiDocumentCompiler.clientBoxRenderer;
     }
 
     private static IntrinsicSizeResolver effectiveIntrinsicResolver() {
-        return intrinsicSizeResolver != null ? intrinsicSizeResolver : UiDocumentCompiler.intrinsicSizeResolver;
+        return com.nishiyu.enderframelib.core.EngineContext.current().intrinsicSizeResolver;
     }
 
     public static List<DisplayItem> renderDocument(Document doc, int rootW, int rootH, Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
@@ -346,8 +346,8 @@ public class RenderPipeline {
                 || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
             return false;
         }
-        String position = newStyle.get(CssProperty.Id.POSITION);
-        if (!Objects.equals(position, oldStyle.get(CssProperty.Id.POSITION))) return false;
+        String position = newStyle.get(CssPropertyIndex.POSITION);
+        if (!Objects.equals(position, oldStyle.get(CssPropertyIndex.POSITION))) return false;
         boolean offsetOnly = "relative".equals(position) || "sticky".equals(position);
         boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position);
         if (!offsetOnly && !outOfFlow) return false;
@@ -365,12 +365,12 @@ public class RenderPipeline {
         boolean horizontal = axes[0];
         boolean vertical = axes[1];
         if (offsetOnly) return true;
-        if (horizontal && (bothInsets(oldStyle, CssProperty.Id.LEFT, CssProperty.Id.RIGHT)
-                || bothInsets(newStyle, CssProperty.Id.LEFT, CssProperty.Id.RIGHT))) {
+        if (horizontal && (bothInsets(oldStyle, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT)
+                || bothInsets(newStyle, CssPropertyIndex.LEFT, CssPropertyIndex.RIGHT))) {
             return false;
         }
-        return !vertical || !(bothInsets(oldStyle, CssProperty.Id.TOP, CssProperty.Id.BOTTOM)
-                || bothInsets(newStyle, CssProperty.Id.TOP, CssProperty.Id.BOTTOM));
+        return !vertical || !(bothInsets(oldStyle, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)
+                || bothInsets(newStyle, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM));
     }
 
     private static boolean bothInsets(ComputedStyle style, int start, int end) {
@@ -425,7 +425,12 @@ public class RenderPipeline {
      * 直近の {@link #restyleLayoutTree} で、寸法の入力だけが変わった箱（箱の木の形は変わらない）。
      * {@link #relayoutInPlace} に渡して、印付けを経路だけにする。UI スレッド専用（他の統計と同じ前提）。
      */
-    static final List<LayoutBox> layoutChangedBoxes = new ArrayList<>();
+    private static final ThreadLocal<List<LayoutBox>> LAYOUT_CHANGED_BOXES = ThreadLocal.withInitial(ArrayList::new);
+
+    /** このスレッドの印付け用の一時リスト（複数のビューが別スレッドで再レイアウトしても混ざらない）。 */
+    static List<LayoutBox> layoutChangedBoxes() {
+        return LAYOUT_CHANGED_BOXES.get();
+    }
 
     /** 局所再レイアウト（箱の木を作り直さない）を有効にするか。false なら常に木を作り直す（切り分け用。結果は同じでなければならない）。 */
     public static volatile boolean inPlaceRestyleRelayout = true;
@@ -733,7 +738,7 @@ public class RenderPipeline {
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         // 共有の結果は再スタイルをまたいで残す（鍵は親の算出表の同一性・掛かった規則・数値の入力。シートの版・環境が変われば ShareCache が捨てる）。
         // 親が変わらない要素の「前に解いた規則の組」へ戻る往復（class の付け外しなど）が、解き直しなしで済む
-        RenderPipeline.layoutChangedBoxes.clear();
+        RenderPipeline.layoutChangedBoxes().clear();
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
             return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
@@ -789,7 +794,7 @@ public class RenderPipeline {
                     } else {
                         layoutRequired = true;
                         if (!isGeometryOnlyChange(prevStyle, computed)) structural = true;
-                        else RenderPipeline.layoutChangedBoxes.add(box);
+                        else RenderPipeline.layoutChangedBoxes().add(box);
                     }
                 }
             }

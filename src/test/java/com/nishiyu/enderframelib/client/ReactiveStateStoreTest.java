@@ -336,8 +336,8 @@ public class ReactiveStateStoreTest {
 
     @Test
     public void testApplyI18nAttributesFiresMutationObserver() {
-        java.util.function.Function<String, String> saved = com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver;
-        com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver = key -> "tr:" + key;
+        java.util.function.Function<String, String> saved = com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver;
+        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = key -> "tr:" + key;
         try {
             HtmlNode input = new com.nishiyu.enderframelib.core.dom.node.HtmlElement("input");
             input.ownerDocument = new com.nishiyu.enderframelib.core.dom.node.HtmlDocument();
@@ -352,7 +352,7 @@ public class ReactiveStateStoreTest {
             assertEquals("tr:ui.name", input.getAttribute("placeholder"));
             assertTrue(hasAttributeRecord(received, "placeholder"), "placeholder の変更が MutationObserver に届くこと");
         } finally {
-            com.nishiyu.enderframelib.core.dom.Bindings.i18nResolver = saved;
+            com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = saved;
         }
     }
 

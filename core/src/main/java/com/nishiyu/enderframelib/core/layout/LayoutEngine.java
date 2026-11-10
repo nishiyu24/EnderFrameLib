@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.text.model.FontFace;
@@ -83,7 +84,7 @@ public abstract class LayoutEngine {
     public abstract void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx);
 
 
-    private static final int ID_DISPLAY = CssProperty.Id.DISPLAY;
+    private static final int ID_DISPLAY = CssPropertyIndex.DISPLAY;
 
     protected boolean isDisplayNone(ComputedStyle style) {
         return "none".equals(style.get(ID_DISPLAY));

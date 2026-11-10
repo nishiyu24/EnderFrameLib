@@ -8,12 +8,12 @@ public final class IdInitOrderMain {
     public static void main(String[] args) throws Exception {
         Class.forName(args[0], true, IdInitOrderMain.class.getClassLoader());
         StringBuilder bad = new StringBuilder();
-        // 1) CssProperty.Id の全定数
+        // 1) CssPropertyIndex の全定数
         for (Field f : CssProperty.class.getFields()) {
             if (f.getType() != String.class || !Modifier.isStatic(f.getModifiers())) continue;
             String name = (String) f.get(null);
             int expected = ComputedStyle.idOf(name);
-            int actual = CssProperty.Id.class.getField(f.getName()).getInt(null);
+            int actual = CssPropertyIndex.class.getField(f.getName()).getInt(null);
             if (expected < 0 || expected != actual) bad.append("Id.").append(f.getName()).append(' ').append(actual).append("!=").append(expected).append('\n');
         }
         // 2) 添字の表を持つ静的フィールド（初期化の順序で 0 のまま固まっていないか）

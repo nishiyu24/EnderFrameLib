@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.dom;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.parser.*;
@@ -722,12 +723,12 @@ public class InteractionState implements StateLookup {
                 && Float.floatToIntBits(flags.containerBoxH) == Float.floatToIntBits(flags.containerHeight)) {
             return hit;
         }
-        ContainerType type = switch (style.keyword(CssProperty.Id.CONTAINER_TYPE, "normal")) {
+        ContainerType type = switch (style.keyword(CssPropertyIndex.CONTAINER_TYPE, "normal")) {
             case "size" -> ContainerType.SIZE;
             case "inline-size" -> ContainerType.INLINE_SIZE;
             default -> ContainerType.NORMAL;
         };
-        String nameList = style.keyword(CssProperty.Id.CONTAINER_NAME, "none");
+        String nameList = style.keyword(CssPropertyIndex.CONTAINER_NAME, "none");
         List<String> names;
         if (nameList.equals("none") || nameList.isEmpty()) {
             names = List.of(); // 正規表現の分割を避ける（大半の要素は名前を持たない）

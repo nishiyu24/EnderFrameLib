@@ -95,7 +95,7 @@ public final class StyleFacts {
         intrinsicWidthKind = IW_NONE;
         fitContentArg = null;
         if (PackedLengths.isZeroPx(w) || PackedLengths.isExpression(w)) {
-            String widthStr = s.getOrDefault(CssProperty.Id.WIDTH, "auto").trim();
+            String widthStr = s.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim();
             widthPercent = widthStr.contains("%");
             if (com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)) {
                 String kw = widthStr.toLowerCase();
@@ -108,21 +108,21 @@ public final class StyleFacts {
                 } else intrinsicWidthKind = IW_FIT_CONTENT;
             }
         }
-        if (PackedLengths.isZeroPx(h) || PackedLengths.isExpression(h)) heightPercent = s.getOrDefault(CssProperty.Id.HEIGHT, "auto").trim().contains("%");
+        if (PackedLengths.isZeroPx(h) || PackedLengths.isExpression(h)) heightPercent = s.getOrDefault(CssPropertyIndex.HEIGHT, "auto").trim().contains("%");
         autoMarginT = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_T));
         autoMarginR = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_R));
         autoMarginB = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_B));
         autoMarginL = PackedLengths.isAuto(s.packedEdge(ComputedStyle.EDGE_MARGIN_L));
         // 左右の auto だけは旧来どおり大小文字・空白を区別する（auto と判った時だけ原文を見る）
-        marginLeftAuto = autoMarginL && "auto".equals(s.get(CssProperty.Id.MARGIN_LEFT));
-        marginRightAuto = autoMarginR && "auto".equals(s.get(CssProperty.Id.MARGIN_RIGHT));
-        borderBox = s.keywordFresh(CssProperty.Id.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
-        alignItems = flexAlignment(s.keywordFresh(CssProperty.Id.ALIGN_ITEMS, CssKeywords.Alignment.class));
-        CssKeywords.Alignment self = s.keywordFresh(CssProperty.Id.ALIGN_SELF, CssKeywords.Alignment.class);
+        marginLeftAuto = autoMarginL && "auto".equals(s.get(CssPropertyIndex.MARGIN_LEFT));
+        marginRightAuto = autoMarginR && "auto".equals(s.get(CssPropertyIndex.MARGIN_RIGHT));
+        borderBox = s.keywordFresh(CssPropertyIndex.BOX_SIZING, CssKeywords.BoxSizing.class) == CssKeywords.BoxSizing.BORDER_BOX;
+        alignItems = flexAlignment(s.keywordFresh(CssPropertyIndex.ALIGN_ITEMS, CssKeywords.Alignment.class));
+        CssKeywords.Alignment self = s.keywordFresh(CssPropertyIndex.ALIGN_SELF, CssKeywords.Alignment.class);
         alignSelfAuto = self == CssKeywords.Alignment.AUTO;
         alignSelf = flexAlignment(self);
         usesViewportUnits = s.usesViewportUnits();
-        String wm = s.get(CssProperty.Id.WRITING_MODE);
+        String wm = s.get(CssPropertyIndex.WRITING_MODE);
         horizontalFixed = definiteWidth && !widthAuto && !widthPercent && intrinsicWidthKind == IW_NONE &&!usesViewportUnits
                 && !marginLeftAuto && !marginRightAuto && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
                 && (wm == null || KeywordMatch.trimmedStartsWith(wm, "horizontal"))
@@ -133,19 +133,19 @@ public final class StyleFacts {
                 && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
                 && !s.edgeHasPercent(ComputedStyle.DIM_LEFT) && !s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
                 && !s.edgeHasPercent(ComputedStyle.DIM_TOP) && !s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
-        rtl = KeywordMatch.is(s.get(CssProperty.Id.DIRECTION), "rtl");
+        rtl = KeywordMatch.is(s.get(CssPropertyIndex.DIRECTION), "rtl");
         bfcByStyle = floating || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
                 || overflowX.scrolls() || overflowY.scrolls();
-        whiteSpace = com.nishiyu.enderframelib.core.text.model.WhiteSpace.of(s.get(CssProperty.Id.WHITE_SPACE));
-        wordBreak = com.nishiyu.enderframelib.core.text.model.WordBreak.of(s.get(CssProperty.Id.WORD_BREAK));
-        overflowWrapBreaks = s.keywordFresh(CssProperty.Id.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class) != CssKeywords.OverflowWrap.NORMAL;
-        ellipsis = s.keywordFresh(CssProperty.Id.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS;
-        String kerning = s.get(CssProperty.Id.FONT_KERNING);
+        whiteSpace = com.nishiyu.enderframelib.core.text.model.WhiteSpace.of(s.get(CssPropertyIndex.WHITE_SPACE));
+        wordBreak = com.nishiyu.enderframelib.core.text.model.WordBreak.of(s.get(CssPropertyIndex.WORD_BREAK));
+        overflowWrapBreaks = s.keywordFresh(CssPropertyIndex.OVERFLOW_WRAP, CssKeywords.OverflowWrap.class) != CssKeywords.OverflowWrap.NORMAL;
+        ellipsis = s.keywordFresh(CssPropertyIndex.TEXT_OVERFLOW, CssKeywords.TextOverflow.class) == CssKeywords.TextOverflow.ELLIPSIS;
+        String kerning = s.get(CssPropertyIndex.FONT_KERNING);
         fontStyle = new com.nishiyu.enderframelib.core.text.model.FontStyle(
                 s.fontSizePx(),
                 fontWeight >= 600,
-                s.keywordFresh(CssProperty.Id.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
-                s.length(CssProperty.Id.LETTER_SPACING, 0, 0, 0),
+                s.keywordFresh(CssPropertyIndex.FONT_STYLE, CssKeywords.FontStyle.class) != CssKeywords.FontStyle.NORMAL,
+                s.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0),
                 fontWeight,
                 !KeywordMatch.is(kerning, "none"));
     }

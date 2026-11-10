@@ -101,11 +101,11 @@ public class StyleResolver {
         if (!raw.containsKey(CssProperty.CONTENT)) return null; // content は継承しないので、宣言が無ければ none
         ComputedStyle computed = finalizeComputedStyle(raw, sheet, env, parent,
                 parentComputedStyle.fontSizePx(), rootFontSize, rootLineHeight, viewportW, viewportH, container);
-        String content = computed.get(CssProperty.Id.CONTENT);
+        String content = computed.get(CssPropertyIndex.CONTENT);
         if (content == null) return null;
         content = content.trim();
         if (content.isEmpty() || content.equals("none") || content.equals("normal")) return null;
-        if ("none".equals(computed.get(CssProperty.Id.DISPLAY))) return null;
+        if ("none".equals(computed.get(CssPropertyIndex.DISPLAY))) return null;
         return computed;
     }
 
@@ -829,7 +829,7 @@ public class StyleResolver {
     /** 登録したカスタムプロパティの絶対化に使う、この要素のフォントサイズ（var() を含むなら親のまま）。 */
     private static float estimateFontSize(Map<String, String> raw, float parentFontSize, float rootFontSize,
                                           int viewportW, int viewportH) {
-        String fontSize = raw instanceof StyleTable table ? table.textById(CssProperty.Id.FONT_SIZE) : raw.get(CssProperty.FONT_SIZE);
+        String fontSize = raw instanceof StyleTable table ? table.textById(CssPropertyIndex.FONT_SIZE) : raw.get(CssProperty.FONT_SIZE);
         if (fontSize == null || fontSize.contains("var(") || CssWideKeyword.of(fontSize) != null) return parentFontSize;
         return ValueComputer.resolveFontSize(fontSize,
                 new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, viewportW, viewportH,

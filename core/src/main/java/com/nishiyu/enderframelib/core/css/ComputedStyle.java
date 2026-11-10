@@ -469,7 +469,7 @@ public final class ComputedStyle {
     /** 作業表 {@code owned} の配列をそのまま引き取る（呼び出し側はこの後 {@code owned} を触らない）。{@link #of} と同じ算出。 */
     static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize) {
         float own = parentFontSize;
-        String fontSize = owned.textById(CssProperty.Id.FONT_SIZE);
+        String fontSize = owned.textById(CssPropertyIndex.FONT_SIZE);
         if (fontSize != null) {
             own = ValueComputer.resolveFontSize(fontSize,
                     new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -65,10 +66,10 @@ public final class BoxDecorationPainter {
     }
 
     static final String[] BORDER_DIRECTIONS = {"top", "right", "bottom", "left"};
-    private static final int[] BORDER_COLOR_IDS = {CssProperty.Id.BORDER_TOP_COLOR, CssProperty.Id.BORDER_RIGHT_COLOR,
-            CssProperty.Id.BORDER_BOTTOM_COLOR, CssProperty.Id.BORDER_LEFT_COLOR};
-    private static final int[] BORDER_STYLE_IDS = {CssProperty.Id.BORDER_TOP_STYLE, CssProperty.Id.BORDER_RIGHT_STYLE,
-            CssProperty.Id.BORDER_BOTTOM_STYLE, CssProperty.Id.BORDER_LEFT_STYLE};
+    private static final int[] BORDER_COLOR_IDS = {CssPropertyIndex.BORDER_TOP_COLOR, CssPropertyIndex.BORDER_RIGHT_COLOR,
+            CssPropertyIndex.BORDER_BOTTOM_COLOR, CssPropertyIndex.BORDER_LEFT_COLOR};
+    private static final int[] BORDER_STYLE_IDS = {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_RIGHT_STYLE,
+            CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE};
 
     /**
      * 枠線の幅・色・線種。幅はレイアウトが決めた値（{@code box.bT} など）をそのまま使う（軸 1・3）。
@@ -221,12 +222,12 @@ public final class BoxDecorationPainter {
      */
     void drawOutline(List<DisplayItem> elements, LayoutBox box, String id, int color,
                              ItemProps events, RenderMeta meta, int transDur) {
-        String lineStyle = box.style.keywordOf(CssProperty.Id.OUTLINE_STYLE, BorderStyle.class).cssName();
+        String lineStyle = box.style.keywordOf(CssPropertyIndex.OUTLINE_STYLE, BorderStyle.class).cssName();
         if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
-        float w = box.style.length(CssProperty.Id.OUTLINE_WIDTH, box.w, rootW, rootH);
+        float w = box.style.length(CssPropertyIndex.OUTLINE_WIDTH, box.w, rootW, rootH);
         if (w <= 0) return;
-        float offset = box.style.length(CssProperty.Id.OUTLINE_OFFSET, box.w, rootW, rootH);
-        String colorProp = box.style.get(CssProperty.Id.OUTLINE_COLOR);
+        float offset = box.style.length(CssPropertyIndex.OUTLINE_OFFSET, box.w, rootW, rootH);
+        String colorProp = box.style.get(CssPropertyIndex.OUTLINE_COLOR);
         int c = colorProp == null || "invert".equalsIgnoreCase(colorProp.trim()) ? color : ColorParser.parseColor(colorProp);
         if ("auto".equals(lineStyle)) lineStyle = "solid";
 
@@ -247,9 +248,9 @@ public final class BoxDecorationPainter {
                          ItemProps events, RenderMeta meta, int transDur) {
         float[][] rules = box.columnRules;
         if (rules == null) return;
-        String lineStyle = box.style.keywordOf(CssProperty.Id.COLUMN_RULE_STYLE, BorderStyle.class).cssName();
+        String lineStyle = box.style.keywordOf(CssPropertyIndex.COLUMN_RULE_STYLE, BorderStyle.class).cssName();
         if ("none".equals(lineStyle) || "hidden".equals(lineStyle)) return;
-        String colorProp = box.style.get(CssProperty.Id.COLUMN_RULE_COLOR);
+        String colorProp = box.style.get(CssPropertyIndex.COLUMN_RULE_COLOR);
         int c = colorProp == null ? color : ColorParser.parseColor(colorProp);
         String[] styles = {lineStyle, lineStyle, lineStyle, lineStyle};
         int[] colors = {c, c, c, c};
@@ -451,7 +452,7 @@ public final class BoxDecorationPainter {
 
     /** {@code currentColor} になる色（要素の {@code color}）。 */
     private static int currentColor(LayoutBox box) {
-        return ColorParser.parseColor(box.style.getOrDefault(CssProperty.Id.COLOR, "black"));
+        return ColorParser.parseColor(box.style.getOrDefault(CssPropertyIndex.COLOR, "black"));
     }
 
     private void drawImageLayers(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.BackgroundLayer> layers,

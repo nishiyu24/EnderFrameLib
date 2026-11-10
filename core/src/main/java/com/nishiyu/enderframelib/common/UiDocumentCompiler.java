@@ -36,7 +36,6 @@ public class UiDocumentCompiler {
     public static RenderPipeline.ILayoutBoxRenderer clientBoxRenderer = DEFAULT_BOX_RENDERER;
     public static Function<String, String> clientResourceFallback = null;
     public static Function<String, String> datapackResourceFallback = null;
-    public static IntrinsicSizeResolver intrinsicSizeResolver = null;
     public static Function<String, String> resourceTextResolver = DocumentLoader.DEFAULT_RESOURCE_TEXT_RESOLVER;
     public static final BiFunction<String, String, HtmlNode> INNER_HTML_PARSER = DocumentLoader.INNER_HTML_PARSER;
 

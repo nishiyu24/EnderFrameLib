@@ -26,10 +26,10 @@ import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 
 /**
- * Milestone 2: 算出スタイルの読み取りは添字（{@code CssProperty.Id.*}）で行う、という移行が崩れないこと。
+ * Milestone 2: 算出スタイルの読み取りは添字（{@code CssPropertyIndex.*}）で行う、という移行が崩れないこと。
  * 本番のソースを型つきで解析し（受け手の型まで見る）、次を禁じる。
  * <ol>
- *   <li>{@code Map} など {@code ComputedStyle} 以外の受け手に {@code CssProperty.Id.*} を渡す
+ *   <li>{@code Map} など {@code ComputedStyle} 以外の受け手に {@code CssPropertyIndex.*} を渡す
  *       （{@code Map.get(Object)} は int を受け付けてしまい、コンパイルは通るのに黙って常に null を返す）</li>
  *   <li>{@code ComputedStyle} の読み取りに名前の文字列を渡す（ハッシュ引きに戻る）。名前を実行時に決める
  *       {@code StyleAnimator}（トランジションの対象名）だけは許す</li>
@@ -69,7 +69,7 @@ class PropertyIdMigrationGuardTest {
                     if (!n.getArguments().isEmpty() && n.getMethodSelect() instanceof MemberSelectTree ms) {
                         String method = ms.getIdentifier().toString();
                         ExpressionTree first = n.getArguments().get(0);
-                        boolean idArg = first.toString().startsWith("CssProperty.Id.");
+                        boolean idArg = first.toString().startsWith("CssPropertyIndex.");
                         TypeMirror recv = trees2.getTypeMirror(new TreePath(getCurrentPath(), ms.getExpression()));
                         boolean onStyle = recv != null && recv.toString().endsWith("core.css.ComputedStyle");
                         // 作業表（StyleTable）の添字版（引数が int で、Map の Object 引数には化けない）だけは添字を渡してよい
@@ -82,7 +82,7 @@ class PropertyIdMigrationGuardTest {
                         } else if (onStyle && READERS.contains(method) && !RUNTIME_NAME_FILES.contains(file)) {
                             TypeMirror t = trees2.getTypeMirror(new TreePath(getCurrentPath(), first));
                             if (t != null && t.toString().equals("java.lang.String")) {
-                                violations.add(file + ":" + line + " " + ms + "(" + first + ") は名前の文字列で読んでいる（CssProperty.Id.* を使う）");
+                                violations.add(file + ":" + line + " " + ms + "(" + first + ") は名前の文字列で読んでいる（CssPropertyIndex.* を使う）");
                             }
                         }
                     }

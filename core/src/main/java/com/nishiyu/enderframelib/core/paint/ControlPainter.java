@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -58,12 +59,10 @@ final class ControlPainter {
         // img は srcset / sizes から密度に合う候補を選ぶ（無ければ src）
         ImageChoice chosen = "img".equals(box.node.tag)
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
-        String src = box.style.getOrDefault(CssProperty.Id.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
-        if ("mc-fluid".equals(box.node.tag) && !src.startsWith("fluid:")) {
-            src = "fluid:" + box.node.attrs.getOrDefault("fluid", src);
-        } else if ("mc-entity".equals(box.node.tag) && !src.startsWith("entity:")) {
-            src = "entity:" + box.node.attrs.getOrDefault("entity", src.isEmpty() ? "@self" : src);
-        }
+        String src = box.style.getOrDefault(CssPropertyIndex.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
+        com.nishiyu.enderframelib.core.layout.CustomElementPainter hostPainter =
+                com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf(box.node.tag);
+        if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
 
         String tag = box.node.tag;
         boolean gif = "img".equals(tag) && isRemoteGif(src);
@@ -75,7 +74,7 @@ final class ControlPainter {
             if (gif || box.node.attrs.containsKey("loop")) mediaEvents.put("media-loop", "1");
             if (gif || box.node.attrs.containsKey("muted")) mediaEvents.put("media-muted", "1");
         }
-        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssProperty.Id.OBJECT_FIT, "fill"));
+        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
@@ -98,7 +97,7 @@ final class ControlPainter {
             src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio());
         }
         ItemProps imageEvents = mediaEvents;
-        String position = box.style.get(CssProperty.Id.OBJECT_POSITION);
+        String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
         if (position != null && !position.isBlank()) {
             imageEvents = mediaEvents.copy();
             imageEvents.put("object-position", position);
@@ -151,9 +150,9 @@ final class ControlPainter {
         ItemProps canvasEvents = partsEvents.copy();
         canvasEvents.put("canvas-width", box.node.attrs.getOrDefault("width", ""));
         canvasEvents.put("canvas-height", box.node.attrs.getOrDefault("height", ""));
-        String position = box.style.get(CssProperty.Id.OBJECT_POSITION);
+        String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
-        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssProperty.Id.OBJECT_FIT, "fill"));
+        ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
         addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
     }
 
@@ -234,7 +233,7 @@ final class ControlPainter {
                     phEvents.pointerEventsNone();
                     // ::placeholder の color（UA の既定は #aaa）。規則が掛からなければ既定の色
                     int placeholderColor = box.placeholderStyle != null
-                            ? box.placeholderStyle.color(CssProperty.Id.COLOR, DEFAULT_PLACEHOLDER_COLOR)
+                            ? box.placeholderStyle.color(CssPropertyIndex.COLOR, DEFAULT_PLACEHOLDER_COLOR)
                             : DEFAULT_PLACEHOLDER_COLOR;
                     addElement(elements, id, id + "_ph", ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
                 }
@@ -419,7 +418,7 @@ final class ControlPainter {
 
     /** {@code accent-color}。auto（UA の既定）なら null。 */
     static Integer accentColor(LayoutBox box, int textColor) {
-        String v = box.style.get(CssProperty.Id.ACCENT_COLOR);
+        String v = box.style.get(CssPropertyIndex.ACCENT_COLOR);
         if (v == null) return null;
         v = v.trim();
         if (v.isEmpty() || "auto".equalsIgnoreCase(v)) return null;

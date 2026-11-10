@@ -7,12 +7,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Milestone 2: 添字定数（{@code CssProperty.Id}）は {@code ComputedStyle} → {@code PropertyRegistry} の初期化に依存するので、
+ * Milestone 2: 添字定数（{@code CssPropertyIndex}）は {@code ComputedStyle} → {@code PropertyRegistry} の初期化に依存するので、
  * それらを経由して初期化される側の静的な添字表が、途中の 0 のまま固まらないこと（最初に触るクラスを変えた別 JVM で確かめる）。
  */
 class IdInitOrderTest {
     private static final List<String> FIRST_TOUCH = List.of(
-            "com.nishiyu.enderframelib.core.css.CssProperty$Id",
+            "com.nishiyu.enderframelib.core.css.CssPropertyIndex",
             "com.nishiyu.enderframelib.core.css.ComputedStyle",
             "com.nishiyu.enderframelib.core.css.PropertyRegistry",
             "com.nishiyu.enderframelib.core.css.LengthResolver",

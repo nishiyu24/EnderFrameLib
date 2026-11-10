@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -92,7 +93,7 @@ public final class BoxTreeBuilder {
 
     /** 局所パッチの対象にしてよい {@code list-style-type}（番号を使わない = 兄弟の数に依らない）。 */
     private static boolean unnumberedListStyle(LayoutBox box) {
-        String type = box.style.getOrDefault(CssProperty.Id.LIST_STYLE_TYPE, "disc").trim().toLowerCase(Locale.ROOT);
+        String type = box.style.getOrDefault(CssPropertyIndex.LIST_STYLE_TYPE, "disc").trim().toLowerCase(Locale.ROOT);
         return type.equals("none") || type.equals("disc") || type.equals("circle") || type.equals("square");
     }
 
@@ -111,7 +112,7 @@ public final class BoxTreeBuilder {
                 || tag.equals("svg") || tag.equals("select") || tag.equals("button")) {
             return false;
         }
-        if (!WhiteSpace.of(parent.style.get(CssProperty.Id.WHITE_SPACE)).collapses()) return false;
+        if (!WhiteSpace.of(parent.style.get(CssPropertyIndex.WHITE_SPACE)).collapses()) return false;
         boolean anyBlock = false;
         for (LayoutBox c : parent.children) {
             if (c.isAnonymous || c.node == null || c.node.isPseudoNode || c.isOutsideMarker || c.isRenderedLegend) return false;
@@ -376,12 +377,12 @@ public final class BoxTreeBuilder {
      */
     private static boolean isOutOfFlow(LayoutBox box) {
         return box.display.isNone() || box.isAbsolute || box.isOutsideMarker
-                || !"none".equals(box.style.getOrDefault(CssProperty.Id.FLOAT, "none"));
+                || !"none".equals(box.style.getOrDefault(CssPropertyIndex.FLOAT, "none"));
     }
 
     private static boolean isCollapsibleWhitespace(LayoutBox box) {
         if (box.node.nodeType != NodeType.TEXT) return false;
-        if (!WhiteSpace.of(box.style.get(CssProperty.Id.WHITE_SPACE)).collapses()) return false;
+        if (!WhiteSpace.of(box.style.get(CssPropertyIndex.WHITE_SPACE)).collapses()) return false;
         return box.node.text == null || box.node.text.isBlank();
     }
 
@@ -418,7 +419,7 @@ public final class BoxTreeBuilder {
             if (!child.isAnonymous) continue;
             Map<String, String> overrides = child.node.isPseudoNode
                     ? MARKER_OVERRIDES
-                    : Map.of(CssProperty.DISPLAY, child.style.getOrDefault(CssProperty.Id.DISPLAY, "block"));
+                    : Map.of(CssProperty.DISPLAY, child.style.getOrDefault(CssPropertyIndex.DISPLAY, "block"));
             child.updateStyle(child.node.isPseudoNode ? markerStyleOf(owner) : generatedStyle(owner, overrides));
             if (child.node.isPseudoNode) {
                 for (LayoutBox text : child.children) text.updateStyle(child.style);
@@ -470,16 +471,16 @@ public final class BoxTreeBuilder {
      */
     private LayoutBox createMarker(LayoutBox listItem, Counters counters) {
         String text = markerContent(listItem, counters);
-        String imageUrl = text == null ? listStyleImageUrl(listItem.style.get(CssProperty.Id.LIST_STYLE_IMAGE)) : null;
+        String imageUrl = text == null ? listStyleImageUrl(listItem.style.get(CssPropertyIndex.LIST_STYLE_IMAGE)) : null;
         if (imageUrl != null) return createImageMarker(listItem, imageUrl);
         if (text == null) {
-            text = counterStyles.marker(listItem.style.getOrDefault(CssProperty.Id.LIST_STYLE_TYPE, "disc"),
+            text = counterStyles.marker(listItem.style.getOrDefault(CssPropertyIndex.LIST_STYLE_TYPE, "disc"),
                     counters.value(LIST_ITEM));
         }
         if (text == null || text.isEmpty()) return null;
 
         ComputedStyle style = markerStyleOf(listItem);
-        boolean outside = listItem.style.keywordOf(CssProperty.Id.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+        boolean outside = listItem.style.keywordOf(CssPropertyIndex.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
                 != CssKeywords.ListStylePosition.INSIDE;
 
         // 前回と同じ文字のマーカーは箱ごと使い回す（番号が変わったら作り直す）
@@ -524,7 +525,7 @@ public final class BoxTreeBuilder {
     /** 画像のマーカー: 画像の置換要素と、続く空白 1 文字。画像が同じなら前回の箱を使い回す。 */
     private LayoutBox createImageMarker(LayoutBox listItem, String url) {
         ComputedStyle style = markerStyleOf(listItem);
-        boolean outside = listItem.style.keywordOf(CssProperty.Id.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
+        boolean outside = listItem.style.keywordOf(CssPropertyIndex.LIST_STYLE_POSITION, CssKeywords.ListStylePosition.class)
                 != CssKeywords.ListStylePosition.INSIDE;
 
         LayoutBox reused = takeReusableGenerated(listItem.node.key() + "_marker");
@@ -562,7 +563,7 @@ public final class BoxTreeBuilder {
     /** {@code ::marker} の {@code content}。無い・{@code normal} は null（リストの種類で決める）、{@code none} は空文字列。 */
     private String markerContent(LayoutBox listItem, Counters counters) {
         if (listItem.markerStyle == null) return null;
-        String content = listItem.markerStyle.get(CssProperty.Id.CONTENT);
+        String content = listItem.markerStyle.get(CssPropertyIndex.CONTENT);
         if (content == null || content.isBlank() || content.trim().equalsIgnoreCase("normal")) return null;
         if (content.trim().equalsIgnoreCase("none")) return "";
         return evaluateContent(content, listItem.node, counters);
@@ -581,7 +582,7 @@ public final class BoxTreeBuilder {
      * {@code "(" attr(title) ")"} のような連結が文字列のまま出ていた。カウンタも読めなかった。
      */
     private void evaluateGeneratedContent(LayoutBox pseudo, Counters counters) {
-        String content = pseudo.style.get(CssProperty.Id.CONTENT);
+        String content = pseudo.style.get(CssPropertyIndex.CONTENT);
         if (content == null || pseudo.elementChildren.isEmpty()) return;
         LayoutBox textBox = pseudo.elementChildren.getFirst();
         if (textBox.node.nodeType != NodeType.TEXT) return;
@@ -757,7 +758,7 @@ public final class BoxTreeBuilder {
             ComputedStyle style = box.style;
             HtmlNode node = box.node;
 
-            Map<String, Integer> resets = parseCounterList(style.get(CssProperty.Id.COUNTER_RESET), 0);
+            Map<String, Integer> resets = parseCounterList(style.get(CssPropertyIndex.COUNTER_RESET), 0);
             // <ol start> は list-item の初期値を変える表示上のヒント（HTML の Rendering 節）
             if (resets.containsKey(LIST_ITEM) && "ol".equalsIgnoreCase(node.tag) && node.attrs.containsKey("start")) {
                 Integer start = parseInt(node.attrs.get("start"));
@@ -774,14 +775,14 @@ public final class BoxTreeBuilder {
                 if (reversed && reset.getKey().equals(LIST_ITEM)) reversedInstances.add(names.size() - 1);
             }
 
-            Map<String, Integer> increments = parseCounterList(style.get(CssProperty.Id.COUNTER_INCREMENT), 1);
+            Map<String, Integer> increments = parseCounterList(style.get(CssPropertyIndex.COUNTER_INCREMENT), 1);
             if (box.display.listItem() && !increments.containsKey(LIST_ITEM)) {
                 int i = innermost(LIST_ITEM);
                 increments.put(LIST_ITEM, i >= 0 && reversedInstances.contains(i) ? -1 : 1);
             }
             increments.forEach(this::increment);
 
-            Map<String, Integer> sets = parseCounterList(style.get(CssProperty.Id.COUNTER_SET), 0);
+            Map<String, Integer> sets = parseCounterList(style.get(CssPropertyIndex.COUNTER_SET), 0);
             if (box.display.listItem() && !sets.containsKey(LIST_ITEM) && node.attrs.containsKey("value")) {
                 Integer value = parseInt(node.attrs.get("value"));
                 if (value != null) sets.put(LIST_ITEM, value);

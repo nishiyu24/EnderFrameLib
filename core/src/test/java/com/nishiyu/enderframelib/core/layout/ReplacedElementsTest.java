@@ -48,7 +48,7 @@ class ReplacedElementsTest {
     void invalidRegistrationIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("", Kind.SCENE));
         assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register(null, Kind.SCENE));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", null));
+        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (Kind) null));
     }
 
     @Test

@@ -30,8 +30,8 @@ public class ClientLocalEnvProvider {
 
     static {
         LocalEnvironment.setBaseSource(ClientLocalEnvProvider::captureMinecraftEnv);
-        Bindings.i18nResolver = ClientLocalEnvProvider::translateKey;
-        Bindings.i18nFormatter = ClientLocalEnvProvider::translateKey;
+        com.nishiyu.enderframelib.core.EngineContext.global().i18nResolver = ClientLocalEnvProvider::translateKey;
+        com.nishiyu.enderframelib.core.EngineContext.global().i18nFormatter = ClientLocalEnvProvider::translateKey;
     }
 
     public static String translateKey(String key, Object[] args) {
