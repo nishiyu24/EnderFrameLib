@@ -53,6 +53,14 @@ final class CpuRaster {
         this.pool = new PixmapPool(w, h);
     }
 
+    int width() {
+        return w;
+    }
+
+    int height() {
+        return h;
+    }
+
     // ------------------------------------------------------------------ 描画先
 
     /** 根の描画先。初めて必要になったときに確保する。 */
@@ -89,6 +97,34 @@ final class CpuRaster {
     /** CPU が描いた範囲 {@code {x0, y0, x1, y1}}。何も描いていなければ null。 */
     int[] dirtyBounds() {
         return dirty.bounds();
+    }
+
+    /** 根の描画先を {@code color}（事前乗算）で全面塗り直す。 */
+    void clearAll(int color) {
+        java.util.Arrays.fill(root().pixels(), color);
+    }
+
+    /** 根の描画先の {@code [x0,x1) × [y0,y1)} を {@code color}（事前乗算）で塗り直す。 */
+    void clearRect(int x0, int y0, int x1, int y1, int color) {
+        Pixmap r = root();
+        int[] px = r.pixels();
+        int w = r.width();
+        for (int y = y0; y < y1; y++) java.util.Arrays.fill(px, y * w + x0, y * w + x1, color);
+    }
+
+    /** 汚れているタイルだけを {@code color}（事前乗算）で塗り直す（差分描画）。 */
+    void clearTiles(DamageRegion damage, int color) {
+        Pixmap r = root();
+        int[] px = r.pixels();
+        int w = r.width(), h = r.height();
+        for (int ty = 0, ny = damage.tilesY(); ty < ny; ty++) {
+            for (int tx = 0, nx = damage.tilesX(); tx < nx; tx++) {
+                if (!damage.isTileDirty(tx, ty)) continue;
+                int ax0 = tx * DamageRegion.TILE, ay0 = ty * DamageRegion.TILE;
+                int ax1 = Math.min(w, ax0 + DamageRegion.TILE), ay1 = Math.min(h, ay0 + DamageRegion.TILE);
+                for (int y = ay0; y < ay1; y++) java.util.Arrays.fill(px, y * w + ax0, y * w + ax1, color);
+            }
+        }
     }
 
     /** 描いた範囲を透明に戻し、汚れ範囲を空にする。 */

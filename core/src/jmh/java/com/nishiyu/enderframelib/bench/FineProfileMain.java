@@ -93,6 +93,18 @@ public final class FineProfileMain {
             System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
                     + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
                     + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
+            if (backend instanceof SoftwareRenderBackend sw) {
+                try {
+                    java.lang.reflect.Method p = SoftwareRenderBackend.class.getDeclaredMethod("partialFrames");
+                    java.lang.reflect.Method f = SoftwareRenderBackend.class.getDeclaredMethod("fullFrames");
+                    java.lang.reflect.Method a = SoftwareRenderBackend.class.getDeclaredMethod("damageAborts");
+                    java.lang.reflect.Method s = SoftwareRenderBackend.class.getDeclaredMethod("skippedItems");
+                    p.setAccessible(true); f.setAccessible(true); a.setAccessible(true); s.setAccessible(true);
+                    System.out.println("DAMAGE partial=" + p.invoke(sw) + " full=" + f.invoke(sw) + " aborts=" + a.invoke(sw) + " skipped=" + s.invoke(sw));
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
             System.out.print(StageProfiler.report());
         }
     }

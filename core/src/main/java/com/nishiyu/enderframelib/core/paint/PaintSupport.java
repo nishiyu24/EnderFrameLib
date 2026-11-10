@@ -77,13 +77,29 @@ final class PaintSupport {
                             float x, float y, float w, float h, String text,
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
-                            RenderMeta meta) {
+                            RenderMeta meta, long key) {
         int left = Math.round(x);
         int top = Math.round(y);
         int width = Math.round(x + w) - left;
         int height = Math.round(y + h) - top;
         elements.add(new DisplayItem(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events.attrs(), radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode,
-                (meta == null && events.hints() == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(events.hints()))));
+                (meta == null && events.hints() == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(events.hints())), key));
+    }
+
+    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,
+                            float x, float y, float w, float h, String text,
+                            int color, int bgColor, ItemProps events, int radius, float opacity,
+                            float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
+                            RenderMeta meta) {
+        addElement(elements, baseNodeId, id, type, fitMode, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta, 0L);
+    }
+
+    static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type,
+                            float x, float y, float w, float h, String text,
+                            int color, int bgColor, ItemProps events, int radius, float opacity,
+                            float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
+                            RenderMeta meta, long key) {
+        addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta, key);
     }
 
     static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type,
@@ -91,7 +107,7 @@ final class PaintSupport {
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             RenderMeta meta) {
-        addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta);
+        addElement(elements, baseNodeId, id, type, ImageFitMode.FILL, x, y, w, h, text, color, bgColor, events, radius, opacity, tx, ty, sx, sy, rot, trans, animDef, meta, 0L);
     }
 
     static String resolveLiveInputValue(String nodeId, String attrValue) {

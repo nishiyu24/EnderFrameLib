@@ -53,6 +53,14 @@ public final class PaintSceneDriver {
 
     /** 走査の結果を受け取る描画側。 */
     public interface Painter {
+        /**
+         * このフレームで項目 {@code index} を描かないと描画側が決めているなら true。ドライバは姿勢・クリップの計算と
+         * {@link #drawItem} の呼び出しを省く（画素は描画側の責任で前のフレームのまま残す）。既定は false。
+         */
+        default boolean skipItem(int index) {
+            return false;
+        }
+
         /** 開いている層を、項目の祖先のグループ {@code want}（外側から内側の順）に合わせる。 */
         void syncLayers(List<Group> want);
 
@@ -292,6 +300,8 @@ public final class PaintSceneDriver {
     private int[] diffBuf = new int[64];
     /** 索引（{@link #indexedById}・{@link #indexOf}・{@link #fxAnchors}）を作った時のリスト。 */
     private List<DisplayItem> indexedItems;
+    /** {@link #prepare} で索引とフレーム番号を整え、まだ {@link #run} が消費していない。 */
+    private boolean prepared;
     private Long2ObjectOpenHashMap<DisplayItem> indexedById = new Long2ObjectOpenHashMap<>();
     private long generation;
 
@@ -312,6 +322,24 @@ public final class PaintSceneDriver {
     /** 項目 {@code i} の版（{@link #itemVersion}）。 */
     public int itemVersion(int i) {
         return i < itemVersion.length ? itemVersion[i] : 0;
+    }
+
+    /** 項目 {@code i} の親（{@link ElementType#NODE} の項目）の位置。無ければ -1。 */
+    public int parentIndex(int i) {
+        return i >= 0 && i < parentIdx.length ? parentIdx[i] : -1;
+    }
+
+    /**
+     * 項目 {@code el} に、時刻 {@code nowMs} でまだ動いている補間・キーフレームがあるか。
+     * 描画側が「変化がないフレームを飛ばせるか」を、項目ごとに確かめるために使う。
+     */
+    public static boolean itemActiveAt(String sessionId, DisplayItem el, long nowMs) {
+        return CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs);
+    }
+
+    /** 項目が、層（フィルター・マスク・混合・クリップ・背景フィルター）を要する錨か。 */
+    public static boolean hasFxLayer(DisplayItem el) {
+        return el.type() == ElementType.NODE && hasFx(el.hints().layer());
     }
 
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
@@ -340,20 +368,32 @@ public final class PaintSceneDriver {
     }
 
     /**
+     * {@code items} の索引を（前回と同じなら差分で）整え、このフレームの時刻と変換を設定する。
+     * 描画側が先に姿勢（{@link #resolveAt}）や親子（{@link #parentIndex}）を読んで、描く範囲を決めたいときに使う。
+     * 直後に {@link #run} を呼ぶと、索引の作り直しとフレーム番号の更新を繰り返さない。
+     */
+    public void prepare(List<DisplayItem> items, long nowMs, Matrix2D frame) {
+        if (items == null || items.isEmpty()) return;
+        this.now = nowMs;
+        this.frame = frame;
+        CssAnimator.cleanup(sessionId, items);
+        // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
+        // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
+        if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items) && !patchIndexByDiff(items)) rebuildIndex(items);
+        if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
+        prepared = true;
+    }
+
+    /**
      * {@code items} を時刻 {@code nowMs} の見た目で先頭から走査し、{@code painter} へ渡す。
      *
      * @param frame フレーム全体の変換（普通は {@code dpr} 倍の拡縮）
      */
     public void run(List<DisplayItem> items, long nowMs, Matrix2D frame, Painter painter) {
         if (items == null || items.isEmpty()) return;
-        this.now = nowMs;
-        this.frame = frame;
-        CssAnimator.cleanup(sessionId, items);
+        if (!prepared) prepare(items, nowMs, frame);
+        prepared = false;
         try {
-            // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
-            // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
-            if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items) && !patchIndexByDiff(items)) rebuildIndex(items);
-            if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
             this.byId = indexedById;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
             anchorNext = 0;
@@ -379,7 +419,7 @@ public final class PaintSceneDriver {
                     skipTo = retainTo[rn];
                     continue;
                 }
-                if (rn >= 0 && plan != null && plan[rn] == RetainPlan.RECORD) {
+                if (rn >= 0) {
                     win = windows.isEmpty() ? null : windows.get(rn);
                     if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
                 }
@@ -388,6 +428,10 @@ public final class PaintSceneDriver {
                     if (!win.keep[blk]) { i = Math.min(winTo, winFrom + ((blk + 1) << BLOCK_SHIFT)) - 1; continue; }
                 }
                 DisplayItem el = items.get(i);
+                if (el.type() != ElementType.NODE && painter.skipItem(i)) { // 描画側が前のフレームの画素をそのまま残す項目: 姿勢も鎖も要らない
+                    chains[i] = null;
+                    continue;
+                }
                 List<Group> chain = List.of();
                 if (el.type() != ElementType.NODE) {
                     Resolved r = resolveAt(i);
@@ -410,18 +454,23 @@ public final class PaintSceneDriver {
             int openN = 0;
             for (int i = 0; i < items.size(); i++) {
                 int rn = retainNodeAt.length > i ? retainNodeAt[i] : -1;
-                if (rn >= 0 && plan != null && plan[rn] != null && plan[rn] != RetainPlan.NONE) {
-                    DisplayItem node = items.get(rn);
-                    painter.syncLayers(List.of());
-                    if (plan[rn] == RetainPlan.SKIP) {
+                if (rn >= 0) {
+                    RetainPlan r = plan != null ? plan[rn] : null;
+                    if (r == RetainPlan.SKIP) {
+                        DisplayItem node = items.get(rn);
+                        painter.syncLayers(List.of());
                         painter.drawRetained(node, rn, retainFrom[rn], retainTo[rn]);
                         i = retainTo[rn] - 1;
                         continue;
                     }
-                    painter.beginRetained(node, rn, retainFrom[rn], retainTo[rn]);
-                    if (openN == open.length) open = java.util.Arrays.copyOf(open, openN * 2);
-                    open[openN++] = rn;
-                    win = plan[rn] == RetainPlan.RECORD && !windows.isEmpty() ? windows.get(rn) : null;
+                    if (r == RetainPlan.RECORD) {
+                        DisplayItem node = items.get(rn);
+                        painter.syncLayers(List.of());
+                        painter.beginRetained(node, rn, retainFrom[rn], retainTo[rn]);
+                        if (openN == open.length) open = java.util.Arrays.copyOf(open, openN * 2);
+                        open[openN++] = rn;
+                    }
+                    win = windows.isEmpty() ? null : windows.get(rn);
                     if (win != null) { winFrom = retainFrom[rn]; winTo = retainTo[rn]; } else winTo = 0;
                 }
                 boolean culledRun = false;
@@ -429,7 +478,7 @@ public final class PaintSceneDriver {
                     int blk = (i - winFrom) >> BLOCK_SHIFT;
                     if (!win.keep[blk]) { i = Math.min(winTo, winFrom + ((blk + 1) << BLOCK_SHIFT)) - 1; culledRun = true; }
                 }
-                DisplayItem el = culledRun ? null : items.get(i);
+                DisplayItem el = culledRun || painter.skipItem(i) ? null : items.get(i);
                 if (el != null && el.type() != ElementType.NODE) {
                     List<Group> chain = chains[i];
                     if (chain != null) {
@@ -456,6 +505,7 @@ public final class PaintSceneDriver {
                     painter.syncLayers(List.of());
                     if (!painter.endRetained(items.get(node), node)) {
                         plan[node] = RetainPlan.NONE;
+                        windows.remove(node);
                         i = retainFrom[node] - 1;
                         openN = 0;
                         win = null; // 描き直しは通常の走査（外した項目は鎖が無いので描かれない）
@@ -473,9 +523,10 @@ public final class PaintSceneDriver {
      * 保持できるスクロール層の扱いを、描画側へ問い合わせて決める。節の祖先にグループ（不透明度・フィルター）がある・
      * フィルターの錨の範囲に入っているときは問い合わせない（描画側の保持はグループの外でだけ成り立つ）。
      * 外側の範囲の中にある入れ子の節は問い合わせない（外側が NONE のときだけ、内側を問い合わせる）。
+     * 保持しない（NONE）場合でも、描画側が cullWindow を持っていれば画面外ブロックを走査から外す。
      */
     private RetainPlan[] planRetained(List<DisplayItem> items, Painter painter) {
-        if (!retainScrollLayers || retainNodes.length == 0) return null;
+        if (retainNodes.length == 0) return null;
         RetainPlan[] plan = null;
         int coveredUntil = 0;
         for (int c : retainNodes) {
@@ -484,16 +535,28 @@ public final class PaintSceneDriver {
             if (insideFxAnchor(items, c)) continue;
             Resolved r = resolveAt(c);
             if (!r.groups().isEmpty() || r.opacity() < 0.999f) continue;
-            RetainPlan decision = painter.planRetained(items.get(c), c, from, to);
-            if (decision == RetainPlan.NONE) continue;
-            if (plan == null) {
-                if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];
-                else Arrays.fill(planBuf, 0, items.size(), null);
-                plan = planBuf;
+            RetainPlan decision = retainScrollLayers ? painter.planRetained(items.get(c), c, from, to) : RetainPlan.NONE;
+            if (decision == RetainPlan.SKIP) {
+                if (plan == null) {
+                    if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];
+                    else Arrays.fill(planBuf, 0, items.size(), null);
+                    plan = planBuf;
+                }
+                plan[c] = decision;
+                coveredUntil = to;
+            } else if (decision == RetainPlan.RECORD) {
+                if (plan == null) {
+                    if (planBuf.length < items.size()) planBuf = new RetainPlan[Math.max(items.size(), planBuf.length * 2)];
+                    else Arrays.fill(planBuf, 0, items.size(), null);
+                    plan = planBuf;
+                }
+                plan[c] = decision;
+                planWindow(items, c, painter);
+                coveredUntil = to;
+            } else {
+                // 保持層を作らない通常描画（CPUバックエンド等）でも、画面外ブロックを走査から外す
+                planWindow(items, c, painter);
             }
-            plan[c] = decision;
-            if (decision == RetainPlan.RECORD) planWindow(items, c, painter);
-            coveredUntil = to;
         }
         return plan;
     }
@@ -772,6 +835,19 @@ public final class PaintSceneDriver {
     public static boolean anyActiveAt(String sessionId, List<DisplayItem> items, long nowMs) {
         for (DisplayItem el : items) {
             if (CssAnimator.stateFor(sessionId, el, nowMs).isActiveAt(nowMs)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 直近に {@link #resolveAt} で解決した項目の状態だけを走査し、時刻 {@code nowMs} でまだ動いているものがあるか。
+     * 状態の表を読むだけで id の表を引かない（毎フレームの差分描画の可否判定に使う）。差し替わった項目の状態は
+     * 索引の更新で消えているので、その項目は呼び出し側が {@link #itemActiveAt} で別に確かめる。
+     */
+    public boolean anyCachedActiveAt(long nowMs) {
+        for (int i = 0; i < states.length; i++) {
+            CssAnimator.AnimState st = states[i];
+            if (st != null && st.isActiveAt(nowMs)) return true;
         }
         return false;
     }

@@ -59,6 +59,25 @@ public record DisplayItem(
         return AtomTable.shared().intern(id);
     }
 
+    /**
+     * ノードのアリーナハンドル（nodeId）と部品番号（partOrdinal: 0〜65535）から 64-bit 整数鍵を生成する（戦略 T2）。
+     * 文字列連結や {@link AtomTable#intern} のハッシュ照合を一切行わずに O(1) で即座に計算できる。
+     */
+    public static long keyOf(int nodeHandle, int partOrdinal) {
+        if (nodeHandle <= 0) return 0L;
+        return (((long) nodeHandle) << 16) | (partOrdinal & 0xFFFFL);
+    }
+
+    /** 鍵から元のノードハンドルを復元する（{@link #keyOf(int, int)} でパックされた鍵のみ）。 */
+    public static int nodeHandleOf(long key) {
+        return (int) (key >>> 16);
+    }
+
+    /** 鍵から部品番号を復元する（{@link #keyOf(int, int)} でパックされた鍵のみ）。 */
+    public static int partOrdinalOf(long key) {
+        return (int) (key & 0xFFFFL);
+    }
+
     public String baseId() {
         return (baseNodeId != null && !baseNodeId.isEmpty()) ? baseNodeId : id;
     }
