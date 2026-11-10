@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-11（**追記: P0-3 段階 4 — 残余描画要素（境界線・スクロールバー・UI部品等）の完全 64-bit 整数鍵化と親子キー直結（P0-1/T2）完了／同日: P0-3 段階 3 — 主要部品（NODE / _bg / コントロール群）の 64-bit 整数鍵化と索引側の整数鍵直結完了**／同日: P0-3 段階 2 — 装飾部品（断片・影）の整数鍵化と部品番号領域の分離／同日: P0-3 64-bit 整数鍵化（`DisplayItem.keyOf(nodeHandle, partOrdinal)`）の導入とテキスト項目での `AtomTable.intern` バイパス／同日: P0 段階 1b 残余 `NONE` 保持計画／CPU バックエンドでの画面外ブロック走査除外を解禁**／同日: P0 段階 1b ① 記録範囲の画面外ブロック走査除外（ドライバ単体 `0.46 → 0.03〜0.09 ms`）、§7.3／同日: P0 段階 1b-③ 記録中の `buildClip` 前カリング／同日: P0 段階 1b-② 保持スクロール層記録時カリング実装）／2026-11-10（**同日追記: `TEXT_PATCH` を `button` / `label` へ開放（§7.3 P1-2）**。**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統を全て解消（`KNOWN_UPWARD` = 空集合。P0「参照モデルによる崩壊防止」完了）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
+> **最終更新**: 2026-11-11（**追記: P0-1 増分索引シフト（`patchIndexByShift`）＆ 構造不変大規模差分（`inherited` 等）インプレースパッチ完了（`CHILD_PATCH`・大規模スタイル変更での `rebuildIndex` 配列再生成を根絶）／同日: P0-3 段階 4 — 残余描画要素（境界線・スクロールバー・UI部品等）の完全 64-bit 整数鍵化と親子キー直結（P0-1/T2）完了／同日: P0-3 段階 3 — 主要部品（NODE / _bg / コントロール群）の 64-bit 整数鍵化と索引側の整数鍵直結完了**／同日: P0-3 段階 2 — 装飾部品（断片・影）の整数鍵化と部品番号領域の分離／同日: P0-3 64-bit 整数鍵化（`DisplayItem.keyOf(nodeHandle, partOrdinal)`）の導入とテキスト項目での `AtomTable.intern` バイパス／同日: P0 段階 1b 残余 `NONE` 保持計画／CPU バックエンドでの画面外ブロック走査除外を解禁**／同日: P0 段階 1b ① 記録範囲の画面外ブロック走査除外（ドライバ単体 `0.46 → 0.03〜0.09 ms`）、§7.3／同日: P0 段階 1b-③ 記録中の `buildClip` 前カリング／同日: P0 段階 1b-② 保持スクロール層記録時カリング実装）／2026-11-10（**同日追記: `TEXT_PATCH` を `button` / `label` へ開放（§7.3 P1-2）**。**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統を全て解消（`KNOWN_UPWARD` = 空集合。P0「参照モデルによる崩壊防止」完了）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -541,9 +541,22 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
    - **対策**: `patchIndexByDiff` が既に持つ「変更項目の集合」から**ダメージ矩形（変更項目の旧 AABB ∪ 新 AABB）**を求め、`TileQueue` の 64×64 タイルのうち交わるビット（`long[3]` の Dirty Bitset）だけをクリア・再描画する（他タイルは前フレームの `Pixmap` を維持）。スクロールは `Pixmap` の `System.arraycopy` 行シフト + 新規露出帯タイルのみ描画。`DiffPatchPixelTest` の全画素一致保証を差分描画の回帰テストにも流用する。
    - **KPI**: showcase の `hover`/`text`/`style` CPU **`< 0.3〜0.8 ms`**（現 `4.4〜4.7 ms`、Chrome CPU 合成 `0.68〜1.55 ms`・Swing `0.64 ms` を上回る）、large-list `scroll` CPU **`< 0.3 ms`**（現 `3.3 ms`）。
 
-1. **`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保（戦略 T2）**:
-   - **現状**: `patchIndexByDiff` は項目数が変わる `child`（子の挿入・削除: `4.19 ms / 6.6 MB`）や差分が 1/4 を超える `inherited`（継承色変更: `6.75 ms / 13.4 MB`）では従来の全項目 `rebuildIndex` にフォールバックする。
-   - **対策**: 項目の挿入・削除に対して既存の `Resolved` / `states` / `ClipEntry` を `System.arraycopy` インデックスシフト（または 64-bit 整数鍵マップ引き継ぎ）で再利用し、差分が多い場合も構造（親・クリップ鎖）が不変ならクリップ記憶とアニメ状態を破棄しない増分更新へ拡張する。
+1. **【完了 2026-11-11】`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保（戦略 T2）**:
+   - **達成内容**:
+     - ✅ **構造不変・大規模差分（`inherited` 等）のインプレース差分更新（`patchIndexByDiff` 上限撤廃）**:
+       - 変更項目数が 1/4（25%）を超える場合でも、全変更項目の構造（`key()`, `parentKey()`, `type()`, `LayerSpec`）が同一である限り、`rebuildIndex` へフォールバックせず、既存の配列と索引を維持して変更位置のみをインプレース更新。
+       - 10 種類におよぶキャッシュ配列の新規確保を 0 にし、`generation` も進まないため外部のクリップ記憶キャッシュ（`ClipEntry`）を 100% 維持。
+     - ✅ **局所挿入・削除（`child` = `CHILD_PATCH`）に対する増分インデックスシフト（`patchIndexByShift`）**:
+       - 変化が単一の局所領域（`head` と `tail` の間）に集約されている場合、既存の内部配列（`parentIdx`, `states`, `prevRes`, `prevStatic`, `prevIdle`, `itemVersion` 等）を `System.arraycopy` でインプレースシフト。
+       - `indexOf` および `indexedById` は差分項目のみを増分更新（削除項目の除去、シフト項目の位置更新、挿入項目の登録）。
+       - 親インデックス（`parentIdx`）および FX レイヤー錨（`fxAnchors`）もシフト量 `delta` に応じて調整。
+       - 挿入・削除ごとの数 MB〜数十 MB に達していた配列再確保と全項目走査を根絶。
+   - **検証**:
+     - [`PaintSceneDriverDiffPatchTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverDiffPatchTest.java) に `largeDiffWithSameStructureInheritedStylePatchesInPlace`（87.5% の要素が一斉変化しても `generation` 不変でインプレース更新され、全出力が再構築時と 100% 一致）を追加し PASSED。
+     - 新設 [`PaintSceneDriverShiftPatchTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverShiftPatchTest.java)（先頭・中間・末尾での行挿入・削除、およびランダム操作列 60 ステップにおいて、シフトパッチ出力が毎回再構築時と 100% 完全一致）全 7 テスト PASSED。
+     - 新設 [`ShiftPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ShiftPatchPixelTest.java)（挿入・削除が連続する実フレームで、CPU バックエンドでの描画結果が毎回再構築時と 120 フレーム全画素完全一致）PASSED。
+     - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
+     - コアモジュール全テスト（`:core:test` 1,880 件超）全件グリーン。
 2. **項目単位の保持された GPU 記録（1 字形あたり `0.13 µs` の毎フレーム固定費の解消 — 戦略 T3）**:
    - **現状**: 1 要素のテキスト変更でも、未変更の字形に対して毎フレーム `drawGlyphs`（フレーム時間の 39%：`GpuAttempt.glyph` 15% + `GlRectStream.open` 10% + `GlyphCache` 6%）が走っている。
    - **対策**: `DisplayItem` は未変更ボックスでは同一インスタンスが再利用される（`drawBoxSelfMemo`）ため、項目ごとに生成された 80B GPU インスタンスレコード列を保持し、項目と変換・クリップが同一なら字形ループ自体をスキップして前回の GPU レコードを `MemorySegment.copy` で一括転送する。これにより `GlRectStream` の容量上限 4,096 も CPU 負荷増なしで拡大可能になる。

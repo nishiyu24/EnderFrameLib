@@ -135,4 +135,57 @@ class PaintSceneDriverDiffPatchTest {
         assertTrue(comparable > 80, "同じ大きさで変わるフレームが十分ある: " + comparable);
         assertTrue(patchedFrames > comparable / 2, "索引が差分の更新で済んでいない: " + patchedFrames + "/" + comparable);
     }
+
+    @Test
+    void largeDiffWithSameStructureInheritedStylePatchesInPlace() {
+        // 全40行のうち80%以上の行のスタイルが一斉に変化するシナリオ（CSS変数やbody継承色の変更に相当）
+        StandaloneView view = new StandaloneView(html(), W, H, FontResolver.FALLBACK);
+        List<List<DisplayItem>> frames = new ArrayList<>();
+        try (var backend = new NoDraw()) {
+            long now = 1000;
+            view.frame(now, backend, true);
+            frames.add(view.ui().renderCache());
+
+            for (int step = 0; step < 10; step++) {
+                // 40行中35行（87.5%）のスタイルを一斉に変更
+                for (int i = 0; i < 35; i++) {
+                    HtmlNode r = view.root().getNodeById("r" + i);
+                    if (r instanceof HtmlElement e) {
+                        e.setAttribute("style", "background:#" + ((step % 2 == 0) ? "ffd" : "def") + ";color:#" + ((step % 2 == 0) ? "800" : "008"));
+                    }
+                }
+                now += 16;
+                view.frame(now, backend, true);
+                frames.add(view.ui().renderCache());
+            }
+        } finally {
+            view.close();
+        }
+
+        PaintSceneDriver patched = new PaintSceneDriver("drv-large-diff-patched");
+        PaintSceneDriver rebuilt = new PaintSceneDriver("drv-large-diff-rebuilt");
+        long t = 5000;
+        int inPlacePatched = 0;
+
+        for (int f = 0; f < frames.size(); f++) {
+            t += 16;
+            PaintSceneDriver.patchDiffIndex = false;
+            List<String> expect = trace(rebuilt, frames.get(f), t);
+
+            PaintSceneDriver.patchDiffIndex = true;
+            long genBefore = patched.generation();
+            List<String> actual = trace(patched, frames.get(f), t);
+
+            assertEquals(expect, actual, "large diff frame " + f);
+            if (f > 0 && frames.get(f).size() == frames.get(f - 1).size()) {
+                // 差分が1/4（25%）を大幅に超える（87.5%）にもかかわらず、
+                // 構造同一判定により rebuildIndex されず generation が維持されること！
+                if (patched.generation() == genBefore) {
+                    inPlacePatched++;
+                }
+            }
+        }
+
+        assertTrue(inPlacePatched >= 9, "大規模差分（87.5%）がインプレースで差分更新されていること: " + inPlacePatched);
+    }
 }

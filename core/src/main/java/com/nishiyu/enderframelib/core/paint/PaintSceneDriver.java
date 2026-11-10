@@ -295,6 +295,8 @@ public final class PaintSceneDriver {
     private int[] itemVersion = new int[0];
     /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 */
     public static volatile boolean patchDiffIndex = !Boolean.getBoolean("enderframe.paint.nodiffpatch");
+    /** 切り分け用: false なら、サイズの異なるリストの局所挿入・削除に対する増分索引シフト（patchIndexByShift）を使わず作り直す。 */
+    public static volatile boolean patchShiftIndex = !Boolean.getBoolean("enderframe.paint.noshiftpatch");
     /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
     private static final int PATCH_MAX_DIFF_DIVISOR = 4;
     private int[] diffBuf = new int[64];
@@ -389,7 +391,12 @@ public final class PaintSceneDriver {
         CssAnimator.cleanup(sessionId, items);
         // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
         // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
-        if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items) && !patchIndexByDiff(items)) rebuildIndex(items);
+        if (!(items == indexedItems && isImmutable(items))
+                && !patchIndex(items)
+                && !patchIndexByDiff(items)
+                && !patchIndexByShift(items)) {
+            rebuildIndex(items);
+        }
         this.byId = indexedById;
         if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
         prepared = true;
@@ -695,11 +702,27 @@ public final class PaintSceneDriver {
         return true;
     }
 
+    private void ensureCapacity(int minCap) {
+        if (curRes.length >= minCap) return;
+        int newCap = Math.max(minCap, curRes.length == 0 ? 16 : curRes.length * 3 / 2);
+        curRes = Arrays.copyOf(curRes, newCap);
+        curStamp = Arrays.copyOf(curStamp, newCap);
+        prevRes = Arrays.copyOf(prevRes, newCap);
+        prevParentRes = Arrays.copyOf(prevParentRes, newCap);
+        prevStatic = Arrays.copyOf(prevStatic, newCap);
+        prevIdle = Arrays.copyOf(prevIdle, newCap);
+        visiting = Arrays.copyOf(visiting, newCap);
+        states = Arrays.copyOf(states, newCap);
+        itemVersion = Arrays.copyOf(itemVersion, newCap);
+        stateVerified = Arrays.copyOf(stateVerified, newCap);
+        parentIdx = Arrays.copyOf(parentIdx, newCap);
+    }
+
     /**
-     * 一般のリスト（{@link OffsetItemList} でない）が、前回と同じ大きさで、差のある位置が少なく、差のある位置の構造
+     * 一般のリスト（{@link OffsetItemList} でない）が、前回と同じ大きさで、差のある位置の構造
      * （鍵・親・種類・層）が前回と同じなら、差のある位置だけを更新して true。変わっていない項目の姿勢・補間状態は使い回す。
-     * 1 つの要素の変化（文字・ホバー・色）で、全項目の索引・姿勢・補間状態の表を作り直さずに済む。
-     * 構造が違う（項目の増減・鍵や親の変更・層の出入り）ときは false で、呼び出し側が作り直す。
+     * 1 つの要素の変化（文字・ホバー・色）や、全要素に及ぶ継承スタイル変更（inherited）でも、全項目の索引・姿勢・補間状態の表を作り直さずに済む。
+     * 構造が違う（項目の増減・鍵や親の変更・層の出入り）ときは false で、呼び出し側が作り直すかシフトする。
      */
     private boolean patchIndexByDiff(List<DisplayItem> items) {
         List<DisplayItem> old = indexedItems;
@@ -708,34 +731,271 @@ public final class PaintSceneDriver {
         // 表示リストは不変のリスト（List.copyOf 系）で届く
         if (!isImmutable(old) || !isImmutable(items)) return false;
         int n = items.size();
-        int limit = Math.max(8, n / PATCH_MAX_DIFF_DIVISOR);
+
+        // 第 1 パス: 差分がある位置の構造が一致しているか全件確認
         int count = 0;
         for (int i = 0; i < n; i++) {
             DisplayItem was = old.get(i), is = items.get(i);
             if (was == is) continue;
-            if (count >= limit || was.key() != is.key() || !sameStructure(was, is)) return false;
-            if (count == diffBuf.length) diffBuf = Arrays.copyOf(diffBuf, Math.max(16, count * 2));
-            diffBuf[count++] = i;
+            if (was.key() != is.key() || !sameStructure(was, is)) return false;
+            count++;
         }
-        for (int k = 0; k < count; k++) {
-            int i = diffBuf[k];
-            DisplayItem curItem = items.get(i);
-            long key = curItem.key();
-            indexedById.put(key, curItem);
-            if (curItem.id() != null && !curItem.id().isEmpty()) {
-                long strKey = DisplayItem.keyOf(curItem.id());
-                if (strKey != key) indexedById.put(strKey, curItem);
+        if (count == 0) {
+            indexedItems = items;
+            return true;
+        }
+
+        // 第 2 パス: 構造が完全に一致していることが保証されたため、変更位置を更新
+        if (count <= n / 4 && count <= 256) {
+            int p = 0;
+            if (diffBuf.length < count) diffBuf = new int[Math.max(count, diffBuf.length * 2)];
+            for (int i = 0; i < n; i++) {
+                if (old.get(i) != items.get(i)) diffBuf[p++] = i;
             }
-            states[i] = null;
-            prevRes[i] = null;
-            prevStatic[i] = false;
-            itemVersion[i]++;
-            stateVerified[i] = false;
+            for (int k = 0; k < count; k++) {
+                int i = diffBuf[k];
+                DisplayItem curItem = items.get(i);
+                long key = curItem.key();
+                indexedById.put(key, curItem);
+                if (curItem.id() != null && !curItem.id().isEmpty()) {
+                    long strKey = DisplayItem.keyOf(curItem.id());
+                    if (strKey != key) indexedById.put(strKey, curItem);
+                }
+                states[i] = null;
+                prevRes[i] = null;
+                prevStatic[i] = false;
+                itemVersion[i]++;
+                stateVerified[i] = false;
+            }
+        } else {
+            // 差分が多数（inherited 等）の場合: diffBuf の再確保を避け直接走査で更新
+            for (int i = 0; i < n; i++) {
+                DisplayItem is = items.get(i);
+                if (old.get(i) == is) continue;
+                long key = is.key();
+                indexedById.put(key, is);
+                if (is.id() != null && !is.id().isEmpty()) {
+                    long strKey = DisplayItem.keyOf(is.id());
+                    if (strKey != key) indexedById.put(strKey, is);
+                }
+                states[i] = null;
+                prevRes[i] = null;
+                prevStatic[i] = false;
+                itemVersion[i]++;
+                stateVerified[i] = false;
+            }
         }
-        if (count > 0) invalidateRangeBounds();
+        invalidateRangeBounds();
         indexedItems = items;
         // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
         indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        return true;
+    }
+
+    /**
+     * 表示リストのサイズが異なる場合（子の挿入・削除 = CHILD_PATCH）において、
+     * 変化が単一の局所領域（head と tail の間）に集約されている場合、
+     * 既存の配列を System.arraycopy でシフトし、未変更項目の姿勢・アニメーション状態・キー索引を引き継ぐ。
+     */
+    private boolean patchIndexByShift(List<DisplayItem> items) {
+        List<DisplayItem> old = indexedItems;
+        if (!patchShiftIndex || old == null || old == items || old.size() == items.size()) return false;
+        if (!isImmutable(old) || !isImmutable(items)) return false;
+
+        int oldN = old.size();
+        int newN = items.size();
+
+        int head = 0;
+        while (head < oldN && head < newN && old.get(head) == items.get(head)) {
+            head++;
+        }
+
+        int tail = 0;
+        while (tail < (oldN - head) && tail < (newN - head)
+                && old.get(oldN - 1 - tail) == items.get(newN - 1 - tail)) {
+            tail++;
+        }
+
+        int delCount = oldN - head - tail;
+        int insCount = newN - head - tail;
+        int delta = newN - oldN;
+
+        // 変化領域が広すぎる（一致部分が半分未満）場合は全再構築に委譲
+        if (head + tail < Math.min(oldN, newN) / 2) return false;
+
+        int oldTailStart = oldN - tail;
+        int newTailStart = newN - tail;
+
+        // スクロール節 (_scrollc) が変更領域に含まれる場合は安全のため再構築
+        for (int i = head; i < oldTailStart; i++) {
+            DisplayItem it = old.get(i);
+            if (it.type() == ElementType.NODE && it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) return false;
+        }
+        for (int i = head; i < newTailStart; i++) {
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE && it.id() != null && it.id().endsWith(SCROLL_CONTENT_SUFFIX)) return false;
+        }
+
+        ensureCapacity(newN);
+
+        // 1. 削除された項目の索引除去
+        for (int i = head; i < oldTailStart; i++) {
+            DisplayItem was = old.get(i);
+            long key = was.key();
+            indexedById.remove(key);
+            indexOf.remove(key);
+            if (was.id() != null && !was.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(was.id());
+                if (strKey != key) {
+                    indexedById.remove(strKey);
+                    indexOf.remove(strKey);
+                }
+            }
+        }
+
+        // 2. 末尾区間 [oldTailStart, oldN) の配列シフト
+        if (tail > 0 && delta != 0) {
+            System.arraycopy(states, oldTailStart, states, newTailStart, tail);
+            System.arraycopy(prevRes, oldTailStart, prevRes, newTailStart, tail);
+            System.arraycopy(prevParentRes, oldTailStart, prevParentRes, newTailStart, tail);
+            System.arraycopy(prevStatic, oldTailStart, prevStatic, newTailStart, tail);
+            System.arraycopy(prevIdle, oldTailStart, prevIdle, newTailStart, tail);
+            System.arraycopy(visiting, oldTailStart, visiting, newTailStart, tail);
+            System.arraycopy(itemVersion, oldTailStart, itemVersion, newTailStart, tail);
+            System.arraycopy(stateVerified, oldTailStart, stateVerified, newTailStart, tail);
+            System.arraycopy(parentIdx, oldTailStart, parentIdx, newTailStart, tail);
+            System.arraycopy(curStamp, oldTailStart, curStamp, newTailStart, tail);
+            System.arraycopy(curRes, oldTailStart, curRes, newTailStart, tail);
+        }
+
+        // 3. 挿入区間 [head, newTailStart) の初期化
+        if (insCount > 0) {
+            Arrays.fill(states, head, newTailStart, null);
+            Arrays.fill(prevRes, head, newTailStart, null);
+            Arrays.fill(prevParentRes, head, newTailStart, null);
+            Arrays.fill(curRes, head, newTailStart, null);
+            Arrays.fill(curStamp, head, newTailStart, 0);
+            Arrays.fill(itemVersion, head, newTailStart, 0);
+            Arrays.fill(prevStatic, head, newTailStart, false);
+            Arrays.fill(prevIdle, head, newTailStart, false);
+            Arrays.fill(visiting, head, newTailStart, false);
+            Arrays.fill(stateVerified, head, newTailStart, false);
+            Arrays.fill(parentIdx, head, newTailStart, -1);
+        }
+
+        // 4. 縮小時に不要になった末尾スロットのクリア
+        if (newN < oldN) {
+            Arrays.fill(states, newN, oldN, null);
+            Arrays.fill(prevRes, newN, oldN, null);
+            Arrays.fill(prevParentRes, newN, oldN, null);
+            Arrays.fill(curRes, newN, oldN, null);
+            Arrays.fill(curStamp, newN, oldN, 0);
+            Arrays.fill(itemVersion, newN, oldN, 0);
+            Arrays.fill(prevStatic, newN, oldN, false);
+            Arrays.fill(prevIdle, newN, oldN, false);
+            Arrays.fill(visiting, newN, oldN, false);
+            Arrays.fill(stateVerified, newN, oldN, false);
+            Arrays.fill(parentIdx, newN, oldN, -1);
+        }
+
+        // 5. 末尾区間の項目の indexOf 更新
+        if (delta != 0) {
+            for (int i = newTailStart; i < newN; i++) {
+                DisplayItem it = items.get(i);
+                long key = it.key();
+                indexOf.put(key, i);
+                if (it.id() != null && !it.id().isEmpty()) {
+                    long strKey = DisplayItem.keyOf(it.id());
+                    if (strKey != key) indexOf.put(strKey, i);
+                }
+            }
+        }
+
+        // 6. 挿入項目の indexedById, indexOf への登録
+        for (int i = head; i < newTailStart; i++) {
+            DisplayItem it = items.get(i);
+            long key = it.key();
+            indexedById.put(key, it);
+            indexOf.put(key, i);
+            if (it.id() != null && !it.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(it.id());
+                if (strKey != key) {
+                    indexedById.put(strKey, it);
+                    indexOf.put(strKey, i);
+                }
+            }
+        }
+
+        // 7. parentIdx の調整
+        for (int i = 0; i < head; i++) {
+            int p = parentIdx[i];
+            if (p >= oldTailStart) {
+                parentIdx[i] = p + delta;
+            } else if (p >= head) {
+                parentIdx[i] = -1;
+            }
+        }
+        for (int i = newTailStart; i < newN; i++) {
+            int p = parentIdx[i];
+            if (p >= oldTailStart) {
+                parentIdx[i] = p + delta;
+            } else if (p >= head) {
+                parentIdx[i] = -1;
+            }
+        }
+        for (int i = head; i < newTailStart; i++) {
+            int pidx = -1;
+            long pKey = items.get(i).hints().parentKey();
+            if (pKey != 0L) {
+                pidx = indexOf.getOrDefault(pKey, -1);
+            }
+            if (pidx < 0) {
+                String pid = items.get(i).hints().parentId();
+                if (pid != null) {
+                    pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
+                }
+            }
+            parentIdx[i] = pidx;
+        }
+
+        // 8. fxAnchors の更新
+        boolean hasNewFx = false;
+        for (int i = head; i < newTailStart; i++) {
+            DisplayItem it = items.get(i);
+            if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
+                hasNewFx = true;
+                break;
+            }
+        }
+        if (delta != 0 || hasNewFx) {
+            List<Integer> newFx = new ArrayList<>(fxAnchors.size() + (hasNewFx ? 4 : 0));
+            for (int a : fxAnchors) {
+                if (a < head) {
+                    newFx.add(a);
+                } else if (a >= oldTailStart) {
+                    newFx.add(a + delta);
+                }
+            }
+            if (hasNewFx) {
+                for (int i = head; i < newTailStart; i++) {
+                    DisplayItem it = items.get(i);
+                    if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) {
+                        newFx.add(i);
+                    }
+                }
+                newFx.sort(Integer::compareTo);
+            }
+            fxAnchors.clear();
+            fxAnchors.addAll(newFx);
+        }
+
+        // 9. スクロール節の範囲更新
+        computeRetainRanges(items);
+        invalidateRangeBounds();
+
+        indexedItems = items;
+        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        generation++;
         return true;
     }
 
@@ -759,7 +1019,8 @@ public final class PaintSceneDriver {
     }
 
     private void rebuildIndex(List<DisplayItem> items) {
-        Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(items.size() * 2);
+        int n = items.size();
+        Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(n * 2);
         for (DisplayItem it : items) {
             map.put(it.key(), it);
             if (it.id() != null && !it.id().isEmpty()) {
@@ -770,7 +1031,7 @@ public final class PaintSceneDriver {
         indexedById = map;
         indexOf.clear();
         fxAnchors.clear();
-        for (int i = 0; i < items.size(); i++) {
+        for (int i = 0; i < n; i++) {
             DisplayItem it = items.get(i);
             long key = it.key();
             indexOf.put(key, i);
@@ -782,8 +1043,8 @@ public final class PaintSceneDriver {
         }
         indexedItems = items;
         indexedBase = items instanceof OffsetItemList o ? o.base() : items;
-        int n = items.size();
-        parentIdx = new int[n];
+
+        ensureCapacity(n);
         for (int i = 0; i < n; i++) {
             int pidx = -1;
             long pKey = items.get(i).hints().parentKey();
@@ -799,16 +1060,16 @@ public final class PaintSceneDriver {
             parentIdx[i] = pidx;
         }
         computeRetainRanges(items);
-        curRes = new Resolved[n];
-        curStamp = new int[n];
-        prevRes = new Resolved[n];
-        prevParentRes = new Resolved[n];
-        prevStatic = new boolean[n];
-        prevIdle = new boolean[n];
-        visiting = new boolean[n];
-        states = new CssAnimator.AnimState[n];
-        itemVersion = new int[n];
-        stateVerified = new boolean[n];
+        Arrays.fill(curRes, 0, n, null);
+        Arrays.fill(curStamp, 0, n, 0);
+        Arrays.fill(prevRes, 0, n, null);
+        Arrays.fill(prevParentRes, 0, n, null);
+        Arrays.fill(prevStatic, 0, n, false);
+        Arrays.fill(prevIdle, 0, n, false);
+        Arrays.fill(visiting, 0, n, false);
+        Arrays.fill(states, 0, n, null);
+        Arrays.fill(itemVersion, 0, n, 0);
+        Arrays.fill(stateVerified, 0, n, false);
         rangeBounds.clear();
         generation++;
     }
@@ -888,7 +1149,8 @@ public final class PaintSceneDriver {
      * 索引の更新で消えているので、その項目は呼び出し側が {@link #itemActiveAt} で別に確かめる。
      */
     public boolean anyCachedActiveAt(long nowMs) {
-        for (int i = 0; i < states.length; i++) {
+        int n = indexedItems != null ? indexedItems.size() : states.length;
+        for (int i = 0; i < n; i++) {
             CssAnimator.AnimState st = states[i];
             if (st != null && st.isActiveAt(nowMs)) return true;
         }
