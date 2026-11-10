@@ -127,6 +127,73 @@ final class CpuRaster {
         }
     }
 
+    /**
+     * 根の描画先の指定矩形 {@code [rx0, rx1) × [ry0, ry1)} 内の画素を {@code (dx, dy)} だけシフトし、
+     * シフトによって露出した空き領域を {@code color}（事前乗算）で塗りつぶす（スクロール Blit 再利用）。
+     */
+    void scrollBlit(int rx0, int ry0, int rx1, int ry1, int dx, int dy, int color) {
+        if (dx == 0 && dy == 0) return;
+        Pixmap r = root();
+        int[] px = r.pixels();
+        int w = r.width(), h = r.height();
+        rx0 = Math.max(0, rx0);
+        ry0 = Math.max(0, ry0);
+        rx1 = Math.min(w, rx1);
+        ry1 = Math.min(h, ry1);
+        int rectW = rx1 - rx0, rectH = ry1 - ry0;
+        if (rectW <= 0 || rectH <= 0) return;
+
+        if (Math.abs(dx) >= rectW || Math.abs(dy) >= rectH) {
+            // シフト量が矩形以上: 全体が流れるため、矩形全体をクリア
+            for (int y = ry0; y < ry1; y++) java.util.Arrays.fill(px, y * w + rx0, y * w + rx1, color);
+            return;
+        }
+
+        int srcX0 = Math.max(rx0, rx0 - dx), srcX1 = Math.min(rx1, rx1 - dx);
+        int srcY0 = Math.max(ry0, ry0 - dy), srcY1 = Math.min(ry1, ry1 - dy);
+        int dstX0 = srcX0 + dx;
+        int dstY0 = srcY0 + dy;
+        int copyW = srcX1 - srcX0;
+        int copyH = srcY1 - srcY0;
+
+        if (copyW > 0 && copyH > 0) {
+            if (dy > 0) {
+                // 下方向へのシフト: 下の行から順にコピー（上書き防止）
+                for (int row = copyH - 1; row >= 0; row--) {
+                    int sy = srcY0 + row;
+                    int dyRow = dstY0 + row;
+                    System.arraycopy(px, sy * w + srcX0, px, dyRow * w + dstX0, copyW);
+                }
+            } else {
+                // 上方向または水平のみ: 上の行から順にコピー
+                for (int row = 0; row < copyH; row++) {
+                    int sy = srcY0 + row;
+                    int dyRow = dstY0 + row;
+                    System.arraycopy(px, sy * w + srcX0, px, dyRow * w + dstX0, copyW);
+                }
+            }
+        }
+
+        // 露出領域のクリア
+        // 垂直方向の露出
+        if (dy > 0) {
+            int expY1 = Math.min(ry1, ry0 + dy);
+            for (int y = ry0; y < expY1; y++) java.util.Arrays.fill(px, y * w + rx0, y * w + rx1, color);
+        } else if (dy < 0) {
+            int expY0 = Math.max(ry0, ry1 + dy);
+            for (int y = expY0; y < ry1; y++) java.util.Arrays.fill(px, y * w + rx0, y * w + rx1, color);
+        }
+
+        // 水平方向の露出
+        if (dx > 0) {
+            int expX1 = Math.min(rx1, rx0 + dx);
+            for (int y = ry0; y < ry1; y++) java.util.Arrays.fill(px, y * w + rx0, y * w + expX1, color);
+        } else if (dx < 0) {
+            int expX0 = Math.max(rx0, rx1 + dx);
+            for (int y = ry0; y < ry1; y++) java.util.Arrays.fill(px, y * w + expX0, y * w + rx1, color);
+        }
+    }
+
     /** 描いた範囲を透明に戻し、汚れ範囲を空にする。 */
     void clearDirty() {
         int[] b = dirty.bounds();
