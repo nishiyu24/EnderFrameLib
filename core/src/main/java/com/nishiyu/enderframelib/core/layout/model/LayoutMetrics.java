@@ -47,7 +47,7 @@ public final class LayoutMetrics {
     }
 
     public static boolean isBold(ComputedStyle style) {
-        return isBoldWeight(style.getOrDefault(CssProperty.FONT_WEIGHT, ""));
+        return isBoldWeight(style.getOrDefault(CssProperty.Id.FONT_WEIGHT, ""));
     }
 
     public static boolean isBoldWeight(String weight) {
@@ -72,8 +72,8 @@ public final class LayoutMetrics {
         return Math.clamp(value, 1, 1000);
     }
 
-    private static final int ID_FONT_WEIGHT = ComputedStyle.idOf(CssProperty.FONT_WEIGHT);
-    private static final int ID_LINE_HEIGHT = ComputedStyle.idOf(CssProperty.LINE_HEIGHT);
+    private static final int ID_FONT_WEIGHT = CssProperty.Id.FONT_WEIGHT;
+    private static final int ID_LINE_HEIGHT = CssProperty.Id.LINE_HEIGHT;
 
     public static int numericWeight(ComputedStyle style) {
         return style.facts().fontWeight;
@@ -84,7 +84,7 @@ public final class LayoutMetrics {
      */
     public static String applyTextTransform(String text, ComputedStyle style) {
         if (text == null || text.isEmpty()) return text;
-        return switch (style.keywordOf(CssProperty.TEXT_TRANSFORM, CssKeywords.TextTransform.class)) {
+        return switch (style.keywordOf(CssProperty.Id.TEXT_TRANSFORM, CssKeywords.TextTransform.class)) {
             case UPPERCASE -> text.toUpperCase(java.util.Locale.ROOT);
             case LOWERCASE -> text.toLowerCase(java.util.Locale.ROOT);
             case CAPITALIZE -> capitalizeWords(text);

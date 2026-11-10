@@ -137,8 +137,8 @@ final class ItemProps {
         ItemProps partsEvents = new ItemProps();
         partsEvents.parentId(id);
         applyTransitionEvents(partsEvents, transSpec);
-        if (box.style.containsKey(CssProperty.FONT_FAMILY)) {
-            partsEvents.put("font-family", box.style.get(CssProperty.FONT_FAMILY));
+        if (box.style.containsKey(CssProperty.Id.FONT_FAMILY)) {
+            partsEvents.put("font-family", box.style.get(CssProperty.Id.FONT_FAMILY));
         }
         putFontEvents(box, partsEvents);
         if (box.node.attrs.containsKey("title")) partsEvents.title(box.node.attrs.get("title"));

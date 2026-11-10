@@ -398,7 +398,7 @@ final class PaintOrder {
     }
 
     static boolean hasBackground(LayoutBox box) {
-        return box.style.containsKey(CssProperty.BACKGROUND_COLOR) || box.style.containsKey(CssProperty.BACKGROUND);
+        return box.style.containsKey(CssProperty.Id.BACKGROUND_COLOR) || box.style.containsKey(CssProperty.Id.BACKGROUND);
     }
 
     // ==========================================
@@ -586,18 +586,18 @@ final class PaintOrder {
     static StyleFacts factsOf(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (style.derivedFacts() instanceof StyleFacts cached) return cached;
         STAT_FACTS_COMPUTED.increment();
-        String z = style.get(CssProperty.Z_INDEX);
+        String z = style.get(CssProperty.Id.Z_INDEX);
         boolean zAuto = z == null || z.isBlank() || "auto".equalsIgnoreCase(z.trim());
         boolean mask = styleHasMask(style);
-        boolean stacking = !isNone(style.get(CssProperty.TRANSFORM)) || !isNone(style.get("filter"))
-                || !isNone(style.get("clip-path")) || !isNone(style.get("backdrop-filter")) || mask
-                || style.keywordOf("isolation", CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE
-                || !"normal".equals(style.keyword("mix-blend-mode", "normal"));
+        boolean stacking = !isNone(style.get(CssProperty.Id.TRANSFORM)) || !isNone(style.get(CssProperty.Id.FILTER))
+                || !isNone(style.get(CssProperty.Id.CLIP_PATH)) || !isNone(style.get(CssProperty.Id.BACKDROP_FILTER)) || mask
+                || style.keywordOf(CssProperty.Id.ISOLATION, CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE
+                || !"normal".equals(style.keyword(CssProperty.Id.MIX_BLEND_MODE, "normal"));
         String[] overflow = overflowPair(style);
-        StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssProperty.DISPLAY, "block")), zAuto,
-                style.number(CssProperty.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
+        StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssProperty.Id.DISPLAY, "block")), zAuto,
+                style.number(CssProperty.Id.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
                 isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]),
-                style.get(CssProperty.ANIMATION) != null || style.get(CssProperty.ANIMATION_NAME) != null);
+                style.get(CssProperty.Id.ANIMATION) != null || style.get(CssProperty.Id.ANIMATION_NAME) != null);
         style.derivedFacts(facts);
         return facts;
     }
@@ -625,26 +625,26 @@ final class PaintOrder {
      * どれも無ければ null（直に描く）。{@code span} は {@link DisplayListBuilder} が項目を出し終えてから埋める。
      */
     LayerSpec layerSpecFor(LayoutBox box) {
-        float opacity = box.style.number(CssProperty.OPACITY, 1f);
+        float opacity = box.style.number(CssProperty.Id.OPACITY, 1f);
         boolean opacityMoves = animatesOpacity.test(box);
-        List<FilterOp> filters = FilterOp.parse(box.style.get("filter"), new FilterOp.Context(rootW, rootH,
-                box.style.fontSizePx(), box.style.rootFontSizePx(), box.style.color(CssProperty.COLOR, 0xFF000000)));
-        BlendMode blend = BlendMode.fromCss(box.style.keyword("mix-blend-mode", "normal"));
+        List<FilterOp> filters = FilterOp.parse(box.style.get(CssProperty.Id.FILTER), new FilterOp.Context(rootW, rootH,
+                box.style.fontSizePx(), box.style.rootFontSizePx(), box.style.color(CssProperty.Id.COLOR, 0xFF000000)));
+        BlendMode blend = BlendMode.fromCss(box.style.keyword(CssProperty.Id.MIX_BLEND_MODE, "normal"));
         boolean isolate = hasBlendDescendant(box);
 
         float fontPx = box.style.fontSizePx(), rootFontPx = box.style.rootFontSizePx();
         float[] border = {box.x, box.y, box.w, box.h};
         float[] padding = {box.x + box.bL, box.y + box.bT, Math.max(0, box.w - box.bL - box.bR), Math.max(0, box.h - box.bT - box.bB)};
         float[] content = {padding[0] + box.pL, padding[1] + box.pT, Math.max(0, padding[2] - box.pL - box.pR), Math.max(0, padding[3] - box.pT - box.pB)};
-        ClipShape clip = ClipShape.parse(box.style.get("clip-path"),
+        ClipShape clip = ClipShape.parse(box.style.get(CssProperty.Id.CLIP_PATH),
                 ClipShape.Context.of(border, padding, content, rootW, rootH, fontPx, rootFontPx));
 
         boolean masked = hasMask(box);
         boolean luminance = masked && !BoxDecorations.maskModes(box.style).isEmpty()
                 && "luminance".equals(BoxDecorations.maskModes(box.style).getFirst());
 
-        List<FilterOp> backdrop = FilterOp.parse(box.style.get("backdrop-filter"), new FilterOp.Context(rootW, rootH, fontPx, rootFontPx,
-                box.style.color(CssProperty.COLOR, 0xFF000000)));
+        List<FilterOp> backdrop = FilterOp.parse(box.style.get(CssProperty.Id.BACKDROP_FILTER), new FilterOp.Context(rootW, rootH, fontPx, rootFontPx,
+                box.style.color(CssProperty.Id.COLOR, 0xFF000000)));
         ClipShape backdropShape = null;
         if (!backdrop.isEmpty()) {
             float[] r = LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH);
@@ -687,7 +687,7 @@ final class PaintOrder {
         boolean found = false;
         for (LayoutBox child : box.children) {
             if (child.display.isNone()) continue;
-            if (!"normal".equals(child.style.keyword("mix-blend-mode", "normal"))) {
+            if (!"normal".equals(child.style.keyword(CssProperty.Id.MIX_BLEND_MODE, "normal"))) {
                 found = true;
                 break;
             }
@@ -825,7 +825,7 @@ final class PaintOrder {
     }
 
     void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
-        if (box.style.keywordOf(CssProperty.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
+        if (box.style.keywordOf(CssProperty.Id.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class) == CssKeywords.ScrollbarWidth.NONE) return;
 
         float scrollW = box.scrollWidth;
         float scrollH = box.scrollHeight;

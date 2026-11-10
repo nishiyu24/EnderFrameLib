@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.text.model;
 
+import com.nishiyu.enderframelib.core.css.KeywordMatch;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 
@@ -24,12 +25,10 @@ public enum WhiteSpace {
 
     public static WhiteSpace of(String keyword) {
         if (keyword == null) return NORMAL;
-        return switch (keyword.trim().toLowerCase()) {
-            case "nowrap" -> NOWRAP;
-            case "pre" -> PRE;
-            case "pre-wrap" -> PRE_WRAP;
-            case "pre-line" -> PRE_LINE;
-            default -> NORMAL;
-        };
+        if (KeywordMatch.is(keyword, "nowrap")) return NOWRAP;
+        if (KeywordMatch.is(keyword, "pre")) return PRE;
+        if (KeywordMatch.is(keyword, "pre-wrap")) return PRE_WRAP;
+        if (KeywordMatch.is(keyword, "pre-line")) return PRE_LINE;
+        return NORMAL;
     }
 }

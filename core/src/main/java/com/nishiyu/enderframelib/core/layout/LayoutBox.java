@@ -205,7 +205,7 @@ public class LayoutBox {
     }
 
     private boolean hasTransformOrFilter() {
-        return isSet(style.get(CssProperty.TRANSFORM)) || isSet(style.get("filter"));
+        return isSet(style.get(CssProperty.Id.TRANSFORM)) || isSet(style.get(CssProperty.Id.FILTER));
     }
 
     private static boolean isSet(String value) {
@@ -376,15 +376,15 @@ public class LayoutBox {
         this.display = Display.of(node, newStyle).blockified(newStyle);
 
         // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
-        String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssProperty.WHITE_SPACE)));
+        String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssProperty.Id.WHITE_SPACE)));
         this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
 
-        String pos = newStyle.getOrDefault(CssProperty.POSITION, "static");
+        String pos = newStyle.getOrDefault(CssProperty.Id.POSITION, "static");
         this.isFixed = "fixed".equals(pos);
         this.isAbsolute = "absolute".equals(pos) || this.isFixed;
         this.isRelative = "relative".equals(pos);
         this.isSticky = "sticky".equals(pos);
-        this.zIndex = (int) newStyle.number(CssProperty.Z_INDEX, 0f);
+        this.zIndex = (int) newStyle.number(CssProperty.Id.Z_INDEX, 0f);
     }
 
     /** 算出スタイルも節の文字も前回と同じなら何もしない {@link #updateStyle}（差分レイアウトで箱を使い回すとき用）。 */
@@ -452,10 +452,10 @@ public class LayoutBox {
         float rootH = ctx.viewport().rootH();
 
         // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
-        String minWidthDecl = style.get(CssProperty.MIN_WIDTH);
+        String minWidthDecl = style.get(CssProperty.Id.MIN_WIDTH);
         if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)) {
             // 枠線ボックスは padding と border より細くならない（min-width: 0 でも装飾の分は残る）
-            float min = style.length(CssProperty.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            float min = style.length(CssProperty.Id.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
             return style.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
         }
 
@@ -528,23 +528,23 @@ public class LayoutBox {
      * そうでなければ min-content。百分率は親の幅に依存して循環するので auto と同じに扱う。
      */
     private float minContentContribution(LayoutContext ctx) {
-        String width = style.get(CssProperty.WIDTH);
+        String width = style.get(CssProperty.Id.WIDTH);
         if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
             return getMinContentWidth(ctx);
         }
-        float v = style.length(CssProperty.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        float v = style.length(CssProperty.Id.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
         float borderBox = style.isBorderBox() ? Math.max(v, horizontalDecoration()) : v + horizontalDecoration();
-        String minWidth = style.get(CssProperty.MIN_WIDTH);
+        String minWidth = style.get(CssProperty.Id.MIN_WIDTH);
         if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
-            float min = style.length(CssProperty.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            float min = style.length(CssProperty.Id.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             borderBox = Math.max(borderBox, style.isBorderBox() ? min : min + horizontalDecoration());
         }
         return borderBox;
     }
 
     private boolean isSingleLineRowFlex() {
-        String direction = style.getOrDefault(CssProperty.FLEX_DIRECTION, "row").trim();
-        String wrap = style.getOrDefault(CssProperty.FLEX_WRAP, "nowrap").trim();
+        String direction = style.getOrDefault(CssProperty.Id.FLEX_DIRECTION, "row").trim();
+        String wrap = style.getOrDefault(CssProperty.Id.FLEX_WRAP, "nowrap").trim();
         return direction.startsWith("row") && "nowrap".equals(wrap);
     }
 
@@ -1357,17 +1357,17 @@ public class LayoutBox {
             // 両方あれば left / top が勝つ（過剰制約のときは end 側を無視する。CSS 2.2 §10.3.7）。
             // 両方 auto の軸は静的位置に置く。以前は right / bottom が勝ち、両方 auto なら
             // 包含ブロックの原点に置いていた
-            if (!BoxMeasurer.isAutoInset(style, CssProperty.LEFT)) {
-                this.x = refX + style.length(CssProperty.LEFT, refW, rootW, rootH) + mL;
-            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.RIGHT)) {
-                this.x = refX + refW - this.w - style.length(CssProperty.RIGHT, refW, rootW, rootH) - mR;
+            if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.LEFT)) {
+                this.x = refX + style.length(CssProperty.Id.LEFT, refW, rootW, rootH) + mL;
+            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.RIGHT)) {
+                this.x = refX + refW - this.w - style.length(CssProperty.Id.RIGHT, refW, rootW, rootH) - mR;
             } else {
                 this.x = (Float.isNaN(staticX) ? refX : staticX) + mL;
             }
-            if (!BoxMeasurer.isAutoInset(style, CssProperty.TOP)) {
-                this.y = refY + style.length(CssProperty.TOP, refH, rootW, rootH) + mT;
-            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.BOTTOM)) {
-                this.y = refY + refH - this.h - style.length(CssProperty.BOTTOM, refH, rootW, rootH) - mB;
+            if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.TOP)) {
+                this.y = refY + style.length(CssProperty.Id.TOP, refH, rootW, rootH) + mT;
+            } else if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.BOTTOM)) {
+                this.y = refY + refH - this.h - style.length(CssProperty.Id.BOTTOM, refH, rootW, rootH) - mB;
             } else {
                 this.y = (Float.isNaN(staticY) ? refY : staticY) + mT;
             }
@@ -1512,8 +1512,8 @@ public class LayoutBox {
      */
     private void placeRenderedLegend(LayoutBox legend, LayoutContext ctx) {
         float contentW = Math.max(0, w - horizontalDecoration());
-        boolean autoLeft = "auto".equals(legend.style.get(CssProperty.MARGIN_LEFT));
-        boolean autoRight = "auto".equals(legend.style.get(CssProperty.MARGIN_RIGHT));
+        boolean autoLeft = "auto".equals(legend.style.get(CssProperty.Id.MARGIN_LEFT));
+        boolean autoRight = "auto".equals(legend.style.get(CssProperty.Id.MARGIN_RIGHT));
         float free = contentW - legend.w - (autoLeft ? 0 : legend.mL) - (autoRight ? 0 : legend.mR);
         if (autoLeft && autoRight) {
             legend.mL = Math.max(0, free / 2);
@@ -1527,8 +1527,8 @@ public class LayoutBox {
     /** auto を 0 とした左右のマージン（px）。 */
     float ownInlineMargins(LayoutContext ctx) {
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        float l = "auto".equals(style.get(CssProperty.MARGIN_LEFT)) ? 0 : style.length(CssProperty.MARGIN_LEFT, 0, rootW, rootH);
-        float r = "auto".equals(style.get(CssProperty.MARGIN_RIGHT)) ? 0 : style.length(CssProperty.MARGIN_RIGHT, 0, rootW, rootH);
+        float l = "auto".equals(style.get(CssProperty.Id.MARGIN_LEFT)) ? 0 : style.length(CssProperty.Id.MARGIN_LEFT, 0, rootW, rootH);
+        float r = "auto".equals(style.get(CssProperty.Id.MARGIN_RIGHT)) ? 0 : style.length(CssProperty.Id.MARGIN_RIGHT, 0, rootW, rootH);
         return l + r;
     }
 
@@ -1558,18 +1558,18 @@ public class LayoutBox {
         float cbRight = parent.x + parent.w - parent.bR - parent.pR;
 
         float dx = 0, dy = 0;
-        if (!BoxMeasurer.isAutoInset(style, CssProperty.TOP)) {
-            float limit = portY + style.length(CssProperty.TOP, portH, rootW, rootH);
+        if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.TOP)) {
+            float limit = portY + style.length(CssProperty.Id.TOP, portH, rootW, rootH);
             if (y < limit) dy = Math.max(0, Math.min(limit - y, cbBottom - (y + h + mB)));
-        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.BOTTOM)) {
-            float limit = portY + portH - style.length(CssProperty.BOTTOM, portH, rootW, rootH);
+        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.BOTTOM)) {
+            float limit = portY + portH - style.length(CssProperty.Id.BOTTOM, portH, rootW, rootH);
             if (y + h > limit) dy = -Math.max(0, Math.min(y + h - limit, y - mT - cbTop));
         }
-        if (!BoxMeasurer.isAutoInset(style, CssProperty.LEFT)) {
-            float limit = portX + style.length(CssProperty.LEFT, portW, rootW, rootH);
+        if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.LEFT)) {
+            float limit = portX + style.length(CssProperty.Id.LEFT, portW, rootW, rootH);
             if (x < limit) dx = Math.max(0, Math.min(limit - x, cbRight - (x + w + mR)));
-        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.RIGHT)) {
-            float limit = portX + portW - style.length(CssProperty.RIGHT, portW, rootW, rootH);
+        } else if (!BoxMeasurer.isAutoInset(style, CssProperty.Id.RIGHT)) {
+            float limit = portX + portW - style.length(CssProperty.Id.RIGHT, portW, rootW, rootH);
             if (x + w > limit) dx = -Math.max(0, Math.min(x + w - limit, x - mL - cbLeft));
         }
         if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
@@ -1597,10 +1597,10 @@ public class LayoutBox {
         if (!this.isRelative) return;
 
         float offX = 0, offY = 0;
-        if (style.containsKey(CssProperty.LEFT)) offX += style.length(CssProperty.LEFT, parentOuterW, rootW, rootH);
-        else if (style.containsKey(CssProperty.RIGHT)) offX -= style.length(CssProperty.RIGHT, parentOuterW, rootW, rootH);
-        if (style.containsKey(CssProperty.TOP)) offY += style.length(CssProperty.TOP, parentOuterH, rootW, rootH);
-        else if (style.containsKey(CssProperty.BOTTOM)) offY -= style.length(CssProperty.BOTTOM, parentOuterH, rootW, rootH);
+        if (style.containsKey(CssProperty.Id.LEFT)) offX += style.length(CssProperty.Id.LEFT, parentOuterW, rootW, rootH);
+        else if (style.containsKey(CssProperty.Id.RIGHT)) offX -= style.length(CssProperty.Id.RIGHT, parentOuterW, rootW, rootH);
+        if (style.containsKey(CssProperty.Id.TOP)) offY += style.length(CssProperty.Id.TOP, parentOuterH, rootW, rootH);
+        else if (style.containsKey(CssProperty.Id.BOTTOM)) offY -= style.length(CssProperty.Id.BOTTOM, parentOuterH, rootW, rootH);
 
         if (offX != 0 || offY != 0) applyRelativeOffset(offX, offY);
     }
@@ -1674,13 +1674,13 @@ public class LayoutBox {
      */
     public boolean isCollapsedTable() {
         return display != null && display.inner() == Display.Inner.TABLE && style != null && !clipsOverflow()
-                && style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE;
+                && style.keywordOf(CssProperty.Id.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class) == CssKeywords.BorderCollapse.COLLAPSE;
     }
 
     private boolean hasDefiniteHeight() {
-        String height = style.get(CssProperty.HEIGHT);
+        String height = style.get(CssProperty.Id.HEIGHT);
         if (height != null && !height.isBlank() && !"auto".equalsIgnoreCase(height.trim())) return true;
-        String minHeight = style.get(CssProperty.MIN_HEIGHT);
+        String minHeight = style.get(CssProperty.Id.MIN_HEIGHT);
         return minHeight != null && !minHeight.isBlank() && !"0".equals(minHeight.trim()) && !"0px".equals(minHeight.trim())
                 && !"auto".equalsIgnoreCase(minHeight.trim());
     }
@@ -1750,7 +1750,7 @@ public class LayoutBox {
         /** 箱の display。テキストは常にインライン、宣言が無い・解釈できない値はタグから推測する。 */
         public static Display of(HtmlNode node, ComputedStyle style) {
             if (node.nodeType == NodeType.TEXT) return INLINE;
-            Display parsed = parse(style.get(CssProperty.DISPLAY));
+            Display parsed = parse(style.get(CssProperty.Id.DISPLAY));
             if (parsed != null) return parsed;
             return INLINE_TAGS.contains(node.tag) || ReplacedElements.isHost(node.tag) ? INLINE : BLOCK;
         }
@@ -1815,7 +1815,7 @@ public class LayoutBox {
          */
         public Display blockified(ComputedStyle style) {
             if (outer != Outer.INLINE) return this;
-            CssKeywords.Position position = style.keywordOf(CssProperty.POSITION, CssKeywords.Position.class);
+            CssKeywords.Position position = style.keywordOf(CssProperty.Id.POSITION, CssKeywords.Position.class);
             boolean outOfFlow = position == CssKeywords.Position.ABSOLUTE || position == CssKeywords.Position.FIXED
                     || style.facts().floating;
             return outOfFlow ? new Display(Outer.BLOCK, inner, listItem) : this;

@@ -39,14 +39,14 @@ public record LayoutContext(
     }
 
     // テキストの測定ごとに引くプロパティは、名前ではなく添字で引く
-    private static final int ID_FONT_FAMILY = ComputedStyle.idOf(CssProperty.FONT_FAMILY);
-    private static final int ID_FONT_STYLE = ComputedStyle.idOf(CssProperty.FONT_STYLE);
-    private static final int ID_LETTER_SPACING = ComputedStyle.idOf(CssProperty.LETTER_SPACING);
-    private static final int ID_FONT_KERNING = ComputedStyle.idOf(CssProperty.FONT_KERNING);
-    private static final int ID_OVERFLOW_WRAP = ComputedStyle.idOf(CssProperty.OVERFLOW_WRAP);
-    private static final int ID_WHITE_SPACE = ComputedStyle.idOf(CssProperty.WHITE_SPACE);
-    private static final int ID_WORD_BREAK = ComputedStyle.idOf(CssProperty.WORD_BREAK);
-    private static final int ID_TEXT_OVERFLOW = ComputedStyle.idOf(CssProperty.TEXT_OVERFLOW);
+    private static final int ID_FONT_FAMILY = CssProperty.Id.FONT_FAMILY;
+    private static final int ID_FONT_STYLE = CssProperty.Id.FONT_STYLE;
+    private static final int ID_LETTER_SPACING = CssProperty.Id.LETTER_SPACING;
+    private static final int ID_FONT_KERNING = CssProperty.Id.FONT_KERNING;
+    private static final int ID_OVERFLOW_WRAP = CssProperty.Id.OVERFLOW_WRAP;
+    private static final int ID_WHITE_SPACE = CssProperty.Id.WHITE_SPACE;
+    private static final int ID_WORD_BREAK = CssProperty.Id.WORD_BREAK;
+    private static final int ID_TEXT_OVERFLOW = CssProperty.Id.TEXT_OVERFLOW;
 
     /** 算出スタイルの {@code font-family} に対応する書体。 */
     public FontFace faceFor(ComputedStyle style) {

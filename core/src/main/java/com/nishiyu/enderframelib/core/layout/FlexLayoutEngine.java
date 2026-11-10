@@ -150,7 +150,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         float parentH = space.percentageBlockSize();
         boolean isBorderBox = box.style.isBorderBox();
-        for (String prop : new String[]{CssProperty.HEIGHT, CssProperty.MAX_HEIGHT}) {
+        for (int prop : new int[]{CssProperty.Id.HEIGHT, CssProperty.Id.MAX_HEIGHT}) {
             String v = box.style.get(prop);
             if (v == null || "auto".equalsIgnoreCase(v.trim()) || "none".equalsIgnoreCase(v.trim())
                     || LayoutMetrics.isIntrinsicSizeKeyword(v) || (v.contains("%") && parentH <= 0)) {
@@ -187,7 +187,7 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float crossGap = axes.row ? box.rowGap : box.columnGap;
         float mainGap = axes.row ? box.columnGap : box.rowGap;
-        String alignContent = box.style.keywordOf(CssProperty.ALIGN_CONTENT, CssKeywords.Alignment.class).cssName();
+        String alignContent = box.style.keywordOf(CssProperty.Id.ALIGN_CONTENT, CssKeywords.Alignment.class).cssName();
         int lineCount = state.lines.size();
 
         // 1 行のコンテナでは行の交差軸の寸法はコンテナの寸法（CSS Flexbox §9.4 の 15）
@@ -240,7 +240,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     private static List<FlexItem> orderedItems(LayoutBox box) {
         List<FlexItem> items = new ArrayList<>();
         for (LayoutBox child : box.children) if (child.participatesInFlow()) items.add(new FlexItem(child));
-        items.sort(Comparator.comparingInt(item -> (int) item.box.style.number(CssProperty.ORDER, 0f)));
+        items.sort(Comparator.comparingInt(item -> (int) item.box.style.number(CssProperty.Id.ORDER, 0f)));
         return items;
     }
 
@@ -400,11 +400,11 @@ public class FlexLayoutEngine extends LayoutEngine {
             LayoutBox b = item.box;
             if (alignSelfOf(b, alignItems) != CssKeywords.Alignment.STRETCH || hasAutoCrossMargin(b, axes.row)) continue;
             if (axes.row) {
-                if (hasSize(b.style, CssProperty.HEIGHT)) continue;
+                if (hasSize(b.style, CssProperty.Id.HEIGHT)) continue;
                 float target = line.cross - b.mT - b.mB;
                 if (b.h < target) remeasure(b, b.w, Math.max(0, target), axes, space, ctx);
             } else {
-                if (hasSize(b.style, CssProperty.WIDTH)) continue;
+                if (hasSize(b.style, CssProperty.Id.WIDTH)) continue;
                 float target = line.cross - b.mL - b.mR;
                 if (Math.abs(b.w - target) > 0.001f && target >= 0) remeasure(b, target, b.h, axes, space, ctx);
             }
@@ -420,8 +420,8 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (FlexItem item : items) {
             LayoutBox b = item.box;
             used += mainSize(b, axes.row) + mainMargins(b, axes.row);
-            if (isAuto(b.style, axes.row ? CssProperty.MARGIN_LEFT : CssProperty.MARGIN_TOP)) autoMargins++;
-            if (isAuto(b.style, axes.row ? CssProperty.MARGIN_RIGHT : CssProperty.MARGIN_BOTTOM)) autoMargins++;
+            if (isAuto(b.style, axes.row ? CssProperty.Id.MARGIN_LEFT : CssProperty.Id.MARGIN_TOP)) autoMargins++;
+            if (isAuto(b.style, axes.row ? CssProperty.Id.MARGIN_RIGHT : CssProperty.Id.MARGIN_BOTTOM)) autoMargins++;
         }
         float free = innerMain - used;
 
@@ -431,7 +431,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         if (autoMargins > 0) {
             spacing = new MainAxisSpacing(0, mainGap);
         } else {
-            String justify = box.style.keywordOf(CssProperty.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName();
+            String justify = box.style.keywordOf(CssProperty.Id.JUSTIFY_CONTENT, CssKeywords.Alignment.class).cssName();
             spacing = distributeMainAxis(justifyDistribution(justify, axes), 0, innerMain, used - mainGap * Math.max(0, items.size() - 1),
                     mainGap, items.size());
         }
@@ -440,11 +440,11 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (FlexItem item : items) {
             LayoutBox b = item.box;
             if (axes.row) {
-                if (isAuto(b.style, CssProperty.MARGIN_LEFT)) b.mL = autoMargin;
-                if (isAuto(b.style, CssProperty.MARGIN_RIGHT)) b.mR = autoMargin;
+                if (isAuto(b.style, CssProperty.Id.MARGIN_LEFT)) b.mL = autoMargin;
+                if (isAuto(b.style, CssProperty.Id.MARGIN_RIGHT)) b.mR = autoMargin;
             } else {
-                if (isAuto(b.style, CssProperty.MARGIN_TOP)) b.mT = autoMargin;
-                if (isAuto(b.style, CssProperty.MARGIN_BOTTOM)) b.mB = autoMargin;
+                if (isAuto(b.style, CssProperty.Id.MARGIN_TOP)) b.mT = autoMargin;
+                if (isAuto(b.style, CssProperty.Id.MARGIN_BOTTOM)) b.mB = autoMargin;
             }
             float outerMain = mainSize(b, axes.row) + (axes.row ? b.mL + b.mR : b.mT + b.mB);
             float main = axes.reverse ? innerMain - pos - outerMain : pos;
@@ -458,8 +458,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 行の中での交差軸の位置。auto マージンは align-self より先に余りを吸う。 */
     private static float crossOffset(LayoutBox b, FlexLine line, Axes axes, CssKeywords.Alignment alignItems) {
         float outer = axes.row ? b.h + b.mT + b.mB : b.w + b.mL + b.mR;
-        String startSide = axes.row ? CssProperty.MARGIN_TOP : CssProperty.MARGIN_LEFT;
-        String endSide = axes.row ? CssProperty.MARGIN_BOTTOM : CssProperty.MARGIN_RIGHT;
+        int startSide = axes.row ? CssProperty.Id.MARGIN_TOP : CssProperty.Id.MARGIN_LEFT;
+        int endSide = axes.row ? CssProperty.Id.MARGIN_BOTTOM : CssProperty.Id.MARGIN_RIGHT;
         boolean autoStart = isAuto(b.style, startSide);
         boolean autoEnd = isAuto(b.style, endSide);
         if (autoStart || autoEnd) {
@@ -495,13 +495,13 @@ public class FlexLayoutEngine extends LayoutEngine {
      * 指定、それも無ければ内容の寸法（測定済みの幅・高さ）。主軸が不定のときの % は内容の寸法に落とす。
      */
     private static float flexBaseSize(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
-        String basis = child.style.get(CssProperty.FLEX_BASIS);
+        String basis = child.style.get(CssProperty.Id.FLEX_BASIS);
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
         if (basis != null) {
             String b = basis.trim().toLowerCase();
             boolean percentOfIndefinite = b.contains("%") && Float.isNaN(innerMain);
             if (!b.equals("auto") && !b.equals("content") && !percentOfIndefinite) {
-                float value = child.style.length(CssProperty.FLEX_BASIS, Float.isNaN(innerMain) ? 0 : innerMain,
+                float value = child.style.length(CssProperty.Id.FLEX_BASIS, Float.isNaN(innerMain) ? 0 : innerMain,
                         ctx.viewport().rootW(), ctx.viewport().rootH());
                 boolean isBorderBox = child.style.isBorderBox();
                 return Math.max(decoration, isBorderBox ? value : value + decoration);
@@ -521,8 +521,8 @@ public class FlexLayoutEngine extends LayoutEngine {
      * （CSS Flexbox §4.5: 指定された寸法と内容の最小寸法の小さい方。スクロールコンテナは 0）。
      */
     private static float minMainSize(LayoutBox child, boolean row, LayoutContext ctx) {
-        String prop = row ? CssProperty.MIN_WIDTH : CssProperty.MIN_HEIGHT;
-        String sizeProp = row ? CssProperty.WIDTH : CssProperty.HEIGHT;
+        int prop = row ? CssProperty.Id.MIN_WIDTH : CssProperty.Id.MIN_HEIGHT;
+        int sizeProp = row ? CssProperty.Id.WIDTH : CssProperty.Id.HEIGHT;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
         String min = child.style.get(prop);
         boolean isBorderBox = child.style.isBorderBox();
@@ -549,7 +549,7 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static float maxMainSize(LayoutBox child, boolean row, float innerMain, ConstraintSpace space, LayoutContext ctx) {
-        String prop = row ? CssProperty.MAX_WIDTH : CssProperty.MAX_HEIGHT;
+        int prop = row ? CssProperty.Id.MAX_WIDTH : CssProperty.Id.MAX_HEIGHT;
         String max = child.style.get(prop);
         if (max == null || "none".equalsIgnoreCase(max.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(max)) {
             return Float.POSITIVE_INFINITY;
@@ -576,37 +576,37 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 主軸方向のマージンの和。auto は 0 として数える（余りは位置を決めるときに配る）。 */
     private static float mainMargins(LayoutBox b, boolean row) {
         if (row) {
-            return (isAuto(b.style, CssProperty.MARGIN_LEFT) ? 0 : b.mL) + (isAuto(b.style, CssProperty.MARGIN_RIGHT) ? 0 : b.mR);
+            return (isAuto(b.style, CssProperty.Id.MARGIN_LEFT) ? 0 : b.mL) + (isAuto(b.style, CssProperty.Id.MARGIN_RIGHT) ? 0 : b.mR);
         }
-        return (isAuto(b.style, CssProperty.MARGIN_TOP) ? 0 : b.mT) + (isAuto(b.style, CssProperty.MARGIN_BOTTOM) ? 0 : b.mB);
+        return (isAuto(b.style, CssProperty.Id.MARGIN_TOP) ? 0 : b.mT) + (isAuto(b.style, CssProperty.Id.MARGIN_BOTTOM) ? 0 : b.mB);
     }
 
     private static boolean hasAutoCrossMargin(LayoutBox b, boolean row) {
         return row
-                ? isAuto(b.style, CssProperty.MARGIN_TOP) || isAuto(b.style, CssProperty.MARGIN_BOTTOM)
-                : isAuto(b.style, CssProperty.MARGIN_LEFT) || isAuto(b.style, CssProperty.MARGIN_RIGHT);
+                ? isAuto(b.style, CssProperty.Id.MARGIN_TOP) || isAuto(b.style, CssProperty.Id.MARGIN_BOTTOM)
+                : isAuto(b.style, CssProperty.Id.MARGIN_LEFT) || isAuto(b.style, CssProperty.Id.MARGIN_RIGHT);
     }
 
-    private static boolean isAuto(ComputedStyle style, String prop) {
-        // 余白の四辺は事実から引く（定数の文字列は同一のインスタンスなので == で当たる）。それ以外の宣言は従来どおり読む
-        if (prop == CssProperty.MARGIN_TOP) return style.layoutFacts().autoMarginT;
-        if (prop == CssProperty.MARGIN_RIGHT) return style.layoutFacts().autoMarginR;
-        if (prop == CssProperty.MARGIN_BOTTOM) return style.layoutFacts().autoMarginB;
-        if (prop == CssProperty.MARGIN_LEFT) return style.layoutFacts().autoMarginL;
+    private static boolean isAuto(ComputedStyle style, int prop) {
+        // 余白の四辺は事実から引く（添字の定数と比べる）。それ以外の宣言は従来どおり読む
+        if (prop == CssProperty.Id.MARGIN_TOP) return style.layoutFacts().autoMarginT;
+        if (prop == CssProperty.Id.MARGIN_RIGHT) return style.layoutFacts().autoMarginR;
+        if (prop == CssProperty.Id.MARGIN_BOTTOM) return style.layoutFacts().autoMarginB;
+        if (prop == CssProperty.Id.MARGIN_LEFT) return style.layoutFacts().autoMarginL;
         return "auto".equalsIgnoreCase(style.getOrDefault(prop, "0").trim());
     }
 
-    private static boolean hasSize(ComputedStyle style, String prop) {
+    private static boolean hasSize(ComputedStyle style, int prop) {
         String v = style.get(prop);
         return v != null && !"auto".equalsIgnoreCase(v.trim());
     }
 
     private static float grow(LayoutBox b) {
-        return Math.max(0, b.style.number(CssProperty.FLEX_GROW, 0f));
+        return Math.max(0, b.style.number(CssProperty.Id.FLEX_GROW, 0f));
     }
 
     private static float shrink(LayoutBox b) {
-        return Math.max(0, b.style.number(CssProperty.FLEX_SHRINK, 1f));
+        return Math.max(0, b.style.number(CssProperty.Id.FLEX_SHRINK, 1f));
     }
 
     private static boolean scrollsAlong(LayoutBox box, boolean row) {
@@ -674,8 +674,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** 主軸と交差軸の向き。 */
     private record Axes(FormattingContext.Display direction, boolean row, boolean reverse, boolean wrap, boolean wrapReverse) {
         static Axes of(ComputedStyle style) {
-            CssKeywords.FlexDirection dir = style.keywordOf(CssProperty.FLEX_DIRECTION, CssKeywords.FlexDirection.class);
-            CssKeywords.FlexWrap wrap = style.keywordOf(CssProperty.FLEX_WRAP, CssKeywords.FlexWrap.class);
+            CssKeywords.FlexDirection dir = style.keywordOf(CssProperty.Id.FLEX_DIRECTION, CssKeywords.FlexDirection.class);
+            CssKeywords.FlexWrap wrap = style.keywordOf(CssProperty.Id.FLEX_WRAP, CssKeywords.FlexWrap.class);
             return new Axes(displayOf(dir), dir.isRow(), dir.isReverse(),
                     wrap != CssKeywords.FlexWrap.NOWRAP, wrap == CssKeywords.FlexWrap.WRAP_REVERSE);
         }
