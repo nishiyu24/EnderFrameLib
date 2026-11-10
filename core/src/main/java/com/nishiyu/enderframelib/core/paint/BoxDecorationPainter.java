@@ -398,16 +398,18 @@ public final class BoxDecorationPainter {
             bgType = ElementType.A;
         }
         boolean isInteractiveBox = bgType != ElementType.RECT;
+        long bgKey = box.node != null ? DisplayItem.bgKeyOf(box.node.nodeId()) : 0L;
 
         if (border.isCircle() && border.hasBorder()) {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
-            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
             drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
+            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BORDER) : 0L;
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                    new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false));
+                    new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
             // background-clip が border-box でなければ、色は箱の内側だけに塗る。_bg はヒットテストと
             // 状態の受け口なので箱いっぱいのまま残し、色だけを切った矩形に移す
@@ -417,12 +419,13 @@ public final class BoxDecorationPainter {
                 bgFill = 0x00000000;
                 BoxDecorations.Rect area = BoxDecorations.boxArea(box, colorClip);
                 Corners areaRadii = "padding-box".equals(colorClip) ? border.innerRadii() : null;
+                long bglKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BGL_BASE + (BoxDecorations.layers(box.style).size() & 0x3F)) : 0L;
                 addElement(elements, id, id + "_bgl" + BoxDecorations.layers(box.style).size() + "_0", ElementType.RECT,
                         area.x(), area.y(), area.w(), area.h(), "", 0, bgColor, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                        new RenderMeta(normalizedClip, areaRadii, null, fontHVal, ox, oy, 1, false));
+                        new RenderMeta(normalizedClip, areaRadii, null, fontHVal, ox, oy, 1, false), bglKey);
             }
             // 角丸の箱でも背景は枠線ボックスいっぱい（枠線の下まで）に塗り、枠線をその上に重ねる（付録 E）
-            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            addElement(elements, id, id + "_bg", bgType, box.x, box.y, box.w, box.h, "", color, bgFill, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, bgKey);
             drawBackgroundImages(elements, box, id, normalizedClip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
             drawInsetShadows(elements, box, id, shadows, border, normalizedClip, fontHVal, ox, oy);
             // border-image（9-slice）が描ければ、枠線の通常の描画に代わる（枠線の太さは配置にそのまま効く）

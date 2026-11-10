@@ -99,9 +99,15 @@ public class HitTestIndex {
             return;
         }
 
-        this.elementMap = new Long2ObjectOpenHashMap<>(elements.size());
+        this.elementMap = new Long2ObjectOpenHashMap<>(elements.size() * 2);
         for (DisplayItem el : elements) {
-            elementMap.put(el.key(), el);
+            long k = el.key();
+            elementMap.put(k, el);
+            if (el.id() != null && !el.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(el.id());
+                if (strKey != k) elementMap.putIfAbsent(strKey, el);
+                if (this.dynamicIds.contains(el.id())) dynamicKeys.add(k);
+            }
         }
 
         List<Entry> entries = new ArrayList<>();
@@ -162,6 +168,10 @@ public class HitTestIndex {
             DisplayItem item = changed.get(i);
             long k = item.key();
             elementMap.put(k, item);
+            if (item.id() != null && !item.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(item.id());
+                if (strKey != k) elementMap.put(strKey, item);
+            }
             if (scrollEntryAt.containsKey(k)) { // 動く節がスクロールする箱でもある: 新しい項目で Entry を作り直す
                 int at = scrollEntryAt.get(k);
                 Entry old = scrollEntries.get(at);
@@ -622,5 +632,15 @@ public class HitTestIndex {
 
     public DisplayItem getElementByKey(long key) {
         return elementMap.get(key);
+    }
+
+    /** ノードハンドルと部品番号から項目を引く（文字列のハッシュを使わない）。 */
+    public DisplayItem getElementByHandle(int nodeHandle, int partOrdinal) {
+        return elementMap.get(DisplayItem.keyOf(nodeHandle, partOrdinal));
+    }
+
+    /** 節自身（錨 NODE）をノードハンドルから引く。 */
+    public DisplayItem getElementByHandle(int nodeHandle) {
+        return getElementByHandle(nodeHandle, DisplayItem.PART_NODE);
     }
 }
