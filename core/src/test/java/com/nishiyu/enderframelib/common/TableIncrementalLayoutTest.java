@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 表を含む文書での差分レイアウト（{@link RenderPipeline#incrementalLayout}）が、毎回すべてを作り直して測り直した結果と
+ * 表を含む文書での差分レイアウト（{@link EngineContext#incrementalLayout}）が、毎回すべてを作り直して測り直した結果と
  * まったく同じ表示リストになること。表の種類（分離・collapse・fixed・入れ子・キャプション・colspan）を含む文書に、
  * class・style（display の切り替えを含む）・文字・子の増減・リサイズを乱数で混ぜて 1 手ずつ比べる。
  *
@@ -53,11 +53,11 @@ public class TableIncrementalLayoutTest {
 
     @AfterEach
     public void restore() {
-        RenderPipeline.incrementalLayout = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
     }
 
     private static List<List<String>> run(boolean incremental, long seed) {
-        RenderPipeline.incrementalLayout = incremental;
+        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = incremental;
         return MutationScenario.run(HTML, CLASSES, STYLES, seed, 80);
     }
 

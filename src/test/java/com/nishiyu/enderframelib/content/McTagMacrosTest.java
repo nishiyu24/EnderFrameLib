@@ -1,4 +1,6 @@
-package com.nishiyu.enderframelib.common;
+package com.nishiyu.enderframelib.content;
+
+import com.nishiyu.enderframelib.common.CustomTagExpander;
 
 import com.nishiyu.enderframelib.core.css.SelectorMatcher.SelectorEngine;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
@@ -29,7 +31,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * カスタムタグのマクロ展開が、正規表現による文字列置換から DOM の部分木差し替えに
  * 移っても同じ構造を作ることの確認。
  */
-public class CustomTagExpanderTest {
+public class McTagMacrosTest {
 
     private static HtmlNode expanded(String html) {
         HtmlNode root = HtmlParser.parse(html);

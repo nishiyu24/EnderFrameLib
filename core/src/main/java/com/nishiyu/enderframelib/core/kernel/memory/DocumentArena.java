@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.kernel.memory;
 
-import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
@@ -32,7 +31,15 @@ public final class DocumentArena {
     private OffHeapColumns.Ints generation, nextFree;
     private Object[] owners;
 
-    private final Map<Object, NodeSlots<?>> tables = new IdentityHashMap<>();
+    /**
+     * 持ち主（{@code InteractionState} など）ごとの列挙用の表。キーも値も弱参照にする。表の実体は持ち主が持つ
+     * （{@link #slots} の戻り値を持ち主が保持する）。強参照だと、持ち主が手放されても {@link #dropSlots} が呼ばれない限り、
+     * その持ち主が持つ全節ぶんの状態（算出スタイル）が文書の寿命の間残ってしまう（文書に対して {@code InteractionState} を
+     * 作り捨てると、ヒープが際限なく増えて再スタイルも遅くなっていた）。値の表から持ち主へ強い参照が戻る
+     * （{@code StateFlags.owner}）ので、値を弱参照にしないとキーだけ弱くしても回収されない。
+     * 持ち主は {@code equals} / {@code hashCode} を上書きしない前提（同一性で比べる）。
+     */
+    private final Map<Object, java.lang.ref.WeakReference<NodeSlots<?>>> tables = new java.util.WeakHashMap<>();
 
     public DocumentArena() {
         this(64);
@@ -307,7 +314,12 @@ public final class DocumentArena {
      */
     @SuppressWarnings("unchecked")
     public <T> NodeSlots<T> slots(Object owner) {
-        return (NodeSlots<T>) tables.computeIfAbsent(owner, k -> new NodeSlots<T>(this));
+        java.lang.ref.WeakReference<NodeSlots<?>> ref = tables.get(owner);
+        NodeSlots<?> existing = ref != null ? ref.get() : null;
+        if (existing != null) return (NodeSlots<T>) existing;
+        NodeSlots<T> created = new NodeSlots<>(this);
+        tables.put(owner, new java.lang.ref.WeakReference<>(created));
+        return created;
     }
 
     /** 持ち主が手放すとき。 */

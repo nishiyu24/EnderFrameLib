@@ -154,7 +154,7 @@ public final class BoxMeasurer {
     }
 
     /** fieldset の legend の幅は fit-content（HTML §15.3.13）。auto マージンは置くときに解く。 */
-    private static final FormattingContext LEGEND_CONTEXT = new FormattingContext(FormattingContext.Display.LEGEND, true, false);
+    private static final FormattingContext LEGEND_CONTEXT = FormattingContext.of(FormattingContext.Display.LEGEND, true, false);
 
     private static void measureLegend(LayoutBox legend, float fieldsetInnerW, LayoutContext ctx) {
         legend.measure(new ConstraintSpace(fieldsetInnerW, Float.NaN, LEGEND_CONTEXT), ctx);

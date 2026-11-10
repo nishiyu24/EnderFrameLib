@@ -41,20 +41,20 @@ public class ServerClientLayoutParityTest {
     private static final int W = 800;
     private static final int H = 600;
 
-    private RenderPipeline.ILayoutBoxRenderer previousRenderer;
+    private com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer previousRenderer;
 
     @BeforeEach
     public void setUp() {
-        previousRenderer = UiDocumentCompiler.clientBoxRenderer;
-        UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        previousRenderer = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
         clearSessions();
     }
 
     @AfterEach
     public void tearDown() {
         clearSessions();
-        RenderPipeline.incrementalLayout = true;
-        UiDocumentCompiler.clientBoxRenderer = previousRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = previousRenderer;
     }
 
     private static void clearSessions() {
@@ -241,11 +241,11 @@ public class ServerClientLayoutParityTest {
     private static void flushAndCompare(String label, List<String> history) {
         session(SERVER).flushInvalidation();
         session(CLIENT).flushInvalidation();
-        RenderPipeline.incrementalLayout = false;
+        com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = false;
         try {
             session(REFERENCE).flushInvalidation();
         } finally {
-            RenderPipeline.incrementalLayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().incrementalLayout = true;
         }
         List<DisplayItem> reference = session(REFERENCE).renderCache();
         for (String id : new String[]{SERVER, CLIENT}) {

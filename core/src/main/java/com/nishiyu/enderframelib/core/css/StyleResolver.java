@@ -84,8 +84,10 @@ public class StyleResolver {
                                                    float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
         if (node == null || type == null || sheet == null || parentComputedStyle == null) return null;
         if (node.nodeType != NodeType.ELEMENT || node.isPseudoNode) return null;
-        // ::before / ::after は content を宣言する規則が無ければ生成されない。規則が 1 つも無い文書では、要素ごとにカスケードを解かない
-        if ((type == PseudoType.BEFORE || type == PseudoType.AFTER) && !sheet.index().hasPseudoRules(type)) return null;
+        // その疑似要素に掛かる規則が 1 つも無ければ、結果は無い（::before / ::after は生成されない。::marker / ::placeholder は
+        // 継承だけで何も宣言されず null になる）。規則が 1 つも無い文書では、要素ごとにカスケードを解かない
+        // （リストの項目・入力欄ごとに 920 B の表を作っていた）
+        if (!sheet.index().hasPseudoRules(type)) return null;
         Map<String, String> parent = parentComputedStyle.asMap();
         Map<String, String> raw = resolveDeclarations(node, type, parent, sheet, stateLookup);
         StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
@@ -683,6 +685,64 @@ public class StyleResolver {
             if (value == null) value = PropertyRegistry.initialValue(longhand);
             if (value != null) target.put(longhand, value);
         }
+    }
+
+    private static final String[] VIEWPORT_SUFFIXES = {"w", "h", "i", "b", "min", "max"};
+
+    /** 末尾の単位（w / h / i / b / min / max）が {@code at} から始まり、その直後が英字でないか。 */
+    private static boolean viewportSuffixAt(String v, int at) {
+        for (String suffix : VIEWPORT_SUFFIXES) {
+            int end = at + suffix.length();
+            if (v.regionMatches(true, at, suffix, 0, suffix.length())
+                    && (end >= v.length() || !isAsciiLetter(v.charAt(end)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAsciiLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    /**
+     * 値がビューポート（vw/vh…）・コンテナ（cqw…）の単位、{@code var()}、{@code env()} を含むか。
+     * 正規表現（{@code Matcher}）を作らずに判定する。
+     */
+    public static boolean valueDependsOnViewport(String v) {
+        int n = v.length();
+        for (int i = 0; i < n; i++) {
+            char c = v.charAt(i);
+            if (c == '(' && i >= 3) {
+                if (v.regionMatches(true, i - 3, "var", 0, 3) || v.regionMatches(true, i - 3, "env", 0, 3)) return true;
+            }
+            if (c >= '0' && c <= '9' && i + 1 < n) {
+                int j = i + 1;
+                char d = v.charAt(j);
+                if ((d == 's' || d == 'S' || d == 'l' || d == 'L' || d == 'd' || d == 'D') && j + 1 < n
+                        && (v.charAt(j + 1) == 'v' || v.charAt(j + 1) == 'V') && viewportSuffixAt(v, j + 2)) {
+                    return true;
+                }
+                if ((d == 'v' || d == 'V') && viewportSuffixAt(v, j + 1)) return true;
+                if ((d == 'c' || d == 'C') && j + 1 < n && (v.charAt(j + 1) == 'q' || v.charAt(j + 1) == 'Q')
+                        && viewportSuffixAt(v, j + 2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 生の宣言のどれかの値が {@link #valueDependsOnViewport} を満たすか。{@link StyleTable} なら、値の文字列を毎回走査せず
+     * 正規の値（{@link CssValue}）が覚えた答えを引く（同じ値は全要素で 1 回しか解析しない）。
+     */
+    public static boolean rawDependsOnViewport(Map<String, String> raw) {
+        if (raw instanceof StyleTable table) return table.anyValueDependsOnViewport();
+        for (String value : raw.values()) {
+            if (value != null && valueDependsOnViewport(value)) return true;
+        }
+        return false;
     }
 
     /**

@@ -1671,8 +1671,8 @@ public class EnderFrameCommands {
 
     private static String resolveServerHtml(ResourceLocation uiId) {
         String html = EnderFrameDataPackManager.getHtml(uiId);
-        if ((html == null || html.isEmpty()) && UiDocumentCompiler.resourceTextResolver != null) {
-            html = UiDocumentCompiler.resourceTextResolver.apply(uiId.toString());
+        if ((html == null || html.isEmpty())) {
+            html = com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply(uiId.toString());
         }
         return (html != null && !html.isEmpty()) ? html : null;
     }

@@ -57,7 +57,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (LayoutBox child : box.children) {
             if (!child.participatesInFlow()) continue;
             CssKeywords.Alignment childAlign = alignSelfOf(child, alignItems);
-            FormattingContext childCtx = new FormattingContext(axes.direction, childAlign == CssKeywords.Alignment.STRETCH, box.sizingMode == SizingMode.SHRINK_TO_FIT);
+            FormattingContext childCtx = FormattingContext.of(axes.direction, childAlign == CssKeywords.Alignment.STRETCH, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             ConstraintSpace itemSpace = new ConstraintSpace(tentativeInnerW, parentH, childCtx);
             // 確定の測り直し（行方向は contentBlockSize、列方向は finishLayout）は、来なかった項目を settle で本当に測る。
             // 中身が変わっていない項目は、仮の測定を前回の産物で済ませる
@@ -238,10 +238,24 @@ public class FlexLayoutEngine extends LayoutEngine {
     // ==========================================
 
     /** 通常フローのアイテムを {@code order} の昇順に（同値は文書順）。 */
+
+    private static final Comparator<FlexItem> ORDER_COMPARATOR =
+            Comparator.comparingInt(item -> (int) item.box.style.number(CssPropertyIndex.ORDER, 0f));
+
     private static List<FlexItem> orderedItems(LayoutBox box) {
-        List<FlexItem> items = new ArrayList<>();
-        for (LayoutBox child : box.children) if (child.participatesInFlow()) items.add(new FlexItem(child));
-        items.sort(Comparator.comparingInt(item -> (int) item.box.style.number(CssPropertyIndex.ORDER, 0f)));
+        List<FlexItem> items = new ArrayList<>(box.children.size());
+        boolean inOrder = true;
+        int previous = Integer.MIN_VALUE;
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            LayoutBox child = box.children.get(i);
+            if (!child.participatesInFlow()) continue;
+            items.add(new FlexItem(child));
+            int order = (int) child.style.number(CssPropertyIndex.ORDER, 0f);
+            if (order < previous) inOrder = false;
+            previous = order;
+        }
+        // order が文書順のまま昇順（全て同じを含む）なら、安定ソートは何も動かさない
+        if (!inOrder) items.sort(ORDER_COMPARATOR);
         return items;
     }
 
@@ -292,7 +306,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         float initialFree = innerMain - outerSum(items, axes.row) - gap;
 
         for (int guard = 0; guard < items.size() + 1; guard++) {
-            if (items.stream().allMatch(i -> i.frozen)) break;
+            if (allFrozen(items)) break;
             float free = innerMain - outerSum(items, axes.row) - gap;
             float sumFactors = 0;
             for (FlexItem item : items) if (!item.frozen) sumFactors += growing ? grow(item.box) : shrink(item.box);
@@ -328,6 +342,13 @@ public class FlexLayoutEngine extends LayoutEngine {
         for (FlexItem item : items) item.box.settleTentative();
     }
 
+    private static boolean allFrozen(List<FlexItem> items) {
+        for (int i = 0, n = items.size(); i < n; i++) {
+            if (!items.get(i).frozen) return false;
+        }
+        return true;
+    }
+
     /** 凍結したアイテムは決まった寸法、それ以外は flex base size で数えた外側の寸法の和。 */
     private static float outerSum(List<FlexItem> items, boolean row) {
         float sum = 0;
@@ -335,10 +356,38 @@ public class FlexLayoutEngine extends LayoutEngine {
         return sum;
     }
 
+    /** 切り分け用: false なら、幅が同じでも shrink-to-fit の項目を必ず測り直す（従来の動き）。 */
+    public static volatile boolean skipSameWidthRemeasure = !Boolean.getBoolean("enderframe.layout.noflexskip");
+
+    /**
+     * 親が渡す幅が違っても、この箱の寸法の決まり方が変わらないか。割合（親の幅が基準）と内在サイズのキーワード
+     * （{@code fit-content} など。上書き寸法のときは別の経路で解く）は、測り直すと別の値になり得る。
+     */
+    private static boolean widthIndependentOfParent(LayoutBox child) {
+        StyleFacts f = child.style.layoutFacts();
+        if (f.percentGeometry || f.intrinsicWidthKind != StyleFacts.IW_NONE) return false;
+        // 子孫の割合は、この箱の幅が基準になる。仮の測定のときの利用可能幅と確定した幅とで解け方が変わり得るので、部分木ぜんぶを見る
+        List<LayoutBox> kids = child.children;
+        for (int i = 0, n = kids.size(); i < n; i++) {
+            LayoutBox k = kids.get(i);
+            if (k.style.facts().displayNone) continue;
+            if (!widthIndependentOfParent(k)) return false;
+        }
+        return true;
+    }
+
     /** 主軸の寸法を決めて測り直す。行方向なら幅を固定して高さを、列方向なら高さを固定する。 */
     private static void setMainSize(LayoutBox child, Axes axes, float size, ConstraintSpace space, LayoutContext ctx) {
         if (axes.row) {
-            if (Math.abs(child.w - size) > 0.001f || child.sizingMode != SizingMode.DEFINITE) {
+            boolean sameWidth = Math.abs(child.w - size) <= 0.001f;
+            if (!sameWidth || child.sizingMode != SizingMode.DEFINITE) {
+                if (sameWidth && skipSameWidthRemeasure && child.sizingMode == SizingMode.SHRINK_TO_FIT
+                        && widthIndependentOfParent(child)) {
+                    // 仮の測定（shrink-to-fit）で出た幅が、伸縮で決まった幅と同じ。同じ幅で測り直しても同じ箱になるので省く。
+                    // 確定測定の状態（DEFINITE）にだけ揃える。測り直しが来なかった項目は、呼び出し側の settleTentative が終わらせる
+                    child.sizingMode = SizingMode.DEFINITE;
+                    return;
+                }
                 remeasure(child, size, Float.NaN, axes, space, ctx);
             }
         } else if (Math.abs(child.h - size) > 0.001f) {
@@ -350,7 +399,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         child.overrideWidth = width;
         child.overrideHeight = height;
         try {
-            FormattingContext childCtx = new FormattingContext(axes.direction, true, false);
+            FormattingContext childCtx = FormattingContext.of(axes.direction, true, false);
             child.measure(new ConstraintSpace(width, itemPercentageBase(child.parent, space, ctx), childCtx), ctx);
         } finally {
             child.overrideWidth = Float.NaN;

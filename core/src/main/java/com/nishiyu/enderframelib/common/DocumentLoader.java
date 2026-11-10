@@ -28,11 +28,6 @@ public class DocumentLoader {
 
     private static final Pattern INCLUDE_PATTERN = Pattern.compile("(?is)<include\\b[^>]*\\bsrc=[\"']([^\"']+)[\"'][^>]*(?:/>|>\\s*</include>)");
 
-    public static Function<String, String> clientResourceFallback = null;
-
-    /** サーバー（データパック）側リソースを解決するための依存性注入用フック */
-    public static Function<String, String> datapackResourceFallback = null;
-
     /**
      * innerHTML 相当のフラグメント解析（引数は HTML と文脈の要素のタグ）。
      * Markdown は文字列段階、カスタムタグはパース後の DOM 段階で展開する。
@@ -49,15 +44,13 @@ public class DocumentLoader {
         String builtIn = resolveBuiltInTheme(clean);
         if (builtIn != null) return builtIn;
 
-        Function<String, String> dpFallback = datapackResourceFallback != null
-                ? datapackResourceFallback : UiDocumentCompiler.datapackResourceFallback;
+        Function<String, String> dpFallback = com.nishiyu.enderframelib.core.EngineContext.current().datapackResourceFallback;
         if (dpFallback != null) {
             String fromDatapack = dpFallback.apply(clean);
             if (fromDatapack != null && !fromDatapack.isEmpty()) return fromDatapack;
         }
 
-        Function<String, String> clFallback = clientResourceFallback != null
-                ? clientResourceFallback : UiDocumentCompiler.clientResourceFallback;
+        Function<String, String> clFallback = com.nishiyu.enderframelib.core.EngineContext.current().clientResourceFallback;
         if (clFallback != null) {
             String fromClient = clFallback.apply(clean);
             if (fromClient != null && !fromClient.isEmpty()) return fromClient;
@@ -79,13 +72,10 @@ public class DocumentLoader {
         return "";
     };
 
-    public static Function<String, String> resourceTextResolver = DEFAULT_RESOURCE_TEXT_RESOLVER;
-
+    /** 有効な解決関数。文脈に差し込まれていればそれ、無ければ既定（{@link #DEFAULT_RESOURCE_TEXT_RESOLVER}）。 */
     public static Function<String, String> effectiveResourceTextResolver() {
-        if (UiDocumentCompiler.resourceTextResolver != null && UiDocumentCompiler.resourceTextResolver != DEFAULT_RESOURCE_TEXT_RESOLVER) {
-            return UiDocumentCompiler.resourceTextResolver;
-        }
-        return resourceTextResolver != null ? resourceTextResolver : DEFAULT_RESOURCE_TEXT_RESOLVER;
+        Function<String, String> r = com.nishiyu.enderframelib.core.EngineContext.current().resourceTextResolver;
+        return r != null ? r : DEFAULT_RESOURCE_TEXT_RESOLVER;
     }
 
     private static final Pattern SAFE_NAMESPACE = Pattern.compile("[a-z0-9_.-]{1,64}");
@@ -145,7 +135,60 @@ public class DocumentLoader {
         return buildStyleSheet(null, authorCss, rootW, rootH);
     }
 
+    /**
+     * 解析済みのスタイルシートの雛形（UA + ユーザー + 作者の CSS とビューポートの大きさが同じなら同じ結果）。
+     * 画面を開き直すたびに UA シート（約 11 KB）と作者の CSS を解析し直さず、雛形の写しを渡す。
+     * 切り分け用: {@code -Denderframe.sheetcache.off=true} で無効。
+     */
+    public static volatile boolean sheetTemplateCache = !Boolean.getBoolean("enderframe.sheetcache.off");
+
+    private static final int SHEET_TEMPLATE_MAX = 16;
+
+    private record SheetKey(String userAgent, String user, String author, int rootW, int rootH) {}
+
+    private static final java.util.LinkedHashMap<SheetKey, StyleSheet> SHEET_TEMPLATES =
+            new java.util.LinkedHashMap<>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<SheetKey, StyleSheet> eldest) {
+                    return size() > SHEET_TEMPLATE_MAX;
+                }
+            };
+
+    /**
+     * 解析に副作用や外部の読み込みがあり、解析を飛ばせない CSS か。{@code @font-face} は解析がフォントの登録フックを呼び、
+     * {@code @import} は資源の読み込み（内容が変わり得る）を伴う。
+     */
+    private static boolean uncacheableCss(String css) {
+        if (css == null || css.isEmpty()) return false;
+        for (int i = css.indexOf('@'); i >= 0; i = css.indexOf('@', i + 1)) {
+            if (css.regionMatches(true, i, "@font-face", 0, 10) || css.regionMatches(true, i, "@import", 0, 7)) return true;
+        }
+        return false;
+    }
+
     public static StyleSheet buildStyleSheet(String userCss, String authorCss, int rootW, int rootH) {
+        String ua = userAgentCss();
+        if (!sheetTemplateCache || uncacheableCss(ua) || uncacheableCss(userCss) || uncacheableCss(authorCss)) {
+            return parseStyleSheet(userCss, authorCss, rootW, rootH);
+        }
+        SheetKey key = new SheetKey(ua, userCss == null ? "" : userCss, authorCss == null ? "" : authorCss, rootW, rootH);
+        StyleSheet template;
+        synchronized (SHEET_TEMPLATES) {
+            template = SHEET_TEMPLATES.get(key);
+        }
+        if (template == null) {
+            StyleSheet built = parseStyleSheet(userCss, authorCss, rootW, rootH);
+            // 呼び出し側が書き換えても雛形が変わらないよう、雛形は別の写しにする
+            template = built.copy();
+            synchronized (SHEET_TEMPLATES) {
+                SHEET_TEMPLATES.put(key, template);
+            }
+            return built;
+        }
+        return template.copy();
+    }
+
+    private static StyleSheet parseStyleSheet(String userCss, String authorCss, int rootW, int rootH) {
         CssParser.MediaEnvironment media =
                 CssParser.MediaEnvironment.of(rootW, rootH)
                         .withImportResolver(effectiveResourceTextResolver());

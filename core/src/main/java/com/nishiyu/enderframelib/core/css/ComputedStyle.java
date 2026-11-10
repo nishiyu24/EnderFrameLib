@@ -39,6 +39,11 @@ public final class ComputedStyle {
     private final CssValue[] values;
     /** 添字を持たない宣言（{@code --*} のカスタムプロパティなど）。無ければ null で、通常の要素では確保しない。 */
     private final Map<String, String> extras;
+    /**
+     * {@link #extras} の包みの下の、実際の表。継承で表を共有している算出スタイル同士は同じ実体を指すので、
+     * 比較は中身の突き合わせの前に実体の同一性で済む。
+     */
+    private final Map<String, String> extrasBase;
     private final int size;
     /** {@link #usesViewportUnits()} の結果（1 / 0）。-1 は未確定（値を走査して決め、以後は覚える）。値は不変なので競っても同じ。 */
     private volatile byte relativeUnits = -1;
@@ -151,14 +156,22 @@ public final class ComputedStyle {
         if (source instanceof StyleTable table) {
             // カスケード・算出の作業表から: 名前を引き直さない。引き取るなら配列もコピーしない
             this.values = adopt ? table.values : table.values.clone();
-            this.extras = table.extras == null ? null
-                    : Collections.unmodifiableMap(adopt ? table.extras : new LinkedHashMap<>(table.extras));
+            if (table.extras == null) {
+                this.extrasBase = null;
+                this.extras = null;
+            } else {
+                // 引き取らないときも写さず共有する（作業表は次に書くとき自分の分を写す）
+                if (!adopt) table.markExtrasShared();
+                this.extrasBase = table.extras;
+                this.extras = Collections.unmodifiableMap(table.extras);
+            }
             this.size = table.size;
             this.relativeUnits = table.relativeUnits;
         } else if (source instanceof StyleMap other) {
             // 算出スタイルの複製: 配列をそのままコピーするだけで、マップは作らない
             this.values = other.owner.values.clone();
             this.extras = other.owner.extras;
+            this.extrasBase = other.owner.extrasBase;
             this.size = other.owner.size;
             this.relativeUnits = other.owner.relativeUnits;
         } else {
@@ -177,6 +190,7 @@ public final class ComputedStyle {
             }
             this.values = v;
             this.extras = x == null ? null : Collections.unmodifiableMap(x);
+            this.extrasBase = x;
             this.size = n;
         }
         this.properties = new StyleMap(this);
@@ -326,7 +340,7 @@ public final class ComputedStyle {
         if (a.extras == null && b.extras == null) return;
         Map<String, String> ex = a.extras != null ? a.extras : Map.of();
         Map<String, String> ey = b.extras != null ? b.extras : Map.of();
-        if (ex == ey) return;
+        if (ex == ey || (a.extrasBase != null && a.extrasBase == b.extrasBase)) return;
         // forEach は読み取り専用の包みが項目ごとに作る Map.Entry を介さない
         ex.forEach((k, v) -> {
             if (!java.util.Objects.equals(v, ey.get(k))) visitor.changed(k, false, true);
@@ -355,9 +369,21 @@ public final class ComputedStyle {
         }
         Map<String, String> ex = view.owner.extras;
         if (ex != null) {
-            for (Map.Entry<String, String> e : ex.entrySet()) {
-                if (e.getKey().startsWith("--")) target.put(e.getKey(), e.getValue());
+            if (table != null && table.extras == null && allCustomProperties(ex)) {
+                // 継承するのは --* だけ。全部が --* なら、親の表を丸ごと共有する（1 件ずつ入れ直さない。書くときに写す）
+                table.shareExtrasFrom(ex);
+            } else {
+                for (Map.Entry<String, String> e : ex.entrySet()) {
+                    if (e.getKey().startsWith("--")) target.put(e.getKey(), e.getValue());
+                }
             }
+        }
+        return true;
+    }
+
+    private static boolean allCustomProperties(Map<String, String> extras) {
+        for (String key : extras.keySet()) {
+            if (!key.startsWith("--")) return false;
         }
         return true;
     }
@@ -410,7 +436,8 @@ public final class ComputedStyle {
             if (o instanceof StyleMap other) {
                 return owner.size == other.owner.size
                         && java.util.Arrays.equals(owner.values, other.owner.values)
-                        && java.util.Objects.equals(owner.extras, other.owner.extras);
+                        && (owner.extrasBase == other.owner.extrasBase
+                        || java.util.Objects.equals(owner.extras, other.owner.extras));
             }
             return super.equals(o);
         }

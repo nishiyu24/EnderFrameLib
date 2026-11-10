@@ -163,8 +163,8 @@ public class HeadlessClientStateSyncTest {
     @Test
     @DisplayName("差分で長くなった flex アイテムの文字が折り返さないこと")
     void testGrownFlexItemTextStaysOnOneLine() {
-        var prevRenderer = UiDocumentCompiler.clientBoxRenderer;
-        UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
+        var prevRenderer = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) -> new DisplayListBuilder(w, h, kf, ss).render(rootBox);
         try {
             String templateId = "mymod:flex_status";
             ClientTemplateManager.registerTemplate(templateId, """
@@ -185,7 +185,7 @@ public class HeadlessClientStateSyncTest {
             assertEquals(next.height(), status.height(), 0.01, "状態表示が 2 行になった");
             assertEquals(next.y(), status.y(), 0.01, "隣の要素の縦位置がずれた");
         } finally {
-            UiDocumentCompiler.clientBoxRenderer = prevRenderer;
+            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prevRenderer;
         }
     }
 

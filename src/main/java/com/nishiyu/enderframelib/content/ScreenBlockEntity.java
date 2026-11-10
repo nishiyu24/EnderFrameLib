@@ -78,8 +78,8 @@ public class ScreenBlockEntity extends EnderScreenBlockEntity {
 
     private static String resolveServerHtml(ResourceLocation id) {
         String html = EnderFrameDataPackManager.getHtml(id);
-        if ((html == null || html.isEmpty()) && UiDocumentCompiler.resourceTextResolver != null) {
-            html = UiDocumentCompiler.resourceTextResolver.apply(id.toString());
+        if ((html == null || html.isEmpty())) {
+            html = com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply(id.toString());
         }
         return (html != null && !html.isEmpty()) ? html : null;
     }

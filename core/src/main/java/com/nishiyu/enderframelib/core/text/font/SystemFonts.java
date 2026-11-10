@@ -107,6 +107,33 @@ public final class SystemFonts implements FontResolver {
         this.japanese = locale != null && "ja".equals(locale.getLanguage());
     }
 
+    /** 持っている面の全部（同じ面が複数のファミリ名で引かれても 1 回だけ）。 */
+    public List<Face> faces() {
+        java.util.Set<Face> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        List<Face> out = new ArrayList<>();
+        for (List<Face> list : byFamily.values()) {
+            for (Face f : list) if (seen.add(f)) out.add(f);
+        }
+        return out;
+    }
+
+    /**
+     * {@code extra} の面を足した別の目録を返す（この目録は変えない）。{@code extra} と同じファミリ名の既存の面は外す
+     * （足した側が先: CSS Fonts 4 §4.1 の {@code @font-face} と同じ優先）。
+     */
+    public SystemFonts withFaces(List<Face> extra) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (Face f : extra) names.addAll(f.familyNames());
+        List<Face> merged = new ArrayList<>();
+        for (Face f : faces()) {
+            boolean shadowed = false;
+            for (String n : f.familyNames()) if (names.contains(n)) { shadowed = true; break; }
+            if (!shadowed) merged.add(f);
+        }
+        merged.addAll(extra);
+        return new SystemFonts(merged, japanese ? Locale.JAPANESE : Locale.ENGLISH);
+    }
+
     /** OS の書体と OS の言語の既定（Chrome の既定の書体設定と同じ言語の値）。 */
     public static SystemFonts system() {
         SystemFonts s = system;

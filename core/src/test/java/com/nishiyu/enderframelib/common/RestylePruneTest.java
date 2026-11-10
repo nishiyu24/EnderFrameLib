@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 再スタイルの走査が、汚れていない部分木を飛ばしても（{@link RenderPipeline#pruneCleanSubtrees}）、全ての箱をたどったときと
+ * 再スタイルの走査が、汚れていない部分木を飛ばしても（{@link EngineContext#pruneCleanSubtrees}）、全ての箱をたどったときと
  * まったく同じ表示リストになること。クラス・style・文字・子の増減・マウスの移動（:hover と祖先を読む規則）・
  * トランジション・描画系の @keyframes・リサイズ（vw と @media）・時間の経過を、乱数で混ぜて 1 手ずつ比べる。
  */
@@ -58,15 +58,15 @@ public class RestylePruneTest {
 
     @AfterEach
     public void restore() {
-        RenderPipeline.pruneCleanSubtrees = true;
+        com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
     }
 
     @Test
     public void skippingCleanSubtreesGivesTheSameDisplayListAsWalkingEverything() {
         for (long seed = 1; seed <= 14; seed++) {
-            RenderPipeline.pruneCleanSubtrees = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
             List<List<String>> pruned = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
-            RenderPipeline.pruneCleanSubtrees = false;
+            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = false;
             List<List<String>> full = MutationScenario.run(HTML, CLASSES, STYLES, seed, 70);
             assertEquals(full.size(), pruned.size());
             for (int step = 0; step < full.size(); step++) {
@@ -95,9 +95,9 @@ public class RestylePruneTest {
         String[] classes = {"", "px", "px flash", "px pulse", "row", "card", "stat", "hot", "fill", "bar", "stripe"};
         String[] styles = {"", "transform:scaleX(.5)", "opacity:.5", "width:120px", "color:red", "display:none", "padding:12px"};
         for (long seed = 1; seed <= 3; seed++) {
-            RenderPipeline.pruneCleanSubtrees = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = true;
             List<List<String>> pruned = MutationScenario.run(html, classes, styles, seed, 40, false);
-            RenderPipeline.pruneCleanSubtrees = false;
+            com.nishiyu.enderframelib.core.EngineContext.global().pruneCleanSubtrees = false;
             List<List<String>> full = MutationScenario.run(html, classes, styles, seed, 40, false);
             assertEquals(full.size(), pruned.size());
             for (int step = 0; step < full.size(); step++) {

@@ -643,7 +643,41 @@ public class LayoutBox {
 
     /** 上書き寸法なしで測った結果の産物と、その入力。 */
     private record Tentative(ConstraintSpace space, Viewport viewport, FontResolver fonts,
-                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs) {}
+                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree) {
+        /** 同じ制約か。高さの % の基準が結果に効かない箱（{@link #percentFree}）は、それだけが違っても同じとみなす。 */
+        boolean matches(ConstraintSpace s) {
+            return space.equals(s) || (percentFree && sameIgnoringPercentBlock(space, s));
+        }
+    }
+
+    /** 高さの % の基準以外（使える幅・親の整形コンテキスト）が同じ。 */
+    private static boolean sameIgnoringPercentBlock(ConstraintSpace a, ConstraintSpace b) {
+        return Float.floatToIntBits(a.availableInlineSize()) == Float.floatToIntBits(b.availableInlineSize())
+                && a.parent().equals(b.parent());
+    }
+
+    /**
+     * この箱の測定が、親が渡す「高さの % の基準」に依らない（{@link StyleFacts#blockPercentFree} が自分と全ての子孫で真）。
+     * 測ったとき（{@link #recordMeasurement}）に決める。
+     */
+    private boolean measuredBlockPercentFree;
+
+    private boolean computeBlockPercentFree() {
+        StyleFacts f = style.layoutFacts();
+        // 横方向の割合・内在サイズのキーワードは、親の現在の幅（子の割合 padding の基準・最小内容幅のキャッシュ）を通して
+        // 測定時の状態に隠れて依存する。高さの基準を無視して測り直しを省くと、その状態の更新まで省いてしまうので、含まない
+        if (!blockPercentFreeEnabled || !f.blockPercentFree || f.percentGeometry
+                || f.intrinsicWidthKind != StyleFacts.IW_NONE || renderedLegend() != null) return false;
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
+            if (c.style.facts().displayNone) continue;
+            if (!c.measuredBlockPercentFree) return false;
+        }
+        return true;
+    }
+
+    /** 切り分け用: false なら、高さの % の基準が違う制約は常に別の入力として扱う（従来の動き）。 */
+    public static volatile boolean blockPercentFreeEnabled = !Boolean.getBoolean("enderframe.layout.noblockpercentkey");
 
     /** 上書き寸法なしの制約ごとの産物（最大 {@link #MAX_TENTATIVES}。grid は寄与の測定と列幅での測定の 2 種類を持つ）。 */
     private Tentative[] tentatives;
@@ -676,7 +710,7 @@ public class LayoutBox {
         if (!tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
         Tentative t = null;
         for (Tentative candidate : all) {
-            if (candidate != null && space.equals(candidate.space())) {
+            if (candidate != null && candidate.matches(space)) {
                 t = candidate;
                 break;
             }
@@ -687,7 +721,7 @@ public class LayoutBox {
         if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
         if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
                 || floatSpace != null || collapsedBorders != null
-                || !space.equals(t.space())
+                || !t.matches(space)
                 || !ctx.viewport().equals(t.viewport()) || ctx.fonts() != t.fonts()
                 || ctx.intrinsicResolver() != t.intrinsics()) {
             return false;
@@ -895,7 +929,8 @@ public class LayoutBox {
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
                 && floatSpace == null
                 && collapsedBorders == null
-                && ((space.equals(measuredSpace) && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx))
+                && (((space.equals(measuredSpace) || (measuredBlockPercentFree && sameIgnoringPercentBlock(space, measuredSpace)))
+                        && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
                 && ctx.fonts() == measuredFonts
@@ -931,6 +966,7 @@ public class LayoutBox {
         // 再レイアウト境界が中身だけを測り直し、外から見える寸法が前回と同じなら、祖先の測定は無効にならない
         boolean outerSizeStable = measuredStyle != null && w == measuredW && h == measuredH
                 && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML;
+        measuredBlockPercentFree = computeBlockPercentFree();
         measuredSpace = space;
         measuredOverrideW = overrideWidth;
         measuredOverrideH = overrideHeight;
@@ -966,12 +1002,12 @@ public class LayoutBox {
         if (tentativeReuse && parentUsesTentatives() && Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight)
                 && floatSpace == null && collapsedBorders == null) {
             Tentative fresh = new Tentative(space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(), measuredEpoch,
-                    BoxOutputs.capture(this));
+                    BoxOutputs.capture(this), measuredBlockPercentFree);
             if (tentatives == null) tentatives = new Tentative[MAX_TENTATIVES];
             int slot = -1;
             for (int i = 0; i < tentatives.length; i++) {
                 Tentative old = tentatives[i];
-                if (old == null || space.equals(old.space())) {
+                if (old == null || old.matches(space)) {
                     slot = i;
                     break;
                 }

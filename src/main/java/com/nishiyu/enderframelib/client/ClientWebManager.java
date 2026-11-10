@@ -55,9 +55,7 @@ public class ClientWebManager {
 
         String resolvedHtml = rawHtml;
         if ((resolvedHtml == null || resolvedHtml.isEmpty()) && htmlResource != null) {
-            resolvedHtml = UiDocumentCompiler.resourceTextResolver != null
-                    ? UiDocumentCompiler.resourceTextResolver.apply(htmlResource.toString())
-                    : "";
+            resolvedHtml = com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply(htmlResource.toString());
         }
 
         if (resolvedHtml != null && !resolvedHtml.isEmpty()) {

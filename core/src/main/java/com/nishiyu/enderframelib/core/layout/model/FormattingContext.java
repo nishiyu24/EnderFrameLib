@@ -14,6 +14,22 @@ public record FormattingContext(Display parentDisplay, boolean stretch, boolean 
     /** 通常のブロックフロー（幅いっぱいに広がる）。 */
     public static final FormattingContext BLOCK = new FormattingContext(Display.BLOCK, true, false);
 
+    /** 取り得る組（親の種類 × stretch × shrink）の共有の実体。子の測定のたびに作らない。 */
+    private static final FormattingContext[] SHARED = new FormattingContext[Display.values().length * 4];
+
+    static {
+        for (Display d : Display.values()) {
+            for (int bits = 0; bits < 4; bits++) {
+                SHARED[d.ordinal() * 4 + bits] = new FormattingContext(d, (bits & 1) != 0, (bits & 2) != 0);
+            }
+        }
+    }
+
+    /** {@code new FormattingContext(...)} と同じ値の、共有の実体。 */
+    public static FormattingContext of(Display parentDisplay, boolean stretch, boolean isShrink) {
+        return SHARED[parentDisplay.ordinal() * 4 + (stretch ? 1 : 0) + (isShrink ? 2 : 0)];
+    }
+
     public boolean isFlexRow() { return parentDisplay == Display.ROW || parentDisplay == Display.ROW_REVERSE; }
     public boolean isFlexColumn() { return parentDisplay == Display.COLUMN || parentDisplay == Display.COLUMN_REVERSE; }
     public boolean isBlock() { return parentDisplay == Display.BLOCK; }

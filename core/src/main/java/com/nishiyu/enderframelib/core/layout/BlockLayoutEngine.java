@@ -58,7 +58,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         InlineWidth line = new InlineWidth();
 
         float childParentH = childPercentageBase(box, space.percentageBlockSize(), ctx);
-        FormattingContext childCtx = new FormattingContext(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
+        FormattingContext childCtx = FormattingContext.of(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
 
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.isRenderedLegend || isDisplayNone(child.style)) continue;
@@ -283,7 +283,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 外側のマーカーを測るときの文脈。折り返さず、内容の幅に縮む。 */
-    private static final FormattingContext MARKER_CONTEXT = new FormattingContext(FormattingContext.Display.BLOCK, true, true);
+    private static final FormattingContext MARKER_CONTEXT = FormattingContext.of(FormattingContext.Display.BLOCK, true, true);
 
     /**
      * 外側の {@code ::marker} を、リスト項目の境界ボックスの左外に、最初の行のベースラインに揃えて置く。
@@ -466,7 +466,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
             box.floatSpace = null;
             this.childPercentBase = childPercentageBase(box, space.percentageBlockSize(), ctx);
-            this.childCtx = new FormattingContext(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
+            this.childCtx = FormattingContext.of(FormattingContext.Display.BLOCK, true, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             this.collapseTop = collapsesThroughTop(box);
         }
 
@@ -637,8 +637,10 @@ public class BlockLayoutEngine extends LayoutEngine {
             firstRun = false;
 
             LineBuilder lines = new LineBuilder(this, y, indent);
-            List<InlineLine> result = lines.build(new ArrayList<>(run));
-            state.items.add(new LineRun(new ArrayList<>(run), result));
+            // 組むための写しと LineRun が持つ写しは同じ中身で、どちらも読むだけ（build は引数を書き換えない）
+            List<LayoutBox> boxes = new ArrayList<>(run);
+            List<InlineLine> result = lines.build(boxes);
+            state.items.add(new LineRun(boxes, result));
             if (!result.isEmpty()) {
                 InlineLine last = result.getLast();
                 cursor = last.top() + last.height();
@@ -697,8 +699,10 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     static final class FloatSpace {
         /** {x, y, right, bottom} */
-        private final List<float[]> lefts = new ArrayList<>();
-        private final List<float[]> rights = new ArrayList<>();
+        private static final List<float[]> NONE = List.of();
+        /** 最初の追加まで共有の空の表（大半の箱は float を持たない）。 */
+        private List<float[]> lefts = NONE;
+        private List<float[]> rights = NONE;
         private float lastTop = Float.NEGATIVE_INFINITY;
 
         boolean isEmpty() {
@@ -706,7 +710,13 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         void add(boolean left, float x, float y, float w, float h) {
-            (left ? lefts : rights).add(new float[]{x, y, x + w, y + h});
+            if (left) {
+                if (lefts == NONE) lefts = new ArrayList<>();
+                lefts.add(new float[]{x, y, x + w, y + h});
+            } else {
+                if (rights == NONE) rights = new ArrayList<>();
+                rights.add(new float[]{x, y, x + w, y + h});
+            }
             lastTop = Math.max(lastTop, y);
         }
 
@@ -946,7 +956,7 @@ public class BlockLayoutEngine extends LayoutEngine {
 
         List<InlineLine> build(List<LayoutBox> inlines) {
             List<FlatRun> runs = new ArrayList<>();
-            flattenInlines(inlines, runs, new ArrayList<>());
+            flattenInlines(inlines, runs, new ArrayList<>(), new List[1]);
             for (int i = 0; i < runs.size(); i++) {
                 FlatRun run = runs.get(i);
                 switch (run.kind) {
@@ -962,10 +972,17 @@ public class BlockLayoutEngine extends LayoutEngine {
                     case CLOSE -> closeBox();
                 }
             }
-            if (!current.isEmpty() || spans.stream().anyMatch(s -> isDecorated(s.open().box))) newLine(0, 0, false);
+            if (!current.isEmpty() || anyDecorated(spans)) newLine(0, 0, false);
             for (LayoutBox f : deferredFloats) flow.placeFloat(f, lineTop);
             deferredFloats.clear();
             return lines;
+        }
+
+        private boolean anyDecorated(List<BoxSpan> list) {
+            for (int i = 0, n = list.size(); i < n; i++) {
+                if (isDecorated(list.get(i).open().box)) return true;
+            }
+            return false;
         }
 
         /** {@code runs[i]} の直後に閉じるインラインボックスの終了端の装飾。最後の語と一緒に行に入らないといけない。 */
@@ -1225,7 +1242,7 @@ public class BlockLayoutEngine extends LayoutEngine {
          */
         private InlineLine finishLine(float fallbackHeight, float fallbackBaseline, float used) {
             if (current.isEmpty()) {
-                boolean decorated = fallbackHeight == 0 && spans.stream().anyMatch(s -> isDecorated(s.open().box));
+                boolean decorated = fallbackHeight == 0 && anyDecorated(spans);
                 return new InlineLine(current, spans, lineTop, lineLeft, lineWidth,
                         decorated ? strutHeight : fallbackHeight, decorated ? strutBaseline : fallbackBaseline, used);
             }
@@ -1428,29 +1445,43 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** インラインボックスは開始タグと終了タグ（{@code OPEN} / {@code CLOSE}）で中身を挟む。 */
-    private void flattenInlines(List<LayoutBox> boxes, List<FlatRun> runs, List<LayoutBox> parents) {
-        for (LayoutBox b : boxes) {
+    /**
+     * {@code snapshot[0]} は、いまの {@code parents} の読み取り専用の写し（{@code parents} が変わるまで同じものを渡す）。
+     * 断片ごとに写しを作ると、親の無い（ブロック直下の）文字では空の表を、入れ子の span の中では同じ道筋の表を、
+     * 語の数だけ作っていた。写しは読むだけ（{@code InlineFragment.parents} の使い手は {@code get} / {@code size} だけ）。
+     */
+    private void flattenInlines(List<LayoutBox> boxes, List<FlatRun> runs, List<LayoutBox> parents, List<LayoutBox>[] snapshot) {
+        for (int i = 0, n = boxes.size(); i < n; i++) {
+            LayoutBox b = boxes.get(i);
             if (b.display.isNone()) continue;
             if (b.isAbsolute) {
-                runs.add(new FlatRun(FlatRun.Kind.ABSOLUTE, b, null, new ArrayList<>(parents)));
+                runs.add(new FlatRun(FlatRun.Kind.ABSOLUTE, b, null, chainOf(parents, snapshot)));
             } else if (isFloating(b)) {
-                runs.add(new FlatRun(FlatRun.Kind.FLOAT, b, null, new ArrayList<>(parents)));
+                runs.add(new FlatRun(FlatRun.Kind.FLOAT, b, null, chainOf(parents, snapshot)));
             } else if (b.node.nodeType == NodeType.TEXT) {
                 if (b.displayText != null && !b.displayText.isEmpty()) {
-                    runs.add(new FlatRun(FlatRun.Kind.TEXT, b, b.displayText, new ArrayList<>(parents)));
+                    runs.add(new FlatRun(FlatRun.Kind.TEXT, b, b.displayText, chainOf(parents, snapshot)));
                 }
             } else if (b.node.tag.equals("br")) {
-                runs.add(new FlatRun(FlatRun.Kind.BREAK, b, "\n", new ArrayList<>(parents)));
+                runs.add(new FlatRun(FlatRun.Kind.BREAK, b, "\n", chainOf(parents, snapshot)));
             } else if (isAtomicInline(b)) {
-                runs.add(new FlatRun(FlatRun.Kind.ATOMIC, b, null, new ArrayList<>(parents)));
+                runs.add(new FlatRun(FlatRun.Kind.ATOMIC, b, null, chainOf(parents, snapshot)));
             } else {
-                runs.add(new FlatRun(FlatRun.Kind.OPEN, b, null, new ArrayList<>(parents)));
+                runs.add(new FlatRun(FlatRun.Kind.OPEN, b, null, chainOf(parents, snapshot)));
                 parents.add(b);
-                flattenInlines(b.children, runs, parents);
+                snapshot[0] = null;
+                flattenInlines(b.children, runs, parents, snapshot);
                 parents.removeLast();
-                runs.add(new FlatRun(FlatRun.Kind.CLOSE, b, null, new ArrayList<>(parents)));
+                snapshot[0] = null;
+                runs.add(new FlatRun(FlatRun.Kind.CLOSE, b, null, chainOf(parents, snapshot)));
             }
         }
+    }
+
+    private static List<LayoutBox> chainOf(List<LayoutBox> parents, List<LayoutBox>[] snapshot) {
+        List<LayoutBox> s = snapshot[0];
+        if (s == null) snapshot[0] = s = List.copyOf(parents); // 空なら共有の空の表
+        return s;
     }
 
     /** 中身を分割せず 1 つの塊として置くインライン要素。 */

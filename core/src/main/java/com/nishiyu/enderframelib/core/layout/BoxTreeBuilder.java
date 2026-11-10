@@ -757,6 +757,20 @@ public final class BoxTreeBuilder {
             if (box.node.nodeType == NodeType.TEXT) return;
             ComputedStyle style = box.style;
             HtmlNode node = box.node;
+            // 3 つとも指定が無く、リスト項目でもなければ、何も起きない（大半の箱。毎回マップを作らない）
+            if (noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_RESET))
+                    && noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_INCREMENT))
+                    && noCounterDeclaration(style.get(CssPropertyIndex.COUNTER_SET))) {
+                if (!box.display.listItem()) return;
+                // リスト項目だけ: 宣言が無いときの動きそのまま（list-item を 1 つ増やし、li の value 属性なら設定する）。マップを作らない
+                int i = innermost(LIST_ITEM);
+                increment(LIST_ITEM, i >= 0 && reversedInstances.contains(i) ? -1 : 1);
+                if (node.attrs.containsKey("value")) {
+                    Integer value = parseInt(node.attrs.get("value"));
+                    if (value != null) set(LIST_ITEM, value);
+                }
+                return;
+            }
 
             Map<String, Integer> resets = parseCounterList(style.get(CssPropertyIndex.COUNTER_RESET), 0);
             // <ol start> は list-item の初期値を変える表示上のヒント（HTML の Rendering 節）
@@ -815,6 +829,13 @@ public final class BoxTreeBuilder {
                 if (names.get(i).equals(name)) return i;
             }
             return -1;
+        }
+
+        /** {@link #parseCounterList} が空の表を返す指定（未指定・空・{@code none}）か。 */
+        private static boolean noCounterDeclaration(String value) {
+            if (value == null) return true;
+            String v = value.trim();
+            return v.isEmpty() || v.equalsIgnoreCase("none");
         }
 
         /** {@code "a 2 b"} → {@code {a=2, b=既定値}}。{@code none} と空は空の表。 */

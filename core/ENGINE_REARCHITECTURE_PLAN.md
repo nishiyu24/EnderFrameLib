@@ -2,7 +2,7 @@
 
 **対象モジュール**: `D:\Dev\Personal\enderframelib-1.21.1\core`  
 **関連設計書**: [`ENGINE_3D_ARCHITECTURE_PLAN.md`（Three.js 型 3D シーングラフ統合設計書）](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)  
-**最終更新**: 2026-11-10（Milestone 2 追加進捗：カスケード継承コピーを `String[] values` の直接走査へ（`InheritCopyTest`）／カスケード・算出の作業表を `StyleTable`（`String[]` 裏打ち）へ（確保 −6%）／宣言の事前コンパイル `CompiledDeclarations`／JFR で内訳を実測し、算出の単位換算・全域キーワード判定・`usesViewportUnits`・`dependentStateMask` を修正（全体再スタイル 4.04→2.4 ms、冷たい構築 約 −20%、確保 約 −19%。続報 7）／算出スタイル読み取りの添字定数化を本番全箇所で実施（`CssPropertyIndex`・型つきの番人テスト。続報 8）／`ValueComputer` / `expandShorthands`（`ShorthandPlan`）/ `substituteVariables` の添字化（全体再スタイル 約 −20%。続報 9）／`usesViewportUnits` を算出の途中で決める（続報 10）／`String[] values` を型付きの正規値 `CssValue[]` へ置換（続報 11。Milestone 2 の項目を完了）／`StyleFacts` の `%` 文字列検索を詰めた長さ値の判定へ置換し、寸法・inset 11 個を縁と同じ `long[]` に統合 ／ Milestone 0〜5 実装 ＋ 二重構造解消完了 ＋ Wave 1 着手（`ReplacedElements` 台帳）＋ **第 7 章：`:core` 全 225 ファイル精査による現状評価・他 UI ライブラリ比較・汎用 Web/UI エンジンとしての課題と超克ロードマップ** を追加）
+**最終更新**: 2026-11-10（Milestone 0〜5 実装＋二重構造解消＋Wave 1 着手。Milestone 2 は `String[]` を型付き `CssValue[]` へ置換済みで、残りは宣言アリーナ化。**§7.1.1 に Chrome 156 との実測比較と JMH 再計測を追加**。各進捗の詳細は §2・§4・§5 を参照）
 
 ---
 
@@ -333,6 +333,337 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 | **フレーム予算（144〜240fps 耐性）** | リ플ロー・GC スパイクが発生しやすい | IPC / テクスチャコピーがボトルネック | Immediate Mode は毎フレーム CPU 構築コストが比例 | **静止 Skip / `:hover` `~10ns` / GL スクロール `0.13ms` / `TEXT_PATCH` / `CHILD_PATCH`** | **○ 定常時は極速、コールド時・確保量に改善余地** |
 | **汎用 API・拡張性・エコシステム** | 成熟した公開 API・IME・アクセシビリティ完備 | Web エコシステムそのまま | 豊富なウィジェット・デバッグツール完備 | **`api` と `common`/`core` の境界が発展途上、Minecraft 固有概念の一部残存、IME 未対応** | **△ 汎用エンジン化の主課題** |
 
+
+### 7.1.1 実測比較：Chrome 156（Blink）対 `:core`（2026-11-10 計測）
+
+**条件**: 同一マシン（Windows 11 / JDK 21.0.12 / Chrome 156 headless）、同一文書（`showcase.html` 163 要素、500 行 `large-list`）、ビューポート 800×600。
+`:core` は JMH（`./gradlew :core:jmh`、fork 1・ウォームアップ 3 回・測定 4 回、`-Xmx3g`）の平均、Chrome は iframe 内で 20 回まとめ×60 回の中央値（`performance.now` の刻み 0.1 ms を割って 20 で除す）。Chrome は 2 回実行して一致を確認。計測用の HTML は使い捨てで、リポジトリには入れていない。
+
+| 操作 | showcase `:core` | showcase Chrome | large-list `:core` | large-list Chrome | 備考 |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| 再スタイル（全要素に継承する `color` 変更） | `2.31 ms` | `0.055 ms` | `2.37 ms` | `0.30 ms` | Chrome 約 **40 倍 / 8 倍**速い |
+| 再レイアウト（幅 1px 変更） | `1.61 ms` | `0.065 ms` | `0.81 ms` | `0.75 ms` | showcase は約 **25 倍**、large-list はほぼ同等 |
+| 全構築（解析＋スタイル＋レイアウト）※ | `fullLayoutWarm` `1.79 ms`（解析を含まない） | `1.5 ms`（解析を含む） | `1.66 ms`（同） | `3.4 ms`（同） | 定義が違うため参考値。解析込みなら `:core` 側が不利 |
+| `:hover` 1 回（スタイル往復） | `0.013 ms` | `0.045 ms` | ≈0 | — | `:core` が約 3.5 倍速い。ただし Chrome は `backgroundColor` 直書きで、`:core` は状態表の引き。**意味が同一ではない** |
+| スクロール 1 段 | `2.19 ms`（`scrollStep`：再レイアウト＋DisplayList） | ≈0（コンポジタ処理） | `2.68 ms` | ≈0 | `:core` の実スクロールは GL 経路で `0.13 ms`（§2.1）。ベンチ値は全経路を通す測り方 |
+| DisplayList 構築 | `0.46 ms` | （測定不可） | `1.64 ms` | （測定不可） | Chrome の paint は JS から測れない |
+| CPU ソフトウェア描画（`softwarePaint`） | `4.35 ms` | （対応物なし） | `3.46 ms` | — | **§2.1 の `1.11〜1.18 ms` と食い違う**。誤差が `±2.8 ms` と大きい短時間実行のため、定常値の裏付けは再計測が必要 |
+
+※ Chrome の「再スタイル」「再レイアウト」は、ネイティブ C++・LayoutNG の結果キャッシュ・無効化集合が効く経路。`:core` の値は JIT 済みの JVM の定常値で、冷たい初回は §2.1 のとおりこの数倍かかる。
+
+**読み取れること**
+1. **全体再スタイルと再レイアウトでは Chrome が 1〜2 桁速い**。§2.1 の最終ゲート（`relayout < 0.30 ms`）は、Chrome の showcase 値（`0.065 ms`）と同水準を狙う設定だが、現状 `1.6 ms` で未達。差の原因は §7.1.2 で JFR により調べた（ベンチの測り方が最悪ケースであること、文字列キー表の走査、flex/grid の再測定）。
+2. **局所的な状態変化（`:hover`）と GL スクロールは `:core` が上回る、または同等**。ゲーム UI で頻出するのはこの経路で、設計の狙いと整合する。
+3. **large-list の再レイアウトは Chrome と同等（`0.81` 対 `0.75 ms`）**。`overflow` コンテナ内の差分レイアウトが効いている。
+4. **JMH の誤差が大きい**（`±0.4〜2.8 ms`）。開発機で他プロセスが動いており、測定 4 回と短いため。回帰判定には使わず、桁の比較にだけ使う。
+
+**計測で見つかった問題（✅ 2026-11-10 解決。原因は本番コードのリーク）**
+- JMH の `PipelineBench.restyle` が、既定の `-Xmx1g` で `OutOfMemoryError` を出して固まった。反復を重ねるほど遅くなる（`2.4 → 4 → 9 → 28 → 138 ms/op`）ので、ベンチの揺れではなく**メモリのリーク**。
+- 原因: `DocumentArena.tables`（持ち主 → 節ごとの状態の表）が、持ち主（`InteractionState`）を**強参照**していた。`InteractionState` は、手放されても `dropSlots` が呼ばれない限り、全節ぶんの `StateFlags`（算出スタイル・生宣言）を文書の寿命の間ずっと残した。文書に対して `new InteractionState()` を作り捨てるたびに積み上がる。単純に `WeakHashMap` へ替えるだけでは直らず（値の `StateFlags.owner` が持ち主へ強参照を戻すため）、**表の実体を持ち主側に置き、アリーナは `WeakReference` で引くだけ**にして解決。
+- 守り: `ArenaSlotsLeakTest`（作り捨てた状態が GC で回収されること。修正を外すと落ちることを確認済み）。
+- 上の表の `restyle` の値（`2.31 ms`・`2.37 ms`）は、この修正前でリークの影響を含む。**修正後の安定値は showcase `2.00 ms`・large-list `2.32 ms`**（以降の A/B の基準）。
+
+#### 他ライブラリとの比較（実測なし・仕様と公開情報に基づく定性評価）
+
+下表は本リポジトリでは計測していない。数値は載せず、設計上の位置づけだけを示す。
+
+| ライブラリ | 実行形態 | `:core` との設計上の差 |
+| :--- | :--- | :--- |
+| Chrome / Blink | C++・別プロセス・GPU コンポジタ | 上記の実測参照。再計算は桁違いに速いが、配布物・プロセス・ゲームのフレームへの組込みコストが別問題 |
+| JCEF（Chromium 埋め込み） | JNI＋別プロセス | 描画はテクスチャ転送。Minecraft への同梱に 100MB 級のバイナリが必要 |
+| Ultralight / litehtml | C/C++ の HTML 描画 | CSS 対応が限定的、または Flex/Grid が弱い。JVM から使うには JNI が必要 |
+| Dear ImGui | 即時モードの C++ | 毎フレーム UI を再構築するため CPU 時間が要素数に比例。HTML/CSS 資産は使えない |
+| JavaFX / Swing | JVM・独自 CSS サブセット | Flex/Grid が無い。Minecraft の GL コンテキストとの共存が難しい |
+| Compose / ModernUI | コード駆動の宣言的 UI | HTML/CSS の標準仕様ではない。スコープ違い |
+
+### 7.1.2 再スタイル・再レイアウトが Chrome より遅い理由（2026-11-10 JFR 調査）
+
+**方法**: `PipelineBench.restyle` / `relayout`（showcase）を JFR（`settings=profile`、実行サンプル 324 / 689 件）で採り、ベンチ本体を含むスタックだけ集計。実フレーム経路は `./gradlew :core:profile -Pprofile.args="showcase 600 --mode=relayout"` で段別に測定。
+
+#### (a) まず、JMH の値は「最悪ケース」で、実フレームの値ではない
+
+| 経路 | 所要 | 内訳 |
+| :--- | :---: | :--- |
+| JMH `relayout`（`runLayoutPasses`、測定の再利用なし） | `1.61 ms` | 全箱を毎回測り直す |
+| **実フレーム経路の全体再レイアウト（`--mode=relayout`）** | **`約 0.49 ms`** | style+build `0.16` / box-tree `0.14` / measure `0.12` / place `0.065` |
+| JMH `restyle`（毎回 `new InteractionState()`） | `2.31 ms` | 要素ごとの算出スタイルの記憶が毎回空 |
+| 実フレームの再スタイル（変化なし、`--mode=restyle`） | `0.001 ms` | 汚れた節だけ走査する（`pruneRestyle`）。`rootFlags` の記憶が前提 |
+
+- JMH の `restyle` は、毎回新しい `InteractionState` を渡すので `pruneRestyle` が働かず（`restyleLayoutTree` は `rootFlags.cachedViewportW == rootW` のときだけ飛ばす）、**全 163 要素のカスケードを一から解く**。Chrome の測定は「継承する `color` だけが変わる」ので、Blink は選択子照合をせず継承の差分だけを再計算する。**同じ「全体再スタイル」ではなく、`:core` に不利な比較**。
+- 実フレームの全体再レイアウトは、Chrome（`0.065 ms`）の約 **7.5 倍**で、§7.1.1 の表が示す約 25 倍ではない。
+
+#### (b) それでも残る遅さの原因（JFR）
+
+**再スタイル（`restyleBoxRecursive` 配下 98.5%）**
+
+| 割合（包含） | 場所 | 原因 |
+| :---: | :--- | :--- |
+| 52.8% | `styleEntry` → `computeEntry`（うち `finalizeComputedStyle` 28.1%、`ShareCache.resolve` 24.4%） | 要素ごとに算出スタイルを組み立てる。`StyleTable.copyOf` が **`LinkedHashMap` を作って `HashMap.putVal` を回す**（確保＋ハッシュ） |
+| 17.0% | `ValueComputer.compute`（`absolutizeUnits`・`finishValue` 8.3%） | 長さの単位換算を要素ごとに再計算 |
+| 13.0% | `dependsOnViewport`（自己 6.2%） | **要素ごとに生の宣言値の全文字列を走査**して `vw` / `var()` / `env()` を探す。宣言の集合が同じなら結果は同じなのに、毎回やる |
+| 7.4% | `hasInteractiveRules` → `StyleStateAutomaton.interactiveMask` → `matchesPrefixIgnoringState` | `:hover` などの規則の有無を、**要素ごとに選択子へ当てて**調べる。シート単位で 1 回済むはず |
+| 6.5% | `ComputedStyle.sameDeclarations` → `StyleMap.equals` | 算出結果が前回と同じか、表の全項目の比較 |
+| 5.2% | `CssSyntax.parseComponentValues`、他に `Pattern` 2.8% | 値の文字列をこの経路で再解析している箇所が残る |
+| 自己 | `HashMap.getNode` 6.8% / `putVal` 5.6% / `ConcurrentHashMap.get` 5.6% | 文字列キーの表引きが自己時間の上位。Chrome は Atom／添字の配列 |
+
+→ Milestone 2 で `CssValue[]` 化した算出表の本体は速いが、**その周辺（生宣言の `Map<String,String>`、`dependsOnViewport`、`hasInteractiveRules`、`StyleTable.copyOf`）に文字列と `HashMap` の経路が残っている**。
+
+**再レイアウト（`LayoutBox.measure` 配下 95%）**
+
+| 割合（包含） | 場所 | 原因 |
+| :---: | :--- | :--- |
+| 68.1% | `FlexLayoutEngine.resolveFlexibleLengths` → `setMainSize` → `remeasure` | flex の柔軟長さの解決で、**項目を主軸サイズを変えて何度も測り直す**（再帰で入れ子の flex/grid ごとに乗算） |
+| 86.6% | `GridLayoutEngine.measureInArea` | grid 項目を領域幅で測り直し。showcase は grid の中に flex が入るので掛け算になる |
+| 19〜20% | `LayoutBox.recordMeasurement` | 測定結果の保存（3 制約スロット）自体が重い。ここは `Tentative` の設計上のコスト |
+| 15〜19% | `FlowBuilder.build` → `LineBuilder.build/addText` | **幅が変わる/測り直すたびに行分割をやり直す**（`ParagraphSegments` の幅非依存の下ごしらえは使うが、行への詰めは毎回） |
+| 約 8% | `FormattingContext.equals` 3.9% / `ConstraintSpace.equals` 3.9% | 再利用判定の制約比較が `equals` の呼び出し。Chrome の LayoutNG は制約空間のハッシュ／同一性で判定 |
+| 5.5% | `ConcurrentHashMap.get` | 字形幅・フォントの共有表の引き。ロック無しだがハッシュ引き |
+| 4.5% | `ComputedStyle.keywordOf` / `initialKeyword` | 算出値のキーワードを**文字列で判定**している箇所が残る |
+
+#### (c) 構造的な差（Chrome 側にあって `:core` に無いもの）
+
+1. **再利用の粒度**: Blink は「入力の制約空間が同一なら測定結果を返す」（LayoutNG のキャッシュ）を要素単位で、しかも flex/grid の内側の再測定にも効かせる。`:core` の `Tentative` 再利用は部分文字変更（`13 箱`）には効くが、**幅変更では flex/grid 項目の再測定が実際に走る**（JMH の `relayout` が全箱測り直しなのは測定再利用を使わない経路だから）。
+2. **再スタイルの無効化集合**: Blink は変化した属性・class・継承プロパティから、影響する要素だけを再スタイルする。`:core` も `InvalidationSets` を持つが、**全体再スタイル要求では要素ごとの完全な解決**に入る。継承プロパティだけの変化を継承の差分だけで済ます近道が無い。
+3. **実装言語の差**: 文字列キー表・`equals` 呼び出し・`LinkedHashMap` 確保などは、C++ ではインライン化されるか確保が無い。JVM はウォームアップ後でも、これらのオブジェクト確保と GC の負荷が残る。
+
+#### (d) 改善候補（効果の見込み順。いずれも未実施・A/B で確かめてから）
+
+| # | 候補 | 根拠 | 見込み |
+| :-: | :--- | :--- | :--- |
+| 1 | `dependsOnViewport` を宣言の集合ごとに 1 回だけ判定して記憶（`CompiledDeclarations` 側のフラグ） | 再スタイルの 13%、毎回同じ結果 | restyle 約 −10% |
+| 2 | `hasInteractiveRules` をシート単位で 1 回（版が変わるまで）記憶 | 7.4% | restyle 約 −7% |
+| 3 | `StyleTable.copyOf` の `LinkedHashMap` 生成を、添字配列のコピーに置換（`CssValue[]` から直接） | 確保＋`putVal` 約 5〜10% | restyle 約 −8% と確保削減 |
+| 4 | 継承プロパティだけが変わる全体再スタイルの近道（選択子照合を飛ばし、継承値を再計算） | Chrome が速い主因 | restyle の該当ケースで大幅 |
+| 5 | flex の柔軟長さ解決で、主軸サイズが前回と同じ項目の再測定を飛ばす | 再レイアウトの 68% が `remeasure` | relayout 数十 % |
+| 6 | 再利用判定の `ConstraintSpace` / `FormattingContext` の `equals` を、事前計算ハッシュ＋同一性比較へ | 約 8% | relayout 約 −5% |
+| 7 | 行分割の結果を、同じ幅・同じ段落なら再利用（`ShapeKey` と行分割の結果の対応） | 15〜19% | relayout 約 −10〜15% |
+
+#### (e) 候補 1〜3 の実装と A/B 結果（2026-11-10）
+
+**条件**: JMH `PipelineBench`、fork 3 × ウォームアップ 4 回 × 測定 8 回（24 サンプル）、`-Xmx3g`、`-prof gc`。基準 A2 は上記のリーク修正後。表の ± は 99.9% 信頼区間。
+
+| 候補 | 実装 | 結果 |
+| :-: | :--- | :--- |
+| **1** | `dependsOnViewport` の判定を `StyleResolver.valueDependsOnViewport` へ移し、**値の答えを正規の値 `CssValue` に 1 回だけ覚えさせる**（`StyleTable.anyValueDependsOnViewport` が添字配列を直接走査）。値は要素をまたいで共有されるので、同じ文字列は全体で 1 回しか解析しない | JFR の包含割合 **13.0% → 5.0%** |
+| **2** | `interactiveMask` を、規則・選択子・複合セレクタを事前に平らに並べた一覧の走査へ | **効果なし（取り下げ）**。JFR の包含割合は `7.4% → 11.0%` と減らず、絶対値でも約 `0.15 → 0.19 ms`。コストは一覧のたどり方ではなく、実際の選択子照合（祖先の探索）にあった。B（1+2+3）と B2（1+3）は信頼区間が重なり、差は測れなかった。コードは元に戻した |
+| **3** | `StyleTable` の `--*` などの表（`extras`）を、複製時には写さず**書き込み時にだけ写す**（`extrasShared`）。走査中の `remove` も共有表を壊さない | `HashMap.putVal` の自己割合 `5.6% → 3.7%`、**確保量 −11〜15%** |
+
+| ベンチ（採用: 1+3 = B2） | A2（修正後の基準） | B2 | 変化 |
+| :--- | :---: | :---: | :---: |
+| `restyle` showcase 時間 | `1.996 ± 0.131 ms` | `1.807 ± 0.079 ms` | **−9.5%** |
+| `restyle` showcase 確保 | `1.858 MB/op` | `1.585 MB/op` | **−14.7%** |
+| `restyle` large-list 時間 | `2.317 ± 0.145 ms` | `2.131 ± 0.164 ms` | **−8.0%** |
+| `restyle` large-list 確保 | `1.970 MB/op` | `1.748 MB/op` | **−11.3%** |
+| `fullLayoutWarm` showcase | `1.748 ms` / `2.77 MB` | `1.752 ms` / `2.75 MB` | 変化なし（誤差内） |
+| `fullLayoutWarm` large-list | `1.650 ms` / `3.64 MB` | `1.547 ms` / `3.65 MB` | 誤差内 |
+
+- 当初の見込み（候補 1 で −10%、2 で −7%、3 で −8%、計 −25%）に対し、**実測は −8〜10%**。`restyle` が最も効く 1・3 だけが効いた。`fullLayoutWarm` は「前回の算出を覚えた状態」の経路で、全体再スタイルの熱い箇所を通らないため効かない（想定どおり）。
+- 守り: `StyleTableHotPathTest`（判定を素朴な Map 走査と乱数 2000 件で突き合わせ／`extras` を共有した複製どうしが互いの書き込み・走査中の削除を見ないことを乱数で検証）。`:core:test` 全件緑。
+- Chrome 比（`0.055 ms`）は約 `36 倍 → 33 倍`で、**構造的な差（候補 4・5・7）には届いていない**。
+
+#### (f) 候補 4・5 の実装と A/B 結果（2026-11-10）
+
+**ベンチ側の整備**: `PipelineBench` に `restyleInherited`（同じ `InteractionState` を保ち、`<body>` の継承プロパティ `color` を 1 つ切り替えて再スタイル。Chrome 側の「`color` を変える」と同条件）と `layoutWidthChange`（同じ状態でビューポート幅を ±1px して箱の木を組み直す）を追加。切り分けはシステムプロパティで行った。
+
+##### 候補 4：継承だけが変わる再スタイルの近道
+
+JFR を採り直すと、状態を保った経路（`restyleInherited`、`0.224 ms`）の支配項は **カスケード本体（`styleEntry` 7%）ではなかった**。`hasInteractiveRules` 24%、`dependsOnViewport` 18%、`StyleMap.equals` / `sameDeclarations` / `diff` 11〜20% など、**要素ごとの付随処理**だった。そこで「選択子照合を飛ばして継承値だけ計算し直す」大改造ではなく、変わりようのない付随処理を省く 3 点にした。
+
+| 変更 | 内容 | 単独で外したときの時間（全部 ON `0.116 ms` 比） |
+| :--- | :--- | :---: |
+| **4-a** `hasInteractiveRules` の再利用 | 入力（シート・規則の版・節の属性の版・親）が前回と同じで、節が汚れておらず、祖先・兄弟による強制（`FORCE_SUBTREE`）が無いとき、親の算出スタイルだけが変わった再スタイル（継承の変化）では前回の答えを使う（`canReuseInteractive`） | `0.178 ms`（**+53%**） |
+| **4-b** 継承する `--*` の表を共有 | 親の算出スタイルから `--*` を継承するとき、全部が `--*` なら 1 件ずつ入れ直さず親の表を丸ごと共有（書き込み時にだけ写す）。`ComputedStyle` は実体の同一性（`extrasBase`）で比較し、`extras` の `AbstractMap.equals`（`HashMap` 引き）を通らない | `0.140 ms`（**+21%**） |
+| **4-c** `extras` のビューポート依存判定を記憶 | `StyleTable` が `extras` の判定結果を覚え、書き換えで無効にする（候補 1 の取りこぼし。`extras` は文字列を毎回走査していた） | `0.150 ms`（**+29%**） |
+
+| ベンチ（24 サンプル） | 全部 OFF | 全部 ON | 変化 |
+| :--- | :---: | :---: | :---: |
+| `restyleInherited` 時間 | `0.224 ± 0.009 ms` | `0.116 ± 0.006 ms` | **−48%** |
+| `restyleInherited` 確保 | `42.5 KB/op` | `39.0 KB/op` | −8% |
+| `restyle`（毎回状態を捨てる最悪ケース） 時間 | `1.734 ± 0.072 ms` | `1.903 ± 0.140 ms` | **差は測れず**（信頼区間が重なる） |
+| `restyle` 確保 | `1.558 MB/op` | `1.427 MB/op` | −8% |
+
+- **Chrome 比**（`<body>` の `color` 変更）: `0.116 ms` 対 `0.055 ms` で **約 2.1 倍**。§7.1.1 の「約 40 倍」は、毎回状態を捨てる最悪ケースとの比較だった。**状態を保つ実際の経路では、Chrome の約 2 倍まで来ている**。
+- `restyle`（最悪ケース）に効かないのは当然で、毎回節の状態が空なので再利用の前提（前回の入力）が無い。
+- 守り: 既存の再スタイル・差分レイアウトのファズ（全体の作り直しとの完全一致）が全件緑。`StyleTableHotPathTest` に共有表の独立性を検証する乱数テストあり。
+
+##### 候補 5：flex の再測定の省略
+
+測ってみると、`setMainSize` は「幅が同じで確定測定（`DEFINITE`）なら飛ばす」判定を既に持っていた（`118,810` 回を省略）。**飛ばせていなかったのは、幅が同じなのに shrink-to-fit（`SHRINK_TO_FIT`）のままの項目**で、showcase のレイアウト 1 回あたり再測定 `357,520` 回のうち **`213,640` 回（60%）**がそれだった（幅の一致を見る前に `sizingMode != DEFINITE` で測り直していた）。
+
+- **変更**: 幅が同じ shrink-to-fit の項目は測り直さず、確定測定の状態（`DEFINITE`）に揃えるだけにした（`FlexLayoutEngine.skipSameWidthRemeasure`）。
+- **条件を絞った理由**: 最初は無条件で省いたところ、差分テストで 2 種類の不一致が見つかった。(1) 項目自身が横方向の割合値（`width:50%`・`padding:2px 6%` など）を持つ場合、割合は親の幅が基準で、仮の測定（利用可能幅）と確定測定（決まった幅）とで解け方が変わる。(2) **子孫**に割合幅（`width:100%`）がある場合も、項目の幅が基準になるので同じ。そこで「項目の部分木のどこにも、横方向の割合（width / min・max-width / 余白 / padding / inset）と内在サイズのキーワード（`fit-content` など）が無い」ときだけ省く（`StyleFacts.percentGeometry` を追加し、部分木を再帰で確認）。
+- **守り**: `FlexSameWidthRemeasureTest`。省略の ON/OFF で表示リストが完全一致することを、忠実度コーパス 138 ケース × 4 解像度、ショーケース、flex / grid の入れ子・割合幅・折り返し・auto マージンを混ぜた乱数 250 文書 × 3 解像度で確認（上の 2 種類の反例は、このテストが最小の文書まで縮めて見つけた）。切り分け用に `-Denderframe.layout.noflexskip=true` で無効化できる。
+
+| ベンチ（24 サンプル） | 省略 OFF | 省略 ON | 変化 |
+| :--- | :---: | :---: | :---: |
+| `relayout` showcase | `1.667 ± 0.111 ms` | `1.273 ± 0.079 ms` | **−24%** |
+| `fullLayoutWarm` showcase | `1.792 ± 0.091 ms` | `1.531 ± 0.117 ms` | **−15%** |
+| `scrollStep` showcase | `2.197 ± 0.119 ms` | `1.874 ± 0.066 ms` | **−15%** |
+| `layoutWidthChange` showcase | `1.833 ± 0.116 ms` | `1.624 ± 0.127 ms` | **−11%** |
+| 上記の確保量（showcase） | `2.42〜3.51 MB/op` | `1.99〜3.08 MB/op` | **−12〜16%** |
+| large-list（4 ベンチ） | `0.85〜2.53 ms` | `0.82〜2.58 ms` | 変化なし（flex の shrink-to-fit 項目が無い） |
+
+- 省略できた測定回数が 60% なのに時間が 11〜24% にとどまるのは、省けるのが主に小さな項目（文字・短い部分木）で、重い部分木には割合や内在サイズの指定があり条件から外れるため。
+- Chrome 比（`relayout`、showcase）: `1.273 ms` 対 `0.065 ms` で、約 `25 倍 → 20 倍`。**まだ Chrome の 2 桁近い差が残る**ので、flex の確定測定そのものの再利用（§7.1.2(d) の 6・7）が次の課題。
+
+**ベンチ側の宿題**: `PipelineBench.restyle` を、実フレームと同じく同じ `InteractionState` を使い回す版（`restyleWarm`）と、継承プロパティ 1 つだけを変える版（`restyleInherited`）に分け、Chrome と同じ条件で比べられるようにする。`relayout` も、測定再利用あり／なしの 2 つを持つ。
+
+---
+### 7.1.3 再調査：遅さの根本原因と、Web エンジンに倣わない解決方針（2026-11-10）
+
+§7.1.2 までは「どの関数が熱いか」を見て 10〜20% ずつ削ってきた。ここでは、**なぜ 1 箱あたり約 4.5 µs・約 7 KB も使うのか**を、構造の側から測り直した。調査用に `InvestigateMain`（`./gradlew :core:profile -Pprofile.main=com.nishiyu.enderframelib.bench.InvestigateMain -Pprofile.args="showcase 800"`）を追加。
+
+#### (a) 先に訂正：これまでの「Chrome の数十倍」の比較は、実経路ではなかった
+
+- JMH の `fullLayout` / `fullLayoutWarm` / `layoutWidthChange` は `layoutDocument` を **`previousRoot` なし**で呼ぶ。この呼び方は `incremental=false` で、**箱を毎回新品で作り、測定の再利用も全て切る「冷たい経路」**（画面を開いた直後・構造変更の直後に相当）。UI の実経路は前回の箱を渡す。
+- 実経路で DOM が変わらない全体再レイアウトは **測定 15 回だけ**（再利用が効いている）で、段別は style+build `0.089 ms` / box-tree `0.096 ms` / measure `0.107 ms` / place `0.045 ms`（合計約 `0.34 ms`）。**半分以上（約 54%）は、測定ではなく箱の木の組み直し**。
+
+#### (b) 冷たい経路の実測（showcase、258 箱）
+
+| 指標 | 値 | 意味 |
+| :--- | :---: | :--- |
+| 測定回数 / レイアウト | **1,785 回（箱 1 つあたり 6.9 回）** | large-list（1,008 箱）は **1.0 回**。均質な構造では増幅しない |
+| うち「箱・制約・上書き寸法が全く同じ」繰り返し | **942 回（53%）** | 純粋な無駄。異なる入力は 843 通り（箱あたり平均 3.5 通り） |
+| 箱ごとの測定回数の分布 | 1 回: 18 箱 / 6 回: 96 箱 / 12 回: 50 箱 / 24 回: 4 箱 | 入れ子の flex / grid で掛け算になる |
+| 呼び出し元 | `Flex.measureContent` 844 / `Block.measureContent` 703 / `Flex.remeasure` 189 / `Grid.measureInArea` 36 | 親が子の寸法を探るために測る（仮の測定・確定測定・min/max の探り） |
+| 1 回の測定のコスト | **約 0.7〜0.9 µs** | 測定そのものは遅くない。**測る回数が根本** |
+| CPU の内訳 | `runLayoutPasses` **83%**、`buildLayoutTree` 9.5%、`BoxTreeBuilder.build` 5% | 時間は測定・配置パス |
+| 確保（段別の実測） | build `201 KB`（11%）/ boxTree `68 KB`（4%）/ **passes `1,580 KB`（85%）** | 1 測定あたり約 **1.2 KB** の使い捨て |
+| 確保元（深さ 64 の JFR） | `FlowBuilder` / `LineBuilder` 系、`ArrayList` 群、`BoxOutputs.capture`、`FloatSpace`、flex の行・項目 | 測定のたびに作る作業用オブジェクト |
+
+> [!NOTE]
+> **調査の落とし穴**: JFR の確保サンプルをスタック深さ 8 で集計すると、深い再帰の中の確保が落ち、「確保の 46% がカウンタ解析」と誤って見えた（実際に直しても確保は 2% しか減らなかった）。確保は必ず **スレッド確保バイト数の差分（段別）** で裏を取ること。
+
+#### (c) 根本原因
+
+1. **測定が「箱に状態を書き込む再入可能な多段処理」になっている**。親が子を様々な幅で測り直し（探り → 仮の測定 → 確定測定）、そのたびに子の箱が上書きされる。結果が共有できる値になっていないため、再利用は「単一スロット＋仮の産物 3 枠＋`settleTentative`＋退避」という**条件付きの継ぎ足し**になり、同一入力の繰り返しの半分すら捕まえられない（同一パス再利用を効かせても `1,785 → 1,309` 回までで、時間は −6%。残りは異なる入力の必要な測定）。入れ子が深いほど、段数が掛け算になる。
+2. **測定のたびに作業用オブジェクトを確保する**（約 1.2 KB / 測定）。1 レイアウト約 `1.9 MB`＝世代別 GC に約 1.5 GB/s の割合で流れ込み、キャッシュも汚す。データ指向の理想（箱あたり数十バイト）と 2 桁違う。
+3. **構造と値が分かれていない**。実経路で変更が無くても、毎回「スタイル解決＋箱の生成＋箱の木の整形」を通る（54%）。保持した木を局所的に直す経路（`CHILD_PATCH` など）は一部の変更にしか無い。
+4. 1 箱あたり約 `4.5 µs`（showcase）は、データ指向の理想（約 `0.1〜0.3 µs`）の 15〜40 倍、Chrome（`0.065 ms ÷ 164 要素 ≒ 0.4 µs`）の約 10 倍。**差は定数倍ではなく、上の 3 つの構造から来ている**。
+
+#### (d) 根本的な解決方針（Web エンジンに合わせず、ゲームエンジンの発想で）
+
+| # | 方針 | ゲームエンジンでの対応物 | 解く原因 | 見込み | 難しさ |
+| :-: | :--- | :--- | :-: | :--- | :-: |
+| **S1** | **測定を「値を返す純粋関数」にする**。`computeSize(箱, 制約) → 結果レコード（不変）` と `performLayout`（確定した結果だけを箱へ書く）を分ける。箱ごとに**制約をキーにした小さな多枠キャッシュ**（Taffy / Yoga の方式）を持ち、箱の状態を上書きしないので、仮の測定・退避・`settleTentative` が不要になる | 純粋関数＋メモ化（Yoga・Taffy・Bevy UI） | 1 | 測定 `6.9 → 約 2` 回/箱（冷たい経路 −50〜70%） | 大（`Block` 1,485 / `Grid` 1,121 / `Table` 836 行に触る。コーパス 138 ケースの完全一致で守る） |
+| **S2** | **内在サイズ（min / max-content）を幅に依らない値として、内容の版ごとに 1 回だけ焼く**。親は「利用可能幅で一度測って最大幅を知る」探りをやめ、焼いた値を引く。確定測定は、実際に決まった幅の 1 回だけ | ゲームのベイク（事前計算）のように前計算して引く | 1 | `Flex.measureContent` の 844 回が消える（約 −45%） | 中（`getMinContentWidth` は既にあるので、max-content を同じ基盤に載せる） |
+| **S3** | **測定の作業用オブジェクトを、フレームごとの作業領域（スクラッチアリーナ）とプールで使い回す**。`FlowBuilder` / `LineBuilder` / リスト群 / `BoxOutputs` を、レイアウト文脈が持つ再利用可能な作業台へ。測定の再入は深さで積み、戻るとき返す | フレームアロケータ・オブジェクトプール | 2 | 確保 `1.58 MB → 約 0.2 MB`、時間 −10〜25% | 小〜中（機械的。再入の安全性だけ要注意） |
+| **S4** | **保持した木を直す**。スタイルの変化を「箱のどの値が変わるか」で分類し、形が変わらない変更（幾何・色・継承）は箱を作り直さず値を直す。変化が無い再レイアウトは測定の入力の版（ダーティ）だけを見る | 保持モード＋ダーティビット（ECS の変更検出） | 3 | 実経路の再レイアウト `0.34 → 約 0.15 ms` | 中（`relayoutInPlace` の対象を広げる） |
+| **S5** | **画面（文書）単位のレイアウトキャッシュ**。鍵は「文書の版 × ビューポートの寸法 × フォント」。同じ画面を同じ解像度で開き直せば、測定ゼロで前回の結果を差し込む。HUD やメニューのように開閉を繰り返す UI に効く | シーンのベイク・シェーダーキャッシュ | 全体 | 再オープン時 `≒ 0 ms` | 小（鍵の設計と、結果の凍結だけ） |
+| **S6** | **フレーム予算での時間分割**。画面外・隠れた部分木・仮想リストの先読みは、毎フレームの予算（例 0.2 ms）の範囲で数フレームに分けて測る | ゲームのフレーム予算・ストリーミング | 全体 | スパイクの平滑化（平均は変わらない） | 中 |
+| **S7** | **独立した部分木を並列に測る**（再レイアウト境界・確定寸法の flex 項目）。ゲームのジョブシステムの発想 | ジョブ / ワーカー | 1 | 大きい画面で線形に近い | 大（258 箱では起動コストが勝つ。数千箱以上で意味が出る） |
+
+**推奨の順序**: 低リスクで確実な **S3（確保）→ S5（画面キャッシュ）** を先に入れ、効果が最大で設計の核になる **S2 → S1（純粋な測定）** へ進む。（実施結果: S3・S5 は §7.1.3(f)、S1 の部分実装と S2 の評価は §7.1.3(g)。S1 本体の前提条件は (g) の末尾。）S1 / S2 は、既存の `FlexSameWidthRemeasureTest` と同じ**差分テスト（旧実装と表示リストが完全一致）**を先に拡張してから着手する。S4 は S1 の後（結果が値になれば、変更検出の単位が揃う）。
+
+#### (e) 今回実施したこと
+
+| 変更 | 内容 | 結果 |
+| :--- | :--- | :--- |
+| 新品の箱の経路でも、同一パス内の同一入力の測定を使い回す（`RenderPipeline.FRESH_LAYOUT_PASS_REUSE`、`-Denderframe.layout.nofreshreuse=true` で無効） | これまで前回の箱が無いと測定の再利用が丸ごと切られていた | 測定 `1,785 → 1,309` 回（−27%）。JMH（24 サンプル）showcase: `fullLayoutWarm` **`1.464 → 1.283 ms`（−12%）**、`layoutWidthChange` `1.458 → 1.293 ms`（−11%）、確保 **−16〜17%**。large-list は変化なし |
+| カウンタの早期リターン（`counter-*` が無指定でリスト項目でもない箱は何もしない） | 3 つのマップを毎回作っていた | 確保 −2%（効果は小さいが完全に同一の結果なので残す） |
+
+- 守り: `FlexSameWidthRemeasureTest` を拡張し、同一パス再利用の ON/OFF で表示リストが完全一致することを、忠実度コーパス 138 ケース × 4 解像度と乱数 250 文書 × 3 解像度で確認。`:core:test` 全件緑。
+- 時間の改善が測定回数の削減（−27%）より小さい（−12%）のは、**繰り返しの残りが安い葉の箱で、高い測定は「異なる入力の必要な測定」だったため**。これが §7.1.3(c)1 の結論（局所的な再利用では頭打ち。測定を値にする S1 / S2 が必要）の根拠。
+
+#### (f) S3・S5 の実装結果（2026-11-10）
+
+**実施状況**: S3 ✅（見込みと違う形で大きな効果。下記）／ S5 ✅（「レイアウト結果のキャッシュ」ではなく「解析済みスタイルシートの雛形キャッシュ」に形を変えた。理由は下記）。
+
+##### S3：測定パスの確保の削減
+
+確保の内訳を調べ直すと、見込み（作業台のプールで −85%）は外れていた。**測定パスの確保の大半は、箱に保持される「結果」**（`FlowState`・`InlineFragment`・`LineItem`・`BoxOutputs` など）で、プールできるのは使い捨ての作業用だけだった。一方で、**プール以前の「無駄」が見つかり、これが最大の効果だった**。
+
+| 変更 | 内容 | 効果 |
+| :--- | :--- | :--- |
+| **疑似要素 `::marker` / `::placeholder` の解決を、規則が無ければ飛ばす**（`StyleResolver.resolvePseudoStyle`） | `::before` / `::after` にだけあった「その疑似要素に掛かる規則が 1 つも無ければ解かない」早期リターンが無く、**リスト項目・入力欄ごとにカスケードを解き、920 B の表と `Map.Entry` を作って捨てていた**（`StyleTable` 確保の 99.9% がここ）。結果は常に `null` になる（継承だけで何も宣言されない）ので、結果は完全に同一 | large-list（1,008 箱）: **レイアウト `0.937 → 0.692 ms`（−26%）、確保 −26%、スタイル解決の段 `1,410 → 550 KB`（−61%）** |
+| リスト項目のカウンタ最短経路（`BoxTreeBuilder.Counters.apply`） | `counter-*` 無指定なら、`LinkedHashMap` を 3 つ作らず、`list-item` の加算と `li[value]` だけ行う | 確保 −9%（large-list） |
+| 親チェーンの写しの共有（`flattenInlines`） | 断片ごとに `new ArrayList<>(parents)` していたのを、親が変わるまで読み取り専用の同じ写しにする（親の無い文字は共有の空の表） | showcase 確保 −5% |
+| `flushRun` の写しを 1 つに / `FloatSpace` の表を最初の追加まで作らない / flex の `order` ソートの省略・比較器の定数化・`stream` の除去 | 使い捨ての作業用の削減 | 合計 −3% |
+| `FormattingContext` を 28 通りの共有の実体に（`FormattingContext.of`） | 値が同じ不変レコードを、子の測定のたびに作っていた | showcase 確保 −5% |
+| `TextShaper` の整形キャッシュの照会キーをスレッドごとに使い回す | 照会のたびに鍵を作っていた（入れるときだけ複製） | 確保 −2% |
+
+| JMH（24 サンプル） | 前 | 後 | 変化 |
+| :--- | :---: | :---: | :---: |
+| `fullLayoutWarm` large-list | `1.423 ms` / `3.31 MB` | **`1.072 ms` / `2.09 MB`** | **−25% / −37%** |
+| `restyle` large-list | `2.131 ms` / `1.75 MB` | **`1.447 ms` / `0.53 MB`** | **−32% / −70%** |
+| `restyle` showcase | `1.903 ms` / `1.43 MB` | `1.737 ms` / `1.37 MB` | −9% / −4% |
+| `fullLayoutWarm` showcase | `1.283 ms` / `1.90 MB` | `1.355 ms`（誤差内）/ `1.62 MB` | 時間は差が測れず、確保 −15% |
+| `scrollStep`（showcase / large-list） | `1.874` / `2.578 ms` | `1.899` / `2.584 ms` | 時間は変化なし（確保 −4〜11%） |
+
+- showcase の InvestigateMain（レイアウト 1 回）: 確保 `1,894 → 1,581 KB`（−17%）、`6,276 B/箱`。
+- **残りの確保は主に「結果」**（`InlineFragment` 6%・`LayoutBox` 6%・`BoxOutputs` 4%・`FlowState`/`FlowBuilder`/`LineBuilder` など）で、プールでは減らせない。結果を箱から切り離して値の配列に積む（S1 の「純粋な測定」＋結果のアリーナ化）が必要。**ゼロ GC の次の一手は S1**。
+- 時間への効き方は確保量と比例しない（showcase は確保 −17% でも時間は誤差内）。効いたのは「無駄な計算ごと消えた」変更（疑似要素の解決）だけ。
+
+##### S5：画面を開くコストと、解析済みスタイルシートの雛形キャッシュ
+
+「画面（文書）単位のレイアウト結果のキャッシュ」は、`:core` の中では**安全に作れない**と判断した。(1) `RELAYOUT` の要求は、DOM の変化だけでなく画像の寸法やフォントの到着のような **DOM の外の変化**でも出るので、「何も汚れていない」を根拠に結果を再利用すると古い寸法を返す。(2) レイアウト結果は DOM の節に結ばれた箱の木で、差分レイアウトが**同じ木を直接書き換える**ので、別の画面や別の解像度の結果を取っておくには木の複製が要る。(3) 文書そのものを開き直すときは、新しい DOM の節に対する箱を作り直すことになる。
+
+そこで、画面を開くコストを実測して内訳から狙いを決めた（showcase、JIT 後）:
+
+| 段 | 時間 | 内訳 |
+| :--- | :---: | :--- |
+| HTML の解析 | `約 1.0 ms` | |
+| スタイルシートの構築 | `約 1.0 ms` | UA シート（約 11 KB）の解析 `0.67` ＋ 作者 CSS の解析・併合・並べ替え `0.37` |
+| 初回レイアウト（新しい文書・空の状態） | `約 3.4 ms` | スタイル解決の全面実行を含む（定常レイアウトの約 3 倍） |
+
+UA シートと作者 CSS は、**画面を開くたびに同じ内容を解析し直している**。これを内容（UA + ユーザー + 作者の CSS + ビューポートの大きさ）をキーにした**解析済みの雛形**から複製して渡す。
+
+- **実装**: `StyleSheet.copy()` / `StyleRule.copy()`（解析済みのセレクタ・宣言の前処理は不変なので共有し、`mediaActive`・レイヤー順位入りの詳細度・宣言表・層の木・メディア環境は写しに持つ）と、`DocumentLoader.buildStyleSheet` の雛形キャッシュ（LRU 16 件）。雛形は誰にも渡さず、渡すのは常に写し。`-Denderframe.sheetcache.off=true` で無効化できる。
+- **対象外にした CSS**: `@font-face`（解析が `CssParser.fontFaceCallback` を呼んでフォントを登録する**副作用**がある。解析を飛ばすと 2 回目以降の登録が漏れる）と `@import`（資源の読み込みを伴い内容が変わり得る）。`StyleSheetTemplateCacheTest` が「`@font-face` は 2 回解析して 2 回フックが呼ばれる」ことも確認する。
+
+| 画面を開くコスト（showcase） | キャッシュ OFF | ON | 変化 |
+| :--- | :---: | :---: | :---: |
+| 解析（HTML + スタイルシート） | `2.05 ms` | `1.08 ms` | **−47%** |
+| 初回レイアウト | `3.39 ms` | `2.80 ms` | −17%（宣言の前処理 `CompiledDeclarations` が雛形から共有され、初回の作り直しが要らない） |
+| 合計 | `5.4 ms` | `3.9 ms` | **−28%** |
+
+- 守り: `StyleSheetTemplateCacheTest`（雛形・初回・写しの 3 者で、規則の順・詳細度・宣言・状態・メディア・レイヤー・`@keyframes` / `@property` / `@counter-style` まで文字列で完全一致／写しを書き換えても他の写しと雛形が変わらない／忠実度コーパス 138 ケース × 2 解像度で表示リストが完全一致）。`:core:test` 全件緑。
+- 残る開くコスト（約 `3.9 ms`）の大半は **HTML の解析（約 1.0 ms）と、空の状態からの初回スタイル解決**。文書そのものの複製（DOM の雛形化）は、節の番号の確定（`sealNodeIds`）とカスタムタグの展開（ホストごとの SPI）を含むため、今回は見送った。
+
+#### (g) S1・S2 の実装結果と、全面実装に至らなかった理由（2026-11-10）
+
+**実施状況**: S1 は「依存を見た再利用の鍵」まで ✅（部分実装）。S2（幅だけの探り）は、実測で**単独では得にならない**と分かり実装を見送った。純粋な測定（結果を値として切り離す S1 本体）は、下の前提条件が先に要る。
+
+##### 先に測ったこと（トレース）：残る重複の正体
+
+測定のたびに（箱・制約・上書き寸法）を記録して、箱ごとの「異なる入力」が制約のどの成分の違いから生まれるかを数えた（showcase、242 箱、1 レイアウト）。
+
+- 異なる入力どうしの違いは、**高さの % の基準（`percentageBlockSize`）だけ**のものが最多（78 箱・530 組）。たとえば `button` は、幅も文脈も同じで基準の高さだけが `NaN / 204 / 601 / 575 / 477 / 451` と変わり、そのたびに測り直されていた。
+- ところが `percentageBlockSize` が結果に効くのは、**部分木のどこかに高さ方向の割合を持つ箱があるときだけ**。219/242 箱は持たない。この成分をキーから外せば、異なる入力は `843 → 379` 通り（−55%）。
+- 呼び出し元は `Flex.measureContent` 55%（親が子の幅を探る測定）、`Block.measureContent` 約 30%。
+
+##### S1（部分実装）：依存を見た再利用の鍵（`LayoutBox.blockPercentFreeEnabled`）
+
+- **内容**: 箱が「自分と全ての子孫が、高さ方向の割合・式（height / min・max-height / top / bottom / flex-basis / row-gap / grid の行指定の `%` と `calc()`）を持たない」（`StyleFacts.blockPercentFree`）ことを測定時に覚え（`measuredBlockPercentFree`）、再利用の判定（`canReuseMeasurement`）と仮の測定の 3 枠（`Tentative.matches`）で、**高さの % の基準だけが違う制約を同じ入力とみなす**。無効化は `-Denderframe.layout.noblockpercentkey=true`。
+- **等価性の落とし穴（差分テストが見つけた）**: 最初は「高さ方向の割合が無い」だけを条件にしたところ、乱数 300 文書のうち seed 74 で表示が変わった。最小の反例は、`padding: 2px 6%`（横方向の割合）と `width: fit-content` を持つ grid を含む flex の入れ子。原因は、**子の割合 padding の基準や最小内容幅のキャッシュが、「親の現在の幅」（`parentInnerWidth()`）という測定時の状態を通して隠れて依存している**こと。従来は測り直しがこの状態を更新していたので、再測定を省くと更新まで省いて結果が変わる。そこで条件を「子孫に横方向の割合・内在サイズのキーワードも無い」まで絞った（`percentGeometry` / `intrinsicWidthKind`）。
+- **守り**: `LayoutKeyEquivalenceTest`。鍵の ON/OFF で表示リストが完全一致することを、忠実度コーパス 138 ケース、ショーケース、高さの割合（height / min-height / max-height / flex-basis / top / gap `%` / grid の行）を混ぜた乱数 300 文書で、**ビューポートを `360×600 → 640×400 → 360×600 → 900×700 → 320×200` と変えながら連続してレイアウト**して全ステップで確認。`:core:test` 全件緑。
+
+| 指標（JMH、24 サンプル） | 鍵 OFF | 鍵 ON | 変化 |
+| :--- | :---: | :---: | :---: |
+| 測定回数 / レイアウト（showcase） | 1,309 | **860** | **−34%**（増幅率 5.07 → 3.33。冷たい経路の初期値 1,785 / 6.9 からは **−52%**） |
+| `fullLayoutWarm` showcase | `1.236 ms` / `1.62 MB` | **`0.986 ms` / `1.12 MB`** | **−20% / −31%** |
+| `layoutWidthChange` showcase | `1.283 ms` / `1.63 MB` | **`0.993 ms` / `1.13 MB`** | **−23% / −31%** |
+| `relayout`・`scrollStep`（showcase） | `1.230` / `1.822 ms` | `1.176` / `1.776 ms` | 誤差内（測定を再利用しない経路・スクロール経路には効かない） |
+| large-list（4 ベンチ） | `0.75〜2.51 ms` | `0.78〜2.39 ms` | 変化なし（入れ子の flex が無く、増幅していない） |
+
+##### S2（幅だけの探り）：実測で得にならないと分かった
+
+S2 は「親が子の幅を知るための探り測定（`Flex.measureContent` の子の測定）を、高さまで解く完全な測定ではなく、幅だけを返す安い探りにする」案だった。flex 項目の主軸の再測定（`setMainSize`、累計 476,330 回）を数えると、
+
+- **仮の測定の幅がそのまま確定幅だったのが 69.8%**（332,450 回）、違ったのは 30.2%（143,880 回）。
+- 探りが完全な測定なら、7 割の項目はそれだけで確定する（確定測定は省かれる）。**幅だけの探りに替えると、この 7 割で「探り＋確定測定」の二重になる**。得をするのは残り 3 割（入れ子で掛け算になる部分）だけで、全体では得にならない見込み。
+- そこで、探りを残したまま、**確定幅と同じになる項目の再測定を省く**（§7.1.2(f) の `skipSameWidthRemeasure`）方向がすでに正しい形だった。S2 を別の形（内在サイズを前計算して引く）で実現するには、下の前提条件が要る。
+
+##### 残る重複の正体（なぜこれ以上は局所的な再利用では取れないか）
+
+鍵を直したあとも、`860` 回のうち `581` 通りの異なる入力に対して `279` 回が同一入力の繰り返しだった。**前回の記録と同じ入力なのに再利用が外れた回数は 0 件**（診断で全条件を個別に調べた）。つまり残りの繰り返しは全て **A→B→A→B と交互に測る**もので、単一の記録スロットでは原理的に捕まえられない。古い入力の結果へ戻すには、**部分木の状態ごと復元する**必要があり、箱が結果を書き込む現在の設計では持てない。
+
+##### 前提条件（S1 本体＝純粋な測定に進むために先に要ること）
+
+1. **隠れた状態の入力を明示する**: `parentInnerWidth()`・`getMinContentWidth` のキャッシュ・`child.w` を介した兄弟間の値渡しなど、**測定時の箱の状態を暗黙に読む箇所**を、制約（`ConstraintSpace`）か引数として明示する。上の等価性の落とし穴はこれが原因で、これを解かない限り、どんな「測り直しの省略」も差分テストで割れる。
+2. **測定結果を箱から切り離す**: `computeSize(箱, 制約) → 不変の結果`（箱の寸法・余白・子の結果への参照）と、確定した結果だけを箱へ書く `commit` に分け、結果を制約キーの多枠キャッシュへ置く。これで交互パターンが取れ、仮の測定の退避（`tentativeStash`）・`settleTentative` が不要になる。結果が値になれば、`FlowState` / `InlineFragment` / `BoxOutputs` の確保も、フレーム用のアリーナへ積める（S3 の残り）。
+3. **差分テストの体制は整った**: `FlexSameWidthRemeasureTest`（再測定の省略・同一パス再利用）と `LayoutKeyEquivalenceTest`（鍵の正規化。連続リサイズ）が、「旧実装と表示リストが完全一致」を機械的に守る。S1 本体はこの 2 つを緑に保ったまま、エンジンを 1 つずつ（Block → Flex → Grid → Table）移す。
+
 ---
 
 ### 7.2 サブシステム別・コード精査による現状評価（強みと成熟度）
@@ -365,10 +696,11 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 1. **公開 API（`api`）とランタイム実装（`common` / `core`）のギャップ**:
    - [`WebDocument.java:16-34`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/WebDocument.java#L16-L34) は `authorCss()`, `hasElement()`, `tagOf()`, `attributeOf()` の 4 メソッドしか公開しておらず、一方で [`api.dom.Document`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/dom/Document.java) / [`api.dom.Element`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/dom/Element.java) と、画面ライフサイクルを担う [`UiView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) / [`StandaloneView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java) が `common` パッケージに分かれている。
    - **対策**: エンジンを数行で組み込める統合エントリーポイント（例：`EnderEngine` / `WebViewSurface`）を `api` に定義し、GLFW ウィンドウ・オフスクリーン FBO・ヘッドレス `Pixmap`・カスタムホストへのマウントを統一 API で提供する。
+   - **✅ 一部実施（2026-11-10）**: [`EnderEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/EnderEngine.java)（`EnderEngine.html(html).size(w,h).devicePixelRatio(r).clearColor(c).target(..).sink(..).build()` / `.openWindow()`）と、マウント先によらず同じ操作の [`WebViewSurface`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/WebViewSurface.java)（`frame(nowMs, force)`・`resize`・マウス／ホイール／キー／文字入力・`isPointerOverUi`・`focusedId`・`onNavigate`・`document()`・`pixels()` / `writePng`・`close`）を `api` に新設。描画先は `Target.SOFTWARE`（CPU のヘッドレス `Pixmap`、既定）・`Target.GPU_OFFSCREEN`（GL オフスクリーン）・カスタムホストの [`PixelSink`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/PixelSink.java)（描いたフレームごとに事前乗算 ARGB を渡す）・`openWindow()`（GLFW 窓、`StandaloneViewer.show`）。`api` は実装に依存してはならない（`ApiBoundaryTest`）ので、実装は SPI [`EnginePlatform`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/EnginePlatform.java) として `common/EngineSurface.Platform`（`StandaloneView` ＋ `RenderBackend` の組）が ServiceLoader で提供する。API の署名に `core.*` / `common.*` の型は出ない。守護: [`EnderEngineTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/EnderEngineTest.java)（12 件: 数行でのヘッドレス描画と画素値・アイドル時に描かない／force で描く・dpr による画素数・`document()` が DOM 型を出さない・PNG 出力・クリックでの input フォーカスと文字入力・リンク遷移の通知・resize で送られる画素サイズ・`PixelSink` が描いたフレームだけ受け取る・ServiceLoader での発見・不正引数・公開シグネチャに内部型が漏れないこと）。`:core` と root の全テスト（`ArchitectureTest` 21 件・`ApiBoundaryTest` を含む）成功。**未了**: ① `openWindow()` と `GPU_OFFSCREEN` は GL 環境が要るため自動テスト未対応（ビルドと既存の GL 経路の流用のみ） ② ~~`WebDocument` と `api.dom` の統合~~（✅ 2026-11-10 続報）: `WebDocument.dom()`（標準の `api.dom.Document`＝`getElementById` / `querySelector(All)` / `createElement` / `getBody` / `Element` のスタイル・属性・`innerHTML`・`append`・`addEventListener` など）を追加し、`WebViewSurface.dom()` を近道に置いた。既存の 4 メソッド（`authorCss` / `hasElement` / `tagOf` / `attributeOf`）は読み取りの簡易版として残し、`dom()` と一致することを確認。実体は `common.Document.dom()`（`root` が `HtmlDocument`＝`api.dom.Document` の実装のときそれを返す）で、API の署名に内部型は出ない。守護: [`WebDocumentDomTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/WebDocumentDomTest.java)（7 件: surface と document から DOM に届く・簡易メソッドと DOM の一致・`style.setProperty` が次フレームの画素に反映・`setAttribute` / `setInnerHTML` で再レイアウト・`createElement` + `append` の描画・`addEventListener("click")` が surface の入力で発火・`matches` / `closest` / `querySelectorAll` / 兄弟走査）。`:core` と root の全テスト（`ArchitectureTest` 21 件・`ApiBoundaryTest` を含む）成功。残りだった `UiView` のライフサイクル API も公開した（✅ 2026-11-10 続報 2）: `WebViewSurface` に ① リアクティブ状態 `state()`（[`SurfaceState`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/SurfaceState.java): `set` / `get` / `setList` / `watch` / `bind` / `forceSync`。実体は既存の `UiStateStore`、`{{key}}`・`data-if`・`data-for` に反映）② 文書の差し替え `load(html)`（状態は保たれ新文書へ当て直し。`StandaloneView.load` を新設）③ `invalidate()` / `needsFrame()` / `scrollToAnchor(id)` ④ タイマー `setTimeout` / `setInterval` / `requestAnimationFrame` と各 `clear*`（実時計・`frame` のたびに実行） ⑤ 通知 [`SurfaceLifecycleListener`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/SurfaceLifecycleListener.java)（`onLoaded` / `onFrame` / `onResized` / `onClosed`）と `isClosed()`（`close` は冪等で 1 回だけ通知）を追加。署名に内部型は出ない。守護: [`SurfaceLifecycleTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/SurfaceLifecycleTest.java)（12 件: 状態が DOM と画面へ反映・`data-if` / `data-for` の追従・watch の変化時のみ通知と bind・`load` で状態維持・timeout の 1 回実行と取り消し・interval の繰り返しと停止・rAF にフレーム時刻が渡り取り消せる・待機中のタイマーで `needsFrame`・リスナーの順序と解除・`scrollToAnchor`・内部型の非公開）。`:core` と root の全テスト（`ArchitectureTest` 21 件・`ApiBoundaryTest` を含む）成功。**制約**: タイマーは `UiTimers` の既存仕様どおり実時計基準（フレーム時刻を仮想時間にする決定論的な時計は未対応）。フォーカスは `dom().getElementById(id).focus()` で足りるため専用 API は設けていない ③ ~~マウスの右・中ボタン・修飾キー・クリップボード~~（✅ 2026-11-10 続報 3）: `WebViewSurface.mouseButton(MouseButton, down)`（[`MouseButton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/MouseButton.java) = LEFT / RIGHT / MIDDLE、`mouseButton(boolean)` は左の近道）を追加。エンジン内部はすでに右・中（`contextmenu` / `auxclick`、`button` 1・2）を持っていたが、`StandaloneView.mouseButton` が左固定だったため、`mouseButton(down, hostButton, session)` を新設（右・中は `pointerdown`/`mousedown`、押した要素の上で離すと右は `contextmenu`、右と中は `auxclick`。フォーカス移動・テキスト選択・`:active` は左だけ。押下中の別ボタンの押下と、押下の無い解放は無視。ポップアップは閉じるだけ）。修飾キーは [`KeyMods`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/KeyMods.java)（GLFW と同値）、クリップボードは [`SurfaceClipboard`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/SurfaceClipboard.java) と `setClipboard` で差し替え可能（Ctrl+C / X / V がホストのものを使う）。入力イベントの購読は専用 API を設けず `dom().addEventListener`（`click` / `contextmenu` / `auxclick` / `keydown` など）に一本化。守護: [`SurfaceInputTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/SurfaceInputTest.java)（13 件: 左・右・中の DOM イベント列と `button` 値・既定オーバーロード・押下中の別ボタンの無視・押下無しの解放の無視・右ではフォーカスしない・null と GLFW 番号の対応・修飾キーが keydown に届く・`KeyMods` が内部値と一致・コピー／切り取り／貼り付けがホストのクリップボードを使う・null 読み取りと既定への復帰）。フォント・画像の差し込み設定（✅ 2026-11-10 続報 4）: `EnderEngine.Builder` に ① `font(SurfaceFont)` / `font(family, bytes|Path)`（[`SurfaceFont`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/SurfaceFont.java): TTF / OTF のバイト列かファイル、太さ・斜体つき。同名の OS の書体より先に使われ、**面ごと**に閉じる〔プロセス全体の `WebFonts` 登録簿へは載せない〕。読めない書体は `build()` が `IllegalArgumentException`）② `systemFonts(false)`（OS の書体を使わず、持ち込み書体と内蔵の標準フォントだけ＝環境に依らない描画）③ `images(ImageSource)`（[`ImageSource`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/ImageSource.java)＋[`SurfaceImage`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/SurfaceImage.java)＝ストレート ARGB。`<img src>` と CSS `url()` の両方に効き、`null` を返した `src` は既定の解決〔`data:`・ローカル・クラスパス〕へ回る）④ `webImages(true)`（HTTP 取得つき。取れたら・アニメ中は自動で描き直し、`close` で取得を止める）を追加。実装: `SystemFonts.faces()` / `withFaces()`（同名の既存の面を外して足す別目録）・`WebFonts.isUsable` / `isUsableFile`・合成の画像供給 [`OverrideImages`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/OverrideImages.java)（9-slice の切り出しは基底の規則、元画像の取得にも差し替えが効く）。レイアウトの測定（`StandaloneView`）と描画（バックエンド）の両方に同じ書体・画像供給を渡す。守護: [`SurfaceResourcesTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/SurfaceResourcesTest.java)（13 件: 差し込み画像の画素・ストレート α の事前乗算・`null` で既定へ回る・CSS 背景にも効く・`SurfaceImage` / `SurfaceFont` の引数検査・`webImages` が通信なしで構築と終了できる・読めない書体の拒否・持ち込み書体ファイルが同じ書体を OS 名で引いた描画とピクセル一致・バイト列とファイルの一致・別の面とプロセス全体の登録簿へ漏れない・`systemFonts(false)` が環境非依存で持ち込み書体は効く）。OS の書体ファイルが無い環境では書体のテストは `Assumptions` で飛ばす。`:core` と root の全テスト（`ArchitectureTest` 21 件・`ApiBoundaryTest` を含む）成功。**制約**: 描画側の保険の字形解決（`SoftwareRenderBackend` の一部）はまだ共有の `SystemFonts.system()` を引く箇所が残る（持ち込み書体にない文字の代替字形）④ README へのクイックスタート追記
 2. **コア層に残存する Minecraft 固有タグ・命名のプラグイン SPI 化**:
    - [`DisplayListBuilder.java:54-57`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java#L54-L57) の `NON_FRAGMENT_TAGS` に `"mc-fluid"`, `"mc-entity"`, `"mc-scene"` がハードコードされており、[`ElementType.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/ElementType.java) にも `ITEM`, `ENTITY`, `FLUID` 等のゲーム固有列挙が固定されている。また [`UiInput.java:109-116`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiInput.java#L109-L116) の引数名にも `minecraftButton` が残っている。
    - **対策**: 置換要素（Replaced Element）の採寸・描画・ヒットテストを外部から登録できる **`CustomElementPainter` / `ReplacedElementRegistry` SPI** を導入し、`<mc-*>` は Minecraft ホスト側のプラグインとして注入する構造へ純化する。
-   - **✅ 一部実施（2026-11-10）**: タグ台帳 [`ReplacedElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/ReplacedElements.java)（`register(tag, Kind)` / `isHost` / `isReplacedTag`、不変スナップショット参照で読み取りは確保ゼロ）を導入し、`LayoutBox.Display` / `Block・Flex・GridLayoutEngine.isReplaced` / `BoxMeasurer.isReplacedImage` / `DisplayListBuilder`（`NON_FRAGMENT_TAGS`・`memoizable`）に直書きされていた `mc-fluid` / `mc-entity` / `mc-scene` を台帳経由に置換。守護: [`ReplacedElementsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/ReplacedElementsTest.java)（既定の挙動維持・ホスト登録タグが inline 置換要素として振る舞うこと・上記 5 ファイル＋`DisplayListBuilder` への直書き復活の禁止）。core 全テスト成功。**追加実施（2026-11-10・残課題①）**: [`CustomElementPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/CustomElementPainter.java) を導入（`kind()`・`resolveSrc(attrs, src)`・`sceneMinWidth()`/`sceneHeight()`）。`ReplacedElements.register(tag, CustomElementPainter)` で登録し、`painterOf(tag)` で引く（`register(tag, Kind)` は既定寸法の最小実装で従来どおり）。`BoxMeasurer` の `mc-scene` 採寸、`ControlPainter` の `fluid:`/`entity:` 接頭辞、`DisplayListBuilder` の `case "mc-scene"` / `"mc-fluid"` / `"mc-entity"` を、台帳の差し込み経由（`default` 分岐で `Kind` により scene／media を選ぶ）に置換し、3 ファイルから具体名の直書きをゼロにした。既定の 3 タグ（Minecraft）の登録は台帳の `defaults()` に残してある（挙動維持のため。ホストへの完全移設は未了）。守護: [`CustomElementPainterTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/CustomElementPainterTest.java)（既定の src 規則維持・登録した `x-gauge` の `resolveSrc` が描画項目に反映・`x-view` のシーン高さ 77／既定 120・不正登録の拒否・3 ファイルへの直書き復活禁止）。core 全 1728 テスト成功。**残課題**: ① `HtmlParser.VoidElements` の `mc-*` 空要素、`defaults()` の Minecraft 3 種をホスト側の登録へ移す ② `ElementType` の `ITEM/ENTITY/FLUID` 列挙 ③ ~~`UiInput` の `minecraftButton` 命名~~（✅ 2026-11-10 解消：ボタン番号は実質 GLFW 規約（0=左・1=右・2=中）でホスト非依存のため `hostButton` へ改名。`UiInput`・`PressResult` の要素名とルートモッドの呼び出し側 2 ファイルを更新。守護: [`UiInputHostButtonTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/UiInputHostButtonTest.java)＝`domButton`/`buttonsMask` の対応表・`PressResult.hostButton()`・`common` に `minecraftButton` が復活しないこと） ④ ~~static グローバルの `EngineContext` 化~~（**一部実施・2026-11-10**）: [`EngineContext`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/EngineContext.java) を新設し、`Bindings` の `i18nResolver` / `i18nFormatter` / `jsonListParser` と、`RenderPipeline`・`UiDocumentCompiler` の二重だった `intrinsicSizeResolver` を 1 か所へ移した。ホストは `EngineContext.global()` に差し込み、複数ホスト・テストは `EngineContext.runWith(ctx, …)` / `callWith` で**そのスレッドの間だけ**別の文脈へ切り替える（他スレッドと global は不変、例外時も復元、入れ子可）。`Bindings` は `EngineContext.current()` を読む。あわせて、`RenderPipeline.layoutChangedBoxes`（全ビューで共有されていた再レイアウト用の一時リスト＝複数スレッドで混ざる欠陥）をスレッド単位の `ThreadLocal` にした。ルートモッドの呼び出し 3 ファイルとテストを新 API へ更新。守護: [`EngineContextTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextTest.java)（スコープ内外の挙動・例外時の復元・入れ子・2 スレッド同時に別文脈・既定値・旧 static の復活禁止）。`:core` 全テストと既存 `BindingsTest` 成功。**残課題**: `clientBoxRenderer`（`RenderPipeline` / `UiDocumentCompiler` に二重）・`clientResourceFallback` 等の `UiDocumentCompiler` の static、`RenderPipeline` の統計・`incrementalLayout` 等の切り分けフラグ（`volatile` の static）・`LAYOUT_RUNS` は未移行（`ILayoutBoxRenderer` が `common` 型で、`core` の文脈へ入れるには型の移動が要る）。なお root の `ArchitectureTest` M7（入れ子型 `CssProperty.Id` が 5 パッケージから参照され上限 0 超過。HEAD で既に赤）は、2026-11-10 に `Id` をトップレベルの [`CssPropertyIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssPropertyIndex.java) へ出して解消（`CssProperty.Id.X` → `CssPropertyIndex.X`、34 ファイル。`ComputedStyle` 内の同名に近い入れ子の `CssPropertyId`〔名前→添字の表〕とは別物）。`:core` と root の全テスト緑。
+   - **✅ 一部実施（2026-11-10）**: タグ台帳 [`ReplacedElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/ReplacedElements.java)（`register(tag, Kind)` / `isHost` / `isReplacedTag`、不変スナップショット参照で読み取りは確保ゼロ）を導入し、`LayoutBox.Display` / `Block・Flex・GridLayoutEngine.isReplaced` / `BoxMeasurer.isReplacedImage` / `DisplayListBuilder`（`NON_FRAGMENT_TAGS`・`memoizable`）に直書きされていた `mc-fluid` / `mc-entity` / `mc-scene` を台帳経由に置換。守護: [`ReplacedElementsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/ReplacedElementsTest.java)（既定の挙動維持・ホスト登録タグが inline 置換要素として振る舞うこと・上記 5 ファイル＋`DisplayListBuilder` への直書き復活の禁止）。core 全テスト成功。**追加実施（2026-11-10・残課題①）**: [`CustomElementPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/CustomElementPainter.java) を導入（`kind()`・`resolveSrc(attrs, src)`・`sceneMinWidth()`/`sceneHeight()`）。`ReplacedElements.register(tag, CustomElementPainter)` で登録し、`painterOf(tag)` で引く（`register(tag, Kind)` は既定寸法の最小実装で従来どおり）。`BoxMeasurer` の `mc-scene` 採寸、`ControlPainter` の `fluid:`/`entity:` 接頭辞、`DisplayListBuilder` の `case "mc-scene"` / `"mc-fluid"` / `"mc-entity"` を、台帳の差し込み経由（`default` 分岐で `Kind` により scene／media を選ぶ）に置換し、3 ファイルから具体名の直書きをゼロにした。既定の 3 タグ（Minecraft）の登録は台帳の `defaults()` に残してある（挙動維持のため。ホストへの完全移設は未了）。守護: [`CustomElementPainterTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/CustomElementPainterTest.java)（既定の src 規則維持・登録した `x-gauge` の `resolveSrc` が描画項目に反映・`x-view` のシーン高さ 77／既定 120・不正登録の拒否・3 ファイルへの直書き復活禁止）。core 全 1728 テスト成功。**✅ 残課題①② 解消（2026-11-10 続報）**: ①ホスト宣言を [`HostElementProvider`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/HostElementProvider.java) SPI（`java.util.ServiceLoader`、`META-INF/services` で登録。`replacedElements()` と `voidElements()` を返すだけの純粋な宣言）に切り出した。`ReplacedElements.defaults()` はプロバイダの宣言だけを集め（コアは `mc-*` を持たない）、`HtmlParser.VoidElements` も標準の空要素表（`TAGS`）から `mc-*` を外して `host` 集合（`registerHost` / `resetHost`）を併用する。Minecraft の宣言（`mc-fluid`/`mc-entity`/`mc-scene` の置換要素と、空要素 `mc-slot`/`mc-slot-grid`/`mc-inventory`/`mc-bar` を含む 7 種）はルートモッドの [`McHostElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/main/java/com/nishiyu/enderframelib/content/McHostElements.java) へ移設。core 単体のテストは test 側の `McTestHostElements`（同内容）を ServiceLoader で差し込む。`DisplayListBuilder.memoizable` の `startsWith("mc-")` は「ハイフンを含むカスタム要素名で、ホスト未登録なら記憶しない」に一般化（記憶しない側へ倒すだけで描画結果は不変）。②`ElementType` の `ITEM/ENTITY/FLUID` は現行コードに既に存在せず（過去に解消済み。この記述は陳腐化していた）、再発防止の番人テストだけ追加。守護: [`HostElementProviderTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/HostElementProviderTest.java)（ServiceLoader 経由の発見・ホスト空要素が解析結果〔子を持たない〕を変えること・不正登録の拒否・既定が空の契約・5 ファイルへの `mc-*` 直書き復活禁止・`ElementType` にゲーム固有の定数が無いこと）、ルートの [`McHostElementsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/test/java/com/nishiyu/enderframelib/content/McHostElementsTest.java)（実モッドのクラスパスで ServiceLoader が `McHostElements` を見つけること・7 タグがエンジンに届くこと・`fluid:`/`entity:` の参照先規則の維持）。`:core` 全テストとルート全テスト（`ArchitectureTest` 21 件を含む）成功。**✅ `CustomTagExpander` の SPI 化（2026-11-10 続報 2）**: 展開器を「ホストが登録した `TagMacro` だけを DOM の部分木差し替えで展開する汎用エンジン」にし、`mc-slot`/`mc-slot-grid`/`mc-inventory`/`mc-bar`/`mc-energy`/`mc-tank` の 6 マクロ本体（クラス名 `mc-slot`・色・流体色を含む）はルートモッドの `McTagMacros` へ移設した。宣言は `HostElementProvider.tagMacros()`（`TagMacro` は `core/dom/node` の関数型 I/F）で、`McHostElements` が返す。`CustomTagExpander` に `register` / `resetToDefaults` を追加。`ArchitectureTest` の DOM 属性直書きの除外を `content/McTagMacros.java` へ付け替え。守護: コアの [`CustomTagExpanderSpiTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/CustomTagExpanderSpiTest.java)（未登録タグは素通し・大小文字無視の登録と親の付け替え・`null` 返しは残して内側を展開・リセット・不正登録・`mc-` 直書き禁止）、既存の展開テストはホスト側の `McTagMacrosTest`（旧 `CustomTagExpanderTest` を移設、構造は不変）。`:core` とルートの全テスト成功。**✅ `mc-if`/`mc-for`/`<mc-markdown>` 別名の SPI 化（2026-11-10 続報 3）**: ホスト構文の台帳 [`HostSyntax`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/HostSyntax.java)（`aliasesOf` / `canonicalOf` / `attr` / `markdownTags`。不変スナップショット参照で読み取りは確保ゼロ、`register*` / `resetToDefaults` あり）を新設し、`HostElementProvider` に `attributeAliases()`（別名→正規名）と `markdownTags()` を追加。`Bindings`（`data-if` / `data-for` の読み取りと依存収集の `switch`）と `MarkdownParser`（目印判定・開始タグ照合・`<article>` への変換）の直書きを台帳経由に置換した。宣言は `McHostElements`（`mc-if`→`data-if`、`mc-for`→`data-for`、`mc-markdown`）が持つ。既存 HTML の挙動は不変（別名は従来どおり効く）。守護: [`HostSyntaxTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/dom/HostSyntaxTest.java)（8 件: SPI 発見・正規名優先→別名の順・動的登録とリセット・不正登録・既定が空・`mc-markdown` の展開と動的 Markdown タグ・`sync` で `mc-if` が `data-if` と同じく `hidden` を付けること・依存索引が別名も拾うこと・コア 3 ファイルへの直書き禁止）。`:core` とルートの全テスト（`ArchitectureTest` 21 件を含む）成功。**これで `core/src/main` に残る Minecraft 固有タグ・属性名の直書きは解消**（コメント・KDoc を除く）。**残課題**（旧①②は解消済み。残りは ④ の `EngineContext` 未移行分のみ）: ~~`UiInput` の `minecraftButton` 命名~~（✅ 2026-11-10 解消：ボタン番号は実質 GLFW 規約（0=左・1=右・2=中）でホスト非依存のため `hostButton` へ改名。`UiInput`・`PressResult` の要素名とルートモッドの呼び出し側 2 ファイルを更新。守護: [`UiInputHostButtonTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/UiInputHostButtonTest.java)＝`domButton`/`buttonsMask` の対応表・`PressResult.hostButton()`・`common` に `minecraftButton` が復活しないこと） ④ ~~static グローバルの `EngineContext` 化~~（**一部実施・2026-11-10**）: [`EngineContext`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/EngineContext.java) を新設し、`Bindings` の `i18nResolver` / `i18nFormatter` / `jsonListParser` と、`RenderPipeline`・`UiDocumentCompiler` の二重だった `intrinsicSizeResolver` を 1 か所へ移した。ホストは `EngineContext.global()` に差し込み、複数ホスト・テストは `EngineContext.runWith(ctx, …)` / `callWith` で**そのスレッドの間だけ**別の文脈へ切り替える（他スレッドと global は不変、例外時も復元、入れ子可）。`Bindings` は `EngineContext.current()` を読む。あわせて、`RenderPipeline.layoutChangedBoxes`（全ビューで共有されていた再レイアウト用の一時リスト＝複数スレッドで混ざる欠陥）をスレッド単位の `ThreadLocal` にした。ルートモッドの呼び出し 3 ファイルとテストを新 API へ更新。守護: [`EngineContextTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextTest.java)（スコープ内外の挙動・例外時の復元・入れ子・2 スレッド同時に別文脈・既定値・旧 static の復活禁止）。`:core` 全テストと既存 `BindingsTest` 成功。**✅ 続報（2026-11-10）`ILayoutBoxRenderer` を core へ移し、描画関数とリソース代替取得を `EngineContext` へ**: `RenderPipeline` の入れ子だった `ILayoutBoxRenderer`（`UiDocumentCompiler` にも同名の継承版があった）を [`core/paint/ILayoutBoxRenderer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/ILayoutBoxRenderer.java) のトップレベル型にし、既定（`DisplayListBuilder`）を `ILayoutBoxRenderer.DEFAULT` に持たせた。`RenderPipeline.clientBoxRenderer` と `UiDocumentCompiler.clientBoxRenderer`／`DEFAULT_BOX_RENDERER` の二重 static を `EngineContext.boxRenderer` の 1 か所へ、`clientResourceFallback` / `datapackResourceFallback`（`DocumentLoader` と `UiDocumentCompiler` に二重）を `EngineContext` へ移し、`RenderPipeline`・`DocumentLoader`・`UiView` は `EngineContext.current()` を読む（スレッド単位で別文脈へ切り替え可能）。ルートモッド 2 ファイルとテスト 6 ファイルを新 API へ更新。守護: [`EngineContextRendererTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextRendererTest.java)（既定値・スコープ内だけ差し替えが効く・`null` は何も描かない・2 スレッドが別々の描画関数を見る・リソース代替取得もスコープ単位でデータパック優先・旧 static と入れ子型の復活禁止）。`:core` と root の全テスト（`ArchitectureTest` 21 件を含む）成功。**✅ 続報 2（2026-11-10）`resourceTextResolver` も `EngineContext` へ**: `UiDocumentCompiler.resourceTextResolver` と `DocumentLoader.resourceTextResolver` の二重 static（優先順位の判定が入り組んでいた）を `EngineContext.resourceTextResolver`（null＝既定の解決）1 つに統合。`DocumentLoader.effectiveResourceTextResolver()` が「文脈にあればそれ、無ければ `DEFAULT_RESOURCE_TEXT_RESOLVER`」を返す。ルートの参照 5 ファイル（`ClientWebManager`・`EnderConfigScreen`・`ScreenBlockEntity`・`EnderFrameCommands`・`EnderFrameLib`）は null 判定込みで `effectiveResourceTextResolver()` へ集約。`BoxTreeTest` は文脈のスコープ実行へ書き換え（テスト後の手動復元が不要に）。守護: `EngineContextRendererTest` に既定／スコープ内外の挙動と旧 static 復活禁止を追加（計 7 件）。`:core` と root の全テスト（`ArchitectureTest` 21 件を含む）成功。**✅ 続報 3（2026-11-10）切り分けフラグと診断状態も脱 static**: `RenderPipeline` の volatile static のうち、設定値の 5 つ（`incrementalLayout`・`pruneCleanSubtrees`・`localRelayout`・`inPlaceRestyleRelayout`・`trackAllocations`）を `EngineContext` のフィールドへ移し、パイプラインは `EngineContext.current()` を読む。「直近の結果」の状態（`lastBuildStats`・`lastRelayoutWasLocal`・段ごとの割り当て・箱数の計数・各パスの所要時間）は、複数のビュー／スレッドが同時にレイアウトすると数え合う欠陥だったため、[`PipelineStats`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/diag/PipelineStats.java) としてスレッド単位（`ThreadLocal`）で持ち、`RenderPipeline.lastBuildStats()` / `lastRelayoutWasLocal()` で読む。`UiView`・core テスト 5 ファイル・ルートの `ServerClientLayoutParityTest` を新 API へ更新。守護: [`EngineContextPipelineFlagsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextPipelineFlagsTest.java)（6 件: 既定値の維持・フラグのスレッド単位スコープ・別スレッドの構築が自スレッドの統計を壊さない・割り当て追跡が文脈のフラグに従う・切り分けフラグが結果を変えない・旧 static の復活禁止）。`:core` と root の全テスト（`ArchitectureTest` 21 件を含む）成功。**あえて残したもの**: `LAYOUT_RUNS`（レイアウト通し番号の採番。JVM 全体で一意であるべき単調増加カウンタ）、`rootStyleCache` / `lastInitial` / `lastEntered`（不変オブジェクトを丸ごと差し替える 1 要素の記憶で、スレッド安全。取り違えは起きない）。これで課題領域 1 の項目 3 は完了。なお root の `ArchitectureTest` M7（入れ子型 `CssProperty.Id` が 5 パッケージから参照され上限 0 超過。HEAD で既に赤）は、2026-11-10 に `Id` をトップレベルの [`CssPropertyIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssPropertyIndex.java) へ出して解消（`CssProperty.Id.X` → `CssPropertyIndex.X`、34 ファイル。`ComputedStyle` 内の同名に近い入れ子の `CssPropertyId`〔名前→添字の表〕とは別物）。`:core` と root の全テスト緑。
 3. **static グローバル状態の排除（マルチインスタンス・マルチスレッド対応）**:
    - [`RenderPipeline.java:64-65, 428`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/RenderPipeline.java#L64-L65) の `clientBoxRenderer` / `intrinsicSizeResolver` / `layoutChangedBoxes`、および [`Bindings.java:28-31`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java#L28-L31) の `i18nResolver` / `i18nFormatter` / `jsonListParser` がプロセス全体の `static` フィールドになっている。
    - **対策**: 複数ウィンドウやサーバー・クライアント同時実行で競合しないよう、これらを `EngineContext`（または `UiView` インスタンス）スコープへ移動する。
@@ -501,7 +833,8 @@ core/src/main/java/com/nishiyu/enderframelib/core/
 
 | フェーズ | テーマ | 主要アクション項目 | 達成時のインパクト（到達指標） |
 | :--- | :--- | :--- | :--- |
-| **Wave 1**<br/>（基盤純化 & Zero-GC 完遂） | **汎用 API 確立・ホスト分離・スタイル/描画の完全数値化** | 1. `<mc-*>` / `ElementType` の `ReplacedElementRegistry` SPI 化と `RenderPipeline` / `Bindings` の脱 `static` 化<br/>2. `ComputedStyle` の脱 `String[]`（宣言アリーナの `PackedCssValue` 直結）と `StyleFacts` 全寸法 `long[]` 化<br/>3. Phase A 完結（GPU/CPU 走査方向の反転 + 非等方角丸・せん断の GPU シェーダー化）<br/>4. `LoadedFace.LOCK` の Face 単位ロック分離（✅ 2026-11-10 完了：面ごとのロック＋専用 `FT_Library`、§7.3 課題領域 4） | ・Minecraft 非依存の完全汎用 JAR として単体配布可能<br/>・フルレイアウト `< 0.50 ms`、2D の CPU フォールバック率 `0%` |
+| **Wave 0**<br/>（§7.1.1 の計測で出た宿題） | **計測の信頼性回復と Chrome 比の差の解消** | 1. ✅ JMH の OOM・ハングは `DocumentArena` のリークと判明し修正済み（§7.1.1）<br/>2. `softwarePaint` が §2.1 の `1.1 ms` と食い違った件を、測定回数を増やして再計測<br/>3. §7.1.2(d) の改善候補のうち ✅1・3・4・5 は実施済み（§7.1.2(e)(f)。`restyleInherited` −48%、`relayout` −24%）、2 は効果なしで取り下げ。残りの 6・7（`equals` の置換、行分割の再利用）を A/B で試す実フレーム経路の再レイアウトは約 `0.49 ms`（Chrome の約 7.5 倍）<br/>4. ✅ `PipelineBench` に `restyleInherited` / `layoutWidthChange` を追加済み。現行 JMH の `restyle` / `relayout` は最悪ケース（状態を捨てる・測定を再利用しない）なので、Chrome 比には前者を使う | ・ベンチが既定設定で完走する<br/>・`relayout` / 全体再スタイルの目標を、Chrome 実測値を基準に再設定 |
+| **Wave 1**<br/>（基盤純化 & Zero-GC 完遂） | **汎用 API 確立・ホスト分離・スタイル/描画の完全数値化** | 1. `<mc-*>` / `ElementType` の `ReplacedElementRegistry` SPI 化（✅ 置換要素・空要素は `HostElementProvider` で完了、`CustomTagExpander` も SPI 化済み。`mc-if`/`mc-for`/`mc-markdown` 別名も完了）と `RenderPipeline` / `Bindings` の脱 `static` 化<br/>2. `ComputedStyle` の脱 `String[]`（宣言アリーナの `PackedCssValue` 直結）と `StyleFacts` 全寸法 `long[]` 化<br/>3. Phase A 完結（GPU/CPU 走査方向の反転 + 非等方角丸・せん断の GPU シェーダー化）<br/>4. `LoadedFace.LOCK` の Face 単位ロック分離（✅ 2026-11-10 完了：面ごとのロック＋専用 `FT_Library`、§7.3 課題領域 4） | ・Minecraft 非依存の完全汎用 JAR として単体配布可能<br/>・フルレイアウト `< 0.50 ms`、2D の CPU フォールバック率 `0%` |
 | **Wave 2**<br/>（2D/3D 空間融合） | **Three.js 型 3D シーングラフ統合（Phase C）** | [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) の Milestone 3D-1〜3D-5 実装（`Scene3DArena`, `GlScene3DRenderer`, `SoftwareScene3DRasterizer`, `InstancedBatcher`, `GltfBinaryLoader`, `Raycaster3D`, `HTMLMesh`） | ・**ブラウザ (Three.js) でも JavaFX でも不可能な「HTML/CSS と 3D の単一パイプライン・ゼロコピー双方向融合」** を実現 |
 | **Wave 3**<br/>（レイアウト & 国際化完成） | **最新 CSS レイアウト・自動仮想化・IME 完備** | 1. CSS `subgrid`、Anchor Positioning + Top Layer（`<dialog>` / `popover`）、縦書き（`writing-mode: vertical-*`）実装<br/>2. `content-visibility: auto` + `FenwickVirtualList` による 10 万行リスト自動仮想化<br/>3. `TextEditing` の IME Preedit / Composition 対応とカラー絵文字・文脈依存 GSUB 対応 | ・10 万要素の大規模テーブル／リストでも `< 0.2 ms` で動作<br/>・日本語・多言語デスクトップ UI として JavaFX / Swing を完全に代替可能 |
 | **Wave 4**<br/>（DX & エコシステム） | **コンパイル済み型安全リアクティブ & 組み込み DevTools** | 1. テンプレートの事前コンパイル（正規表現ゼロ化）と Java 21 `Record` / `Signal<T>` 直結バインディング<br/>2. スコープ付きコンポーネント（`@scope` + `<slot>`）<br/>3. `F12` 組み込み **EnderDevTools**（ボックスハイライト・CSS ライブ編集・フレームプロファイラ・ホットリロード） | ・開発生産性と実行性能の双方で Web フロントエンドおよび既存 Java UI ライブラリを凌駕 |

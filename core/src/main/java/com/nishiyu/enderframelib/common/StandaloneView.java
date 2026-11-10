@@ -121,6 +121,8 @@ public final class StandaloneView implements AutoCloseable {
     private final Map<HtmlNode, float[]> scrollTargets = new HashMap<>();
     private double mouseX = -1, mouseY = -1;
     private boolean mouseDown;
+    /** 押している左以外のボタン（GLFW の番号）。無ければ -1。 */
+    private int otherButton = -1;
     private Consumer<String> navigation = href -> {};
     private final Map<HtmlNode, TextEditing.State> edits = new HashMap<>();
     private TextEditing.Clipboard clipboard = TextEditing.Clipboard.inMemory();
@@ -152,6 +154,19 @@ public final class StandaloneView implements AutoCloseable {
         ui.loadLocalHtml(html, width, height);
         this.items = ui.renderCache();
         timings = "load=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size();
+    }
+
+    /** 文書を別の HTML に差し替える（入力中の編集・ポップアップ・スクロール先は捨てる）。 */
+    public void load(String html) {
+        popup.close();
+        dragField = null;
+        swallowRelease = false;
+        scrollTargets.clear();
+        edits.clear();
+        ui.loadLocalHtml(html, width, height);
+        items = ui.renderCache();
+        redraw = true;
+        drawn = false;
     }
 
     /** 下の {@link UiView}（DOM・タイマー・状態を直接触りたいとき）。 */
@@ -343,7 +358,21 @@ public final class StandaloneView implements AutoCloseable {
      * 押した要素（またはその祖先）がフォーカスできればフォーカスが移り、そうでなければ外れる。
      */
     public void mouseButton(boolean down, String sessionId) {
+        mouseButton(down, 0, sessionId);
+    }
+
+    /**
+     * ボタン指定つき（GLFW の番号: 0=左・1=右・2=中）。右・中は押下で {@code pointerdown} / {@code mousedown}、押した要素の上で
+     * 離すと右は {@code contextmenu}、右と中は {@code auxclick} を送る。ポップアップは閉じるだけで、フォーカス移動・
+     * テキスト選択・{@code :active} は左だけ。
+     */
+    public void mouseButton(boolean down, int hostButton, String sessionId) {
         ui.adoptSessionId(sessionId);
+        if (hostButton != 0) {
+            if (hostButton < 0 || hostButton > 2) return;
+            mouseButtonOther(down, hostButton);
+            return;
+        }
         if (down) {
             if (popup.isOpen()) {
                 // ポップアップが開いている間の押下は、選ぶか閉じるかだけ。閉じる押下が select 自身なら開き直さない
@@ -399,6 +428,30 @@ public final class StandaloneView implements AutoCloseable {
             return;
         }
         input.release(mouseX, mouseY, 0, true, linkSink);
+    }
+
+    /** 左以外のボタン。押しているのは 1 つのボタンだけとして扱う（別のボタンの押下中の押下は無視）。 */
+    private void mouseButtonOther(boolean down, int hostButton) {
+        if (down) {
+            if (mouseDown || otherButton != -1) return;
+            if (popup.isOpen()) {
+                popup.close();
+                redraw = true;
+                swallowRelease = true;
+                otherButton = hostButton;
+                return;
+            }
+            otherButton = hostButton;
+            input.press(mouseX, mouseY, hostButton, UiInput.Host.NONE);
+            return;
+        }
+        if (otherButton != hostButton) return;
+        otherButton = -1;
+        if (swallowRelease) {
+            swallowRelease = false;
+            return;
+        }
+        input.release(mouseX, mouseY, hostButton, true, linkSink);
     }
 
     /** 同じ場所を続けて押した回数（500ms・4px 以内で積む）。 */
