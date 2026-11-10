@@ -52,7 +52,8 @@ final class ControlPainter {
         else if (box.node.attrs.containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.node.attrs.get("data-slice-y"));
         if (box.node.attrs.containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.node.attrs.get("auto-rotate"));
 
-        addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+        long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SCENE) : 0L;
+        addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
     }
 
     void drawMediaElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -84,8 +85,9 @@ final class ControlPainter {
             int thickness = border.maxThickness();
             String bData = thickness + ":" + border.bcTop() + "," + border.bcRight() + "," + border.bcBottom() + "," + border.bcLeft();
             CircleBorderSpec cbSpec = new CircleBorderSpec(thickness, border.bcTop(), border.bcRight(), border.bcBottom(), border.bcLeft());
+            long cbKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_BORDER) : 0L;
             addElement(elements, id, id + "_cb", ElementType.CIRCLE_BORDER, box.x, box.y, box.w, box.h, bData, 0, 0, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE,
-                    new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false));
+                    new RenderMeta(normalizedClip, radii, cbSpec, fontHVal, ox, oy, 1, false), cbKey);
         } else {
             decor.drawBorder(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
@@ -112,7 +114,8 @@ final class ControlPainter {
             if (imageEvents == mediaEvents) imageEvents = mediaEvents.copy();
             imageEvents.put("hit-alpha", hitAlpha.isBlank() ? "128" : hitAlpha.trim());
         }
-        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+        long mediaKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_MEDIA) : 0L;
+        addElement(elements, id, id + "_img", type, fitMode, innerX, innerY, innerW, innerH, src, color, bgColor, imageEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, mediaKey);
     }
 
     /** 動画デコーダで再生する GIF（パスが .gif の http(s) URL）。それ以外は従来どおり静止画。 */
@@ -137,8 +140,9 @@ final class ControlPainter {
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight());
         float innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
         String src = RasterPainting.svgSrc(box.node, innerW, innerH, ImageFitMode.FILL, innerW, innerH, color, decor.devicePixelRatio());
+        long svgKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_MEDIA) : 0L;
         addElement(elements, id, id + "_svg", ElementType.IMAGE, ImageFitMode.FILL, innerX, innerY, innerW, innerH, src, color, bgColor,
-                partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+                partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, svgKey);
     }
 
     void drawCanvasElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -157,7 +161,8 @@ final class ControlPainter {
         String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);
         if (position != null && !position.isBlank()) canvasEvents.put("object-position", position);
         ImageFitMode fitMode = ImageFitMode.fromString(box.style.getOrDefault(CssPropertyIndex.OBJECT_FIT, "fill"));
-        addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+        long canvasKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_CANVAS) : 0L;
+        addElement(elements, id, id + "_canvas", ElementType.CANVAS, fitMode, innerX, innerY, innerW, innerH, id, color, bgColor, canvasEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, canvasKey);
     }
 
     void drawTextareaElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor, int fallbackRadius,
@@ -174,11 +179,12 @@ final class ControlPainter {
         if (box.node.attrs.containsKey("data-syntax")) taEvents.put("data-syntax", box.node.attrs.get("data-syntax"));
         if (box.node.attrs.containsKey("data-line-numbers")) taEvents.put("data-line-numbers", box.node.attrs.get("data-line-numbers"));
 
+        long taKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_TEXTAREA) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, innerX, innerY, innerW, innerH, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, taKey);
         } else {
-            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            addElement(elements, id, id + "_textarea", ElementType.TEXTAREA, box.x, box.y, box.w, box.h, val, color, bgColor, taEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, taKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -192,11 +198,12 @@ final class ControlPainter {
         float innerX = box.x + border.bwLeft(), innerY = box.y + border.bwTop();
         float innerW = Math.max(0, box.w - border.bwLeft() - border.bwRight()), innerH = Math.max(0, box.h - border.bwTop() - border.bwBottom());
 
+        long selKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SELECT) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
-            addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+            addElement(elements, id, id + "_select", ElementType.SELECT, innerX, innerY, innerW, innerH, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, selKey);
         } else {
-            addElement(elements, id, id + "_select", ElementType.SELECT, box.x, box.y, box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            addElement(elements, id, id + "_select", ElementType.SELECT, box.x, box.y, box.w, box.h, displayLabel, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, selKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }
@@ -239,7 +246,8 @@ final class ControlPainter {
                     int placeholderColor = box.placeholderStyle != null
                             ? box.placeholderStyle.color(CssPropertyIndex.COLOR, DEFAULT_PLACEHOLDER_COLOR)
                             : DEFAULT_PLACEHOLDER_COLOR;
-                    addElement(elements, id, id + "_ph", ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
+                    long phKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PLACEHOLDER) : 0L;
+                    addElement(elements, id, id + "_ph", ElementType.TEXT, phX, innerY, innerW, innerH, placeholderText, placeholderColor, 0x00000000, phEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, phKey);
                 }
             }
         }
@@ -285,16 +293,18 @@ final class ControlPainter {
         int mark = radio ? strong : dark && !mixed ? NATIVE_DARK : NATIVE_WHITE;
         int fill = filled ? strong : radio && dark ? NATIVE_DARK : NATIVE_WHITE;
         // 印の部品が背景を塗り、印（点・チェック）を中身として描く。輪はその上に重ねる
+        long toggleKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), radio ? DisplayItem.PART_RADIO : DisplayItem.PART_CHECKBOX) : 0L;
         addElement(elements, id, id + "_input", radio ? ElementType.RADIO : ElementType.CHECKBOX, x, y, size, size, state,
                 mark, fill, partsEvents, radius,
-                1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+                1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, toggleKey);
         if (filled) return;
         int ring = radio ? strong : stateColor;
         RoundedBorderSpec spec = new RoundedBorderSpec(1f, 1f, 1f, 1f, ring, ring, ring, ring);
         RenderMeta ringMeta = new RenderMeta(baseMeta.clipRect(), corners, null,
                 baseMeta.fontHeight(), 0f, 0f, baseMeta.originX(), baseMeta.originY(), 1, false, spec);
+        long roundKey = box.node != null ? BoxDecorationPainter.decorationKey(box, BoxDecorationPainter.FRAG_PART_BASE, 0) : 0L;
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, x, y, size, size, "", 0, 0x00000000,
-                passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+                passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, roundKey);
     }
 
     /**
@@ -374,8 +384,9 @@ final class ControlPainter {
         RoundedBorderSpec trackBorder = track ? new RoundedBorderSpec(1f, 1f, 1f, 1f, edge, edge, edge, edge) : null;
         RenderMeta meta = new RenderMeta(baseMeta.clipRect(), null, null, baseMeta.fontHeight(), 0f, 0f,
                 baseMeta.originX(), baseMeta.originY(), 1, false, trackBorder);
+        long rangeKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_INPUT) : 0L;
         addElement(elements, id, id + "_input", ElementType.RANGE, box.x, box.y, box.w, box.h, rangeData, strong, fill,
-                partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+                partsEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, rangeKey);
     }
 
     /** 溝の色と枠の色（Chrome の実測: 枠は溝の上で #b2b2b2・値の上で #3b75ba になる 50% の #767676。暗い配色は溝の上で #858585）。 */
@@ -435,11 +446,15 @@ final class ControlPainter {
                                      ItemProps partsEvents, ItemProps innerEvents, ItemProps passiveBorderEvents,
                                      BorderSpec border, RenderMeta baseMeta, RenderMeta innerMeta, float rOff,
                                      int transDur, AnimationSpec colorBgAnim) {
+        int partOrd = "_input".equals(suffix) ? DisplayItem.PART_INPUT :
+                      "_textarea".equals(suffix) ? DisplayItem.PART_TEXTAREA :
+                      "_select".equals(suffix) ? DisplayItem.PART_SELECT : DisplayItem.PART_INPUT;
+        long ctrlKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), partOrd) : 0L;
         if (border.useRoundedBorder()) {
             decor.drawRoundedBorder(elements, id, box, passiveBorderEvents, border, baseMeta, transDur);
-            addElement(elements, id, id + suffix, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta);
+            addElement(elements, id, id + suffix, type, innerX, innerY, innerW, innerH, text, color, bgColor, innerEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, ctrlKey);
         } else {
-            addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+            addElement(elements, id, id + suffix, type, box.x, box.y, box.w, box.h, text, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, ctrlKey);
             if (border.hasBorder()) decor.drawStraightBorders(elements, id, box, rOff, passiveBorderEvents, border, baseMeta, transDur);
         }
     }

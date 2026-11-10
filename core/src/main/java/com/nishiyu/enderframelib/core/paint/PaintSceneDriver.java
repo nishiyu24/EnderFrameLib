@@ -347,6 +347,16 @@ public final class PaintSceneDriver {
         return frame;
     }
 
+    /** 走査中の、ノードハンドルと部品番号から項目を引く。 */
+    public DisplayItem item(int nodeHandle, int partOrdinal) {
+        return byId.get(DisplayItem.keyOf(nodeHandle, partOrdinal));
+    }
+
+    /** ノードハンドルと部品番号の項目の位置。無ければ -1。 */
+    public int indexOf(int nodeHandle, int partOrdinal) {
+        return indexOf.getOrDefault(DisplayItem.keyOf(nodeHandle, partOrdinal), -1);
+    }
+
     /** 走査中の、id から項目を引く。 */
     public DisplayItem itemById(String id) {
         return byId.get(DisplayItem.keyOf(id));
@@ -380,6 +390,7 @@ public final class PaintSceneDriver {
         // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
         // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
         if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items) && !patchIndexByDiff(items)) rebuildIndex(items);
+        this.byId = indexedById;
         if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
         prepared = true;
     }
@@ -708,7 +719,13 @@ public final class PaintSceneDriver {
         }
         for (int k = 0; k < count; k++) {
             int i = diffBuf[k];
-            indexedById.put(items.get(i).key(), items.get(i));
+            DisplayItem curItem = items.get(i);
+            long key = curItem.key();
+            indexedById.put(key, curItem);
+            if (curItem.id() != null && !curItem.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(curItem.id());
+                if (strKey != key) indexedById.put(strKey, curItem);
+            }
             states[i] = null;
             prevRes[i] = null;
             prevStatic[i] = false;
@@ -738,13 +755,24 @@ public final class PaintSceneDriver {
 
     private void rebuildIndex(List<DisplayItem> items) {
         Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(items.size() * 2);
-        for (DisplayItem it : items) map.put(it.key(), it);
+        for (DisplayItem it : items) {
+            map.put(it.key(), it);
+            if (it.id() != null && !it.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(it.id());
+                if (strKey != it.key()) map.putIfAbsent(strKey, it);
+            }
+        }
         indexedById = map;
         indexOf.clear();
         fxAnchors.clear();
         for (int i = 0; i < items.size(); i++) {
             DisplayItem it = items.get(i);
-            indexOf.put(it.key(), i);
+            long key = it.key();
+            indexOf.put(key, i);
+            if (it.id() != null && !it.id().isEmpty()) {
+                long strKey = DisplayItem.keyOf(it.id());
+                if (strKey != key) indexOf.putIfAbsent(strKey, i);
+            }
             if (it.type() == ElementType.NODE && hasFx(it.hints().layer())) fxAnchors.add(i);
         }
         indexedItems = items;

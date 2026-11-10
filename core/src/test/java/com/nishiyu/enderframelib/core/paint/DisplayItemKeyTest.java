@@ -123,4 +123,118 @@ class DisplayItemKeyTest {
             view.close();
         }
     }
+
+    @Test
+    void majorPartOrdinalsAreDistinctAndInReservedNamespace() {
+        int[] parts = {
+                DisplayItem.PART_NODE,
+                DisplayItem.PART_BG,
+                DisplayItem.PART_BORDER,
+                DisplayItem.PART_INPUT,
+                DisplayItem.PART_CHECKBOX,
+                DisplayItem.PART_RADIO,
+                DisplayItem.PART_SELECT,
+                DisplayItem.PART_TEXTAREA,
+                DisplayItem.PART_CANVAS,
+                DisplayItem.PART_SCENE,
+                DisplayItem.PART_MEDIA,
+                DisplayItem.PART_PLACEHOLDER,
+                DisplayItem.PART_SCROLLBAR_V,
+                DisplayItem.PART_SCROLLBAR_H,
+                DisplayItem.PART_BGL_BASE
+        };
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (int p : parts) {
+            assertTrue(p >= 0x7000 && p <= 0x7FFF, "主要部品番号は 0x7000〜0x7FFF の予約領域にある: 0x" + Integer.toHexString(p));
+            assertTrue(seen.add(p), "部品番号の重複なし: 0x" + Integer.toHexString(p));
+        }
+    }
+
+    @Test
+    void nodeAndBackgroundAndControlItemsUsePackedKeys() {
+        String html = "<div id=\"card\" style=\"width:100px;height:50px;background:#336699\">"
+                + "<input id=\"in\" type=\"text\" value=\"abc\">"
+                + "<input id=\"chk\" type=\"checkbox\" checked>"
+                + "<select id=\"sel\"><option value=\"1\">one</option></select>"
+                + "</div>";
+        com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
+                html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        try {
+            java.util.List<DisplayItem> items = view.items();
+            boolean foundNode = false, foundBg = false, foundInput = false, foundChk = false, foundSel = false;
+            for (DisplayItem it : items) {
+                int handle = DisplayItem.nodeHandleOf(it.key());
+                int part = DisplayItem.partOrdinalOf(it.key());
+                if (it.type() == ElementType.NODE && "card".equals(it.id())) {
+                    foundNode = true;
+                    assertTrue(handle > 0, "card NODE item has positive node handle");
+                    assertEquals(DisplayItem.PART_NODE, part, "card NODE has PART_NODE");
+                } else if ("card_bg".equals(it.id())) {
+                    foundBg = true;
+                    assertTrue(handle > 0, "card_bg item has positive node handle");
+                    assertEquals(DisplayItem.PART_BG, part, "card_bg has PART_BG");
+                } else if ("in_input".equals(it.id())) {
+                    foundInput = true;
+                    assertTrue(handle > 0, "in_input item has positive node handle");
+                    assertEquals(DisplayItem.PART_INPUT, part, "in_input has PART_INPUT");
+                } else if ("chk_input".equals(it.id())) {
+                    foundChk = true;
+                    assertTrue(handle > 0, "chk_input item has positive node handle");
+                    assertEquals(DisplayItem.PART_CHECKBOX, part, "chk_input has PART_CHECKBOX");
+                } else if ("sel_select".equals(it.id())) {
+                    foundSel = true;
+                    assertTrue(handle > 0, "sel_select item has positive node handle");
+                    assertEquals(DisplayItem.PART_SELECT, part, "sel_select has PART_SELECT");
+                }
+            }
+            assertTrue(foundNode, "card NODE item found");
+            assertTrue(foundBg, "card_bg item found");
+            assertTrue(foundInput, "in_input item found");
+            assertTrue(foundChk, "chk_input item found");
+            assertTrue(foundSel, "sel_select item found");
+
+            // PaintSceneDriver & HitTestIndex lookup test
+            HitTestIndex hitIdx = view.ui().hitTestIndex();
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode cardNode = view.root().getNodeById("card");
+            assertNotNull(cardNode);
+            int cardHandle = cardNode.nodeId();
+
+            // Lookup by handle & part
+            DisplayItem cardByHandle = hitIdx.getElementByHandle(cardHandle, DisplayItem.PART_NODE);
+            assertNotNull(cardByHandle, "HitTestIndex getElementByHandle finds card NODE");
+            assertEquals("card", cardByHandle.id());
+
+            DisplayItem cardBgByHandle = hitIdx.getElementByHandle(cardHandle, DisplayItem.PART_BG);
+            assertNotNull(cardBgByHandle, "HitTestIndex getElementByHandle finds card_bg");
+            assertEquals("card_bg", cardBgByHandle.id());
+
+            // Lookup by string ID (backward compatibility)
+            DisplayItem cardById = hitIdx.getElementById("card");
+            assertNotNull(cardById, "HitTestIndex getElementById finds card NODE");
+            assertSame(cardByHandle, cardById);
+
+            DisplayItem cardBgById = hitIdx.getElementById("card_bg");
+            assertNotNull(cardBgById, "HitTestIndex getElementById finds card_bg");
+            assertSame(cardBgByHandle, cardBgById);
+
+            // PaintSceneDriver direct test
+            PaintSceneDriver driver = new PaintSceneDriver("test_session");
+            driver.prepare(items, 1000, com.nishiyu.enderframelib.core.raster.Matrix2D.IDENTITY);
+
+            DisplayItem driverItemByHandle = driver.item(cardHandle, DisplayItem.PART_BG);
+            assertNotNull(driverItemByHandle, "PaintSceneDriver.item(handle, part) finds card_bg");
+            assertEquals("card_bg", driverItemByHandle.id());
+
+            DisplayItem driverItemById = driver.itemById("card_bg");
+            assertNotNull(driverItemById, "PaintSceneDriver.itemById('card_bg') finds card_bg");
+            assertSame(driverItemByHandle, driverItemById);
+
+            int indexByHandle = driver.indexOf(cardHandle, DisplayItem.PART_BG);
+            int indexById = driver.indexOf("card_bg");
+            assertTrue(indexByHandle >= 0, "indexOf(handle, part) >= 0");
+            assertEquals(indexByHandle, indexById, "index by handle and string ID match");
+        } finally {
+            view.close();
+        }
+    }
 }

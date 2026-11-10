@@ -68,6 +68,39 @@ public record DisplayItem(
         return (((long) nodeHandle) << 16) | (partOrdinal & 0xFFFFL);
     }
 
+    // ------------------------------------------------------------------ 部品番号領域（戦略 T2 / P0-3）
+    // 0x0000〜0x6FFF: テキスト断片（fragIds: 0〜28671）
+    // 0x7000〜0x7FFF: 主要部品（節自身・背景・枠線・フォーム・メディア・背景レイヤー）
+    // 0x8000〜0xBFFF: 装飾断片（インライン断片・枠線角丸: FRAG_PART_BASE = 0x8000）
+    // 0xC000〜0xDFFF: 外側の影（SHADOW_PART_BASE = 0xC000）
+    // 0xE000〜0xFFFF: 内側の影（INSET_SHADOW_PART_BASE = 0xE000）
+
+    public static final int PART_NODE = 0x7000;
+    public static final int PART_BG = 0x7001;
+    public static final int PART_BORDER = 0x7002;
+    public static final int PART_INPUT = 0x7003;
+    public static final int PART_CHECKBOX = 0x7004;
+    public static final int PART_RADIO = 0x7005;
+    public static final int PART_SELECT = 0x7006;
+    public static final int PART_TEXTAREA = 0x7007;
+    public static final int PART_CANVAS = 0x7008;
+    public static final int PART_SCENE = 0x7009;
+    public static final int PART_MEDIA = 0x700A;
+    public static final int PART_PLACEHOLDER = 0x700B;
+    public static final int PART_SCROLLBAR_V = 0x700C;
+    public static final int PART_SCROLLBAR_H = 0x700D;
+    public static final int PART_BGL_BASE = 0x7100;
+
+    /** 節自身（錨 NODE）の整数鍵。 */
+    public static long nodeKeyOf(int nodeHandle) {
+        return keyOf(nodeHandle, PART_NODE);
+    }
+
+    /** 節の背景矩形（_bg）の整数鍵。 */
+    public static long bgKeyOf(int nodeHandle) {
+        return keyOf(nodeHandle, PART_BG);
+    }
+
     /** 鍵から元のノードハンドルを復元する（{@link #keyOf(int, int)} でパックされた鍵のみ）。 */
     public static int nodeHandleOf(long key) {
         return (int) (key >>> 16);
