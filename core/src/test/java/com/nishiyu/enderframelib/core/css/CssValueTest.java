@@ -101,4 +101,52 @@ class CssValueTest {
         }
         assertTrue(after < before + 20000, "表が際限なく増えない: before=" + before + " after=" + after);
     }
+
+    /** 置き換え前の ComputedStyle.buildFacts の line-height 解釈（書き写し）。 */
+    private static float[] legacyLineHeight(String raw) {
+        String v = raw.trim();
+        if (v.isEmpty() || v.equalsIgnoreCase("normal")) return new float[]{ComputedStyle.LH_NORMAL, 0f};
+        try {
+            if (v.endsWith("px")) return new float[]{ComputedStyle.LH_PX, Float.parseFloat(v.substring(0, v.length() - 2).trim())};
+            if (v.endsWith("%")) return new float[]{ComputedStyle.LH_PERCENT, Float.parseFloat(v.substring(0, v.length() - 1).trim()) / 100f};
+            if (v.endsWith("em")) return new float[]{ComputedStyle.LH_EM, Float.parseFloat(v.substring(0, v.length() - 2).trim())};
+            return new float[]{ComputedStyle.LH_NUMBER, Float.parseFloat(v)};
+        } catch (NumberFormatException e) {
+            return new float[]{ComputedStyle.LH_NORMAL, 0f};
+        }
+    }
+
+    @Test
+    void lineHeightAndFontWeightMatchTheOldParsing() {
+        String[] fixed = {"normal", "NORMAL", "", " ", "20px", " 18px ", "150%", "1.5em", "1.4", "px", "abc", "-3px", "0", "NaN", "1e2", "calc(1px)"};
+        Random r = new Random(20261110);
+        for (int i = 0; i < 3000; i++) {
+            String raw = i < fixed.length ? fixed[i]
+                    : switch (r.nextInt(5)) {
+                case 0 -> (r.nextInt(400) - 50) / 4f + "px";
+                case 1 -> r.nextInt(300) + "%";
+                case 2 -> (r.nextInt(30) / 10f) + "em";
+                case 3 -> String.valueOf(r.nextFloat() * 3);
+                default -> "x" + r.nextInt(9);
+            };
+            CssValue v = CssValue.of(raw);
+            float[] expected = legacyLineHeight(raw);
+            assertEquals((byte) expected[0], v.lineHeightKind(), raw);
+            assertEquals(expected[1], v.lineHeightValue(), 0f, raw);
+            assertEquals(com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.numericWeight(raw), v.fontWeight(), raw);
+        }
+        assertEquals(400, CssValue.of("normal").fontWeight());
+        assertEquals(700, CssValue.of("bold").fontWeight());
+    }
+
+    @Test
+    void factsReadLineHeightAndWeightThroughTheValueObject() {
+        StyleFacts f = ComputedStyle.of(Map.of("line-height", "150%", "font-weight", "bold"), 16f, 16f).facts();
+        assertEquals(ComputedStyle.LH_PERCENT, f.lineHeightKind);
+        assertEquals(1.5f, f.lineHeightValue, 0f);
+        assertEquals(700, f.fontWeight);
+        StyleFacts none = ComputedStyle.of(Map.of(), 16f, 16f).facts();
+        assertEquals(ComputedStyle.LH_NORMAL, none.lineHeightKind);
+        assertEquals(400, none.fontWeight);
+    }
 }

@@ -183,6 +183,68 @@ final class CssValue {
         return h == 2;
     }
 
+    /** 0 = 未解析。解析済みは bit 40 が立ち、bit 32〜39 が {@code LH_*}、下位 32 bit が float。 */
+    private volatile long lineHeightBits;
+
+    /** {@code line-height} の種類（{@code ComputedStyle.LH_*}）。解釈できない値は normal。 */
+    byte lineHeightKind() {
+        return (byte) (lineHeightBits() >>> 32);
+    }
+
+    /** {@code line-height} の数値（px はそのまま、% は割合、em と数値は倍率）。normal は 0。 */
+    float lineHeightValue() {
+        return Float.intBitsToFloat((int) lineHeightBits());
+    }
+
+    private long lineHeightBits() {
+        long b = lineHeightBits;
+        if (b == 0) {
+            b = (1L << 40) | parseLineHeight(text);
+            lineHeightBits = b;
+        }
+        return b;
+    }
+
+    private static long parseLineHeight(String raw) {
+        String v = raw.trim();
+        byte kind = ComputedStyle.LH_NORMAL;
+        float value = 0f;
+        if (!v.isEmpty() && !v.equalsIgnoreCase("normal")) {
+            try {
+                if (v.endsWith("px")) {
+                    value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
+                    kind = ComputedStyle.LH_PX;
+                } else if (v.endsWith("%")) {
+                    value = Float.parseFloat(v.substring(0, v.length() - 1).trim()) / 100f;
+                    kind = ComputedStyle.LH_PERCENT;
+                } else if (v.endsWith("em")) {
+                    value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
+                    kind = ComputedStyle.LH_EM;
+                } else {
+                    value = Float.parseFloat(v);
+                    kind = ComputedStyle.LH_NUMBER;
+                }
+            } catch (NumberFormatException e) {
+                kind = ComputedStyle.LH_NORMAL;
+                value = 0f;
+            }
+        }
+        return ((long) (kind & 0xFF) << 32) | (Float.floatToRawIntBits(value) & 0xFFFFFFFFL);
+    }
+
+    /** 0 = 未解析、それ以外は {@code font-weight} の数値（1〜1000）。 */
+    private volatile int weight;
+
+    /** {@code font-weight} の数値。{@code LayoutMetrics.numericWeight(String)} と同じ結果。 */
+    int fontWeight() {
+        int w = weight;
+        if (w == 0) {
+            w = com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.numericWeight(text);
+            weight = w;
+        }
+        return w;
+    }
+
     /** {@code trim().toLowerCase()} した文字列（{@code keyword()} が返す正規化）。 */
     private volatile String lowered;
 
