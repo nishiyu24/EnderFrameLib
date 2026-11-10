@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
@@ -7,11 +8,11 @@ import com.nishiyu.enderframelib.core.css.model.Keyframes;
 import com.nishiyu.enderframelib.core.css.model.KeyframeBlock;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.CssSyntax;
-import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
+import com.nishiyu.enderframelib.core.css.model.EasingFunction;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
-import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;

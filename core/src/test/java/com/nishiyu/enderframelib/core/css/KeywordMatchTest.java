@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.text.model.WhiteSpace;

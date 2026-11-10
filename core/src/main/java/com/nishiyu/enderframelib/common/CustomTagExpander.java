@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.common;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.dom.node.TagMacro;
-import com.nishiyu.enderframelib.core.layout.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
 
 import java.util.HashMap;
 import java.util.List;

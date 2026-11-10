@@ -251,7 +251,7 @@ final class CssValue {
     int fontWeight() {
         int w = weight;
         if (w == 0) {
-            w = com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.numericWeight(text);
+            w = ValueKeywords.numericFontWeight(text);
             weight = w;
         }
         return w;

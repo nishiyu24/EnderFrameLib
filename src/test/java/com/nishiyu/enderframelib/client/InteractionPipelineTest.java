@@ -10,7 +10,7 @@ import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.text.model.TextSelection;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;

@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint.model;
+package com.nishiyu.enderframelib.core.css.model;
 
 import java.util.List;
 

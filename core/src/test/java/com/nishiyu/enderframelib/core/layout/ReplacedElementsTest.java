@@ -2,7 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.nishiyu.enderframelib.core.layout.ReplacedElements.Kind;
+import com.nishiyu.enderframelib.core.dom.ReplacedKind;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,7 +37,7 @@ class ReplacedElementsTest {
     @Test
     void hostCanRegisterItsOwnReplacedElement() {
         assertFalse(ReplacedElements.isReplacedTag("x-gauge"));
-        ReplacedElements.register("x-gauge", Kind.IMAGE_LIKE);
+        ReplacedElements.register("x-gauge", ReplacedKind.IMAGE_LIKE);
         assertTrue(ReplacedElements.isReplacedTag("x-gauge"));
         assertTrue(ReplacedElements.isHostImageLike("x-gauge"));
         ReplacedElements.resetToDefaults();
@@ -46,14 +46,14 @@ class ReplacedElementsTest {
 
     @Test
     void invalidRegistrationIsRejected() {
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("", Kind.SCENE));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register(null, Kind.SCENE));
-        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (Kind) null));
+        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("", ReplacedKind.SCENE));
+        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register(null, ReplacedKind.SCENE));
+        assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (ReplacedKind) null));
     }
 
     @Test
     void registeredTagBehavesAsInlineReplacedInLayout() {
-        ReplacedElements.register("x-gauge", Kind.IMAGE_LIKE);
+        ReplacedElements.register("x-gauge", ReplacedKind.IMAGE_LIKE);
         var node = new com.nishiyu.enderframelib.core.dom.node.HtmlNode("x-gauge");
         var style = new com.nishiyu.enderframelib.core.css.ComputedStyle(java.util.Map.of());
         assertEquals(LayoutBox.Display.INLINE, LayoutBox.Display.of(node, style));

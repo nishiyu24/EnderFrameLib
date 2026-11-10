@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.regex.Pattern;
-import com.nishiyu.enderframelib.core.paint.*;
+
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;

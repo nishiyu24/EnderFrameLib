@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import com.nishiyu.enderframelib.core.paint.*;
+
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;

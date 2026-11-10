@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.content;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser.VoidElements;
-import com.nishiyu.enderframelib.core.layout.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
 import com.nishiyu.enderframelib.core.layout.ReplacedElements;
 import java.util.Map;
 import java.util.ServiceLoader;

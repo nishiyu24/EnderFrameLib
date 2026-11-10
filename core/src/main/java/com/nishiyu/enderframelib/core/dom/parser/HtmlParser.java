@@ -1470,8 +1470,8 @@ public class HtmlParser {
 
         private static Set<String> loadHost() {
             Set<String> m = new java.util.HashSet<>();
-            for (var p : java.util.ServiceLoader.load(com.nishiyu.enderframelib.core.layout.HostElementProvider.class,
-                    com.nishiyu.enderframelib.core.layout.HostElementProvider.class.getClassLoader())) {
+            for (var p : java.util.ServiceLoader.load(com.nishiyu.enderframelib.core.dom.HostElementProvider.class,
+                    com.nishiyu.enderframelib.core.dom.HostElementProvider.class.getClassLoader())) {
                 for (String t : p.voidElements()) m.add(t.toLowerCase(java.util.Locale.ROOT));
             }
             return Set.copyOf(m);

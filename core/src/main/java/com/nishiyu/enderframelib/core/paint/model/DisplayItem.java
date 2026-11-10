@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.model;
 
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;

@@ -985,7 +985,7 @@ public final class ComputedStyle {
         if (value == null) return false;
         String v = value.trim().toLowerCase(java.util.Locale.ROOT);
         return !v.isEmpty() && !v.equals("auto") && !v.contains("%")
-                && !com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(v);
+                && !ValueKeywords.isIntrinsicSizeKeyword(v);
     }
 
     private Overflow computeOverflowAxis(String property, int shorthandIndex) {

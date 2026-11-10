@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.layout;
+package com.nishiyu.enderframelib.core.dom;
 
 import java.util.Map;
 
@@ -12,7 +12,7 @@ import java.util.Map;
 public interface CustomElementPainter {
 
     /** 置換要素の性質（採寸・描画の経路を決める）。 */
-    ReplacedElements.Kind kind();
+    ReplacedKind kind();
 
     /**
      * 画像として描くときの参照先を決める。{@code src} は {@code src} スタイル／属性から求めた既定値。
@@ -22,12 +22,12 @@ public interface CustomElementPainter {
         return src;
     }
 
-    /** {@link ReplacedElements.Kind#SCENE} の最小幅（CSS px）。 */
+    /** {@link ReplacedKind#SCENE} の最小幅（CSS px）。 */
     default int sceneMinWidth() {
         return 64;
     }
 
-    /** {@link ReplacedElements.Kind#SCENE} の既定の高さ（CSS px、内容高さの分は含まない）。 */
+    /** {@link ReplacedKind#SCENE} の既定の高さ（CSS px、内容高さの分は含まない）。 */
     default int sceneHeight() {
         return 120;
     }

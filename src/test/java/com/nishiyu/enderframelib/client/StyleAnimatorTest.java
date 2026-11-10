@@ -4,7 +4,7 @@ import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.common.Document;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
 import com.nishiyu.enderframelib.core.css.AnimationParser;
-import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
+import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
 import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.ValueInterpolator;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -96,10 +96,10 @@ public class StyleAnimatorTest {
 
     @Test
     public void progressFollowsDelayIterationDirectionAndFill() {
-        var normal = com.nishiyu.enderframelib.core.paint.model.AnimationSpec.Direction.NORMAL;
-        var alternate = com.nishiyu.enderframelib.core.paint.model.AnimationSpec.Direction.ALTERNATE;
-        var none = com.nishiyu.enderframelib.core.paint.model.AnimationSpec.FillMode.NONE;
-        var both = com.nishiyu.enderframelib.core.paint.model.AnimationSpec.FillMode.BOTH;
+        var normal = com.nishiyu.enderframelib.core.css.model.AnimationSpec.Direction.NORMAL;
+        var alternate = com.nishiyu.enderframelib.core.css.model.AnimationSpec.Direction.ALTERNATE;
+        var none = com.nishiyu.enderframelib.core.css.model.AnimationSpec.FillMode.NONE;
+        var both = com.nishiyu.enderframelib.core.css.model.AnimationSpec.FillMode.BOTH;
         assertTrue(Float.isNaN(AnimationTiming.progressPct(1000, 500, 1f, normal, none, 100)));
         assertEquals(0f, AnimationTiming.progressPct(1000, 500, 1f, normal, both, 100));
         assertEquals(50f, AnimationTiming.progressPct(1000, 500, 1f, normal, none, 1000));
