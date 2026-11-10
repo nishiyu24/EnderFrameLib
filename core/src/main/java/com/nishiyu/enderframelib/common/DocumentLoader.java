@@ -231,9 +231,8 @@ public class DocumentLoader {
         if (html != null) {
             html = resolveIncludes(html, 0);
             html = MarkdownParser.processDocumentOrBlocks(html);
-            if (html.length() > 131072) html = html.substring(0, 131072);
+            // 長さでの黙った切り捨ては行わない（タグ途中で切れて欠落する）。上限は ParseLimits（トークン数・深さ）に一本化する。
         }
-        if (externalCss != null && externalCss.length() > 65536) externalCss = externalCss.substring(0, 65536);
 
         HtmlNode htmlRoot = HtmlParser.parseDocument(html == null ? "" : html);
         CustomTagExpander.expand(htmlRoot);

@@ -380,6 +380,34 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 項目
 
+    /** 照合・切り分け用: false なら、クリップの外にある項目も塗りの経路へ渡す（結果の画素は同じはず）。 */
+    static volatile boolean cullOffscreen = !Boolean.getBoolean("enderframe.soft.nocull");
+    /** 項目の塗りを、クリップの範囲に掛からないために省いた数（累計。診断・テスト用）。 */
+    private long culledItems;
+
+    long culledItems() { return culledItems; }
+
+    /** 文字・影の広がり（箱の外へはみ出す分）の余白（デバイス画素）。 */
+    private static final float CULL_PAD = 128f;
+
+    /**
+     * 項目の箱を姿勢で写した範囲が、クリップの外接（保持する層へ記録中でない通常の描画）に全く掛からないか。掛からない項目は何も塗らない。
+     * 文字はあふれて箱の外へ出うるので、横方向は見ず、縦方向だけを余白つきで見る（箱の縦のはみ出しは行の高さ程度）。
+     * 影の部品の矩形は、ぼかしが消える所までの広さを既に含む。シーン（3D）は箱の外へ描きうるので省かない。
+     */
+    private boolean outsideClip(DisplayItem el, Matrix2D pose, Clip clip) {
+        ElementType type = el.type();
+        if (type == ElementType.SCENE || type == ElementType.NODE) return false;
+        if (!pose.isFinite()) return false;
+        double[] b = deviceBounds(pose, el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), boundsScratch);
+        double pad = CULL_PAD + el.height();
+        if (b[3] + pad < clip.y0() || b[1] - pad > clip.y1()) return true;
+        boolean overflowsSideways = (el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT
+                || type == ElementType.SELECT || type == ElementType.TEXTAREA;
+        if (overflowsSideways) return false;
+        return b[2] + CULL_PAD < clip.x0() || b[0] - CULL_PAD > clip.x1();
+    }
+
     private void drawItem(DisplayItem el, int index, float flat) {
         if (clipGeneration != driver.generation()) {
             if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
@@ -392,6 +420,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         AnimatedValues anim = res.anim();
         Clip clip = buildClip(index, el, anim);
         if (clip.empty()) return;
+        if (cullOffscreen && recordOwner == null && outsideClip(el, res.pose(), clip)) {
+            culledItems++;
+            return;
+        }
 
         float[][] radii = radii(el, anim);
         float[] rx = radii[0], ry = radii[1];
