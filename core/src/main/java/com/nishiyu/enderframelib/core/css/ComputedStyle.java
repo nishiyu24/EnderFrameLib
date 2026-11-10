@@ -857,34 +857,12 @@ public final class ComputedStyle {
     }
 
     private StyleFacts buildFacts() {
-        String raw = get(CssProperty.LINE_HEIGHT);
-        byte kind = LH_NORMAL;
-        float value = 0f;
-        if (raw != null) {
-            String v = raw.trim();
-            if (!v.isEmpty() && !v.equalsIgnoreCase("normal")) {
-                try {
-                    if (v.endsWith("px")) {
-                        value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
-                        kind = LH_PX;
-                    } else if (v.endsWith("%")) {
-                        value = Float.parseFloat(v.substring(0, v.length() - 1).trim()) / 100f;
-                        kind = LH_PERCENT;
-                    } else if (v.endsWith("em")) {
-                        value = Float.parseFloat(v.substring(0, v.length() - 2).trim());
-                        kind = LH_EM;
-                    } else {
-                        value = Float.parseFloat(v);
-                        kind = LH_NUMBER;
-                    }
-                } catch (NumberFormatException e) {
-                    kind = LH_NORMAL;
-                }
-            }
-        }
+        // line-height / font-weight は値オブジェクトに覚えた解析結果を引く（同じ文字列なら全スタイルで 1 回だけ解析）
+        CssValue lh = values[idOf(CssProperty.LINE_HEIGHT)];
+        CssValue fw = values[idOf(CssProperty.FONT_WEIGHT)];
         StyleFacts built = new StyleFacts(computeOverflowAxis(CssProperty.OVERFLOW_X, 0), computeOverflowAxis(CssProperty.OVERFLOW_Y, 1),
-                com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.numericWeight(get(CssProperty.FONT_WEIGHT)),
-                kind, value,
+                fw == null ? 400 : fw.fontWeight(),
+                lh == null ? LH_NORMAL : lh.lineHeightKind(), lh == null ? 0f : lh.lineHeightValue(),
                 (containment() & (CONTAIN_SIZE | CONTAIN_INLINE_SIZE)) != 0
                         || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsInlineSize(),
                 (containment() & CONTAIN_SIZE) != 0
