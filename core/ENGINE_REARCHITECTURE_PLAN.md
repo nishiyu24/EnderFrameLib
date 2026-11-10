@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-10（**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統のうち 7 系統を解消・残り 4 系統（6 件）を凍結（P0 の一部を実装済み）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
+> **最終更新**: 2026-11-10（**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統を全て解消（`KNOWN_UPWARD` = 空集合。P0「参照モデルによる崩壊防止」完了）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -76,7 +76,7 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
 - **外向き禁止**: `core.*` は `common` / `client` / `server` を参照できず、`api` は DOM・イベントの契約型（`api.dom` / `api.event`）のみ参照可（`coreNeverDependsOutward`）。
 - **検査器自身の検証**: 上向きの `import`・ワイルドカード・FQN の検出、下向き/同層/コメントの非検出、層割り当て表の 5 テストで偽陰性を防ぐ。
 
-**実装前の実測は 29 件の `import` ＋ 完全修飾名 3 箇所（計 6 系統）。今回の作業で 5 系統を実際に解消し、2 系統は層の定義で解消、残り 4 系統（6 件）を `KNOWN_UPWARD` に凍結した。**
+**実装前の実測は 29 件の `import` ＋ 完全修飾名 3 箇所（計 11 系統）。9 系統を実際に解消し、2 系統は層の定義で解消した。`KNOWN_UPWARD` は空集合で、以後の新規逆方向参照はビルドで即失敗する。**
 
 | 逆方向参照の向き | 状態 | 実施内容 / 残件と解消策 |
 | :--- | :---: | :--- |
@@ -87,10 +87,10 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
 | **L4 (`layout`) $	o$ L5 (`paint`)**（未使用ワイルドカード） | ✅ 解消 | 8 ファイルの未使用 `import core.paint.*;` を削除 |
 | **L1 (`kernel/compiler`) $	o$ L3** | ✅ 解消（定義で） | `kernel/compiler` は CSS/DOM を保持するため L3 と定義（逆参照 0） |
 | **L2 (`raster/svg`) $	o$ L3 (`dom`, `css`)** | ✅ 解消（定義で） | SVG は DOM を解析して描くため `raster/svg` を L3 と定義（`raster` 本体からの参照は 0、利用側は layout/paint のみ） |
-| **L2 (`raster`) $	o$ L3**: `CanvasRenderingContext2D` → `css.ColorParser` | ⏳ 凍結 | 色解析を L1/L2 へ下ろす（`ColorParser` は css・paint・テストの 20 箇所超から参照される） |
-| **L2 (`text/font`) $	o$ L4/L5**: `FontFaceRules` → `LayoutMetrics` / `DisplayItem` | ⏳ 凍結 | `fontStyleFor(DisplayItem, …)` を上位（paint）へ移す |
-| **L3 (`dom`) $	o$ L6**: `Bindings` → `EngineContext` | ⏳ 凍結（新規発見） | i18n 解決器・JSON 解析器を引数（または L3 の小さな SPI）で受ける。旧版は「違反 0」と書いていたが実際は 1 件あった |
-| **L4 (`layout`) $	o$ L5**: `BoxMeasurer` → `ImageChoice` / `ImageSources` | ⏳ 凍結 | 画像寸法の取得を L2/L4 の窓口へ分離する |
+| **L2 (`raster`) $	o$ L3**: `CanvasRenderingContext2D` → `css.ColorParser` | ✅ 解消 | L2 に SPI [`ColorSyntax`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/raster/ColorSyntax.java)（`ServiceLoader`）を新設し、L3 の `CssColorSyntax` が `ColorParser` へ委譲（`META-INF/services` 登録。`ColorParser` 自体は 20 箇所超から参照されるため移設しない） |
+| **L2 (`text/font`) $	o$ L4/L5**: `FontFaceRules` → `LayoutMetrics` / `DisplayItem` | ✅ 解消 | `fontStyleFor(DisplayItem, …)` を L5 の [`DisplayItemFonts`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayItemFonts.java) へ移し、太さの解析は L3 `ValueKeywords` を使用（`WebFontManager` を新所在へ更新） |
+| **L3 (`dom`) $	o$ L6**: `Bindings` → `EngineContext` | ✅ 解消 | L3 に SPI [`BindingHooks`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/BindingHooks.java)（翻訳・JSON 解析）を定義し、L6 の `EngineContext` が実装して静的初期化で供給元を設置。スレッドスコープの文脈切替（`callWith`）はそのまま効く。ホスト向けの公開フィールド（`EngineContext.global().i18nResolver` 等）は不変 |
+| **L4 (`layout`) $	o$ L5**: `BoxMeasurer` → `ImageChoice` / `ImageSources` | ✅ 解消 | 依存のない純粋ロジックなので `core.paint` → L2 の `core.media` へ移設（paint 側は import を更新） |
 
 ---
 
@@ -139,7 +139,7 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
 | **M5: Zero-Allocation Tile CPU Fallback** | [`AllocationRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/AllocationRatchetTest.java), [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java) | ✅ **完全達成** | 64×64 タイル並列 `TileQueue`、`OpPool` ゼロ確保、`Fast.div255` |
 | **Wave 1: 公開 API・ホスト分離・並行書体・脱 static** | [`ApiBoundaryTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/ApiBoundaryTest.java), [`HostElementProviderTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/HostElementProviderTest.java), [`EngineContextTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextTest.java), [`LoadedFaceConcurrencyTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/text/font/LoadedFaceConcurrencyTest.java) | ✅ **完全達成** | `EnderEngine` / `WebViewSurface` 公開 API、`core/src/main` から `mc-*` 完全撤去、`EngineContext` スレッドスコープ化、`LoadedFace` 面単位ロック + 専用 `FT_Library` |
 | **Portability Ratchet (LWJGL/AWT 隔離)** | [`PortabilityRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/PortabilityRatchetTest.java) | ✅ **完全達成** | プラットフォーム依存を `gl` 5 + `LoadedFace` + `AwtImageDecoder` の計 7 ファイルのみに固定 |
-| **Layer Ratchet (7 層単方向 DAG)** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) | 🔧 **固定済み（凍結 6 件）** | import＋完全修飾名を走査し下位→上位参照を検出、既知 6 件のみ許容（増加も未更新の解消も失敗）。`core` から `common`/`client`/`server` への外向き参照 0 |
+| **Layer Ratchet (7 層単方向 DAG)** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) | ✅ **完全達成（逆方向参照 0）** | import＋完全修飾名を走査し下位→上位参照を検出、`KNOWN_UPWARD` は空集合。継ぎ目の挙動は [`LayerInversionSeamsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerInversionSeamsTest.java) が固定。`core` から `common`/`client`/`server` への外向き参照 0 |
 
 ---
 
@@ -616,7 +616,7 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 | :--- | :---: | :--- | :--- |
 | **Milestone 1〜5** | ✅ **完了** | オフヒープ DOM・状態オートマトン・増分レイアウト・GPU Uber-Shader・タイル並列 CPU ラスタ | `:hover` **`0.0069 ms`（Chrome の 49 倍高速）**、`scroll` `0.002 ms / 0 B` |
 | **Wave 0 & Wave 1** | ✅ **完了** | 公開 API (`EnderEngine`/`WebViewSurface`)・脱 `mc-*` SPI・脱 `static` (`EngineContext`)・`CssPropertyIndex` & `CssValue[]`・`LoadedFace` 並列化・GL 差分走査・測定半減 | `fullLayoutWarm` **`0.986 ms`**、`showcase` 規模で Chrome 同等以上、単体汎用 JAR として完全自立 |
-| **Wave 1 基盤: 7 層参照モデルラチェット（§1.3）** | 🔧 **一部完了（2026-11-10）** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) で L1〜L6 の単方向性を固定。逆方向参照 11 系統のうち 7 系統を解消し、残り 4 系統（6 件: `CanvasRenderingContext2D`→`ColorParser`、`FontFaceRules`、`Bindings`→`EngineContext`、`BoxMeasurer`→`ImageChoice/ImageSources`）を `KNOWN_UPWARD` に凍結 | `KNOWN_UPWARD` を空集合にする（Wave 1.5 以降の機能追加と並行して 1 件ずつ解消）。以後の新規逆方向参照はビルドで即失敗 |
+| **Wave 1 基盤: 7 層参照モデルラチェット（§1.3）** | ✅ **完了（2026-11-10）** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) で L1〜L6 の単方向性を固定。逆方向参照 11 系統を全て解消し `KNOWN_UPWARD` を空集合化（SPI 3 本 `BindingHooks`/`ColorSyntax`＋移設 `media.ImageSources`/`paint.DisplayItemFonts`） | 完了。以後は新規逆方向参照がビルドで即失敗するため、Wave 1.5 以降の機能追加はこの層規則の内側で行う（新規 SPI を足す場合も下位層が定義し上位層が実装する） |
 | **Wave 1.5 (P0 & P1: 戦略 T1〜T6)** | 🎯 **進行中（①・②a 完了）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8）<br/>② 🔧 空間カリング（T1: ペインタ段 `outsideClip` 完了で CPU −55%。次は `SCROLL_NODE` 区間カリング）+ 項目単位の保持 GPU 記録（T3）<br/>③ Segmented DisplayList スライス保持 + `keyOf` 整数化（T2: W2・W4・W6 解消）<br/>④ CPU Tile Dirty Bitset + Scroll Blit（T4: W3 解消）<br/>⑤ 4-Way 測定キャッシュ + `place` 制約スキップ（T5: W5 解消）<br/>⑥ DOM 雛形クローン + 文書横断 `ShareCache`（T6: W7 解消）** | ・2,000 行画面外 `hover` GL **`< 0.25〜0.7 ms`**（現 `13.1`、Chrome `0.55` を凌駕）<br/>・2,000 行 `child` **`< 0.5〜1.5 ms`**（現 `25.6`、Chrome `1.09` を凌駕）<br/>・CPU `hover` **`< 0.3〜0.8 ms`**（現 `4.4`、Chrome CPU `1.55`・Swing `0.64` を逆転）<br/>・showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.93`、Chrome `0.084` 同等）<br/>・フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
 | **Wave 2 (P2: 戦略 T7-③)** | 📋 **設計完了** | Three.js 型 3D シーングラフ統合（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)） | HTML/CSS と 3D メッシュ・ライト・レイキャストの単一パス・ゼロコピー融合（ブラウザ Three.js では不可能な領域） |
 | **Wave 3 (P3: 戦略 T7-①)** | 📋 **計画中** | IME Composition・Top Layer (`<dialog>`/`popover`) & Anchor Positioning・`content-visibility: auto` + `FenwickVirtualList` 10 万行仮想化・`subgrid`・縦書き | 20,000〜100,000 行リスト **`< 0.2〜0.5 ms`**（Chrome 20,000 行 `117 ms` の **200 倍以上高速**）、日本語デスクトップ UI 完全対応 |

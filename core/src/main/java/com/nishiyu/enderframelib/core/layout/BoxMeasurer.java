@@ -16,8 +16,8 @@ import com.nishiyu.enderframelib.core.layout.LayoutBox.SizingMode;
 import com.nishiyu.enderframelib.core.layout.model.ConstraintSpace;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
-import com.nishiyu.enderframelib.core.paint.ImageChoice;
-import com.nishiyu.enderframelib.core.paint.ImageSources;
+import com.nishiyu.enderframelib.core.media.ImageChoice;
+import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.raster.svg.SvgSize;
 

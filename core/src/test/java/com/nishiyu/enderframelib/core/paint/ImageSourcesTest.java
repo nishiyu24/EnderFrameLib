@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
+import com.nishiyu.enderframelib.core.media.ImageChoice;
+import com.nishiyu.enderframelib.core.media.ImageSources;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

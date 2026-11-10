@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.paint;
+package com.nishiyu.enderframelib.core.media;
 
 import java.util.ArrayList;
 import java.util.List;

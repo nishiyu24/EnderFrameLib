@@ -45,21 +45,11 @@ class LayerDependencyRatchetTest {
     };
 
     /**
-     * 既知の逆方向参照（ファイル → 参照先の型）。解消策は計画書 §1.3。
-     * <ul>
-     *   <li>L2→L3 {@code CanvasRenderingContext2D → ColorParser}: 色解析を L1/L2 へ</li>
-     *   <li>L2→L4/L5 {@code FontFaceRules → LayoutMetrics / DisplayItem}: CSS・Paint 依存メソッドを上位へ</li>
-     *   <li>L3→L6 {@code Bindings → EngineContext}: i18n・JSON 解析器を引数で受ける</li>
-     *   <li>L4→L5 {@code BoxMeasurer → ImageChoice / ImageSources}: 画像寸法の取得を L2/L4 の窓口へ</li>
-     * </ul>
+     * 既知の逆方向参照（ファイル → 参照先の型）。解消したら外すこと。2026-11-10 時点で全て解消済み（空集合）。
+     * 逆転の手段: SPI（{@code dom.BindingHooks}・{@code raster.ColorSyntax}）、型の下層への移設（{@code media.ImageSources}）、
+     * 上位層へのメソッド移設（{@code paint.DisplayItemFonts}）。
      */
-    private static final Set<String> KNOWN_UPWARD = Set.of(
-            "core/raster/CanvasRenderingContext2D.java -> core.css.ColorParser",
-            "core/text/font/FontFaceRules.java -> core.layout.model.LayoutMetrics",
-            "core/text/font/FontFaceRules.java -> core.paint.model.DisplayItem",
-            "core/dom/Bindings.java -> core.EngineContext",
-            "core/layout/BoxMeasurer.java -> core.paint.ImageChoice",
-            "core/layout/BoxMeasurer.java -> core.paint.ImageSources");
+    private static final Set<String> KNOWN_UPWARD = Set.of();
 
     private static final Pattern IMPORT = Pattern.compile("^\\s*import\\s+(static\\s+)?(" + Pattern.quote(BASE) + "[\\w.]+?)(\\.\\*)?;", Pattern.MULTILINE);
     private static final Pattern FQN = Pattern.compile(Pattern.quote(BASE) + "([a-z][\\w]*(?:\\.[a-z][\\w]*)*)(?:\\.([A-Z]\\w*))?");

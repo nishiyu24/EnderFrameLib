@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.dom;
 
-import com.nishiyu.enderframelib.core.EngineContext;
 
 import com.nishiyu.enderframelib.core.dom.node.*;
 import com.nishiyu.enderframelib.core.dom.node.HtmlDocument.HtmlDocumentFragment;
@@ -106,16 +105,16 @@ public final class Bindings {
             if (expr.startsWith("i18n:") || expr.startsWith("@i18n:")) {
                 List<String> parts = splitI18n(expr.substring(expr.indexOf(':') + 1));
                 if (parts.size() == 1) {
-                    replacement = EngineContext.current().i18nResolver.apply(parts.get(0));
+                    replacement = BindingHooks.current().i18nResolver().apply(parts.get(0));
                 } else {
                     Object[] args = new Object[parts.size() - 1];
                     for (int i = 1; i < parts.size(); i++) args[i - 1] = i18nArg(parts.get(i), data);
-                    replacement = EngineContext.current().i18nFormatter.apply(parts.get(0), args);
+                    replacement = BindingHooks.current().i18nFormatter().apply(parts.get(0), args);
                 }
             } else if (expr.contains("|") && expr.toLowerCase(Locale.ROOT).endsWith("i18n")) {
                 String rawKey = expr.substring(0, expr.indexOf('|')).trim().replaceAll("^['\"]+|['\"]+$", "");
                 String resolvedKey = data != null ? data.getOrDefault(rawKey, rawKey) : rawKey;
-                replacement = EngineContext.current().i18nResolver.apply(resolvedKey);
+                replacement = BindingHooks.current().i18nResolver().apply(resolvedKey);
             } else if (expr.startsWith("@")) {
                 if (env != null && env.containsKey(expr)) {
                     replacement = env.get(expr);
@@ -148,7 +147,7 @@ public final class Bindings {
         if (vNode.attrs.containsKey("data-i18n")) {
             String key = vNode.attrs.get("data-i18n").trim();
             if (!key.isEmpty()) {
-                String tr = EngineContext.current().i18nResolver.apply(key);
+                String tr = BindingHooks.current().i18nResolver().apply(key);
                 if (!Objects.equals(vNode.getTextContent(), tr)) {
                     vNode.updateTextContent(tr);
                     changed = true;
@@ -156,14 +155,14 @@ public final class Bindings {
             }
         }
         if (vNode.attrs.containsKey("data-i18n-placeholder")) {
-            String tr = EngineContext.current().i18nResolver.apply(vNode.attrs.get("data-i18n-placeholder").trim());
+            String tr = BindingHooks.current().i18nResolver().apply(vNode.attrs.get("data-i18n-placeholder").trim());
             if (!Objects.equals(vNode.attrs.get("placeholder"), tr)) {
                 vNode.setAttribute("placeholder", tr);
                 changed = true;
             }
         }
         if (vNode.attrs.containsKey("data-i18n-title")) {
-            String tr = EngineContext.current().i18nResolver.apply(vNode.attrs.get("data-i18n-title").trim());
+            String tr = BindingHooks.current().i18nResolver().apply(vNode.attrs.get("data-i18n-title").trim());
             if (!Objects.equals(vNode.attrs.get("title"), tr)) {
                 vNode.setAttribute("title", tr);
                 changed = true;
@@ -544,9 +543,9 @@ public final class Bindings {
             List<HtmlNode> templateChildren = extractTemplateChildren(node);
             node.children.clear();
 
-            if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.contains("{{") && EngineContext.current().jsonListParser != null) {
+            if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.contains("{{") && BindingHooks.current().jsonListParser() != null) {
                 try {
-                    List<Map<String, String>> parsedItems = EngineContext.current().jsonListParser.apply(jsonStr);
+                    List<Map<String, String>> parsedItems = BindingHooks.current().jsonListParser().apply(jsonStr);
                     if (parsedItems != null) {
                         for (Map<String, String> itemMap : parsedItems) {
                             Map<String, String> localData = new HashMap<>(data);

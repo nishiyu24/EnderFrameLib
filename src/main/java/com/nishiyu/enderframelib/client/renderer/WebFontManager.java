@@ -269,7 +269,7 @@ public class WebFontManager {
     }
 
     public static FontStyle fontStyleFor(DisplayItem el, float fontSizePx) {
-        return FontFaceRules.fontStyleFor(el, fontSizePx);
+        return com.nishiyu.enderframelib.core.paint.DisplayItemFonts.fontStyleFor(el, fontSizePx);
     }
 
     /**
