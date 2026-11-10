@@ -457,10 +457,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
         int w, h;
         /** 作ったときの世代と、クリップの元（{@link ClipRect} の同一インスタンス。動くクリップは null）。 */
         long generation;
+        /** 作ったときの項目の版（{@link PaintSceneDriver#itemVersion}）。世代が同じでも、差し替わった項目の結果は使わない。 */
+        int version;
         Object source;
         /** 持ち主の id があるのに見つからなかった（後から現れると結果が変わるので世代をまたいで使い回さない）。 */
         boolean unresolvedOwner;
     }
+
 
     private Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
         ClipEntry ce = clipCache[index];
@@ -469,7 +472,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
         // 項目の並びが変わった世代をまたぐときは、元の ClipRect が同一インスタンスのものだけ使い回す（添字が同じでも別の項目かもしれない）
         boolean recording = recordOwner != null; // 保持する層へ記録中は、コンテナの切り取りを外すので使い回しの覚えを使わない
         if (!recording && ce != null && ce.w == raster.targetWidth() && ce.h == raster.targetHeight()
-                && (ce.generation == clipGeneration || (source != null && ce.source == source && !ce.unresolvedOwner))) {
+                && ((ce.generation == clipGeneration && ce.version == driver.itemVersion(index))
+                        || (source != null && ce.source == source && !ce.unresolvedOwner))) {
             boolean same = true;
             for (int k = 0; k < ce.owner.length && same; k++) {
                 same = (ce.owner[k] < 0 ? null : driver.resolveAt(ce.owner[k])) == ce.ownerRes[k];
@@ -497,6 +501,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ce.owner = new int[owners.size()];
         for (int k = 0; k < ce.owner.length; k++) ce.owner[k] = owners.get(k);
         ce.generation = clipGeneration;
+        ce.version = driver.itemVersion(index);
         ce.source = source;
         ce.unresolvedOwner = sawUnresolvedOwner;
         ce.ownerRes = ownerRes.toArray(new Resolved[0]);

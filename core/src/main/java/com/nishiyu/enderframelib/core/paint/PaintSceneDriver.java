@@ -124,6 +124,16 @@ public final class PaintSceneDriver {
     private Resolved[] curRes = new Resolved[0], prevRes = new Resolved[0], prevParentRes = new Resolved[0];
     private boolean[] prevStatic = new boolean[0], prevIdle = new boolean[0], visiting = new boolean[0];
     private CssAnimator.AnimState[] states = new CssAnimator.AnimState[0];
+    /**
+     * 項目ごとの版。{@link #patchIndexByDiff} が差し替えた位置だけ増える（索引を作り直すと 0 に戻る）。
+     * 項目の添字で引く外部のキャッシュ（クリップ）が、世代が同じまま差し替わった項目の古い結果を返さないための印。
+     */
+    private int[] itemVersion = new int[0];
+    /** 切り分け用: false なら、一般のリストの変化は常に索引の作り直しにする（従来の動き）。 */
+    public static volatile boolean patchDiffIndex = !Boolean.getBoolean("enderframe.paint.nodiffpatch");
+    /** 差のある位置の数がこれを超える（項目数に対する割合）なら、差分の更新より作り直しの方が安い。 */
+    private static final int PATCH_MAX_DIFF_DIVISOR = 4;
+    private int[] diffBuf = new int[64];
     /** 索引（{@link #indexedById}・{@link #indexOf}・{@link #fxAnchors}）を作った時のリスト。 */
     private List<DisplayItem> indexedItems;
     private Long2ObjectOpenHashMap<DisplayItem> indexedById = new Long2ObjectOpenHashMap<>();
@@ -141,6 +151,11 @@ public final class PaintSceneDriver {
     /** 項目の索引を作り直すたび（リストが変わったとき）に増える。項目の位置で引く外部のキャッシュの無効化に使う。 */
     public long generation() {
         return generation;
+    }
+
+    /** 項目 {@code i} の版（{@link #itemVersion}）。 */
+    public int itemVersion(int i) {
+        return i < itemVersion.length ? itemVersion[i] : 0;
     }
 
     /** 走査中の、フレーム全体の変換（CSS px → デバイス画素）。 */
@@ -181,7 +196,7 @@ public final class PaintSceneDriver {
         try {
             // 項目の並びが前回と同じ（不変リストの同一インスタンス）なら、id の索引と錨の一覧は作り直さない。
             // アニメーションだけが動くフレームでは、リストは変わらず姿勢だけが変わる
-            if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items)) rebuildIndex(items);
+            if (!(items == indexedItems && isImmutable(items)) && !patchIndex(items) && !patchIndexByDiff(items)) rebuildIndex(items);
             if (++frameStamp == 0) { Arrays.fill(curStamp, 0); frameStamp = 1; }
             this.byId = indexedById;
             // 項目ごとの祖先のグループ（親子の鎖と、錨の範囲の両方から。外側から内側の順）
@@ -424,6 +439,56 @@ public final class PaintSceneDriver {
         return true;
     }
 
+    /**
+     * 一般のリスト（{@link OffsetItemList} でない）が、前回と同じ大きさで、差のある位置が少なく、差のある位置の構造
+     * （鍵・親・種類・層）が前回と同じなら、差のある位置だけを更新して true。変わっていない項目の姿勢・補間状態は使い回す。
+     * 1 つの要素の変化（文字・ホバー・色）で、全項目の索引・姿勢・補間状態の表を作り直さずに済む。
+     * 構造が違う（項目の増減・鍵や親の変更・層の出入り）ときは false で、呼び出し側が作り直す。
+     */
+    private boolean patchIndexByDiff(List<DisplayItem> items) {
+        List<DisplayItem> old = indexedItems;
+        if (!patchDiffIndex || old == null || old == items || old.size() != items.size()) return false;
+        // 可変のリストは、索引を作ってから中身を書き換えられうる（前回のリストを基準にした差が当てにならない）ので、毎回作り直す。
+        // 表示リストは不変のリスト（List.copyOf 系）で届く
+        if (!isImmutable(old) || !isImmutable(items)) return false;
+        int n = items.size();
+        int limit = Math.max(8, n / PATCH_MAX_DIFF_DIVISOR);
+        int count = 0;
+        for (int i = 0; i < n; i++) {
+            DisplayItem was = old.get(i), is = items.get(i);
+            if (was == is) continue;
+            if (count >= limit || was.key() != is.key() || !sameStructure(was, is)) return false;
+            if (count == diffBuf.length) diffBuf = Arrays.copyOf(diffBuf, count * 2);
+            diffBuf[count++] = i;
+        }
+        for (int k = 0; k < count; k++) {
+            int i = diffBuf[k];
+            indexedById.put(items.get(i).key(), items.get(i));
+            states[i] = null;
+            prevRes[i] = null;
+            prevStatic[i] = false;
+            itemVersion[i]++;
+        }
+        indexedItems = items;
+        // 中身が変わった印（スクロール層の保持が、前に描いた層をそのまま使えるかの判定に使う）は、作り直しと同じく進める
+        indexedBase = items instanceof OffsetItemList o ? o.base() : items;
+        return true;
+    }
+
+    /** 索引・親子・グループの錨・スクロール範囲が、項目から読むもの（種類・親・層）が同じか。 */
+    private static boolean sameStructure(DisplayItem a, DisplayItem b) {
+        if (a.type() != b.type()) return false;
+        String pa = a.hints().parentId(), pb = b.hints().parentId();
+        if (pa != pb && (pa == null || !pa.equals(pb))) return false;
+        if (a.type() == ElementType.NODE) {
+            LayerSpec la = a.hints().layer(), lb = b.hints().layer();
+            boolean fa = hasFx(la), fb = hasFx(lb);
+            if (fa != fb) return false;
+            if (fa && la.span() != lb.span()) return false;
+        }
+        return true;
+    }
+
     private void rebuildIndex(List<DisplayItem> items) {
         Long2ObjectOpenHashMap<DisplayItem> map = new Long2ObjectOpenHashMap<>(items.size() * 2);
         for (DisplayItem it : items) map.put(it.key(), it);
@@ -452,6 +517,7 @@ public final class PaintSceneDriver {
         prevIdle = new boolean[n];
         visiting = new boolean[n];
         states = new CssAnimator.AnimState[n];
+        itemVersion = new int[n];
         generation++;
     }
 

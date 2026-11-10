@@ -24,8 +24,13 @@ import java.util.List;
 final class GpuAttempt {
     private GpuAttempt() {}
 
-    /** GPU へ渡せるクリップの列。多すぎれば {@code null}（CPU が塗る）。 */
+    /** GPU へ渡せるクリップの列。多すぎれば {@code null}（CPU が塗る）。同じ {@link Clip} では覚えた同じ配列を返す。 */
     static GpuClip[] gpuClips(Clip clip) {
+        return clip.gpuClips();
+    }
+
+    /** {@link #gpuClips} の本体（{@link Clip#gpuClips} が 1 度だけ呼ぶ）。 */
+    static GpuClip[] buildGpuClips(Clip clip) {
         List<ClipPart> parts = clip.parts();
         if (parts.size() > GpuSink.MAX_CLIPS) return null;
         GpuClip[] out = new GpuClip[parts.size()];

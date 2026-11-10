@@ -1,0 +1,59 @@
+<!doctype html><meta charset=utf-8><body style="margin:0"><iframe id=f style="width:800px;height:600px;border:0"></iframe>
+<script>
+const P = new URLSearchParams(location.search);
+const DOC = P.get('doc') || 'showcase';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function largeList(n){let s='<html><head><style>body { margin: 8px; } ul { list-style: none; padding: 0; } li { padding: 4px; border-bottom: 1px solid #ccc; } li.fh { background: #eef; }</style></head><body><div id="scroller" style="height: 400px; overflow-y: auto;"><ul>';
+ for(let i=1;i<=n;i++) s+='<li id="item-'+i+'">Row item #'+i+' with description text</li>'; return s+'</ul></div></body></html>';}
+async function getHtml(){
+  if(DOC.startsWith('large-list')) return largeList(parseInt(DOC.split('-')[2]||'500'));
+  let t = await (await fetch('showcase.html')).text();
+  return t.replace(/:hover/g,'.fh');   // :hover を JS で切り替えられるクラスに置換
+}
+const out = {ua: navigator.userAgent, doc: DOC, res: {}};
+function bench(name, fn, n=200, samples=15, warm=300){
+  for(let i=0;i<warm;i++) fn(i);
+  const t=[]; let k=0;
+  for(let s=0;s<samples;s++){ const a=performance.now(); for(let i=0;i<n;i++) fn(k++); t.push((performance.now()-a)/n); }
+  t.sort((a,b)=>a-b); out.res[name]={median:t[t.length>>1], min:t[0], max:t[t.length-1]};
+}
+(async()=>{
+  const html = await getHtml();
+  const f = document.getElementById('f');
+  // parse (DOM 構築のみ)
+  bench('parse', ()=>{ const d=new DOMParser().parseFromString(html,'text/html'); return d.body.childElementCount; }, 20, 15, 50);
+  out.res.elements = null;
+  // open: srcdoc 設定 → load → 強制レイアウト
+  const ot=[]; for(let i=0;i<30;i++){ const nf=document.createElement('iframe'); nf.style.cssText='width:800px;height:600px;border:0';
+     document.body.appendChild(nf); const a=performance.now(); await new Promise(r=>{nf.onload=r; nf.srcdoc=html;});
+     nf.contentDocument.body.offsetHeight; ot.push(performance.now()-a); nf.remove(); await sleep(5);} 
+  ot.sort((a,b)=>a-b); out.res.open={median:ot[ot.length>>1],min:ot[0],max:ot[ot.length-1]};
+  await new Promise(r=>{f.onload=r; f.srcdoc=html;}); await sleep(300);
+  const d=f.contentDocument, w=f.contentWindow; const all=d.querySelectorAll('*'); out.elements=all.length;
+  const probe = d.body.lastElementChild || d.body;
+  const style = ()=>w.getComputedStyle(probe).color;      // スタイル再計算の強制
+  const layout = ()=>d.body.offsetHeight;                  // レイアウトの強制
+  const btns=[...d.querySelectorAll(DOC.startsWith('large-list')?'li':'.btn')].slice(0,2); const hv=[btns[0],btns[btns.length>1?1:0]];
+  let textNode, styleEl, ul;
+  if(DOC.startsWith('large-list')){ textNode=d.getElementById('item-250').firstChild; styleEl=d.getElementById('item-250'); ul=d.querySelector('ul'); }
+  else { styleEl=d.querySelector('.btn')||d.body.firstElementChild; const sp=[...d.querySelectorAll('span')].find(s=>s.firstChild&&s.firstChild.nodeType===3&&s.textContent.trim().length>3); textNode=sp.firstChild; ul=d.querySelector('div'); }
+  const sc=DOC.startsWith('large-list')?d.getElementById('scroller'):d.scrollingElement;
+  const scen = {
+    hover: i=>{ hv[i&1].classList.add('fh'); hv[(i+1)&1].classList.remove('fh'); },
+    text: i=>{ textNode.data = (i&1)? 'Row item A with text '+(i&7) : 'Row item B with text '+(i&7); },
+    style: i=>{ styleEl.style.color = (i&1)?'#112233':'#223344'; },
+    inherited: i=>{ d.body.style.color = (i&1)?'#112233':'#223344'; },
+    child: i=>{ if(i&1){ ul.removeChild(ul.lastChild); } else { const li=d.createElement('li'); li.textContent='inserted '+i; ul.appendChild(li); } },
+    fontsize: i=>{ d.body.style.fontSize = (i&1)?'16px':'15px'; },
+    relayout: i=>{ f.style.width = (i&1)?'799px':'800px'; },
+    scroll: i=>{ sc.scrollTop += (i&1)?1:-1; }
+  };
+  for(const [name,mut] of Object.entries(scen)){
+    bench(name+'.style', i=>{mut(i); style();});
+    bench(name+'.styleLayout', i=>{mut(i); style(); layout();});
+  }
+  // 解析済み DOM でのフルスタイル + レイアウト（キャッシュ無効化は幅変更で代用済み）
+  out.res.noop = null;
+  await fetch('/result',{method:'POST',body:JSON.stringify(out)});
+})();
+</script>

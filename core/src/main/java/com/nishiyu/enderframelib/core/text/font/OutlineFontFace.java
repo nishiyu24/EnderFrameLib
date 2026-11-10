@@ -85,6 +85,50 @@ public final class OutlineFontFace implements FontFace {
      * （描画とキャレットの位置が測定と一致する）。
      */
     public float[] positions(String text, FontStyle style) {
+        // 同じ（文字列・スタイル）の送り位置は、この書体面では常に同じ（面は登録が変われば別のインスタンスになる）。
+        // 描画は変わっていない文字も毎フレーム使うので覚える。返す配列は読むだけ（呼び出し側は書き換えない）。
+        // 照会はスレッドごとの鍵を書き換えて行い、入れるときだけ複製する
+        PosKey probe = POS_PROBE.get().set(text, style);
+        float[] hit = positionCache.get(probe);
+        if (hit != null) return hit;
+        float[] computed = computePositions(text, style);
+        if (positionCache.size() >= POSITION_CACHE_LIMIT) positionCache.clear();
+        positionCache.put(new PosKey(text, style), computed);
+        return computed;
+    }
+
+    private static final int POSITION_CACHE_LIMIT = 4096;
+    private final java.util.concurrent.ConcurrentHashMap<PosKey, float[]> positionCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final ThreadLocal<PosKey> POS_PROBE = ThreadLocal.withInitial(() -> new PosKey("", null));
+
+    /** {@link #positions} の覚えの鍵（可変。照会用の 1 個を使い回し、入れるときだけ複製する）。 */
+    private static final class PosKey {
+        private String text;
+        private FontStyle style;
+
+        PosKey(String text, FontStyle style) {
+            this.text = text;
+            this.style = style;
+        }
+
+        PosKey set(String text, FontStyle style) {
+            this.text = text;
+            this.style = style;
+            return this;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof PosKey k && k.text.equals(text) && java.util.Objects.equals(k.style, style);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * text.hashCode() + (style == null ? 0 : style.hashCode());
+        }
+    }
+
+    private float[] computePositions(String text, FontStyle style) {
         float[] out = new float[text.length() + 1];
         StyleChain chain = chainFor(style);
         float size = style.fontSizePx();

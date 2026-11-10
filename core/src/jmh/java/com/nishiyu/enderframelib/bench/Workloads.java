@@ -29,12 +29,18 @@ public final class Workloads {
                 case SHOWCASE -> read("showcase.html");
                 case GUIDEBOOK -> MarkdownParser.toHtml(read("guidebook.md"));
                 case LARGE_LIST -> largeList(500);
-                default -> throw new IllegalArgumentException("未知の文書: " + name);
+                default -> {
+                    if (isList(name)) yield largeList(name.equals(LARGE_LIST) ? 500 : Integer.parseInt(name.substring(LARGE_LIST.length() + 1)));
+                    throw new IllegalArgumentException("未知の文書: " + name);
+                }
             };
         } catch (IOException e) {
             throw new IllegalStateException("文書を読めない（作業ディレクトリはリポジトリ直下か）: " + name, e);
         }
     }
+
+    /** {@code large-list} または {@code large-list-N}（N 行）か。 */
+    public static boolean isList(String name) { return name.equals(LARGE_LIST) || name.startsWith(LARGE_LIST + "-"); }
 
     private static String read(String file) throws IOException {
         return Files.readString(FIXTURES.resolve(file), StandardCharsets.UTF_8).replace("\r\n", "\n");
