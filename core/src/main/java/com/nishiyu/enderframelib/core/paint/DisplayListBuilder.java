@@ -853,8 +853,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
      * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
      */
-    private void addTextRun(List<DisplayItem> elements, String id, float x, float y, float w, float h, String text, int color, int bgColor,
+    private void addTextRun(List<DisplayItem> elements, LayoutBox box, String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow sh = shadows.get(i);
             if ((sh.color() >>> 24) == 0) continue;
@@ -862,24 +863,32 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             shadowEvents.pointerEventsNone();
             boolean blurred = sh.blur() > 0f;
             if (blurred) {
-                String anchorId = id + "_tsh" + fragIds.getAndIncrement();
+                int anchorPart = fragIds.getAndIncrement();
+                String anchorId = id + "_tsh" + anchorPart;
+                long anchorKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, anchorPart) : 0L;
                 ItemProps anchorEvents = new ItemProps();
                 String owner = events.hints().parentId();
                 if (owner != null) anchorEvents.parentId(owner);
                 anchorEvents.pointerEventsNone();
-                addElement(elements, id, anchorId, ElementType.NODE, x, y, w, h, "", 0, 0, anchorEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                addElement(elements, id, anchorId, ElementType.NODE, x, y, w, h, "", 0, 0, anchorEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, anchorKey);
                 int at = elements.size() - 1;
                 shadowEvents.parentId(anchorId);
-                addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                int shadowPart = fragIds.getAndIncrement();
+                long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
+                addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, shadowKey);
                 LayerSpec spec = new LayerSpec(elements.size() - at, 1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
                 elements.set(at, withLayer(elements.get(at), spec));
             } else {
-                addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                int shadowPart = fragIds.getAndIncrement();
+                long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
+                addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, shadowKey);
             }
         }
-        addElement(elements, id, id + "_txt_" + (fragIds.getAndIncrement()), ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, meta);
+        int mainPart = fragIds.getAndIncrement();
+        long mainKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, mainPart) : 0L;
+        addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, colorAnim, meta, mainKey);
     }
 
     /** {@code -webkit-text-stroke-width} の CSS px（{@code thin / medium / thick} は 1 / 3 / 5）。無い・0 以下は 0。 */
@@ -933,7 +942,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 if (frag.text == null || frag.text.isBlank()) continue;
                 RenderMeta fragMeta = new RenderMeta(
                         normalizedClip, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
-                addTextRun(elements, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, textShadows);
+                addTextRun(elements, box, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, textShadows);
             }
         } else if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
@@ -951,7 +960,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                     RenderMeta lineMeta = new RenderMeta(
                             normalizedClip, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
-                    addTextRun(elements, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, textShadows);
+                    addTextRun(elements, box, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, textShadows);
                 }
                 lineY += line.height();
             }

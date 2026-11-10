@@ -53,6 +53,24 @@ public final class BoxDecorationPainter {
         this.devicePixelRatio = dppx;
     }
 
+    /**
+     * 装飾部品（インライン断片・影）の 64-bit 整数鍵の部品番号の領域（P0-3）。テキスト項目は 0〜0x7FFF（{@code fragIds}）を使うので、
+     * 上位ビットを立てた領域に置いて同じ節の鍵と衝突させない。断片 {@code 0x8000〜0xBFFF}・外側の影 {@code 0xC000〜0xDFFF}・内側の影 {@code 0xE000〜0xFFFF}。
+     */
+    static final int FRAG_PART_BASE = 0x8000;
+    static final int SHADOW_PART_BASE = 0xC000;
+    static final int INSET_SHADOW_PART_BASE = 0xE000;
+    private static final int FRAG_PART_MASK = 0x3FFF;
+    private static final int SHADOW_PART_MASK = 0x1FFF;
+
+    /** 装飾部品の整数鍵。ノードが無ければ 0（従来どおり ID 文字列から導く）。部品番号は領域内へ丸める。 */
+    static long decorationKey(LayoutBox box, int base, int ordinal) {
+        int handle = box.node != null ? box.node.nodeId() : 0;
+        if (handle <= 0) return 0L;
+        int mask = base == FRAG_PART_BASE ? FRAG_PART_MASK : SHADOW_PART_MASK;
+        return DisplayItem.keyOf(handle, base | (ordinal & mask));
+    }
+
     BoxDecorationPainter(int rootW, int rootH, AtomicInteger fragIds) {
         this.rootW = rootW;
         this.rootH = rootH;
@@ -158,8 +176,9 @@ public final class BoxDecorationPainter {
             };
             Corners radii = Corners.fromArray(r);
             RenderMeta meta = new RenderMeta(clip, radii, null, fontHVal, 0f, box.lineHeightPx, ox, oy, itemCount, interactive);
-            addElement(elements, id, id + "_frag_" + (fragIds.getAndIncrement()), ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
-                    "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta);
+            int fragPart = fragIds.getAndIncrement();
+            addElement(elements, id, id + "_frag_" + fragPart, ElementType.RECT, frag.x, frag.y, frag.w, frag.h,
+                    "", color, bgColor, partsEvents, r[0], 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, meta, decorationKey(box, FRAG_PART_BASE, fragPart));
             drawFragmentImages(elements, box, id, frag, clip, radii, border, passiveBorderEvents, fontHVal, ox, oy);
 
             float[] widths = {box.bT, frag.endEdge ? box.bR : 0, box.bB, frag.startEdge ? box.bL : 0};
@@ -169,8 +188,10 @@ public final class BoxDecorationPainter {
                         colors[0], colors[1], colors[2], colors[3]);
                 RenderMeta ringMeta = new RenderMeta(clip, radii, null,
                         fontHVal, 0f, 0f, ox, oy, 1, false, spec);
-                addElement(elements, id, id + "_b_round_" + (fragIds.getAndIncrement()), ElementType.ROUNDED_BORDER, frag.x, frag.y, frag.w, frag.h,
-                        "", 0, 0x00000000, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+                int ringPart = fragIds.getAndIncrement();
+                addElement(elements, id, id + "_b_round_" + ringPart, ElementType.ROUNDED_BORDER, frag.x, frag.y, frag.w, frag.h,
+                        "", 0, 0x00000000, passiveBorderEvents, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta,
+                        decorationKey(box, FRAG_PART_BASE, ringPart));
             } else {
                 drawLines(elements, id, "_b_", frag.x, frag.y, frag.w, frag.h, widths, styles, colors, 0,
                         passiveBorderEvents, meta, transDur, true);
@@ -292,10 +313,11 @@ public final class BoxDecorationPainter {
                 blurEvents.shadowShape(new ShadowShape(false, box.x, box.y, box.x + box.w, box.y + box.h,
                         radii.topLeft(), radii.topRight(), radii.bottomRight(), radii.bottomLeft(),
                         radii.topLeftV(), radii.topRightV(), radii.bottomRightV(), radii.bottomLeftV()));
-                addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
+                addElement(elements, id, id + "_shadow_" + n, ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, s.color(), blurEvents,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                        new RenderMeta(clip, r, null, fontHVal, ox, oy, 1, false));
+                        new RenderMeta(clip, r, null, fontHVal, ox, oy, 1, false), decorationKey(box, SHADOW_PART_BASE, n));
+                n++;
                 continue;
             }
             for (BoxDecorations.ShadowLayer layer : BoxDecorations.shadowLayers(s)) {
@@ -304,10 +326,11 @@ public final class BoxDecorationPainter {
                 if (w <= 0 || h <= 0) continue;
                 // 広がりは角の丸みも同じだけ変える（丸みの無い角は角のまま。§7.1.1）
                 Corners r = grow(radii, grow);
-                addElement(elements, id, id + "_shadow_" + (n++), ElementType.RECT,
+                addElement(elements, id, id + "_shadow_" + n, ElementType.RECT,
                         box.x + s.offsetX() - grow, box.y + s.offsetY() - grow, w, h, "", 0, layer.color(), events,
                         r.topLeft(), 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                        new RenderMeta(clip, r, null, fontHVal, ox, oy, 1, false));
+                        new RenderMeta(clip, r, null, fontHVal, ox, oy, 1, false), decorationKey(box, SHADOW_PART_BASE, n));
+                n++;
             }
         }
     }
@@ -356,9 +379,10 @@ public final class BoxDecorationPainter {
                         Math.min(Math.max(0, inner.topLeft() - s.spread()), limit), Math.min(Math.max(0, inner.topRight() - s.spread()), limit),
                         Math.min(Math.max(0, inner.bottomRight() - s.spread()), limit), Math.min(Math.max(0, inner.bottomLeft() - s.spread()), limit)));
             }
-            addElement(elements, id, id + "_shadow_in" + (n++), ElementType.RECT, px0, py0, px1 - px0, py1 - py0, "", 0,
+            addElement(elements, id, id + "_shadow_in" + n, ElementType.RECT, px0, py0, px1 - px0, py1 - py0, "", 0,
                     s.color(), shadowEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE,
-                    new RenderMeta(padClip, null, null, fontHVal, ox, oy, 1, false));
+                    new RenderMeta(padClip, null, null, fontHVal, ox, oy, 1, false), decorationKey(box, INSET_SHADOW_PART_BASE, n));
+            n++;
         }
     }
 

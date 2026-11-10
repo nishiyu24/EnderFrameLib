@@ -10,6 +10,7 @@ import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
 
 import com.nishiyu.enderframelib.core.paint.model.ShadowShape;
 import com.nishiyu.enderframelib.core.paint.model.TextureRef;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 
 import com.nishiyu.enderframelib.core.paint.model.ClipChainPart;
 
@@ -20,6 +21,7 @@ import com.nishiyu.enderframelib.core.paint.gpu.GpuScrollLayer;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BoxDecorationPainter;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
+import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.ObjectFit;
 import com.nishiyu.enderframelib.core.paint.PaintSceneDriver;
 import com.nishiyu.enderframelib.core.paint.RetainPlan;
@@ -103,6 +105,53 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final double[] boundsScratch = new double[4];
     private Matrix2D frame = Matrix2D.IDENTITY;
 
+    // ------------------------------------------------------------------ 差分描画（Tile Dirty Bitset）
+
+    /**
+     * 変更のあった項目の範囲だけを塗り直すか（{@code -Denderframe.soft.nodamage=true} で無効）。
+     * 無効にすると毎フレーム全面をクリアして描く（疑うときの切り分け用。絵は同じでなければならない）。
+     */
+    static volatile boolean damageEnabled = !Boolean.getBoolean("enderframe.soft.nodamage");
+
+    /** このフレームで塗り直す範囲（タイル境界まで広げた外接矩形）。 */
+    private final DamageRegion damage = new DamageRegion();
+    /** 前のフレームの表示リスト（項目の同一性の比較と、旧範囲の持ち主）。 */
+    private List<DisplayItem> prevItems;
+    private boolean prevValid;
+    /** 前のフレームの描画がアニメーションの途中だった（次のフレームは全面を描き直す）。 */
+    private boolean prevHadActive;
+    private int prevClearColor;
+    private boolean prevCullOffscreen = true;
+
+    /** 項目ごとの、実際に塗った範囲（{@code x0,y0,x1,y1}。空なら x1 <= x0）。前のフレームと今のフレームで入れ替える。 */
+    private int[] prevExtent = new int[0], curExtent = new int[0];
+    /** 項目ごとの、描いたときのクリップの外接（{@code x0,y0,x1,y1}）。新しい範囲の見積もりをクリップに収めるのに使う。 */
+    private int[] prevClip = new int[0], curClip = new int[0];
+    /** このフレームで描かない（前のフレームの画素をそのまま残す）項目。 */
+    private boolean[] skipBuf = new boolean[0];
+    /** このフレームで描き直す項目（項目自身が変わったか、動いた節の子孫）。 */
+    private boolean[] dirtyBuf = new boolean[0];
+    /** 動いた節の子孫（姿勢が親から変わる）か。 */
+    private boolean[] movedBuf = new boolean[0];
+    /** このフレームの差分描画が有効（{@link PaintSceneDriver.Painter#skipItem} を効かせる）。 */
+    private boolean partialActive;
+    /** 変更項目の塗りがダメージ範囲の外へ出た（全面描画へ切り替える）。 */
+    private boolean damageAbort;
+    /** このフレームの描画がアニメーションの途中か（次のフレームの判定に使う）。 */
+    private boolean frameHadActive;
+    /** 実際に塗った範囲を記録するか（{@link #renderOnto} では要らない）。 */
+    private boolean recordExtents;
+    /** いま描いている項目の添字（{@link #paintRange} が範囲を記録する）。 */
+    private int currentItem = -1;
+    /** いま描いている項目が描き直しの対象か（塗りがダメージの外へ出たら全面へ切り替える）。 */
+    private boolean currentItemDirty;
+    /** 見積もりの作業用。 */
+    private final int[] estimateScratch = new int[4];
+    private final int[] planClipScratch = new int[4];
+
+    /** 診断用: 差分描画したフレーム・全面描画したフレーム・見積もり外れで全面へ切り替えたフレーム・省いた項目の累計。 */
+    private long partialFrames, fullFrames, abortedFrames, skippedItems;
+
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
     public SoftwareRenderBackend(int cssW, int cssH) {
         this(cssW, cssH, 1f);
@@ -172,11 +221,53 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /**
      * 描画先を {@link #clearColor} で塗り直し、{@code items} を時刻 {@code nowMs}（ミリ秒）の見た目で描く。
+     *
+     * <p>前のフレームと同じ表示リスト（変更のあった項目だけが差し替わったもの）なら、変更項目の旧範囲と新範囲が掛かる
+     * 64×64 タイルだけをクリアし、その外接矩形にクリップして描き直す。描き直す必要のない項目は
+     * {@link PaintSceneDriver.Painter#skipItem} で走査から外す。見積もりが外れた（変更項目がダメージの外へ塗った）ときは
+     * 全面を描き直すので、絵は常に全面描画と同じになる。</p>
      */
     @Override
     public void render(List<DisplayItem> items, long nowMs) {
-        java.util.Arrays.fill(raster.root().pixels(), clearColor);
-        drawFrame(items, nowMs, null);
+        if (items == null || items.isEmpty()) {
+            raster.clearAll(clearColor);
+            prevValid = false;
+            prevItems = null;
+            return;
+        }
+        route.begin(null);
+        raster.beginFrame();
+        beginFrame(items);
+        boolean partial = false;
+        recordExtents = true;
+        try {
+            driver.prepare(items, nowMs, frame);
+            partial = planDamage(items, nowMs);
+            if (partial) raster.clearTiles(damage, clearColor);
+            else raster.clearAll(clearColor);
+            partialActive = partial;
+            damageAbort = false;
+            driver.run(items, nowMs, frame, painter);
+            queue.flush();
+            if (partial && damageAbort) { // 見積もりより外へ塗った: 全面でやり直す（絵は同じ）
+                abortedFrames++;
+                partial = false;
+                partialActive = false;
+                damageAbort = false;
+                raster.clearAll(clearColor);
+                resetCurExtents(items.size());
+                driver.run(items, nowMs, frame, painter);
+                queue.flush();
+            }
+        } finally {
+            queue.discard(); // 例外のときは捨てる（描画先は不定）
+            raster.endFrame();
+            route.end();
+            partialActive = false;
+            recordExtents = false;
+            currentItem = -1;
+        }
+        commitFrame(items, partial);
     }
 
     /**
@@ -184,6 +275,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * （受け取られなかったものだけ CPU が描く）。GPU 版が文字・画像などの CPU 描画を重ねるのに使う。
      */
     public void renderOnto(List<DisplayItem> items, long nowMs, GpuSink sink) {
+        // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
+        prevValid = false;
+        prevItems = null;
         drawFrame(items, nowMs, sink);
     }
 
@@ -199,14 +293,20 @@ public final class SoftwareRenderBackend implements RenderBackend {
         raster.clearDirty();
     }
 
-    private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
-        if (items == null || items.isEmpty()) return;
-        route.begin(gpu);
-        raster.beginFrame();
+    private void beginFrame(List<DisplayItem> items) {
         this.frame = Matrix2D.scale(dpr, dpr);
         this.frameSize = items.size();
         this.retainInfo.clear();
         this.recordOwner = null;
+    }
+
+    private void drawFrame(List<DisplayItem> items, long nowMs, GpuSink gpu) {
+        if (items == null || items.isEmpty()) return;
+        partialActive = false;
+        recordExtents = false;
+        route.begin(gpu);
+        raster.beginFrame();
+        beginFrame(items);
         try {
             // 走査（アニメーション補間・親子の変形・グループの鎖）は PaintSceneDriver が受け持ち、ここは画素を塗るだけ
             driver.run(items, nowMs, frame, painter);
@@ -215,7 +315,247 @@ public final class SoftwareRenderBackend implements RenderBackend {
             queue.discard(); // 例外のときは捨てる（描画先は不定）
             raster.endFrame();
             route.end();
+            currentItem = -1;
         }
+    }
+
+    // ------------------------------------------------------------------ 差分描画の計画
+
+    /**
+     * このフレームを差分で描けるか決め、描けるなら {@link #damage} に塗り直す範囲を、{@link #skipBuf} に描かない項目を入れる。
+     * 描けない（初回・項目の増減・種類の変化・アニメーション中・層を要する項目がある）なら false を返す。
+     */
+    private boolean planDamage(List<DisplayItem> items, long nowMs) {
+        int n = items.size();
+        ensureArrays(n);
+        frameHadActive = driver.anyCachedActiveAt(nowMs);
+        boolean eligible = damageEnabled && prevValid && prevItems != null && prevItems.size() == n
+                && prevClearColor == clearColor && prevCullOffscreen == cullOffscreen
+                && stableList(items) && stableList(prevItems) && !frameHadActive;
+        if (eligible) {
+            for (int i = 0; i < n; i++) {
+                DisplayItem cur = items.get(i), old = prevItems.get(i);
+                if (cur.key() != old.key() || cur.type() != old.type() || volatileItem(cur) || groupItem(cur)) {
+                    eligible = false;
+                    break;
+                }
+                if (old != cur && mayAnimate(cur) && PaintSceneDriver.itemActiveAt(sessionId, cur, nowMs)) {
+                    frameHadActive = true;
+                    eligible = false;
+                    break;
+                }
+            }
+        }
+        if (prevHadActive) eligible = false; // 前のフレームが補間の途中: 止まった後の最初の 1 枚は全面で描く
+        if (!eligible) {
+            resetCurExtents(n);
+            return false;
+        }
+        // 変わった項目と、姿勢が変わる「動いた節」の子孫（表示リストは親が先に来る）
+        for (int i = 0; i < n; i++) {
+            DisplayItem cur = items.get(i), old = prevItems.get(i);
+            int p = driver.parentIndex(i);
+            boolean parentMoved = p >= 0 && movedBuf[p];
+            boolean nodeChanged = old != cur && cur.type() == ElementType.NODE;
+            movedBuf[i] = parentMoved || nodeChanged;
+            dirtyBuf[i] = old != cur || parentMoved;
+        }
+        damage.reset(raster.width(), raster.height());
+        syncClipGeneration();
+        java.util.Arrays.fill(skipBuf, 0, n, true);
+        for (int i = 0; i < n; i++) {
+            if (!dirtyBuf[i]) continue;
+            DisplayItem cur = items.get(i);
+            if (cur.type() == ElementType.NODE) continue; // 節自身は塗らない（子孫は上で印を付けている）
+            Resolved r = driver.resolveAt(i);
+            int[] cb = planClip(i, cur, r, prevItems.get(i) != cur);
+            estimateBounds(cur, r.pose(), cb, estimateScratch);
+            boolean oldHas = hasArea(prevExtent, i);
+            boolean newHas = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
+            skipBuf[i] = !oldHas && !newHas; // 旧範囲も新範囲も画面に無い: 描く必要も消す必要も無い
+            damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
+            addExtent(prevExtent, i, damage);
+        }
+        damage.seal(); // タイル境界まで広げる（クリアするタイルの外接矩形に描画クリップを揃える）
+        if (Boolean.getBoolean("enderframe.soft.damagedebug") && partialFrames < 6) {
+            int skipped = 0;
+            for (int i = 0; i < n; i++) if (skipBuf[i]) skipped++;
+            System.out.println("DAMAGE now=" + nowMs + " tiles=" + damage.dirtyTileCount()
+                    + " bounds=" + java.util.Arrays.toString(damage.bounds()) + " skip=" + skipped + "/" + n);
+        }
+        int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
+        for (int i = 0; i < n; i++) {
+            if (!dirtyBuf[i]) skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
+            if (skipBuf[i] || !dirtyBuf[i]) {
+                // 描き直しても、ダメージの外の前のフレームの画素は残る。項目の範囲は和のまま覚える
+                copyExtent(prevExtent, curExtent, i);
+                copyClip(prevClip, curClip, i);
+            } else {
+                clearExtent(curExtent, i);
+                copyClip(prevClip, curClip, i);
+            }
+        }
+        return true;
+    }
+
+    private void commitFrame(List<DisplayItem> items, boolean partial) {
+        if (partial) partialFrames++;
+        else fullFrames++;
+        prevItems = items;
+        prevValid = true;
+        prevHadActive = frameHadActive;
+        prevClearColor = clearColor;
+        prevCullOffscreen = cullOffscreen;
+        int[] t = prevExtent;
+        prevExtent = curExtent;
+        curExtent = t;
+        t = prevClip;
+        prevClip = curClip;
+        curClip = t;
+    }
+
+    private void ensureArrays(int n) {
+        int need = n * 4;
+        if (prevExtent.length != need) {
+            prevExtent = new int[need];
+            prevClip = new int[need];
+            prevValid = false; // 添字の意味が変わる
+        }
+        if (curExtent.length != need) {
+            curExtent = new int[need];
+            curClip = new int[need];
+        }
+        if (skipBuf.length != n) {
+            skipBuf = new boolean[n];
+            dirtyBuf = new boolean[n];
+            movedBuf = new boolean[n];
+        }
+    }
+
+    private void resetCurExtents(int n) {
+        ensureArrays(n);
+        java.util.Arrays.fill(curExtent, 0);
+        java.util.Arrays.fill(curClip, 0);
+    }
+
+    /** 項目の新しい範囲を、前のフレームのクリップ（変わった項目は新しいクリップ）に収めて見積もる。 */
+    private int[] planClip(int i, DisplayItem el, Resolved r, boolean changed) {
+        int b = i * 4;
+        if (!changed && prevClip[b + 2] > prevClip[b] && prevClip[b + 3] > prevClip[b + 1]) {
+            planClipScratch[0] = prevClip[b];
+            planClipScratch[1] = prevClip[b + 1];
+            planClipScratch[2] = prevClip[b + 2];
+            planClipScratch[3] = prevClip[b + 3];
+            return planClipScratch;
+        }
+        Clip c = buildClip(i, el, r.anim());
+        if (c.empty()) {
+            planClipScratch[0] = planClipScratch[1] = planClipScratch[2] = planClipScratch[3] = 0;
+        } else {
+            planClipScratch[0] = c.x0();
+            planClipScratch[1] = c.y0();
+            planClipScratch[2] = c.x1();
+            planClipScratch[3] = c.y1();
+        }
+        return planClipScratch;
+    }
+
+    /**
+     * 項目が新しく塗りうる範囲（デバイス画素）の見積もり。箱を姿勢で写し、文字・影・枠線のはみ出し分の余白を足して
+     * クリップと画面に収める。実際の塗りがこれを超えたら {@link #damageAbort} で全面描画へ切り替える。
+     */
+    private void estimateBounds(DisplayItem el, Matrix2D pose, int[] clip, int[] out) {
+        if (clip != null && (clip[2] <= clip[0] || clip[3] <= clip[1])) {
+            out[0] = out[1] = out[2] = out[3] = 0;
+            return;
+        }
+        float pad = 2f;
+        RenderHints hints = el.hints();
+        if (hints.shadowBlur() > 0f) pad = Math.max(pad, BoxDecorationPainter.SHADOW_REACH * hints.shadowBlur() + 1f);
+        String text = el.text();
+        if (text != null && !text.isEmpty()) {
+            RenderMeta meta = el.meta();
+            float font = meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : el.height();
+            pad = Math.max(pad, font + 1f);
+        }
+        double[] b = deviceBounds(pose, el.x() - pad, el.y() - pad, el.x() + el.width() + pad, el.y() + el.height() + pad, boundsScratch);
+        int x0 = (int) Math.floor(b[0]), y0 = (int) Math.floor(b[1]);
+        int x1 = (int) Math.ceil(b[2]), y1 = (int) Math.ceil(b[3]);
+        if (clip != null) {
+            x0 = Math.max(x0, clip[0]);
+            y0 = Math.max(y0, clip[1]);
+            x1 = Math.min(x1, clip[2]);
+            y1 = Math.min(y1, clip[3]);
+        }
+        x0 = Math.max(0, x0);
+        y0 = Math.max(0, y0);
+        x1 = Math.min(raster.width(), x1);
+        y1 = Math.min(raster.height(), y1);
+        if (x1 <= x0 || y1 <= y0) {
+            out[0] = out[1] = out[2] = out[3] = 0;
+            return;
+        }
+        out[0] = x0;
+        out[1] = y0;
+        out[2] = x1;
+        out[3] = y1;
+    }
+
+    private static boolean stableList(List<DisplayItem> list) {
+        if (list instanceof OffsetItemList o) return stableList(o.base());
+        return list.getClass().getName().startsWith("java.util.ImmutableCollections$");
+    }
+
+    private static boolean volatileItem(DisplayItem el) {
+        return switch (el.type()) {
+            case IMAGE, VIDEO, CANVAS, SCENE, INPUT, TEXTAREA, SELECT, PROGRESS, RANGE -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean groupItem(DisplayItem el) {
+        return el.type() == ElementType.NODE && (el.opacity() < 0.999f || PaintSceneDriver.hasFxLayer(el));
+    }
+
+    private static boolean mayAnimate(DisplayItem el) {
+        return el.transitionDuration() > 0 || (el.animDef() != null && !AnimationSpec.NONE.equals(el.animDef()));
+    }
+
+    private static void addExtent(int[] ext, int i, DamageRegion d) {
+        int b = i * 4;
+        if (ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1]) d.add(ext[b], ext[b + 1], ext[b + 2], ext[b + 3]);
+    }
+
+    private static boolean hasArea(int[] ext, int i) {
+        int b = i * 4;
+        return ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1];
+    }
+
+    private static boolean extentIntersects(int[] ext, int i, int x0, int y0, int x1, int y1) {
+        int b = i * 4;
+        return ext[b + 2] > ext[b] && ext[b + 3] > ext[b + 1]
+                && ext[b + 2] > x0 && ext[b] < x1 && ext[b + 3] > y0 && ext[b + 1] < y1;
+    }
+
+    private static void copyExtent(int[] from, int[] to, int i) {
+        int b = i * 4;
+        to[b] = from[b];
+        to[b + 1] = from[b + 1];
+        to[b + 2] = from[b + 2];
+        to[b + 3] = from[b + 3];
+    }
+
+    private static void clearExtent(int[] ext, int i) {
+        int b = i * 4;
+        ext[b] = ext[b + 1] = ext[b + 2] = ext[b + 3] = 0;
+    }
+
+    private static void copyClip(int[] from, int[] to, int i) {
+        int b = i * 4;
+        to[b] = from[b];
+        to[b + 1] = from[b + 1];
+        to[b + 2] = from[b + 2];
+        to[b + 3] = from[b + 3];
     }
 
     private final PaintSceneDriver driver;
@@ -225,6 +565,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return driver.anyActiveAt(items, nowMs);
     }
     private final PaintSceneDriver.Painter painter = new PaintSceneDriver.Painter() {
+        @Override
+        public boolean skipItem(int index) {
+            if (!partialActive || index < 0 || index >= skipBuf.length || !skipBuf[index]) return false;
+            skippedItems++;
+            return true;
+        }
+
         @Override
         public void syncLayers(List<Group> want) {
             SoftwareRenderBackend.this.syncLayers(want);
@@ -393,6 +740,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     long culledItems() { return culledItems; }
 
+    /** ドライバ段で画面外ブロックとして走査から外した数（累計。診断・テスト用）。 */
+    public long rangeCulledItems() { return driver.rangeCulledItems(); }
+
+    /** 診断用: 差分描画したフレーム数・全面描画したフレーム数・見積もり外れで全面へ切り替えた回数・省いた項目の延べ数。 */
+    long partialFrames() { return partialFrames; }
+
+    long fullFrames() { return fullFrames; }
+
+    long damageAborts() { return abortedFrames; }
+
+    long skippedItems() { return skippedItems; }
+
     /** 文字・影の広がり（箱の外へはみ出す分）の余白（デバイス画素）。 */
     private static final float CULL_PAD = 128f;
 
@@ -428,10 +787,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private void drawItem(DisplayItem el, int index, float flat) {
-        if (clipGeneration != driver.generation()) {
-            if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
-            clipGeneration = driver.generation();
-        }
+        syncClipGeneration();
+        currentItem = recordExtents && index >= 0 && curExtent.length >= (index + 1) * 4 ? index : -1;
+        currentItemDirty = partialActive && index >= 0 && index < dirtyBuf.length && dirtyBuf[index];
         Resolved res = driver.resolveAt(index);
         if (res.opacity() <= 0.005f) return;
         float opacity = res.residual() * flat;
@@ -444,6 +802,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
         Clip clip = buildClip(index, el, anim);
+        if (currentItem >= 0) {
+            int b = currentItem * 4;
+            curClip[b] = clip.x0();
+            curClip[b + 1] = clip.y0();
+            curClip[b + 2] = clip.x1();
+            curClip[b + 3] = clip.y1();
+        }
         if (clip.empty()) return;
         if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
             culledItems++;
@@ -521,6 +886,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
         boolean unresolvedOwner;
     }
 
+
+    private void syncClipGeneration() {
+        if (clipGeneration != driver.generation()) {
+            if (clipCache.length != frameSize) clipCache = java.util.Arrays.copyOf(clipCache, frameSize);
+            clipGeneration = driver.generation();
+        }
+    }
 
     private Clip buildClip(int index, DisplayItem el, AnimatedValues anim) {
         ClipEntry ce = clipCache[index];
@@ -726,13 +1098,32 @@ public final class SoftwareRenderBackend implements RenderBackend {
     static volatile boolean fastSolid = !Boolean.getBoolean("enderframe.soft.nofastsolid");
 
 
-    /** 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。 */
+    /**
+     * 局所の矩形を姿勢で写してクリップと交わらせた画素の範囲 {@code {x0, y0, x1, y1}}（空なら null）。汚れた範囲も広げる。
+     * 差分描画のフレームでは、実際に塗る範囲をダメージの外接矩形に収める（外の画素は前のフレームのまま残す）。
+     * 描き直す項目の自然な範囲がダメージの外へ出たら、見積もりが外れた印を付ける（呼び出し側が全面でやり直す）。
+     */
     private int[] paintRange(Matrix2D pose, float bx0, float by0, float bx1, float by1, Clip clip) {
         double[] b = deviceBounds(pose, bx0, by0, bx1, by1, boundsScratch);
         int x0 = Math.max(clip.x0(), (int) Math.floor(b[0])), y0 = Math.max(clip.y0(), (int) Math.floor(b[1]));
         int x1 = Math.min(clip.x1(), (int) Math.ceil(b[2])), y1 = Math.min(clip.y1(), (int) Math.ceil(b[3]));
         if (x1 <= x0 || y1 <= y0) return null;
+        if (partialActive) {
+            if (currentItemDirty && !damage.covers(x0, y0, x1, y1)) damageAbort = true;
+            x0 = Math.max(x0, damage.x0());
+            y0 = Math.max(y0, damage.y0());
+            x1 = Math.min(x1, damage.x1());
+            y1 = Math.min(y1, damage.y1());
+            if (x1 <= x0 || y1 <= y0) return null;
+        }
         raster.dirty().add(x0, y0, x1, y1);
+        if (recordExtents && currentItem >= 0) {
+            int e = currentItem * 4;
+            if (x0 < curExtent[e]) curExtent[e] = x0;
+            if (y0 < curExtent[e + 1]) curExtent[e + 1] = y0;
+            if (x1 > curExtent[e + 2]) curExtent[e + 2] = x1;
+            if (y1 > curExtent[e + 3]) curExtent[e + 3] = y1;
+        }
         return new int[]{x0, y0, x1, y1};
     }
 

@@ -49,11 +49,12 @@ class PaintSceneDriverRangeCullTest {
         double y0, y1;
         boolean endOk = true;
         boolean offerWindow = true;
+        RetainPlan plan = RetainPlan.RECORD;
         int from, to;
 
         @Override public void syncLayers(List<PaintSceneDriver.Group> want) {}
         @Override public void drawItem(DisplayItem el, int index, float flat) { drawn.add(index); }
-        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t) { from = f; to = t; return RetainPlan.RECORD; }
+        @Override public RetainPlan planRetained(DisplayItem node, int nodeIndex, int f, int t) { from = f; to = t; return plan; }
         @Override public void beginRetained(DisplayItem node, int nodeIndex, int f, int t) { log.add("begin"); }
         @Override public boolean endRetained(DisplayItem node, int nodeIndex) { log.add("end"); return endOk; }
         @Override public double[] cullWindow(DisplayItem node, int nodeIndex) { return offerWindow ? new double[]{y0, y1, PAD} : null; }
@@ -67,10 +68,15 @@ class PaintSceneDriverRangeCullTest {
     private record Result(Rec rec, PaintSceneDriver driver) {}
 
     private static Result run(List<DisplayItem> items, double y0, double y1, boolean cull, boolean endOk) {
+        return run(items, y0, y1, cull, endOk, RetainPlan.RECORD);
+    }
+
+    private static Result run(List<DisplayItem> items, double y0, double y1, boolean cull, boolean endOk, RetainPlan plan) {
         Rec r = new Rec();
         r.y0 = y0;
         r.y1 = y1;
         r.endOk = endOk;
+        r.plan = plan;
         PaintSceneDriver d = new PaintSceneDriver("rangecull-" + SEQ.incrementAndGet());
         boolean was = PaintSceneDriver.cullRecordedRanges;
         PaintSceneDriver.cullRecordedRanges = cull;
@@ -225,5 +231,36 @@ class PaintSceneDriverRangeCullTest {
         }
         assertEquals(List.of("begin", "end"), on.rec.log);
         assertTrue(on.rec.drawn.size() < off.rec.drawn.size());
+    }
+
+    @Test
+    void nonePlanAlsoCullsOffscreenBlocksWithoutRetainedBrackets() {
+        List<DisplayItem> items = items(html(400, ""));
+        Result on = run(items, 0, 240, true, true, RetainPlan.NONE);
+        Result off = run(items, 0, 240, false, true, RetainPlan.NONE);
+        assertExact(items, on, off, 0, 240);
+        assertTrue(on.driver.rangeCulledItems() > 300, "NONE 保持計画でも末尾の画面外ブロックが除外される: " + on.driver.rangeCulledItems());
+        assertTrue(on.rec.log.isEmpty(), "保持層ではないため begin/end は呼ばれない");
+        assertTrue(off.rec.log.isEmpty());
+    }
+
+    @Test
+    void retainScrollLayersDisabledStillCullsWhenWindowOffered() {
+        List<DisplayItem> items = items(html(400, ""));
+        Result baseline = run(items, 0, 240, true, true, RetainPlan.RECORD);
+        int from = baseline.rec.from, to = baseline.rec.to;
+        boolean was = PaintSceneDriver.retainScrollLayers;
+        PaintSceneDriver.retainScrollLayers = false;
+        try {
+            Result on = run(items, 0, 240, true, true, RetainPlan.NONE);
+            Result off = run(items, 0, 240, false, true, RetainPlan.NONE);
+            on.rec.from = off.rec.from = from;
+            on.rec.to = off.rec.to = to;
+            assertExact(items, on, off, 0, 240);
+            assertTrue(on.driver.rangeCulledItems() > 300, "retainScrollLayers 無効時でも画面外ブロック除外が働く: " + on.driver.rangeCulledItems());
+            assertTrue(on.rec.log.isEmpty());
+        } finally {
+            PaintSceneDriver.retainScrollLayers = was;
+        }
     }
 }

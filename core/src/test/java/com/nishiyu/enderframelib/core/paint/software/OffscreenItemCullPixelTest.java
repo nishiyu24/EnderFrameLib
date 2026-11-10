@@ -91,4 +91,19 @@ class OffscreenItemCullPixelTest {
             }
         }
     }
+
+    @Test
+    void scrollContainerBlocksAreRangeCulledInSoftwareBackend() {
+        // 200 行のスクロールコンテナ（画面外ブロックが多数発生する）
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 200; i++) sb.append("<div style=\"height:24px;border:1px solid #ccc\">item ").append(i).append("</div>");
+        String html = "<style>body{margin:0}#sc{width:200px;height:200px;overflow-y:auto}</style><div id=\"sc\">" + sb + "</div>";
+        StandaloneView view = new StandaloneView(html, 400, 300, FontResolver.FALLBACK);
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(400, 300, 1f)) {
+            view.frame(1000, cpu, true);
+            assertTrue(cpu.rangeCulledItems() > 0, "CPU描画（NONE保持）でも画面外ブロックが除外される: " + cpu.rangeCulledItems());
+        } finally {
+            view.close();
+        }
+    }
 }
