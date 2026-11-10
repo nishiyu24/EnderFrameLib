@@ -263,13 +263,13 @@ public class UiView implements AutoCloseable {
 
     /**
      * 箱の木から表示リストを作る。{@code scrollOnly} は位置だけが変わった作り直し
-     * （画面の外の箱は項目を作らなくてよい）。既定は {@link UiDocumentCompiler#clientBoxRenderer}。
+     * （画面の外の箱は項目を作らなくてよい）。既定は {@link com.nishiyu.enderframelib.core.EngineContext#boxRenderer}。
      */
     protected List<DisplayItem> paintBoxes(LayoutBox root, int width, int height, boolean scrollOnly) {
-        var renderer = UiDocumentCompiler.clientBoxRenderer;
+        var renderer = com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer;
         if (renderer == null) return null;
         var keyframes = document.sheet.keyframes;
-        if (renderer != UiDocumentCompiler.DEFAULT_BOX_RENDERER) return renderer.render(root, width, height, keyframes, scrollState);
+        if (renderer != com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT) return renderer.render(root, width, height, keyframes, scrollState);
         // 既定の描画は、ビルダーをこのビューで持ち回す: 前回と入力が同じ箱は、項目を作り直さず前回のものを使う
         var builder = paintBuilder;
         if (builder == null || paintBuilderW != width || paintBuilderH != height
@@ -983,7 +983,7 @@ public class UiView implements AutoCloseable {
     /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
     protected List<ScrollContentInfo> builtScrollContents() {
         var builder = paintBuilder;
-        return builder != null && UiDocumentCompiler.clientBoxRenderer == UiDocumentCompiler.DEFAULT_BOX_RENDERER
+        return builder != null && com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer == com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT
                 ? builder.scrollContents() : List.of();
     }
 
@@ -1257,7 +1257,7 @@ public class UiView implements AutoCloseable {
         for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
         publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
         long layoutDone = System.nanoTime();
-        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal;
+        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
         List<DisplayItem> elements;
         try {
             elements = paintBoxes(layoutRoot, rootW, rootH, false);
@@ -1462,7 +1462,7 @@ public class UiView implements AutoCloseable {
                 changedParents, new java.util.HashSet<>(changedParents));
         publishLayoutToDom();
         long layoutDone = System.nanoTime();
-        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal;
+        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
         // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
         exactTranslation = true;
         List<DisplayItem> elements;
@@ -1493,7 +1493,7 @@ public class UiView implements AutoCloseable {
      */
     private boolean tryRelayoutInPlace() {
         Document doc = document;
-        if (!RenderPipeline.inPlaceRestyleRelayout || layoutRoot == null || doc == null || doc.root == null
+        if (!com.nishiyu.enderframelib.core.EngineContext.current().inPlaceRestyleRelayout || layoutRoot == null || doc == null || doc.root == null
                 || doc.sheet == null) {
             return false;
         }
@@ -1800,10 +1800,10 @@ public class UiView implements AutoCloseable {
                     layoutRoot);
             setLayoutRoot(rootBox);
             long layoutDone = System.nanoTime();
-            long paintAlloc0 = RenderPipeline.trackAllocations ? RenderPipeline.threadAllocatedBytes() : 0;
+            long paintAlloc0 = com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? RenderPipeline.threadAllocatedBytes() : 0;
             List<DisplayItem> elements = paintBoxes(rootBox, newRootW, newRootH, false);
-            lastBreakdown = RenderPipeline.lastBuildStats
-                    + (RenderPipeline.trackAllocations ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
+            lastBreakdown = RenderPipeline.lastBuildStats()
+                    + (com.nishiyu.enderframelib.core.EngineContext.current().trackAllocations ? " paintAllocKB=" + (RenderPipeline.threadAllocatedBytes() - paintAlloc0) / 1024 : "") + " layout=" + (layoutDone - startedAt) / 1_000_000 + "ms paint=" + (System.nanoTime() - layoutDone) / 1_000_000 + "ms";
             if (elements == null) elements = new ArrayList<>();
             publishBuilt(elements);
             applyOverrides();

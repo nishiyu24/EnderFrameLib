@@ -314,7 +314,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     // 他の箱の増減に左右されない。入力が前回と全部同じなら、前回の項目（不変）をそのまま出し、作り直さない。
     // 一致の判定は値の比較（署名のハッシュではない）なので、取り違えは起きない。確実に決まらない箱（表・フォーム部品・
     // SVG・srcset 付きの画像・動画など描画側が別の資源を読む箱）は、いつも描き直す。img（点陣画像）・progress・meter・
-    // mc-scene / mc-fluid / mc-entity は属性とスタイルだけで決まるので記憶する。
+    // ホスト登録の置換要素は属性とスタイルだけで決まるので記憶する。
 
     /** 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。 */
     private static final class BoxMemo {
@@ -394,8 +394,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private static boolean memoizable(LayoutBox box) {
         String tag = box.node.tag;
         if (tag == null) return false;
-        if (tag.startsWith("mc-")) {
-            // 描画が読むのは属性とスタイルだけ（mc-scene / mc-fluid / mc-entity）。他の mc-* は従来どおり除外する
+        if (tag.indexOf('-') >= 0) {
+            // カスタム要素名（ハイフンを含む）。ホストが置換要素として登録したものは描画が属性とスタイルだけを読むので記憶できる。
+            // 未登録のものは従来どおり除外する
             if (!ReplacedElements.isHost(tag)) return false;
         } else {
             switch (tag) {

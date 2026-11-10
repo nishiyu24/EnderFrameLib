@@ -20,6 +20,13 @@ import java.util.Set;
 final class StyleTable extends AbstractMap<String, String> {
     CssValue[] values;
     Map<String, String> extras;
+    /**
+     * {@link #extras} を別の表と共有している（複製は書き込み時にコピーする）。{@code --*} などの添字を持たない宣言は、
+     * 継承のたびに表ごと複製されるが、書き換えは稀なので、複製の時点では写さずに共有し、最初の書き込みで初めて写す。
+     */
+    private boolean extrasShared;
+    /** {@link #extras} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。{@link #extras} を書き換えるたびに未確定へ戻す。 */
+    private byte extrasViewport = -1;
     int size;
     /**
      * 算出（{@code ValueComputer.compute}）が、どれかの値がビューポート・コンテナ基準の単位を使うと決めた結果
@@ -37,11 +44,59 @@ final class StyleTable extends AbstractMap<String, String> {
         if (source instanceof StyleTable other) {
             System.arraycopy(other.values, 0, t.values, 0, t.values.length);
             t.size = other.size;
-            if (other.extras != null) t.extras = new LinkedHashMap<>(other.extras);
+            if (other.extras != null) {
+                t.extras = other.extras;
+                t.extrasShared = true;
+                t.extrasViewport = other.extrasViewport;
+                other.extrasShared = true;
+            }
         } else if (!ComputedStyle.copyStyleMapInto(source, t)) {
             t.putAll(source);
         }
         return t;
+    }
+
+    /** 作業表の {@link #extras} を他と共有したと印を付ける（次に書くとき自分の分を写す）。 */
+    void markExtrasShared() {
+        extrasShared = true;
+    }
+
+    /** 空の表へ、{@code source}（変更されない表）の {@code --*} を丸ごと共有して取り込む。 */
+    void shareExtrasFrom(Map<String, String> source) {
+        extras = source;
+        extrasShared = true;
+        extrasViewport = -1;
+        size += source.size();
+    }
+
+    /** {@link #extras} を自分だけのものにする（共有中なら写す）。書く前に呼ぶ。 */
+    private void ownExtras() {
+        if (extrasShared) {
+            extras = new LinkedHashMap<>(extras);
+            extrasShared = false;
+        }
+    }
+
+    /** どれかの値がビューポート基準か。添字つきの値は {@link CssValue} が覚えた答えを引き、{@code --*} などは文字列を走査する。 */
+    boolean anyValueDependsOnViewport() {
+        CssValue[] v = values;
+        for (int i = 0; i < v.length; i++) {
+            CssValue value = v[i];
+            if (value != null && value.dependsOnViewport()) return true;
+        }
+        if (extras == null) return false;
+        byte e = extrasViewport;
+        if (e < 0) {
+            e = 0;
+            for (String value : extras.values()) {
+                if (value != null && StyleResolver.valueDependsOnViewport(value)) {
+                    e = 1;
+                    break;
+                }
+            }
+            extrasViewport = e;
+        }
+        return e == 1;
     }
 
     /** 添字（{@code CssPropertyId}）で直接書く（文字列は正規の値にする）。 */
@@ -111,6 +166,8 @@ final class StyleTable extends AbstractMap<String, String> {
         }
         if (value == null) return remove(key);
         if (extras == null) extras = new LinkedHashMap<>();
+        else ownExtras();
+        extrasViewport = -1;
         String old = extras.put(key, value);
         if (old == null) size++;
         return old;
@@ -130,6 +187,9 @@ final class StyleTable extends AbstractMap<String, String> {
             return old;
         }
         if (extras == null) return null;
+        if (!extras.containsKey(name)) return null;
+        ownExtras();
+        extrasViewport = -1;
         String old = extras.remove(name);
         if (old != null) size--;
         return old;
@@ -140,6 +200,8 @@ final class StyleTable extends AbstractMap<String, String> {
         relativeUnits = -1;
         java.util.Arrays.fill(values, null);
         extras = null;
+        extrasShared = false;
+        extrasViewport = -1;
         size = 0;
     }
 
@@ -158,6 +220,7 @@ final class StyleTable extends AbstractMap<String, String> {
                     private int last = -1;
                     private Iterator<Entry<String, String>> extra;
                     private boolean inExtras;
+                    private String lastExtraKey;
 
                     private int advance(int from) {
                         CssValue[] v = values;
@@ -185,13 +248,24 @@ final class StyleTable extends AbstractMap<String, String> {
                         }
                         if (!hasNext()) throw new NoSuchElementException();
                         inExtras = true;
-                        return extra.next();
+                        Entry<String, String> e = extra.next();
+                        lastExtraKey = e.getKey();
+                        return e;
                     }
 
                     @Override
                     public void remove() {
                         if (inExtras) {
-                            extra.remove();
+                            extrasViewport = -1;
+                            if (extrasShared) {
+                                // 共有中の表を走査の途中で書き換えない。写しから消す（走査は元の表のまま続く）
+                                if (lastExtraKey == null) throw new IllegalStateException();
+                                ownExtras();
+                                extras.remove(lastExtraKey);
+                                lastExtraKey = null;
+                            } else {
+                                extra.remove();
+                            }
                             size--;
                         } else {
                             if (last < 0 || values[last] == null) throw new IllegalStateException();

@@ -23,6 +23,11 @@ public class Document implements WebDocument {
     }
 
     @Override
+    public com.nishiyu.enderframelib.api.dom.Document dom() {
+        return root instanceof com.nishiyu.enderframelib.api.dom.Document d ? d : null;
+    }
+
+    @Override
     public boolean hasElement(String elementId) {
         return find(elementId) != null;
     }

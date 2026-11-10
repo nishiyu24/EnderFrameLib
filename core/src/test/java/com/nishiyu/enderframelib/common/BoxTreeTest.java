@@ -378,9 +378,9 @@ public class BoxTreeTest {
 
     @Test
     public void testStyleAndLinkAreCollectedInDocumentOrder() {
-        var previous = UiDocumentCompiler.resourceTextResolver;
-        UiDocumentCompiler.resourceTextResolver = href -> "/* " + href + " */";
-        try {
+        var ctx = new com.nishiyu.enderframelib.core.EngineContext();
+        ctx.resourceTextResolver = href -> "/* " + href + " */";
+        com.nishiyu.enderframelib.core.EngineContext.runWith(ctx, () -> {
             UiDocumentCompiler parser = new UiDocumentCompiler();
             Document doc = parser.parseDocument("""
                     <style>/* first */</style>
@@ -389,9 +389,7 @@ public class BoxTreeTest {
                     <div><style>/* third */</style></div>
                     """, "/* external */", VIEWPORT_W, VIEWPORT_H);
             assertEquals("/* external */\n/* first */\n/* second.css */\n/* third */\n", doc.authorCss);
-        } finally {
-            UiDocumentCompiler.resourceTextResolver = previous;
-        }
+        });
     }
 
     // ==========================================

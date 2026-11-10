@@ -185,6 +185,23 @@ public class StyleSheet {
     }
 
     /**
+     * 独立した写し。規則は {@link StyleRule#copy()}、{@code @keyframes} / {@code @counter-style} / {@code @property} の値は不変なので
+     * 共有し、表・層の木・メディア環境は写しに持つ。写しを書き換えても元（と他の写し）は変わらない。
+     */
+    public StyleSheet copy() {
+        StyleSheet c = new StyleSheet();
+        c.rules.ensureCapacity(rules.size());
+        for (int i = 0, n = rules.size(); i < n; i++) c.rules.add(rules.get(i).copy());
+        c.keyframes.putAll(keyframes);
+        c.counterStyles.putAll(counterStyles);
+        c.variables.putAll(variables);
+        c.registeredProperties.putAll(registeredProperties);
+        c.layers.copyFrom(layers);
+        c.mediaEnvironment = mediaEnvironment;
+        return c;
+    }
+
+    /**
      * 別のシート（UA シートへ作者シートを重ねるなど）の中身をこのシートの後ろへ足す。
      * 規則の順は呼び出し側が {@link #sortCascade()} で整える。
      */
@@ -370,6 +387,32 @@ public class StyleSheet {
 
         public Selector parsedSelector() {
             return parsed;
+        }
+
+        /**
+         * 同じ規則の独立した写し。解析済みのセレクタ・宣言の前処理（どちらも不変）は共有し、シートごとに変わる状態
+         * （メディアの有効・詳細度に入るレイヤー順位・宣言表）は写しに持つ。
+         */
+        public StyleRule copy() {
+            StyleRule c = new StyleRule(parsed);
+            c.selector = selector;
+            c.specificity = specificity;
+            c.isHover = isHover;
+            c.isActive = isActive;
+            c.isFocus = isFocus;
+            c.stateMask = stateMask;
+            c.isBefore = isBefore;
+            c.isAfter = isAfter;
+            c.pseudoElement = pseudoElement;
+            c.properties.putAll(properties);
+            CompiledDeclarations shared = compiled();
+            c.compiled = shared;
+            c.compiledVersion = c.properties.version;
+            c.layer = layer;
+            c.containerQueries = containerQueries;
+            c.mediaQueries = mediaQueries;
+            c.mediaActive = mediaActive;
+            return c;
         }
 
         /** オリジンを差し替える（UA シートに作者シートを重ねるときに使う）。 */
@@ -627,6 +670,21 @@ public class StyleSheet {
         private int anonymousCount;
         /** 道筋 → 後順の通し番号。層が増えたら作り直す。 */
         private Map<List<String>, Integer> ranks;
+
+        /** {@code other} の層の木と匿名層の通し番号を、このまっさらな木へ写す。 */
+        void copyFrom(LayerTree other) {
+            copyChildren(other.root, root);
+            anonymousCount = other.anonymousCount;
+            ranks = null;
+        }
+
+        private static void copyChildren(Node from, Node to) {
+            for (Map.Entry<String, Node> e : from.children.entrySet()) {
+                Node child = new Node();
+                to.children.put(e.getKey(), child);
+                copyChildren(e.getValue(), child);
+            }
+        }
 
         /** 層の名前の道筋を登録する（途中の層も登録される）。既にあれば順は変わらない。 */
         public void declare(List<String> path) {

@@ -105,6 +105,18 @@ final class CssValue {
         return (int) c;
     }
 
+    /** {@link StyleResolver#valueDependsOnViewport} の答え（0 = 未確定、1 = 使う、2 = 使わない）。値は不変なので 1 回だけ求める。 */
+    private volatile byte viewportDependence;
+
+    boolean dependsOnViewport() {
+        byte d = viewportDependence;
+        if (d == 0) {
+            d = StyleResolver.valueDependsOnViewport(text) ? (byte) 1 : (byte) 2;
+            viewportDependence = d;
+        }
+        return d == 1;
+    }
+
     private static final Object NOT_A_NUMBER = new Object();
     private volatile Object number;
 

@@ -181,6 +181,14 @@ public class InteractionState implements StateLookup {
         public boolean viewportDependent = true;
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
+        /**
+         * {@link #hasInteractiveRules} を求めたときの入力（シート・規則の版・節の属性の版・親）。入力が同じなら、親の算出スタイルだけが
+         * 変わった再スタイル（継承の変化）で求め直さなくてよい。祖先・兄弟・構造の変化は、汚れの印（FORCE_SUBTREE / DIRTY_STYLE）で別に伝わる。
+         */
+        public Object interactiveSheet;
+        public int interactiveVersion;
+        public int interactiveAttrVersion;
+        public HtmlNode interactiveParent;
         /** 列挙用の表に載せたときの番号（番号の世代が変われば載せ直す）。 */
         DocumentArena slotArena;
         int slotId = -1;

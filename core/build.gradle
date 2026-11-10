@@ -164,7 +164,7 @@ tasks.register('profile', JavaExec) {
     group = 'verification'
     description = '本番の経路で段別の所要時間を表にする（PipelineProfileMain）。-Pprofile.jfr=ファイル で JFR も取る'
     classpath = sourceSets.jmh.output + sourceSets.jmh.runtimeClasspath
-    mainClass = 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
+    mainClass = project.findProperty('profile.main') ?: 'com.nishiyu.enderframelib.bench.PipelineProfileMain'
     workingDir = rootProject.projectDir
     if (project.hasProperty('profile.jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('profile.jfr')},settings=profile"
     if (project.hasProperty('profile.args')) args(project.property('profile.args').toString().split(' ').findAll { !it.isEmpty() })

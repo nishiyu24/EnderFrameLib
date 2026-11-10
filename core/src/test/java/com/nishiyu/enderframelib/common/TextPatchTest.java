@@ -132,7 +132,7 @@ public class TextPatchTest {
             long[] ns = new long[2];
             for (int i = 0; i < 600; i++) {
                 int mode = i & 1;
-                RenderPipeline.localRelayout = mode == 0;
+                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = mode == 0;
                 hp.updateTextContent("HP " + i);
                 long t0 = System.nanoTime();
                 v.ui().flushInvalidation();
@@ -141,7 +141,7 @@ public class TextPatchTest {
             System.out.println("[text-patch benchmark] interleaved 250 frames each: local=" + ns[0] / 1_000_000
                     + "ms whole-tree-mark=" + ns[1] / 1_000_000 + "ms");
         } finally {
-            RenderPipeline.localRelayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
         }
     }
 
@@ -161,16 +161,16 @@ public class TextPatchTest {
             for (int i = 0; i < ids.length; i++) {
                 final String id = ids[i], text = texts[i];
                 ((HtmlText) textChild(local, id)).setData(text);
-                RenderPipeline.localRelayout = true;
+                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
                 List<String> a = sigs(local);
-                if (RenderPipeline.lastRelayoutWasLocal) localHits++;
+                if (RenderPipeline.lastRelayoutWasLocal()) localHits++;
                 ((HtmlText) textChild(whole, id)).setData(text);
-                RenderPipeline.localRelayout = false;
+                com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = false;
                 List<String> b = sigs(whole);
                 assertEquals(b, a, "手順 " + i + " (" + id + ")");
             }
         } finally {
-            RenderPipeline.localRelayout = true;
+            com.nishiyu.enderframelib.core.EngineContext.global().localRelayout = true;
         }
         assertTrue(localHits >= ids.length - 1, "局所の印付けで済んだ回数: " + localHits);
     }
@@ -222,7 +222,7 @@ public class TextPatchTest {
         for (int i = 0; i < 3; i++) { hp.updateTextContent("w" + i); v.ui().flushInvalidation(); }
         long before = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.styleFactsComputed();
         for (int i = 0; i < 5; i++) { hp.updateTextContent("HP " + i); v.ui().flushInvalidation(); }
-        assertTrue(RenderPipeline.lastRelayoutWasLocal);
+        assertTrue(RenderPipeline.lastRelayoutWasLocal());
         long computed = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.styleFactsComputed() - before;
         assertTrue(computed < 10, "StyleFacts を算出した回数: " + computed);
     }
@@ -241,7 +241,7 @@ public class TextPatchTest {
         hp.updateTextContent("HP 77");
         v.ui().flushInvalidation();
         long measured = com.nishiyu.enderframelib.core.layout.LayoutBox.measurementsComputed() - before;
-        assertTrue(RenderPipeline.lastRelayoutWasLocal);
+        assertTrue(RenderPipeline.lastRelayoutWasLocal());
         assertTrue(measured < 10, "境界の中だけ測り直す: " + measured);
     }
 

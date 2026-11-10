@@ -83,7 +83,7 @@ public class EnderFrameDataPackManager extends SimplePreparableReloadListener<Ma
         LOADED_UIS.clear();
         LOADED_UIS.putAll(prepared);
         // common層のUiDocumentCompilerにデータパックリソースの解決処理を注入する
-        UiDocumentCompiler.datapackResourceFallback = EnderFrameDataPackManager::getHtml;
+        com.nishiyu.enderframelib.core.EngineContext.global().datapackResourceFallback = EnderFrameDataPackManager::getHtml;
         EnderFrameLib.LOGGER.info("Loaded {} EnderFrame UI entries from datapacks.", entryCount());
     }
 

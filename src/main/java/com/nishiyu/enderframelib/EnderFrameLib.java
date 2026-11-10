@@ -34,8 +34,7 @@ public class EnderFrameLib {
         EnderConfigManager.configDirProvider = net.neoforged.fml.loading.FMLPaths.CONFIGDIR::get;
         // 0. 設定画面のテンプレート解決を注入（api/config から common への依存を持たせないため）
         EnderConfigManager.resourceResolver = path -> {
-            Function<String, String> resolver = UiDocumentCompiler.resourceTextResolver;
-            return resolver != null ? resolver.apply(path) : "";
+            return com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply(path);
         };
 
         // 1. 組み込み設定クラスの登録（HTML5標準フォームによるMod設定画面自動生成）

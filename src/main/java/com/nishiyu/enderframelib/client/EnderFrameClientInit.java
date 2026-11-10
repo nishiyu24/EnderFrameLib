@@ -147,7 +147,7 @@ public class EnderFrameClientInit {
         WebFontManager.installFontReader();
         CssParser.fontFaceCallback = WebFontManager::extractAndRegisterFontFaces;
 
-        UiDocumentCompiler.clientResourceFallback = path -> {
+        com.nishiyu.enderframelib.core.EngineContext.global().clientResourceFallback = path -> {
             ResourceLocation loc = ResourceLocation.tryParse(path);
             if (loc == null) {
                 EnderFrameLib.LOGGER.warn("Not a valid resource location, ignoring include: {}", path);

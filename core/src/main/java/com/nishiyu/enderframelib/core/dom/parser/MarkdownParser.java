@@ -48,7 +48,7 @@ public final class MarkdownParser {
     private MarkdownParser() {}
 
     /**
-     * HTML内の <article data-markdown>, <section data-markdown>, <script type="text/markdown">, <mc-markdown>
+     * HTML内の <article data-markdown>, <section data-markdown>, <script type="text/markdown">, ホスト宣言の Markdown タグ
      * または純粋なMarkdownテキスト全体をセマンティックHTML5へ展開する。
      */
     public static String processDocumentOrBlocks(String input) {
@@ -85,11 +85,16 @@ public final class MarkdownParser {
     /** Markdown ブロックである目印。1 つも無ければブロック探索自体を省略できる。 */
     private static boolean hasMarkdownBlockMarker(String input) {
         String lower = input.toLowerCase(Locale.ROOT);
-        return lower.contains("data-markdown") || lower.contains("mc-markdown") || lower.contains("text/markdown");
+        return lower.contains("data-markdown") || lower.contains("text/markdown") || containsHostMarkdownTag(lower);
     }
 
-    /** 展開対象になり得るタグ。 */
-    private static final String[] MD_BLOCK_TAGS = {"mc-markdown", "article", "section", "div", "script"};
+    private static boolean containsHostMarkdownTag(String lower) {
+        for (String t : HostSyntax.markdownTags()) if (lower.contains(t)) return true;
+        return false;
+    }
+
+    /** 展開対象になり得る標準のタグ。ホスト宣言のタグ（{@link HostSyntax#markdownTags()}）も対象になる。 */
+    private static final String[] MD_BLOCK_TAGS = {"article", "section", "div", "script"};
 
     /** 見つかった Markdown ブロック 1 つ。 */
     private record MarkdownBlock(String tag, String rawAttrs, String body, int startIndex, int endIndex) {}
@@ -120,7 +125,7 @@ public final class MarkdownParser {
             boolean selfClosing = rawAttrs.trim().endsWith("/");
             String lowerAttrs = rawAttrs.toLowerCase(Locale.ROOT);
 
-            boolean isMdBlock = !selfClosing && ("mc-markdown".equals(matchedTag)
+            boolean isMdBlock = !selfClosing && (HostSyntax.isMarkdownTag(matchedTag)
                     || lowerAttrs.contains("data-markdown")
                     || lowerAttrs.contains("text/markdown"));
             if (!isMdBlock) {
@@ -144,7 +149,17 @@ public final class MarkdownParser {
 
     /** 位置 lt の "<" が MD_BLOCK_TAGS のいずれかの開始タグなら、そのタグ名を返す。 */
     private static String matchTagNameAt(String input, int lt) {
-        for (String tag : MD_BLOCK_TAGS) {
+        String t = matchTagNameIn(MD_BLOCK_TAGS, input, lt);
+        if (t != null) return t;
+        for (String tag : HostSyntax.markdownTags()) {
+            t = matchTagNameIn(new String[] {tag}, input, lt);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    private static String matchTagNameIn(String[] tags, String input, int lt) {
+        for (String tag : tags) {
             int nameEnd = lt + 1 + tag.length();
             if (nameEnd > input.length()) continue;
             if (!input.regionMatches(true, lt + 1, tag, 0, tag.length())) continue;
@@ -213,7 +228,7 @@ public final class MarkdownParser {
 
     /** ブロックを Markdown として展開した HTML に変換する。 */
     private static String renderBlock(MarkdownBlock block) {
-        String outTag = ("mc-markdown".equals(block.tag) || "script".equals(block.tag)) ? "article" : block.tag;
+        String outTag = (HostSyntax.isMarkdownTag(block.tag) || "script".equals(block.tag)) ? "article" : block.tag;
         String cleanedAttrs = block.rawAttrs
                 .replaceAll("(?i)\\bdata-markdown(?:\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+))?", "")
                 .replaceAll("(?i)\\btype\\s*=\\s*[\"']text/markdown[\"']", "")

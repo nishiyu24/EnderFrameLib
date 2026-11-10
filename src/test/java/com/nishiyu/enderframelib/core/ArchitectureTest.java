@@ -74,7 +74,7 @@ public class ArchitectureTest {
     private static final int M1X_MAX_STATIC_CALLBACK_FIELDS = 0;
     /** M1 拡張: コマンド定義クラス内のサーバー状態コレクション（Phase 1 / T8 で server/HologramRegistry へ移し 0 にした。2026-10-25）。 */
     private static final int M1X_MAX_COMMAND_STATE_COLLECTIONS = 0;
-    /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・CustomTagExpander の新規ノード構築を除く。Phase 1 / T8 で 0 にした。2026-10-25）。 */
+    /** DOM 属性の直接書き換え（node/・パーサ・直列化の復元・McTagMacros の新規ノード構築を除く。Phase 1 / T8 で 0 にした。2026-10-25）。 */
     private static final int DOM_MAX_DIRECT_ATTR_WRITES = 0;
     /** R6: RenderKeys の参照行数（Phase 3 で撤去して 0 にした。2026-10-26）。型付きの付帯情報は {@code RenderHints}。 */
     private static final int R6_MAX_RENDER_KEYS_REFERENCES = 0;
@@ -246,7 +246,7 @@ public class ArchitectureTest {
             if (rel.startsWith("core/dom/node/") || rel.startsWith("core/dom/parser/")
                     || rel.equals("network/DomMutationRecord.java")
                     || rel.equals("network/HtmlNodeSerializer.java")
-                    || rel.equals("common/CustomTagExpander.java")) continue;
+                    || rel.equals("content/McTagMacros.java")) continue;
             String[] lines = Files.readString(path).split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
                 if (write.matcher(lines[i]).find()) found.add(rel + ":" + (i + 1));

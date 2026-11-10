@@ -61,6 +61,11 @@ public class PipelineBench {
         hoverRoot = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
                 FontResolver.FALLBACK, hoverState);
         hoverTarget = firstButton(document.root);
+        inheritedState = new InteractionState();
+        inheritedRoot = parser.layoutDocument(document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), new ScrollState(),
+                FontResolver.FALLBACK, inheritedState);
+        inheritedTarget = document.root.querySelector("body");
+        for (int i = 0; i < 4; i++) restyleInherited();
         // 状態表を温めて、往復の定常状態を測る
         for (int i = 0; i < 4; i++) hoverToggle();
     }
@@ -72,6 +77,35 @@ public class PipelineBench {
         hoverOn = !hoverOn;
         hoverState.setHoveredNode(hoverOn ? hoverTarget : null);
         return parser.restyleLayoutTree(hoverRoot, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), hoverState);
+    }
+
+    private InteractionState inheritedState;
+    private LayoutBox inheritedRoot;
+    private HtmlNode inheritedTarget;
+    private boolean inheritedOn;
+
+    /**
+     * 同じ {@link InteractionState} を使い続け、{@code <body>} の継承プロパティ（{@code color}）を 1 つ切り替えて再スタイルする。
+     * 実際の UI で「祖先の継承プロパティだけが変わった」ときの経路（{@code restyle} は毎回状態を捨てる最悪ケース）。
+     */
+    @Benchmark
+    public Object restyleInherited() {
+        if (inheritedTarget == null) return null;
+        String old = inheritedTarget.attrs.get("style");
+        String next = (inheritedOn = !inheritedOn) ? "color:#112233" : "color:#223344";
+        inheritedTarget.attrs.put("style", next);
+        inheritedState.invalidateAttribute(inheritedTarget, "style", old, next);
+        return parser.restyleLayoutTree(inheritedRoot, document, Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, Map.of(), inheritedState);
+    }
+
+    private boolean narrow;
+
+    /** 同じ状態で、ビューポートの幅を 1px ずつ交互に変えて箱の木を組み直す（幅の変化で測り直しが要る箱の経路）。 */
+    @Benchmark
+    public LayoutBox layoutWidthChange() {
+        narrow = !narrow;
+        return parser.layoutDocument(document, Workloads.VIEWPORT_W - (narrow ? 1 : 0), Workloads.VIEWPORT_H, Map.of(),
+                new ScrollState(), FontResolver.FALLBACK, hoverState);
     }
 
     /** 箱の木を一から作って測り、配置する（差分なし）。 */

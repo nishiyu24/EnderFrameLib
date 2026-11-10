@@ -161,12 +161,13 @@ public final class TextShaper {
         if (text == null || face == null) return shapeUncached(text, face, style, availableWidth);
         // 同じ文字列・書体・スタイル・幅の整形は結果も同じ（書体の面は同一性で見分ける。登録が変われば別のインスタンスになる）。
         // 再レイアウトは変わらない文字も測り直すことが多いので、整形のやり直しを避ける
-        ShapeKey key = new ShapeKey(text, face, style, availableWidth);
-        List<ShapedLine> hit = SHAPED.get(key);
+        // 照会は、スレッドごとの 1 個の鍵を書き換えて使う（呼び出しごとに鍵を作らない）。入れるときだけ複製する
+        ShapeKey probe = SHAPE_PROBE.get().set(text, face, style, availableWidth);
+        List<ShapedLine> hit = SHAPED.get(probe);
         if (hit != null) return hit;
         List<ShapedLine> lines = List.copyOf(shapeUncached(text, face, style, availableWidth));
         if (SHAPED.size() >= SHAPED_LIMIT) SHAPED.clear();
-        SHAPED.put(key, lines);
+        SHAPED.put(new ShapeKey(text, face, style, availableWidth), lines);
         return lines;
     }
 
@@ -176,7 +177,24 @@ public final class TextShaper {
      * 行の分割はこの数値だけで行う。
      */
 
-    private record SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+    private static final class SegKey {
+        private String paragraph;
+        private FontFace face;
+        private FontStyle font;
+        private WordBreak wordBreak;
+
+        SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+            set(paragraph, face, font, wordBreak);
+        }
+
+        SegKey set(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+            this.paragraph = paragraph;
+            this.face = face;
+            this.font = font;
+            this.wordBreak = wordBreak;
+            return this;
+        }
+
         @Override
         public boolean equals(Object o) {
             return o instanceof SegKey k && k.face == face && k.wordBreak == wordBreak
@@ -189,6 +207,9 @@ public final class TextShaper {
         }
     }
 
+    private static final ThreadLocal<ShapeKey> SHAPE_PROBE = ThreadLocal.withInitial(() -> new ShapeKey(null, null, null, 0f));
+    private static final ThreadLocal<SegKey> SEG_PROBE = ThreadLocal.withInitial(() -> new SegKey(null, null, null, null));
+
     private static final java.util.concurrent.ConcurrentHashMap<SegKey, ParagraphSegments> SEGMENTED = new java.util.concurrent.ConcurrentHashMap<>();
     private static final AtomicInteger SEGMENTED_BUILDS = new AtomicInteger();
 
@@ -196,9 +217,9 @@ public final class TextShaper {
     static int segmentedBuilds() { return SEGMENTED_BUILDS.get(); }
 
     public static ParagraphSegments segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
-        SegKey key = new SegKey(paragraph, face, font, wordBreak);
-        ParagraphSegments hit = SEGMENTED.get(key);
+        ParagraphSegments hit = SEGMENTED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak));
         if (hit != null) return hit;
+        SegKey key = new SegKey(paragraph, face, font, wordBreak);
         List<String> list = segments(paragraph, wordBreak);
         int n = list.size();
         String[] segs = list.toArray(new String[0]);
@@ -230,7 +251,24 @@ public final class TextShaper {
     }
 
     /** 整形結果の記憶の鍵。{@code face} は同一性で比べる。 */
-    private record ShapeKey(String text, FontFace face, TextStyle style, float width) {
+    private static final class ShapeKey {
+        private String text;
+        private FontFace face;
+        private TextStyle style;
+        private float width;
+
+        ShapeKey(String text, FontFace face, TextStyle style, float width) {
+            set(text, face, style, width);
+        }
+
+        ShapeKey set(String text, FontFace face, TextStyle style, float width) {
+            this.text = text;
+            this.face = face;
+            this.style = style;
+            this.width = width;
+            return this;
+        }
+
         @Override
         public boolean equals(Object o) {
             return o instanceof ShapeKey k && k.face == face && Float.compare(k.width, width) == 0

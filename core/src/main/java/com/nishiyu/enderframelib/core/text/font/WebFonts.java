@@ -75,6 +75,21 @@ public final class WebFonts {
         return true;
     }
 
+    /** データが拡大縮小できる書体として開けるか（登録はしない）。 */
+    public static boolean isUsable(byte[] data) {
+        return data != null && data.length > 0 && probe(data);
+    }
+
+    /** ファイルが拡大縮小できる書体として開けるか（登録はしない）。 */
+    public static boolean isUsableFile(Path file) {
+        if (file == null) return false;
+        FT_Face probe = LoadedFace.openFace(file.toAbsolutePath(), 0);
+        if (probe == null) return false;
+        boolean scalable = (probe.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0;
+        LoadedFace.closeFace(probe);
+        return scalable;
+    }
+
     /** データが書体として開けるか。 */
     private static boolean probe(byte[] data) {
         synchronized (LoadedFace.LOCK) {

@@ -143,8 +143,8 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testBoundStyleChangesReachLayoutWithoutOtherInvalidation() {
-        com.nishiyu.enderframelib.common.RenderPipeline.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer;
-        com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) ->
+        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) ->
                 new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
         try {
             String html = "<style>#mover{position:absolute;width:10px;height:10px;background:red}"
@@ -165,7 +165,7 @@ public class ReactiveStateStoreTest {
             assertEquals(40, itemById("mover").width(), "data-class の変更が反映される");
             assertNotNull(itemById("overlay"), "スタイルシートで display:none の要素を data-show で表示できる");
         } finally {
-            com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = prev;
+            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prev;
         }
     }
 
@@ -175,8 +175,8 @@ public class ReactiveStateStoreTest {
      */
     @Test
     public void testNumericStyleBindingsReachLayoutThroughThePatchTable() {
-        com.nishiyu.enderframelib.common.RenderPipeline.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer;
-        com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = (rootBox, w, h, kf, ss) ->
+        com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer prev = com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer;
+        com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = (rootBox, w, h, kf, ss) ->
                 new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(w, h, kf, ss).render(rootBox);
         try {
             String html = "<style>#bar{position:absolute;left:0;top:0;height:10px;background:red}"
@@ -207,7 +207,7 @@ public class ReactiveStateStoreTest {
             store.syncToDom();
             assertEquals(80, itemById("bar").width());
         } finally {
-            com.nishiyu.enderframelib.common.UiDocumentCompiler.clientBoxRenderer = prev;
+            com.nishiyu.enderframelib.core.EngineContext.global().boxRenderer = prev;
         }
     }
 

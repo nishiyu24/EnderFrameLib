@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
+import com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.diag.PipelineStage;
@@ -50,22 +51,13 @@ import java.util.regex.Pattern;
 @ApiStatus.Internal
 public class RenderPipeline {
 
-    @FunctionalInterface
-    public interface ILayoutBoxRenderer {
-        List<DisplayItem> render(LayoutBox rootBox, int rootW, int rootH,
-                                Map<String, Keyframes> keyframes,
-                                ScrollState scrollState);
-    }
-
     private static final int LAYOUT_PASSES = 1;
     /** レイアウトの通し番号（{@link LayoutContext#layoutRun()}）。 */
     private static final java.util.concurrent.atomic.AtomicLong LAYOUT_RUNS = new java.util.concurrent.atomic.AtomicLong();
     private static final int MAX_CONTAINER_PASSES = 4;
 
-    public static ILayoutBoxRenderer clientBoxRenderer = null;
-
     private static ILayoutBoxRenderer effectiveRenderer() {
-        return clientBoxRenderer != null ? clientBoxRenderer : UiDocumentCompiler.clientBoxRenderer;
+        return com.nishiyu.enderframelib.core.EngineContext.current().boxRenderer;
     }
 
     private static IntrinsicSizeResolver effectiveIntrinsicResolver() {
@@ -101,45 +93,45 @@ public class RenderPipeline {
         return layoutDocument(doc, rootW, rootH, env, scrollState, fonts, interactionState, null);
     }
 
-    /**
-     * 差分レイアウトを有効にするか。false なら {@code previousRoot} を渡されても全部を作り直して測り直す
-     * （差分レイアウトを疑うときの切り分け用）。
-     */
-    public static volatile boolean incrementalLayout = true;
+    private static final ThreadLocal<com.nishiyu.enderframelib.core.diag.PipelineStats> STATS =
+            ThreadLocal.withInitial(com.nishiyu.enderframelib.core.diag.PipelineStats::new);
 
-    /**
-     * 再スタイルの走査で、汚れていない部分木を丸ごと飛ばすか。false なら全ての箱をたどる
-     * （飛ばし方を疑うときの切り分け用。結果は同じでなければならない）。
-     */
-    public static volatile boolean pruneCleanSubtrees = true;
+    private static com.nishiyu.enderframelib.core.diag.PipelineStats stats() {
+        return STATS.get();
+    }
 
-    /** 直近の {@link #layoutDocument} で作った箱の数・スタイルを算出し直した数・前回の箱を使い回した数（調べる用）。 */
-    public static volatile String lastBuildStats = "";
+    private static com.nishiyu.enderframelib.core.EngineContext ctx() {
+        return com.nishiyu.enderframelib.core.EngineContext.current();
+    }
 
-    /** 診断用: true の間、各段の割り当て量（KB、呼び出しスレッド）を {@link #lastBuildStats} に足す。既定は false で費用なし。 */
-    public static volatile boolean trackAllocations = false;
+    /** このスレッドの直近の {@link #layoutDocument} で作った箱の数・算出し直した数・使い回した数（調べる用）。 */
+    public static String lastBuildStats() {
+        return stats().lastBuildStats;
+    }
 
-    /** 診断用: {@link #trackAllocations} のとき、スタイル解決の段ごとの割り当て（バイト）。 */
-    public static long allocResolve, allocCompute, allocAnimated;
+    /** このスレッドの直近の {@link #relayoutInPlace} が経路だけの印付け（局所）で済んだか。調べる・テスト用。 */
+    public static boolean lastRelayoutWasLocal() {
+        return stats().lastRelayoutWasLocal;
+    }
 
-    /** 呼び出しスレッドがこれまでに割り当てたバイト数（{@link #trackAllocations} のときだけ呼ぶ）。 */
+    /** 呼び出しスレッドがこれまでに割り当てたバイト数（{@link EngineContext#trackAllocations} のときだけ呼ぶ）。 */
     public static long threadAllocatedBytes() {
         return ((com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean())
                 .getThreadAllocatedBytes(Thread.currentThread().getId());
     }
-    private static int statBoxes, statRestyled, statReused;
-    private static String statPhases = "";
-    private static long passMeasureMs, passLayoutMs, passMeasured;
 
     /**
      * 文書をレイアウトする。{@code previousRoot}（同じ文書の前回の結果）があれば差分レイアウトにする:
      * 箱は DOM の節ごとに使い回し、中身も入力も前回と同じ部分木は measure を飛ばす。
      * 結果は全部を作り直したときと同じ（{@code IncrementalLayoutTest} が確かめる）。
      */
+    /** 切り分け用: 前回の箱が無い（新品の箱の）レイアウトでも、同じパスの中の同一入力の測定を使い回す。 */
+    public static volatile boolean FRESH_LAYOUT_PASS_REUSE = !Boolean.getBoolean("enderframe.layout.nofreshreuse");
+
     public static LayoutBox layoutDocument(Document doc, int rootW, int rootH, Map<String, String> env,
                                            ScrollState scrollState, FontResolver fonts, InteractionState interactionState,
                                            LayoutBox previousRoot) {
-        boolean incremental = incrementalLayout && previousRoot != null;
+        boolean incremental = ctx().incrementalLayout && previousRoot != null;
         Map<String, String> rootStyleRaw = rootViewportStyle(rootW, rootH);
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
@@ -152,11 +144,11 @@ public class RenderPipeline {
         LayoutBox rootBox = incremental ? previousRoot : null;
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
             Map<HtmlNode, LayoutBox> reusable = incremental ? LayoutBox.reusableBoxes(rootBox) : null;
-            statBoxes = statRestyled = statReused = 0;
-            allocResolve = allocCompute = allocAnimated = 0;
+            stats().boxes = stats().restyled = stats().reused = 0;
+            stats().allocResolve = stats().allocCompute = stats().allocAnimated = 0;
             long tA = System.nanoTime();
             long profBuild = StageProfiler.begin(PipelineStage.STYLE_BUILD);
-            boolean track = trackAllocations;
+            boolean track = ctx().trackAllocations;
             long aA = track ? threadAllocatedBytes() : 0;
             // 共有した結果は残す（restyleLayoutTree と同じ理由。シート・環境・版が変われば ShareCache が捨てる）
             try {
@@ -175,15 +167,16 @@ public class RenderPipeline {
             long aC = track ? threadAllocatedBytes() : 0;
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
             long tD = System.nanoTime();
-            runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, incremental);
+            runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts,
+                    incremental || FRESH_LAYOUT_PASS_REUSE);
             long tE = System.nanoTime();
             long aE = track ? threadAllocatedBytes() : 0;
-            statPhases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
-                    + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + passMeasureMs + "/" + passMeasured + "boxes layout=" + passLayoutMs + ")"
-                    + (track ? " allocKB[resolve=" + allocResolve / 1024 + " compute=" + allocCompute / 1024 + " anim=" + allocAnimated / 1024 + " build=" + (aB - aA) / 1024 + " boxTree=" + (aC - aB) / 1024 + " passes=" + (aE - aC) / 1024 + "]" : "");
+            stats().phases = "build=" + (tB - tA) / 1_000_000 + " boxTree=" + (tC - tB) / 1_000_000 + " mark=" + (tD - tC) / 1_000_000
+                    + " passes=" + (tE - tD) / 1_000_000 + "(measure=" + stats().passMeasureMs + "/" + stats().passMeasured + "boxes layout=" + stats().passLayoutMs + ")"
+                    + (track ? " allocKB[resolve=" + stats().allocResolve / 1024 + " compute=" + stats().allocCompute / 1024 + " anim=" + stats().allocAnimated / 1024 + " build=" + (aB - aA) / 1024 + " boxTree=" + (aC - aB) / 1024 + " passes=" + (aE - aC) / 1024 + "]" : "");
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
-        lastBuildStats = "boxes=" + statBoxes + " restyled=" + statRestyled + " reused=" + statReused + " " + statPhases;
+        stats().lastBuildStats = "boxes=" + stats().boxes + " restyled=" + stats().restyled + " reused=" + stats().reused + " " + stats().phases;
         return rootBox;
     }
 
@@ -250,9 +243,9 @@ public class RenderPipeline {
         long m2 = System.nanoTime();
         StageProfiler.record(PipelineStage.LAYOUT_MEASURE, m1 - m0);
         StageProfiler.record(PipelineStage.LAYOUT_PLACE, m2 - m1);
-        passMeasureMs = (m1 - m0) / 1_000_000;
-        passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
-        passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
+        stats().passMeasureMs = (m1 - m0) / 1_000_000;
+        stats().passMeasured = LayoutBox.measurementsComputed() - measuredBefore;
+        stats().passLayoutMs = (System.nanoTime() - m1) / 1_000_000;
         if (clearMarks) LayoutBox.clearAllSubtreeMarks(rootBox);
     }
 
@@ -265,12 +258,6 @@ public class RenderPipeline {
                                        ScrollState scrollState, FontResolver fonts) {
         relayoutInPlace(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, null);
     }
-
-    /** 局所レイアウトを有効にするか。false なら常に木全体の印付けをする（切り分け用。結果は同じでなければならない）。 */
-    public static volatile boolean localRelayout = true;
-
-    /** 直近の {@link #relayoutInPlace} が経路だけの印付け（局所）で済んだか。調べる・テスト用。 */
-    public static volatile boolean lastRelayoutWasLocal;
 
     /**
      * @param changed 変わったと分かっている箱（文字の箱）。経路だけの印付けで済むなら木全体の走査を省く。null なら木全体
@@ -288,9 +275,9 @@ public class RenderPipeline {
     public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                        ScrollState scrollState, FontResolver fonts,
                                        java.util.Collection<LayoutBox> changed, java.util.Set<LayoutBox> shallow) {
-        List<LayoutBox> path = localRelayout && changed != null && !changed.isEmpty()
+        List<LayoutBox> path = ctx().localRelayout && changed != null && !changed.isEmpty()
                 ? LayoutBox.markLayoutChangesAlong(rootBox, changed, shallow) : null;
-        lastRelayoutWasLocal = path != null;
+        stats().lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
         runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null);
         if (path != null) {
@@ -432,9 +419,6 @@ public class RenderPipeline {
         return LAYOUT_CHANGED_BOXES.get();
     }
 
-    /** 局所再レイアウト（箱の木を作り直さない）を有効にするか。false なら常に木を作り直す（切り分け用。結果は同じでなければならない）。 */
-    public static volatile boolean inPlaceRestyleRelayout = true;
-
     /**
      * 箱の木の形（匿名箱・生成箱・表示の種類）に響かず、寸法の入力にだけなる非継承プロパティか。
      * これだけが変わった再スタイルは、箱の木を作り直さず測り直しだけで足りる。
@@ -561,68 +545,15 @@ public class RenderPipeline {
         return FORCE_NONE;
     }
 
-    /** 正規表現にかける前の足切り: ビューポート依存の書き方（{@code vw} {@code cqw} {@code var(} {@code env(}）は必ず v・q・( のどれかを含む。 */
-    private static final String[] VIEWPORT_SUFFIXES = {"w", "h", "i", "b", "min", "max"};
-
-    /** 末尾の単位（w / h / i / b / min / max）が {@code at} から始まり、その直後が英字でないか。 */
-    private static boolean viewportSuffixAt(String v, int at) {
-        for (String suffix : VIEWPORT_SUFFIXES) {
-            int end = at + suffix.length();
-            if (v.regionMatches(true, at, suffix, 0, suffix.length())
-                    && (end >= v.length() || !isAsciiLetter(v.charAt(end)))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isAsciiLetter(char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-    }
-
-    /**
-     * 値がビューポート（vw/vh…）・コンテナ（cqw…）の単位、{@code var()}、{@code env()} を含むか。
-     * {@link #VIEWPORT_DEPENDENT_VALUE} と同じ判定を、{@code Matcher} を作らずに行う。
-     */
+    /** 値がビューポート・コンテナ基準の単位、{@code var()}、{@code env()} を含むか（判定の本体は {@link StyleResolver}）。 */
     static boolean dependsOnViewportValue(String v) {
-        int n = v.length();
-        for (int i = 0; i < n; i++) {
-            char c = v.charAt(i);
-            if (c == '(' && i >= 3) {
-                if (v.regionMatches(true, i - 3, "var", 0, 3) || v.regionMatches(true, i - 3, "env", 0, 3)) return true;
-            }
-            if (c >= '0' && c <= '9' && i + 1 < n) {
-                int j = i + 1;
-                char d = v.charAt(j);
-                if ((d == 's' || d == 'S' || d == 'l' || d == 'L' || d == 'd' || d == 'D') && j + 1 < n
-                        && (v.charAt(j + 1) == 'v' || v.charAt(j + 1) == 'V') && viewportSuffixAt(v, j + 2)) {
-                    return true;
-                }
-                if ((d == 'v' || d == 'V') && viewportSuffixAt(v, j + 1)) return true;
-                if ((d == 'c' || d == 'C') && j + 1 < n && (v.charAt(j + 1) == 'q' || v.charAt(j + 1) == 'Q')
-                        && viewportSuffixAt(v, j + 2)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean mayDependOnViewport(String value) {
-        for (int i = 0, n = value.length(); i < n; i++) {
-            char c = value.charAt(i);
-            if (c == '(' || c == 'v' || c == 'V' || c == 'q' || c == 'Q') return true;
-        }
-        return false;
+        return StyleResolver.valueDependsOnViewport(v);
     }
 
     private static boolean dependsOnViewport(HtmlNode node, Map<String, String> rawStyle) {
         // ルートはビューポートの寸法を継承元の表として受け取る
         if (node.parent == null) return true;
-        for (String value : rawStyle.values()) {
-            if (value != null && mayDependOnViewport(value) && dependsOnViewportValue(value)) return true;
-        }
-        return false;
+        return StyleResolver.rawDependsOnViewport(rawStyle);
     }
 
     /**
@@ -675,9 +606,23 @@ public class RenderPipeline {
                 container != null ? container : containerFor(node, interactionState)));
     }
 
+    /**
+     * 前回求めた {@code hasInteractiveRules} を、そのまま使ってよいか。入力（シート・規則の版・この節の属性・親）が前回と同じで、
+     * この節自身が汚れておらず、祖先・兄弟の変化による強制（{@link #FORCE_SUBTREE}）も無いこと。
+     * 親の算出スタイルが変わっただけ（継承の変化。{@link #FORCE_SELF}）なら、対話状態の規則の当たり方は変わらない。
+     */
+    private static boolean canReuseInteractive(InteractionState.StateFlags flags, HtmlNode node, StyleSheet sheet, int force) {
+        return flags != null && sheet != null && force != FORCE_SUBTREE
+                && flags.interactiveSheet == sheet
+                && flags.interactiveVersion == sheet.rules.version()
+                && flags.interactiveAttrVersion == node.attrVersion()
+                && flags.interactiveParent == node.parent
+                && (flags.dirtyBits() & (InteractionState.StateFlags.DIRTY_STYLE | InteractionState.StateFlags.DIRTY_UNSCOPED)) == 0;
+    }
+
     private static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, Map<String, String> rawStyle,
                                    ComputedStyle computed, float parentFontSize, StyleScope scope,
-                                   boolean hasInteractive) {
+                                   boolean hasInteractive, StyleSheet sheet) {
         flags.computedStyleCache = rawStyle;
         flags.computedStyle = computed;
         flags.cachedParentFontSize = parentFontSize;
@@ -687,6 +632,10 @@ public class RenderPipeline {
         flags.cachedViewportH = scope.viewportH();
         flags.viewportDependent = dependsOnViewport(node, rawStyle);
         flags.hasInteractiveRules = hasInteractive;
+        flags.interactiveSheet = sheet;
+        flags.interactiveVersion = sheet != null ? sheet.rules.version() : -1;
+        flags.interactiveAttrVersion = node.attrVersion();
+        flags.interactiveParent = node.parent;
         flags.clearStyleDirtyFlag();
         flags.clearSubtreeDirty();
         flags.clearDirtyBelow();
@@ -734,7 +683,7 @@ public class RenderPipeline {
         else interactionState.discardUnscopedLog();
         // 飛ばしてよいのは、前回の走査と同じビューポートのとき（変わると、飛ばした子孫の vw や var() が古くなる）
         InteractionState.StateFlags rootFlags = interactionState.get(rootBox.node);
-        interactionState.pruneRestyle = pruneCleanSubtrees && rootFlags != null
+        interactionState.pruneRestyle = ctx().pruneCleanSubtrees && rootFlags != null
                 && rootFlags.cachedViewportW == rootW && rootFlags.cachedViewportH == rootH;
         // 共有の結果は再スタイルをまたいで残す（鍵は親の算出表の同一性・掛かった規則・数値の入力。シートの版・環境が変われば ShareCache が捨てる）。
         // 親が変わらない要素の「前に解いた規則の組」へ戻る往復（class の付け外しなど）が、解き直しなしで済む
@@ -784,7 +733,8 @@ public class RenderPipeline {
                 rawStyle.putAll(animation);
                 computed = computeStyle(rawStyle, inheritedStyle, sheet, env, parentFontSize, scope, container);
             }
-            boolean hasInteractive = StyleResolver.hasInteractiveRules(node, sheet);
+            boolean hasInteractive = canReuseInteractive(flags, node, sheet, force)
+                    ? flags.hasInteractiveRules : StyleResolver.hasInteractiveRules(node, sheet);
 
             if (prevStyle == null || !ComputedStyle.sameDeclarations(prevStyle, computed)) {
                 styleChanged = true;
@@ -816,7 +766,7 @@ public class RenderPipeline {
             resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState);
             BoxTreeBuilder.restyleGeneratedBoxes(box);
             box.hasInteractiveRules = hasInteractive;
-            cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
+            cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive, sheet);
         } else {
             computed = flags.computedStyle;
             childForce = subtreeDirty ? FORCE_SUBTREE : FORCE_NONE;
@@ -973,8 +923,8 @@ public class RenderPipeline {
         InteractionState.StateFlags flags = interactionState != null ? interactionState.getOrCreate(node) : null;
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
         boolean needsRestyle = cache != StyleCache.VALID;
-        statBoxes++;
-        if (needsRestyle) statRestyled++;
+        stats().boxes++;
+        if (needsRestyle) stats().restyled++;
 
         ComputedStyle computed;
         boolean hasInteractive;
@@ -983,7 +933,7 @@ public class RenderPipeline {
         boolean subtreeDirty = (flags != null && flags.subtreeDirty()) || force == FORCE_SUBTREE;
 
         if (needsRestyle) {
-            boolean tk = trackAllocations;
+            boolean tk = ctx().trackAllocations;
             long k0 = tk ? threadAllocatedBytes() : 0;
             StyleSet styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
             ContainerBox container = containerFor(node, interactionState);
@@ -1014,15 +964,15 @@ public class RenderPipeline {
             }
             hasInteractive = styleSet.hasInteractiveRules();
             if (tk) {
-                allocResolve += k1 - k0;
-                allocCompute += k2 - k1;
-                allocAnimated += threadAllocatedBytes() - k2;
+                stats().allocResolve += k1 - k0;
+                stats().allocCompute += k2 - k1;
+                stats().allocAnimated += threadAllocatedBytes() - k2;
             }
 
             Propagation propagation = propagationOf(previous, computed);
             childForce = childForceOf(subtreeDirty, propagation, sheet);
             childForceIfInherits = propagation == Propagation.NON_INHERITED;
-            if (flags != null) cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive);
+            if (flags != null) cacheStyle(flags, node, rawStyle, computed, parentFontSize, scope, hasInteractive, sheet);
         } else {
             computed = flags.computedStyle;
             hasInteractive = flags.hasInteractiveRules;
@@ -1044,7 +994,7 @@ public class RenderPipeline {
             else {
                 box.resetEngineOutputs();
                 reusedBox = true;
-                statReused++;
+                stats().reused++;
             }
         }
         if (box == null) {

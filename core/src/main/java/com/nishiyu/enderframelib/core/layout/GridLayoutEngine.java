@@ -55,7 +55,7 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
 public class GridLayoutEngine extends LayoutEngine {
 
     /** 列の寸法を測るための文脈。内容の寸法に縮む。 */
-    private static final FormattingContext CONTRIBUTION_CONTEXT = new FormattingContext(FormattingContext.Display.GRID, false, true);
+    private static final FormattingContext CONTRIBUTION_CONTEXT = FormattingContext.of(FormattingContext.Display.GRID, false, true);
 
     @Override
     public float measureContent(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
@@ -554,7 +554,7 @@ public class GridLayoutEngine extends LayoutEngine {
         float areaW = span(gs.colSizes, item.colStart, item.colSpan, box.columnGap);
         CssKeywords.Alignment justify = selfAlignment(item.box, CssPropertyIndex.JUSTIFY_SELF, box.style, CssPropertyIndex.JUSTIFY_ITEMS);
         boolean stretch = justify == CssKeywords.Alignment.STRETCH && !hasAutoMargin(item.box, true);
-        FormattingContext childCtx = new FormattingContext(FormattingContext.Display.GRID,
+        FormattingContext childCtx = FormattingContext.of(FormattingContext.Display.GRID,
                 justify == CssKeywords.Alignment.STRETCH, !stretch);
         // % の高さの子は、行の大きさがまだ決まっていない段階では auto として測る（呼び出し側が NaN を渡す）。
         // 行が決まった後に alignItems が領域の高さで測り直す
@@ -592,7 +592,7 @@ public class GridLayoutEngine extends LayoutEngine {
                     b.overrideWidth = b.w;
                     b.overrideHeight = Math.max(0, target);
                     try {
-                        b.measure(new ConstraintSpace(areaW, parentH, new FormattingContext(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
+                        b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
                     } finally {
                         b.overrideWidth = Float.NaN;
                         b.overrideHeight = Float.NaN;
@@ -602,7 +602,7 @@ public class GridLayoutEngine extends LayoutEngine {
                 // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。
                 // 以前はグリッドコンテナの基準で解いていたので、height: 100% の子が領域を越えて伸びていた。
                 // 同じ基準で測り済み（行が 1 つで領域 = グリッドの高さ）なら測り直さない
-                b.measure(new ConstraintSpace(areaW, areaH, new FormattingContext(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
+                b.measure(new ConstraintSpace(areaW, areaH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
                 item.percentBase = areaH;
             }
             // 測り直しが来なかった項目の仮の産物を終わらせる（以降の alignWithin は auto マージンを書き換える）

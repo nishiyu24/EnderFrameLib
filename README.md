@@ -363,7 +363,7 @@ Arguments fill `%s` in the translation: `{{i18n:mymod.progress, percent, 'Furnac
 `data-pan-zoom`, and for server-sent HTML `data-owner` `data-forward`
 `data-forward-action`
 
-- `data-if` (and alias `mc-if`): Toggles the HTML `hidden` boolean attribute on the element based on the condition expression.
+- `data-if` (and the Minecraft host alias `mc-if`, declared through the `HostElementProvider` SPI): Toggles the HTML `hidden` boolean attribute on the element based on the condition expression.
 - `data-show`: Toggles inline `display: none` style on the element, restoring the original display property when condition is true.
 - `data-list`: Evaluates a list model or inline JSON array/object to expand children/templates.
 

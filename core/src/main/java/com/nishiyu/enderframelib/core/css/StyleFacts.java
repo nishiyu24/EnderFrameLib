@@ -37,12 +37,27 @@ public final class StyleFacts {
 
     /** {@code width} / {@code height} の宣言（前後の空白を除く。無ければ {@code auto}）の性質。宣言の文字列自体は持たない。 */
     public boolean widthAuto, heightAuto, widthPercent, heightPercent;
+    /**
+     * 横方向の寸法に効く割合（{@code %}）がある（width / min-width / max-width / 余白 / padding / inset のどれか）。割合は親の幅を基準に
+     * 解くので、親が渡す幅が変わると箱の寸法が変わる。
+     */
+    public boolean percentGeometry;
+    /**
+     * 高さ方向の割合・式（{@code %} / {@code calc()} など）を、height / min-height / max-height / top / bottom / flex-basis /
+     * row-gap / grid-template-rows / grid-auto-rows のどれにも持たない。持たなければ、親が渡す「高さの % の基準」は
+     * この箱自身の寸法の決まり方に効かない（子孫が持たなければ、子孫の寸法にも効かない）。
+     */
+    public boolean blockPercentFree;
     /** {@code height} の宣言があるか（{@code auto} の明示も含む）。 */
     public boolean hasHeightDeclaration;
     /** {@code width} の内在サイズのキーワードの種類（{@code IW_*}）。キーワードでなければ {@link #IW_NONE}。 */
     public byte intrinsicWidthKind;
     /** {@code width: fit-content(<長さ>)} の引数（前後の空白を除く小文字）。その形でなければ null。 */
     public String fitContentArg;
+
+    private static boolean noBlockPercent(String v) {
+        return v == null || (v.indexOf('%') < 0 && v.indexOf('(') < 0);
+    }
 
     public static final byte IW_NONE = 0, IW_MIN_CONTENT = 1, IW_MAX_CONTENT = 2, IW_FIT_CONTENT = 3, IW_FIT_CONTENT_FN = 4;
 
@@ -133,6 +148,19 @@ public final class StyleFacts {
                 && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) && !s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
                 && !s.edgeHasPercent(ComputedStyle.DIM_LEFT) && !s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
                 && !s.edgeHasPercent(ComputedStyle.DIM_TOP) && !s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
+        percentGeometry = widthPercent
+                || s.edgeHasPercent(ComputedStyle.DIM_MIN_WIDTH) || s.edgeHasPercent(ComputedStyle.DIM_MAX_WIDTH)
+                || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_L) || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_R)
+                || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_T) || s.edgeHasPercent(ComputedStyle.EDGE_MARGIN_B)
+                || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_L) || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_R)
+                || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
+                || s.edgeHasPercent(ComputedStyle.DIM_LEFT) || s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
+                || s.edgeHasPercent(ComputedStyle.DIM_TOP) || s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
+        blockPercentFree = noBlockPercent(s.get(CssPropertyIndex.HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.MIN_HEIGHT))
+                && noBlockPercent(s.get(CssPropertyIndex.MAX_HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.TOP))
+                && noBlockPercent(s.get(CssPropertyIndex.BOTTOM)) && noBlockPercent(s.get(CssPropertyIndex.FLEX_BASIS))
+                && noBlockPercent(s.get(CssPropertyIndex.ROW_GAP)) && noBlockPercent(s.get(CssPropertyIndex.GRID_TEMPLATE_ROWS))
+                && noBlockPercent(s.get(CssPropertyIndex.GRID_AUTO_ROWS));
         rtl = KeywordMatch.is(s.get(CssPropertyIndex.DIRECTION), "rtl");
         bfcByStyle = floating || (s.containment() & (ComputedStyle.CONTAIN_LAYOUT | ComputedStyle.CONTAIN_PAINT)) != 0
                 || overflowX.scrolls() || overflowY.scrolls();

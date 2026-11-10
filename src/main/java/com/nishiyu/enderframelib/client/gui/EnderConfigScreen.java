@@ -61,9 +61,7 @@ public class EnderConfigScreen extends AbstractEnderScreen {
             this.state.set(spec.key(), spec.getCurrentValueAsString());
         }
         if (this.config.configMeta != null && !this.config.configMeta.customTemplate().isEmpty()) {
-            String customHtml = UiDocumentCompiler.resourceTextResolver != null
-                    ? UiDocumentCompiler.resourceTextResolver.apply(this.config.configMeta.customTemplate())
-                    : null;
+            String customHtml = com.nishiyu.enderframelib.common.DocumentLoader.effectiveResourceTextResolver().apply(this.config.configMeta.customTemplate());
             if (customHtml != null && !customHtml.isEmpty()) {
                 return customHtml;
             }

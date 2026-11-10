@@ -2,10 +2,11 @@ package com.nishiyu.enderframelib.core.layout;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ServiceLoader;
 
 /**
  * 置換要素（replaced element）のタグ台帳。レイアウト・描画の各所に散らばっていた
- * {@code "mc-fluid" / "mc-entity" / "mc-scene"} の直書きを 1 か所へ集約する。
+ * ホスト固有タグの直書きを 1 か所へ集約する。
  *
  * <p>HTML 標準の置換要素（img・canvas・svg・フォーム部品など）は固定、ホストが持ち込む置換要素
  * （Minecraft なら mc-fluid 等）は {@link #register} で登録する。エンジン本体は具体的なタグ名を知らない。
@@ -27,23 +28,18 @@ public final class ReplacedElements {
     /** 性質だけを持つ最小の差し込み（参照先の書き換え・寸法は既定）。 */
     private record Plain(Kind kind) implements CustomElementPainter {}
 
-    /** {@code <mc-fluid fluid="...">} → {@code fluid:...}。 */
-    private static CustomElementPainter prefixed(String prefix, String attr, String emptyDefault) {
-        return new CustomElementPainter() {
-            @Override public Kind kind() { return Kind.IMAGE_LIKE; }
-            @Override public String resolveSrc(Map<String, String> attrs, String src) {
-                if (src.startsWith(prefix)) return src;
-                return prefix + attrs.getOrDefault(attr, src.isEmpty() ? emptyDefault : src);
-            }
-        };
-    }
-
+    /** {@link HostElementProvider}（ServiceLoader）が宣言した置換要素。何も無ければ空（エンジンは具体名を持たない）。 */
     private static Map<String, CustomElementPainter> defaults() {
         Map<String, CustomElementPainter> m = new HashMap<>();
-        // 流体は属性が無いときだけ src を使う（空なら空のまま）
-        m.put("mc-fluid", prefixed("fluid:", "fluid", ""));
-        m.put("mc-entity", prefixed("entity:", "entity", "@self"));
-        m.put("mc-scene", new Plain(Kind.SCENE));
+        for (HostElementProvider p : ServiceLoader.load(HostElementProvider.class, HostElementProvider.class.getClassLoader())) {
+            for (Map.Entry<String, CustomElementPainter> e : p.replacedElements().entrySet()) {
+                CustomElementPainter cp = e.getValue();
+                if (e.getKey() == null || e.getKey().isEmpty() || cp == null || cp.kind() == null) {
+                    throw new IllegalStateException(p.getClass().getName() + " の置換要素の宣言が不正です: " + e.getKey());
+                }
+                m.put(e.getKey(), cp);
+            }
+        }
         return Map.copyOf(m);
     }
 
@@ -68,7 +64,7 @@ public final class ReplacedElements {
         return host.get(tag);
     }
 
-    /** 既定（Minecraft 3 種）へ戻す。テストの後始末用。 */
+    /** プロバイダ（SPI）の宣言だけの状態へ戻す。テストの後始末用。 */
     public static synchronized void resetToDefaults() {
         host = defaults();
     }

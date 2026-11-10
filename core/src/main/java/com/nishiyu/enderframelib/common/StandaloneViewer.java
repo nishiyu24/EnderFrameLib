@@ -89,6 +89,11 @@ public final class StandaloneViewer {
         run(html, w, h, fonts, setup);
     }
 
+    /** HTML 文字列を窓に表示する（閉じるまで戻らない）。{@code setup} は文書を読み込んだ直後に 1 度呼ばれる。 */
+    public static void show(String html, int w, int h, java.util.function.Consumer<StandaloneView> setup) {
+        run(html, w, h, installFonts(""), setup);
+    }
+
     /**
      * {@code @font-face} を窓でも効かせる: CSS の解析から登録へつなぎ、書体の出所（ファイル・HTTP・data:）を引く。
      * 文書を作る前に呼ぶ。

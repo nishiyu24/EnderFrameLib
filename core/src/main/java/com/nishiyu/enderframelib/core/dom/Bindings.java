@@ -876,7 +876,7 @@ public final class Bindings {
 
         private boolean applyConditionalVisibility(HtmlNode vNode, Map<String, String> scopeData) {
             boolean changed = false;
-            String ifExpr = vNode.attrs.getOrDefault("data-if", vNode.attrs.get("mc-if"));
+            String ifExpr = HostSyntax.attr(vNode.attrs, "data-if");
             if (ifExpr != null && !ifExpr.isBlank()) {
                 Boolean evalResult = evaluateCondition(ifExpr.trim(), scopeData);
                 if (evalResult != null) {
@@ -946,7 +946,7 @@ public final class Bindings {
             if (vNode.attrs.containsKey("data-list")) {
                 listKey = vNode.attrs.get("data-list").trim();
             } else {
-                String forAttr = vNode.attrs.getOrDefault("data-for", vNode.attrs.get("mc-for"));
+                String forAttr = HostSyntax.attr(vNode.attrs, "data-for");
                 if (forAttr != null && !forAttr.isBlank()) {
                     Matcher fm = FOR_EXPR_PATTERN.matcher(forAttr.trim());
                     if (fm.matches()) {
@@ -1114,7 +1114,7 @@ public final class Bindings {
                 addPlaceholderDeps(value, out);
                 if (value == null) continue;
 
-                switch (name) {
+                switch (HostSyntax.canonicalOf(name)) {
                     case "data-i18n", "data-i18n-placeholder", "data-i18n-title" -> out.add(ALWAYS);
                     case "data-model", "data-list" -> addKey(value.trim(), out);
                     case "data-bind" -> {
@@ -1125,14 +1125,14 @@ public final class Bindings {
                             addKey(key, out);
                         }
                     }
-                    case "data-if", "mc-if", "data-show" -> addExpressionDeps(value, out);
+                    case "data-if", "data-show" -> addExpressionDeps(value, out);
                     case "data-class" -> {
                         for (String item : value.split(",")) {
                             int colon = item.indexOf(':');
                             if (colon > 0) addExpressionDeps(item.substring(colon + 1), out);
                         }
                     }
-                    case "data-for", "mc-for" -> {
+                    case "data-for" -> {
                         Matcher fm = FOR_EXPR_PATTERN.matcher(value.trim());
                         addKey(fm.matches() ? fm.group(2).trim() : value.trim(), out);
                     }
