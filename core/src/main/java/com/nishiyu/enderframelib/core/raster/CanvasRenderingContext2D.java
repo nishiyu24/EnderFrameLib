@@ -1,6 +1,5 @@
 package com.nishiyu.enderframelib.core.raster;
 
-import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -222,8 +221,8 @@ public final class CanvasRenderingContext2D {
     }
 
     public void fillStyle(String css) {
-        if (css == null || !ColorParser.isColor(css) || css.trim().equalsIgnoreCase("currentcolor")) return;
-        state.fillStyle = Paint.solid(ColorParser.parseColor(css));
+        if (css == null || !ColorSyntax.get().isColor(css) || css.trim().equalsIgnoreCase("currentcolor")) return;
+        state.fillStyle = Paint.solid(ColorSyntax.get().parseColor(css));
         state.fillCss = css;
     }
 
@@ -232,8 +231,8 @@ public final class CanvasRenderingContext2D {
     }
 
     public void strokeStyle(String css) {
-        if (css == null || !ColorParser.isColor(css) || css.trim().equalsIgnoreCase("currentcolor")) return;
-        state.strokeStyle = Paint.solid(ColorParser.parseColor(css));
+        if (css == null || !ColorSyntax.get().isColor(css) || css.trim().equalsIgnoreCase("currentcolor")) return;
+        state.strokeStyle = Paint.solid(ColorSyntax.get().parseColor(css));
         state.strokeCss = css;
     }
 
@@ -250,7 +249,7 @@ public final class CanvasRenderingContext2D {
     }
 
     public void shadowColor(String css) {
-        if (css != null && ColorParser.isColor(css)) state.shadowColor = ColorParser.parseColor(css);
+        if (css != null && ColorSyntax.get().isColor(css)) state.shadowColor = ColorSyntax.get().parseColor(css);
     }
 
     public void shadowColor(int argb) {

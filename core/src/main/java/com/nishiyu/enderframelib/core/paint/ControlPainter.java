@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.media.ImageChoice;
+import com.nishiyu.enderframelib.core.media.ImageSources;
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;

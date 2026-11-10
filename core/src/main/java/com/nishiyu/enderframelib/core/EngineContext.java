@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core;
 
+import com.nishiyu.enderframelib.core.dom.BindingHooks;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer;
 import java.util.List;
@@ -17,9 +18,14 @@ import java.util.function.Function;
  * {@link #callWith} / {@link #runWith} で、そのスレッドの間だけ別の文脈に切り替える（他スレッドと global は変わらない）。
  * 各フィールドは差し込み時に代入する単純な値で、読み取りは {@link #current()} 経由。
  */
-public final class EngineContext {
+public final class EngineContext implements BindingHooks {
     private static final EngineContext GLOBAL = new EngineContext();
     private static final ThreadLocal<EngineContext> SCOPED = new ThreadLocal<>();
+
+    static {
+        // L3（DOM）の Bindings が上位層を参照せずに、このスレッドの文脈の翻訳・JSON 解析を引けるようにする（層の逆転）。
+        BindingHooks.install(EngineContext::current);
+    }
 
     /** {@code {{i18n:key}}} などの翻訳。既定はキーをそのまま返す。 */
     public volatile Function<String, String> i18nResolver = key -> key;
@@ -50,6 +56,12 @@ public final class EngineContext {
     public volatile Function<String, String> clientResourceFallback = null;
     /** サーバー側リソース（データパック）の本文を引く。null なら引かない。 */
     public volatile Function<String, String> datapackResourceFallback = null;
+
+    @Override public Function<String, String> i18nResolver() { return i18nResolver; }
+
+    @Override public BiFunction<String, Object[], String> i18nFormatter() { return i18nFormatter; }
+
+    @Override public Function<String, List<Map<String, String>>> jsonListParser() { return jsonListParser; }
 
     /** 既定値で始まる新しい文脈（global とは独立）。 */
     public EngineContext() {}
