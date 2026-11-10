@@ -122,6 +122,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean prevHadActive;
     private int prevClearColor;
     private boolean prevCullOffscreen = true;
+    /** 直近に描いたスクロール節の姿勢平行移動成分 (key -> [tx, ty])。 */
+    private final java.util.HashMap<Long, double[]> prevScrollPoses = new java.util.HashMap<>();
 
     /** 項目ごとの、実際に塗った範囲（{@code x0,y0,x1,y1}。空なら x1 <= x0）。前のフレームと今のフレームで入れ替える。 */
     private int[] prevExtent = new int[0], curExtent = new int[0];
@@ -321,78 +323,358 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     // ------------------------------------------------------------------ 差分描画の計画
 
+    private static boolean isScrollContent(DisplayItem item) {
+        if (item == null || item.type() != ElementType.NODE) return false;
+        if (DisplayItem.partOrdinalOf(item.key()) == DisplayItem.PART_SCROLL_CONTENT) return true;
+        String id = item.id();
+        return id != null && id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX);
+    }
+
     /**
      * このフレームを差分で描けるか決め、描けるなら {@link #damage} に塗り直す範囲を、{@link #skipBuf} に描かない項目を入れる。
      * 描けない（初回・項目の増減・種類の変化・アニメーション中・層を要する項目がある）なら false を返す。
      */
     private boolean planDamage(List<DisplayItem> items, long nowMs) {
         int n = items.size();
-        ensureArrays(n);
         frameHadActive = driver.anyCachedActiveAt(nowMs);
-        boolean eligible = damageEnabled && prevValid && prevItems != null && prevItems.size() == n
-                && prevClearColor == clearColor && prevCullOffscreen == cullOffscreen
-                && stableList(items) && stableList(prevItems) && !frameHadActive;
-        if (eligible) {
-            for (int i = 0; i < n; i++) {
-                DisplayItem cur = items.get(i), old = prevItems.get(i);
-                if (cur.key() != old.key() || cur.type() != old.type() || volatileItem(cur) || groupItem(cur)) {
-                    eligible = false;
-                    break;
-                }
-                if (old != cur && mayAnimate(cur) && PaintSceneDriver.itemActiveAt(sessionId, cur, nowMs)) {
-                    frameHadActive = true;
-                    eligible = false;
-                    break;
-                }
-            }
-        }
-        if (prevHadActive) eligible = false; // 前のフレームが補間の途中: 止まった後の最初の 1 枚は全面で描く
-        if (!eligible) {
+        if (prevHadActive || !damageEnabled || !prevValid || prevItems == null
+                || prevClearColor != clearColor || prevCullOffscreen != cullOffscreen
+                || !stableList(items) || !stableList(prevItems) || frameHadActive) {
             resetCurExtents(n);
             return false;
         }
-        // 変わった項目と、姿勢が変わる「動いた節」の子孫（表示リストは親が先に来る）
+
+        int oldN = prevItems.size();
+        boolean sameSize = oldN == n;
+        int[] oldIndexOf = null;
+        if (!sameSize) {
+            // サイズ不一致時: 64-bit 整数鍵を用いたインデックスマッピング（ブロック層・インライン層の複数スライスに対応）
+            java.util.HashMap<Long, Integer> oldKeyMap = new java.util.HashMap<>(oldN * 2);
+            for (int i = 0; i < oldN; i++) {
+                DisplayItem it = prevItems.get(i);
+                long k = it.key();
+                if (k != 0L) oldKeyMap.putIfAbsent(k, i);
+            }
+            boolean[] oldUsed = new boolean[oldN];
+            oldIndexOf = new int[n];
+            int matchedCount = 0;
+            for (int i = 0; i < n; i++) {
+                DisplayItem it = items.get(i);
+                long k = it.key();
+                Integer prevIdx = (k != 0L) ? oldKeyMap.get(k) : null;
+                if (prevIdx != null && !oldUsed[prevIdx] && prevItems.get(prevIdx).type() == it.type()) {
+                    oldIndexOf[i] = prevIdx;
+                    oldUsed[prevIdx] = true;
+                    matchedCount++;
+                } else {
+                    oldIndexOf[i] = -1;
+                }
+            }
+            if (matchedCount < Math.min(oldN, n) / 2) {
+                resetCurExtents(n);
+                return false;
+            }
+            for (int i = 0; i < n; i++) {
+                DisplayItem cur = items.get(i);
+                if (volatileItem(cur) || groupItem(cur)) {
+                    resetCurExtents(n);
+                    return false;
+                }
+            }
+            for (int i = 0; i < oldN; i++) {
+                DisplayItem old = prevItems.get(i);
+                if (volatileItem(old) || groupItem(old)) {
+                    resetCurExtents(n);
+                    return false;
+                }
+            }
+
+            damage.reset(raster.width(), raster.height());
+            for (int i = 0; i < oldN; i++) {
+                if (!oldUsed[i]) addExtent(prevExtent, i, damage);
+            }
+            int[] newPrevExtent = new int[n * 4];
+            int[] newPrevClip = new int[n * 4];
+            for (int i = 0; i < n; i++) {
+                int oldI = oldIndexOf[i];
+                if (oldI >= 0) {
+                    copyExtent(prevExtent, newPrevExtent, oldI, i);
+                    copyClip(prevClip, newPrevClip, oldI, i);
+                }
+            }
+            prevExtent = newPrevExtent;
+            prevClip = newPrevClip;
+        } else {
+            for (int i = 0; i < n; i++) {
+                DisplayItem cur = items.get(i), old = prevItems.get(i);
+                if (cur.key() != old.key() || cur.type() != old.type() || volatileItem(cur) || groupItem(cur)) {
+                    resetCurExtents(n);
+                    return false;
+                }
+                if (old != cur && mayAnimate(cur) && PaintSceneDriver.itemActiveAt(sessionId, cur, nowMs)) {
+                    frameHadActive = true;
+                    resetCurExtents(n);
+                    return false;
+                }
+            }
+            damage.reset(raster.width(), raster.height());
+        }
+
+        ensureArrays(n);
+
+        // 変わった項目と、姿勢が変わる「動いた節」の子孫
         for (int i = 0; i < n; i++) {
-            DisplayItem cur = items.get(i), old = prevItems.get(i);
+            DisplayItem cur = items.get(i);
             int p = driver.parentIndex(i);
             boolean parentMoved = p >= 0 && movedBuf[p];
-            boolean nodeChanged = old != cur && cur.type() == ElementType.NODE;
+            boolean itemChanged;
+            if (!sameSize) {
+                int oldI = oldIndexOf[i];
+                itemChanged = (oldI < 0) || (prevItems.get(oldI) != cur);
+            } else {
+                DisplayItem old = prevItems.get(i);
+                itemChanged = old != cur;
+            }
+            boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
             movedBuf[i] = parentMoved || nodeChanged;
-            dirtyBuf[i] = old != cur || parentMoved;
+            dirtyBuf[i] = itemChanged || parentMoved;
         }
-        damage.reset(raster.width(), raster.height());
+
+        // スクロール Blit 再利用の判定
+        boolean didScrollBlit = false;
+        int scrollDx = 0, scrollDy = 0;
+        int scrollContentIdx = -1;
+        if (sameSize) {
+            for (int i = 0; i < n; i++) {
+                DisplayItem cur = items.get(i), old = prevItems.get(i);
+                if (cur != old && isScrollContent(cur)) {
+                    if (cur.translateX() != old.translateX() || cur.translateY() != old.translateY()) {
+                        if (scrollContentIdx == -1) {
+                            scrollContentIdx = i;
+                        } else {
+                            scrollContentIdx = -2;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (scrollContentIdx >= 0) {
+                DisplayItem sNode = items.get(scrollContentIdx);
+                double[] prevP = prevScrollPoses.get(sNode.key());
+                Resolved r = driver.resolveAt(scrollContentIdx);
+                if (prevP != null && r != null && r.pose() != null) {
+                    Matrix2D pose = r.pose();
+                    if (Math.abs(pose.b()) < 1e-5 && Math.abs(pose.c()) < 1e-5) {
+                        double ddx = pose.e() - prevP[0];
+                        double ddy = pose.f() - prevP[1];
+                        int sdx = (int) Math.round(ddx);
+                        int sdy = (int) Math.round(ddy);
+                        // 純粋な整数ピクセル移動のときのみ scrollBlit を実行（サブピクセル位相差による画素ズレを完全防止）
+                        boolean isExactIntegerScroll = Math.abs(ddx - sdx) < 1e-3 && Math.abs(ddy - sdy) < 1e-3;
+                        if (isExactIntegerScroll && (sdx != 0 || sdy != 0)) {
+                            boolean otherOk = true;
+                            for (int i = 0; i < n; i++) {
+                                if (i == scrollContentIdx) continue;
+                                if (dirtyBuf[i]) {
+                                    int anc = driver.parentIndex(i);
+                                    while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
+                                    if (anc != scrollContentIdx) {
+                                        DisplayItem it = items.get(i);
+                                        int part = DisplayItem.partOrdinalOf(it.key());
+                                        boolean isScrollUi = part == DisplayItem.PART_SCROLLBAR_V
+                                                || part == DisplayItem.PART_SCROLLBAR_H
+                                                || part == DisplayItem.PART_SCROLLBAR_TRACK_V
+                                                || part == DisplayItem.PART_SCROLLBAR_TRACK_H
+                                                || part == DisplayItem.PART_SCROLLBAR_NODE_V
+                                                || part == DisplayItem.PART_SCROLLBAR_NODE_H;
+                                        if (!isScrollUi) {
+                                            otherOk = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (otherOk) {
+                                int[] clipBounds = null;
+                                for (int i = 0; i < n; i++) {
+                                    int anc = driver.parentIndex(i);
+                                    while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
+                                    if (anc == scrollContentIdx) {
+                                        Resolved ir = driver.resolveAt(i);
+                                        Clip c = buildClip(i, items.get(i), ir.anim());
+                                        if (c != null && !c.empty()) {
+                                            clipBounds = new int[]{c.x0(), c.y0(), c.x1(), c.y1()};
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (clipBounds != null && clipBounds[2] > clipBounds[0] && clipBounds[3] > clipBounds[1]) {
+                                    int cx0 = clipBounds[0], cy0 = clipBounds[1], cx1 = clipBounds[2], cy1 = clipBounds[3];
+                                    raster.scrollBlit(cx0, cy0, cx1, cy1, sdx, sdy, clearColor);
+                                    didScrollBlit = true;
+                                    scrollDx = sdx;
+                                    scrollDy = sdy;
+                                    if (sdy < 0) {
+                                        damage.add(cx0, cy1 + sdy, cx1, cy1);
+                                    } else if (sdy > 0) {
+                                        damage.add(cx0, cy0, cx1, cy0 + sdy);
+                                    }
+                                    if (sdx < 0) {
+                                        damage.add(cx1 + sdx, cy0, cx1, cy1);
+                                    } else if (sdx > 0) {
+                                        damage.add(cx0, cy0, cx0 + sdx, cy1);
+                                    }
+                                    damage.add(Math.max(cx0, cx1 - 20), cy0, cx1, cy1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         syncClipGeneration();
         java.util.Arrays.fill(skipBuf, 0, n, true);
-        for (int i = 0; i < n; i++) {
-            if (!dirtyBuf[i]) continue;
-            DisplayItem cur = items.get(i);
-            if (cur.type() == ElementType.NODE) continue; // 節自身は塗らない（子孫は上で印を付けている）
-            Resolved r = driver.resolveAt(i);
-            int[] cb = planClip(i, cur, r, prevItems.get(i) != cur);
-            estimateBounds(cur, r.pose(), cb, estimateScratch);
-            boolean oldHas = hasArea(prevExtent, i);
-            boolean newHas = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
-            skipBuf[i] = !oldHas && !newHas; // 旧範囲も新範囲も画面に無い: 描く必要も消す必要も無い
-            damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
-            addExtent(prevExtent, i, damage);
-        }
-        damage.seal(); // タイル境界まで広げる（クリアするタイルの外接矩形に描画クリップを揃える）
-        if (Boolean.getBoolean("enderframe.soft.damagedebug") && partialFrames < 6) {
-            int skipped = 0;
-            for (int i = 0; i < n; i++) if (skipBuf[i]) skipped++;
-            System.out.println("DAMAGE now=" + nowMs + " tiles=" + damage.dirtyTileCount()
-                    + " bounds=" + java.util.Arrays.toString(damage.bounds()) + " skip=" + skipped + "/" + n);
-        }
-        int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
-        for (int i = 0; i < n; i++) {
-            if (!dirtyBuf[i]) skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
-            if (skipBuf[i] || !dirtyBuf[i]) {
-                // 描き直しても、ダメージの外の前のフレームの画素は残る。項目の範囲は和のまま覚える
-                copyExtent(prevExtent, curExtent, i);
-                copyClip(prevClip, curClip, i);
-            } else {
-                clearExtent(curExtent, i);
-                copyClip(prevClip, curClip, i);
+
+        if (didScrollBlit) {
+            // スクロール Blit 実行時
+            for (int i = 0; i < n; i++) {
+                if (!dirtyBuf[i]) continue;
+                int anc = driver.parentIndex(i);
+                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
+                if (anc != scrollContentIdx) {
+                    DisplayItem cur = items.get(i);
+                    if (cur.type() == ElementType.NODE) continue;
+                    Resolved r = driver.resolveAt(i);
+                    int[] cb = planClip(i, cur, r, true);
+                    estimateBounds(cur, r.pose(), cb, estimateScratch);
+                    damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
+                    addExtent(prevExtent, i, damage);
+                }
+            }
+            damage.seal();
+            int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
+            if (Boolean.getBoolean("enderframe.soft.damagedebug")) {
+                System.out.println("FRAME=" + (partialFrames + fullFrames) + " dx0=" + dx0 + " dy0=" + dy0 + " dx1=" + dx1 + " dy1=" + dy1 + " sdy=" + scrollDy);
+            }
+
+            boolean[] subtreeDirty = new boolean[n];
+            for (int i = 0; i < n; i++) {
+                int anc = driver.parentIndex(i);
+                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
+                boolean isDescendant = anc == scrollContentIdx;
+
+                if (isDescendant) {
+                    DisplayItem cur = items.get(i);
+                    if (cur.type() == ElementType.NODE) continue;
+                    boolean hasOldArea = hasArea(prevExtent, i);
+                    if (hasOldArea) {
+                        int b = i * 4;
+                        prevExtent[b] += scrollDx;
+                        prevExtent[b + 1] += scrollDy;
+                        prevExtent[b + 2] += scrollDx;
+                        prevExtent[b + 3] += scrollDy;
+                    }
+
+                    Resolved r = driver.resolveAt(i);
+                    int[] cb = planClip(i, cur, r, true);
+                    estimateBounds(cur, r.pose(), cb, estimateScratch);
+                    boolean hasNewArea = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
+
+                    boolean needRepaint;
+                    if (!hasOldArea) {
+                        needRepaint = hasNewArea;
+                    } else {
+                        needRepaint = extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1)
+                                || (hasNewArea && damage.intersects(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]));
+                    }
+                    if (needRepaint) {
+                        dirtyBuf[i] = true;
+                        int p = driver.parentIndex(i);
+                        while (p >= 0 && p != scrollContentIdx) {
+                            subtreeDirty[p] = true;
+                            p = driver.parentIndex(p);
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < n; i++) {
+                int anc = driver.parentIndex(i);
+                while (anc >= 0 && anc != scrollContentIdx) anc = driver.parentIndex(anc);
+                boolean isDescendant = anc == scrollContentIdx;
+
+                if (isDescendant) {
+                    DisplayItem cur = items.get(i);
+                    if (cur.type() == ElementType.NODE) {
+                        skipBuf[i] = true;
+                        continue;
+                    }
+                    int p = driver.parentIndex(i);
+                    boolean parentTreeDirty = false;
+                    while (p >= 0 && p != scrollContentIdx) {
+                        if (subtreeDirty[p]) {
+                            parentTreeDirty = true;
+                            break;
+                        }
+                        p = driver.parentIndex(p);
+                    }
+                    if (dirtyBuf[i] || parentTreeDirty) {
+                        skipBuf[i] = false;
+                        dirtyBuf[i] = true;
+                        clearExtent(curExtent, i);
+                        copyClip(prevClip, curClip, i);
+                    } else {
+                        skipBuf[i] = true;
+                        dirtyBuf[i] = false;
+                        copyExtent(prevExtent, curExtent, i);
+                        copyClip(prevClip, curClip, i);
+                    }
+                } else {
+                    if (dirtyBuf[i]) {
+                        skipBuf[i] = false;
+                        clearExtent(curExtent, i);
+                        copyClip(prevClip, curClip, i);
+                    } else {
+                        skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
+                        if (skipBuf[i]) {
+                            copyExtent(prevExtent, curExtent, i);
+                            copyClip(prevClip, curClip, i);
+                        } else {
+                            clearExtent(curExtent, i);
+                            copyClip(prevClip, curClip, i);
+                        }
+                    }
+                }
+            }
+        } else {
+            // 通常の差分描画（要素追加・削除・スタイル変更・テキスト変更・小数スクロール）
+            for (int i = 0; i < n; i++) {
+                if (!dirtyBuf[i]) continue;
+                DisplayItem cur = items.get(i);
+                if (cur.type() == ElementType.NODE) continue;
+                int oldIdx = (oldIndexOf != null) ? oldIndexOf[i] : i;
+                boolean changed = oldIdx < 0 || prevItems.get(oldIdx) != cur || movedBuf[i];
+                Resolved r = driver.resolveAt(i);
+                int[] cb = planClip(i, cur, r, changed);
+                estimateBounds(cur, r.pose(), cb, estimateScratch);
+                boolean oldHas = hasArea(prevExtent, i);
+                boolean newHas = estimateScratch[2] > estimateScratch[0] && estimateScratch[3] > estimateScratch[1];
+                skipBuf[i] = !oldHas && !newHas;
+                damage.add(estimateScratch[0], estimateScratch[1], estimateScratch[2], estimateScratch[3]);
+                addExtent(prevExtent, i, damage);
+            }
+            damage.seal();
+            int dx0 = damage.x0(), dy0 = damage.y0(), dx1 = damage.x1(), dy1 = damage.y1();
+            for (int i = 0; i < n; i++) {
+                if (!dirtyBuf[i]) skipBuf[i] = !extentIntersects(prevExtent, i, dx0, dy0, dx1, dy1);
+                if (skipBuf[i] || !dirtyBuf[i]) {
+                    copyExtent(prevExtent, curExtent, i);
+                    copyClip(prevClip, curClip, i);
+                } else {
+                    clearExtent(curExtent, i);
+                    copyClip(prevClip, curClip, i);
+                }
             }
         }
         return true;
@@ -412,6 +694,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
         t = prevClip;
         prevClip = curClip;
         curClip = t;
+
+        prevScrollPoses.clear();
+        for (int i = 0; i < items.size(); i++) {
+            DisplayItem it = items.get(i);
+            if (isScrollContent(it)) {
+                Resolved r = driver.resolveAt(i);
+                if (r != null && r.pose() != null) {
+                    prevScrollPoses.put(it.key(), new double[]{r.pose().e(), r.pose().f()});
+                }
+            }
+        }
     }
 
     private void ensureArrays(int n) {
@@ -538,11 +831,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private static void copyExtent(int[] from, int[] to, int i) {
-        int b = i * 4;
-        to[b] = from[b];
-        to[b + 1] = from[b + 1];
-        to[b + 2] = from[b + 2];
-        to[b + 3] = from[b + 3];
+        copyExtent(from, to, i, i);
+    }
+
+    private static void copyExtent(int[] from, int[] to, int srcIdx, int dstIdx) {
+        int sb = srcIdx * 4, db = dstIdx * 4;
+        to[db] = from[sb];
+        to[db + 1] = from[sb + 1];
+        to[db + 2] = from[sb + 2];
+        to[db + 3] = from[sb + 3];
     }
 
     private static void clearExtent(int[] ext, int i) {
@@ -551,11 +848,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private static void copyClip(int[] from, int[] to, int i) {
-        int b = i * 4;
-        to[b] = from[b];
-        to[b + 1] = from[b + 1];
-        to[b + 2] = from[b + 2];
-        to[b + 3] = from[b + 3];
+        copyClip(from, to, i, i);
+    }
+
+    private static void copyClip(int[] from, int[] to, int srcIdx, int dstIdx) {
+        int sb = srcIdx * 4, db = dstIdx * 4;
+        to[db] = from[sb];
+        to[db + 1] = from[sb + 1];
+        to[db + 2] = from[sb + 2];
+        to[db + 3] = from[sb + 3];
     }
 
     private final PaintSceneDriver driver;
@@ -1119,10 +1420,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
         raster.dirty().add(x0, y0, x1, y1);
         if (recordExtents && currentItem >= 0) {
             int e = currentItem * 4;
-            if (x0 < curExtent[e]) curExtent[e] = x0;
-            if (y0 < curExtent[e + 1]) curExtent[e + 1] = y0;
-            if (x1 > curExtent[e + 2]) curExtent[e + 2] = x1;
-            if (y1 > curExtent[e + 3]) curExtent[e + 3] = y1;
+            if (curExtent[e + 2] <= curExtent[e] || curExtent[e + 3] <= curExtent[e + 1]) {
+                curExtent[e] = x0;
+                curExtent[e + 1] = y0;
+                curExtent[e + 2] = x1;
+                curExtent[e + 3] = y1;
+            } else {
+                if (x0 < curExtent[e]) curExtent[e] = x0;
+                if (y0 < curExtent[e + 1]) curExtent[e + 1] = y0;
+                if (x1 > curExtent[e + 2]) curExtent[e + 2] = x1;
+                if (y1 > curExtent[e + 3]) curExtent[e + 3] = y1;
+            }
         }
         return new int[]{x0, y0, x1, y1};
     }

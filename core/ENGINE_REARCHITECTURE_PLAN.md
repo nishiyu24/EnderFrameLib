@@ -536,10 +536,25 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
      3. **段階 2（項目単位の保持 GPU 記録 — 戦略 T3・下記 2）**: 可視範囲内の未変更項目について 80B GPU インスタンス列を保持し、変更された項目だけを GPU バッファへ再書込する。
      4. **段階 3（ボックス単位の DisplayItem スライス範囲保持 — 戦略 T2・下記 4）**: `hover` / `text` / `child` / `inherited` での `DisplayListBuilder` 全ボックス走査を排除する。
    - **KPI**: 2,000 行・画面外 `hover` の GL フレーム `< 0.25〜0.7 ms`（現 `13.1 ms`、Chrome `0.55 ms`）、`child` `< 1.0〜1.5 ms`（現 `25.6 ms`、Chrome `1.09 ms`）、`text` `< 0.8〜1.2 ms`（現 `10.3 ms`）。500 行は `hover`/`text`/`style` `< 0.3〜0.5 ms`。
-0b. **【新規】CPU バックエンドの差分描画（Tile Dirty Bitset）とスクロール Blit 再利用（W3 — 戦略 T4）**:
-   - **現状**: showcase `hover` が `4.42 ms`（Chrome CPU 合成 `1.55 ms`）、large-list `scroll` が `3.28 ms`（GL `0.20 ms`）。`SoftwareRenderBackend` は変更のたびに 800×600 全面（130 タイルすべて）をクリアして再ラスタする。
-   - **対策**: `patchIndexByDiff` が既に持つ「変更項目の集合」から**ダメージ矩形（変更項目の旧 AABB ∪ 新 AABB）**を求め、`TileQueue` の 64×64 タイルのうち交わるビット（`long[3]` の Dirty Bitset）だけをクリア・再描画する（他タイルは前フレームの `Pixmap` を維持）。スクロールは `Pixmap` の `System.arraycopy` 行シフト + 新規露出帯タイルのみ描画。`DiffPatchPixelTest` の全画素一致保証を差分描画の回帰テストにも流用する。
-   - **KPI**: showcase の `hover`/`text`/`style` CPU **`< 0.3〜0.8 ms`**（現 `4.4〜4.7 ms`、Chrome CPU 合成 `0.68〜1.55 ms`・Swing `0.64 ms` を上回る）、large-list `scroll` CPU **`< 0.3 ms`**（現 `3.3 ms`）。
+0b. **【完了 2026-11-11】CPU バックエンドの差分描画（Tile Dirty Bitset）とスクロール Blit 再利用（W3 — 戦略 T4）**:
+    - **達成内容**:
+      - ✅ **CPU バックエンド向け高速スクロール Blit（`CpuRaster.scrollBlit`）新設**:
+        - 根の描画先 `Pixmap` 内の指定矩形（スクロールコンテナ境界）を `System.arraycopy` でインプレースに上下・左右シフト（上書き防止のためシフト方向に応じた順走／逆走走査）。
+        - シフトによって露出した矩形領域をクリア色（事前乗算）で高速に塗りつぶし。
+      - ✅ **スクロール Blit 再利用計画（`SoftwareRenderBackend.planDamage`）**:
+        - スクロール節（`PART_SCROLL_CONTENT` / `_scrollc`）の姿勢変化（`translateX` / `translateY`）を検出し、整数ピクセルスクロール時に `scrollBlit` を適用。
+        - 露出帯矩形のみを `DamageRegion` に登録し、コンテナ内の未露出項目を描画スキップ（`skipBuf`）することで、スクロール時の不要なテキスト・装飾再ラスタを劇的に削減。
+      - ✅ **子要素増減（`CHILD_PATCH`）時の 64-bit 整数鍵マッピングと差分描画継続**:
+        - `prevItems.size() != items.size()`（行の追加・削除等）時、64-bit 整数鍵（`DisplayItem.key()`）を用いて旧項目と新項目の 1 対 1 マッピング（`oldKeyMap` / `oldIndexOf`）を実施。
+        - ブロック層（背景）とインライン層（テキスト）の複数スライスにまたがる挿入・削除でも、旧 `prevExtent` / `prevClip` を正しく再配置し、タイル差分描画（`clearTiles` / `TileQueue`）を継続。
+      - ✅ **姿勢変化・クリップ追従・ダーティ伝播の完全化**:
+        - 移動節の子孫（`movedBuf`）におけるクリップ追従（`planClip` の `changed || movedBuf[i]`）を修正し、スクロール流入要素の誤スキップを防止。
+        - 行背景再描画時の子孫・兄弟枝テキストの同期再描画（`subtreeDirty` 伝播）を保証。
+    - **検証**:
+      - 新設 [`ScrollBlitTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ScrollBlitTest.java)（上下左右シフト・露出領域塗りつぶし・全体流出クリア等 全 4 テスト PASSED）。
+      - 新設 [`CpuScrollBlitPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/CpuScrollBlitPixelTest.java)（連続スクロール 40 フレーム、および動的行追加・削除 30 ステップにおいて、全面再描画と 100% 全画素一致・差分描画有効・見積外れ abort 0 件を検証）全テスト PASSED。
+      - 既存のソフトウェア描画テスト群（[`PartialRepaintPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/PartialRepaintPixelTest.java), [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java), [`ShiftPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ShiftPatchPixelTest.java) 等）およびコアモジュール全テスト（`:core:test` 全 1,880 件超）全件グリーン。
+      - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
 
 1. **【完了 2026-11-11】`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保（戦略 T2）**:
    - **達成内容**:
@@ -697,7 +712,7 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 | **Milestone 1〜5** | ✅ **完了** | オフヒープ DOM・状態オートマトン・増分レイアウト・GPU Uber-Shader・タイル並列 CPU ラスタ | `:hover` **`0.0069 ms`（Chrome の 49 倍高速）**、`scroll` `0.002 ms / 0 B` |
 | **Wave 0 & Wave 1** | ✅ **完了** | 公開 API (`EnderEngine`/`WebViewSurface`)・脱 `mc-*` SPI・脱 `static` (`EngineContext`)・`CssPropertyIndex` & `CssValue[]`・`LoadedFace` 並列化・GL 差分走査・測定半減 | `fullLayoutWarm` **`0.986 ms`**、`showcase` 規模で Chrome 同等以上、単体汎用 JAR として完全自立 |
 | **Wave 1 基盤: 7 層参照モデルラチェット（§1.3）** | ✅ **完了（2026-11-10）** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) で L1〜L6 の単方向性を固定。逆方向参照 11 系統を全て解消し `KNOWN_UPWARD` を空集合化（SPI 3 本 `BindingHooks`/`ColorSyntax`＋移設 `media.ImageSources`/`paint.DisplayItemFonts`） | 完了。以後は新規逆方向参照がビルドで即失敗するため、Wave 1.5 以降の機能追加はこの層規則の内側で行う（新規 SPI を足す場合も下位層が定義し上位層が実装する） |
-| **Wave 1.5 (P0 & P1: 戦略 T1〜T6)** | 🎯 **進行中（①・②a・③ 完了）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8）<br/>② 🔧 空間カリング（T1: ペインタ段 `outsideClip`・ドライバ段 64 項目ブロック走査除外完了。次は `SCROLL_NODE` 区間カリング）+ 項目単位の保持 GPU 記録（T3）<br/>③ ✅ Segmented DisplayList スライス保持（P0-4）+ 64-bit 整数鍵化（P0-3 段階 1〜4 完遂）+ 増分索引シフト（P0-1）（T2: W2・W4・W6 解消）<br/>④ CPU Tile Dirty Bitset + Scroll Blit（T4: W3 解消）<br/>⑤ 4-Way 測定キャッシュ + `place` 制約スキップ（T5: W5 解消）<br/>⑥ DOM 雛形クローン + 文書横断 `ShareCache`（T6: W7 解消）** | ・2,000 行画面外 `hover` GL **`< 0.25〜0.7 ms`**（現 `13.1`、Chrome `0.55` を凌駕）<br/>・2,000 行 `child` **`< 0.5〜1.5 ms`**（現 `25.6`、Chrome `1.09` を凌駕）<br/>・CPU `hover` **`< 0.3〜0.8 ms`**（現 `4.4`、Chrome CPU `1.55`・Swing `0.64` を逆転）<br/>・showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.93`、Chrome `0.084` 同等）<br/>・フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
+| **Wave 1.5 (P0 & P1: 戦略 T1〜T6)** | 🎯 **進行中（①・②a・③・④ 完了）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8）<br/>② 🔧 空間カリング（T1: ペインタ段 `outsideClip`・ドライバ段 64 項目ブロック走査除外完了。次は `SCROLL_NODE` 区間カリング）+ 項目単位の保持 GPU 記録（T3）<br/>③ ✅ Segmented DisplayList スライス保持（P0-4）+ 64-bit 整数鍵化（P0-3 段階 1〜4 完遂）+ 増分索引シフト（P0-1）（T2: W2・W4・W6 解消）<br/>④ ✅ CPU Tile Dirty Bitset + Scroll Blit（P0-0b / T4: W3 解消）<br/>⑤ 4-Way 測定キャッシュ + `place` 制約スキップ（T5: W5 解消）<br/>⑥ DOM 雛形クローン + 文書横断 `ShareCache`（T6: W7 解消）** | ・2,000 行画面外 `hover` GL **`< 0.25〜0.7 ms`**（現 `13.1`、Chrome `0.55` を凌駕）<br/>・2,000 行 `child` **`< 0.5〜1.5 ms`**（現 `25.6`、Chrome `1.09` を凌駕）<br/>・CPU `hover` **`< 0.3〜0.8 ms`**（現 `4.4`、Chrome CPU `1.55`・Swing `0.64` を逆転）<br/>・showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.93`、Chrome `0.084` 同等）<br/>・フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
 | **Wave 2 (P2: 戦略 T7-③)** | 📋 **設計完了** | Three.js 型 3D シーングラフ統合（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)） | HTML/CSS と 3D メッシュ・ライト・レイキャストの単一パス・ゼロコピー融合（ブラウザ Three.js では不可能な領域） |
 | **Wave 3 (P3: 戦略 T7-①)** | 📋 **計画中** | IME Composition・Top Layer (`<dialog>`/`popover`) & Anchor Positioning・`content-visibility: auto` + `FenwickVirtualList` 10 万行仮想化・`subgrid`・縦書き | 20,000〜100,000 行リスト **`< 0.2〜0.5 ms`**（Chrome 20,000 行 `117 ms` の **200 倍以上高速**）、日本語デスクトップ UI 完全対応 |
 | **Wave 4 (P4: 戦略 T7-②)** | 📋 **計画中** | コンパイル済み型安全 `Signal<T>` / `Record` 直結バインディング・`<slot>` コンポーネント・`F12` 組み込み `EnderDevTools` | 開発生産性と実行性能の双方で Web フロントエンド（React/CEF）および既存 Java UI ライブラリを凌駕 |
