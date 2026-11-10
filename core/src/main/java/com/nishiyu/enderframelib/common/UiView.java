@@ -1536,7 +1536,7 @@ public class UiView implements AutoCloseable {
         String tag = parent.tag == null ? "" : parent.tag.toLowerCase(Locale.ROOT);
         return switch (tag) {
             case "textarea", "select", "option", "optgroup", "style", "script", "title", "noscript", "svg", "template",
-                 "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "button", "label",
+                 "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
                  "legend", "summary", "details", "pre" -> false;
             default -> true;
         };
