@@ -783,7 +783,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (isInvisible(box) || PaintSupport.hidesEmptyCell(box)) return;
 
         ItemProps partsEvents = ItemProps.forParts(box, id, transSpec);
-        ItemProps passiveBorderEvents = ItemProps.forPassiveBorder(id, transSpec);
+        ItemProps passiveBorderEvents = ItemProps.forPassiveBorder(id, nodeKey, transSpec);
         // 何が壊れていたか: 以前は pointer-events を部品に載せていなかったので、ヒットテストの
         // pointer-events: none の判定は常に偽だった
         if (pointerEventsNone) {
@@ -816,7 +816,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 // 何が壊れていたか: ここが RANGE を出していたため、progress / meter が
                 // つまみ付きのスライダーとして描かれていた。進捗バーの描画実装
                 // (ControlElementRenderer.renderProgressElement) は呼ばれない死にコードだった。
-                addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta);
+                long progressKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_PROGRESS) : 0L;
+                addElement(elements, id, id + "_progress", ElementType.PROGRESS, box.x, box.y, box.w, box.h, val + ":" + min + ":" + max, color, bgColor, partsEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, baseMeta, progressKey);
             }
             case "svg" -> controls.drawSvgElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);
             case "canvas" -> controls.drawCanvasElement(elements, box, id, color, bgColor, fallbackRadius, partsEvents, passiveBorderEvents, border, baseMeta, innerMeta, rOff, transDur, colorBgAnim);

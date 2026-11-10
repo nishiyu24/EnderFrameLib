@@ -714,7 +714,7 @@ public final class PaintSceneDriver {
             DisplayItem was = old.get(i), is = items.get(i);
             if (was == is) continue;
             if (count >= limit || was.key() != is.key() || !sameStructure(was, is)) return false;
-            if (count == diffBuf.length) diffBuf = Arrays.copyOf(diffBuf, count * 2);
+            if (count == diffBuf.length) diffBuf = Arrays.copyOf(diffBuf, Math.max(16, count * 2));
             diffBuf[count++] = i;
         }
         for (int k = 0; k < count; k++) {
@@ -742,8 +742,13 @@ public final class PaintSceneDriver {
     /** 索引・親子・グループの錨・スクロール範囲が、項目から読むもの（種類・親・層）が同じか。 */
     private static boolean sameStructure(DisplayItem a, DisplayItem b) {
         if (a.type() != b.type()) return false;
-        String pa = a.hints().parentId(), pb = b.hints().parentId();
-        if (pa != pb && (pa == null || !pa.equals(pb))) return false;
+        long pka = a.hints().parentKey(), pkb = b.hints().parentKey();
+        if (pka != 0L || pkb != 0L) {
+            if (pka != pkb) return false;
+        } else {
+            String pa = a.hints().parentId(), pb = b.hints().parentId();
+            if (pa != pb && (pa == null || !pa.equals(pb))) return false;
+        }
         if (a.type() == ElementType.NODE) {
             LayerSpec la = a.hints().layer(), lb = b.hints().layer();
             boolean fa = hasFx(la), fb = hasFx(lb);
@@ -780,8 +785,18 @@ public final class PaintSceneDriver {
         int n = items.size();
         parentIdx = new int[n];
         for (int i = 0; i < n; i++) {
-            String pid = items.get(i).hints().parentId();
-            parentIdx[i] = pid == null ? -1 : indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
+            int pidx = -1;
+            long pKey = items.get(i).hints().parentKey();
+            if (pKey != 0L) {
+                pidx = indexOf.getOrDefault(pKey, -1);
+            }
+            if (pidx < 0) {
+                String pid = items.get(i).hints().parentId();
+                if (pid != null) {
+                    pidx = indexOf.getOrDefault(DisplayItem.keyOf(pid), -1);
+                }
+            }
+            parentIdx[i] = pidx;
         }
         computeRetainRanges(items);
         curRes = new Resolved[n];
