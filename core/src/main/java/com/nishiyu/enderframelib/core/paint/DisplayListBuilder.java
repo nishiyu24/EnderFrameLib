@@ -107,6 +107,23 @@ public class DisplayListBuilder {
         return PaintOrder.STAT_CHUNK_REPLAYED.sum();
     }
 
+    /** 直近に描画またはパッチされた完全な表示リスト（Segmented DisplayList）。 */
+    private List<DisplayItem> currentDisplayList;
+    /** 直近に描画されたボックス（描画順 = 表示リスト上の dlStart 昇順）。 */
+    private final List<LayoutBox> renderedBoxes = new ArrayList<>();
+    /** 直近の描画のルートボックス。 */
+    private LayoutBox currentRoot;
+
+    /** 診断: 表示リストの差分スライスパッチ成功回数（全ボックス走査スキップ）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
+    public static final java.util.concurrent.atomic.LongAdder STAT_CHILD_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
+    public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_FALLBACKS = new java.util.concurrent.atomic.LongAdder();
+
+    /** 現在保持されている完全な表示リストを取得する（未描画時は null）。 */
+    public List<DisplayItem> currentDisplayList() {
+        return currentDisplayList;
+    }
+
     /** 箱を描く順（スタッキングコンテキストの順）に並べた箱。 */
     public List<LayoutBox> paintOrder(LayoutBox root) {
         return order.paintOrder(root);
@@ -136,6 +153,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     buildEpoch = LayoutBox.paintEpoch();
     translating = cullOffscreen && TRANSLATE_ENABLED;
     translatedHits = 0;
+    renderedBoxes.clear();
+    currentRoot = box;
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
     List<DisplayItem> elements = new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
         canvasBackgroundSource = null;
@@ -195,9 +214,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (cullOffscreen && !openBoxes.contains(owner) && offscreen(owner)) {
                 BoxMemo kept = boxMemo.get(owner);
                 if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
+                owner.dlStart = -1;
+                owner.dlEnd = -1;
+                owner.dlOrder = -1;
                 continue;
             }
+            int start = elements.size();
             task.drawAction().accept(elements);
+            int end = elements.size();
+            owner.dlStart = start;
+            owner.dlEnd = end;
+            owner.dlOrder = renderedBoxes.size();
+            renderedBoxes.add(owner);
         }
         // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
         // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
@@ -206,6 +234,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         order.endRender();
         lastElementCount = elements.size();
+        this.currentDisplayList = elements;
+        this.currentRoot = box;
         return elements;
     }
 
@@ -968,5 +998,301 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 lineY += line.height();
             }
         }
+    }
+
+    // ==========================================
+    // Segmented DisplayList: 差分スライスパッチ API (P0-4 / 戦略 T2)
+    // ==========================================
+
+    private ClipRect clipForBox(LayoutBox box) {
+        BoxMemo m = boxMemo.get(box);
+        if (m != null && m.clip != null) return m.clip;
+        LayoutBox p = box.parent;
+        while (p != null) {
+            BoxMemo pm = boxMemo.get(p);
+            if (pm != null && pm.clip != null) return pm.clip;
+            p = p.parent;
+        }
+        return null;
+    }
+
+    private String parentIdForBox(LayoutBox box) {
+        BoxMemo m = boxMemo.get(box);
+        if (m != null && m.parentId != null) return m.parentId;
+        if (box.parent == null) return null;
+        PaintOrder.ScrollContent sc = order.scrollContentOf(box.parent);
+        if (sc != null) return sc.contentId;
+        return box.parent.node != null ? box.parent.node.key() : null;
+    }
+
+    private static void collectSubtreeBoxes(LayoutBox b, List<LayoutBox> out) {
+        if (b == null) return;
+        if (b.dlStart >= 0) out.add(b);
+        if (b.children != null) {
+            for (LayoutBox c : b.children) collectSubtreeBoxes(c, out);
+        }
+    }
+
+    private void renderSubtreeBoxes(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> out, List<LayoutBox> outBoxes) {
+        if (box == null || box.w <= 0 || box.h <= 0 || box.isAnonymous || (box.display != null && box.display.isNone())) return;
+        int start = out.size();
+        fragIds.set(0);
+        drawBoxSelfUncached(out, box, clip, parentId);
+        int end = out.size();
+        box.dlStart = start;
+        box.dlEnd = end;
+        outBoxes.add(box);
+        boxMemo.put(box, remember(box, clip, parentId, List.copyOf(out.subList(start, end))));
+
+        String childParent = box.node != null ? box.node.key() : parentId;
+        ClipRect childClip = clip;
+        if (box.children != null) {
+            for (LayoutBox child : box.children) {
+                renderSubtreeBoxes(child, childClip, childParent, out, outBoxes);
+            }
+        }
+    }
+
+    /**
+     * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
+     */
+    public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return false;
+        if (boxes == null || boxes.isEmpty()) return false;
+        int listSize = currentDisplayList.size();
+        int boxCount = renderedBoxes.size();
+        for (LayoutBox b : boxes) {
+            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) return false;
+            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) return false;
+            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return false;
+            if (b.style != null) {
+                var facts = PaintOrder.factsOf(b.style);
+                if (facts.scrollbars() || facts.hasAnimation()) return false;
+            }
+            if (order.createsStackingContext(b)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 変更されたボックス群のスライスを再描画し、全ボックス走査を回避して表示リストをインプレースで差分更新する。
+     * パッチ不可能な場合は null を返す（呼び出し側がフル描画にフォールバック）。
+     */
+    public List<DisplayItem> patchBoxes(java.util.Collection<LayoutBox> boxes) {
+        long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
+        try {
+            return patchBoxesUnprofiled(boxes);
+        } finally {
+            StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
+        }
+    }
+
+    private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
+        if (!canPatchBoxes(boxes)) {
+            STAT_SLICE_PATCH_FALLBACKS.increment();
+            return null;
+        }
+
+        // 複数ボックスがある場合、dlStart の降順（末尾から先頭へ）でソート
+        List<LayoutBox> sorted = new ArrayList<>(boxes);
+        if (sorted.size() > 1) {
+            sorted.sort((a, b) -> Integer.compare(b.dlStart, a.dlStart));
+        }
+
+        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
+
+        for (LayoutBox b : sorted) {
+            ClipRect clip = clipForBox(b);
+            String parentId = parentIdForBox(b);
+            fragIds.set(0);
+            List<DisplayItem> newItems = new ArrayList<>(b.dlEnd - b.dlStart + 4);
+            drawBoxSelfUncached(newItems, b, clip, parentId);
+            boxMemo.put(b, remember(b, clip, parentId, newItems));
+
+            int oldLen = b.dlEnd - b.dlStart;
+            int newLen = newItems.size();
+            int delta = newLen - oldLen;
+
+            if (delta == 0) {
+                // スライス長同一: インプレース置換 (O(newLen))
+                for (int i = 0; i < newLen; i++) {
+                    currentDisplayList.set(b.dlStart + i, newItems.get(i));
+                }
+            } else {
+                // スライス長変化: 局所置換と後続インデックスシフト
+                currentDisplayList.subList(b.dlStart, b.dlEnd).clear();
+                currentDisplayList.addAll(b.dlStart, newItems);
+                b.dlEnd = b.dlStart + newLen;
+
+                int orderIdx = b.dlOrder;
+                for (int k = orderIdx + 1, n = renderedBoxes.size(); k < n; k++) {
+                    LayoutBox succ = renderedBoxes.get(k);
+                    succ.dlStart += delta;
+                    succ.dlEnd += delta;
+                }
+            }
+        }
+
+        generation++;
+        buildSerial++;
+        buildEpoch = LayoutBox.paintEpoch();
+        lastElementCount = currentDisplayList.size();
+        STAT_SLICE_PATCH_HITS.increment();
+        return currentDisplayList;
+    }
+
+    /**
+     * 子要素の増減（CHILD_PATCH）に対して、削除されたボックスと追加されたボックスのスライスを差分差し替え可能か判定する。
+     */
+    public boolean canPatchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return false;
+        if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return false;
+        if (order.createsStackingContext(parentBox)) return false;
+
+        // 削除ボックスの検証
+        if (!removed.isEmpty()) {
+            List<LayoutBox> allRemoved = new ArrayList<>();
+            for (LayoutBox r : removed) collectSubtreeBoxes(r, allRemoved);
+            if (allRemoved.isEmpty()) return false;
+            int firstOrder = allRemoved.get(0).dlOrder;
+            if (firstOrder < 0 || firstOrder >= renderedBoxes.size()) return false;
+            for (int i = 0; i < allRemoved.size(); i++) {
+                LayoutBox b = allRemoved.get(i);
+                if (b.dlOrder != firstOrder + i || b.dlStart < 0 || b.dlEnd < b.dlStart) return false;
+                if (renderedBoxes.get(b.dlOrder) != b) return false;
+                if (i > 0 && b.dlStart != allRemoved.get(i - 1).dlEnd) return false; // 表示リスト上でも連続
+                if (order.createsStackingContext(b)) return false;
+            }
+        }
+
+        // 挿入位置の検証
+        if (afterBox != null) {
+            if (afterBox.dlEnd < 0 || afterBox.dlOrder < 0 || afterBox.dlOrder >= renderedBoxes.size()) return false;
+            if (renderedBoxes.get(afterBox.dlOrder) != afterBox) return false;
+        }
+
+        // 追加ボックスの検証
+        for (LayoutBox a : added) {
+            if (order.createsStackingContext(a)) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 子要素の増減（CHILD_PATCH）に対して、削除されたボックスのスライスを除去し、追加されたボックスのスライスを挿入して差分更新する。
+     * パッチ不可能な場合は null を返す（フル描画フォールバック）。
+     */
+    public List<DisplayItem> patchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
+        long prof = StageProfiler.begin(PipelineStage.DISPLAY_LIST);
+        try {
+            return patchChildSlicesUnprofiled(parentBox, removed, added, afterBox);
+        } finally {
+            StageProfiler.end(PipelineStage.DISPLAY_LIST, prof);
+        }
+    }
+
+    private List<DisplayItem> patchChildSlicesUnprofiled(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
+        if (!canPatchChildSlices(parentBox, removed, added, afterBox)) {
+            STAT_SLICE_PATCH_FALLBACKS.increment();
+            return null;
+        }
+
+        int remStart = -1;
+        int remEnd = -1;
+        int remOrderStart = -1;
+        int remCount = 0;
+
+        if (!removed.isEmpty()) {
+            List<LayoutBox> allRemoved = new ArrayList<>();
+            for (LayoutBox r : removed) collectSubtreeBoxes(r, allRemoved);
+            remStart = allRemoved.get(0).dlStart;
+            remEnd = allRemoved.get(allRemoved.size() - 1).dlEnd;
+            remOrderStart = allRemoved.get(0).dlOrder;
+            remCount = allRemoved.size();
+
+            // 表示リストから削除
+            currentDisplayList.subList(remStart, remEnd).clear();
+            // renderedBoxes から削除
+            renderedBoxes.subList(remOrderStart, remOrderStart + remCount).clear();
+            for (LayoutBox r : allRemoved) r.clearDlSlice();
+        }
+
+        // 挿入位置の決定
+        int insertDlPos;
+        int insertOrderPos;
+        if (remStart >= 0) {
+            insertDlPos = remStart;
+            insertOrderPos = remOrderStart;
+        } else if (afterBox != null) {
+            List<LayoutBox> afterSub = new ArrayList<>();
+            collectSubtreeBoxes(afterBox, afterSub);
+            LayoutBox lastAfter = afterSub.isEmpty() ? afterBox : afterSub.get(afterSub.size() - 1);
+            insertDlPos = lastAfter.dlEnd;
+            insertOrderPos = lastAfter.dlOrder + 1;
+        } else {
+            LayoutBox firstChildWithSlice = null;
+            if (parentBox.children != null) {
+                for (LayoutBox c : parentBox.children) {
+                    if (c.dlStart >= 0 && !added.contains(c)) {
+                        firstChildWithSlice = c;
+                        break;
+                    }
+                }
+            }
+            if (firstChildWithSlice != null) {
+                insertDlPos = firstChildWithSlice.dlStart;
+                insertOrderPos = firstChildWithSlice.dlOrder;
+            } else {
+                insertDlPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
+                insertOrderPos = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
+            }
+        }
+
+        // 追加ボックスの描画スライス生成
+        List<DisplayItem> addedItems = new ArrayList<>();
+        List<LayoutBox> addedBoxes = new ArrayList<>();
+        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
+        ClipRect clip = clipForBox(parentBox);
+        String parentId = parentIdForBox(parentBox);
+
+        for (LayoutBox a : added) {
+            renderSubtreeBoxes(a, clip, parentId, addedItems, addedBoxes);
+        }
+
+        // 挿入位置を基準に dlStart / dlEnd を補正
+        for (LayoutBox a : addedBoxes) {
+            a.dlStart += insertDlPos;
+            a.dlEnd += insertDlPos;
+        }
+
+        // 表示リストと renderedBoxes への挿入
+        currentDisplayList.addAll(insertDlPos, addedItems);
+        renderedBoxes.addAll(insertOrderPos, addedBoxes);
+
+        // 差分シフト量
+        int removedItemsLen = (remStart >= 0) ? (remEnd - remStart) : 0;
+        int delta = addedItems.size() - removedItemsLen;
+
+        // 後続ボックスの dlOrder / dlStart / dlEnd を補正
+        int startShiftOrder = insertOrderPos + addedBoxes.size();
+        for (int k = startShiftOrder, n = renderedBoxes.size(); k < n; k++) {
+            LayoutBox succ = renderedBoxes.get(k);
+            succ.dlOrder = k;
+            succ.dlStart += delta;
+            succ.dlEnd += delta;
+        }
+
+        // 挿入されたボックスの dlOrder を設定
+        for (int i = 0; i < addedBoxes.size(); i++) {
+            addedBoxes.get(i).dlOrder = insertOrderPos + i;
+        }
+
+        generation++;
+        buildSerial++;
+        buildEpoch = LayoutBox.paintEpoch();
+        lastElementCount = currentDisplayList.size();
+        STAT_CHILD_SLICE_PATCH_HITS.increment();
+        return currentDisplayList;
     }
 }
