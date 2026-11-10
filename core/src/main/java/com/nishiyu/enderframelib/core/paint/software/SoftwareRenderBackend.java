@@ -396,16 +396,29 @@ public final class SoftwareRenderBackend implements RenderBackend {
      * 影の部品の矩形は、ぼかしが消える所までの広さを既に含む。シーン（3D）は箱の外へ描きうるので省かない。
      */
     private boolean outsideClip(DisplayItem el, Matrix2D pose, Clip clip) {
+        if (recordOwner != null) {
+            // 保持する層への記録中はコンテナの切り取りを外しているので、層の実体（描画先と同じ大きさ）の範囲で判定する（段階 1b）
+            return outsideBox(el, pose, 0, 0, raster.targetWidth(), raster.targetHeight());
+        }
+        return outsideBox(el, pose, clip.x0(), clip.y0(), clip.x1(), clip.y1());
+    }
+
+    static boolean outsideBoxFor(double top, double bottom, double left, double right, double pad, boolean sideways,
+                                 double x0, double y0, double x1, double y1) {
+        if (bottom + pad < y0 || top - pad > y1) return true;
+        if (sideways) return false;
+        return right + CULL_PAD < x0 || left - CULL_PAD > x1;
+    }
+
+    private boolean outsideBox(DisplayItem el, Matrix2D pose, double cx0, double cy0, double cx1, double cy1) {
         ElementType type = el.type();
         if (type == ElementType.SCENE || type == ElementType.NODE) return false;
         if (!pose.isFinite()) return false;
         double[] b = deviceBounds(pose, el.x(), el.y(), el.x() + el.width(), el.y() + el.height(), boundsScratch);
         double pad = CULL_PAD + el.height();
-        if (b[3] + pad < clip.y0() || b[1] - pad > clip.y1()) return true;
         boolean overflowsSideways = (el.text() != null && !el.text().isEmpty()) || type == ElementType.INPUT
                 || type == ElementType.SELECT || type == ElementType.TEXTAREA;
-        if (overflowsSideways) return false;
-        return b[2] + CULL_PAD < clip.x0() || b[0] - CULL_PAD > clip.x1();
+        return outsideBoxFor(b[1], b[3], b[0], b[2], pad, overflowsSideways, cx0, cy0, cx1, cy1);
     }
 
     private void drawItem(DisplayItem el, int index, float flat) {
@@ -420,7 +433,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         AnimatedValues anim = res.anim();
         Clip clip = buildClip(index, el, anim);
         if (clip.empty()) return;
-        if (cullOffscreen && recordOwner == null && outsideClip(el, res.pose(), clip)) {
+        if (cullOffscreen && outsideClip(el, res.pose(), clip)) {
             culledItems++;
             return;
         }
