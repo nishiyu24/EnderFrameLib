@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.kernel.gpu;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
-import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
+import com.nishiyu.enderframelib.core.css.model.EasingFunction;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;

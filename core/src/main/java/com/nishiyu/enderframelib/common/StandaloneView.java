@@ -12,7 +12,7 @@ import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;

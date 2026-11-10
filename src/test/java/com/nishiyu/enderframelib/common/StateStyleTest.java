@@ -6,7 +6,7 @@ import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.core.css.StyleSheet.CascadeOrigin;
 import com.nishiyu.enderframelib.core.css.CssProperty;
-import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
+import com.nishiyu.enderframelib.core.css.model.EasingFunction;
 import com.nishiyu.enderframelib.core.css.model.ElementState;
 import com.nishiyu.enderframelib.core.css.StyleSheet.Specificity;
 import com.nishiyu.enderframelib.core.css.CssParser;

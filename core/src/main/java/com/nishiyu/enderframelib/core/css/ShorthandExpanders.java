@@ -2,7 +2,6 @@ package com.nishiyu.enderframelib.core.css;
 
 import com.nishiyu.enderframelib.core.css.model.*;
 
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

@@ -1,12 +1,14 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.dom.parser.DomUtils;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.StyleResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
@@ -60,7 +62,7 @@ final class ControlPainter {
         ImageChoice chosen = "img".equals(box.node.tag)
                 ? ImageSources.forImg(box.node.attrs, decor.rootW(), decor.rootH(), decor.devicePixelRatio()) : null;
         String src = box.style.getOrDefault(CssPropertyIndex.SRC, chosen != null ? chosen.url() : box.node.attrs.getOrDefault("src", ""));
-        com.nishiyu.enderframelib.core.layout.CustomElementPainter hostPainter =
+        com.nishiyu.enderframelib.core.dom.CustomElementPainter hostPainter =
                 com.nishiyu.enderframelib.core.layout.ReplacedElements.painterOf(box.node.tag);
         if (hostPainter != null) src = hostPainter.resolveSrc(box.node.attrs, src);
 

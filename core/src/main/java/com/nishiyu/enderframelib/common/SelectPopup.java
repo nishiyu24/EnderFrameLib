@@ -1,7 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;

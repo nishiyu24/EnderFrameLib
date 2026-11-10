@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
@@ -44,7 +46,7 @@ class CustomElementPainterTest {
     @Test
     void hostPainterResolvesSrcForRendering() {
         ReplacedElements.register("x-gauge", new CustomElementPainter() {
-            @Override public ReplacedElements.Kind kind() { return ReplacedElements.Kind.IMAGE_LIKE; }
+            @Override public ReplacedKind kind() { return ReplacedKind.IMAGE_LIKE; }
             @Override public String resolveSrc(Map<String, String> attrs, String src) {
                 return "gauge:" + attrs.getOrDefault("kind", "none");
             }
@@ -57,7 +59,7 @@ class CustomElementPainterTest {
     @Test
     void hostSceneUsesPainterDimensions() {
         ReplacedElements.register("x-view", new CustomElementPainter() {
-            @Override public ReplacedElements.Kind kind() { return ReplacedElements.Kind.SCENE; }
+            @Override public ReplacedKind kind() { return ReplacedKind.SCENE; }
             @Override public int sceneHeight() { return 77; }
         });
         DisplayItem scene = first(render("<div style='width:200px'><x-view></x-view></div>"), ElementType.SCENE);
@@ -77,7 +79,7 @@ class CustomElementPainterTest {
     void invalidPainterIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", (CustomElementPainter) null));
         assertThrows(IllegalArgumentException.class, () -> ReplacedElements.register("x-a", new CustomElementPainter() {
-            @Override public ReplacedElements.Kind kind() { return null; }
+            @Override public ReplacedKind kind() { return null; }
         }));
     }
 

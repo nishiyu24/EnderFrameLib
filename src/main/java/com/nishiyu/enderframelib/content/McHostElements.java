@@ -1,8 +1,8 @@
 package com.nishiyu.enderframelib.content;
 
-import com.nishiyu.enderframelib.core.layout.CustomElementPainter;
-import com.nishiyu.enderframelib.core.layout.HostElementProvider;
-import com.nishiyu.enderframelib.core.layout.ReplacedElements.Kind;
+import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.node.TagMacro;
 import java.util.Map;
 import java.util.Set;
@@ -16,7 +16,7 @@ public final class McHostElements implements HostElementProvider {
     /** {@code <mc-fluid fluid="...">} → {@code fluid:...} のように参照先へ接頭辞を付ける画像系の置換要素。 */
     private static CustomElementPainter prefixed(String prefix, String attr, String emptyDefault) {
         return new CustomElementPainter() {
-            @Override public Kind kind() { return Kind.IMAGE_LIKE; }
+            @Override public ReplacedKind kind() { return ReplacedKind.IMAGE_LIKE; }
             @Override public String resolveSrc(Map<String, String> attrs, String src) {
                 if (src.startsWith(prefix)) return src;
                 return prefix + attrs.getOrDefault(attr, src.isEmpty() ? emptyDefault : src);
@@ -25,7 +25,7 @@ public final class McHostElements implements HostElementProvider {
     }
 
     private static final CustomElementPainter SCENE = new CustomElementPainter() {
-        @Override public Kind kind() { return Kind.SCENE; }
+        @Override public ReplacedKind kind() { return ReplacedKind.SCENE; }
     };
 
     @Override

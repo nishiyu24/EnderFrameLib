@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.css;
 
+import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
 import com.nishiyu.enderframelib.core.css.model.Overflow;
 
 /** 算出スタイルから決まる、レイアウトが繰り返し読む値。 */
@@ -112,7 +113,7 @@ public final class StyleFacts {
         if (PackedLengths.isZeroPx(w) || PackedLengths.isExpression(w)) {
             String widthStr = s.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim();
             widthPercent = widthStr.contains("%");
-            if (com.nishiyu.enderframelib.core.layout.model.LayoutMetrics.isIntrinsicSizeKeyword(widthStr)) {
+            if (ValueKeywords.isIntrinsicSizeKeyword(widthStr)) {
                 String kw = widthStr.toLowerCase();
                 if (kw.equals("min-content")) intrinsicWidthKind = IW_MIN_CONTENT;
                 else if (kw.equals("max-content")) intrinsicWidthKind = IW_MAX_CONTENT;

@@ -1,8 +1,9 @@
 package com.nishiyu.enderframelib.core.paint;
 
-import com.nishiyu.enderframelib.core.paint.model.AnimationTiming;
-import com.nishiyu.enderframelib.core.paint.model.EasingFunction;
-import com.nishiyu.enderframelib.core.paint.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.model.*;
+import com.nishiyu.enderframelib.core.css.model.AnimationTiming;
+import com.nishiyu.enderframelib.core.css.model.EasingFunction;
+import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 

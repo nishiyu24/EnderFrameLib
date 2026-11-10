@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.parser.HtmlParser;
-import com.nishiyu.enderframelib.core.layout.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,6 +1,6 @@
 package com.nishiyu.enderframelib.core.text.model;
 
-import com.nishiyu.enderframelib.core.css.KeywordMatch;
+import com.nishiyu.enderframelib.core.kernel.style.KeywordMatch;
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 

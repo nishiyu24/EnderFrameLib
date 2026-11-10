@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.css;
+package com.nishiyu.enderframelib.core.kernel.style;
 
 /**
  * キーワード値の照合を、{@code trim().toLowerCase()} の新しい文字列を作らずに行う。

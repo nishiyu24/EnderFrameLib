@@ -20,7 +20,7 @@ import com.nishiyu.enderframelib.core.paint.ImageChoice;
 import com.nishiyu.enderframelib.core.paint.ImageSources;
 import com.nishiyu.enderframelib.core.raster.svg.SvgImage;
 import com.nishiyu.enderframelib.core.raster.svg.SvgSize;
-import com.nishiyu.enderframelib.core.paint.*;
+
 import com.nishiyu.enderframelib.core.text.*;
 import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.css.model.Overflow;

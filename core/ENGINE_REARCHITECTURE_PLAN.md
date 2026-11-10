@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-10（Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
+> **最終更新**: 2026-11-10（**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統のうち 7 系統を解消・残り 4 系統（6 件）を凍結（P0 の一部を実装済み）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -33,6 +33,64 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
    - 矩形・角丸・枠線・影・グラデーション・グリフは単一 Uber-Shader（[`GpuRectShader`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/GpuRectShader.java) + [`GlRectStream`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/GlRectStream.java)）で 1 ドローコール描画し、複雑なパス・フィルタやヘッドレス環境では 64×64 タイル並列ラスタライザ（[`TileQueue`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/TileQueue.java)）がピクセル等価性を保証する。
 4. **機械的ラチェット（Mechanical Ratchets）による退行防止**:
    - 達成した構造純化（`mc-*` 直書き禁止、公開 API への内部型漏洩禁止、`ComputedStyle` の文字列名アクセス禁止、プラットフォーム依存クラス数上限、テスト当たりヒープ確保量上限）はすべて自動テストで固定し、逆行をコンパイル／テスト段階で阻止する。
+
+### 1.3 OSI 参照モデル型・7 層単方向アーキテクチャ（機能追加による構造崩壊の防止）
+
+今後の大規模な機能追加（Wave 1.5〜Wave 4）によってパッケージ間の責務や依存方向が崩れることを防ぐため、エンジン全体を **OSI 参照モデルに倣った 7 層の単方向階層（L1〜L7）** として定義する。**「第 $N$ 層は第 $N-1$ 層以下の型しか参照してはならず、各層間は明確な不変データ単位（PDU: Protocol Data Unit）のみで通信する」**ことを原則とする。
+
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│ L7: Public API & Host Surface Layer (`api/*` + `common/EngineSurface`)     │
+│   PDU: `WebViewSurface`, `SurfaceState`, `PixelSink` (内部型露出 0)         │
+├────────────────────────────────────────────────────────────────────────────┤
+│ L6: Session & Pipeline Orchestration Layer (`common/*`, `core/EngineContext`)│
+│   PDU: フレーム駆動・入力イベント合成 (`UiView`, `RenderPipeline`, `UiInput`)│
+├────────────────────────────────────────────────────────────────────────────┤
+│ L5: Paint, Composition & Backend Layer (`core/paint/*`)                    │
+│   PDU: `DisplayItem` スライス → 80B GPU インスタンス / 64×64 タイル `Op`   │
+├────────────────────────────────────────────────────────────────────────────┤
+│ L4: Box Tree & Layout Formatting Layer (`core/layout/*`)                   │
+│   PDU: `ConstraintSpace` → `LayoutBox` (解決済み座標 `x, y, w, h`, `ShapedLine`)│
+├────────────────────────────────────────────────────────────────────────────┤
+│ L3: Document, Style & Event Semantics Layer (`core/dom/*`, `core/css/*`,   │
+│     `core/event/*`, `core/kernel/compiler/*`)                              │
+│   PDU: `HtmlNode`, `ComputedStyle` (`CssValue[]`, `StyleFacts`), `CoreEvent`│
+├────────────────────────────────────────────────────────────────────────────┤
+│ L2: Text Shaping, Font & 2D Raster Primitives Layer (`core/text/*`,        │
+│     `core/raster/*`, `core/net/*`, `core/media/*`)                         │
+│   PDU: `FontFace`, `ShapedLine`, `GlyphBitmap`, `Pixmap`, `Path2D`         │
+├────────────────────────────────────────────────────────────────────────────┤
+│ L1: Physical Memory, Math & GPU Kernel Layer (`core/kernel/memory/*`,      │
+│     `core/kernel/style/*`, `core/kernel/gpu/*`, `core/diag/*`, `api/dom`)  │
+│   PDU: `MemorySegment` (`DocumentArena`, `AtomTable`), `PackedCssValue`    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 階層純度の現状と機械的固定（2026-11-10 実装: [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java)）
+
+マクロ層（`api` $\leftarrow$ `core` $\leftarrow$ `common` $\leftarrow$ `client`/`server`）の単方向性は [`ApiBoundaryTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/test/java/com/nishiyu/enderframelib/api/ApiBoundaryTest.java) と [`ArchitectureTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/test/java/com/nishiyu/enderframelib/core/ArchitectureTest.java) で固定済み。`core.*` 内部（L1〜L6）の単方向性は **`LayerDependencyRatchetTest`** が固定する。
+
+- **検査対象**: `core/src/main` の全 `.java` について、`import`（ワイルドカード含む）と**完全修飾名の直接参照**（コメントは除外）を走査し、「参照元の層 < 参照先の層」を逆方向参照として検出する。
+- **層の割り当て**: `kernel/memory|style|gpu`・`diag` = L1、`text`・`raster`・`net`・`media` = L2、`dom`・`css`・`event`・`kernel/compiler`・`raster/svg` = L3（`kernel/compiler` は CSS/DOM を保持し、`raster/svg` は DOM を解析するため L3）、`layout` = L4、`paint` = L5、`core` 直下（`EngineContext`）= L6。
+- **ラチェット**: 既知の逆方向参照 `KNOWN_UPWARD` は**増やせず、解消したら一覧から外さないと失敗**する（`PortabilityRatchetTest` と同方式）。目標は空集合。
+- **外向き禁止**: `core.*` は `common` / `client` / `server` を参照できず、`api` は DOM・イベントの契約型（`api.dom` / `api.event`）のみ参照可（`coreNeverDependsOutward`）。
+- **検査器自身の検証**: 上向きの `import`・ワイルドカード・FQN の検出、下向き/同層/コメントの非検出、層割り当て表の 5 テストで偽陰性を防ぐ。
+
+**実装前の実測は 29 件の `import` ＋ 完全修飾名 3 箇所（計 6 系統）。今回の作業で 5 系統を実際に解消し、2 系統は層の定義で解消、残り 4 系統（6 件）を `KNOWN_UPWARD` に凍結した。**
+
+| 逆方向参照の向き | 状態 | 実施内容 / 残件と解消策 |
+| :--- | :---: | :--- |
+| **L3 (`dom`) $	o$ L4 (`layout`)**（`HostSyntax` → `HostElementProvider`） | ✅ 解消 | SPI [`HostElementProvider`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/HostElementProvider.java) と、それが返す [`CustomElementPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/CustomElementPainter.java)、置換要素の性質 [`ReplacedKind`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/ReplacedKind.java)（旧 `ReplacedElements.Kind`）を `core.dom` へ移設。`META-INF/services` の登録名（`core/src/test/resources`・ルート `src/main/resources`）も新 FQN へ更新（旧名のままだと SPI が黙って無効化される） |
+| **L3 (`css`) $	o$ L5 (`paint`)**（`AnimationParser` / `StyleAnimator` / `ShorthandExpanders`） | ✅ 解消 | `AnimationTiming` / `EasingFunction` / `AnimationSpec` を `core.paint.model` → `core.css.model` へ移設（`EasingFunction`・`AnimationSpec` の未使用 `paint.*` import も除去） |
+| **L3 (`css`) $	o$ L4 (`layout`)**（`ComputedStyle` / `CssValue` / `StyleFacts`） | ✅ 解消 | 計画書旧版は import のみを数えていたが、実際は**完全修飾名で 3 箇所**残っていた（検査器が FQN も走査して発見）。純粋な文字列判定 `isIntrinsicSizeKeyword` / `numericFontWeight` を新設 [`ValueKeywords`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ValueKeywords.java)（L3）へ移し、`LayoutMetrics` は委譲 |
+| **L2 (`text`) $	o$ L3 (`css`)**（`WhiteSpace` / `WordBreak` → `KeywordMatch`） | ✅ 解消 | `KeywordMatch` を L1 `core.kernel.style` へ移設 |
+| **L4 (`layout`) $	o$ L5 (`paint`)**（未使用ワイルドカード） | ✅ 解消 | 8 ファイルの未使用 `import core.paint.*;` を削除 |
+| **L1 (`kernel/compiler`) $	o$ L3** | ✅ 解消（定義で） | `kernel/compiler` は CSS/DOM を保持するため L3 と定義（逆参照 0） |
+| **L2 (`raster/svg`) $	o$ L3 (`dom`, `css`)** | ✅ 解消（定義で） | SVG は DOM を解析して描くため `raster/svg` を L3 と定義（`raster` 本体からの参照は 0、利用側は layout/paint のみ） |
+| **L2 (`raster`) $	o$ L3**: `CanvasRenderingContext2D` → `css.ColorParser` | ⏳ 凍結 | 色解析を L1/L2 へ下ろす（`ColorParser` は css・paint・テストの 20 箇所超から参照される） |
+| **L2 (`text/font`) $	o$ L4/L5**: `FontFaceRules` → `LayoutMetrics` / `DisplayItem` | ⏳ 凍結 | `fontStyleFor(DisplayItem, …)` を上位（paint）へ移す |
+| **L3 (`dom`) $	o$ L6**: `Bindings` → `EngineContext` | ⏳ 凍結（新規発見） | i18n 解決器・JSON 解析器を引数（または L3 の小さな SPI）で受ける。旧版は「違反 0」と書いていたが実際は 1 件あった |
+| **L4 (`layout`) $	o$ L5**: `BoxMeasurer` → `ImageChoice` / `ImageSources` | ⏳ 凍結 | 画像寸法の取得を L2/L4 の窓口へ分離する |
 
 ---
 
@@ -81,6 +139,7 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
 | **M5: Zero-Allocation Tile CPU Fallback** | [`AllocationRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/AllocationRatchetTest.java), [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java) | ✅ **完全達成** | 64×64 タイル並列 `TileQueue`、`OpPool` ゼロ確保、`Fast.div255` |
 | **Wave 1: 公開 API・ホスト分離・並行書体・脱 static** | [`ApiBoundaryTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/api/ApiBoundaryTest.java), [`HostElementProviderTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/HostElementProviderTest.java), [`EngineContextTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/EngineContextTest.java), [`LoadedFaceConcurrencyTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/text/font/LoadedFaceConcurrencyTest.java) | ✅ **完全達成** | `EnderEngine` / `WebViewSurface` 公開 API、`core/src/main` から `mc-*` 完全撤去、`EngineContext` スレッドスコープ化、`LoadedFace` 面単位ロック + 専用 `FT_Library` |
 | **Portability Ratchet (LWJGL/AWT 隔離)** | [`PortabilityRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/PortabilityRatchetTest.java) | ✅ **完全達成** | プラットフォーム依存を `gl` 5 + `LoadedFace` + `AwtImageDecoder` の計 7 ファイルのみに固定 |
+| **Layer Ratchet (7 層単方向 DAG)** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) | 🔧 **固定済み（凍結 6 件）** | import＋完全修飾名を走査し下位→上位参照を検出、既知 6 件のみ許容（増加も未更新の解消も失敗）。`core` から `common`/`client`/`server` への外向き参照 0 |
 
 ---
 
@@ -164,7 +223,7 @@ com.nishiyu.enderframelib
    - 各 DOM ノードの `parent`, `firstChild`, `nextSibling`, `tagAtom`, `idAtom`, `flags`（24 Bytes/node）と祖先セレクタ照合用の 64-bit Bloom Filter（`ancestorBloom`）を `MemorySegment` 上に連続格納。
    - **2026-11-10 リーク修正**: `DocumentArena` が GC された後も静的テーブル `SLOTS` に `InteractionState`（＝旧 `HtmlDocument` 全体）が強参照で残っていたバグを修正し、[`ArenaSlotsLeakTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/memory/ArenaSlotsLeakTest.java) で 400 回文書を作り直しても古い文書が 100% GC 回収されることを保証。
 2. **ホスト固有要素・構文の SPI 分離（`core/src/main` からの `mc-*` 完全撤去）**:
-   - [`HostElementProvider`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/HostElementProvider.java)（`ServiceLoader` SPI）を新設し、置換要素台帳 [`ReplacedElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/ReplacedElements.java)・カスタム描画 [`CustomElementPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/CustomElementPainter.java)・カスタムタグマクロ [`TagMacro`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/TagMacro.java)（[`CustomTagExpander`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/CustomTagExpander.java)）・属性別名と Markdown タグ台帳 [`HostSyntax`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/HostSyntax.java) をすべてプラグイン化。
+   - [`HostElementProvider`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/HostElementProvider.java)（`ServiceLoader` SPI）を新設し、置換要素台帳 [`ReplacedElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/ReplacedElements.java)・カスタム描画 [`CustomElementPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/CustomElementPainter.java)・カスタムタグマクロ [`TagMacro`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/node/TagMacro.java)（[`CustomTagExpander`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/CustomTagExpander.java)）・属性別名と Markdown タグ台帳 [`HostSyntax`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/HostSyntax.java) をすべてプラグイン化。
    - Minecraft 固有の 7 タグ（`mc-fluid`, `mc-entity`, `mc-scene`, `mc-slot`, `mc-slot-grid`, `mc-inventory`, `mc-bar` 等）と別名（`mc-if`, `mc-for`, `mc-markdown`）はすべてルート Mod 側の [`McHostElements`](file:///D:/Dev/Personal/enderframelib-1.21.1/src/main/java/com/nishiyu/enderframelib/content/McHostElements.java) / `McTagMacros` に移設され、`:core` 本番コードから `mc-*` の直書きが完全にゼロとなった（[`HostElementProviderTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/layout/HostElementProviderTest.java), [`CustomTagExpanderSpiTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/CustomTagExpanderSpiTest.java), [`HostSyntaxTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/dom/HostSyntaxTest.java) で守護）。
 
 ### 4.2 CSS 解決・カスケード・アニメーション層（Milestone 2 完全達成）
@@ -182,7 +241,7 @@ com.nishiyu.enderframelib
    - 継承可能なカスタムプロパティ `--*` は、要素自身が `--*` を宣言していない限り親の不変マップ参照をそのまま共有。
 4. **`StyleFacts` の 25 寸法 `long[]` パック化と無確保キーワード照合**:
    - 縁 14 個（margin/padding/border）に加え、`width`, `height`, `min-*`, `max-*`, `top`, `right`, `bottom`, `left`, `flex-basis` の 11 個（計 25 個）を [`ComputedStyle.packedEdges`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java) (`long[]`) に統合。`noPercent`, `widthAuto`, `definiteWidth` 等のフラグ導出から文字列検索を撤去（[`StyleFactsPercentTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/css/StyleFactsPercentTest.java), [`StyleFactsPackedFlagsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/css/StyleFactsPackedFlagsTest.java)）。
-   - トリムや大小文字無視のキーワード比較は `trim().toLowerCase()` の確保を行わない [`KeywordMatch`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/KeywordMatch.java) に統一。
+   - トリムや大小文字無視のキーワード比較は `trim().toLowerCase()` の確保を行わない [`KeywordMatch`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/style/KeywordMatch.java) に統一。
 5. **CSS 解析テンプレートの共有キャッシュ（[`StyleSheet`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/StyleSheet.java)）**:
    - 同一 CSS 文字列から解析された不変の規則・索引・`InvalidationSets` を最大 64 件キャッシュし、`StyleSheet.parse` 時は複製を返すことで、画面を開く（`open`）コストを **`5.4 ms → 3.9 ms`（−28%、確保 −1.5 MB）** に短縮（[`StyleSheetTemplateCacheTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/css/StyleSheetTemplateCacheTest.java)）。
 
@@ -393,8 +452,8 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 
 | # | 弱点 | 実測の根拠（`:core` ÷ Chrome。特記なければ全 CPU） | 構造的な原因 |
 | :--- | :--- | :--- | :--- |
-| **W1** | 🔧 **一部解消（2026-11-10: ペインタ段カリング実装、§7.2 P0-0）** GL/CPU 描画が可視範囲カリングを持たず、再描画コストが総項目数に比例（`GlRectStream` 4,096 超過ぶんは CPU フォールバック）** | 画面外 1 行の `hover`: 500 行 **7.4x**（`2.62` vs `0.36` ms）→ 2,000 行 **23.8x**（`13.05` vs `0.55` ms）。2,000 行の GL 実行で 1 フレームあたり約 `4,100` 図形を GPU、約 `5.9 万` 個を **容量超過で CPU へ棄却**（`rejects` カウンタ）。ただし `scroll` は保持レイヤで `0.2〜0.6 ms` と良好 | スクロールコンテナ外・ビューポート外の項目も毎フレーム GPU ストリームへ詰め直している。§6.3 の「項目単位の保持 GPU 記録」が未実装のため、局所変更でも全項目が対象 |
-| **W2** | **子の挿入・削除が O(行数) 以上（`CHILD_PATCH` が成立してもペイント準備が全走査）** | 500 行 **9.1x**（`4.96` ms）→ 2,000 行 **23.5x**（`25.6` ms、null でも `9.72` vs `1.09`）。`CHILD_PATCH` は 1,100 回中 1,100 回ヒットしているのに、段別では **display-list が `9.02` ms 中の `7.06` ms（78%）** | レイアウトは局所化済みだが `DisplayListBuilder` が全ボックスを再走査（§7.2 P0-4 の範囲差し替え未実装）。4 倍の行数で 11 倍の時間＝超線形 |
+| **W1** | 🔧 **一部解消（2026-11-10: ペインタ段カリング実装、§7.3 P0-0）** GL/CPU 描画が可視範囲カリングを持たず、再描画コストが総項目数に比例（`GlRectStream` 4,096 超過ぶんは CPU フォールバック） | 画面外 1 行の `hover`: 500 行 **7.4x**（`2.62` vs `0.36` ms）→ 2,000 行 **23.8x**（`13.05` vs `0.55` ms）。2,000 行の GL 実行で 1 フレームあたり約 `4,100` 図形を GPU、約 `5.9 万` 個を **容量超過で CPU へ棄却**（`rejects` カウンタ）。ただし `scroll` は保持レイヤで `0.2〜0.6 ms` と良好 | スクロールコンテナ外・ビューポート外の項目も毎フレーム GPU ストリームへ詰め直している。§6.3 の「項目単位の保持 GPU 記録」が未実装のため、局所変更でも全項目が対象 |
+| **W2** | **子の挿入・削除が O(行数) 以上（`CHILD_PATCH` が成立してもペイント準備が全走査）** | 500 行 **9.1x**（`4.96` ms）→ 2,000 行 **23.5x**（`25.6` ms、null でも `9.72` vs `1.09`）。`CHILD_PATCH` は 1,100 回中 1,100 回ヒットしているのに、段別では **display-list が `9.02` ms 中の `7.06` ms（78%）** | レイアウトは局所化済みだが `DisplayListBuilder` が全ボックスを再走査（§7.3 P0-4 の範囲差し替え未実装）。4 倍の行数で 11 倍の時間＝超線形 |
 | **W3** | **CPU バックエンドに差分描画（ダメージ矩形）・スクロールレイヤ再利用が無い** | showcase `hover` `4.42` ms（Chrome CPU 合成 `1.55` ms、**2.9x**）、`inherited` `7.35` ms、large-list `scroll` `3.28` ms（Chrome CPU 合成 `1.20`・GL `0.20`、**2.7x**） | GL 経路は `patchIndexByDiff` と `GpuScrollLayer` で保持するが、`SoftwareRenderBackend` は変更のたびに 800×600 を全面再ラスタ（`softwarePaint` 単体 `1.97` ms + 走査・合成）。ヘッドレス／GL 不可環境の実用上限を決める |
 | **W4** | **ペイント準備（DisplayList 生成）が Chrome の prepaint+paint の約 4.8 倍** | `fontsize`（全面無効化・約 2,200 行）: display-list `9.93` ms vs Chrome prepaint+paint `2.07` ms。`displayList` JMH は large-list で `1.45` ms（showcase の 3.7 倍） | 変更の有無に関わらず全ボックスを辿って `DisplayItem` を（メモ済みでも）列挙する。ボックス単位のスライス保持が無い |
 | **W5** | **幅変更・全面無効化のレイアウト（測定キャッシュの限界）** | showcase の幅 ±1px: **11.1x**（`0.931` vs `0.0835` ms）。large-list 500 行は 1.3x、`fontsize` の layout は 1.4x（`9.3` vs `6.6` ms）、`inherited`（500 行）は 2.5x（`2.35` vs `0.93` ms）。2,000 行 `fontsize` は **3.0x**（GL 込み） | 親制約が同一の子を丸ごとスキップする Blink の LayoutNG 制約キャッシュ相当が無い。1 ボックス 1 スロットの測定キャッシュ（§6.2） |
@@ -434,85 +493,105 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 
 > **総合評価（2026-11-10 の横断計測を反映して改訂）**:
 > Wave 1 の実装により、**① 公開 API の整備、② `core/src/main` からの Minecraft 固有概念の完全分離、③ `EngineContext` によるマルチインスタンス化、④ `LoadedFace` の並列化、⑤ Milestone 2 の完遂、⑥ GL 走査の差分更新化とレイアウト測定回数の半減** まで完了し、**数百〜千要素規模の UI（ゲーム HUD・設定画面・ダッシュボード）では Chrome と同等以上、Swing / JavaFX を明確に上回る**水準に到達した（`:hover`・継承再スタイル・`idle`・`scroll`・オープン速度は Chrome を上回る）。
-> 一方、**「他エンジンを超える」には 2 つの構造的な穴が残る**。(1) **規模耐性**: 描画側（GL 送出・DisplayList 生成・CPU 全面再描画）が可視範囲に関係なく総項目数に比例するため、2,000 行（2 万項目）級で局所更新が Chrome の 10〜24 倍、`child` が 23 倍になる（W1〜W4）。パイプライン単体（`null` バックエンド）の局所テキスト更新は 2,000 行でも Chrome 以上なので、**解くべきは「下流のペイント準備・送出を可視範囲＋変更部分に限定すること」**である。(2) **全面レイアウトの測定キャッシュ**（幅変更で Chrome の 11 倍、W5）。加えて文書上限 128 KiB の黙った切り捨て（W8）は**正しさの問題**として最優先で直す。
+> 一方、**「他エンジンを超える」には 2 つの構造的な穴が残る**。(1) **規模耐性**: 描画側（GL 送出・DisplayList 生成・CPU 全面再描画）が可視範囲に関係なく総項目数に比例するため、2,000 行（2 万項目）級で局所更新が Chrome の 10〜24 倍、`child` が 23 倍になる（W1〜W4）。パイプライン単体（`null` バックエンド）の局所テキスト更新は 2,000 行でも Chrome 以上なので、**解くべきは「下流のペイント準備・送出を可視範囲＋変更部分に限定すること」**である。(2) **全面レイアウトの測定キャッシュ**（幅変更で Chrome の 11 倍、W5）。なお文書上限 128 KiB の黙った切り捨て（W8）は 2026-11-10 に修正済み。
 
 ---
 
-### 7.2 未解決の重要課題（優先度順・整理版）
+### 7.2 横断ベンチマークから導かれる「既存ライブラリ・ブラウザを凌駕するための 7 大技術戦略」
+
+§6.4・§6.5 の横断計測が示した本質は極めて明快である。`:core` は**上流のコンパイラ型最適化（[`StyleStateAutomaton`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/StyleStateAutomaton.java) による `:hover` 49 倍高速化、`restyleInherited` 4.5 倍高速化、2,000 行 `TEXT_PATCH` の `0.725 ms`）ではすでに Blink / Gecko を圧倒**している一方、**下流（DisplayList 構築・SceneDriver 走査・GPU/CPU ラスタ送出）および幅変更レイアウトに「$O(N_{\text{全要素}})$ の線形走査」が残っている**ために大規模ページで逆転されている。
+
+したがって、既存のブラウザ（Blink LayoutNG / PaintArtifactCompositor、Firefox WebRender）や UI フレームワーク（Flutter Impeller、Dear ImGui、最新ゲームエンジンの GPU-Driven Rendering）の知見と、Java 21 FFM API・単一プロセス統合の強みを掛け合わせた以下の **7 大技術戦略（T1〜T7）** によって、すべての領域で既存エンジンを上回る。
+
+| 戦略 ID | 対象弱点 | 採用するコア技術（他分野・ブラウザ技術の応用） | 計算量の変化 | 既存エンジンを超える根拠（理論・目標値） |
+| :--- | :---: | :--- | :---: | :--- |
+| **T1: 階層的空間カリング & スクロール区間インデックス** | **W1** | **WebRender / ゲームエンジン BVH 型**: `SCROLL_NODE` の可視 Y 区間二分探索と [`PaintOrder.Chunk`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintOrder.java) 外接 AABB カリングを [`PaintSceneDriver.run`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) の上流で行う | $O(N_{\text{total}}) \to O(\log N + N_{\text{visible}})$ | ペインタ段の `outsideClip`（2026-11-10 実装済み・CPU −55%）をさらに上流へ引き上げ、画面外 20,000 項目の `resolveAt`・`buildClip` 自体をゼロにする。2,000 行画面外 `hover` を **`< 0.25 ms`（Chrome `0.55 ms` の 2 倍以上高速）** へ |
+| **T2: Segmented DisplayList（CoW スライス木）＋ 64-bit 整数鍵** | **W2, W4, W6** | **Rope / B-Tree スライス構造 & Blink PaintChunk**: 各 [`LayoutBox`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java) が自身の `[dlStart, dlEnd)` スライスを保持し、局所変更・`CHILD_PATCH` 時は該当スライスのみを配列シフト／差し替え。`keyOf` は `(arenaHandle << 8) \| partOrdinal` の `long` 化 | $O(N_{\text{boxes}}) \to O(\Delta_{\text{dirty}})$ | `CHILD_PATCH` 成立時に 78%（`7.1 ms`）を占めていた `DisplayListBuilder` 全走査と、全シナリオの 8〜10% を占める `AtomTable.intern` が消滅。2,000 行の行挿入・削除を **`< 0.5 ms`（Chrome `1.09 ms` の 2 倍高速）** へ |
+| **T3: GPU-Driven Retained Instance Slices（VRAM 永続スライス保持）** | **W1, W6** | **WebRender / GPU-Driven Rendering**: 未変更 [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java)（特にテキストの字形群）が生成した 80B GPU インスタンス列をキャッシュし、次フレームは字形ループを飛ばして `MemorySegment.copy` 1 回（または SSBO 間接参照）で送出 | $O(N_{\text{glyphs}}) \to O(\Delta_{\text{changed items}})$ | §6.3 で `GlRectStream` 容量拡大が逆効果だった原因（1 字形 `0.13 µs` の CPU 積み込み）を根絶。容量上限 4,096 を撤廃して **5.9 万件の CPU 棄却をゼロ**にしつつ、メインスレッド送出を `< 0.1 ms` に抑える |
+| **T4: Tile Dirty Bitset（64×64 タイル差分ラスタ）＋ Scroll Blit** | **W3** | **Skia / Flutter Impeller Dirty Region Tile Binning**: 800×600 画面の 130 タイルを `long[3]` ビットマスクで管理し、`patchIndexByDiff` の変更項目（旧 AABB ∪ 新 AABB）と交わるタイルのみ再ラスタ。スクロールは既存 `Pixmap` の `arraycopy` シフト＋露出帯のみ描画 | $O(W \times H) \to O(\text{Area}_{\text{dirty}})$ | ボタン 1 個の `:hover` で塗るタイルが 130 枚 → 2〜4 枚（面積比 1/40）に激減。CPU バックエンド単体で **`4.42 ms → 0.15〜0.30 ms`** となり、**Chrome CPU 合成 (`1.55 ms`) や Swing (`0.64 ms`) を逆転** |
+| **T5: Blink LayoutNG 型「二段制約キャッシュ（Measure 多枠 + Place 入力スキップ）」** | **W5** | **Blink LayoutNG `NGLayoutResult` Caching**: ① [`BoxMeasurer`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BoxMeasurer.java) を純粋関数化してボックス当たり 4-way キャッシュ（Intrinsic / 仮幅 / 確定幅）を持たせ A→B→A→B 上書きを根絶、② `place` パスでも親から渡る実効制約幅が不変なら非 Dirty 部分木の再配置を丸ごとスキップし座標オフセットのみシフト | $O(N_{\text{subtree}}^2) \to O(N_{\text{width-changed}})$ | ウィンドウ幅 ±1px 変更時に固定幅カードや未変更グリッド内の再測定・再配置がすべてスキップされ、`showcase` 幅変更を **`0.931 ms → < 0.10 ms`（Chrome `0.084 ms` と同等、Swing/JavaFX の 5〜10 倍高速）** へ |
+| **T6: オフヒープ DOM 雛形クローン & 文書横断 `ShareCache` & 非同期 JIT 暖機** | **W7** | **AOT Template Cloning & Virtual Thread Prewarm**: 同一 HTML テンプレートの [`DocumentArena`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/memory/DocumentArena.java) オフヒープ列を `MemorySegment.copy` で複製し、UA/共通 CSS の `ComputedStyle` を文書横断で共有。起動時にバックグラウンドで JIT プリウォームを実行 | 初回 Open コスト半減・コールドスパイク 0 | `StyleSheet` 雛形キャッシュ（S5）を HTML DOM と算出スタイルまで拡張し、画面オープン速度で Chrome / Firefox / JavaFX / Swing のすべてを安定して下回る |
+| **T7: ブラウザに原理的に不可能な「単一プロセス・ゼロコピー空間 UI & コンパイル済み Signal」** | **W9 + 超差別化** | **① `content-visibility: auto` + [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java) ($O(\log N)$ 自動仮想化)、② Java 21 `Record` / プリミティブ `Signal` → [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) 直結、③ Phase C ゼロコピー 2D/3D シーングラフ融合** | 10 万行 `< 0.2 ms`・IPC/JS オーバーヘッド 0 | Chromium (CEF) のプロセス間通信・V8 JS 変換・DOM 仮想化ライブラリや、ブラウザ Three.js の `html2canvas` 転送では**構造上絶対に到達できない領域**を確立 |
+
+---
+
+### 7.3 未解決の重要課題（優先度順・整理版）
 
 完了済みの項目を除き、現在残っている真の技術課題を**実測インパクト順（P0〜P4）**に整理する。
 
 ---
 
-#### 🔥 最優先 P0：GL 描画パイプラインと DisplayList のスケール課題（5,000 項目超での 144Hz 維持）
+#### 🔥 最優先 P0：GL 描画パイプラインと DisplayList のスケール課題（5,000〜20,000 項目での 144Hz 維持 — 戦略 T1〜T4）
 
-`showcase`（730 項目）では全操作が `0.66〜1.34 ms` に収まったが、`large-list`（5,012 項目・19,000 字形）では以下のボトルネックが残っている。§6.5 の横断計測（W1〜W4・W6）で、**500 行（5 千項目）で Chrome の 4.5〜9 倍、2,000 行（2 万項目）で 10〜24 倍**まで開くことが確定した。以下の **0 番**を最初に実施し、1〜5 はその前提・拡張として進める。
+`showcase`（730 項目）では全操作が `0.66〜1.34 ms` に収まったが、`large-list`（5,012 項目・19,000 字形）では以下のボトルネックが残っている。§6.5 の横断計測（W1〜W4・W6）で、**500 行（5 千項目）で Chrome の 4.5〜9 倍、2,000 行（2 万項目）で 10〜24 倍**まで開くことが確定した。以下の **0 番（T1〜T3）**と **0b 番（T4）**を最初に実施し、1〜5 はその構成要素として進める。
 
-0. **【新規・最優先】可視範囲カリング + 変更範囲限定の送出（W1・W2・W4 の共通解）**:
-   - **現状（実測）**: 画面外 1 行の `hover` が 500 行で `2.6 ms`、2,000 行で `13.1 ms`（Chrome `0.36` / `0.55 ms`）。GL 実フレームの内訳（2,000 行）は `restyle-local 0.25` + display-list `3.6` + GL 送出 約 `9 ms`で、`GlRectStream` の 4,096 を超えた約 `5.9 万`/フレームの図形が CPU タイル描画へ棄却されている。`child` は `CHILD_PATCH` 成立後も display-list が `9.0 ms` 中 `7.1 ms`。
-   - **対策**:
-     1. `DisplayListBuilder` / `PaintSceneDriver` で、**ビューポートとスクロールコンテナのクリップ矩形に交わらない項目を GPU 送出・CPU 棄却カウントの対象から外す**（`PaintOrder.Chunk` 単位でクリップ外を丸ごとスキップ。スクロール時のみ可視範囲を再選択する）。これだけで 2,000 行の GL 送出は項目数非依存（可視 約 13 行ぶん）になる見込み。
-     2. 項目単位の保持 GPU 記録（下記 2）と組み合わせ、**変更された項目だけを GPU バッファへ再書込**する。
-     3. ボックス単位の DisplayItem スライス範囲保持（下記 4）で、`child` / `inherited` の display-list 全走査を排除する。
-   - ✅ **対策 1 実装済み（2026-11-10）— ペインタ段の可視範囲カリング**: [`SoftwareRenderBackend.drawItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) が、項目の箱を姿勢で写した範囲がクリップ外接に（縦 `128px + 項目高` の余白つきで）掛からない項目を塗り（GPU 送出・CPU 棄却とも）から除外する。文字は横にあふれうるので縦のみ判定、`SCENE`/`NODE` と保持スクロール層への記録中は対象外。表示リスト自体は変えないため、ヒットテスト・保持レイヤ・差分索引には影響しない（`-Denderframe.soft.nocull=true` で無効化可）。検証: [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java)（影・あふれ文字・スクロール箱・変形を含む 120 フレームで省略あり／なしの全画素一致、かつ省略数 > 0）、`:core:test` 全体グリーン。**実測（`large-list` 5,012 項目・CPU バックエンド・600 フレーム）: `hover` `3.18 → 1.41 ms`（−56%、確保 `1,510 → 864 KB`）、`text` `2.23 → 1.01 ms`（−55%、確保 `1,277 → 631 KB`）**。GL 実フレーム・2,000 行での KPI 達成は**未計測**（要 GL 環境での再計測）。残りは対策 2・3（項目単位の保持 GPU 記録・DisplayItem スライス保持）。なお `DisplayListBuilder` の画面外省略は `StandaloneView` のスクロールのみ再構築でしか有効でなく、`hover`/`text` では全項目の表示リストが作られる（W4 の対象）。
-   - **KPI**: 2,000 行・画面外 `hover` の GL フレーム `< 0.7 ms`（現 `13.1 ms`）、`child` `< 1.5 ms`（現 `25.6 ms`）、`text` `< 1.2 ms`（現 `10.3 ms`）。500 行は `hover`/`text`/`style` `< 0.5 ms`。
-0b. **【新規】CPU バックエンドの差分描画（ダメージ矩形）とスクロールレイヤ再利用（W3）**:
-   - **現状**: showcase `hover` が `4.42 ms`（Chrome CPU 合成 `1.55 ms`）、large-list `scroll` が `3.28 ms`（GL `0.20 ms`）。`SoftwareRenderBackend` は変更のたびに全面を再ラスタする。
-   - **対策**: `patchIndexByDiff` が既に持つ「変更項目の集合」から**ダメージ矩形（変更項目の旧新境界の和）**を求め、`TileQueue` の 64×64 タイルのうち交わるものだけを再描画する（他タイルは前フレームの `Pixmap` を維持）。スクロールは `Pixmap` のシフト + 露出帯のみ描画。`DiffPatchPixelTest` の全画素一致保証を差分描画の回帰テストにも流用する。
-   - **KPI**: showcase の `hover`/`text`/`style` CPU `< 1.0 ms`（現 `4.4〜4.7 ms`）、large-list `scroll` CPU `< 0.5 ms`（現 `3.3 ms`）。
+0. **【最優先・進行中】可視範囲カリング + 変更範囲限定の送出（W1・W2・W4 の共通解 — 戦略 T1 / T2 / T3）**:
+   - **現状（実測）**: 画面外 1 行の `hover` が 500 行で `2.6 ms`、2,000 行で `13.1 ms`（Chrome `0.36` / `0.55 ms`）。GL 実フレームの内訳（2,000 行）は `restyle-local 0.25` + display-list `3.6` + GL 送出 約 `9 ms` で、`GlRectStream` の 4,096 を超えた約 `5.9 万`/フレームの図形が CPU タイル描画へ棄却されている。`child` は `CHILD_PATCH` 成立後も display-list が `9.0 ms` 中 `7.1 ms`。
+   - **段階的対策**:
+     1. **段階 1a（ペインタ段の項目カリング）— ✅ 2026-11-10 実装済み**: [`SoftwareRenderBackend.drawItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) が、項目の箱を姿勢で写した範囲がクリップ外接に（縦 `128px + 項目高` の余白つきで）掛からない項目を塗り（GPU 送出・CPU 棄却とも）から除外する。文字は横にあふれうるので縦のみ判定、`SCENE`/`NODE` と保持スクロール層への記録中は対象外。表示リスト自体は変えないため、ヒットテスト・保持レイヤ・差分索引には影響しない（`-Denderframe.soft.nocull=true` で無効化可）。検証: [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java)（影・あふれ文字・スクロール箱・変形を含む 120 フレームで省略あり／なしの全画素一致、かつ省略数 > 0）、`:core:test` 全体グリーン。**実測（`large-list` 5,012 項目・CPU バックエンド・600 フレーム）: `hover` `3.18 → 1.41 ms`（−56%、確保 `1,510 → 864 KB`）、`text` `2.23 → 1.01 ms`（−55%、確保 `1,277 → 631 KB`）**。
+     2. **段階 1b（ドライバ段 `SCROLL_NODE` / `Chunk` 単位の階層カリング & スクロール層記録時カリング — 戦略 T1）**: 段階 1a でも 20,000 項目すべてに対して `PaintSceneDriver.resolveAt` と `SoftwareRenderBackend.buildClip`・`deviceBounds` は呼ばれており、またスクロールコンテナ内の 1 行が変わって `recordOwner != null`（`GpuScrollLayer` 再記録）になったフレームでは `outsideClip` が無効化される。そこで ① `PaintSceneDriver.run` が `SCROLL_NODE` を走査する際、スクロールオフセットとクリップ矩形から可視項目範囲 `[visFrom, visTo)` を二分探索／チャンク境界で求めて画面外ループ自体をスキップし、② `GpuScrollLayer` の FBO はビューポート寸法（`width × height`）しかないため、`recordOwner != null` の間もビューポート `[0, 0, width, height]` 外の項目をカリングする。
+     3. **段階 2（項目単位の保持 GPU 記録 — 戦略 T3・下記 2）**: 可視範囲内の未変更項目について 80B GPU インスタンス列を保持し、変更された項目だけを GPU バッファへ再書込する。
+     4. **段階 3（ボックス単位の DisplayItem スライス範囲保持 — 戦略 T2・下記 4）**: `hover` / `text` / `child` / `inherited` での `DisplayListBuilder` 全ボックス走査を排除する。
+   - **KPI**: 2,000 行・画面外 `hover` の GL フレーム `< 0.25〜0.7 ms`（現 `13.1 ms`、Chrome `0.55 ms`）、`child` `< 1.0〜1.5 ms`（現 `25.6 ms`、Chrome `1.09 ms`）、`text` `< 0.8〜1.2 ms`（現 `10.3 ms`）。500 行は `hover`/`text`/`style` `< 0.3〜0.5 ms`。
+0b. **【新規】CPU バックエンドの差分描画（Tile Dirty Bitset）とスクロール Blit 再利用（W3 — 戦略 T4）**:
+   - **現状**: showcase `hover` が `4.42 ms`（Chrome CPU 合成 `1.55 ms`）、large-list `scroll` が `3.28 ms`（GL `0.20 ms`）。`SoftwareRenderBackend` は変更のたびに 800×600 全面（130 タイルすべて）をクリアして再ラスタする。
+   - **対策**: `patchIndexByDiff` が既に持つ「変更項目の集合」から**ダメージ矩形（変更項目の旧 AABB ∪ 新 AABB）**を求め、`TileQueue` の 64×64 タイルのうち交わるビット（`long[3]` の Dirty Bitset）だけをクリア・再描画する（他タイルは前フレームの `Pixmap` を維持）。スクロールは `Pixmap` の `System.arraycopy` 行シフト + 新規露出帯タイルのみ描画。`DiffPatchPixelTest` の全画素一致保証を差分描画の回帰テストにも流用する。
+   - **KPI**: showcase の `hover`/`text`/`style` CPU **`< 0.3〜0.8 ms`**（現 `4.4〜4.7 ms`、Chrome CPU 合成 `0.68〜1.55 ms`・Swing `0.64 ms` を上回る）、large-list `scroll` CPU **`< 0.3 ms`**（現 `3.3 ms`）。
 
-1. **`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保**:
+1. **`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保（戦略 T2）**:
    - **現状**: `patchIndexByDiff` は項目数が変わる `child`（子の挿入・削除: `4.19 ms / 6.6 MB`）や差分が 1/4 を超える `inherited`（継承色変更: `6.75 ms / 13.4 MB`）では従来の全項目 `rebuildIndex` にフォールバックする。
-   - **対策**: 項目の挿入・削除に対して既存の `Resolved` / `states` / `ClipEntry` をインデックスシフト（またはキーマップ引き継ぎ）で再利用し、差分が多い場合も構造（親・クリップ鎖）が不変ならクリップ記憶とアニメ状態を破棄しない増分更新へ拡張する。
-2. **項目単位の保持された GPU 記録（1 字形あたり `0.13 µs` の毎フレーム固定費の解消）**:
-   - **現状**: 1 要素のテキスト変更でも、未変更の約 19,000 字形に対して毎フレーム `drawGlyphs`（フレーム時間の 39%：`GpuAttempt.glyph` 15% + `GlRectStream.open` 10% + `GlyphCache` 6%）が走っている。
-   - **対策**: `DisplayItem` は未変更ボックスでは同一インスタンスが再利用される（`drawBoxSelfMemo`）ため、項目ごとに生成された GPU インスタンスレコード列（またはコマンド範囲）を保持し、項目と変換・クリップが同一なら字形ループ自体をスキップして前回の GPU レコードをそのまま転送する。
-3. **`DisplayItem.keyOf` → `AtomTable.intern` の文字列連結・ハッシュ照合（全シナリオの 8〜10%）**:
+   - **対策**: 項目の挿入・削除に対して既存の `Resolved` / `states` / `ClipEntry` を `System.arraycopy` インデックスシフト（または 64-bit 整数鍵マップ引き継ぎ）で再利用し、差分が多い場合も構造（親・クリップ鎖）が不変ならクリップ記憶とアニメ状態を破棄しない増分更新へ拡張する。
+2. **項目単位の保持された GPU 記録（1 字形あたり `0.13 µs` の毎フレーム固定費の解消 — 戦略 T3）**:
+   - **現状**: 1 要素のテキスト変更でも、未変更の字形に対して毎フレーム `drawGlyphs`（フレーム時間の 39%：`GpuAttempt.glyph` 15% + `GlRectStream.open` 10% + `GlyphCache` 6%）が走っている。
+   - **対策**: `DisplayItem` は未変更ボックスでは同一インスタンスが再利用される（`drawBoxSelfMemo`）ため、項目ごとに生成された 80B GPU インスタンスレコード列を保持し、項目と変換・クリップが同一なら字形ループ自体をスキップして前回の GPU レコードを `MemorySegment.copy` で一括転送する。これにより `GlRectStream` の容量上限 4,096 も CPU 負荷増なしで拡大可能になる。
+3. **`DisplayItem.keyOf` → `AtomTable.intern` の文字列連結・ハッシュ照合の排除（全シナリオの 8〜10% — 戦略 T2）**:
    - **現状**: `DisplayItem` 生成時および `PaintSceneDriver` の索引構築時に、毎回文字列連結で ID を作って `AtomTable.intern` (`ConcurrentHashMap<String, Integer>`) を引いている。
-   - **対策**: 描画項目の識別鍵を「ノードの `arenaHandle`（または整数 Atom）＋ 部品種別 ordinal（`_bg`, `_border` 等）」の `long` パック整数ペアに置き換え、文字列連結と `AtomTable.intern` を完全に排除する。
-4. **`DisplayListBuilder` の差分範囲差し替え（局所変更時の全ボックス走査の排除）**:
-   - **現状**: `hover` で局所再スタイルが `0.023 ms` で終わっても、`DisplayListBuilder` が全ボックスを辿るため `0.165 ms`（`large-list` の `child` では `0.87 ms`）かかっている。
-   - **対策**: 各ボックスが自身の生成した `DisplayItem` スライス範囲を保持し、再スタイル／局所レイアウトで見た目が変わったボックスのスライス範囲だけをフラット配列上で差し替える。
+   - **対策**: 描画項目の識別鍵を `((long) nodeArenaHandle << 8) | partOrdinal` の 64-bit `long` パック整数ペアに置き換え、文字列連結と `AtomTable.intern` を完全に排除する。
+4. **`DisplayListBuilder` の差分範囲差し替え（局所変更時の全ボックス走査の排除 — 戦略 T2）**:
+   - **現状**: `hover` で局所再スタイルが `0.023 ms` で終わっても、`DisplayListBuilder` が全ボックスを辿るため `0.165 ms`（2,000 行の `hover` では `3.6 ms`、`child` では `7.1 ms`）かかっている。
+   - **対策**: 各 `LayoutBox` が自身の生成した `DisplayItem` スライス範囲 `[dlStart, dlEnd)` を保持し、再スタイル／局所レイアウト／`CHILD_PATCH` で変化したボックスのスライス範囲だけを差し替える。
 5. **Phase A 完結：GPU/CPU 走査向きの反転と非等方角丸・せん断の GPU シェーダー化**:
    - **現状**: `LwjglGlRenderBackend` → `CpuLayerFallback` → `SoftwareRenderBackend` → `PaintSceneDriver` → `GpuAttempt` の向きで走査しており、また `GlRectStream.decompose` が毎フレーム `Matrix2D` を `atan2`/`hypot` で逆分解し、せん断 (`skew`) や非等方スケール下の角丸を CPU フォールバックへ回している。
    - **対策**: `PropertyTrees` の Transform ノードに 2D アフィン行列をそのまま保持して `decompose` を廃止し、`GpuRectShader` で非等方角丸・せん断を直接評価して 2D プリミティブの CPU フォールバック率を 0% にする。
 
 ---
 
-#### ⚡ 優先度 P1：レイアウト S1 本体（純粋関数測定と多枠キャッシュ）および局所パッチ対象拡大
+#### ⚡ 優先度 P1：レイアウト二段制約キャッシュ（Measure 多枠 + Place スキップ）と局所パッチ拡大（戦略 T5 / T6）
 
-1. **`BoxMeasurer.computeSize` の純粋関数化と多枠（2〜4 スロット）測定キャッシュ**:
-   - **現状**: §6.2 で特定したとおり、Flex レイアウト等で同一ボックスが「仮幅 A → 確定幅 B」の 2 通りで交互に測定されると、1 スロットキャッシュが毎回上書きされて 279 回の重複測定が発生している。また `computeSize` 内に `parentInnerWidth()` 等の暗黙入力が残っているため、不用意に多枠化すると古い親幅の測定値を返す危険がある。
-   - **対策**: `computeSize` が参照する親依存パラメータをすべて [`ConstraintSpace`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/model/ConstraintSpace.java)（および測定キャッシュ鍵）に明示化して純粋関数にし、ボックスごとに 2〜4 スロットの測定キャッシュを持たせる。さらに **配置（`place`）も「親から渡る制約が前回と同一なら子を丸ごとスキップ」する Blink LayoutNG 型の制約キャッシュ**にする。
-   - **実測の根拠（§6.4.4 / §6.5 W5）**: showcase の幅 ±1px が `0.931 ms` に対し Chrome `0.0835 ms`（**11.1 倍**）、約 2,200 行の `fontsize` 全面無効化で layout が Chrome の 1.4 倍、500 行の `inherited` が 2.5 倍。KPI: showcase 幅変更 `< 0.2 ms`、`fullLayoutWarm` `< 0.5 ms`。
+1. **`BoxMeasurer.computeSize` の純粋関数化・4-Way 測定キャッシュ ＋ `place` 制約スキップ（W5 — 戦略 T5）**:
+   - **現状**: §6.2 で特定したとおり、Flex レイアウト等で同一ボックスが「仮幅 A → 確定幅 B」の 2 通りで交互に測定されると、1 スロットキャッシュが毎回上書きされて 279 回の重複測定が発生している。さらに `showcase` の幅 ±1px 変更で `0.931 ms`（Chrome `0.0835 ms` の **11.1 倍**）かかるのは、親から渡る実効幅が変わっていない固定幅カードや内部ボックスまで `place` と測定をやり直しているためである。
+   - **対策**:
+     1. `computeSize` が参照する親依存パラメータ（`parentInnerWidth()` 等）をすべて [`ConstraintSpace`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/model/ConstraintSpace.java)（および測定キャッシュ鍵）に明示化して純粋関数にし、ボックスごとに 2〜4 スロットの測定キャッシュ（Intrinsic / Flex 仮測定 / 確定サイズ）を持たせる。
+     2. **配置（`place`）パスにも Blink LayoutNG 型の制約キャッシュ**を導入し、ボックスが `!layoutDirty` かつ親から渡された利用可能幅・高さが前回 `place` 時と同一なら、子孫の `place` 再帰を丸ごとスキップして親の移動量 $(\Delta x, \Delta y)$ のみを反映する。
+   - **KPI**: showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.931 ms`、Chrome `0.084 ms` に並び Swing `0.47 ms`・JavaFX `1.02 ms` を上回る）、`fullLayoutWarm` **`< 0.50 ms`**。
 2. **局所更新ファストパス（`TEXT_PATCH` / `CHILD_PATCH`）の適用範囲拡大**:
    - **現状**:
      - `TEXT_PATCH`: 親が `button`, `label`, `td`, `th`, `summary`, `legend` 等だと `isPatchableParent` で弾かれ 100% フォールバックする（`showcase` の `textbtn` は `0.433 ms` で本文 `span` `0.248 ms` の 1.7 倍）。ゲーム UI で最頻出のボタンラベル・テーブルセル数値の更新が恩恵を受けられていない。
      - `CHILD_PATCH`: `large-list` では 100% ヒットするが、`showcase` では **1,400 回中 0 回ヒット（100% フォールバック）** している。
    - **対策**: 固定幅または親寸法に影響しない `button` / `label` / `td` 内テキスト更新へ `TEXT_PATCH` を開放し、`CHILD_PATCH` の不成立理由カウンタを追加して Flex / Grid コンテナへの子要素追加・削除にも対応させる。
-3. ✅ **【完了 2026-11-10・正しさ】文書サイズ上限の黙った切り捨ての解消（W8）**: `DocumentLoader.parseDocument` から 128 KiB（HTML）・64 KiB（外部 CSS）の `substring` を撤去し、上限は `ParseLimits`（トークン数・深さ）に一本化。回帰テスト [`DocumentSizeNoTruncationTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/DocumentSizeNoTruncationTest.java)（5,000 行・20,000 行を欠落なく開く／64 KiB 超 CSS の末尾規則が残る）を追加、`:core:test` 全体グリーン。以下は修正前の記録:
-   - **現状**: [`DocumentLoader.parseDocument`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/DocumentLoader.java) が `html.length() > 131072` で警告なしに `substring` し、タグの途中でも切断する（5,000 行の一覧は約 2,224 要素で欠落）。`ParseLimits`（200,000 トークン・深さ 256）のコメントは「数万行も通す」としており食い違う。
-   - **対策**: 長さ上限を撤去して `ParseLimits` に一本化する、または超過時に `ParseLimits.strict` 同様の例外／明示的な警告ログ（1 回）を出す。`externalCss` の 64 KiB 切り捨ても同様に扱う。「20,000 行のリストを欠落なく開く」回帰テストを追加する（上限の根拠は信頼できない入力対策なので、`EnderEngine` に上限を設定可能な API を足す）。
-4. **画面オープン（`open`: `3.9〜4.8 ms`）のさらなる高速化**（実測: showcase `6.2 ms`・Chrome `5.0 ms`、2,000 行 `25.5 ms`・Chrome `19.8 ms`＝1.3 倍遅い。コールド JVM の初回フレームは未計測で、Wave 1.5 で追加計測する）:
-   - **対策**: `StyleSheet` 雛形キャッシュ（S5）に続き、HTML テンプレートの事前解析雛形クローン化、`sealNodeIds`（large-list で 6.5%）のパース時 1 パス統合、および UA スタイル解決結果の文書横断 `ShareCache` 共有を行う。
+3. ✅ **【完了 2026-11-10・正しさ】文書サイズ上限の黙った切り捨ての解消（W8）**:
+   - `DocumentLoader.parseDocument` から 128 KiB（HTML）・64 KiB（外部 CSS）の `substring` を撤去し、上限は `ParseLimits`（トークン数・深さ）に一本化。回帰テスト [`DocumentSizeNoTruncationTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/DocumentSizeNoTruncationTest.java)（5,000 行・20,000 行を欠落なく開く／64 KiB 超 CSS の末尾規則が残る）を追加、`:core:test` 全体グリーン。
+4. **画面オープン（`open`）のさらなる高速化と JIT プリウォーム（W7 — 戦略 T6）**:
+   - **現状**: 実測で showcase `6.2 ms`（Chrome `5.0 ms`）、2,000 行 `25.5 ms`（Chrome `19.8 ms`＝1.3 倍遅い）。コールド JVM の初回フレームは未計測。
+   - **対策**: `StyleSheet` 雛形キャッシュ（S5）に続き、① HTML テンプレートの事前解析 `DocumentArena` 雛形クローン化（`MemorySegment.copy`）、② `sealNodeIds`（large-list で 6.5%）のパース時 1 パス統合、③ UA/共通スタイル解決結果の文書横断 `ShareCache` 共有、④ `EnderEngine.prewarm()` によるバックグラウンド非同期 JIT 暖機を導入する。
 
 ---
 
-#### 🌌 優先度 P2：Phase C — Three.js 型 3D シーングラフのエンジン統合
+#### 🌌 優先度 P2：Phase C — Three.js 型 3D シーングラフのエンジン統合（戦略 T7-③）
 
 - ブラウザ (Three.js + DOM) でも JavaFX でも不可能な**「同一レンダーパス・ゼロコピーで HTML/CSS 要素と 3D メッシュ・ライト・カメラ・レイキャストが双方向に融合する空間 UI エンジン」**を実現する。
 - 詳細設計・メモリレイアウト・5 マイルストーン（`Scene3DArena`, `GlScene3DRenderer`, `SoftwareScene3DRasterizer`, `InstancedBatcher`, `GltfBinaryLoader`, `Raycaster3D`, `HTMLMesh`）は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) に定義済み。
 
 ---
 
-#### 🌍 優先度 P3：実践 UI 仕様ギャップの解消（IME / 最新 CSS レイアウト / 自動仮想化 / SVG・Canvas）
+#### 🌍 優先度 P3：実践 UI 仕様ギャップの解消（IME / 最新 CSS レイアウト / 自動仮想化 / SVG・Canvas — W9 & 戦略 T7-①）
 
 1. **IME（かな漢字変換・インライン Preedit Composition）対応**:
-   - [`TextEditing.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/common/TextEditing.java) と [`WebViewSurface`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/WebViewSurface.java) に IME 未確定文字列（Preedit 文節下線描画、`compositionstart` / `compositionupdate` / `compositionend` イベント、変換候補ウィンドウ座標 `getImeCursorRect()`）を追加し、日本語・多言語デスクトップアプリで JavaFX / Swing を完全に代替可能にする。
+   - [`TextEditing.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/TextEditing.java) と [`WebViewSurface`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/api/WebViewSurface.java) に IME 未確定文字列（Preedit 文節下線描画、`compositionstart` / `compositionupdate` / `compositionend` イベント、変換候補ウィンドウ座標 `getImeCursorRect()`）を追加し、日本語・多言語デスクトップアプリで JavaFX / Swing を完全に代替可能にする。
 2. **CSS Top Layer（`<dialog>`, `popover`）& CSS Anchor Positioning**:
    - 現在 [`SelectPopup`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/SelectPopup.java) 専用になっているポップアップ機構を一般化し、親の `overflow: hidden` を突き抜けてターゲット要素に自動追従・画面端反転する `popover` / `<dialog>` / `anchor()` を実装する。
-3. **CSS `content-visibility: auto` + `FenwickVirtualList` による 10 万件自動仮想スクロール**:
-   - テスト層で検証済みの [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)（$O(\log N)$ 累積高さ索引）を [`BlockLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java) の `content-visibility: auto` に接続し、10 万行の DOM でもビューポート内の数十件だけをレイアウト・描画する。
+3. **CSS `content-visibility: auto` + `FenwickVirtualList` による 10 万件自動仮想スクロール（戦略 T7-①）**:
+   - テスト層で検証済みの [`FenwickVirtualList`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/kernel/layout/FenwickVirtualList.java)（$O(\log N)$ 累積高さ索引）を [`BlockLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java) の `content-visibility: auto` に接続し、20,000〜100,000 行の DOM でもビューポート内の数十件だけをスタイル・レイアウト・描画する（Chrome が 20,000 行 `fontsize` で `117 ms` かかる処理を **`< 0.5 ms`** に抑える）。
 4. **CSS Grid `subgrid`・縦書き（`writing-mode: vertical-rl`）・インライン跨ぎ Bidi・カラー絵文字（`COLR`/`CPAL`）**:
    - [`GridLayoutEngine`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/GridLayoutEngine.java) の `subgrid` 対応、和風 UI・ノベルゲーム向けの縦書き対応、[`GsubTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/text/font/GsubTable.java) の文脈依存置換とカラー絵文字対応。
 5. **`<svg>` へのページ CSS カスケード接続と `<canvas>` 機能拡充**:
@@ -520,9 +599,9 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 
 ---
 
-#### 🛠️ 優先度 P4：開発体験（DX）の革新（型安全リアクティブ & 組み込み `EnderDevTools`）
+#### 🛠️ 優先度 P4：開発体験（DX）の革新（型安全リアクティブ & 組み込み `EnderDevTools` — 戦略 T7-②）
 
-1. **事前コンパイル済み型安全 `Signal<T>` / Java 21 `Record` バインディング**:
+1. **事前コンパイル済み型安全 `Signal<T>` / Java 21 `Record` バインディング（戦略 T7-②）**:
    - [`Bindings.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/dom/Bindings.java) の `{{...}}` 正規表現走査をテンプレート読み込み時の 1 回限りの AST コンパイルに置き換え、プリミティブ `IntSignal` / `FloatSignal` や Java `Record` を文字列変換なしで [`BindingPatchTable`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/kernel/compiler/BindingPatchTable.java) に直結する。
 2. **スコープ付きコンポーネント（`@scope` + `<slot>`）**:
    - [`CustomTagExpander`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/CustomTagExpander.java) を拡張し、名前付き `<slot>` と `@scope` スタイル隔離を持つ再利用可能な Web Components ライクなコンポーネント機構を提供する。
@@ -531,13 +610,15 @@ Dear ImGui 等のネイティブ即時モード GUI は HTML/CSS・レイアウ�
 
 ---
 
-### 7.3 統合ロードマップ総覧
+### 7.4 統合ロードマップ総覧
 
-| フェーズ | 状態 | テーマ | 到達指標（KPI） |
+| フェーズ | 状態 | テーマ | 到達指標（KPI — Chrome 157 / Firefox 159 / Swing / JavaFX 比較） |
 | :--- | :---: | :--- | :--- |
-| **Milestone 1〜5** | ✅ **完了** | オフヒープ DOM・状態オートマトン・増分レイアウト・GPU Uber-Shader・タイル並列 CPU ラスタ | `restyle` `0.008 ms`、`scroll` `0.002 ms / 0 B`、`softwarePaint` `1.1 ms` |
-| **Wave 0 & Wave 1** | ✅ **完了** | 公開 API (`EnderEngine`/`WebViewSurface`)・脱 `mc-*` SPI・脱 `static` (`EngineContext`)・`CssPropertyIndex` & `CssValue[]`・`LoadedFace` 並列化・GL 差分走査・測定半減 | `fullLayoutWarm` **`0.986 ms`**、`large-list` GL hover/text **半減 (`1.9〜2.2 ms`)**、単体汎用 JAR として完全自立 |
-| **Wave 1.5 (P0 & P1)** | 🎯 **進行中（①完了）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8・正しさ。2026-11-10 完了）→ ② 🔧 可視範囲カリング（ペインタ段は 2026-11-10 実装済み・CPU `large-list` hover/text −55%。GL 再計測と保持 GPU 記録が残る） 可視範囲カリング + 変更範囲限定の GPU 送出（W1）→ ③ DisplayItem スライス範囲保持で `child`/`inherited` の全走査排除（W2・W4）→ ④ CPU バックエンドのダメージ矩形（W3）→ ⑤ 純粋関数多枠測定キャッシュ + 制約キャッシュ（W5）**、項目単位の保持 GPU 記録・`DisplayItem.keyOf` 整数化・`TEXT_PATCH`/`CHILD_PATCH` 拡大 | 2,000 行（2 万項目）ページの画面外 `hover` GL フレーム **`< 0.7 ms`**（現 `13.1`）、`child` **`< 1.5 ms`**（現 `25.6`）、500 行 `hover`/`text`/`style` **`< 0.5 ms`**（現 `2.2〜2.6`）、CPU `hover` **`< 1.0 ms`**（現 `4.4`）、showcase 幅変更 **`< 0.2 ms`**（現 `0.93`）、フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
-| **Wave 2 (P2)** | 📋 **設計完了** | Three.js 型 3D シーングラフ統合（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)） | HTML/CSS と 3D メッシュ・ライト・レイキャストの単一パス・ゼロコピー融合 |
-| **Wave 3 (P3)** | 📋 **計画中** | IME Composition・Top Layer (`<dialog>`/`popover`) & Anchor Positioning・`content-visibility: auto` 10 万行仮想化・`subgrid`・縦書き | 10 万行リスト **`< 0.2 ms`**、日本語デスクトップ UI 完全対応 |
-| **Wave 4 (P4)** | 📋 **計画中** | コンパイル済み型安全 `Signal<T>` バインディング・`<slot>` コンポーネント・`F12` 組み込み `EnderDevTools` | 開発生産性と実行性能の双方で Web フロントエンドおよび既存 Java UI ライブラリを凌駕 |
+| **Milestone 1〜5** | ✅ **完了** | オフヒープ DOM・状態オートマトン・増分レイアウト・GPU Uber-Shader・タイル並列 CPU ラスタ | `:hover` **`0.0069 ms`（Chrome の 49 倍高速）**、`scroll` `0.002 ms / 0 B` |
+| **Wave 0 & Wave 1** | ✅ **完了** | 公開 API (`EnderEngine`/`WebViewSurface`)・脱 `mc-*` SPI・脱 `static` (`EngineContext`)・`CssPropertyIndex` & `CssValue[]`・`LoadedFace` 並列化・GL 差分走査・測定半減 | `fullLayoutWarm` **`0.986 ms`**、`showcase` 規模で Chrome 同等以上、単体汎用 JAR として完全自立 |
+| **Wave 1 基盤: 7 層参照モデルラチェット（§1.3）** | 🔧 **一部完了（2026-11-10）** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) で L1〜L6 の単方向性を固定。逆方向参照 11 系統のうち 7 系統を解消し、残り 4 系統（6 件: `CanvasRenderingContext2D`→`ColorParser`、`FontFaceRules`、`Bindings`→`EngineContext`、`BoxMeasurer`→`ImageChoice/ImageSources`）を `KNOWN_UPWARD` に凍結 | `KNOWN_UPWARD` を空集合にする（Wave 1.5 以降の機能追加と並行して 1 件ずつ解消）。以後の新規逆方向参照はビルドで即失敗 |
+| **Wave 1.5 (P0 & P1: 戦略 T1〜T6)** | 🎯 **進行中（①・②a 完了）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8）<br/>② 🔧 空間カリング（T1: ペインタ段 `outsideClip` 完了で CPU −55%。次は `SCROLL_NODE` 区間カリング）+ 項目単位の保持 GPU 記録（T3）<br/>③ Segmented DisplayList スライス保持 + `keyOf` 整数化（T2: W2・W4・W6 解消）<br/>④ CPU Tile Dirty Bitset + Scroll Blit（T4: W3 解消）<br/>⑤ 4-Way 測定キャッシュ + `place` 制約スキップ（T5: W5 解消）<br/>⑥ DOM 雛形クローン + 文書横断 `ShareCache`（T6: W7 解消）** | ・2,000 行画面外 `hover` GL **`< 0.25〜0.7 ms`**（現 `13.1`、Chrome `0.55` を凌駕）<br/>・2,000 行 `child` **`< 0.5〜1.5 ms`**（現 `25.6`、Chrome `1.09` を凌駕）<br/>・CPU `hover` **`< 0.3〜0.8 ms`**（現 `4.4`、Chrome CPU `1.55`・Swing `0.64` を逆転）<br/>・showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.93`、Chrome `0.084` 同等）<br/>・フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
+| **Wave 2 (P2: 戦略 T7-③)** | 📋 **設計完了** | Three.js 型 3D シーングラフ統合（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)） | HTML/CSS と 3D メッシュ・ライト・レイキャストの単一パス・ゼロコピー融合（ブラウザ Three.js では不可能な領域） |
+| **Wave 3 (P3: 戦略 T7-①)** | 📋 **計画中** | IME Composition・Top Layer (`<dialog>`/`popover`) & Anchor Positioning・`content-visibility: auto` + `FenwickVirtualList` 10 万行仮想化・`subgrid`・縦書き | 20,000〜100,000 行リスト **`< 0.2〜0.5 ms`**（Chrome 20,000 行 `117 ms` の **200 倍以上高速**）、日本語デスクトップ UI 完全対応 |
+| **Wave 4 (P4: 戦略 T7-②)** | 📋 **計画中** | コンパイル済み型安全 `Signal<T>` / `Record` 直結バインディング・`<slot>` コンポーネント・`F12` 組み込み `EnderDevTools` | 開発生産性と実行性能の双方で Web フロントエンド（React/CEF）および既存 Java UI ライブラリを凌駕 |
+

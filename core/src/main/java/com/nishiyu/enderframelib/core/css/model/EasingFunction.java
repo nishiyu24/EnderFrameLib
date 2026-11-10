@@ -1,7 +1,5 @@
-package com.nishiyu.enderframelib.core.paint.model;
+package com.nishiyu.enderframelib.core.css.model;
 
-import com.nishiyu.enderframelib.core.paint.*;
-import com.nishiyu.enderframelib.core.paint.model.*;
 
 import java.util.Locale;
 import java.util.regex.Matcher;

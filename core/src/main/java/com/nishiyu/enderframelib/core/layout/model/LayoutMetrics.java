@@ -33,7 +33,6 @@ public final class LayoutMetrics {
      * font-weight が太字扱いになる値。書体は通常の 1 面だけなので、600 以上は太字を合成する
      * （CSS Fonts 4 §5.2）。何が壊れていたか: 以前は 600（semibold）を通常の太さで描いていた。
      */
-    private static final Pattern BOLD_FONT_WEIGHT = Pattern.compile("(?i)bold|bolder");
 
     private LayoutMetrics() {}
 
@@ -41,10 +40,7 @@ public final class LayoutMetrics {
      * 長さではなく内容から決まるサイズのキーワードか。
      */
     public static boolean isIntrinsicSizeKeyword(String value) {
-        if (value == null) return false;
-        String v = value.trim().toLowerCase();
-        return v.equals("min-content") || v.equals("max-content")
-                || v.equals("fit-content") || v.startsWith("fit-content(") || v.equals("auto");
+        return com.nishiyu.enderframelib.core.css.ValueKeywords.isIntrinsicSizeKeyword(value);
     }
 
     public static boolean isBold(ComputedStyle style) {
@@ -60,17 +56,7 @@ public final class LayoutMetrics {
      * {@code bolder} / {@code lighter} は親の太さが要るが、ここでは親が通常の太さとして 700 / 100 にする。
      */
     public static int numericWeight(String weight) {
-        if (weight == null) return 400;
-        String w = weight.trim();
-        if (w.isEmpty()) return 400;
-        if (!Character.isDigit(w.charAt(0))) {
-            if (BOLD_FONT_WEIGHT.matcher(w).matches()) return 700;
-            return w.equalsIgnoreCase("lighter") ? 100 : 400;
-        }
-        // 文字ごとの測定のたびに呼ばれるので、数値でない値で例外を投げない
-        int value = 0;
-        for (int i = 0; i < w.length() && Character.isDigit(w.charAt(i)); i++) value = value * 10 + (w.charAt(i) - '0');
-        return Math.clamp(value, 1, 1000);
+        return com.nishiyu.enderframelib.core.css.ValueKeywords.numericFontWeight(weight);
     }
 
     private static final int ID_FONT_WEIGHT = CssPropertyIndex.FONT_WEIGHT;

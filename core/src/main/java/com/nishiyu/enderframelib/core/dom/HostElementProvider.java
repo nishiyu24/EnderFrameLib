@@ -1,4 +1,4 @@
-package com.nishiyu.enderframelib.core.layout;
+package com.nishiyu.enderframelib.core.dom;
 
 import com.nishiyu.enderframelib.core.dom.node.TagMacro;
 import java.util.Map;
@@ -6,7 +6,7 @@ import java.util.Set;
 
 /**
  * ホスト（Minecraft など）が持ち込む独自タグをエンジンへ教える SPI。{@link java.util.ServiceLoader} で探されるので、
- * ホストは {@code META-INF/services/com.nishiyu.enderframelib.core.layout.HostElementProvider} に実装クラス名を書く。
+ * ホストは {@code META-INF/services/com.nishiyu.enderframelib.core.dom.HostElementProvider} に実装クラス名を書く。
  *
  * <p>実装は値を返すだけにする（エンジンの静的初期化から呼ばれるため、他のエンジン API を呼んではならない）。
  * エンジン本体は具体的なタグ名（{@code mc-*}）を一切持たない。

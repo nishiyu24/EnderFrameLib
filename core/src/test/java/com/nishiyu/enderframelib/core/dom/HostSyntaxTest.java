@@ -3,7 +3,7 @@ package com.nishiyu.enderframelib.core.dom;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.core.dom.parser.MarkdownParser;
-import com.nishiyu.enderframelib.core.layout.HostElementProvider;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

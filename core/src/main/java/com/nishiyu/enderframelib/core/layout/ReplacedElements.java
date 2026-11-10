@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.dom.ReplacedKind;
+import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
+import com.nishiyu.enderframelib.core.dom.HostElementProvider;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -13,20 +16,12 @@ import java.util.ServiceLoader;
  * 読み取りは不変スナップショットの参照 1 回（ロック・確保なし）。
  */
 public final class ReplacedElements {
-    /** ホスト置換要素の性質。 */
-    public enum Kind {
-        /** 画像と同様に固有サイズを持ち、画像として採寸される（流体・エンティティなど）。 */
-        IMAGE_LIKE,
-        /** 属性だけで描かれ、固有サイズは別途解決される（3D シーンなど）。 */
-        SCENE
-    }
-
     private static volatile Map<String, CustomElementPainter> host = defaults();
 
     private ReplacedElements() {}
 
     /** 性質だけを持つ最小の差し込み（参照先の書き換え・寸法は既定）。 */
-    private record Plain(Kind kind) implements CustomElementPainter {}
+    private record Plain(ReplacedKind kind) implements CustomElementPainter {}
 
     /** {@link HostElementProvider}（ServiceLoader）が宣言した置換要素。何も無ければ空（エンジンは具体名を持たない）。 */
     private static Map<String, CustomElementPainter> defaults() {
@@ -44,7 +39,7 @@ public final class ReplacedElements {
     }
 
     /** ホスト置換要素を性質だけで登録する（同名は上書き）。 */
-    public static void register(String tag, Kind kind) {
+    public static void register(String tag, ReplacedKind kind) {
         if (kind == null) throw new IllegalArgumentException("tag/kind");
         register(tag, new Plain(kind));
     }
@@ -77,12 +72,12 @@ public final class ReplacedElements {
     /** ホスト置換要素のうち画像として採寸されるもの。 */
     public static boolean isHostImageLike(String tag) {
         CustomElementPainter p = host.get(tag);
-        return p != null && p.kind() == Kind.IMAGE_LIKE;
+        return p != null && p.kind() == ReplacedKind.IMAGE_LIKE;
     }
 
     public static boolean isHostScene(String tag) {
         CustomElementPainter p = host.get(tag);
-        return p != null && p.kind() == Kind.SCENE;
+        return p != null && p.kind() == ReplacedKind.SCENE;
     }
 
     /** 置換要素として箱を作るタグか（HTML 標準のフォーム部品・画像類 ＋ ホスト登録分）。 */
