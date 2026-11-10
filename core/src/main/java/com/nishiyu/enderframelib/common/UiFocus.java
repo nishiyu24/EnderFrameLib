@@ -80,7 +80,7 @@ public final class UiFocus {
         if (node == null || node.attrs.containsKey("hidden")) return;
         LayoutBox box = findBox(layout, node);
         // display:none の部分木は箱があっても描かれない。ここから先へは降りない
-        if (box != null && box.style != null && "none".equals(box.style.getOrDefault(CssProperty.DISPLAY, "block"))) return;
+        if (box != null && box.style != null && "none".equals(box.style.getOrDefault(CssProperty.Id.DISPLAY, "block"))) return;
         Integer tab = explicitTabIndex(node);
         boolean focusable = !node.attrs.containsKey("disabled") && (tab != null || isNaturallyFocusable(node));
         if (box != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {

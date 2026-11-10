@@ -301,8 +301,42 @@ public class StyleSheet {
         /** 規則が掛かる疑似要素。要素自身に掛かる規則は null。 */
         public PseudoType pseudoElement;
 
-        /** 宣言順を保つため LinkedHashMap。 */
-        public Map<String, String> properties = new LinkedHashMap<>();
+        /** 宣言順を保つため LinkedHashMap。書き換えると {@link #compiled()} の前処理は作り直される。 */
+        public final DeclMap properties = new DeclMap();
+
+        private volatile CompiledDeclarations compiled;
+        private volatile int compiledVersion = -1;
+
+        /** 宣言の前処理済みの表（{@link CompiledDeclarations}）。最初の参照で作り、宣言が書き換わるまで使い回す。 */
+        CompiledDeclarations compiled() {
+            CompiledDeclarations c = compiled;
+            int v = properties.version;
+            if (c == null || compiledVersion != v) {
+                c = CompiledDeclarations.of(properties);
+                compiled = c;
+                compiledVersion = v;
+            }
+            return c;
+        }
+
+        /** 書き換えを数える宣言表（前処理の作り直しの目印）。 */
+        public static final class DeclMap extends LinkedHashMap<String, String> {
+            int version;
+
+            @Override public String put(String k, String v) { version++; return super.put(k, v); }
+            @Override public void putAll(Map<? extends String, ? extends String> m) { version++; super.putAll(m); }
+            @Override public String remove(Object k) { version++; return super.remove(k); }
+            @Override public boolean remove(Object k, Object v) { version++; return super.remove(k, v); }
+            @Override public void clear() { version++; super.clear(); }
+            @Override public String putIfAbsent(String k, String v) { version++; return super.putIfAbsent(k, v); }
+            @Override public String merge(String k, String v, java.util.function.BiFunction<? super String, ? super String, ? extends String> f) { version++; return super.merge(k, v, f); }
+            @Override public String compute(String k, java.util.function.BiFunction<? super String, ? super String, ? extends String> f) { version++; return super.compute(k, f); }
+            @Override public String computeIfAbsent(String k, java.util.function.Function<? super String, ? extends String> f) { version++; return super.computeIfAbsent(k, f); }
+            @Override public String computeIfPresent(String k, java.util.function.BiFunction<? super String, ? super String, ? extends String> f) { version++; return super.computeIfPresent(k, f); }
+            @Override public String replace(String k, String v) { version++; return super.replace(k, v); }
+            @Override public boolean replace(String k, String o, String n) { version++; return super.replace(k, o, n); }
+            @Override public void replaceAll(java.util.function.BiFunction<? super String, ? super String, ? extends String> f) { version++; super.replaceAll(f); }
+        }
 
         /** 規則が属する {@code @layer} の名前の道筋。層の無い規則は空。 */
         public List<String> layer = List.of();

@@ -346,8 +346,8 @@ public class RenderPipeline {
                 || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
             return false;
         }
-        String position = newStyle.get(CssProperty.POSITION);
-        if (!Objects.equals(position, oldStyle.get(CssProperty.POSITION))) return false;
+        String position = newStyle.get(CssProperty.Id.POSITION);
+        if (!Objects.equals(position, oldStyle.get(CssProperty.Id.POSITION))) return false;
         boolean offsetOnly = "relative".equals(position) || "sticky".equals(position);
         boolean outOfFlow = "absolute".equals(position) || "fixed".equals(position);
         if (!offsetOnly && !outOfFlow) return false;
@@ -365,15 +365,15 @@ public class RenderPipeline {
         boolean horizontal = axes[0];
         boolean vertical = axes[1];
         if (offsetOnly) return true;
-        if (horizontal && (bothInsets(oldStyle, CssProperty.LEFT, CssProperty.RIGHT)
-                || bothInsets(newStyle, CssProperty.LEFT, CssProperty.RIGHT))) {
+        if (horizontal && (bothInsets(oldStyle, CssProperty.Id.LEFT, CssProperty.Id.RIGHT)
+                || bothInsets(newStyle, CssProperty.Id.LEFT, CssProperty.Id.RIGHT))) {
             return false;
         }
-        return !vertical || !(bothInsets(oldStyle, CssProperty.TOP, CssProperty.BOTTOM)
-                || bothInsets(newStyle, CssProperty.TOP, CssProperty.BOTTOM));
+        return !vertical || !(bothInsets(oldStyle, CssProperty.Id.TOP, CssProperty.Id.BOTTOM)
+                || bothInsets(newStyle, CssProperty.Id.TOP, CssProperty.Id.BOTTOM));
     }
 
-    private static boolean bothInsets(ComputedStyle style, String start, String end) {
+    private static boolean bothInsets(ComputedStyle style, int start, int end) {
         return !isAutoInset(style.get(start)) && !isAutoInset(style.get(end));
     }
 

@@ -36,7 +36,7 @@ class TypedValueCacheTest {
             assertEquals(0.5f, s.number(CssProperty.OPACITY, 1f), 0f);
             assertEquals(7f, s.number(CssProperty.Z_INDEX, 7f), 0f, "解けない値は既定値");
         }
-        assertEquals(3, TypedValueCache.sizeForTest());
+        assertEquals(0, TypedValueCache.sizeForTest(), "算出スタイルの型付き読み取りは値オブジェクト（CssValue）に覚える。共有表は文字列から直に引く呼び出し用");
         assertEquals(9f, s.number(CssProperty.Z_INDEX, 9f), 0f, "解けないことを覚えても既定値は呼び出しごと");
         assertEquals(Float.NaN, TypedValueCache.number("NaN", 0f), "NaN は解けた値");
         assertEquals(-2f, style(CssProperty.Z_INDEX, " -2 ").number(CssProperty.Z_INDEX, 0f), 0f, "前後の空白は無視");

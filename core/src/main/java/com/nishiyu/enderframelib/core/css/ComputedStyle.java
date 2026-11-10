@@ -36,10 +36,12 @@ public final class ComputedStyle {
     public static final float DEFAULT_FONT_SIZE = 16.0f;
 
     /** 登録済みプロパティの値。{@link CssPropertyId} の添字で引く。宣言が無ければ null。 */
-    private final String[] values;
+    private final CssValue[] values;
     /** 添字を持たない宣言（{@code --*} のカスタムプロパティなど）。無ければ null で、通常の要素では確保しない。 */
     private final Map<String, String> extras;
     private final int size;
+    /** {@link #usesViewportUnits()} の結果（1 / 0）。-1 は未確定（値を走査して決め、以後は覚える）。値は不変なので競っても同じ。 */
+    private volatile byte relativeUnits = -1;
     private final StyleMap properties;
     private final float elementFontSize;
     private final float rootFontSize;
@@ -142,20 +144,32 @@ public final class ComputedStyle {
     }
 
     public ComputedStyle(Map<String, String> source, float elementFontSize, float rootFontSize) {
-        if (source instanceof StyleMap other) {
+        this(source, elementFontSize, rootFontSize, false);
+    }
+
+    private ComputedStyle(Map<String, String> source, float elementFontSize, float rootFontSize, boolean adopt) {
+        if (source instanceof StyleTable table) {
+            // カスケード・算出の作業表から: 名前を引き直さない。引き取るなら配列もコピーしない
+            this.values = adopt ? table.values : table.values.clone();
+            this.extras = table.extras == null ? null
+                    : Collections.unmodifiableMap(adopt ? table.extras : new LinkedHashMap<>(table.extras));
+            this.size = table.size;
+            this.relativeUnits = table.relativeUnits;
+        } else if (source instanceof StyleMap other) {
             // 算出スタイルの複製: 配列をそのままコピーするだけで、マップは作らない
             this.values = other.owner.values.clone();
             this.extras = other.owner.extras;
             this.size = other.owner.size;
+            this.relativeUnits = other.owner.relativeUnits;
         } else {
-            String[] v = new String[CssPropertyId.count()];
+            CssValue[] v = new CssValue[CssPropertyId.count()];
             Map<String, String> x = null;
             int n = 0;
             for (Map.Entry<String, String> e : source.entrySet()) {
                 int id = CssPropertyId.of(e.getKey());
                 if (id != CssPropertyId.NONE) {
                     if (v[id] == null) n++;
-                    v[id] = e.getValue();
+                    v[id] = CssValue.of(e.getValue());
                 } else {
                     if (x == null) x = new LinkedHashMap<>();
                     if (x.put(e.getKey(), e.getValue()) == null) n++;
@@ -174,10 +188,12 @@ public final class ComputedStyle {
      * 登録済みの CSS プロパティ名に振る固定の添字。宣言を名前をキーにしたマップではなく、この添字で引く配列に持つための表で、
      * 起動後は読み取り専用。登録に無い名前（{@code --*} のカスタムプロパティなど）は {@link #NONE}。
      */
-    private static final class CssPropertyId {
+    static final class CssPropertyId {
         static final int NONE = -1;
         /** 名前 → 添字の、開番地法のハッシュ表（{@code HashMap<String, Integer>} の箱詰めと間接参照を避ける）。起動後は読み取り専用。 */
         private static final String[] KEYS;
+        /** {@link #KEYS} と並行する名前のハッシュ。衝突の列をたどるとき、別の名前の文字列オブジェクトを触らずに比べる。 */
+        private static final int[] HASHES;
         private static final int[] VALS;
         private static final int MASK;
         private static final String[] NAMES;
@@ -185,12 +201,18 @@ public final class ComputedStyle {
         private static final boolean[] PAINT_ONLY;
         /** 添字ごとの、子孫が値を受け継ぐ（未登録は安全側に true）プロパティか。 */
         private static final boolean[] INHERITED;
+        /** 添字ごとの、カスケードの初期値として親から受け取る（継承するロングハンド）プロパティか。 */
+        private static final boolean[] INHERITS_AS_LONGHAND;
+        /** 添字ごとの初期値（無ければ null）。算出が名前でレジストリを引き直さないための表。 */
+        private static final String[] INITIALS;
+        private static final CssValue[] INITIAL_VALUES;
 
         static {
             var all = PropertyRegistry.all();
             String[] names = new String[all.size()];
             int cap = Integer.highestOneBit(Math.max(8, all.size() * 4 - 1)) << 1;
             String[] keys = new String[cap];
+            int[] hashes = new int[cap];
             int[] vals = new int[cap];
             int i = 0;
             for (PropertyRegistry.Property p : all) {
@@ -199,18 +221,27 @@ public final class ComputedStyle {
                 int at = (h ^ (h >>> 16)) & (cap - 1);
                 while (keys[at] != null) at = (at + 1) & (cap - 1);
                 keys[at] = name;
+                hashes[at] = h;
                 vals[at] = i;
                 names[i++] = name;
             }
             KEYS = keys;
+            HASHES = hashes;
             VALS = vals;
             MASK = cap - 1;
             NAMES = names;
             PAINT_ONLY = new boolean[names.length];
             INHERITED = new boolean[names.length];
+            INHERITS_AS_LONGHAND = new boolean[names.length];
+            INITIALS = new String[names.length];
+            INITIAL_VALUES = new CssValue[names.length];
             for (int k = 0; k < names.length; k++) {
                 PAINT_ONLY[k] = PropertyRegistry.isPaintOnly(names[k]);
                 INHERITED[k] = PropertyRegistry.isInherited(names[k]);
+                PropertyRegistry.Property p = PropertyRegistry.get(names[k]);
+                INHERITS_AS_LONGHAND[k] = p != null && p.inherited() && !p.isShorthand();
+                INITIALS[k] = p != null ? p.initial() : null;
+                INITIAL_VALUES[k] = CssValue.of(INITIALS[k]);
             }
         }
 
@@ -223,10 +254,11 @@ public final class ComputedStyle {
             int h = name.hashCode(); // 文字列の定数は intern 済みで、ハッシュはキャッシュ済み
             int at = (h ^ (h >>> 16)) & MASK;
             String[] keys = KEYS;
+            int[] hashes = HASHES;
             for (; ; ) {
                 String k = keys[at];
                 if (k == null) return NONE;
-                if (k == name || (k.hashCode() == h && k.equals(name))) return VALS[at];
+                if (k == name || (hashes[at] == h && k.equals(name))) return VALS[at];
                 at = (at + 1) & MASK;
             }
         }
@@ -234,6 +266,44 @@ public final class ComputedStyle {
         static String name(int id) {
             return NAMES[id];
         }
+    }
+
+    /** 親の算出値（{@code ctx.parent()}）を添字で引く。算出スタイル・作業表なら配列を直接引き、素のマップなら名前で引く。 */
+    static String parentValue(Map<String, String> parent, int id) {
+        CssValue v = parentCssValue(parent, id);
+        return v != null ? v.text : null;
+    }
+
+    /** {@link #parentValue} の値オブジェクト版（継承で値を引き取るとき、文字列を引き直さない）。 */
+    static CssValue parentCssValue(Map<String, String> parent, int id) {
+        if (parent instanceof StyleMap view) return view.owner.values[id];
+        if (parent instanceof StyleTable table) return table.values[id];
+        return CssValue.of(parent.get(CssPropertyId.name(id)));
+    }
+
+    /** {@code source} が算出スタイルのビューなら、宣言を値オブジェクトのまま {@code into} へ写す（文字列を引き直さない）。 */
+    static boolean copyStyleMapInto(Map<String, String> source, StyleTable into) {
+        if (!(source instanceof StyleMap view)) return false;
+        CssValue[] v = view.owner.values;
+        System.arraycopy(v, 0, into.values, 0, v.length);
+        into.size = view.owner.size;
+        if (view.owner.extras != null) into.extras = new LinkedHashMap<>(view.owner.extras);
+        return true;
+    }
+
+    /** 添字のプロパティの初期値（無ければ null）。 */
+    static String initialOf(int id) {
+        return CssPropertyId.INITIALS[id];
+    }
+
+    /** 添字のプロパティの初期値の値オブジェクト（無ければ null）。 */
+    static CssValue initialValueOf(int id) {
+        return CssPropertyId.INITIAL_VALUES[id];
+    }
+
+    /** 添字のプロパティが継承するか（{@link PropertyRegistry#isInherited} と同じ）。 */
+    static boolean isInheritedId(int id) {
+        return CssPropertyId.INHERITED[id];
     }
 
     /** 2 つの算出スタイルの宣言の差分を 1 つずつ渡す先。 */
@@ -247,10 +317,10 @@ public final class ComputedStyle {
      * 違いが無ければ何も呼ばずに false（呼び出し側が先に {@link #sameDeclarations} で足切りしてもよい）。
      */
     public static void diff(ComputedStyle a, ComputedStyle b, DiffVisitor visitor) {
-        String[] x = a.values, y = b.values;
+        CssValue[] x = a.values, y = b.values;
         for (int i = 0; i < x.length; i++) {
-            if (x[i] == y[i]) continue;
-            if (x[i] != null && x[i].equals(y[i])) continue;
+            if (x[i] == y[i]) continue; // 同じ文字列は同じ値オブジェクト
+            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
             visitor.changed(CssPropertyId.name(i), CssPropertyId.PAINT_ONLY[i], CssPropertyId.INHERITED[i]);
         }
         if (a.extras == null && b.extras == null) return;
@@ -264,6 +334,32 @@ public final class ComputedStyle {
         ey.forEach((k, v) -> {
             if (!ex.containsKey(k)) visitor.changed(k, false, true);
         });
+    }
+
+    /**
+     * カスケードの初期値として、親の算出スタイルから継承するロングハンドと {@code --*} を {@code target} へ写す。
+     * {@code parent} が算出スタイルのビューなら、{@code Map.Entry} を作らず、固定の添字表（継承するか）で配列を直接走査する。
+     * 走査順は {@code parent.entrySet()} と同じ（登録順 → 添字を持たない宣言）なので、{@code target} の並びも変わらない。
+     *
+     * @return 算出スタイルのビューとして処理した。false なら何も書いておらず、呼び出し側が従来の走査をする
+     */
+    static boolean copyInheritable(Map<String, String> parent, Map<String, String> target) {
+        if (!(parent instanceof StyleMap view)) return false;
+        CssValue[] v = view.owner.values;
+        boolean[] inherits = CssPropertyId.INHERITS_AS_LONGHAND;
+        StyleTable table = target instanceof StyleTable t ? t : null;
+        for (int i = 0; i < v.length; i++) {
+            if (v[i] == null || !inherits[i]) continue;
+            if (table != null) table.putValueById(i, v[i]);
+            else target.put(CssPropertyId.NAMES[i], v[i].text);
+        }
+        Map<String, String> ex = view.owner.extras;
+        if (ex != null) {
+            for (Map.Entry<String, String> e : ex.entrySet()) {
+                if (e.getKey().startsWith("--")) target.put(e.getKey(), e.getValue());
+            }
+        }
+        return true;
     }
 
     /** 宣言が全く同じか（フォントサイズは見ない）。 */
@@ -296,7 +392,10 @@ public final class ComputedStyle {
         public String get(Object key) {
             if (!(key instanceof String name)) return null;
             int id = CssPropertyId.of(name);
-            if (id != CssPropertyId.NONE) return owner.values[id];
+            if (id != CssPropertyId.NONE) {
+                CssValue v = owner.values[id];
+                return v != null ? v.text : null;
+            }
             return owner.extras != null ? owner.extras.get(name) : null;
         }
 
@@ -336,7 +435,7 @@ public final class ComputedStyle {
                         private java.util.Iterator<Entry<String, String>> extra;
 
                         private int advance(int from) {
-                            String[] v = owner.values;
+                            CssValue[] v = owner.values;
                             while (from < v.length && v[from] == null) from++;
                             return from;
                         }
@@ -356,7 +455,7 @@ public final class ComputedStyle {
                             if (next < owner.values.length) {
                                 int id = next;
                                 next = advance(id + 1);
-                                return new java.util.AbstractMap.SimpleImmutableEntry<>(CssPropertyId.name(id), owner.values[id]);
+                                return new java.util.AbstractMap.SimpleImmutableEntry<>(CssPropertyId.name(id), owner.values[id].text);
                             }
                             if (!hasNext()) throw new java.util.NoSuchElementException();
                             return extra.next();
@@ -365,6 +464,17 @@ public final class ComputedStyle {
                 }
             };
         }
+    }
+
+    /** 作業表 {@code owned} の配列をそのまま引き取る（呼び出し側はこの後 {@code owned} を触らない）。{@link #of} と同じ算出。 */
+    static ComputedStyle ofOwned(StyleTable owned, float parentFontSize, float rootFontSize) {
+        float own = parentFontSize;
+        String fontSize = owned.textById(CssProperty.Id.FONT_SIZE);
+        if (fontSize != null) {
+            own = ValueComputer.resolveFontSize(fontSize,
+                    new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
+        }
+        return new ComputedStyle(owned, own, rootFontSize, true);
     }
 
     public ComputedStyle(Map<String, String> properties) {
@@ -499,9 +609,10 @@ public final class ComputedStyle {
      */
     public float length(String propertyName, float maxPixels, float rootW, float rootH) {
         int id = CssPropertyId.of(propertyName);
+        if (id != CssPropertyId.NONE) return length(id, maxPixels, rootW, rootH);
         String val = rawAt(id, propertyName);
         if (val == null) return 0;
-        return compiledLength(id, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+        return TypedValueCache.length(val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
     }
 
     /**
@@ -518,12 +629,28 @@ public final class ComputedStyle {
      * 基準の単位を使っているか。レイアウトが箱の外の寸法を読む可能性があるかの、保守的な判定（数値の直後の単位だけを見る）。
      */
     public boolean usesViewportUnits() {
-        for (String v : values) if (v != null && hasRelativeUnit(v)) return true;
-        if (extras != null) for (String v : extras.values()) if (v != null && hasRelativeUnit(v)) return true;
-        return false;
+        byte known = relativeUnits;
+        if (known >= 0) return known == 1;
+        boolean uses = false;
+        for (CssValue v : values) {
+            if (v != null && v.usesRelativeUnit()) {
+                uses = true;
+                break;
+            }
+        }
+        if (!uses && extras != null) {
+            for (String v : extras.values()) {
+                if (v != null && ValueComputer.mayContainDimension(v) && scanRelativeUnit(v)) {
+                    uses = true;
+                    break;
+                }
+            }
+        }
+        relativeUnits = (byte) (uses ? 1 : 0);
+        return uses;
     }
 
-    private static boolean hasRelativeUnit(String v) {
+    static boolean scanRelativeUnit(String v) {
         int n = v.length();
         for (int i = 0; i < n; i++) {
             char c = v.charAt(i);
@@ -539,33 +666,94 @@ public final class ComputedStyle {
         return false;
     }
 
-    private static boolean isRelativeUnit(String v, int from, int to) {
-        String u = v.substring(from, to).toLowerCase(java.util.Locale.ROOT);
-        return switch (u) {
-            case "vw", "vh", "vi", "vb", "vmin", "vmax",
-                 "svw", "svh", "svi", "svb", "svmin", "svmax",
-                 "lvw", "lvh", "lvi", "lvb", "lvmin", "lvmax",
-                 "dvw", "dvh", "dvi", "dvb", "dvmin", "dvmax",
-                 "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax" -> true;
-            default -> false;
-        };
+    /** {@code vw} 系（{@code s/l/d} 接頭辞つきを含む）と {@code cq*} か。単位ごとに文字列を作らず、大小文字を無視して照合する。 */
+    static boolean isRelativeUnit(String v, int from, int to) {
+        int len = to - from;
+        if (len < 2 || len > 6) return false;
+        char c0 = Character.toLowerCase(v.charAt(from));
+        if (c0 == 'c') return len >= 3 && Character.toLowerCase(v.charAt(from + 1)) == 'q' && isAxisUnit(v, from + 2, to);
+        int start = from;
+        if ((c0 == 's' || c0 == 'l' || c0 == 'd') && len >= 3) {
+            start = from + 1;
+            c0 = Character.toLowerCase(v.charAt(start));
+        }
+        return c0 == 'v' && isAxisUnit(v, start + 1, to);
+    }
+
+    /** {@code w h i b min max}（{@code vw} の {@code w} など、単位の後半）か。 */
+    private static boolean isAxisUnit(String v, int from, int to) {
+        int n = to - from;
+        if (n == 1) {
+            char c = Character.toLowerCase(v.charAt(from));
+            return c == 'w' || c == 'h' || c == 'i' || c == 'b';
+        }
+        return n == 3 && (v.regionMatches(true, from, "min", 0, 3) || v.regionMatches(true, from, "max", 0, 3));
     }
 
     /** {@link #idOf} の添字で宣言の文字列を引く。{@code get(name)} と同じ結果。添字は登録済みのものに限る。 */
     public String get(int id) {
-        return values[id];
+        CssValue v = values[id];
+        return v != null ? v.text : null;
     }
 
     /** 添字版の {@link #length(String, float, float, float)}。 */
     public float length(int id, float maxPixels, float rootW, float rootH) {
-        String val = values[id];
-        if (val == null) return 0;
-        return compiledLength(id, val).resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+        CssValue v = values[id];
+        if (v == null) return 0;
+        return v.length().resolve(maxPixels, rootW, rootH, elementFontSize, rootFontSize);
+    }
+
+    /** 添字版の {@link #getOrDefault(String, String)}。 */
+    public String getOrDefault(int id, String defaultValue) {
+        CssValue v = values[id];
+        return v != null ? v.text : defaultValue;
+    }
+
+    /** 添字版の {@link #containsKey(String)}。 */
+    public boolean containsKey(int id) {
+        return values[id] != null;
+    }
+
+    /** 添字版の {@link #lengthOrDefault(String, float, float, float, float)}。 */
+    public float lengthOrDefault(int id, float defaultPixels, float maxPixels, float rootW, float rootH) {
+        if (values[id] == null) return defaultPixels;
+        return length(id, maxPixels, rootW, rootH);
+    }
+
+    /** 添字版の {@link #color(String, int)}。 */
+    public int color(int id, int defaultColor) {
+        CssValue v = values[id];
+        return v != null ? v.color() : defaultColor;
+    }
+
+    /** 添字版の {@link #number(String, float)}。 */
+    public float number(int id, float defaultValue) {
+        CssValue v = values[id];
+        return v != null ? v.number(defaultValue) : defaultValue;
+    }
+
+    /** 添字版の {@link #keyword(String, String)}。 */
+    public String keyword(int id, String defaultValue) {
+        CssValue v = values[id];
+        return v != null ? v.lowered() : defaultValue;
+    }
+
+    /** 添字版の {@link #is(String, String)}。 */
+    public boolean is(int id, String expected) {
+        return expected.equals(keyword(id, null));
+    }
+
+    /** 添字版の {@link #keywordFresh(String, Class)}。 */
+    <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(int id, Class<E> type) {
+        CssValue v = values[id];
+        E parsed = v != null ? v.keyword(type) : null;
+        return parsed != null ? parsed : PropertyRegistry.initialKeyword(CssPropertyId.name(id), type);
     }
 
     /** 添字版の {@link #keywordOf(String, Class)}。 */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(int id, Class<E> type) {
-        E parsed = CssKeywords.parse(type, values[id]);
+        CssValue v = values[id];
+        E parsed = v != null ? v.keyword(type) : null;
         return parsed != null ? parsed : initialKeyword(id, type);
     }
 
@@ -580,7 +768,7 @@ public final class ComputedStyle {
 
     /** 添字（{@link CssPropertyId#NONE} なら名前）で宣言を引く。{@link StyleMap#get} と同じ結果。 */
     private String rawAt(int id, String name) {
-        if (id != CssPropertyId.NONE) return values[id];
+        if (id != CssPropertyId.NONE) return get(id);
         return extras != null ? extras.get(name) : null;
     }
 
@@ -590,13 +778,10 @@ public final class ComputedStyle {
         return length(propertyName, maxPixels, rootW, rootH);
     }
 
-    private LengthResolver.CompiledLength compiledLength(int id, String value) {
-        return TypedValueCache.length(value);
-    }
-
     /** 色を ARGB に解決する。宣言が無ければ {@code defaultColor}。 */
     public int color(String propertyName, int defaultColor) {
         int id = CssPropertyId.of(propertyName);
+        if (id != CssPropertyId.NONE) return color(id, defaultColor);
         String val = rawAt(id, propertyName);
         if (val == null) return defaultColor;
         return TypedValueCache.color(val);
@@ -605,6 +790,7 @@ public final class ComputedStyle {
     /** 単位なしの数値（{@code opacity} / {@code flex-grow} / {@code z-index} など）。 */
     public float number(String propertyName, float defaultValue) {
         int id = CssPropertyId.of(propertyName);
+        if (id != CssPropertyId.NONE) return number(id, defaultValue);
         String val = rawAt(id, propertyName);
         if (val == null) return defaultValue;
         return TypedValueCache.number(val, defaultValue);
@@ -616,14 +802,15 @@ public final class ComputedStyle {
      */
     public <E extends Enum<E> & CssKeywords.Keyword> E keywordOf(String propertyName, Class<E> type) {
         int id = CssPropertyId.of(propertyName);
+        if (id != CssPropertyId.NONE) return keywordOf(id, type);
         E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
-        if (parsed != null) return parsed;
-        return id == CssPropertyId.NONE ? PropertyRegistry.initialKeyword(propertyName, type) : initialKeyword(id, type);
+        return parsed != null ? parsed : PropertyRegistry.initialKeyword(propertyName, type);
     }
 
     /** {@link #keywordOf(String, Class)} と同じ値（事実の算出用の別名。以前は記憶表を避けるために分けていた）。 */
     <E extends Enum<E> & CssKeywords.Keyword> E keywordFresh(String propertyName, Class<E> type) {
         int id = CssPropertyId.of(propertyName);
+        if (id != CssPropertyId.NONE) return keywordFresh(id, type);
         E parsed = CssKeywords.parse(type, rawAt(id, propertyName));
         return parsed != null ? parsed : PropertyRegistry.initialKeyword(propertyName, type);
     }
@@ -744,10 +931,10 @@ public final class ComputedStyle {
     private long[] compileEdges() {
         long[] out = new long[EDGE_IDS.length];
         for (int i = 0; i < out.length; i++) {
-            String val = values[EDGE_IDS[i]];
+            CssValue val = values[EDGE_IDS[i]];
             out[i] = val == null ? com.nishiyu.enderframelib.core.kernel.style.PackedCssValue.NONE
-                    : "auto".equalsIgnoreCase(val.trim()) ? PackedLengths.AUTO
-                    : PackedLengths.pack(LengthResolver.compile(val));
+                    : "auto".equalsIgnoreCase(val.text.trim()) ? PackedLengths.AUTO
+                    : PackedLengths.pack(val.length());
         }
         return out;
     }

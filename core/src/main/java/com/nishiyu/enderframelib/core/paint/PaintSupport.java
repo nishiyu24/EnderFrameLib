@@ -39,7 +39,7 @@ final class PaintSupport {
      * LIMITATION(制約): 表の行・列の {@code collapse} も hidden と同じで、場所を詰めない。README の "Not supported" に対応。
      */
     static boolean isInvisible(LayoutBox box) {
-        return box.style.keywordOf(CssProperty.VISIBILITY, CssKeywords.Visibility.class) != CssKeywords.Visibility.VISIBLE;
+        return box.style.keywordOf(CssProperty.Id.VISIBILITY, CssKeywords.Visibility.class) != CssKeywords.Visibility.VISIBLE;
     }
 
     /**
@@ -48,7 +48,7 @@ final class PaintSupport {
      */
     static boolean hidesEmptyCell(LayoutBox box) {
         if (box.display == null || box.display.inner() != LayoutBox.Display.Inner.TABLE_CELL || box.collapsedBorders != null) return false;
-        if (!"hide".equalsIgnoreCase(String.valueOf(box.style.get("empty-cells")).trim())) return false;
+        if (!"hide".equalsIgnoreCase(String.valueOf(box.style.get(CssProperty.Id.EMPTY_CELLS)).trim())) return false;
         return hasNoContent(box);
     }
 
@@ -106,16 +106,16 @@ final class PaintSupport {
      */
     static void putFontEvents(LayoutBox box, ItemProps events) {
         // 既定値（400 / normal / auto）は載せない。描画側は無ければ既定値として読む
-        String weight = box.style.get(CssProperty.FONT_WEIGHT);
+        String weight = box.style.get(CssProperty.Id.FONT_WEIGHT);
         if (weight != null && !weight.equals("normal") && !weight.equals("400")) events.put("font-weight", weight);
-        String fontStyle = box.style.get(CssProperty.FONT_STYLE);
+        String fontStyle = box.style.get(CssProperty.Id.FONT_STYLE);
         if (fontStyle != null && !fontStyle.equals("normal")) events.put("font-style", fontStyle);
-        String kerning = box.style.get(CssProperty.FONT_KERNING);
+        String kerning = box.style.get(CssProperty.Id.FONT_KERNING);
         if (kerning != null && !kerning.equals("auto")) events.put("font-kerning", kerning);
         // 長さの解決は要素ごとには重いので、指定があるときだけ（初期値は normal = 0）
-        String spacing = box.style.get(CssProperty.LETTER_SPACING);
+        String spacing = box.style.get(CssProperty.Id.LETTER_SPACING);
         if (spacing != null && !spacing.equals("normal") && !spacing.equals("0")) {
-            float letterSpacing = box.style.length(CssProperty.LETTER_SPACING, 0, 0, 0);
+            float letterSpacing = box.style.length(CssProperty.Id.LETTER_SPACING, 0, 0, 0);
             if (letterSpacing != 0) events.put("letter-spacing", String.valueOf(letterSpacing));
         }
     }

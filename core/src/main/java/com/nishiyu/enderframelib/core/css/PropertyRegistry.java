@@ -308,6 +308,13 @@ public final class PropertyRegistry {
         paint("opacity", "1", false, ValueType.NUMBER, true);
         paint("transform", "none", false, ValueType.LIST, true);
         paint("transform-origin", "50% 50%", false, ValueType.LIST, true);
+        // 個別変形プロパティ・書字方向・段区切り。以前は未登録（添字なし）で、名前で引く遠回りの経路を通っていた
+        layout("rotate", "none", false, ValueType.OTHER, false);
+        layout("translate", "none", false, ValueType.OTHER, false);
+        layout("scale", "none", false, ValueType.OTHER, false);
+        layout("writing-mode", "horizontal-tb", true, ValueType.KEYWORD, false);
+        layout("break-inside", "auto", false, ValueType.KEYWORD, false);
+        layout("perspective", "none", false, ValueType.OTHER, false);
         paint("filter", "none", false, ValueType.LIST, true);
         paint("mix-blend-mode", "normal", false, ValueType.KEYWORD, false);
         keyword("isolation", CssKeywords.Isolation.class, CssKeywords.Isolation.AUTO, false, Invalidation.PAINT);
@@ -476,47 +483,30 @@ public final class PropertyRegistry {
      * 何が壊れていたか: 以前は書かれなかったロングハンドを入れなかったので、継承するロングハンドが
      * 親の値のまま残り得た。{@code var()} が無効なショートハンドはロングハンドが 1 つも入らなかった。
      */
-    /**
-     * ショートハンドの展開は文字列だけで決まる純関数なので、（名前, 値）ごとに結果を覚える。要素ごとの再スタイルが
-     * 同じ宣言（{@code border: 1px solid #ccc} など）を毎回トークン分割し直さない。返す表は読み取り専用。
-     */
-    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>>
-            EXPANSIONS = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final int EXPANSIONS_LIMIT = 2048;
-
-    private static Map<String, String> expandCached(String name, Property p, String value) {
-        var perName = EXPANSIONS.computeIfAbsent(name, k -> new java.util.concurrent.ConcurrentHashMap<>());
-        Map<String, String> hit = perName.get(value);
-        if (hit != null) return hit;
-        Map<String, String> parts = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(p.expander().apply(value)));
-        if (perName.size() >= EXPANSIONS_LIMIT) perName.clear();
-        perName.put(value, parts);
-        return parts;
+    /** 展開の順（入れ子のショートハンドが先）。{@link ShorthandPlan} が添字の表を組むのに使う。 */
+    static List<String> expansionOrder() {
+        return EXPANSION_ORDER;
     }
 
+    /**
+     * 算出スタイルのショートハンドをロングハンドへ展開する（{@code putIfAbsent} なので
+     * 既にあるロングハンドが優先）。値が CSS 全域キーワードなら全ロングハンドに同じキーワードを配る。
+     * 値に書かれなかったロングハンドは初期値に戻す。{@code var()} を置き換えた結果が解釈できなければ
+     * ロングハンドはすべて {@code unset}（CSS Variables 1 §3.1 の「算出時に無効」）。
+     *
+     * 何が壊れていたか: 以前は書かれなかったロングハンドを入れなかったので、継承するロングハンドが
+     * 親の値のまま残り得た。{@code var()} が無効なショートハンドはロングハンドが 1 つも入らなかった。
+     *
+     * 実際の展開は {@link ShorthandPlan}（添字の表と、（ショートハンド, 値）ごとに覚えた展開結果）が行う。
+     * 作業表（{@link StyleTable}）なら配列を直接読み書きし、素のマップは作業表に写して展開して書き戻す。
+     */
     public static void expandShorthands(Map<String, String> style) {
-        for (String name : EXPANSION_ORDER) {
-            String value = style.get(name);
-            if (value == null || value.isBlank()) continue;
-            Property p = PROPERTIES.get(name);
-            if (CssWideKeyword.of(value) != null) {
-                for (String l : p.longhands()) style.putIfAbsent(l, value.trim());
-                continue;
-            }
-            Map<String, String> parts = expandCached(name, p, value.trim());
-            if (parts.isEmpty()) {
-                for (String l : p.longhands()) style.putIfAbsent(l, "unset");
-                continue;
-            }
-            for (Map.Entry<String, String> e : parts.entrySet()) {
-                if (e.getValue() != null) style.putIfAbsent(e.getKey(), e.getValue());
-            }
-            for (String l : p.longhands()) {
-                Property longhand = PROPERTIES.get(l);
-                if (parts.get(l) == null && !longhand.isShorthand() && longhand.initial() != null) {
-                    style.putIfAbsent(l, longhand.initial());
-                }
-            }
+        if (style instanceof StyleTable table) {
+            ShorthandPlan.expand(table);
+            return;
         }
+        StyleTable table = StyleTable.copyOf(style);
+        ShorthandPlan.expand(table);
+        for (Map.Entry<String, String> e : table.entrySet()) style.putIfAbsent(e.getKey(), e.getValue());
     }
 }

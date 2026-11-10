@@ -297,6 +297,21 @@ public record Selector(
 
         /** この複合セレクタ（{@code :not()} / {@code :is()} の中も含む）の照合が依存する状態ビット集合。 */
         public int dependentStateMask() {
+            // 規則ごと・要素ごとの照合で呼ばれる。毎回リストを走査（イテレータを確保）しないよう、構成が同じなら前回の結果を返す
+            int fp = ((((stateFlags * 31 + absentStateFlags) * 31 + notSelectors.size()) * 31 + anyOfSelectors.size()) * 31
+                    + hasSelectors.size()) * 31 + nths.size();
+            if (maskCacheValid && maskCacheFp == fp) return maskCache;
+            int computed = computeDependentStateMask();
+            maskCache = computed;
+            maskCacheFp = fp;
+            maskCacheValid = true;
+            return computed;
+        }
+
+        private int maskCache, maskCacheFp;
+        private boolean maskCacheValid;
+
+        private int computeDependentStateMask() {
             int mask = stateFlags | absentStateFlags;
             for (Selector s : notSelectors) mask |= s.stateMask();
             for (List<Selector> group : anyOfSelectors) {

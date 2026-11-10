@@ -93,8 +93,8 @@ final class BoxAnimation {
     /** 箱の算出値の {@code translate} / {@code rotate} / {@code scale} / {@code transform} を宣言順に合成して {@code {tx, ty, sx, sy, rot}} にする。 */
     float[] transformOf(LayoutBox box) {
         Transforms.Context ctx = new Transforms.Context(box.w, box.h, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx());
-        return Transforms.toTrs(Transforms.compose(box.style.get("translate"), box.style.get("rotate"), box.style.get("scale"),
-                box.style.get(CssProperty.TRANSFORM), ctx));
+        return Transforms.toTrs(Transforms.compose(box.style.get(CssProperty.Id.TRANSLATE), box.style.get(CssProperty.Id.ROTATE), box.style.get(CssProperty.Id.SCALE),
+                box.style.get(CssProperty.Id.TRANSFORM), ctx));
     }
 
     /**
@@ -202,10 +202,10 @@ final class BoxAnimation {
         }
         if (!hasStart || !hasEnd) {
             Transforms.Context ctx = new Transforms.Context(baseW, baseH, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
-            float[] base = java.util.Arrays.copyOf(Transforms.toTrs(Transforms.compose(style.get("translate"), style.get("rotate"),
-                    style.get("scale"), style.get(CssProperty.TRANSFORM), ctx)), 6);
+            float[] base = java.util.Arrays.copyOf(Transforms.toTrs(Transforms.compose(style.get(CssProperty.Id.TRANSLATE), style.get(CssProperty.Id.ROTATE),
+                    style.get(CssProperty.Id.SCALE), style.get(CssProperty.Id.TRANSFORM), ctx)), 6);
             if (base[2] == 0f && base[3] == 0f) { base[2] = 1f; base[3] = 1f; }
-            float baseOpacity = style.number(CssProperty.OPACITY, 1f);
+            float baseOpacity = style.number(CssProperty.Id.OPACITY, 1f);
             if (!hasStart) {
                 frames.add(new AnimationSpec.Keyframe(0f, base[0], base[1], base[2], base[3], base[4], base[5], baseOpacity,
                         baseColor, baseBgColor, animatedChannels));
@@ -309,11 +309,11 @@ final class BoxAnimation {
     AnimationSpec textColorAnimation(LayoutBox text, AnimationSpec own) {
         AnimationSpec colorAnim = own.withChannels(AnimationSpec.CH_COLOR);
         if (!colorAnim.isEmpty()) return colorAnim;
-        String inherited = text.style.get(CssProperty.COLOR);
+        String inherited = text.style.get(CssProperty.Id.COLOR);
         for (LayoutBox a = text.parent; a != null && a.style != null; a = a.parent) {
-            if (!Objects.equals(inherited, a.style.get(CssProperty.COLOR))) break;
-            if (a.style.get(CssProperty.ANIMATION) != null || a.style.get(CssProperty.ANIMATION_NAME) != null) {
-                int color = a.style.color(CssProperty.COLOR, 0xFF000000);
+            if (!Objects.equals(inherited, a.style.get(CssProperty.Id.COLOR))) break;
+            if (a.style.get(CssProperty.Id.ANIMATION) != null || a.style.get(CssProperty.Id.ANIMATION_NAME) != null) {
+                int color = a.style.color(CssProperty.Id.COLOR, 0xFF000000);
                 AnimationSpec anim = parseAnimationDef(a.style, a.w, a.h, color, 0).withChannels(AnimationSpec.CH_COLOR);
                 if (!anim.isEmpty()) return anim;
             }
@@ -326,7 +326,7 @@ final class BoxAnimation {
     /** 親と違う色を持っている（= 自分で color を宣言した）か。 */
     static boolean declaresOwnColor(LayoutBox box) {
         return box.parent != null && box.parent.style != null
-                && !Objects.equals(box.style.get(CssProperty.COLOR), box.parent.style.get(CssProperty.COLOR));
+                && !Objects.equals(box.style.get(CssProperty.Id.COLOR), box.parent.style.get(CssProperty.Id.COLOR));
     }
 
     record TransitionSpec(int durationMs, int delayMs, String easing, String property) {}

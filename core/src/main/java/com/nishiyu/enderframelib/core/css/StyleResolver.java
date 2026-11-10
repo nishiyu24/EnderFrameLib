@@ -101,11 +101,11 @@ public class StyleResolver {
         if (!raw.containsKey(CssProperty.CONTENT)) return null; // content は継承しないので、宣言が無ければ none
         ComputedStyle computed = finalizeComputedStyle(raw, sheet, env, parent,
                 parentComputedStyle.fontSizePx(), rootFontSize, rootLineHeight, viewportW, viewportH, container);
-        String content = computed.get(CssProperty.CONTENT);
+        String content = computed.get(CssProperty.Id.CONTENT);
         if (content == null) return null;
         content = content.trim();
         if (content.isEmpty() || content.equals("none") || content.equals("normal")) return null;
-        if ("none".equals(computed.get(CssProperty.DISPLAY))) return null;
+        if ("none".equals(computed.get(CssProperty.Id.DISPLAY))) return null;
         return computed;
     }
 
@@ -272,7 +272,7 @@ public class StyleResolver {
             }
             // 巻き戻し（revert）は UA / ユーザーのオリジンを別に追う経路でしか解けない
             for (int i = 0; i < key.n; i++) {
-                if (mentionsRevert(key.rules[i].properties)) return null;
+                if (key.rules[i].compiled().mentionsRevert) return null;
             }
             misses++;
             Map<String, String> raw = cascadeMatched(parent, sheet, key.rules, key.n);
@@ -287,11 +287,8 @@ public class StyleResolver {
     /** 掛かった規則の列（カスケード順）で解く。{@code style} 属性と {@code revert} が無いときの {@link #resolveDeclarations} と同じ結果。 */
     private static Map<String, String> cascadeMatched(Map<String, String> parent, StyleSheet sheet,
                                                       StyleRule[] matched, int count) {
-        Map<String, String> result = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : parent.entrySet()) {
-            String key = entry.getKey();
-            if (key.startsWith("--") || inheritsAsLonghand(key)) result.put(key, entry.getValue());
-        }
+        Map<String, String> result = new StyleTable();
+        inheritInto(parent, result);
         applyRegisteredInitialValues(result, parent, sheet);
         CascadeState state = new CascadeState(result, null, null, parent);
         for (int i = 0; i < count; i++) state.apply(matched[i]);
@@ -378,12 +375,9 @@ public class StyleResolver {
                                                            StateLookup stateLookup) {
         StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
         Map<String, String> parent = inheritedStyle != null ? inheritedStyle : Map.of();
-        Map<String, String> result = new LinkedHashMap<>();
+        Map<String, String> result = new StyleTable();
 
-        for (Map.Entry<String, String> entry : parent.entrySet()) {
-            String key = entry.getKey();
-            if (key.startsWith("--") || inheritsAsLonghand(key)) result.put(key, entry.getValue());
-        }
+        inheritInto(parent, result);
         applyRegisteredInitialValues(result, parent, sheet);
 
         List<StyleRule> candidates = sheet != null && node != null ? sheet.index().candidates(node) : List.of();
@@ -412,10 +406,10 @@ public class StyleResolver {
         boolean trackOrigins = pseudo == null && node != null && "input".equals(node.tag)
                 || mentionsRevert(inlineNormal) || mentionsRevert(inlineImportant);
         for (int i = 0; !trackOrigins && i < candidates.size(); i++) {
-            trackOrigins = mentionsRevert(candidates.get(i).properties);
+            trackOrigins = candidates.get(i).compiled().mentionsRevert;
         }
-        Map<String, String> uaValues = trackOrigins ? new LinkedHashMap<>(result) : null;
-        Map<String, String> userValues = trackOrigins ? new LinkedHashMap<>(result) : null;
+        Map<String, String> uaValues = trackOrigins ? StyleTable.copyOf(result) : null;
+        Map<String, String> userValues = trackOrigins ? StyleTable.copyOf(result) : null;
 
         // 規則はカスケード順（弱い順）に並んでいる。通常の宣言 → style 属性の通常の宣言 →
         // 作者の !important → style 属性の !important → ユーザー・UA の !important の順に重ねる。
@@ -470,7 +464,7 @@ public class StyleResolver {
         boolean toggle = isNativeToggle(node, result);
         if (!toggle && !isNativeRange(node, result)) return;
         // UA の宣言はショートハンド（border など）のまま入っているので、展開してから辺ごとの色を読む
-        Map<String, String> ua = new LinkedHashMap<>(uaValues);
+        Map<String, String> ua = StyleTable.copyOf(uaValues);
         PropertyRegistry.expandShorthands(ua);
         for (int i = 0; i < 4; i++) {
             String side = SIDES[i];
@@ -527,13 +521,13 @@ public class StyleResolver {
             this.uaValues = uaValues;
             this.userValues = userValues;
             this.parent = parent;
-            this.layerBase = uaValues != null ? new LinkedHashMap<>(result) : null;
+            this.layerBase = uaValues != null ? StyleTable.copyOf(result) : null;
         }
 
         void apply(StyleRule rule) {
             StyleSheet.Specificity s = rule.specificity;
             if (!started || s.origin() != currentOrigin || s.layer() != currentLayer || s.important() != currentImportant) {
-                if (uaValues != null) layerBase = new LinkedHashMap<>(result);
+                if (uaValues != null) layerBase = StyleTable.copyOf(result);
                 currentOrigin = s.origin();
                 currentLayer = s.layer();
                 currentImportant = s.important();
@@ -541,17 +535,17 @@ public class StyleResolver {
             }
             switch (s.origin()) {
                 case USER_AGENT -> {
-                    applyDeclarations(result, rule.properties, null, layerBase, parent);
+                    applyDeclarations(result, rule.compiled(), null, layerBase, parent);
                     if (uaValues != null) {
-                        applyDeclarations(uaValues, rule.properties, null, uaValues, parent);
-                        applyDeclarations(userValues, rule.properties, null, userValues, parent);
+                        applyDeclarations(uaValues, rule.compiled(), null, uaValues, parent);
+                        applyDeclarations(userValues, rule.compiled(), null, userValues, parent);
                     }
                 }
                 case USER -> {
-                    applyDeclarations(result, rule.properties, uaValues, layerBase, parent);
-                    if (uaValues != null) applyDeclarations(userValues, rule.properties, uaValues, userValues, parent);
+                    applyDeclarations(result, rule.compiled(), uaValues, layerBase, parent);
+                    if (uaValues != null) applyDeclarations(userValues, rule.compiled(), uaValues, userValues, parent);
                 }
-                default -> applyDeclarations(result, rule.properties, userValues, layerBase, parent);
+                default -> applyDeclarations(result, rule.compiled(), userValues, layerBase, parent);
             }
         }
 
@@ -559,11 +553,11 @@ public class StyleResolver {
         void applyInline(Map<String, String> declarations) {
             if (declarations.isEmpty()) return;
             if (currentOrigin != CascadeOrigin.AUTHOR || currentLayer != StyleSheet.LayerTree.UNLAYERED) {
-                if (uaValues != null) layerBase = new LinkedHashMap<>(result);
+                if (uaValues != null) layerBase = StyleTable.copyOf(result);
                 currentOrigin = CascadeOrigin.AUTHOR;
                 currentLayer = StyleSheet.LayerTree.UNLAYERED;
             }
-            applyDeclarations(result, declarations, userValues, layerBase, parent);
+            applyDeclarations(result, CompiledDeclarations.of(declarations), userValues, layerBase, parent);
         }
     }
 
@@ -584,6 +578,15 @@ public class StyleResolver {
         }
     }
 
+    /** カスケードの初期値: 親から継承するロングハンドと {@code --*} を写す。親が算出スタイルなら配列を直接走査する。 */
+    static void inheritInto(Map<String, String> parent, Map<String, String> result) {
+        if (ComputedStyle.copyInheritable(parent, result)) return;
+        for (Map.Entry<String, String> entry : parent.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith("--") || inheritsAsLonghand(key)) result.put(key, entry.getValue());
+        }
+    }
+
     /** 継承の初期値として親から受け取るのはロングハンドだけ（ショートハンドは展開済みの結果が届く）。 */
     private static boolean inheritsAsLonghand(String key) {
         PropertyRegistry.Property p = PropertyRegistry.get(key);
@@ -601,15 +604,15 @@ public class StyleResolver {
      *                     null（UA 自身の {@code revert} は {@code unset} になる）
      * @param layerBase    {@code revert-layer} の巻き戻し先（今のレイヤーの始まりの時点の結果）
      */
-    private static void applyDeclarations(Map<String, String> target, Map<String, String> decls,
+    private static void applyDeclarations(Map<String, String> target, CompiledDeclarations decls,
                                           Map<String, String> revertSource, Map<String, String> layerBase,
                                           Map<String, String> parent) {
-        for (Map.Entry<String, String> decl : decls.entrySet()) {
-            String key = decl.getKey();
-            String value = decl.getValue();
-            CssWideKeyword keyword = CssWideKeyword.of(value);
+        StyleTable table = target instanceof StyleTable t ? t : null;
+        for (int i = 0; i < decls.n; i++) {
+            String key = decls.names[i];
+            CssWideKeyword keyword = decls.wide[i];
 
-            if ("all".equals(key)) {
+            if (decls.isAll[i]) {
                 if (keyword != null) applyAll(target, keyword, revertSource, layerBase, parent);
                 continue;
             }
@@ -621,22 +624,28 @@ public class StyleResolver {
                 revert(target, key, layerBase);
                 continue;
             }
+            // 解釈できないショートハンド・色は宣言ごと無効（先行するロングハンドを消さない）。判定は解析時に済んでいる
+            if (decls.invalid[i]) continue;
 
-            PropertyRegistry.Property p = PropertyRegistry.get(key);
-            if (p != null && p.expander() != null && keyword == null && !value.contains("var(")
-                    && p.expander().apply(value.trim()).isEmpty()) {
-                continue; // 解釈できないショートハンドは宣言ごと無効（先行するロングハンドを消さない）
+            int[] subIds = decls.subIds[i];
+            if (subIds.length != 0) {
+                String[] subNames = decls.subNames[i];
+                for (int j = 0; j < subIds.length; j++) {
+                    if (table != null && subIds[j] >= 0) table.putById(subIds[j], null);
+                    else target.remove(subNames[j]);
+                }
             }
-            if (keyword == null && !value.contains("var(") && !isValidColorValue(p, key, value)) {
-                continue; // 解釈できない色も宣言ごと無効（以前は描画が不透明な白で塗っていた）
+            int id = decls.ids[i];
+            if (table != null && id >= 0) {
+                table.putValueById(id, keyword == CssWideKeyword.REVERT ? CompiledDeclarations.UNSET : decls.cssValues[i]);
+            } else {
+                target.put(key, keyword == CssWideKeyword.REVERT ? "unset" : decls.values[i]);
             }
-            for (String sub : PropertyRegistry.subproperties(key)) target.remove(sub);
-            target.put(key, keyword == CssWideKeyword.REVERT ? "unset" : value);
         }
     }
 
     /** 色の型のプロパティなら、値が色として解けるか。色の型でなければ常に真。 */
-    private static boolean isValidColorValue(PropertyRegistry.Property p, String key, String value) {
+    static boolean isValidColorValue(PropertyRegistry.Property p, String key, String value) {
         if (p == null || p.type() != PropertyRegistry.ValueType.COLOR || CssWideKeyword.of(value) != null) return true;
         // outline-color だけは invert を取る（CSS UI 4 §3.4）
         if ("outline-color".equals(key) && "invert".equalsIgnoreCase(value.trim())) return true;
@@ -802,7 +811,7 @@ public class StyleResolver {
                                                       float parentFontSize, float rootFontSize, float rootLineHeight,
                                                       int viewportW, int viewportH,
                                                       ContainerBox container) {
-        Map<String, String> style = new LinkedHashMap<>(rawStyle);
+        StyleTable style = StyleTable.copyOf(rawStyle);
         float ownFontSize = estimateFontSize(rawStyle, parentFontSize, rootFontSize, viewportW, viewportH);
         float rootLineHeightPx = Float.isNaN(rootLineHeight)
                 ? rootFontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM : rootLineHeight;
@@ -814,13 +823,13 @@ public class StyleResolver {
         ValueComputer.compute(style, new ValueComputer.Context(
                 parentStyle != null ? parentStyle : Map.of(), parentFontSize, rootFontSize, viewportW, viewportH,
                 container.width(), container.height(), rootLineHeight));
-        return ComputedStyle.of(style, parentFontSize, rootFontSize);
+        return ComputedStyle.ofOwned(style, parentFontSize, rootFontSize);
     }
 
     /** 登録したカスタムプロパティの絶対化に使う、この要素のフォントサイズ（var() を含むなら親のまま）。 */
     private static float estimateFontSize(Map<String, String> raw, float parentFontSize, float rootFontSize,
                                           int viewportW, int viewportH) {
-        String fontSize = raw.get(CssProperty.FONT_SIZE);
+        String fontSize = raw instanceof StyleTable table ? table.textById(CssProperty.Id.FONT_SIZE) : raw.get(CssProperty.FONT_SIZE);
         if (fontSize == null || fontSize.contains("var(") || CssWideKeyword.of(fontSize) != null) return parentFontSize;
         return ValueComputer.resolveFontSize(fontSize,
                 new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, viewportW, viewportH,
@@ -835,7 +844,7 @@ public class StyleResolver {
      * 登録したカスタムプロパティ（{@code @property}）は、解いた値が構文に合うかを確かめて算出値（絶対化した形）にする。
      * 合わなければ算出時に無効で、継承するなら親の算出値、しなければ初期値になる。
      */
-    private static void substituteVariables(Map<String, String> style, Map<String, String> raw,
+    private static void substituteVariables(StyleTable style, Map<String, String> raw,
                                             StyleSheet sheet, Map<String, String> env,
                                             Map<String, String> parent, Metrics metrics) {
         Function<String, CustomPropertyRegistration> registrations =
@@ -855,8 +864,21 @@ public class StyleResolver {
             String fallback = registration.inherits() ? parent.get(name) : null;
             return fallback != null ? fallback : registration.initialValue();
         });
-        for (String key : new ArrayList<>(style.keySet())) {
-            String value = style.get(key);
+        // 添字を持つ宣言: var() を含む値だけを解く（添字で配列を直接走査する）
+        CssValue[] values = style.values;
+        for (int id = 0; id < values.length; id++) {
+            CssValue cv = values[id];
+            if (cv == null || !cv.containsVar()) continue;
+            String value = cv.text;
+            String key = ComputedStyle.CssPropertyId.name(id);
+            String resolved = vars.substitute(value);
+            if (resolved != null && !isValidColorValue(PropertyRegistry.get(key), key, resolved)) resolved = null;
+            style.putById(id, resolved != null ? resolved : "unset");
+        }
+        // 添字を持たない宣言: {@code --*}（と未登録の名前）
+        if (style.extras == null) return;
+        for (String key : style.extras.keySet().toArray(new String[0])) {
+            String value = style.extras.get(key);
             if (key.startsWith("--")) {
                 // 参照も登録も無い普通のカスタムプロパティ（継承で大量に届く）は、解いた値が宣言そのもの
                 if (value != null && !value.isBlank() && !value.contains("var(") && registrations.apply(key) == null) continue;

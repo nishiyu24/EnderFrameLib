@@ -83,7 +83,7 @@ public abstract class LayoutEngine {
     public abstract void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx);
 
 
-    private static final int ID_DISPLAY = ComputedStyle.idOf(CssProperty.DISPLAY);
+    private static final int ID_DISPLAY = CssProperty.Id.DISPLAY;
 
     protected boolean isDisplayNone(ComputedStyle style) {
         return "none".equals(style.get(ID_DISPLAY));

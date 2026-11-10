@@ -334,6 +334,10 @@ public class LengthResolver {
         return edges;
     }
 
+    private static final int[] CORNER_IDS = {
+            CssProperty.Id.BORDER_TOP_LEFT_RADIUS, CssProperty.Id.BORDER_TOP_RIGHT_RADIUS,
+            CssProperty.Id.BORDER_BOTTOM_RIGHT_RADIUS, CssProperty.Id.BORDER_BOTTOM_LEFT_RADIUS};
+
     private static final String[] CORNER_PROPERTIES = {
             CssProperty.BORDER_TOP_LEFT_RADIUS, CssProperty.BORDER_TOP_RIGHT_RADIUS,
             CssProperty.BORDER_BOTTOM_RIGHT_RADIUS, CssProperty.BORDER_BOTTOM_LEFT_RADIUS};
@@ -375,11 +379,11 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         float[] out = new float[4];
         String shorthand = null;
         for (int i = 0; i < 4; i++) {
-            String value = style.get(CORNER_PROPERTIES[i]);
+            String value = style.get(CORNER_IDS[i]);
             if (value == null) {
                 // 展開を通っていない算出スタイル（テストや埋め込み側が直に組んだもの）
                 if (shorthand == null) {
-                    shorthand = style.getOrDefault(CssProperty.BORDER_RADIUS, "0");
+                    shorthand = style.getOrDefault(CssProperty.Id.BORDER_RADIUS, "0");
                 }
                 value = expandedRadius(shorthand).getOrDefault(CORNER_PROPERTIES[i], "0");
             }
@@ -411,9 +415,9 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
         String[] values = new String[4];
         String shorthand = null;
         for (int i = 0; i < 4; i++) {
-            String value = style.get(CORNER_PROPERTIES[i]);
+            String value = style.get(CORNER_IDS[i]);
             if (value == null) {
-                if (shorthand == null) shorthand = style.getOrDefault(CssProperty.BORDER_RADIUS, "0");
+                if (shorthand == null) shorthand = style.getOrDefault(CssProperty.Id.BORDER_RADIUS, "0");
                 value = expandedRadius(shorthand).getOrDefault(CORNER_PROPERTIES[i], "0");
             }
             values[i] = value;

@@ -75,7 +75,7 @@ public class TableLayoutEngine extends LayoutEngine {
         buildGrid(state);
         markCollapsed(state);
 
-        state.collapse = box.style.keywordOf(CssProperty.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
+        state.collapse = box.style.keywordOf(CssProperty.Id.BORDER_COLLAPSE, CssKeywords.BorderCollapse.class)
                 == CssKeywords.BorderCollapse.COLLAPSE;
         if (state.collapse) {
             collapseBorders(box, state, rootW, rootH);
@@ -91,7 +91,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float spacingW = n > 0 ? state.hSpacing * (n + 1) : 0;
         boolean definite = box.sizingMode == SizingMode.DEFINITE;
         boolean fixed = definite
-                && box.style.keywordOf(CssProperty.TABLE_LAYOUT, CssKeywords.TableLayout.class) == CssKeywords.TableLayout.FIXED;
+                && box.style.keywordOf(CssProperty.Id.TABLE_LAYOUT, CssKeywords.TableLayout.class) == CssKeywords.TableLayout.FIXED;
 
         float[] widths;
         if (fixed) {
@@ -157,8 +157,8 @@ public class TableLayoutEngine extends LayoutEngine {
 
         for (int r = 0; r < rows; r++) {
             LayoutBox row = state.rows.get(r);
-            if (!state.collapsedRows[r] && row.style.containsKey(CssProperty.HEIGHT)) {
-                heights[r] = row.style.length(CssProperty.HEIGHT, space.percentageBlockSize(), rootW, rootH);
+            if (!state.collapsedRows[r] && row.style.containsKey(CssProperty.Id.HEIGHT)) {
+                heights[r] = row.style.length(CssProperty.Id.HEIGHT, space.percentageBlockSize(), rootW, rootH);
             }
         }
         for (CellSlot slot : state.cells) {
@@ -197,7 +197,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float captionTop = 0, captionBottom = 0;
         for (LayoutBox caption : state.captions) {
             float outer = caption.h + caption.mT + caption.mB;
-            if (caption.style.keywordOf(CssProperty.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) {
+            if (caption.style.keywordOf(CssProperty.Id.CAPTION_SIDE, CssKeywords.CaptionSide.class) == CssKeywords.CaptionSide.BOTTOM) {
                 captionBottom += outer;
             }
             else captionTop += outer;
@@ -236,7 +236,7 @@ public class TableLayoutEngine extends LayoutEngine {
                 case TABLE_COLUMN -> state.columns.add(child);
                 case TABLE_ROW -> body.add(child);
                 case TABLE_ROW_GROUP -> {
-                    String d = child.style.keyword(CssProperty.DISPLAY, "table-row-group");
+                    String d = child.style.keyword(CssProperty.Id.DISPLAY, "table-row-group");
                     // 最初の thead / tfoot だけが先頭・末尾に動く。2 つ目以降は tbody と同じ位置
                     List<LayoutBox> target = d.equals("table-header-group") && header.isEmpty() ? header
                             : d.equals("table-footer-group") && footer.isEmpty() ? footer : body;
@@ -274,7 +274,7 @@ public class TableLayoutEngine extends LayoutEngine {
     }
 
     private static boolean isCollapsed(LayoutBox box) {
-        return "collapse".equalsIgnoreCase(box.style.getOrDefault(CssProperty.VISIBILITY, "visible").trim());
+        return "collapse".equalsIgnoreCase(box.style.getOrDefault(CssProperty.Id.VISIBILITY, "visible").trim());
     }
 
     /** セルを格子に並べる。{@code rowspan} で上の行から伸びてきたセルの位置は飛ばす。 */
@@ -361,7 +361,7 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** {@code border-spacing} の横と縦（1 つなら両方）。 */
     private static float[] borderSpacing(ComputedStyle style, float rootW, float rootH) {
-        String v = style.get(CssProperty.BORDER_SPACING);
+        String v = style.get(CssProperty.Id.BORDER_SPACING);
         if (v == null || v.isBlank()) return new float[]{0, 0};
         String[] parts = v.trim().split("\\s+");
         float h = LengthResolver.parseDim(parts[0], 0, rootW, rootH, style.fontSizePx(), style.rootFontSizePx());
@@ -382,25 +382,25 @@ public class TableLayoutEngine extends LayoutEngine {
                 for (int c = s.col; c < s.col + s.colSpan && c < cols; c++) at[r][c] = s;
             }
         }
-        float tableTop = border(table, CssProperty.BORDER_TOP_WIDTH, rootW, rootH);
-        float tableRight = border(table, CssProperty.BORDER_RIGHT_WIDTH, rootW, rootH);
-        float tableBottom = border(table, CssProperty.BORDER_BOTTOM_WIDTH, rootW, rootH);
-        float tableLeft = border(table, CssProperty.BORDER_LEFT_WIDTH, rootW, rootH);
+        float tableTop = border(table, CssProperty.Id.BORDER_TOP_WIDTH, CssProperty.Id.BORDER_TOP_STYLE, rootW, rootH);
+        float tableRight = border(table, CssProperty.Id.BORDER_RIGHT_WIDTH, CssProperty.Id.BORDER_RIGHT_STYLE, rootW, rootH);
+        float tableBottom = border(table, CssProperty.Id.BORDER_BOTTOM_WIDTH, CssProperty.Id.BORDER_BOTTOM_STYLE, rootW, rootH);
+        float tableLeft = border(table, CssProperty.Id.BORDER_LEFT_WIDTH, CssProperty.Id.BORDER_LEFT_STYLE, rootW, rootH);
         float outerTop = tableTop, outerRight = tableRight, outerBottom = tableBottom, outerLeft = tableLeft;
 
         for (CellSlot s : state.cells) {
-            float top = border(s.cell, CssProperty.BORDER_TOP_WIDTH, rootW, rootH);
-            float right = border(s.cell, CssProperty.BORDER_RIGHT_WIDTH, rootW, rootH);
-            float bottom = border(s.cell, CssProperty.BORDER_BOTTOM_WIDTH, rootW, rootH);
-            float left = border(s.cell, CssProperty.BORDER_LEFT_WIDTH, rootW, rootH);
+            float top = border(s.cell, CssProperty.Id.BORDER_TOP_WIDTH, CssProperty.Id.BORDER_TOP_STYLE, rootW, rootH);
+            float right = border(s.cell, CssProperty.Id.BORDER_RIGHT_WIDTH, CssProperty.Id.BORDER_RIGHT_STYLE, rootW, rootH);
+            float bottom = border(s.cell, CssProperty.Id.BORDER_BOTTOM_WIDTH, CssProperty.Id.BORDER_BOTTOM_STYLE, rootW, rootH);
+            float left = border(s.cell, CssProperty.Id.BORDER_LEFT_WIDTH, CssProperty.Id.BORDER_LEFT_STYLE, rootW, rootH);
             CellSlot above = s.row > 0 ? at[s.row - 1][s.col] : null;
             CellSlot below = s.row + s.rowSpan < rows ? at[s.row + s.rowSpan][s.col] : null;
             CellSlot before = s.col > 0 ? at[s.row][s.col - 1] : null;
             CellSlot after = s.col + s.colSpan < cols ? at[s.row][s.col + s.colSpan] : null;
-            top = joint(s.cell, "top", top, above != null ? above.cell : table, "bottom", above != null ? border(above.cell, CssProperty.BORDER_BOTTOM_WIDTH, rootW, rootH) : tableTop);
-            bottom = joint(s.cell, "bottom", bottom, below != null ? below.cell : table, "top", below != null ? border(below.cell, CssProperty.BORDER_TOP_WIDTH, rootW, rootH) : tableBottom);
-            left = joint(s.cell, "left", left, before != null ? before.cell : table, "right", before != null ? border(before.cell, CssProperty.BORDER_RIGHT_WIDTH, rootW, rootH) : tableLeft);
-            right = joint(s.cell, "right", right, after != null ? after.cell : table, "left", after != null ? border(after.cell, CssProperty.BORDER_LEFT_WIDTH, rootW, rootH) : tableRight);
+            top = joint(s.cell, CssProperty.Id.BORDER_TOP_STYLE, top, above != null ? above.cell : table, CssProperty.Id.BORDER_BOTTOM_STYLE, above != null ? border(above.cell, CssProperty.Id.BORDER_BOTTOM_WIDTH, CssProperty.Id.BORDER_BOTTOM_STYLE, rootW, rootH) : tableTop);
+            bottom = joint(s.cell, CssProperty.Id.BORDER_BOTTOM_STYLE, bottom, below != null ? below.cell : table, CssProperty.Id.BORDER_TOP_STYLE, below != null ? border(below.cell, CssProperty.Id.BORDER_TOP_WIDTH, CssProperty.Id.BORDER_TOP_STYLE, rootW, rootH) : tableBottom);
+            left = joint(s.cell, CssProperty.Id.BORDER_LEFT_STYLE, left, before != null ? before.cell : table, CssProperty.Id.BORDER_RIGHT_STYLE, before != null ? border(before.cell, CssProperty.Id.BORDER_RIGHT_WIDTH, CssProperty.Id.BORDER_RIGHT_STYLE, rootW, rootH) : tableLeft);
+            right = joint(s.cell, CssProperty.Id.BORDER_RIGHT_STYLE, right, after != null ? after.cell : table, CssProperty.Id.BORDER_LEFT_STYLE, after != null ? border(after.cell, CssProperty.Id.BORDER_LEFT_WIDTH, CssProperty.Id.BORDER_LEFT_STYLE, rootW, rootH) : tableRight);
             if (above == null) outerTop = Math.max(outerTop, top);
             if (below == null) outerBottom = Math.max(outerBottom, bottom);
             if (before == null) outerLeft = Math.max(outerLeft, left);
@@ -415,16 +415,15 @@ public class TableLayoutEngine extends LayoutEngine {
     }
 
     /** 隣り合う 2 本の枠線の幅。どちらかが {@code hidden} なら 0、そうでなければ太い方（CSS 2.2 §17.6.2.1）。 */
-    private static float joint(LayoutBox a, String sideA, float widthA, LayoutBox b, String sideB, float widthB) {
-        if (a.style.keywordOf("border-" + sideA + "-style", BorderStyle.class) == BorderStyle.HIDDEN
-                || b.style.keywordOf("border-" + sideB + "-style", BorderStyle.class) == BorderStyle.HIDDEN) return 0;
+    private static float joint(LayoutBox a, int sideA, float widthA, LayoutBox b, int sideB, float widthB) {
+        if (a.style.keywordOf(sideA, BorderStyle.class) == BorderStyle.HIDDEN
+                || b.style.keywordOf(sideB, BorderStyle.class) == BorderStyle.HIDDEN) return 0;
         return Math.max(widthA, widthB);
     }
 
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
-    private static float border(LayoutBox box, String widthProp, float rootW, float rootH) {
-        String side = widthProp.substring("border-".length(), widthProp.length() - "-width".length());
-        BorderStyle style = box.style.keywordOf("border-" + side + "-style", BorderStyle.class);
+    private static float border(LayoutBox box, int widthProp, int styleProp, float rootW, float rootH) {
+        BorderStyle style = box.style.keywordOf(styleProp, BorderStyle.class);
         if (style == BorderStyle.NONE || style == BorderStyle.HIDDEN) return 0;
         return box.style.length(widthProp, 0, rootW, rootH);
     }
@@ -515,7 +514,7 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** {@code width: N%}（N は 0 以上）。% 以外・負・auto は -1。 */
     private static float percentWidth(ComputedStyle style) {
-        String w = style.get(CssProperty.WIDTH);
+        String w = style.get(CssProperty.Id.WIDTH);
         if (w == null) return -1f;
         w = w.trim();
         if (!w.endsWith("%") || w.indexOf('(') >= 0) return -1f;
@@ -684,11 +683,11 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** px で確定する {@code width}（auto・%・内容のキーワードは null）。 */
     private static Float fixedWidth(ComputedStyle style, float rootW, float rootH) {
-        String w = style.get(CssProperty.WIDTH);
+        String w = style.get(CssProperty.Id.WIDTH);
         if (w == null || "auto".equalsIgnoreCase(w.trim()) || w.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(w)) {
             return null;
         }
-        return style.length(CssProperty.WIDTH, 0, rootW, rootH);
+        return style.length(CssProperty.Id.WIDTH, 0, rootW, rootH);
     }
 
     private static float spanWidth(TableState state, int col, int span) {
@@ -702,7 +701,7 @@ public class TableLayoutEngine extends LayoutEngine {
     // ==========================================
 
     private static String verticalAlign(LayoutBox cell) {
-        String v = cell.style.keyword(CssProperty.VERTICAL_ALIGN, "baseline");
+        String v = cell.style.keyword(CssProperty.Id.VERTICAL_ALIGN, "baseline");
         return switch (v) {
             case "top", "middle", "bottom" -> v;
             default -> "baseline";
@@ -723,7 +722,7 @@ public class TableLayoutEngine extends LayoutEngine {
 
         float topY = 0, bottomY = captionTop + gridH;
         for (LayoutBox caption : state.captions) {
-            if ("bottom".equals(caption.style.keyword(CssProperty.CAPTION_SIDE, "top"))) {
+            if ("bottom".equals(caption.style.keyword(CssProperty.Id.CAPTION_SIDE, "top"))) {
                 tablePlacements.add(new Placement(caption, 0, bottomY));
                 bottomY += caption.h + caption.mT + caption.mB;
             } else {

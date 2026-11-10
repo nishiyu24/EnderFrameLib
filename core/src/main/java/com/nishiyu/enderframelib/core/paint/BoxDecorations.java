@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.paint.model.*;
 
 import com.nishiyu.enderframelib.core.css.ColorParser;
@@ -201,12 +202,12 @@ public final class BoxDecorations {
     private record LayerKey(boolean mask, double dppx) {}
 
     private static List<BackgroundLayer> computeLayers(ComputedStyle style, double dppx) {
-        List<String> images = list(style.get("background-image"), "none");
-        List<String> positions = list(style.get("background-position"), "0% 0%");
-        List<String> sizes = list(style.get("background-size"), "auto");
-        List<String> repeats = list(style.get("background-repeat"), "repeat");
-        List<String> origins = list(style.get("background-origin"), "padding-box");
-        List<String> clips = list(style.get("background-clip"), "border-box");
+        List<String> images = list(style.get(CssProperty.Id.BACKGROUND_IMAGE), "none");
+        List<String> positions = list(style.get(CssProperty.Id.BACKGROUND_POSITION), "0% 0%");
+        List<String> sizes = list(style.get(CssProperty.Id.BACKGROUND_SIZE), "auto");
+        List<String> repeats = list(style.get(CssProperty.Id.BACKGROUND_REPEAT), "repeat");
+        List<String> origins = list(style.get(CssProperty.Id.BACKGROUND_ORIGIN), "padding-box");
+        List<String> clips = list(style.get(CssProperty.Id.BACKGROUND_CLIP), "border-box");
         List<BackgroundLayer> out = new ArrayList<>(images.size());
         for (int i = 0; i < images.size(); i++) {
             out.add(new BackgroundLayer(images.get(i), positions.get(i % positions.size()), sizes.get(i % sizes.size()),
@@ -229,12 +230,12 @@ public final class BoxDecorations {
     }
 
     private static List<BackgroundLayer> computeMaskLayers(ComputedStyle style, double dppx) {
-        List<String> images = list(style.get("mask-image"), "none");
-        List<String> positions = list(style.get("mask-position"), "0% 0%");
-        List<String> sizes = list(style.get("mask-size"), "auto");
-        List<String> repeats = list(style.get("mask-repeat"), "repeat");
-        List<String> origins = list(style.get("mask-origin"), "border-box");
-        List<String> clips = list(style.get("mask-clip"), "border-box");
+        List<String> images = list(style.get(CssProperty.Id.MASK_IMAGE), "none");
+        List<String> positions = list(style.get(CssProperty.Id.MASK_POSITION), "0% 0%");
+        List<String> sizes = list(style.get(CssProperty.Id.MASK_SIZE), "auto");
+        List<String> repeats = list(style.get(CssProperty.Id.MASK_REPEAT), "repeat");
+        List<String> origins = list(style.get(CssProperty.Id.MASK_ORIGIN), "border-box");
+        List<String> clips = list(style.get(CssProperty.Id.MASK_CLIP), "border-box");
         List<BackgroundLayer> out = new ArrayList<>(images.size());
         for (int i = 0; i < images.size(); i++) {
             String origin = origins.get(i % origins.size()), clip = clips.get(i % clips.size());
@@ -254,13 +255,13 @@ public final class BoxDecorations {
     /** {@code mask-mode} のリスト（{@code alpha} / {@code luminance} / {@code match-source}）。 */
     public static List<String> maskModes(ComputedStyle style) {
         List<String> out = new ArrayList<>();
-        for (String m : list(style.get("mask-mode"), "match-source")) out.add(m.trim().toLowerCase(Locale.ROOT));
+        for (String m : list(style.get(CssProperty.Id.MASK_MODE), "match-source")) out.add(m.trim().toLowerCase(Locale.ROOT));
         return out;
     }
 
     /** {@code background-clip: text}（{@code -webkit-} 付きも）のレイヤーがあるか。背景を文字の形で切る（箱の中身を文字のアルファでマスクする）。 */
     public static boolean clipsText(ComputedStyle style) {
-        String v = style.get("background-clip");
+        String v = style.get(CssProperty.Id.BACKGROUND_CLIP);
         if (v == null) return false;
         for (String clip : CssSyntax.parseCommaList(v)) if ("text".equalsIgnoreCase(clip.trim())) return true;
         return false;
@@ -274,8 +275,8 @@ public final class BoxDecorations {
     private static final Object COLOR_CLIP = new Object();
 
     private static String computeColorClip(ComputedStyle style) {
-        List<String> clips = list(style.get("background-clip"), "border-box");
-        int layerCount = list(style.get("background-image"), "none").size();
+        List<String> clips = list(style.get(CssProperty.Id.BACKGROUND_CLIP), "border-box");
+        int layerCount = list(style.get(CssProperty.Id.BACKGROUND_IMAGE), "none").size();
         return clips.get((layerCount - 1) % clips.size());
     }
 
