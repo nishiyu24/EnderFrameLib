@@ -245,6 +245,46 @@ public class TextPatchTest {
         assertTrue(measured < 10, "境界の中だけ測り直す: " + measured);
     }
 
+    private static final String CONTROLS_HTML = """
+            <style>
+              body { margin: 0; font-size: 14px }
+              button { padding: 4px 8px; margin: 2px }
+              .fixed { width: 120px; height: 30px }
+              .row { display: flex; gap: 6px; align-items: center }
+              label { margin: 0 4px }
+            </style>
+            <div class=row><button id=b1>OK</button><button id=b2 class=fixed>Cancel</button><label id=l1>Name</label></div>
+            <div id=below>below the controls</div>
+            <p>a <label id=l2>inline label</label> in a paragraph that is long enough to wrap in a narrow viewport okay</p>
+            <div id=tail>tail</div>
+            """;
+
+    /** ボタン・ラベルの文字更新（旧版は常に全体再レイアウトへ退いていた）も、局所パッチで全体再レイアウトと同じ結果になる。 */
+    @Test
+    public void buttonAndLabelTextPatchMatchesFullRelayout() {
+        StandaloneView patched = new StandaloneView(CONTROLS_HTML, 320, 240, FontResolver.FALLBACK);
+        StandaloneView full = new StandaloneView(CONTROLS_HTML, 320, 240, FontResolver.FALLBACK);
+        sigs(patched);
+        sigs(full);
+        long hitsBefore = UiView.TEXT_PATCH_HITS.get();
+
+        step(patched, full, "ボタン: 長く（兄弟が動く）", v -> ((HtmlText) textChild(v, "b1")).setData("Confirm the selection"));
+        step(patched, full, "ボタン: 短く", v -> ((HtmlText) textChild(v, "b1")).setData("Go"));
+        step(patched, full, "固定幅ボタン", v -> ((HtmlText) textChild(v, "b2")).setData("Cancel everything now please"));
+        step(patched, full, "ラベル", v -> ((HtmlText) textChild(v, "l1")).setData("A much longer label"));
+        step(patched, full, "段落内のラベル（折り返しが変わる）",
+                v -> ((HtmlText) textChild(v, "l2")).setData("a considerably longer inline label that wraps"));
+        step(patched, full, "updateTextContent（ボタン）", v -> v.root().getNodeById("b1").updateTextContent("Apply"));
+        step(patched, full, "複数まとめて", v -> {
+            ((HtmlText) textChild(v, "b1")).setData("B1 changed");
+            ((HtmlText) textChild(v, "l1")).setData("L1");
+            ((HtmlText) textChild(v, "tail")).setData("tail too");
+        });
+
+        assertTrue(UiView.TEXT_PATCH_HITS.get() - hitsBefore >= 6,
+                "ボタン・ラベルが局所パッチの経路に乗る: " + (UiView.TEXT_PATCH_HITS.get() - hitsBefore));
+    }
+
     @Test
     public void textOnlyChangeRaisesTextPatchNotRelayout() {
         StandaloneView v = new StandaloneView(HTML, 320, 240, FontResolver.FALLBACK);
