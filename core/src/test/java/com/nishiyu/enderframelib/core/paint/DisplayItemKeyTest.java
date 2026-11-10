@@ -237,4 +237,118 @@ class DisplayItemKeyTest {
             view.close();
         }
     }
+
+    @Test
+    void remainingPartOrdinalsAreDistinctAndInReservedNamespace() {
+        int[] parts = {
+                DisplayItem.PART_NODE,
+                DisplayItem.PART_BG,
+                DisplayItem.PART_BORDER,
+                DisplayItem.PART_INPUT,
+                DisplayItem.PART_CHECKBOX,
+                DisplayItem.PART_RADIO,
+                DisplayItem.PART_SELECT,
+                DisplayItem.PART_TEXTAREA,
+                DisplayItem.PART_CANVAS,
+                DisplayItem.PART_SCENE,
+                DisplayItem.PART_MEDIA,
+                DisplayItem.PART_PLACEHOLDER,
+                DisplayItem.PART_SCROLLBAR_V,
+                DisplayItem.PART_SCROLLBAR_H,
+                DisplayItem.PART_SCROLLBAR_TRACK_V,
+                DisplayItem.PART_SCROLLBAR_TRACK_H,
+                DisplayItem.PART_PROGRESS,
+                DisplayItem.PART_CIRCLE_BORDER,
+                DisplayItem.PART_BORDER_TOP,
+                DisplayItem.PART_BORDER_RIGHT,
+                DisplayItem.PART_BORDER_BOTTOM,
+                DisplayItem.PART_BORDER_LEFT,
+                DisplayItem.PART_GHOST_IMAGE,
+                DisplayItem.PART_BGL_FALLBACK,
+                DisplayItem.PART_SCROLLBAR_NODE_V,
+                DisplayItem.PART_SCROLLBAR_NODE_H,
+                DisplayItem.PART_SCROLL_CONTENT,
+                DisplayItem.PART_BGL_BASE,
+                DisplayItem.PART_BORDER_ROUND_BASE,
+                DisplayItem.PART_BORDER_IMAGE_BASE
+        };
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (int p : parts) {
+            assertTrue(p >= 0x7000 && p <= 0x7FFF, "Part ordinal 0x" + Integer.toHexString(p) + " must be in 0x7000..0x7FFF");
+            assertTrue(seen.add(p), "Part ordinal 0x" + Integer.toHexString(p) + " must be distinct");
+        }
+    }
+
+    @Test
+    void bordersProgressScrollbarsAndScrollContentUsePackedKeys() {
+        String html = "<div id=\"container\" style=\"width:100px;height:60px;overflow:scroll;border:2px solid #ff0000;border-radius:4px;\">"
+                + "<progress id=\"prog\" value=\"40\" max=\"100\" style=\"width:80px;height:10px;\"></progress>"
+                + "<div id=\"content\" style=\"width:150px;height:120px;\">hello</div>"
+                + "</div>";
+        com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
+                html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        try {
+            java.util.List<DisplayItem> items = view.items();
+            boolean foundProg = false, foundBorder = false, foundSbV = false, foundSbVt = false, foundScrollc = false;
+            for (DisplayItem it : items) {
+                int handle = DisplayItem.nodeHandleOf(it.key());
+                int part = DisplayItem.partOrdinalOf(it.key());
+                if ("prog_progress".equals(it.id())) {
+                    foundProg = true;
+                    assertTrue(handle > 0, "prog_progress has positive node handle");
+                    assertEquals(DisplayItem.PART_PROGRESS, part, "prog_progress has PART_PROGRESS");
+                } else if ("container_b_round".equals(it.id())) {
+                    foundBorder = true;
+                    assertTrue(handle > 0, "container_b_round has positive node handle");
+                    assertEquals(DisplayItem.PART_BORDER, part, "container_b_round has PART_BORDER");
+                } else if (it.id() != null && it.id().endsWith("_sb_v")) {
+                    foundSbV = true;
+                    assertTrue(handle > 0, "scrollbar thumb has positive node handle");
+                    assertEquals(DisplayItem.PART_SCROLLBAR_V, part, "scrollbar thumb has PART_SCROLLBAR_V");
+                } else if (it.id() != null && it.id().endsWith("_sb_vt")) {
+                    foundSbVt = true;
+                    assertTrue(handle > 0, "scrollbar track has positive node handle");
+                    assertEquals(DisplayItem.PART_SCROLLBAR_TRACK_V, part, "scrollbar track has PART_SCROLLBAR_TRACK_V");
+                } else if (it.id() != null && it.id().endsWith("_scrollc")) {
+                    foundScrollc = true;
+                    assertTrue(handle > 0, "scrollc node has positive node handle");
+                    assertEquals(DisplayItem.PART_SCROLL_CONTENT, part, "scrollc node has PART_SCROLL_CONTENT");
+                }
+            }
+            assertTrue(foundProg, "prog_progress found");
+            assertTrue(foundBorder, "container_b_round found");
+            assertTrue(foundSbV, "scrollbar thumb found");
+            assertTrue(foundSbVt, "scrollbar track found");
+            assertTrue(foundScrollc, "scrollc node found");
+        } finally {
+            view.close();
+        }
+    }
+
+    @Test
+    void parentKeyInRenderHintsMatchesParentNodeKey() {
+        String html = "<div id=\"box\" style=\"width:100px;height:50px;background:#112233;\">"
+                + "<span id=\"txt\">Sample</span>"
+                + "</div>";
+        com.nishiyu.enderframelib.common.StandaloneView view = new com.nishiyu.enderframelib.common.StandaloneView(
+                html, 300, 200, com.nishiyu.enderframelib.core.text.model.FontResolver.FALLBACK);
+        try {
+            java.util.List<DisplayItem> items = view.items();
+            com.nishiyu.enderframelib.core.dom.node.HtmlNode boxNode = view.root().getNodeById("box");
+            assertNotNull(boxNode);
+            long expectedBoxNodeKey = DisplayItem.nodeKeyOf(boxNode.nodeId());
+
+            boolean verifiedBg = false;
+            for (DisplayItem it : items) {
+                if ("box_bg".equals(it.id())) {
+                    assertEquals(expectedBoxNodeKey, it.hints().parentKey(), "box_bg hints.parentKey matches box nodeKey");
+                    assertEquals("box", it.hints().parentId(), "box_bg hints.parentId matches 'box'");
+                    verifiedBg = true;
+                }
+            }
+            assertTrue(verifiedBg, "box_bg parentKey was verified");
+        } finally {
+            view.close();
+        }
+    }
 }

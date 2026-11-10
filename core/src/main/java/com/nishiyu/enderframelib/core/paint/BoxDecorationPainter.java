@@ -194,7 +194,7 @@ public final class BoxDecorationPainter {
                         decorationKey(box, FRAG_PART_BASE, ringPart));
             } else {
                 drawLines(elements, id, "_b_", frag.x, frag.y, frag.w, frag.h, widths, styles, colors, 0,
-                        passiveBorderEvents, meta, transDur, true);
+                        passiveBorderEvents, meta, transDur, true, box.node != null ? box.node.nodeId() : 0);
             }
         }
     }
@@ -439,7 +439,8 @@ public final class BoxDecorationPainter {
             if (!ghostItem.isEmpty() && !"minecraft:air".equals(ghostItem)) {
                 float iconX = box.x + (box.w - 16) / 2;
                 float iconY = box.y + (box.h - 16) / 2;
-                addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta);
+                long ghostKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_GHOST_IMAGE) : 0L;
+                addElement(elements, id, id + "_ghost_img", ElementType.IMAGE, ImageFitMode.FILL, iconX, iconY, 16, 16, "item:" + ghostItem, color, 0, partsEvents, 0, 0.85f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, innerMeta, ghostKey);
             }
         }
     }
@@ -515,6 +516,7 @@ public final class BoxDecorationPainter {
             List<BoxDecorations.Rect> tiles = BoxDecorations.tiles(layer, box, intrinsic, rootW, rootH,
                     box.style.fontSizePx(), box.style.rootFontSizePx());
             int part = 0;
+            int nodeHandle = box.node != null ? box.node.nodeId() : 0;
             for (BoxDecorations.Rect t : tiles) {
                 if (url != null) {
                     String tileSrc = url;
@@ -522,8 +524,9 @@ public final class BoxDecorationPainter {
                         // SVG はタイルの大きさで描く（拡大しても滲まない）。届くまでは描かない
                         tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box), devicePixelRatio);
                     }
+                    long bglPartKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BGL_BASE + ((i & 0x07) << 4) + (part & 0x0F)) : 0L;
                     addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,
-                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta);
+                            0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, imageMeta, bglPartKey);
                     continue;
                 }
                 // グラデーションはシェーダーが画素ごとに計算して描く（帯・格子の継ぎ目や段が出ない）。
@@ -539,8 +542,9 @@ public final class BoxDecorationPainter {
                 for (ShaderGradient segment : shaderGradients) {
                     ItemProps gradientEvents = events.copy();
                     gradientEvents.shaderGradient(segment);
+                    long bglPartKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BGL_BASE + ((i & 0x07) << 4) + (part & 0x0F)) : 0L;
                     addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.RECT, gx0, gy0, gx1 - gx0, gy1 - gy0, "",
-                            0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, gradientMeta);
+                            0, 0, gradientEvents, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, gradientMeta, bglPartKey);
                 }
             }
         }
@@ -563,10 +567,12 @@ public final class BoxDecorationPainter {
         if (cells.isEmpty()) return false;
         RenderMeta meta = new RenderMeta(clip, null, null, fontHVal, ox, oy, 1, false);
         int part = 0;
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         for (BorderImage.Cell c : cells) {
+            long biKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER_IMAGE_BASE + (part & 0x3F)) : 0L;
             addElement(elements, id, id + "_bi" + (part++), ElementType.IMAGE, ImageFitMode.FILL, c.dx(), c.dy(), c.dw(), c.dh(),
                     com.nishiyu.enderframelib.core.paint.software.CropSrc.of(c.sx(), c.sy(), c.sw(), c.sh(), url),
-                    0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta);
+                    0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, meta, biKey);
         }
         return true;
     }
@@ -596,6 +602,7 @@ public final class BoxDecorationPainter {
         float[][] regions = {{x0, y0, left, y1}, {right, y0, x1, y1}, {left, bottom, right, y1}};
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         for (int i = 0; i < regions.length; i++) {
             if (regions[i][2] <= regions[i][0] || regions[i][3] <= regions[i][1]) continue;
             ClipRect clip = ClipRect.fromArray(BoxDecorations.intersectClip(
@@ -605,13 +612,14 @@ public final class BoxDecorationPainter {
                         colors[0], colors[1], colors[2], colors[3], b.dashKind());
                 RenderMeta ringMeta = new RenderMeta(clip, meta.borderRadii(), null,
                         meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
+                long ringKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER_ROUND_BASE + (i & 0x0F)) : 0L;
                 addElement(elements, id, id + "_b_round_" + i, ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
-                        events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+                        events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, ringKey);
             } else {
                 RenderMeta clipped = new RenderMeta(clip, meta.borderRadii(), null,
                         meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
                 drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff,
-                        events, clipped, transDur, true);
+                        events, clipped, transDur, true, nodeHandle);
             }
         }
     }
@@ -630,15 +638,24 @@ public final class BoxDecorationPainter {
                 b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft(), b.dashKind());
         RenderMeta ringMeta = new RenderMeta(meta.clipRect(), meta.borderRadii(), null,
                 meta.fontHeight(), 0f, 0f, meta.originX(), meta.originY(), 1, false, spec);
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        long borderKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BORDER) : 0L;
         addElement(elements, id, id + "_b_round", ElementType.ROUNDED_BORDER, box.x, box.y, box.w, box.h, "", 0, 0x00000000,
-                events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta);
+                events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, ringMeta, borderKey);
     }
 
     void drawStraightBorders(List<DisplayItem> elements, String id, LayoutBox box, float rOff, ItemProps partsEvents, BorderSpec b, RenderMeta meta, int transDur) {
         float[] widths = {b.bwTop(), b.bwRight(), b.bwBottom(), b.bwLeft()};
         int[] colors = {b.bcTop(), b.bcRight(), b.bcBottom(), b.bcLeft()};
-        drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur);
+        drawLines(elements, id, "_b_", box.x, box.y, box.w, box.h, widths, b.styles(), colors, rOff, partsEvents, meta, transDur, false, box.node != null ? box.node.nodeId() : 0);
     }
+
+    private static final int[] BORDER_SIDE_PARTS = {
+            DisplayItem.PART_BORDER_TOP,
+            DisplayItem.PART_BORDER_RIGHT,
+            DisplayItem.PART_BORDER_BOTTOM,
+            DisplayItem.PART_BORDER_LEFT
+    };
 
     /**
      * 矩形の内側に沿った 4 辺の線（枠線と輪郭線で共有）。辺ごとに線種で片に分ける（{@link BoxDecorations}）。
@@ -650,13 +667,19 @@ public final class BoxDecorationPainter {
     void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
                            ItemProps events, RenderMeta meta, int transDur) {
-        drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, false);
+        drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, false, 0);
+    }
+
+    void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
+                           float[] widths, String[] styles, int[] colors, float rOff,
+                           ItemProps events, RenderMeta meta, int transDur, boolean numbered) {
+        drawLines(elements, id, prefix, x, y, w, h, widths, styles, colors, rOff, events, meta, transDur, numbered, 0);
     }
 
     /** {@code numbered} なら片の id をすべて番号付きにする（1 つの箱が複数の矩形に線を描くインラインの断片）。 */
     void drawLines(List<DisplayItem> elements, String id, String prefix, float x, float y, float w, float h,
                            float[] widths, String[] styles, int[] colors, float rOff,
-                           ItemProps events, RenderMeta meta, int transDur, boolean numbered) {
+                           ItemProps events, RenderMeta meta, int transDur, boolean numbered, int nodeHandle) {
         float[][] bands = {
                 {x + rOff, y, w - rOff * 2, widths[0]},
                 {x + w - widths[1], y + rOff, widths[1], h - rOff * 2},
@@ -678,10 +701,20 @@ public final class BoxDecorationPainter {
                 Corners corners = radius > 0 ? new Corners(radius, radius, radius, radius) : null;
                 RenderMeta segMeta = new RenderMeta(meta.clipRect(), corners, null,
                         meta.fontHeight(), meta.originX(), meta.originY(), 1, false);
-                String partId = numbered ? base + "_" + (fragIds.getAndIncrement()) : k == 0 ? base : base + "_" + k;
+                String partId;
+                long lineKey;
+                if (numbered) {
+                    int fid = fragIds.getAndIncrement();
+                    partId = base + "_" + fid;
+                    lineKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, FRAG_PART_BASE | (fid & FRAG_PART_MASK)) : 0L;
+                } else {
+                    partId = k == 0 ? base : base + "_" + k;
+                    int partOrdinal = BORDER_SIDE_PARTS[i] + (k & 0x03);
+                    lineKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, partOrdinal) : 0L;
+                }
                 addElement(elements, id, partId, ElementType.RECT, seg.x(), seg.y(), seg.w(), seg.h(),
                         "", 0, BoxDecorations.shade(colors[i], seg.shade()), events, radius, 1f, 0, 0, 1f, 1f, 0, transDur,
-                        AnimationSpec.NONE, segMeta);
+                        AnimationSpec.NONE, segMeta, lineKey);
             }
         }
     }

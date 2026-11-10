@@ -74,6 +74,11 @@ final class ItemProps {
             return this;
         }
 
+        ItemProps parentId(String id, long key) {
+            hints = hints.withParent(id, key);
+            return this;
+        }
+
         ItemProps title(String title) {
             hints = hints.withTitle(title);
             return this;
@@ -136,7 +141,8 @@ final class ItemProps {
 
     static ItemProps forParts(LayoutBox box, String id, TransitionSpec transSpec) {
         ItemProps partsEvents = new ItemProps();
-        partsEvents.parentId(id);
+        long nodeKey = box.node != null ? DisplayItem.nodeKeyOf(box.node.nodeId()) : 0L;
+        partsEvents.parentId(id, nodeKey);
         applyTransitionEvents(partsEvents, transSpec);
         if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) {
             partsEvents.put("font-family", box.style.get(CssPropertyIndex.FONT_FAMILY));
@@ -180,8 +186,12 @@ final class ItemProps {
     }
 
     static ItemProps forPassiveBorder(String id, TransitionSpec transSpec) {
+        return forPassiveBorder(id, 0L, transSpec);
+    }
+
+    static ItemProps forPassiveBorder(String id, long parentKey, TransitionSpec transSpec) {
         ItemProps passive = new ItemProps();
-        passive.parentId(id);
+        passive.parentId(id, parentKey);
         applyTransitionEvents(passive, transSpec);
         return passive;
     }

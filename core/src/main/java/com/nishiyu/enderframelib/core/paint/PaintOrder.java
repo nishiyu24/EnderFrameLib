@@ -820,10 +820,16 @@ final class PaintOrder {
      */
     void addMovingNode(List<DisplayItem> elements, String id, LayoutBox box, RenderMeta meta) {
         ItemProps events = new ItemProps();
-        events.parentId(box.node.key());
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
+        events.parentId(box.node.key(), nodeKey);
         events.pointerEventsNone();
+        long movingKey = nodeHandle > 0 ? (id.endsWith("_scrollv") ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V)
+                : id.endsWith("_scrollh") ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H)
+                : id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLL_CONTENT)
+                : DisplayItem.nodeKeyOf(nodeHandle)) : 0L;
         addElement(elements, id, id, ElementType.NODE, box.x, box.y, box.w, box.h, "", 0, 0, events, 0, 1f, 0, 0, 1f, 1f, 0, 0,
-                AnimationSpec.NONE, meta == null ? RenderMeta.EMPTY : new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false));
+                AnimationSpec.NONE, meta == null ? RenderMeta.EMPTY : new RenderMeta(null, null, null, 12.0f, 0.5f, 0.5f, 1, false), movingKey);
     }
 
     void drawScrollbarsIfNeeded(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect) {
@@ -834,8 +840,10 @@ final class PaintOrder {
         float curX = scrollState.getScrollX(box.node);
         float curY = scrollState.getScrollY(box.node);
 
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        long nodeKey = nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L;
         ItemProps sbEvents = new ItemProps();
-        sbEvents.parentId(box.node.key());
+        sbEvents.parentId(box.node.key(), nodeKey);
         ScrollContent content = scrollContentOf.get(box);
         ClipRect sbClip = clipRect;
         RenderMeta sbMeta = new RenderMeta(sbClip, new Corners(2, 2, 2, 2), null, 12.0f, 0.5f, 0.5f, 1, false);
@@ -849,16 +857,20 @@ final class PaintOrder {
             float maxScrollY = Math.max(1f, scrollH - box.h);
             float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
 
-            addElement(elements, box.node.key(), box.node.key() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
+            long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_V) : 0L;
+            long nodeVKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_V) : 0L;
+
+            addElement(elements, box.node.key(), box.node.key() + "_sb_vt", ElementType.RECT, trackX, trackY, barThickness, trackH, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
             ItemProps thumbEvents = sbEvents;
             if (content != null) { // つまみは、スクロール量に比例して動く節の下に置く（スクロールのたびに作り直さない）
                 content.thumbVId = box.node.key() + "_scrollv";
                 content.ky = (trackH - thumbH) / maxScrollY;
                 addMovingNode(elements, content.thumbVId, box, sbMeta);
                 thumbEvents = new ItemProps();
-                thumbEvents.parentId(content.thumbVId);
+                thumbEvents.parentId(content.thumbVId, nodeVKey);
             }
-            addElement(elements, box.node.key(), box.node.key() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_v", ElementType.RECT, trackX, thumbY, barThickness, thumbH, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, thumbKey);
         }
         if (scrollW > box.w + 2 && box.w > 12) {
             float trackX = box.x + box.bL + 2;
@@ -868,16 +880,20 @@ final class PaintOrder {
             float maxScrollX = Math.max(1f, scrollW - box.w);
             float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
 
-            addElement(elements, box.node.key(), box.node.key() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            long trackKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;
+            long thumbKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_H) : 0L;
+            long nodeHKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_SCROLLBAR_NODE_H) : 0L;
+
+            addElement(elements, box.node.key(), box.node.key() + "_sb_ht", ElementType.RECT, trackX, trackY, trackW, barThickness, "", 0, 0x33000000, sbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, trackKey);
             ItemProps thumbEvents = sbEvents;
             if (content != null) {
                 content.thumbHId = box.node.key() + "_scrollh";
                 content.kx = (trackW - thumbW) / maxScrollX;
                 addMovingNode(elements, content.thumbHId, box, sbMeta);
                 thumbEvents = new ItemProps();
-                thumbEvents.parentId(content.thumbHId);
+                thumbEvents.parentId(content.thumbHId, nodeHKey);
             }
-            addElement(elements, box.node.key(), box.node.key() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta);
+            addElement(elements, box.node.key(), box.node.key() + "_sb_h", ElementType.RECT, thumbX, trackY, thumbW, barThickness, "", 0, 0x88CCCCCC, thumbEvents, 2, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, sbMeta, thumbKey);
         }
     }
 

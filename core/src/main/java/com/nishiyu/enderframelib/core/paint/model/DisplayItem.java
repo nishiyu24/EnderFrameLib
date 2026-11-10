@@ -89,7 +89,22 @@ public record DisplayItem(
     public static final int PART_PLACEHOLDER = 0x700B;
     public static final int PART_SCROLLBAR_V = 0x700C;
     public static final int PART_SCROLLBAR_H = 0x700D;
+    public static final int PART_SCROLLBAR_TRACK_V = 0x700E;
+    public static final int PART_SCROLLBAR_TRACK_H = 0x700F;
+    public static final int PART_PROGRESS = 0x7010;
+    public static final int PART_CIRCLE_BORDER = 0x7011;
+    public static final int PART_BORDER_TOP = 0x7012;
+    public static final int PART_BORDER_RIGHT = 0x7013;
+    public static final int PART_BORDER_BOTTOM = 0x7014;
+    public static final int PART_BORDER_LEFT = 0x7015;
+    public static final int PART_GHOST_IMAGE = 0x7016;
+    public static final int PART_BGL_FALLBACK = 0x7017;
+    public static final int PART_SCROLLBAR_NODE_V = 0x7018;
+    public static final int PART_SCROLLBAR_NODE_H = 0x7019;
+    public static final int PART_SCROLL_CONTENT = 0x701A;
     public static final int PART_BGL_BASE = 0x7100;
+    public static final int PART_BORDER_ROUND_BASE = 0x7180;
+    public static final int PART_BORDER_IMAGE_BASE = 0x7200;
 
     /** 節自身（錨 NODE）の整数鍵。 */
     public static long nodeKeyOf(int nodeHandle) {
