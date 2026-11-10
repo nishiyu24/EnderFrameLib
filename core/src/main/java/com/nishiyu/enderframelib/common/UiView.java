@@ -1257,12 +1257,17 @@ public class UiView implements AutoCloseable {
         for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
         publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
         long layoutDone = System.nanoTime();
-        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
-        List<DisplayItem> elements;
-        try {
-            elements = paintBoxes(layoutRoot, rootW, rootH, false);
-        } finally {
-            useChangeStamps = false;
+        List<DisplayItem> elements = null;
+        if (paintBuilder != null && paintBuilder.canPatchBoxes(found.values())) {
+            elements = paintBuilder.patchBoxes(found.values());
+        }
+        if (elements == null) {
+            useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
+            try {
+                elements = paintBoxes(layoutRoot, rootW, rootH, false);
+            } finally {
+                useChangeStamps = false;
+            }
         }
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
@@ -1462,15 +1467,30 @@ public class UiView implements AutoCloseable {
                 changedParents, new java.util.HashSet<>(changedParents));
         publishLayoutToDom();
         long layoutDone = System.nanoTime();
-        useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
-        // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
-        exactTranslation = true;
-        List<DisplayItem> elements;
-        try {
-            elements = paintBoxes(layoutRoot, rootW, rootH, false);
-        } finally {
-            useChangeStamps = false;
-            exactTranslation = false;
+        List<DisplayItem> elements = null;
+        if (paintBuilder != null && plans.size() == 1) {
+            ChildPlan plan = plans.get(0);
+            List<LayoutBox> addedBoxes = built.get(0);
+            LayoutBox previousBox = null;
+            if (plan.previousNode() != null) {
+                for (LayoutBox b : plan.parentBox().children) {
+                    if (b.node == plan.previousNode()) { previousBox = b; break; }
+                }
+            }
+            if (paintBuilder.canPatchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox)) {
+                elements = paintBuilder.patchChildSlices(plan.parentBox(), plan.removed(), addedBoxes, previousBox);
+            }
+        }
+        if (elements == null) {
+            useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
+            // 属性は変わらず、後続の行が整数ぶん下へずれるだけの箱は、前回の項目を厳密に平行移動して使い回す
+            exactTranslation = true;
+            try {
+                elements = paintBoxes(layoutRoot, rootW, rootH, false);
+            } finally {
+                useChangeStamps = false;
+                exactTranslation = false;
+            }
         }
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();

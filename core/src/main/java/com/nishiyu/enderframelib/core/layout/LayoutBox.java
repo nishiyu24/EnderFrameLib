@@ -304,13 +304,29 @@ public class LayoutBox {
     private long cachedMinContentKey = Long.MIN_VALUE;
 
     // ==========================================
-    // 描画の変更印（paint stamp）
+    // 描画の変更印（paint stamp）＆ 表示リストスライス範囲（Segmented DisplayList）
     // ==========================================
     //
     // 箱の「描画に効く入力（位置・大きさ・スタイル・文字）」が書き換わりうる地点で、全体で単調に増える通し番号を書く。
     // 描画側（DisplayListBuilder）は、記憶を作った時点の通し番号より新しい印が自分にも祖先にも無い箱を「変わっていない」
     // とみなして、署名の比較を省ける。印は layout の再利用判定（measure を使い回す・配置を飛ばす）と同じ地点で付けるので、
     // レイアウトが「触っていない」と言う部分木は印も付かない。付け漏れは DisplayListBuilder の検証モードで検出する。
+
+    /**
+     * 直近の描画でこの箱自身が生成した DisplayItem の表示リスト上でのスライス範囲 [dlStart, dlEnd)。
+     * 項目を持たない、または未描画の箱は dlStart = dlEnd = -1。
+     */
+    public int dlStart = -1;
+    public int dlEnd = -1;
+    /** この箱が直近の描画で記録された順序（DisplayListBuilder.renderedBoxes 上でのインデックス）。未記録は -1。 */
+    public int dlOrder = -1;
+
+    /** 表示リストスライス範囲をリセットする。 */
+    public void clearDlSlice() {
+        dlStart = -1;
+        dlEnd = -1;
+        dlOrder = -1;
+    }
 
     private static final java.util.concurrent.atomic.AtomicLong PAINT_EPOCH = new java.util.concurrent.atomic.AtomicLong();
     /** 最後に描画入力が書き換わりうる地点を通った時の通し番号。新しい箱は常に新しい。 */
