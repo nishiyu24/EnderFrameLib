@@ -64,6 +64,7 @@ public final class BoxMeasurer {
         box.h = 0;
         box.legendSpill = 0;
         box.measuredClamped = false;
+        box.naturalInlineSize = Float.NaN;
 
         float parentW = tentativeInnerW;
         if (box.isFixed) {
@@ -125,6 +126,7 @@ public final class BoxMeasurer {
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             // 横の size containment がある箱（コンテナ）は、中身で幅が決まらない
             box.w = (box.containsInlineSize() ? 0 : contentW) + box.horizontalDecoration();
+            box.naturalInlineSize = box.w;
         }
 
         if (intrinsicWidth != StyleFacts.IW_NONE && !overridden) {

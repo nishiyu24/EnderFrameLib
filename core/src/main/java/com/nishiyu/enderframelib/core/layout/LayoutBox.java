@@ -142,6 +142,8 @@ public class LayoutBox {
     float legendSpill = 0;
     /** 直近の測定で、内容の幅が使える幅で切られた（shrink-to-fit の幅が使える幅に頭打ちされた）。ブロックの整形が決める。 */
     boolean measuredClamped;
+    /** shrink-to-fit の箱が、min/max-width で切り詰める前に内容から決まった幅（装飾込み）。決まらなければ NaN。 */
+    float naturalInlineSize = Float.NaN;
 
     /**
      * 指定された {@code height} / 最小・最大に関わらない内容の高さ（装飾を含む）。直近の測定で入る。
@@ -1043,6 +1045,11 @@ public class LayoutBox {
         // 使える幅がこの幅以上なら同じ結果。ちょうどの幅は収まる（整形は WRAP_TOLERANCE を許す）。使える幅で切られていた
         // 箱（measuredClamped）は、切られた幅と同じ w になるので、w では見分けられず別に印を持つ
         float need = w + mL + mR;
+        if (!textNode) {
+            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅が、使える幅に届くかの境目
+            if (Float.isNaN(naturalInlineSize)) return none;
+            need = naturalInlineSize + mL + mR;
+        }
         if (textNode) {
             // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
             List<ShapedLine> lines = shapedLines;
