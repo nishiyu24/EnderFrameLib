@@ -89,6 +89,10 @@ public final class StyleFacts {
      * 余白・パディング・オフセットに % がなく、横の余白も {@code auto} でない。
      */
     public boolean horizontalFixed;
+    /** {@code width: auto} で横の寸法に % / auto の余白 / ビューポート単位が無い（内容で決まり得る箱）。 */
+    public boolean fitCandidate;
+    /** 余白・パディング・オフセットに % / auto / ビューポート単位が無い（親が幅を決めて渡すなら、使える幅を読まない）。 */
+    public boolean edgesAvailableFree;
 
     /** 整形に使う、スタイルだけで決まる値。 */
     public com.nishiyu.enderframelib.core.text.model.WhiteSpace whiteSpace;
@@ -157,6 +161,14 @@ public final class StyleFacts {
                 || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_T) || s.edgeHasPercent(ComputedStyle.EDGE_PADDING_B)
                 || s.edgeHasPercent(ComputedStyle.DIM_LEFT) || s.edgeHasPercent(ComputedStyle.DIM_RIGHT)
                 || s.edgeHasPercent(ComputedStyle.DIM_TOP) || s.edgeHasPercent(ComputedStyle.DIM_BOTTOM);
+        // width: auto で、横方向の寸法のどれにも % / auto の余白 / ビューポート単位が無い。使える幅が余っている間は、
+        // 箱の寸法が使える幅に依らない（内容で決まる）箱の候補（LayoutBox の fit 再利用が、内容が収まっているかを調べて使う）
+        String flexBasis = s.get(CssPropertyIndex.FLEX_BASIS);
+        edgesAvailableFree = !usesViewportUnits && !percentGeometry
+                && (flexBasis == null || (flexBasis.indexOf('%') < 0 && !flexBasis.contains("calc")))
+                && !autoMarginT && !autoMarginR && !autoMarginB && !autoMarginL
+                && (wm == null || KeywordMatch.trimmedStartsWith(wm, "horizontal"));
+        fitCandidate = edgesAvailableFree && widthAuto && intrinsicWidthKind == IW_NONE;
         blockPercentFree = noBlockPercent(s.get(CssPropertyIndex.HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.MIN_HEIGHT))
                 && noBlockPercent(s.get(CssPropertyIndex.MAX_HEIGHT)) && noBlockPercent(s.get(CssPropertyIndex.TOP))
                 && noBlockPercent(s.get(CssPropertyIndex.BOTTOM)) && noBlockPercent(s.get(CssPropertyIndex.FLEX_BASIS))

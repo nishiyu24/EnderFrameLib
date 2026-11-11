@@ -140,6 +140,8 @@ public class LayoutBox {
      * {@link #verticalDecoration()} に入る。{@link BoxMeasurer} が legend を測ったあとに入れる。
      */
     float legendSpill = 0;
+    /** 直近の測定で、内容の幅が使える幅で切られた（shrink-to-fit の幅が使える幅に頭打ちされた）。ブロックの整形が決める。 */
+    boolean measuredClamped;
 
     /**
      * 指定された {@code height} / 最小・最大に関わらない内容の高さ（装飾を含む）。直近の測定で入る。
@@ -517,6 +519,12 @@ public class LayoutBox {
         }
 
         if (children.isEmpty()) {
+            // 置換要素は測った幅が固有の幅。子を持たない普通の箱の min-content は装飾だけ（今の w を読むと、親が先に
+            // 測った箱と後で測る箱で値が変わり、差分レイアウトが一から組んだ結果とずれる）
+            if (!ReplacedElements.isReplacedTag(node.tag) && !node.tag.equals("canvas") && !node.tag.equals("svg")
+                    && !node.tag.equals("img") && !node.tag.equals("video") && !node.tag.equals("iframe")) {
+                return horizontalDecoration();
+            }
             return this.w > 0 ? this.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
         }
 
@@ -605,6 +613,26 @@ public class LayoutBox {
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
+        measureCore(space, ctx);
+        noteFitToParent(measuredFitNeed);
+    }
+
+    /**
+     * 親の測定の最中に、親が渡した制約（上書き寸法なし）で測られた子が、使える幅に依らない（{@link #measuredFitNeed} が有限か、
+     * 幅が確定している）かを親に伝える。親の fit 判定は、子の最終状態（flex が後から上書き幅で測り直した記録）ではなく、
+     * 親の寸法を決めた測定のときの子の状態で行う（最終状態は親の寸法に依って決まり、使える幅への依存を隠す）。
+     */
+    private void noteFitToParent(float need) {
+        LayoutBox p = parent;
+        if (p != null && Float.isNaN(overrideWidth) && need == Float.POSITIVE_INFINITY && !measuredWidthFree) {
+            p.childFitBlocked = true;
+        }
+    }
+
+    /** 直近の測定で、使える幅に依る子（折り返す・切られる・幅を埋める）があった。測定の始めに下ろし、子の測定が立てる。 */
+    private boolean childFitBlocked;
+
+    private void measureCore(ConstraintSpace space, LayoutContext ctx) {
         restoreTentativeStash();
         for (LayoutBox child : children) adopt(child);
         if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
@@ -622,6 +650,7 @@ public class LayoutBox {
         MEASUREMENTS_COMPUTED.increment();
         if (layoutChanged) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
         touchPaint();
+        childFitBlocked = false;
         BoxMeasurer.measure(this, space, ctx);
         // エンジンが確定させ損ねた子（高さを測らない箱など）を、親が測り終える前に必ず確定させる
         if (hasTentativeChildren) settleTentativeChildren();
@@ -659,10 +688,26 @@ public class LayoutBox {
 
     /** 上書き寸法なしで測った結果の産物と、その入力。 */
     private record Tentative(ConstraintSpace space, Viewport viewport, FontResolver fonts,
-                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree) {
-        /** 同じ制約か。高さの % の基準が結果に効かない箱（{@link #percentFree}）は、それだけが違っても同じとみなす。 */
+                             IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree,
+                             float fitNeed) {
+        /**
+         * 同じ制約か。高さの % の基準が結果に効かない箱（{@link #percentFree}）は、それだけが違っても同じとみなす。
+         * 内容で寸法が決まる箱（{@link #fitNeed}）は、使える幅が前回も今回もそれ以上なら幅の違いも同じとみなす。
+         */
         boolean matches(ConstraintSpace s) {
-            return space.equals(s) || (percentFree && sameIgnoringPercentBlock(space, s));
+            return space.equals(s) || (percentFree && sameIgnoringPercentBlock(space, s)) || fitMatches(s);
+        }
+
+        boolean fitMatches(ConstraintSpace s) {
+            return fitNeed != Float.POSITIVE_INFINITY && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
+                    && Float.floatToIntBits(s.percentageBlockSize()) == Float.floatToIntBits(space.percentageBlockSize())
+                    && s.parent().equals(space.parent());
+        }
+
+        /** ビューポートが同じか。内容で寸法が決まる箱は、ビューポートの幅（と、読まない箱では高さ以外）の違いを許す。 */
+        boolean sameViewport(Viewport v) {
+            return viewport.equals(v) || (fitNeed != Float.POSITIVE_INFINITY && viewport.rootH() == v.rootH()
+                    && viewport.devicePixelRatio() == v.devicePixelRatio());
         }
     }
 
@@ -738,7 +783,7 @@ public class LayoutBox {
         if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
                 || floatSpace != null || collapsedBorders != null
                 || !t.matches(space)
-                || !ctx.viewport().equals(t.viewport()) || ctx.fonts() != t.fonts()
+                || !t.sameViewport(ctx.viewport()) || ctx.fonts() != t.fonts()
                 || ctx.intrinsicResolver() != t.intrinsics()) {
             return false;
         }
@@ -750,6 +795,7 @@ public class LayoutBox {
         invalidateMinContentCache();
         parent.hasTentativeChildren = true;
         TENTATIVE_SKIPPED.increment();
+        noteFitToParent(t.fitNeed());
         return true;
     }
 
@@ -924,6 +970,68 @@ public class LayoutBox {
                 && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
+    /**
+     * 内容で寸法が決まる箱（{@code width: auto} の shrink-to-fit と、折り返さない 1 行の文字）の fit 再利用。
+     * 親が渡す使える幅が {@link #measuredFitNeed} 以上なら、前回の幅が何であっても測定の結果は同じ
+     * （使える幅に届かず折り返す・縮められる箱だけが、使える幅に依る）。Blink の LayoutNG が fit-content の結果を
+     * 使い回すのと同じ考え方で、flex の項目・インラインブロック・span のように、幅が 1px 変わっても中身が収まっている箱を
+     * 測り直さない。切り分け用: {@code -Denderframe.layout.nofitreuse=true} で無効。
+     */
+    public static volatile boolean fitReuseEnabled = !Boolean.getBoolean("enderframe.layout.nofitreuse");
+
+    /** この使える幅以上なら測定の結果が同じ（無限大は当てはまらない）。測り終えたときに決める。 */
+    private float measuredFitNeed = Float.POSITIVE_INFINITY;
+
+    private boolean fitReuse(ConstraintSpace space, LayoutContext ctx) {
+        float need = measuredFitNeed;
+        if (!fitReuseEnabled || need == Float.POSITIVE_INFINITY || measuredSpace == null || measuredViewport == null) return false;
+        if (!(space.availableInlineSize() >= need) || !(measuredSpace.availableInlineSize() >= need)) return false;
+        Viewport vp = ctx.viewport(), old = measuredViewport;
+        // 文字は整形した行の幅・高さだけが結果で、親の整形コンテキスト（shrink かどうか）や % の基準には依らない
+        boolean sameContext = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                || (Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize())
+                        && space.parent().equals(measuredSpace.parent()));
+        return sameContext && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
+    }
+
+    private float computeFitNeed() {
+        final float none = Float.POSITIVE_INFINITY;
+        if (!fitReuseEnabled || parent == null || !measuredOutsideFree || measuredHasTable) return none;
+        if (floatSpace != null || collapsedBorders != null
+                || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
+        StyleFacts f = style.layoutFacts();
+        if (f.floating) return none;
+        boolean textNode = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT;
+        if (!Float.isNaN(overrideWidth)) {
+            // 幅は親が決めて渡した値（flex の伸縮・stretch）。中身はその幅で測るので、使える幅は余白・パディングの % と
+            // auto の余白にしか効かない。文字は使える幅で整形した行を持つので当てはまらない
+            return !textNode && f.edgesAvailableFree ? 0f : none;
+        }
+        if (!f.fitCandidate) return none;
+        // 使える幅がこの幅以上なら同じ結果。ちょうどの幅は収まる（整形は WRAP_TOLERANCE を許す）。使える幅で切られていた
+        // 箱（measuredClamped）は、切られた幅と同じ w になるので、w では見分けられず別に印を持つ
+        float need = w + mL + mR;
+        if (textNode) {
+            // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
+            List<ShapedLine> lines = shapedLines;
+            if (lines == null || lines.size() != 1 || style.containsKey(CssPropertyIndex.MAX_WIDTH)) return none;
+            return need;
+        }
+        Display.Inner inner = display.inner();
+        if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT) return none;
+        // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
+        // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。中身は文字・確定幅の箱・同じ条件の箱だけ
+        if (sizingMode != SizingMode.SHRINK_TO_FIT || measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
+                || containsInlineSize() || !measuredFlowFloatFree) return none;
+        if (childFitBlocked) return none;
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
+            if (c.style.facts().displayNone) continue;
+            if (c.isOutsideMarker || c.isAbsolute || BlockLayoutEngine.isFloating(c)) return none;
+        }
+        return need;
+    }
+
     private void recordWidthIndependence() {
         StyleFacts f = style.layoutFacts();
         boolean outside = !isAbsolute && !f.usesViewportUnits;
@@ -946,7 +1054,7 @@ public class LayoutBox {
                 && floatSpace == null
                 && collapsedBorders == null
                 && (((space.equals(measuredSpace) || (measuredBlockPercentFree && sameIgnoringPercentBlock(space, measuredSpace)))
-                        && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx))
+                        && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
                 && ctx.fonts() == measuredFonts
@@ -1015,10 +1123,15 @@ public class LayoutBox {
         }
         measuredFlowFloatFree = floatFree;
         layoutChanged = false;
+        boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
+        for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
+        measuredHasTable = hasTable;
+        recordWidthIndependence();
+        measuredFitNeed = computeFitNeed();
         if (tentativeReuse && parentUsesTentatives() && Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight)
                 && floatSpace == null && collapsedBorders == null) {
             Tentative fresh = new Tentative(space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(), measuredEpoch,
-                    BoxOutputs.capture(this), measuredBlockPercentFree);
+                    BoxOutputs.capture(this), measuredBlockPercentFree, !Float.isNaN(overrideWidth) ? Float.POSITIVE_INFINITY : measuredFitNeed);
             if (tentatives == null) tentatives = new Tentative[MAX_TENTATIVES];
             int slot = -1;
             for (int i = 0; i < tentatives.length; i++) {
@@ -1034,10 +1147,6 @@ public class LayoutBox {
             }
             tentatives[slot] = fresh;
         }
-        boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
-        for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
-        measuredHasTable = hasTable;
-        recordWidthIndependence();
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
         // いま祖先が測っている途中なら、祖先は測り終えたときに記録し直す

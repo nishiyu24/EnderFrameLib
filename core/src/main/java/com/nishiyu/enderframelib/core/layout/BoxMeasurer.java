@@ -63,6 +63,7 @@ public final class BoxMeasurer {
         // 以前は親が伸ばした高さ（表の行・stretch）が次の測定に残り、内容の高さが分からなくなっていた
         box.h = 0;
         box.legendSpill = 0;
+        box.measuredClamped = false;
 
         float parentW = tentativeInnerW;
         if (box.isFixed) {
