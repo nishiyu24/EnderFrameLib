@@ -414,9 +414,17 @@ public class RenderPipeline {
      */
     private static final ThreadLocal<List<LayoutBox>> LAYOUT_CHANGED_BOXES = ThreadLocal.withInitial(ArrayList::new);
 
+    /** 直近の {@link #restyleLayoutTree} で、スタイル（描画のみ）が変わった箱。UI スレッド専用。 */
+    private static final ThreadLocal<List<LayoutBox>> STYLE_CHANGED_BOXES = ThreadLocal.withInitial(ArrayList::new);
+
     /** このスレッドの印付け用の一時リスト（複数のビューが別スレッドで再レイアウトしても混ざらない）。 */
     static List<LayoutBox> layoutChangedBoxes() {
         return LAYOUT_CHANGED_BOXES.get();
+    }
+
+    /** 直近の再スタイルで描画スタイルのみが変化したボックス群。DisplayList スライスパッチ用。 */
+    public static List<LayoutBox> styleChangedBoxes() {
+        return STYLE_CHANGED_BOXES.get();
     }
 
     /**
@@ -688,6 +696,7 @@ public class RenderPipeline {
         // 共有の結果は再スタイルをまたいで残す（鍵は親の算出表の同一性・掛かった規則・数値の入力。シートの版・環境が変われば ShareCache が捨てる）。
         // 親が変わらない要素の「前に解いた規則の組」へ戻る往復（class の付け外しなど）が、解き直しなしで済む
         RenderPipeline.layoutChangedBoxes().clear();
+        RenderPipeline.styleChangedBoxes().clear();
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
             return restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
@@ -746,6 +755,8 @@ public class RenderPipeline {
                         if (!isGeometryOnlyChange(prevStyle, computed)) structural = true;
                         else RenderPipeline.layoutChangedBoxes().add(box);
                     }
+                } else {
+                    STYLE_CHANGED_BOXES.get().add(box);
                 }
             }
 
@@ -867,6 +878,9 @@ public class RenderPipeline {
 
         boolean styleChanged = !ComputedStyle.sameDeclarations(existing.style, next);
         boolean layoutRequired = styleChanged && StyleResolver.isLayoutAffectingChange(existing.style, next);
+        if (styleChanged && !layoutRequired) {
+            STYLE_CHANGED_BOXES.get().add(existing);
+        }
         existing.updateStyle(next);
         existing.hasInteractiveRules = owner.hasInteractiveRules;
         BoxTreeBuilder.restyleGeneratedBoxes(existing);

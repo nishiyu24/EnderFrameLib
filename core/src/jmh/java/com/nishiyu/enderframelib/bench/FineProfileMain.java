@@ -46,11 +46,13 @@ public final class FineProfileMain {
         String html = Workloads.html(doc);
         if ((scenario.equals("hover") || scenario.equals("scrollhover")) && Workloads.isList(doc)) html = html.replace("</style>", " li:hover { background: #eef; }</style>");
 
-        try (RenderBackend backend = switch (backendName) {
+        try (RenderBackend raw = switch (backendName) {
             case "cpu" -> new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
             case "gl" -> new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
             default -> new NullBackend();
         }) {
+            // 描画バックエンド呼び出し（CPU 側の描画・GL 送出・索引走査を含む）を PAINT 段として計るため包む。種別判定は raw で行う
+            RenderBackend backend = new com.nishiyu.enderframelib.core.paint.ProfilingRenderBackend(raw);
             StandaloneView[] view = {newView(html)};
             long[] now = {1000};
             view[0].frame(now[0], backend, true);
@@ -89,11 +91,11 @@ public final class FineProfileMain {
                     sorted[(int) (frames * 0.95)], sorted[(int) (frames * 0.99)], sorted[frames - 1], allocTotal / 1024.0 / frames);
             System.out.println("DOM elements=" + countElements(view[0].root()));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
-            if (backend instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " per-frame frames=" + (frames + warmup));
+            if (raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " per-frame frames=" + (frames + warmup));
             System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
                     + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
                     + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
-            if (backend instanceof SoftwareRenderBackend sw) {
+            if (raw instanceof SoftwareRenderBackend sw) {
                 try {
                     java.lang.reflect.Method p = SoftwareRenderBackend.class.getDeclaredMethod("partialFrames");
                     java.lang.reflect.Method f = SoftwareRenderBackend.class.getDeclaredMethod("fullFrames");
@@ -106,6 +108,36 @@ public final class FineProfileMain {
                 }
             }
             System.out.print(StageProfiler.report());
+            double stageTotal = 0;
+            for (StageProfiler.StageStats st : StageProfiler.snapshot()) {
+                // GPU 段は数フレーム遅れて届くタイマークエリで CPU フレーム時間と重複するため合算しない
+                if (st.stage() != com.nishiyu.enderframelib.core.diag.PipelineStage.GPU) stageTotal += st.totalMs();
+            }
+            double meanMs = sum / frames;
+            double accounted = stageTotal / frames;
+            System.out.printf("ACCOUNTED stages=%.4f ms/frame frame=%.4f ms explained=%.1f%% unaccounted=%.4f ms%n",
+                    accounted, meanMs, 100.0 * accounted / meanMs, meanMs - accounted);
+            System.out.println("PATCH slice(style/text) hit=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_HITS.sum()
+                    + " child-slice hit=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CHILD_SLICE_PATCH_HITS.sum()
+                    + " slice-fallback=" + com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_SLICE_PATCH_FALLBACKS.sum()
+                    + " | restyle: structural=" + UiView.RESTYLE_STRUCTURAL.get()
+                    + " relayoutFull=" + UiView.RESTYLE_RELAYOUT_FULL.get()
+                    + " relayoutInplace=" + UiView.RESTYLE_RELAYOUT_INPLACE.get()
+                    + " reposition=" + UiView.RESTYLE_REPOSITION.get()
+                    + " repaintPatch=" + UiView.RESTYLE_REPAINT_PATCH.get()
+                    + " repaintFull=" + UiView.RESTYLE_REPAINT_FULL.get()
+                    + " (ウォームアップ込み累計)");
+            StringBuilder cant = new StringBuilder("CANTPATCH");
+            for (int w = 0; w < 2; w++) {
+                cant.append(w == 0 ? " boxes[" : " child[");
+                for (int k = 0; k < 16; k++) {
+                    long c = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_CANT_PATCH[w][k].sum();
+                    if (c > 0) cant.append(k).append('=').append(c).append(' ');
+                }
+                cant.append(']');
+            }
+            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
+            System.out.println(cant);
         }
     }
 
