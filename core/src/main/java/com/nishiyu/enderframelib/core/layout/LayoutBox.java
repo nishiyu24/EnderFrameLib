@@ -613,8 +613,18 @@ public class LayoutBox {
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
-        measureCore(space, ctx);
-        noteFitToParent(measuredFitNeed);
+        // 親が決めた寸法は制約で受け取る。測定の中身は従来どおり overrideWidth / overrideHeight を読むので、測定の間だけ写す
+        // （測定の外では常に NaN。入れ子の測定は別の箱のフィールドなので干渉しない）
+        overrideWidth = space.fixedInlineSize();
+        overrideHeight = space.fixedBlockSize();
+        boolean fixedWidth = !Float.isNaN(overrideWidth);
+        try {
+            measureCore(space, ctx);
+        } finally {
+            overrideWidth = Float.NaN;
+            overrideHeight = Float.NaN;
+        }
+        noteFitToParent(measuredFitNeed, fixedWidth);
     }
 
     /**
@@ -622,9 +632,9 @@ public class LayoutBox {
      * 幅が確定している）かを親に伝える。親の fit 判定は、子の最終状態（flex が後から上書き幅で測り直した記録）ではなく、
      * 親の寸法を決めた測定のときの子の状態で行う（最終状態は親の寸法に依って決まり、使える幅への依存を隠す）。
      */
-    private void noteFitToParent(float need) {
+    private void noteFitToParent(float need, boolean fixedWidth) {
         LayoutBox p = parent;
-        if (p != null && Float.isNaN(overrideWidth) && need == Float.POSITIVE_INFINITY && !measuredWidthFree) {
+        if (p != null && !fixedWidth && need == Float.POSITIVE_INFINITY && !measuredWidthFree) {
             p.childFitBlocked = true;
         }
     }
@@ -795,7 +805,7 @@ public class LayoutBox {
         invalidateMinContentCache();
         parent.hasTentativeChildren = true;
         TENTATIVE_SKIPPED.increment();
-        noteFitToParent(t.fitNeed());
+        noteFitToParent(t.fitNeed(), false);
         return true;
     }
 

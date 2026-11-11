@@ -131,12 +131,7 @@ public class TableLayoutEngine extends LayoutEngine {
         // 列幅でセルを測り直す
         for (CellSlot slot : state.cells) {
             float w = spanWidth(state, slot.col, slot.colSpan);
-            slot.cell.overrideWidth = w;
-            try {
-                slot.cell.measure(new ConstraintSpace(w, parentH, FIXED_CELL), ctx);
-            } finally {
-                slot.cell.overrideWidth = Float.NaN;
-            }
+            slot.cell.measure(new ConstraintSpace(w, parentH, FIXED_CELL).withFixed(w, Float.NaN), ctx);
             slot.naturalHeight = slot.cell.h;
         }
         for (LayoutBox caption : state.captions) {

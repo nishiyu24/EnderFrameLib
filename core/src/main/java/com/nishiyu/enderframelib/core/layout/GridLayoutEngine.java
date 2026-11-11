@@ -589,14 +589,8 @@ public class GridLayoutEngine extends LayoutEngine {
                 if (Math.abs(b.h - target) > 0.01f) {
                     // 伸ばした高さは確定した高さとして測り直す（CSS Grid §6.2: 子の % の高さの基準になる）。
                     // 以前は高さだけを書き換えて解き直していて、中の height: 100% が 0 のままだった
-                    b.overrideWidth = b.w;
-                    b.overrideHeight = Math.max(0, target);
-                    try {
-                        b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false)), ctx);
-                    } finally {
-                        b.overrideWidth = Float.NaN;
-                        b.overrideHeight = Float.NaN;
-                    }
+                    b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false))
+                            .withFixed(b.w, Math.max(0, target)), ctx);
                 }
             } else if (isPercentage(b.style.get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
                 // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。

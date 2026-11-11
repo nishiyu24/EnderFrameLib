@@ -396,15 +396,8 @@ public class FlexLayoutEngine extends LayoutEngine {
     }
 
     private static void remeasure(LayoutBox child, float width, float height, Axes axes, ConstraintSpace space, LayoutContext ctx) {
-        child.overrideWidth = width;
-        child.overrideHeight = height;
-        try {
-            FormattingContext childCtx = FormattingContext.of(axes.direction, true, false);
-            child.measure(new ConstraintSpace(width, itemPercentageBase(child.parent, space, ctx), childCtx), ctx);
-        } finally {
-            child.overrideWidth = Float.NaN;
-            child.overrideHeight = Float.NaN;
-        }
+        FormattingContext childCtx = FormattingContext.of(axes.direction, true, false);
+        child.measure(new ConstraintSpace(width, itemPercentageBase(child.parent, space, ctx), childCtx).withFixed(width, height), ctx);
     }
 
     /**
