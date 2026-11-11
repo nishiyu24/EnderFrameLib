@@ -182,6 +182,51 @@ class DisplayListSlicePatchTest {
         assertItemsEqual(expectedItems, patchedItems, "テキスト更新でパッチ結果がフル描画結果と 100% 一致");
     }
 
+    private static final String SCROLL_HTML = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+              body { margin: 10px; font-size: 14px; color: #222222; }
+              body.alt { color: #aa3300; }
+              #scroller { overflow: auto; height: 90px; background: #eeeeee; border: 1px solid #999; }
+              .row { padding: 4px; margin: 2px 0; background: #dddddd; }
+            </style>
+            </head>
+            <body id="b">
+              <div id="scroller">
+                <div class="row">Row 0</div><div class="row">Row 1</div><div class="row">Row 2</div>
+                <div class="row">Row 3</div><div class="row">Row 4</div><div class="row">Row 5</div>
+                <div class="row">Row 6</div><div class="row">Row 7</div><div class="row">Row 8</div>
+              </div>
+              <div id="after" class="row">After scroller</div>
+            </body>
+            </html>
+            """;
+
+    /** スクロール付きの箱が変更ボックスに入っても（継承色の変更）、局所パッチが成立し全再構築と一致する。 */
+    @Test
+    void inheritedChangeWithScrollContainerPatchesAndMatchesFullRender() {
+        StandaloneView viewPatch = new StandaloneView(SCROLL_HTML, W, H, FontResolver.FALLBACK);
+        StandaloneView viewFull = new StandaloneView(SCROLL_HTML, W, H, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+        flush(viewFull, false);
+
+        for (int step = 0; step < 4; step++) {
+            String cls = step % 2 == 0 ? "alt" : "";
+            long hitsBefore = UiView.RESTYLE_REPAINT_PATCH.get();
+            ((HtmlElement) viewPatch.root().getNodeById("b")).setAttribute("class", cls);
+            ((HtmlElement) viewFull.root().getNodeById("b")).setAttribute("class", cls);
+            List<DisplayItem> patchedItems = flush(viewPatch, true);
+            List<DisplayItem> expectedItems = flush(viewFull, false);
+            assertItemsEqual(expectedItems, patchedItems, "継承色変更 step " + step + "（スクロール付きの箱を含む）で全再構築と一致");
+            if (step == 0) {
+                assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > hitsBefore,
+                        "スクロール付きの箱を含む継承変更でスライスパッチが成立する");
+            }
+        }
+    }
+
     @Test
     void childInsertMiddleMatchesFullRender() {
         StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
