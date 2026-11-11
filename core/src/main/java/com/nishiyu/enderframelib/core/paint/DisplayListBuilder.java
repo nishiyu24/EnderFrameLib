@@ -117,6 +117,22 @@ public class DisplayListBuilder {
     /** 診断: 表示リストの差分スライスパッチ成功回数（全ボックス走査スキップ）。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
     public static final java.util.concurrent.atomic.LongAdder STAT_CHILD_SLICE_PATCH_HITS = new java.util.concurrent.atomic.LongAdder();
+    /** パッチ不成立の理由別カウンタ（計測用）。[0]=canPatchBoxes、[1]=canPatchChildSlices。添字は各判定内の if の出現順。 */
+    public static final java.util.concurrent.atomic.LongAdder[][] STAT_CANT_PATCH = {
+        newAdders(16), newAdders(16)
+    };
+
+    private static java.util.concurrent.atomic.LongAdder[] newAdders(int n) {
+        java.util.concurrent.atomic.LongAdder[] a = new java.util.concurrent.atomic.LongAdder[n];
+        for (int i = 0; i < n; i++) a[i] = new java.util.concurrent.atomic.LongAdder();
+        return a;
+    }
+
+    private static boolean cant(int which, int reason) {
+        STAT_CANT_PATCH[which][reason].increment();
+        return false;
+    }
+
     public static final java.util.concurrent.atomic.LongAdder STAT_SLICE_PATCH_FALLBACKS = new java.util.concurrent.atomic.LongAdder();
 
     /** 現在保持されている完全な表示リストを取得する（未描画時は null）。 */
@@ -1057,19 +1073,44 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
      */
     public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return false;
-        if (boxes == null || boxes.isEmpty()) return false;
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(0, 0);
+        if (boxes == null || boxes.isEmpty()) return cant(0, 1);
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
         for (LayoutBox b : boxes) {
-            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) return false;
-            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) return false;
-            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return false;
+            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) return cant(0, 2);
+            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(0, 3);
+            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(0, 4);
             if (b.style != null) {
                 var facts = PaintOrder.factsOf(b.style);
-                if (facts.scrollbars() || facts.hasAnimation()) return false;
+                if (facts.scrollbars() || facts.hasAnimation()) return cant(0, 5);
             }
-            if (order.createsStackingContext(b)) return false;
+            if (order.createsStackingContext(b, b.style)) return cant(0, 6);
+            BoxMemo m = boxMemo.get(b);
+            if (m != null) {
+                if (m.style != null) {
+                    var prevFacts = PaintOrder.factsOf(m.style);
+                    if (prevFacts.scrollbars() || prevFacts.hasAnimation()) return cant(0, 5);
+                    if (order.createsStackingContext(b, m.style)) return cant(0, 6);
+                }
+                if (m.nums != null && m.nums.length >= 4) {
+                    if (Float.compare(m.nums[0], b.x) != 0 || Float.compare(m.nums[1], b.y) != 0
+                            || Float.compare(m.nums[2], b.w) != 0 || Float.compare(m.nums[3], b.h) != 0) {
+                        return cant(0, 8);
+                    }
+                }
+            }
+        }
+        if (boxes.size() > 1) {
+            List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
+            if (sorted.size() > 1) {
+                sorted.sort((x, y) -> Integer.compare(x.dlStart, y.dlStart));
+                for (int i = 0, n = sorted.size(); i < n - 1; i++) {
+                    LayoutBox b1 = sorted.get(i);
+                    LayoutBox b2 = sorted.get(i + 1);
+                    if (b1.dlEnd > b2.dlStart) return cant(0, 7);
+                }
+            }
         }
         return true;
     }
@@ -1094,7 +1135,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
 
         // 複数ボックスがある場合、dlStart の降順（末尾から先頭へ）でソート
-        List<LayoutBox> sorted = new ArrayList<>(boxes);
+        List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
         if (sorted.size() > 1) {
             sorted.sort((a, b) -> Integer.compare(b.dlStart, a.dlStart));
         }
@@ -1143,40 +1184,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /**
      * 子要素の増減（CHILD_PATCH）に対して、削除されたボックスと追加されたボックスのスライスを差分差し替え可能か判定する。
+     * （R2 で後続座標シフト・親寸法更新のチャンク化とともに本格成立させるため、現時点では理由 12 でフォールバック）
      */
     public boolean canPatchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return false;
-        if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return false;
-        if (order.createsStackingContext(parentBox)) return false;
-
-        // 削除ボックスの検証
-        if (!removed.isEmpty()) {
-            List<LayoutBox> allRemoved = new ArrayList<>();
-            for (LayoutBox r : removed) collectSubtreeBoxes(r, allRemoved);
-            if (allRemoved.isEmpty()) return false;
-            int firstOrder = allRemoved.get(0).dlOrder;
-            if (firstOrder < 0 || firstOrder >= renderedBoxes.size()) return false;
-            for (int i = 0; i < allRemoved.size(); i++) {
-                LayoutBox b = allRemoved.get(i);
-                if (b.dlOrder != firstOrder + i || b.dlStart < 0 || b.dlEnd < b.dlStart) return false;
-                if (renderedBoxes.get(b.dlOrder) != b) return false;
-                if (i > 0 && b.dlStart != allRemoved.get(i - 1).dlEnd) return false; // 表示リスト上でも連続
-                if (order.createsStackingContext(b)) return false;
-            }
-        }
-
-        // 挿入位置の検証
-        if (afterBox != null) {
-            if (afterBox.dlEnd < 0 || afterBox.dlOrder < 0 || afterBox.dlOrder >= renderedBoxes.size()) return false;
-            if (renderedBoxes.get(afterBox.dlOrder) != afterBox) return false;
-        }
-
-        // 追加ボックスの検証
-        for (LayoutBox a : added) {
-            if (order.createsStackingContext(a)) return false;
-        }
-
-        return true;
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(1, 0);
+        if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
+        // 後続アイテムの y 座標シフトおよび祖先ボックス寸法の同期は R2 で実装
+        return cant(1, 12);
     }
 
     /**

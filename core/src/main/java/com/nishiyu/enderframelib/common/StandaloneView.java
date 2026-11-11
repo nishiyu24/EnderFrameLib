@@ -54,9 +54,6 @@ public final class StandaloneView implements AutoCloseable {
 
     /** 窓のための {@link UiView}。フォントと、時計（フレームの時刻）と、画面外の箱を省く描画だけ差し込む。 */
     private final class Ui extends UiView {
-        private DisplayListBuilder builder;
-        private Object builderKeyframes;
-
         Ui() {
             super("standalone");
         }
@@ -72,29 +69,10 @@ public final class StandaloneView implements AutoCloseable {
         }
 
         @Override
-        protected List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> builtScrollContents() {
-            return builder != null ? builder.scrollContents() : List.of();
-        }
-
-        @Override
         protected List<DisplayItem> paintBoxes(LayoutBox root, int w, int h, boolean scrollOnly) {
-            var keyframes = document().sheet.keyframes;
-            if (builder == null || builderKeyframes != keyframes) {
-                builder = new DisplayListBuilder(w, h, keyframes, scrollState());
-                builderKeyframes = keyframes;
-            }
-            // スクロールだけなら中身は前回と同じ。画面の外の箱は項目を作らない（全件を作るのは再スタイルのとき）。
-            // 動いただけの箱は前回の項目を平行移動して使うので、位置が最大 1 画素ずれうる: 止まったら厳密に描き直す
-            builder.setUseChangeStamps(useChangeStamps());
-            builder.setExactTranslation(exactTranslation());
-            List<DisplayItem> items;
-            try {
-                items = builder.render(root, scrollOnly);
-            } finally {
-                builder.setUseChangeStamps(false);
-                builder.setExactTranslation(false);
-            }
-            settlePending = scrollOnly && builder.translatedHits() > 0;
+            List<DisplayItem> items = super.paintBoxes(root, w, h, scrollOnly);
+            DisplayListBuilder b = paintBuilder();
+            settlePending = scrollOnly && b != null && b.translatedHits() > 0;
             lastScrollPaintAt = lastNow;
             return items;
         }

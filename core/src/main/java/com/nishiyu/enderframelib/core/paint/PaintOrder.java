@@ -609,14 +609,19 @@ final class PaintOrder {
      * Compositing 1 / Transforms 1 の追加分）。
      */
     boolean createsStackingContext(LayoutBox box) {
-        StyleFacts f = factsOf(box.style);
+        return createsStackingContext(box, box != null ? box.style : null);
+    }
+
+    boolean createsStackingContext(LayoutBox box, com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        if (box == null || style == null) return false;
+        StyleFacts f = factsOf(style);
         boolean zAuto = f.zAuto();
         if (isPositioned(box) && !zAuto) return true;
         if (box.isFixed || box.isSticky) return true;
         if (!zAuto && isFlexOrGridItem(box)) return true;
         if (f.opacity() < 1f) return true;
         // opacity を動かすアニメーションは、静的な値が 1 でも動いている間スタッキングコンテキストを作る（CSS Positioned Layout 3 §2）
-        if (animatesOpacity.test(box)) return true;
+        if (animatesOpacity != null && animatesOpacity.test(box)) return true;
         // transform・filter・clip-path・mask・backdrop-filter・isolation・mix-blend-mode（CSS Masking 1 / Filter Effects 2 / Compositing 1）
         return f.stackingByStyle();
     }

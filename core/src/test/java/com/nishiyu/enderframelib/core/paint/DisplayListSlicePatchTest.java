@@ -39,7 +39,10 @@ class DisplayListSlicePatchTest {
               body { margin: 10px; font-size: 14px; }
               .card { padding: 8px; margin: 4px 0; background: #f0f0f0; border: 1px solid #ccc; }
               .btn { display: block; padding: 4px 8px; background: #007acc; color: #fff; }
+              .btn:hover { background: #005a9e; }
               .btn.hot { background: #e04040; }
+              .btn.trans { transition: background 0.3s; background: #28a745; }
+              .btn.stacked { opacity: 0.8; background: #333333; }
               .list { margin: 4px 0; padding: 0; }
               .item { padding: 6px; margin: 2px 0; background: #e8e8e8; border-bottom: 1px solid #ddd; }
             </style>
@@ -123,12 +126,14 @@ class DisplayListSlicePatchTest {
 
         HtmlElement btn1Patch = (HtmlElement) viewPatch.root().getNodeById("btn1");
         HtmlElement btn1Full = (HtmlElement) viewFull.root().getNodeById("btn1");
+        long patchHitsBefore = UiView.RESTYLE_REPAINT_PATCH.get();
         btn1Patch.setAttribute("class", "btn hot");
         btn1Full.setAttribute("class", "btn hot");
 
         List<DisplayItem> patchedItems = flush(viewPatch, true);
         List<DisplayItem> expectedItems = flush(viewFull, false);
 
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > patchHitsBefore, "単一スタイル変更で RESTYLE_REPAINT_PATCH がヒットしている");
         assertItemsEqual(expectedItems, patchedItems, "単一スタイル変更でパッチ結果がフル描画結果と 100% 一致");
     }
 
@@ -139,6 +144,7 @@ class DisplayListSlicePatchTest {
         flush(viewPatch, true);
         flush(viewFull, false);
 
+        long patchHitsBefore = UiView.RESTYLE_REPAINT_PATCH.get();
         for (String id : List.of("btn1", "btn2", "btn3")) {
             ((HtmlElement) viewPatch.root().getNodeById(id)).setAttribute("class", "btn hot");
             ((HtmlElement) viewFull.root().getNodeById(id)).setAttribute("class", "btn hot");
@@ -147,6 +153,7 @@ class DisplayListSlicePatchTest {
         List<DisplayItem> patchedItems = flush(viewPatch, true);
         List<DisplayItem> expectedItems = flush(viewFull, false);
 
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > patchHitsBefore, "複数スタイル変更で RESTYLE_REPAINT_PATCH がヒットしている");
         assertItemsEqual(expectedItems, patchedItems, "複数スタイル変更でパッチ結果がフル描画結果と 100% 一致");
     }
 
@@ -339,5 +346,77 @@ class DisplayListSlicePatchTest {
 
         assertTrue(UiView.CHILD_PATCH_HITS.get() > startChildHits, "Child patch hits increased in random ops");
         assertTrue(UiView.TEXT_PATCH_HITS.get() > startTextHits, "Text patch hits increased in random ops");
+    }
+
+    @Test
+    void hoverToggleStylePatchMatchesFullRender() {
+        StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        StandaloneView viewFull = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+        flush(viewFull, false);
+
+        HtmlElement btn1Patch = (HtmlElement) viewPatch.root().getNodeById("btn1");
+        HtmlElement btn1Full = (HtmlElement) viewFull.root().getNodeById("btn1");
+
+        // 1. :hover を付与
+        long hits1 = UiView.RESTYLE_REPAINT_PATCH.get();
+        viewPatch.ui().setHoveredElement("btn1");
+        viewFull.ui().setHoveredElement("btn1");
+        List<DisplayItem> patched1 = flush(viewPatch, true);
+        List<DisplayItem> expected1 = flush(viewFull, false);
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > hits1, ":hover 付与で RESTYLE_REPAINT_PATCH がヒットする");
+        assertItemsEqual(expected1, patched1, ":hover 付与でパッチ結果がフル描画結果と 100% 一致");
+
+        // 2. :hover を解除（往復）
+        long hits2 = UiView.RESTYLE_REPAINT_PATCH.get();
+        viewPatch.ui().setHoveredElement(null);
+        viewFull.ui().setHoveredElement(null);
+        List<DisplayItem> patched2 = flush(viewPatch, true);
+        List<DisplayItem> expected2 = flush(viewFull, false);
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > hits2, ":hover 解除で RESTYLE_REPAINT_PATCH がヒットする");
+        assertItemsEqual(expected2, patched2, ":hover 解除でパッチ結果がフル描画結果と 100% 一致");
+    }
+
+    @Test
+    void transitionStylePatchMatchesFullRender() {
+        StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        StandaloneView viewFull = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+        flush(viewFull, false);
+
+        HtmlElement btn2Patch = (HtmlElement) viewPatch.root().getNodeById("btn2");
+        HtmlElement btn2Full = (HtmlElement) viewFull.root().getNodeById("btn2");
+
+        long hitsBefore = UiView.RESTYLE_REPAINT_PATCH.get();
+        btn2Patch.setAttribute("class", "btn trans");
+        btn2Full.setAttribute("class", "btn trans");
+
+        List<DisplayItem> patched = flush(viewPatch, true);
+        List<DisplayItem> expected = flush(viewFull, false);
+
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > hitsBefore, "transition 要素のクラス変更で RESTYLE_REPAINT_PATCH がヒットする");
+        assertItemsEqual(expected, patched, "transition 要素のスタイル変更でパッチ結果がフル描画結果と 100% 一致");
+    }
+
+    @Test
+    void stackingContextStyleChangeFallsBackGracefully() {
+        StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        StandaloneView viewFull = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+        flush(viewFull, false);
+
+        HtmlElement btn3Patch = (HtmlElement) viewPatch.root().getNodeById("btn3");
+        HtmlElement btn3Full = (HtmlElement) viewFull.root().getNodeById("btn3");
+
+        long fullRepaintsBefore = UiView.RESTYLE_REPAINT_FULL.get();
+        // position: relative; z-index: 5 を持つ stacked クラスへ変更
+        btn3Patch.setAttribute("class", "btn stacked");
+        btn3Full.setAttribute("class", "btn stacked");
+
+        List<DisplayItem> patched = flush(viewPatch, true);
+        List<DisplayItem> expected = flush(viewFull, false);
+
+        assertTrue(UiView.RESTYLE_REPAINT_FULL.get() > fullRepaintsBefore, "スタッキングコンテキスト要素のスタイル変更では安全に RESTYLE_REPAINT_FULL へフォールバックする");
+        assertItemsEqual(expected, patched, "フォールバック後もパッチ結果がフル描画結果と 100% 一致");
     }
 }

@@ -283,11 +283,16 @@ public class UiView implements AutoCloseable {
         builder.setUseChangeStamps(useChangeStamps);
         builder.setExactTranslation(exactTranslation);
         try {
-            return builder.render(root);
+            return builder.render(root, scrollOnly);
         } finally {
             builder.setUseChangeStamps(false);
             builder.setExactTranslation(false);
         }
+    }
+
+    /** 直近に表示リストを構築したビルダー。スライスパッチ判定やスクロール節情報参照に使用。 */
+    protected final com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder() {
+        return paintBuilder;
     }
 
     /** 次の {@link #paintBoxes} だけ、箱の変更印で署名の比較を省く（変わった箱が分かっている文字の局所パッチ）。 */
@@ -1054,12 +1059,35 @@ public class UiView implements AutoCloseable {
                 rootW, rootH,
                 env, interactionState);
         if (res.layoutRequired()) {
-            if (res.structural() || !tryRelayoutInPlace()) recomputeLayout(rootW, rootH);
+            if (res.structural()) {
+                RESTYLE_STRUCTURAL.incrementAndGet();
+                recomputeLayout(rootW, rootH);
+            } else if (!tryRelayoutInPlace()) {
+                RESTYLE_RELAYOUT_FULL.incrementAndGet();
+                recomputeLayout(rootW, rootH);
+            } else {
+                RESTYLE_RELAYOUT_INPLACE.incrementAndGet();
+            }
         } else if (repositionRequested || res.repositionRequired()) {
             // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
+            RESTYLE_REPOSITION.incrementAndGet();
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
         } else if (res.styleChanged()) {
-            repaintFromLayout();
+            List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
+            List<DisplayItem> patched = null;
+            if (paintBuilder == null) {
+                SLICE_NO_BUILDER.incrementAndGet();
+            } else if (!changedBoxes.isEmpty() && paintBuilder.canPatchBoxes(changedBoxes)) {
+                patched = paintBuilder.patchBoxes(changedBoxes);
+            }
+            if (patched != null) {
+                RESTYLE_REPAINT_PATCH.incrementAndGet();
+                publishBuilt(patched);
+                applyOverrides();
+            } else {
+                RESTYLE_REPAINT_FULL.incrementAndGet();
+                repaintFromLayout();
+            }
         } else if (!attrNodes.isEmpty()) {
             repaintAttrPatched(attrNodes);
         }
@@ -1258,7 +1286,9 @@ public class UiView implements AutoCloseable {
         publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
         long layoutDone = System.nanoTime();
         List<DisplayItem> elements = null;
-        if (paintBuilder != null && paintBuilder.canPatchBoxes(found.values())) {
+        if (paintBuilder == null) {
+            SLICE_NO_BUILDER.incrementAndGet();
+        } else if (paintBuilder.canPatchBoxes(found.values())) {
             elements = paintBuilder.patchBoxes(found.values());
         }
         if (elements == null) {
@@ -1289,6 +1319,16 @@ public class UiView implements AutoCloseable {
     public static volatile boolean childPatchEnabled = !Boolean.getBoolean("enderframe.ui.nochildpatch");
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
     public static final java.util.concurrent.atomic.AtomicLong CHILD_PATCH_FALLBACKS = new java.util.concurrent.atomic.AtomicLong();
+    /** 再スタイル経路（{@code restyleAndUpdate}）の行き先の内訳（計測用）。{@code RESTYLE_REPAINT_FULL} は表示リストを全体再構築した回数（スライスパッチ未使用）。 */
+    /** スライスパッチを試みる箇所で、表示リストのビルダーが無かった／子の計画が複数だった回数（計測用）。 */
+    public static final java.util.concurrent.atomic.AtomicLong SLICE_NO_BUILDER = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong SLICE_MULTI_PLAN = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_STRUCTURAL = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_FULL = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_RELAYOUT_INPLACE = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPOSITION = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_PATCH = new java.util.concurrent.atomic.AtomicLong();
+    public static final java.util.concurrent.atomic.AtomicLong RESTYLE_REPAINT_FULL = new java.util.concurrent.atomic.AtomicLong();
     /** 1 回の局所パッチで直す親の最大数・親ごとに増減できる子の最大数（超えたら全体の再レイアウトの方が安い）。 */
     private static final int CHILD_PATCH_MAX_PARENTS = 4;
     private static final int CHILD_PATCH_MAX_CHANGES = 16;
@@ -1468,6 +1508,8 @@ public class UiView implements AutoCloseable {
         publishLayoutToDom();
         long layoutDone = System.nanoTime();
         List<DisplayItem> elements = null;
+        if (paintBuilder == null) SLICE_NO_BUILDER.incrementAndGet();
+        else if (plans.size() != 1) SLICE_MULTI_PLAN.incrementAndGet();
         if (paintBuilder != null && plans.size() == 1) {
             ChildPlan plan = plans.get(0);
             List<LayoutBox> addedBoxes = built.get(0);
