@@ -102,6 +102,9 @@ public final class FineProfileMain {
                     java.lang.reflect.Method a = SoftwareRenderBackend.class.getDeclaredMethod("damageAborts");
                     java.lang.reflect.Method s = SoftwareRenderBackend.class.getDeclaredMethod("skippedItems");
                     p.setAccessible(true); f.setAccessible(true); a.setAccessible(true); s.setAccessible(true);
+                    java.lang.reflect.Method w = SoftwareRenderBackend.class.getDeclaredMethod("fullReasons");
+                    w.setAccessible(true);
+                    System.out.println("DAMAGE-WHY " + java.util.Arrays.toString((long[]) w.invoke(sw)));
                     System.out.println("DAMAGE partial=" + p.invoke(sw) + " full=" + f.invoke(sw) + " aborts=" + a.invoke(sw) + " skipped=" + s.invoke(sw));
                 } catch (ReflectiveOperationException e) {
                     throw new IllegalStateException(e);
