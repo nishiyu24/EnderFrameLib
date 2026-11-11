@@ -1240,6 +1240,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return windowedBuild && b.dlStart < 0 && b.dlEnd < 0 && b.dlOrder < 0 && offscreen(b);
     }
 
+    /** スクロール付きの箱の、スクロール節・つまみの出方を決める性質（overflow・scrollbar-width）が前回の記憶と同じか。記憶が無ければ false。 */
+    private boolean scrollTraitsUnchanged(LayoutBox b) {
+        BoxMemo m = boxMemo.get(b);
+        if (m == null || m.style == null || b.style == null) return false;
+        var now = PaintOrder.factsOf(b.style);
+        var prev = PaintOrder.factsOf(m.style);
+        if (!prev.scrollbars() || !java.util.Objects.equals(now.overflowX(), prev.overflowX())
+                || !java.util.Objects.equals(now.overflowY(), prev.overflowY())) return false;
+        return b.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class)
+                == m.style.keywordOf(CssPropertyIndex.SCROLLBAR_WIDTH, CssKeywords.ScrollbarWidth.class);
+    }
+
     /**
      * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
      */
@@ -1255,14 +1267,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(0, 4);
             if (b.style != null) {
                 var facts = PaintOrder.factsOf(b.style);
-                if (facts.scrollbars() || facts.hasAnimation()) return cant(0, 5);
+                if (facts.hasAnimation()) return cant(0, 5);
+                // スクロール付きの箱でも、つまみ・溝は箱自身のスライスの外（after 層）に出るので、
+                // スクロールの有無・overflow・scrollbar-width が前回と同じなら自身のスライスだけ差し替えればよい
+                if (facts.scrollbars() && !scrollTraitsUnchanged(b)) return cant(0, 5);
             }
             if (order.createsStackingContext(b, b.style)) return cant(0, 6);
             BoxMemo m = boxMemo.get(b);
             if (m != null) {
                 if (m.style != null) {
                     var prevFacts = PaintOrder.factsOf(m.style);
-                    if (prevFacts.scrollbars() || prevFacts.hasAnimation()) return cant(0, 5);
+                    if (prevFacts.hasAnimation()) return cant(0, 5);
+                    if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) return cant(0, 5);
                     if (order.createsStackingContext(b, m.style)) return cant(0, 6);
                 }
                 if (m.nums != null && m.nums.length >= 4) {

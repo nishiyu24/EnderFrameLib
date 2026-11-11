@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-11（**最新: **窓付き表示リストを実装（§8.6.2）: 大きい文書で画面外の箱の項目を作らず、2,000 行 GL の `hover` 1.06→0.26・`text` 1.61→0.37・`fontsize` 19.6→8.8 ms で Chrome を超え、`child` は約 18→2.25 ms（Chrome 1.09）。**その前提として、R2（`child`）は「スライスパッチ命中 100%・確保量削減」まで達成し時間 KPI は未達と確定（§6.10）していた。JFR 分解で、原因は平坦リストの O(N) そのものではなく「後続項目の再生成（散在ヒープのポインタ追い）」と「それに巻き込まれる下流索引の全面作り直し」と判明。現行方式の延長では `< 3 ms` に届かないため、DoD 再設計（座標を持たない Paint 表）と内容アドレス化・反復ブロックのインスタンス化（RTI）へ方針転換（§8）。**／前: R1 完了（§6.9）／前: R0 計測基盤補強完了（§6.8））
+> **最終更新**: 2026-11-11（**最新: スクロール付きの箱を含む局所パッチを許可（§8.6.11）: `inherited` の display-list が varied 3.3→1.18 ms・large 0.84→0.64 ms、パッチ命中 100%。**／前: **窓付き表示リストを実装（§8.6.2）: 大きい文書で画面外の箱の項目を作らず、2,000 行 GL の `hover` 1.06→0.26・`text` 1.61→0.37・`fontsize` 19.6→8.8 ms で Chrome を超え、`child` は約 18→2.25 ms（Chrome 1.09）。**その前提として、R2（`child`）は「スライスパッチ命中 100%・確保量削減」まで達成し時間 KPI は未達と確定（§6.10）していた。JFR 分解で、原因は平坦リストの O(N) そのものではなく「後続項目の再生成（散在ヒープのポインタ追い）」と「それに巻き込まれる下流索引の全面作り直し」と判明。現行方式の延長では `< 3 ms` に届かないため、DoD 再設計（座標を持たない Paint 表）と内容アドレス化・反復ブロックのインスタンス化（RTI）へ方針転換（§8）。**／前: R1 完了（§6.9）／前: R0 計測基盤補強完了（§6.8））
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -1126,6 +1126,23 @@ Chrome は `mem.js`（空ページからの Private 増分、各 3 回の平均�
 **測定上の注意**: プロセス Private の増分は GC の起きた位置で -20〜+75 MB と大きく振れ、削減の効果を示す尺度にならない（確保量そのものを指標にする）。ヒープ保持（42.7 MB）は変わらない。
 
 **残る大きい確保**: `StyleTable` の表が要素ごとに 4 つ（約 3.3 GB 相当/10%）、語ごとの `LineItem`・断片、インライン style の解析。`StyleTable` は、結果の複製を省く（保持する生宣言と作業表を分ける設計の見直し）か、疎な表にすれば減らせるが、いずれも影響が広い。
+
+#### 8.6.11 スクロール付きの箱を含む局所パッチ（2026-11-11）
+
+**原因（§8.6.8-2b の対処）**: `inherited`（body の `color`）では変更ボックスに `overflow: auto` の `#scroller` が含まれ、`canPatchBoxes` が理由 5（スクロールバーを持つ箱）で退き、窓付きの全面再構築に落ちていた。
+
+**実装**（`DisplayListBuilder.canPatchBoxes` / `scrollTraitsUnchanged`）: スクロールバーのつまみ・溝は箱自身のスライス `[dlStart, dlEnd)` の外（`PaintOrder` の after 層）に出る。そのため、**スクロールの有無・`overflow-x/y`・`scrollbar-width` が前回の記憶と同じ**なら、自身のスライスだけを差し替えればよい。変わるときと、記憶が無いとき、`animation` を持つときは従来どおり退く（理由 5）。
+
+**検証**: `DisplayListSlicePatchTest.inheritedChangeWithScrollContainerPatchesAndMatchesFullRender`（スクロール付きの箱を含む継承色変更を 4 手順往復し、毎回全再構築と全項目一致、かつ `RESTYLE_REPAINT_PATCH` が命中）。`:core:test` 全件グリーン。
+
+**実測**（`FineProfileMain inherited`・GL・1,500 フレーム、平均 ms）:
+
+| 文書 | 変更前 | 変更後 |
+| :-- | :-: | :-: |
+| varied-list-2000 `inherited` | 9.6（display-list 3.3） | **9.35（display-list 1.18）**、確保 3.2 MB/フレーム |
+| large-list-2000 `inherited` | 3.9（display-list 0.84） | **3.54（display-list 0.64）** |
+
+スライスパッチ命中は 100%（`repaintPatch=2100`・`repaintFull=0`・フォールバック 0）。`inherited` の残りは `restyle-local`（varied 6.2 / large 2.2 ms）で、要素ごとの定数コスト（`StyleStateAutomaton.compress`・`TextShaper.isAlreadyNormal`・`CssValue.dependsOnViewport`）が支配的。次はここの短絡（継承値を使わない要素の再解決を省く）と、varied `child` の後続行の置き直し（断片の再利用・窓外のレイアウト遅延）。
 
 R3（§7.3）は施策 2・3 とほぼ同一作業なのでそちらで進める。R2 の時間 KPI（`child` `< 3 ms`）は施策 4・5 の完了で再判定する。
 
