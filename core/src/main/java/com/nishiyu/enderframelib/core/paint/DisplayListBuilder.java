@@ -20,10 +20,13 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.TextShaper;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.paint.*;
 import com.nishiyu.enderframelib.core.paint.model.*;
 import com.nishiyu.enderframelib.core.text.*;
@@ -111,6 +114,8 @@ public class DisplayListBuilder {
     private List<DisplayItem> currentDisplayList;
     /** 直近に描画されたボックス（描画順 = 表示リスト上の dlStart 昇順）。 */
     private final List<LayoutBox> renderedBoxes = new ArrayList<>();
+    /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
+    private final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 直近の描画のルートボックス。 */
     private LayoutBox currentRoot;
 
@@ -170,6 +175,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     translating = cullOffscreen && TRANSLATE_ENABLED;
     translatedHits = 0;
     renderedBoxes.clear();
+    scrollBoxes.clear();
     currentRoot = box;
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
     List<DisplayItem> elements = new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
@@ -242,6 +248,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             owner.dlEnd = end;
             owner.dlOrder = renderedBoxes.size();
             renderedBoxes.add(owner);
+            if (owner.node != null && PaintOrder.factsOf(owner.style).scrollbars()) scrollBoxes.add(owner);
         }
         // 今回使われなかった箱（木から消えた箱）の記憶を捨てる
         // 掃除は数回に 1 度（毎回全件を辿るとリストの規模に比例する）。保持された部分木の中の箱は、部分木が使われていれば残す
@@ -249,6 +256,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             boxMemo.values().removeIf(m -> m.generation != generation && (m.chunk == null || m.chunk.generation != generation));
         }
         order.endRender();
+
         lastElementCount = elements.size();
         this.currentDisplayList = elements;
         this.currentRoot = box;
@@ -371,6 +379,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         com.nishiyu.enderframelib.core.css.ComputedStyle style;
         com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
         float[] nums;
+        float scrollW, scrollH;
         ClipRect clip;
         String parentId;
         /** 記憶を作ったときの属性の版番号（属性の写しを持たずに、書き換えがあったかを見分ける）。 */
@@ -530,6 +539,21 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 属性が変わらない更新（文字の局所パッチ）でだけ呼び出し側が有効にする。
      */
     private boolean stampClean(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        if (m.nums != null && m.nums.length >= 4) {
+            if (Float.compare(box.x, m.nums[0]) != 0 || Float.compare(box.y, m.nums[1]) != 0
+                    || Float.compare(box.w, m.nums[2]) != 0 || Float.compare(box.h, m.nums[3]) != 0) {
+                return false;
+            }
+        }
+        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) {
+            return false;
+        }
+        if (!box.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
+            LayoutBox.InlineFragment f0 = box.inlineFragments.get(0);
+            if (Float.compare(f0.x, m.fragNums[0]) != 0 || Float.compare(f0.y, m.fragNums[1]) != 0) {
+                return false;
+            }
+        }
         return m.parentBox == box.parent && box.pathPaintStamp(buildSerial) <= m.epoch
                 && m.canvasSource == (box == canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
                 && m.suppressShadow == suppressTextShadow && sameClip(m.clip, clip)
@@ -548,6 +572,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
         if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return 0;
+        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) return 0;
         float dx = box.x - m.nums[0], dy = box.y - m.nums[1];
         // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
         // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
@@ -671,6 +696,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         m.style = box.style;
         m.ancestors = ancestorStyles(box);
         m.nums = numsOf(box);
+        m.scrollW = box.scrollWidth;
+        m.scrollH = box.scrollHeight;
         m.clip = clip;
         m.parentId = parentId;
         m.attrVersion = box.node.attrVersion();
@@ -1032,13 +1059,18 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return null;
     }
 
+    private String contentParentIdOf(LayoutBox box) {
+        if (box == null) return null;
+        PaintOrder.ScrollContent sc = order.scrollContentOf(box);
+        if (sc != null) return sc.contentId;
+        return box.node != null ? box.node.key() : null;
+    }
+
     private String parentIdForBox(LayoutBox box) {
         BoxMemo m = boxMemo.get(box);
         if (m != null && m.parentId != null) return m.parentId;
         if (box.parent == null) return null;
-        PaintOrder.ScrollContent sc = order.scrollContentOf(box.parent);
-        if (sc != null) return sc.contentId;
-        return box.parent.node != null ? box.parent.node.key() : null;
+        return contentParentIdOf(box.parent);
     }
 
     private static void collectSubtreeBoxes(LayoutBox b, List<LayoutBox> out) {
@@ -1049,22 +1081,52 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
     }
 
-    private void renderSubtreeBoxes(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> out, List<LayoutBox> outBoxes) {
-        if (box == null || box.w <= 0 || box.h <= 0 || box.isAnonymous || (box.display != null && box.display.isNone())) return;
-        int start = out.size();
-        fragIds.set(0);
-        drawBoxSelfUncached(out, box, clip, parentId);
-        int end = out.size();
-        box.dlStart = start;
-        box.dlEnd = end;
-        outBoxes.add(box);
-        boxMemo.put(box, remember(box, clip, parentId, List.copyOf(out.subList(start, end))));
+    static final class SubtreeSlices {
+        final List<LayoutBox> blockBoxes = new ArrayList<>();
+        final List<LayoutBox> inlineBoxes = new ArrayList<>();
+    }
 
-        String childParent = box.node != null ? box.node.key() : parentId;
+    private void collectSubtreeSlices(LayoutBox box, SubtreeSlices out) {
+        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
+        if (!box.isAnonymous) {
+            if (box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT)) {
+                out.inlineBoxes.add(box);
+            } else {
+                out.blockBoxes.add(box);
+            }
+        }
+        if (box.children != null) {
+            for (LayoutBox c : box.children) {
+                collectSubtreeSlices(c, out);
+            }
+        }
+    }
+
+    private void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId,
+                                    List<DisplayItem> outBlocks, List<LayoutBox> outBlockBoxes,
+                                    List<DisplayItem> outInlines, List<LayoutBox> outInlineBoxes) {
+        if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
+
+        if (!box.isAnonymous) {
+            boolean isInline = box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT);
+            List<DisplayItem> targetItems = isInline ? outInlines : outBlocks;
+            List<LayoutBox> targetBoxes = isInline ? outInlineBoxes : outBlockBoxes;
+
+            int start = targetItems.size();
+            fragIds.set(0);
+            drawBoxSelfUncached(targetItems, box, clip, parentId);
+            int end = targetItems.size();
+            box.dlStart = start;
+            box.dlEnd = end;
+            targetBoxes.add(box);
+            boxMemo.put(box, remember(box, clip, parentId, List.copyOf(targetItems.subList(start, end))));
+        }
+
+        String childParent = (box.node != null && !box.isAnonymous) ? box.node.key() : parentId;
         ClipRect childClip = clip;
         if (box.children != null) {
             for (LayoutBox child : box.children) {
-                renderSubtreeBoxes(child, childClip, childParent, out, outBoxes);
+                renderSubtreeSlices(child, childClip, childParent, outBlocks, outBlockBoxes, outInlines, outInlineBoxes);
             }
         }
     }
@@ -1189,8 +1251,25 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     public boolean canPatchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
         if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(1, 0);
         if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
-        // 後続アイテムの y 座標シフトおよび祖先ボックス寸法の同期は R2 で実装
-        return cant(1, 12);
+        int listSize = currentDisplayList.size();
+        int boxCount = renderedBoxes.size();
+        if (!removed.isEmpty()) {
+            SubtreeSlices remSlices = new SubtreeSlices();
+            for (LayoutBox r : removed) collectSubtreeSlices(r, remSlices);
+            for (LayoutBox b : remSlices.blockBoxes) {
+                if (b.dlStart >= 0) {
+                    if (b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(1, 2);
+                    if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(1, 3);
+                }
+            }
+            for (LayoutBox b : remSlices.inlineBoxes) {
+                if (b.dlStart >= 0) {
+                    if (b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(1, 4);
+                    if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(1, 5);
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -1211,95 +1290,902 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
+        order.clearClips();
 
-        int remStart = -1;
-        int remEnd = -1;
-        int remOrderStart = -1;
-        int remCount = 0;
+        // 1. 削除スライスの特定と除去（ブロック層・インライン層）
+        int remBlockStart = -1, remBlockEnd = -1, remBlockOrderStart = -1, remBlockCount = 0;
+        int remInlineStart = -1, remInlineEnd = -1, remInlineOrderStart = -1, remInlineCount = 0;
 
         if (!removed.isEmpty()) {
-            List<LayoutBox> allRemoved = new ArrayList<>();
-            for (LayoutBox r : removed) collectSubtreeBoxes(r, allRemoved);
-            remStart = allRemoved.get(0).dlStart;
-            remEnd = allRemoved.get(allRemoved.size() - 1).dlEnd;
-            remOrderStart = allRemoved.get(0).dlOrder;
-            remCount = allRemoved.size();
+            SubtreeSlices remSlices = new SubtreeSlices();
+            for (LayoutBox r : removed) collectSubtreeSlices(r, remSlices);
 
-            // 表示リストから削除
-            currentDisplayList.subList(remStart, remEnd).clear();
-            // renderedBoxes から削除
-            renderedBoxes.subList(remOrderStart, remOrderStart + remCount).clear();
-            for (LayoutBox r : allRemoved) r.clearDlSlice();
+            // インライン層の削除区間
+            if (!remSlices.inlineBoxes.isEmpty()) {
+                int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
+                int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
+                for (LayoutBox b : remSlices.inlineBoxes) {
+                    if (b.dlStart >= 0 && b.dlEnd >= b.dlStart) {
+                        minS = Math.min(minS, b.dlStart);
+                        maxE = Math.max(maxE, b.dlEnd);
+                    }
+                    if (b.dlOrder >= 0) {
+                        minO = Math.min(minO, b.dlOrder);
+                        maxO = Math.max(maxO, b.dlOrder);
+                    }
+                }
+                if (minS != Integer.MAX_VALUE) {
+                    remInlineStart = minS;
+                    remInlineEnd = maxE;
+                    remInlineOrderStart = minO;
+                    remInlineCount = maxO - minO + 1;
+                }
+            }
+
+            // ブロック層の削除区間
+            if (!remSlices.blockBoxes.isEmpty()) {
+                int minS = Integer.MAX_VALUE, maxE = Integer.MIN_VALUE;
+                int minO = Integer.MAX_VALUE, maxO = Integer.MIN_VALUE;
+                for (LayoutBox b : remSlices.blockBoxes) {
+                    if (b.dlStart >= 0 && b.dlEnd >= b.dlStart) {
+                        minS = Math.min(minS, b.dlStart);
+                        maxE = Math.max(maxE, b.dlEnd);
+                    }
+                    if (b.dlOrder >= 0) {
+                        minO = Math.min(minO, b.dlOrder);
+                        maxO = Math.max(maxO, b.dlOrder);
+                    }
+                }
+                if (minS != Integer.MAX_VALUE) {
+                    remBlockStart = minS;
+                    remBlockEnd = maxE;
+                    remBlockOrderStart = minO;
+                    remBlockCount = maxO - minO + 1;
+                }
+            }
+
+            // 境界チェック
+            if (remInlineStart >= 0 && (remInlineEnd > currentDisplayList.size() || remInlineOrderStart + remInlineCount > renderedBoxes.size())) {
+                return null;
+            }
+            if (remBlockStart >= 0 && (remBlockEnd > currentDisplayList.size() || remBlockOrderStart + remBlockCount > renderedBoxes.size())) {
+                return null;
+            }
+
+            // 後ろの層から先に削除（通常はインライン層が後ろ）
+            if (remInlineStart >= 0 && remBlockStart >= 0) {
+                if (remInlineStart >= remBlockEnd) {
+                    currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
+                    renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
+                    currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
+                    renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
+                } else if (remBlockStart >= remInlineEnd) {
+                    currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
+                    renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
+                    currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
+                    renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
+                } else {
+                    return null; // 重複
+                }
+            } else if (remInlineStart >= 0) {
+                currentDisplayList.subList(remInlineStart, remInlineEnd).clear();
+                renderedBoxes.subList(remInlineOrderStart, remInlineOrderStart + remInlineCount).clear();
+            } else if (remBlockStart >= 0) {
+                currentDisplayList.subList(remBlockStart, remBlockEnd).clear();
+                renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
+            }
+
+            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
+            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
         }
 
-        // 挿入位置の決定
-        int insertDlPos;
-        int insertOrderPos;
-        if (remStart >= 0) {
-            insertDlPos = remStart;
-            insertOrderPos = remOrderStart;
-        } else if (afterBox != null) {
-            List<LayoutBox> afterSub = new ArrayList<>();
-            collectSubtreeBoxes(afterBox, afterSub);
-            LayoutBox lastAfter = afterSub.isEmpty() ? afterBox : afterSub.get(afterSub.size() - 1);
-            insertDlPos = lastAfter.dlEnd;
-            insertOrderPos = lastAfter.dlOrder + 1;
-        } else {
-            LayoutBox firstChildWithSlice = null;
-            if (parentBox.children != null) {
-                for (LayoutBox c : parentBox.children) {
-                    if (c.dlStart >= 0 && !added.contains(c)) {
-                        firstChildWithSlice = c;
-                        break;
+        // 2. 追加ボックスの描画スライス生成（ブロック層・インライン層）
+        List<DisplayItem> addedBlockItems = new ArrayList<>();
+        List<LayoutBox> addedBlockBoxes = new ArrayList<>();
+        List<DisplayItem> addedInlineItems = new ArrayList<>();
+        List<LayoutBox> addedInlineBoxes = new ArrayList<>();
+        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
+        ClipRect clip = order.contentClipOf(parentBox);
+        String parentId = contentParentIdOf(parentBox);
+
+        for (LayoutBox a : added) {
+            renderSubtreeSlices(a, clip, parentId, addedBlockItems, addedBlockBoxes, addedInlineItems, addedInlineBoxes);
+        }
+
+        // 3. 挿入位置の決定（ブロック層・インライン層）
+        int insertBlockPos = -1, insertBlockOrder = -1;
+        int insertInlinePos = -1, insertInlineOrder = -1;
+
+        int removedBlockItemsLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
+
+        if (remBlockStart >= 0) {
+            insertBlockPos = remBlockStart;
+            insertBlockOrder = remBlockOrderStart;
+        }
+
+        if (remInlineStart >= 0) {
+            insertInlinePos = remInlineStart - removedBlockItemsLen;
+            insertInlineOrder = remInlineOrderStart - remBlockCount;
+        }
+
+        if (insertBlockPos < 0 || insertInlinePos < 0) {
+            int afterIdx = (parentBox.children != null && afterBox != null) ? parentBox.children.indexOf(afterBox) : -1;
+
+            if (afterBox != null && afterIdx >= 0) {
+                // afterBox 以前の描画済みボックスを逆順探索
+                if (insertBlockPos < 0) {
+                    LayoutBox lastBlock = null;
+                    for (int i = afterIdx; i >= 0; i--) {
+                        LayoutBox c = parentBox.children.get(i);
+                        SubtreeSlices s = new SubtreeSlices();
+                        collectSubtreeSlices(c, s);
+                        for (int k = s.blockBoxes.size() - 1; k >= 0; k--) {
+                            LayoutBox b = s.blockBoxes.get(k);
+                            if (b.dlEnd >= 0 && b.dlOrder >= 0) {
+                                lastBlock = b;
+                                break;
+                            }
+                        }
+                        if (lastBlock != null) break;
+                        if (c.dlEnd >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                            lastBlock = c;
+                            break;
+                        }
+                    }
+                    if (lastBlock != null) {
+                        insertBlockPos = lastBlock.dlEnd;
+                        insertBlockOrder = lastBlock.dlOrder + 1;
+                    } else if (parentBox.dlEnd >= 0 && parentBox.dlOrder >= 0) {
+                        insertBlockPos = parentBox.dlEnd;
+                        insertBlockOrder = parentBox.dlOrder + 1;
+                    } else {
+                        // afterBox 以降の最初のブロックボックスを前方探索
+                        LayoutBox firstBlock = null;
+                        for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
+                            LayoutBox c = parentBox.children.get(i);
+                            if (added.contains(c)) continue;
+                            SubtreeSlices s = new SubtreeSlices();
+                            collectSubtreeSlices(c, s);
+                            for (LayoutBox b : s.blockBoxes) {
+                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
+                                    firstBlock = b;
+                                    break;
+                                }
+                            }
+                            if (firstBlock != null) break;
+                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                                firstBlock = c;
+                                break;
+                            }
+                        }
+                        if (firstBlock != null) {
+                            insertBlockPos = firstBlock.dlStart;
+                            insertBlockOrder = firstBlock.dlOrder;
+                        } else {
+                            insertBlockPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
+                            insertBlockOrder = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
+                        }
+                    }
+                }
+
+                if (insertInlinePos < 0) {
+                    LayoutBox lastInline = null;
+                    for (int i = afterIdx; i >= 0; i--) {
+                        LayoutBox c = parentBox.children.get(i);
+                        SubtreeSlices s = new SubtreeSlices();
+                        collectSubtreeSlices(c, s);
+                        for (int k = s.inlineBoxes.size() - 1; k >= 0; k--) {
+                            LayoutBox b = s.inlineBoxes.get(k);
+                            if (b.dlEnd >= 0 && b.dlOrder >= 0) {
+                                lastInline = b;
+                                break;
+                            }
+                        }
+                        if (lastInline != null) break;
+                    }
+                    if (lastInline != null) {
+                        insertInlinePos = lastInline.dlEnd;
+                        insertInlineOrder = lastInline.dlOrder + 1;
+                    } else {
+                        // afterBox 以降の最初のインラインボックスを前方探索
+                        LayoutBox firstInline = null;
+                        for (int i = afterIdx + 1; i < parentBox.children.size(); i++) {
+                            LayoutBox c = parentBox.children.get(i);
+                            if (added.contains(c)) continue;
+                            SubtreeSlices s = new SubtreeSlices();
+                            collectSubtreeSlices(c, s);
+                            for (LayoutBox b : s.inlineBoxes) {
+                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
+                                    firstInline = b;
+                                    break;
+                                }
+                            }
+                            if (firstInline != null) break;
+                        }
+                        if (firstInline != null) {
+                            insertInlinePos = firstInline.dlStart;
+                            insertInlineOrder = firstInline.dlOrder;
+                        } else {
+                            insertInlinePos = insertBlockPos;
+                            insertInlineOrder = insertBlockOrder;
+                        }
+                    }
+                }
+            } else {
+                // 先頭挿入または afterBox 不明
+                if (insertBlockPos < 0) {
+                    LayoutBox firstBlock = null;
+                    if (parentBox.children != null) {
+                        for (LayoutBox c : parentBox.children) {
+                            if (added.contains(c)) continue;
+                            SubtreeSlices s = new SubtreeSlices();
+                            collectSubtreeSlices(c, s);
+                            for (LayoutBox b : s.blockBoxes) {
+                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
+                                    firstBlock = b;
+                                    break;
+                                }
+                            }
+                            if (firstBlock != null) break;
+                            if (c.dlStart >= 0 && c.dlOrder >= 0 && !c.display.isInlineLevel()) {
+                                firstBlock = c;
+                                break;
+                            }
+                        }
+                    }
+                    if (firstBlock != null) {
+                        insertBlockPos = firstBlock.dlStart;
+                        insertBlockOrder = firstBlock.dlOrder;
+                    } else {
+                        insertBlockPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
+                        insertBlockOrder = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
+                    }
+                }
+
+                if (insertInlinePos < 0) {
+                    LayoutBox firstInline = null;
+                    if (parentBox.children != null) {
+                        for (LayoutBox c : parentBox.children) {
+                            if (added.contains(c)) continue;
+                            SubtreeSlices s = new SubtreeSlices();
+                            collectSubtreeSlices(c, s);
+                            for (LayoutBox b : s.inlineBoxes) {
+                                if (b.dlStart >= 0 && b.dlOrder >= 0) {
+                                    firstInline = b;
+                                    break;
+                                }
+                            }
+                            if (firstInline != null) break;
+                        }
+                    }
+                    if (firstInline != null) {
+                        insertInlinePos = firstInline.dlStart;
+                        insertInlineOrder = firstInline.dlOrder;
+                    } else {
+                        insertInlinePos = insertBlockPos;
+                        insertInlineOrder = insertBlockOrder;
                     }
                 }
             }
-            if (firstChildWithSlice != null) {
-                insertDlPos = firstChildWithSlice.dlStart;
-                insertOrderPos = firstChildWithSlice.dlOrder;
-            } else {
-                insertDlPos = parentBox.dlEnd >= 0 ? parentBox.dlEnd : 0;
-                insertOrderPos = parentBox.dlOrder >= 0 ? parentBox.dlOrder + 1 : 0;
+        }
+
+        // 境界値チェックと安全なフォールバック
+        if (insertBlockPos < 0 || insertBlockPos > currentDisplayList.size()
+                || insertBlockOrder < 0 || insertBlockOrder > renderedBoxes.size()
+                || insertInlinePos < 0 || insertInlinePos > currentDisplayList.size()
+                || insertInlineOrder < 0 || insertInlineOrder > renderedBoxes.size()) {
+            return null;
+        }
+
+        // 4. ブロック層の挿入と後続シフト
+        int remBlockLen = remBlockStart >= 0 ? (remBlockEnd - remBlockStart) : 0;
+        int deltaBlock = addedBlockItems.size() - remBlockLen;
+        if (!addedBlockItems.isEmpty()) {
+            for (LayoutBox b : addedBlockBoxes) {
+                b.dlStart += insertBlockPos;
+                b.dlEnd += insertBlockPos;
+            }
+            currentDisplayList.addAll(insertBlockPos, addedBlockItems);
+            renderedBoxes.addAll(insertBlockOrder, addedBlockBoxes);
+            for (LayoutBox ab : addedBlockBoxes) if (ab.node != null && PaintOrder.factsOf(ab.style).scrollbars()) scrollBoxes.add(ab);
+            if (deltaBlock != 0) {
+                for (int k = insertBlockOrder + addedBlockBoxes.size(), n = renderedBoxes.size(); k < n; k++) {
+                    LayoutBox succ = renderedBoxes.get(k);
+                    succ.dlStart += deltaBlock;
+                    succ.dlEnd += deltaBlock;
+                }
+            }
+        } else if (remBlockLen > 0) {
+            for (int k = insertBlockOrder, n = renderedBoxes.size(); k < n; k++) {
+                LayoutBox succ = renderedBoxes.get(k);
+                succ.dlStart -= remBlockLen;
+                succ.dlEnd -= remBlockLen;
             }
         }
 
-        // 追加ボックスの描画スライス生成
-        List<DisplayItem> addedItems = new ArrayList<>();
-        List<LayoutBox> addedBoxes = new ArrayList<>();
-        decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
-        ClipRect clip = clipForBox(parentBox);
-        String parentId = parentIdForBox(parentBox);
+        // ブロック層の変更がインライン層の挿入位置に及ぼす影響を反映
+        int actualInlinePos = insertInlinePos + addedBlockItems.size();
+        int actualInlineOrder = insertInlineOrder + addedBlockBoxes.size();
 
-        for (LayoutBox a : added) {
-            renderSubtreeBoxes(a, clip, parentId, addedItems, addedBoxes);
+        // 5. インライン層の挿入と後続シフト
+        int remInlineLen = remInlineStart >= 0 ? (remInlineEnd - remInlineStart) : 0;
+        int deltaInline = addedInlineItems.size() - remInlineLen;
+        if (!addedInlineItems.isEmpty()) {
+            for (LayoutBox b : addedInlineBoxes) {
+                b.dlStart += actualInlinePos;
+                b.dlEnd += actualInlinePos;
+            }
+            currentDisplayList.addAll(actualInlinePos, addedInlineItems);
+            renderedBoxes.addAll(actualInlineOrder, addedInlineBoxes);
+            for (LayoutBox ab : addedInlineBoxes) if (ab.node != null && PaintOrder.factsOf(ab.style).scrollbars()) scrollBoxes.add(ab);
+            if (deltaInline != 0) {
+                for (int k = actualInlineOrder + addedInlineBoxes.size(), n = renderedBoxes.size(); k < n; k++) {
+                    LayoutBox succ = renderedBoxes.get(k);
+                    succ.dlStart += deltaInline;
+                    succ.dlEnd += deltaInline;
+                }
+            }
+        } else if (remInlineLen > 0) {
+            for (int k = actualInlineOrder, n = renderedBoxes.size(); k < n; k++) {
+                LayoutBox succ = renderedBoxes.get(k);
+                succ.dlStart -= remInlineLen;
+                succ.dlEnd -= remInlineLen;
+            }
         }
 
-        // 挿入位置を基準に dlStart / dlEnd を補正
-        for (LayoutBox a : addedBoxes) {
-            a.dlStart += insertDlPos;
-            a.dlEnd += insertDlPos;
-        }
-
-        // 表示リストと renderedBoxes への挿入
-        currentDisplayList.addAll(insertDlPos, addedItems);
-        renderedBoxes.addAll(insertOrderPos, addedBoxes);
-
-        // 差分シフト量
-        int removedItemsLen = (remStart >= 0) ? (remEnd - remStart) : 0;
-        int delta = addedItems.size() - removedItemsLen;
-
-        // 後続ボックスの dlOrder / dlStart / dlEnd を補正
-        int startShiftOrder = insertOrderPos + addedBoxes.size();
+        // 6. dlOrder の正規化（挿入位置以降のみ）
+        int startShiftOrder = Math.max(0, Math.min(insertBlockOrder, actualInlineOrder) - 1);
         for (int k = startShiftOrder, n = renderedBoxes.size(); k < n; k++) {
-            LayoutBox succ = renderedBoxes.get(k);
-            succ.dlOrder = k;
-            succ.dlStart += delta;
-            succ.dlEnd += delta;
+            renderedBoxes.get(k).dlOrder = k;
         }
 
-        // 挿入されたボックスの dlOrder を設定
-        for (int i = 0; i < addedBoxes.size(); i++) {
-            addedBoxes.get(i).dlOrder = insertOrderPos + i;
+        // 7. ボックスの座標変化（dx, dy）のアイテムへの反映（挿入位置以降のみ）
+        int translatedHits = 0;
+        LayoutBox lastParentForClip = null;
+        ClipRect cachedParentClip = null;
+
+        for (int k = startShiftOrder, n = renderedBoxes.size(); k < n; k++) {
+            LayoutBox b = renderedBoxes.get(k);
+            BoxMemo m = boxMemo.get(b);
+            if (m != null) {
+                float dx = (m.nums != null && m.nums.length >= 2) ? (b.x - m.nums[0]) : 0;
+                float dy = (m.nums != null && m.nums.length >= 2) ? (b.y - m.nums[1]) : 0;
+                boolean isTextNode = (b.node != null && b.node.nodeType == NodeType.TEXT);
+                if (dx == 0 && dy == 0 && !b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
+                    LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
+                    dx = f0.x - m.fragNums[0];
+                    dy = f0.y - m.fragNums[1];
+                }
+                if (dx != 0 || dy != 0) {
+                    if (b.dlStart < 0 || b.dlEnd > currentDisplayList.size() || b.dlStart > b.dlEnd) continue;
+                    STAT_TRANSLATED.increment();
+                    translatedHits++;
+
+                    // 親クリップのキャッシュ（親が同一なら再計算スキップ）
+                    ClipRect expectedClip;
+                    if (b.parent == lastParentForClip) {
+                        expectedClip = cachedParentClip;
+                    } else {
+                        expectedClip = order.contentClipOf(b.parent);
+                        lastParentForClip = b.parent;
+                        cachedParentClip = expectedClip;
+                    }
+
+                    int itemCount = b.dlEnd - b.dlStart;
+                    if (isTextNode && !b.inlineFragments.isEmpty()) {
+                        int numFrags = b.inlineFragments.size();
+                        if (numFrags == 1 && itemCount == 1 && currentDisplayList.get(b.dlStart).type() == ElementType.TEXT) {
+                            // 最頻ケース: 単一フラグメント・単一TEXTアイテム（リスト行のテキストなど）
+                            LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
+                            int newTop = Math.round(f0.y);
+                            int newLeft = Math.round(f0.x);
+                            int newH = Math.round(f0.y + f0.h) - newTop;
+                            int newW = Math.round(f0.x + f0.w) - newLeft;
+                            DisplayItem it = currentDisplayList.get(b.dlStart);
+                            RenderMeta meta = it.meta();
+                            if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
+                                meta = meta.withClip(expectedClip);
+                            }
+                            DisplayItem shifted = new DisplayItem(
+                                    it.id(), it.baseNodeId(), it.type(),
+                                    newLeft, newTop, newW, newH,
+                                    it.text(), it.color(), it.bgColor(), it.events(),
+                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                    it.animDef(), it.fitMode(), meta, it.key()
+                            );
+                            currentDisplayList.set(b.dlStart, shifted);
+                        } else {
+                            // 複数フラグメントまたは装飾アンカー・シャドウを含むケース
+                            List<LayoutBox.InlineFragment> validFrags = new ArrayList<>(numFrags);
+                            for (int fi = 0; fi < numFrags; fi++) {
+                                LayoutBox.InlineFragment f = b.inlineFragments.get(fi);
+                                if (f.text != null && !f.text.isBlank()) validFrags.add(f);
+                            }
+                            int textItemCount = 0;
+                            for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
+                                if (currentDisplayList.get(idx).type() == ElementType.TEXT) textItemCount++;
+                            }
+                            if (textItemCount == validFrags.size()) {
+                                int fIdx = 0;
+                                LayoutBox.InlineFragment f0 = validFrags.get(0);
+                                int baseTop = Math.round(f0.y);
+                                int baseLeft = Math.round(f0.x);
+                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] : f0.y;
+                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] : f0.x;
+                                int oldBaseTop = Math.round(oldFragY);
+                                int oldBaseLeft = Math.round(oldFragX);
+                                for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
+                                    DisplayItem it = currentDisplayList.get(idx);
+                                    RenderMeta meta = it.meta();
+                                    if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
+                                        meta = meta.withClip(expectedClip);
+                                    }
+                                    if (it.type() == ElementType.TEXT) {
+                                        LayoutBox.InlineFragment f = validFrags.get(fIdx++);
+                                        int newTop = Math.round(f.y);
+                                        int newLeft = Math.round(f.x);
+                                        int newH = Math.round(f.y + f.h) - newTop;
+                                        int newW = Math.round(f.x + f.w) - newLeft;
+                                        DisplayItem shifted = new DisplayItem(
+                                                it.id(), it.baseNodeId(), it.type(),
+                                                newLeft, newTop, newW, newH,
+                                                it.text(), it.color(), it.bgColor(), it.events(),
+                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                                it.animDef(), it.fitMode(), meta, it.key()
+                                        );
+                                        currentDisplayList.set(idx, shifted);
+                                    } else if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
+                                        int newX = Math.round(b.x);
+                                        int newY = Math.round(b.y);
+                                        DisplayItem shifted = new DisplayItem(
+                                                it.id(), it.baseNodeId(), it.type(),
+                                                newX, newY, it.width(), it.height(),
+                                                it.text(), it.color(), it.bgColor(), it.events(),
+                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                                it.animDef(), it.fitMode(), meta, it.key()
+                                        );
+                                        currentDisplayList.set(idx, shifted);
+                                    } else {
+                                        int newY = baseTop + (it.y() - oldBaseTop);
+                                        int newX = baseLeft + (it.x() - oldBaseLeft);
+                                        DisplayItem shifted = new DisplayItem(
+                                                it.id(), it.baseNodeId(), it.type(),
+                                                newX, newY, it.width(), it.height(),
+                                                it.text(), it.color(), it.bgColor(), it.events(),
+                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                                it.animDef(), it.fitMode(), meta, it.key()
+                                        );
+                                        currentDisplayList.set(idx, shifted);
+                                    }
+                                }
+                            } else {
+                                LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
+                                int targetTop = Math.round(f0.y);
+                                int targetLeft = Math.round(f0.x);
+                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] : f0.y;
+                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] : f0.x;
+                                int oldTop = Math.round(oldFragY);
+                                int oldLeft = Math.round(oldFragX);
+                                int targetH = Math.round(f0.y + f0.h) - targetTop;
+                                int targetW = Math.round(f0.x + f0.w) - targetLeft;
+                                int oldHInt = Math.round(oldFragY + f0.h) - oldTop;
+                                int oldWInt = Math.round(oldFragX + f0.w) - oldLeft;
+                                for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
+                                    DisplayItem it = currentDisplayList.get(idx);
+                                    RenderMeta meta = it.meta();
+                                    if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
+                                        meta = meta.withClip(expectedClip);
+                                    }
+                                    if (it.id() != null && b.node != null && it.id().equals(b.node.key())) {
+                                        int newX = Math.round(b.x);
+                                        int newY = Math.round(b.y);
+                                        DisplayItem shifted = new DisplayItem(
+                                                it.id(), it.baseNodeId(), it.type(),
+                                                newX, newY, it.width(), it.height(),
+                                                it.text(), it.color(), it.bgColor(), it.events(),
+                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                                it.animDef(), it.fitMode(), meta, it.key()
+                                        );
+                                        currentDisplayList.set(idx, shifted);
+                                    } else {
+                                        int newY = targetTop + (it.y() - oldTop);
+                                        int newX = targetLeft + (it.x() - oldLeft);
+                                        int newH = (it.height() == oldHInt) ? targetH : it.height();
+                                        int newW = (it.width() == oldWInt) ? targetW : it.width();
+                                        DisplayItem shifted = new DisplayItem(
+                                                it.id(), it.baseNodeId(), it.type(),
+                                                newX, newY, newW, newH,
+                                                it.text(), it.color(), it.bgColor(), it.events(),
+                                                it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                                it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                                it.animDef(), it.fitMode(), meta, it.key()
+                                        );
+                                        currentDisplayList.set(idx, shifted);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // ブロック要素
+                        int targetTop = Math.round(b.y);
+                        int targetLeft = Math.round(b.x);
+                        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] : b.y;
+                        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] : b.x;
+                        float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : b.h;
+                        float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : b.w;
+                        int oldTop = Math.round(oldBoxY);
+                        int oldLeft = Math.round(oldBoxX);
+                        int targetH = Math.round(b.y + b.h) - targetTop;
+                        int targetW = Math.round(b.x + b.w) - targetLeft;
+                        int oldHInt = Math.round(oldBoxY + oldBoxH) - oldTop;
+                        int oldWInt = Math.round(oldBoxX + oldBoxW) - oldLeft;
+                        int shiftX = targetLeft - oldLeft;
+                        int shiftY = targetTop - oldTop;
+                        boolean sameDim = (targetH == oldHInt && targetW == oldWInt);
+
+                        for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
+                            DisplayItem it = currentDisplayList.get(idx);
+                            int newX, newY, newW, newH;
+                            if (sameDim) {
+                                newX = it.x() + shiftX;
+                                newY = it.y() + shiftY;
+                                newW = it.width();
+                                newH = it.height();
+                            } else {
+                                newY = targetTop + (it.y() - oldTop);
+                                newX = targetLeft + (it.x() - oldLeft);
+                                newH = (it.height() == oldHInt) ? targetH : it.height();
+                                newW = (it.width() == oldWInt) ? targetW : it.width();
+                                if (it.id() != null && it.id().endsWith("_b_bottom")) {
+                                    newY = (targetTop + targetH) - it.height();
+                                } else if (it.id() != null && it.id().endsWith("_b_right")) {
+                                    newX = (targetLeft + targetW) - it.width();
+                                }
+                            }
+                            RenderMeta meta = it.meta();
+                            if (meta != null && meta.clipRect() != null && expectedClip != null && !expectedClip.equals(meta.clipRect())) {
+                                meta = meta.withClip(expectedClip);
+                            }
+                            if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
+                                meta = meta.withHints(meta.hints().withScroll(b.scrollWidth, b.scrollHeight));
+                            }
+                            DisplayItem shifted = new DisplayItem(
+                                    it.id(), it.baseNodeId(), it.type(),
+                                    newX, newY, newW, newH,
+                                    it.text(), it.color(), it.bgColor(), it.events(),
+                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                    it.animDef(), it.fitMode(), meta, it.key()
+                            );
+                            currentDisplayList.set(idx, shifted);
+                        }
+                    }
+
+                    if (m.nums != null && m.nums.length >= 2) {
+                        m.nums[0] = b.x;
+                        m.nums[1] = b.y;
+                    }
+                    m.scrollW = b.scrollWidth;
+                    m.scrollH = b.scrollHeight;
+                    if (expectedClip != null) {
+                        m.clip = expectedClip;
+                    }
+                    if (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
+                        for (int i = 0; i < b.inlineFragments.size() && (i * 8 + 1) < m.fragNums.length; i++) {
+                            m.fragNums[i * 8] = b.inlineFragments.get(i).x;
+                            m.fragNums[i * 8 + 1] = b.inlineFragments.get(i).y;
+                        }
+                    }
+                    if (itemCount > 0) {
+                        int memoEnd = b.dlEnd;
+                        PaintOrder.ScrollContent content = order.scrollContentOf(b);
+                        if (content != null && memoEnd > b.dlStart && content.contentId.equals(currentDisplayList.get(memoEnd - 1).id())) {
+                            memoEnd--;
+                        }
+                        int mLen = memoEnd - b.dlStart;
+                        DisplayItem[] arr = new DisplayItem[mLen];
+                        for (int ai = 0; ai < mLen; ai++) {
+                            arr[ai] = currentDisplayList.get(b.dlStart + ai);
+                        }
+                        m.items = java.util.Arrays.asList(arr);
+                    }
+                    b.touchPaint();
+                }
+            }
+        }
+
+        // 8. 祖先ボックスの寸法変化（親要素・body・html の NODE や背景）および scrollWidth/scrollHeight 変化を反映
+        for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
+            BoxMemo am = boxMemo.get(anc);
+            if (am != null && am.nums != null && am.nums.length >= 4) {
+                float oldH = am.nums[3];
+                float newH = anc.h;
+                boolean hChanged = Float.compare(oldH, newH) != 0;
+                boolean scrollChanged = Float.compare(am.scrollH, anc.scrollHeight) != 0 || Float.compare(am.scrollW, anc.scrollWidth) != 0;
+                if ((hChanged || scrollChanged) && anc.dlStart >= 0 && anc.dlEnd > anc.dlStart) {
+                    int targetTop = Math.round(anc.y);
+                    int targetH = Math.round(anc.y + newH) - targetTop;
+                    int oldTop = Math.round(am.nums[1]);
+                    int oldHInt = Math.round(am.nums[1] + oldH) - oldTop;
+                    int dh = targetH - oldHInt;
+                    for (int idx = anc.dlStart; idx < anc.dlEnd; idx++) {
+                        DisplayItem it = currentDisplayList.get(idx);
+                        RenderMeta meta = it.meta();
+                        if (meta != null && meta.hints() != null && meta.hints().scrollable()) {
+                            meta = meta.withHints(meta.hints().withScroll(anc.scrollWidth, anc.scrollHeight));
+                        }
+                        boolean itemChanged = false;
+                        int nextH = it.height();
+                        if (hChanged) {
+                            if (it.type() == ElementType.NODE) {
+                                nextH = targetH;
+                                itemChanged = true;
+                            } else if (it.type() == ElementType.RECT || it.type() == ElementType.ROUNDED_BORDER) {
+                                nextH = (it.height() == oldHInt) ? targetH : it.height() + dh;
+                                itemChanged = true;
+                            }
+                        }
+                        if (meta != it.meta()) {
+                            itemChanged = true;
+                        }
+                        if (itemChanged) {
+                            DisplayItem updated = new DisplayItem(
+                                    it.id(), it.baseNodeId(), it.type(),
+                                    it.x(), it.y(), it.width(), nextH,
+                                    it.text(), it.color(), it.bgColor(), it.events(),
+                                    it.radius(), it.opacity(), it.translateX(), it.translateY(),
+                                    it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(),
+                                    it.animDef(), it.fitMode(), meta, it.key()
+                            );
+                            currentDisplayList.set(idx, updated);
+                        }
+                    }
+                    am.nums[3] = newH;
+                    am.scrollH = anc.scrollHeight;
+                    am.scrollW = anc.scrollWidth;
+                    if (anc.dlStart >= 0 && anc.dlEnd >= anc.dlStart) {
+                        int memoEnd = anc.dlEnd;
+                        PaintOrder.ScrollContent content = order.scrollContentOf(anc);
+                        if (content != null && memoEnd > anc.dlStart && content.contentId.equals(currentDisplayList.get(memoEnd - 1).id())) {
+                            memoEnd--;
+                        }
+                        am.items = List.copyOf(currentDisplayList.subList(anc.dlStart, memoEnd));
+                    }
+                    anc.touchPaint();
+                }
+            }
+        }
+
+        // 8b. スクロールバーのトラック・つまみ寸法の同期（祖先コンテナおよび動いたスクロールコンテナ）
+        Set<LayoutBox> scrollbarBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (LayoutBox anc = parentBox; anc != null; anc = anc.parent) {
+            if (anc.node != null && PaintOrder.factsOf(anc.style).scrollbars()) scrollbarBoxes.add(anc);
+        }
+        // 全箱ではなく、描画時に集めたスクロール可能な箱だけを見る（取り残しは dlOrder が今の並びと合うかで除く）
+        for (LayoutBox b : scrollBoxes) {
+            if (b.dlOrder >= 0 && b.dlOrder < renderedBoxes.size() && renderedBoxes.get(b.dlOrder) == b) scrollbarBoxes.add(b);
+        }
+        for (LayoutBox anc : scrollbarBoxes) {
+            float scrollH = anc.scrollHeight;
+            float scrollW = anc.scrollWidth;
+            boolean wantsV = scrollH > anc.h + 2 && anc.h > 12;
+            boolean wantsH = scrollW > anc.w + 2 && anc.w > 12;
+            // 6 部品は 64-bit 整数鍵（nodeHandle<<16 | 部品番号）で引く。文字列 equals を全項目 × 6 回しない
+            int sbHandle = anc.node.nodeId();
+            boolean byKey = sbHandle > 0;
+            long vtKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_TRACK_V) : 0L;
+            long vKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_V) : 0L;
+            long svKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_NODE_V) : 0L;
+            long htKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_TRACK_H) : 0L;
+            long hKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_H) : 0L;
+            long shKey = byKey ? DisplayItem.keyOf(sbHandle, DisplayItem.PART_SCROLLBAR_NODE_H) : 0L;
+            String vtId = byKey ? null : anc.node.key() + "_sb_vt";
+            String vId = byKey ? null : anc.node.key() + "_sb_v";
+            String svId = byKey ? null : anc.node.key() + "_scrollv";
+            String htId = byKey ? null : anc.node.key() + "_sb_ht";
+            String hId = byKey ? null : anc.node.key() + "_sb_h";
+            String shId = byKey ? null : anc.node.key() + "_scrollh";
+            int vtIdx = -1, vIdx = -1, svIdx = -1;
+            int htIdx = -1, hIdx = -1, shIdx = -1;
+            int sbGrace = 3;
+            PaintOrder.ScrollContent content = order.scrollContentOf(anc);
+            for (int i = currentDisplayList.size() - 1; i >= 0; i--) {
+                DisplayItem item = currentDisplayList.get(i);
+                if (byKey) {
+                    long k = item.key();
+                    if (vtIdx < 0 && k == vtKey) vtIdx = i;
+                    else if (vIdx < 0 && k == vKey) vIdx = i;
+                    else if (svIdx < 0 && k == svKey) svIdx = i;
+                    else if (htIdx < 0 && k == htKey) htIdx = i;
+                    else if (hIdx < 0 && k == hKey) hIdx = i;
+                    else if (shIdx < 0 && k == shKey) shIdx = i;
+                } else {
+                    if (vtIdx < 0 && vtId.equals(item.id())) vtIdx = i;
+                    if (vIdx < 0 && vId.equals(item.id())) vIdx = i;
+                    if (svIdx < 0 && svId.equals(item.id())) svIdx = i;
+                    if (htIdx < 0 && htId.equals(item.id())) htIdx = i;
+                    if (hIdx < 0 && hId.equals(item.id())) hIdx = i;
+                    if (shIdx < 0 && shId.equals(item.id())) shIdx = i;
+                }
+                // 6 部品は「縦（vt, sv, v）→ 横（ht, sh, h）」の順に連続して置かれ、持ち主の内容の後ろ（多くは表示リストの末尾付近）にある。
+                // 欲しい軸の部品が全部見つかったら、番号の小さい側に隣り合う高々 3 件（反対軸の取り残し）だけ確かめて打ち切る。
+                // 欲しい軸が無いときは、無いことを示すため従来どおり全走査する。
+                boolean haveV = !wantsV || (vtIdx >= 0 && vIdx >= 0 && (content == null || svIdx >= 0));
+                boolean haveH = !wantsH || (htIdx >= 0 && hIdx >= 0 && (content == null || shIdx >= 0));
+                if (haveV && haveH && (wantsV || wantsH)) {
+                    if (--sbGrace < 0) break;
+                } else if (haveV && haveH && (content == null || (svIdx >= 0 && shIdx >= 0))) {
+                    break;
+                }
+            }
+            if (wantsV != (vIdx >= 0) || wantsH != (hIdx >= 0)) {
+                // スクロールバーの出現・消滅はアイテム数増減を伴うため安全にフル描画へフォールバック
+                return null;
+            }
+            ClipRect expectedClip = order.contentClipOf(anc.parent);
+            int barThickness = 4;
+            if (wantsV && vtIdx >= 0 && vIdx >= 0) {
+                float curY = scrollState != null ? scrollState.getScrollY(anc.node) : 0f;
+                float trackX = anc.x + anc.w - anc.bR - barThickness - 2;
+                float trackY = anc.y + anc.bT + 2;
+                float trackH = anc.h - anc.bT - anc.bB - 4;
+                float thumbH = Math.max(12, trackH * (anc.h / scrollH));
+                float maxScrollY = Math.max(1f, scrollH - anc.h);
+                float thumbY = trackY + (trackH - thumbH) * Math.clamp(curY / maxScrollY, 0f, 1f);
+
+                int vtLeft = Math.round(trackX);
+                int vtTop = Math.round(trackY);
+                int vtW = Math.round(trackX + barThickness) - vtLeft;
+                int vtH = Math.round(trackY + trackH) - vtTop;
+
+                int vLeft = Math.round(trackX);
+                int vTop = Math.round(thumbY);
+                int vW = Math.round(trackX + barThickness) - vLeft;
+                int vH = Math.round(thumbY + thumbH) - vTop;
+
+                DisplayItem itVt = currentDisplayList.get(vtIdx);
+                RenderMeta metaVt = itVt.meta();
+                if (metaVt != null && metaVt.clipRect() != null && expectedClip != null) {
+                    metaVt = metaVt.withClip(expectedClip);
+                }
+                currentDisplayList.set(vtIdx, new DisplayItem(
+                        itVt.id(), itVt.baseNodeId(), itVt.type(),
+                        vtLeft, vtTop, vtW, vtH,
+                        itVt.text(), itVt.color(), itVt.bgColor(), itVt.events(),
+                        itVt.radius(), itVt.opacity(), itVt.translateX(), itVt.translateY(),
+                        itVt.scaleX(), itVt.scaleY(), itVt.rotate(), itVt.transitionDuration(),
+                        itVt.animDef(), itVt.fitMode(), metaVt, itVt.key()
+                ));
+
+                if (content != null && svIdx >= 0) {
+                    content.thumbVId = svId;
+                    content.ky = (trackH - thumbH) / maxScrollY;
+                    DisplayItem itSv = currentDisplayList.get(svIdx);
+                    int svLeft = Math.round(anc.x);
+                    int svTop = Math.round(anc.y);
+                    int svW = Math.round(anc.x + anc.w) - svLeft;
+                    int svH = Math.round(anc.y + anc.h) - svTop;
+                    RenderMeta metaSv = itSv.meta();
+                    if (metaSv != null && metaSv.clipRect() != null && expectedClip != null) {
+                        metaSv = metaSv.withClip(expectedClip);
+                    }
+                    currentDisplayList.set(svIdx, new DisplayItem(
+                            itSv.id(), itSv.baseNodeId(), itSv.type(),
+                            svLeft, svTop, svW, svH,
+                            itSv.text(), itSv.color(), itSv.bgColor(), itSv.events(),
+                            itSv.radius(), itSv.opacity(), itSv.translateX(), itSv.translateY(),
+                            itSv.scaleX(), itSv.scaleY(), itSv.rotate(), itSv.transitionDuration(),
+                            itSv.animDef(), itSv.fitMode(), metaSv, itSv.key()
+                    ));
+                }
+
+                DisplayItem itV = currentDisplayList.get(vIdx);
+                RenderMeta metaV = itV.meta();
+                if (metaV != null && metaV.clipRect() != null && expectedClip != null) {
+                    metaV = metaV.withClip(expectedClip);
+                }
+                currentDisplayList.set(vIdx, new DisplayItem(
+                        itV.id(), itV.baseNodeId(), itV.type(),
+                        vLeft, vTop, vW, vH,
+                        itV.text(), itV.color(), itV.bgColor(), itV.events(),
+                        itV.radius(), itV.opacity(), itV.translateX(), itV.translateY(),
+                        itV.scaleX(), itV.scaleY(), itV.rotate(), itV.transitionDuration(),
+                        itV.animDef(), itV.fitMode(), metaV, itV.key()
+                ));
+            }
+            if (wantsH && htIdx >= 0 && hIdx >= 0) {
+                float curX = scrollState != null ? scrollState.getScrollX(anc.node) : 0f;
+                float trackX = anc.x + anc.bL + 2;
+                float trackY = anc.y + anc.h - anc.bB - barThickness - 2;
+                float trackW = anc.w - anc.bL - anc.bR - 4;
+                float thumbW = Math.max(12, trackW * (anc.w / scrollW));
+                float maxScrollX = Math.max(1f, scrollW - anc.w);
+                float thumbX = trackX + (trackW - thumbW) * Math.clamp(curX / maxScrollX, 0f, 1f);
+
+                int htLeft = Math.round(trackX);
+                int htTop = Math.round(trackY);
+                int htW = Math.round(trackX + trackW) - htLeft;
+                int htH = Math.round(trackY + barThickness) - htTop;
+
+                int hLeft = Math.round(thumbX);
+                int hTop = Math.round(trackY);
+                int hW = Math.round(thumbX + thumbW) - hLeft;
+                int hH = Math.round(trackY + barThickness) - hTop;
+
+                DisplayItem itHt = currentDisplayList.get(htIdx);
+                RenderMeta metaHt = itHt.meta();
+                if (metaHt != null && metaHt.clipRect() != null && expectedClip != null) {
+                    metaHt = metaHt.withClip(expectedClip);
+                }
+                currentDisplayList.set(htIdx, new DisplayItem(
+                        itHt.id(), itHt.baseNodeId(), itHt.type(),
+                        htLeft, htTop, htW, htH,
+                        itHt.text(), itHt.color(), itHt.bgColor(), itHt.events(),
+                        itHt.radius(), itHt.opacity(), itHt.translateX(), itHt.translateY(),
+                        itHt.scaleX(), itHt.scaleY(), itHt.rotate(), itHt.transitionDuration(),
+                        itHt.animDef(), itHt.fitMode(), metaHt, itHt.key()
+                ));
+
+                if (content != null && shIdx >= 0) {
+                    content.thumbHId = shId;
+                    content.kx = (trackW - thumbW) / maxScrollX;
+                    DisplayItem itSh = currentDisplayList.get(shIdx);
+                    int shLeft = Math.round(anc.x);
+                    int shTop = Math.round(anc.y);
+                    int shW = Math.round(anc.x + anc.w) - shLeft;
+                    int shH = Math.round(anc.y + anc.h) - shTop;
+                    RenderMeta metaSh = itSh.meta();
+                    if (metaSh != null && metaSh.clipRect() != null && expectedClip != null) {
+                        metaSh = metaSh.withClip(expectedClip);
+                    }
+                    currentDisplayList.set(shIdx, new DisplayItem(
+                            itSh.id(), itSh.baseNodeId(), itSh.type(),
+                            shLeft, shTop, shW, shH,
+                            itSh.text(), itSh.color(), itSh.bgColor(), itSh.events(),
+                            itSh.radius(), itSh.opacity(), itSh.translateX(), itSh.translateY(),
+                            itSh.scaleX(), itSh.scaleY(), itSh.rotate(), itSh.transitionDuration(),
+                            itSh.animDef(), itSh.fitMode(), metaSh, itSh.key()
+                    ));
+                }
+
+                DisplayItem itH = currentDisplayList.get(hIdx);
+                RenderMeta metaH = itH.meta();
+                if (metaH != null && metaH.clipRect() != null && expectedClip != null) {
+                    metaH = metaH.withClip(expectedClip);
+                }
+                currentDisplayList.set(hIdx, new DisplayItem(
+                        itH.id(), itH.baseNodeId(), itH.type(),
+                        hLeft, hTop, hW, hH,
+                        itH.text(), itH.color(), itH.bgColor(), itH.events(),
+                        itH.radius(), itH.opacity(), itH.translateX(), itH.translateY(),
+                        itH.scaleX(), itH.scaleY(), itH.rotate(), itH.transitionDuration(),
+                        itH.animDef(), itH.fitMode(), metaH, itH.key()
+                ));
+            }
+        }
+
+        // 9. bg_root の寸法同期
+        if (!currentDisplayList.isEmpty()) {
+            DisplayItem first = currentDisplayList.get(0);
+            if ("bg_root".equals(first.id()) && currentRoot != null) {
+                int expectedH = Math.round(Math.max(currentRoot.h, (float) rootH));
+                if (first.height() != expectedH) {
+                    DisplayItem updatedRoot = new DisplayItem(
+                            first.id(), first.baseNodeId(), first.type(),
+                            first.x(), first.y(), first.width(), expectedH,
+                            first.text(), first.color(), first.bgColor(), first.events(),
+                            first.radius(), first.opacity(), first.translateX(), first.translateY(),
+                            first.scaleX(), first.scaleY(), first.rotate(), first.transitionDuration(),
+                            first.animDef(), first.fitMode(), first.meta(), first.key()
+                    );
+                    currentDisplayList.set(0, updatedRoot);
+                }
+            }
         }
 
         generation++;

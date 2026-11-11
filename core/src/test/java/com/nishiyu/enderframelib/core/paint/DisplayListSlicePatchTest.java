@@ -71,15 +71,20 @@ class DisplayListSlicePatchTest {
         for (int i = 0; i < expected.size(); i++) {
             DisplayItem exp = expected.get(i);
             DisplayItem act = actual.get(i);
-            assertEquals(exp.key(), act.key(), msg + " [item " + i + " key mismatch]");
-            assertEquals(exp.type(), act.type(), msg + " [item " + i + " type mismatch]");
-            assertEquals(exp.x(), act.x(), 1e-2f, msg + " [item " + i + " x mismatch]");
-            assertEquals(exp.y(), act.y(), 1e-2f, msg + " [item " + i + " y mismatch]");
-            assertEquals(exp.width(), act.width(), 1e-2f, msg + " [item " + i + " width mismatch]");
-            assertEquals(exp.height(), act.height(), 1e-2f, msg + " [item " + i + " height mismatch]");
-            assertEquals(exp.color(), act.color(), msg + " [item " + i + " color mismatch]");
-            assertEquals(exp.bgColor(), act.bgColor(), msg + " [item " + i + " bgColor mismatch]");
-            assertEquals(exp.text(), act.text(), msg + " [item " + i + " text mismatch]");
+            try {
+                assertEquals(exp.key(), act.key(), msg + " [item " + i + " key mismatch]");
+                assertEquals(exp.type(), act.type(), msg + " [item " + i + " type mismatch]");
+                assertEquals(exp.x(), act.x(), 1e-2f, msg + " [item " + i + " x mismatch]");
+                assertEquals(exp.y(), act.y(), 1e-2f, msg + " [item " + i + " y mismatch]");
+                assertEquals(exp.width(), act.width(), 1e-2f, msg + " [item " + i + " width mismatch]");
+                assertEquals(exp.height(), act.height(), 1e-2f, msg + " [item " + i + " height mismatch]");
+                assertEquals(exp.color(), act.color(), msg + " [item " + i + " color mismatch]");
+                assertEquals(exp.bgColor(), act.bgColor(), msg + " [item " + i + " bgColor mismatch]");
+                assertEquals(exp.text(), act.text(), msg + " [item " + i + " text mismatch]");
+            } catch (AssertionError e) {
+                System.out.println("MISMATCH in " + msg + " at " + i + ":\n  exp: " + exp + "\n  act: " + act);
+                throw e;
+            }
         }
     }
 

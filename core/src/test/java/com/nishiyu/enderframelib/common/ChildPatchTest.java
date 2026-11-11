@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
+import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import org.junit.jupiter.api.AfterEach;
@@ -133,7 +134,8 @@ class ChildPatchTest {
             // 連続で数個追加
             (v, rnd, step) -> {
                 HtmlNode p = parent(v, rnd);
-                for (int i = 0; i < 1 + rnd.nextInt(3); i++) p.appendChild(fresh(p.getId(), step * 10 + i, rnd));
+                int count = 1 + rnd.nextInt(3);
+                for (int i = 0; i < count; i++) p.appendChild(fresh(p.getId(), step * 10 + i, rnd));
             },
             // 同じフレームの別の変更（文字・class）と重ねる
             (v, rnd, step) -> {
@@ -153,8 +155,30 @@ class ChildPatchTest {
     }
 
     private static void sameItems(List<DisplayItem> expected, List<DisplayItem> actual, String step) {
+        if (expected.size() != actual.size()) {
+            System.out.printf("SIZE MISMATCH %s: exp=%d act=%d%n", step, expected.size(), actual.size());
+            int minLen = Math.min(expected.size(), actual.size());
+            for (int i = 0; i < minLen; i++) {
+                if (!expected.get(i).equals(actual.get(i))) {
+                    System.out.printf("FIRST MISMATCH at %d: exp=%s act=%s%n", i, expected.get(i).id(), actual.get(i).id());
+                    break;
+                }
+            }
+            if (expected.size() > actual.size()) {
+                System.out.println("MISSING in actual: " + expected.subList(actual.size(), expected.size()));
+            } else {
+                System.out.println("EXTRA in actual: " + actual.subList(expected.size(), actual.size()));
+            }
+        }
         assertEquals(expected.size(), actual.size(), step + ": 項目の数");
-        for (int i = 0; i < expected.size(); i++) assertEquals(expected.get(i), actual.get(i), step + ": 項目 " + i);
+        for (int i = 0; i < expected.size(); i++) {
+            try {
+                assertEquals(expected.get(i), actual.get(i), step + ": 項目 " + i);
+            } catch (AssertionError e) {
+                System.out.println("ChildPatchTest MISMATCH at " + i + " step=" + step + ":\n  exp: " + expected.get(i) + "\n  act: " + actual.get(i));
+                throw e;
+            }
+        }
     }
 
     private void run(String sep, boolean structural, int seeds, boolean expectHits) {
@@ -170,7 +194,9 @@ class ChildPatchTest {
                 UiView.childPatchEnabled = true; // 変更の通知は有効なまま、パッチする側だけを flush で切り替える
                 MUTATIONS[m].apply(off, rOff, step);
                 MUTATIONS[m].apply(on, rOn, step);
-                sameItems(flush(off, false), flush(on, true), "seed " + seed + " 手順 " + step + " (変更 " + m + ")");
+                List<DisplayItem> exp = flush(off, false);
+                List<DisplayItem> act = flush(on, true);
+                sameItems(exp, act, "seed " + seed + " 手順 " + step + " (変更 " + m + ")");
                 reasons.merge(UiView.lastChildPatchRejection, 1, Integer::sum);
             }
         }
