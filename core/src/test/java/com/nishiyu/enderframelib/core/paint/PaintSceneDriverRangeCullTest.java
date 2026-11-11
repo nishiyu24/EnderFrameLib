@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -19,6 +21,17 @@ import org.junit.jupiter.api.Test;
  * 当たらない項目は 1 つも外れないこと、範囲の begin / end の呼び出しが保たれることを確かめる。
  */
 class PaintSceneDriverRangeCullTest {
+    /** ドライバの範囲カリングを見るので、ビルダーの窓付きの表示リスト（画面外の箱の項目を作らない）は切って、全件のリストを渡す。 */
+    @BeforeEach
+    void noWindow() {
+        DisplayListBuilder.WINDOWED_ENABLED = false;
+    }
+
+    @AfterEach
+    void restoreWindow() {
+        DisplayListBuilder.WINDOWED_ENABLED = true;
+    }
+
     private static final double PAD = 128;
     /** アニメ状態の表はセッション ID ごとに共有されるので、呼び出しごとに別のセッションにする。 */
     private static final java.util.concurrent.atomic.AtomicInteger SEQ = new java.util.concurrent.atomic.AtomicInteger();

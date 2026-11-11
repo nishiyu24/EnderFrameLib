@@ -116,6 +116,8 @@ public class DisplayListBuilder {
     private final List<LayoutBox> renderedBoxes = new ArrayList<>();
     /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
     private final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** 窓付きの描画で項目を省いた箱（画面外）。差分パッチが、窓の出入りが無いかを調べるのに使う。 */
+    private final Set<LayoutBox> culledBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 直近の描画のルートボックス。 */
     private LayoutBox currentRoot;
 
@@ -173,9 +175,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     buildSerial++;
     buildEpoch = LayoutBox.paintEpoch();
     translating = cullOffscreen && TRANSLATE_ENABLED;
+    // 大きい文書は、スクロール時でなくても画面（と余白）の外の箱の項目を作らない（窓付きの表示リスト。項目数が可視範囲に比例する）
+    if (lastOwnerCount == 0 && WINDOWED_ENABLED) lastOwnerCount = countBoxes(box, WINDOW_MIN_OWNERS); // 最初の描画だけ、箱の数を数えて判定する
+    boolean windowed = !cullOffscreen && WINDOWED_ENABLED && lastOwnerCount >= WINDOW_MIN_OWNERS;
+    windowedBuild = windowed;
+    if (windowed) STAT_WINDOWED_BUILDS.increment();
+    boolean cull = cullOffscreen || windowed;
+    int ownerCount = 0;
     translatedHits = 0;
     renderedBoxes.clear();
     scrollBoxes.clear();
+    culledBoxes.clear();
     currentRoot = box;
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
     List<DisplayItem> elements = new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
@@ -203,7 +213,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         java.util.ArrayDeque<LayerSpec> openSpecs = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<LayoutBox> openBoxes = new java.util.ArrayDeque<>();
         // 部分木の保持は、全ての箱を描く描画でだけ（平行移動・画面外の省略では項目が欠ける／動く）。再利用は変更印が使える描画でだけ
-        order.beginRender(buildSerial, buildEpoch, generation, !translating, useChangeStamps && !translating);
+        order.beginRender(buildSerial, buildEpoch, generation, !translating && !windowed, useChangeStamps && !translating);
         for (RenderTask task : order.paintTasks(box)) {
             if (task.layerStart() != null) {
                 openLayers.push(new int[]{elements.size()});
@@ -233,12 +243,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 task.drawAction().accept(elements);
                 continue;
             }
-            if (cullOffscreen && !openBoxes.contains(owner) && offscreen(owner)) {
+            ownerCount++;
+            if (cull && !openBoxes.contains(owner) && offscreen(owner)) {
                 BoxMemo kept = boxMemo.get(owner);
                 if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
                 owner.dlStart = -1;
                 owner.dlEnd = -1;
                 owner.dlOrder = -1;
+                if (windowed) culledBoxes.add(owner);
                 continue;
             }
             int start = elements.size();
@@ -258,6 +270,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         order.endRender();
 
         lastElementCount = elements.size();
+        lastOwnerCount = ownerCount;
         this.currentDisplayList = elements;
         this.currentRoot = box;
         return elements;
@@ -265,6 +278,28 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 直近の描画で出した項目の数（次の描画の出力リストの初期容量に使う）。 */
     private int lastElementCount;
+    /** 直近の描画の、項目を持ちうる箱の数（省いた箱も含む）。窓付きの表示リストにするかの判定に使う。 */
+    private int lastOwnerCount;
+    /** 窓付きで作った表示リストの数（検証用）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_WINDOWED_BUILDS = new java.util.concurrent.atomic.LongAdder();
+    /** 直近の描画が窓付き（画面外の箱を省いた）か。 */
+    private boolean windowedBuild;
+    /** 切り分け用: false なら、大きい文書でも窓付きの表示リストにしない（従来の動き）。 */
+    public static volatile boolean WINDOWED_ENABLED = !Boolean.getBoolean("enderframe.paint.nowindow");
+    /** 窓付きにする、項目を持ちうる箱の数の下限（これより小さい文書は全件を作る）。 */
+    public static volatile int WINDOW_MIN_OWNERS = Integer.getInteger("enderframe.paint.windowmin", 800);
+    /** 箱の数（{@code cap} に達したらそこで打ち切る）。 */
+    private static int countBoxes(LayoutBox b, int cap) {
+        int n = 1;
+        for (LayoutBox c : b.children) {
+            n += countBoxes(c, cap - n);
+            if (n >= cap) return n;
+        }
+        return n;
+    }
+
+    /** 直近の表示リストが窓付き（画面外の箱の項目が無い）か。 */
+    public boolean isWindowed() { return windowedBuild; }
 
     /** 記憶の項目を出力へ足す。数個なら直接足す（{@code addAll} は毎回 {@code toArray} で写しを作る）。 */
     static void appendItems(List<DisplayItem> elements, List<DisplayItem> items) {
@@ -374,6 +409,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 箱の記憶。{@code generation} は最後に使われた描画の世代（古いものは描画の終わりに捨てる）。 */
     private static final class BoxMemo {
+        /**
+         * 表示リストの項目は、記憶の位置から平行移動した位置にある（{@link #match} が 2 を返した箱。記憶そのものは動かさない）ときの動き。
+         * 差分パッチは「箱の今の位置 − 記憶の位置」で動きを見るので、これを足さないと、リストの中で既に動いた分を二重に動かす。
+         */
+        int appliedDx, appliedDy;
+        boolean appliedFragOnly;
         int generation;
         List<DisplayItem> items;
         com.nishiyu.enderframelib.core.css.ComputedStyle style;
@@ -750,6 +791,24 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (content != null) order.addMovingNode(elements, content.contentId, box, null); // 箱の項目のあと・子孫の項目の前
     }
 
+    /** 項目が記憶の位置から動いている分（{@link BoxMemo#appliedDx}）を、記憶の基準の位置へ取り込む（差分パッチの前に呼ぶ）。 */
+    private static void syncApplied(BoxMemo m) {
+        int ax = m.appliedDx, ay = m.appliedDy;
+        if (ax == 0 && ay == 0) return;
+        if (!m.appliedFragOnly && m.nums != null && m.nums.length >= 2) {
+            m.nums[0] += ax;
+            m.nums[1] += ay;
+        }
+        if (m.fragNums != null) {
+            for (int i = 0; i + 1 < m.fragNums.length; i += 8) {
+                m.fragNums[i] += ax;
+                m.fragNums[i + 1] += ay;
+            }
+        }
+        m.appliedDx = m.appliedDy = 0;
+        m.appliedFragOnly = false;
+    }
+
     private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
         if (!MEMO_ENABLED || !memoizable(box)) {
             STAT_UNMEMOIZABLE.increment();
@@ -772,6 +831,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (kind == 1) {
             STAT_EXACT.increment();
+            m.appliedDx = m.appliedDy = 0;
+            m.appliedFragOnly = false;
             m.generation = generation;
             m.epoch = buildEpoch;
             appendItems(elements, m.items);
@@ -779,6 +840,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
             m.generation = generation;
+            m.appliedDx = Math.round(hitDx);
+            m.appliedDy = Math.round(hitDy);
+            m.appliedFragOnly = hitFragmentsOnly;
             elements.addAll(translated(m, clipRect, hitDx, hitDy, hitFragmentsOnly));
             translatedHits++;
             STAT_TRANSLATED.increment();
@@ -1107,7 +1171,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                                     List<DisplayItem> outInlines, List<LayoutBox> outInlineBoxes) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
 
-        if (!box.isAnonymous) {
+        if (!box.isAnonymous && windowedBuild && offscreen(box)) {
+            // 窓の外（画面外）の箱は、全体を窓付きで組み直したときと同じく、項目を作らない
+            box.dlStart = -1;
+            box.dlEnd = -1;
+            box.dlOrder = -1;
+            culledBoxes.add(box);
+        } else if (!box.isAnonymous) {
             boolean isInline = box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT);
             List<DisplayItem> targetItems = isInline ? outInlines : outBlocks;
             List<LayoutBox> targetBoxes = isInline ? outInlineBoxes : outBlockBoxes;
@@ -1132,6 +1202,34 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     /**
+     * 窓付きの表示リストで、子の増減のあと（レイアウトは済んでいる）も、窓の出入りが無いか。
+     * 項目を作った箱は全て窓の中、省いた箱は全て窓の外のままなら、全体を窓付きで組み直した結果と同じ並びになる。
+     * 窓から出た箱・窓に入る箱があれば、組み直す（削除される箱は調べない）。
+     */
+    private boolean windowIntact(List<LayoutBox> removed) {
+        Set<LayoutBox> gone = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (LayoutBox r : removed) markSubtree(r, gone);
+        for (LayoutBox b : renderedBoxes) {
+            if (!gone.contains(b) && offscreen(b)) return false;
+        }
+        for (LayoutBox b : culledBoxes) {
+            if (!gone.contains(b) && !offscreen(b)) return false;
+        }
+        return true;
+    }
+
+    private static void markSubtree(LayoutBox b, Set<LayoutBox> out) {
+        if (b == null) return;
+        out.add(b);
+        if (b.children != null) for (LayoutBox c : b.children) markSubtree(c, out);
+    }
+
+    /** 窓付きの表示リストで、項目を省いた箱が今も画面外にある（＝表示リストに触れずに済む）か。 */
+    private boolean isCulledNoop(LayoutBox b) {
+        return windowedBuild && b.dlStart < 0 && b.dlEnd < 0 && b.dlOrder < 0 && offscreen(b);
+    }
+
+    /**
      * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
      */
     public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
@@ -1141,6 +1239,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int boxCount = renderedBoxes.size();
         for (LayoutBox b : boxes) {
             if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) return cant(0, 2);
+            if (isCulledNoop(b)) continue; // 窓の外の箱: 表示リストに項目が無く、画面外のままなら何も変えずに済む
             if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(0, 3);
             if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(0, 4);
             if (b.style != null) {
@@ -1165,6 +1264,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (boxes.size() > 1) {
             List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
+            if (windowedBuild) sorted.removeIf(this::isCulledNoop);
             if (sorted.size() > 1) {
                 sorted.sort((x, y) -> Integer.compare(x.dlStart, y.dlStart));
                 for (int i = 0, n = sorted.size(); i < n - 1; i++) {
@@ -1198,6 +1298,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
         // 複数ボックスがある場合、dlStart の降順（末尾から先頭へ）でソート
         List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
+        if (windowedBuild) sorted.removeIf(DisplayListBuilder.this::isCulledNoop);
         if (sorted.size() > 1) {
             sorted.sort((a, b) -> Integer.compare(b.dlStart, a.dlStart));
         }
@@ -1253,6 +1354,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
+        if (windowedBuild && !windowIntact(removed)) return cant(1, 13);
         if (!removed.isEmpty()) {
             SubtreeSlices remSlices = new SubtreeSlices();
             for (LayoutBox r : removed) collectSubtreeSlices(r, remSlices);
@@ -1375,8 +1477,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
             }
 
-            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
-            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
+            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); culledBoxes.remove(b); }
+            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); culledBoxes.remove(b); }
         }
 
         // 2. 追加ボックスの描画スライス生成（ブロック層・インライン層）
@@ -1648,13 +1750,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             LayoutBox b = renderedBoxes.get(k);
             BoxMemo m = boxMemo.get(b);
             if (m != null) {
-                float dx = (m.nums != null && m.nums.length >= 2) ? (b.x - m.nums[0]) : 0;
-                float dy = (m.nums != null && m.nums.length >= 2) ? (b.y - m.nums[1]) : 0;
+                // 表示リストの中の項目は、記憶の位置から appliedDx/appliedDy だけ動いている（箱の位置は記憶の基準を足して見る）
+                final int ax = m.appliedFragOnly ? 0 : m.appliedDx, ay = m.appliedFragOnly ? 0 : m.appliedDy;
+                final int fx = m.appliedDx, fy = m.appliedDy;
+                float dx = (m.nums != null && m.nums.length >= 2) ? (b.x - (m.nums[0] + ax)) : 0;
+                float dy = (m.nums != null && m.nums.length >= 2) ? (b.y - (m.nums[1] + ay)) : 0;
                 boolean isTextNode = (b.node != null && b.node.nodeType == NodeType.TEXT);
                 if (dx == 0 && dy == 0 && !b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2) {
                     LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
-                    dx = f0.x - m.fragNums[0];
-                    dy = f0.y - m.fragNums[1];
+                    dx = f0.x - (m.fragNums[0] + fx);
+                    dy = f0.y - (m.fragNums[1] + fy);
                 }
                 if (dx != 0 || dy != 0) {
                     if (b.dlStart < 0 || b.dlEnd > currentDisplayList.size() || b.dlStart > b.dlEnd) continue;
@@ -1711,8 +1816,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                                 LayoutBox.InlineFragment f0 = validFrags.get(0);
                                 int baseTop = Math.round(f0.y);
                                 int baseLeft = Math.round(f0.x);
-                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] : f0.y;
-                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] : f0.x;
+                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
+                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
                                 int oldBaseTop = Math.round(oldFragY);
                                 int oldBaseLeft = Math.round(oldFragX);
                                 for (int idx = b.dlStart; idx < b.dlEnd; idx++) {
@@ -1766,8 +1871,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                                 LayoutBox.InlineFragment f0 = b.inlineFragments.get(0);
                                 int targetTop = Math.round(f0.y);
                                 int targetLeft = Math.round(f0.x);
-                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] : f0.y;
-                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] : f0.x;
+                                float oldFragY = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[1] + fy : f0.y;
+                                float oldFragX = m.fragNums != null && m.fragNums.length >= 2 ? m.fragNums[0] + fx : f0.x;
                                 int oldTop = Math.round(oldFragY);
                                 int oldLeft = Math.round(oldFragX);
                                 int targetH = Math.round(f0.y + f0.h) - targetTop;
@@ -1814,8 +1919,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         // ブロック要素
                         int targetTop = Math.round(b.y);
                         int targetLeft = Math.round(b.x);
-                        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] : b.y;
-                        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] : b.x;
+                        float oldBoxY = m.nums != null && m.nums.length >= 2 ? m.nums[1] + ay : b.y;
+                        float oldBoxX = m.nums != null && m.nums.length >= 2 ? m.nums[0] + ax : b.x;
                         float oldBoxH = m.nums != null && m.nums.length >= 4 ? m.nums[3] : b.h;
                         float oldBoxW = m.nums != null && m.nums.length >= 4 ? m.nums[2] : b.w;
                         int oldTop = Math.round(oldBoxY);
@@ -1866,6 +1971,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         }
                     }
 
+                    m.appliedDx = m.appliedDy = 0; // 記憶を今のリストの状態に揃える（下で項目も取り直す）
+                    m.appliedFragOnly = false;
                     if (m.nums != null && m.nums.length >= 2) {
                         m.nums[0] = b.x;
                         m.nums[1] = b.y;
@@ -1954,6 +2061,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         if (content != null && memoEnd > anc.dlStart && content.contentId.equals(currentDisplayList.get(memoEnd - 1).id())) {
                             memoEnd--;
                         }
+                        syncApplied(am); // 項目を今のリストから取り直すので、基準の位置も動いた分だけ進める
                         am.items = List.copyOf(currentDisplayList.subList(anc.dlStart, memoEnd));
                     }
                     anc.touchPaint();
