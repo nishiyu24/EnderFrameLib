@@ -85,6 +85,7 @@ public class FlexLayoutEngine extends LayoutEngine {
             return w;
         }
         float sum = sumChildW + (count > 1 ? box.columnGap * (count - 1) : 0);
+        if (tentativeInnerW > 0 && sum > tentativeInnerW) box.measuredClamped = true; // 使える幅で切られた（縮み・折り返しが使える幅に依る）
         // shrink-to-fit は利用できる幅で止まる（アイテムは伸縮長の解決で縮む）
         return tentativeInnerW > 0 ? Math.min(sum, tentativeInnerW) : sum;
     }
