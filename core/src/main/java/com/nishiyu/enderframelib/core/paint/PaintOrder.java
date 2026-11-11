@@ -109,9 +109,12 @@ final class PaintOrder {
     // 箱の数が同じなら、分類も箱の照合も飛ばして、保持した項目をそのまま出す。
     // 描画順の決まり方は変えない: 部分木の項目は、分類したときと同じ層の同じ位置に出る。
 
+    record BoxSlice(LayoutBox box, List<DisplayItem> items) {}
+
     /** 保持した部分木の項目。{@code blocks} と {@code inlines} は、分類したときに入った層ごとの、描いた順の項目。 */
     static final class Chunk {
         final LayoutBox parentBox;
+        final float boxX, boxY;
         final ClipRect clip;
         final String parentId;
         final long epoch;
@@ -119,13 +122,16 @@ final class PaintOrder {
         final int interactiveCount;
         final List<DisplayItem> blockItems = new ArrayList<>();
         final List<DisplayItem> inlineItems = new ArrayList<>();
+        final List<BoxSlice> blockSlices = new ArrayList<>();
+        final List<BoxSlice> inlineSlices = new ArrayList<>();
         int created;
         int executed;
         int generation;
-        private PaintNode blockNode, inlineNode;
 
-        Chunk(LayoutBox parentBox, ClipRect clip, String parentId, long epoch, int boxCount, int interactiveCount) {
+        Chunk(LayoutBox parentBox, float boxX, float boxY, ClipRect clip, String parentId, long epoch, int boxCount, int interactiveCount) {
             this.parentBox = parentBox;
+            this.boxX = boxX;
+            this.boxY = boxY;
             this.clip = clip;
             this.parentId = parentId;
             this.epoch = epoch;
@@ -136,20 +142,6 @@ final class PaintOrder {
         /** 記録中のタスクが全部走り終えたか（途中で止まった記録は使わない）。 */
         boolean complete() {
             return created == executed;
-        }
-
-        PaintNode blockNode() {
-            if (blockNode == null) blockNode = replayNode(blockItems);
-            return blockNode;
-        }
-
-        PaintNode inlineNode() {
-            if (inlineNode == null) inlineNode = replayNode(inlineItems);
-            return inlineNode;
-        }
-
-        private static PaintNode replayNode(List<DisplayItem> items) {
-            return new PaintNode(new RenderTask(null, elements -> DisplayListBuilder.appendItems(elements, items)), false, 0, null);
         }
     }
 
@@ -257,13 +249,19 @@ final class PaintOrder {
             scanCount = 0;
             scanMaxStamp = 0;
             scanInteractive = 0;
-            if (scan(box, false) && c.parentBox == box.parent && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
+            if (scan(box, false) && c.parentBox == box.parent
+                    && Float.compare(c.boxX, box.x) == 0 && Float.compare(c.boxY, box.y) == 0
+                    && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
                     && scanCount == c.boxCount && scanInteractive == c.interactiveCount
                     && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
                 if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId);
                 c.generation = renderGeneration;
-                if (!c.blockItems.isEmpty()) local.blocks.add(c.blockNode());
-                if (!c.inlineItems.isEmpty()) local.inlines.add(c.inlineNode());
+                for (BoxSlice slice : c.blockSlices) {
+                    local.blocks.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items)), false, 0, null));
+                }
+                for (BoxSlice slice : c.inlineSlices) {
+                    local.inlines.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items)), false, 0, null));
+                }
                 STAT_CHUNK_REPLAYED.increment();
                 return true;
             }
@@ -272,7 +270,7 @@ final class PaintOrder {
         scanMaxStamp = 0;
         scanInteractive = 0;
         if (!scan(box, true)) return false;
-        Chunk fresh = new Chunk(box.parent, clip, parentId, renderEpoch, scanCount, scanInteractive);
+        Chunk fresh = new Chunk(box.parent, box.x, box.y, clip, parentId, renderEpoch, scanCount, scanInteractive);
         fresh.generation = renderGeneration;
         chunks.put(box, fresh);
         recording = fresh;
@@ -316,6 +314,20 @@ final class PaintOrder {
     /** 箱が中身の節を持つスクロールコンテナなら、その記録。 */
     ScrollContent scrollContentOf(LayoutBox box) {
         return scrollContentOf.get(box);
+    }
+
+    ClipRect contentClipOf(LayoutBox box) {
+        if (box == null) return null;
+        if (contentClips.containsKey(box)) return contentClips.get(box);
+        ClipRect parentClip = box.parent != null ? contentClipOf(box.parent) : null;
+        ClipRect computed = computeChildClipRect(box, parentClip);
+        ClipRect res = computed == parentClip ? parentClip : canonical(computed);
+        contentClips.put(box, res);
+        return res;
+    }
+
+    void clearClips() {
+        contentClips.clear();
     }
 
     /** 直近の {@link #paintTasks} で中身の節を作ったスクロールコンテナの記録（描いたあとに読む）。 */
@@ -559,8 +571,14 @@ final class PaintOrder {
         return new RenderTask(box, elements -> {
             int start = elements.size();
             painter.draw(elements, box, clip, parentId);
-            List<DisplayItem> dst = inline ? rec.inlineItems : rec.blockItems;
-            for (int i = start, n = elements.size(); i < n; i++) dst.add(elements.get(i));
+            int count = elements.size() - start;
+            List<DisplayItem> sliceItems = count > 0 ? new ArrayList<>(count) : List.of();
+            for (int i = start; i < elements.size(); i++) {
+                DisplayItem item = elements.get(i);
+                sliceItems.add(item);
+                (inline ? rec.inlineItems : rec.blockItems).add(item);
+            }
+            (inline ? rec.inlineSlices : rec.blockSlices).add(new BoxSlice(box, sliceItems));
             if (memoKeeper != null) memoKeeper.owned(box, rec);
             rec.executed++;
         });

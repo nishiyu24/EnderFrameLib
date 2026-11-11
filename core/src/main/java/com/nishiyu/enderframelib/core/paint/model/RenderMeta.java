@@ -53,6 +53,12 @@ public record RenderMeta(
                 originX, originY, itemCount, interactiveState, roundedBorder, newHints);
     }
 
+    public RenderMeta withClip(ClipRect newClip) {
+        if (java.util.Objects.equals(clipRect, newClip)) return this;
+        return new RenderMeta(newClip, borderRadii, circleBorder, fontHeight, baseline, lineHeight,
+                originX, originY, itemCount, interactiveState, roundedBorder, hints);
+    }
+
     /**
      * 素のサイズからのフォントの倍率。
      */
