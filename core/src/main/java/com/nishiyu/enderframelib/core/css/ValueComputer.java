@@ -398,8 +398,10 @@ final class ValueComputer {
     static String absolutizeUnits(String value, Metrics metrics) {
         // 寸法のトークン（数値の直後に単位）が 1 つも無い値（キーワード・色・単位なしの数値）は、字句解析も直列化もしない
         if (!mayContainDimension(value)) return value;
-        boolean[] changed = {false};
         List<ComponentValue> values = CssSyntax.parseComponentValues(value);
+        // 置き換える寸法が 1 つも無ければ（px だけの値など）、直列化しない（値ごとに文字列を作って捨てていた）
+        if (!anyReplaceableDimension(values, metrics)) return value;
+        boolean[] changed = {false};
         String result = CssSyntax.serialize(values, token -> {
             if (token.type() != Type.DIMENSION) return token.raw();
             String unit = token.unit().toLowerCase(Locale.ROOT);
@@ -409,6 +411,26 @@ final class ValueComputer {
             return replacement;
         });
         return changed[0] ? result : value;
+    }
+
+    /** 値の木に、{@link #replaceUnit} が px などへ置き換える寸法のトークンがあるか（関数・ブロックの中も見る）。 */
+    private static boolean anyReplaceableDimension(List<ComponentValue> values, Metrics metrics) {
+        for (int i = 0, n = values.size(); i < n; i++) { // 反復子を作らない（値ごとに呼ばれる）
+            ComponentValue v = values.get(i);
+            switch (v) {
+                case CssSyntax.Preserved p -> {
+                    Token t = p.token();
+                    if (t.type() == Type.DIMENSION && replaceUnit(t, t.unit().toLowerCase(Locale.ROOT), metrics) != null) return true;
+                }
+                case CssSyntax.Function f -> {
+                    if (anyReplaceableDimension(f.args(), metrics)) return true;
+                }
+                case CssSyntax.Block b -> {
+                    if (anyReplaceableDimension(b.body(), metrics)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

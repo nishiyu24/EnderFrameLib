@@ -69,8 +69,8 @@ async function measure(name) {
 (async () => {
   const out = [];
   for (const name of Object.keys(docs)) {
-    for (let k = 0; k < 4; k++) { const r = await measure(name); r.run = k; out.push(r); console.log(JSON.stringify(r)); }
+    for (let k = 0; k < 3; k++) { const r = await measure(name); r.run = k; out.push(r); console.log(JSON.stringify(r)); }
   }
   process.exit(0);
 })();
-setTimeout(() => { console.log('TIMEOUT'); process.exit(2); }, 240000);
+setTimeout(() => { console.log('TIMEOUT'); process.exit(2); }, 420000);
