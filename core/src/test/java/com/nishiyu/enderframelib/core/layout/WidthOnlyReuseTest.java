@@ -164,6 +164,29 @@ class WidthOnlyReuseTest {
      * 変わり、差分レイアウトが一から組んだ結果と 1px ずれた。
      */
     @Test
+    void flexMinWidthPercentAndIntrinsicMarginsDoNotDependOnPreviousLayouts() {
+        String[] items = {
+                "<div style=\"display:flex\"><span style=\"min-width:30%\">alpha beta gamma</span><span>x</span></div>",
+                "<div style=\"display:flex\"><div style=\"min-width:50%;flex:0 1 auto\">alpha beta</div><div style=\"flex:1\">gamma delta</div></div>",
+                "<div style=\"display:inline-flex\"><span style=\"margin:0 auto\">alpha beta gamma delta</span><b>x</b></div>",
+                "<div style=\"display:flex\"><div style=\"margin:0 10%\">alpha beta</div><div style=\"margin-left:auto\">y</div></div>",
+                "<div style=\"display:flex;flex-wrap:wrap\"><span style=\"min-width:40%\">a long label here</span><span style=\"min-width:40%\">another one</span></div>",
+        };
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        for (String item : items) {
+            String html = "<html><head><style>body{margin:0}</style></head><body><div style=\"width:fit-content\">" + item + "</div></body></html>";
+            assertFalse(mismatches(parser, html, new int[]{800, 799, 800, 300, 301, 120, 121, 800}), item);
+        }
+        // 旧実装（親の箱が前回に測った幅・子の前回の余白を読む）では、差分が一から組んだ結果とずれた組み合わせ
+        String[] containers = {"display:inline-flex", "display:flex;width:fit-content", "display:flex"};
+        for (String container : containers) {
+            String html = "<html><head><style>body{margin:0}</style></head><body><div style=\"width:fit-content\"><div style=\"" + container
+                    + "\"><span style=\"min-width:100%\">alpha beta gamma delta</span><div style=\"display:flex\"><b style=\"margin:0 10%\">item one two three</b><i>z</i></div></div></div></body></html>";
+            assertFalse(mismatches(parser, html, new int[]{800, 300, 801, 120, 800, 500, 90, 800}), container);
+        }
+    }
+
+    @Test
     void emptyBoxMinContentDoesNotDependOnItsCurrentWidth() {
         String html = "<html><head><style>body{margin:0}</style></head><body><div style=\"display:flex;\">ok<span><p></p>"
                 + "<div style=\"display:inline-block;white-space:nowrap;\">a bit longer label text</div>"

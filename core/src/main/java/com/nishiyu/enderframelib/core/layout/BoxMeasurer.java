@@ -592,6 +592,18 @@ public final class BoxMeasurer {
     }
 
     /** サイズが分からないときの既定値。リモート画像は読み込み中なので少し大きめにとる。 */
+    /**
+     * 画像類（img / canvas / svg / ホストの画像）の固有の幅（装飾込み）。{@link #resolveWidth} の置換画像の経路と同じ値を、
+     * 箱が前回に測った幅（flex の伸縮で変わり得る）を読まずに求める。画像類でなければ NaN。
+     */
+    static float replacedImageWidth(LayoutBox box, LayoutContext ctx) {
+        if (!isReplacedImage(box.node.tag)) return Float.NaN;
+        int[] intrinsic = intrinsicSize(box, ctx);
+        return (intrinsic != null && intrinsic[0] > 0)
+                ? intrinsic[0] + box.horizontalDecoration()
+                : replacedFallbackWidth(box, ctx) + box.horizontalDecoration();
+    }
+
     private static float replacedFallbackWidth(LayoutBox box, LayoutContext ctx) {
         ImageChoice sel = box.node.tag.equals("img") ? selectedImage(box, ctx) : null;
         String src = sel != null ? sel.url() : box.node.attrs.getOrDefault("src", "");

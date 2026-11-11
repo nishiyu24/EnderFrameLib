@@ -415,7 +415,14 @@ public class LayoutBox {
     public float horizontalDecoration() { return pL + pR + bL + bR; }
 
     /** 親の内容ボックスの幅（% の基準）。親が無ければ 0。 */
-    float parentInnerWidth() { return parent == null ? 0 : Math.max(0, parent.w - parent.horizontalDecoration()); }
+    /**
+     * 内在の幅（min-content）に足す左右の余白。スタイルだけから求める（% と auto は 0: CSS Sizing 3 §5.2 の循環の扱い）。
+     * 前回の測定が置いた {@link #mL} / {@link #mR}（% は前回の使える幅で解いた値・auto は中央寄せで決めた値）を読まない。
+     */
+    float intrinsicInlineMargins(LayoutContext ctx) {
+        float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        return style.edgeLength(ComputedStyle.EDGE_MARGIN_L, 0, rootW, rootH) + style.edgeLength(ComputedStyle.EDGE_MARGIN_R, 0, rootW, rootH);
+    }
     public float verticalDecoration() { return pT + pB + bT + bB + legendSpill; }
 
     /** fieldset の描画される legend（{@link #isRenderedLegend}）。無ければ null。 */
@@ -525,6 +532,8 @@ public class LayoutBox {
                     && !node.tag.equals("img") && !node.tag.equals("video") && !node.tag.equals("iframe")) {
                 return horizontalDecoration();
             }
+            float image = BoxMeasurer.replacedImageWidth(this, ctx);
+            if (!Float.isNaN(image)) return image;
             return this.w > 0 ? this.w : LayoutMetrics.FALLBACK_REPLACED_SIZE;
         }
 
@@ -536,7 +545,7 @@ public class LayoutBox {
         int count = 0;
         for (LayoutBox c : children) {
             if (!c.participatesInFlow()) continue;
-            float contribution = c.minContentContribution(ctx) + c.mL + c.mR;
+            float contribution = c.minContentContribution(ctx) + c.intrinsicInlineMargins(ctx);
             max = Math.max(max, contribution);
             sum += contribution;
             count++;
