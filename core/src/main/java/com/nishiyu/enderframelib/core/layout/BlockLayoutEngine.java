@@ -72,6 +72,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
                 addInlineWidth(child, line, ctx);
+                if (tentativeInnerW > 0 && line.max > tentativeInnerW) box.measuredClamped = true;
                 maxChildW = Math.max(maxChildW, tentativeInnerW > 0 ? Math.min(tentativeInnerW, line.max) : line.max);
             } else {
                 line.clear();

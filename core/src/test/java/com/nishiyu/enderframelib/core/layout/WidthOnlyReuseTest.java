@@ -100,6 +100,167 @@ class WidthOnlyReuseTest {
         }
     }
 
+    // ---- fit 再利用: width:auto の箱（内容で寸法が決まる）。収まる幅と収まらない幅を跨いで、一から組んだ結果と一致すること ----
+
+    private static String fitNode(Random rnd, int depth) {
+        String[] text = {"ok", "label", "alpha beta", "a bit longer label text", "x", "日本語", "a longer piece of text that wraps when narrow",
+                "wordwordwordwordwordword", "two  spaces   here", "a<br>b", "<b>bold</b> and <i>it</i>"};
+        String t = text[rnd.nextInt(text.length)];
+        String[] tags = {"span", "div", "button", "label", "b", "p"};
+        String tag = tags[rnd.nextInt(tags.length)];
+        StringBuilder style = new StringBuilder();
+        switch (rnd.nextInt(10)) {
+            case 0 -> style.append("display:inline-block;");
+            case 1 -> style.append("display:flex;gap:").append(rnd.nextInt(8)).append("px;");
+            case 2 -> style.append("display:inline-flex;");
+            case 3 -> style.append("display:inline-block;padding:").append(rnd.nextInt(8)).append("px;border:1px solid #888;");
+            case 4 -> style.append("display:flex;flex-wrap:wrap;");
+            case 5 -> style.append("float:left;");
+            case 6 -> style.append("display:inline-block;white-space:nowrap;");
+            case 7 -> style.append("display:grid;grid-template-columns:auto auto;");
+            default -> { }
+        }
+        if (rnd.nextInt(6) == 0) style.append("margin:0 ").append(rnd.nextInt(10)).append("px;");
+        if (rnd.nextInt(8) == 0) style.append("max-width:").append(40 + rnd.nextInt(200)).append("px;");
+        if (rnd.nextInt(10) == 0) style.append("min-width:").append(20 + rnd.nextInt(100)).append("px;");
+        if (rnd.nextInt(10) == 0) style.append("text-align:").append(rnd.nextBoolean() ? "center" : "right").append(";");
+        StringBuilder sb = new StringBuilder("<").append(tag).append(" style=\"").append(style).append("\">").append(t);
+        if (depth < 3) for (int i = 0, n = rnd.nextInt(4); i < n; i++) sb.append(fitNode(rnd, depth + 1));
+        return sb.append("</").append(tag).append(">").toString();
+    }
+
+    private static String fitDoc(Random rnd) {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:0}</style></head><body>");
+        for (int r = 0, rows = 3 + rnd.nextInt(8); r < rows; r++) {
+            String container = switch (rnd.nextInt(4)) {
+                case 0 -> "display:flex;gap:6px;";
+                case 1 -> "display:flex;justify-content:space-between;";
+                case 2 -> "display:flex;flex-wrap:wrap;";
+                default -> "";
+            };
+            sb.append("<div style=\"").append(container).append("padding:").append(rnd.nextInt(10)).append("px\">");
+            for (int i = 0, n = 1 + rnd.nextInt(5); i < n; i++) sb.append(fitNode(rnd, 0));
+            sb.append("</div>");
+        }
+        return sb.append("</body></html>").toString();
+    }
+
+    private static boolean mismatches(UiDocumentCompiler parser, String html, int[] widths) {
+        var document = parser.parseDocument(html, "", 800, H);
+        InteractionState state = new InteractionState();
+        LayoutBox prev = null;
+        for (int w : widths) {
+            LayoutBox inc = prev == null ? parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state)
+                    : parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, prev);
+            String fresh = dump(parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState()));
+            if (!fresh.equals(dump(inc))) return true;
+            prev = inc;
+        }
+        return false;
+    }
+
+    /**
+     * 子を持たない箱（ここでは空の {@code p}）の min-content が今の幅を読むと、flex の項目の縮み方が、その箱を先に測ったか後で測るかで
+     * 変わり、差分レイアウトが一から組んだ結果と 1px ずれた。
+     */
+    @Test
+    void emptyBoxMinContentDoesNotDependOnItsCurrentWidth() {
+        String html = "<html><head><style>body{margin:0}</style></head><body><div style=\"display:flex;\">ok<span><p></p>"
+                + "<div style=\"display:inline-block;white-space:nowrap;\">a bit longer label text</div>"
+                + "<b style=\"display:inline-block;white-space:nowrap;\">a longer piece of text that wraps when narrow</b></span></div></body></html>";
+        assertFalse(mismatches(new UiDocumentCompiler(), html, new int[]{800, 799, 800, 801, 400, 401, 800}));
+    }
+
+    private static final int[] FIT_WIDTHS = {800, 799, 800, 200, 201, 120, 119, 121, 60, 61, 400, 399, 150, 151, 800, 90, 89, 300, 1000, 999};
+
+    /** 1/1000 px 未満の差（箱の幅を別の経路で出した float の丸め誤差）は同じとみなす。 */
+    private static String roundedDump(String dump) {
+        return java.util.regex.Pattern.compile("-?\\d+\\.\\d+").matcher(dump)
+                .replaceAll(m -> String.format(java.util.Locale.ROOT, "%.3f", Double.parseDouble(m.group())).replace("$", ""));
+    }
+
+    /** 差分レイアウトを 1 本の連鎖として進め、各手の結果の dump を返す。 */
+    private static java.util.List<String> chain(UiDocumentCompiler parser, com.nishiyu.enderframelib.common.Document document, boolean fit) {
+        boolean saved = LayoutBox.fitReuseEnabled;
+        LayoutBox.fitReuseEnabled = fit;
+        try {
+            InteractionState state = new InteractionState();
+            LayoutBox previous = null;
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (int w : FIT_WIDTHS) {
+                LayoutBox inc = previous == null
+                        ? parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state)
+                        : parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, previous);
+                out.add(dump(inc));
+                previous = inc;
+            }
+            return out;
+        } finally {
+            LayoutBox.fitReuseEnabled = saved;
+        }
+    }
+
+    /**
+     * fit 再利用ありの差分レイアウトは、なしの差分レイアウトと全ての手で一致する（再利用が結果を変えない）。
+     * なしの差分レイアウトも一から組んだ結果と一致しなければならない（空の箱の min-content が今の幅を読んでいた不具合の再発防止）。
+     */
+    @Test
+    void fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths() {
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        int baselineMismatches = 0;
+        for (int seed = 0; seed < 300; seed++) {
+            Random rnd = new Random(1000 + seed);
+            String html = fitDoc(rnd);
+            var document = parser.parseDocument(html, "", 800, H);
+            java.util.List<String> with = chain(parser, document, true);
+            java.util.List<String> without = chain(parser, document, false);
+            for (int step = 0; step < FIT_WIDTHS.length; step++) {
+                if (!roundedDump(with.get(step)).equals(roundedDump(without.get(step)))) {
+                    fail("seed " + seed + " 幅 " + FIT_WIDTHS[step] + " (手 " + step + ") で fit 再利用が結果を変えた\n" + html
+                            + "\n--- without\n" + without.get(step) + "\n--- with\n" + with.get(step));
+                }
+                boolean savedFit = LayoutBox.fitReuseEnabled;
+                LayoutBox.fitReuseEnabled = false;
+                String fresh;
+                try {
+                    fresh = dump(parser.layoutDocument(document, FIT_WIDTHS[step], H, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState()));
+                } finally {
+                    LayoutBox.fitReuseEnabled = savedFit;
+                }
+                if (!fresh.equals(without.get(step))) { baselineMismatches++; break; }
+            }
+        }
+        assertEquals(0, baselineMismatches, "差分レイアウトが一から組んだ結果と違う文書がある（fit 再利用の有無によらない）");
+    }
+
+    @Test
+    void fitReuseSkipsMeasuringBoxesThatStillFit() {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:0}</style></head><body>");
+        for (int i = 0; i < 40; i++) {
+            sb.append("<div style=\"display:flex;gap:6px\"><span>label ").append(i).append("</span><span>value</span><button>go</button></div>");
+        }
+        sb.append("</body></html>");
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        var document = parser.parseDocument(sb.toString(), "", 800, H);
+        long[] counts = new long[2];
+        for (int k = 0; k < 2; k++) {
+            boolean saved = LayoutBox.fitReuseEnabled;
+            LayoutBox.fitReuseEnabled = k == 1;
+            try {
+                InteractionState state = new InteractionState();
+                LayoutBox root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+                long before = LayoutBox.measurementsComputed();
+                parser.layoutDocument(document, 799, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, root);
+                counts[k] = LayoutBox.measurementsComputed() - before;
+            } finally {
+                LayoutBox.fitReuseEnabled = saved;
+            }
+        }
+        System.out.println("FITREUSE measurements after a 1px width change: without=" + counts[0] + " with=" + counts[1]);
+        // flex の項目は仮の測定と確定の測定を交互に受けて、1 箱 1 スロットの記録が上書きされ合うため、半減には届かない（既知の限界）
+        assertTrue(counts[1] < counts[0] * 0.9, "収まっている箱は測り直さない: " + counts[1] + " vs " + counts[0]);
+    }
+
     @Test
     void fixedWidthSubtreesAreNotMeasuredAgainWhenOnlyTheWidthChanges() {
         StringBuilder sb = new StringBuilder("<html><head><style>body{margin:0}</style></head><body><div>");
