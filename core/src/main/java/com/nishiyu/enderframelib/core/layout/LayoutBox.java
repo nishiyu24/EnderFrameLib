@@ -622,13 +622,23 @@ public class LayoutBox {
      * エンジンが子に対して再帰的に呼ぶため、入口はここに残している。
      */
     public void measure(ConstraintSpace space, LayoutContext ctx) {
+        measureWith(space, ctx, true);
+    }
+
+    /**
+     * @param restoreOk 親のエンジンが測定を実行している最中の呼び出し（親は子の測定のあとに stretch・auto マージン・相殺などを
+     *                  改めて書く）。子の前回の測定を使い回すとき、親が書き換えた出力を自然な測定結果へ戻してよい。
+     *                  親が測り直さない下降（{@link #remeasureChanged}）では false: 戻すと親の書き換えが消えるので、
+     *                  出力が測定時と違う子は従来どおり測り直す。
+     */
+    private void measureWith(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         // 親が決めた寸法は制約で受け取る。測定の中身は従来どおり overrideWidth / overrideHeight を読むので、測定の間だけ写す
         // （測定の外では常に NaN。入れ子の測定は別の箱のフィールドなので干渉しない）
         overrideWidth = space.fixedInlineSize();
         overrideHeight = space.fixedBlockSize();
         boolean fixedWidth = !Float.isNaN(overrideWidth);
         try {
-            measureCore(space, ctx);
+            measureCore(space, ctx, restoreOk);
         } finally {
             overrideWidth = Float.NaN;
             overrideHeight = Float.NaN;
@@ -651,10 +661,11 @@ public class LayoutBox {
     /** 直近の測定で、使える幅に依る子（折り返す・切られる・幅を埋める）があった。測定の始めに下ろし、子の測定が立てる。 */
     private boolean childFitBlocked;
 
-    private void measureCore(ConstraintSpace space, LayoutContext ctx) {
+    private void measureCore(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         restoreTentativeStash();
         for (LayoutBox child : children) adopt(child);
-        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx)) {
+        if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx, restoreOk)) {
+            if (restoreOk) restoreNaturalOutputs();
             if (!(subtreeChanged && ctx.firstPass())) return;
             int[] depth = DESCENT.get();
             depth[0]++;
@@ -860,11 +871,11 @@ public class LayoutBox {
             // 境界・外寸の変化を親が吸収できる箱（cutoff）・測り直しの印が付いた箱は、自分で測り直す。
             // 結果が外寸に出れば直接の親の測定が無効になり、親は呼び出し側（この関数の後）で測り直す
             if (child.layoutChanged || child.isRelayoutBoundary() || child.isCutoffEligible()) {
-                child.measure(child.measuredSpace, ctx);
+                child.measureWith(child.measuredSpace, ctx, false);
             } else {
                 child.remeasureChanged(ctx);
                 // 降りた先の結果で、この子の測定が当てはまらなくなったなら、ここで測り直す（取り残さない）
-                if (!child.measurementValid) child.measure(child.measuredSpace, ctx);
+                if (!child.measurementValid) child.measureWith(child.measuredSpace, ctx, false);
             }
         }
     }
@@ -943,6 +954,8 @@ public class LayoutBox {
     private long measuredRun = -1;
     /** measure を終えたときの自分の寸法。親が後から書き換えた（stretch・表の行の高さ）なら使い回さない。 */
     private float measuredW, measuredH, measuredMT, measuredMR, measuredMB, measuredML;
+    /** 測定を終えたときの自然な出力の全部（親が後から書き換える前）。 */
+    private BoxOutputs measuredOutputs;
     /** measure を終えたときの中身の署名。 */
     private ComputedStyle measuredStyle;
     private ComputedStyle measuredPlaceholderStyle;
@@ -1065,7 +1078,7 @@ public class LayoutBox {
         measuredWidthFree = free;
     }
 
-    private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx) {
+    private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         return measurementValid
                 && !layoutChanged
                 && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))
@@ -1078,8 +1091,21 @@ public class LayoutBox {
                 && sameLength(overrideHeight, measuredOverrideH)
                 && ctx.fonts() == measuredFonts
                 && ctx.intrinsicResolver() == measuredIntrinsics
-                && w == measuredW && h == measuredH
-                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML;
+                && (restoreOk || (w == measuredW && h == measuredH
+                        && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML));
+    }
+
+    /** 測定を使い回すとき、親が書き換えた出力（stretch の高さ・auto/相殺の余白など）を、測定したときの自然な結果へ戻す。 */
+    private void restoreNaturalOutputs() {
+        BoxOutputs natural = measuredOutputs;
+        if (natural == null) return;
+        if (w == measuredW && h == measuredH && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML
+                && contentBlockExtent == natural.contentBlockExtent()) {
+            return;
+        }
+        natural.apply(this);
+        invalidateMinContentCache();
+        touchPaint();
     }
 
     private static boolean sameLength(float a, float b) {
@@ -1118,6 +1144,7 @@ public class LayoutBox {
         measuredIntrinsics = ctx.intrinsicResolver();
         measuredEpoch = MEASUREMENT_EPOCH.get();
         measuredRun = ctx.layoutRun();
+        measuredOutputs = BoxOutputs.capture(this);
         measuredW = w;
         measuredH = h;
         measuredMT = mT;
