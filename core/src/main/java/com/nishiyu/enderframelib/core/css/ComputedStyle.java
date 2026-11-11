@@ -501,7 +501,101 @@ public final class ComputedStyle {
             own = ValueComputer.resolveFontSize(fontSize,
                     new ValueComputer.Context(Map.of(), parentFontSize, rootFontSize, 0, 0));
         }
-        return new ComputedStyle(owned, own, rootFontSize, true);
+        ComputedStyle fresh = new ComputedStyle(owned, own, rootFontSize, true);
+        return SHARE_ENABLED ? share(fresh) : fresh;
+    }
+
+    // ==================== 同じ内容の算出スタイルの共有（hash-consing） ====================
+    //
+    // 算出スタイルは不変で、宣言の値は文字列ごとに 1 つの正規のオブジェクト（CssValue）なので、内容が同じかは参照の比較で決まる。
+    // 同じ宣言・同じフォントサイズの要素（リストの行など）は、1 つのインスタンスを共有する。
+    // 保持量が要素数でなく「異なるスタイルの数」に比例し、変わっていないかの判定（diff・sameDeclarations）が同一性で済む。
+    // 表は弱参照で持つので、どの要素からも使われなくなったスタイルは回収される。
+
+    /** 切り分け用: false なら算出スタイルを共有しない（要素ごとに別のインスタンス）。 */
+    public static volatile boolean SHARE_ENABLED = !Boolean.getBoolean("enderframe.css.noshare");
+
+    private static final class Interned extends java.lang.ref.WeakReference<ComputedStyle> {
+        final int hash;
+
+        Interned(ComputedStyle s, int hash, java.lang.ref.ReferenceQueue<ComputedStyle> q) {
+            super(s, q);
+            this.hash = hash;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o == this) return true;
+            if (!(o instanceof Interned other) || other.hash != hash) return false;
+            ComputedStyle a = get(), b = other.get();
+            return a != null && b != null && sameContent(a, b);
+        }
+    }
+
+    private static final ConcurrentHashMap<Interned, Interned> SHARED = new ConcurrentHashMap<>(256);
+    private static final java.lang.ref.ReferenceQueue<ComputedStyle> SHARED_QUEUE = new java.lang.ref.ReferenceQueue<>();
+    private static final java.util.concurrent.atomic.LongAdder SHARE_HITS = new java.util.concurrent.atomic.LongAdder();
+    private static final java.util.concurrent.atomic.LongAdder SHARE_MISSES = new java.util.concurrent.atomic.LongAdder();
+
+    /** 共有で既存のインスタンスに置き換えた回数と、新しく登録した回数（診断・テスト用）。 */
+    public static long shareHits() {
+        return SHARE_HITS.sum();
+    }
+
+    public static long shareMisses() {
+        return SHARE_MISSES.sum();
+    }
+
+    private static int contentHash(ComputedStyle s) {
+        int h = 17;
+        for (CssValue v : s.values) h = 31 * h + (v == null ? 0 : v.text.hashCode());
+        h = 31 * h + Float.floatToIntBits(s.elementFontSize);
+        h = 31 * h + Float.floatToIntBits(s.rootFontSize);
+        if (s.extras != null) h = 31 * h + s.extras.hashCode();
+        return h;
+    }
+
+    /** 宣言・フォントサイズが全く同じか（値は正規の 1 個のオブジェクトなので参照で比べる）。 */
+    private static boolean sameContent(ComputedStyle a, ComputedStyle b) {
+        if (a == b) return true;
+        if (a.size != b.size || Float.compare(a.elementFontSize, b.elementFontSize) != 0
+                || Float.compare(a.rootFontSize, b.rootFontSize) != 0) return false;
+        CssValue[] x = a.values, y = b.values;
+        if (x.length != y.length) return false;
+        for (int i = 0; i < x.length; i++) if (x[i] != y[i]) return false;
+        if (a.extras == null || b.extras == null) return a.extras == b.extras;
+        return a.extras == b.extras || a.extras.equals(b.extras);
+    }
+
+    private static ComputedStyle share(ComputedStyle fresh) {
+        Object r;
+        while ((r = SHARED_QUEUE.poll()) != null) SHARED.remove((Interned) r, (Interned) r);
+        int h = contentHash(fresh);
+        Interned probe = new Interned(fresh, h, null);
+        Interned found = SHARED.get(probe);
+        if (found != null) {
+            ComputedStyle s = found.get();
+            if (s != null) {
+                SHARE_HITS.increment();
+                return s;
+            }
+        }
+        Interned mine = new Interned(fresh, h, SHARED_QUEUE);
+        Interned prev = SHARED.putIfAbsent(mine, mine);
+        if (prev != null) {
+            ComputedStyle s = prev.get();
+            if (s != null) {
+                SHARE_HITS.increment();
+                return s; // 競った相手が先に登録した
+            }
+        }
+        SHARE_MISSES.increment();
+        return fresh;
     }
 
     public ComputedStyle(Map<String, String> properties) {

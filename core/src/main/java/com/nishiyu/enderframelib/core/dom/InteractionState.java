@@ -161,8 +161,6 @@ public class InteractionState implements StateLookup {
         /** 状態 → 算出スタイルの表（自身だけの再スタイルで使い回す）。 */
         public com.nishiyu.enderframelib.core.kernel.compiler.StateStyleMemo stateMemo;
 
-        /** カスケード解決後の生宣言キャッシュ。 */
-        public Map<String, String> computedStyleCache;
         /** 確定済みの算出スタイルキャッシュ。 */
         public ComputedStyle computedStyle;
         /** 算出時の親フォントサイズ（px）。 */

@@ -16,18 +16,24 @@ import java.util.WeakHashMap;
 public class ScrollState {
     private final Map<HtmlNode, float[]> offsetsByNode = Collections.synchronizedMap(new WeakHashMap<>());
 
+    /** 一度でも位置が書かれたか。書かれていなければ、レイアウトが箱ごとに引く同期付きの弱参照の表を見ずに 0 を返す。 */
+    private volatile boolean anyScroll;
+
     public float getScrollX(HtmlNode node) {
+        if (!anyScroll) return 0;
         float[] offset = node != null ? offsetsByNode.get(node) : null;
         return offset != null ? offset[0] : 0;
     }
 
     public float getScrollY(HtmlNode node) {
+        if (!anyScroll) return 0;
         float[] offset = node != null ? offsetsByNode.get(node) : null;
         return offset != null ? offset[1] : 0;
     }
 
     public void setScroll(HtmlNode node, float x, float y) {
         if (node == null) return;
+        anyScroll = true;
         offsetsByNode.put(node, new float[]{x, y});
     }
 
@@ -44,5 +50,6 @@ public class ScrollState {
 
     public void clear() {
         offsetsByNode.clear();
+        anyScroll = false;
     }
 }

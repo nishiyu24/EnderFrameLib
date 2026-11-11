@@ -8,7 +8,7 @@ const SCRIPT=`<script>
 const DOC=${JSON.stringify(doc)}, SC=${JSON.stringify(scen)};
 let frames=0;window.__frames=0;
 function init(){
- const d=document; const list=DOC.startsWith('large-list');
+ const d=document; const list=DOC.startsWith('large-list')||DOC.startsWith('varied-list');
  const hv=list?[d.getElementById('item-100'),d.getElementById('item-101')]:[...d.querySelectorAll('.btn')].slice(0,2);
  const textNode=list?d.getElementById('item-250').firstChild:[...d.querySelectorAll('span')].find(s=>s.firstChild&&s.firstChild.nodeType===3&&s.textContent.trim().length>3).firstChild;
  const styleEl=list?d.getElementById('item-100'):d.querySelector('.btn');
@@ -21,6 +21,7 @@ function init(){
   inherited:i=>{d.body.style.color=(i&1)?'#112233':'#223344';},
   fontsize:i=>{d.body.style.fontSize=(i&1)?'16px':'15px';},
   child:i=>{if(i&1)ul.removeChild(ul.lastChild);else{const li=d.createElement('li');li.textContent='inserted '+i;ul.appendChild(li);}},
+  child250:i=>{if(i&1)ul.removeChild(ul.children[250]);else{const li=d.createElement('li');li.textContent='inserted '+i;ul.insertBefore(li,ul.children[250]);}},
   scroll:i=>{sc.scrollTop+=(i&1)?1:-1;}};
  const f=M[SC];
  (function loop(){ f(frames++); window.__frames=frames; requestAnimationFrame(loop); })();
@@ -28,7 +29,7 @@ function init(){
 addEventListener('load',()=>setTimeout(init,300));
 </script>`;
 const srv=http.createServer((req,res)=>{
-  let html = doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
+  let html = doc.startsWith('varied-list') ? fs.readFileSync(process.env.VARIED_FILE,'utf8') : doc.startsWith('large-list') ? largeList(parseInt(doc.split('-')[2]||'500')) : fs.readFileSync(path.join(__dirname,'../../../src/main/resources/data/enderframelib/enderframe_ui/showcase.html'),'utf8').replace(/:hover/g,'.fh');
   html=html+SCRIPT; res.setHeader('Content-Type','text/html'); res.end(html);
 }).listen(0,async()=>{
   const port=srv.address().port, dbg=9300+Math.floor(Math.random()*500);

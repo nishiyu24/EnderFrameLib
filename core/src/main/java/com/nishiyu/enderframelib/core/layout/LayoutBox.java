@@ -1389,6 +1389,18 @@ public class LayoutBox {
             LAYOUTS_SKIPPED.increment();
             return;
         }
+        // 原点だけが違い、部分木の配置が前回と同じ（原点からの相対位置が変わらない）なら、置き直さず部分木ごと平行移動する
+        // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
+        if (!sameInputs && SHIFT_ENABLED && ctx.reuseMeasurements() && canKeepPlacement(ctx.layoutRun())
+                && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
+                && parentX == lastLayoutX && isIntegral(parentY - lastLayoutY)
+                && lastLayoutOuterW == parentOuterW && isShiftableSubtree()) {
+            shiftSubtree(parentX - lastLayoutX, parentY - lastLayoutY);
+            lastLayoutX = parentX;
+            lastLayoutY = parentY;
+            LAYOUTS_SHIFTED.increment();
+            return;
+        }
         // 原点か包含ブロックの寸法が変わったので、前回の配置を引き継いだ子孫の位置はどれも古い。先に捨てる
         // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
         // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
@@ -1472,6 +1484,66 @@ public class LayoutBox {
 
     private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SKIPPED =
             new java.util.concurrent.atomic.LongAdder();
+
+    private static final java.util.concurrent.atomic.LongAdder LAYOUTS_SHIFTED =
+            new java.util.concurrent.atomic.LongAdder();
+
+    /** 切り分け用: false なら、原点だけが違う部分木も置き直す（平行移動で済ませない）。 */
+    public static volatile boolean SHIFT_ENABLED = !Boolean.getBoolean("enderframe.layout.noshift");
+
+    /** 原点だけが違うので部分木ごと平行移動した layout の回数（診断・テスト用）。 */
+    public static long layoutsShifted() {
+        return LAYOUTS_SHIFTED.sum();
+    }
+
+    /**
+     * 部分木が、位置を原点からの相対だけで持つ通常フロー（ブロック・flow-root・インライン。flex・grid・段組・表・グリッドの状態を持たない）か。
+     * 平行移動で済ませる前に、移動してはならない状態（絶対位置を持つエンジンの状態）が無いことを確かめる。
+     */
+    private boolean isShiftableSubtree() {
+        if (columnShifts != null || collapsedBorders != null || hasLegendBox()) return false;
+        if (engineState != null && !(engineState instanceof BlockLayoutEngine.FlowState)) return false;
+        if (display != null && display.inner() != Display.Inner.FLOW && display.inner() != Display.Inner.FLOW_ROOT) return false;
+        for (LayoutBox child : children) {
+            if (child.style.facts().displayNone) continue;
+            if (!child.isShiftableSubtree()) return false;
+        }
+        return true;
+    }
+
+    /** 整数ぶんだけの移動か（丸めの境目に当たらないので、置き直した結果と同じ丸めになる）。縦だけ・幅が同じ場合に限って使う（行の増減で後続が下へ動く形）。 */
+    private static boolean isIntegral(float v) {
+        return v == Math.rint(v);
+    }
+
+    private boolean hasLegendBox() {
+        return renderedLegend() != null;
+    }
+
+    /** 部分木の位置（箱・断片・行の下端・前回の配置の記録）を {@code (dx, dy)} だけ動かす。描画の変更印も進める。 */
+    private void shiftSubtree(float dx, float dy) {
+        // 文字の塊の箱は自分の位置を持たない（x / y は置き直しでも動かない。置かれるのは断片）
+        if (node == null || node.nodeType != NodeType.TEXT) {
+            this.x += dx;
+            this.y += dy;
+        }
+        if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
+        if (!Float.isNaN(staticX)) staticX += dx;
+        if (!Float.isNaN(staticY)) staticY += dy;
+        for (InlineFragment frag : inlineFragments) {
+            frag.x += dx;
+            frag.y += dy;
+        }
+        touchPaint();
+        for (LayoutBox child : children) {
+            if (child.style.facts().displayNone) continue;
+            if (!Float.isNaN(child.lastLayoutX)) {
+                child.lastLayoutX += dx;
+                child.lastLayoutY += dy;
+            }
+            child.shiftSubtree(dx, dy);
+        }
+    }
 
     /** これまでに使い回して飛ばした layout の回数（差分レイアウトの効き具合を測るテスト・診断用）。 */
     public static long layoutsSkipped() {
