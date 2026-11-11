@@ -631,7 +631,7 @@ public class RenderPipeline {
     private static void cacheStyle(InteractionState.StateFlags flags, HtmlNode node, Map<String, String> rawStyle,
                                    ComputedStyle computed, float parentFontSize, StyleScope scope,
                                    boolean hasInteractive, StyleSheet sheet) {
-        flags.computedStyleCache = rawStyle;
+        // カスケード解決後の生宣言（rawStyle）は、どこからも読まれないので節に持たせない（要素ごとに 1 表・約 1 KB が残っていた）
         flags.computedStyle = computed;
         flags.cachedParentFontSize = parentFontSize;
         flags.cachedRootFontSize = scope.rootFontSize();

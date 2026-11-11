@@ -138,7 +138,22 @@ public final class CssSyntax {
         }
 
         private void emit(Type type, String value, double number, String unit, boolean flag, int start) {
-            out.add(new Token(type, value, number, unit, flag, rawText(type, start), start, pos));
+            out.add(new Token(type, pooled(value), number, pooled(unit), flag, pooled(rawText(type, start)), start, pos));
+        }
+
+        // トークンの文字列（識別子・単位・ソースの断片）は、同じ綴りなら 1 つの String を共有する。解析結果の記憶（VALUE_CACHE）が
+        // 数千件のトークンの木を持つので、px・solid・数字などが記憶のたびに別の String になっていると保持量が嵩む。
+        // 直接配置の表（衝突したら新しい方に置き換える。競っても内容の同じ不変の文字列）。
+        private static final String[] POOL = new String[1 << 12];
+
+        private static String pooled(String v) {
+            if (v == null || v.length() > 24) return v;
+            int h = v.hashCode();
+            int slot = (h ^ (h >>> 12)) & (POOL.length - 1);
+            String hit = POOL[slot];
+            if (hit != null && hit.equals(v)) return hit;
+            POOL[slot] = v;
+            return v;
         }
 
         /**

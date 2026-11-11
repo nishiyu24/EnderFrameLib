@@ -881,7 +881,13 @@ public class BlockLayoutEngine extends LayoutEngine {
     private enum VAlign { BASELINE, TOP, BOTTOM }
 
     /** 行の中の 1 断片。{@code raise} はベースラインから持ち上げる量（px）。 */
-    record LineItem(InlineFragment frag, VAlign align, float raise) {}
+    /**
+     * 行の中の 1 断片（文字の語・不可分なインラインの箱）。座標は行の左端からの相対（{@code x}）で、{@link #placeLine} が行の位置と
+     * 揃えを足して {@link InlineFragment} を作って置く。以前は行の相対座標も {@link InlineFragment} で持っており、
+     * 語ごとに同じ大きさのオブジェクトが（行の記憶と置いた結果で）2 つずつ残っていた。
+     */
+    record LineItem(LayoutBox box, float x, float w, float h, String text, float baseline, float descent,
+                    List<LayoutBox> parents, VAlign align, float raise) {}
 
     /**
      * 行分割の結果 1 行。座標は内容ボックス相対、{@code baseline} は行の上端から。
@@ -1165,11 +1171,8 @@ public class BlockLayoutEngine extends LayoutEngine {
                     kerned += join;
                     previousOnLine = segment;
                     // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
-                    InlineFragment frag = new InlineFragment(run.box, lineX, 0, advance, runH, segment);
-                    frag.baseline = baseline;
-                    frag.descent = descent;
-                    frag.parents = run.inlineParents;
-                    current.add(new LineItem(frag, alignment.align, alignment.raise));
+                    current.add(new LineItem(run.box, lineX, advance, runH, segment, baseline, descent, run.inlineParents,
+                            alignment.align, alignment.raise));
                     lineX += advance;
                     trailingSpace = advance - trimmedW;
                     markContent();
@@ -1200,10 +1203,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 ensureLine();
             }
             dropBelowFloats(lineX + boxOuterW + closing);
-            InlineFragment frag = new InlineFragment(b, lineX + b.mL, 0, b.w, b.h, null);
-            frag.baseline = baseline;
-            frag.parents = run.inlineParents;
-            current.add(new LineItem(frag, alignment.align, alignment.raise));
+            current.add(new LineItem(b, lineX + b.mL, b.w, b.h, null, baseline, 0, run.inlineParents, alignment.align, alignment.raise));
             lineX += boxOuterW;
             trailingSpace = 0;
             markContent();
@@ -1250,15 +1250,14 @@ public class BlockLayoutEngine extends LayoutEngine {
             float belowBaseline = strutHeight - strutBaseline;
             for (LineItem item : current) {
                 if (item.align() != VAlign.BASELINE) continue;
-                InlineFragment f = item.frag();
-                baseline = Math.max(baseline, f.box.mT + f.baseline + item.raise());
-                belowBaseline = Math.max(belowBaseline, f.h - f.baseline + f.box.mB - item.raise());
+                baseline = Math.max(baseline, item.box().mT + item.baseline() + item.raise());
+                belowBaseline = Math.max(belowBaseline, item.h() - item.baseline() + item.box().mB - item.raise());
             }
             float height = baseline + belowBaseline;
             // top / bottom は行ボックスの端に揃える。ベースラインで揃えた内容より高ければ行を広げる
             for (LineItem item : current) {
                 if (item.align() == VAlign.BASELINE) continue;
-                height = Math.max(height, outerHeight(item.frag()));
+                height = Math.max(height, outerHeight(item));
             }
             return new InlineLine(current, spans, lineTop, lineLeft, lineWidth, height, baseline, used);
         }
@@ -1313,8 +1312,8 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     /** 断片のマージンを含む高さ。 */
-    private static float outerHeight(InlineFragment f) {
-        return f.box.mT + f.h + f.box.mB;
+    private static float outerHeight(LineItem f) {
+        return f.box().mT + f.h() + f.box().mB;
     }
 
     /**
@@ -1340,22 +1339,22 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         for (LineItem item : items) {
-            InlineFragment src = item.frag();
+            LineItem src = item;
             // マージンボックスの上端
             float top = switch (item.align()) {
                 case TOP -> drawY;
                 case BOTTOM -> drawY + line.height() - outerHeight(src);
-                default -> drawY + line.baseline() - (src.box.mT + src.baseline + item.raise());
+                default -> drawY + line.baseline() - (src.box().mT + src.baseline() + item.raise());
             };
 
-            InlineFragment f = new InlineFragment(src.box, src.x + offsetX, top + src.box.mT, src.w, src.h, src.text);
-            f.baseline = src.baseline;
-            f.descent = src.descent;
-            f.parents = src.parents;
+            InlineFragment f = new InlineFragment(src.box(), src.x() + offsetX, top + src.box().mT, src.w(), src.h(), src.text());
+            f.baseline = src.baseline();
+            f.descent = src.descent();
+            f.parents = src.parents();
             f.box.inlineFragments.add(f);
             if (!f.isText()) {
                 f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
-            } else if (!src.text.isBlank()) {
+            } else if (!src.text().isBlank()) {
                 // 文字の内容領域（ベースラインから descent まで）は行の高さより下に出ることがある。
                 // ブラウザのスクロール範囲（scrollHeight）はこの内容領域を含む
                 textBottom = Math.max(textBottom, f.y + f.baseline + f.descent);

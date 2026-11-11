@@ -136,12 +136,32 @@ public final class TextShaper {
         int start = 0;
         for (int i = text.offsetByCodePoints(0, 1); i < text.length(); i = text.offsetByCodePoints(i, 1)) {
             if (LineBreaker.canBreakBefore(text, i, wordBreak)) {
-                out.add(text.substring(start, i));
+                out.add(sharedSegment(text, start, i));
                 start = i;
             }
         }
-        out.add(text.substring(start));
+        out.add(sharedSegment(text, start, text.length()));
         return out;
+    }
+
+    // 語（折り返しの単位）の文字列は、同じ語なら 1 つの String を共有する。段落ごと・書体ごとに別の部分文字列を持つと、
+    // 数千行のリストで語の数だけ String と byte[] が残る（語彙は文章の量よりずっと少ない）。
+    // 直接配置の表（衝突したら新しい方に置き換える）で、確保なしに引く。作るのは段落の記憶の更新時だけ。
+    private static final int SHARED_SEGMENT_MAX_LENGTH = 24;
+    private static final String[] SHARED_SEGMENTS = new String[1 << 15];
+
+    /** 切り出し {@code [start, end)} の文字列。短い語は共有する（表への書き込みは競っても同じ内容の不変の文字列）。 */
+    private static String sharedSegment(String text, int start, int end) {
+        int len = end - start;
+        if (len > SHARED_SEGMENT_MAX_LENGTH) return text.substring(start, end);
+        int h = 0;
+        for (int k = start; k < end; k++) h = 31 * h + text.charAt(k);
+        int slot = (h ^ (h >>> 15)) & (SHARED_SEGMENTS.length - 1);
+        String hit = SHARED_SEGMENTS[slot];
+        if (hit != null && hit.length() == len && text.startsWith(hit, start)) return hit;
+        String made = text.substring(start, end);
+        SHARED_SEGMENTS[slot] = made;
+        return made;
     }
 
     private static boolean isBlank(char c) {

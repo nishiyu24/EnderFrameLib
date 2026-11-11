@@ -117,7 +117,7 @@ public class DisplayListBuilder {
     /** スクロールバーを持ちうる（overflow: scroll / auto）描画済みの箱。差分パッチで全箱を走査せずに済ませるための集合（描画のたびに作り直し、子の増減で更新する）。 */
     private final Set<LayoutBox> scrollBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
     /** 窓付きの描画で項目を省いた箱（画面外）。差分パッチが、窓の出入りが無いかを調べるのに使う。 */
-    private final Set<LayoutBox> culledBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final List<LayoutBox> culledBoxes = new ArrayList<>();
     /** 直近の描画のルートボックス。 */
     private LayoutBox currentRoot;
 
@@ -250,7 +250,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 owner.dlStart = -1;
                 owner.dlEnd = -1;
                 owner.dlOrder = -1;
-                if (windowed) culledBoxes.add(owner);
+                if (windowed && isGeometryOwner(owner)) culledBoxes.add(owner);
                 continue;
             }
             int start = elements.size();
@@ -316,12 +316,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             CssPropertyIndex.SCALE, CssPropertyIndex.ANIMATION, CssPropertyIndex.ANIMATION_NAME, CssPropertyIndex.FILTER,
             CssPropertyIndex.PERSPECTIVE};
 
-    private boolean offscreen(LayoutBox box) {
-        // 文字の塊の箱は位置を持たない（断片が置かれる）。持ち主の箱の範囲で見る
+    /** 箱（文字の塊は持ち主の箱）の位置が、画面と余白の範囲に掛かるか。 */
+    private boolean inWindowGeometry(LayoutBox box) {
         LayoutBox at = box;
         while (at.parent != null && ("#text".equals(at.node.tag) || at.isAnonymous)) at = at.parent;
-        if (at.x + at.w >= -CULL_MARGIN && at.x <= rootW + CULL_MARGIN
-                && at.y + at.h >= -CULL_MARGIN && at.y <= rootH + CULL_MARGIN) return false;
+        return at.x + at.w >= -CULL_MARGIN && at.x <= rootW + CULL_MARGIN
+                && at.y + at.h >= -CULL_MARGIN && at.y <= rootH + CULL_MARGIN;
+    }
+
+    private boolean offscreen(LayoutBox box) {
+        if (inWindowGeometry(box)) return false;
         for (LayoutBox b = box; b != null; b = b.parent) {
             if (b.style == null) continue;
             for (int prop : MOVING_PROPS) {
@@ -1176,7 +1180,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             box.dlStart = -1;
             box.dlEnd = -1;
             box.dlOrder = -1;
-            culledBoxes.add(box);
+            if (isGeometryOwner(box)) culledBoxes.add(box);
         } else if (!box.isAnonymous) {
             boolean isInline = box.display.isInlineLevel() || (box.node != null && box.node.nodeType == NodeType.TEXT);
             List<DisplayItem> targetItems = isInline ? outInlines : outBlocks;
@@ -1209,13 +1213,20 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private boolean windowIntact(List<LayoutBox> removed) {
         Set<LayoutBox> gone = Collections.newSetFromMap(new IdentityHashMap<>());
         for (LayoutBox r : removed) markSubtree(r, gone);
+        // 位置だけで決まる側（窓に掛かる箱は描く・掛からない箱は、変形などの動く祖先が無いかぎり省く）を先に見て、祖先の走査を避ける。
+        // 省いた箱の変形などの有無は、省いた時点から変わらない（スタイルの変更は別の経路で、子の増減のパッチには来ない）
         for (LayoutBox b : renderedBoxes) {
-            if (!gone.contains(b) && offscreen(b)) return false;
+            if (!gone.contains(b) && !inWindowGeometry(b) && offscreen(b)) return false;
         }
         for (LayoutBox b : culledBoxes) {
-            if (!gone.contains(b) && !offscreen(b)) return false;
+            if (!gone.contains(b) && inWindowGeometry(b)) return false;
         }
         return true;
+    }
+
+    /** 文字の塊・匿名の箱は、窓に掛かるかを持ち主の箱の位置で決める（持ち主と同じ答えになる）ので、窓の出入りの確認では持ち主だけを見る。 */
+    private static boolean isGeometryOwner(LayoutBox b) {
+        return !b.isAnonymous && !(b.node != null && "#text".equals(b.node.tag));
     }
 
     private static void markSubtree(LayoutBox b, Set<LayoutBox> out) {
@@ -1477,8 +1488,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 renderedBoxes.subList(remBlockOrderStart, remBlockOrderStart + remBlockCount).clear();
             }
 
-            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); culledBoxes.remove(b); }
-            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); culledBoxes.remove(b); }
+            for (LayoutBox b : remSlices.inlineBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
+            for (LayoutBox b : remSlices.blockBoxes) { b.clearDlSlice(); scrollBoxes.remove(b); }
+            if (windowedBuild) {
+                Set<LayoutBox> goneBoxes = Collections.newSetFromMap(new IdentityHashMap<>());
+                for (LayoutBox r : removed) markSubtree(r, goneBoxes);
+                culledBoxes.removeIf(goneBoxes::contains);
+            }
         }
 
         // 2. 追加ボックスの描画スライス生成（ブロック層・インライン層）
