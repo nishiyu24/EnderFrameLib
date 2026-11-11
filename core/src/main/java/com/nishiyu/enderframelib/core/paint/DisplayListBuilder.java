@@ -62,9 +62,9 @@ public class DisplayListBuilder {
             "input", "select", "progress", "meter", "textarea", "canvas", "svg"
     );
 
-    private final int rootW;
+    private int rootW;
 
-    private final int rootH;
+    private int rootH;
 
     private final Map<String, Keyframes> keyframes;
 
@@ -79,6 +79,20 @@ public class DisplayListBuilder {
 
     /** 背景をキャンバスに譲った要素（html か body）。自分の箱には背景色を描かない。 */
     private LayoutBox canvasBackgroundSource;
+
+    /**
+     * ビューポートの大きさが変わった（ウィンドウのリサイズ）。箱ごとの記憶は残す: ビューポート基準の単位（{@code vw} など）を
+     * 使わない箱の項目は、ビューポートの大きさに依らないので、位置・寸法・スタイルが同じなら使い回せる
+     * （{@link BoxMemo#viewportSensitive}）。部分木の保持は箱の記憶と別の鍵なので、捨てる。
+     */
+    public void setViewport(int rootW, int rootH) {
+        if (this.rootW == rootW && this.rootH == rootH) return;
+        this.rootW = rootW;
+        this.rootH = rootH;
+        anim.setViewport(rootW, rootH);
+        decor.setViewport(rootW, rootH);
+        order.setViewport(rootW, rootH);
+    }
 
     public DisplayListBuilder(int rootW, int rootH, Map<String, Keyframes> keyframes, ScrollState scrollState) {
         this.rootW = rootW;
@@ -420,6 +434,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int appliedDx, appliedDy;
         boolean appliedFragOnly;
         int generation;
+        /** 記憶を作ったときのビューポートの大きさと、項目がそれに依る箱か（ビューポート基準の単位・ルートの背景）。 */
+        int rootW, rootH;
+        boolean viewportSensitive;
         List<DisplayItem> items;
         com.nishiyu.enderframelib.core.css.ComputedStyle style;
         com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
@@ -584,6 +601,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 属性が変わらない更新（文字の局所パッチ）でだけ呼び出し側が有効にする。
      */
     private boolean stampClean(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return false;
         if (m.nums != null && m.nums.length >= 4) {
             if (Float.compare(box.x, m.nums[0]) != 0 || Float.compare(box.y, m.nums[1]) != 0
                     || Float.compare(box.w, m.nums[2]) != 0 || Float.compare(box.h, m.nums[3]) != 0) {
@@ -614,10 +632,19 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * （または、クリップだけが違う）なので、前回の項目を平行移動して使える。
      * 2 を返すのは {@link #translating}（スクロールなど位置だけが変わる作り直し）で、記憶が平行移動に耐える箱のときだけ。
      */
+    /** 診断: {@link #match} が 0（使えない）を返した理由別の回数（添字は match 内の return 0 の出現順。1 始まり、[0] は未使用）。 */
+    public static final java.util.concurrent.atomic.LongAdder[] STAT_MATCH_FAIL = newAdders(24);
+
+    private static int matchFail(int reason) {
+        STAT_MATCH_FAIL[reason].increment();
+        return 0;
+    }
+
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
+        if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return matchFail(1);
         if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
-                || m.suppressShadow != suppressTextShadow) return 0;
-        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) return 0;
+                || m.suppressShadow != suppressTextShadow) return matchFail(2);
+        if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) return matchFail(3);
         float dx = box.x - m.nums[0], dy = box.y - m.nums[1];
         // 文字の箱は自分の位置を持たず、断片だけが置かれる。箱が動かないのに断片が動いたときは、断片の動きを箱の動きとして見る
         // （後続の行が下へずれるとき、文字の箱が毎回描き直しになるのを避ける）。断片どうしの動きが揃っているかは下で確かめる
@@ -633,38 +660,38 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         // スクロールの作り直しは丸めて動かす。子の増減では、整数ぶんだけ動いた箱に限って厳密に動かす（丸めが入らない）
         boolean moveOk = m.translatable && (translating
                 || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && dx == Math.rint(dx) && dy == Math.rint(dy)));
-        if (moved && !moveOk) return 0;
-        if (m.nums.length != NUMS_LENGTH) return 0;
-        for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return 0;
+        if (moved && !moveOk) return matchFail(4);
+        if (m.nums.length != NUMS_LENGTH) return matchFail(5);
+        for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return matchFail(6);
         boolean clipSame = sameClip(m.clip, clip);
-        if (!clipSame && !moveOk) return 0;
-        if (!java.util.Objects.equals(m.parentId, parentId)) return 0;
-        if (!java.util.Objects.equals(m.displayText, box.displayText) || !java.util.Objects.equals(m.shaped, box.shapedLines)) return 0;
-        if (m.attrVersion != box.node.attrVersion()) return 0;
+        if (!clipSame && !moveOk) return matchFail(7);
+        if (!java.util.Objects.equals(m.parentId, parentId)) return matchFail(8);
+        if (!java.util.Objects.equals(m.displayText, box.displayText) || !java.util.Objects.equals(m.shaped, box.shapedLines)) return matchFail(9);
+        if (m.attrVersion != box.node.attrVersion()) return matchFail(10);
         int depth = 0;
         for (LayoutBox a = box.parent; a != null; a = a.parent, depth++) {
-            if (depth >= m.ancestors.length || !sameStyle(m.ancestors[depth], a.style)) return 0;
+            if (depth >= m.ancestors.length || !sameStyle(m.ancestors[depth], a.style)) return matchFail(11);
         }
-        if (depth != m.ancestors.length) return 0;
+        if (depth != m.ancestors.length) return matchFail(12);
         List<LayoutBox.InlineFragment> frags = box.inlineFragments;
-        if (m.fragText.length != frags.size()) return 0;
+        if (m.fragText.length != frags.size()) return matchFail(13);
         int r = 0;
         for (int i = 0; i < frags.size(); i++) {
             LayoutBox.InlineFragment f = frags.get(i);
             int n = i * 8;
-            if (!java.util.Objects.equals(m.fragText[i], f.text)) return 0;
+            if (!java.util.Objects.equals(m.fragText[i], f.text)) return matchFail(14);
             // 断片の位置は、箱と同じだけ動いていること（動き方が違う断片があれば、平行移動では済まない）
             if (moved ? (Math.abs(f.x - m.fragNums[n] - dx) > 1e-3f || Math.abs(f.y - m.fragNums[n + 1] - dy) > 1e-3f)
-                    : (Float.compare(m.fragNums[n], f.x) != 0 || Float.compare(m.fragNums[n + 1], f.y) != 0)) return 0;
+                    : (Float.compare(m.fragNums[n], f.x) != 0 || Float.compare(m.fragNums[n + 1], f.y) != 0)) return matchFail(15);
             if (Float.compare(m.fragNums[n + 2], f.w) != 0 || Float.compare(m.fragNums[n + 3], f.h) != 0
                     || Float.compare(m.fragNums[n + 4], f.baseline) != 0 || m.fragNums[n + 5] != (f.startEdge ? 1f : 0f)
-                    || m.fragNums[n + 6] != (f.endEdge ? 1f : 0f) || Float.compare(m.fragNums[n + 7], f.descent) != 0) return 0;
-            if (m.fragRefs[r++] != f.box || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return 0;
+                    || m.fragNums[n + 6] != (f.endEdge ? 1f : 0f) || Float.compare(m.fragNums[n + 7], f.descent) != 0) return matchFail(16);
+            if (m.fragRefs[r++] != f.box || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], f.box != null ? f.box.style : null)) return matchFail(17);
             List<LayoutBox> parents = f.parents;
             int pn = parents == null ? 0 : parents.size();
-            if (!(m.fragRefs[r++] instanceof Integer count) || count != pn) return 0;
+            if (!(m.fragRefs[r++] instanceof Integer count) || count != pn) return matchFail(18);
             for (int k = 0; k < pn; k++) {
-                if (m.fragRefs[r++] != parents.get(k) || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return 0;
+                if (m.fragRefs[r++] != parents.get(k) || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return matchFail(19);
             }
         }
         if (!moved && clipSame) return 1;
@@ -736,6 +763,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private BoxMemo remember(LayoutBox box, ClipRect clip, String parentId, List<DisplayItem> items) {
         BoxMemo m = new BoxMemo();
         m.epoch = buildEpoch;
+        m.rootW = rootW;
+        m.rootH = rootH;
+        m.viewportSensitive = box.parent == null || box.style.usesViewportUnits();
         m.parentBox = box.parent;
         m.items = items;
         m.style = box.style;

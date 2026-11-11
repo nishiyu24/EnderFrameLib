@@ -272,6 +272,13 @@ public class UiView implements AutoCloseable {
         if (renderer != com.nishiyu.enderframelib.core.paint.ILayoutBoxRenderer.DEFAULT) return renderer.render(root, width, height, keyframes, scrollState);
         // 既定の描画は、ビルダーをこのビューで持ち回す: 前回と入力が同じ箱は、項目を作り直さず前回のものを使う
         var builder = paintBuilder;
+        if (builder != null && (paintBuilderW != width || paintBuilderH != height)
+                && paintBuilderKeyframes == keyframes && paintBuilderScroll == scrollState) {
+            // リサイズ: ビルダーを作り直さず、箱ごとの記憶を残す（ビューポートに依らない箱は項目を使い回せる）
+            builder.setViewport(width, height);
+            paintBuilderW = width;
+            paintBuilderH = height;
+        }
         if (builder == null || paintBuilderW != width || paintBuilderH != height
                 || paintBuilderKeyframes != keyframes || paintBuilderScroll != scrollState) {
             builder = paintBuilder = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(width, height, keyframes, scrollState);
