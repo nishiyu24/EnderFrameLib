@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-11（**最新: R1 スタイル変更（`:hover` / `style` / `:focus`）の DisplayList スライスパッチ化 ＆ R1-0 `StandaloneView` ビルダー一本化完了（§6.9）— 寸法・重なり・スタッキングコンテキスト検知フォールバック網羅、100% 一致検証・全 1,908 テスト合格。次は R2 `child` 残差へ。**／**前: R0 計測基盤補強完了（§6.8）— P0-4 スライスパッチが標準経路（`StandaloneView`）で未使用と判明・R1-0 へ。**／前: 差分描画・Segmented DisplayList 実装後の `:core` 再計測（§6.7）を受けた全面再策定 — 新ロードマップ R0〜R7（§7.3 冒頭・§7.4）。結論: GL 送出は律速でなくなり、残りは「スタイル変更経路が DisplayList スライスパッチを使っていない疑い」「子要素増減・全面無効化の下流コスト」「幅変更レイアウト」／同日追記: P0-4 Segmented DisplayList（`LayoutBox` の `[dlStart, dlEnd)` スライス保持と差分差し替え、全ボックス走査の排除 — 戦略 T2）完了（`TEXT_PATCH` / `CHILD_PATCH` / 単一・複数スタイル変更で `DisplayListBuilder` の全ツリー走査をバイパスしてスライスを差分差し替え・シフト可能化。毎回フル再構築時と 100% 完全一致）**／同日: P0-1 増分索引シフト（`patchIndexByShift`）＆ 構造不変大規模差分（`inherited` 等）インプレースパッチ完了（`CHILD_PATCH`・大規模スタイル変更での `rebuildIndex` 配列再生成を根絶）／同日: P0-3 段階 4 — 残余描画要素（境界線・スクロールバー・UI部品等）の完全 64-bit 整数鍵化と親子キー直結（P0-1/T2）完了／同日: P0-3 段階 3 — 主要部品（NODE / _bg / コントロール群）の 64-bit 整数鍵化と索引側の整数鍵直結完了／同日: P0-3 段階 2 — 装飾部品（断片・影）の整数鍵化と部品番号領域の分離／同日: P0-3 64-bit 整数鍵化（`DisplayItem.keyOf(nodeHandle, partOrdinal)`）の導入とテキスト項目での `AtomTable.intern` バイパス／同日: P0 段階 1b 残余 `NONE` 保持計画／CPU バックエンドでの画面外ブロック走査除外を解禁／同日: P0 段階 1b ① 記録範囲の画面外ブロック走査除外（ドライバ単体 `0.46 → 0.03〜0.09 ms`）、§7.3／同日: P0 段階 1b-③ 記録中の `buildClip` 前カリング／同日: P0 段階 1b-② 保持スクロール層記録時カリング実装）／2026-11-10（**同日追記: `TEXT_PATCH` を `button` / `label` へ開放（§7.3 P1-2）**。**同日: §1.3 の 7 層参照モデルを `LayerDependencyRatchetTest` で機械的に固定し、逆方向参照 11 系統を全て解消（`KNOWN_UPWARD` = 空集合。P0「参照モデルによる崩壊防止」完了）**。Milestone 1〜5 完遂 ＋ Wave 1 基盤純化・公開 API・GL 差分走査・レイアウト増幅削減を反映し全面整理。**同日追記: Chrome 157 / Firefox 159 / Swing / JavaFX との横断ベンチマーク（§6.4）と劣後点 W1〜W9（§6.5）、それに基づく P0〜P1 の再編**）
+> **最終更新**: 2026-11-11（**最新: R2（`child`）は「スライスパッチ命中 100%・確保量削減」まで達成、時間 KPI は未達と確定（§6.10）。JFR 分解で、原因は平坦リストの O(N) そのものではなく「後続項目の再生成（散在ヒープのポインタ追い）」と「それに巻き込まれる下流索引の全面作り直し」と判明。現行方式の延長では `< 3 ms` に届かないため、DoD 再設計（座標を持たない Paint 表）と内容アドレス化・反復ブロックのインスタンス化（RTI）へ方針転換（§8）。**／前: R1 完了（§6.9）／前: R0 計測基盤補強完了（§6.8））
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -551,103 +551,84 @@ JMH はスタイル・レイアウト・フル DisplayList の単体で、今回
 | W7（open） | 変化小 | showcase null `6.19 → 5.51`、GL `5.39 → 5.11` ms（Chrome `5.0` と同等）。500 行 GL `9.22 → 6.17` ms |
 
 **未解消の主課題**: (1) `child`・`fontsize`・`inherited` のような**構造/全面変更系**が 2,000 行で Chrome の 1.7〜12.6 倍、(2) 幅変更レイアウト（W5）、(3) showcase 規模の CPU バックエンド全面再ラスタ、(4) `softwarePaint` showcase の JMH 悪化の原因調査。
+### 6.8 R0 計測基盤の補強（2026-11-11 完了）
 
-### 6.8 R0 計測基盤の補強の結果（2026-11-11）
+`FineProfileMain` に `PAINT` 段（バックエンドを `ProfilingRenderBackend` で包む）、`ACCOUNTED`（段合計の説明率）、`PATCH` / `CANTPATCH`（スライスパッチ命中・不成立理由）の各行を追加。[`run-fine.sh`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/run-fine.sh) / [`summarize-fine.js`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/summarize-fine.js) で 3 回実行の中央値・最小・最大を台帳化（`REPS=3 run-fine.sh fine.log` → `node summarize-fine.js fine.log stages`）。ばらつきは多くが ±5% 以内で、§6.7 の 1 回実行値は妥当だった。
 
-**追加したもの**（本番挙動は不変。カウンタのみ）:
+#### 6.8.1 段別内訳（2,000 行・GL、ms/フレーム）と判明した事実
 
-| 追加 | 場所 | 内容 |
-| :--- | :--- | :--- |
-| `PAINT` 段の計測 | [`FineProfileMain`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/jmh/java/com/nishiyu/enderframelib/bench/FineProfileMain.java) | バックエンドを `ProfilingRenderBackend` で包み、`paint(cpu)`（CPU 側の描画・GL 送出・索引走査）を段として出力 |
-| `ACCOUNTED` 行 | 同上 | 段の合計がフレーム平均の何 % を説明するか（GPU 段は重複のため除外） |
-| `PATCH` 行 | 同上 + [`UiView`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) | スライスパッチ命中・フォールバック、再スタイル経路の内訳（`structural` / `relayoutFull` / `relayoutInplace` / `reposition` / `repaintFull`） |
-| `CANTPATCH` 行 | 同上 + [`DisplayListBuilder`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java) | `canPatchBoxes` / `canPatchChildSlices` の不成立理由別カウンタ（`STAT_CANT_PATCH`）、`noBuilder`（ビルダー不在）、`multiPlan` |
-| 3 回実行 + 中央値・最小・最大 | [`run-fine.sh`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/run-fine.sh) / [`summarize-fine.js`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/summarize-fine.js) | `REPS=3 core/src/bench-crossengine/run-fine.sh fine.log` → `node summarize-fine.js fine.log stages`（段別内訳つき）。2,000 行に `inherited` / `relayout` を追加 |
-
-#### 6.8.1 3 回実行の台帳（平均 ms の中央値 [最小–最大]、201 回実行）
-
-ばらつきは全体に小さく（多くが ±5% 以内）、§6.7 の 1 回実行値は妥当だった。`large-list-2000` GL の主な値: `scroll 0.509` / `hover 3.547 [3.544–3.632]` / `text 1.514` / `style 3.042` / `child 14.078 [13.597–14.154]` / `inherited 15.898` / `fontsize 19.617` / `relayout 4.569`。showcase CPU は `hover 4.717 [4.623–4.816]`・`inherited 8.262`。large-list(500) GL は `hover 0.716` / `text 0.427` / `child 2.257` / `inherited 3.521`。
-
-#### 6.8.2 段別内訳（2,000 行・GL、ms/フレーム）と判明した事実
-
-| シナリオ | restyle-local | layout (measure+place) | display-list | paint（GL 送出） | 説明率 |
+| シナリオ | restyle-local | layout | display-list | paint（GL 送出） | 説明率 |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | `hover` | `0.10` | — | **`2.49`（70%）** | `0.77` | 95% |
 | `style` | `0.14` | — | **`1.95`（64%）** | `0.77` | 94% |
 | `text` | — | `0.19` | `0.44` | `0.65` | 84% |
 | `child` | — | `1.22` | **`5.78`（41%）** | **`6.24`（44%）** | 94% |
 | `inherited` | **`3.40`** | — | **`6.97`（44%）** | `5.16`（32%） | 98% |
-| `fontsize` | `1.95` | `3.71`（box-tree `0.61` 別） | **`6.41`（33%）** | `5.41`（28%） | 95% |
-| `relayout` | — | `0.02`（box-tree `0.52`） | `1.99` | `0.83` | 85% |
+| `fontsize` | `1.95` | `3.71` | **`6.41`（33%）** | `5.41`（28%） | 95% |
 
-**判明した事実（R1〜R4 の根拠）**:
+1. 🔴 **P0-4（スライスパッチ）は標準経路で一度も実行されていなかった**（`StandaloneView.Ui` が独自ビルダーを持ち `UiView.paintBuilder` が常に `null` → `noBuilder` で素通り）。単体テストは `DisplayListBuilder` を直接呼ぶため緑のまま。→ R1-0 で解消。**教訓: 「テストは緑だが実経路では未使用」を防ぐため、パッチ命中率をカウンタでラチェット化する（R7）。**
+2. スタイル変更（`hover`/`style`/`inherited`）は当時 100% 全面再構築（`repaintFull`）。→ R1 で解消。
+3. `text`・`child` のレイアウト局所パッチは large-list で 100% 命中。showcase の `child` は 0%（全フォールバック、P1-2 の既知事項）。
+4. 2,000 行 `inherited` は restyle-local が `3.40` ms（継承値の伝播が全ボックスに及ぶ）。
+5. CPU バックエンド: showcase `hover` は `DAMAGE partial=0 full=2101`（常に全面再描画）、large-list 500 行は `partial=2100 full=1`（差分描画が機能）。showcase では差分描画が成立していない（→ R4）。
 
-1. 🔴 **P0-4（Segmented DisplayList のスライスパッチ）は標準経路で一度も実行されていない**。`text`・`child` を 2,100 回起こしてもスライス命中 `0`、`noBuilder=2100`。原因は [`StandaloneView.Ui.paintBoxes`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/StandaloneView.java) が独自の `DisplayListBuilder` を保持し、`UiView.paintBuilder` が常に `null` のままになり、`UiView` 側の `paintBuilder != null` 条件で素通りしていたこと（`UiView.paintBoxes` の既定実装だけが `paintBuilder` を作る）。単体テスト（`DisplayListSlicePatchTest`）は `DisplayListBuilder` を直接呼ぶため通っていた＝**「テストは緑だが実経路では未使用」**。§7.3 P0-4 の「達成内容」は機構の実装としては正しいが、**効果は未発現**。→ R1-0。
-2. **スタイル変更（`hover`/`style`/`inherited`）は 100% が `repaintFromLayout()`（全体再構築）**（`repaintFull=2100`）。スライスパッチ呼び出し自体がそもそも無い。→ R1。
-3. **`text`・`child` はレイアウトの局所パッチは 100% 命中**（`TEXT_PATCH` 2,100/2,100、`CHILD_PATCH` 2,100/2,100・large-list）。showcase の `child` は **0/2,100（全フォールバック）** のまま（P1-2 の既知事項）。
-4. **GL 送出（`paint(cpu)`）は `child`・`inherited`・`fontsize` で 28〜44%**。`hover`/`style`/`text` では 22〜43% を占めるが絶対値は `0.65〜0.77` ms。R5 の着手条件（30% 超）に `child`・`inherited` が該当。
-5. **`inherited` は restyle-local が `3.40` ms**（2,000 行）。継承値の伝播が全ボックスに及ぶ（R3-④）。
-6. **CPU バックエンド**: showcase `hover` は `DAMAGE partial=0 full=2101`（**常に全面再描画**、aborts 0）。large-list 500 行 `hover` は `partial=2100 full=1`（差分描画が機能）。つまり showcase では**差分描画が一度も成立していない**（理由カウンタは今後 R4 で追加）。
+#### 6.8.2 JMH `softwarePaint` showcase の悪化 — 退行ではなかった
 
-#### 6.8.3 JMH `softwarePaint` showcase の悪化調査 — 退行ではなかった
-
-`PaintBench.softwarePaint showcase` を `-f 3` で再現確認（`4.557 ± 0.502 ms`、large-list `0.314 ± 0.003 ms`）。11-10 の `1.970 ms` を出したコミット（`9ee4ee1`）自体を同じ環境で測り直すと showcase `4.477`・large-list `3.452 ms`、さらに `61a507c`（`4.471`）・`240050e`（`4.591`）・`857fbc1`（`4.492`）でも同値。`fullLayoutWarm` は `0.909` vs HEAD `0.971` でほぼ一致（マシン全体が遅いわけではない）。**よって差は §6.4.1 の `1.970` / `1.955` が現環境で再現しないこと**（当時の計測条件の差）で、コード退行ではない。**確定した事実は、同一環境での large-list `3.452 → 0.314 ms`（約 11 倍改善、差分描画の効果）と、showcase は `4.5 ms` のまま改善していないこと**。§6.4.1 の該当値は参考値に降格する。
+11-10 の `1.970 ms` を出したコミットを同環境で測り直しても `4.477 ms` で、他のコミットも同値。差は当時の計測条件の差であり、コード退行ではない。確定した事実は、同一環境での large-list `3.452 → 0.314 ms`（約 11 倍、差分描画の効果）と、showcase が `4.5 ms` のまま未改善であること。§6.4.1 の該当値は参考値に降格。
 
 ---
 
-### 6.9 R1 スタイル変更のスライスパッチ化 & R1-0 ビルダー一本化（2026-11-11 完了）
+### 6.9 R1 スタイル変更のスライスパッチ化 & ビルダー一本化（2026-11-11 完了）
 
-R0 で判明した「P0-4 スライスパッチが実経路（`StandaloneView`）で未使用（`noBuilder=2100`）」「スタイル変更が 100% 全面再描画（`repaintFull=2100`）」を解消。
+- **R1-0**: `StandaloneView.Ui` の独自ビルダーを撤廃し `UiView.paintBuilder` に一本化。`noBuilder` フォールバックを解消。
+- **R1**: `RenderPipeline.restyleLayoutTree` が収集した「寸法に影響しないスタイル変更ボックス」を `canPatchBoxes` / `patchBoxes` へ接続（`RESTYLE_REPAINT_PATCH`）。スライス重複（`cant(0,7)`）・寸法変動（`cant(0,8)`）・スタッキングコンテキストの発生/解除（`cant(0,6)`）は理由カウンタ付きで全面描画へフォールバック。
+- 検証: `DisplayListSlicePatchTest` に `:hover` 往復・`transition`・スタッキング解除の全再構築一致テストを追加、`:core:test` 全件グリーン。
 
-#### 6.9.1 達成内容
-
-1. **R1-0: `StandaloneView.Ui` の DisplayListBuilder を `UiView.paintBuilder` に一本化**:
-   - `StandaloneView.Ui` が独自に保持していた `builder` / `builderKeyframes` フィールドと `paintBoxes` / `builtScrollContents` オーバーライドを撤廃。
-   - `UiView.paintBoxes` の既定実装（`paintBuilder.render(root, scrollOnly)`）を実行し、`StandaloneView` 側は `paintBuilder().translatedHits()` を参照する形に統合。
-   - これにより、`tryTextPatch` / `restyleAndUpdate` の `paintBuilder != null` 条件が標準経路で満たされ、`noBuilder` フォールバックを完全解消。
-2. **R1: スタイル変更（`:hover` / `style` / `:focus`）の DisplayList スライスパッチ化**:
-   - `RenderPipeline.restyleLayoutTree` で、スタイル変更がありレイアウト（寸法・配置）に影響しないボックスを `ThreadLocal<List<LayoutBox>>` (`STYLE_CHANGED_BOXES`) に収集。
-   - `UiView.restyleAndUpdate` の `res.styleChanged()` 分岐において、変更ボックス群が `canPatchBoxes(changedBoxes)` を満たす場合に `paintBuilder.patchBoxes(changedBoxes)` を呼び出し、インプレースでスライス置換（`RESTYLE_REPAINT_PATCH`）。
-3. **安全フォールバック（不成立理由カウンタつき）の網羅**:
-   - **スライスの重なり（`cant(0, 7)`）**: 複数ボックス更新時、前後のスライス範囲が重複している場合は安全にフォールバック。
-   - **寸法・位置の変動（`cant(0, 8)`）**: 前回の記憶（`BoxMemo.nums` の `x, y, w, h`）と現在のボックス寸法・座標が不一致（テキスト変更や属性変更による親・自身のサイズ変化）の場合にフォールバック（`TextPatchTest` でのテキスト幅変化への安全性を保証）。
-   - **スタッキングコンテキストの発生・解除（`cant(0, 6)`）**:
-     - 現在のスタイルだけでなく、**前回のスタイル（`BoxMemo.style`）** でも `order.createsStackingContext(b, style)` を判定。
-     - スタッキングコンテキストの形成／解除（`opacity: 0.5 <-> 1.0` や `z-index` 変化等）が起きると描画順自体が通常フローとスタッキングレイヤー間で入れ替わるため、前後のいずれかがスタッキングコンテキストであれば安全にフォールバック（`AttrPatchTest` でのペイント順不整合を完全解消）。
-   - **不成立時のフル描画フォールバック**: パッチ不能な場合は `RESTYLE_REPAINT_FULL` をインクリメントし、従来の `repaintFromLayout()` へ安全にフォールバック。
-4. **子要素増減スライスパッチ（`canPatchChildSlices`）の R2 への安全移管**:
-   - 行の追加・削除は後続ボックスの `y` 座標シフトや親・祖先（`bg_root` 等）の高さ更新を伴うため、現時点では理由 12（`cant(1, 12)`）でフル描画経路に安全フォールバック（R2 でチャンク化・親寸法更新とともに本格対応）。
-
-#### 6.9.2 テスト検証結果
-
-- **単体・統合テスト**:
-  - `DisplayListSlicePatchTest` に以下の検証を追加:
-    - `hoverToggleStylePatchMatchesFullRender`: `:hover` 往復トグルで `RESTYLE_REPAINT_PATCH` がヒットし、フル再構築と全項目 100% 一致。
-    - `transitionStylePatchMatchesFullRender`: `transition` 要素のスタイル変更で `RESTYLE_REPAINT_PATCH` がヒットし、フル再構築と全項目 100% 一致。
-    - `stackingContextStyleChangeFallsBackGracefully`: `opacity` 変更によるスタッキングコンテキスト形成・解除時に安全に `RESTYLE_REPAINT_FULL` にフォールバックし、フル再構築と全項目 100% 一致。
-  - `DisplayListSlicePatchTest` 全 11 テスト PASSED。
-  - `TextPatchTest`、`AttrPatchTest`、各種ラチェットテストを含む `:core:test` 全 1,908 件がグリーン（失敗 0）。
-
-#### 6.9.3 実測ベンチマークと KPI 達成確認
-
-`FineProfileMain`（1,500 フレーム計測）による実測値と R1 KPI の照合結果:
-
-| 指標 / シナリオ | 以前の実測値（R0） | R1 実装後の実測値 | 目標 KPI（合否線） | 判定 |
+| 指標 | R0 | R1 後 | 目標 | 判定 |
 | :--- | :---: | :---: | :---: | :---: |
-| **2,000 行 `hover` GL** (フレーム平均 / p50) | `3.50 ms` (p50 `3.38`) | **`mean 1.06 ms` / `p50 0.9995 ms`** | **`< 1.0 ms`** | **✅ 達成** (約 3.5 倍高速化) |
-| **500 行 `hover` GL** (フレーム平均 / p50) | `0.721 ms` | **`mean 0.337 ms` / `p50 0.305 ms`** | **`< 0.4 ms`** | **✅ 達成** (Chrome `0.34 ms` を凌駕) |
-| **2,000 行 `hover` GL** (ヒープ確保量) | 不明（MB級） | **`198.5 KB/frame`** | **`< 300 KB`** | **✅ 達成** (予算比 −34%) |
-| **2,000 行 `hover` null** (パイプライン単体) | `3.38 ms` | **`mean 0.249 ms` / `p50 0.228 ms`** | — | **🚀 14.8 倍高速化** |
-| **2,000 行 `display-list` 段時間** | `2.45 ms` (全体の 70%) | **`mean 0.018 ms` / `p50 0.014 ms`** | — | **🚀 175 倍高速化** |
-| **スライスパッチ命中率** | `0%` (`noBuilder=2100`) | **`100%` (`repaintPatch=2100`, `repaintFull=0`)** | 100% | **✅ 達成** |
-| **2,000 行 `style` GL** (インラインスタイル) | `2.50 ms` | **`mean 1.04 ms` / `p50 0.923 ms`** (alloc `208.5 KB`) | — | **🚀 大幅高速化** |
+| 2,000 行 `hover` GL（mean / p50） | `3.50 / 3.38 ms` | **`1.06 / 0.9995 ms`** | `< 1.0 ms` | ✅ |
+| 500 行 `hover` GL | `0.721 ms` | **`0.337 ms`**（Chrome `0.34`） | `< 0.4 ms` | ✅ |
+| 2,000 行 `hover` 確保量 | MB 級 | **`198.5 KB/frame`** | `< 300 KB` | ✅ |
+| 2,000 行 `hover` null / `display-list` 段 | `3.38 / 2.45 ms` | **`0.249 / 0.018 ms`** | — | 約 15 倍 / 175 倍 |
+| スライスパッチ命中率 | 0% | **100%** | 100% | ✅ |
 
-- **結論**:
-  - `DisplayListBuilder` の全ボックス走査が完全に排除され、`display-list` 段が `2.45 ms → 0.014 ms` へ短縮。
-  - 2,000 行 `hover` GL の p50 が **`0.9995 ms`** となり、目標の `< 1.0 ms` を達成。500 行 GL は **`0.305 ms`**（Chrome `0.34 ms` より高速）に到達。
-  - ヒープ確保量も **`198.5 KB/frame`**（目標 `< 300 KB`）を余裕でクリアし、**R1 の全 KPI を完全にクリア**。
+### 6.10 R2: 子要素の挿入・削除（`child`）— 部分達成（2026-11-11）
+
+**実装済み（要約）**: `canPatchChildSlices` / `patchChildSlices`。ブロック層・インライン層の 2 層スライスパッチ、後続ボックスの座標追従、親・祖先の寸法とスクロール範囲・スクロールバーの同期、不成立時の全面描画フォールバック。`ChildPatchTest`・`DisplayListSlicePatchTest`・`:core:test` 全件が全再構築と 100% 一致。
+
+#### 6.10.1 KPI 照合
+
+| 指標 | R0 | R2 実装直後 | 目標 | 判定 |
+| :--- | :---: | :---: | :---: | :---: |
+| スライスパッチ命中率 | 0% | **100%**（hit=1200 / fallback=0） | 100% | ✅ |
+| 500 行 `child` 確保量（GL） | `6,598 KB` | **`1,217 KB`** | `< 2 MB` | ✅ |
+| 500 行 `child` GL 時間 | `4.96 ms` | `p50 2.92 ms` | `< 0.9 ms` | ❌ |
+| 2,000 行 `child` GL 時間 | `14.08 ms`※ | `p50 17.31 ms` | `< 3 ms` | ❌ |
+| 2,000 行 `child` null 時間 | `7.57 ms`※ | `p50 13.73 ms` | `< 1.5 ms` | ❌ |
+| 2,000 行 `child` 確保量（GL） | `19 MB` | `5.3 MB` | `< 2 MB` | ❌ |
+
+※ R0 の 2,000 行値は §6.8。**時間は R0 より悪化している（確保量は減ったが後続シフトの CPU が増えた）。**
+
+#### 6.8 後の JFR 分解（2,000 行 `child`・null、2026-11-11）と是正
+
+| 区間 | 当初 | 是正後 | 内容 |
+| :--- | :---: | :---: | :--- |
+| スクロールバー ID の線形走査 | 約 5.6 ms（33%） | ≈ 0 | **存在しない横バーを探して毎回 20,012 件を全走査**していた。整数鍵比較＋「欲しい軸が揃ったら打ち切り」で解消 |
+| スクロール可能ボックスの収集 | 約 1.1 ms | ≈ 0 | `renderedBoxes` 全走査 → 描画時に集めた集合の走査 |
+| 後続ボックスの座標差分ループ（7a） | 約 1.6 ms | 同左 | 3,500 ボックスの `boxMemo` 引き |
+| 後続アイテムの再生成（7b） | 約 8.4 ms | **約 7 ms** | 17,500 項目の再生成。**内部は `withClip`・`equals`・生成そのものではなく散在ヒープの読み出し（メモリ律速）** |
+| `display-list` 段 平均 | 16.9 ms | **9.2〜9.5 ms** | フレーム平均 `19.1 → 約 10.9 ms`（null）。`:core:test` 全件グリーン |
+
+下流（JFR 付き・GL）: フレーム `18.5 ms` = display-list `11.3` + `paint(cpu)` `4.9`（**うち索引の全面作り直し `rebuildIndex` が 61%＝約 3 ms**、`AtomTable.intern` が 25%）+ layout `1.4`。CPU バックエンドは `paint` `18.3 ms`・確保 `20 MB/frame`。
+
+#### 6.10.2 結論 — 当初の診断の訂正
+
+- 「平坦リストは O(N) が必然で達成不能」は**半分しか正しくない**。O(N) 自体は 17,500 個の `int` 加算なら数十 µs（D0 ベンチ: SoA 範囲加算 `0.09〜1.6 µs`、現行のレコード再生成 `458 µs`）。実コストは、**散在した 3,500 ボックス×数オブジェクトの読み出し（メモリ律速）**と、**後続の同一性が失われることで下流の増分索引（`patchIndexByShift`）が成立せず全面作り直しに落ちる**ことにある。
+- 行の高さが小数のとき、後続項目の座標は「旧座標＋`dy`」にならず、小数のボックス座標から丸め直す必要がある。項目だけをずらす近道は全再構築との一致を壊す。
+- よって **ビルダー・索引・バックエンドを貫く契約の再設計（座標を持たない表示表）が必要**であり、現行方式の局所最適化では `< 3 ms` に届かない。方針は §7.3 冒頭の Wave 1.7。
 
 ---
+
 
 ## 7. 現状の総合評価と「他 UI ライブラリを超える」ための残存課題・次期ロードマップ
 
@@ -715,148 +696,44 @@ R0 で判明した「P0-4 スライスパッチが実経路（`StandaloneView`�
 | :--- | :---: | :--- | :--- | :--- | :--- |
 | **R0** | ✅ **完了（2026-11-11・§6.8）** | **計測基盤の補強**（以降すべての判定に使う） | 段別が `restyle-local` / `display-list` しか出ず、GL 送出・レイアウト・索引・パッチ命中が見えない。分散が大きい | ① `FineProfileMain` に段別（measure/place/index/GL send）と **パッチ命中・不成立理由カウンタ**（text/child/style/slice）を出力。② 各条件 3 回実行して中央値＋最小・最大を台帳化（`summarize-fine.js` 拡張）。③ 2,000 行 `inherited`・`relayout` を追加。④ JMH `softwarePaint` showcase の悪化を再現確認のうえ二分探索（`git bisect`）で原因特定（**実施済み: 退行ではなかった。§6.8.3**） | 2,000 行の全シナリオで段別合計がフレーム平均の 95% 以上を説明 |
 | **R1** | ✅ **完了（2026-11-11・§6.9）** | **【R1-0 実装済みスライスパッチの有効化】＋ スタイル変更（`hover`/`style`/`:focus`）の DisplayList スライスパッチ化** | **R0 で判明（§6.8）: `StandaloneView.Ui.paintBoxes` が独自の `DisplayListBuilder` を持ち、`UiView.paintBuilder` が常に `null` のため、P0-4 の `patchBoxes`/`patchChildSlices` は標準経路で一度も実行されていない（スライス命中 0）**。2,000 行 `hover` display-list `2.45 / 3.50` ms（70%）、`style` `1.95`、`text` `0.44` | **✅ 完了**: ① R1-0: `StandaloneView.Ui` のビルダーを `UiView.paintBuilder` に一本化し `noBuilder` フォールバックを完全解消。② `restyle-local` の変更ボックス集合を `canPatchBoxes`/`patchBoxes` へ接続（`RESTYLE_REPAINT_PATCH` 経路確立）。③ 境界不成立（スライス重複 `cant(0, 7)`、スタッキングコンテキスト発生・解除 `cant(0, 6)`、寸法変動 `cant(0, 8)`）を理由カウンタ付きで安全フォールバック。④ `:hover` 往復・`transition`・スタッキングコンテキスト解除の 100% 一致テストを `DisplayListSlicePatchTest` に追加し全件合格 | 2,000 行 GL `hover` **`< 1.0 ms`**（現 `3.50`、Chrome `0.55`、第 2 目標 `< 0.6`）、500 行 `< 0.4 ms`、確保 `< 300 KB` |
-| **R2** | 🥇 最優先 | **子要素の挿入・削除（`child`）の残差解消（W2）** | 2,000 行 `child` GL `14.1` ms（Chrome `1.09`・12.9 倍）、display-list `5.8` ms、**paint(cpu)（GL 送出）`6.2` ms**、確保 `19 MB`。R0 の結果、`child` は GL 送出も約 44% を占める（R5 の判定条件 30% 超に該当） | ① R1-0 でスライスパッチが有効になった上で不成立理由カウンタ（`CANTPATCH`）を見て `canPatchChildSlices` を成立させる。② 全項目 `ArrayList` の挿入・削除と `renderedBoxes` 後続シフトを O(N) 配列コピーから**チャンク化（ギャップバッファ／ロープ）**へ。③ レイアウト側の兄弟オフセット再配置を挿入位置以降に限定。④ `PaintSceneDriver.patchIndexByShift` の補助配列を同方式に。⑤ 配列再確保 `19 MB → < 2 MB` | 2,000 行 `child` GL **`< 3 ms`**（null `< 1.5`）、500 行 `< 0.9 ms`、確保 `< 2 MB` |
-| **R3** | 🥈 高 | **全面無効化（`fontsize`/`inherited`）＋ 幅変更 ＋ 可視範囲限定のスタイル・レイアウト（W5/W6 / T5・T7-①）** | 2,000 行 `fontsize` GL `18.9`（Chrome `11.3`）、確保 `25 MB`。500 行 `inherited` GL `3.59`（Chrome `0.96`・3.8 倍）。showcase 幅変更 `1.04`（Chrome `0.084`） | ① T5: 測定 4-way キャッシュ＋`place` 制約スキップ（P1-1）。② `content-visibility: auto` 相当の**ビューポート外スキップ**（`FenwickVirtualList` を `BlockLayoutEngine` へ接続・P3-3 を前倒し）。③ `Resolved`・`DisplayItem`・クリップ列の再利用（スロット化）でフレーム確保を削減。④ `inherited` は継承値を使うボックスだけへ伝播を限定 | 500 行 `inherited` GL **`< 1.5 ms`**、2,000 行 `fontsize` GL **`< 10 ms`**（Chrome `11.3` 超え）、showcase 幅変更 **`< 0.2 ms`**、`fontsize` 2,000 行の確保 **`< 5 MB`** |
+| **R2** | 🔧 **部分達成（2026-11-11・§6.10）** | **子要素の挿入・削除（`child`）の残差解消（W2）** | 2,000 行 `child` GL `14.1` ms（Chrome `1.09`・12.9 倍） | スライスパッチ（2 層・座標追従・親寸法同期）を実装し命中 100%・確保削減（500 行 `1.2 MB`）は達成。**時間は未達**（2,000 行 `約 18 ms`）。原因は後続項目の再生成と下流索引の全面作り直し（§6.10.2）で、現行方式の延長では届かない | 2,000 行 `child` GL **`< 3 ms`**（Wave 1.7 の RTI・Paint 表で再判定）、500 行 `< 0.9 ms`、確保 `< 2 MB` |
+| **R3** | 🥇 最優先 | **全面無効化（`fontsize`/`inherited`）＋ 幅変更 ＋ 可視範囲限定のスタイル・レイアウト（W5/W6 / T5・T7-①）** | 2,000 行 `fontsize` GL `18.9`（Chrome `11.3`）、確保 `25 MB`。500 行 `inherited` GL `3.59`（Chrome `0.96`・3.8 倍）。showcase 幅変更 `1.04`（Chrome `0.084`） | ① T5: 測定 4-way キャッシュ＋`place` 制約スキップ（P1-1）。② `content-visibility: auto` 相当の**ビューポート外スキップ**（`FenwickVirtualList` を `BlockLayoutEngine` へ接続・P3-3 を前倒し）。③ `Resolved`・`DisplayItem`・クリップ列の再利用（スロット化）でフレーム確保を削減。④ `inherited` は継承値を使うボックスだけへ伝播を限定 | 500 行 `inherited` GL **`< 1.5 ms`**、2,000 行 `fontsize` GL **`< 10 ms`**（Chrome `11.3` 超え）、showcase 幅変更 **`< 0.2 ms`**、`fontsize` 2,000 行の確保 **`< 5 MB`** |
 | **R4** | 🥈 高 | **CPU バックエンドのダメージ領域全面化の解消（W3 の残り）** | showcase CPU `hover` `4.59`、`inherited` `8.25` ms（large-list 500 行 `hover` `2.28` より重い）。Chrome CPU 合成 `1.55` | ① R0 で Tile Dirty の「全面ダメージ化」「見積外れ abort」の理由別カウンタを出す。② 影・ブラー・`backdrop-filter`・`mix-blend` 等のフィルター層が AABB を全面に広げていないか確認し局所化。③ 差分描画の見積コストが全面描画を超える閾値判断の再調整。④ ~~JMH `softwarePaint` 悪化の修正~~（R0 で**退行ではない**と判明: §6.8.3）。代わりに showcase の `softwarePaint`（同一リスト再描画）が `4.5 ms` で large-list `0.31 ms` の 14 倍かかる理由（差分判定が効かない項目の特定）を調べる | showcase CPU `hover` **`< 1.5 ms`**（Chrome CPU `1.55` 並み）、`inherited` `< 4 ms` |
 | **R5** | 🥉 中（条件付き） | **項目単位の保持 GPU 記録（T3）** | 2,000 行 `hover` は GL 送出 `0.77` ms（22%）で律速でないが、**`child` `6.2` ms（44%）・`inherited` `5.2` ms（33%）・`fontsize` `5.4` ms（28%）は 30% 前後以上**。R1〜R3 後に再判定（`child` はすでに条件を満たす） | 現行設計（`MemorySegment.copy` 一括転送＋容量 4,096 撤廃）を温存。着手判定は R0 の段別で **GL 送出 > フレームの 30%** | 着手時: 2,000 行 `text` GL `< 0.8 ms` |
 | **R6** | 🥉 中 | **オープン・コールド JVM（W7 / T6）** | showcase `open` `5.5` ms（Chrome `5.0`）、500 行 GL `6.2` ms、2,000 行は未再計測 | DOM 雛形クローン・`sealNodeIds` 統合・`EnderEngine.prewarm()`。**コールド JVM 初回フレームを計測に追加** | 初回フレーム p99 を台帳化、2,000 行 `open` `< 20 ms` |
 | **R7** | 🔒 横串 | **退行防止ラチェットの拡張** | 今回の改善（パッチ命中・確保量）は時間でなくカウンタで固定できる（時間ベンチは全件実行で不安定） | `AllocationRatchetTest` に 500 行 `hover`/`text`/`child` の確保上限、`UiView` の **パッチ命中率ラチェット**（`hover` 往復で slice-patch 100%・`child` 100%）、全再構築との一致ランダム列テスト（`DisplayListSlicePatchTest` を style/hover へ拡張） | 追加テスト全件グリーン、`:core:test` 全件グリーン |
 
-**実施順序**: R0（完了）→ R1（完了）→ R2（着手・最優先）→ R3（P1-1 と並行可）→ R4 → R6 → R5（条件付き）。R7 は各段に同伴。各段の完了ごとに §6.7 形式で再計測し台帳を更新する。**P2（3D）・P3（IME 等）・P4（DX）は性能 KPI（R1〜R4）が Chrome 比 2 倍以内に入るまで着手しない**（ただし IME は日本語 UI の必須要件のため R3 と独立に並行着手可）。
+**実施順序**: R0（完了）→ R1（完了）→ R2（部分達成。時間 KPI は Wave 1.7 で再判定）→ R3（Wave 1.7 の施策 2・3 として最優先）→ R4 → R6 → R5（条件付き）。R7 は各段に同伴。各段の完了ごとに §6.7 形式で再計測し台帳を更新する。**P2（3D）・P3（IME 等）・P4（DX）は性能 KPI（R1〜R4）が Chrome 比 2 倍以内に入るまで着手しない**（ただし IME は日本語 UI の必須要件のため R3 と独立に並行着手可）。
+
+#### 🔄 Wave 1.7（2026-11-11 方針転換）：DoD 再設計・内容アドレス化・RTI → 設計は §8
+
+R2 の未達（§6.10）を受け、局所最適化では `display-list` 約 9 ms が下限と確定した。律速は構造（項目が絶対座標を焼き込み、全項目を同一性で比較する）にある。方針は ① 構造クラスの計測（M0）→ ② テキスト成形の幅非依存キャッシュ＋改行区間キャッシュ → ③ `ComputedStyle` の共有 → ④ 反復ブロックのインスタンス化（RTI）→ ⑤ 座標を持たない Paint 表・Box 表 → ⑥ 永続データ構造・並列化。**R3（全面無効化・幅変更・可視範囲限定）は ②③ と実質同一の作業として進める。** 詳細・見積もり・限界・リスクは §8 を参照。
 
 **下記 P0〜P4 の記述は、実装済み事項の記録と各設計メモとして残す。優先順位と KPI は上表 R0〜R7 が優先する。**
 
 ---
 
-#### 🔥 最優先 P0：GL 描画パイプラインと DisplayList のスケール課題（5,000〜20,000 項目での 144Hz 維持 — 戦略 T1〜T4）
+#### 🔥 P0：GL 描画パイプラインと DisplayList のスケール課題（5,000〜20,000 項目での 144Hz 維持 — 戦略 T1〜T4）
 
-`showcase`（730 項目）では全操作が `0.66〜1.34 ms` に収まったが、`large-list`（5,012 項目・19,000 字形）では以下のボトルネックが残っている。§6.5 の横断計測（W1〜W4・W6）で、**500 行（5 千項目）で Chrome の 4.5〜9 倍、2,000 行（2 万項目）で 10〜24 倍**まで開くことが確定した。以下の **0 番（T1〜T3）**と **0b 番（T4）**を最初に実施し、1〜5 はその構成要素として進める。
+§6.5 の横断計測（W1〜W4・W6）で、500 行（5 千項目）で Chrome の 4.5〜9 倍、2,000 行（2 万項目）で 10〜24 倍まで開くことが確定した。以下は実装済みの要約と、残課題である。
 
-0. **【大部分完了・残りは R1〜R3 へ移管】可視範囲カリング + 変更範囲限定の送出（W1・W2・W4 の共通解 — 戦略 T1 / T2 / T3）**:
-   - **現状（実測）**: 画面外 1 行の `hover` が 500 行で `2.6 ms`、2,000 行で `13.1 ms`（Chrome `0.36` / `0.55 ms`）。GL 実フレームの内訳（2,000 行）は `restyle-local 0.25` + display-list `3.6` + GL 送出 約 `9 ms` で、`GlRectStream` の 4,096 を超えた約 `5.9 万`/フレームの図形が CPU タイル描画へ棄却されている。`child` は `CHILD_PATCH` 成立後も display-list が `9.0 ms` 中 `7.1 ms`。
-   - **段階的対策**:
-     1. **段階 1a（ペインタ段の項目カリング）— ✅ 2026-11-10 実装済み**: [`SoftwareRenderBackend.drawItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) が、項目の箱を姿勢で写した範囲がクリップ外接に（縦 `128px + 項目高` の余白つきで）掛からない項目を塗り（GPU 送出・CPU 棄却とも）から除外する。文字は横にあふれうるので縦のみ判定、`SCENE`/`NODE` と保持スクロール層への記録中は対象外。表示リスト自体は変えないため、ヒットテスト・保持レイヤ・差分索引には影響しない（`-Denderframe.soft.nocull=true` で無効化可）。検証: [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java)（影・あふれ文字・スクロール箱・変形を含む 120 フレームで省略あり／なしの全画素一致、かつ省略数 > 0）、`:core:test` 全体グリーン。**実測（`large-list` 5,012 項目・CPU バックエンド・600 フレーム）: `hover` `3.18 → 1.41 ms`（−56%、確保 `1,510 → 864 KB`）、`text` `2.23 → 1.01 ms`（−55%、確保 `1,277 → 631 KB`）**。
-     2a. **段階 1b-② （スクロール層記録時カリング）— ✅ 2026-11-11 実装済み**: 保持スクロール層（`GpuScrollLayer`）への記録中（`recordOwner != null`）は、コンテナの切り取りを外すため 1a のカリングが無効だった。[`SoftwareRenderBackend.outsideClip`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) が記録中は層の実体（描画先と同じ大きさ `[0,0,targetWidth,targetHeight]`）で画面外判定するようにした（FBO 外は元々 GL が切り捨てるため画素は不変）。判定の核は純関数 `outsideBoxFor` に分離。検証: [`RecordingCullBoundsTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/RecordingCullBoundsTest.java)（上下の画面外・余白内・文字の横あふれの境界）、既存 `OffscreenItemCullPixelTest` / `DiffPatchPixelTest` 通過、`:core:test` 全 1,850 件グリーン。**未計測**: 記録経路は GL 実フレームでのみ通るため、効果の実測（2,000 行 GL `hover`）と GL 画素一致の確認は未実施。
-     2b. **段階 1b-③ （記録中は `buildClip` より先に画面外判定）— ✅ 2026-11-11 実装済み**: 記録中の `buildClip` は使い回しの覚えを使わず毎フレーム `ArrayList` 等を確保して作り直すのに、判定は層の実体の範囲だけで決まりクリップを参照しない。[`SoftwareRenderBackend.drawItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) で記録中（`recordOwner != null`）の画面外項目を `buildClip` の前に捨てるよう並べ替えた（判定式は 2a と同一のため塗られる画素は不変）。検証: `:core:test` 全件グリーン（失敗 0・既存の `OffscreenItemCullPixelTest` / `DiffPatchPixelTest` / `RecordingCullBoundsTest` を含む）。**未計測・未検証**: 記録経路は GL 実フレームでのみ通るため、本変更専用の自動テストは無く、効果（2,000 行 GL `hover`）と GL 画素一致は未実施。**現状の内訳（2026-11-11 計測・`FineProfileMain hover large-list 600 cpu`）**: フレーム mean `1.93` / p50 `1.40` ms、`restyle-local` p50 `0.03`、**`display-list` p50 `0.49`（mean `0.71`）**、残り約 `0.9` ms が走査（`PaintSceneDriver.run`）＋描画。つまり段階 1b ① で削れる上限は走査分の約 `0.9 ms`、display-list の全ボックス走査（下記 4 番）は同程度かそれ以上で、後者は単調性の仮定が要らない。**2c. 段階 1b ①（記録範囲の画面外ブロックを走査から外す）— ✅ 2026-11-11 実装済み**: 当初案（先頭・末尾の二分探索）は、表示リストが CSS の描画順（背景 → 文字）で並び縦位置が鋸歯状になるため成立しなかった（実測で 0 件しか外れず断念）。代わりに [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) が、`RECORD` の保持範囲を 64 項目のブロックに分け、**ブロック内の全項目が描画側の画面外判定（`Painter.cullWindow` の `{y0, y1, pad}`）に当たるブロックだけ**を両ループ（鎖の計算・描画）から外す。整列の仮定は要らず、判定式は `SoftwareRenderBackend.outsideBox` と同じ（項目の高さ・倍率 `d` を鍵に畳み込み、端に 2px の余裕を持たせて外す側を狭める）。**外す条件（すべて満たす範囲だけ）**: 範囲内の全項目が変形なし・不透明度 1・アニメなし・フィルター層なし・`SCENE` なし（姿勢がスクロール節と同じになる）、入れ子のスクロール節を含まない、スクロール節の姿勢が縦だけの拡縮・平行移動（`b = c = 0`、`d > 0`）、かつ項目のアニメ状態（`CssAnimator`）の姿勢が中立で動いていない（確認済みの印を持ち、項目の差し替え・索引の作り直しで外れる。状態が理由で外せない間は判定を覚えず次フレームで再確認）。範囲の `beginRetained` / `endRetained` は全部外れても必ず呼ぶ。`-Denderframe.paint.nocullrange=true` で無効化可。検証: [`PaintSceneDriverRangeCullTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverRangeCullTest.java)（外した項目は全て画面外判定に当たり、当たらない項目は 1 つも外れない／窓が末尾・中ほど・全項目の外・全項目を覆う／変形項目を含む範囲は外さない／倍率 1.5 のフレーム／前の文書の変形状態が残るセッションでは外さず、追いついたら外す／窓を出さない描画側は従来どおり／記録失敗の描き直し）と `PaintSceneDriverRetainTest`、`:core:test` 全 1,859 件グリーン（失敗 0）。**実測（ドライバ単体・1.8 万項目・`RECORD`・描画なし）: 走査 `0.46 → 0.03〜0.09 ms`**。**実 GL 計測（2026-11-11・`FineProfileMain scrollhover large-list-2000 600 gl`・各 3 回交互）**: 保持層はスクロールが実際に起きるまで作られない（`planScrollLayer`）ため、`hover` 単独では記録経路に入らず（`planned=0`）効果が出ない。スクロール 1 度のあとの画面外 `hover`（新シナリオ `scrollhover`）では、**フレーム p50 `6.0〜6.3 → 3.06〜3.24 ms`（約 −50%）、mean `6.3〜6.7 → 3.3〜3.5 ms`、確保 `3,276 → 1,431 KB/フレーム`**（1 回の計画で約 1.9 万項目を除外）。**GL 画素一致**: 一時ハーネスでスクロール＋ホバー列（240 フレーム。保持層の計画 234 回・除外 約 416 万項目、別列では visible 行のホバーも含む）をフラグ有無で描き、各フレームの全画素 CRC が全て一致。残りの `3 ms` 台の段別内訳は未取得（除外なしの計測では display-list が約 `3.3 ms`）。表示リストの項目差し替えのたびに範囲の索引（O(範囲)）を作り直す点は未最適化。**`NONE`（CPU バックエンド・保持不可）でもクリップ窓を出して外す（2026-11-11 実装完了）**: `decision == RetainPlan.NONE` や保持レイヤ未作成（CPU バックエンド `SoftwareRenderBackend` や保持無効時）でも、ペインタが `cullWindow`（`{y0, y1, pad}`）を提供していれば同様に画面外 64 項目ブロックの走査除外窓を構築し、ドライバの第 1 ループ（`chains`/`resolveAt`）および第 2 ループ（描画/`drawItem`）から除外するように拡張。検証: [`PaintSceneDriverRangeCullTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverRangeCullTest.java)（`nonePlanAlsoCullsOffscreenBlocksWithoutRetainedBrackets`, `retainScrollLayersDisabledStillCullsWhenWindowOffered`）および [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java)（`scrollContainerBlocksAreRangeCulledInSoftwareBackend`、全画素一致を保証）。残りの候補: 索引の差分更新。
-**次（旧記述・参考）**: 段階 1b ①（`PaintSceneDriver.run` の `SCROLL_NODE` 可視区間スキップ。項目が縦に単調とは限らない（flex-wrap・絶対配置）ため、単調性の判定を伴う設計が要る）。
-     2. **段階 1b（残り: ドライバ段 `SCROLL_NODE` / `Chunk` 単位の階層カリング — 戦略 T1）**（上記 ② は完了、① の二分探索は未実装）: 段階 1a でも 20,000 項目すべてに対して `PaintSceneDriver.resolveAt` と `SoftwareRenderBackend.buildClip`・`deviceBounds` は呼ばれており、またスクロールコンテナ内の 1 行が変わって `recordOwner != null`（`GpuScrollLayer` 再記録）になったフレームでは `outsideClip` が無効化される。そこで ① `PaintSceneDriver.run` が `SCROLL_NODE` を走査する際、スクロールオフセットとクリップ矩形から可視項目範囲 `[visFrom, visTo)` を二分探索／チャンク境界で求めて画面外ループ自体をスキップし、② `GpuScrollLayer` の FBO はビューポート寸法（`width × height`）しかないため、`recordOwner != null` の間もビューポート `[0, 0, width, height]` 外の項目をカリングする。
-     3. **段階 2（項目単位の保持 GPU 記録 — 戦略 T3・下記 2）**: 可視範囲内の未変更項目について 80B GPU インスタンス列を保持し、変更された項目だけを GPU バッファへ再書込する。
-     4. **段階 3（ボックス単位の DisplayItem スライス範囲保持 — 戦略 T2・下記 4）**: `hover` / `text` / `child` / `inherited` での `DisplayListBuilder` 全ボックス走査を排除する。
-   - **KPI**: 2,000 行・画面外 `hover` の GL フレーム `< 0.25〜0.7 ms`（現 `13.1 ms`、Chrome `0.55 ms`）、`child` `< 1.0〜1.5 ms`（現 `25.6 ms`、Chrome `1.09 ms`）、`text` `< 0.8〜1.2 ms`（現 `10.3 ms`）。500 行は `hover`/`text`/`style` `< 0.3〜0.5 ms`。
-0b. **【完了 2026-11-11】CPU バックエンドの差分描画（Tile Dirty Bitset）とスクロール Blit 再利用（W3 — 戦略 T4）**:
-    - **達成内容**:
-      - ✅ **CPU バックエンド向け高速スクロール Blit（`CpuRaster.scrollBlit`）新設**:
-        - 根の描画先 `Pixmap` 内の指定矩形（スクロールコンテナ境界）を `System.arraycopy` でインプレースに上下・左右シフト（上書き防止のためシフト方向に応じた順走／逆走走査）。
-        - シフトによって露出した矩形領域をクリア色（事前乗算）で高速に塗りつぶし。
-      - ✅ **スクロール Blit 再利用計画（`SoftwareRenderBackend.planDamage`）**:
-        - スクロール節（`PART_SCROLL_CONTENT` / `_scrollc`）の姿勢変化（`translateX` / `translateY`）を検出し、整数ピクセルスクロール時に `scrollBlit` を適用。
-        - 露出帯矩形のみを `DamageRegion` に登録し、コンテナ内の未露出項目を描画スキップ（`skipBuf`）することで、スクロール時の不要なテキスト・装飾再ラスタを劇的に削減。
-      - ✅ **子要素増減（`CHILD_PATCH`）時の 64-bit 整数鍵マッピングと差分描画継続**:
-        - `prevItems.size() != items.size()`（行の追加・削除等）時、64-bit 整数鍵（`DisplayItem.key()`）を用いて旧項目と新項目の 1 対 1 マッピング（`oldKeyMap` / `oldIndexOf`）を実施。
-        - ブロック層（背景）とインライン層（テキスト）の複数スライスにまたがる挿入・削除でも、旧 `prevExtent` / `prevClip` を正しく再配置し、タイル差分描画（`clearTiles` / `TileQueue`）を継続。
-      - ✅ **姿勢変化・クリップ追従・ダーティ伝播の完全化**:
-        - 移動節の子孫（`movedBuf`）におけるクリップ追従（`planClip` の `changed || movedBuf[i]`）を修正し、スクロール流入要素の誤スキップを防止。
-        - 行背景再描画時の子孫・兄弟枝テキストの同期再描画（`subtreeDirty` 伝播）を保証。
-    - **検証**:
-      - 新設 [`ScrollBlitTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ScrollBlitTest.java)（上下左右シフト・露出領域塗りつぶし・全体流出クリア等 全 4 テスト PASSED）。
-      - 新設 [`CpuScrollBlitPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/CpuScrollBlitPixelTest.java)（連続スクロール 40 フレーム、および動的行追加・削除 30 ステップにおいて、全面再描画と 100% 全画素一致・差分描画有効・見積外れ abort 0 件を検証）全テスト PASSED。
-      - 既存のソフトウェア描画テスト群（[`PartialRepaintPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/PartialRepaintPixelTest.java), [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java), [`ShiftPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ShiftPatchPixelTest.java) 等）およびコアモジュール全テスト（`:core:test` 全 1,880 件超）全件グリーン。
-      - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
+**実装済み（詳細はコードとテストを参照）**
 
-1. **【完了 2026-11-11】`inherited` / `child` 変更時の `PaintSceneDriver` 索引再構築コストとヒープ確保（戦略 T2）**:
-   - **達成内容**:
-     - ✅ **構造不変・大規模差分（`inherited` 等）のインプレース差分更新（`patchIndexByDiff` 上限撤廃）**:
-       - 変更項目数が 1/4（25%）を超える場合でも、全変更項目の構造（`key()`, `parentKey()`, `type()`, `LayerSpec`）が同一である限り、`rebuildIndex` へフォールバックせず、既存の配列と索引を維持して変更位置のみをインプレース更新。
-       - 10 種類におよぶキャッシュ配列の新規確保を 0 にし、`generation` も進まないため外部のクリップ記憶キャッシュ（`ClipEntry`）を 100% 維持。
-     - ✅ **局所挿入・削除（`child` = `CHILD_PATCH`）に対する増分インデックスシフト（`patchIndexByShift`）**:
-       - 変化が単一の局所領域（`head` と `tail` の間）に集約されている場合、既存の内部配列（`parentIdx`, `states`, `prevRes`, `prevStatic`, `prevIdle`, `itemVersion` 等）を `System.arraycopy` でインプレースシフト。
-       - `indexOf` および `indexedById` は差分項目のみを増分更新（削除項目の除去、シフト項目の位置更新、挿入項目の登録）。
-       - 親インデックス（`parentIdx`）および FX レイヤー錨（`fxAnchors`）もシフト量 `delta` に応じて調整。
-       - 挿入・削除ごとの数 MB〜数十 MB に達していた配列再確保と全項目走査を根絶。
-   - **検証**:
-     - [`PaintSceneDriverDiffPatchTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverDiffPatchTest.java) に `largeDiffWithSameStructureInheritedStylePatchesInPlace`（87.5% の要素が一斉変化しても `generation` 不変でインプレース更新され、全出力が再構築時と 100% 一致）を追加し PASSED。
-     - 新設 [`PaintSceneDriverShiftPatchTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverShiftPatchTest.java)（先頭・中間・末尾での行挿入・削除、およびランダム操作列 60 ステップにおいて、シフトパッチ出力が毎回再構築時と 100% 完全一致）全 7 テスト PASSED。
-     - 新設 [`ShiftPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/ShiftPatchPixelTest.java)（挿入・削除が連続する実フレームで、CPU バックエンドでの描画結果が毎回再構築時と 120 フレーム全画素完全一致）PASSED。
-     - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
-     - コアモジュール全テスト（`:core:test` 1,880 件超）全件グリーン。
-2. **項目単位の保持された GPU 記録（1 字形あたり `0.13 µs` の毎フレーム固定費の解消 — 戦略 T3）**:
-   - **現状**: 1 要素のテキスト変更でも、未変更の字形に対して毎フレーム `drawGlyphs`（フレーム時間の 39%：`GpuAttempt.glyph` 15% + `GlRectStream.open` 10% + `GlyphCache` 6%）が走っている。
-   - **対策**: `DisplayItem` は未変更ボックスでは同一インスタンスが再利用される（`drawBoxSelfMemo`）ため、項目ごとに生成された 80B GPU インスタンスレコード列を保持し、項目と変換・クリップが同一なら字形ループ自体をスキップして前回の GPU レコードを `MemorySegment.copy` で一括転送する。これにより `GlRectStream` の容量上限 4,096 も CPU 負荷増なしで拡大可能になる。
-3. **`DisplayItem.keyOf` → `AtomTable.intern` の文字列連結・ハッシュ照合の排除（全シナリオの 8〜10% — 戦略 T2）**:
-   - **現状**: `DisplayItem` 生成時および `PaintSceneDriver` の索引構築時に、毎回文字列連結で ID を作って `AtomTable.intern` (`ConcurrentHashMap<String, Integer>`) を引いており、全シナリオの 8〜10% の CPU 時間と GC 圧を占めていた。
-   - **対策・進捗**:
-     - ✅ **段階 1: 64-bit 整数鍵基盤新設とテキスト項目バイパス（2026-11-11 実装完了）**:
-       - [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java) に `public static long keyOf(int nodeHandle, int partOrdinal)`（`(((long) nodeHandle) << 16) | (partOrdinal & 0xFFFFL)`）および逆変換 `nodeHandleOf` / `partOrdinalOf` を新設。
-       - [`PaintSupport.addElement`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSupport.java) に明示的な `long key` オーバーロードを追加し、`key == 0L` 時は従来の `DisplayItem` 自動導出へ安全にフォールバック。
-       - 最も生成件数の多いテキスト断片・テキスト影（[`DisplayListBuilder.addTextRun`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java)）で `nodeHandle` から `keyOf` を直接生成し、文字列連結および `AtomTable.intern` を完全にバイパス。
-       - 検証: [`DisplayItemKeyTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/DisplayItemKeyTest.java)（パック・アンパック可逆性、非正ハンドルの 0 戻り、明示鍵による `AtomTable` バイパス、フォールバック、キー非衝突、実 HTML 描画時でのパックキー検証など全 6 項目 PASSED）、アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
-     - ✅ **段階 2: 装飾部品（インライン断片の背景・角丸枠線、外側／内側の影）への拡大（2026-11-11 実装完了）**:
-       - [`BoxDecorationPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/paint/BoxDecorationPainter.java) の `_frag_<n>` / `_b_round_<n>`（断片）、`_shadow_<n>`（外側）、`_shadow_in<n>`（内側）が `decorationKey(box, base, ordinal)` で整数鍵を直接生成する。`fragIds` は箱ごとにリセットされテキスト項目も同じ番号を使うため、**部品番号の領域を分離**して同一節内の鍵衝突を防ぐ（テキスト `0x0000〜0x6FFF`／主要部品 `0x7000〜0x7FFF`／断片 `0x8000〜0xBFFF`／外側の影 `0xC000〜0xDFFF`／内側の影 `0xE000〜0xFFFF`。範囲外は領域内へ丸める）。ID 文字列の綴りは不変（`HitTestIndex.DECORATION_PARTS` など文字列判定は影響なし）。
-       - 検証: `DisplayItemKeyTest.decorationPartsUsePackedKeysInTheirOwnNamespaceAndNeverCollide`（影 3 種・インライン `<code>` の枠線付き断片を含むページで、全項目の鍵が一意、各部品が節ハンドルと所定の領域の部品番号を持つことを確認）、`:core:test` 全 1,877 件グリーン（失敗 0・スキップ 3）。
-     - ✅ **段階 3: 主要部品（NODE / _bg / コントロール群）の 64-bit 整数鍵化と索引側の整数鍵直結（2026-11-11 実装完了）**:
-       - **部品番号領域の完全分離**: [`DisplayItem`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/DisplayItem.java) に主要部品用の定数領域を新設（`PART_NODE=0x7000`, `PART_BG=0x7001`, `PART_BORDER=0x7002`, `PART_INPUT=0x7003`, `PART_CHECKBOX=0x7004`, `PART_RADIO=0x7005`, `PART_SELECT=0x7006`, `PART_TEXTAREA=0x7007`, `PART_CANVAS=0x7008`, `PART_SCENE=0x7009`, `PART_MEDIA=0x700A`, `PART_PLACEHOLDER=0x700B`, `PART_SCROLLBAR_V=0x700C`, `PART_SCROLLBAR_H=0x700D`, `PART_BGL_BASE=0x7100`）。テキスト項目領域を `0x0000〜0x6FFF`（28,672 枠）に設定。
-       - **ペインタ側のパック鍵供給**:
-         - [`DisplayListBuilder`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java): 錨ノード（`ElementType.NODE`）およびキャンバス背景（`bg_root`）で `nodeKeyOf(nodeHandle)`, `bgKeyOf(nodeHandle)` を供給。
-         - [`BoxDecorationPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/BoxDecorationPainter.java): 主背景・背景画像・境界線レイヤーで `bgKeyOf(nodeHandle)` および `keyOf(nodeHandle, PART_BGL_BASE + layer)` を供給。
-         - [`ControlPainter`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/ControlPainter.java): フォームコントロール群（`_cb`, `_scene`, `_img`, `_svg`, `_canvas`, `_textarea`, `_select`, `_ph`, `_input`）で各部品定数からパック鍵を直接供給。
-       - **索引側（PaintSceneDriver / HitTestIndex）の整数鍵直結と 100% 後方互換性**:
-         - [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) に `item(int nodeHandle, int partOrdinal)` および `indexOf(int nodeHandle, int partOrdinal)` を新設。整数鍵 (`key()`) と文字列 ID 導出鍵の両方を索引付けし、既存の `itemById` も維持。また `prepare()` 内で確実に `byId` インデックスを公開。
-         - [`HitTestIndex`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/HitTestIndex.java) に `getElementByHandle(int nodeHandle, int partOrdinal)` および `getElementByHandle(int nodeHandle)` を新設。`dynamicKeys` および `elementMap` にパック鍵を登録し、ノードハンドルによるゼロアロケーション直結引きを実現。
-       - **検証**:
-         - [`DisplayItemKeyTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/DisplayItemKeyTest.java) に `majorPartOrdinalsAreDistinctAndInReservedNamespace`（予約領域の非重複検証）および `nodeAndBackgroundAndControlItemsUsePackedKeys`（実 HTML レンダリングでの NODE/_bg/コントロールのパック鍵検証、および HitTestIndex / PaintSceneDriver での handle 引き・文字列 ID 引きの両立検証）を追加し PASSED。
-         - [`PaintOffsetHitTestCacheTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/PaintOffsetHitTestCacheTest.java)（動的キー追跡・パッチキャッシュ検証）PASSED。
-         - 描画回帰テスト [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java), [`PartialRepaintPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/PartialRepaintPixelTest.java), [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java) の全画素一致 PASSED。
-         - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
-         - `:core:test` 全テストスイート通過（1,879 件全件グリーン、0 失敗）。
-      - ✅ **段階 4: 残余装飾・境界線・スクロールバー・UI部品の完全 64-bit 整数鍵化と親子キー（parentKey）直結（2026-11-11 実装完了）**:
-        - **残余描画項目の完全パック鍵化**:
-          - スクロールバーサム（`PART_SCROLLBAR_V`, `PART_SCROLLBAR_H`）、トラック（`PART_SCROLLBAR_TRACK_V`, `PART_SCROLLBAR_TRACK_H`）、つまみ移動節（`PART_SCROLLBAR_NODE_V`, `PART_SCROLLBAR_NODE_H`）、スクロールコンテンツ節（`PART_SCROLL_CONTENT`）を完全鍵化し、スクロールコンテンツ節と持ち主節の NODE 鍵衝突を解消。
-          - 単一丸角枠線（`PART_BORDER`）、円形枠線（`PART_CIRCLE_BORDER`）、四辺直線枠線（`PART_BORDER_TOP`〜`PART_BORDER_LEFT`）、複数丸角枠線（`PART_BORDER_ROUND_BASE + i`）、border-image（`PART_BORDER_IMAGE_BASE + part`）、背景画像タイル・グラデーション（`PART_BGL_BASE`）、背景フォールバック色矩形（`PART_BGL_FALLBACK`）、ゴースト画像（`PART_GHOST_IMAGE`）、プログレスバー（`PART_PROGRESS`）にパック鍵を供給。
-        - **親子関係の 64-bit 整数キー直結（P0-1 / 戦略 T2）**:
-          - [`RenderHints`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/model/RenderHints.java) に `long parentKey` を導入し、[`ItemProps`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/ItemProps.java) で親ノードの 64-bit 鍵を直接供給。
-          - [`PaintSceneDriver`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriver.java) の `parentIdx` 構築ループで `parentKey` 直結引き当てを行い、文字列の `AtomTable.intern` 探索を完全スキップ（未設定時は文字列キーへ安全にフォールバック）。
-          - `sameStructure` で `parentKey` 同士の 64-bit 整数比較を行い、文字列 `equals` を完全バイパス。
-        - **検証**:
-          - [`DisplayItemKeyTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/DisplayItemKeyTest.java) に `remainingPartOrdinalsAreDistinctAndInReservedNamespace`（全 30 定数の非重複・予約空間内検証）、`bordersProgressScrollbarsAndScrollContentUsePackedKeys`（実 HTML での境界線・プログレス・スクロールバー・スクロールコンテンツ節パック鍵検証）、`parentKeyInRenderHintsMatchesParentNodeKey`（`parentKey` 直結と親子一致検証）を追加し全 12 テスト PASSED。
-          - スクロール保持検証 [`PaintSceneDriverRetainTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverRetainTest.java), [`PaintSceneDriverRangeCullTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/PaintSceneDriverRangeCullTest.java), [`ScrollCostTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/ScrollCostTest.java)（保持レイヤ再利用率 899/900 回）PASSED。
-          - 描画回帰テスト [`DiffPatchPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/DiffPatchPixelTest.java), [`PartialRepaintPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/PartialRepaintPixelTest.java), [`OffscreenItemCullPixelTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/software/OffscreenItemCullPixelTest.java) の全画素一致 PASSED。
-          - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
-          - `:core:test` 全テストスイート通過（1,882 件全件グリーン、0 失敗）。
-      - **今後の展開**: 段階 1〜4 および親子キー直結により、描画項目のほぼ 100% が 64-bit 整数鍵化され、索引引き・親子参照ともに文字列アロケーションゼロで動作する基盤が完成したため、これをもとに P0-1（増分索引シフト）および P0-4（LayoutBox スライス範囲保持と局所差分差し替え）の実装へ移行する。
-4. **【完了 2026-11-11】`DisplayListBuilder` の差分範囲差し替え（局所変更時の全ボックス走査の排除 — 戦略 T2: Segmented DisplayList）**:
-   - **達成内容**:
-     - ✅ **`LayoutBox` による DisplayItem スライス範囲保持**:
-       - [`LayoutBox`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java) に `dlStart`, `dlEnd`, `dlOrder` フィールドおよび `clearDlSlice()` を追加。
-       - 各ボックスが生成した表示リスト上のインデックス区間 `[dlStart, dlEnd)` と、CSS 2.1 描画順配列上の順序 `dlOrder` を永続保持。
-     - ✅ **`DisplayListBuilder` の局所差分差し替え API 実装**:
-       - 描画時に直近の `currentDisplayList`, `renderedBoxes`, `currentRoot` を保持。
-       - **スタイル変更・テキスト更新の局所スライスパッチ（`canPatchBoxes` / `patchBoxes`）**:
-         - 変更されたボックス群が互いに重なり合わないスライス区間を持つ場合、個別の `[dlStart, dlEnd)` スライスのみを再生成。
-         - スライス項目数不変（`delta == 0`）時は $O(1)$ 上書き、項目数変動（`delta != 0`）時は `renderedBoxes` の後続ボックス配列を線形シフトするだけで完了し、全ボックス走査を完全にバイパス。
-       - **子要素増減（`CHILD_PATCH`）の局所スライスパッチ（`canPatchChildSlices` / `patchChildSlices`）**:
-         - 親要素直下の削除要素および追加要素のスライス区間を特定し、挿入位置前後の境界でスライスを局所置換。
-         - 削除要素のスライス破棄と追加要素のスライス生成をインプレースで実施し、後続ボックスのスライス範囲を `delta` 分インクリメンタルにシフト。
-     - ✅ **`UiView` 統合**:
-       - `tryTextPatch` で `paintBuilder.canPatchBoxes(found.values())` が成立した場合、`paintBuilder.patchBoxes` を呼び出し、全ボックス走査による表示リスト再構築を回避。
-       - `tryChildPatch` で `paintBuilder.canPatchChildSlices` が成立した場合、`paintBuilder.patchChildSlices` を呼び出し、全ボックス走査を回避。
-   - **検証**:
-     - 新設 [`DisplayListSlicePatchTest.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/paint/DisplayListSlicePatchTest.java) にて全 8 テストを実施し、全件 PASSED：
-       1. `slicesAreRecordedOnRender`: 初回レンダリング時に各ボックスへ非負のスライス範囲が割り当てられ、親要素内に包含され、連続していることを検証。
-       2. `singleBoxStylePatchMatchesFullRender`: 単一ボックスの背景色変更でパッチ結果がフル描画結果と 100% 一致。
-       3. `multipleBoxesStylePatchMatchesFullRender`: 複数ボックスの背景色変更でパッチ結果がフル描画結果と 100% 一致。
-       4. `textPatchMatchesFullRender`: テキスト更新でパッチ結果がフル描画結果と 100% 一致（`TEXT_PATCH_HITS` 増加確認）。
-       5. `childInsertMiddleMatchesFullRender`: リスト中間への行挿入でパッチ結果がフル描画結果と 100% 一致（`CHILD_PATCH_HITS` 増加確認）。
-       6. `childRemoveMiddleMatchesFullRender`: リスト中間からの行削除でパッチ結果がフル描画結果と 100% 一致（`CHILD_PATCH_HITS` 増加確認）。
-       7. `childInsertAtStartAndEndMatchesFullRender`: リスト先頭・末尾への行挿入でパッチ結果がフル描画結果と 100% 一致。
-       8. `randomOperationsSequenceMatchesFullRender`: 40 ステップのランダム変異列（行追加・削除・テキスト変更）で、毎回全再構築時と 100% 完全一致。
-     - 回帰テスト [`ChildPatchTest.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/ChildPatchTest.java), [`TextPatchTest.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/common/TextPatchTest.java) 全件 PASSED。
-     - アーキテクチャラチェット（`LayerDependencyRatchetTest`, `PortabilityRatchetTest`, `ApiBoundaryTest`）PASSED。
-     - `:core:test` 全テストスイート通過（1,880 件超全件グリーン、0 失敗）。
-5. **Phase A 完結：GPU/CPU 走査向きの反転と非等方角丸・せん断の GPU シェーダー化**:
-   - **現状**: `LwjglGlRenderBackend` → `CpuLayerFallback` → `SoftwareRenderBackend` → `PaintSceneDriver` → `GpuAttempt` の向きで走査しており、また `GlRectStream.decompose` が毎フレーム `Matrix2D` を `atan2`/`hypot` で逆分解し、せん断 (`skew`) や非等方スケール下の角丸を CPU フォールバックへ回している。
-   - **対策**: `PropertyTrees` の Transform ノードに 2D アフィン行列をそのまま保持して `decompose` を廃止し、`GpuRectShader` で非等方角丸・せん断を直接評価して 2D プリミティブの CPU フォールバック率を 0% にする。
+| 項目 | 内容 | 効果・備考 |
+| :--- | :--- | :--- |
+| 可視範囲カリング（T1） | ペインタ段の項目カリング（`outsideClip`）、スクロール層記録時カリング、`PaintSceneDriver` の 64 項目ブロック走査除外（`NONE` 計画の CPU バックエンドにも適用） | CPU `hover` `3.18 → 1.41 ms`、`scrollhover`（GL）フレーム p50 約 −50%。画素一致テスト（`OffscreenItemCullPixelTest`・`PaintSceneDriverRangeCullTest`）で固定。**未着手: `SCROLL_NODE` 区間の二分探索（表示リストが鋸歯状で単調性が無く、設計見直しが必要）** |
+| CPU Tile Dirty Bitset ＋ Scroll Blit（T4） | `CpuRaster.scrollBlit`、露出帯のみの再描画、`CHILD_PATCH` 時の 64-bit 鍵による旧新項目対応 | large-list 500 行 CPU `hover` 差分描画が成立。`ScrollBlitTest`・`CpuScrollBlitPixelTest` で全画素一致 |
+| 増分索引（T2） | `patchIndexByDiff` の上限撤廃（構造不変なら 25% 超でもインプレース）、`patchIndexByShift`（head/tail 同一性が前提） | **`child` では後続項目が再生成され同一性を失うため `patchIndexByShift` が成立せず、全面作り直しに落ちる（§6.10）** |
+| 64-bit 整数鍵化（T2） | `(nodeHandle << 16) \| partOrdinal`。テキスト断片・装飾・主要部品・スクロールバー・親子鍵（`parentKey`）まで | 索引引きの文字列確保を排除。ただし `rebuildIndex` に文字列鍵の補助索引（`AtomTable.intern`）が残り、全面作り直し時に `paint(cpu)` の約 25% を占める |
+| Segmented DisplayList（T2） | `LayoutBox` が `[dlStart, dlEnd)` を保持、`patchBoxes` / `patchChildSlices` で局所差し替え | R1 で `hover` 2,000 行 `display-list` `2.45 → 0.018 ms`。`child` は §6.10 のとおり未達 |
+
+**残課題**
+
+2. **項目単位の保持 GPU 記録（T3）**: 1 要素のテキスト変更でも、未変更の字形に毎フレーム `drawGlyphs`（フレームの 39%）が走る。項目ごとの 80B GPU インスタンス列を保持し、同一なら `MemorySegment.copy` で一括転送する。着手判定は GL 送出がフレームの 30% 超（R5）。
+5. **GPU/CPU 走査向きの反転と非等方角丸・せん断の GPU シェーダー化**: `GlRectStream.decompose` が毎フレーム `Matrix2D` を `atan2`/`hypot` で逆分解し、せん断・非等方スケール下の角丸を CPU フォールバックへ回している。`PropertyTrees` の Transform ノードに 2D アフィンを保持して `decompose` を廃止し、`GpuRectShader` で直接評価する。
 
 ---
+
 
 #### ⚡ 優先度 P1：レイアウト二段制約キャッシュ（Measure 多枠 + Place スキップ）と局所パッチ拡大（戦略 T5 / T6）
 
@@ -920,8 +797,126 @@ R0 で判明した「P0-4 スライスパッチが実経路（`StandaloneView`�
 | **Wave 0 & Wave 1** | ✅ **完了** | 公開 API (`EnderEngine`/`WebViewSurface`)・脱 `mc-*` SPI・脱 `static` (`EngineContext`)・`CssPropertyIndex` & `CssValue[]`・`LoadedFace` 並列化・GL 差分走査・測定半減 | `fullLayoutWarm` **`0.986 ms`**、`showcase` 規模で Chrome 同等以上、単体汎用 JAR として完全自立 |
 | **Wave 1 基盤: 7 層参照モデルラチェット（§1.3）** | ✅ **完了（2026-11-10）** | [`LayerDependencyRatchetTest`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/test/java/com/nishiyu/enderframelib/core/LayerDependencyRatchetTest.java) で L1〜L6 の単方向性を固定。逆方向参照 11 系統を全て解消し `KNOWN_UPWARD` を空集合化（SPI 3 本 `BindingHooks`/`ColorSyntax`＋移設 `media.ImageSources`/`paint.DisplayItemFonts`） | 完了。以後は新規逆方向参照がビルドで即失敗するため、Wave 1.5 以降の機能追加はこの層規則の内側で行う（新規 SPI を足す場合も下位層が定義し上位層が実装する） |
 | **Wave 1.5 (P0 & P1: 戦略 T1〜T6)** | 🎯 **進行中（①・②a・③・④ 完了。2026-11-11 再計測で効果確認・§6.7。残りは Wave 1.6 の R0〜R7 へ）** | **① ✅ 文書上限 128 KiB の黙った切り捨て解消（W8）<br/>② 🔧 空間カリング（T1: ペインタ段 `outsideClip`・ドライバ段 64 項目ブロック走査除外完了。次は `SCROLL_NODE` 区間カリング）+ 項目単位の保持 GPU 記録（T3）<br/>③ ✅ Segmented DisplayList スライス保持（P0-4）+ 64-bit 整数鍵化（P0-3 段階 1〜4 完遂）+ 増分索引シフト（P0-1）（T2: W2・W4・W6 解消）<br/>④ ✅ CPU Tile Dirty Bitset + Scroll Blit（P0-0b / T4: W3 解消）<br/>⑤ 4-Way 測定キャッシュ + `place` 制約スキップ（T5: W5 解消）<br/>⑥ DOM 雛形クローン + 文書横断 `ShareCache`（T6: W7 解消）** | ・2,000 行画面外 `hover` GL **`< 0.25〜0.7 ms`**（現 `13.1`、Chrome `0.55` を凌駕）<br/>・2,000 行 `child` **`< 0.5〜1.5 ms`**（現 `25.6`、Chrome `1.09` を凌駕）<br/>・CPU `hover` **`< 0.3〜0.8 ms`**（現 `4.4`、Chrome CPU `1.55`・Swing `0.64` を逆転）<br/>・showcase 幅変更 **`< 0.10〜0.20 ms`**（現 `0.93`、Chrome `0.084` 同等）<br/>・フレーム確保量 `fontsize` 級で `< 5 MB`（現 `33 MB`） |
-| **Wave 1.6 (R0〜R7: 2026-11-11 再策定)** | 🎯 **R0・R1 完了・R2 着手** | ✅ R0 計測基盤補強（§6.8）→ **✅ R1-0 `StandaloneView` ビルダー一本化 ＋ R1 スタイル変更のスライスパッチ化（§6.9）** → **R2 `child` 残差** → R3 全面無効化・幅変更・可視範囲限定 → R4 CPU 全面ダメージ解消 → R6 オープン → R5 GPU 記録（条件付き）／R7 ラチェット横串（§7.3 冒頭） | ・2,000 行 GL `hover` **`< 1.0 ms`**（現 `3.50`）<br/>・2,000 行 GL `child` **`< 3 ms`**（現 `13.8`）<br/>・500 行 `inherited` GL **`< 1.5 ms`**（現 `3.59`）<br/>・2,000 行 `fontsize` GL **`< 10 ms`**（現 `18.9`、Chrome `11.3`）<br/>・showcase CPU `hover` **`< 1.5 ms`**（現 `4.59`）／幅変更 **`< 0.2 ms`**（現 `1.04`）<br/>・Chrome 比: 全シナリオ 2 倍以内（現 最大 12.6 倍） |
+| **Wave 1.6 (R0〜R7: 2026-11-11 再策定)** | 🎯 **R0・R1 完了、R2 部分達成（§6.10）、R3 は Wave 1.7 の施策 2・3 として進行** | ✅ R0 計測基盤補強（§6.8）→ ✅ R1 スタイル変更のスライスパッチ化（§6.9）→ 🔧 R2 `child`（命中 100%・確保削減まで。時間 KPI 未達 → Wave 1.7 の RTI・Paint 表で再判定）→ R3 全面無効化・幅変更・可視範囲限定 → R4 CPU 全面ダメージ解消 → R6 オープン → R5 GPU 記録（条件付き）／R7 ラチェット横串（§7.3 冒頭） | ・2,000 行 GL `hover` **`< 1.0 ms`**（✅ 達成）<br/>・2,000 行 GL `child` **`< 3 ms`**（現 `約 18`。未達）<br/>・500 行 `inherited` GL **`< 1.5 ms`**（現 `3.59`）<br/>・2,000 行 `fontsize` GL **`< 10 ms`**（現 `18.9`、Chrome `11.3`）<br/>・showcase CPU `hover` **`< 1.5 ms`**（現 `4.59`）／幅変更 **`< 0.2 ms`**（現 `1.04`）<br/>・Chrome 比: 全シナリオ 2 倍以内（現 最大約 17 倍） |
+| **Wave 1.7 (2026-11-11 方針転換)** | 🎯 **着手前（M0 計測から）** | DoD 再設計（座標を持たない Paint 表）＋内容アドレス化（成形・スタイル・測定・配置の共有）＋反復ブロックのインスタンス化（RTI）。§8 | ・2,000 行 `child` GL **`< 0.5 ms`**（Chrome `1.09` の約 2 倍速）<br/>・2,000 行 `fontsize` **`< 5 ms`**、確保 `< 2 MB`<br/>・10 万行で `hover`/`text`/スクロール `< 0.3 ms` |
 | **Wave 2 (P2: 戦略 T7-③)** | 📋 **設計完了** | Three.js 型 3D シーングラフ統合（[`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md)） | HTML/CSS と 3D メッシュ・ライト・レイキャストの単一パス・ゼロコピー融合（ブラウザ Three.js では不可能な領域） |
 | **Wave 3 (P3: 戦略 T7-①)** | 📋 **計画中** | IME Composition・Top Layer (`<dialog>`/`popover`) & Anchor Positioning・`content-visibility: auto` + `FenwickVirtualList` 10 万行仮想化・`subgrid`・縦書き | 20,000〜100,000 行リスト **`< 0.2〜0.5 ms`**（Chrome 20,000 行 `117 ms` の **200 倍以上高速**）、日本語デスクトップ UI 完全対応 |
 | **Wave 4 (P4: 戦略 T7-②)** | 📋 **計画中** | コンパイル済み型安全 `Signal<T>` / `Record` 直結バインディング・`<slot>` コンポーネント・`F12` 組み込み `EnderDevTools` | 開発生産性と実行性能の双方で Web フロントエンド（React/CEF）および既存 Java UI ライブラリを凌駕 |
 
+---
+
+## 8. Wave 1.7 設計: DoD 再設計・内容アドレス化・反復ブロックのインスタンス化（2026-11-11）
+
+> R2（§6.10）の未達を受けた根本的な作り直しの設計。**数値はすべて見積もり（未実装・未検証）。** 実測済みなのは §8.1 のみ。
+
+### 8.1 診断（実測で確定した事実）
+
+**現行表現の構造的欠陥**
+
+| # | 欠陥 | 帰結 |
+| :-- | :-- | :-- |
+| F1 | 幾何の二重保持（`LayoutBox.x/y/w/h`＝float、`DisplayItem.x/y/width/height`＝int、`BoxMemo.nums`） | 挿入 1 回で 3 か所を同期。同期コードが `patchChildSlices` の大半 |
+| F2 | AoS の太い不変レコード（`DisplayItem` 23 フィールド、`String`×3・`Map`・`RenderMeta` 参照） | 走査はポインタ追い、移動は再生成 |
+| F3 | 同一スタイルの重複（行ごとに同じ色・半径・影・クリップを複製） | 2,000 行で同値を 2,000 回持つ |
+| F4 | 索引が項目の同一性比較に依存（`patchIndexByDiff` / `patchIndexByShift` / `SoftwareRenderBackend`） | 後続が再生成されると増分索引が成立せず全面作り直し |
+| F5 | ホットパスの Map 引き・`equals`・文字列キー（`rebuildIndex` の `AtomTable.intern`） | `paint(cpu)` の約 25% |
+
+**D0 ベンチ**（`DodHypothesisBench`、JMH。後続 17,500 項目相当）
+
+| 項目 | 時間 |
+| :-- | :-: |
+| 現行: 17,500 項目を `new DisplayItem` で作り直し（確保 2 MB） | 458 µs |
+| SoA: Box 表 y 列の範囲加算（3,500 要素）／項目ごと y 列（17,500 要素） | **0.09 µs** ／ 1.6 µs |
+| 現行: 20,000 項目の AoS 走査（可視 200 件出力）／SoA 全走査／**SoA 可視のみ（二分探索）** | 58.7 µs ／ 19.8 µs ／ **0.21 µs** |
+
+SoA 全走査は AoS の 3 倍止まり。**可視限定（O(可視)）がなければ SoA 化だけでは大差が出ない。** また孤立ベンチの再生成 0.46 ms に対し本番 `itemShift` は約 7 ms で、差はヒープ上に散在したオブジェクトの読み出し（メモリ律速）である（§6.10）。
+
+**下流の内訳**（2,000 行 `child`・GL・JFR 付き）: `paint(cpu)` 4.9 ms のうち索引の全面作り直し 61%（約 3 ms、文字列キー `intern` 25%）、`isNeutral` / `peekState`（文字列キーの状態引き）20%、保持範囲の走査 8%。CPU バックエンドは `paint` 18.3 ms・確保 20 MB/frame。
+
+### 8.2 設計原則と目標データモデル（DoD 再設計）
+
+原則: ① 幾何は一か所（Box 表）にだけ置き、表示側は添字で引く（遅延束縛）。② 変更は列単位（`float[]` の範囲加算、`int[]` の 1 要素）。③ スタイル由来の値は重複排除した Payload 表。④ 作業量は O(可視＋変更)。⑤ 毎フレーム確保 0（事前確保・世代番号）。⑥ 差分は dirty ビットセット／範囲で伝え、比較走査をしない。
+
+```text
+Box 表（SoA, 文書順）    float[] x,y,w,h（小数のまま） / int[] parent,firstChild,nextSibling / int[] styleSlot / long[] dirtyBits
+Payload 表              スタイル由来の描画値（bg/border/radius/opacity/shadow/clip…）。ComputedStyle 単位で intern、行は番号だけ共有
+Paint 表（SoA, 描画順）  int[] boxIdx / byte[] kind / int[] payloadIdx / long[] key（現行 64-bit 鍵を継承）。Box ごとに [paintStart,paintEnd)
+GlyphRun 表             (boxIdx, fontSlot, glyphStart, glyphCount)。同一文字列・フォントなら成形結果を共有、原点は描画時に Box から加算
+```
+
+- 文字列・`Map`・`RenderMeta`・`AnimationSpec` は表に入れず、添字参照の別アリーナへ。
+- **GPU（GPU-Driven）**: インスタンスを 80 B → 16 B（`boxIdx, kind, payloadIdx, flags`）にし、頂点シェーダが Box/Payload SSBO を引く。行の移動は Box SSBO の連続範囲だけ、`:hover` は Payload 1 行の書き換え。
+- **CPU**: Tile Dirty の入力を「項目差分」から「dirty Box の旧・新矩形」へ。タイルの対象 Paint 行は y 範囲の二分探索。
+- **座標の丸め**: 行の高さが小数のとき、後続の `y` は「旧＋`dy`」にならず、小数のボックス座標から丸め直す必要がある（項目だけずらす近道は全再構築との一致を壊す）。**Paint 表は小数の相対値を保持し、丸めは描画の最終段 1 か所（現行規則どおり）で行う。**
+- 代替案（RTI が使えないブロック向けの保険）: ビルダーが `DisplayListDelta{spliceAt, removedLen, addedLen, shiftFrom, dx, dy}` を発行し、後続は再生成せず `ShiftTable`（Fenwick）で座標を読み出し時に解決、索引は差分駆動にする。**ビルダー・索引・バックエンドを同時に切り替える必要がある**（同一性比較に頼る既存コードが遅延実体化を全面更新と誤判定するため）。
+
+### 8.3 内容アドレス化（Content-Addressed Pipeline）
+
+各段の結果を入力の内容ハッシュで保存し、同じ入力なら再計算せず共有する。**コストは N（ノード数）ではなく D（異なる計算の数）に比例する。** 対応する他分野の技術: 内容アドレス型ビルドキャッシュ（Bazel / Nix）、hash-consing（等価判定を O(1) に）、増分計算（Salsa / Adapton）、永続データ構造（HAMT / rope / B 木）、GPU インスタンス描画、コンパイル型 UI（Svelte / Solid ＝ `BindingPatchTable`）。
+
+| 段 | キー | 共有されるもの | 効く場面 |
+| :-- | :-- | :-- | :-- |
+| スタイル | (祖先の算出スタイル ID, セレクタ一致集合) | `ComputedStyle`（intern） | 継承変更（`fontsize` / `inherited`）、オープン |
+| テキスト成形 | (文字列, フォント, 言語) → グリフ列・前進幅・**改行可能位置** | 成形結果（幅に依存しない） | 幅変更で再成形せず、改行は「幅 → 行分割」の**区間キャッシュ**（行数が同じ幅区間は同じ分割） |
+| 測定 (intrinsic) | (部分木の構造キー, 制約) | min/max-content | 同形の部分木を別の場所でも共有（T5 の拡張） |
+| 配置 | (部分木の構造キー, 利用可能幅) → **相対座標** | 部分木内レイアウト | 親が動いても子を更新しない |
+| ペイント | (部分木の構造キー, 算出値) | テンプレート（相対座標・小数のまま） | カード・ボタン等の部品単位 |
+| 字形 | (グリフ ID, フォント, サイズ) | アトラス位置 | 既存 `FontSet` アトラス |
+
+**構造クラス判定**: `shape(node) = H(tag, 算出スタイルの正規化 ID, 描画に効く属性, [shape(child)…])`（文字の内容は含めない＝「穴」）。DOM 変更で変わったノードから祖先へ増分更新（O(深さ)）。`:nth-child` 等で縞模様になる場合は算出スタイルが違うので別クラスになる。
+
+### 8.4 反復ブロックのインスタンス化（RTI）
+
+同形の行（見た目が同じ）は 1 つのテンプレートを共有し、行 = (クラス ID, 位置の序数, 文字の参照) だけを持つ。位置は全行同高さなら `y0 + i×h`（Flutter の固定 extent と同じ O(1)）、高さが違えば Fenwick。描画は可視範囲（y の二分探索）の行だけ、テンプレート＋行の原点＋文字を送出（GPU はテンプレート 1 つ＋インスタンス属性）。1 行だけ `:hover`・インライン style になったら、その行だけ別クラス（変種）へ移す（コピーオンライト）。
+
+| 操作（2,000 行・全行同一クラス） | 現状 | RTI（見込み） |
+| :-- | :-: | :-: |
+| `child` | 後続の再生成・再配置・索引再構築（GL 約 18 ms） | クラス判定＋配列挿入＋`i×h`。後続の項目・ボックスは存在しない。**0.2〜0.4 ms**（Chrome 1.09） |
+| `fontsize` / `inherited` | 全行のスタイル解決・測定・配置（GL 18.9 ms、確保 25 MB） | クラスのスタイル 1 回の再解決＋テンプレートの再測定 1 回。**1〜3 ms**（Chrome 11.3） |
+| `hover`（1 行） | 1.0 ms | 該当行をクラスから分離。O(1) |
+| 幅変更 | 全行再測定 | 折り返しが起きるかの判定のみ（最大文字幅 ≤ 内容幅なら再測定ゼロ） |
+
+**入れ子・長文**: 構造ハッシュは子の構造を含むので入れ子でも同クラスになる（一部だけ形が違う行は別クラス）。長文が折り返す行は高さが可変（Fenwick・O(log N)）で、折り返し計算は行の文字が変わるたびに必要（RTI では省けない）。効くのは挿入・削除・スタイル変更・全行にまたがる変更（成形結果をキャッシュ）。**適用外**（従来経路にフォールバック）: クラス数/行数が高いブロック、`float`・`position: absolute/sticky` が兄弟と相互作用、margin 相殺が行ごとに変わる場合。イベント・ヒットテスト・IME・選択は、行番号の逆引きと「必要になった行だけ実体化」で扱う。
+
+### 8.5 Chrome 比の到達見込みと限界（正直に）
+
+| シナリオ | 対 Chrome |
+| :-- | :-: |
+| 同形の行の挿入・削除・`hover`・全行スタイル変更 | **大幅に超える**（要素ごとにスタイル・レイアウト・ペイントを持つ Chrome は構造上届かない） |
+| 不均一ページの局所更新（1 要素のテキスト・スタイル） | **超える**（既に `hover` 49 倍・継承 4.5 倍。下流の全走査排除で拡大） |
+| 長文の折り返し・幅変更（全行再折り返し） | **超えうる**（成形を幅非依存・改行を区間キャッシュ。Chrome は幅変更で行ごとに再成形・再改行） |
+| 全行の文字が毎フレーム変わる（ストリーミング） | 同程度〜わずかに下（成形が支配的。HarfBuzz(C++) 対 純 Java。並列化で緩和） |
+| 初回のコールド描画（JIT 前）・全内容がユニーク | **劣る可能性が高い**（共有できる物が無い。`prewarm` / AOT で緩和） |
+| 画像・フィルタ・影・ブラー重視 | Skia/GPU が有利（共有では減らせない。T3 の別軸） |
+
+他のネックへの効き方: 後続再生成・索引全面作り直し（W2）、全面無効化（W6）、幅変更（W5）、`intern`（W4）、CPU バックエンド（W3 — 行ラスタ結果をテンプレート＋文字の内容キーでキャッシュして貼り付け）には効く。オープン（W7）は DOM 雛形クローン・テンプレート永続化で 2 回目以降のみ。GL ドライバ送出・画像デコード・フィルタは別手段が必要。
+
+目標は「全面で超える」ではなく、**重複と不変が大半を占める現実の UI のほぼ全域で超え、最悪でも Chrome と同程度**。
+
+### 8.6 実施計画（効果 ÷ 工数・各段で全再構築との一致テストを合否にする）
+
+| 順 | 施策 | 内容 | 出口 KPI |
+| :-: | :-- | :-- | :-- |
+| 1 | **M0 計測**（読み取り専用） | 構造ハッシュで「クラス数/ノード数」と行高さの一様性を、長文・入れ子・不均一ページ（showcase 等）を含む実ドキュメントで測る | large-list は 1 クラス、showcase でも反復部分の 70% 以上がクラス化できるか |
+| 2 | **テキスト成形の幅非依存キャッシュ＋改行区間キャッシュ** | 他と独立に導入でき全ページに効く（W5 の主因） | showcase 幅変更 `< 0.2 ms` |
+| 3 | **`ComputedStyle` intern と (親スタイル, 一致集合) 共有** | S5（`StyleSheet` 雛形キャッシュ）の拡張 | 2,000 行 `fontsize` `< 10 ms`、500 行 `inherited` `< 1.5 ms` |
+| 4 | **RTI M1**: 反復ブロックの検出と固定 extent レイアウト（`y_i = y0 + i×h`）、可視行のみ実体化 | 全再構築・差分レイアウトとの一致 | 2,000 行 `child` の layout＋display-list `< 1 ms` |
+| 5 | **RTI M2/M3 ＋ Paint 表（D1〜D5）**: テンプレート＋インスタンス表、相対座標、Box 表の導入（`DisplayItem` は読み取り専用ビューで互換維持）、Fenwick、GPU インスタンス描画 | 旧経路 oracle との差分テスト（`DisplayListSlicePatchTest` 等を温存） | 2,000 行 `child` **`< 0.5 ms`**、`fontsize` `< 5 ms`、確保 `< 2 MB`、10 万行 `< 0.3 ms` |
+| 6 | 永続データ構造化（行配列・表示リスト・索引） | 差分が「ポインタが違う部分木」だけになり、全項目の同一性比較が O(差分) | 不均一ページの構造変更 |
+| 7 | クラス単位の並列化 | 成形・測定は独立。`ForkJoinPool` で並列（Chrome のレイアウトは主スレッド 1 本） | ユニーク内容・コールド |
+
+R3（§7.3）は施策 2・3 とほぼ同一作業なのでそちらで進める。R2 の時間 KPI（`child` `< 3 ms`）は施策 4・5 の完了で再判定する。
+
+### 8.7 約束事とリスク
+
+1. キーは「入力の正規化ハッシュ」。衝突は `equals` で必ず確認する（見た目が変わる誤共有を許さない）。
+2. すべての中間結果は不変（共有できる前提）。座標は小数の相対値で保持し、丸めは描画の最終段 1 か所。
+3. 「共有なし・全再計算」と同じ結果になることを、ランダム変異列＋実ドキュメントで毎段検証する。クラス数が多い／小さな部分木は自動で共有を止める（ハッシュ計算が計算を上回る場合は共有しない。閾値は M0 で決める）。
+
+| リスク | 対策 |
+| :-- | :-- |
+| 影響範囲が広い（GL・CPU・HitTest・PaintOrder・テスト） | `DisplayItem` を読み取り専用ビュー（フライウェイト）として互換維持。段ごとに旧経路 oracle と差分テスト |
+| `jdk.incubator.vector` が incubator | 17,500 要素ならスカラ版でも数十 µs の見込み。必須にしない（D0 で実測） |
+| `transition`・アニメ中の補間値（Payload の付け替えで表現不可） | アニメ中ノードは専用のローカル Payload スロットを動的確保（少数） |
+| スタッキングコンテキスト・`transform` と描画順 | Paint 表の順序は現行 `PaintOrder` の出力を採用。`transform` / スタッキング / sticky / アニメ中の範囲は従来経路へフォールバック |
+| 時間ベンチが全件実行で不安定（既知） | 時間でなく確保量・パッチ命中・走査項目数のカウンタをラチェット化（R7） |
