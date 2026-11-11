@@ -28,9 +28,14 @@ import com.nishiyu.enderframelib.core.text.model.*;
 
 /** 箱の {@code transform}・{@code transition}・{@code animation} を、描画項目が運ぶ値（{@link AnimationSpec} など）に解く。 */
 final class BoxAnimation {
-    private final int rootW;
-    private final int rootH;
+    private int rootW;
+    private int rootH;
     private final Map<String, Keyframes> keyframes;
+
+    void setViewport(int rootW, int rootH) {
+        this.rootW = rootW;
+        this.rootH = rootH;
+    }
 
     BoxAnimation(int rootW, int rootH, Map<String, Keyframes> keyframes) {
         this.rootW = rootW;

@@ -36,6 +36,14 @@ public final class FineProfileMain {
         @Override public float devicePixelRatio() { return 1f; }
     }
 
+    private static long D_STAT(Class<?> c, String name) {
+        try {
+            return ((java.util.concurrent.atomic.LongAdder) c.getField(name).get(null)).sum();
+        } catch (ReflectiveOperationException e) {
+            return -1;
+        }
+    }
+
     public static void main(String[] args) {
         String scenario = args.length > 0 ? args[0] : "idle";
         String doc = args.length > 1 ? args[1] : Workloads.SHOWCASE;
@@ -92,6 +100,19 @@ public final class FineProfileMain {
             System.out.println("DOM elements=" + countElements(view[0].root()));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " per-frame frames=" + (frames + warmup));
+            {
+                var D = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.class;
+                long n = frames + warmup;
+                System.out.printf("BOXMEMO per-frame exact=%.1f translated=%.1f miss=%.1f new=%.1f unmemoizable=%.1f stamped=%.1f%n",
+                        D_STAT(D, "STAT_EXACT") / (double) n, D_STAT(D, "STAT_TRANSLATED") / (double) n, D_STAT(D, "STAT_MISS") / (double) n,
+                        D_STAT(D, "STAT_NEW") / (double) n, D_STAT(D, "STAT_UNMEMOIZABLE") / (double) n, D_STAT(D, "STAT_STAMPED") / (double) n);
+            }
+            {
+                StringBuilder why = new StringBuilder("MATCHFAIL");
+                var fails = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.STAT_MATCH_FAIL;
+                for (int i = 1; i < fails.length; i++) if (fails[i].sum() > 0) why.append(' ').append(i).append('=').append(String.format("%.1f", fails[i].sum() / (double) (frames + warmup)));
+                System.out.println(why);
+            }
             System.out.println("RANGECULL planned=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_PLANNED.get()
                     + " ineligible=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_INELIGIBLE.get()
                     + " culledItems=" + com.nishiyu.enderframelib.core.paint.PaintSceneDriver.RANGE_CULLED_TOTAL.get());
@@ -139,7 +160,8 @@ public final class FineProfileMain {
                 }
                 cant.append(']');
             }
-            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
+            cant.append(" noBuilder=").append(UiView.SLICE_NO_BUILDER.get()).append(" multiPlan=").append(UiView.SLICE_MULTI_PLAN.get());
+
             System.out.println(cant);
         }
     }

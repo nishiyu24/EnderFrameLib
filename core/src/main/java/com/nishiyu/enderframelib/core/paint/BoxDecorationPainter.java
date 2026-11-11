@@ -30,8 +30,8 @@ public final class BoxDecorationPainter {
     /** ぼかした影の矩形が、ぼかしが消える所まで外へ広がる倍率（ぼかし半径に対して）。 */
     public static final float SHADOW_REACH = 1.5f;
 
-    private final int rootW;
-    private final int rootH;
+    private int rootW;
+    private int rootH;
     private final AtomicInteger fragIds;
 
     int rootW() {
@@ -69,6 +69,11 @@ public final class BoxDecorationPainter {
         if (handle <= 0) return 0L;
         int mask = base == FRAG_PART_BASE ? FRAG_PART_MASK : SHADOW_PART_MASK;
         return DisplayItem.keyOf(handle, base | (ordinal & mask));
+    }
+
+    void setViewport(int rootW, int rootH) {
+        this.rootW = rootW;
+        this.rootH = rootH;
     }
 
     BoxDecorationPainter(int rootW, int rootH, AtomicInteger fragIds) {

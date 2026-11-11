@@ -44,8 +44,8 @@ final class PaintOrder {
         void draw(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId);
     }
 
-    private final int rootW;
-    private final int rootH;
+    private int rootW;
+    private int rootH;
     private final ScrollState scrollState;
     private final AtomicInteger fragIds;
     private final BoxPainter painter;
@@ -370,6 +370,13 @@ final class PaintOrder {
             if (hasUnscrollableDescendant(container, child)) return true;
         }
         return false;
+    }
+
+    /** ビューポートの大きさが変わった。部分木の保持はビューポート基準の単位を使う箱の項目を含み得るので捨てる。 */
+    void setViewport(int rootW, int rootH) {
+        this.rootW = rootW;
+        this.rootH = rootH;
+        chunks.clear();
     }
 
     PaintOrder(int rootW, int rootH, ScrollState scrollState, AtomicInteger fragIds, BoxPainter painter,
