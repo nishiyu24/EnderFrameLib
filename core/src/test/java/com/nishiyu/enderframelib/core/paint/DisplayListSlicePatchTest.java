@@ -398,6 +398,89 @@ class DisplayListSlicePatchTest {
         assertTrue(UiView.TEXT_PATCH_HITS.get() > startTextHits, "Text patch hits increased in random ops");
     }
 
+    /**
+     * R7: スタイル変更（class 付け外し・継承色・インライン style）・hover・テキスト・子の挿入削除を混ぜた
+     * 乱択列で、毎手順パッチ結果が全再構築と 100% 一致し、スタイル系の手順ではスライスパッチが命中すること。
+     */
+    @Test
+    void randomMixedStyleHoverTextChildSequenceMatchesFullRender() {
+        StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        StandaloneView viewFull = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+        flush(viewFull, false);
+
+        long startStyleHits = UiView.RESTYLE_REPAINT_PATCH.get();
+        String[] btnIds = {"btn1", "btn2", "btn3"};
+        String[] classes = {"btn", "btn hot", "btn trans", "btn stacked", "btn hot trans"};
+        String[] colors = {"#112233", "#aa5500", "#000000", "#ffffff"};
+        Random rnd = new Random(98765);
+        int styleOps = 0;
+
+        for (int step = 0; step < 60; step++) {
+            UiView.childPatchEnabled = true;
+            UiView.textPatchEnabled = true;
+            int op = rnd.nextInt(6);
+            switch (op) {
+                case 0 -> { // class の付け外し
+                    String id = btnIds[rnd.nextInt(btnIds.length)];
+                    String cls = classes[rnd.nextInt(classes.length)];
+                    for (StandaloneView v : List.of(viewPatch, viewFull)) {
+                        ((HtmlElement) v.root().getNodeById(id)).setAttribute("class", cls);
+                    }
+                    styleOps++;
+                }
+                case 1 -> { // hover の移動・解除
+                    String id = rnd.nextBoolean() ? null : btnIds[rnd.nextInt(btnIds.length)];
+                    viewPatch.ui().setHoveredElement(id);
+                    viewFull.ui().setHoveredElement(id);
+                    styleOps++;
+                }
+                case 2 -> { // 継承色の変更（リスト全体）
+                    String color = colors[rnd.nextInt(colors.length)];
+                    for (StandaloneView v : List.of(viewPatch, viewFull)) {
+                        ((HtmlElement) v.root().getNodeById("list")).setAttribute("style", "color: " + color);
+                    }
+                    styleOps++;
+                }
+                case 3 -> { // インライン style（背景）
+                    String id = "i" + rnd.nextInt(5);
+                    String color = colors[rnd.nextInt(colors.length)];
+                    for (StandaloneView v : List.of(viewPatch, viewFull)) {
+                        HtmlNode n = v.root().getNodeById(id);
+                        if (n instanceof HtmlElement el) el.setAttribute("style", "background: " + color);
+                    }
+                    styleOps++;
+                }
+                case 4 -> { // テキスト更新
+                    String text = "Mixed " + step + " r" + rnd.nextInt(100);
+                    String id = btnIds[rnd.nextInt(btnIds.length)];
+                    for (StandaloneView v : List.of(viewPatch, viewFull)) {
+                        ((HtmlElement) v.root().getNodeById(id)).updateTextContent(text);
+                    }
+                }
+                default -> { // 行の追加（上限あり）
+                    String elId = "mix-" + step;
+                    for (StandaloneView v : List.of(viewPatch, viewFull)) {
+                        HtmlNode list = v.root().getNodeById("list");
+                        if (list.children.size() < 12) {
+                            HtmlElement el = new HtmlElement("div");
+                            el.setAttribute("class", "item");
+                            el.setAttribute("id", elId);
+                            el.updateTextContent("Mixed row " + step);
+                            list.appendChild(el);
+                        }
+                    }
+                }
+            }
+            List<DisplayItem> patched = flush(viewPatch, true);
+            List<DisplayItem> expected = flush(viewFull, false);
+            assertItemsEqual(expected, patched, "混合乱択 step " + step + "（op " + op + "）で全再構築と一致");
+        }
+
+        assertTrue(styleOps > 10, "スタイル系の手順が十分に含まれる");
+        assertTrue(UiView.RESTYLE_REPAINT_PATCH.get() > startStyleHits, "混合列でスライスパッチが命中している");
+    }
+
     @Test
     void hoverToggleStylePatchMatchesFullRender() {
         StandaloneView viewPatch = new StandaloneView(BASE_HTML, W, H, FontResolver.FALLBACK);
