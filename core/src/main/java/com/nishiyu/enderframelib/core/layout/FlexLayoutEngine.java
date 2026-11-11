@@ -268,7 +268,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         float used = 0;
         for (FlexItem item : state.items) {
             item.base = flexBaseSize(item.box, axes.row, innerMain, ctx);
-            item.min = minMainSize(item.box, axes.row, ctx);
+            item.min = minMainSize(item.box, axes.row, innerMain, ctx);
             item.max = maxMainSize(item.box, axes.row, innerMain, space, ctx);
             item.hypothetical = clamp(item.base, item.min, item.max);
             float outer = item.hypothetical + mainMargins(item.box, axes.row);
@@ -556,21 +556,22 @@ public class FlexLayoutEngine extends LayoutEngine {
     /** min / max で切り詰めた仮の主軸の寸法。 */
     private static float hypotheticalMain(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
         float base = flexBaseSize(child, row, row ? innerMain : Float.NaN, ctx);
-        return clamp(base, minMainSize(child, row, ctx), maxMainSize(child, row, innerMain, null, ctx));
+        return clamp(base, minMainSize(child, row, innerMain, ctx), maxMainSize(child, row, innerMain, null, ctx));
     }
 
     /**
      * 主軸の最小寸法。{@code min-width} / {@code min-height} が auto なら自動の最小寸法
      * （CSS Flexbox §4.5: 指定された寸法と内容の最小寸法の小さい方。スクロールコンテナは 0）。
      */
-    private static float minMainSize(LayoutBox child, boolean row, LayoutContext ctx) {
+    private static float minMainSize(LayoutBox child, boolean row, float innerMain, LayoutContext ctx) {
         int prop = row ? CssPropertyIndex.MIN_WIDTH : CssPropertyIndex.MIN_HEIGHT;
         int sizeProp = row ? CssPropertyIndex.WIDTH : CssPropertyIndex.HEIGHT;
         float decoration = row ? child.horizontalDecoration() : child.verticalDecoration();
         String min = child.style.get(prop);
         boolean isBorderBox = child.style.isBorderBox();
         if (min != null && !"auto".equalsIgnoreCase(min.trim()) && !LayoutMetrics.isIntrinsicSizeKeyword(min)) {
-            float v = child.style.length(prop, row ? child.parentInnerWidth() : 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            // % の min-width の基準はコンテナの内容の幅（測定の入力）。親の箱が前回に測った幅は読まない
+            float v = child.style.length(prop, row && !Float.isNaN(innerMain) ? innerMain : 0, ctx.viewport().rootW(), ctx.viewport().rootH());
             return isBorderBox ? Math.max(v, decoration) : v + decoration;
         }
         if (child.isScrollContainer()) return decoration;
