@@ -153,6 +153,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 診断用: 差分描画したフレーム・全面描画したフレーム・見積もり外れで全面へ切り替えたフレーム・省いた項目の累計。 */
     private long partialFrames, fullFrames, abortedFrames, skippedItems;
+    /** 差分描画を諦めた理由の件数（1=前フレームが動作中 2=無効 3=初回 4=背景/カリング変化 5=不安定な項目列 6=動作中の項目 7=項目の増減・種類変化 8=volatile 9=グループ）。 */
+    private final long[] fullWhy = new long[11];
 
     /** CSS px の大きさ {@code cssW × cssH}・等倍の描画先を作る。 */
     public SoftwareRenderBackend(int cssW, int cssH) {
@@ -337,9 +339,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean planDamage(List<DisplayItem> items, long nowMs) {
         int n = items.size();
         frameHadActive = driver.anyCachedActiveAt(nowMs);
-        if (prevHadActive || !damageEnabled || !prevValid || prevItems == null
-                || prevClearColor != clearColor || prevCullOffscreen != cullOffscreen
-                || !stableList(items) || !stableList(prevItems) || frameHadActive) {
+        int why = prevHadActive ? 1 : !damageEnabled ? 2 : (!prevValid || prevItems == null) ? 3
+                : (prevClearColor != clearColor || prevCullOffscreen != cullOffscreen) ? 4
+                : (!stableList(items) || !stableList(prevItems)) ? 5 : frameHadActive ? 6 : 0;
+        if (why != 0) {
+            fullWhy[why]++;
             resetCurExtents(n);
             return false;
         }
@@ -407,11 +411,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
         } else {
             for (int i = 0; i < n; i++) {
                 DisplayItem cur = items.get(i), old = prevItems.get(i);
-                if (cur.key() != old.key() || cur.type() != old.type() || volatileItem(cur) || groupItem(cur)) {
+                // 内容が項目の同一性に現れない種類（画像・入力欄・キャンバス等）は、abort せず毎フレーム「変わった」として扱う（下の itemChanged）
+                if (cur.key() != old.key() || cur.type() != old.type() || groupItem(cur)) {
+                    fullWhy[cur.key() != old.key() || cur.type() != old.type() ? 7 : PaintSceneDriver.hasFxLayer(cur) ? 9 : 10]++;
                     resetCurExtents(n);
                     return false;
                 }
                 if (old != cur && mayAnimate(cur) && PaintSceneDriver.itemActiveAt(sessionId, cur, nowMs)) {
+                    fullWhy[6]++;
                     frameHadActive = true;
                     resetCurExtents(n);
                     return false;
@@ -433,7 +440,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 itemChanged = (oldI < 0) || (prevItems.get(oldI) != cur);
             } else {
                 DisplayItem old = prevItems.get(i);
-                itemChanged = old != cur;
+                itemChanged = old != cur || volatileItem(cur);
             }
             boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
             movedBuf[i] = parentMoved || nodeChanged;
@@ -1045,6 +1052,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public long rangeCulledItems() { return driver.rangeCulledItems(); }
 
     /** 診断用: 差分描画したフレーム数・全面描画したフレーム数・見積もり外れで全面へ切り替えた回数・省いた項目の延べ数。 */
+    long[] fullReasons() { return fullWhy.clone(); }
     long partialFrames() { return partialFrames; }
 
     long fullFrames() { return fullFrames; }
