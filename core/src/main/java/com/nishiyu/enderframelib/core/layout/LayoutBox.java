@@ -655,10 +655,17 @@ public class LayoutBox {
      */
     private void noteFitToParent(float need, boolean fixedWidth) {
         LayoutBox p = parent;
-        if (p != null && !fixedWidth && need == Float.POSITIVE_INFINITY && !measuredWidthFree) {
-            p.childFitBlocked = true;
+        if (p == null || fixedWidth) return;
+        if (need == Float.POSITIVE_INFINITY) {
+            if (!measuredWidthFree) p.childFitBlocked = true;
+        } else if (need > p.childFitNeedMax) {
+            // 子が切られずに済む使える幅（子の使える幅は親の内容幅）。親の必要幅は、これに親の装飾を足した幅以上
+            p.childFitNeedMax = need;
         }
     }
+
+    /** 直近の測定で、親が渡した制約で測られた子が、切られずに済むために必要とした使える幅の最大。測定の始めに 0 に戻す。 */
+    private float childFitNeedMax;
 
     /** 直近の測定で、使える幅に依る子（折り返す・切られる・幅を埋める）があった。測定の始めに下ろし、子の測定が立てる。 */
     private boolean childFitBlocked;
@@ -683,6 +690,7 @@ public class LayoutBox {
         if (layoutChanged) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
         touchPaint();
         childFitBlocked = false;
+        childFitNeedMax = 0;
         BoxMeasurer.measure(this, space, ctx);
         // エンジンが確定させ損ねた子（高さを測らない箱など）を、親が測り終える前に必ず確定させる
         if (hasTentativeChildren) settleTentativeChildren();
@@ -1048,7 +1056,7 @@ public class LayoutBox {
         if (!textNode) {
             // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅が、使える幅に届くかの境目
             if (Float.isNaN(naturalInlineSize)) return none;
-            need = naturalInlineSize + mL + mR;
+            need = Math.max(naturalInlineSize + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
         }
         if (textNode) {
             // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
@@ -1057,7 +1065,7 @@ public class LayoutBox {
             return need;
         }
         Display.Inner inner = display.inner();
-        if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT) return none;
+        if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT && inner != Display.Inner.FLEX) return none;
         // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
         // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。中身は文字・確定幅の箱・同じ条件の箱だけ
         if (sizingMode != SizingMode.SHRINK_TO_FIT || measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
