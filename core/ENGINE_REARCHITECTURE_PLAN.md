@@ -1066,6 +1066,67 @@ GlyphRun 表             (boxIdx, fontSlot, glyphStart, glyphCount)。同一文�
 
 **`StyleTable` の保持元（特定済み）**: 状態の記憶 `StateStyleMemo.Entry(raw, computed)` が、要素ごとにカスケード解決後の生宣言の表 `raw`（`StyleTable`・配列 約 840 B）を保持している（約 3,000 件）。`raw` を内容で共有する案（弱参照の hash-consing）を試したが、**保持量は変わらなかった**（異なる内容が 2,196 件あり、行ごとにインライン style が違う varied では `raw` も行ごとに別物。同じ宣言の要素は、既存のスタイル共有 `styleShare` が先に共有している）。効果が無いので戻した。残る手は、**疎な表**（`raw` は 210 スロットのうち数十しか使わない）を ID と値の小さな配列で持つこと（見込み 約 1.5 MB・4%）だが、`raw` を読む経路（`StyleTable.copyOf`）が遅くなるため見送り。Chrome のレンダラの増分は同じ文書で +26 MB なので、**同じ文書で約 1.5 倍まで縮んだ**（開始時は約 2.3 倍）。
 
+#### 8.6.8 再測定と原因の調査し直し（2026-11-11、§8.6.7 の直後）
+
+**再測定**（2,000 行・GL 平均 ms ／ Chrome 157 全 CPU、`child` は Chrome も 250 行目へ挿入の `child250`）:
+
+| シナリオ | large-list `:core` | Chrome | varied `:core` | Chrome |
+| :-- | :-: | :-: | :-: | :-: |
+| `hover` | **0.24** | 0.61 | **0.30** | 0.79 |
+| `style` | **0.24** | 0.62 | **0.31** | 0.71 |
+| `text` | **0.37** | 1.26 | **0.62** | 2.15 |
+| `scroll` | **0.08** | 0.44 | **0.09** | 0.52 |
+| `child` | **1.18** | 2.01 | 4.15 | **3.63** |
+| `fontsize` | **6.2** | 11.6 | 43.6 → **28.5**（後述） | 43.6 |
+| `inherited` | 3.9 | **2.31** | 9.6 | **3.57** |
+
+**劣る 3 箇所の原因（JFR・段別、今回の調べ直し）**:
+
+1. **varied `fontsize`（43.6 ms）— 原因は記憶の容量の崖だった（修正済み → 28.5 ms）**。`layout.measure` が 26.7 ms で、`FontFace.naturalAdvance`（書体の幅の計算）が全サンプルの 16%、`sharedSegment`・`LineBreaker.classify` が続く。段落の下ごしらえの記憶（`TextShaper.SEGMENTED`）と整形結果の記憶（`SHAPED`）は、**件数が上限 4,096 に達すると全てを消す**作りで、varied は段落 2,300 件 × 書体の大きさ 2 通り（往復する）= 約 4,600 件で上限を超え、**往復のたびに全段落を測り直していた**。2 世代の記憶（新しい世代が 8,192 件に達したら古い世代を捨てる。`Generational`）に変えた結果、`measure` 26.7 → 8.9 ms、確保 64 → 25 MB/フレーム、保持量は +約 4 MB（39 → 43 MB）。Chrome は同条件で 43.6 ms なので **Chrome の約 1.5 倍速い**。
+2. **`inherited`（large 3.9 / varied 9.6 ms、Chrome 2.3 / 3.6）— 原因は 2 つ**。(a) `restyle-local` が 2.9 / 6.1 ms: `ComputedStyle.diff`（全スロットの比較）が最大（18%）。共有された算出スタイルは同じ（古い・新しい）の組が行ごとに何度も来るので、**組で結果を覚える**ようにした（`isLayoutAffectingChange` の記憶）。large は 2.9 → 2.4 ms。varied は行ごとに組が違うので効かない（6.1 ms のまま）。残りは `StyleStateAutomaton.compress`・`TextShaper.isAlreadyNormal`（文字の箱ごとに空白の畳み方を毎回確認）・`CssValue.dependsOnViewport`（生宣言ごとに全スロットを走査）で、いずれも要素ごとの定数コスト。(b) `display-list` が 0.84 / 3.3 ms: **`canPatchBoxes` が理由 5（スクロールバーを持つ箱）で毎フレーム退き**、窓付きの全面再構築に落ちている（変更ボックスに `#scroller`（overflow: auto）が含まれるため。`PaintOrder.factsOf`・`classify`・`hasUnscrollableDescendant`・`offscreen` が並ぶ）。スクロールコンテナの項目（`_scrollc` の動く節・スクロールバー）を含めて再生成できるようにすれば、この 0.84 / 3.3 ms は消える。
+3. **varied `child`（4.15 ms、Chrome 3.63）— 原因は後続行の置き直し**。`layout.place` が 2.7 ms で、`placeLine`（断片を新しく作る 3 行）・`scanFloats`・`updateScrollExtent`・`arrangeFlow` が並ぶ。行の高さが小数だと §8.6.3 の平行移動の近道（縦・整数ぶん）が使えず、**後続 1,750 行ぶん・約 7.5 万個の断片を毎回作り直している**。large-list も同じ理由で `place` 0.46 ms が残るが、断片が少ない（1 行 6 語）ので目立たない。解決策は、窓の外の行のレイアウトを遅延するか、置き直しで既存の断片オブジェクトを再利用すること。
+
+**副産物**: `TextShaper` の記憶の全消去は、段落 × 書体が 4,096 を超える文書なら、リサイズ・拡大縮小でも同じ崖を踏む（幅変更の `showcase` は小さいので影響なし）。
+
+#### 8.6.9 メモリの再測定（2026-11-11、§8.6.8 の変更後）
+
+Chrome は `mem.js`（空ページからの Private 増分、各 3 回の平均）、`:core` は `MemFootprintMain`（GC 後のヒープ保持。各 3 回で完全に一致）。
+
+| 文書 | Chrome レンダラ Private（空ページ 26.2 MB から） | `:core` ヒープ保持 | 比 | `:core` プロセス Private 増分（Serial GC・ヒープ固定） |
+| :-- | :-: | :-: | :-: | :-: |
+| large-list-500 | 約 28.7（**+2.5**、ばらつき ±1.5） | **2.5 MB** | 約 1.0 倍 | 約 7〜9 MB |
+| large-list-2000 | 約 34.9（**+8.7**、前回 +5。ばらつき ±3） | **8.7 MB** | 約 1.0 倍 | 測れず（-9〜+3 MB のばらつき） |
+| varied-list-2000 | 約 54.4（**+28.2**、前回 +26） | **42.7 MB** | **約 1.5 倍**（開始時 2.3 倍） | **約 70〜75 MB** |
+
+**読み方**:
+- **ヒープ保持は、同形の文書で Chrome のレンダラの増分とほぼ同じ、デザインが違う文書で約 1.5 倍**。§8.6.7 の削減（60.2 → 39.0 MB）の後、§8.6.8 の整形記憶の 2 世代化（`fontsize` 往復の崖の解消）で **+3.7 MB（39.0 → 42.7 MB）**を払っている（速度 43.6 → 28.5 ms との引き換え）。
+- **プロセスの Private 増分は、ヒープ保持よりずっと大きい**（varied で約 72 MB）。読み込み中の一時的なゴミ（レイアウト・成形の確保）がヒープの若い世代のページに触れた分と、オフヒープ（`DocumentArena`）・ネイティブの分を含む。既定の G1 では伸縮で 237 MB まで見える。**Chrome の Private（約 28 MB 増）と同じ尺度で比べると約 2.6 倍**で、ヒープ保持の比（1.5 倍）より悪い。読み込み時の確保の削減（一時的な確保の総量）が別の課題。
+- 空ページの土台は比べられない（Chrome レンダラ 約 26 MB に対し、JVM はヒープ 5.4 MB・メタスペースなどのネイティブ領域が別）。
+
+#### 8.6.10 読み込み時の確保（一時的なゴミ）の内訳と削減（2026-11-11）
+
+**背景**: §8.6.9 で、ヒープ保持（42.7 MB）よりプロセス Private の増分（約 72 MB）が大きかった。差は読み込み中の一時的な確保。`FineProfileMain open varied-list-2000` を JFR の `ObjectAllocationSample` で見た（1 回の読み込みで **108 MB** 確保、77 ms。うち `style+build` 41.6 ms・measure 9.3・display-list 4.7・place 4.0・box-tree 3.4）。
+
+**確保の上位（調査時・合計 36 GB 相当のうちの割合）**:
+
+| 場所 | 割合 | 内容 |
+| :-- | :-: | :-- |
+| `StyleTable` の `CssValue[]`（約 840 B）×4 か所 | 約 10% | 要素ごとにカスケード結果の表を 4 つ作る（`resolveDeclarations`・`cascadeMatched`・`finalizeComputedStyle` の複製 ×2 経路） |
+| `CssSyntax.serialize`・`appendSerialized`・`trim`・`splitOnWhitespace`（`ValueComputer.absolutizeUnits` 経由が大半） | **約 13.5%** | 値の中の寸法（`12px` など）を毎回直列化して文字列を作り直し、**置き換えが無ければ捨てていた** |
+| `HtmlParser.TreeBuilder.normalizeText` | **約 6.3%** | 文字ノードごとに正規表現（`replaceAll` ×2）で空白を畳んでいた（畳む必要が無い文字列でも） |
+| `LineItem` ＋ `InlineFragment` ＋ `ArrayList` | 約 9% | 語ごとの行の項目と置いた断片（必要な確保） |
+| インライン style の解析（`parseDeclaration` の `Object[]`・`serialize`） | 約 5% | 行ごとに違うインライン style を宣言に分けて値を直列化 |
+
+**対策**:
+1. `ValueComputer.absolutizeUnits`: **置き換える寸法が 1 つも無ければ直列化しない**（先に値の木を走査して判定。反復子も作らない）。
+2. `HtmlParser.normalizeText`: **改行・タブも連続する空白も無い文字列は正規表現を通さない**。
+
+**効果**（`open varied-list-2000`、null バックエンド）: 確保 **108 → 約 93 MB（−14%）**、読み込み時間 77 → 約 65〜70 ms。`:core:test` 全件グリーン。
+
+**測定上の注意**: プロセス Private の増分は GC の起きた位置で -20〜+75 MB と大きく振れ、削減の効果を示す尺度にならない（確保量そのものを指標にする）。ヒープ保持（42.7 MB）は変わらない。
+
+**残る大きい確保**: `StyleTable` の表が要素ごとに 4 つ（約 3.3 GB 相当/10%）、語ごとの `LineItem`・断片、インライン style の解析。`StyleTable` は、結果の複製を省く（保持する生宣言と作業表を分ける設計の見直し）か、疎な表にすれば減らせるが、いずれも影響が広い。
+
 R3（§7.3）は施策 2・3 とほぼ同一作業なのでそちらで進める。R2 の時間 KPI（`child` `< 3 ms`）は施策 4・5 の完了で再判定する。
 
 ### 8.7 約束事とリスク

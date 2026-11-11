@@ -186,7 +186,6 @@ public final class TextShaper {
         List<ShapedLine> hit = SHAPED.get(probe);
         if (hit != null) return hit;
         List<ShapedLine> lines = List.copyOf(shapeUncached(text, face, style, availableWidth));
-        if (SHAPED.size() >= SHAPED_LIMIT) SHAPED.clear();
         SHAPED.put(new ShapeKey(text, face, style, availableWidth), lines);
         return lines;
     }
@@ -230,7 +229,7 @@ public final class TextShaper {
     private static final ThreadLocal<ShapeKey> SHAPE_PROBE = ThreadLocal.withInitial(() -> new ShapeKey(null, null, null, 0f));
     private static final ThreadLocal<SegKey> SEG_PROBE = ThreadLocal.withInitial(() -> new SegKey(null, null, null, null));
 
-    private static final java.util.concurrent.ConcurrentHashMap<SegKey, ParagraphSegments> SEGMENTED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Generational<SegKey, ParagraphSegments> SEGMENTED = new Generational<>();
     private static final AtomicInteger SEGMENTED_BUILDS = new AtomicInteger();
 
     /** 段落の下ごしらえの作成回数（テスト用）。 */
@@ -265,7 +264,6 @@ public final class TextShaper {
         }
         ParagraphSegments made = new ParagraphSegments(segs, offsets, full, trimmed, joins, strippedTrailing, stripped);
         SEGMENTED_BUILDS.incrementAndGet();
-        if (SEGMENTED.size() >= SHAPED_LIMIT) SEGMENTED.clear();
         SEGMENTED.put(key, made);
         return made;
     }
@@ -301,8 +299,38 @@ public final class TextShaper {
         }
     }
 
-    private static final java.util.concurrent.ConcurrentHashMap<ShapeKey, List<ShapedLine>> SHAPED = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final int SHAPED_LIMIT = 4096;
+    private static final Generational<ShapeKey, List<ShapedLine>> SHAPED = new Generational<>();
+    /** 1 世代の上限（件数）。2 世代で最大 2 倍まで持つ。段落 × 書体の組が上限を超えると、全消去ではなく古い世代だけが落ちる。 */
+    private static final int SHAPED_LIMIT = Integer.getInteger("enderframe.text.cache", 8192);
+
+    /**
+     * 2 世代の整形結果の記憶。新しい世代が上限に達したら、それを古い世代にして新しい世代を空にする（古い世代は捨てる）。
+     * 以前は上限に達すると全てを消していたため、段落 × 書体の組が上限を少し超える文書（2,000 行のリストで書体の大きさを往復する）では
+     * 往復のたびに全てを組み直していた。古い世代の命中はそのまま返す（昇格しない: 鍵を作り直さずに済ませる）。
+     */
+    private static final class Generational<K, V> {
+        private volatile java.util.concurrent.ConcurrentHashMap<K, V> young = new java.util.concurrent.ConcurrentHashMap<>();
+        private volatile java.util.concurrent.ConcurrentHashMap<K, V> old = new java.util.concurrent.ConcurrentHashMap<>();
+
+        V get(K probe) {
+            V v = young.get(probe);
+            return v != null ? v : old.get(probe);
+        }
+
+        void put(K key, V value) {
+            java.util.concurrent.ConcurrentHashMap<K, V> y = young;
+            if (y.size() >= SHAPED_LIMIT) {
+                synchronized (this) {
+                    if (young.size() >= SHAPED_LIMIT) {
+                        old = young;
+                        young = new java.util.concurrent.ConcurrentHashMap<>();
+                    }
+                }
+                y = young;
+            }
+            y.put(key, value);
+        }
+    }
 
     private static List<ShapedLine> shapeUncached(String text, FontFace face, TextStyle style, float availableWidth) {
         Shaping shaping = new Shaping(face, style, availableWidth);

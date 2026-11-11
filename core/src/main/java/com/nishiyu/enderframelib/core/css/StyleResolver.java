@@ -800,7 +800,23 @@ public class StyleResolver {
      * 2 つの算出スタイルの差分がレイアウト（measure / layout）の再実行を要するかどうかを判定する。
      * ペイント専用プロパティしか変わっていなければ false を返し、repaint のみで済ませる。
      */
+    /** 直近の判定の記憶（古い・新しいスタイルの組 → 結果）。共有された算出スタイルは同じ組が行ごとに何度も来るので、差分を取り直さない。 */
+    private record LayoutDiff(ComputedStyle oldStyle, ComputedStyle newStyle, boolean affects) {}
+
+    private static final LayoutDiff[] LAYOUT_DIFF = new LayoutDiff[256];
+
     public static boolean isLayoutAffectingChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
+        if (oldStyle == null || newStyle == null) return true;
+        if (oldStyle == newStyle) return false;
+        int slot = (System.identityHashCode(oldStyle) * 31 + System.identityHashCode(newStyle)) & (LAYOUT_DIFF.length - 1);
+        LayoutDiff hit = LAYOUT_DIFF[slot];
+        if (hit != null && hit.oldStyle == oldStyle && hit.newStyle == newStyle) return hit.affects;
+        boolean affects = computeLayoutAffectingChange(oldStyle, newStyle);
+        LAYOUT_DIFF[slot] = new LayoutDiff(oldStyle, newStyle, affects);
+        return affects;
+    }
+
+    private static boolean computeLayoutAffectingChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
         if (oldStyle == null || newStyle == null) return true;
         if (Float.compare(oldStyle.fontSizePx(), newStyle.fontSizePx()) != 0
                 || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {

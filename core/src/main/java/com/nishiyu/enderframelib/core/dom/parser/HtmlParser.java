@@ -1091,7 +1091,8 @@ public class HtmlParser {
                 if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
                 return text;
             }
-            String raw = token.text.replaceAll("[\\r\\n\\t]+", " ").replaceAll(" +", " ");
+            // 改行・タブも連続する空白も無い文字列は、正規表現（Matcher の生成・置換結果の確保）を通さない
+            String raw = needsCollapse(token.text) ? token.text.replaceAll("[\\r\\n\\t]+", " ").replaceAll(" +", " ") : token.text;
             String trimmed = raw.trim();
             if (trimmed.isEmpty()) {
                 boolean inlineGap = !token.text.contains("\n") && !token.text.contains("\r") && !parent.children.isEmpty();
@@ -1102,6 +1103,22 @@ public class HtmlParser {
             boolean leadSpace = Character.isWhitespace(first) && first != '\n' && first != '\r';
             boolean trailSpace = Character.isWhitespace(last) && last != '\n' && last != '\r';
             return (leadSpace ? " " : "") + trimmed + (trailSpace ? " " : "");
+        }
+
+        /** 改行・タブがある、または空白が 2 つ以上続く（畳む必要がある）か。 */
+        private static boolean needsCollapse(String s) {
+            boolean prevSpace = false;
+            for (int i = 0, n = s.length(); i < n; i++) {
+                char c = s.charAt(i);
+                if (c == '\r' || c == '\n' || c == '\t') return true;
+                if (c == ' ') {
+                    if (prevSpace) return true;
+                    prevSpace = true;
+                } else {
+                    prevSpace = false;
+                }
+            }
+            return false;
         }
 
         static boolean isText(HtmlTokenizer.Token t) {
