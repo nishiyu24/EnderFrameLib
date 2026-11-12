@@ -555,6 +555,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             this.snapshotRaw = new int[0];
             // 層の FBO は画面と同じ大きさで確保済み。古い大きさのまま使い回すと、グループ描画（clip・opacity など）が欠けて白く抜ける
             releaseRetained();
+            retainOverflow = false;
             for (GpuLayer l : allLayers) deleteLayer(l);
             allLayers.clear();
             layerPool.clear();
@@ -721,7 +722,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         texProgram = link(TEX_VERT, TEX_FRAG);
         if (rectTrees) {
             try {
-                rects = new GlRectStream(Integer.getInteger("enderframe.gl.rectcapacity", 4096));
+                rects = new GlRectStream(Integer.getInteger("enderframe.gl.rectcapacity", 16384));
                 org.slf4j.LoggerFactory.getLogger(LwjglGlRenderBackend.class).info(
                         "GPU プリミティブ経路を使う（永続マップ={}, 容量={}）", rects.isPersistent(), rects.capacity());
             } catch (RuntimeException | LinkageError e) {
@@ -844,7 +845,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         while (!layerStack.isEmpty()) endGroup(); // 例外で閉じ損ねた層があっても根の描画先へ戻す
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         flushAll();
-        if (rects != null) rects.end();
+        if (rects != null) {
+            rects.end();
+            // 容量を超えて CPU へ回した図形は、保持する層への記録中だと層に載らず白く抜けることがある。以後は保持せず毎フレーム描く
+            if (rects.overflows != seenOverflows) {
+                seenOverflows = rects.overflows;
+                if (retainedScroll && !retainOverflow) {
+                    retainOverflow = true;
+                    releaseRetained();
+                }
+            }
+        }
         if (hostManaged) publishFrame();
     }
 
@@ -1963,6 +1974,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public long scrollLayersSkipped() { return scrollLayersSkipped; }
     public long scrollLayersRecorded() { return scrollLayersRecorded; }
 
+    /** 図形の容量の超過を最後に見たときの {@link GlRectStream#overflows}。 */
+    private long seenOverflows;
+    /** 容量の超過が起きたので、スクロール層の保持をやめている（大きさが変わるまで）。 */
+    private boolean retainOverflow;
+
     private void releaseRetained() {
         for (Retained r : retained.values()) deleteLayer(r.layer);
         retained.clear();
@@ -1979,7 +1995,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     @Override
     public com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayer(GpuScrollLayer l) {
         var NONE = com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
-        if (!retainedScroll || rects == null || closed || !layerStack.isEmpty()) return NONE;
+        if (!retainedScroll || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
         Retained r = retained.get(l.key());
         if (r == null) {
             // スクロールが実際に起きるまでは保持しない（静止した文書の見た目を変えない）: 節の位置が前フレームから動いたときに記録を始める
