@@ -326,7 +326,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     private static final float CULL_MARGIN = 256f;
-    private static final int[] MOVING_PROPS = {CssPropertyIndex.TRANSFORM, CssPropertyIndex.TRANSLATE, CssPropertyIndex.ROTATE,
+    static final int[] MOVING_PROPS = {
+            CssPropertyIndex.TRANSFORM, CssPropertyIndex.TRANSLATE, CssPropertyIndex.ROTATE,
             CssPropertyIndex.SCALE, CssPropertyIndex.ANIMATION, CssPropertyIndex.ANIMATION_NAME, CssPropertyIndex.FILTER,
             CssPropertyIndex.PERSPECTIVE};
 
@@ -338,16 +339,36 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 && at.y + at.h >= -CULL_MARGIN && at.y <= rootH + CULL_MARGIN;
     }
 
-    private boolean offscreen(LayoutBox box) {
-        if (inWindowGeometry(box)) return false;
-        for (LayoutBox b = box; b != null; b = b.parent) {
-            if (b.style == null) continue;
-            for (int prop : MOVING_PROPS) {
-                String v = b.style.get(prop);
-                if (v != null && !v.isBlank() && !"none".equalsIgnoreCase(v.trim())) return false;
+    private LayoutBox cachedParentForMovingCheck;
+    private boolean cachedParentHasMoving;
+
+    private boolean hasMovingAncestor(LayoutBox box) {
+        if (box == null) return false;
+        if (box.style != null && PaintOrder.factsOf(box.style).hasMovingProps()) return true;
+        LayoutBox p = box.parent;
+        if (p == null) return false;
+        if (p == cachedParentForMovingCheck) {
+            return cachedParentHasMoving;
+        }
+        boolean moving = false;
+        for (LayoutBox b = p; b != null; b = b.parent) {
+            if (b == cachedParentForMovingCheck) {
+                moving = cachedParentHasMoving;
+                break;
+            }
+            if (b.style != null && PaintOrder.factsOf(b.style).hasMovingProps()) {
+                moving = true;
+                break;
             }
         }
-        return true;
+        cachedParentForMovingCheck = p;
+        cachedParentHasMoving = moving;
+        return moving;
+    }
+
+    private boolean offscreen(LayoutBox box) {
+        if (inWindowGeometry(box)) return false;
+        return !hasMovingAncestor(box);
     }
 
     /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
@@ -1283,55 +1304,112 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     /**
-     * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
+     * 指定されたボックス群のスライスパッチ妥当性を検証し、降順（dlStart の大きい順）にソートされた
+     * 有効パッチ対象のリストを返す。不適格な場合は cant カウンタを記録して null を返す。
+     * 画面外で項目を持たないボックス（isCulledNoop）は除外され、重複ボックスは 1 つにまとめられる。
      */
-    public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
-        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(0, 0);
-        if (boxes == null || boxes.isEmpty()) return cant(0, 1);
+    List<LayoutBox> preparePatchBoxes(java.util.Collection<LayoutBox> boxes) {
+        if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) {
+            cant(0, 0);
+            return null;
+        }
+        if (boxes == null || boxes.isEmpty()) {
+            cant(0, 1);
+            return null;
+        }
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
+        cachedParentForMovingCheck = null;
+        List<LayoutBox> targets = new ArrayList<>(boxes.size());
         for (LayoutBox b : boxes) {
-            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) return cant(0, 2);
+            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) {
+                cant(0, 2);
+                return null;
+            }
             if (isCulledNoop(b)) continue; // 窓の外の箱: 表示リストに項目が無く、画面外のままなら何も変えずに済む
-            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) return cant(0, 3);
-            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) return cant(0, 4);
+            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) {
+                cant(0, 3);
+                return null;
+            }
+            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) {
+                cant(0, 4);
+                return null;
+            }
             if (b.style != null) {
                 var facts = PaintOrder.factsOf(b.style);
-                if (facts.hasAnimation()) return cant(0, 5);
+                if (facts.hasAnimation()) {
+                    cant(0, 5);
+                    return null;
+                }
                 // スクロール付きの箱でも、つまみ・溝は箱自身のスライスの外（after 層）に出るので、
                 // スクロールの有無・overflow・scrollbar-width が前回と同じなら自身のスライスだけ差し替えればよい
-                if (facts.scrollbars() && !scrollTraitsUnchanged(b)) return cant(0, 5);
+                if (facts.scrollbars() && !scrollTraitsUnchanged(b)) {
+                    cant(0, 5);
+                    return null;
+                }
             }
-            if (order.createsStackingContext(b, b.style)) return cant(0, 6);
+            if (order.createsStackingContext(b, b.style)) {
+                cant(0, 6);
+                return null;
+            }
             BoxMemo m = boxMemo.get(b);
             if (m != null) {
                 if (m.style != null) {
                     var prevFacts = PaintOrder.factsOf(m.style);
-                    if (prevFacts.hasAnimation()) return cant(0, 5);
-                    if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) return cant(0, 5);
-                    if (order.createsStackingContext(b, m.style)) return cant(0, 6);
+                    if (prevFacts.hasAnimation()) {
+                        cant(0, 5);
+                        return null;
+                    }
+                    if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) {
+                        cant(0, 5);
+                        return null;
+                    }
+                    if (order.createsStackingContext(b, m.style)) {
+                        cant(0, 6);
+                        return null;
+                    }
                 }
                 if (m.nums != null && m.nums.length >= 4) {
                     if (Float.compare(m.nums[0], b.x) != 0 || Float.compare(m.nums[1], b.y) != 0
                             || Float.compare(m.nums[2], b.w) != 0 || Float.compare(m.nums[3], b.h) != 0) {
-                        return cant(0, 8);
+                        cant(0, 8);
+                        return null;
                     }
                 }
             }
+            targets.add(b);
         }
-        if (boxes.size() > 1) {
-            List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
-            if (windowedBuild) sorted.removeIf(this::isCulledNoop);
-            if (sorted.size() > 1) {
-                sorted.sort((x, y) -> Integer.compare(x.dlStart, y.dlStart));
-                for (int i = 0, n = sorted.size(); i < n - 1; i++) {
-                    LayoutBox b1 = sorted.get(i);
-                    LayoutBox b2 = sorted.get(i + 1);
-                    if (b1.dlEnd > b2.dlStart) return cant(0, 7);
+        if (targets.size() > 1) {
+            targets.sort((a, b) -> {
+                int cmp = Integer.compare(b.dlStart, a.dlStart);
+                if (cmp != 0) return cmp;
+                return Integer.compare(System.identityHashCode(b), System.identityHashCode(a));
+            });
+            int write = 0;
+            for (int i = 0; i < targets.size(); i++) {
+                LayoutBox b = targets.get(i);
+                if (write > 0) {
+                    LayoutBox prev = targets.get(write - 1);
+                    if (b == prev) continue;
+                    if (b.dlEnd > prev.dlStart) {
+                        cant(0, 7);
+                        return null;
+                    }
                 }
+                targets.set(write++, b);
+            }
+            if (write < targets.size()) {
+                targets.subList(write, targets.size()).clear();
             }
         }
-        return true;
+        return targets;
+    }
+
+    /**
+     * 指定されたボックス群の表示項目スライス [dlStart, dlEnd) をインプレースで差分差し替え可能か判定する。
+     */
+    public boolean canPatchBoxes(java.util.Collection<LayoutBox> boxes) {
+        return preparePatchBoxes(boxes) != null;
     }
 
     /**
@@ -1348,16 +1426,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     private List<DisplayItem> patchBoxesUnprofiled(java.util.Collection<LayoutBox> boxes) {
-        if (!canPatchBoxes(boxes)) {
+        List<LayoutBox> sorted = preparePatchBoxes(boxes);
+        if (sorted == null) {
             STAT_SLICE_PATCH_FALLBACKS.increment();
             return null;
         }
-
-        // 複数ボックスがある場合、dlStart の降順（末尾から先頭へ）でソート
-        List<LayoutBox> sorted = new ArrayList<>(boxes instanceof java.util.Set ? boxes : new java.util.LinkedHashSet<>(boxes));
-        if (windowedBuild) sorted.removeIf(DisplayListBuilder.this::isCulledNoop);
-        if (sorted.size() > 1) {
-            sorted.sort((a, b) -> Integer.compare(b.dlStart, a.dlStart));
+        if (sorted.isEmpty()) {
+            return currentDisplayList;
         }
 
         decor.setDevicePixelRatio(currentRoot.devicePixelRatio);
