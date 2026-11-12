@@ -345,6 +345,57 @@ public final class ComputedStyle {
         return CssPropertyId.INHERITED[id];
     }
 
+    /** 直近の (旧, 新) の組ごとの差分の添字（Q2）。スタイルは不変なので、同じ組の再計算を省ける。 */
+    private record DiffMemo(ComputedStyle a, ComputedStyle b, int[] ids) {}
+
+    private static final int[] NO_IDS = new int[0];
+    private static final int DIFF_MEMO_SLOTS = 256;
+    private static final DiffMemo[] DIFF_MEMO = new DiffMemo[DIFF_MEMO_SLOTS];
+    private static final java.util.concurrent.atomic.LongAdder DIFF_MEMO_HITS = new java.util.concurrent.atomic.LongAdder();
+    private static final java.util.concurrent.atomic.LongAdder DIFF_MEMO_MISSES = new java.util.concurrent.atomic.LongAdder();
+
+    /** 診断・テスト用: 差分メモの命中回数。 */
+    public static long diffMemoHits() { return DIFF_MEMO_HITS.sum(); }
+
+    /** 診断・テスト用: 差分メモの不命中回数（全枠の走査をした回数）。 */
+    public static long diffMemoMisses() { return DIFF_MEMO_MISSES.sum(); }
+
+    /**
+     * 宣言（添字つき）の値が違う添字を昇順に返す。同じ (a, b) の組（同一性）は、1 要素の再スタイルで何度も（分類ごとに）、
+     * 同形のリストでは要素ごとに繰り返し問われるので、直接写像の小さな表に覚える。
+     */
+    static int[] changedIds(ComputedStyle a, ComputedStyle b) {
+        if (a == b) return NO_IDS;
+        int slot = (int) ((a.declHash * 31 + b.declHash) & (DIFF_MEMO_SLOTS - 1));
+        DiffMemo m = DIFF_MEMO[slot];
+        if (m != null && m.a == a && m.b == b) {
+            DIFF_MEMO_HITS.increment();
+            return m.ids;
+        }
+        DIFF_MEMO_MISSES.increment();
+        int[] ids = scanChangedIds(a.values, b.values);
+        DIFF_MEMO[slot] = new DiffMemo(a, b, ids);
+        return ids;
+    }
+
+    private static int[] scanChangedIds(CssValue[] x, CssValue[] y) {
+        int n = 0;
+        for (int i = 0; i < x.length; i++) {
+            if (x[i] == y[i]) continue; // 同じ文字列は同じ値オブジェクト
+            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
+            n++;
+        }
+        if (n == 0) return NO_IDS;
+        int[] out = new int[n];
+        int k = 0;
+        for (int i = 0; i < x.length && k < n; i++) {
+            if (x[i] == y[i]) continue;
+            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
+            out[k++] = i;
+        }
+        return out;
+    }
+
     /** 2 つの算出スタイルの宣言の差分を 1 つずつ渡す先。 */
     public interface DiffVisitor {
         /** @param paintOnly 描画だけに効くプロパティか @param inherited 子孫が値を受け継ぐプロパティか（未登録・{@code --*} は true） */
@@ -356,11 +407,9 @@ public final class ComputedStyle {
      * 違いが無ければ何も呼ばずに false（呼び出し側が先に {@link #sameDeclarations} で足切りしてもよい）。
      */
     public static void diff(ComputedStyle a, ComputedStyle b, DiffVisitor visitor) {
-        CssValue[] x = a.values, y = b.values;
-        for (int i = 0; i < x.length; i++) {
-            if (x[i] == y[i]) continue; // 同じ文字列は同じ値オブジェクト
-            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
-            visitor.changed(CssPropertyId.name(i), CssPropertyId.PAINT_ONLY[i], CssPropertyId.INHERITED[i]);
+        int[] ids = changedIds(a, b);
+        for (int id : ids) {
+            visitor.changed(CssPropertyId.name(id), CssPropertyId.PAINT_ONLY[id], CssPropertyId.INHERITED[id]);
         }
         if (a.extras == null && b.extras == null) return;
         Map<String, String> ex = a.extras != null ? a.extras : Map.of();
