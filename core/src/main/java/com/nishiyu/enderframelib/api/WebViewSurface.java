@@ -63,6 +63,35 @@ public interface WebViewSurface extends AutoCloseable {
     /** 文字入力。受け取ったら true。 */
     boolean charTyped(int codePoint);
 
+    // ---- IME (Input Method Editor) ----
+
+    /**
+     * IME の入力開始（{@code compositionstart}）。
+     */
+    default void compositionStart() {}
+
+    /**
+     * IME の未確定文字列の更新（{@code compositionupdate}）。
+     *
+     * @param data 未確定文字列
+     * @param cursor 未確定文字列内のカーソル位置（0〜data.length()）
+     */
+    default void compositionUpdate(String data, int cursor) {}
+
+    /**
+     * IME の確定（{@code compositionend}）。
+     *
+     * @param data 確定された文字列（null または空なら変換取り消し）
+     */
+    default void compositionEnd(String data) {}
+
+    /**
+     * フォーカス中のテキスト欄のキャレット（または IME 未確定開始位置）の表示矩形 {x, y, w, h}（CSS px）。
+     * ホスト（GLFW や OS の IME 候補窓）が候補リストの位置を合わせるのに使う。フォーカスがなければ null。
+     */
+    @Nullable
+    default float[] imeCursorRect() { return null; }
+
     /** 点が対話要素の上にあるか。ホストが、クリックを UI に渡すか自分で処理するかを決めるのに使う。 */
     boolean isPointerOverUi(double x, double y);
 

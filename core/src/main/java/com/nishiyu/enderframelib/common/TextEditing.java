@@ -39,9 +39,34 @@ public final class TextEditing {
         public int caret;
         public int anchor;
 
+        // IME 未確定文字列と内部カーソル
+        public String compositionText = null;
+        public int compositionCursor = 0;
+
         public State(int caret) {
             this.caret = caret;
             this.anchor = caret;
+        }
+
+        public boolean isComposing() {
+            return compositionText != null;
+        }
+
+        public void startComposition() {
+            compositionText = "";
+            compositionCursor = 0;
+        }
+
+        public void updateComposition(String text, int cursor) {
+            compositionText = text != null ? text : "";
+            compositionCursor = Math.max(0, Math.min(compositionText.length(), cursor));
+        }
+
+        public String endComposition() {
+            String committed = compositionText;
+            compositionText = null;
+            compositionCursor = 0;
+            return committed != null ? committed : "";
         }
 
         public boolean hasSelection() {

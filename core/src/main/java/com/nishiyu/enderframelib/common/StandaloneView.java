@@ -624,6 +624,57 @@ public final class StandaloneView implements AutoCloseable {
         return applyEdit(focused, TextEditing.type(editState(focused), valueOf(focused), s));
     }
 
+    /** IME 未確定入力の開始（compositionstart）。 */
+    public void compositionStart() {
+        HtmlNode focused = interaction.focusedNode();
+        if (focused == null || !isTextControl(focused)) return;
+        TextEditing.State st = editState(focused);
+        st.startComposition();
+        focused.dispatchEvent(CoreEvent.composition("compositionstart", ""));
+        redraw = true;
+    }
+
+    /** IME 未確定文字列の更新（compositionupdate）。 */
+    public void compositionUpdate(String data, int cursor) {
+        HtmlNode focused = interaction.focusedNode();
+        if (focused == null || !isTextControl(focused)) return;
+        TextEditing.State st = editState(focused);
+        if (!st.isComposing()) st.startComposition();
+        st.updateComposition(data, cursor);
+        focused.dispatchEvent(CoreEvent.composition("compositionupdate", st.compositionText));
+        redraw = true;
+    }
+
+    /** IME の確定または取り消し（compositionend）。確定文字列があればテキスト欄に反映する。 */
+    public void compositionEnd(String data) {
+        HtmlNode focused = interaction.focusedNode();
+        if (focused == null || !isTextControl(focused)) return;
+        TextEditing.State st = editState(focused);
+        String committed = data != null ? data : st.endComposition();
+        st.endComposition();
+        focused.dispatchEvent(CoreEvent.composition("compositionend", committed));
+        if (committed != null && !committed.isEmpty()) {
+            applyEdit(focused, TextEditing.type(st, valueOf(focused), committed));
+        }
+        redraw = true;
+    }
+
+    /** フォーカス中のテキスト欄のキャレット表示矩形 {x, y, w, h}（CSS px）。IME 候補窓の配置用。 */
+    public float[] imeCursorRect() {
+        HtmlNode field = interaction.focusedNode();
+        if (field == null || !isTextControl(field)) return null;
+        for (DisplayItem it : withOverlays(items)) {
+            if (it.baseId().equals(field.key()) && (it.isPart("_caret") || it.id().endsWith("_caret"))) {
+                return new float[]{it.x(), it.y(), it.width(), it.height()};
+            }
+        }
+        DisplayItem el = fieldItem(field);
+        if (el != null) {
+            return new float[]{el.x() + 4f, el.y() + 4f, 1f, el.height() - 8f};
+        }
+        return null;
+    }
+
     /** 編集の結果を反映する。値が変わるなら {@code beforeinput} が通ってからキャレットを動かす。 */
     private boolean applyEdit(HtmlNode field, TextEditing.Result r) {
         if (!r.handled()) return false;
@@ -813,13 +864,47 @@ public final class StandaloneView implements AutoCloseable {
                 if (st.end() > offset + line.length() && row < lines.length - 1) x1 = Math.min(right, x1 + 4f);
                 if (x1 > x0) out.add(overlayRect(field, "_sel" + row, x0, top, x1 - x0, glyphH, 0x663B82F6));
             }
-            if (st.caret >= offset && st.caret <= offset + line.length()) {
-                float cx = Math.min(right, left + pos[st.caret - offset]);
-                out.add(overlayRect(field, "_caret", cx, top, 1f, glyphH, caretColor));
+            if (st.isComposing() && st.compositionText != null && !st.compositionText.isEmpty()) {
+                if (st.caret >= offset && st.caret <= offset + line.length()) {
+                    int relCaret = st.caret - offset;
+                    float preeditX0 = Math.min(right, left + pos[relCaret]);
+                    float[] preeditPos = face.positions(st.compositionText, style);
+                    float preeditW = preeditPos.length > 0 ? preeditPos[preeditPos.length - 1] : 0f;
+                    float preeditX1 = Math.min(right, preeditX0 + preeditW);
+                    int bg = (el.bgColor() >>> 24) == 0 ? 0xFFFFFFFF : el.bgColor();
+                    if (preeditX0 < right) {
+                        out.add(overlayRect(field, "_ime_clr", preeditX0, top - 2f, right - preeditX0, glyphH + 4f, bg));
+                    }
+                    if (preeditX1 > preeditX0) {
+                        out.add(overlayRect(field, "_ime_bg", preeditX0, top, preeditX1 - preeditX0, glyphH, 0x333B82F6));
+                        out.add(overlayRect(field, "_ime_ul", preeditX0, top + glyphH - 1f, preeditX1 - preeditX0, 2f, 0xFF3B82F6));
+                        out.add(overlayText(field, "_ime_txt", preeditX0, top, preeditX1 - preeditX0, glyphH, st.compositionText, el));
+                    }
+                    if (relCaret < line.length() && preeditX1 < right) {
+                        String remainder = line.substring(relCaret);
+                        out.add(overlayText(field, "_ime_rem", preeditX1, top, right - preeditX1, glyphH, remainder, el));
+                    }
+                    int curIdx = Math.max(0, Math.min(st.compositionText.length(), st.compositionCursor));
+                    float cx = Math.min(right, preeditX0 + (curIdx < preeditPos.length ? preeditPos[curIdx] : preeditW));
+                    out.add(overlayRect(field, "_caret", cx, top, 1f, glyphH, caretColor));
+                }
+            } else {
+                if (st.caret >= offset && st.caret <= offset + line.length()) {
+                    float cx = Math.min(right, left + pos[st.caret - offset]);
+                    out.add(overlayRect(field, "_caret", cx, top, 1f, glyphH, caretColor));
+                }
             }
             offset += line.length() + 1;
         }
         return out;
+    }
+
+    private static DisplayItem overlayText(HtmlNode field, String part, float x, float y, float w, float h, String text, DisplayItem el) {
+        int left = Math.round(x), top = Math.round(y);
+        int color = (el.color() >>> 24) == 0 ? 0xFF000000 : (el.color() | 0xFF000000);
+        return new DisplayItem(field.key() + part, field.key(), ElementType.TEXT, left, top,
+                Math.max(1, Math.round(x + w) - left), Math.max(1, Math.round(y + h) - top), text, color, 0,
+                Map.of(), 0, 1f, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, ImageFitMode.FILL, el.meta());
     }
 
     private static DisplayItem overlayRect(HtmlNode field, String part, float x, float y, float w, float h, int argb) {
