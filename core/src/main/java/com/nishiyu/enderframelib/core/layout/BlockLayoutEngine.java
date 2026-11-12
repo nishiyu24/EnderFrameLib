@@ -255,12 +255,18 @@ public class BlockLayoutEngine extends LayoutEngine {
         TextAlign textAlign = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class)
                 .physical(isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
+        boolean hasShifts = shifts != null && !shifts.isEmpty();
 
-        for (Object item : state.items) {
+        for (int itemIdx = 0, itemLen = state.items.size(); itemIdx < itemLen; itemIdx++) {
+            Object item = state.items.get(itemIdx);
             switch (item) {
                 case Placement p -> {
-                    float[] sh = shiftOf(shifts, p);
-                    p.box().layout(innerX + sh[0] + p.x(), innerY + sh[1] + p.y(), innerW, p.box().h, ctx);
+                    if (hasShifts) {
+                        float[] sh = shiftOf(shifts, p);
+                        p.box().layout(innerX + sh[0] + p.x(), innerY + sh[1] + p.y(), innerW, p.box().h, ctx);
+                    } else {
+                        p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, ctx);
+                    }
                 }
                 case StaticPosition sp -> {
                     sp.box().staticX = innerX + sp.x();
@@ -269,13 +275,28 @@ public class BlockLayoutEngine extends LayoutEngine {
                     if (sp.box().parent != box) sp.box().layout(innerX, innerY, innerW, 0, ctx);
                 }
                 case LineRun run -> {
-                    for (LayoutBox inlineBox : run.boxes()) clearFragmentsRecursively(inlineBox);
-                    for (InlineLine line : run.lines()) {
-                        float[] sh = shiftOf(shifts, line);
-                        textBottom = Math.max(textBottom,
-                                placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(), textAlign, ctx));
+                    List<LayoutBox> runBoxes = run.boxes();
+                    for (int i = 0, n = runBoxes.size(); i < n; i++) clearFragmentsRecursively(runBoxes.get(i));
+                    List<InlineLine> lines = run.lines();
+                    if (hasShifts) {
+                        for (int i = 0, n = lines.size(); i < n; i++) {
+                            InlineLine line = lines.get(i);
+                            float[] sh = shiftOf(shifts, line);
+                            textBottom = Math.max(textBottom,
+                                    placeLine(line, innerX + sh[0] + line.left(), innerY + sh[1] + line.top(), line.width(), textAlign, ctx));
+                        }
+                    } else {
+                        for (int i = 0, n = lines.size(); i < n; i++) {
+                            InlineLine line = lines.get(i);
+                            textBottom = Math.max(textBottom,
+                                    placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx));
+                        }
                     }
-                    for (LayoutBox inlineBox : run.boxes()) fitToFragments(inlineBox);
+                    for (int i = 0, n = runBoxes.size(); i < n; i++) {
+                        LayoutBox inlineBox = runBoxes.get(i);
+                        finishFragmentsRecursively(inlineBox);
+                        fitToFragments(inlineBox);
+                    }
                 }
                 default -> throw new IllegalStateException(String.valueOf(item));
             }
@@ -291,7 +312,9 @@ public class BlockLayoutEngine extends LayoutEngine {
      * 行が無い（中身がブロックだけで文字を持たない）ときは内容の上端に揃える。
      */
     private void placeOutsideMarkers(LayoutBox box, float innerY, LayoutContext ctx) {
-        for (LayoutBox marker : box.children) {
+        if (!box.hasOutsideMarker) return;
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            LayoutBox marker = box.children.get(i);
             if (!marker.isOutsideMarker || isDisplayNone(marker.style)) continue;
             float markerX = box.x - marker.w - marker.mR;
             marker.layout(markerX - marker.mL, 0, marker.w, marker.h, ctx);
@@ -1348,14 +1371,11 @@ public class BlockLayoutEngine extends LayoutEngine {
                 default -> drawY + line.baseline() - (src.box().mT + src.baseline() + item.raise());
             };
 
-            InlineFragment f = new InlineFragment(src.box(), src.x() + offsetX, top + src.box().mT, src.w(), src.h(), src.text());
-            f.baseline = src.baseline();
-            f.descent = src.descent();
-            f.parents = src.parents();
-            f.box.inlineFragments.add(f);
+            InlineFragment f = src.box().addFragment(src.x() + offsetX, top + src.box().mT, src.w(), src.h(), src.text(),
+                    src.baseline(), src.descent(), src.parents(), true, true);
             if (!f.isText()) {
                 f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
-            } else if (!src.text().isBlank()) {
+            } else if (isNotBlankFast(src.text())) {
                 // 文字の内容領域（ベースラインから descent まで）は行の高さより下に出ることがある。
                 // ブラウザのスクロール範囲（scrollHeight）はこの内容領域を含む
                 textBottom = Math.max(textBottom, f.y + f.baseline + f.descent);
@@ -1363,6 +1383,19 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
         for (BoxSpan span : line.spans()) placeSpan(span, offsetX, drawY, line, ctx);
         return textBottom;
+    }
+
+    /**
+     * 文字列が空白のみでないかを先頭・末尾文字から高速に判定する（isBlank の文字走査を回避）。
+     * ASCII 表示可能文字（0x21〜0x7e）であれば Unicode 空白の可能性はないため即座に true を返す。
+     */
+    static boolean isNotBlankFast(String s) {
+        if (s == null || s.isEmpty()) return false;
+        char first = s.charAt(0);
+        if (first > ' ' && first <= '~') return true;
+        char last = s.charAt(s.length() - 1);
+        if (last > ' ' && last <= '~') return true;
+        return !s.isBlank();
     }
 
     /**
@@ -1384,12 +1417,9 @@ public class BlockLayoutEngine extends LayoutEngine {
             default -> drawY + line.baseline() - alignment.raise();
         };
         float top = baselineY - ascent - b.pT - b.bT;
-        InlineFragment f = new InlineFragment(b, offsetX + span.left(), top, span.right() - span.left(),
-                b.bT + b.pT + ascent + descent + b.pB + b.bB, null);
-        f.baseline = baselineY - top;
-        f.startEdge = span.startEdge();
-        f.endEdge = span.endEdge();
-        b.inlineFragments.add(f);
+        b.addFragment(offsetX + span.left(), top, span.right() - span.left(),
+                b.bT + b.pT + ascent + descent + b.pB + b.bB, null,
+                baselineY - top, 0, null, span.startEdge(), span.endEdge());
     }
 
     /**
@@ -1494,7 +1524,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     }
 
     private static void clearFragmentsRecursively(LayoutBox box) {
-        box.inlineFragments.clear();
+        box.startFragmentPass();
         // テキストの箱は断片から位置を取らない（fitToFragments が飛ばす）ので、祖先の相対配置・sticky のずれだけが乗る。
         // 原点に戻してから足し直させないと、同じ木を配置し直すたびにずれが積み重なる
         if (box.node.nodeType == NodeType.TEXT) {
@@ -1506,6 +1536,14 @@ public class BlockLayoutEngine extends LayoutEngine {
             // ここで断片だけを消すと、残す側で断片が消えたままになる
             if (child.holdsPlacement()) continue;
             clearFragmentsRecursively(child);
+        }
+    }
+
+    private static void finishFragmentsRecursively(LayoutBox box) {
+        box.finishFragmentPass();
+        for (LayoutBox child : box.children) {
+            if (child.holdsPlacement()) continue;
+            finishFragmentsRecursively(child);
         }
     }
 

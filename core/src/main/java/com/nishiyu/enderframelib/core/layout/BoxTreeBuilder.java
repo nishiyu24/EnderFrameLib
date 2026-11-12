@@ -150,15 +150,21 @@ public final class BoxTreeBuilder {
         int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
         parent.children.add(index, added);
         added.parent = parent;
+        parent.updateChildFlagsOnAdd(added);
         added.linkParents();
-        LayoutBox.bumpShapeEpoch();
+        LayoutBox.invalidateFloats(parent);
     }
 
     /** 組み立て済みの子の並びから、箱を外す。並びに無ければ何もしない。 */
     public static void removeBuiltChild(LayoutBox parent, LayoutBox removed) {
         int index = indexOfBox(parent.children, removed);
-        if (index >= 0) parent.children.remove(index);
-        LayoutBox.bumpShapeEpoch();
+        if (index >= 0) {
+            parent.children.remove(index);
+            if (removed.isOutsideMarker || removed.isAbsolute) {
+                parent.recomputeChildFlags();
+            }
+        }
+        LayoutBox.invalidateFloats(parent);
     }
 
     /** 同一性で探した位置。無ければ -1。 */
@@ -190,7 +196,7 @@ public final class BoxTreeBuilder {
         if (marker != null) items.add(marker);
         collectItems(box, items);
         LayoutBox legend = takeRenderedLegend(box, items);
-        box.children.clear();
+        box.clearChildren();
         LayoutBox.bumpShapeEpoch();
         if (legend != null) box.addChild(legend);
         for (LayoutBox child : fixup(box, items)) box.addChild(child);
