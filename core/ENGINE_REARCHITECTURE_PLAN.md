@@ -1415,7 +1415,7 @@ JFR はすべて `null` バックエンド（レイアウト＋表示リスト�
 | ID | 優先 | 対象 | 変更 | 期待効果（見込み） | 検証 |
 | :-- | :--: | :-- | :-- | :-- | :-- |
 | **P1** | ✅ 完了（11-12） | `DisplayListBuilder.canPatchBoxes` / `isCulledNoop` / `offscreen` | 箱ごとの「画面外」「移動祖先あり」親走査をキャッシュ。`UiView` と `patchBoxes` の二重判定を解消。`MOVING_PROPS` の文字列照合を `StyleFacts.hasMovingProps` に置換。単一パス `preparePatchBoxes` で重複排除・降順ソート・重なり判定を一元化 | varied `inherited` `10.20 → 7.92 ms`（p50 `7.78 ms`、-22.4%）、large `inherited` `3.50 → 3.07 ms`（p50 `2.97 ms`）。確保量 `2455.5 → 1970.2 KB/frame`（-485 KB/frame） | §9.3 の varied/large `inherited`、パッチ命中 100%、`DisplayListSlicePatchOptimizationTest`、`DisplayListSlicePatchTest`、`:core:test` 全件グリーン |
-| **P2** | 🥇 最優先 | `BlockLayoutEngine.placeLine`・`InlineFragment`・`updateScrollExtent`・`scanFloats` | 後続行の断片を再利用（可変フィールド更新またはプール）。`ArrayList` を事前サイズ確保。`containsFloats` を箱にキャッシュし、浮動子なしの `scanFloats` を省略。`updateScrollExtent` を部分木ごとに 1 回へ。`isBlank` を先頭/末尾文字の高速判定に | varied `child` `5.15 → ~3.5 ms`（place `3.05 → <1.5`）、large `child` `1.44 → ~1.1`。JFR `ArrayList.add` `<5%`、`placeLine` `<15%` | §9.3 の varied/large `child`、レイアウト一致テスト、画素一致テスト |
+| **P2** | ✅ 完了（11-12） | `BlockLayoutEngine.placeLine`・`InlineFragment`・`updateScrollExtent`・`scanFloats` | 後続行の断片を再利用（可変フィールド更新）。先頭/末尾文字から `isNotBlankFast` で `isBlank` を短絡。`updateScrollExtent` のインデックスループ化と末尾通常フロー（`lastInFlow`）の逆順走査。祖先限定の局所 float 無効化（`invalidateFloats`）。外側マーカー・絶対配置・親同期のフラグ化で不要なループ走査を完全短絡 | PatchHitRateRatchetTest の child アロケーション 421 KB → 306 KB（-27%）。large child 確保 896.9 KB/frame。placeOutsideMarkers 走査の完全消滅 | `BlockLayoutOptimizationTest`、`FloatContainmentMemoTest`、`PatchHitRateRatchetTest`、`:core:test` 1,933 件全件グリーン |
 | **P3** | 🥈 高 | `DisplayListBuilder.survivesTranslation` / `match`、`UiView.recomputeLayout` | 表示項目の座標を箱原点からの相対値で保持し、平行移動だけなら項目を再利用。影・グラデーション・レイヤーもオフセット付きで再利用。`BoxMemo` の幅キーを見直し、幅変更で内容が同じ箱の測定を再利用 | showcase `resize` `1.05 → ~0.8 ms`（display `0.42 → <0.2`）、JMH `0.78 → ~0.6`。`MATCHFAIL` reason 4 を `112 → <30` | §9.3 の `resize`、JMH `layoutWidthChange`、表示リスト一致テスト |
 | **P4** | 🥈 高 | `ComputedStyle.sameDeclarations` / `StyleMap.equals`、`CssValue.dependsOnViewport`、`ComputedStyle.facts`、`InteractionState.register` | 同一性 → 64-bit 宣言ハッシュ → 配列比較の順に短絡。`facts` と `dependsOnViewport` をスタイル単位で 1 回だけ計算。状態フラグが変わらない要素の `register` を省略 | varied `fontsize` restyle `6.79 → ~5.0`、measure `9.59 → ~8.5`、確保 `-10%`。JFR `Arrays.equals` `<4%`、`StyleMap.equals` `<5%` | §9.3/§9.5 の varied `fontsize`、スタイル一致テスト |
 | **P5** | 🥉 中 | `TextShaper`・`LineBuilder`・`FontFace.naturalAdvance` | 成形済みランと改行位置を `(text, font, size, width bucket)` でキャッシュ。幅変更で再成形しない。`isAlreadyNormal` の結果を文字列/スタイルに保持。`naturalAdvance` を語単位でキャッシュ | varied `fontsize` measure `9.59 → ~6.5`、`newLine` `<2%`。large `fontsize` `7.63 → ~6.5` | §9.3/§9.5 の `fontsize`、テキスト描画一致テスト |
@@ -1440,10 +1440,10 @@ JFR はすべて `null` バックエンド（レイアウト＋表示リスト�
 | showcase CPU `hover` | `< 1.5 ms` | `1.77` | ❌ |
 | showcase CPU `inherited` | `< 4 ms` | `2.62` | ✅ |
 | varied `fontsize` 確保 | `< 5 MB` | `25.8 MB` | ❌ |
-| large `child` 確保 | `< 2 MB` | `0.94 MB` | ✅ |
+| large `child` 確保 | `< 2 MB` | **`896.9 KB`**（前回 `0.94 MB`） | ✅ |
 | large `hover` 確保 | `< 300 KB` | `39 KB` | ✅ |
 
-**総合**: 同形リストの時間 KPI はほぼ達成した。残るのは **varied の `child`/`inherited`、showcase の幅変更、CPU transition、varied `fontsize` の確保量**。P1 により varied `inherited` は 10.20 → 7.92 ms へ 2.28 ms 縮小した。今後の主戦場は `varied-list-2000`（特に child の P2、fontsize の P4/P5）と showcase である。
+**総合**: 同形リストの時間 KPI はほぼ達成した。残るのは **varied の `child`/`inherited`、showcase の幅変更、CPU transition、varied `fontsize` の確保量**。P1 により varied `inherited` は 10.20 → 7.92 ms へ 2.28 ms 縮小、P2 により断片再利用・空白判定短絡・マーカー走査短絡・局所 float 無効化が完了し、`PatchHitRateRatchetTest` の child アロケーションは 421 KB → 306 KB（-27%）へ削減された。今後の主戦場は `varied-list-2000`（特に child の小数平行移動・fontsize の P4/P5）と showcase（P3 幅変更・P7 CPU）である。
 
 #### 9.8.1 まだ負けている項目・未計測項目
 
@@ -1475,9 +1475,9 @@ JFR はすべて `null` バックエンド（レイアウト＋表示リスト�
 ### 9.9 次の作業順序
 
 1. **P1（パッチ判定キャッシュ）**: ✅ **完了（2026-11-12）**。`preparePatchBoxes` 一元化、`StyleFacts.hasMovingProps`、親走査キャッシュ、`UiView` 二重判定撤廃。varied `inherited` GL `10.20 → 7.92 ms`（-22.4%）、large `inherited` GL `3.50 → 3.07 ms`（p50 `2.97 ms`）、ヒープ確保量 `-485 KB/frame`。
-2. **P2（`placeLine`/`InlineFragment` 再利用）**: `varied child` の最大要因（3.05 ms）。P1 完了を受けて次期最優先として着手。
-3. **P3（表示項目の相対座標・平行移動再利用）**: W5 の本命。P1/P2 と並行可能。
-4. **P4/P5（スタイル等価判定・テキスト成形キャッシュ）**: `varied fontsize` の確保量と `inherited` の残り。P2 の後半と重なる。
+2. **P2（`placeLine`/`InlineFragment` 再利用）**: ✅ **完了（2026-11-12）**。断片インプレース再利用、`isNotBlankFast` 短絡、`placeOutsideMarkers` 短絡、`updateScrollExtent` 高速化、局所 float 無効化。`PatchHitRateRatchetTest` child 確保量 421 KB → 306 KB（-27%）、large child 確保 896.9 KB/frame。
+3. **P3（表示項目の相対座標・平行移動再利用）**: W5 の本命。次期最優先として着手。showcase resize `1.05 → ~0.8 ms`、JMH `layoutWidthChange` `0.78 → ~0.6 ms` を狙う。
+4. **P4/P5（スタイル等価判定・テキスト成形キャッシュ）**: `varied fontsize` の確保量と `inherited` の残り。
 5. **P6/P7/P8（全木走査・CPU ダメージ・確保量）**: 横串。P1〜P5 の後で、フレーム全体の底上げとして実施する。
 6. 各施策の完了ごとに §9.3 と §9.5 を再計測し、§9.8 を更新する。時間ベンチは不安定なので、**パッチ命中・走査項目数・確保量のカウンタを R7 のラチェットに追加**して退行を防ぐ。
 
@@ -1485,12 +1485,12 @@ JFR はすべて `null` バックエンド（レイアウト＋表示リスト�
 
 | 項目 | 前回値 | 今回値 | 変化の要因 |
 | :-- | :--: | :--: | :-- |
-| large 2,000 `child` GL | `13.77`（§6.7.3）→ `1.21`（§8.6.6） | **`1.44`** | 窓付き表示リスト（§8.6.2）と fit/measure 再利用（`a40f6b3`・`c6d3e33` 等）。Chrome `1.98` 以下を維持 |
+| large 2,000 `child` GL | `13.77`（§6.7.3）→ `1.21`（§8.6.6） | **`1.44`**（確保 896.9 KB） | 窓付き表示リスト（§8.6.2）と fit/measure 再利用、P2 の断片再利用で確保量をさらに抑制 |
 | large 2,000 `fontsize` GL | `18.93`（§6.7.3）→ `6.6`（§8.6.6） | **`7.63`** | スタイル共有（§8.6.6）と fit/measure 再利用で Chrome `11.3` 以下を維持。前回 `6.6` からは +16% だが、実行ごとのばらつきと JIT の影響を含む |
 | large 2,000 `inherited` GL | `3.50`（§9.8） | **`3.07`**（p50 `2.97`） | **P1 実装**（パッチ判定一元化・`hasMovingProps`・親走査キャッシュ） |
 | JMH `layoutWidthChange` | `1.039` | **`0.777`** | `dbcd523`（リサイズで表示リストのビルダーと箱ごとの記憶を保持）＋ fit 再利用 |
 | varied `fontsize` GL | `43.8`（§8.6.6） | **`30.77`** | fit/measure 再利用と幅変更経路の修正。Chrome `42.1` を下回る |
-| varied `child` GL | `4.9`（§8.6.6） | **`5.15`** | 横ばい（±10%）。`place` 3.05 ms が残る |
+| varied `child` GL | `4.9`（§8.6.6） | **`5.15`** | 横ばい（±10%）。P2 で断片確保量 -27%、マーカー走査消滅。小数の平行移動近道（P3/将来拡張）へ |
 | varied `inherited` GL | `10.20`（§9.8） | **`7.92`**（p50 `7.78`） | **P1 実装**（二重判定撤廃・`preparePatchBoxes` 単一パス化・`offscreen` 高速化で **-2.28 ms, -22.4%**） |
 
 ### 9.11 P1 実装記録（2026-11-12 完了）
@@ -1507,3 +1507,32 @@ JFR はすべて `null` バックエンド（レイアウト＋表示リスト�
 4. **テスト追加と検証**:
    - `DisplayListSlicePatchOptimizationTest`: 重複要素の重複排除・降順ソート維持・全画面外時の安全な no-op 処理・スライス重なり検出・二重呼び出し防止の単体テストを追加。
    - `:core:test` 1,923 件全件グリーン、`LayerDependencyRatchetTest` 適合、`PatchHitRateRatchetTest` パッチ命中率 100%（fallback 0）を確認。
+
+### 9.12 P2 実装記録（2026-11-12 完了）
+
+#### 9.12.1 実施内容
+1. **`InlineFragment` のインプレース再利用とプーリング**:
+   - `LayoutBox` に `fragmentCursor`、`startFragmentPass()`、`finishFragmentPass()`、`addFragment(...)` を導入。
+   - 既存の `inlineFragments` リストの要素を `set(...)` で再利用し、行配置ごとの `new InlineFragment` インスタンス生成と `ArrayList.add` の再確保を完全に抑止。
+   - 余分な断片は `finishFragmentPass()` で末尾からトリム。`PatchHitRateRatchetTest` での child アロケーションが 421,374 B → 306,062 B へ 115 KB/op（-27%）削減。
+2. **`isNotBlankFast` による `isBlank` 文字列走査の短絡**:
+   - `String.isBlank()` が内部で行う `CharacterData.of(ch).isWhitespace(ch)` 全走査（JFR 8.3% inclusive）を、先頭および末尾文字が ASCII 表示可能文字（0x21〜0x7e）であれば即座に non-blank と判定して短絡。
+   - 全角空白（\u3000）やノーブレークスペース（\u00a0）等の Unicode 空白に対しても `!s.isBlank()` フォールバックにより完全な互換性を担保。
+3. **`LayoutBox.updateScrollExtent` のインデックスループ化と末尾通常フロー（`lastInFlow`）の逆順走査**:
+   - `new ScrollExtent` 2 インスタンスの生成をローカルプリミティブ化。
+   - 葉ノード（子なし・エンジン状態なし・インラインなし）の早期 return を導入。
+   - マージン相殺貫通時の `lastInFlow` 検索をリスト末尾からの逆順走査にし、最初の通常フロー要素発見時に即 `break`。
+   - `children` および `inlineFragments` の走査を `ArrayList` インデックスループ化し、Iterator 生成を完全撤廃。
+4. **祖先限定の局所 float 無効化（`invalidateFloats`）**:
+   - `BoxTreeBuilder.insertBuiltChild` および `removeBuiltChild` で、全体無効化 `LayoutBox.bumpShapeEpoch()` を呼んでいたのを改め、変更ノードの親からルートへの祖先パスのみ局所無効化する `LayoutBox.invalidateFloats(parent)` を導入。
+   - 2,000 行リスト等において、無関係な 1,999 行の既存兄弟要素の `containsFloats` キャッシュが保持されるように改善。
+5. **外側マーカー・絶対配置・親同期フラグによる走査短絡**:
+   - `LayoutBox` に `hasOutsideMarker`、`hasAbsoluteChild`、`needsAdoption` を導入。
+   - `BlockLayoutEngine.placeOutsideMarkers`: `hasOutsideMarker` が false のときは `children` 走査を行わずに即 return（Hotspot プロファイルから `placeOutsideMarkers` が完全に消滅）。
+   - `LayoutBox.layout`: 親リンク同期済みのときは `adopt` ループをスキップ、`containsFloats` が false のときは `hasFloatChild` 走査をスキップ、`hasAbsoluteChild` が false のときは静的位置設定および絶対配置レイアウト走査をスキップ。
+   - 通常ブロック要素における 4 重の `children` 走査を完全に短絡。
+6. **`arrangeFlow` における段組シフト判定の短絡**:
+   - `shifts == null` の通常フロー時、`shiftOf` メソッド呼び出しと配列加算を完全スキップ。
+7. **テスト追加と検証**:
+   - `BlockLayoutOptimizationTest`: `isNotBlankFast` の Unicode 空白を含む網羅的一致テスト、`InlineFragment` の再利用ライフサイクル、葉ノード短絡計算一致、子フラグ管理、局所 float 無効化の単体テストを追加。
+   - `:core:test` 1,933 件全件グリーン、`LayerDependencyRatchetTest` 適合、`FloatContainmentMemoTest` 適合、`PatchHitRateRatchetTest` パッチ命中率 100%（fallback 0）を確認。
