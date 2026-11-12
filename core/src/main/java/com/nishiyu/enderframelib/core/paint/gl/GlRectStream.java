@@ -39,6 +39,8 @@ final class GlRectStream implements AutoCloseable {
     /** 診断: 受け付けなかった理由別の数（0 pose / 1 格子 / 2 角 / 3 容量・不透明度）。 */
     final long[] rejects = new long[4];
     long clipRejects;
+    /** スロット・クリップの容量が足りず、描く図形を CPU へ回した回数の累計（フレームをまたいで増える。保持した層の記録の安全判定に使う）。 */
+    long overflows;
 
     GlRectStream(int requestedCapacity) {
         // バッファテクスチャの大きさの上限（GL 3.1 の最小保証は 65536 テクセル）。1 プリミティブ = 半精度で 64 テクセル
@@ -100,8 +102,13 @@ final class GlRectStream implements AutoCloseable {
 
     private boolean accepts(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips,
                             float opacity, int kind, int slotsNeeded) {
-        if (clips != null && clips.length > 0 && (clips.length > PropertyTrees.MAX_CLIPS_PER_PRIMITIVE || clipCount + clips.length > clipCapacity)) { rejects[3]++; return false; }
-        if (slots + slotsNeeded > capacity || !(opacity > 0f) || !pose.isFinite() || !(x1 > x0) || !(y1 > y0)) { rejects[3]++; return false; }
+        if (clips != null && clips.length > 0 && (clips.length > PropertyTrees.MAX_CLIPS_PER_PRIMITIVE || clipCount + clips.length > clipCapacity)) {
+            rejects[3]++;
+            if (clips.length <= PropertyTrees.MAX_CLIPS_PER_PRIMITIVE) overflows++; // 容量の不足だけ数える（1 図形のクリップ数の上限は構造の制約）
+            return false;
+        }
+        if (slots + slotsNeeded > capacity) { rejects[3]++; overflows++; return false; }
+        if (!(opacity > 0f) || !pose.isFinite() || !(x1 > x0) || !(y1 > y0)) { rejects[3]++; return false; }
         if (!decompose(pose)) { rejects[0]++; return false; }
         boolean rounded = false;
         for (int i = 0; i < 4; i++) if (rx[i] > 0f || ry[i] > 0f) rounded = true;
