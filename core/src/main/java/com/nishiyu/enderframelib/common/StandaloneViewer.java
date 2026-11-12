@@ -139,10 +139,19 @@ public final class StandaloneViewer {
                 }
             });
 
+            GLFW.glfwSetFramebufferSizeCallback(window, (win, fbW, fbH) -> {
+                if (fbW > 0 && fbH > 0) {
+                    gl.resize(fbW, fbH);
+                    view.resize(fbW, fbH);
+                }
+            });
+
             GLFW.glfwSetCursorPosCallback(window, (win, x, y) -> {
                 int[] ww = new int[1], wh = new int[1];
                 GLFW.glfwGetWindowSize(win, ww, wh);
-                view.mouseMove(x * w / Math.max(1, ww[0]), y * h / Math.max(1, wh[0]), session);
+                int curW = view.width();
+                int curH = view.height();
+                view.mouseMove(x * curW / Math.max(1, ww[0]), y * curH / Math.max(1, wh[0]), session);
             });
             GLFW.glfwSetCursorEnterCallback(window, (win, entered) -> {
                 if (!entered) view.mouseLeave();

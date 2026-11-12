@@ -517,6 +517,12 @@ public class CoreEvent implements Event {
         return ev;
     }
 
+    public static CoreCompositionEvent composition(String type, String data) {
+        CoreCompositionEvent ev = new CoreCompositionEvent(type, true, false, data);
+        ev.markTrusted(true);
+        return ev;
+    }
+
     public static CoreSubmitEvent submit() {
         return submit(null);
     }

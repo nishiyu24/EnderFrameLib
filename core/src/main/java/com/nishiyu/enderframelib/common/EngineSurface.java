@@ -230,6 +230,10 @@ public final class EngineSurface implements WebViewSurface {
     @Override public void keyDown(int key, int mods) { view.keyDown(key, mods); }
     @Override public void keyUp(int key, int mods) { view.keyUp(key, mods); }
     @Override public boolean charTyped(int codePoint) { return view.charTyped(codePoint); }
+    @Override public void compositionStart() { view.compositionStart(); }
+    @Override public void compositionUpdate(String data, int cursor) { view.compositionUpdate(data, cursor); }
+    @Override public void compositionEnd(String data) { view.compositionEnd(data); }
+    @Override public float[] imeCursorRect() { return view.imeCursorRect(); }
     @Override public boolean isPointerOverUi(double x, double y) { return view.isPointerOverUi(x, y); }
     @Override public String focusedId() { String id = view.focusedId(); return id == null || id.isEmpty() ? null : id; }
     @Override public void onNavigate(Consumer<String> handler) { view.onNavigate(handler); }

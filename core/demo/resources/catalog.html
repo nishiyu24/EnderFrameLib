@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Catalog bench site</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: sans-serif; background: #f3f4f6; color: #111827; }
+  header { position: absolute; left: 0; top: 0; right: 0; height: 56px; z-index: 5; display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: #1f2937; color: #fff; }
+  header h1 { font-size: 20px; margin: 0; flex: 1; }
+  header .stat { font-size: 13px; color: #9ca3af; }
+  header .stat b { color: #fbbf24; }
+  .scroller { position: absolute; left: 0; top: 56px; right: 0; bottom: 0; overflow-y: auto; overflow-x: hidden; }
+  main { display: flex; gap: 20px; padding: 20px 24px; }
+  aside { width: 240px; flex: none; background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.15); align-self: flex-start; }
+  aside h2 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; color: #6b7280; }
+  aside label { display: block; margin: 6px 0; font-size: 14px; }
+  aside input[type=text] { width: 100%; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+  #list { flex: 1; display: flex; flex-wrap: wrap; gap: 14px; }
+  .card { width: 200px; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.15); transition: transform .15s, box-shadow .15s; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 6px 14px rgba(0,0,0,.25); }
+  .card .thumb { height: 90px; }
+  .card .body { padding: 10px 12px; }
+  .card .name { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  .card .desc { font-size: 12px; color: #6b7280; line-height: 1.4; height: 50px; overflow: hidden; }
+  .card .row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .price { font-size: 16px; font-weight: bold; color: #047857; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; }
+  .badge.low { background: #fee2e2; color: #b91c1c; }
+  .card.flash { box-shadow: 0 0 0 3px #f59e0b; }
+  button { padding: 6px 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  .ticker { margin-top: 12px; font-size: 12px; color: #4b5563; font-family: monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Catalog</h1>
+  <div class="stat">items <b id="count">0</b></div>
+  <div class="stat">clock <b id="clock">--:--:--</b></div>
+  <div class="stat">updates <b id="updates">0</b></div>
+</header>
+<div class="scroller">
+<main>
+  <aside>
+    <h2>Filter</h2>
+    <input type="text" id="q" placeholder="search name">
+    <h2 style="margin-top:14px">Category</h2>
+    <label><input type="checkbox" checked> Tools</label>
+    <label><input type="checkbox" checked> Blocks</label>
+    <label><input type="checkbox" checked> Food</label>
+    <label><input type="checkbox"> Rare</label>
+    <div class="ticker" id="ticker"></div>
+  </aside>
+  <div id="list"></div>
+</main>
+</div>
+</body>
+</html>

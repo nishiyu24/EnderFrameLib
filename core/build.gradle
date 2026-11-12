@@ -15,6 +15,16 @@ base {
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
     withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    if (options instanceof StandardJavadocDocletOptions) {
+        options.addStringOption('Xdoclint:none', '-quiet')
+        options.addBooleanOption('-allow-script-in-comments', true)
+    }
 }
 
 repositories {
@@ -84,10 +94,45 @@ publishing {
         register('mavenJava', MavenPublication) {
             from components.java
             artifactId = mod_id + '-core'
+            pom {
+                name = 'EnderFrameLib Core'
+                description = 'High-performance pure-Java HTML/CSS UI and layout engine.'
+                url = 'https://github.com/nishiyu24/EnderFrameLib'
+                licenses {
+                    license {
+                        name = 'GNU Lesser General Public License, Version 3.0'
+                        url = 'https://www.gnu.org/licenses/lgpl-3.0.html'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'nishiyu'
+                        name = 'nishiyu'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/nishiyu24/EnderFrameLib.git'
+                    developerConnection = 'scm:git:ssh://github.com:nishiyu24/EnderFrameLib.git'
+                    url = 'https://github.com/nishiyu24/EnderFrameLib'
+                }
+            }
         }
     }
     repositories {
-        maven { url "file://${rootProject.projectDir}/repo" }
+        maven {
+            name = 'localRepo'
+            url = "file://${rootProject.projectDir}/repo"
+        }
+        if (System.getenv('MAVEN_REPO_URL') != null) {
+            maven {
+                name = 'remote'
+                url = uri(System.getenv('MAVEN_REPO_URL'))
+                credentials {
+                    username = System.getenv('MAVEN_USERNAME') ?: System.getenv('OSSRH_USERNAME')
+                    password = System.getenv('MAVEN_PASSWORD') ?: System.getenv('OSSRH_PASSWORD')
+                }
+            }
+        }
     }
 }
 

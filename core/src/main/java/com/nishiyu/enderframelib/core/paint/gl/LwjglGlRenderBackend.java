@@ -316,15 +316,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             }
             """;
 
-    private final int width;
-    private final int height;
+    private int width;
+    private int height;
     private final float dpr;
     private static final java.util.concurrent.atomic.AtomicInteger SESSIONS = new java.util.concurrent.atomic.AtomicInteger();
     /** アニメーション状態のセッション名。CPU 描画器（保険）にも同じ名前を使わせる。 */
     private final String sessionId;
     /** 文字・画像の供給元。保険の {@link #cpu} と共有し、差し替えはここに 1 回書く（CPU 描画器へ転送しない）。 */
     private final PaintResources resources = new PaintResources();
-    private final CpuLayerFallback cpu;
+    private CpuLayerFallback cpu;
     /** 図形を Property Tree ＋ 1 回のインスタンス描画で描く GPU 経路（{@link #rectTrees} が false、または作れなければ null。そのときは全て CPU が描く）。 */
     private GlRectStream rects;
     /**
@@ -334,7 +334,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
      * テクスチャユニットが足りない環境では、作成に失敗して CPU 描画だけで動く。旧バッチ（データテクスチャ）経路は撤去済み。
      */
     public static volatile boolean rectTrees = !"false".equals(System.getProperty("enderframe.gl.recttrees"));
-    private final Pixmap readback;
+    private Pixmap readback;
     private final Map<String, Integer> uniforms = new HashMap<>();
 
     private static final int ATLAS_SIZE = 1024;
@@ -526,6 +526,32 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** {@link #colorTexture()} の高さ（画素）。 */
     public int textureHeight() {
         return height;
+    }
+
+    /**
+     * バックエンドの描画領域（CSS px）を変更する。
+     * 内部の FBO カラーテクスチャ、CPU 保険層、リードバックバッファを新しい大きさに合わせる。
+     */
+    public void resize(int cssW, int cssH) {
+        if (closed || cssW <= 0 || cssH <= 0) return;
+        int nextW = Math.max(1, Math.round(cssW * dpr));
+        int nextH = Math.max(1, Math.round(cssH * dpr));
+        if (nextW == width && nextH == height) return;
+        enter();
+        try {
+            this.width = nextW;
+            this.height = nextH;
+            this.cpu = new CpuLayerFallback(cssW, cssH, dpr, sessionId, resources);
+            this.readback = new Pixmap(width, height);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTex);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, width, height, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, (IntBuffer) null);
+            if (overlayTex != 0) {
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, overlayTex);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, width, height, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, (IntBuffer) null);
+            }
+        } finally {
+            exit();
+        }
     }
 
     /** 溜まった GL 命令をすべて終わらせる。別のコンテキストが {@link #colorTexture()} を読む前に CPU を止めて待ちたいときに使う（共有時の {@link #render} はフェンスを置くだけで、ホストは {@link #waitForRender} を呼ぶ）。 */
