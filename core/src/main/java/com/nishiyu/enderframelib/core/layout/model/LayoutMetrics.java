@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout.model;
 
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.layout.*;
@@ -96,9 +97,9 @@ public final class LayoutMetrics {
     public static float lineHeightPx(ComputedStyle style, FontFace face, FontStyle font) {
         StyleFacts facts = style.facts();
         return switch (facts.lineHeightKind) {
-            case ComputedStyle.LH_PX -> facts.lineHeightValue;
-            case ComputedStyle.LH_PERCENT, ComputedStyle.LH_EM, ComputedStyle.LH_NUMBER -> facts.lineHeightValue * font.fontSizePx();
-            default -> face.normalLineHeight(font);
+            case ComputedStyle.LH_PX -> LayoutUnit.snap(facts.lineHeightValue);
+            case ComputedStyle.LH_PERCENT, ComputedStyle.LH_EM, ComputedStyle.LH_NUMBER -> LayoutUnit.snap(facts.lineHeightValue * font.fontSizePx());
+            default -> LayoutUnit.snap(face.normalLineHeight(font));
         };
     }
 

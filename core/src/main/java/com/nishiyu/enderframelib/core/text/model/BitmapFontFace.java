@@ -53,12 +53,12 @@ public abstract class BitmapFontFace implements FontFace {
 
     @Override
     public float ascent(FontStyle style) {
-        return naturalAscent * scaleFor(style);
+        return com.nishiyu.enderframelib.core.kernel.LayoutUnit.snap(naturalAscent * scaleFor(style));
     }
 
     @Override
     public float descent(FontStyle style) {
-        return naturalDescent * scaleFor(style);
+        return com.nishiyu.enderframelib.core.kernel.LayoutUnit.snap(naturalDescent * scaleFor(style));
     }
 
     @Override
