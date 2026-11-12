@@ -123,6 +123,36 @@ public class DesktopExample {
 
 ---
 
+## ⚛️ Modern Declarative UI (React / Hyperscript DSL in Pure Java)
+
+EnderFrameLib provides a lightweight, zero-dependency declarative UI framework inspired by React and JSX (`com.nishiyu.enderframelib.api.ui.React`):
+
+```java
+import static com.nishiyu.enderframelib.api.ui.React.*;
+
+// 1. Reactive State
+var count = useState(0);
+
+// 2. Declarative Components & VDOM
+var app = div(cls("counter-card"),
+    h1("EnderFrameLib React DSL"),
+    p("Count: ", count), // automatically updates text when count changes!
+    button(cls("btn primary"), onClick(e -> count.update(c -> c + 1)), "Increment"),
+    button(cls("btn"), onClick(e -> count.set(0)), "Reset")
+);
+
+// 3. Mount into DOM or render
+mount(rootElement, app);
+```
+
+### Highlights:
+- **Zero Boilerplate**: Write nested HTML trees using `div(...)`, `span(...)`, `h1(...)`, `p(...)`, `cls(...)`, `style(...)`, `attr(...)`.
+- **React-Style Hooks**: `useState(initial)` with two-way binding & automatic DOM text synchronization, `useRef()` for typed element references, and `useEffect(runnable, deps...)`.
+- **Modern DOM Helpers**: jQuery-like `$(selector, root)` and `byId(id, root)`, plus standard WHATWG `classList(el).toggle("active", condition)`.
+- **High Performance**: Automatically batches insertions using `DocumentFragment`, eliminating unnecessary DOM mutation notifications.
+
+---
+
 ## ⌨️ Input & IME (Multi-language / Japanese Composition)
 
 `WebViewSurface` supports full pointer, keyboard, and W3C UI Events Composition:
