@@ -28,3 +28,8 @@ hs_err_pid*.log
 # IDE のビルド出力
 /out/
 /logs/
+
+# core 配下のドキュメント（README 以外は追跡対象外）
+/core/**/*.md
+!/core/**/README.md
+
