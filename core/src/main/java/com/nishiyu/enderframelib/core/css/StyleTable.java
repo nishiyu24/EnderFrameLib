@@ -27,6 +27,8 @@ final class StyleTable extends AbstractMap<String, String> {
     private boolean extrasShared;
     /** {@link #extras} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。{@link #extras} を書き換えるたびに未確定へ戻す。 */
     private byte extrasViewport = -1;
+    /** {@link #values} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。添字つきの値を書き換えるたびに未確定へ戻す。 */
+    private byte valuesViewport = -1;
     int size;
     /**
      * 算出（{@code ValueComputer.compute}）が、どれかの値がビューポート・コンテナ基準の単位を使うと決めた結果
@@ -44,6 +46,7 @@ final class StyleTable extends AbstractMap<String, String> {
         if (source instanceof StyleTable other) {
             System.arraycopy(other.values, 0, t.values, 0, t.values.length);
             t.size = other.size;
+            t.valuesViewport = other.valuesViewport;
             if (other.extras != null) {
                 t.extras = other.extras;
                 t.extrasShared = true;
@@ -79,11 +82,20 @@ final class StyleTable extends AbstractMap<String, String> {
 
     /** どれかの値がビューポート基準か。添字つきの値は {@link CssValue} が覚えた答えを引き、{@code --*} などは文字列を走査する。 */
     boolean anyValueDependsOnViewport() {
-        CssValue[] v = values;
-        for (int i = 0; i < v.length; i++) {
-            CssValue value = v[i];
-            if (value != null && value.dependsOnViewport()) return true;
+        byte v = valuesViewport;
+        if (v < 0) {
+            v = 0;
+            CssValue[] arr = values;
+            for (int i = 0; i < arr.length; i++) {
+                CssValue value = arr[i];
+                if (value != null && value.dependsOnViewport()) {
+                    v = 1;
+                    break;
+                }
+            }
+            valuesViewport = v;
         }
+        if (v == 1) return true;
         if (extras == null) return false;
         byte e = extrasViewport;
         if (e < 0) {
@@ -107,6 +119,7 @@ final class StyleTable extends AbstractMap<String, String> {
     /** 添字で、値オブジェクトをそのまま書く（文字列を引き直さない）。熱い経路用。null は宣言の削除。 */
     void putValueById(int id, CssValue value) {
         relativeUnits = -1;
+        valuesViewport = -1;
         if (value == null) {
             if (values[id] != null) size--;
             values[id] = null;
@@ -182,6 +195,7 @@ final class StyleTable extends AbstractMap<String, String> {
             String old = textById(id);
             if (old != null) {
                 values[id] = null;
+                valuesViewport = -1;
                 size--;
             }
             return old;
@@ -198,6 +212,7 @@ final class StyleTable extends AbstractMap<String, String> {
     @Override
     public void clear() {
         relativeUnits = -1;
+        valuesViewport = 0;
         java.util.Arrays.fill(values, null);
         extras = null;
         extrasShared = false;
@@ -270,6 +285,7 @@ final class StyleTable extends AbstractMap<String, String> {
                         } else {
                             if (last < 0 || values[last] == null) throw new IllegalStateException();
                             values[last] = null;
+                            valuesViewport = -1;
                             size--;
                             last = -1;
                         }
