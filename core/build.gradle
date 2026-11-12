@@ -181,6 +181,15 @@ tasks.register('runShowcase', JavaExec) {
     workingDir = rootProject.projectDir
 }
 
+tasks.register('runCatalog', JavaExec) {
+    group = 'application'
+    description = 'カタログベンチサイト（多数カード・React スタイル DSL）を窓または PNG に出す'
+    classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.demo.CatalogApp'
+    ['catalog.items'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
+    workingDir = rootProject.projectDir
+}
+
 // ---- 計測（MEASUREMENT.md）----
 // JMH のマイクロベンチと、本番の経路の段別プロファイル。公開物には入れない。
 //   ./gradlew :core:jmh                                   全部（遅い。数分）
@@ -215,5 +224,5 @@ tasks.register('profile', JavaExec) {
     if (project.hasProperty('profile.args')) args(project.property('profile.args').toString().split(' ').findAll { !it.isEmpty() })
 }
 
-// 計測用のソースが腐らないよう、check でコンパイルだけは通す（実行はしない）
-tasks.named('check') { dependsOn 'compileJmhJava' }
+// デモ・計測用のソースが腐らないよう、check でコンパイルだけは通す（実行はしない）
+tasks.named('check') { dependsOn 'compileDemoJava', 'compileJmhJava' }
