@@ -177,6 +177,20 @@ public class InteractionState implements StateLookup {
          * 依存しない要素は、ビューポートが変わっても算出スタイルのキャッシュをそのまま使う。
          */
         public boolean viewportDependent = true;
+        /** {@link #viewportDependent} を一度でも確かめたか（作りたては未確認で、依存するとみなす）。 */
+        private boolean viewportDependenceKnown;
+
+        /**
+         * 要素のビューポート依存を記録する。ルート以外で依存が増えた・初めて確かめたときは、持ち主の世代
+         * （{@link InteractionState#viewportDependenceEpoch}）を進めて「依存する要素は無い」の記憶を捨てさせる。
+         */
+        public void noteViewportDependence(boolean root, boolean dependent) {
+            if (!root && (!viewportDependenceKnown || viewportDependent != dependent) && owner != null) owner.viewportDependenceEpoch++;
+            viewportDependenceKnown = true;
+            viewportDependent = dependent;
+        }
+
+        public boolean viewportDependenceKnown() { return viewportDependenceKnown; }
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
         /**
@@ -286,6 +300,24 @@ public class InteractionState implements StateLookup {
         ComputedStyle containerStyle;
         float containerBoxW, containerBoxH;
         ContainerBox containerBox;
+    }
+
+    /** ルート以外の要素のビューポート依存が変わるたびに進む世代。{@code RenderPipeline} の「依存する要素は無い」の記憶の鍵。 */
+    public int viewportDependenceEpoch;
+    /** 「ルート以外にビューポートへ依存する要素は無い」と確かめた木・世代・シートの版（無ければ null / -1）。 */
+    public Object viewportFreeRoot;
+    public int viewportFreeEpoch = -1;
+    public Object viewportFreeSheet;
+    public int viewportFreeVersion;
+    public boolean viewportFreeResult;
+
+    /** 子ノードの追加・削除など、DOMの木構造が変わるたびに進む版番号。 */
+    public int domStructureVersion;
+    /** 前回箱の木（BoxTreeBuilder）を組んだときの {@link #domStructureVersion}。 */
+    public int lastBuiltStructureVersion;
+
+    public void notifyDomStructureChanged() {
+        domStructureVersion++;
     }
 
     /** 再スタイルの走査が、汚れていない部分木を飛ばしてよいか（走査のたびに {@code RenderPipeline} が決める）。 */

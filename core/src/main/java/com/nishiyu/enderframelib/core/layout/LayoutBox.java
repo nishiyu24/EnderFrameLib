@@ -1111,10 +1111,26 @@ public class LayoutBox {
     /** この部分木が、箱の外の寸法（ビューポート／コンテナ単位・絶対配置）を読まない。幅に依らない測定の判定の材料。 */
     private boolean measuredOutsideFree;
 
+    /**
+     * ビューポートが前回の測定と同じとみなせるか。部分木が箱の外の寸法（ビューポート単位・絶対配置）を読まない
+     * （{@link #measuredOutsideFree}）なら、ビューポートの幅は測定の結果に効かない（ウィンドウの幅変更で、制約が同じ箱を測り直さない）。
+     * 高さと解像度比は、パーセントの高さ・画像の候補選びに効くので比べる。
+     * 切り分け用: {@code -Denderframe.layout.noviewportwidthfree=true} で無効。
+     */
+    public static volatile boolean viewportWidthFreeReuse = !Boolean.getBoolean("enderframe.layout.noviewportwidthfree");
+
+    private boolean sameViewportForMeasure(Viewport vp) {
+        Viewport old = measuredViewport;
+        if (old == null) return false;
+        if (vp.equals(old)) return true;
+        return viewportWidthFreeReuse && measuredOutsideFree && vp.rootH() == old.rootH()
+                && vp.devicePixelRatio() == old.devicePixelRatio();
+    }
+
     private boolean widthOnlyChange(ConstraintSpace space, LayoutContext ctx) {
         if (!widthIndependentReuse || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
         Viewport vp = ctx.viewport(), old = measuredViewport;
-        return Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize())
+        return (measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
                 && space.parent().equals(measuredSpace.parent())
                 && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
@@ -1138,7 +1154,7 @@ public class LayoutBox {
         Viewport vp = ctx.viewport(), old = measuredViewport;
         // 文字は整形した行の幅・高さだけが結果で、親の整形コンテキスト（shrink かどうか）や % の基準には依らない
         boolean sameContext = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
-                || (Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize())
+                || ((measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
                         && space.parent().equals(measuredSpace.parent()));
         return sameContext && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
@@ -1188,7 +1204,8 @@ public class LayoutBox {
 
     private void recordWidthIndependence() {
         StyleFacts f = style.layoutFacts();
-        boolean outside = !isAbsolute && !f.usesViewportUnits;
+        // 画像の候補選び（srcset / sizes）はビューポートの幅を読む
+        boolean outside = !isAbsolute && !f.usesViewportUnits && !(node != null && ("img".equals(node.tag) || "picture".equals(node.tag)));
         for (int i = 0, n = children.size(); outside && i < n; i++) {
             LayoutBox c = children.get(i);
             outside = c.style.facts().displayNone || c.measuredOutsideFree;
@@ -1208,7 +1225,7 @@ public class LayoutBox {
                 && floatSpace == null
                 && collapsedBorders == null
                 && (((space.equals(measuredSpace) || (measuredBlockPercentFree && sameIgnoringPercentBlock(space, measuredSpace)))
-                        && ctx.viewport().equals(measuredViewport)) || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
+                        && sameViewportForMeasure(ctx.viewport())) || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
                 && ctx.fonts() == measuredFonts

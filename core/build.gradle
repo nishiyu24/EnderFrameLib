@@ -70,6 +70,11 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.withType(JavaExec).configureEach {
+    defaultCharacterEncoding = 'UTF-8'
+    jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
 
 // テストはリポジトリ直下の src/test/resources（フォント・ゴールデン等）と src/main/resources を相対パスで読む
 sourceSets.test.resources.srcDir rootProject.file('src/test/resources')

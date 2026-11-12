@@ -1,11 +1,13 @@
 package com.nishiyu.enderframelib.demo;
 
+import com.nishiyu.enderframelib.api.dom.Document;
+import com.nishiyu.enderframelib.api.dom.Element;
+import com.nishiyu.enderframelib.api.dom.Node;
+import com.nishiyu.enderframelib.api.ui.Ref;
+import com.nishiyu.enderframelib.api.ui.VNode;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.common.StandaloneViewer;
 import com.nishiyu.enderframelib.common.UiTimers;
-import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
-import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
-import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 
 import java.nio.file.Path;
 import java.time.LocalTime;
@@ -14,8 +16,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import static com.nishiyu.enderframelib.api.ui.React.*;
+
 /**
  * ライブラリだけで動くテストサイト。表は多彩な HTML / CSS アニメーション、裏は Java が DOM を操作する。
+ *
+ * <p>React / Hyperscript に着想を得たモダンな宣言的 UI DSL ({@link com.nishiyu.enderframelib.api.ui.React})
+ * で記述されています。</p>
  *
  * <pre>
  * ./gradlew :core:runShowcase                         窓で表示
@@ -23,7 +30,7 @@ import java.util.Random;
  * </pre>
  *
  * Java 側の仕込み（{@link #wire}）: 時計・カウンタ・進捗バー・ログの追加と削除・表の書き換え・
- * フォームのイベント・1 600 要素のグリッドの波。
+ * フォームのイベント・1 000 要素のグリッドの波。
  */
 public final class ShowcaseApp {
     private static final int GRID_COLS = 50, GRID_ROWS = 20; // 1 000 セル
@@ -222,134 +229,220 @@ public final class ShowcaseApp {
         return Float.NaN;
     }
 
+    /**
+     * 進捗バーコンポーネント表現と、マウント後の fill ハンドル。
+     */
+    record BarItem(
+            VNode vnode,
+            Ref<Element> fillRef
+    ) implements VNode {
+        @Override
+        public Node mount(Document doc) {
+            return vnode.mount(doc);
+        }
+
+        public Element fill() { return fillRef.get(); }
+    }
+
+    private static BarItem Bar() {
+        Ref<Element> fillRef = useRef();
+        var vnode = div(cls("bar"), div(ref(fillRef), cls("fill")));
+        return new BarItem(vnode, fillRef);
+    }
+
+    /**
+     * ライブテーブルの行コンポーネント表現と、マウント後の DOM ハンドル。
+     */
+    record TableRowItem(
+            VNode vnode,
+            Ref<Element> rowRef,
+            Ref<Element> valRef
+    ) implements VNode {
+        @Override
+        public Node mount(Document doc) {
+            return vnode.mount(doc);
+        }
+
+        public Element row() { return rowRef.get(); }
+        public Element val() { return valRef.get(); }
+    }
+
+    /**
+     * テーブルの行を生成する関数型コンポーネント。
+     */
+    private static TableRowItem TableRow(int i) {
+        Ref<Element> rowRef = useRef();
+        Ref<Element> valRef = useRef();
+        var vnode = tr(ref(rowRef),
+                td(String.valueOf(i)),
+                td("node-" + Integer.toHexString(0x1000 + i * 37)),
+                td(ref(valRef), "0")
+        );
+        return new TableRowItem(vnode, rowRef, valRef);
+    }
+
+    /**
+     * グリッドのセルを生成する関数型コンポーネント。
+     */
+    record CellItem(
+            VNode vnode,
+            Ref<Element> cellRef
+    ) implements VNode {
+        @Override
+        public Node mount(Document doc) {
+            return vnode.mount(doc);
+        }
+
+        public Element cell() { return cellRef.get(); }
+    }
+
+    private static CellItem GridCell(int r, int c) {
+        Ref<Element> cellRef = useRef();
+        double phase = (c * 0.09 + r * 0.05) % 4.0;
+        String phaseStr = String.format(java.util.Locale.ROOT, "%.2f", phase);
+        boolean pulse = (r * 7 + c * 3) % 11 == 0;
+        var vnode = div(
+                ref(cellRef),
+                cls(pulse ? "px pulse" : "px"),
+                style("animation-delay:-" + phaseStr + "s")
+        );
+        return new CellItem(vnode, cellRef);
+    }
+
     /** 文書を読み込んだ直後に呼ばれる。以降はタイマーとイベントで DOM を書き換える。 */
     static void wire(StandaloneView view) {
-        HtmlNode root = view.root();
-        HtmlDocument doc = root.ownerDocument;
+        Node root = view.root();
         TICK_TASKS.clear();
         TICK_EVERY.clear();
         UiTimers timers = view.timers();
         if (Boolean.getBoolean("showcase.notimers")) timers = new UiTimers("x");
         Random rnd = new Random(42);
 
-        // ---- 時計とカウンタ ----
-        HtmlNode clock = byId(root, "clock");
-        HtmlNode counter = byId(root, "counter");
-        int[] ticks = {0};
+        // ---- 1. 時計とカウンタ (React useState / bindText) ----
+        var clock = useState("--:--:--");
+        var counter = useState(0);
+        bindText($("#clock", root), clock);
+        bindText($("#counter", root), counter);
+
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss");
         every("clock", timers, () -> {
-            clock.setTextContent(LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-            counter.setTextContent(Integer.toString(++ticks[0]));
+            clock.set(LocalTime.now().format(timeFmt));
+            counter.update(c -> c + 1);
         }, 1000);
 
-        // ---- 進捗バー（width の transition を Java が起こす） ----
-        HtmlNode bars = byId(root, "bars");
-        List<HtmlElement> fills = new ArrayList<>();
+        // ---- 2. 進捗バー（transform の transition を Java が起こす） ----
+        List<BarItem> bars = new ArrayList<>(6);
         for (int i = 0; i < 6; i++) {
-            HtmlElement bar = el(doc, "div", "bar");
-            HtmlElement fill = el(doc, "div", "fill");
-            bar.appendChild(fill);
-            bars.appendChild(bar);
-            fills.add(fill);
+            bars.add(Bar());
         }
+        mount($("#bars", root), bars);
+
         every("bars", timers, () -> {
-            for (HtmlElement f : fills) f.setAttribute("style", "transform:scaleX(" + ((8 + rnd.nextInt(92)) / 100.0) + ")");
+            for (BarItem b : bars) {
+                b.fill().setAttribute("style", "transform:scaleX(" + ((8 + rnd.nextInt(92)) / 100.0) + ")");
+            }
         }, 2000);
 
-        // ---- ログ（追加と削除） ----
-        HtmlNode log = byId(root, "log");
+        // ---- 3. ログ（追加と削除） ----
+        Element log = $("#log", root);
         int[] seq = {0};
         String[] verbs = {"createElement", "appendChild", "setAttribute", "classList.add", "removeChild", "setTextContent"};
         every("log", timers, () -> {
-            HtmlElement row = el(doc, "div", "row");
-            row.setTextContent("#" + (++seq[0]) + "  " + verbs[rnd.nextInt(verbs.length)] + "  @" + System.currentTimeMillis() % 100000);
-            log.appendChild(row);
-            while (log.children.size() > 12) log.removeChild(log.children.get(0));
+            String text = "#" + (++seq[0]) + "  " + verbs[rnd.nextInt(verbs.length)] + "  @" + System.currentTimeMillis() % 100000;
+            mount(log, div(cls("row"), text));
+            while (log.getChildElementCount() > 12) {
+                Element first = log.getFirstElementChild();
+                if (first != null) log.removeChild(first);
+            }
         }, 400);
 
-        // ---- 表（17 行を作り、毎秒たくさん書き換える） ----
-        HtmlNode tbl = byId(root, "tbl");
-        HtmlElement body = el(doc, "tbody", null);
-        tbl.appendChild(body);
-        List<HtmlElement> valueCells = new ArrayList<>();
-        List<HtmlElement> rows = new ArrayList<>();
+        // ---- 4. 表（17 行を作り、毎秒たくさん書き換える） ----
+        List<TableRowItem> rows = new ArrayList<>(17);
         for (int i = 1; i <= 17; i++) {
-            HtmlElement tr = el(doc, "tr", null);
-            HtmlElement c0 = el(doc, "td", null), c1 = el(doc, "td", null), c2 = el(doc, "td", null);
-            c0.setTextContent(Integer.toString(i));
-            c1.setTextContent("node-" + Integer.toHexString(0x1000 + i * 37));
-            c2.setTextContent("0");
-            tr.appendChild(c0);
-            tr.appendChild(c1);
-            tr.appendChild(c2);
-            body.appendChild(tr);
-            valueCells.add(c2);
-            rows.add(tr);
+            rows.add(TableRow(i));
         }
+        mount($("#tbl", root), tbody(rows));
+
         every("table", timers, () -> {
             for (int i = 0; i < 8; i++) {
-                int k = rnd.nextInt(valueCells.size());
-                valueCells.get(k).setTextContent(Integer.toString(rnd.nextInt(10000)));
-                rows.get(k).setAttribute("class", rnd.nextBoolean() ? "hot" : "");
+                int k = rnd.nextInt(rows.size());
+                TableRowItem item = rows.get(k);
+                item.val().setTextContent(Integer.toString(rnd.nextInt(10000)));
+                classList(item.row()).toggle("hot", rnd.nextBoolean());
             }
         }, 400);
 
-        // ---- フォームのイベント ----
-        HtmlNode name = byId(root, "name");
-        HtmlNode echo = byId(root, "echo");
-        HtmlNode preview = byId(root, "preview");
-        HtmlNode size = byId(root, "size");
-        HtmlNode sizeOut = byId(root, "sizeOut");
-        HtmlNode color = byId(root, "color");
-        HtmlNode spin = byId(root, "spin");
+        // ---- 5. フォームのイベント ----
+        Element name = $("#name", root);
+        Element echo = $("#echo", root);
+        Element preview = $("#preview", root);
+        Element size = $("#size", root);
+        Element sizeOut = $("#sizeOut", root);
+        Element color = $("#color", root);
+        Element spin = $("#spin", root);
+        Element go = $("#go", root);
         String base = "border-radius:12px;margin:30px;";
+
         size.addEventListener("input", e -> {
-            String v = size.attrs.getOrDefault("value", "80");
-            sizeOut.setTextContent(v);
-            preview.setAttribute("style", "width:" + v + "px;height:" + v + "px;background:" + color.attrs.getOrDefault("value", "#f59e0b") + ";" + base);
+            String v = size.getAttribute("value");
+            String c = color.getAttribute("value");
+            sizeOut.setTextContent(v != null ? v : "80");
+            preview.setAttribute("style", "width:" + (v != null ? v : "80") + "px;height:" + (v != null ? v : "80") + "px;background:" + (c != null ? c : "#f59e0b") + ";" + base);
         });
-        color.addEventListener("change", e -> preview.setAttribute("style",
-                "width:" + size.attrs.getOrDefault("value", "80") + "px;height:" + size.attrs.getOrDefault("value", "80") + "px;background:"
-                        + color.attrs.getOrDefault("value", "#f59e0b") + ";" + base));
+        color.addEventListener("change", e -> {
+            String v = size.getAttribute("value");
+            String c = color.getAttribute("value");
+            preview.setAttribute("style", "width:" + (v != null ? v : "80") + "px;height:" + (v != null ? v : "80") + "px;background:" + (c != null ? c : "#f59e0b") + ";" + base);
+        });
         spin.addEventListener("click", e -> {
-            String s = preview.attrs.getOrDefault("style", "");
+            String s = preview.getAttribute("style");
+            if (s == null) s = "";
             preview.setAttribute("style", s.contains("animation") ? s.replaceAll("animation:[^;]*;?", "") : s + "animation: spinbox 2s linear infinite;");
         });
-        byId(root, "go").addEventListener("click", e -> echo.setTextContent(
-                "Java received: name=\"" + name.attrs.getOrDefault("value", "") + "\" size=" + size.attrs.getOrDefault("value", "")
-                        + " color=" + color.attrs.getOrDefault("value", "")));
+        go.addEventListener("click", e -> {
+            String nVal = name.getAttribute("value");
+            String szVal = size.getAttribute("value");
+            String clrVal = color.getAttribute("value");
+            echo.setTextContent(
+                    "Java received: name=\"" + (nVal != null ? nVal : "") + "\" size=" + (szVal != null ? szVal : "")
+                            + " color=" + (clrVal != null ? clrVal : ""));
+        });
 
-        // ---- ストレス: 1 000 セルの波 ----
+        // ---- 6. ストレス: 1 000 セルの波 ----
         // 波そのものは CSS の @keyframes（色の補間は描画側＝GPU 経路が毎フレーム行う）。Java は位相（animation-delay）を
         // 一度だけ割り振り、毎ティックは数個のセルのクラスを入れ替えるだけにする（DOM の書き換えは全体の再レイアウトを伴うため）
-        HtmlNode grid = byId(root, "grid");
-        HtmlElement[][] cells = new HtmlElement[GRID_ROWS][GRID_COLS];
+        Element grid = $("#grid", root);
+        CellItem[][] cells = new CellItem[GRID_ROWS][GRID_COLS];
+        List<CellItem> cellList = new ArrayList<>(GRID_ROWS * GRID_COLS);
         for (int r = 0; r < GRID_ROWS; r++) {
             for (int c = 0; c < GRID_COLS; c++) {
-                HtmlElement cell = el(doc, "div", (r * 7 + c * 3) % 11 == 0 ? "px pulse" : "px");
-                double phase = (c * 0.09 + r * 0.05) % 4.0;
-                cell.setAttribute("style", "animation-delay:-" + String.format(java.util.Locale.ROOT, "%.2f", phase) + "s");
-                grid.appendChild(cell);
+                CellItem cell = GridCell(r, c);
                 cells[r][c] = cell;
+                cellList.add(cell);
             }
         }
-        HtmlNode title = byId(root, "stressTitle");
+        mount(grid, cellList);
+
+        Element title = $("#stressTitle", root);
         title.setTextContent(GRID_COLS * GRID_ROWS + " elements, animated from Java");
-        HtmlElement[] flashed = new HtmlElement[12];
+        Element[] flashed = new Element[12];
         every("grid", timers, () -> {
             for (int i = 0; i < flashed.length; i++) {
-                if (flashed[i] != null) flashed[i].setAttribute("class", "px");
-                flashed[i] = cells[rnd.nextInt(GRID_ROWS)][rnd.nextInt(GRID_COLS)];
-                flashed[i].setAttribute("class", "px flash");
+                if (flashed[i] != null) classList(flashed[i]).remove("flash");
+                flashed[i] = cells[rnd.nextInt(GRID_ROWS)][rnd.nextInt(GRID_COLS)].cell();
+                classList(flashed[i]).add("flash");
             }
         }, BASE_MS);
 
-        // ---- 夕焼けの縞（Java が数十本を差し込む） ----
-        HtmlNode stripes = byId(root, "stripes");
+        // ---- 7. 夕焼けの縞（Java が数十本を差し込む） ----
+        List<VNode> stripeNodes = new ArrayList<>(12);
         for (int i = 0; i < 12; i++) {
-            HtmlElement s = el(doc, "div", "stripe");
-            s.setAttribute("style", "animation-delay:-" + (i * 0.25) + "s");
-            stripes.appendChild(s);
+            stripeNodes.add(div(
+                    cls("stripe"),
+                    style("animation-delay:-" + (i * 0.25) + "s")
+            ));
         }
+        mount($("#stripes", root), stripeNodes);
     }
 
     /** 全ティックの土台（ms）。DOM を書き換えるたびに全体が再レイアウトされるので、書き換えを 1 つのティックへ集める。 */
@@ -376,20 +469,5 @@ public final class ShowcaseApp {
         }
         TICK_TASKS.add(r);
         TICK_EVERY.add((int) Math.max(1, Math.round((double) ms / BASE_MS)));
-    }
-
-    private static HtmlNode byId(HtmlNode root, String id) {
-        HtmlNode n = root.getNodeById(id);
-        if (n == null) throw new IllegalStateException("#" + id + " not found");
-        return n;
-    }
-
-    private static int idSeq;
-
-    private static HtmlElement el(HtmlDocument doc, String tag, String cls) {
-        HtmlElement e = (HtmlElement) doc.createElement(tag);
-        e.setAttribute("id", "j" + (++idSeq)); // 明示の id（自動採番の id に補間状態が結びつくのを避ける）
-        if (cls != null) e.setAttribute("class", cls);
-        return e;
     }
 }
