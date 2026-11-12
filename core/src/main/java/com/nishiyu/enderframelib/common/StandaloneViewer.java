@@ -44,7 +44,7 @@ public final class StandaloneViewer {
      */
     public static void launch(String[] args, java.util.function.Consumer<StandaloneView> setup) throws Exception {
         if (args.length < 1) {
-            System.err.println("usage: StandaloneViewer <file|url> [width height] [--png out.png] [--after ms]");
+            System.err.println("usage: StandaloneViewer <file|url> [width height [resizable]] [--png out.png] [--after ms] [--resizable]");
             System.exit(2);
         }
         String source = args[0];
@@ -56,10 +56,26 @@ public final class StandaloneViewer {
             h = Integer.parseInt(args[2]);
             pos = 3;
         }
+        boolean resizable = false;
+        if (pos == 3 && args.length > 3 && (args[3].equalsIgnoreCase("true") || args[3].equalsIgnoreCase("false"))) {
+            resizable = Boolean.parseBoolean(args[3]);
+            pos = 4;
+        }
         long after = 0;
-        for (int i = pos; i + 1 < args.length; i += 2) {
-            if ("--png".equals(args[i])) png = args[i + 1];
-            else if ("--after".equals(args[i])) after = Long.parseLong(args[i + 1]);
+        for (int i = pos; i < args.length; i++) {
+            if ("--png".equals(args[i]) && i + 1 < args.length) {
+                png = args[++i];
+            } else if ("--after".equals(args[i]) && i + 1 < args.length) {
+                after = Long.parseLong(args[++i]);
+            } else if ("--resizable".equals(args[i])) {
+                if (i + 1 < args.length && (args[i + 1].equalsIgnoreCase("true") || args[i + 1].equalsIgnoreCase("false"))) {
+                    resizable = Boolean.parseBoolean(args[++i]);
+                } else {
+                    resizable = true;
+                }
+            } else if ("true".equalsIgnoreCase(args[i]) || "false".equalsIgnoreCase(args[i])) {
+                resizable = Boolean.parseBoolean(args[i]);
+            }
         }
 
         String html = load(source);
@@ -86,12 +102,17 @@ public final class StandaloneViewer {
             System.out.println("wrote " + png);
             return;
         }
-        run(html, w, h, fonts, setup);
+        run(html, w, h, resizable, fonts, setup);
     }
 
     /** HTML 文字列を窓に表示する（閉じるまで戻らない）。{@code setup} は文書を読み込んだ直後に 1 度呼ばれる。 */
     public static void show(String html, int w, int h, java.util.function.Consumer<StandaloneView> setup) {
-        run(html, w, h, installFonts(""), setup);
+        show(html, w, h, false, setup);
+    }
+
+    /** HTML 文字列を窓に表示する（閉じるまで戻らない）。{@code resizable} で可変ウィンドウ（最大化・枠ドラッグリサイズ）を制御する。 */
+    public static void show(String html, int w, int h, boolean resizable, java.util.function.Consumer<StandaloneView> setup) {
+        run(html, w, h, resizable, installFonts(""), setup);
     }
 
     /**
@@ -117,9 +138,9 @@ public final class StandaloneViewer {
         return Files.readString(Path.of(source), StandardCharsets.UTF_8);
     }
 
-    private static void run(String html, int w, int h, FontSources fonts, java.util.function.Consumer<StandaloneView> setup) {
+    private static void run(String html, int w, int h, boolean resizable, FontSources fonts, java.util.function.Consumer<StandaloneView> setup) {
         ImageProvider.Web images = ImageProvider.web();
-        try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib")) {
+        try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib", resizable)) {
             gl.images(images).clearColor(0xFFFFFFFF);
             StandaloneView view = new StandaloneView(html, w, h).images(images);
             setup.accept(view);
@@ -143,6 +164,9 @@ public final class StandaloneViewer {
                 if (fbW > 0 && fbH > 0) {
                     gl.resize(fbW, fbH);
                     view.resize(fbW, fbH);
+                    if (view.frame(System.currentTimeMillis(), gl, true)) {
+                        gl.present();
+                    }
                 }
             });
 

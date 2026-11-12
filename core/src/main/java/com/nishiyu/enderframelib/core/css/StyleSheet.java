@@ -114,6 +114,33 @@ public class StyleSheet {
         return false;
     }
 
+    private boolean viewportValues;
+    private int viewportValuesVersion = -1;
+
+    /**
+     * どれかの規則・カスタムプロパティの宣言値が、ビューポートの大きさで変わり得るか（{@code vw} / {@code cqw} などの単位、{@code var()}、{@code env()}）。
+     * 偽なら、疑似要素・{@code ::marker} の算出値もビューポートの幅に依らない（幅変更で再スタイルを飛ばしてよい判定の材料）。
+     */
+    public boolean declaresViewportDependentValues() {
+        int v = rules.version();
+        if (viewportValuesVersion != v) {
+            boolean found = false;
+            for (StyleRule rule : rules) {
+                for (String value : rule.properties.values()) {
+                    if (StyleResolver.valueDependsOnViewport(value)) { found = true; break; }
+                }
+                if (found) break;
+            }
+            for (String value : variables.values()) {
+                if (found) break;
+                found = StyleResolver.valueDependsOnViewport(value);
+            }
+            viewportValues = found;
+            viewportValuesVersion = v;
+        }
+        return viewportValues;
+    }
+
     /** {@code :has()} を使う規則があるか。あれば、子孫・後続の兄弟の変化で祖先も再スタイルする。 */
     public boolean usesHasSelectors() {
         int v = rules.version();

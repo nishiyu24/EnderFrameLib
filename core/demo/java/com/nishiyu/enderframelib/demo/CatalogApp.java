@@ -27,6 +27,8 @@ import static com.nishiyu.enderframelib.api.ui.React.*;
  *
  * <pre>
  * ./gradlew :core:runCatalog                         窓で表示（-Dcatalog.items=N で件数、既定 3000）
+ * ./gradlew :core:runCatalog --args="true"           可変ウィンドウで表示（最大化・マウスリサイズ可）
+ * ./gradlew :core:runCatalog --args="1280 800 true"  幅・高さ・可変ウィンドウを指定
  * ./gradlew :core:runCatalog --args="--png out.png"  窓なしで PNG
  * </pre>
  */
@@ -36,9 +38,32 @@ public final class CatalogApp {
     public static void main(String[] args) throws Exception {
         Path html = Path.of("core/demo/resources/catalog.html");
         List<String> a = new ArrayList<>(List.of(html.toString()));
+
+        // 画面サイズ（幅・高さ）と可変ウィンドウ（true指定: 最大化・マウスリサイズを許可。argsでfalse指定された場合は可変しない）
         boolean sized = args.length >= 2 && args[0].matches("[0-9]+") && args[1].matches("[0-9]+");
-        if (!sized) a.addAll(List.of("1280", "800"));
-        a.addAll(List.of(args));
+        boolean hasResizable = sized
+                ? (args.length >= 3 && ("true".equalsIgnoreCase(args[2]) || "false".equalsIgnoreCase(args[2])))
+                : (args.length >= 1 && ("true".equalsIgnoreCase(args[0]) || "false".equalsIgnoreCase(args[0])));
+        boolean resizable = hasResizable ? Boolean.parseBoolean(sized ? args[2] : args[0]) : true;
+
+        int pos = 0;
+        if (sized) {
+            a.add(args[0]);
+            a.add(args[1]);
+            pos = 2;
+        } else {
+            a.addAll(List.of("1280", "800"));
+        }
+
+        a.add(String.valueOf(resizable));
+        if (hasResizable) {
+            pos++;
+        }
+
+        for (int i = pos; i < args.length; i++) {
+            a.add(args[i]);
+        }
+
         StandaloneViewer.launch(a.toArray(new String[0]), CatalogApp::wire);
     }
 

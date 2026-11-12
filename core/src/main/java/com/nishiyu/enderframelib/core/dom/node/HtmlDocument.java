@@ -301,6 +301,7 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     /** 子が増減した。兄弟の並びを読む規則が及ぶ範囲だけを汚して、持ち主に知らせる。 */
     void childListChanged(HtmlNode parent, int index) {
+        interactionState.notifyDomStructureChanged();
         interactionState.invalidateChildList(parent, index);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(parent, null);

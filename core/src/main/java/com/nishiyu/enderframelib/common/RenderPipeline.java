@@ -136,10 +136,16 @@ public class RenderPipeline {
 
         InteractionState effectiveState = interactionState != null ? interactionState : new InteractionState();
         effectiveState.bindStyleSheet(doc.sheet);
-        if (doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(rootW, rootH))) {
+        boolean mediaChanged = doc.sheet.updateMediaEnvironment(doc.sheet.mediaEnvironment().withSize(rootW, rootH));
+        if (mediaChanged) {
             effectiveState.markAllDirty();
         }
         boolean hasContainers = doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries();
+
+        if (incremental && !mediaChanged && !hasContainers && canSkipRebuild(doc, previousRoot, rootW, rootH, effectiveState)) {
+            LayoutBox fast = relayoutRootOnly(doc, previousRoot, rootW, rootH, rootStyleRaw, env, scrollState, fonts, effectiveState);
+            if (fast != null) return fast;
+        }
 
         LayoutBox rootBox = incremental ? previousRoot : null;
         for (int settle = 0; settle <= MAX_CONTAINER_PASSES; settle++) {
@@ -163,6 +169,7 @@ public class RenderPipeline {
             long profBox = StageProfiler.begin(PipelineStage.BOX_TREE);
             BoxTreeBuilder.build(rootBox, CounterStyles.of(doc.sheet.counterStyles));
             StageProfiler.end(PipelineStage.BOX_TREE, profBox);
+            effectiveState.lastBuiltStructureVersion = effectiveState.domStructureVersion;
             long tC = System.nanoTime();
             long aC = track ? threadAllocatedBytes() : 0;
             if (incremental) LayoutBox.markLayoutChanges(rootBox);
@@ -177,6 +184,103 @@ public class RenderPipeline {
             if (!hasContainers || !measureContainers(rootBox, effectiveState)) break;
         }
         stats().lastBuildStats = "boxes=" + stats().boxes + " restyled=" + stats().restyled + " reused=" + stats().reused + " " + stats().phases;
+        return rootBox;
+    }
+
+    /** 切り分け用: {@code -Denderframe.layout.noresizeskip=true} で、幅変更でも毎回スタイルと箱の木を組み直す。 */
+    public static volatile boolean RESIZE_SKIP_REBUILD = !Boolean.getBoolean("enderframe.layout.noresizeskip");
+
+    private static final java.util.concurrent.atomic.AtomicLong RESIZE_SKIPS = new java.util.concurrent.atomic.AtomicLong();
+
+    /** {@link #layoutDocument} がスタイルと箱の木の組み直しを飛ばした回数（テスト・計測用）。 */
+    public static long resizeRebuildSkips() {
+        return RESIZE_SKIPS.get();
+    }
+
+    /**
+     * ビューポートだけが変わった再レイアウトで、箱の木のスタイル算出と {@link BoxTreeBuilder} を飛ばしてよいか。
+     * メディア環境の結果・コンテナ・汚れ・動いているアニメーションが無く、ルート以外の要素と疑似要素の算出値が
+     * ビューポートに依らないとき、ルート以外の算出スタイルも箱の木も前回のまま正しい。
+     */
+    private static boolean canSkipRebuild(Document doc, LayoutBox previousRoot, int rootW, int rootH, InteractionState state) {
+        if (!RESIZE_SKIP_REBUILD || previousRoot == null || previousRoot.node != doc.root) return false;
+        InteractionState.StateFlags rootFlags = state.get(previousRoot.node);
+        if (rootFlags == null || rootFlags.computedStyle == null || rootFlags.isStyleDirty() || rootFlags.subtreeDirty()
+                || rootFlags.dirtyBelow() || state.hasDirtyNodes()) {
+            return false;
+        }
+        if (state.domStructureVersion != state.lastBuiltStructureVersion) return false;
+        if (state.animator().isRunning(state.animationTimeMs())) return false;
+        return viewportFreeBelowRoot(previousRoot, doc.sheet, state);
+    }
+
+    /** ルート以外の要素の算出値（と疑似要素・{@code ::marker} などの値）がビューポートに依らないか。世代が同じ間は結果を使い回す。 */
+    private static boolean viewportFreeBelowRoot(LayoutBox root, StyleSheet sheet, InteractionState state) {
+        int version = sheet.rules.version();
+        if (state.viewportFreeRoot == root && state.viewportFreeEpoch == state.viewportDependenceEpoch
+                && state.viewportFreeSheet == sheet && state.viewportFreeVersion == version) {
+            return state.viewportFreeResult;
+        }
+        boolean free = !sheet.declaresViewportDependentValues() || !hasGeneratedBoxes(root);
+        for (int i = 0, n = root.elementChildren.size(); free && i < n; i++) free = viewportFree(root.elementChildren.get(i), state);
+        state.viewportFreeRoot = root;
+        state.viewportFreeEpoch = state.viewportDependenceEpoch;
+        state.viewportFreeSheet = sheet;
+        state.viewportFreeVersion = version;
+        state.viewportFreeResult = free;
+        return free;
+    }
+
+    private static boolean hasGeneratedBoxes(LayoutBox box) {
+        if (box.node.isPseudoNode || box.markerStyle != null || box.placeholderStyle != null) return true;
+        for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
+            if (hasGeneratedBoxes(box.elementChildren.get(i))) return true;
+        }
+        return false;
+    }
+
+    private static boolean viewportFree(LayoutBox box, InteractionState state) {
+        // 表のエンジンは中の箱へ直接書き込む（箱の木の組み直しで作り直す前提。buildLayoutTree の reusable の扱いと同じ）ので、表は飛ばさない
+        if (LayoutBox.isTableBox(box)) return false;
+        // 疑似要素の箱の節は算出スタイルを持たない（値は持ち主の規則から解く。シート全体の判定が受け持つ）
+        if (!box.node.isPseudoNode) {
+            InteractionState.StateFlags flags = state.get(box.node);
+            if (flags == null || !flags.viewportDependenceKnown() || flags.viewportDependent) return false;
+        }
+        for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
+            if (!viewportFree(box.elementChildren.get(i), state)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 幅変更の近道: ルートだけ再スタイルし（幅・最小の高さがビューポート由来）、箱の木はそのまま測り直して配置し直す。
+     * ルートの変化が構造に及ぶ（表示の種類など）ときは null を返し、呼び出し側が全体を組み直す。
+     */
+    private static LayoutBox relayoutRootOnly(Document doc, LayoutBox rootBox, int rootW, int rootH,
+                                              Map<String, String> rootStyleRaw, Map<String, String> env,
+                                              ScrollState scrollState, FontResolver fonts, InteractionState state) {
+        long tA = System.nanoTime();
+        state.pruneRestyle = true;
+        layoutChangedBoxes().clear();
+        styleChangedBoxes().clear();
+        RestyleResult result;
+        long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
+        try {
+            result = restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE, ComputedStyle.DEFAULT_FONT_SIZE,
+                    StyleScope.initial(rootW, rootH), state, StyleResolver.hasSiblingStateRules(doc.sheet));
+        } finally {
+            StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);
+            state.pruneRestyle = false;
+        }
+        if (result.structural()) return null;
+        long tB = System.nanoTime();
+        LayoutBox.markLayoutChanges(rootBox);
+        runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, true);
+        RESIZE_SKIPS.incrementAndGet();
+        stats().boxes = stats().restyled = stats().reused = 0;
+        stats().lastBuildStats = "boxes=0 restyled=0 reused=0 skipped=resize restyle=" + (tB - tA) / 1000 + "us "
+                + "passes=" + (System.nanoTime() - tB) / 1000 + "us";
         return rootBox;
     }
 
@@ -638,7 +742,7 @@ public class RenderPipeline {
         flags.cachedRootLineHeight = scope.rootLineHeight();
         flags.cachedViewportW = scope.viewportW();
         flags.cachedViewportH = scope.viewportH();
-        flags.viewportDependent = dependsOnViewport(node, rawStyle);
+        flags.noteViewportDependence(node.parent == null, dependsOnViewport(node, rawStyle));
         flags.hasInteractiveRules = hasInteractive;
         flags.interactiveSheet = sheet;
         flags.interactiveVersion = sheet != null ? sheet.rules.version() : -1;

@@ -437,7 +437,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
      * @param visible {@code true} なら画面にウィンドウを出す（{@link #present} で映す）。{@code false} は画面外の描画だけ。
      */
     public LwjglGlRenderBackend(int cssW, int cssH, float devicePixelRatio, boolean visible, String title) {
-        this(cssW, cssH, devicePixelRatio, visible, title, MemoryUtil.NULL);
+        this(cssW, cssH, devicePixelRatio, visible, title, MemoryUtil.NULL, false);
+    }
+
+    /**
+     * @param visible {@code true} なら画面にウィンドウを出す（{@link #present} で映す）。{@code false} は画面外の描画だけ。
+     * @param resizable {@code true} ならウィンドウの最大化やマウスドラッグによるサイズ変更を許可する。
+     */
+    public LwjglGlRenderBackend(int cssW, int cssH, float devicePixelRatio, boolean visible, String title, boolean resizable) {
+        this(cssW, cssH, devicePixelRatio, visible, title, MemoryUtil.NULL, resizable);
     }
 
     /**
@@ -451,10 +459,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
      */
     public static LwjglGlRenderBackend sharedWith(long hostWindow, int cssW, int cssH, float devicePixelRatio) {
         if (hostWindow == MemoryUtil.NULL) throw new IllegalArgumentException("hostWindow is null");
-        return new LwjglGlRenderBackend(cssW, cssH, devicePixelRatio, false, "EnderFrame", hostWindow);
+        return new LwjglGlRenderBackend(cssW, cssH, devicePixelRatio, false, "EnderFrame", hostWindow, false);
     }
 
-    private LwjglGlRenderBackend(int cssW, int cssH, float devicePixelRatio, boolean visible, String title, long shareWith) {
+    private LwjglGlRenderBackend(int cssW, int cssH, float devicePixelRatio, boolean visible, String title, long shareWith, boolean resizable) {
         this.shareWith = shareWith;
         this.hostManaged = shareWith != MemoryUtil.NULL;
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
@@ -467,7 +475,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         long outerContext = GLFW.glfwGetCurrentContext();
         GLCapabilities outerCaps = currentCaps();
         try {
-            initContext(visible, title == null ? "EnderFrame" : title);
+            initContext(visible, title == null ? "EnderFrame" : title, resizable);
             initGl();
             myCaps = GL.getCapabilities();
             if (hostManaged) GL11.glFinish();
@@ -543,6 +551,13 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             this.height = nextH;
             this.cpu = new CpuLayerFallback(cssW, cssH, dpr, sessionId, resources);
             this.readback = new Pixmap(width, height);
+            this.snapshotPm = null; // 読み戻し先は新しい大きさで作り直す（古い大きさのままだと範囲外に書く）
+            this.snapshotRaw = new int[0];
+            // 層の FBO は画面と同じ大きさで確保済み。古い大きさのまま使い回すと、グループ描画（clip・opacity など）が欠けて白く抜ける
+            releaseRetained();
+            for (GpuLayer l : allLayers) deleteLayer(l);
+            allLayers.clear();
+            layerPool.clear();
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTex);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, width, height, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, (IntBuffer) null);
             if (overlayTex != 0) {
@@ -653,7 +668,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     // ------------------------------------------------------------------ コンテキスト
 
-    private void initContext(boolean visible, String title) {
+    private void initContext(boolean visible, String title, boolean resizable) {
         if (!hostManaged) synchronized (LwjglGlRenderBackend.class) {
             if (liveInstances == 0) {
                 errorCallback = GLFWErrorCallback.createPrint(System.err);
@@ -670,7 +685,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 2);
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT, GLFW.GLFW_TRUE);
-        GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, GLFW.GLFW_FALSE);
+        GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, resizable ? GLFW.GLFW_TRUE : GLFW.GLFW_FALSE);
         int winW = Math.max(1, Math.round(width / dpr)), winH = Math.max(1, Math.round(height / dpr));
         window = GLFW.glfwCreateWindow(winW, winH, title, MemoryUtil.NULL, shareWith);
         if (window == MemoryUtil.NULL) {
@@ -706,7 +721,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         texProgram = link(TEX_VERT, TEX_FRAG);
         if (rectTrees) {
             try {
-                rects = new GlRectStream(4096);
+                rects = new GlRectStream(Integer.getInteger("enderframe.gl.rectcapacity", 4096));
                 org.slf4j.LoggerFactory.getLogger(LwjglGlRenderBackend.class).info(
                         "GPU プリミティブ経路を使う（永続マップ={}, 容量={}）", rects.isPersistent(), rects.capacity());
             } catch (RuntimeException | LinkageError e) {
