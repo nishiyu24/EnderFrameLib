@@ -298,7 +298,7 @@ public class UiView implements AutoCloseable {
     }
 
     /** 直近に表示リストを構築したビルダー。スライスパッチ判定やスクロール節情報参照に使用。 */
-    protected final com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder() {
+    public final com.nishiyu.enderframelib.core.paint.DisplayListBuilder paintBuilder() {
         return paintBuilder;
     }
 
@@ -1084,7 +1084,7 @@ public class UiView implements AutoCloseable {
             List<DisplayItem> patched = null;
             if (paintBuilder == null) {
                 SLICE_NO_BUILDER.incrementAndGet();
-            } else if (!changedBoxes.isEmpty() && paintBuilder.canPatchBoxes(changedBoxes)) {
+            } else if (!changedBoxes.isEmpty()) {
                 patched = paintBuilder.patchBoxes(changedBoxes);
             }
             if (patched != null) {

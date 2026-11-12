@@ -1,6 +1,6 @@
 # EnderFrameLib `:core` — エンジンアーキテクチャ総括 & 次世代ロードマップ
 
-> **最終更新**: 2026-11-11（**最新: R4 の調査（CPU 差分描画が全面に戻る理由の計測と volatile 項目の是正、§8.6.13）。**／前: R7 の一部として、スタイル・hover・継承・テキスト・子を混ぜた乱択列の全再構築一致テストを追加（§8.6.12）。**／前: スクロール付きの箱を含む局所パッチを許可（§8.6.11）: `inherited` の display-list が varied 3.3→1.18 ms・large 0.84→0.64 ms、パッチ命中 100%。**／前: **窓付き表示リストを実装（§8.6.2）: 大きい文書で画面外の箱の項目を作らず、2,000 行 GL の `hover` 1.06→0.26・`text` 1.61→0.37・`fontsize` 19.6→8.8 ms で Chrome を超え、`child` は約 18→2.25 ms（Chrome 1.09）。**その前提として、R2（`child`）は「スライスパッチ命中 100%・確保量削減」まで達成し時間 KPI は未達と確定（§6.10）していた。JFR 分解で、原因は平坦リストの O(N) そのものではなく「後続項目の再生成（散在ヒープのポインタ追い）」と「それに巻き込まれる下流索引の全面作り直し」と判明。現行方式の延長では `< 3 ms` に届かないため、DoD 再設計（座標を持たない Paint 表）と内容アドレス化・反復ブロックのインスタンス化（RTI）へ方針転換（§8）。**／前: R1 完了（§6.9）／前: R0 計測基盤補強完了（§6.8））
+> **最終更新**: 2026-11-12（**最新: 現行コードの再計測と JFR 特定（§9）。`varied-list-2000` は `child` GL `5.15 ms`・`inherited` GL `10.20 ms` が Chrome `3.67` / `3.55` に対し残存。JFR で `canPatchBoxes` 26.4% / `offscreen` 20.4%（inherited）、`placeLine` 26.3%（child）、`StyleMap.equals` 8.5% / `Arrays.equals` 7.9%（fontsize）を特定し、優先改善 P1〜P8 を整理。`large-list-2000` は `child` `1.44`・`fontsize` `7.63`・`hover` `0.30 ms` で Chrome 以下、showcase 幅変更は JMH `0.78 ms` まで短縮（実フレーム `1.05 ms`、Chrome `0.084`）。**／前: 2026-11-11（R7 の一部として、パッチ命中率と 1 操作あたり確保量のラチェット `PatchHitRateRatchetTest` を追加（§8.6.14）。**／前: R4 の調査（CPU 差分描画が全面に戻る理由の計測と volatile 項目の是正、§8.6.13）。**／前: R7 の一部として、スタイル・hover・継承・テキスト・子を混ぜた乱択列の全再構築一致テストを追加（§8.6.12）。**／前: スクロール付きの箱を含む局所パッチを許可（§8.6.11）: `inherited` の display-list が varied 3.3→1.18 ms・large 0.84→0.64 ms、パッチ命中 100%。**／前: **窓付き表示リストを実装（§8.6.2）: 大きい文書で画面外の箱の項目を作らず、2,000 行 GL の `hover` 1.06→0.26・`text` 1.61→0.37・`fontsize` 19.6→8.8 ms で Chrome を超え、`child` は約 18→2.25 ms（Chrome 1.09）。**その前提として、R2（`child`）は「スライスパッチ命中 100%・確保量削減」まで達成し時間 KPI は未達と確定（§6.10）していた。JFR 分解で、原因は平坦リストの O(N) そのものではなく「後続項目の再生成（散在ヒープのポインタ追い）」と「それに巻き込まれる下流索引の全面作り直し」と判明。現行方式の延長では `< 3 ms` に届かないため、DoD 再設計（座標を持たない Paint 表）と内容アドレス化・反復ブロックのインスタンス化（RTI）へ方針転換（§8）。**／前: R1 完了（§6.9）／前: R0 計測基盤補強完了（§6.8））
 > **対象モジュール**: `:core` (`com.nishiyu.enderframelib.core.*`, `common.*`, `api.*` — 本番 335 クラス)
 > **位置付け**: 本書は `:core` エンジンの**マスターアーキテクチャ仕様書・実測ベンチマーク台帳・残存課題ロードマップ**である。3D シーングラフ統合の詳細設計は [`ENGINE_3D_ARCHITECTURE_PLAN.md`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/ENGINE_3D_ARCHITECTURE_PLAN.md) を参照。
 
@@ -21,6 +21,8 @@ EnderFrameLib `:core` は、Java 21 FFM API（オフヒープメモリ）・ビ�
 | **インタラクション** | `:hover` / `:focus` 切替 | `< 0.15 ms` | `0 B` | JMH (`restyle`): **`0.008 ms` / `32 B`**、GL 実フレーム: showcase **`0.719 ms`**、large-list 500 行 **`0.337 ms` (p50 `0.305 ms`)**、2,000 行 **`1.06 ms` (p50 `0.999 ms` / null `0.228 ms`)**（**R1 KPI 達成・§6.9**） |
 | **局所データ更新** | テキスト・インライン style 変更 | `< 0.25 ms` | `< 1 KB` | `TEXT_PATCH` (`null`): **`0.248 ms`**、GL 実フレーム: showcase **`0.781 ms`**、large-list 500 行 **`0.431 ms`**、2,000 行 **`1.61 ms`** |
 | **フル再レイアウト** | ウィンドウ幅変更・全体再計算 | `< 1.00 ms` | `< 1 MB` | JMH (`fullLayoutWarm`): **`0.971 ms` / `1.1 MB`**（2026-11-11 再計測。showcase `layoutWidthChange` `1.04 ms` は目標内だが Chrome `0.084 ms` に劣る＝W5） |
+
+> **2026-11-12 再計測（§9）**: `large-list-2000` は `hover` GL `0.30 ms`・`child` `1.44 ms`・`fontsize` `7.63 ms` で Chrome（`0.55` / `1.98` / `11.3`）以下。`varied-list-2000` は `child` `5.15 ms`・`inherited` `10.20 ms` が Chrome（`3.67` / `3.55`）を上回る。showcase 幅変更は JMH `layoutWidthChange` `0.78 ms`（実フレーム `1.05 ms`、Chrome `0.0835`）で、W5 は未解消。
 
 ### 1.2 4 つの絶対設計原則
 
@@ -542,15 +544,15 @@ JMH はスタイル・レイアウト・フル DisplayList の単体で、今回
 
 | # | 状態 | 今回の実測 |
 | :--- | :--- | :--- |
-| W1（GL ストリームの総項目数比例） | 🔧 **大幅改善** | 2,000 行 `hover` `13.05 → 3.50` ms、`text` `10.25 → 1.61` ms。Chrome 比は 24x → 6.4x（`hover`）、10x → 1.6x（`text`）。残りは Chrome の 0.55 ms に対する差 |
-| W2（子の挿入・削除） | 🔧 **改善・未解消** | 2,000 行 `child` GL `25.6 → 13.8` ms、null `9.72 → 7.57`。500 行 GL `4.96 → 2.18`。Chrome（`1.09` ms）比は 23x → 12.6x。DisplayList 以外（レイアウト・確保量 `17 MB`/フレーム）が残る |
-| W3（CPU 差分描画・スクロール再利用） | 🔧 **大幅改善（large-list）／ showcase は不変** | large-list 500 行 CPU: `scroll 3.28 → 1.39`、`hover 3.40 → 2.28`、`text 3.10 → 1.29` ms。showcase CPU は全面ダメージのため `4.4〜9.3 ms` のまま |
-| W4（DisplayList 全走査） | 🔧 **改善** | 上記 GL/null の大規模値が低下（2,000 行 `child` null `9.72 → 7.57`）。ただし JMH `displayList`（フル構築）は不変で、効果は差分経路のみ |
-| W5（幅変更・全面無効化レイアウト） | ❌ **未改善** | showcase `layoutWidthChange` `0.931 → 1.039` ms（Chrome 0.0835 の 12x）。`restyle`/`fullLayout` も不変 |
-| W6（ヒープ確保量） | 🔧 **一部改善** | 2,000 行 `hover` GL は `5.1 MB → 1.3 MB`/フレーム。`fontsize` 2,000 行 `25 MB`、`child` 2,000 行 `19 MB` は依然大きい |
+| W1（GL ストリームの総項目数比例） | ✅ **large は解消（§9）** | large 2,000 行 `hover` GL は窓付き表示リスト後 **`0.30 ms`**（Chrome `0.55` 以下）。GL 送出は `paint 0.167 ms` で律速でない。`text` は §6.7 の `1.61 ms` から未再計測（§9.9 の次回項目）。 |
+| W2（子の挿入・削除） | ✅ **large は解消／varied は残存（§9）** | large 2,000 行 `child` GL は窓付き表示リスト後 **`1.44 ms`**（Chrome `child250` `1.98` 以下、確保 `938 KB`）。varied 2,000 行は **`5.15 ms`**（Chrome `3.67`・1.4x）で、`place` が `3.05 ms`（59%）・`ArrayList.add` 15%。 |
+| W3（CPU 差分描画・スクロール再利用） | 🔧 **large は改善／showcase は部分改善（§9）** | large-list 500 行 CPU: `scroll 3.28 → 1.39`、`hover 3.40 → 2.28`、`text 3.10 → 1.29` ms。showcase CPU `hover` **`1.77 ms`**（paint `1.64`、`partial=0/full=1801`、理由 1/6 = transition）、`inherited` **`2.62 ms`**（paint `2.19`、`partial=1599/full=2`） |
+| W4（DisplayList 全走査） | ✅ **large は解消／varied は残存（§9）** | large 2,000 行 `child` null は `1.13 ms`（窓付き表示リスト＋子パッチ）。JMH `displayList`（フル構築）は不変。varied は `child` の display-list `0.316 ms`、`inherited` `1.311 ms` が残る。 |
+| W5（幅変更・全面無効化レイアウト） | 🔧 **改善・未達（§9）** | JMH `layoutWidthChange` `1.039 → 0.777` ms（5 iter、Chrome `0.0835` の 9.3x）。実フレーム showcase resize `1.045 ms`（measure `0.375` + display-list `0.421`）。`MATCHFAIL` reason 4（移動するが平行移動不可）が `111.9/163.9` |
+| W6（ヒープ確保量） | 🔧 **large は改善／varied は未解消（§9）** | large `hover` GL `39 KB`、`child` `938 KB`、`fontsize` `7.3 MB`。varied `fontsize` は **`25.8 MB`**/フレーム（`InlineFragment`・`LineItem`・`CssValue[]` コピー）。 |
 | W7（open） | 変化小 | showcase null `6.19 → 5.51`、GL `5.39 → 5.11` ms（Chrome `5.0` と同等）。500 行 GL `9.22 → 6.17` ms |
 
-**未解消の主課題**: (1) `child`・`fontsize`・`inherited` のような**構造/全面変更系**が 2,000 行で Chrome の 1.7〜12.6 倍、(2) 幅変更レイアウト（W5）、(3) showcase 規模の CPU バックエンド全面再ラスタ、(4) `softwarePaint` showcase の JMH 悪化の原因調査。
+**未解消の主課題（2026-11-12 更新・§9）**: (1) **`varied-list-2000`** の `child`（`5.15` vs Chrome `3.67`）と `inherited`（`10.20` vs `3.55`）。large-list の `child`/`fontsize` は Chrome 以下になった。(2) 幅変更レイアウト（W5: 実フレーム `1.05 ms` / JMH `0.78 ms`、Chrome `0.084`）。(3) showcase CPU の transition 中の全面再ラスタ（`hover` `1.77 ms`、paint `1.64`）。(4) varied `fontsize` の確保量 `25.8 MB`/フレーム。
 ### 6.8 R0 計測基盤の補強（2026-11-11 完了）
 
 `FineProfileMain` に `PAINT` 段（バックエンドを `ProfilingRenderBackend` で包む）、`ACCOUNTED`（段合計の説明率）、`PATCH` / `CANTPATCH`（スライスパッチ命中・不成立理由）の各行を追加。[`run-fine.sh`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/run-fine.sh) / [`summarize-fine.js`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/bench-crossengine/summarize-fine.js) で 3 回実行の中央値・最小・最大を台帳化（`REPS=3 run-fine.sh fine.log` → `node summarize-fine.js fine.log stages`）。ばらつきは多くが ±5% 以内で、§6.7 の 1 回実行値は妥当だった。
@@ -680,9 +682,9 @@ JMH はスタイル・レイアウト・フル DisplayList の単体で、今回
 
 ---
 
-#### 🧭 再策定（2026-11-11）：再計測（§6.7）に基づく新ロードマップ R0〜R7
+#### 🧭 再策定（2026-11-11、2026-11-12 更新）：再計測（§6.7・§9）に基づく新ロードマップ R0〜R7
 
-**再計測が示した事実**
+**再計測が示した事実**（以下は 2026-11-11 の §6.7 再計測。最新の 2026-11-12 値は §9.3 と下表を参照）
 
 1. **成果**: ペインタ段・ドライバ段カリング、64-bit 鍵、増分索引、Segmented DisplayList、CPU Tile Dirty で、large-list の局所更新（GL）が **−44〜−84%**。500 行 `text` は Chrome 並み（0.9 倍）。
 2. **律速の移動**: 2,000 行 `hover` は GL `3.50` ≒ null `3.38` ms。段別は `restyle-local 0.11` + **`display-list 2.45`**（70%）。`hover` 往復は 500→2,000 行で null が `0.50 → 3.38 ms`（行数 4 倍で 6.8 倍＝超線形）で、**スタイル変更経路が `patchBoxes`（スライスパッチ）に乗らず、`DisplayListBuilder` を全走査している疑いが強い**（`UiView` が `patchBoxes` を呼ぶのは `tryTextPatch` 経路、`patchChildSlices` は `tryChildPatch` 経路のみ。**要コード確認 = R0/R1 の最初の作業**）。同じ画面外 1 行の `text` は display-list `0.47 ms` で済んでおり、パッチ経路に乗れば約 1/5 になる見込み。
@@ -696,14 +698,16 @@ JMH はスタイル・レイアウト・フル DisplayList の単体で、今回
 | :--- | :---: | :--- | :--- | :--- | :--- |
 | **R0** | ✅ **完了（2026-11-11・§6.8）** | **計測基盤の補強**（以降すべての判定に使う） | 段別が `restyle-local` / `display-list` しか出ず、GL 送出・レイアウト・索引・パッチ命中が見えない。分散が大きい | ① `FineProfileMain` に段別（measure/place/index/GL send）と **パッチ命中・不成立理由カウンタ**（text/child/style/slice）を出力。② 各条件 3 回実行して中央値＋最小・最大を台帳化（`summarize-fine.js` 拡張）。③ 2,000 行 `inherited`・`relayout` を追加。④ JMH `softwarePaint` showcase の悪化を再現確認のうえ二分探索（`git bisect`）で原因特定（**実施済み: 退行ではなかった。§6.8.3**） | 2,000 行の全シナリオで段別合計がフレーム平均の 95% 以上を説明 |
 | **R1** | ✅ **完了（2026-11-11・§6.9）** | **【R1-0 実装済みスライスパッチの有効化】＋ スタイル変更（`hover`/`style`/`:focus`）の DisplayList スライスパッチ化** | **R0 で判明（§6.8）: `StandaloneView.Ui.paintBoxes` が独自の `DisplayListBuilder` を持ち、`UiView.paintBuilder` が常に `null` のため、P0-4 の `patchBoxes`/`patchChildSlices` は標準経路で一度も実行されていない（スライス命中 0）**。2,000 行 `hover` display-list `2.45 / 3.50` ms（70%）、`style` `1.95`、`text` `0.44` | **✅ 完了**: ① R1-0: `StandaloneView.Ui` のビルダーを `UiView.paintBuilder` に一本化し `noBuilder` フォールバックを完全解消。② `restyle-local` の変更ボックス集合を `canPatchBoxes`/`patchBoxes` へ接続（`RESTYLE_REPAINT_PATCH` 経路確立）。③ 境界不成立（スライス重複 `cant(0, 7)`、スタッキングコンテキスト発生・解除 `cant(0, 6)`、寸法変動 `cant(0, 8)`）を理由カウンタ付きで安全フォールバック。④ `:hover` 往復・`transition`・スタッキングコンテキスト解除の 100% 一致テストを `DisplayListSlicePatchTest` に追加し全件合格 | 2,000 行 GL `hover` **`< 1.0 ms`**（現 `3.50`、Chrome `0.55`、第 2 目標 `< 0.6`）、500 行 `< 0.4 ms`、確保 `< 300 KB` |
-| **R2** | 🔧 **部分達成（2026-11-11・§6.10）** | **子要素の挿入・削除（`child`）の残差解消（W2）** | 2,000 行 `child` GL `14.1` ms（Chrome `1.09`・12.9 倍） | スライスパッチ（2 層・座標追従・親寸法同期）を実装し命中 100%・確保削減（500 行 `1.2 MB`）は達成。時間は実装直後は未達（2,000 行 `約 18 ms`）だったが、窓付き表示リスト（§8.6.2）で `2.25 ms` に短縮。原因は後続項目の再生成と下流索引の全面作り直し（§6.10.2）で、現行方式の延長では届かない | 2,000 行 `child` GL **`< 3 ms`**（Wave 1.7 の RTI・Paint 表で再判定）、500 行 `< 0.9 ms`、確保 `< 2 MB` |
-| **R3** | 🥇 最優先 | **全面無効化（`fontsize`/`inherited`）＋ 幅変更 ＋ 可視範囲限定のスタイル・レイアウト（W5/W6 / T5・T7-①）** | 2,000 行 `fontsize` GL `18.9`（Chrome `11.3`）、確保 `25 MB`。500 行 `inherited` GL `3.59`（Chrome `0.96`・3.8 倍）。showcase 幅変更 `1.04`（Chrome `0.084`） | ① T5: 測定 4-way キャッシュ＋`place` 制約スキップ（P1-1）。② `content-visibility: auto` 相当の**ビューポート外スキップ**（`FenwickVirtualList` を `BlockLayoutEngine` へ接続・P3-3 を前倒し）。③ `Resolved`・`DisplayItem`・クリップ列の再利用（スロット化）でフレーム確保を削減。④ `inherited` は継承値を使うボックスだけへ伝播を限定 | 500 行 `inherited` GL **`< 1.5 ms`**、2,000 行 `fontsize` GL **`< 10 ms`**（Chrome `11.3` 超え）、showcase 幅変更 **`< 0.2 ms`**、`fontsize` 2,000 行の確保 **`< 5 MB`** |
-| **R4** | 🥈 高 | **CPU バックエンドのダメージ領域全面化の解消（W3 の残り）** | showcase CPU `hover` `4.59`、`inherited` `8.25` ms（large-list 500 行 `hover` `2.28` より重い）。Chrome CPU 合成 `1.55` | ① R0 で Tile Dirty の「全面ダメージ化」「見積外れ abort」の理由別カウンタを出す。② 影・ブラー・`backdrop-filter`・`mix-blend` 等のフィルター層が AABB を全面に広げていないか確認し局所化。③ 差分描画の見積コストが全面描画を超える閾値判断の再調整。④ ~~JMH `softwarePaint` 悪化の修正~~（R0 で**退行ではない**と判明: §6.8.3）。代わりに showcase の `softwarePaint`（同一リスト再描画）が `4.5 ms` で large-list `0.31 ms` の 14 倍かかる理由（差分判定が効かない項目の特定）を調べる | showcase CPU `hover` **`< 1.5 ms`**（Chrome CPU `1.55` 並み）、`inherited` `< 4 ms` |
+| **R2** | 🔧 **部分達成（2026-11-11・§6.10／2026-11-12 再計測 §9）** | **子要素の挿入・削除（`child`）の残差解消（W2）** | **large 2,000 行は `1.44 ms`（Chrome `child250` `1.98` 以下）で KPI 達成**。varied 2,000 行は `5.15 ms`（Chrome `3.67`・1.4x）で未達。`place` が `3.05 ms`（59%）、`ArrayList.add` 15% | スライスパッチ（2 層・座標追従・親寸法同期）・窓付き表示リスト（§8.6.2）・fit/measure 再利用（2026-11-12 コミット）で large は解消。varied の残りは後続 1,750 行の `InlineFragment` 再生成（P2） | large `child` GL `< 3 ms` は達成。varied `child` GL **`< 3.7 ms`**（Chrome 並み）、確保 `< 2 MB` |
+| **R3** | 🥇 最優先 | **全面無効化（`fontsize`/`inherited`）＋ 幅変更 ＋ 可視範囲限定のスタイル・レイアウト（W5/W6 / T5・T7-①）** | **large 2,000 行 `fontsize` は `7.63 ms`（Chrome `11.3` 以下）で達成**。varied 2,000 行 `fontsize` は `30.77 ms`（Chrome `42.1` 以下）だが確保 `25.8 MB`。varied `inherited` は `10.20 ms`（Chrome `3.55`・2.9x）で、`canPatchBoxes` 26.4% が主因。showcase 幅変更 `1.05`（Chrome `0.084`） | ① **P1: `canPatchBoxes`/`offscreen` の判定キャッシュ（§9.7）**。② P2: `placeLine`/`InlineFragment` 再利用。③ T5: 測定 4-way キャッシュ＋`place` 制約スキップ。④ `content-visibility: auto` 相当の**ビューポート外スキップ**。⑤ `inherited` は継承値を使うボックスだけへ伝播を限定 | 500 行 `inherited` GL **`< 1.5 ms`**、varied 2,000 行 `inherited` **`< 3.6 ms`**、2,000 行 `fontsize` GL **`< 10 ms`**、showcase 幅変更 **`< 0.2 ms`**、`fontsize` 2,000 行の確保 **`< 5 MB`** |
+| **R4** | 🥈 高（一部達成） | **CPU バックエンドのダメージ領域全面化の解消（W3 の残り）** | showcase CPU `hover` **`1.77 ms`**（paint `1.64`、`partial=0/full=1801`、理由 1/6 = transition）、`inherited` **`2.62 ms`**（paint `2.19`、`partial=1599/full=2`）。`inherited` は目標内、`hover` は未達 | ① P7: 項目ごとの「前フレームで動作中だったか」を記録し、遷移中の項目だけを変更扱いにする（§9.7）。② 動作中項目のタイルだけを部分再描画する。③ 影・ブラー・`backdrop-filter`・`mix-blend` の AABB 局所化。④ 差分描画の見積コストが全面描画を超える閾値判断の再調整 | showcase CPU `hover` **`< 1.5 ms`**、`inherited` `< 4 ms`（達成: `2.62`） |
 | **R5** | 🥉 中（条件付き） | **項目単位の保持 GPU 記録（T3）** | 2,000 行 `hover` は GL 送出 `0.77` ms（22%）で律速でないが、**`child` `6.2` ms（44%）・`inherited` `5.2` ms（33%）・`fontsize` `5.4` ms（28%）は 30% 前後以上**。R1〜R3 後に再判定（`child` はすでに条件を満たす） | 現行設計（`MemorySegment.copy` 一括転送＋容量 4,096 撤廃）を温存。着手判定は R0 の段別で **GL 送出 > フレームの 30%** | 着手時: 2,000 行 `text` GL `< 0.8 ms` |
 | **R6** | 🥉 中 | **オープン・コールド JVM（W7 / T6）** | showcase `open` `5.5` ms（Chrome `5.0`）、500 行 GL `6.2` ms、2,000 行は未再計測 | DOM 雛形クローン・`sealNodeIds` 統合・`EnderEngine.prewarm()`。**コールド JVM 初回フレームを計測に追加** | 初回フレーム p99 を台帳化、2,000 行 `open` `< 20 ms` |
-| **R7** | 🔒 横串 | **退行防止ラチェットの拡張** | 今回の改善（パッチ命中・確保量）は時間でなくカウンタで固定できる（時間ベンチは全件実行で不安定） | `AllocationRatchetTest` に 500 行 `hover`/`text`/`child` の確保上限、`UiView` の **パッチ命中率ラチェット**（`hover` 往復で slice-patch 100%・`child` 100%）、全再構築との一致ランダム列テスト（`DisplayListSlicePatchTest` を style/hover へ拡張） | 追加テスト全件グリーン、`:core:test` 全件グリーン |
+| **R7** | 🔒 横串（一部完了・§8.6.12 / §8.6.14） | **退行防止ラチェットの拡張** | 今回の改善（パッチ命中・確保量）は時間でなくカウンタで固定できる（時間ベンチは全件実行で不安定） | `AllocationRatchetTest` に 500 行 `hover`/`text`/`child` の確保上限、`UiView` の **パッチ命中率ラチェット**（`hover` 往復で slice-patch 100%・`child` 100%）、全再構築との一致ランダム列テスト（`DisplayListSlicePatchTest` を style/hover へ拡張） | 追加テスト全件グリーン、`:core:test` 全件グリーン |
 
 **実施順序**: R0（完了）→ R1（完了）→ R2（部分達成。時間 KPI は Wave 1.7 で再判定）→ R3（Wave 1.7 の施策 2・3 として最優先）→ R4 → R6 → R5（条件付き）。R7 は各段に同伴。各段の完了ごとに §6.7 形式で再計測し台帳を更新する。**P2（3D）・P3（IME 等）・P4（DX）は性能 KPI（R1〜R4）が Chrome 比 2 倍以内に入るまで着手しない**（ただし IME は日本語 UI の必須要件のため R3 と独立に並行着手可）。
+
+**2026-11-12 再計測（§9）による順序の更新**: R3 の前段として、**P1（`canPatchBoxes`/`offscreen` の判定キャッシュ）→ P2（`placeLine`/`InlineFragment` 再利用）** を最優先で実施する。P1 は varied `inherited`、P2 は varied `child` の最大要因であり、どちらも R3/R2 の KPI に直結する。
 
 #### 🔄 Wave 1.7（2026-11-11 方針転換）：DoD 再設計・内容アドレス化・RTI → 設計は §8
 
@@ -1166,6 +1170,20 @@ R3（§7.3）は施策 2・3 とほぼ同一作業なのでそちらで進める
 
 **残り**: hover 先の要素が `transition` を持つため、遷移中は全面描画に戻る（現行設計では、動作中の項目の同一性が変わらないので差分判定できない）。対応には項目ごとの「前フレームで動作中だったか」の記録と、動作中項目を変更扱いにする設計が必要（次の候補）。不透明度・フィルターの層（`groupItem`）も、同サイズのフレームでは全面に戻したまま。
 
+#### 8.6.14 R7: パッチ命中率と 1 操作あたり確保量のラチェット（2026-11-11）
+
+**追加**: `PatchHitRateRatchetTest`（500 行リスト）。時間ではなくカウンタで退行を固定する。
+
+| テスト | 要求 | 実測 |
+| :-- | :-- | :-- |
+| `hoverRoundTripAlwaysPatchesWithoutFullRebuild` | hover 付与・解除 80 操作で `RESTYLE_REPAINT_PATCH` が 80（100%）、`RESTYLE_REPAINT_FULL` が 0、確保 `< 50 KB`/操作 | patch=80・full=0・**約 6 KB/操作** |
+| `classToggleAlwaysPatchesWithoutFullRebuild` | クラス付け外し 80 操作で同上（命中 100%・全面 0） | 合格 |
+| `childAppendAlwaysHitsChildPatch` | 行の追加 20 操作で `CHILD_PATCH_HITS` が 20、フォールバック 0、確保 `< 2.5 MB`/操作 | hits=20・fallbacks=0・**約 740 KB/操作** |
+
+上限は実測の約 3〜8 倍。全面再構築へ落ちる、またはパッチ未使用になる退行は、命中数・フォールバック数で即失敗する。`:core:test` 全件グリーン。
+
+**R7 の残り**: 継承色変更（`inherited`）・テキスト更新のカウンタラチェット、`AllocationRatchetTest` 系の 2,000 行版。**未実施**。
+
 ### 8.7 約束事とリスク
 
 1. キーは「入力の正規化ハッシュ」。衝突は `equals` で必ず確認する（見た目が変わる誤共有を許さない）。
@@ -1179,3 +1197,313 @@ R3（§7.3）は施策 2・3 とほぼ同一作業なのでそちらで進める
 | `transition`・アニメ中の補間値（Payload の付け替えで表現不可） | アニメ中ノードは専用のローカル Payload スロットを動的確保（少数） |
 | スタッキングコンテキスト・`transform` と描画順 | Paint 表の順序は現行 `PaintOrder` の出力を採用。`transform` / スタッキング / sticky / アニメ中の範囲は従来経路へフォールバック |
 | 時間ベンチが全件実行で不安定（既知） | 時間でなく確保量・パッチ命中・走査項目数のカウンタをラチェット化（R7） |
+
+---
+
+## 9. 2026-11-12 再計測: 現行コードのボトルネック特定と改善点
+
+### 9.1 結論
+
+現行コードは「一律に遅い」状態ではない。2026-11-12 時点の実フレーム計測では、**同形の大規模リスト（`large-list-2000`）は `hover`・`child`・`fontsize` のすべてで Chrome と同等以上**（GL `0.30` / `1.44` / `7.63 ms`、Chrome `0.55` / `1.98` / `11.3`）。一方で、次の 3 群が残存する。
+
+1. **行ごとにデザインが違う `varied-list-2000` の `child` と `inherited`**: GL `5.15 ms`（Chrome `3.67`・1.4x）と `10.20 ms`（Chrome `3.55`・2.9x）。`fontsize` は `30.77 ms` で Chrome `42.1` より速いが、確保量が `25.8 MB`/フレームと大きい。
+2. **showcase の幅変更**: 実フレーム `1.045 ms`、JMH `layoutWidthChange` `0.777 ms`。Chrome `0.0835 ms` の 9〜12 倍。表示リストの再構築（`0.421 ms`）と測定（`0.375 ms`）がほぼ半々。
+3. **CPU バックエンドの transition 中の全面再描画**: showcase `hover` は `1.77 ms` のうち paint が `1.64 ms`（93%）。`partial=0 / full=1801` で、理由は「前フレームが動作中」「動作中のアニメ項目」。`inherited` は `2.62 ms` で部分描画が効いている（`partial=1599 / full=2`）。
+
+ただし、これは「全項目で勝った」という意味ではない。large 500 行の `inherited`/`hover`/`style`、2,000 行 `text`、`open`、メモリ保持量、p99 は依然として負けているか未計測である（§9.8.1）。
+
+JFR の実行サンプルから、残存ボトルネックは次の 4 系統に分かれた。
+
+- **A. パッチ判定の O(変更箱 × 祖先) 走査**（`varied inherited` の `canPatchBoxes` 26.4%）。パッチ自体は命中しているのに、判定が高い。
+- **B. 後続行の置き直しと断片の再生成**（`varied child` の `placeLine` 26.3%、`ArrayList.add` 15.0%）。1,750 行の `InlineFragment` を作り直す。
+- **C. 要素ごとのスタイル等価判定・ビューポート依存判定・テキスト成形**（`varied fontsize` の `Arrays.equals` 7.9% + `StyleMap.equals` 8.5%、`dependsOnViewport` 3.6%、`LineBuilder.newLine` 4.5%）。
+- **D. 絶対座標を焼き込んだ表示項目の再生成**（showcase resize の display-list `0.421 ms`、`MATCHFAIL` reason 4 が `111.9/163.9`）。
+
+以下、計測方法、全数値、JFR のホットフレーム、コードとの対応、優先改善 P1〜P8 を示す。
+
+### 9.2 計測環境と方法
+
+| 項目 | 内容 |
+| :-- | :-- |
+| 実行環境 | Windows / JDK 21 / `:core` 現行 HEAD（`dbcd523` 以降） |
+| 画面 | `800×600`（一部 `700×600`・`600×600`）、`FontResolver.FALLBACK` |
+| 実フレーム | `FineProfileMain`（`StandaloneView.renderFrame` 全体）。ウォームアップ 600 フレーム、計測 400〜1,200 フレーム。平均・p50・確保量・段別（style+build / box-tree / restyle-local / measure / place / display-list / paint） |
+| バックエンド | `null`（レイアウト＋表示リストのみ）、`gl`（LWJGL）、`cpu`（ソフトウェア） |
+| JMH | `PipelineBench.layoutWidthChange`（showcase、1 fork、3 warmup、5 iteration、`-prof gc`） |
+| JFR | `jdk.ExecutionSample`、スタック深さ 8。`jfr print` のテキストを集計（実行サンプル数は各表に記載） |
+
+再現コマンド:
+
+```powershell
+.\gradlew.bat :core:profile "-Pprofile.main=com.nishiyu.enderframelib.bench.FineProfileMain" "-Pprofile.args=child varied-list-2000 500 gl"
+.\gradlew.bat :core:jmh "-Pjmh.args=PipelineBench.layoutWidthChange -p doc=showcase -f 1 -wi 3 -i 5 -prof gc"
+.\gradlew.bat :core:profile "-Pprofile.main=com.nishiyu.enderframelib.bench.FineProfileMain" "-Pprofile.args=inherited varied-list-2000 500 null" "-Pprofile.jfr=build/prof/varied-inherited.jfr"
+```
+
+保存した JFR: `build/prof/varied-fontsize.jfr`、`build/prof/varied-inherited.jfr`、`build/prof/varied-child.jfr`、`build/prof/showcase-resize.jfr`。集計は `jfr print --events jdk.ExecutionSample --stack-depth 8` の出力をスクリプトで exclusive / inclusive に集計した。
+
+**注意**: 実フレームの平均は GC・JIT・OS の影響を受ける。以下の差分は同一環境・同一日に取得したが、±10〜15% のばらつきを含む。JFR の割合は実行サンプルに対するもので、フレーム時間の割合ではない（サンプル数が少ない showcase resize は参考値）。
+
+### 9.3 実フレーム再計測の全体像
+
+| 文書 / 操作 | backend（frames） | mean / p50 (ms) | 確保 (KB/frame) | 支配的な段 (ms) | 比較 | 判定 |
+| :-- | :--: | :--: | :--: | :-- | :-- | :--: |
+| large-list-2000 `hover` | GL (800) | `0.300` / `0.286` | `39` | restyle `0.113` / display `0.002` / paint `0.167` | Chrome `0.55` | ✅ |
+| large-list-2000 `child` | GL (800) | `1.435` / `1.387` | `938` | measure `0.213` / place `0.576` / display `0.136` / paint `0.208` | Chrome `child250` `1.98` | ✅ |
+| large-list-2000 `child` | null (800) | `1.126` / `1.048` | `878` | measure `0.209` / place `0.496` / display `0.137` | — | ✅ |
+| large-list-2000 `inherited` | GL (700) | `3.497` / `3.426` | `1,621` | restyle `2.106` / display `0.620` / paint `0.334` | 前 `3.54`（§8.6.11） | 🔧 |
+| large-list-2000 `fontsize` | GL (800) | `7.634` / `7.616` | `7,331` | style `0.436` / box `0.459` / restyle `1.730` / measure `2.302` / place `0.916` / display `0.883` / paint `0.422` | Chrome `11.3` | ✅ |
+| varied-list-2000 `child` | GL (500) | `5.147` / `5.041` | `4,891` | measure `0.451` / place `3.050` / display `0.316` / paint `0.397` / unaccounted `0.934` | Chrome `3.67` | ❌ 1.4x |
+| varied-list-2000 `child` | null (600) | `4.789` / `4.613` | `4,818` | measure `0.461` / place `3.198` / display `0.301` / unaccounted `0.829` | — | ❌ |
+| varied-list-2000 `inherited` | GL (500) | `10.200` / `10.028` | `3,157` | restyle `6.532` / display `1.311` / paint `0.579` / unaccounted `1.777` | Chrome `3.55` | ❌ 2.9x |
+| varied-list-2000 `inherited` | null (600) | `9.691` / `9.506` | `2,456` | restyle `6.616` / display `1.337` / unaccounted `1.738` | — | ❌ |
+| varied-list-2000 `fontsize` | GL (400) | `30.768` / `30.411` | `26,072` | style `1.638` / box `2.214` / restyle `6.794` / measure `9.588` / place `4.690` / display `3.116` / paint `0.616` | Chrome `42.1` | ✅ |
+| varied-list-2000 `fontsize` | null (600) | `30.848` / `30.207` | `25,826` | style `1.715` / box `2.160` / restyle `7.089` / measure `9.707` / place `4.810` / display `3.214` | — | ✅ |
+| showcase `resize` | null (—) | `1.045` / `0.953` | `1,456` | style `0.077` / box `0.060` / measure `0.375` / place `0.043` / display `0.421` | Chrome `0.0835` | ❌ 12.5x |
+| showcase `hover` | CPU (1200) | `1.767` / `1.736` | `285` | restyle `0.036` / display `0.056` / paint `1.640` | Chrome CPU `1.55` | ❌ |
+| showcase `inherited` | CPU (1000) | `2.621` / `2.559` | `879` | restyle `0.240` / display `0.136` / paint `2.192` | 前 `2.21` | ✅ |
+
+**パッチ命中**: large `hover` は slice-patch `1,400`、large `inherited` は `repaintPatch=1,300 / repaintFull=0`、large `child` は `childPatch=1,400 / fallback=0`。いずれも命中率 100% で、**「パッチが当たらない」ことはもう主要因ではない**。残っているのは判定・レイアウト・表示項目の再生成コストである。
+
+**large `child` の表示項目数**: 窓付き表示リストにより画面内の `322` 項目だけを生成する。Chrome の `child250` と同条件で比較すると、`1.44 ms` は Chrome `1.98 ms` を下回る。
+
+**showcase CPU のばらつき**: `hover` の `1.77 ms` は §8.6.13 の `1.50〜1.77 ms` の上端、`inherited` の `2.62 ms` は前回 `2.21 ms` から +18% だが、目標 `< 4 ms` は満たす。CPU の値はタイルのダーティ状態と transition の位相に依存するため、±20% の幅で読む。
+
+### 9.4 JMH: 幅変更（`layoutWidthChange`）
+
+showcase の幅を 1px 交互に変える JMH の 5 iteration:
+
+| iteration | 1 | 2 | 3 | 4 | 5 | 平均 |
+| :-- | :--: | :--: | :--: | :--: | :--: | :--: |
+| ms/op | `0.745` | `0.725` | `0.776` | `0.818` | `0.821` | **`0.777`** |
+
+確保量は `1,175,600 B/op`（約 `1.18 MB/op`）。前回の `1.039 ms` から **−25%**。Chrome `0.0835 ms` に対しては **9.3 倍**で、依然 W5 である。
+
+JMH はレイアウトのみ（表示リストを含まない）。実フレームの `1.045 ms` との差 `約 0.27 ms` が表示リスト再構築とフレーム周辺のコストに相当する。内訳では display-list `0.421 ms` が最大で、measure `0.375 ms` が続く。**幅変更の改善は「レイアウトの測定再利用」と「表示項目の平行移動再利用」の 2 本立てで進める**。
+
+### 9.5 JFR ホットフレーム
+
+JFR はすべて `null` バックエンド（レイアウト＋表示リスト）で取得した。GL 送出・CPU ラスタは含まないため、描画段のボトルネックは §9.3 の段別と §9.6.6 で補う。サンプル数は `fontsize` 2,139（十分）、`inherited` 692・`child` 339（傾向を読むには足りるが ±数% の誤差を含む）、showcase resize 77（参考値）である。
+
+#### 9.5.1 `varied-list-2000` `fontsize`（2,139 サンプル）
+
+| 種別 | 上位フレーム | 割合 |
+| :-- | :-- | :--: |
+| exclusive | `java.util.Arrays.equals(Object[], Object[])` | **7.9%** |
+| exclusive | `BlockLayoutEngine$LineBuilder.newLine` | 4.5% |
+| exclusive | `BlockLayoutEngine.placeLine` | 4.1% |
+| exclusive | `CssValue.dependsOnViewport` | 3.6% |
+| exclusive | `BlockLayoutEngine.arrangeFlow` | 3.4% |
+| exclusive | `DisplayListBuilder.offscreen` | 3.1% |
+| exclusive | `String.hashCode` | 2.5% |
+| exclusive | `BoxMeasurer.measure` | 2.5% |
+| exclusive | `BoxTreeBuilder.restyleGeneratedBoxes` | 2.3% |
+| exclusive | `BlockLayoutEngine.contentBlockSize` | 2.2% |
+| inclusive | `BoxMeasurer.measure` | **25.0%** |
+| inclusive | `RenderPipeline.restyleBoxRecursive` | **24.2%** |
+| inclusive | `LayoutBox.measureCore` | 20.1% |
+| inclusive | `BlockLayoutEngine.arrangeFlow` / `arrangeChildren` | 14.2% |
+| inclusive | `ComputedStyle$StyleMap.equals` | 8.5% |
+| inclusive | `java.util.Arrays.equals` | 7.9% |
+| inclusive | `BlockLayoutEngine.placeLine` | 5.8% |
+| inclusive | `RenderPipeline.styleEntry` | 5.1% |
+| inclusive | `PaintOrder.collectChildren` / `classify` | 5.0% |
+| inclusive | `RenderPipeline.layoutDocument` | 4.7% |
+
+**読み方**: 2 つのクラスタがある。① **スタイル等価判定**（`Arrays.equals` 7.9% + `StyleMap.equals` 8.5% + `String.hashCode` 2.5% + `dependsOnViewport` 3.6%）。② **テキスト成形・行組み**（`newLine` 4.5% + `placeLine` 4.1% + `arrangeFlow` 3.4% + `measure` 2.5% + `contentBlockSize` 2.2%）。`BoxMeasurer.measure` の inclusive 25.0% は、測定そのものより下流のテキスト・行組みを含む。`DisplayListBuilder.offscreen` 3.1% は、全面再構築時にも画面外判定が走ることを示す。
+
+#### 9.5.2 `varied-list-2000` `inherited`（692 サンプル）
+
+| 種別 | 上位フレーム | 割合 |
+| :-- | :-- | :--: |
+| exclusive | `DisplayListBuilder.offscreen` | **20.4%** |
+| exclusive | `java.util.Arrays.equals(Object[], Object[])` | **10.5%** |
+| exclusive | `CssValue.dependsOnViewport` | 6.4% |
+| exclusive | `StateLookup.nearestSizeContainer` | 5.9% |
+| exclusive | `DisplayListBuilder.isCulledNoop` | 5.8% |
+| exclusive | `BoxTreeBuilder.restyleGeneratedBoxes` | 5.2% |
+| exclusive | `ComputedStyle.diff` | 5.1% |
+| exclusive | `TextShaper.isAlreadyNormal` | 3.8% |
+| exclusive | `StyleAnimator.hasValue` | 3.6% |
+| exclusive | `RenderPipeline.restyleBoxRecursive` | 3.3% |
+| inclusive | `RenderPipeline.restyleBoxRecursive` | **64.6%** |
+| inclusive | `DisplayListBuilder.isCulledNoop` | **26.4%** |
+| inclusive | `DisplayListBuilder.canPatchBoxes` | **26.4%** |
+| inclusive | `DisplayListBuilder.offscreen` | 20.7% |
+| inclusive | `DisplayListBuilder.patchBoxes` | 14.0% |
+| inclusive | `java.util.ArrayList.removeIf` | 11.7% |
+| inclusive | `ComputedStyle$StyleMap.equals` | 10.5% |
+| inclusive | `RenderPipeline.cacheStyle` | 10.1% |
+| inclusive | `RenderPipeline.styleEntry` | 10.0% |
+| inclusive | `RenderPipeline.dependsOnViewport` | 6.8% |
+
+**読み方**: 最大の発見は、`inherited` の**実行サンプルの 26.4% が `canPatchBoxes` の判定**（`isCulledNoop` 26.4%、`offscreen` 20.7%）にあること。**スタイル再解決そのものより、パッチ可否の判定が重い**。しかも `UiView` が `canPatchBoxes` を呼んだ直後に `patchBoxes` を呼び、その中で `canPatchBoxes` をもう一度呼ぶため、**同じ高コスト判定が 1 パッチにつき 2 回走る**。`patchBoxes` の 14.0% はこの 2 回目の判定と適用を含む。`offscreen` は変更箱ごとに祖先をたどり、8 つの移動プロパティを文字列で照合する。`canPatchBoxes` はさらに `ArrayList`/`LinkedHashSet` を作り、全箱をソートする。`ArrayList.removeIf` の 11.7% も含め、判定と適用の両方が高い。
+
+#### 9.5.3 `varied-list-2000` `child`（339 サンプル）
+
+| 種別 | 上位フレーム | 割合 |
+| :-- | :-- | :--: |
+| exclusive | `java.util.ArrayList.add(Object, Object[], int)` | **15.0%** |
+| exclusive | `BlockLayoutEngine.arrangeFlow` | 12.7% |
+| exclusive | `LayoutBox.updateScrollExtent` | 8.8% |
+| exclusive | `StringLatin1.indexOfNonWhitespace` | 8.0% |
+| exclusive | `BlockLayoutEngine.scanFloats` | 6.8% |
+| exclusive | `DisplayListBuilder.windowIntact` | 6.2% |
+| exclusive | `BlockLayoutEngine.placeLine` | 5.6% |
+| exclusive | `LayoutBox.layout` | 5.0% |
+| exclusive | `LayoutBox.resetPlacements` | 2.7% |
+| exclusive | `DisplayListBuilder.patchChildSlices` | 1.2% |
+| inclusive | `LayoutBox.layout` | **65.8%** |
+| inclusive | `BlockLayoutEngine.arrangeFlow` / `arrangeChildren` | **65.5%** |
+| inclusive | `BlockLayoutEngine.placeLine` | **26.3%** |
+| inclusive | `UiView.tryChildPatchReason` | 18.0% |
+| inclusive | `java.util.ArrayList.add` | 15.0% |
+| inclusive | `LayoutBox.updateScrollExtent` | 8.8% |
+| inclusive | `String.isBlank` | 8.3% |
+| inclusive | `DisplayListBuilder.patchChildSlices` | 8.0% |
+| inclusive | `DisplayListBuilder.windowIntact` | 7.1% |
+| inclusive | `DisplayListBuilder.canPatchChildSlices` | 7.1% |
+
+**読み方**: レイアウトが 65.8% を占め、そのうち `placeLine` が 26.3%。`ArrayList.add` 15.0% は後続行の `InlineFragment` 追加、`updateScrollExtent` 8.8% は行ごとのスクロール範囲更新、`String.isBlank` 8.3% は行の空白判定、`scanFloats` 6.8% は浮動子の有無の走査。**子パッチの判定（`windowIntact` / `canPatchChildSlices`）は 7.1% で、主因ではない**。ボトルネックは「1,750 行を実際に置き直す」ことにある。
+
+#### 9.5.4 showcase `resize`（77 サンプル、参考値）
+
+サンプル数が少ないため結論には使わないが、`TextShaper.collapseRuns` 9.1% exclusive、measure 系 31% inclusive、`drawBoxSelfMemo` 24.7% inclusive、`FlexLayoutEngine.resolveFlexibleLengths` 5.2% が上位。幅変更でテキストのラン統合が再実行され、測定キャッシュのミス（`BoxMemo` exact 62.1 / miss 163.9 / unmemoizable 13）が起きていることと整合する。
+
+### 9.6 コードとの対応（原因の特定）
+
+#### 9.6.1 `canPatchBoxes` / `isCulledNoop` / `offscreen` の判定コスト
+
+[`DisplayListBuilder.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java) の `canPatchBoxes`（約 1288 行）は、変更箱のコレクションを受け取り、各箱について `isCulledNoop`（約 1269 行）を呼ぶ。`isCulledNoop` は `offscreen`（約 341 行）を呼び、`offscreen` は箱の祖先をたどりながら `MOVING_PROPS` の 8 プロパティを `ComputedStyle` から文字列で `get` し、`trim` と `equalsIgnoreCase` で比較する。さらに `canPatchBoxes` は `ArrayList` と `LinkedHashSet` を作り、全箱をソートしてから判定する。
+
+これは **O(変更箱 × 祖先数 × 8 プロパティ)** で、変更箱が多い `inherited` では支配的になる。JFR の `offscreen` 20.4% exclusive / `canPatchBoxes` 26.4% inclusive がそれを裏付ける。さらに、呼び出し側の [`UiView.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/common/UiView.java) は `canPatchBoxes` で判定した直後に `patchBoxes` を呼び、`patchBoxesUnprofiled`（約 1351 行）が先頭で `canPatchBoxes` を再実行する。**同じ判定が 1 パッチにつき 2 回**走る。**「画面外か」「移動する祖先があるか」は箱ごとの静的な性質**なので、フレームごとに祖先をたどり直す必要はない。`StyleFacts` にビットとして持たせるか、変更箱の集合を作る段階で 1 回だけ計算してキャッシュすればよい。まず 2 回目の判定をなくすだけでも半分になる。
+
+#### 9.6.2 `placeLine` と `InlineFragment` の再生成
+
+[`BlockLayoutEngine.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/BlockLayoutEngine.java) の `placeLine`（約 1329 行）は、後続行の `InlineFragment` を新しいオブジェクトとして生成し、`ArrayList.add` で箱の `inlineFragments` に追加する。行ごとに高さ・折り返しが異なる `varied-list-2000` では、小数の行高さのため `shiftSubtree` の平行移動近道が効かず、1,750 行すべてを置き直す。`resetPlacements`（[`LayoutBox.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/layout/LayoutBox.java) 約 1283 行）は断片リストをクリアして全子を歩く。`updateScrollExtent`（約 1907 行）は行ごとに呼ばれ、`scanFloats` は各ブロックで浮動子の有無を走査する。
+
+**改善の方向**: 断片を再利用可能な可変オブジェクト（またはプール）にし、行の位置・幅・テキストだけを更新する。`containsFloats` を箱にキャッシュし、浮動子がない場合は `scanFloats` を省略する。`updateScrollExtent` は部分木の最後に 1 回だけ計算する。`String.isBlank` は先頭・末尾の非空白文字を直接見る高速判定にする。
+
+#### 9.6.3 スタイル等価判定とビューポート依存判定
+
+[`ComputedStyle.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/ComputedStyle.java) の `sameDeclarations`（約 392 行）と `StyleMap.equals`（約 434 行）は、約 190 エントリの `CssValue[]` を `Arrays.equals` で比較する。`sameDeclarations` には同一性の高速路があるが、**内容が同じでインスタンスが違うスタイル**は配列比較に落ちる。`CssValue.dependsOnViewport()`（[`CssValue.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/css/CssValue.java) 約 111 行）は `CssValue` 単位ではメモ化されているが、要素ごとに何度も呼ばれる。`ComputedStyle.facts()`（約 958 行）と `InteractionState.register` も要素ごとの定数コストとして現れる。
+
+**改善の方向**: 同一性 → 64-bit の宣言ハッシュ → 配列比較の順に短絡する。`facts` と `dependsOnViewport` をスタイル単位で 1 回だけ計算し、要素側では参照を読むだけにする。状態フラグが変わらない要素の `register` を省略する。`varied fontsize` では `Arrays.equals` 7.9% + `StyleMap.equals` 8.5% が直接の対象になる。
+
+#### 9.6.4 テキスト成形・改行の再計算
+
+`varied fontsize` の `LineBuilder.newLine` 4.5%、`placeLine` 4.1%、`FontFace.naturalAdvance` 2.0%、`TextShaper$Generational.get` 1.7%、`isAlreadyNormal` 1.7% は、幅変更で全行のテキストを成形し直していることを示す。`varied fontsize` は行ごとに文字サイズ・文章長・折り返しが異なるため、同形リストのように共有できない。**成形済みランと改行位置を (text, font, size, width) でキャッシュ**し、幅が同じなら再成形を避ける必要がある。`isAlreadyNormal` の結果を文字列またはスタイルに保持するのも有効である。
+
+#### 9.6.5 表示項目の絶対座標と `survivesTranslation`
+
+[`DisplayListBuilder.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/DisplayListBuilder.java) の `survivesTranslation`（約 746 行）は、影・シェーダーグラデーション・レイヤー・`NODE`/`RECT`/`TEXT`/`ROUNDED_BORDER` 以外の項目を「平行移動で再利用できない」と判定する。showcase resize の `MATCHFAIL` は reason 4（移動するが平行移動不可）が `111.9/163.9` を占め、`BoxMemo` も exact `62.1` に対して miss `163.9`、unmemoizable `13` だった。`UiView.recomputeLayout` は `paintBoxes(rootBox, w, h, false)` を呼び、表示リストの全再構築経路に落ちる（ビルダーと箱の記憶は保持していても、項目は作り直す）。
+
+**改善の方向**: 表示項目の座標を箱原点からの相対値で保持し、平行移動だけなら項目を再利用する。影・グラデーション・レイヤーもオフセット付きで再利用できるようにする。`BoxMemo` のキーに幅を含め、内容が同じ箱の測定を幅変更後も再利用する。これが P3 である。
+
+#### 9.6.6 CPU バックエンドの全面再描画
+
+[`SoftwareRenderBackend.java`](file:///D:/Dev/Personal/enderframelib-1.21.1/core/src/main/java/com/nishiyu/enderframelib/core/paint/software/SoftwareRenderBackend.java) は、showcase `hover` で `partial=0 / full=1801`、理由 1（前フレームが動作中）と 6（動作中のアニメ項目）が各 `900`。つまり **transition 中の項目があると毎フレーム全面描画**になる。`inherited` は `partial=1599 / full=2` で部分描画が効いており、paint `2.19 ms` の大半は文字色変更によるタイル更新である。
+
+**改善の方向**: 前フレームで動作中だった項目を記録し、遷移中の項目だけを「変更」として扱う。動作中項目のタイルだけを部分再描画し、全面描画に戻す条件を「項目数が変わった」「新規に動作開始」に限定する。これが P7 である。
+
+#### 9.6.7 全木走査と未計上時間
+
+`varied inherited` の未計上 `1.78 ms`（18%）、`varied child` の未計上 `0.93 ms`（18%）は、`LayoutBox.reusableBoxes` の `IdentityHashMap` 構築（`collectReusableBoxes` 約 1323 行）、`linkParents`（約 173 行）、`resetPlacements`、`clearAllSubtreeMarks`（約 1500 行）、`markLayoutChangesAlong` などの全木走査に対応する。JFR では `IdentityHashMap.resize` 1.4%、`collectReusableBoxes` 2.2% exclusive / 4.8% inclusive、`resetPlacements` 2.7% exclusive が確認できる。**ノード索引の配列・親への逆参照・増分マーク**に置き換えれば、フレーム全体で 5〜10% の短縮が見込める。
+
+### 9.7 改善点（優先順位 P1〜P8）
+
+| ID | 優先 | 対象 | 変更 | 期待効果（見込み） | 検証 |
+| :-- | :--: | :-- | :-- | :-- | :-- |
+| **P1** | ✅ 完了（11-12） | `DisplayListBuilder.canPatchBoxes` / `isCulledNoop` / `offscreen` | 箱ごとの「画面外」「移動祖先あり」親走査をキャッシュ。`UiView` と `patchBoxes` の二重判定を解消。`MOVING_PROPS` の文字列照合を `StyleFacts.hasMovingProps` に置換。単一パス `preparePatchBoxes` で重複排除・降順ソート・重なり判定を一元化 | varied `inherited` `10.20 → 7.92 ms`（p50 `7.78 ms`、-22.4%）、large `inherited` `3.50 → 3.07 ms`（p50 `2.97 ms`）。確保量 `2455.5 → 1970.2 KB/frame`（-485 KB/frame） | §9.3 の varied/large `inherited`、パッチ命中 100%、`DisplayListSlicePatchOptimizationTest`、`DisplayListSlicePatchTest`、`:core:test` 全件グリーン |
+| **P2** | 🥇 最優先 | `BlockLayoutEngine.placeLine`・`InlineFragment`・`updateScrollExtent`・`scanFloats` | 後続行の断片を再利用（可変フィールド更新またはプール）。`ArrayList` を事前サイズ確保。`containsFloats` を箱にキャッシュし、浮動子なしの `scanFloats` を省略。`updateScrollExtent` を部分木ごとに 1 回へ。`isBlank` を先頭/末尾文字の高速判定に | varied `child` `5.15 → ~3.5 ms`（place `3.05 → <1.5`）、large `child` `1.44 → ~1.1`。JFR `ArrayList.add` `<5%`、`placeLine` `<15%` | §9.3 の varied/large `child`、レイアウト一致テスト、画素一致テスト |
+| **P3** | 🥈 高 | `DisplayListBuilder.survivesTranslation` / `match`、`UiView.recomputeLayout` | 表示項目の座標を箱原点からの相対値で保持し、平行移動だけなら項目を再利用。影・グラデーション・レイヤーもオフセット付きで再利用。`BoxMemo` の幅キーを見直し、幅変更で内容が同じ箱の測定を再利用 | showcase `resize` `1.05 → ~0.8 ms`（display `0.42 → <0.2`）、JMH `0.78 → ~0.6`。`MATCHFAIL` reason 4 を `112 → <30` | §9.3 の `resize`、JMH `layoutWidthChange`、表示リスト一致テスト |
+| **P4** | 🥈 高 | `ComputedStyle.sameDeclarations` / `StyleMap.equals`、`CssValue.dependsOnViewport`、`ComputedStyle.facts`、`InteractionState.register` | 同一性 → 64-bit 宣言ハッシュ → 配列比較の順に短絡。`facts` と `dependsOnViewport` をスタイル単位で 1 回だけ計算。状態フラグが変わらない要素の `register` を省略 | varied `fontsize` restyle `6.79 → ~5.0`、measure `9.59 → ~8.5`、確保 `-10%`。JFR `Arrays.equals` `<4%`、`StyleMap.equals` `<5%` | §9.3/§9.5 の varied `fontsize`、スタイル一致テスト |
+| **P5** | 🥉 中 | `TextShaper`・`LineBuilder`・`FontFace.naturalAdvance` | 成形済みランと改行位置を `(text, font, size, width bucket)` でキャッシュ。幅変更で再成形しない。`isAlreadyNormal` の結果を文字列/スタイルに保持。`naturalAdvance` を語単位でキャッシュ | varied `fontsize` measure `9.59 → ~6.5`、`newLine` `<2%`。large `fontsize` `7.63 → ~6.5` | §9.3/§9.5 の `fontsize`、テキスト描画一致テスト |
+| **P6** | 🥉 中 | `LayoutBox.reusableBoxes` / `linkParents` / `resetPlacements` / `clearAllSubtreeMarks` / `markLayoutChangesAlong` | `IdentityHashMap` をノード索引の配列に置換。親への逆参照を保持し、`linkParents` の全走査を廃止。変更マークを増分更新。部分木だけの再配置で `resetPlacements` の全走査を避ける | 未計上 `16〜19% → <10%`、フレーム全体 `-5〜10%`、`IdentityHashMap.resize` `<0.5%` | JFR の `collectReusableBoxes` `<1%`、レイアウト一致テスト |
+| **P7** | 🥉 中 | `SoftwareRenderBackend` の全面描画理由 1/6 | 前フレームで動作中だった項目を記録し、遷移中の項目だけを「変更」として扱う。動作中項目のタイルだけを部分再描画。全面描画に戻す条件を「項目数が変わった」「新規に動作開始」に限定 | showcase CPU `hover` `1.77 → <1.5`、遷移中も `partial>0` を維持。`inherited` `2.62` は維持 | `DAMAGE-WHY` の partial/full、`PartialRepaintPixelTest`、`VolatileItemPartialRepaintTest` |
+| **P8** | 🔒 横串 | `InlineFragment`・`LineItem`・`CssValue[]` コピー・インライン style の解析 | 断片・行項目を再利用。配列を事前サイズ確保。解析済みインライン style をノードに保持。防御的コピーを廃止 | varied `fontsize` `25.8 → <15 MB/frame`、p99 `-20%`。large `fontsize` `7.3 → <6 MB` | `AllocationRatchetTest`、FineProfile の確保量、GC ログ |
+
+**P1 と P2 を先に行う理由**: どちらも「パッチは命中しているが、その前後の処理が重い」という同じ構造で、R2/R3 の KPI に直結する。P1 は `varied inherited` の 26.4%、P2 は `varied child` の 26.3% を直接狙う。P3 は W5、P4/P5 は `varied fontsize` の確保量と `inherited` の残り、P6〜P8 は横串の底上げである。
+
+### 9.8 KPI 判定（2026-11-12）
+
+| KPI | 目標 | 実測 | 判定 |
+| :-- | :--: | :--: | :--: |
+| large 2,000 `child` GL | `< 3 ms` | `1.44` | ✅ |
+| large 2,000 `hover` GL | `< 1.0 ms` | `0.30` | ✅ |
+| large 2,000 `fontsize` GL | `< 10 ms` | `7.63` | ✅ |
+| large 2,000 `inherited` GL | 前回 `3.54` 以下 | **`3.07`**（p50 `2.97`） | ✅（P1 完了） |
+| varied 2,000 `child` GL | Chrome 並み `~3.67` | `5.15` | ❌ |
+| varied 2,000 `inherited` GL | Chrome 並み `~3.55` | **`7.92`**（p50 `7.78`） | 🔧（P1 で 10.20→7.92、-22%） |
+| varied 2,000 `fontsize` GL | Chrome 以下 `42.1` | `30.77` | ✅ |
+| showcase `resize` | `< 0.2 ms` | `1.05`（JMH `0.78`） | ❌ |
+| showcase CPU `hover` | `< 1.5 ms` | `1.77` | ❌ |
+| showcase CPU `inherited` | `< 4 ms` | `2.62` | ✅ |
+| varied `fontsize` 確保 | `< 5 MB` | `25.8 MB` | ❌ |
+| large `child` 確保 | `< 2 MB` | `0.94 MB` | ✅ |
+| large `hover` 確保 | `< 300 KB` | `39 KB` | ✅ |
+
+**総合**: 同形リストの時間 KPI はほぼ達成した。残るのは **varied の `child`/`inherited`、showcase の幅変更、CPU transition、varied `fontsize` の確保量**。P1 により varied `inherited` は 10.20 → 7.92 ms へ 2.28 ms 縮小した。今後の主戦場は `varied-list-2000`（特に child の P2、fontsize の P4/P5）と showcase である。
+
+#### 9.8.1 まだ負けている項目・未計測項目
+
+§9.8 の表は今回測った KPI の抜粋であり、「全項目で勝った」という意味ではない。現時点で負けている、または今回測っていない主な項目は次のとおり。
+
+| 項目 | 現状 | 比較 | 状態 |
+| :-- | :--: | :--: | :--: |
+| large 500 `inherited` GL | `3.59 ms` | Chrome `0.96`（3.8x） | ❌ 前回（§6.7） |
+| large 500 `hover` GL | `0.72 ms` | Chrome `0.35`（2.0x） | ❌ 前回（§6.7） |
+| large 500 `style` GL | `0.65 ms` | Chrome `0.33`（2.0x） | ❌ 前回（§6.7） |
+| large 500 `fontsize` GL | `4.24 ms` | Chrome `3.45`（1.2x） | ❌ 前回（§6.7） |
+| large 500 `child` GL | `2.18 ms` | Chrome `child250` `1.98`（1.1x） | 🔧 前回（条件補正後） |
+| large 2,000 `text` GL | `1.61 ms` | Chrome `1.02`（1.6x） | ❌ 今回未再計測 |
+| large 2,000 `inherited` GL | **`3.07 ms`** | Chrome 2,000 未取得（500 は `0.96`） | ⚠️ 未比較（P1 で 3.50→3.07） |
+| large 2,000 `scroll` GL | `0.56 ms` | Chrome `0.46`（1.2x） | ❌ 前回（§6.7） |
+| large 2,000 `open` | `25.5 ms` | Chrome `19.8`（1.3x） | ❌ 前回（null） |
+| varied 2,000 `child` GL | `5.15 ms` | Chrome `3.67`（1.4x） | ❌ 今回 |
+| varied 2,000 `inherited` GL | **`7.92 ms`** | Chrome `3.55`（2.2x） | 🔧 今回（P1 で 10.20→7.92） |
+| showcase `resize` | `1.05 ms` | Chrome `0.084`（12.5x） | ❌ 今回 |
+| showcase CPU `hover` | `1.77 ms` | Chrome CPU `1.55`（1.1x） | ❌ 今回 |
+| showcase `open` | `6.19 ms` | Chrome `5.0`（1.2x） | ❌ 前回 |
+| varied ヒープ保持 | `51.8 MB` | Chrome +`26 MB`（約2x） | ❌ 前回（§8.6.5） |
+| large 2,000 ヒープ保持 | `9.3 MB` | Chrome +`5 MB`（約1.9x） | ❌ 前回（§8.6.5） |
+| p99 / 分散 | 未計測 | — | ⚠️ |
+| `softwarePaint` showcase JMH | `4.38 ms` | 旧 `1.97`（退行ではないが高い） | ⚠️ 要調査 |
+
+**CPU バックエンド（参考）**: large 500 行の CPU は `hover 2.28` / `text 1.29` / `style 1.66` / `inherited 8.00` / `fontsize 7.76` / `child 5.30 ms` で、Chrome の GPU 合成込み全 CPU（`0.36` / `0.49` / `0.33` / `0.96` / `3.45` / `0.54`）より遅い。ただし CPU バックエンドはソフトウェアラスタで、Chrome の GPU 合成との単純比較はできない（参考値）。showcase CPU `inherited` は `2.62 ms` で目標 `< 4 ms` は満たすが、Chrome CPU の同操作は未取得で、Chrome 比較は未確定である。
+
+### 9.9 次の作業順序
+
+1. **P1（パッチ判定キャッシュ）**: ✅ **完了（2026-11-12）**。`preparePatchBoxes` 一元化、`StyleFacts.hasMovingProps`、親走査キャッシュ、`UiView` 二重判定撤廃。varied `inherited` GL `10.20 → 7.92 ms`（-22.4%）、large `inherited` GL `3.50 → 3.07 ms`（p50 `2.97 ms`）、ヒープ確保量 `-485 KB/frame`。
+2. **P2（`placeLine`/`InlineFragment` 再利用）**: `varied child` の最大要因（3.05 ms）。P1 完了を受けて次期最優先として着手。
+3. **P3（表示項目の相対座標・平行移動再利用）**: W5 の本命。P1/P2 と並行可能。
+4. **P4/P5（スタイル等価判定・テキスト成形キャッシュ）**: `varied fontsize` の確保量と `inherited` の残り。P2 の後半と重なる。
+5. **P6/P7/P8（全木走査・CPU ダメージ・確保量）**: 横串。P1〜P5 の後で、フレーム全体の底上げとして実施する。
+6. 各施策の完了ごとに §9.3 と §9.5 を再計測し、§9.8 を更新する。時間ベンチは不安定なので、**パッチ命中・走査項目数・確保量のカウンタを R7 のラチェットに追加**して退行を防ぐ。
+
+### 9.10 前回台帳との差分（最近のコミットの効果）
+
+| 項目 | 前回値 | 今回値 | 変化の要因 |
+| :-- | :--: | :--: | :-- |
+| large 2,000 `child` GL | `13.77`（§6.7.3）→ `1.21`（§8.6.6） | **`1.44`** | 窓付き表示リスト（§8.6.2）と fit/measure 再利用（`a40f6b3`・`c6d3e33` 等）。Chrome `1.98` 以下を維持 |
+| large 2,000 `fontsize` GL | `18.93`（§6.7.3）→ `6.6`（§8.6.6） | **`7.63`** | スタイル共有（§8.6.6）と fit/measure 再利用で Chrome `11.3` 以下を維持。前回 `6.6` からは +16% だが、実行ごとのばらつきと JIT の影響を含む |
+| large 2,000 `inherited` GL | `3.50`（§9.8） | **`3.07`**（p50 `2.97`） | **P1 実装**（パッチ判定一元化・`hasMovingProps`・親走査キャッシュ） |
+| JMH `layoutWidthChange` | `1.039` | **`0.777`** | `dbcd523`（リサイズで表示リストのビルダーと箱ごとの記憶を保持）＋ fit 再利用 |
+| varied `fontsize` GL | `43.8`（§8.6.6） | **`30.77`** | fit/measure 再利用と幅変更経路の修正。Chrome `42.1` を下回る |
+| varied `child` GL | `4.9`（§8.6.6） | **`5.15`** | 横ばい（±10%）。`place` 3.05 ms が残る |
+| varied `inherited` GL | `10.20`（§9.8） | **`7.92`**（p50 `7.78`） | **P1 実装**（二重判定撤廃・`preparePatchBoxes` 単一パス化・`offscreen` 高速化で **-2.28 ms, -22.4%**） |
+
+### 9.11 P1 実装記録（2026-11-12 完了）
+
+#### 9.11.1 実施内容
+1. **二重判定の撤廃**:
+   - `UiView.restyleAndUpdate` の `canPatchBoxes(changedBoxes)` 事前呼出を撤廃し、`patchBoxes(changedBoxes)` に一本化。
+2. **単一パス化（`preparePatchBoxes`）**:
+   - `canPatchBoxes` と `patchBoxesUnprofiled` で重複していた `isCulledNoop` 走査・`LinkedHashSet`/`ArrayList` の多重生成・二重ソートを `preparePatchBoxes` に統合。
+   - `boxes.size() > 1` 時の降順ソート後の in-place 重複排除とスライス重なり判定（`b.dlEnd > prev.dlStart`）を 1 パスで処理。
+3. **`MOVING_PROPS` の高速ビット化と親走査キャッシュ**:
+   - `PaintOrder.StyleFacts` に `boolean hasMovingProps` を導入。変形・アニメーション・フィルター等の 8 プロパティ文字列比較をスタイル解決時の 1 回のみに集約。
+   - `hasMovingAncestor` に直近親の走査結果キャッシュ（`cachedParentForMovingCheck`）を導入。共通親を持つリスト項目群（2000 行など）の祖先走査を O(1) に短絡。
+4. **テスト追加と検証**:
+   - `DisplayListSlicePatchOptimizationTest`: 重複要素の重複排除・降順ソート維持・全画面外時の安全な no-op 処理・スライス重なり検出・二重呼び出し防止の単体テストを追加。
+   - `:core:test` 1,923 件全件グリーン、`LayerDependencyRatchetTest` 適合、`PatchHitRateRatchetTest` パッチ命中率 100%（fallback 0）を確認。

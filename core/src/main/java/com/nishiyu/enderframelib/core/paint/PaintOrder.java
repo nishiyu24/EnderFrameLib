@@ -604,7 +604,8 @@ final class PaintOrder {
      * （算出スタイルは不変で、箱の木が変わっても同じインスタンスなら使い回せる）。
      */
     record StyleFacts(boolean displayNone, boolean zAuto, float opacity, boolean stackingByStyle, boolean hasMask,
-                      String overflowX, String overflowY, boolean scrollbars, boolean hasAnimation) {
+                      String overflowX, String overflowY, boolean scrollbars, boolean hasAnimation,
+                      boolean hasMovingProps) {
     }
 
     /** 診断: {@link StyleFacts} を新しく算出した回数（キャッシュに当たらなかった回数）。 */
@@ -621,10 +622,18 @@ final class PaintOrder {
                 || style.keywordOf(CssPropertyIndex.ISOLATION, CssKeywords.Isolation.class) == CssKeywords.Isolation.ISOLATE
                 || !"normal".equals(style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"));
         String[] overflow = overflowPair(style);
+        boolean hasAnimation = style.get(CssPropertyIndex.ANIMATION) != null || style.get(CssPropertyIndex.ANIMATION_NAME) != null;
+        boolean hasMovingProps = hasAnimation
+                || !isNone(style.get(CssPropertyIndex.TRANSFORM))
+                || !isNone(style.get(CssPropertyIndex.TRANSLATE))
+                || !isNone(style.get(CssPropertyIndex.ROTATE))
+                || !isNone(style.get(CssPropertyIndex.SCALE))
+                || !isNone(style.get(CssPropertyIndex.FILTER))
+                || !isNone(style.get(CssPropertyIndex.PERSPECTIVE));
         StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssPropertyIndex.DISPLAY, "block")), zAuto,
                 style.number(CssPropertyIndex.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
                 isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]),
-                style.get(CssPropertyIndex.ANIMATION) != null || style.get(CssPropertyIndex.ANIMATION_NAME) != null);
+                hasAnimation, hasMovingProps);
         style.derivedFacts(facts);
         return facts;
     }
