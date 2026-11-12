@@ -101,6 +101,13 @@ public final class FineProfileMain {
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " per-frame frames=" + (frames + warmup));
             {
+                long n = frames + warmup;
+                // 配置の近道の効き具合（プロセス累計 / フレーム）: shifted = 部分木の平行移動、skipped = 入力が同じで飛ばした
+                System.out.printf("LAYOUTSKIP per-frame shifted=%.1f skipped=%.1f%n",
+                        com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() / (double) n,
+                        com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() / (double) n);
+            }
+            {
                 var D = com.nishiyu.enderframelib.core.paint.DisplayListBuilder.class;
                 long n = frames + warmup;
                 System.out.printf("BOXMEMO per-frame exact=%.1f translated=%.1f miss=%.1f new=%.1f unmemoizable=%.1f stamped=%.1f%n",
@@ -211,8 +218,43 @@ public final class FineProfileMain {
                     t.added = null;
                 }
             }
+            // 切り分け用: child と同じだが、挿入する行の高さを整数（20px + 下枠 1px）に固定する。後続の行の移動量が整数になり、
+            // 平行移動の近道（整数の移動だけ許す）が効くかどうかで、child の place の原因が「小数の移動量」かを確かめる
+            case "childfixed" -> {
+                if ((i & 1) == 0) {
+                    HtmlElement added = new HtmlElement("li");
+                    added.setAttribute("style", "height:20px;overflow:hidden");
+                    added.updateTextContent("inserted " + i);
+                    t.parent.insertBefore(added, t.anchor);
+                    t.added = added;
+                } else if (t.added != null) {
+                    t.parent.removeChild(t.added);
+                    t.added = null;
+                }
+            }
             case "relayout" -> v.ui().markInvalidation(UiView.InvalidationLevel.RELAYOUT);
             case "resize" -> v.ui().recomputeLayout(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
+            // 切り分け用: 幅を 2px ずつ変える。中央寄せの箱の移動量が 0.5px → 1px（整数）になり、表示項目の平行移動の再利用が効くかを確かめる
+            case "resize2" -> v.ui().recomputeLayout(Workloads.VIEWPORT_W - 2 * (i & 1), Workloads.VIEWPORT_H);
+            // ホストが実際に通る経路（StandaloneView.resize → requestResize → flushInvalidation の resize 分岐）。
+            // recomputeLayout の直呼びと違い、表示項目の厳密な平行移動（exactTranslation）が有効になる
+            case "resizeframe" -> v.resize(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
+            // flushInvalidation の resize 分岐と同じく exactTranslation を立てて recomputeLayout する（resizeframe は壁時計の間引きで
+            // 連続フレームではレイアウトが走らないため、その分岐の中身だけを直接再現する）
+            case "resizeexact" -> {
+                try {
+                    var f = UiView.class.getDeclaredField("exactTranslation");
+                    f.setAccessible(true);
+                    f.setBoolean(v.ui(), true);
+                    try {
+                        v.ui().recomputeLayout(Workloads.VIEWPORT_W - (i & 1), Workloads.VIEWPORT_H);
+                    } finally {
+                        f.setBoolean(v.ui(), false);
+                    }
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
             case "open" -> {
                 view[0] = newView(html);
                 return view[0].frame(now[0] += 16, backend, true);

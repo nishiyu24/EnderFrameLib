@@ -85,6 +85,49 @@ public class BlockLayoutOptimizationTest {
     }
 
     @Test
+    void resetPlacementsKeepsFragmentObjectsForReuse() {
+        LayoutBox box = new LayoutBox(new HtmlElement("div"), defaultStyle());
+        box.startFragmentPass();
+        LayoutBox.InlineFragment f1 = box.addFragment(1, 2, 3, 4, "a", 3, 1, null, true, true);
+        LayoutBox.InlineFragment f2 = box.addFragment(5, 2, 3, 4, "b", 3, 1, null, true, true);
+        box.finishFragmentPass();
+
+        // 置き直し: 描画が古い断片を読まないよう空になるが、オブジェクトは控えに残る
+        LayoutBox.resetPlacements(box, -1);
+        assertTrue(box.inlineFragments.isEmpty());
+        assertEquals(2, box.spareFragmentCount());
+
+        // 次の配置パスは控えから取り、新しい値で上書きする
+        box.startFragmentPass();
+        LayoutBox.InlineFragment g1 = box.addFragment(10, 20, 30, 40, "x", 9, 2, null, false, true);
+        LayoutBox.InlineFragment g2 = box.addFragment(50, 20, 30, 40, "y", 9, 2, null, true, false);
+        LayoutBox.InlineFragment g3 = box.addFragment(90, 20, 30, 40, "z", 9, 2, null, true, true);
+        box.finishFragmentPass();
+
+        assertEquals(0, box.spareFragmentCount());
+        assertEquals(3, box.inlineFragments.size());
+        assertTrue((g1 == f1 || g1 == f2) && (g2 == f1 || g2 == f2) && g1 != g2);
+        assertNotSame(f1, g3);
+        assertNotSame(f2, g3);
+        assertEquals("x", g1.text);
+        assertEquals(10f, g1.x);
+        assertFalse(g1.startEdge);
+        assertEquals("y", g2.text);
+        assertEquals(20f, g2.y);
+        assertEquals("z", g3.text);
+    }
+
+    @Test
+    void spareFragmentsAreBounded() {
+        LayoutBox box = new LayoutBox(new HtmlElement("div"), defaultStyle());
+        box.startFragmentPass();
+        for (int i = 0; i < 100; i++) box.addFragment(i, 0, 1, 1, "t", 1, 0, null, true, true);
+        box.finishFragmentPass();
+        LayoutBox.resetPlacements(box, -1);
+        assertTrue(box.spareFragmentCount() <= 16);
+    }
+
+    @Test
     void updateScrollExtentLeafNodeShortCircuit() {
         HtmlNode node = new HtmlElement("div");
         ComputedStyle style = defaultStyle();

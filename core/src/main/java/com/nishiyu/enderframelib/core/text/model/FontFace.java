@@ -39,7 +39,7 @@ public interface FontFace {
 
     /** {@code line-height: normal} が予約する 1 行の高さ（px）。 */
     default float normalLineHeight(FontStyle style) {
-        return ascent(style) + descent(style) + lineGap(style);
+        return com.nishiyu.enderframelib.core.kernel.LayoutUnit.snap(ascent(style) + descent(style) + lineGap(style));
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
@@ -351,6 +352,14 @@ public class LayoutBox {
             f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge);
             return f;
         }
+        int spare = spareFragments == null ? 0 : spareFragments.size();
+        if (spare > 0) {
+            InlineFragment f = spareFragments.remove(spare - 1);
+            f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge);
+            inlineFragments.add(f);
+            fragmentCursor++;
+            return f;
+        }
         InlineFragment f = new InlineFragment(this, x, y, w, h, text);
         f.baseline = baseline;
         f.descent = descent;
@@ -361,6 +370,27 @@ public class LayoutBox {
         fragmentCursor++;
         return f;
     }
+
+    /** 置き直しで捨てた断片オブジェクトの控え（{@link #resetPlacements} が積み、{@link #addFragment} が使う）。 */
+    private static final int SPARE_FRAGMENT_LIMIT = 16;
+    private ArrayList<InlineFragment> spareFragments;
+
+    /** 見えている断片を捨てる（描画が古い断片を読まないように空にする）。オブジェクトは控えに回して再利用する。 */
+    private void discardFragments() {
+        int n = inlineFragments.size();
+        if (n == 0) return;
+        if (spareFragments == null) spareFragments = new ArrayList<>(Math.min(n, SPARE_FRAGMENT_LIMIT));
+        for (int i = n - 1; i >= 0 && spareFragments.size() < SPARE_FRAGMENT_LIMIT; i--) {
+            spareFragments.add(inlineFragments.get(i));
+        }
+        inlineFragments.clear();
+    }
+
+    /** 診断・テスト用: 再利用待ちの断片の数。 */
+    public int spareFragmentCount() {
+        return spareFragments == null ? 0 : spareFragments.size();
+    }
+
     /** エンジン固有の状態（グリッドの行列など）。 */
     public LayoutEngineState engineState;
     public SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
@@ -1373,7 +1403,7 @@ public class LayoutBox {
             box.placementPure = false;
             box.lastLayoutX = Float.NaN;
         }
-        box.inlineFragments.clear();
+        box.discardFragments();
         box.fragmentCursor = 0;
         box.x = 0;
         box.y = 0;
@@ -1648,8 +1678,8 @@ public class LayoutBox {
         // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
         if (!sameInputs && SHIFT_ENABLED && ctx.reuseMeasurements() && canKeepPlacement(ctx.layoutRun())
                 && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
-                && parentX == lastLayoutX && isIntegral(parentY - lastLayoutY)
-                && lastLayoutOuterW == parentOuterW && isShiftableSubtree()) {
+                && parentX == lastLayoutX && isShiftableDelta(parentY, lastLayoutY)
+                && lastLayoutOuterW == parentOuterW && isShiftableSubtree(!isIntegral(parentY - lastLayoutY))) {
             shiftSubtree(parentX - lastLayoutX, parentY - lastLayoutY);
             lastLayoutX = parentX;
             lastLayoutY = parentY;
@@ -1761,13 +1791,14 @@ public class LayoutBox {
      * 部分木が、位置を原点からの相対だけで持つ通常フロー（ブロック・flow-root・インライン。flex・grid・段組・表・グリッドの状態を持たない）か。
      * 平行移動で済ませる前に、移動してはならない状態（絶対位置を持つエンジンの状態）が無いことを確かめる。
      */
-    private boolean isShiftableSubtree() {
+    private boolean isShiftableSubtree(boolean needGrid) {
+        if (needGrid && !isGridAligned()) return false;
         if (columnShifts != null || collapsedBorders != null || hasLegendBox()) return false;
         if (engineState != null && !(engineState instanceof BlockLayoutEngine.FlowState)) return false;
         if (display != null && display.inner() != Display.Inner.FLOW && display.inner() != Display.Inner.FLOW_ROOT) return false;
         for (LayoutBox child : children) {
             if (child.style.facts().displayNone) continue;
-            if (!child.isShiftableSubtree()) return false;
+            if (!child.isShiftableSubtree(needGrid)) return false;
         }
         return true;
     }
@@ -1777,14 +1808,58 @@ public class LayoutBox {
         return v == Math.rint(v);
     }
 
+    /**
+     * 縦の移動量が、置き直しとビット単位で一致する平行移動になるか。整数ぶんなら従来どおり（丸めの境目に当たらない）。
+     * 小数ぶんは、移動量と両方の原点が {@link LayoutUnit} の格子に載っているときに限る
+     * （その場合に限り float の加算が厳密。部分木の側は {@link #isGridAligned} で確かめる）。
+     */
+    private static boolean isShiftableDelta(float parentY, float lastY) {
+        float d = parentY - lastY;
+        if (isIntegral(d)) return true;
+        float limit = LayoutUnit.EXACT_LIMIT - LayoutUnit.SHIFT_MARGIN;
+        return Math.abs(parentY) < limit && Math.abs(lastY) < limit
+                && LayoutUnit.isOnGrid(parentY) && LayoutUnit.isOnGrid(lastY) && LayoutUnit.isOnGrid(d);
+    }
+
+    /** この箱が平行移動で動かす縦の値（y・静的位置・行の下端・断片の y）がすべて格子に載っているか。 */
+    private boolean isGridAligned() {
+        boolean isText = node != null && node.nodeType == NodeType.TEXT;
+        if (!isText && !LayoutUnit.isOnGrid(y)) return false;
+        if (inlineContentBottom > Float.NEGATIVE_INFINITY && !LayoutUnit.isOnGrid(inlineContentBottom)) return false;
+        if (!Float.isNaN(staticY) && !LayoutUnit.isOnGrid(staticY)) return false;
+        for (int i = 0, n = inlineFragments.size(); i < n; i++) {
+            if (!LayoutUnit.isOnGrid(inlineFragments.get(i).y)) return false;
+        }
+        if (!Float.isNaN(lastLayoutY) && !LayoutUnit.isOnGrid(lastLayoutY)) return false;
+        return true;
+    }
+
     private boolean hasLegendBox() {
         return renderedLegend() != null;
+    }
+
+    /**
+     * layout を通らず、置き直しでも位置が 0,0 のままの箱か（改行、または文字以外の断片を 1 つも持たないインライン要素。
+     * インライン要素の矩形は置いた断片を囲む形で決まるので、断片が無ければ決まらない）。平行移動で動かしてはならない。
+     */
+    private boolean isUnplacedInline() {
+        if (node == null || node.nodeType == NodeType.TEXT || !Float.isNaN(lastLayoutX)) return false;
+        if ("br".equals(node.tag)) return true;
+        if (display == null || display.outer() != Display.Outer.INLINE || display.inner() != Display.Inner.FLOW) return false;
+        if (isAbsolute || isFixed) return false;
+        for (int i = 0, n = inlineFragments.size(); i < n; i++) {
+            if (!inlineFragments.get(i).isText()) return false;
+        }
+        return true;
     }
 
     /** 部分木の位置（箱・断片・行の下端・前回の配置の記録）を {@code (dx, dy)} だけ動かす。描画の変更印も進める。 */
     private void shiftSubtree(float dx, float dy) {
         // 文字の塊の箱は自分の位置を持たない（x / y は置き直しでも動かない。置かれるのは断片）
-        if (node == null || node.nodeType != NodeType.TEXT) {
+        // 改行（br）の箱も同じ: 行に流れるだけで layout を通らず、位置は置き直しでも 0,0 のまま（動かすと一から組んだ結果と違う）
+        // 断片を持たない（置かれなかった）インラインの箱も同じ: 位置は断片から決まるので、断片が無ければ 0,0 のまま
+        boolean unplaced = isUnplacedInline();
+        if ((node == null || node.nodeType != NodeType.TEXT) && !unplaced) {
             this.x += dx;
             this.y += dy;
         }
