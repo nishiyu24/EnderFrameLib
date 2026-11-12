@@ -49,9 +49,14 @@
 
 ### ⚪ P3: 性能最適化の継続推進（ENGINE_REARCHITECTURE_PLAN 準拠）
 - **詳細**:
-  1. P3: 表示項目の相対座標化と平行移動再利用（`layoutWidthChange` の高速化）。
-  2. P4/P5: `varied-list-2000` でのスタイル等価判定短絡とテキスト成形キャッシュ。
-  3. P7: CPU バックエンドでの transition 中の部分再描画維持。
+  1. **P4: スタイル等価判定短絡 & ビューポート依存キャッシュ** (✅ 完了):
+     - `StyleTable.java`: `valuesViewport` キャッシュによる 190 プロパティ走査の $O(1)$ 短絡。
+     - `ComputedStyle.java`: 64-bit FNV-1a `declHash` による `sameDeclarations` / `StyleMap.equals` の $O(1)$ 足切り、`contentHash` / `sameContent` の高速化。
+  2. **P3: 表示項目の相対座標化と平行移動再利用** (✅ 完了):
+     - `DisplayListBuilder.java`: `isIntegerTranslation` 許容誤差導入による浮動小数点誤差起因の matchFail(4) 解消、`ShadowShape.offset` / `withShadowShape` による box-shadow 保持項目の平行移動再利用対応。
+     - `UiView.java`: ウィンドウリサイズ時の `paintBuilder` 保持（`setViewport`）と `exactTranslation` による不変ボックスの表示リスト再利用。
+  3. P5: `varied-list-2000` でのテキスト成形キャッシュ。
+  4. P7: CPU バックエンドでの transition 中の部分再描画維持。
 
 ---
 
@@ -76,6 +81,10 @@
  ├── 4.1 core/README.md の作成（単体利用ガイド） ── ✅ 完了
  ├── 4.2 ImeCompositionTest の作成と単体テスト検証 ── ✅ 完了
  └── 4.3 全ラチェットテスト（Layer, Portability, ApiBoundary, Allocation）の再確認 ── ✅ 完了
+
+[Phase 5] P3 & P4: 性能最適化（ENGINE_REARCHITECTURE_PLAN 準拠） ── 【完了 ✅】
+ ├── 5.1 P4: StyleTable.valuesViewport キャッシュ & ComputedStyle.declHash 64-bit 高速等価判定 ── ✅ 完了
+ └── 5.2 P3: 表示項目平行移動（isIntegerTranslation / ShadowShape 保持）& リサイズ時 DisplayListBuilder 再利用 ── ✅ 完了
 ```
 
 ---

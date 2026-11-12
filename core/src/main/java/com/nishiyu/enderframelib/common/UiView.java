@@ -279,13 +279,16 @@ public class UiView implements AutoCloseable {
             paintBuilderW = width;
             paintBuilderH = height;
         }
-        if (builder == null || paintBuilderW != width || paintBuilderH != height
-                || paintBuilderKeyframes != keyframes || paintBuilderScroll != scrollState) {
+        if (builder == null || paintBuilderKeyframes != keyframes || paintBuilderScroll != scrollState) {
             builder = paintBuilder = new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(width, height, keyframes, scrollState);
             paintBuilderW = width;
             paintBuilderH = height;
             paintBuilderKeyframes = keyframes;
             paintBuilderScroll = scrollState;
+        } else if (paintBuilderW != width || paintBuilderH != height) {
+            builder.setViewport(width, height);
+            paintBuilderW = width;
+            paintBuilderH = height;
         }
         builder.setUseChangeStamps(useChangeStamps);
         builder.setExactTranslation(exactTranslation);
@@ -1211,7 +1214,12 @@ public class UiView implements AutoCloseable {
             ensureLayoutFresh();
         }
         if (resize) {
-            recomputeLayout(pendingResizeW, pendingResizeH);
+            exactTranslation = true;
+            try {
+                recomputeLayout(pendingResizeW, pendingResizeH);
+            } finally {
+                exactTranslation = false;
+            }
             return;
         }
 

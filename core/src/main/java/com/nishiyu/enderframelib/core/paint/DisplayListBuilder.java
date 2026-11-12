@@ -680,7 +680,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         boolean moved = dx != 0 || dy != 0;
         // スクロールの作り直しは丸めて動かす。子の増減では、整数ぶんだけ動いた箱に限って厳密に動かす（丸めが入らない）
         boolean moveOk = m.translatable && (translating
-                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && dx == Math.rint(dx) && dy == Math.rint(dy)));
+                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && isIntegerTranslation(dx) && isIntegerTranslation(dy)));
         if (moved && !moveOk) return matchFail(4);
         if (m.nums.length != NUMS_LENGTH) return matchFail(5);
         for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return matchFail(6);
@@ -722,6 +722,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         return 2;
     }
 
+    private static boolean isIntegerTranslation(float d) {
+        return Math.abs(d - Math.rint(d)) <= 1e-3f;
+    }
+
     /**
      * 前回の項目を {@code (dx, dy)} を四捨五入した分だけ動かし、クリップを今のものに替えた写し。項目の座標は整数なので、
      * 位置を整数に丸めたあとの相対関係（箱の中の項目どうしの並び）は崩れない。
@@ -730,12 +734,20 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         int ix = Math.round(dx), iy = Math.round(dy);
         List<DisplayItem> out = new ArrayList<>(m.items.size());
         for (DisplayItem it : m.items) {
-            int ox = textOnly && it.type() != ElementType.TEXT ? 0 : ix, oy = textOnly && it.type() != ElementType.TEXT ? 0 : iy;
+            boolean movesWithFragment = it.type() == ElementType.TEXT || it.id().contains("_tsh");
+            int ox = textOnly && !movesWithFragment ? 0 : ix, oy = textOnly && !movesWithFragment ? 0 : iy;
             RenderMeta meta = it.meta();
-            if (meta != null && meta.clipRect() != null) {
-                meta = new RenderMeta(newClip, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
-                        meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
-                        meta.roundedBorder(), meta.hints());
+            if (meta != null) {
+                RenderHints h = meta.hints();
+                if (h != null && h.shadowShape() != null && (ox != 0 || oy != 0)) {
+                    h = h.withShadowShape(h.shadowShape().offset(ox, oy));
+                }
+                if (meta.clipRect() != null || (h != null && h != meta.hints())) {
+                    ClipRect c = meta.clipRect() != null ? newClip : null;
+                    meta = new RenderMeta(c, meta.borderRadii(), meta.circleBorder(), meta.fontHeight(), meta.baseline(),
+                            meta.lineHeight(), meta.originX(), meta.originY(), meta.itemCount(), meta.interactiveState(),
+                            meta.roundedBorder(), h != null ? h : meta.hints());
+                }
             }
             out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ox, it.y() + oy, it.width(), it.height(),
                     it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
@@ -774,7 +786,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             if (meta == null) continue;
             if (meta.clipRect() != null && !sameClip(meta.clipRect(), clip)) return false;
             RenderHints h = meta.hints();
-            if (h.shadowShape() != null || h.shaderGradient() != null) return false;
+            if (h.shaderGradient() != null) return false;
             LayerSpec layer = h.layer();
             if (layer != null && (layer.clip() != null || layer.backdropShape() != null)) return false;
         }

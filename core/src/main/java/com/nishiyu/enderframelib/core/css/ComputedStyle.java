@@ -50,6 +50,8 @@ public final class ComputedStyle {
     private final StyleMap properties;
     private final float elementFontSize;
     private final float rootFontSize;
+    /** 宣言内容の 64-bit ハッシュ。{@link #sameDeclarations} や {@link StyleMap#equals} の高速足切り用。 */
+    final long declHash;
 
     /**
      * 描画側が、この算出スタイルだけから決まる結果（アニメーション定義の解決など）を覚える置き場。
@@ -193,9 +195,32 @@ public final class ComputedStyle {
             this.extrasBase = x;
             this.size = n;
         }
+        if (source instanceof StyleMap other) {
+            this.declHash = other.owner.declHash;
+        } else {
+            this.declHash = computeDeclHash(this.values, this.extras);
+        }
         this.properties = new StyleMap(this);
         this.elementFontSize = elementFontSize;
         this.rootFontSize = rootFontSize;
+    }
+
+    private static long computeDeclHash(CssValue[] values, Map<String, String> extras) {
+        long h = 0xcbf29ce484222325L;
+        for (int i = 0; i < values.length; i++) {
+            CssValue v = values[i];
+            if (v != null) {
+                h ^= i;
+                h *= 0x100000001b3L;
+                h ^= (long) v.text.hashCode();
+                h *= 0x100000001b3L;
+            }
+        }
+        if (extras != null && !extras.isEmpty()) {
+            h ^= (long) extras.hashCode();
+            h *= 0x100000001b3L;
+        }
+        return h;
     }
 
     /**
@@ -390,7 +415,7 @@ public final class ComputedStyle {
 
     /** 宣言が全く同じか（フォントサイズは見ない）。 */
     public static boolean sameDeclarations(ComputedStyle a, ComputedStyle b) {
-        return a == b || a.properties.equals(b.properties);
+        return a == b || (a != null && b != null && a.declHash == b.declHash && a.properties.equals(b.properties));
     }
 
     /**
@@ -434,10 +459,11 @@ public final class ComputedStyle {
         public boolean equals(Object o) {
             if (o == this) return true;
             if (o instanceof StyleMap other) {
-                return owner.size == other.owner.size
-                        && java.util.Arrays.equals(owner.values, other.owner.values)
+                return owner.declHash == other.owner.declHash
+                        && owner.size == other.owner.size
                         && (owner.extrasBase == other.owner.extrasBase
-                        || java.util.Objects.equals(owner.extras, other.owner.extras));
+                        || java.util.Objects.equals(owner.extras, other.owner.extras))
+                        && java.util.Arrays.equals(owner.values, other.owner.values);
             }
             return super.equals(o);
         }
@@ -552,18 +578,16 @@ public final class ComputedStyle {
     }
 
     private static int contentHash(ComputedStyle s) {
-        int h = 17;
-        for (CssValue v : s.values) h = 31 * h + (v == null ? 0 : v.text.hashCode());
+        int h = (int) (s.declHash ^ (s.declHash >>> 32));
         h = 31 * h + Float.floatToIntBits(s.elementFontSize);
         h = 31 * h + Float.floatToIntBits(s.rootFontSize);
-        if (s.extras != null) h = 31 * h + s.extras.hashCode();
         return h;
     }
 
     /** 宣言・フォントサイズが全く同じか（値は正規の 1 個のオブジェクトなので参照で比べる）。 */
     private static boolean sameContent(ComputedStyle a, ComputedStyle b) {
         if (a == b) return true;
-        if (a.size != b.size || Float.compare(a.elementFontSize, b.elementFontSize) != 0
+        if (a.declHash != b.declHash || a.size != b.size || Float.compare(a.elementFontSize, b.elementFontSize) != 0
                 || Float.compare(a.rootFontSize, b.rootFontSize) != 0) return false;
         CssValue[] x = a.values, y = b.values;
         if (x.length != y.length) return false;
