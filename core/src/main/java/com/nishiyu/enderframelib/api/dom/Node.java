@@ -113,6 +113,15 @@ public interface Node extends EventTarget {
     void setTextContent(@Nullable String textContent);
 
     /**
+     * {@link #setTextContent} と同じ結果の文字にするが、子が空でない Text 1 つだけのときは、その Text の文字を書き換えるだけにする
+     * （Text 節を作り直さない）。値が頻繁に変わる文字（HUD・データバインディング）向けで、レイアウトの局所パッチに乗る。
+     * 既定は {@link #setTextContent} と同じ。
+     */
+    default void updateTextContent(@Nullable String textContent) {
+        setTextContent(textContent);
+    }
+
+    /**
      * Adds the specified node to the end of the list of children of this node.
      */
     Node appendChild(Node node);

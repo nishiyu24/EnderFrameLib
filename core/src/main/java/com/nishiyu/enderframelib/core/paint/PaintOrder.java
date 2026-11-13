@@ -98,6 +98,12 @@ final class PaintOrder {
     private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
     private final List<ScrollContent> scrollContents = new ArrayList<>();
 
+    /**
+     * 子の部分木ごと省ける（画面外で、中の箱も全て省かれる）か判定して、省いたら true を返す（描画側が持ち主の記録を済ませる）。
+     * 省いた子は分類しない（箱ごとにタスクを作って後で捨てるより安い）。null なら省かない。
+     */
+    Predicate<LayoutBox> subtreePruner;
+
     // ==========================================
     // 部分木の保持（チャンク）
     // ==========================================
@@ -344,18 +350,34 @@ final class PaintOrder {
      * スクロールするだけで中身が正しく動くコンテナか: スクロールコンテナで、中身に sticky・固定配置・包含ブロックがコンテナの外の
      * 絶対配置（スクロールに動かされない）が無い。そうした子孫があると、中身の節を動かすと位置が合わないので、従来の作り直しにする。
      */
-    private static boolean scrollsAsOneNode(LayoutBox box) {
+    private boolean scrollsAsOneNode(LayoutBox box) {
         if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
         String tag = box.node.tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return false;
-        return !hasUnscrollableDescendant(box, box);
+        // 子孫の全走査になる（大きいスクロールコンテナでは毎回の作り直しの負担）。子の増減や、固定・粘着・絶対配置・包含ブロックに効くスタイルが変わると構造の世代が進むので、進むまで保持する
+        long struct = LayoutBox.structEpoch(), container = LayoutBox.containerEpoch();
+        ScrollVerdict known = unscrollableVerdict.get(box);
+        if (known == null || known.struct != struct || (known.sawAbsolute && known.container != container)) {
+            if (unscrollableVerdict.size() > 1024) unscrollableVerdict.clear(); // 消えた箱の分が溜まり続けないように
+            scanSawAbsolute = false;
+            boolean bad = hasUnscrollableDescendant(box, box);
+            known = new ScrollVerdict(!bad, scanSawAbsolute, struct, container);
+            unscrollableVerdict.put(box, known);
+        }
+        return known.oneNode;
     }
 
-    private static boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box) {
+    private record ScrollVerdict(boolean oneNode, boolean sawAbsolute, long struct, long container) {}
+
+    private final java.util.IdentityHashMap<LayoutBox, ScrollVerdict> unscrollableVerdict = new java.util.IdentityHashMap<>();
+    private boolean scanSawAbsolute;
+
+    private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box) {
         for (LayoutBox child : box.children) {
             if (child.display != null && child.display.isNone()) continue;
             if (child.isFixed || child.isSticky) return true;
             if (child.isAbsolute) {
+                scanSawAbsolute = true;
                 LayoutBox cb = child.findContainingBlock();
                 if (cb == null) return true;
                 boolean inside = false;
@@ -478,7 +500,11 @@ final class PaintOrder {
             scrollContents.add(content);
             childParent = content.contentId;
         }
-        for (LayoutBox child : box.children) classify(child, clipForChild(child, childClip), childParent, sc, local);
+        Predicate<LayoutBox> prune = subtreePruner;
+        for (LayoutBox child : box.children) {
+            if (prune != null && prune.test(child)) continue;
+            classify(child, clipForChild(child, childClip), childParent, sc, local);
+        }
 
         boolean scrollbars = factsOf(box.style).scrollbars();
         if (!"root".equals(tag) && box.w > 0 && box.h > 0 && scrollbars && !isInvisible(box)) {

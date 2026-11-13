@@ -1996,6 +1996,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayer(GpuScrollLayer l) {
         var NONE = com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
         if (!retainedScroll || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
+        // 層は画面と同じ大きさの FBO。画面の 1/8 に満たない小さなコンテナ（カードの overflow:hidden など）に作ると、
+        // 数が多い文書で作成と破棄を毎フレーム繰り返す（保持できる層は少ない）うえ、得も無い
+        int[] bb = l.bounds();
+        if ((long) (bb[2] - bb[0]) * (bb[3] - bb[1]) * 8L < (long) width * height) return NONE;
         Retained r = retained.get(l.key());
         if (r == null) {
             // スクロールが実際に起きるまでは保持しない（静止した文書の見た目を変えない）: 節の位置が前フレームから動いたときに記録を始める

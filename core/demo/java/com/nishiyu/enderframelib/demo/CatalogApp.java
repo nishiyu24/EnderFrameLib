@@ -153,9 +153,10 @@ public final class CatalogApp {
             for (int i = 0; i < 10; i++) {
                 int k = rnd.nextInt(n);
                 var card = cards.get(k);
-                card.price().setTextContent("$" + (5 + rnd.nextInt(995)));
+                // 既存の Text 節の文字だけを書き換える（箱の木を作り直さない局所パッチに乗る）
+                card.price().updateTextContent("$" + (5 + rnd.nextInt(995)));
                 int stock = rnd.nextInt(50);
-                card.badge().setTextContent("stock " + stock);
+                card.badge().updateTextContent("stock " + stock);
                 classList(card.badge()).toggle("low", stock < 8);
                 updates.update(u -> u + 1);
             }
