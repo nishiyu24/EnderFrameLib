@@ -377,6 +377,38 @@ public class FlexLayoutEngine extends LayoutEngine {
         return true;
     }
 
+    /**
+     * 中身が変わっても、flex コンテナの測定（行の折り返し・伸縮・行の交差軸の寸法）に響かないアイテムか。
+     * コンテナがアイテムから読むのは主軸の仮の寸法・外寸・（baseline 揃えのときだけ）ベースラインで、
+     * 行方向で次のとき、仮の主軸の寸法は中身に依らない: 幅が px で確定・flex-basis が auto・最小寸法が確定している
+     * （スクロールコンテナは 0）・最大寸法が確定している。この条件で外寸が変わらない子の変化は、コンテナが吸収できる。
+     * アイテムが stretch で高さを固定されて測られているときは、自然な高さが見えないので吸収しない。
+     */
+    static boolean cutoffSafeItem(LayoutBox parent, LayoutBox child) {
+        if (!Axes.of(parent.style).row) return false;
+        if (!child.measuredWithoutFixedHeight()) return false;
+        if (alignSelfOf(child, alignItemsOf(parent.style)) == CssKeywords.Alignment.BASELINE) return false;
+        if (!isPxLength(child.style.get(CssPropertyIndex.WIDTH))) return false;
+        String basis = child.style.get(CssPropertyIndex.FLEX_BASIS);
+        if (basis != null && !basis.isBlank() && !"auto".equalsIgnoreCase(basis.trim())) return false;
+        String min = child.style.get(CssPropertyIndex.MIN_WIDTH);
+        boolean minAuto = min == null || min.isBlank() || "auto".equalsIgnoreCase(min.trim());
+        if (minAuto ? !child.isScrollContainer() : !isPxLength(min)) return false;
+        String max = child.style.get(CssPropertyIndex.MAX_WIDTH);
+        return max == null || max.isBlank() || "none".equalsIgnoreCase(max.trim()) || isPxLength(max);
+    }
+
+    private static boolean isPxLength(String v) {
+        if (v == null) return false;
+        String t = v.trim().toLowerCase();
+        if (!t.endsWith("px") || t.length() < 3) return false;
+        for (int i = 0, n = t.length() - 2; i < n; i++) {
+            char c = t.charAt(i);
+            if (!(c >= '0' && c <= '9' || c == '.')) return false;
+        }
+        return true;
+    }
+
     /** 主軸の寸法を決めて測り直す。行方向なら幅を固定して高さを、列方向なら高さを固定する。 */
     private static void setMainSize(LayoutBox child, Axes axes, float size, ConstraintSpace space, LayoutContext ctx) {
         if (axes.row) {

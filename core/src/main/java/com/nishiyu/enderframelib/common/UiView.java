@@ -133,12 +133,16 @@ public class UiView implements AutoCloseable {
     private List<ScrollContentInfo> scrollBase = List.of();
     /** {@link #scrollBase} の表示リストを作ったときの、全ての節のスクロール位置（0 でないもの）。 */
     private Map<HtmlNode, float[]> scrollAtBuild = Map.of();
+    /** 表示リストの窓（画面と余白の範囲に作った項目）を作ったときのスクロール位置。節の移動で済ませてよい範囲はこれを基準にする（箱の位置の基準は {@link #scrollAtBuild}）。 */
+    private Map<HtmlNode, float[]> scrollWindowAt = Map.of();
 
     /** 診断: 位置の更新を、節の移動で済ませた回数・スクロールだけなのに作り直した回数・スクロール以外で作り直した回数。 */
     public static final java.util.concurrent.atomic.LongAdder STAT_SCROLL_TRANSLATED = new java.util.concurrent.atomic.LongAdder(),
             STAT_SCROLL_FALLBACK = new java.util.concurrent.atomic.LongAdder(), STAT_REPOSITION_OTHER = new java.util.concurrent.atomic.LongAdder();
     /** 節の移動で済ませる範囲（px）。表示リストは画面の外 256px まで作ってあるので、それより内に収める。 */
-    private static final float SCROLL_TRANSLATE_LIMIT = 192f;
+    /** 診断: 箱の位置を決め直したうえで節の移動で済ませた回数（箱は今のスクロール位置、表示リストは作ったときの位置になる）。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_TRANSLATE_AFTER_FRESH = new java.util.concurrent.atomic.LongAdder();
+    private static final float SCROLL_TRANSLATE_LIMIT = DisplayListBuilder.CULL_MARGIN - 64f;
     /** まだ反映していないビューポートの大きさ。無ければ -1。 */
     /**
      * GUI など、クライアントが画面の大きさを自分で決めているセッションか。そうでない（ブロック・アイテム・ホログラムの
@@ -993,6 +997,7 @@ public class UiView implements AutoCloseable {
         setRenderCache(elements);
         scrollBase = DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of();
         scrollAtBuild = scrollState.snapshot();
+        scrollWindowAt = scrollAtBuild;
     }
 
     /** 直近に作った表示リストの、中身を 1 つの節にまとめたスクロールコンテナ。既定の描画（{@link DisplayListBuilder}）が持つ。 */
@@ -1020,11 +1025,7 @@ public class UiView implements AutoCloseable {
         for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
             if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false; // 0 に戻った
         }
-        for (ScrollContentInfo info : scrollBase) {
-            float dx = scrollState.getScrollX(info.node()) - info.sx0();
-            float dy = scrollState.getScrollY(info.node()) - info.sy0();
-            if (Math.abs(dx) > SCROLL_TRANSLATE_LIMIT || Math.abs(dy) > SCROLL_TRANSLATE_LIMIT) return false;
-        }
+        if (!withinWindow()) return false;
         for (ScrollContentInfo info : scrollBase) {
             float dx = scrollState.getScrollX(info.node()) - info.sx0();
             float dy = scrollState.getScrollY(info.node()) - info.sy0();
@@ -1048,11 +1049,13 @@ public class UiView implements AutoCloseable {
             STAT_SCROLL_TRANSLATED.increment();
             return;
         }
-        ensureLayoutFresh();
+        if (scrollOnly && deferScrollLayout && !observed && rebuildWindowAtBoxFrame()) return;
+        layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
         RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
         // スクロール量だけが変わったなら、表示リストは作り直さない（レイアウトは上で最新にしてある）
         if (scrollOnly && tryScrollTranslate()) {
             STAT_SCROLL_TRANSLATED.increment();
+            STAT_TRANSLATE_AFTER_FRESH.increment();
         } else {
             (scrollOnly ? STAT_SCROLL_FALLBACK : STAT_REPOSITION_OTHER).increment();
             repaintFromLayout(true);
@@ -1060,15 +1063,142 @@ public class UiView implements AutoCloseable {
         if (document.root instanceof HtmlDocument live) live.notifyLayoutObservers();
     }
 
+    /**
+     * スクロールと同じ更新で見た目だけが変わった（スクロールで :hover の対象が替わった）とき、箱の位置は決め直さずに、
+     * 変わった箱のスライスだけを差し替え、スクロール量は節の移動で済ませる。できなければ false（何も変えていない）。
+     */
+    private boolean patchThenTranslate() {
+        if (!deferScrollLayout || paintBuilder == null || !DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
+        if (document == null || (document.root instanceof HtmlDocument live && live.hasLayoutObservers())) return false;
+        if (!canTranslateAll()) return false;
+        List<LayoutBox> changed = RenderPipeline.styleChangedBoxes();
+        if (changed.isEmpty()) return false;
+        List<DisplayItem> patched = paintBuilder.patchBoxes(changed);
+        if (patched == null) return false;
+        RESTYLE_REPAINT_PATCH.incrementAndGet();
+        setRenderCache(patched);
+        applyOverrides();
+        if (!tryScrollTranslate()) { // canTranslateAll で確かめてあるので通常は来ない。来たら位置を決め直して作り直す
+            repositionFromLayout(false);
+            return true;
+        }
+        layoutStale = true;
+        STAT_SCROLL_TRANSLATED.increment();
+        return true;
+    }
+
+    /** {@link #tryScrollTranslate} が成り立つか（表示リストを変えずに確かめる）。 */
+    private boolean canTranslateAll() {
+        java.util.Set<HtmlNode> handled = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (ScrollContentInfo info : scrollBase) handled.add(info.node());
+        Map<HtmlNode, float[]> now = scrollState.snapshot();
+        for (Map.Entry<HtmlNode, float[]> e : now.entrySet()) {
+            float[] was = scrollAtBuild.get(e.getKey());
+            boolean changed = was == null || was[0] != e.getValue()[0] || was[1] != e.getValue()[1];
+            if (changed && !handled.contains(e.getKey())) return false;
+        }
+        for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
+            if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false;
+        }
+        return withinWindow();
+    }
+
+    /** どのスクロールコンテナも、表示リストの窓を作った位置から余白の内に居るか（居なければ、窓を作り直さないと中身が足りない）。 */
+    private boolean withinWindow() {
+        for (ScrollContentInfo info : scrollBase) {
+            float[] w = scrollWindowAt.get(info.node());
+            float wx = w != null ? w[0] : 0f, wy = w != null ? w[1] : 0f;
+            if (Math.abs(scrollState.getScrollX(info.node()) - wx) > SCROLL_TRANSLATE_LIMIT
+                    || Math.abs(scrollState.getScrollY(info.node()) - wy) > SCROLL_TRANSLATE_LIMIT) return false;
+        }
+        return true;
+    }
+
+    /** 診断: 箱の位置を決め直さずに、窓だけを動かして表示リストを作り直した回数。 */
+    public static final java.util.concurrent.atomic.LongAdder STAT_WINDOW_REBUILD = new java.util.concurrent.atomic.LongAdder();
+
+    /**
+     * 窓の余白を超えてスクロールしたとき、箱の位置（前に決めたスクロール位置のまま）は決め直さずに、窓だけを今の位置へ動かして
+     * 表示リストを作り直す。箱も表示リストの座標もスクロール前の位置のままで、動いた分は節の移動で足す。
+     * 箱の位置を決め直す分（全箱の配置）が要らない。できなければ false（何も変えていない）。
+     */
+    private boolean rebuildWindowAtBoxFrame() {
+        if (!layoutStale || paintBuilder == null || !DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
+        if (layoutRoot == null || document == null) return false;
+        java.util.Set<HtmlNode> handled = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (ScrollContentInfo info : scrollBase) handled.add(info.node());
+        Map<HtmlNode, float[]> now = scrollState.snapshot();
+        for (Map.Entry<HtmlNode, float[]> e : now.entrySet()) {
+            float[] was = scrollAtBuild.get(e.getKey());
+            boolean changed = was == null || was[0] != e.getValue()[0] || was[1] != e.getValue()[1];
+            if (changed && !handled.contains(e.getKey())) return false;
+        }
+        for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
+            if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false;
+        }
+        Map<HtmlNode, float[]> shift = new java.util.IdentityHashMap<>();
+        for (ScrollContentInfo info : scrollBase) {
+            float[] was = scrollAtBuild.get(info.node());
+            float wx = was != null ? was[0] : 0f, wy = was != null ? was[1] : 0f;
+            shift.put(info.node(), new float[]{scrollState.getScrollX(info.node()) - wx, scrollState.getScrollY(info.node()) - wy});
+        }
+        // 箱の位置を決めたときのスクロール位置へ一時的に戻して作る（つまみの位置・コンテナの基準が、箱と同じ座標になる）
+        java.util.Set<HtmlNode> keys = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        keys.addAll(now.keySet());
+        keys.addAll(scrollAtBuild.keySet());
+        for (HtmlNode k : keys) {
+            float[] f = scrollAtBuild.get(k);
+            scrollState.setScroll(k, f != null ? f[0] : 0f, f != null ? f[1] : 0f);
+        }
+        List<DisplayItem> elements;
+        try {
+            paintBuilder.setWindowShift(shift);
+            elements = paintBoxes(layoutRoot, rootW, rootH, true);
+        } finally {
+            paintBuilder.setWindowShift(null);
+            for (HtmlNode k : keys) {
+                float[] n = now.get(k);
+                scrollState.setScroll(k, n != null ? n[0] : 0f, n != null ? n[1] : 0f);
+            }
+        }
+        if (elements == null) return false;
+        List<ScrollContentInfo> built = DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of();
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        for (ScrollContentInfo info : built) {
+            keep.add(info.contentId());
+            if (info.thumbVId() != null) keep.add(info.thumbVId());
+            if (info.thumbHId() != null) keep.add(info.thumbHId());
+        }
+        for (ScrollContentInfo info : scrollBase) { // 窓から外れたコンテナの移動量は、残さない
+            if (!keep.contains(info.contentId())) clearPaintOffset(info.contentId());
+            if (info.thumbVId() != null && !keep.contains(info.thumbVId())) clearPaintOffset(info.thumbVId());
+            if (info.thumbHId() != null && !keep.contains(info.thumbHId())) clearPaintOffset(info.thumbHId());
+        }
+        setRenderCache(elements);
+        scrollBase = built;
+        scrollWindowAt = now;
+        applyOverrides();
+        if (!tryScrollTranslate()) { // 作った窓の中なので通常は来ない。来たら位置を決め直して作り直す
+            layoutStale = false;
+            RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
+            repaintFromLayout(true);
+            return true;
+        }
+        STAT_WINDOW_REBUILD.increment();
+        return true;
+    }
+
     /** 汚れた部分木を再スタイルし、結果に応じて必要な最小の段（全レイアウト / 位置だけ / 描き直しだけ）を走らせる。 */
     private void restyleAndUpdate(boolean repositionRequested, boolean scrollOnly, List<HtmlNode> attrNodes) {
-        nodeBoxIndex = null; // 再スタイルは箱を作り替えることがある（疑似要素・生成された箱）。索引は保守側に捨てる
         UiDocumentCompiler parser = new UiDocumentCompiler();
         RenderPipeline.RestyleResult res = parser.restyleLayoutTree(
                 layoutRoot, document,
                 rootW, rootH,
                 env, interactionState);
+        // 箱を作り替えるのは構造が変わる再スタイルだけ（疑似要素・生成された箱）。それ以外は箱を使い回して refreshStyle するだけなので、索引は残す
+        if (res.structural()) nodeBoxIndex = null;
         if (res.layoutRequired()) {
+            ensureLayoutFresh();
             if (res.structural()) {
                 RESTYLE_STRUCTURAL.incrementAndGet();
                 recomputeLayout(rootW, rootH);
@@ -1081,6 +1211,7 @@ public class UiView implements AutoCloseable {
         } else if (repositionRequested || res.repositionRequired()) {
             // 再スタイルで見た目が変わった・位置の指定が変わったときは、スクロールだけの更新ではない
             RESTYLE_REPOSITION.incrementAndGet();
+            if (scrollOnly && res.styleChanged() && !res.repositionRequired() && patchThenTranslate()) return;
             repositionFromLayout(scrollOnly && !res.styleChanged() && !res.repositionRequired());
         } else if (res.styleChanged()) {
             List<LayoutBox> changedBoxes = RenderPipeline.styleChangedBoxes();
@@ -1092,7 +1223,8 @@ public class UiView implements AutoCloseable {
             }
             if (patched != null) {
                 RESTYLE_REPAINT_PATCH.incrementAndGet();
-                publishBuilt(patched);
+                if (layoutStale) setRenderCache(patched); // 位置を後回しにしている間は、表示リストのスクロールの基準を動かさない
+                else publishBuilt(patched);
                 applyOverrides();
             } else {
                 RESTYLE_REPAINT_FULL.incrementAndGet();
@@ -1182,9 +1314,14 @@ public class UiView implements AutoCloseable {
             boolean hadPendingText;
             synchronized (pendingTextNodes) {
                 hadPendingText = !pendingTextNodes.isEmpty();
-                pendingTextNodes.clear();
+                // 再スタイルだけと重なったときは、文字を先に局所パッチで反映してから再スタイルを進める（下の combinedTextPatch）。残しておく
+                if (hadPendingText && (level == InvalidationLevel.RESTYLE || level == InvalidationLevel.NONE) && combinedTextPatchEnabled) {
+                    combinedTextPatch = true;
+                } else {
+                    pendingTextNodes.clear();
+                }
             }
-            if (hadPendingText && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
+            if (hadPendingText && !combinedTextPatch && level != InvalidationLevel.RELAYOUT) level = InvalidationLevel.RELAYOUT;
         }
         if (level != InvalidationLevel.CHILD_PATCH) {
             // 子の増減と再スタイルが同じフレームに重なったら、再スタイルの経路は箱を増減しないので全体にする
@@ -1209,10 +1346,28 @@ public class UiView implements AutoCloseable {
             interactionState.markAllDirty();
         }
         // 後回しにした位置の決め直しは、スクロールだけの更新以外の経路に入る前に済ませる
-        if (layoutStale && (resize || level != InvalidationLevel.REPOSITION || !scrollOnly || interactionState.hasDirtyNodes()
-                || !attrNodes.isEmpty())) {
+        // 汚れた節（:hover など）の再スタイルは、位置が古いままでも進められる（箱は表示リストを作ったときの位置のままで、表示リストと同じ座標）。
+        // 見た目だけの変化は箱のスライスの差し替えで済み、位置が要る経路に落ちるときだけ restyleAndUpdate が決め直す
+        // 文字だけの更新（毎秒のタイマーなど）は、位置が古いままでも箱の座標で済ませられる（tryTextPatch が古い位置の枠で直す）。ここで決め直すと全箱の配置が走る
+        boolean staleTextPatch = layoutStale && staleTextPatchEnabled && (level == InvalidationLevel.TEXT_PATCH || combinedTextPatch) && !resize
+                && attrNodes.isEmpty() && !repositionRequested
+                && !(document.root instanceof HtmlDocument liveDoc && liveDoc.hasLayoutObservers());
+        if (layoutStale && !staleTextPatch && (resize || level != InvalidationLevel.REPOSITION && level != InvalidationLevel.NONE && level != InvalidationLevel.RESTYLE
+                || !scrollOnly && level == InvalidationLevel.REPOSITION || !attrNodes.isEmpty())) {
             ensureLayoutFresh();
         }
+        if (combinedTextPatch && !resize) {
+            combinedTextPatch = false;
+            if (!staleTextPatch) ensureLayoutFresh();
+            if (tryTextPatch(true)) {
+                TEXT_PATCH_HITS.incrementAndGet();
+                COMBINED_TEXT_PATCH_HITS.incrementAndGet();
+            } else {
+                TEXT_PATCH_FALLBACKS.incrementAndGet();
+                level = InvalidationLevel.RELAYOUT;
+            }
+        }
+        combinedTextPatch = false;
         if (resize) {
             exactTranslation = true;
             try {
@@ -1263,7 +1418,23 @@ public class UiView implements AutoCloseable {
      * <p>条件: 文字以外の汚れが無い・コンテナクエリが無い・変わった文字の箱がすべて見つかる・文字の前後とも空白だけではない
      * （空白だけの Text は箱の木に入るかどうかが変わる）・表や入力部品、{@code <style>} の中ではない。</p>
      */
+    /** 文字の変更が再スタイルと同じフレームに重なったとき、文字を局所パッチで済ませてから再スタイルを進めるか（切り分け用）。 */
+    public static volatile boolean combinedTextPatchEnabled = !Boolean.getBoolean("enderframe.ui.nocombinedtext");
+    /** 診断: 位置の決め直しを後回しにしたまま、文字の局所パッチで済ませた回数。 */
+    public static final java.util.concurrent.atomic.AtomicLong STALE_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
+    /** 診断: 重なった文字の変更を局所パッチで済ませた回数。 */
+    public static final java.util.concurrent.atomic.AtomicLong COMBINED_TEXT_PATCH_HITS = new java.util.concurrent.atomic.AtomicLong();
+    private boolean combinedTextPatch;
+
     private boolean tryTextPatch() {
+        return tryTextPatch(false);
+    }
+
+    /** 位置の決め直しを後回しにしている間の文字の局所パッチを、決め直さずに古い位置の枠で済ませるか（切り分け用）。 */
+    public static volatile boolean staleTextPatchEnabled = !Boolean.getBoolean("enderframe.ui.nostaletextpatch");
+
+    /** @param allowOtherDirty true なら、文字の節以外に汚れた節（これから再スタイルする）があってもよい。 */
+    private boolean tryTextPatch(boolean allowOtherDirty) {
         List<HtmlNode> changed;
         synchronized (pendingTextNodes) {
             changed = new ArrayList<>(pendingTextNodes);
@@ -1272,7 +1443,7 @@ public class UiView implements AutoCloseable {
         Document doc = document;
         if (changed.isEmpty() || layoutRoot == null || doc == null || doc.root == null || doc.sheet == null) return false;
         if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
-        if (!interactionState.styleDirtyOnlyIn(changed)) return false;
+        if (!allowOtherDirty && !interactionState.styleDirtyOnlyIn(changed)) return false;
 
         Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
         for (HtmlNode n : changed) {
@@ -1295,17 +1466,51 @@ public class UiView implements AutoCloseable {
         long startedAt = System.nanoTime();
         for (LayoutBox box : found.values()) box.refreshStyle(box.style);
         applyOverrides();
-        RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
-                found.values());
-        for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
-        publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
-        long layoutDone = System.nanoTime();
+        // 位置の決め直しを後回しにしている間は、箱は表示リストを作ったときのスクロール位置のまま。同じ位置へ一時的に戻して、その枠で直す
+        boolean stale = layoutStale;
+        Map<HtmlNode, float[]> scrollNow = null;
+        Set<HtmlNode> scrollKeys = null;
         List<DisplayItem> elements = null;
-        if (paintBuilder == null) {
-            SLICE_NO_BUILDER.incrementAndGet();
-        } else if (paintBuilder.canPatchBoxes(found.values())) {
-            elements = paintBuilder.patchBoxes(found.values());
+        long layoutDone;
+        try {
+            if (stale) {
+                scrollNow = scrollState.snapshot();
+                scrollKeys = Collections.newSetFromMap(new IdentityHashMap<>());
+                scrollKeys.addAll(scrollNow.keySet());
+                scrollKeys.addAll(scrollAtBuild.keySet());
+                for (HtmlNode k : scrollKeys) {
+                    float[] f = scrollAtBuild.get(k);
+                    scrollState.setScroll(k, f != null ? f[0] : 0f, f != null ? f[1] : 0f);
+                }
+            }
+            RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
+                    found.values());
+            for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
+            publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
+            layoutDone = System.nanoTime();
+            if (paintBuilder == null) {
+                SLICE_NO_BUILDER.incrementAndGet();
+            } else if (paintBuilder.canPatchBoxes(found.values())) {
+                elements = paintBuilder.patchBoxes(found.values());
+            }
+        } finally {
+            if (stale) {
+                for (HtmlNode k : scrollKeys) {
+                    float[] n = scrollNow.get(k);
+                    scrollState.setScroll(k, n != null ? n[0] : 0f, n != null ? n[1] : 0f);
+                }
+            }
         }
+        if (stale && elements != null) { // 表示リストのスクロールの基準は動かさない（位置は後回しのまま）
+            STALE_TEXT_PATCH_HITS.incrementAndGet();
+            setRenderCache(elements);
+            lastBreakdown = "stale-text-patch nodes=" + found.size() + " layout=" + ms(startedAt, layoutDone) + "ms";
+            applyOverrides();
+            lastLayoutFinishedNanos = System.nanoTime();
+            lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
+            return true;
+        }
+        if (stale) ensureLayoutFresh(); // 局所パッチで済まなかったので、位置を決め直してから全体を描く
         if (elements == null) {
             useChangeStamps = changeStampsEnabled && RenderPipeline.lastRelayoutWasLocal();
             try {
@@ -1441,7 +1646,7 @@ public class UiView implements AutoCloseable {
             pendingChildParents.clear();
         }
         Document doc = document;
-        if (!childPatchEnabled || parents.isEmpty() || !attrNodes.isEmpty() || repositionRequested || layoutRoot == null
+        if (!childPatchEnabled || parents.isEmpty() || (!attrNodes.isEmpty() || repositionRequested) || layoutRoot == null
                 || doc == null || doc.root == null || doc.sheet == null) {
             return "preconditions";
         }

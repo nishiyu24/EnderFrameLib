@@ -338,8 +338,8 @@ public class UI {
     public static void bindText(Node node, State<?> state) {
         if (node == null) throw new IllegalArgumentException("Cannot bind text: target node is null");
         if (state == null) return;
-        node.setTextContent(String.valueOf(state.get()));
-        state.onChange(val -> node.setTextContent(val != null ? String.valueOf(val) : ""));
+        node.updateTextContent(String.valueOf(state.get()));
+        state.onChange(val -> node.updateTextContent(val != null ? String.valueOf(val) : ""));
     }
 
     /**

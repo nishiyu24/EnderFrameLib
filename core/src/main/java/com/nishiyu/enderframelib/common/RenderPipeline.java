@@ -319,7 +319,7 @@ public class RenderPipeline {
 
     private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                         ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements) {
-        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, true);
+        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, true, true);
     }
 
     /**
@@ -327,8 +327,11 @@ public class RenderPipeline {
      *                   印が付いたまま残り、次の局所更新（経路だけの印付け）が経路の外の箱を「変わった」と読んで配置を使い回せない
      */
     private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
-                                        ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements, boolean clearMarks) {
-        rootBox.linkParents();
+                                        ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements, boolean clearMarks,
+                                        boolean linkParents) {
+        // 箱の木を作り替えていない再レイアウト（relayoutInPlace）は、親リンクが張られたままなので木全体を辿り直さない
+        // （測定と配置が子を迎えるたびに adopt するので、増えた箱も張られる）
+        if (linkParents) rootBox.linkParents();
         Viewport viewport = new Viewport(rootW, rootH, devicePixelRatio);
         rootBox.devicePixelRatio = viewport.devicePixelRatio();
         long run = LAYOUT_RUNS.incrementAndGet();
@@ -383,7 +386,7 @@ public class RenderPipeline {
                 ? LayoutBox.markLayoutChangesAlong(rootBox, changed, shallow) : null;
         stats().lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
-        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null);
+        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, true, path == null, false);
         if (path != null) {
             LayoutBox.clearSubtreeMarks(path);
             // 子を持つ変更箱の部分木は全体版で印を付けたので、全体版と同じ片付けをする
