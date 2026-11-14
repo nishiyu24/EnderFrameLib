@@ -384,6 +384,24 @@ public final class Gradients {
      */
     static ResolvedStops resolveStops(List<ColorStop> stops, float length, boolean angular, float rootW, float rootH,
                                       float fontSize, float rootFontSize) {
+        // 同じ停止点の一覧・同じ寸法なら結果は同じ（毎フレームの再配置で文字列の解析・箱詰めを繰り返さない）。停止点の一覧は不変
+        int h = (System.identityHashCode(stops) * 31 + Float.floatToIntBits(length)) & (STOPS_MEMO.length - 1);
+        StopsMemo m = STOPS_MEMO[h];
+        if (m != null && m.stops == stops && m.length == length && m.angular == angular && m.rootW == rootW && m.rootH == rootH
+                && m.fontSize == fontSize && m.rootFontSize == rootFontSize) return m.result;
+        ResolvedStops r = resolveStopsUncached(stops, length, angular, rootW, rootH, fontSize, rootFontSize);
+        STOPS_MEMO[h] = new StopsMemo(stops, length, angular, rootW, rootH, fontSize, rootFontSize, r);
+        return r;
+    }
+
+    private record StopsMemo(List<ColorStop> stops, float length, boolean angular, float rootW, float rootH,
+                             float fontSize, float rootFontSize, ResolvedStops result) {
+    }
+
+    private static final StopsMemo[] STOPS_MEMO = new StopsMemo[256];
+
+    static ResolvedStops resolveStopsUncached(List<ColorStop> stops, float length, boolean angular, float rootW, float rootH,
+                                              float fontSize, float rootFontSize) {
         List<Integer> colors = new ArrayList<>();
         List<Float> raw = new ArrayList<>();
         List<Float> hintAfter = new ArrayList<>();

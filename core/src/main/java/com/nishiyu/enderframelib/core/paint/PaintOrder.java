@@ -269,10 +269,10 @@ public final class PaintOrder {
                 if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId, ancestorMoving);
                 c.generation = renderGeneration;
                 for (BoxSlice slice : c.blockSlices) {
-                    local.blocks.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
+                    local.addBlock(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
                 }
                 for (BoxSlice slice : c.inlineSlices) {
-                    local.inlines.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
+                    local.addInline(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
                 }
                 STAT_CHUNK_REPLAYED.increment();
                 return true;
@@ -306,11 +306,11 @@ public final class PaintOrder {
         } finally {
             chunksOn = was;
         }
-        if (!tl.negative.isEmpty() || !tl.floats.isEmpty() || !tl.positioned.isEmpty() || !tl.positive.isEmpty() || !tl.after.isEmpty()) {
+        if (!tl.negative().isEmpty() || !tl.floats().isEmpty() || !tl.positioned().isEmpty() || !tl.positive().isEmpty() || !tl.after().isEmpty()) {
             throw new AssertionError("保持した部分木が純粋なフローではない: " + box.node.tag + "#" + box.node.key());
         }
-        runTasks(tl.blocks, blocks);
-        runTasks(tl.inlines, inlines);
+        runTasks(tl.blocks(), blocks);
+        runTasks(tl.inlines(), inlines);
         if (!blocks.equals(c.blockItems) || !inlines.equals(c.inlineItems)) {
             throw new AssertionError("保持した部分木の項目が作り直した項目と違う: " + box.node.tag + "#" + box.node.key()
                     + " blocks " + c.blockItems.size() + "/" + blocks.size() + " inlines " + c.inlineItems.size() + "/" + inlines.size());
@@ -516,7 +516,7 @@ public final class PaintOrder {
 
         boolean scrollbars = factsOf(box.style).scrollbars();
         if (!"root".equals(tag) && box.w > 0 && box.h > 0 && scrollbars && !isInvisible(box)) {
-            local.after.add(new RenderTask(null, elements -> drawScrollbarsIfNeeded(elements, box, clip)));
+            local.addAfter(new RenderTask(null, elements -> drawScrollbarsIfNeeded(elements, box, clip)));
         }
     }
 
@@ -557,24 +557,24 @@ public final class PaintOrder {
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
             PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
-            (z < 0 ? sc.negative : z > 0 ? sc.positive : sc.positioned).add(node);
+            if (z < 0) sc.addNegative(node); else if (z > 0) sc.addPositive(node); else sc.addPositioned(node);
             collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
         } else if (isPositioned(box)) {
             // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
             PaintNode node = new PaintNode(self, false, 0);
-            sc.positioned.add(node);
+            sc.addPositioned(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (BlockLayoutEngine.isFloating(box)) {
             PaintNode node = new PaintNode(self, false, 0);
-            local.floats.add(node);
+            local.addFloat(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (isAtomicInline(box)) {
             PaintNode node = new PaintNode(self, false, 0);
-            local.inlines.add(node);
+            local.addInline(node);
             collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else {
             PaintNode leaf = new PaintNode(self, false, 0, null);
-            (box.display.isInlineLevel() ? local.inlines : local.blocks).add(leaf);
+            if (box.display.isInlineLevel()) local.addInline(leaf); else local.addBlock(leaf);
             collectChildren(box, clip, parentId, sc, local, selfOrAncestorMoving);
         }
     }
@@ -590,18 +590,18 @@ public final class PaintOrder {
             return;
         }
         if (node.stackingContext) {
-            l.negative.sort(Comparator.comparingInt(PaintNode::z));
-            for (PaintNode n : l.negative) emit(n, out);
+            l.sortNegative();
+            for (PaintNode n : l.negative()) emit(n, out);
         }
-        for (PaintNode n : l.blocks) emit(n, out);
-        for (PaintNode n : l.floats) emit(n, out);
-        for (PaintNode n : l.inlines) emit(n, out);
+        for (PaintNode n : l.blocks()) emit(n, out);
+        for (PaintNode n : l.floats()) emit(n, out);
+        for (PaintNode n : l.inlines()) emit(n, out);
         if (node.stackingContext) {
-            for (PaintNode n : l.positioned) emit(n, out);
-            l.positive.sort(Comparator.comparingInt(PaintNode::z));
-            for (PaintNode n : l.positive) emit(n, out);
+            for (PaintNode n : l.positioned()) emit(n, out);
+            l.sortPositive();
+            for (PaintNode n : l.positive()) emit(n, out);
         }
-        out.addAll(l.after);
+        out.addAll(l.after());
         if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
     }
 
@@ -795,13 +795,33 @@ public final class PaintOrder {
 
     /** スタッキングコンテキスト（または疑似コンテキスト）の中の層。番号は付録 E の手順。 */
     static final class PaintLayers {
-        final List<PaintNode> negative = new ArrayList<>();   // 2: 負の z-index のコンテキスト
-        final List<PaintNode> blocks = new ArrayList<>();     // 4: 通常フローのブロックレベル
-        final List<PaintNode> floats = new ArrayList<>();     // 5: float
-        final List<PaintNode> inlines = new ArrayList<>();    // 7: インラインレベル
-        final List<PaintNode> positioned = new ArrayList<>(); // 8: z-index: auto / 0 の位置指定要素とコンテキスト
-        final List<PaintNode> positive = new ArrayList<>();   // 9: 正の z-index のコンテキスト
-        final List<RenderTask> after = new ArrayList<>();     // スクロールバー（中身より上）
+        // 空の層が大半なので、最初の追加まで一覧を作らない（読むときは空の共有一覧）
+        private List<PaintNode> negative;   // 2: 負の z-index のコンテキスト
+        private List<PaintNode> blocks;     // 4: 通常フローのブロックレベル
+        private List<PaintNode> floats;     // 5: float
+        private List<PaintNode> inlines;    // 7: インラインレベル
+        private List<PaintNode> positioned; // 8: z-index: auto / 0 の位置指定要素とコンテキスト
+        private List<PaintNode> positive;   // 9: 正の z-index のコンテキスト
+        private List<RenderTask> after;     // スクロールバー（中身より上）
+
+        List<PaintNode> negative() { return negative == null ? List.of() : negative; }
+        List<PaintNode> blocks() { return blocks == null ? List.of() : blocks; }
+        List<PaintNode> floats() { return floats == null ? List.of() : floats; }
+        List<PaintNode> inlines() { return inlines == null ? List.of() : inlines; }
+        List<PaintNode> positioned() { return positioned == null ? List.of() : positioned; }
+        List<PaintNode> positive() { return positive == null ? List.of() : positive; }
+        List<RenderTask> after() { return after == null ? List.of() : after; }
+
+        void addNegative(PaintNode n) { (negative == null ? negative = new ArrayList<>(4) : negative).add(n); }
+        void addBlock(PaintNode n) { (blocks == null ? blocks = new ArrayList<>(4) : blocks).add(n); }
+        void addFloat(PaintNode n) { (floats == null ? floats = new ArrayList<>(4) : floats).add(n); }
+        void addInline(PaintNode n) { (inlines == null ? inlines = new ArrayList<>(4) : inlines).add(n); }
+        void addPositioned(PaintNode n) { (positioned == null ? positioned = new ArrayList<>(4) : positioned).add(n); }
+        void addPositive(PaintNode n) { (positive == null ? positive = new ArrayList<>(4) : positive).add(n); }
+        void addAfter(RenderTask t) { (after == null ? after = new ArrayList<>(2) : after).add(t); }
+
+        void sortNegative() { if (negative != null) negative.sort(Comparator.comparingInt(PaintNode::z)); }
+        void sortPositive() { if (positive != null) positive.sort(Comparator.comparingInt(PaintNode::z)); }
     }
 
     /**

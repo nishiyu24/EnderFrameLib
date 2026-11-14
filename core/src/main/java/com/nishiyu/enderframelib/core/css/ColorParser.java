@@ -100,8 +100,20 @@ public class ColorParser {
     private static long parse(String c) {
         if (c == null) return INVALID;
         long fast = fastRgb(c);
-        return fast != NOT_FAST ? fast : parseSlow(c);
+        if (fast != NOT_FAST) return fast;
+        // 近道に乗らない書き方（名前・hsl() など）はトークナイザ経由で毎回確保が出るので、結果を小さな表に覚える（文字列は不変・結果は純関数）
+        int h = c.hashCode() & (SLOW_MEMO.length - 1);
+        SlowMemo m = SLOW_MEMO[h];
+        if (m != null && m.key.equals(c)) return m.value;
+        long v = parseSlow(c);
+        SLOW_MEMO[h] = new SlowMemo(c, v);
+        return v;
     }
+
+    private record SlowMemo(String key, long value) {
+    }
+
+    private static final SlowMemo[] SLOW_MEMO = new SlowMemo[512];
 
     /**
      * 近道: 最もよく書かれる {@code rgb(r, g, b)} / {@code rgba(r, g, b, a)}（小文字・カンマ区切り・符号や指数のない 10 進の数 3〜4 個、
@@ -205,10 +217,10 @@ public class ColorParser {
                 if (hex.length() == 4) a = Character.digit(hex.charAt(3), 16) * 0x11;
             }
             case 6, 8 -> {
-                r = Integer.parseInt(hex.substring(0, 2), 16);
-                g = Integer.parseInt(hex.substring(2, 4), 16);
-                b = Integer.parseInt(hex.substring(4, 6), 16);
-                if (hex.length() == 8) a = Integer.parseInt(hex.substring(6, 8), 16);
+                r = Character.digit(hex.charAt(0), 16) << 4 | Character.digit(hex.charAt(1), 16);
+                g = Character.digit(hex.charAt(2), 16) << 4 | Character.digit(hex.charAt(3), 16);
+                b = Character.digit(hex.charAt(4), 16) << 4 | Character.digit(hex.charAt(5), 16);
+                if (hex.length() == 8) a = Character.digit(hex.charAt(6), 16) << 4 | Character.digit(hex.charAt(7), 16);
             }
             default -> {
                 return INVALID;
