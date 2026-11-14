@@ -58,8 +58,8 @@ public class EventDispatcher {
             coreEvent.setTarget(target);
         }
 
-        // ターゲットからルートまでのパス（composedPath 用）
-        List<HtmlNode> composedPath = new ArrayList<>();
+        // ターゲットからルートまでのパス（[target, parent, ..., root]。composedPath と伝播の両方で共有）
+        List<HtmlNode> composedPath = new ArrayList<>(8);
         HtmlNode cur = target;
         while (cur != null) {
             composedPath.add(cur);
@@ -67,20 +67,19 @@ public class EventDispatcher {
         }
 
         if (coreEvent != null) {
-            coreEvent.setComposedPath(new ArrayList<>(composedPath));
+            @SuppressWarnings("unchecked")
+            List<EventTarget> targets = (List<EventTarget>) (List<?>) composedPath;
+            coreEvent.setComposedPathOwned(targets);
         }
 
-        // ルートからターゲットまでの祖先チェーン（キャプチャフェーズ用）
-        List<HtmlNode> chain = new ArrayList<>(composedPath);
-        Collections.reverse(chain); // [root, ..., parent, target]
-
         String eventType = event.getType();
-        String attrName = "on" + eventType.toLowerCase(Locale.ROOT);
+        String attrName = null;
+        int pathSize = composedPath.size();
 
-        // 1. キャプチャフェーズ (root から target の親まで)
+        // 1. キャプチャフェーズ (root から target の親まで = composedPath の末尾から 1 まで逆順)
         setPhase(event, Event.CAPTURING_PHASE);
-        for (int i = 0; i < chain.size() - 1; i++) {
-            HtmlNode node = chain.get(i);
+        for (int i = pathSize - 1; i >= 1; i--) {
+            HtmlNode node = composedPath.get(i);
             setCurrentTarget(event, node);
 
             invokeListeners(node, event, true);
@@ -95,7 +94,8 @@ public class EventDispatcher {
             invokeListenersAtTarget(target, event);
 
             // インライン on* 属性の実行
-            if (!isImmediateStopped(event) && inlineCallback != null && target.attrs != null && target.attrs.containsKey(attrName)) {
+            if (!isImmediateStopped(event) && inlineCallback != null && target.attrs != null && !target.attrs.isEmpty()) {
+                attrName = "on" + eventType.toLowerCase(Locale.ROOT);
                 String action = target.attrs.get(attrName);
                 if (action != null && !action.isEmpty()) {
                     inlineCallback.accept(target, action);
@@ -106,17 +106,18 @@ public class EventDispatcher {
             }
         }
 
-        // 3. バブリングフェーズ (target の親から root まで遡る)
+        // 3. バブリングフェーズ (target の親から root まで = composedPath の 1 から末尾まで正順)
         if (event.isBubbles() && !isStopped(event)) {
             setPhase(event, Event.BUBBLING_PHASE);
-            for (int i = chain.size() - 2; i >= 0; i--) {
-                HtmlNode node = chain.get(i);
+            for (int i = 1; i < pathSize; i++) {
+                HtmlNode node = composedPath.get(i);
                 setCurrentTarget(event, node);
 
                 invokeListeners(node, event, false);
 
                 // インライン on* 属性の実行
-                if (!isImmediateStopped(event) && inlineCallback != null && node.attrs != null && node.attrs.containsKey(attrName)) {
+                if (!isImmediateStopped(event) && inlineCallback != null && node.attrs != null && !node.attrs.isEmpty()) {
+                    if (attrName == null) attrName = "on" + eventType.toLowerCase(Locale.ROOT);
                     String action = node.attrs.get(attrName);
                     if (action != null && !action.isEmpty()) {
                         inlineCallback.accept(node, action);
@@ -148,8 +149,9 @@ public class EventDispatcher {
             BiConsumer<HtmlNode, EventForwardDeclaration> forwardCallback
     ) {
         if (forwardCallback == null) return;
-        for (EventForwardDeclaration declaration : EventForwardDeclaration.declaredOn(node, eventType)) {
-            forwardCallback.accept(node, declaration);
+        List<EventForwardDeclaration> decls = EventForwardDeclaration.declaredOn(node, eventType);
+        for (int i = 0, n = decls.size(); i < n; i++) {
+            forwardCallback.accept(node, decls.get(i));
         }
     }
 
@@ -159,8 +161,9 @@ public class EventDispatcher {
 
     private static void invokeListeners(HtmlNode node, Event event, boolean capturePhase) {
         List<EventListenerEntry> listeners = node.getEventListenersSnapshot();
-        for (EventListenerEntry entry : listeners) {
+        for (int i = 0, n = listeners.size(); i < n; i++) {
             if (isImmediateStopped(event)) break;
+            EventListenerEntry entry = listeners.get(i);
             if (!entry.type().equalsIgnoreCase(event.getType())) continue;
             if (entry.capture() != capturePhase) continue;
 
@@ -170,8 +173,9 @@ public class EventDispatcher {
 
     private static void invokeListenersAtTarget(HtmlNode target, Event event) {
         List<EventListenerEntry> listeners = target.getEventListenersSnapshot();
-        for (EventListenerEntry entry : listeners) {
+        for (int i = 0, n = listeners.size(); i < n; i++) {
             if (isImmediateStopped(event)) break;
+            EventListenerEntry entry = listeners.get(i);
             if (!entry.type().equalsIgnoreCase(event.getType())) continue;
 
             dispatchToListener(target, entry, event);

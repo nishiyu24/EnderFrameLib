@@ -240,7 +240,7 @@ public class RenderPipeline {
     }
 
     private static boolean hasGeneratedBoxes(LayoutBox box) {
-        if (box.node.isPseudoNode || box.markerStyle != null || box.placeholderStyle != null) return true;
+        if (box.node.isPseudoNode || box.markerStyle != null || box.placeholderStyle != null || box.backdropStyle != null) return true;
         for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
             if (hasGeneratedBoxes(box.elementChildren.get(i))) return true;
         }
@@ -960,6 +960,7 @@ public class RenderPipeline {
             selfOrAncestorMoving = stampMoving(box, computed, ancestorHasMoving);
             ComputedStyle prevMarkerStyle = box.markerStyle;
             ComputedStyle prevPlaceholderStyle = box.placeholderStyle;
+            ComputedStyle prevBackdropStyle = box.backdropStyle;
             resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState, selfContainer);
             if (box.display.listItem() && prevMarkerStyle != box.markerStyle) {
                 styleChanged = true;
@@ -975,6 +976,7 @@ public class RenderPipeline {
                 layoutRequired = true;
                 layoutChangedList.add(box);
             }
+            if (prevBackdropStyle != box.backdropStyle) styleChanged = true;
             if (styleChanged || prevMarkerStyle != box.markerStyle) {
                 BoxTreeBuilder.restyleGeneratedBoxes(box);
             }
@@ -1353,6 +1355,11 @@ public class RenderPipeline {
         boolean textInput = "input".equals(node.tag) || "textarea".equals(node.tag);
         box.placeholderStyle = textInput
                 ? resolvePseudoStyle(node, PseudoType.PLACEHOLDER, computed, sheet, env, childScope, interactionState, selfContainer)
+                : null;
+        // Top Layer の箱（dialog・popover）だけが ::backdrop を持つ
+        boolean topLayerCapable = "dialog".equals(node.tag) || node.attrs != null && node.attrs.containsKey("popover");
+        box.backdropStyle = topLayerCapable
+                ? resolvePseudoStyle(node, PseudoType.BACKDROP, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
     }
 

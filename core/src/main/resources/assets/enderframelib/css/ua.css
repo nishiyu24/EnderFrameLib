@@ -42,6 +42,7 @@ dialog:modal { position: fixed; top: 0; bottom: 0; overflow: auto; max-width: ca
 /* HTML §15.3.3 popover: 表示中でない popover は描かない。表示中は Top Layer（中央寄せの固定配置）。 */
 [popover]:not(:popover-open):not(dialog[open]) { display: none; }
 [popover]:popover-open { z-index: 2147483647; }
+dialog:modal::backdrop { background-color: rgba(0, 0, 0, 0.1); }
 [popover] { position: fixed; left: 0; right: 0; top: 0; bottom: 0; width: fit-content; height: fit-content; margin: auto; border: solid; padding: 0.25em; overflow: auto; background-color: white; color: black; }
 slot { display: contents; }
 

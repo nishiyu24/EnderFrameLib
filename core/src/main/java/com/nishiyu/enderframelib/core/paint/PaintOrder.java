@@ -12,6 +12,7 @@ import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
 import com.nishiyu.enderframelib.core.paint.model.ClipRect;
 import com.nishiyu.enderframelib.core.paint.model.Corners;
 import com.nishiyu.enderframelib.core.paint.model.ElementType;
+import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
 import java.util.ArrayList;
@@ -97,6 +98,7 @@ public final class PaintOrder {
 
     private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
     private final List<ScrollContent> scrollContents = new ArrayList<>();
+    private List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cachedScrollInfos;
 
     @FunctionalInterface
     interface SubtreePruner {
@@ -344,12 +346,16 @@ public final class PaintOrder {
 
     /** 直近の {@link #paintTasks} で中身の節を作ったスクロールコンテナの記録（描いたあとに読む）。 */
     List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> scrollContentInfos() {
+        List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> cached = cachedScrollInfos;
+        if (cached != null) return cached;
+        if (scrollContents.isEmpty()) return cachedScrollInfos = List.of();
         List<com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo> out = new ArrayList<>(scrollContents.size());
-        for (ScrollContent c : scrollContents) {
+        for (int i = 0, n = scrollContents.size(); i < n; i++) {
+            ScrollContent c = scrollContents.get(i);
             out.add(new com.nishiyu.enderframelib.core.paint.model.ScrollContentInfo(c.box.node, c.contentId, c.thumbVId, c.thumbHId,
                     c.sx0, c.sy0, c.kx, c.ky));
         }
-        return out;
+        return cachedScrollInfos = java.util.Collections.unmodifiableList(out);
     }
 
     /**
@@ -467,6 +473,7 @@ public final class PaintOrder {
         fragIds.set(0);
         scrollContentOf.clear();
         scrollContents.clear();
+        cachedScrollInfos = null;
         contentClips.clear();
         blendDescendants.clear();
         boolean rootMoving = root.style != null && factsOf(root.style).hasMovingProps();
@@ -495,6 +502,18 @@ public final class PaintOrder {
      * 祖先のスタッキングコンテキストの外へ出て、文書の根のコンテキストの最前面に描かれる（HTML §4.11 / CSS Positioned Layout 3 §5）。
      */
     static final int TOP_LAYER_Z = Integer.MAX_VALUE;
+
+    private void drawBackdrop(List<DisplayItem> elements, LayoutBox box) {
+        int color = ColorParser.parseColor(box.backdropStyle.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent"));
+        float opacity = box.backdropStyle.number(CssPropertyIndex.OPACITY, 1.0f);
+        if ((color >>> 24) == 0 || opacity <= 0f) return;
+        int nodeHandle = box.node != null ? box.node.nodeId() : 0;
+        ItemProps props = new ItemProps();
+        props.parentId(box.node.key(), nodeHandle > 0 ? DisplayItem.nodeKeyOf(nodeHandle) : 0L);
+        // 固定配置の箱と同じく、ビューポートに張り付く（スクロールしない）。クリップはかけない
+        addElement(elements, box.node.key(), box.node.key() + "_backdrop", ElementType.RECT, 0, 0, rootW, rootH, "", 0, color,
+                props, 0, opacity, 0, 0, 1f, 1f, 0, 0, AnimationSpec.NONE, null, 0L);
+    }
 
     private boolean isTopLayer(LayoutBox box) {
         return box.isFixed && box.zIndex == TOP_LAYER_Z && !isZIndexAuto(box);
@@ -575,7 +594,13 @@ public final class PaintOrder {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
             PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
             // 部分木の記録の途中は外へ出せない（記録は部分木の中だけで完結する）
-            PaintLayers target = recording == null && topLayerRoot != null && isTopLayer(box) ? topLayerRoot : sc;
+            boolean hoist = recording == null && topLayerRoot != null && isTopLayer(box);
+            PaintLayers target = hoist ? topLayerRoot : sc;
+            if (hoist && box.backdropStyle != null) {
+                // ::backdrop は箱の直前（同じ z の中の先）に、ビューポート全面で描く
+                PaintNode backdrop = new PaintNode(new RenderTask(box, elements -> drawBackdrop(elements, box), false), false, 0, null);
+                if (z < 0) target.addNegative(backdrop); else if (z > 0) target.addPositive(backdrop); else target.addPositioned(backdrop);
+            }
             if (z < 0) target.addNegative(node); else if (z > 0) target.addPositive(node); else target.addPositioned(node);
             collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
         } else if (isPositioned(box)) {
@@ -755,7 +780,7 @@ public final class PaintOrder {
                 box.style.color(CssPropertyIndex.COLOR, 0xFF000000)));
         ClipShape backdropShape = null;
         if (!backdrop.isEmpty()) {
-            float[] r = LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH);
             float[] d = new float[12];
             d[0] = box.x;
             d[1] = box.y;
@@ -892,7 +917,7 @@ public final class PaintOrder {
         // 内側の角は外側の半径から隣り合う辺の太さを引いたもの（角丸は両軸を切るときだけ）
         float[] own = {minX, minY, maxX, maxY, 0, 0, 0, 0};
         if (clipX && clipY) {
-            float[] r = LengthResolver.cornerRadiiXY(box.style, box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH);
             boolean elliptical = false;
             for (int i = 0; i < 4; i++) elliptical |= Math.round(r[i]) != Math.round(r[4 + i]);
             if (!elliptical) {

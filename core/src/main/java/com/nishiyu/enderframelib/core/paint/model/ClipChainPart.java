@@ -21,6 +21,14 @@ public final class ClipChainPart {
         return rect.clone();
     }
 
+    public int rectLength() {
+        return rect.length;
+    }
+
+    public float rectAt(int index) {
+        return rect[index];
+    }
+
     public String ownerId() {
         return ownerId;
     }

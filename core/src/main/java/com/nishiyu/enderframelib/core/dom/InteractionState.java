@@ -879,6 +879,39 @@ public class InteractionState implements StateLookup {
     /** 再スタイルが必要な印を持つ節が、すべて {@code allowed}（同一性で比べる）に含まれるか。印が無ければ true。 */
     public boolean styleDirtyOnlyIn(java.util.Collection<HtmlNode> allowed) {
         if (dirtyCount <= 0) return true;
+        if (allowed instanceof java.util.List<HtmlNode> list && list.size() <= 8) {
+            int n = list.size();
+            if (n == 1) {
+                HtmlNode only = list.get(0);
+                StateFlags f = get(only);
+                if (f != null && f.isStyleDirty() && 1 >= dirtyCount) return true;
+                boolean[] outside = {false};
+                forEachFlags((node, flags) -> {
+                    if (flags.isStyleDirty() && node != only) outside[0] = true;
+                });
+                return !outside[0];
+            }
+            int inside = 0;
+            for (int i = 0; i < n; i++) {
+                HtmlNode candidate = list.get(i);
+                boolean dup = false;
+                for (int j = 0; j < i; j++) {
+                    if (list.get(j) == candidate) {
+                        dup = true;
+                        break;
+                    }
+                }
+                if (dup) continue;
+                StateFlags f = get(candidate);
+                if (f != null && f.isStyleDirty()) inside++;
+            }
+            if (inside >= dirtyCount) return true;
+            boolean[] outside = {false};
+            forEachFlags((node, flags) -> {
+                if (flags.isStyleDirty() && !containsIdentity(list, node)) outside[0] = true;
+            });
+            return !outside[0];
+        }
         Set<HtmlNode> set = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         set.addAll(allowed);
         // dirtyCount は実数以上なので、allowed の中の汚れた節の数がそれに届けば、外に汚れた節は無い（全走査を省ける）
@@ -894,6 +927,13 @@ public class InteractionState implements StateLookup {
             if (flags.isStyleDirty() && !set.contains(node)) outside[0] = true;
         });
         return !outside[0];
+    }
+
+    private static boolean containsIdentity(java.util.List<HtmlNode> list, HtmlNode target) {
+        for (int i = 0, n = list.size(); i < n; i++) {
+            if (list.get(i) == target) return true;
+        }
+        return false;
     }
 
     /**

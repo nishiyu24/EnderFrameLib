@@ -129,7 +129,7 @@ public final class SelectorParser {
     /** 構文上の擬似要素の種別。{@code type} が null のもの（{@code OTHER}）は描かない。 */
     private enum PseudoElement {
         NONE(null), BEFORE(PseudoType.BEFORE), AFTER(PseudoType.AFTER), MARKER(PseudoType.MARKER),
-        PLACEHOLDER(PseudoType.PLACEHOLDER), SELECTION(PseudoType.SELECTION), OTHER(null);
+        PLACEHOLDER(PseudoType.PLACEHOLDER), SELECTION(PseudoType.SELECTION), BACKDROP(PseudoType.BACKDROP), OTHER(null);
 
         final PseudoType type;
 
@@ -266,6 +266,9 @@ public final class SelectorParser {
                 }
                 case "selection" -> {
                     return PseudoElement.SELECTION;
+                }
+                case "backdrop" -> {
+                    return PseudoElement.BACKDROP;
                 }
                 default -> {
                     // 描かない擬似要素。詳細度は数えるが、要素そのものには一致させない

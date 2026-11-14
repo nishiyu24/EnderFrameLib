@@ -131,6 +131,8 @@ public class UiView implements AutoCloseable {
      * この節の移動量を更新して済ませる（{@link #tryScrollTranslate}）。
      */
     private List<ScrollContentInfo> scrollBase = List.of();
+    private final java.util.Set<HtmlNode> handledScrollNodes =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     /** {@link #scrollBase} の表示リストを作ったときの、全ての節のスクロール位置（0 でないもの）。 */
     private Map<HtmlNode, float[]> scrollAtBuild = Map.of();
     /** 表示リストの窓（画面と余白の範囲に作った項目）を作ったときのスクロール位置。節の移動で済ませてよい範囲はこれを基準にする（箱の位置の基準は {@link #scrollAtBuild}）。 */
@@ -335,9 +337,14 @@ public class UiView implements AutoCloseable {
     }
 
     public void setRenderCache(List<DisplayItem> renderCache) {
-        this.baseRenderCache = (renderCache != null && !renderCache.isEmpty())
-                ? List.copyOf(renderCache)
-                : Collections.emptyList();
+        if (renderCache == null || renderCache.isEmpty()) {
+            this.baseRenderCache = Collections.emptyList();
+        } else if (renderCache instanceof ImmutableItemList) {
+            this.baseRenderCache = renderCache;
+        } else {
+            ImmutableItemList prev = this.baseRenderCache instanceof ImmutableItemList il ? il : null;
+            this.baseRenderCache = ImmutableItemList.from(prev, renderCache);
+        }
         publishRenderCache();
     }
 
@@ -351,9 +358,18 @@ public class UiView implements AutoCloseable {
      */
     public void setPaintOffset(String elementId, float dx, float dy) {
         if (elementId == null || elementId.isEmpty()) return;
-        float[] prev = paintOffsets.put(elementId, new float[]{dx, dy});
-        if (prev == null) paintKeysVersion.incrementAndGet();
-        if (prev == null || prev[0] != dx || prev[1] != dy) paintOffsetsDirty = true;
+        float[] cur = paintOffsets.get(elementId);
+        if (cur != null) {
+            if (cur[0] != dx || cur[1] != dy) {
+                cur[0] = dx;
+                cur[1] = dy;
+                paintOffsetsDirty = true;
+            }
+            return;
+        }
+        paintOffsets.put(elementId, new float[]{dx, dy});
+        paintKeysVersion.incrementAndGet();
+        paintOffsetsDirty = true;
     }
 
     public void clearPaintOffset(String elementId) {
@@ -368,27 +384,59 @@ public class UiView implements AutoCloseable {
         paintOffsetsDirty = false;
         List<DisplayItem> base = this.baseRenderCache;
         List<DisplayItem> shown = base;
-        if (!paintOffsets.isEmpty() && !base.isEmpty()) {
+        int offsetCount = paintOffsets.size();
+        if (offsetCount > 0 && !base.isEmpty()) {
             // 動く節は 1〜数個。全項目を複製せず、差し替えだけを疎な表で持つ（作るのは O(動く節の数)）
             Map<String, Integer> byId = baseIndexById(base);
-            java.util.TreeMap<Integer, DisplayItem> moved = new java.util.TreeMap<>();
-            for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
-                Integer idx = byId.get(e.getKey());
-                if (idx == null) continue;
-                DisplayItem el = base.get(idx);
-                if (el.type() != ElementType.NODE) continue;
-                float[] off = e.getValue();
-                moved.put(idx, el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]));
-            }
-            if (!moved.isEmpty()) {
-                int[] positions = new int[moved.size()];
-                DisplayItem[] repl = new DisplayItem[moved.size()];
+            if (offsetCount <= 8) {
+                int[] positions = new int[offsetCount];
+                DisplayItem[] repl = new DisplayItem[offsetCount];
                 int k = 0;
-                for (Map.Entry<Integer, DisplayItem> e : moved.entrySet()) {
-                    positions[k] = e.getKey();
-                    repl[k++] = e.getValue();
+                for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
+                    Integer idxBox = byId.get(e.getKey());
+                    if (idxBox == null) continue;
+                    int idx = idxBox;
+                    DisplayItem el = base.get(idx);
+                    if (el.type() != ElementType.NODE) continue;
+                    float[] off = e.getValue();
+                    DisplayItem shifted = el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]);
+                    int ins = k;
+                    while (ins > 0 && positions[ins - 1] > idx) {
+                        positions[ins] = positions[ins - 1];
+                        repl[ins] = repl[ins - 1];
+                        ins--;
+                    }
+                    positions[ins] = idx;
+                    repl[ins] = shifted;
+                    k++;
                 }
-                shown = new OffsetItemList(base, positions, repl);
+                if (k > 0) {
+                    if (k < offsetCount) {
+                        positions = java.util.Arrays.copyOf(positions, k);
+                        repl = java.util.Arrays.copyOf(repl, k);
+                    }
+                    shown = new OffsetItemList(base, positions, repl);
+                }
+            } else {
+                java.util.TreeMap<Integer, DisplayItem> moved = new java.util.TreeMap<>();
+                for (Map.Entry<String, float[]> e : paintOffsets.entrySet()) {
+                    Integer idx = byId.get(e.getKey());
+                    if (idx == null) continue;
+                    DisplayItem el = base.get(idx);
+                    if (el.type() != ElementType.NODE) continue;
+                    float[] off = e.getValue();
+                    moved.put(idx, el.withTranslation(el.translateX() + off[0], el.translateY() + off[1]));
+                }
+                if (!moved.isEmpty()) {
+                    int[] positions = new int[moved.size()];
+                    DisplayItem[] repl = new DisplayItem[moved.size()];
+                    int k = 0;
+                    for (Map.Entry<Integer, DisplayItem> e : moved.entrySet()) {
+                        positions[k] = e.getKey();
+                        repl[k++] = e.getValue();
+                    }
+                    shown = new OffsetItemList(base, positions, repl);
+                }
             }
         }
         this.renderCache = shown;
@@ -988,6 +1036,12 @@ public class UiView implements AutoCloseable {
      * 作り直した表示リストを公開する。前の表示リストのスクロールの移動量は新しい表示リストには当てはまらない
      * （新しい表示リストは今のスクロール量で作ってある）ので外し、新しい表示リストのスクロールコンテナを覚え直す。
      */
+    private void setScrollBase(List<ScrollContentInfo> base) {
+        this.scrollBase = base;
+        handledScrollNodes.clear();
+        for (int i = 0, n = base.size(); i < n; i++) handledScrollNodes.add(base.get(i).node());
+    }
+
     private void publishBuilt(List<DisplayItem> elements) {
         for (ScrollContentInfo info : scrollBase) {
             clearPaintOffset(info.contentId());
@@ -995,7 +1049,7 @@ public class UiView implements AutoCloseable {
             if (info.thumbHId() != null) clearPaintOffset(info.thumbHId());
         }
         setRenderCache(elements);
-        scrollBase = DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of();
+        setScrollBase(DisplayListBuilder.scrollContentNodes ? builtScrollContents() : List.of());
         scrollAtBuild = scrollState.snapshot();
         scrollWindowAt = scrollAtBuild;
     }
@@ -1014,17 +1068,7 @@ public class UiView implements AutoCloseable {
     private boolean tryScrollTranslate() {
         if (!DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
         // 節にまとめていないコンテナ（sticky などを含む）のスクロール量が変わっていたら、その中身は作り直さないと動かない
-        java.util.Set<HtmlNode> handled = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        for (ScrollContentInfo info : scrollBase) handled.add(info.node());
-        Map<HtmlNode, float[]> now = scrollState.snapshot();
-        for (Map.Entry<HtmlNode, float[]> e : now.entrySet()) {
-            float[] was = scrollAtBuild.get(e.getKey());
-            boolean changed = was == null || was[0] != e.getValue()[0] || was[1] != e.getValue()[1];
-            if (changed && !handled.contains(e.getKey())) return false;
-        }
-        for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
-            if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false; // 0 に戻った
-        }
+        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         if (!withinWindow()) return false;
         for (ScrollContentInfo info : scrollBase) {
             float dx = scrollState.getScrollX(info.node()) - info.sx0();
@@ -1089,17 +1133,7 @@ public class UiView implements AutoCloseable {
 
     /** {@link #tryScrollTranslate} が成り立つか（表示リストを変えずに確かめる）。 */
     private boolean canTranslateAll() {
-        java.util.Set<HtmlNode> handled = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        for (ScrollContentInfo info : scrollBase) handled.add(info.node());
-        Map<HtmlNode, float[]> now = scrollState.snapshot();
-        for (Map.Entry<HtmlNode, float[]> e : now.entrySet()) {
-            float[] was = scrollAtBuild.get(e.getKey());
-            boolean changed = was == null || was[0] != e.getValue()[0] || was[1] != e.getValue()[1];
-            if (changed && !handled.contains(e.getKey())) return false;
-        }
-        for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
-            if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false;
-        }
+        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         return withinWindow();
     }
 
@@ -1125,17 +1159,8 @@ public class UiView implements AutoCloseable {
     private boolean rebuildWindowAtBoxFrame() {
         if (!layoutStale || paintBuilder == null || !DisplayListBuilder.scrollContentNodes || scrollBase.isEmpty()) return false;
         if (layoutRoot == null || document == null) return false;
-        java.util.Set<HtmlNode> handled = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        for (ScrollContentInfo info : scrollBase) handled.add(info.node());
+        if (scrollState.hasUncheckedChange(scrollAtBuild, handledScrollNodes)) return false;
         Map<HtmlNode, float[]> now = scrollState.snapshot();
-        for (Map.Entry<HtmlNode, float[]> e : now.entrySet()) {
-            float[] was = scrollAtBuild.get(e.getKey());
-            boolean changed = was == null || was[0] != e.getValue()[0] || was[1] != e.getValue()[1];
-            if (changed && !handled.contains(e.getKey())) return false;
-        }
-        for (Map.Entry<HtmlNode, float[]> e : scrollAtBuild.entrySet()) {
-            if (!now.containsKey(e.getKey()) && !handled.contains(e.getKey())) return false;
-        }
         Map<HtmlNode, float[]> shift = new java.util.IdentityHashMap<>();
         for (ScrollContentInfo info : scrollBase) {
             float[] was = scrollAtBuild.get(info.node());
@@ -1175,7 +1200,7 @@ public class UiView implements AutoCloseable {
             if (info.thumbHId() != null && !keep.contains(info.thumbHId())) clearPaintOffset(info.thumbHId());
         }
         setRenderCache(elements);
-        scrollBase = built;
+        setScrollBase(built);
         scrollWindowAt = now;
         applyOverrides();
         if (!tryScrollTranslate()) { // 作った窓の中なので通常は来ない。来たら位置を決め直して作り直す
@@ -1445,26 +1470,38 @@ public class UiView implements AutoCloseable {
         if (doc.sheet.declaresContainers() || doc.sheet.usesContainerQueries()) return false;
         if (!allowOtherDirty && !interactionState.styleDirtyOnlyIn(changed)) return false;
 
-        Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (HtmlNode n : changed) {
+        Collection<LayoutBox> patchedBoxes;
+        Map<HtmlNode, LayoutBox> index = nodeBoxIndex();
+        if (changed.size() == 1) {
+            HtmlNode n = changed.get(0);
             if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
             if (!isPatchableParent(n.parent)) return false;
-            wanted.add(n);
-        }
-        Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
-        Map<HtmlNode, LayoutBox> index = nodeBoxIndex();
-        for (HtmlNode n : wanted) {
             LayoutBox b = index.get(n);
-            if (b != null || index.containsKey(n)) found.put(n, b);
-        }
-        if (found.size() != wanted.size() || found.containsValue(null)) return false;
-        for (LayoutBox box : found.values()) {
-            // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
-            if (box.displayText == null || box.displayText.isBlank()) return false;
+            if (b == null || b.displayText == null || b.displayText.isBlank()) return false;
+            patchedBoxes = List.of(b);
+        } else {
+            Set<HtmlNode> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (int i = 0, cn = changed.size(); i < cn; i++) {
+                HtmlNode n = changed.get(i);
+                if (n.text == null || n.text.isBlank() || !n.isConnected() || n.parent == null) return false;
+                if (!isPatchableParent(n.parent)) return false;
+                wanted.add(n);
+            }
+            Map<HtmlNode, LayoutBox> found = new IdentityHashMap<>();
+            for (HtmlNode n : wanted) {
+                LayoutBox b = index.get(n);
+                if (b != null || index.containsKey(n)) found.put(n, b);
+            }
+            if (found.size() != wanted.size() || found.containsValue(null)) return false;
+            for (LayoutBox box : found.values()) {
+                // 前回の文字が空白だけだった箱は、前回の木に今の形で入っていたか分からない
+                if (box.displayText == null || box.displayText.isBlank()) return false;
+            }
+            patchedBoxes = found.values();
         }
 
         long startedAt = System.nanoTime();
-        for (LayoutBox box : found.values()) box.refreshStyle(box.style);
+        for (LayoutBox box : patchedBoxes) box.refreshStyle(box.style);
         applyOverrides();
         // 位置の決め直しを後回しにしている間は、箱は表示リストを作ったときのスクロール位置のまま。同じ位置へ一時的に戻して、その枠で直す
         boolean stale = layoutStale;
@@ -1484,14 +1521,14 @@ public class UiView implements AutoCloseable {
                 }
             }
             RenderPipeline.relayoutInPlace(layoutRoot, rootW, rootH, layoutRoot.devicePixelRatio, scrollState, fontResolver(),
-                    found.values());
-            for (HtmlNode n : changed) interactionState.clearStyleDirty(n);
+                    patchedBoxes);
+            for (int i = 0, cn = changed.size(); i < cn; i++) interactionState.clearStyleDirty(changed.get(i));
             publishLayoutToDom(); // 箱の木は作り替えていないので、節の箱の索引は捨てない
             layoutDone = System.nanoTime();
             if (paintBuilder == null) {
                 SLICE_NO_BUILDER.incrementAndGet();
-            } else if (paintBuilder.canPatchBoxes(found.values())) {
-                elements = paintBuilder.patchBoxes(found.values());
+            } else if (paintBuilder.canPatchBoxes(patchedBoxes)) {
+                elements = paintBuilder.patchBoxes(patchedBoxes);
             }
         } finally {
             if (stale) {
@@ -1504,7 +1541,7 @@ public class UiView implements AutoCloseable {
         if (stale && elements != null) { // 表示リストのスクロールの基準は動かさない（位置は後回しのまま）
             STALE_TEXT_PATCH_HITS.incrementAndGet();
             setRenderCache(elements);
-            lastBreakdown = "stale-text-patch nodes=" + found.size() + " layout=" + ms(startedAt, layoutDone) + "ms";
+            lastBreakdown = "stale-text-patch nodes=" + patchedBoxes.size() + " layout=" + ms(startedAt, layoutDone) + "ms";
             applyOverrides();
             lastLayoutFinishedNanos = System.nanoTime();
             lastLayoutCostNanos = lastLayoutFinishedNanos - startedAt;
@@ -1522,7 +1559,7 @@ public class UiView implements AutoCloseable {
         if (elements == null) elements = new ArrayList<>();
         long paintDone = System.nanoTime();
         publishBuilt(elements);
-        lastBreakdown = "text-patch nodes=" + found.size() + " layout=" + ms(startedAt, layoutDone)
+        lastBreakdown = "text-patch nodes=" + patchedBoxes.size() + " layout=" + ms(startedAt, layoutDone)
                 + "ms paint=" + ms(layoutDone, paintDone) + "ms publish=" + ms(paintDone, System.nanoTime()) + "ms";
         applyOverrides();
         lastLayoutFinishedNanos = System.nanoTime();
@@ -2161,8 +2198,9 @@ public class UiView implements AutoCloseable {
         float sens = EnderFrameBuiltInConfig.scrollSensitivity;
 
         // 手前のスクロールする箱から。祖先の変換（回転・拡縮・平行移動）の逆行列とクリップを通した点で当たりを取る
-        for (UIHitResult hit : hitTestIndex().scrollContainersAt(sessionId, pixelX, pixelY)) {
-            DisplayItem el = hit.element();
+        List<UIHitResult> hits = hitTestIndex().scrollContainersAt(sessionId, pixelX, pixelY);
+        for (int i = 0, hn = hits.size(); i < hn; i++) {
+            DisplayItem el = hits.get(i).element();
             float maxW = el.hints().scrollWidth(), maxH = el.hints().scrollHeight();
 
             ScrollState state = scrollState;

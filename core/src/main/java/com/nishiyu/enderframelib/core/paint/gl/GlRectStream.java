@@ -29,6 +29,8 @@ final class GlRectStream implements AutoCloseable {
     /** そのフレームで書いたクリップの内容（重複排除の鍵）と、鍵 → スロットのハッシュ表（開地址法）。 */
     private final float[] clipKeys;
     private final int[] clipTable;
+    private final int[] clipSlotVersion;
+    private int clipVerNext = 1, clipHighWater;
     private int clipCount;
     /** 使ったスロット数（主スロット + 続きスロット）と、描画順の表に載せた数（= 描く図形の数）。 */
     private int slots;
@@ -50,6 +52,7 @@ final class GlRectStream implements AutoCloseable {
         this.store = new GlTreeStore(capacity, clipCapacity, capacity, capacity, true);
         this.clipKeys = new float[clipCapacity * KEY];
         this.clipTable = new int[Integer.highestOneBit(clipCapacity * 2 - 1) << 1];
+        this.clipSlotVersion = new int[clipCapacity];
         this.trees = store.trees;
         this.renderer = new GlRectRenderer();
         // 全スロットを確保して初期化する（親・スクロール・クリップ・効果の参照を「なし」にそろえる）
@@ -85,7 +88,7 @@ final class GlRectStream implements AutoCloseable {
     private long[] spFrame;
     private int[] spGlyphs;
     private int[][] spRefs;
-    private float[][] spRefKeys;
+    private int[][] spRefVers;
     private boolean spanOn, spanUnclean;
     private int spanIndex, spanSlot0, spanCount0, spanClip0, spanAtlas;
     private long spanOverflows;
@@ -108,7 +111,7 @@ final class GlRectStream implements AutoCloseable {
         spFrame = spFrame == null ? new long[n] : java.util.Arrays.copyOf(spFrame, n);
         spGlyphs = spGlyphs == null ? new int[n] : java.util.Arrays.copyOf(spGlyphs, n);
         spRefs = spRefs == null ? new int[n][] : java.util.Arrays.copyOf(spRefs, n);
-        spRefKeys = spRefKeys == null ? new float[n][] : java.util.Arrays.copyOf(spRefKeys, n);
+        spRefVers = spRefVers == null ? new int[n][] : java.util.Arrays.copyOf(spRefVers, n);
     }
 
     /** 項目 {@code index} の出力の記録を始める。 */
@@ -148,15 +151,15 @@ final class GlRectStream implements AutoCloseable {
         spGlyphs[index] = glyphs;
         // 参照するクリップの個数が同じなら、前回の配列を書き換えて使う（毎フレーム・毎項目の確保を避ける）
         int[] refs = spRefs[index];
-        float[] keys = spRefKeys[index];
+        int[] vers = spRefVers[index];
         if (refs == null || refs.length != spanRefCount) {
             refs = new int[spanRefCount];
-            keys = new float[spanRefCount * KEY];
+            vers = new int[spanRefCount];
             spRefs[index] = refs;
-            spRefKeys[index] = keys;
+            spRefVers[index] = vers;
         }
         System.arraycopy(spanRefs, 0, refs, 0, spanRefCount);
-        for (int i = 0; i < spanRefCount; i++) System.arraycopy(clipKeys, refs[i] * KEY, keys, i * KEY, KEY);
+        for (int i = 0; i < spanRefCount; i++) vers[i] = clipSlotVersion[refs[i]];
         spFrame[index] = frameNo;
     }
 
@@ -171,13 +174,11 @@ final class GlRectStream implements AutoCloseable {
         if (index >= spSlot0.length || spFrame[index] != frameNo - 1) return false;
         if (slots != spSlot0[index] || count != spCount0[index] || clipCount != spClip0[index] || atlasResets != spAtlas[index]) return false;
         int[] refs = spRefs[index];
-        float[] keys = spRefKeys[index];
+        int[] vers = spRefVers[index];
         int c0 = spClip0[index], c1 = spClip1[index];
         for (int i = 0; i < refs.length; i++) {
             int r = refs[i];
-            if (r >= clipCapacity) return false;
-            int o = r * KEY, ko = i * KEY;
-            for (int j = 0; j < KEY; j++) if (clipKeys[o + j] != keys[ko + j]) return false;
+            if (r >= clipCapacity || clipSlotVersion[r] != vers[i]) return false;
             if (r >= clipCount && (r < c0 || r >= c1)) return false; // まだ登録されていない slot は、この項目が登録したものだけ
         }
         return true;
@@ -499,9 +500,20 @@ final class GlRectStream implements AutoCloseable {
         }
         int slot = clipCount++;
         int o = slot * KEY;
-        key[o] = f0; key[o + 1] = f1; key[o + 2] = f2; key[o + 3] = f3; key[o + 4] = f4; key[o + 5] = f5;
-        key[o + 6] = c.scale(); key[o + 7] = c.x0(); key[o + 8] = c.y0(); key[o + 9] = c.x1(); key[o + 10] = c.y1();
-        for (int j = 0; j < 4; j++) { key[o + 11 + j] = c.rx()[j]; key[o + 15 + j] = c.ry()[j]; }
+        boolean changed = slot >= clipHighWater;
+        if (changed) {
+            clipHighWater = slot + 1;
+        } else {
+            changed = key[o] != f0 || key[o + 1] != f1 || key[o + 2] != f2 || key[o + 3] != f3 || key[o + 4] != f4 || key[o + 5] != f5
+                    || key[o + 6] != c.scale() || key[o + 7] != c.x0() || key[o + 8] != c.y0() || key[o + 9] != c.x1() || key[o + 10] != c.y1()
+                    || !same(key, o + 11, c.rx()) || !same(key, o + 15, c.ry());
+        }
+        if (changed) {
+            clipSlotVersion[slot] = clipVerNext++;
+            key[o] = f0; key[o + 1] = f1; key[o + 2] = f2; key[o + 3] = f3; key[o + 4] = f4; key[o + 5] = f5;
+            key[o + 6] = c.scale(); key[o + 7] = c.x0(); key[o + 8] = c.y0(); key[o + 9] = c.x1(); key[o + 10] = c.y1();
+            for (int j = 0; j < 4; j++) { key[o + 11 + j] = c.rx()[j]; key[o + 15 + j] = c.ry()[j]; }
+        }
         clipTable[i] = slot;
         trees.setClip(slot, v.a(), v.b(), v.c(), v.d(), v.e(), v.f(), c.scale(), c.x0(), c.y0(), c.x1(), c.y1(), c.rx(), c.ry());
         return slot;
@@ -520,7 +532,7 @@ final class GlRectStream implements AutoCloseable {
         int n = count - runStart;
         if (n <= 0) return;
         store.flush();
-        renderer.draw(store, runStart, n, 0f, viewW, viewH, true);
+        renderer.drawPremulBlend(store, runStart, n, 0f, viewW, viewH, true);
         runStart = count;
         drawCalls++;
     }

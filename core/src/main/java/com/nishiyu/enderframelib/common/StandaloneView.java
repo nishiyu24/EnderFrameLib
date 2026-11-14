@@ -9,6 +9,7 @@ import com.nishiyu.enderframelib.core.event.DefaultActionContext;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.DisplayListBuilder;
+import com.nishiyu.enderframelib.core.paint.OffsetItemList;
 import com.nishiyu.enderframelib.core.paint.RenderBackend;
 import com.nishiyu.enderframelib.core.paint.UIHitResult;
 import com.nishiyu.enderframelib.core.layout.model.LayoutMetrics;
@@ -93,6 +94,7 @@ public final class StandaloneView implements AutoCloseable {
     private boolean redraw = true;
     private boolean animating;
     private long compositorUntil;
+    private List<DisplayItem> compositorBase;
     private long lastNow;
     private String timings = "";
     /** ホイールで動かしている最中のスクロール先（節 → {x, y}）。毎フレーム少しずつ近づける。 */
@@ -276,8 +278,12 @@ public final class StandaloneView implements AutoCloseable {
         if (rebuilt) {
             items = after;
             timings = "flush=" + (System.nanoTime() - t0) / 1_000_000 + "ms items=" + items.size() + " " + ui.lastBreakdown();
-            // レイアウト中に新しく走り出したアニメーションも拾う
-            compositorUntil = compositorUntil(items, nowMs);
+            // レイアウト中に新しく走り出したアニメーションも拾う（OffsetItemList は同じ基底を平行移動しただけなので再走査しない）
+            List<DisplayItem> compBase = after instanceof OffsetItemList ol ? ol.base() : after;
+            if (compBase != compositorBase) {
+                compositorBase = compBase;
+                compositorUntil = compositorUntil(compBase, nowMs);
+            }
         }
         boolean wasAnimating = animating;
         animating = running;
@@ -297,7 +303,8 @@ public final class StandaloneView implements AutoCloseable {
      */
     private static long compositorUntil(List<DisplayItem> items, long nowMs) {
         long until = nowMs;
-        for (DisplayItem it : items) {
+        for (int i = 0, n = items.size(); i < n; i++) {
+            DisplayItem it = items.get(i);
             AnimationSpec spec = it.animDef();
             if (spec != null && spec.durationMs() > 0 && !spec.frames().isEmpty()) {
                 if (spec.infinite()) return Long.MAX_VALUE;
@@ -525,8 +532,9 @@ public final class StandaloneView implements AutoCloseable {
                 if (wheel.isDefaultPrevented()) return true;
             }
         }
-        for (UIHitResult hit : ui.hitTestIndex().scrollContainersAt(ui.sessionId(), mouseX, mouseY)) {
-            DisplayItem el = hit.element();
+        List<UIHitResult> hits = ui.hitTestIndex().scrollContainersAt(ui.sessionId(), mouseX, mouseY);
+        for (int i = 0, hn = hits.size(); i < hn; i++) {
+            DisplayItem el = hits.get(i).element();
             HtmlNode node = ui.findNode(el.baseId());
             if (node == null) continue;
             float limitX = Math.max(0, el.hints().scrollWidth() - el.width());
@@ -539,7 +547,12 @@ public final class StandaloneView implements AutoCloseable {
             float nextX = clamp(curX - (float) notchesX * WHEEL_PIXELS, limitX);
             float nextY = clamp(curY - (float) notchesY * WHEEL_PIXELS, limitY);
             if (Math.abs(nextX - curX) > 0.1f || Math.abs(nextY - curY) > 0.1f) {
-                scrollTargets.put(node, new float[]{nextX, nextY});
+                if (base != null) {
+                    base[0] = nextX;
+                    base[1] = nextY;
+                } else {
+                    scrollTargets.put(node, new float[]{nextX, nextY});
+                }
                 return true;
             }
         }
@@ -780,12 +793,13 @@ public final class StandaloneView implements AutoCloseable {
     // ------------------------------------------------------------------
 
     private List<DisplayItem> withOverlays(List<DisplayItem> base) {
-        List<DisplayItem> extra = new ArrayList<>(textOverlay());
-        extra.addAll(popup.overlay());
-        if (extra.isEmpty()) return base;
-        List<DisplayItem> all = new ArrayList<>(base.size() + extra.size());
+        List<DisplayItem> text = textOverlay();
+        List<DisplayItem> pop = popup.overlay();
+        if (text.isEmpty() && pop.isEmpty()) return base;
+        List<DisplayItem> all = new ArrayList<>(base.size() + text.size() + pop.size());
         all.addAll(base);
-        all.addAll(extra);
+        all.addAll(text);
+        all.addAll(pop);
         return all;
     }
 

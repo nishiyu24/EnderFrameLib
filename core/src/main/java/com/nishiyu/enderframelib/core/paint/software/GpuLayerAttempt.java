@@ -45,6 +45,12 @@ final class GpuLayerAttempt {
         return sink == null ? RetainPlan.NONE : sink.planScrollLayer(info);
     }
 
+    /** 境界矩形だけでスクロール保持層の方針を問い合わせる（対応していなければ null）。 */
+    static RetainPlan planScrollBounds(GpuSink sink, String key, Object token, com.nishiyu.enderframelib.core.raster.Matrix2D pose,
+                                       int x0, int y0, int x1, int y1) {
+        return sink == null ? RetainPlan.NONE : sink.planScrollLayerBounds(key, token, pose, x0, y0, x1, y1);
+    }
+
     /** 保持済みのスクロール層を重ねる。 */
     static void drawScroll(GpuSink sink, GpuScrollLayer l) {
         if (l != null && sink != null) sink.drawScrollLayer(l);

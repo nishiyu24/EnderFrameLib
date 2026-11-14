@@ -119,6 +119,15 @@ public interface GpuSink {
         return com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
     }
 
+    /**
+     * 境界矩形だけでスクロール保持層の方針を決める軽量版。{@code null} を返すと従来通り {@link GpuScrollLayer} を組んで
+     * {@link #planScrollLayer(GpuScrollLayer)} へ渡す。境界のみで {@code NONE} 等を返せる実装では {@code GpuClip} 構築を省ける。
+     */
+    default com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayerBounds(
+            String key, Object token, Matrix2D pose, int x0, int y0, int x1, int y1) {
+        return null;
+    }
+
     /** 保持済みの層を、今の節の位置に合わせて（整数画素にずらして）重ねる。 */
     default void drawScrollLayer(GpuScrollLayer layer) {}
 

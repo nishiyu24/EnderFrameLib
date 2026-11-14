@@ -176,28 +176,53 @@ public class CssAnimator {
      * {@code transition-property} の指定文字列をアニメーション対象チャネルのビットマスクに変換する。
      */
     static int parseTransitionPropertyMask(String propSpec) {
-        if (propSpec == null || propSpec.isBlank()) {
+        if (propSpec == null) {
+            return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
+        }
+        int len = propSpec.length();
+        int i = 0;
+        while (i < len && (propSpec.charAt(i) == ',' || Character.isWhitespace(propSpec.charAt(i)))) i++;
+        if (i == len) {
             return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
         }
         int mask = 0;
-        for (String token : propSpec.toLowerCase(Locale.ROOT).split("[,\\s]+")) {
-            String t = token.trim();
-            if (t.isEmpty()) continue;
-            switch (t) {
-                case "none" -> { return 0; }
-                case "all" -> {
-                    return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
-                }
-                case "opacity" -> mask |= AnimationSpec.CH_OPACITY;
-                case "transform", "translate", "scale", "rotate" -> mask |= AnimationSpec.CH_TRANSFORM;
-                case "color" -> mask |= AnimationSpec.CH_COLOR;
-                case "background", "background-color", "border", "border-color",
-                     "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" ->
-                        mask |= AnimationSpec.CH_BG_COLOR;
-                default -> {}
+        while (i < len) {
+            int start = i;
+            while (i < len) {
+                char c = propSpec.charAt(i);
+                if (c == ',' || Character.isWhitespace(c)) break;
+                i++;
             }
+            int tokLen = i - start;
+            if (tokLen == 4 && propSpec.regionMatches(true, start, "none", 0, 4)) return 0;
+            if (tokLen == 3 && propSpec.regionMatches(true, start, "all", 0, 3)) {
+                return AnimationSpec.CH_OPACITY | AnimationSpec.CH_TRANSFORM | AnimationSpec.CH_COLOR | AnimationSpec.CH_BG_COLOR;
+            }
+            mask |= transitionPropertyBit(propSpec, start, tokLen);
+            while (i < len && (propSpec.charAt(i) == ',' || Character.isWhitespace(propSpec.charAt(i)))) i++;
         }
         return mask;
+    }
+
+    private static int transitionPropertyBit(String s, int start, int len) {
+        return switch (len) {
+            case 5 -> s.regionMatches(true, start, "color", 0, 5) ? AnimationSpec.CH_COLOR
+                    : (s.regionMatches(true, start, "scale", 0, 5) ? AnimationSpec.CH_TRANSFORM : 0);
+            case 6 -> (s.regionMatches(true, start, "border", 0, 6)) ? AnimationSpec.CH_BG_COLOR
+                    : (s.regionMatches(true, start, "rotate", 0, 6) ? AnimationSpec.CH_TRANSFORM : 0);
+            case 7 -> s.regionMatches(true, start, "opacity", 0, 7) ? AnimationSpec.CH_OPACITY : 0;
+            case 9 -> (s.regionMatches(true, start, "transform", 0, 9) || s.regionMatches(true, start, "translate", 0, 9))
+                    ? AnimationSpec.CH_TRANSFORM : 0;
+            case 10 -> s.regionMatches(true, start, "background", 0, 10) ? AnimationSpec.CH_BG_COLOR : 0;
+            case 12 -> s.regionMatches(true, start, "border-color", 0, 12) ? AnimationSpec.CH_BG_COLOR : 0;
+            case 16 -> (s.regionMatches(true, start, "background-color", 0, 16)
+                    || s.regionMatches(true, start, "border-top-color", 0, 16))
+                    ? AnimationSpec.CH_BG_COLOR : 0;
+            case 17 -> s.regionMatches(true, start, "border-left-color", 0, 17) ? AnimationSpec.CH_BG_COLOR : 0;
+            case 18 -> s.regionMatches(true, start, "border-right-color", 0, 18) ? AnimationSpec.CH_BG_COLOR : 0;
+            case 19 -> s.regionMatches(true, start, "border-bottom-color", 0, 19) ? AnimationSpec.CH_BG_COLOR : 0;
+            default -> 0;
+        };
     }
 
     /** 進行度順に並べ替えたキーフレーム列。{@link AnimationSpec} から作る。 */

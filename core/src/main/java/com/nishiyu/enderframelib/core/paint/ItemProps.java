@@ -25,11 +25,11 @@ import com.nishiyu.enderframelib.core.paint.BoxAnimation.TransitionSpec;
  */
 final class ItemProps {
 
-        private final Map<String, String> attrs;
+        private Map<String, String> attrs;
         private RenderHints hints;
 
         ItemProps() {
-            this(new HashMap<>(), RenderHints.NONE);
+            this(null, RenderHints.NONE);
         }
 
         private ItemProps(Map<String, String> attrs, RenderHints hints) {
@@ -42,25 +42,30 @@ final class ItemProps {
         }
 
         ItemProps copy() {
-            return new ItemProps(new HashMap<>(attrs), hints);
+            return new ItemProps(attrs == null || attrs.isEmpty() ? null : new HashMap<>(attrs), hints);
         }
 
         // --- DOM 由来の属性 ---
 
+        private Map<String, String> ensureAttrs() {
+            if (attrs == null) attrs = new HashMap<>(4);
+            return attrs;
+        }
+
         void put(String key, String value) {
-            attrs.put(key, value);
+            ensureAttrs().put(key, value);
         }
 
         String get(String key) {
-            return attrs.get(key);
+            return attrs != null ? attrs.get(key) : null;
         }
 
         boolean containsKey(String key) {
-            return attrs.containsKey(key);
+            return attrs != null && attrs.containsKey(key);
         }
 
         Map<String, String> attrs() {
-            return attrs;
+            return attrs == null || attrs.isEmpty() ? Map.of() : attrs;
         }
 
         // --- 型付きの描画の付帯情報 ---
@@ -148,12 +153,15 @@ final class ItemProps {
             partsEvents.put("font-family", box.style.get(CssPropertyIndex.FONT_FAMILY));
         }
         putFontEvents(box, partsEvents);
-        if (box.node.attrs.containsKey("title")) partsEvents.title(box.node.attrs.get("title"));
-        else if (box.node.attrs.containsKey("data-tooltip")) partsEvents.title(box.node.attrs.get("data-tooltip"));
+        Map<String, String> nodeAttrs = box.node.attrs;
+        if (!nodeAttrs.isEmpty()) {
+            if (nodeAttrs.containsKey("title")) partsEvents.title(nodeAttrs.get("title"));
+            else if (nodeAttrs.containsKey("data-tooltip")) partsEvents.title(nodeAttrs.get("data-tooltip"));
 
-        for (String attr : PASSTHROUGH_DATA_ATTRS) {
-            if (box.node.attrs.containsKey(attr)) {
-                partsEvents.put(attr, box.node.attrs.get(attr));
+            for (String attr : PASSTHROUGH_DATA_ATTRS) {
+                if (nodeAttrs.containsKey(attr)) {
+                    partsEvents.put(attr, nodeAttrs.get(attr));
+                }
             }
         }
 
@@ -166,9 +174,12 @@ final class ItemProps {
             partsEvents.scroll(box.scrollWidth, box.scrollHeight);
         }
 
-        for (Map.Entry<String, String> entry : box.node.attrs.entrySet()) {
-            if (entry.getKey().toLowerCase(Locale.ROOT).startsWith("on")) {
-                partsEvents.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
+        if (!nodeAttrs.isEmpty()) {
+            for (Map.Entry<String, String> entry : nodeAttrs.entrySet()) {
+                String k = entry.getKey();
+                if (k.regionMatches(true, 0, "on", 0, 2)) {
+                    partsEvents.put(k.toLowerCase(Locale.ROOT), entry.getValue());
+                }
             }
         }
         // スタイルの on* は算出スタイルだけで決まる。全プロパティを走査するので、スタイルごとに 1 回だけ集める
