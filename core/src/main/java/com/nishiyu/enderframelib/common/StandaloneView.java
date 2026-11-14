@@ -115,6 +115,11 @@ public final class StandaloneView implements AutoCloseable {
     private int clickCount;
     private HtmlNode lastClickField;
 
+    /** HTML なしで空の文書（{@code <html><head/><body/>}）からビューを始める。 */
+    public StandaloneView(int width, int height) {
+        this("", width, height);
+    }
+
     public StandaloneView(String html, int width, int height) {
         this(html, width, height, SystemFonts.system());
     }
@@ -180,26 +185,9 @@ public final class StandaloneView implements AutoCloseable {
         return ui.timers();
     }
 
-    /**
-     * Runs a declarative React/JS-styled UI setup block bound to this view's DOM root and timers.
-     */
-    public void mountApp(Runnable app) {
-        mountApp(timers(), app);
-    }
-
-    /**
-     * Runs a declarative React/JS-styled UI setup block bound to this view's DOM root and {@code timers}.
-     */
-    public void mountApp(UiTimers timers, Runnable app) {
-        com.nishiyu.enderframelib.api.ui.UI.Scheduler scheduler = timers == null ? null : new com.nishiyu.enderframelib.api.ui.UI.Scheduler() {
-            @Override public int setInterval(Runnable task, long intervalMs) { return timers.setInterval(task, intervalMs); }
-            @Override public int setTimeout(Runnable task, long delayMs) { return timers.setTimeout(task, delayMs); }
-            @Override public boolean clearInterval(int id) { return timers.clearInterval(id); }
-            @Override public boolean clearTimeout(int id) { return timers.clearTimeout(id); }
-            @Override public int requestAnimationFrame(Consumer<Double> callback) { return timers.requestAnimationFrame(callback); }
-            @Override public boolean cancelAnimationFrame(int id) { return timers.cancelAnimationFrame(id); }
-        };
-        com.nishiyu.enderframelib.api.ui.UI.withContext(root(), scheduler, app);
+    /** 文書の DOM（公開 {@link com.nishiyu.enderframelib.api.dom.Document} ビュー）。文書が無ければ null。 */
+    public com.nishiyu.enderframelib.api.dom.Document document() {
+        return ui.domDocument();
     }
 
     /** クリップボードの実体（窓では GLFW のクリップボードにつなぐ）。既定はこのビューの中だけのメモリ。 */

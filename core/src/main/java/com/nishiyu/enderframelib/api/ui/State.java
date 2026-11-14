@@ -7,11 +7,11 @@ import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 /**
- * A reactive state holder, similar to React's {@code useState()}.
- * Notifies registered listeners whenever its value is updated.
+ * A reactive state holder that notifies registered listeners whenever its value changes.
  *
  * @param <T> the state value type
  */
@@ -27,6 +27,23 @@ public final class State<T> {
 
     public static <T> State<T> of(@Nullable T initial) {
         return new State<>(initial);
+    }
+
+    /**
+     * Creates a derived reactive state from {@code compute} and updates it whenever
+     * any dependency in {@code deps} changes.
+     */
+    public static <T> State<T> derive(Supplier<? extends T> compute, State<?>... deps) {
+        Objects.requireNonNull(compute, "compute");
+        State<T> derived = new State<>(compute.get());
+        if (deps != null) {
+            for (State<?> dep : deps) {
+                if (dep != null) {
+                    dep.onChange(v -> derived.set(compute.get()));
+                }
+            }
+        }
+        return derived;
     }
 
     @Nullable

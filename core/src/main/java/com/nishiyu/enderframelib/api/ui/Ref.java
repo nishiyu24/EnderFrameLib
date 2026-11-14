@@ -6,7 +6,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Optional;
 
 /**
- * A mutable reference container, similar to React's {@code useRef()}.
+ * A mutable reference container, typically used to capture a mounted {@link com.nishiyu.enderframelib.api.dom.Element}.
  *
  * @param <T> the referenced object type (typically {@link com.nishiyu.enderframelib.api.dom.Element})
  */
