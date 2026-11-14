@@ -116,8 +116,9 @@ class Milestone4GateTest {
     void unconnectedSimdLayoutIslandStaysTestOnly() throws IOException {
         // 箱の木（LayoutBox）を走る本流のレイアウトとは別に、深さ順 SoA 前提の SIMD レイアウト部品が本番から未参照で並存していた。
         // 3D 計画書も使わないため、照合基準としてテスト側へ移した。本番へ戻すなら本流へ接続してから
+        // （FenwickVirtualList は X1 で BlockLayoutEngine の 10 万行仮想化へ接続したため本番へ復帰済み）
         String[] moved = {"kernel/simd/ScalarSimd", "kernel/simd/SimdBackend", "kernel/simd/SimdBackends",
-                "kernel/layout/FenwickVirtualList", "kernel/layout/SimdLayoutKernel"};
+                "kernel/layout/SimdLayoutKernel"};
         Path test = Path.of("core/src/test/java/com/nishiyu/enderframelib/core");
         for (String f : moved) {
             assertFalse(Files.exists(MAIN.resolve("core").resolve(f + ".java")), f + " が本番に戻っている");
@@ -130,7 +131,7 @@ class Milestone4GateTest {
         try (var files = Files.walk(MAIN)) {
             for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
                 String text = Files.readString(p);
-                for (String name : new String[]{"ScalarSimd", "SimdBackend", "FenwickVirtualList", "SimdLayoutKernel"}) {
+                for (String name : new String[]{"ScalarSimd", "SimdBackend", "SimdLayoutKernel"}) {
                     assertFalse(text.contains(name), p + " が " + name + " を参照している");
                 }
             }

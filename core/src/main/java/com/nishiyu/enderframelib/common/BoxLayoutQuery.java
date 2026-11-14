@@ -82,7 +82,16 @@ public final class BoxLayoutQuery implements LayoutQuery {
                 break;
             }
         }
-        return new BoxMetrics(box.x, box.y, box.w, box.h,
+        float x = box.x;
+        float y = box.y;
+        if (box.parent != null && box.parent.isVirtualizedFlow() && box.contentAutoSkipped) {
+            float[] est = box.parent.virtualOffsetOf(box);
+            if (est != null) {
+                x = est[0];
+                y = est[1];
+            }
+        }
+        return new BoxMetrics(x, y, box.w, box.h,
                 box.bL, box.bT, box.bR, box.bB,
                 box.pL, box.pT, box.pR, box.pB,
                 box.mL, box.mT, box.mR, box.mB,
@@ -121,6 +130,13 @@ public final class BoxLayoutQuery implements LayoutQuery {
         if (target == null) return;
         float ex = target.x;
         float ey = target.y;
+        if (target.parent != null && target.parent.isVirtualizedFlow() && target.contentAutoSkipped) {
+            float[] est = target.parent.virtualOffsetOf(target);
+            if (est != null) {
+                ex = est[0];
+                ey = est[1];
+            }
+        }
         float ew = target.w;
         boolean changed = false;
         for (HtmlNode a = node.parent; a != null; a = a.parent) {

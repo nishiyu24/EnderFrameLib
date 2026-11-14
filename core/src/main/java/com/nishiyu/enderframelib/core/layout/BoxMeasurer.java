@@ -120,15 +120,19 @@ public final class BoxMeasurer {
         // 箱自身の幅はここで決める。エンジンは子を測って内容の幅を返すだけ
         ConstraintSpace contentSpace = ConstraintSpace.reuseOrCreate(box.contentSpaceCache, engineInnerW, parentH, fmtCtx);
         box.contentSpaceCache = contentSpace;
-        float contentW = engine.measureContent(box, contentSpace, ctx);
-        LayoutBox legend = box.renderedLegend();
+        boolean skipByAuto = box.contentAutoSkipped;
+        float contentW = skipByAuto
+                ? box.containIntrinsicInlinePx(rootW, rootH)
+                : engine.measureContent(box, contentSpace, ctx);
+        LayoutBox legend = skipByAuto ? null : box.renderedLegend();
         if (legend != null) {
             measureLegend(legend, engineInnerW, ctx);
             contentW = Math.max(contentW, legend.w + legend.ownInlineMargins(ctx));
         }
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
             // 横の size containment がある箱（コンテナ）は、中身で幅が決まらない
-            box.w = (box.containsInlineSize() ? 0 : contentW) + box.horizontalDecoration();
+            box.w = (box.effectiveContainsInlineSize() ? box.containIntrinsicInlinePx(rootW, rootH) : contentW)
+                    + box.horizontalDecoration();
             box.naturalInlineSize = box.w;
         }
 
@@ -157,6 +161,9 @@ public final class BoxMeasurer {
         }
 
         resolveHeights(box, contentSpace, ctx, isBorderBox, engine);
+        if (!box.contentAutoSkipped && facts.contentVisibilityAuto) {
+            box.recordRememberedSize();
+        }
     }
 
     /** fieldset の legend の幅は fit-content（HTML §15.3.13）。auto マージンは置くときに解く。 */
@@ -414,22 +421,22 @@ public final class BoxMeasurer {
             hasHeight = true;
         } else if (style.containsKey(CssPropertyIndex.ASPECT_RATIO) && box.w > 0) {
             applyAspectRatio(box);
-        } else {
+        } else if (!box.contentAutoSkipped && !facts.contentVisibilityHidden) {
             resolveIntrinsicHeight(box, ctx, facts.heightAuto);
         }
 
         // 高さが auto なら内容の高さが箱の高さになる。伸長や stretch はその高さを見て行う
         float contentH;
-        if (box.containsBlockSize()) {
+        if (box.effectiveContainsBlockSize()) {
             // 中身の高さは寄与しないので測らない。前回の測定で作った配置の状態を残すと、子が増減した後の配置に使われてしまう
             box.engineState = null;
-            contentH = 0;
+            contentH = box.containIntrinsicBlockPx(rootW, rootH);
         } else {
             contentH = engine.contentBlockSize(box, space, ctx);
         }
         box.contentBlockExtent = contentH + box.verticalDecoration();
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
-        engine.finishLayout(box, space, ctx);
+        if (!box.contentAutoSkipped) engine.finishLayout(box, space, ctx);
         if (overridden) return;
 
         if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {

@@ -195,6 +195,10 @@ public class InteractionState implements StateLookup {
         }
 
         public boolean viewportDependenceKnown() { return viewportDependenceKnown; }
+        /** {@code content-visibility: auto} で直近の配置時に表示域内（非スキップ）だったか、最後に記録された内容寸法。 */
+        public boolean contentAutoActive;
+        public float lastRememberedWidth = Float.NaN;
+        public float lastRememberedHeight = Float.NaN;
         /** この要素に対話状態（:hover 等）のルールが存在するか。 */
         public boolean hasInteractiveRules;
         /**

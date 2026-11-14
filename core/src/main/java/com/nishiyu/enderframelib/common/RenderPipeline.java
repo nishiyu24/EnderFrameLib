@@ -25,11 +25,13 @@ import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.HtmlText;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.core.layout.BlockLayoutEngine;
 import com.nishiyu.enderframelib.core.layout.BoxTreeBuilder;
 import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.VirtualFlowState;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -183,7 +185,8 @@ public class RenderPipeline {
             rootBox.hasUnmarkedChanges = false;
             rootBox.hasStructuralPending = false;
             long tD = System.nanoTime();
-            runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts,
+            runLayoutPasses(rootBox, doc, env, effectiveState, rootW, rootH,
+                    doc.sheet.mediaEnvironment().resolution(), scrollState, fonts,
                     incremental || FRESH_LAYOUT_PASS_REUSE, true, false);
             long tE = System.nanoTime();
             long aE = track ? threadAllocatedBytes() : 0;
@@ -294,7 +297,8 @@ public class RenderPipeline {
             rootBox.hasUnmarkedChanges = false;
         }
         rootBox.positionTryRules = doc.sheet.positionTryRules;
-        runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, true, true, false);
+        runLayoutPasses(rootBox, doc, env, state, rootW, rootH,
+                doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, true, true, false);
         RESIZE_SKIPS.incrementAndGet();
         stats().boxes = stats().restyled = stats().reused = 0;
         stats().lastBuildStats = "boxes=0 restyled=0 reused=0 skipped=resize restyle=" + (tB - tA) / 1000 + "us "
@@ -332,20 +336,29 @@ public class RenderPipeline {
         return changed;
     }
 
+    private static final int MAX_CV_STABILIZE_PASSES = 4;
+
     public static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
         runLayoutPasses(rootBox, rootW, rootH, 1f, scrollState, fonts, false);
     }
 
     private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                         ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements) {
-        runLayoutPasses(rootBox, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, true, true);
+        runLayoutPasses(rootBox, null, null, null, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, true, true);
+    }
+
+    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+                                        ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements, boolean clearMarks,
+                                        boolean linkParents) {
+        runLayoutPasses(rootBox, null, null, null, rootW, rootH, devicePixelRatio, scrollState, fonts, reuseMeasurements, clearMarks, linkParents);
     }
 
     /**
      * @param clearMarks 配置まで終えたあとに、全ての箱の「変わった」印を外す。全体の印付けのあとは、変わった箱もそうでない箱も
      *                   印が付いたまま残り、次の局所更新（経路だけの印付け）が経路の外の箱を「変わった」と読んで配置を使い回せない
      */
-    private static void runLayoutPasses(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
+    private static void runLayoutPasses(LayoutBox rootBox, Document doc, Map<String, String> env, InteractionState interactionState,
+                                        int rootW, int rootH, float devicePixelRatio,
                                         ScrollState scrollState, FontResolver fonts, boolean reuseMeasurements, boolean clearMarks,
                                         boolean linkParents) {
         // 箱の木を作り替えていない再レイアウト（relayoutInPlace）は、親リンクが張られたままなので木全体を辿り直さない
@@ -354,13 +367,16 @@ public class RenderPipeline {
         Viewport viewport = new Viewport(rootW, rootH, devicePixelRatio);
         rootBox.devicePixelRatio = viewport.devicePixelRatio();
         long run = LAYOUT_RUNS.incrementAndGet();
+        LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
+                rootW, rootH,
+                doc != null ? b -> materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
         LayoutContext ctx = null;
         FormattingContext fmtCtx = FormattingContext.BLOCK;
 
         long m0 = System.nanoTime();
         long measuredBefore = LayoutBox.measurementsComputed();
         for (int pass = 0; pass < LAYOUT_PASSES; pass++) {
-            ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, reuseMeasurements, run, pass == 0);
+            ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, reuseMeasurements, run, pass == 0, av);
             rootBox.measure(rootW, rootH, fmtCtx, ctx);
         }
         long m1 = System.nanoTime();
@@ -371,6 +387,21 @@ public class RenderPipeline {
             rootBox.layout(0, 0, rootW, rootH, ctx);
         } finally {
             LayoutBox.finishResetPlacements(staleFrags);
+        }
+        for (int s = 0; s < MAX_CV_STABILIZE_PASSES && av.consumeNonVirtualVisibilityChanged(); s++) {
+            long nextRun = LAYOUT_RUNS.incrementAndGet();
+            LayoutContext nextCtx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts, true, nextRun, true, av);
+            rootBox.measure(rootW, rootH, fmtCtx, nextCtx);
+            staleFrags.clear();
+            LayoutBox.resetPlacementsFast(rootBox, nextRun, staleFrags);
+            try {
+                rootBox.layout(0, 0, rootW, rootH, nextCtx);
+            } finally {
+                LayoutBox.finishResetPlacements(staleFrags);
+            }
+        }
+        if (av.hasContentAuto() && interactionState != null) {
+            syncContentVisibilityFlags(rootBox, interactionState);
         }
         long m2 = System.nanoTime();
         StageProfiler.record(PipelineStage.LAYOUT_MEASURE, m1 - m0);
@@ -462,8 +493,20 @@ public class RenderPipeline {
      * スクロールバーやウィンドウのドラッグのように毎フレーム変わる値で、木の作り直しと 2 回の measure を省く。</p>
      */
     public static void repositionLayout(LayoutBox rootBox, int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
-        LayoutContext ctx = new LayoutContext(new Viewport(rootW, rootH, rootBox.devicePixelRatio),
-                effectiveIntrinsicResolver(), scrollState, fonts);
+        repositionLayout(rootBox, null, null, null, rootW, rootH, scrollState, fonts);
+    }
+
+    /**
+     * 測った寸法はそのままに、位置だけを決め直す（{@code content-visibility: auto} の可視判定・遅延構築を含む）。
+     */
+    public static void repositionLayout(LayoutBox rootBox, Document doc, Map<String, String> env, InteractionState interactionState,
+                                        int rootW, int rootH, ScrollState scrollState, FontResolver fonts) {
+        Viewport viewport = new Viewport(rootW, rootH, rootBox.devicePixelRatio);
+        LayoutContext.AutoVisibilitySession av = new LayoutContext.AutoVisibilitySession(
+                rootW, rootH,
+                doc != null ? b -> materializeAutoContent(b, doc.sheet, env, rootW, rootH, interactionState) : null);
+        LayoutContext ctx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts,
+                false, LAYOUT_RUNS.get(), true, av);
         long prof = StageProfiler.begin(PipelineStage.REPOSITION);
         List<LayoutBox> staleFrags = STALE_FRAG_BOXES.get();
         staleFrags.clear();
@@ -473,7 +516,133 @@ public class RenderPipeline {
         } finally {
             LayoutBox.finishResetPlacements(staleFrags);
         }
+        for (int s = 0; s < MAX_CV_STABILIZE_PASSES && av.consumeNonVirtualVisibilityChanged(); s++) {
+            long nextRun = LAYOUT_RUNS.incrementAndGet();
+            LayoutContext stabilizeCtx = new LayoutContext(viewport, effectiveIntrinsicResolver(), scrollState, fonts,
+                    true, nextRun, true, av);
+            rootBox.measure(rootW, rootH, FormattingContext.BLOCK, stabilizeCtx);
+            staleFrags.clear();
+            LayoutBox.resetPlacementsFast(rootBox, nextRun, staleFrags);
+            try {
+                rootBox.layout(0, 0, rootW, rootH, stabilizeCtx);
+            } finally {
+                LayoutBox.finishResetPlacements(staleFrags);
+            }
+            LayoutBox.clearAllSubtreeMarks(rootBox);
+        }
+        if (av.hasContentAuto() && interactionState != null) {
+            syncContentVisibilityFlags(rootBox, interactionState);
+        }
         StageProfiler.end(PipelineStage.REPOSITION, prof);
+    }
+
+    private static boolean isFocusWithin(HtmlNode node, InteractionState state) {
+        if (node == null || state == null) return false;
+        HtmlNode focused = state.focusedNode();
+        for (HtmlNode cur = focused; cur != null; cur = cur.parent) {
+            if (cur == node) return true;
+        }
+        return false;
+    }
+
+    private static void syncContentVisibilityFlags(LayoutBox box, InteractionState state) {
+        if (box == null || state == null) return;
+        if (box.node != null && !box.node.isPseudoNode && box.style != null && box.style.facts().contentVisibilityAuto) {
+            InteractionState.StateFlags flags = state.getOrCreate(box.node);
+            flags.contentAutoActive = !box.contentAutoSkipped;
+            if (!Float.isNaN(box.rememberedInnerW)) flags.lastRememberedWidth = box.rememberedInnerW;
+            if (!Float.isNaN(box.rememberedInnerH)) flags.lastRememberedHeight = box.rememberedInnerH;
+        }
+        if (!box.subtreeHasContentAuto || box.contentAutoSkipped) return;
+        VirtualFlowState vf = box.virtualFlowState();
+        if (vf != null) {
+            int start = vf.placedRangeStart();
+            int end = vf.placedRangeEnd();
+            int n = box.children.size();
+            if (start >= 0 && end >= start) {
+                int limit = Math.min(end, n - 1);
+                for (int i = start; i <= limit; i++) {
+                    syncContentVisibilityFlags(box.children.get(i), state);
+                }
+            }
+            for (int k = 0, m = vf.extraPlacedCount(); k < m; k++) {
+                int idx = vf.extraPlacedAt(k);
+                if (idx >= 0 && idx < n && (idx < start || idx > end)) {
+                    syncContentVisibilityFlags(box.children.get(idx), state);
+                }
+            }
+            return;
+        }
+        for (int i = 0, n = box.children.size(); i < n; i++) {
+            syncContentVisibilityFlags(box.children.get(i), state);
+        }
+    }
+
+    /**
+     * {@code content-visibility: auto} により遅延構築されていた {@code box} の中身（疑似要素＋子要素）をその場で組み立てる。
+     */
+    private static void materializeAutoContent(LayoutBox box, StyleSheet sheet, Map<String, String> env,
+                                               int rootW, int rootH, InteractionState interactionState) {
+        if (box == null || !box.childrenDeferred || box.node == null || sheet == null) return;
+        box.childrenDeferred = false;
+        HtmlNode node = box.node;
+        ComputedStyle computed = box.style;
+
+        ArrayList<LayoutBox> chain = new ArrayList<>();
+        for (LayoutBox b = box.parent; b != null; b = b.parent) chain.add(b);
+        StyleScope scope = StyleScope.initial(rootW, rootH);
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            LayoutBox b = chain.get(i);
+            if (!b.isAnonymous && b.node != null) scope = scope.enter(b.node, b.style);
+        }
+        StyleScope childScope = scope.enter(node, computed);
+        ContainerBox parentContainer = interactionState != null && box.parent != null && box.parent.node != null
+                ? interactionState.nearestSizeContainer(box.parent.node)
+                : ContainerBox.NONE_SIZE;
+        boolean parentMoving = false;
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            LayoutBox b = chain.get(i);
+            if (b.movingStamped ? b.selfOrAncestorMoving : PaintOrder.hasMovingProps(b.style)) {
+                parentMoving = true;
+                break;
+            }
+        }
+        boolean selfOrAncestorMoving = stampMoving(box, computed, parentMoving);
+        ContainerBox selfContainer = containerForSelf(node, computed, parentContainer, interactionState);
+        boolean siblingInvalidation = StyleResolver.hasSiblingStateRules(sheet);
+        boolean hasInteractive = box.hasInteractiveRules;
+        Map<String, String> childInherited = computed.asMap();
+
+        box.elementChildren.clear();
+        ComputedStyle beforeStyle = resolvePseudoStyle(node, PseudoType.BEFORE, computed, sheet, env, childScope, interactionState, selfContainer);
+        if (beforeStyle != null) {
+            box.addElementChild(buildPseudoBox(node, PseudoType.BEFORE, beforeStyle, hasInteractive, sheet, env,
+                    childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
+        }
+
+        if (!"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
+            boolean isOpen = interactionState != null
+                    ? interactionState.stateOf(node).open()
+                    : node.attrs.containsKey("open");
+            boolean isClosedDetails = "details".equalsIgnoreCase(node.tag) && !isOpen;
+            for (HtmlNode child : node.children) {
+                if (child.tag.equals("#text") && child.text.isEmpty()) continue;
+                if (isClosedDetails && !"summary".equalsIgnoreCase(child.tag)) continue;
+                box.addElementChild(buildLayoutTree(child, childInherited, sheet, env, FORCE_SUBTREE,
+                        computed.fontSizePx(), childScope, interactionState, siblingInvalidation,
+                        null, null, false, null, selfContainer, selfOrAncestorMoving));
+            }
+        }
+
+        ComputedStyle afterStyle = resolvePseudoStyle(node, PseudoType.AFTER, computed, sheet, env, childScope, interactionState, selfContainer);
+        if (afterStyle != null) {
+            box.addElementChild(buildPseudoBox(node, PseudoType.AFTER, afterStyle, hasInteractive, sheet, env,
+                    childScope, interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving, false, null));
+        }
+
+        BoxTreeBuilder.build(box, CounterStyles.of(sheet.counterStyles));
+        box.linkParents();
+        box.recomputeChildFlags();
     }
 
     /**
@@ -944,6 +1113,12 @@ public class RenderPipeline {
                 }
             }
 
+            if (box.childrenDeferred && !computed.isContentVisibilityAuto() && !computed.skipsContents()) {
+                styleChanged = true;
+                layoutRequired = true;
+                structural = true;
+            }
+
             if ("details".equalsIgnoreCase(node.tag)) {
                 boolean isOpen = interactionState.stateOf(node).open();
                 boolean wasOpen = box.elementChildren.size() > 1;
@@ -1289,9 +1464,37 @@ public class RenderPipeline {
         }
 
         // content-visibility: hidden の中身は測らず描かない（箱の木に入れない。疑似要素も同じ）
+        // content-visibility: auto で前フレーム未表示かつ強制関連でない要素も中身を遅延する
         boolean skipContents = computed.skipsContents();
-        if (skipContents) {
-            // 子を持たない箱として扱う
+        boolean isCvAuto = !skipContents && computed.isContentVisibilityAuto();
+        boolean deferContents = false;
+        if (isCvAuto) {
+            box.markContentAutoSubtree();
+            box.originallyDeferred = true;
+            boolean forceRel = isFocusWithin(node, interactionState);
+            box.cvForceRelevant = forceRel;
+            if (flags != null) {
+                if (Float.isNaN(box.rememberedInnerW)) box.rememberedInnerW = flags.lastRememberedWidth;
+                if (Float.isNaN(box.rememberedInnerH)) box.rememberedInnerH = flags.lastRememberedHeight;
+            }
+            boolean wasActive = (flags != null && flags.contentAutoActive) || forceRel;
+            if (!wasActive) {
+                box.contentAutoSkipped = true;
+                box.childrenDeferred = true;
+                deferContents = true;
+            } else {
+                box.contentAutoSkipped = false;
+                box.childrenDeferred = false;
+            }
+        } else {
+            box.contentAutoSkipped = false;
+            box.childrenDeferred = false;
+            box.originallyDeferred = false;
+            box.cvForceRelevant = false;
+        }
+        boolean omitChildren = skipContents || deferContents;
+        if (omitChildren) {
+            // 子を持たない（または遅延構築する）箱として扱う
         } else if (reusePseudos) {
             if (prevBefore != null) {
                 stampMovingSubtree(prevBefore, selfOrAncestorMoving);
@@ -1306,7 +1509,7 @@ public class RenderPipeline {
         }
 
         // svg の子（図形）は箱にしない。svg 要素が木を読んで自分でラスタライズする
-        if (!skipContents && !"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
+        if (!omitChildren && !"textarea".equalsIgnoreCase(node.tag) && !"svg".equalsIgnoreCase(node.tag)) {
             boolean isOpen = interactionState != null
                     ? interactionState.stateOf(node).open()
                     : node.attrs.containsKey("open");
@@ -1329,7 +1532,7 @@ public class RenderPipeline {
             }
         }
 
-        if (skipContents) {
+        if (omitChildren) {
             // 同上
         } else if (reusePseudos) {
             if (prevAfter != null) {

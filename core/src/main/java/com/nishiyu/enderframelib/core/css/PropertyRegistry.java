@@ -79,6 +79,7 @@ public final class PropertyRegistry {
             "grid-row-gap", "grid-column-gap", "gap", "grid-gap", "grid", "grid-template",
             "flex", "flex-flow", "overflow", "inset",
             "place-content", "place-items", "place-self", "container", "position-try",
+            "contain-intrinsic-size", "contain-intrinsic-inline-size", "contain-intrinsic-block-size",
             "font", "list-style", "outline", "columns", "column-rule",
             "-webkit-background-clip", // background ショートハンドの background-clip: border-box より先に（先に入ったものが勝つ）
             "background",
@@ -267,6 +268,15 @@ public final class PropertyRegistry {
         // ---- containment（箱の中身が外へ及ぶ範囲を限る。再レイアウト境界になる）
         layout("contain", "none", false, ValueType.LIST, false);
         keyword("content-visibility", CssKeywords.ContentVisibility.class, CssKeywords.ContentVisibility.VISIBLE, false, Invalidation.LAYOUT);
+        layout("contain-intrinsic-width", "none", false, ValueType.OTHER, true);
+        layout("contain-intrinsic-height", "none", false, ValueType.OTHER, true);
+        shorthand("contain-intrinsic-inline-size", Invalidation.LAYOUT,
+                v -> Map.of("contain-intrinsic-width", v.trim()), "contain-intrinsic-width");
+        shorthand("contain-intrinsic-block-size", Invalidation.LAYOUT,
+                v -> Map.of("contain-intrinsic-height", v.trim()), "contain-intrinsic-height");
+        shorthand("contain-intrinsic-size", Invalidation.LAYOUT,
+                ShorthandExpanders::containIntrinsicSize,
+                "contain-intrinsic-width", "contain-intrinsic-height");
 
         // ---- コンテナクエリ（container-type は寸法の算出に効く: size containment がある）
         keyword("container-type", CssKeywords.ContainerType.class, CssKeywords.ContainerType.NORMAL, false, Invalidation.LAYOUT);

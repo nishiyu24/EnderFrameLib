@@ -766,4 +766,48 @@ final class ShorthandExpanders {
         out.put("position-try-fallbacks", CssSyntax.serialize(rest));
         return out;
     }
+
+    /**
+     * {@code contain-intrinsic-size: [none | <length> | auto [none | <length>]]{1,2}}。
+     * 1 個なら幅・高さの両方、2 個なら幅・高さの順。{@code %} は無効。
+     */
+    static Map<String, String> containIntrinsicSize(String value) {
+        if (value == null || value.isBlank()) return Map.of();
+        List<String> tokens = splitTopLevelTokens(value);
+        if (tokens.isEmpty()) return Map.of();
+        List<String> items = new ArrayList<>(2);
+        for (int i = 0; i < tokens.size(); i++) {
+            String tok = tokens.get(i).trim();
+            if ("auto".equalsIgnoreCase(tok)) {
+                if (i + 1 >= tokens.size()) return Map.of();
+                String next = tokens.get(++i).trim();
+                if (!isContainIntrinsicLengthToken(next)) return Map.of();
+                items.add("auto " + next);
+            } else {
+                if (!isContainIntrinsicLengthToken(tok)) return Map.of();
+                items.add(tok);
+            }
+            if (items.size() > 2) return Map.of();
+        }
+        if (items.isEmpty()) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("contain-intrinsic-width", items.get(0));
+        out.put("contain-intrinsic-height", items.size() == 2 ? items.get(1) : items.get(0));
+        return out;
+    }
+
+    private static boolean isContainIntrinsicLengthToken(String token) {
+        if (token.isEmpty()) return false;
+        if ("none".equalsIgnoreCase(token)) return true;
+        if (token.indexOf('%') >= 0) return false;
+        Token t = firstToken(token);
+        if (t == null) return false;
+        if (t.type() == Type.DIMENSION) return t.number() >= 0f;
+        if (t.type() == Type.NUMBER) return t.number() == 0f;
+        if (t.type() == Type.FUNCTION) {
+            String fn = t.value().toLowerCase(java.util.Locale.ROOT);
+            return "calc".equals(fn) || "min".equals(fn) || "max".equals(fn) || "clamp".equals(fn);
+        }
+        return false;
+    }
 }

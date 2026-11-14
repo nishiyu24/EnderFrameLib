@@ -105,7 +105,8 @@ public final class BoxTreeBuilder {
         if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.listItem()) return false;
         if (d.inner() != Inner.FLOW && d.inner() != Inner.FLOW_ROOT) return false;
         if (parent.isAnonymous || parent.node == null || parent.node.isPseudoNode || LayoutBox.isTableBox(parent)) return false;
-        if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()) return false;
+        if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()
+                || parent.contentAutoSkipped || parent.childrenDeferred || parent.isVirtualizedFlow()) return false;
         String tag = parent.node.tag == null ? "" : parent.node.tag.toLowerCase(Locale.ROOT);
         if (tag.equals("ol") || tag.equals("fieldset") || tag.equals("details") || tag.equals("textarea")
                 || tag.equals("svg") || tag.equals("select") || tag.equals("button")) {

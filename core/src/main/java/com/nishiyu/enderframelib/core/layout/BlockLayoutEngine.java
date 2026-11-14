@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.kernel.CompactList;
+import com.nishiyu.enderframelib.core.kernel.layout.FenwickVirtualList;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
@@ -272,11 +273,28 @@ public class BlockLayoutEngine extends LayoutEngine {
         return height != null && !"auto".equals(height.trim());
     }
 
+    /** これ以上のブロック子を持ち、{@code content-visibility: auto} 要素を含むコンテナを {@link FenwickVirtualList} で仮想化する。 */
+    public static final int VIRTUAL_FLOW_THRESHOLD = 32;
+
+    private static final java.util.concurrent.atomic.LongAdder VIRTUAL_FLOWS_BUILT =
+            new java.util.concurrent.atomic.LongAdder();
+
+    /** 仮想フロー（{@link VirtualFlowState}）を構築した累積回数（テスト・診断用）。 */
+    public static long virtualFlowsBuilt() {
+        return VIRTUAL_FLOWS_BUILT.sum();
+    }
+
     @Override
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         if (MulticolLayout.isMulticol(box)) return MulticolLayout.contentBlockSize(this, box, space, ctx);
         if (box.engineState instanceof MulticolLayout.State) box.engineState = null;
         if (box.sizingMode == SizingMode.SHRINK_TO_FIT) stretchBlockChildren(box, space, ctx);
+        if (canVirtualize(box)) {
+            VirtualFlowState reusedVf = box.engineState instanceof VirtualFlowState v ? v : new VirtualFlowState();
+            VirtualFlowState vf = buildVirtualFlow(box, space, ctx, Float.NaN, reusedVf);
+            box.engineState = vf;
+            return vf.height;
+        }
         FlowState reused = box.engineState instanceof FlowState fs ? fs : new FlowState();
         FlowState state = buildFlowState(box, space, ctx, box.children, Float.NaN, reused);
         box.engineState = state;
@@ -313,6 +331,15 @@ public class BlockLayoutEngine extends LayoutEngine {
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
         if (box.engineState instanceof MulticolLayout.State columns) {
             box.inlineContentBottom = MulticolLayout.arrange(this, box, columns, innerX, innerY, ctx);
+            placeOutsideMarkers(box, innerY, ctx);
+            return;
+        }
+        if (box.engineState instanceof VirtualFlowState vf) {
+            if (Math.abs(vf.innerW - innerW) > 0.01f) {
+                vf = buildVirtualFlow(box, ConstraintSpace.block(innerW, 0), ctx, innerW, vf);
+                box.engineState = vf;
+            }
+            box.inlineContentBottom = arrangeVirtualFlow(box, vf, innerX, innerY, innerW, ctx);
             placeOutsideMarkers(box, innerY, ctx);
             return;
         }
@@ -971,7 +998,238 @@ public class BlockLayoutEngine extends LayoutEngine {
      */
     private static boolean synthesizesBaseline(LayoutBox box) {
         return (box.style.containment() & (ComputedStyle.CONTAIN_SIZE | ComputedStyle.CONTAIN_LAYOUT)) != 0
-                || box.containsBlockSize();
+                || box.effectiveContainsBlockSize();
+    }
+
+    // ==========================================
+    // 仮想ブロックフロー（content-visibility: auto × FenwickVirtualList）
+    // ==========================================
+
+    private static boolean canVirtualize(LayoutBox box) {
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        if (n < VIRTUAL_FLOW_THRESHOLD || box.hasOutsideMarker || box.hasAbsoluteChild
+                || MulticolLayout.isMulticol(box) || box.renderedLegend() != null) {
+            return false;
+        }
+        if (!box.establishesBfc && box.floatSpace != null) return false;
+        boolean anyCvAuto = false;
+        for (int i = 0; i < n; i++) {
+            LayoutBox c = kids.get(i);
+            if (c.isAbsolute || c.isOutsideMarker || c.isRenderedLegend) return false;
+            if (c.style.facts().displayNone) continue;
+            if (isInlineBox(c) || isFloating(c) || c.node.nodeType == NodeType.TEXT) return false;
+            if (!c.establishesBfc && containsFloats(c)) return false;
+            if (collapsesThrough(c)) return false;
+            if (c.style.facts().contentVisibilityAuto) anyCvAuto = true;
+        }
+        return anyCvAuto;
+    }
+
+    private static VirtualFlowState buildVirtualFlow(LayoutBox box, ConstraintSpace space, LayoutContext ctx,
+                                                     float innerWOverride, VirtualFlowState vf) {
+        VIRTUAL_FLOWS_BUILT.increment();
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        float innerW = Float.isNaN(innerWOverride) ? Math.max(0, box.w - box.horizontalDecoration()) : innerWOverride;
+        float percentBase = childPercentageBase(box, space.percentageBlockSize(), ctx);
+        boolean rtl = box.style.layoutFacts().rtl;
+        FormattingContext childFmt = FormattingContext.of(FormattingContext.Display.BLOCK, true,
+                box.sizingMode == SizingMode.SHRINK_TO_FIT);
+        vf.prepare(n, innerW, percentBase, box, childFmt);
+
+        boolean collapseTop = collapsesThroughTop(box);
+        float pendingPos = 0, pendingNeg = 0;
+        float topPos = 0, topNeg = 0;
+        boolean hasContent = false;
+
+        for (int i = 0; i < n; i++) {
+            LayoutBox c = kids.get(i);
+            c.virtualChildIndex = i;
+            if ("none".equals(c.style.get(CssPropertyIndex.DISPLAY))) {
+                vf.gapBefore[i] = 0;
+                vf.slotHeights[i] = 0;
+                vf.xPos[i] = 0;
+                continue;
+            }
+            if (c.cvForceRelevant) vf.addForceRelevant(i);
+
+            boolean intoParentTop = !hasContent && collapseTop;
+            if (intoParentTop) {
+                if (c.mT > 0) topPos = Math.max(topPos, c.mT);
+                else topNeg = Math.min(topNeg, c.mT);
+                vf.gapBefore[i] = 0;
+            } else {
+                if (c.mT > 0) pendingPos = Math.max(pendingPos, c.mT);
+                else pendingNeg = Math.min(pendingNeg, c.mT);
+                vf.gapBefore[i] = pendingPos + pendingNeg;
+                pendingPos = 0;
+                pendingNeg = 0;
+            }
+            vf.slotHeights[i] = vf.gapBefore[i] + c.h;
+            if (c.mB > 0) pendingPos = Math.max(pendingPos, c.mB);
+            else pendingNeg = Math.min(pendingNeg, c.mB);
+            hasContent = true;
+
+            if (rtl && !"auto".equals(c.style.getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) {
+                vf.xPos[i] = Math.max(0, innerW - (c.w + c.mL + c.mR));
+            } else {
+                vf.xPos[i] = 0;
+            }
+        }
+        vf.fenwick.initFrom(vf.slotHeights, n);
+
+        if (collapsesThroughBottom(box) && (hasContent || !collapseTop)) {
+            float m = box.ownMarginBottom;
+            if (m > 0) pendingPos = Math.max(pendingPos, m);
+            else pendingNeg = Math.min(pendingNeg, m);
+            box.mB = pendingPos + pendingNeg;
+            vf.trailingMargin = 0;
+        } else {
+            vf.trailingMargin = pendingPos + pendingNeg;
+        }
+        if (collapseTop) {
+            float m = box.ownMarginTop;
+            if (m > 0) topPos = Math.max(topPos, m);
+            else topNeg = Math.min(topNeg, m);
+            box.mT = topPos + topNeg;
+        }
+        vf.height = vf.fenwick.totalHeight() + vf.trailingMargin;
+        return vf;
+    }
+
+    private float arrangeVirtualFlow(LayoutBox box, VirtualFlowState vf, float innerX, float innerY, float innerW,
+                                     LayoutContext ctx) {
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        if (n == 0) {
+            vf.placedStart = -1;
+            vf.placedEnd = -1;
+            vf.extraPlacedCount = 0;
+            return Float.NEGATIVE_INFINITY;
+        }
+        LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
+        float margin = LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN;
+        float localTop = Math.max(0f, (ctx.visibilityClipTop() - margin) - innerY);
+        float localBottom = Math.max(0f, (ctx.visibilityClipBottom() + margin) - innerY);
+        float totalH = vf.fenwick.totalHeight();
+
+        int estStart = 0, estEnd = -1;
+        if (localBottom > 0f && localTop < totalH) {
+            estStart = vf.fenwick.firstVisible(localTop);
+            if (estStart < n) {
+                double y = vf.fenwick.offsetOf(estStart);
+                for (int i = estStart; i < n && y < localBottom; i++) {
+                    estEnd = i;
+                    y += vf.fenwick.heightAt(i);
+                }
+            }
+        }
+
+        int prevStart = vf.placedStart, prevEnd = vf.placedEnd;
+        boolean heightChanged = false;
+
+        // 先に前回の配置範囲から画面外へ出た行を再スキップして Fenwick を更新（O(K log N)）
+        if (prevStart >= 0 && prevEnd >= prevStart) {
+            int limit = Math.min(prevEnd, n - 1);
+            for (int i = prevStart; i <= limit; i++) {
+                if (i >= estStart && i <= estEnd) continue;
+                if (reSkipVirtualRow(kids.get(i), i, vf, ctx)) heightChanged = true;
+            }
+        }
+        for (int k = 0; k < vf.extraPlacedCount; k++) {
+            int idx = vf.extraPlaced[k];
+            if (idx >= 0 && idx < n && !(idx >= estStart && idx <= estEnd)) {
+                if (reSkipVirtualRow(kids.get(idx), idx, vf, ctx)) heightChanged = true;
+            }
+        }
+        vf.extraPlacedCount = 0;
+
+        // 最新のオフセットで可視範囲を確定・具現化・配置（O(log N + K)）
+        totalH = vf.fenwick.totalHeight();
+        int newStart = -1, newEnd = -1;
+        if (localBottom > 0f && localTop < totalH) {
+            int first = vf.fenwick.firstVisible(localTop);
+            if (first < n) {
+                double curTop = vf.fenwick.offsetOf(first);
+                for (int i = first; i < n && curTop < localBottom; i++) {
+                    LayoutBox child = kids.get(i);
+                    if (!child.style.facts().displayNone) {
+                        if (materializeAndMeasureVirtualRow(child, i, vf, ctx, av)) heightChanged = true;
+                        float childBoxY = (float) (curTop + vf.gapBefore[i]);
+                        child.layout(innerX + vf.xPos[i], innerY + childBoxY - child.mT, innerW, child.h, ctx);
+                        if (newStart < 0) newStart = i;
+                        newEnd = i;
+                    }
+                    curTop += vf.fenwick.heightAt(i);
+                }
+            }
+        }
+        vf.placedStart = newStart;
+        vf.placedEnd = newEnd;
+
+        // フォーカス等により強制関連な画面外行を配置
+        for (int k = 0; k < vf.forceRelevantCount; k++) {
+            int idx = vf.forceRelevantIndices[k];
+            if (idx < 0 || idx >= n || (idx >= newStart && idx <= newEnd)) continue;
+            LayoutBox child = kids.get(idx);
+            if (child.style.facts().displayNone) continue;
+            if (materializeAndMeasureVirtualRow(child, idx, vf, ctx, av)) heightChanged = true;
+            float rowTop = vf.fenwick.offsetOf(idx) + vf.gapBefore[idx];
+            child.layout(innerX + vf.xPos[idx], innerY + rowTop - child.mT, innerW, child.h, ctx);
+            vf.addExtraPlaced(idx);
+        }
+
+        vf.height = vf.fenwick.totalHeight() + vf.trailingMargin;
+        if (heightChanged && !hasSpecifiedHeight(box.style)) {
+            float newBoxH = vf.height + box.verticalDecoration();
+            if (Math.abs(newBoxH - box.h) > 0.01f) {
+                box.h = newBoxH;
+                box.contentBlockExtent = newBoxH;
+                if (av != null) av.noteNonVirtualVisibilityChanged();
+            }
+        }
+        return Float.NEGATIVE_INFINITY;
+    }
+
+    private static boolean materializeAndMeasureVirtualRow(LayoutBox child, int index, VirtualFlowState vf,
+                                                           LayoutContext ctx, LayoutContext.AutoVisibilitySession av) {
+        if (!child.style.facts().contentVisibilityAuto) return false;
+        if (av != null) av.noteContentAuto();
+        if (!child.contentAutoSkipped && !child.childrenDeferred) return false;
+        float prevH = child.h;
+        child.contentAutoSkipped = false;
+        if (child.childrenDeferred) ctx.materializeAutoBox(child);
+        child.measure(vf.childMeasureSpace, ctx);
+        if (Math.abs(child.h - prevH) > 0.01f) {
+            vf.fenwick.setHeight(index, vf.gapBefore[index] + child.h);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean reSkipVirtualRow(LayoutBox old, int index, VirtualFlowState vf, LayoutContext ctx) {
+        if (old.style.facts().contentVisibilityAuto && !old.cvForceRelevant) {
+            boolean changed = false;
+            if (!old.contentAutoSkipped) {
+                old.recordRememberedSize();
+                old.releaseDeferredChildren();
+                old.contentAutoSkipped = true;
+                float prevH = old.h;
+                old.measure(vf.childMeasureSpace, ctx);
+                if (Math.abs(old.h - prevH) > 0.01f) {
+                    vf.fenwick.setHeight(index, vf.gapBefore[index] + old.h);
+                    changed = true;
+                }
+            }
+            old.x = 0;
+            old.y = 0;
+            old.scrollWidth = 0;
+            old.scrollHeight = 0;
+            if (!old.inlineFragments.isEmpty()) old.discardFragments();
+            return changed;
+        }
+        return false;
     }
 
     /** 最後の行のベースライン（border box の上端から）。インラインブロックのベースラインになる。 */

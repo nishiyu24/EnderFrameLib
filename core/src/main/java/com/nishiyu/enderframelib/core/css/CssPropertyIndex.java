@@ -68,6 +68,11 @@ public final class CssPropertyIndex {
     public static final int CONTAINER_NAME = ComputedStyle.idOf(CssProperty.CONTAINER_NAME);
     public static final int CONTAINER_TYPE = ComputedStyle.idOf(CssProperty.CONTAINER_TYPE);
     public static final int CONTAIN = ComputedStyle.idOf(CssProperty.CONTAIN);
+    public static final int CONTAIN_INTRINSIC_SIZE = ComputedStyle.idOf(CssProperty.CONTAIN_INTRINSIC_SIZE);
+    public static final int CONTAIN_INTRINSIC_WIDTH = ComputedStyle.idOf(CssProperty.CONTAIN_INTRINSIC_WIDTH);
+    public static final int CONTAIN_INTRINSIC_HEIGHT = ComputedStyle.idOf(CssProperty.CONTAIN_INTRINSIC_HEIGHT);
+    public static final int CONTAIN_INTRINSIC_INLINE_SIZE = ComputedStyle.idOf(CssProperty.CONTAIN_INTRINSIC_INLINE_SIZE);
+    public static final int CONTAIN_INTRINSIC_BLOCK_SIZE = ComputedStyle.idOf(CssProperty.CONTAIN_INTRINSIC_BLOCK_SIZE);
     public static final int CONTENT_VISIBILITY = ComputedStyle.idOf(CssProperty.CONTENT_VISIBILITY);
     public static final int CONTENT = ComputedStyle.idOf(CssProperty.CONTENT);
     public static final int COUNTER_INCREMENT = ComputedStyle.idOf(CssProperty.COUNTER_INCREMENT);

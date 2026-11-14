@@ -632,7 +632,10 @@ public class UiView implements AutoCloseable {
     private void ensureLayoutFresh() {
         if (!layoutStale) return;
         layoutStale = false;
-        if (layoutRoot != null) RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
+        if (layoutRoot != null) {
+            RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
+                    rootW, rootH, scrollState, fontResolver());
+        }
     }
 
     public void setLayoutRoot(LayoutBox layoutRoot) {
@@ -1114,9 +1117,10 @@ public class UiView implements AutoCloseable {
             STAT_SCROLL_TRANSLATED.increment();
             return;
         }
-        if (scrollOnly && deferScrollLayout && !observed && rebuildWindowAtBoxFrame()) return;
+        if (scrollOnly && deferScrollLayout && !observed && !layoutRoot.subtreeHasContentAuto && rebuildWindowAtBoxFrame()) return;
         layoutStale = false; // 後回しにした決め直しも、次の 1 回で済む（ensureLayoutFresh を呼ぶと同じ決め直しが 2 回走る）
-        RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
+        RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
+                rootW, rootH, scrollState, fontResolver());
         // スクロール量だけが変わったなら、表示リストは作り直さない（レイアウトは上で最新にしてある）
         if (scrollOnly && tryScrollTranslate()) {
             STAT_SCROLL_TRANSLATED.increment();
@@ -1226,7 +1230,8 @@ public class UiView implements AutoCloseable {
         applyOverrides();
         if (!tryScrollTranslate()) { // 作った窓の中なので通常は来ない。来たら位置を決め直して作り直す
             layoutStale = false;
-            RenderPipeline.repositionLayout(layoutRoot, rootW, rootH, scrollState, fontResolver());
+            RenderPipeline.repositionLayout(layoutRoot, document, env, interactionState,
+                    rootW, rootH, scrollState, fontResolver());
             repaintFromLayout(true);
             return true;
         }

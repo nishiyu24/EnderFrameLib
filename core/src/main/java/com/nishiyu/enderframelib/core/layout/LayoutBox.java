@@ -79,6 +79,20 @@ public class LayoutBox {
     public boolean needsAdoption = true;
     /** 部分木に匿名ボックス・::marker を含むか（{@link BoxTreeBuilder} の再利用収集の枝刈り用）。 */
     boolean subtreeHasGenerated = false;
+    /** 自分または子孫に {@code content-visibility: auto} を持つ箱があるか。 */
+    public boolean subtreeHasContentAuto = false;
+    /** {@code content-visibility: auto} により現在画面外として子の測定・配置・描画をスキップ中か。 */
+    public boolean contentAutoSkipped = false;
+    /** {@code content-visibility: auto} のスキップ中に DOM の子の構築を遅延している（未具現）か。 */
+    public boolean childrenDeferred = false;
+    /** 構築時に子の具現化を遅延したボックスか（画面外へ戻ったときに再解放できる）。 */
+    public boolean originallyDeferred = false;
+    /** フォーカス／focus-within 等で画面外でも強制的に関連（スキップ不可）か。 */
+    public boolean cvForceRelevant = false;
+    /** {@code contain-intrinsic-size: auto <length>} 用の最後に記憶された内寸（px）。未記憶は NaN。 */
+    public float rememberedInnerW = Float.NaN, rememberedInnerH = Float.NaN;
+    /** 親が {@code VirtualFlowState} のときの子配列インデックス（O(1) 参照用、通常は -1）。 */
+    int virtualChildIndex = -1;
     /** {@link #elementChildren} に疑似要素（{@code ::before}/{@code ::after}）の子を含むか。 */
     public boolean hasPseudoElementChild = false;
     /** 前回の {@link #buildLayoutTree} 等で集めたノード索引表（ルート箱が保持し、次の構築へ渡す）。 */
@@ -167,6 +181,14 @@ public class LayoutBox {
         }
         if (child.isAbsolute) this.hasAbsoluteChild = true;
         if (child.isOutsideMarker) this.hasOutsideMarker = true;
+        if (child.subtreeHasContentAuto) markContentAutoSubtree();
+    }
+
+    /** 自分と祖先に {@link #subtreeHasContentAuto} の印を伝播する。 */
+    public void markContentAutoSubtree() {
+        for (LayoutBox cur = this; cur != null && !cur.subtreeHasContentAuto; cur = cur.parent) {
+            cur.subtreeHasContentAuto = true;
+        }
     }
     /**
      * 親が組んでいる BFC の float の領域と、その中でのこの箱の内容ボックスの原点。
@@ -224,6 +246,7 @@ public class LayoutBox {
             if (child.isOutsideMarker) this.hasOutsideMarker = true;
             if (child.isAbsolute) this.hasAbsoluteChild = true;
             if (child.isAnonymous || child.subtreeHasGenerated) this.subtreeHasGenerated = true;
+            if (child.subtreeHasContentAuto) markContentAutoSubtree();
             bumpShapeEpoch();
             STRUCT_EPOCH.incrementAndGet();
         }
@@ -235,6 +258,7 @@ public class LayoutBox {
         this.hasOutsideMarker = false;
         this.hasAbsoluteChild = false;
         this.subtreeHasGenerated = false;
+        this.subtreeHasContentAuto = style != null && style.facts().contentVisibilityAuto;
         this.needsAdoption = false;
     }
 
@@ -242,18 +266,23 @@ public class LayoutBox {
         if (child.isOutsideMarker) this.hasOutsideMarker = true;
         if (child.isAbsolute) this.hasAbsoluteChild = true;
         if (child.isAnonymous || child.subtreeHasGenerated) this.subtreeHasGenerated = true;
+        if (child.subtreeHasContentAuto) markContentAutoSubtree();
     }
 
     public void recomputeChildFlags() {
         boolean outside = false;
         boolean abs = false;
+        boolean cv = style != null && style.facts().contentVisibilityAuto;
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox c = children.get(i);
             if (c.isOutsideMarker) outside = true;
             if (c.isAbsolute) abs = true;
+            if (c.subtreeHasContentAuto) cv = true;
         }
         this.hasOutsideMarker = outside;
         this.hasAbsoluteChild = abs;
+        if (cv) markContentAutoSubtree();
+        else this.subtreeHasContentAuto = false;
     }
 
     /** 要素ツリーに子を足す。ボックスツリーは {@link BoxTreeBuilder} がここから組み立てる。 */
@@ -599,7 +628,7 @@ public class LayoutBox {
     }
 
     /** 見えている断片を捨てる（描画が古い断片を読まないように空にする）。オブジェクトは控えに回して再利用する。 */
-    private void discardFragments() {
+    void discardFragments() {
         int n = inlineFragments.size();
         if (n == 0) return;
         if (spareFragments == null) spareFragments = new ArrayList<>(Math.min(n, SPARE_FRAGMENT_LIMIT));
@@ -748,6 +777,11 @@ public class LayoutBox {
         this.isRelative = "relative".equals(pos);
         this.isSticky = "sticky".equals(pos);
         this.zIndex = (int) newStyle.number(CssPropertyIndex.Z_INDEX, 0f);
+        if (newStyle.facts().contentVisibilityAuto) {
+            markContentAutoSubtree();
+        } else if (this.contentAutoSkipped) {
+            this.contentAutoSkipped = false;
+        }
         if (traitsBefore != structTraits()) STRUCT_EPOCH.incrementAndGet();
         if (containerBefore != containerTraits()) CONTAINER_EPOCH.incrementAndGet();
     }
@@ -820,7 +854,9 @@ public class LayoutBox {
     }
 
     private float computeMinContentWidth(LayoutContext ctx) {
-        if (containsInlineSize()) return horizontalDecoration();
+        if (effectiveContainsInlineSize()) {
+            return horizontalDecoration() + containIntrinsicInlinePx(ctx.viewport().rootW(), ctx.viewport().rootH());
+        }
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
@@ -1397,6 +1433,7 @@ public class LayoutBox {
     private String measuredText;
     private int measuredContentHash;
     private boolean measuredOutsideMarker, measuredRenderedLegend;
+    private boolean measuredContentAutoSkipped;
     /**
      * 表（か表の中の箱）として測ったことがあるか。表のエンジンは中の箱へ枠線の分担・縦の揃えを直接書き込むので、
      * 一度でも表として測った箱は使い回さない。再スタイルが前回の木の算出スタイルをその場で書き換えるため、
@@ -1546,7 +1583,7 @@ public class LayoutBox {
         // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
         // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。中身は文字・確定幅の箱・同じ条件の箱だけ
         if (measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
-                || containsInlineSize() || !measuredFlowFloatFree || childFitBlocked) {
+                || effectiveContainsInlineSize() || !measuredFlowFloatFree || childFitBlocked) {
             return none;
         }
         for (int i = 0, n = children.size(); i < n; i++) {
@@ -1631,6 +1668,7 @@ public class LayoutBox {
                         && sameViewportForMeasure(ctx.viewport())) || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
+                && contentAutoSkipped == measuredContentAutoSkipped
                 && ctx.fonts() == measuredFonts
                 && ctx.intrinsicResolver() == measuredIntrinsics
                 && (restoreOk || (w == measuredW && h == measuredH
@@ -1699,6 +1737,7 @@ public class LayoutBox {
         measuredContentHash = contentHash();
         measuredOutsideMarker = isOutsideMarker;
         measuredRenderedLegend = isRenderedLegend;
+        measuredContentAutoSkipped = contentAutoSkipped;
         everLaidOutAsTable |= isTableBox(this) || collapsedBorders != null;
         measuredChildren = sameChildren(measuredChildren) ? measuredChildren
                 : children.isEmpty() ? EMPTY_BOX_ARRAY : children.toArray(EMPTY_BOX_ARRAY);
@@ -1858,6 +1897,18 @@ public class LayoutBox {
         if (measureAffected && parent != null) parent.measurementValid = false;
     }
 
+    private void markVisibilityChangedForStabilize() {
+        this.measurementValid = false;
+        this.layoutChanged = true;
+        this.subtreeChanged = true;
+        invalidateMinContentCache();
+        for (LayoutBox p = parent; p != null; p = p.parent) {
+            p.subtreeChanged = true;
+            p.invalidateMinContentCache();
+        }
+        invalidateAncestors(true);
+    }
+
     /**
      * 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。ただし再レイアウト境界から上は、
      * 境界の寸法が変わらないので測定は有効なまま（配置の記録だけは全ての祖先で捨てる）。
@@ -1941,7 +1992,18 @@ public class LayoutBox {
         box.descendantOverflowRight = 0;
         box.descendantOverflowBottom = 0;
         box.inlineContentBottom = Float.NEGATIVE_INFINITY;
+        if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
+            vf.resetPlacedChildren(keepRun, false, false, null);
+            return;
+        }
         for (int i = 0, n = box.children.size(); i < n; i++) resetPlacements(box.children.get(i), keepRun);
+    }
+
+    /** {@link #resetPlacementsFast} 等から仮想フローの範囲だけを O(K) でリセットする補助。 */
+    static void resetPlacementChildFast(LayoutBox child, long keepRun, boolean nextOffset, boolean nextBfcFloat,
+                                        List<LayoutBox> staleFrags) {
+        if (staleFrags == null) resetPlacements(child, keepRun);
+        else resetPlacementsFast(child, keepRun, nextOffset, nextBfcFloat, staleFrags);
     }
 
     /**
@@ -1982,6 +2044,10 @@ public class LayoutBox {
         if (n == 0) return;
         boolean nextOffset = ancestorOffset || box.isRelative || box.isSticky;
         boolean nextBfcFloat = box.establishesBfc ? box.hasFloatChild : (inBfcFloat || box.hasFloatChild);
+        if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
+            vf.resetPlacedChildren(keepRun, nextOffset, nextBfcFloat, staleFrags);
+            return;
+        }
         for (int i = 0; i < n; i++) {
             resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
         }
@@ -2380,6 +2446,21 @@ public class LayoutBox {
     public static void clearAllSubtreeMarks(LayoutBox root) {
         if (!root.subtreeChanged) return;
         if (!root.layoutChanged) root.subtreeChanged = false;
+        if (root.engineState instanceof VirtualFlowState vf) {
+            int start = vf.placedRangeStart();
+            int end = vf.placedRangeEnd();
+            List<LayoutBox> kids = root.children;
+            int n = kids.size();
+            if (start >= 0 && end >= start) {
+                int limit = Math.min(end, n - 1);
+                for (int i = start; i <= limit; i++) clearAllSubtreeMarks(kids.get(i));
+            }
+            for (int k = 0, m = vf.extraPlacedCount(); k < m; k++) {
+                int idx = vf.extraPlacedAt(k);
+                if (idx >= 0 && idx < n && (idx < start || idx > end)) clearAllSubtreeMarks(kids.get(idx));
+            }
+            return;
+        }
         List<LayoutBox> kids = root.children;
         for (int i = 0, n = kids.size(); i < n; i++) clearAllSubtreeMarks(kids.get(i));
     }
@@ -2403,7 +2484,7 @@ public class LayoutBox {
      */
     boolean isRelayoutBoundary() {
         if (parent == null || display == null || display.isInlineLevel() || isTableBox(this) || !establishesBfc) return false;
-        if (containsInlineSize() && containsBlockSize()) return true;
+        if (effectiveContainsInlineSize() && effectiveContainsBlockSize()) return true;
         if (!isScrollContainer()) return false;
         StyleFacts facts = style.facts();
         return facts.definiteWidth && facts.definiteHeight;
@@ -2437,13 +2518,16 @@ public class LayoutBox {
         boolean sameMargins = lastLayoutML == mL && lastLayoutMR == mR && lastLayoutMT == mT && lastLayoutMB == mB;
         boolean sameInputs = lastLayoutX == parentX && lastLayoutY == parentY && sameScroll && sameMargins
                 && (keptPure || (lastLayoutOuterW == parentOuterW && lastLayoutOuterH == parentOuterH));
-        if (ctx.reuseMeasurements() && sameInputs && canKeepPlacement(ctx.layoutRun())) {
+        LayoutContext.AutoVisibilitySession av = ctx.autoVisibility();
+        boolean checkAutoSubtree = av != null && (subtreeHasContentAuto || style.facts().contentVisibilityAuto);
+        if (ctx.reuseMeasurements() && !checkAutoSubtree && sameInputs && canKeepPlacement(ctx.layoutRun())) {
             LAYOUTS_SKIPPED.increment();
             return;
         }
         // 原点だけが違い、部分木の配置が前回と同じ（原点からの相対位置が変わらない）なら、置き直さず部分木ごと平行移動する
         // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
-        if (!sameInputs && sameScroll && sameMargins && SHIFT_ENABLED && ctx.reuseMeasurements() && canKeepPlacement(ctx.layoutRun())
+        if (!sameInputs && !checkAutoSubtree && sameScroll && sameMargins && SHIFT_ENABLED && ctx.reuseMeasurements()
+                && canKeepPlacement(ctx.layoutRun())
                 && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
                 && isShiftableDelta(parentX, lastLayoutX) && isShiftableDelta(parentY, lastLayoutY)
                 && isShiftableSubtree(parentX != lastLayoutX, parentY != lastLayoutY)) {
@@ -2487,32 +2571,100 @@ public class LayoutBox {
         float scrollX = ctx.scrollState().getScrollX(node);
         float scrollY = ctx.scrollState().getScrollY(node);
 
+        boolean isCvAuto = style.facts().contentVisibilityAuto;
+        if (isCvAuto && av != null) {
+            av.noteContentAuto();
+            boolean near = this.isFixed
+                    ? (this.x + Math.max(0f, this.w) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                        && this.x <= rootW + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                        && this.y + Math.max(0f, this.h) >= -LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN
+                        && this.y <= rootH + LayoutContext.AutoVisibilitySession.CONTENT_VISIBILITY_MARGIN)
+                    : av.isNearViewport(this.x, this.y, this.w, this.h);
+            boolean relevant = cvForceRelevant || near;
+            boolean shouldSkip = !relevant;
+            if (shouldSkip != this.contentAutoSkipped) {
+                if (shouldSkip) {
+                    releaseDeferredChildren();
+                    this.contentAutoSkipped = true;
+                } else {
+                    this.contentAutoSkipped = false;
+                    if (this.childrenDeferred) av.materialize(this);
+                }
+                markVisibilityChangedForStabilize();
+                av.noteNonVirtualVisibilityChanged();
+            } else if (!shouldSkip && this.childrenDeferred) {
+                av.materialize(this);
+                markVisibilityChangedForStabilize();
+                av.noteNonVirtualVisibilityChanged();
+            }
+        }
+
+        if (this.contentAutoSkipped) {
+            applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
+            if (this.isSticky) applyStickyOffset(ctx);
+            this.descendantOverflowRight = this.w;
+            this.descendantOverflowBottom = this.h;
+            this.scrollWidth = Math.max(this.w, pL + bL + pR + bR);
+            this.scrollHeight = Math.max(this.h, pT + bT + pB + bB);
+            recordPlacement(parentX, parentY, parentOuterW, parentOuterH, false, scrollX, scrollY);
+            return;
+        }
+
         float innerX = this.x + pL + bL - scrollX;
         float innerY = this.y + pT + bT - scrollY + contentOffsetY + legendSpill;
 
-        // 静的位置の既定は内容ボックスの原点。ブロックフローは通常フローの位置で上書きする
-        if (hasAbsoluteChild) {
-            for (int i = 0, n = children.size(); i < n; i++) {
-                LayoutBox child = children.get(i);
-                if (child.isAbsolute) {
-                    child.staticX = innerX;
-                    child.staticY = innerY;
+        float prevClipL = 0, prevClipT = 0, prevClipR = 0, prevClipB = 0;
+        boolean savedClip = false;
+        if (av != null && (this.isFixed || clipsOverflow())) {
+            prevClipL = av.clipLeft();
+            prevClipT = av.clipTop();
+            prevClipR = av.clipRight();
+            prevClipB = av.clipBottom();
+            savedClip = true;
+            float baseL = this.isFixed ? 0f : prevClipL;
+            float baseT = this.isFixed ? 0f : prevClipT;
+            float baseR = this.isFixed ? rootW : prevClipR;
+            float baseB = this.isFixed ? rootH : prevClipB;
+            if (clipsOverflow()) {
+                float boxL = this.x + bL;
+                float boxT = this.y + bT;
+                float boxR = Math.max(boxL, this.x + this.w - bR);
+                float boxB = Math.max(boxT, this.y + this.h - bB);
+                av.setClip(Math.max(baseL, boxL), Math.max(baseT, boxT),
+                        Math.min(baseR, boxR), Math.min(baseB, boxB));
+            } else {
+                av.setClip(baseL, baseT, baseR, baseB);
+            }
+        }
+        LayoutBox legend;
+        try {
+            // 静的位置の既定は内容ボックスの原点。ブロックフローは通常フローの位置で上書きする
+            if (hasAbsoluteChild) {
+                for (int i = 0, n = children.size(); i < n; i++) {
+                    LayoutBox child = children.get(i);
+                    if (child.isAbsolute) {
+                        child.staticX = innerX;
+                        child.staticY = innerY;
+                    }
                 }
             }
-        }
 
-        LayoutEngine engine = LayoutEngine.getEngine(display);
-        engine.arrangeChildren(this, innerX, innerY, ctx);
+            LayoutEngine engine = LayoutEngine.getEngine(display);
+            engine.arrangeChildren(this, innerX, innerY, ctx);
 
-        if (hasAbsoluteChild) {
-            for (int i = 0, n = children.size(); i < n; i++) {
-                LayoutBox child = children.get(i);
-                if (child.style.facts().displayNone) continue;
-                if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
+            if (hasAbsoluteChild) {
+                for (int i = 0, n = children.size(); i < n; i++) {
+                    LayoutBox child = children.get(i);
+                    if (child.style.facts().displayNone) continue;
+                    if (child.isAbsolute) child.layout(this.x - scrollX, this.y - scrollY, this.w, this.h, ctx);
+                }
             }
+            legend = renderedLegend();
+            if (legend != null) placeRenderedLegend(legend, ctx);
+        } finally {
+            if (savedClip) av.setClip(prevClipL, prevClipT, prevClipR, prevClipB);
         }
-        LayoutBox legend = renderedLegend();
-        if (legend != null) placeRenderedLegend(legend, ctx);
+        if (isCvAuto) recordRememberedSize();
 
         applyRelativePositioning(parentOuterW, parentOuterH, rootW, rootH);
         if (this.isSticky) applyStickyOffset(ctx);
@@ -2851,6 +3003,73 @@ public class LayoutBox {
         return style.facts().containsBlockSize;
     }
 
+    /** スキップ中の {@code content-visibility: auto} を含む有効な横方向の size containment。 */
+    public boolean effectiveContainsInlineSize() {
+        return contentAutoSkipped || style.facts().containsInlineSize;
+    }
+
+    /** スキップ中の {@code content-visibility: auto} を含む有効な縦方向の size containment。 */
+    public boolean effectiveContainsBlockSize() {
+        return contentAutoSkipped || style.facts().containsBlockSize;
+    }
+
+    /** size containment 中の固有代用幅（{@code contain-intrinsic-width}、未指定は 0px）。 */
+    public float containIntrinsicInlinePx(float rootW, float rootH) {
+        float px = style.containIntrinsicWidthPx(rootW, rootH, rememberedInnerW);
+        return Float.isNaN(px) ? 0f : px;
+    }
+
+    /** size containment 中の固有代用高さ（{@code contain-intrinsic-height}、未指定は 0px）。 */
+    public float containIntrinsicBlockPx(float rootW, float rootH) {
+        float px = style.containIntrinsicHeightPx(rootW, rootH, rememberedInnerH);
+        return Float.isNaN(px) ? 0f : px;
+    }
+
+    /** {@code content-visibility: auto} が通常表示されたときの内寸を記録する（{@code auto <length>} 用）。 */
+    public void recordRememberedSize() {
+        rememberedInnerW = Math.max(0f, w - horizontalDecoration());
+        rememberedInnerH = Math.max(0f, h - verticalDecoration());
+    }
+
+    /** 画面外へ戻った遅延構築済みボックスの子の箱を解放し、メモリ使用量を可視行数に比例させる。 */
+    public void releaseDeferredChildren() {
+        if (!originallyDeferred || childrenDeferred) return;
+        children.clear();
+        elementChildren.clear();
+        childrenDeferred = true;
+        engineState = null;
+        inlineFragments.clear();
+        hasOutsideMarker = false;
+        hasAbsoluteChild = false;
+        hasFloatChild = false;
+        needsAdoption = false;
+        STRUCT_EPOCH.incrementAndGet();
+        bumpShapeEpoch();
+        touchPaint();
+    }
+
+    /** この箱が {@code FenwickVirtualList} ベースの仮想ブロックフローを使っているか。 */
+    public boolean isVirtualizedFlow() {
+        return engineState instanceof VirtualFlowState;
+    }
+
+    /**
+     * 仮想ブロックフローで直近に配置された子範囲と追加配置インデックスを返す。
+     * 非仮想ボックスなら {@code null}。
+     */
+    public VirtualFlowState virtualFlowState() {
+        return engineState instanceof VirtualFlowState vf ? vf : null;
+    }
+
+    /**
+     * 仮想ブロックフロー内で未配置（画面外）の子の推定配置座標 {@code {x, y}} を O(log N) で返す。
+     * 仮想リスト外または見つからなければ {@code null}。
+     */
+    public float[] virtualOffsetOf(LayoutBox child) {
+        if (!(engineState instanceof VirtualFlowState vf) || child == null) return null;
+        return vf.estimateChildPosition(this, child);
+    }
+
     /** {@code overflow} が {@code visible} / {@code clip} 以外ならスクロールコンテナ。 */
     public boolean isScrollContainer() {
         return style.facts().scrollContainer;
@@ -2892,56 +3111,81 @@ public class LayoutBox {
         float descBottom = this.y + this.h;
 
         boolean marginEscapes = !establishesBfc && pB == 0 && bB == 0 && !hasDefiniteHeight();
-        LayoutBox lastInFlow = null;
-        if (marginEscapes) {
-            for (int i = children.size() - 1; i >= 0; i--) {
-                LayoutBox child = children.get(i);
-                if (!child.style.facts().displayNone && !child.isAbsolute
-                        && !child.display.isInlineLevel()) {
-                    lastInFlow = child;
-                    break;
-                }
-            }
-        }
-        for (int i = 0, n = children.size(); i < n; i++) {
-            LayoutBox child = children.get(i);
-            if (child.style.facts().displayNone || child.isAbsolute) continue;
-            if (child.node != null && child.node.nodeType == NodeType.TEXT) {
-                // 文字の塊の箱は位置を持たない（x / y は 0 のまま。置かれるのは断片）。箱の x / y / h を読むと、相対配置・sticky で
-                // 祖先が動いたとき（その分だけ箱も平行移動される）スクロール範囲にそのずれが入り、sticky ではスクロールするほど
-                // 範囲が伸び続ける。断片の端を取り込む
-                List<InlineFragment> frags = child.inlineFragments;
-                for (int j = 0, m = frags.size(); j < m; j++) {
-                    InlineFragment frag = frags.get(j);
-                    float right = frag.x + frag.w + scrollX;
-                    float bottom = Math.max(frag.y + frag.h, frag.y + frag.baseline + frag.descent) + scrollY;
-                    if (right > extRight) extRight = right;
-                    if (bottom > extBottom) extBottom = bottom;
-                    if (right > descRight) descRight = right;
-                    if (bottom > descBottom) descBottom = bottom;
-                }
-                continue;
-            }
-            if (child == lastInFlow) {
-                float r = child.x + child.w + child.mR + scrollX;
-                float b = child.y + child.h + scrollY;
-                if (r > extRight) extRight = r;
-                if (b > extBottom) extBottom = b;
-            } else {
+        if (engineState instanceof VirtualFlowState vf) {
+            float contentOriginY = this.y + pT + bT + contentOffsetY + legendSpill;
+            float virtualBottom = contentOriginY + vf.contentExtentBottom(marginEscapes);
+            if (virtualBottom > extBottom) extBottom = virtualBottom;
+            if (virtualBottom > descBottom) descBottom = virtualBottom;
+            for (int k = 0, m = vf.placedCount(); k < m; k++) {
+                LayoutBox child = vf.placedChildAt(k);
+                if (child == null || child.style.facts().displayNone || child.isAbsolute) continue;
                 float r = child.x + child.w + child.mR + scrollX;
                 float b = child.y + child.h + child.mB + scrollY;
                 if (r > extRight) extRight = r;
                 if (b > extBottom) extBottom = b;
+                float cr = child.x + child.w + scrollX;
+                float cb = child.y + child.h + scrollY;
+                if (cr > descRight) descRight = cr;
+                if (cb > descBottom) descBottom = cb;
+                if (!child.clipsOverflow()) {
+                    float ovR = child.x + child.descendantOverflowRight + scrollX;
+                    float ovB = child.y + child.descendantOverflowBottom + scrollY;
+                    if (ovR > descRight) descRight = ovR;
+                    if (ovB > descBottom) descBottom = ovB;
+                }
             }
-            float cr = child.x + child.w + scrollX;
-            float cb = child.y + child.h + scrollY;
-            if (cr > descRight) descRight = cr;
-            if (cb > descBottom) descBottom = cb;
-            if (!child.clipsOverflow()) {
-                float ovR = child.x + child.descendantOverflowRight + scrollX;
-                float ovB = child.y + child.descendantOverflowBottom + scrollY;
-                if (ovR > descRight) descRight = ovR;
-                if (ovB > descBottom) descBottom = ovB;
+        } else {
+            LayoutBox lastInFlow = null;
+            if (marginEscapes) {
+                for (int i = children.size() - 1; i >= 0; i--) {
+                    LayoutBox child = children.get(i);
+                    if (!child.style.facts().displayNone && !child.isAbsolute
+                            && !child.display.isInlineLevel()) {
+                        lastInFlow = child;
+                        break;
+                    }
+                }
+            }
+            for (int i = 0, n = children.size(); i < n; i++) {
+                LayoutBox child = children.get(i);
+                if (child.style.facts().displayNone || child.isAbsolute) continue;
+                if (child.node != null && child.node.nodeType == NodeType.TEXT) {
+                    // 文字の塊の箱は位置を持たない（x / y は 0 のまま。置かれるのは断片）。箱の x / y / h を読むと、相対配置・sticky で
+                    // 祖先が動いたとき（その分だけ箱も平行移動される）スクロール範囲にそのずれが入り、sticky ではスクロールするほど
+                    // 範囲が伸び続ける。断片の端を取り込む
+                    List<InlineFragment> frags = child.inlineFragments;
+                    for (int j = 0, m = frags.size(); j < m; j++) {
+                        InlineFragment frag = frags.get(j);
+                        float right = frag.x + frag.w + scrollX;
+                        float bottom = Math.max(frag.y + frag.h, frag.y + frag.baseline + frag.descent) + scrollY;
+                        if (right > extRight) extRight = right;
+                        if (bottom > extBottom) extBottom = bottom;
+                        if (right > descRight) descRight = right;
+                        if (bottom > descBottom) descBottom = bottom;
+                    }
+                    continue;
+                }
+                if (child == lastInFlow) {
+                    float r = child.x + child.w + child.mR + scrollX;
+                    float b = child.y + child.h + scrollY;
+                    if (r > extRight) extRight = r;
+                    if (b > extBottom) extBottom = b;
+                } else {
+                    float r = child.x + child.w + child.mR + scrollX;
+                    float b = child.y + child.h + child.mB + scrollY;
+                    if (r > extRight) extRight = r;
+                    if (b > extBottom) extBottom = b;
+                }
+                float cr = child.x + child.w + scrollX;
+                float cb = child.y + child.h + scrollY;
+                if (cr > descRight) descRight = cr;
+                if (cb > descBottom) descBottom = cb;
+                if (!child.clipsOverflow()) {
+                    float ovR = child.x + child.descendantOverflowRight + scrollX;
+                    float ovB = child.y + child.descendantOverflowBottom + scrollY;
+                    if (ovR > descRight) descRight = ovR;
+                    if (ovB > descBottom) descBottom = ovB;
+                }
             }
         }
         if (engineState != null && engineState.contributesScrollExtent()) {

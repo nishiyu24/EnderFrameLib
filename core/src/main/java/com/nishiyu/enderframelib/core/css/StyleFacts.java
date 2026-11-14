@@ -16,10 +16,13 @@ public final class StyleFacts {
     public final boolean floating, displayNone, scrollContainer;
     /** {@code width} / {@code height} が確定した長さ（auto・%・内在サイズのキーワードでない）。 */
     public final boolean definiteWidth, definiteHeight;
+    /** {@code content-visibility: auto} / {@code hidden}。 */
+    public final boolean contentVisibilityAuto, contentVisibilityHidden;
 
     StyleFacts(Overflow overflowX, Overflow overflowY, int fontWeight, byte lineHeightKind, float lineHeightValue,
           boolean containsInlineSize, boolean containsBlockSize, boolean floating, boolean displayNone,
-          boolean definiteWidth, boolean definiteHeight) {
+          boolean definiteWidth, boolean definiteHeight,
+          boolean contentVisibilityAuto, boolean contentVisibilityHidden) {
         this.overflowX = overflowX;
         this.overflowY = overflowY;
         this.fontWeight = fontWeight;
@@ -31,6 +34,8 @@ public final class StyleFacts {
         this.displayNone = displayNone;
         this.definiteWidth = definiteWidth;
         this.definiteHeight = definiteHeight;
+        this.contentVisibilityAuto = contentVisibilityAuto;
+        this.contentVisibilityHidden = contentVisibilityHidden;
         this.scrollContainer = overflowX.scrolls() || overflowY.scrolls();
     }
 

@@ -14,6 +14,8 @@ import com.nishiyu.enderframelib.core.text.model.TextStyle;
 import com.nishiyu.enderframelib.core.text.model.WhiteSpace;
 import com.nishiyu.enderframelib.core.text.model.WordBreak;
 
+import java.util.function.Consumer;
+
 /**
  * レイアウト 1 回分の外部依存。
  *
@@ -22,6 +24,7 @@ import com.nishiyu.enderframelib.core.text.model.WordBreak;
  * @param layoutRun         このレイアウト（measure の全パスと layout）の通し番号
  * @param firstPass         measure の 1 回目のパスか。2 回目以降は、同じレイアウトの中で記録した結果を使い回さない
  *                          （表の枠線の分担のように、1 回目の結果を読んで 2 回目が変わる箱があるため）
+ * @param autoVisibility    {@code content-visibility: auto} の可視範囲・遅延子の具現化セッション（不要なら {@code null}）
  */
 public record LayoutContext(
         Viewport viewport,
@@ -30,13 +33,106 @@ public record LayoutContext(
         FontResolver fonts,
         boolean reuseMeasurements,
         long layoutRun,
-        boolean firstPass
+        boolean firstPass,
+        AutoVisibilitySession autoVisibility
 ) {
+
+    /**
+     * {@code content-visibility: auto} の可視判定と遅延サブツリー具現化を 1 回のレイアウト中で共有する状態。
+     */
+    public static final class AutoVisibilitySession {
+        /** 可視判定の近傍マージン（UI スクロールの 1 ステップ翻訳幅 576px を包含する 640px）。 */
+        public static final float CONTENT_VISIBILITY_MARGIN = 640f;
+
+        private float clipLeft;
+        private float clipTop;
+        private float clipRight;
+        private float clipBottom;
+        private final Consumer<LayoutBox> materializer;
+        private boolean nonVirtualVisibilityChanged;
+        private boolean anyContentAuto;
+
+        public AutoVisibilitySession(float viewportW, float viewportH, Consumer<LayoutBox> materializer) {
+            this.clipLeft = 0f;
+            this.clipTop = 0f;
+            this.clipRight = Math.max(0f, viewportW);
+            this.clipBottom = Math.max(0f, viewportH);
+            this.materializer = materializer;
+        }
+
+        public float clipLeft() { return clipLeft; }
+        public float clipTop() { return clipTop; }
+        public float clipRight() { return clipRight; }
+        public float clipBottom() { return clipBottom; }
+
+        public void setClip(float left, float top, float right, float bottom) {
+            this.clipLeft = left;
+            this.clipTop = top;
+            this.clipRight = right;
+            this.clipBottom = bottom;
+        }
+
+        public boolean isNearViewport(float x, float y, float w, float h) {
+            float m = CONTENT_VISIBILITY_MARGIN;
+            float r = x + Math.max(0f, w);
+            float b = y + Math.max(0f, h);
+            return r >= clipLeft - m && x <= clipRight + m
+                    && b >= clipTop - m && y <= clipBottom + m;
+        }
+
+        public boolean isVerticalBandNearViewport(float top, float bottom) {
+            float m = CONTENT_VISIBILITY_MARGIN;
+            return bottom >= clipTop - m && top <= clipBottom + m;
+        }
+
+        public void materialize(LayoutBox box) {
+            if (materializer != null && box.childrenDeferred) {
+                materializer.accept(box);
+            }
+        }
+
+        public void noteNonVirtualVisibilityChanged() {
+            nonVirtualVisibilityChanged = true;
+        }
+
+        public boolean consumeNonVirtualVisibilityChanged() {
+            boolean was = nonVirtualVisibilityChanged;
+            nonVirtualVisibilityChanged = false;
+            return was;
+        }
+
+        public void noteContentAuto() {
+            anyContentAuto = true;
+        }
+
+        public boolean hasContentAuto() {
+            return anyContentAuto;
+        }
+    }
 
     /** measure の結果を使い回さない（何もかも測り直す）文脈。 */
     public LayoutContext(Viewport viewport, IntrinsicSizeResolver intrinsicResolver,
                          ScrollState scrollState, FontResolver fonts) {
-        this(viewport, intrinsicResolver, scrollState, fonts, false, 0L, true);
+        this(viewport, intrinsicResolver, scrollState, fonts, false, 0L, true, null);
+    }
+
+    /** 後方互換の 7 引数コンストラクタ（{@code autoVisibility = null}）。 */
+    public LayoutContext(Viewport viewport, IntrinsicSizeResolver intrinsicResolver,
+                         ScrollState scrollState, FontResolver fonts,
+                         boolean reuseMeasurements, long layoutRun, boolean firstPass) {
+        this(viewport, intrinsicResolver, scrollState, fonts, reuseMeasurements, layoutRun, firstPass, null);
+    }
+
+    public float visibilityClipTop() {
+        return autoVisibility != null ? autoVisibility.clipTop() : 0f;
+    }
+
+    public float visibilityClipBottom() {
+        return autoVisibility != null ? autoVisibility.clipBottom() : (viewport != null ? viewport.rootH() : 0f);
+    }
+
+    public void materializeAutoBox(LayoutBox box) {
+        if (autoVisibility != null) autoVisibility.materialize(box);
     }
 
     // テキストの測定ごとに引くプロパティは、名前ではなく添字で引く

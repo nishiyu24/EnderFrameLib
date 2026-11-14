@@ -1222,8 +1222,8 @@ public final class ComputedStyle {
             }
         }
         switch (keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)) {
-            case HIDDEN -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT;
-            case AUTO -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT;
+            case HIDDEN -> bits |= CONTAIN_SIZE | CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
+            case AUTO -> bits |= CONTAIN_LAYOUT | CONTAIN_PAINT | CONTAIN_STYLE;
             default -> {}
         }
         containment = bits;
@@ -1234,6 +1234,41 @@ public final class ComputedStyle {
     public boolean skipsContents() {
         return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
                 == CssKeywords.ContentVisibility.HIDDEN;
+    }
+
+    /** {@code content-visibility: auto}: 画面外の間は中身を省き、表示域に近づいたら組み直す。 */
+    public boolean isContentVisibilityAuto() {
+        return keywordOf(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class)
+                == CssKeywords.ContentVisibility.AUTO;
+    }
+
+    /**
+     * size containment 中の {@code contain-intrinsic-width}（px）。{@code none} や無効値なら {@code Float.NaN}。
+     * {@code auto <length>} で記憶済み寸法 {@code rememberedPx} があればそれを返す。
+     */
+    public float containIntrinsicWidthPx(float rootW, float rootH, float rememberedPx) {
+        return resolveContainIntrinsic(CssPropertyIndex.CONTAIN_INTRINSIC_WIDTH, rootW, rootH, rememberedPx);
+    }
+
+    /**
+     * size containment 中の {@code contain-intrinsic-height}（px）。{@code none} や無効値なら {@code Float.NaN}。
+     * {@code auto <length>} で記憶済み寸法 {@code rememberedPx} があればそれを返す。
+     */
+    public float containIntrinsicHeightPx(float rootW, float rootH, float rememberedPx) {
+        return resolveContainIntrinsic(CssPropertyIndex.CONTAIN_INTRINSIC_HEIGHT, rootW, rootH, rememberedPx);
+    }
+
+    private float resolveContainIntrinsic(int propId, float rootW, float rootH, float rememberedPx) {
+        String raw = get(propId);
+        if (raw == null || raw.isBlank()) return Float.NaN;
+        String s = raw.trim();
+        if (s.length() > 4 && s.regionMatches(true, 0, "auto", 0, 4) && Character.isWhitespace(s.charAt(4))) {
+            if (!Float.isNaN(rememberedPx)) return Math.max(0f, rememberedPx);
+            s = s.substring(4).trim();
+        }
+        if (s.isEmpty() || "none".equalsIgnoreCase(s) || s.indexOf('%') >= 0) return Float.NaN;
+        float px = LengthResolver.parseDim(s, 0f, rootW, rootH, fontSizePx(), rootFontSizePx());
+        return px >= 0f ? px : Float.NaN;
     }
 
     private volatile Map<String, String> customProperties;
@@ -1516,6 +1551,7 @@ public final class ComputedStyle {
         // line-height / font-weight は値オブジェクトに覚えた解析結果を引く（同じ文字列なら全スタイルで 1 回だけ解析）
         CssValue lh = values[idOf(CssProperty.LINE_HEIGHT)];
         CssValue fw = values[idOf(CssProperty.FONT_WEIGHT)];
+        CssKeywords.ContentVisibility cv = keywordFresh(CssProperty.CONTENT_VISIBILITY, CssKeywords.ContentVisibility.class);
         StyleFacts built = new StyleFacts(computeOverflowAxis(CssProperty.OVERFLOW_X, 0), computeOverflowAxis(CssProperty.OVERFLOW_Y, 1),
                 fw == null ? 400 : fw.fontWeight(),
                 lh == null ? LH_NORMAL : lh.lineHeightKind(), lh == null ? 0f : lh.lineHeightValue(),
@@ -1525,7 +1561,8 @@ public final class ComputedStyle {
                         || keywordFresh(CssProperty.CONTAINER_TYPE, CssKeywords.ContainerType.class).containsBlockSize(),
                 keywordFresh(CssProperty.FLOAT, CssKeywords.FloatSide.class) != CssKeywords.FloatSide.NONE,
                 "none".equals(getOrDefault(CssProperty.DISPLAY, "block")),
-                definiteDimension(DIM_WIDTH, CssProperty.WIDTH), definiteDimension(DIM_HEIGHT, CssProperty.HEIGHT));
+                definiteDimension(DIM_WIDTH, CssProperty.WIDTH), definiteDimension(DIM_HEIGHT, CssProperty.HEIGHT),
+                cv == CssKeywords.ContentVisibility.AUTO, cv == CssKeywords.ContentVisibility.HIDDEN);
         return built;
     }
 

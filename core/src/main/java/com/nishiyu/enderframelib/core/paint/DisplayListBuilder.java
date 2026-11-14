@@ -451,6 +451,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         } else if (b.style != null && !text && PaintOrder.factsOf(b.style).hasMovingProps()) {
             return false;
         }
+        if (b.contentAutoSkipped) return true;
+        if (b.isVirtualizedFlow()) return false;
         if (b.children != null) {
             for (LayoutBox c : b.children) {
                 if (!cullableSubtree(c, top)) return false;
@@ -1549,6 +1551,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private static void collectSubtreeBoxes(LayoutBox b, List<LayoutBox> out) {
         if (b == null) return;
         if (b.dlStart >= 0) out.add(b);
+        if (b.contentAutoSkipped) return;
+        if (b.isVirtualizedFlow()) return;
         if (b.children != null) {
             for (LayoutBox c : b.children) collectSubtreeBoxes(c, out);
         }
@@ -1863,6 +1867,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     public boolean canPatchChildSlices(LayoutBox parentBox, List<LayoutBox> removed, List<LayoutBox> added, LayoutBox afterBox) {
         if (currentDisplayList == null || currentDisplayList.isEmpty() || currentRoot == null) return cant(1, 0);
         if (parentBox == null || (removed.isEmpty() && added.isEmpty())) return cant(1, 1);
+        if (parentBox.contentAutoSkipped || parentBox.childrenDeferred || parentBox.isVirtualizedFlow()) return cant(1, 12);
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
         if (windowedBuild && !windowIntact(removed)) return cant(1, 13);

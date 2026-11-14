@@ -71,6 +71,11 @@ public final class CssProperty {
     public static final String POSITION_TRY_ORDER = "position-try-order";
     public static final String CONTAINER_TYPE = "container-type";
     public static final String CONTAIN = "contain";
+    public static final String CONTAIN_INTRINSIC_SIZE = "contain-intrinsic-size";
+    public static final String CONTAIN_INTRINSIC_WIDTH = "contain-intrinsic-width";
+    public static final String CONTAIN_INTRINSIC_HEIGHT = "contain-intrinsic-height";
+    public static final String CONTAIN_INTRINSIC_INLINE_SIZE = "contain-intrinsic-inline-size";
+    public static final String CONTAIN_INTRINSIC_BLOCK_SIZE = "contain-intrinsic-block-size";
     public static final String CONTENT_VISIBILITY = "content-visibility";
     public static final String CONTENT = "content";
     public static final String COUNTER_INCREMENT = "counter-increment";

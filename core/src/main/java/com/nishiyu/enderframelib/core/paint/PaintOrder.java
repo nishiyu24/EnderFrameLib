@@ -364,6 +364,7 @@ public final class PaintOrder {
      */
     private boolean scrollsAsOneNode(LayoutBox box) {
         if (box.isAnonymous || box.w <= 0 || box.h <= 0 || !box.isScrollContainer()) return false;
+        if (box.isVirtualizedFlow() || box.subtreeHasContentAuto) return false;
         String tag = box.node.tag;
         if ("root".equals(tag) || "html".equals(tag) || "body".equals(tag)) return false;
         // 子孫の全走査になる（大きいスクロールコンテナでは毎回の作り直しの負担）。子の増減や、固定・粘着・絶対配置・包含ブロックに効くスタイルが変わると構造の世代が進むので、進むまで保持する
@@ -385,8 +386,10 @@ public final class PaintOrder {
     private boolean scanSawAbsolute;
 
     private boolean hasUnscrollableDescendant(LayoutBox container, LayoutBox box) {
+        if (box.contentAutoSkipped || box.isVirtualizedFlow()) return box.isVirtualizedFlow();
         for (LayoutBox child : box.children) {
             if (child.display != null && child.display.isNone()) continue;
+            if (child.subtreeHasContentAuto) return true;
             if (child.isFixed || child.isSticky) return true;
             if (child.isAbsolute) {
                 scanSawAbsolute = true;
@@ -544,10 +547,34 @@ public final class PaintOrder {
             scrollContents.add(content);
             childParent = content.contentId;
         }
-        SubtreePruner prune = subtreePruner;
-        for (LayoutBox child : box.children) {
-            if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
-            classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
+        if (!box.contentAutoSkipped) {
+            SubtreePruner prune = subtreePruner;
+            com.nishiyu.enderframelib.core.layout.VirtualFlowState vf = box.virtualFlowState();
+            if (vf != null) {
+                int n = box.children.size();
+                int start = vf.placedRangeStart();
+                int end = vf.placedRangeEnd();
+                if (start >= 0 && end >= start) {
+                    int limit = Math.min(end, n - 1);
+                    for (int i = start; i <= limit; i++) {
+                        LayoutBox child = box.children.get(i);
+                        if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                        classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
+                    }
+                }
+                for (int k = 0, m = vf.extraPlacedCount(); k < m; k++) {
+                    int idx = vf.extraPlacedAt(k);
+                    if (idx < 0 || idx >= n || (idx >= start && idx <= end)) continue;
+                    LayoutBox child = box.children.get(idx);
+                    if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                    classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
+                }
+            } else {
+                for (LayoutBox child : box.children) {
+                    if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+                    classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
+                }
+            }
         }
 
         boolean scrollbars = factsOf(box.style).scrollbars();

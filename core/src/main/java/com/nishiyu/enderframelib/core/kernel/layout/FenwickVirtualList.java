@@ -10,14 +10,14 @@ import java.util.Arrays;
  */
 public final class FenwickVirtualList {
     private float[] heights;
-    private float[] tree; // 1 起点
+    private double[] tree; // 1 起点。10 万行の setHeight 差分更新でも丸め誤差を溜めないよう double で持つ
     private int size;
     private int highestPow; // size 以下の最大の 2 冪
 
     public FenwickVirtualList(int initialCapacity) {
         int cap = Math.max(4, initialCapacity);
         heights = new float[cap];
-        tree = new float[cap + 1];
+        tree = new double[cap + 1];
     }
 
     public int size() {
@@ -29,6 +29,24 @@ public final class FenwickVirtualList {
         return heights[row];
     }
 
+    /** 全行を一括設定して O(N) で木を組む。 */
+    public void initFrom(float[] rowHeights, int count) {
+        if (count < 0 || count > rowHeights.length) throw new IndexOutOfBoundsException("count " + count);
+        if (count > heights.length) {
+            int cap = Math.max(4, count);
+            heights = new float[cap];
+            tree = new double[cap + 1];
+        }
+        System.arraycopy(rowHeights, 0, heights, 0, count);
+        size = count;
+        rebuild();
+    }
+
+    public void clear() {
+        size = 0;
+        highestPow = 0;
+    }
+
     /** 末尾に行を足す。O(log N)。 */
     public void append(float height) {
         if (size == heights.length) grow(size * 2);
@@ -36,7 +54,7 @@ public final class FenwickVirtualList {
         size++;
         int i = size;
         // 節 i は [i - lowbit(i) + 1, i] の和。下位の節から組み立てる
-        float sum = height;
+        double sum = height;
         int lowbit = i & -i;
         for (int j = 1; j < lowbit; j <<= 1) sum += tree[i - j];
         tree[i] = sum;
@@ -46,22 +64,28 @@ public final class FenwickVirtualList {
     /** 行の高さを変える。O(log N)。 */
     public void setHeight(int row, float height) {
         checkRow(row);
-        float delta = height - heights[row];
+        double delta = (double) height - heights[row];
         heights[row] = height;
-        if (delta == 0f) return;
+        if (delta == 0.0) return;
         for (int i = row + 1; i <= size; i += i & -i) tree[i] += delta;
     }
 
     /** 行 {@code row} の上端 y（row 行目の直前までの高さの和）。{@code row == size()} なら全体の高さ。O(log N)。 */
     public float offsetOf(int row) {
         if (row < 0 || row > size) throw new IndexOutOfBoundsException("row " + row);
-        float sum = 0f;
+        double sum = 0.0;
         for (int i = row; i > 0; i -= i & -i) sum += tree[i];
-        return sum;
+        return (float) sum;
     }
 
     public float totalHeight() {
         return offsetOf(size);
+    }
+
+    /** 行 {@code row} 自身の高さ。O(1)。 */
+    public float heightAt(int row) {
+        checkRow(row);
+        return heights[row];
     }
 
     /**
@@ -71,7 +95,7 @@ public final class FenwickVirtualList {
     public int rowAt(float y) {
         if (y < 0f) return -1;
         int pos = 0;
-        float rest = y;
+        double rest = y;
         for (int step = highestPow; step > 0; step >>= 1) {
             int next = pos + step;
             if (next <= size && tree[next] <= rest) {
@@ -113,7 +137,7 @@ public final class FenwickVirtualList {
     }
 
     private void rebuild() {
-        Arrays.fill(tree, 0, size + 1, 0f);
+        Arrays.fill(tree, 0, size + 1, 0.0);
         for (int i = 1; i <= size; i++) {
             tree[i] += heights[i - 1];
             int parent = i + (i & -i);
