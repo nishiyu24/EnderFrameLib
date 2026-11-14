@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.demo;
 
+import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.api.dom.Element;
 import com.nishiyu.enderframelib.api.ui.State;
 import com.nishiyu.enderframelib.api.ui.VNode;
@@ -16,13 +17,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.nishiyu.enderframelib.api.ui.React.*;
+import static com.nishiyu.enderframelib.api.ui.UI.*;
 
 /**
  * ライブラリだけで動くテストサイト。表は多彩な HTML / CSS アニメーション、裏は Java が DOM を操作する。
  *
- * <p>React / Hyperscript に着想を得たモダンな宣言的 UI DSL ({@link com.nishiyu.enderframelib.api.ui.React})
+ * <p>軽量な pure-Java DOM ビルダーと {@link State} バインディング ({@link com.nishiyu.enderframelib.api.ui.UI})
  * で記述されています。</p>
  *
  * <pre>
@@ -230,7 +232,7 @@ public final class ShowcaseApp {
         return Float.NaN;
     }
 
-    // ---- React 関数コンポーネント群 ----
+    // ---- UI ビルダー部品 ----
 
     private static VNode Bar(State<Double> scale) {
         return div(className("bar"),
@@ -266,17 +268,22 @@ public final class ShowcaseApp {
      */
     private static final class TickScheduler {
         private static final long BASE_MS = 1000;
+        private final UiTimers timers;
         private final List<Runnable> tasks = new ArrayList<>();
         private final List<Integer> everyTicks = new ArrayList<>();
         private final List<String> offNames = Arrays.asList(System.getProperty("showcase.off", "").split(","));
         private int tickNo;
         private boolean started;
 
+        TickScheduler(UiTimers timers) {
+            this.timers = timers;
+        }
+
         void every(String name, Runnable task, long ms) {
             if (offNames.contains(name)) return;
             if (!started) {
                 started = true;
-                setInterval(() -> {
+                timers.setInterval(() -> {
                     tickNo++;
                     for (int i = 0; i < tasks.size(); i++) {
                         if (tickNo % everyTicks.get(i) == 0) {
@@ -290,129 +297,130 @@ public final class ShowcaseApp {
         }
     }
 
-    /** 文書を読み込んだ直後に呼ばれる。以降は React State / Effect と JS タイマーで DOM を駆動する。 */
+    /** 文書を読み込んだ直後に呼ばれる。以降は State と直接 DOM 操作・タイマーで画面を駆動する。 */
     static void wire(StandaloneView view) {
         UiTimers timers = Boolean.getBoolean("showcase.notimers") ? new UiTimers("x") : view.timers();
+        Document doc = view.document();
         var rnd = new Random(42);
+        var scheduler = new TickScheduler(timers);
 
-        view.mountApp(timers, () -> {
-            var scheduler = new TickScheduler();
+        // ---- 1. 時計とカウンタ (State / bindText) ----
+        var clock = State.of("--:--:--");
+        var counter = State.of(0);
+        bindText(byId(doc, "clock"), clock);
+        bindText(byId(doc, "counter"), counter);
 
-            // ---- 1. 時計とカウンタ (useState / bindText) ----
-            var clock = useState("--:--:--");
-            var counter = useState(0);
-            bindText($("#clock"), clock);
-            bindText($("#counter"), counter);
+        var timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss");
+        scheduler.every("clock", () -> {
+            clock.set(LocalTime.now().format(timeFmt));
+            counter.update(c -> c + 1);
+        }, 1000);
 
-            var timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-            scheduler.every("clock", () -> {
-                clock.set(LocalTime.now().format(timeFmt));
-                counter.update(c -> c + 1);
-            }, 1000);
+        // ---- 2. 進捗バー（State の変化で transform transition を駆動） ----
+        var barScales = map(6, i -> State.of(0.1));
+        render(byId(doc, "bars"), map(barScales, ShowcaseApp::Bar));
 
-            // ---- 2. 進捗バー（State の変化で transform transition を駆動） ----
-            var barScales = map(6, i -> useState(0.1));
-            createRoot("#bars").render(map(barScales, ShowcaseApp::Bar));
-
-            scheduler.every("bars", () -> {
-                for (var scale : barScales) {
-                    scale.set((8 + rnd.nextInt(92)) / 100.0);
-                }
-            }, 2000);
-
-            // ---- 3. ログ（追加と削除） ----
-            var log = $("#log");
-            var seq = useRef(0);
-            String[] verbs = {"createElement", "appendChild", "setAttribute", "classList.add", "removeChild", "setTextContent"};
-            scheduler.every("log", () -> {
-                int nextSeq = seq.get() + 1;
-                seq.set(nextSeq);
-                mount(log, LogRow(nextSeq, verbs[rnd.nextInt(verbs.length)], System.currentTimeMillis() % 100000));
-                while (log.getChildElementCount() > 12) {
-                    Element first = log.getFirstElementChild();
-                    if (first != null) log.removeChild(first);
-                }
-            }, 400);
-
-            // ---- 4. 表（17 行を作り、毎秒ランダム行をリアクティブ更新） ----
-            record RowState(int index, State<Integer> value, State<Boolean> hot) {}
-            var rows = map(1, 18, i -> new RowState(i, useState(0), useState(false)));
-            createRoot("#tbl").append(
-                    tbody(map(rows, row -> TableRow(row.index(), row.value(), row.hot())))
-            );
-
-            scheduler.every("table", () -> {
-                for (int i = 0; i < 8; i++) {
-                    var row = rows.get(rnd.nextInt(rows.size()));
-                    row.value().set(rnd.nextInt(10000));
-                    row.hot().set(rnd.nextBoolean());
-                }
-            }, 400);
-
-            // ---- 5. フォームのイベント (React useState / useEffect + setStyle) ----
-            var name = useState("Hello EnderFrameLib world");
-            var size = useState(80);
-            var color = useState("#f59e0b");
-            var spinning = useState(false);
-            var echoText = useState("(Java echo appears here)");
-
-            bindText($("#sizeOut"), size);
-            bindText($("#echo"), echoText);
-
-            onInputValue($("#name"), name::set);
-            onInputValue($("#size"), v -> size.set(parseIntOr(v, 80)));
-            onChangeValue($("#color"), color::set);
-            onClick($("#spin"), e -> spinning.update(s -> !s));
-            onClick($("#go"), e -> echoText.set(
-                    "Java received: name=\"" + name.get() + "\" size=" + size.get() + " color=" + color.get()
-            ));
-
-            var preview = $("#preview");
-            useEffect(() -> setStyle(preview, Map.of(
-                    "width", size.get() + "px",
-                    "height", size.get() + "px",
-                    "background", color.get(),
-                    "borderRadius", "12px",
-                    "margin", "30px",
-                    "animation", Boolean.TRUE.equals(spinning.get()) ? "spinbox 2s linear infinite" : ""
-            )), size, color, spinning);
-
-            // ---- 6. ストレス: 1 000 セルの波 ----
-            // 波そのものは CSS の @keyframes。Java は位相を一度だけ割り振り、毎ティックはフラッシュ状態のみ切り替える。
-            @SuppressWarnings("unchecked")
-            State<Boolean>[][] cellFlash = new State[GRID_ROWS][GRID_COLS];
-            List<VNode> cellNodes = new ArrayList<>(GRID_ROWS * GRID_COLS);
-            for (int r = 0; r < GRID_ROWS; r++) {
-                for (int c = 0; c < GRID_COLS; c++) {
-                    var flashed = useState(false);
-                    cellFlash[r][c] = flashed;
-                    cellNodes.add(GridCell(r, c, flashed));
-                }
+        scheduler.every("bars", () -> {
+            for (var scale : barScales) {
+                scale.set((8 + rnd.nextInt(92)) / 100.0);
             }
-            createRoot("#grid").render(cellNodes);
+        }, 2000);
 
-            $("#stressTitle").setTextContent(GRID_COLS * GRID_ROWS + " elements, animated from Java");
-            var activeFlashed = new ArrayList<State<Boolean>>(12);
-            scheduler.every("grid", () -> {
-                for (var prev : activeFlashed) {
-                    prev.set(false);
-                }
-                activeFlashed.clear();
-                for (int i = 0; i < 12; i++) {
-                    var next = cellFlash[rnd.nextInt(GRID_ROWS)][rnd.nextInt(GRID_COLS)];
-                    next.set(true);
-                    activeFlashed.add(next);
-                }
-            }, TickScheduler.BASE_MS);
+        // ---- 3. ログ（追加と削除） ----
+        var log = byId(doc, "log");
+        var seq = new AtomicInteger(0);
+        String[] verbs = {"createElement", "appendChild", "setAttribute", "classList.add", "removeChild", "setTextContent"};
+        scheduler.every("log", () -> {
+            int nextSeq = seq.incrementAndGet();
+            mount(log, LogRow(nextSeq, verbs[rnd.nextInt(verbs.length)], System.currentTimeMillis() % 100000));
+            while (log.getChildElementCount() > 12) {
+                Element first = log.getFirstElementChild();
+                if (first != null) log.removeChild(first);
+            }
+        }, 400);
 
-            // ---- 7. 夕焼けの縞（Java が 12 本を差し込む） ----
-            createRoot("#stripes").render(
-                    map(12, i -> div(
-                            className("stripe"),
-                            style("animationDelay", "-" + (i * 0.25) + "s")
-                    ))
-            );
-        });
+        // ---- 4. 表（17 行を作り、毎秒ランダム行をリアクティブ更新） ----
+        record RowState(int index, State<Integer> value, State<Boolean> hot) {}
+        var rows = map(1, 18, i -> new RowState(i, State.of(0), State.of(false)));
+        mount(byId(doc, "tbl"),
+                tbody(map(rows, row -> TableRow(row.index(), row.value(), row.hot())))
+        );
+
+        scheduler.every("table", () -> {
+            for (int i = 0; i < 8; i++) {
+                var row = rows.get(rnd.nextInt(rows.size()));
+                row.value().set(rnd.nextInt(10000));
+                row.hot().set(rnd.nextBoolean());
+            }
+        }, 400);
+
+        // ---- 5. フォームのイベント (State + setStyle) ----
+        var name = State.of("Hello EnderFrameLib world");
+        var size = State.of(80);
+        var color = State.of("#f59e0b");
+        var spinning = State.of(false);
+        var echoText = State.of("(Java echo appears here)");
+
+        bindText(byId(doc, "sizeOut"), size);
+        bindText(byId(doc, "echo"), echoText);
+
+        onInputValue(byId(doc, "name"), name::set);
+        onInputValue(byId(doc, "size"), v -> size.set(parseIntOr(v, 80)));
+        onChangeValue(byId(doc, "color"), color::set);
+        onClick(byId(doc, "spin"), e -> spinning.update(s -> !s));
+        onClick(byId(doc, "go"), e -> echoText.set(
+                "Java received: name=\"" + name.get() + "\" size=" + size.get() + " color=" + color.get()
+        ));
+
+        var preview = byId(doc, "preview");
+        Runnable syncPreview = () -> setStyle(preview, Map.of(
+                "width", size.get() + "px",
+                "height", size.get() + "px",
+                "background", color.get(),
+                "borderRadius", "12px",
+                "margin", "30px",
+                "animation", Boolean.TRUE.equals(spinning.get()) ? "spinbox 2s linear infinite" : ""
+        ));
+        syncPreview.run();
+        size.onChange(v -> syncPreview.run());
+        color.onChange(v -> syncPreview.run());
+        spinning.onChange(v -> syncPreview.run());
+
+        // ---- 6. ストレス: 1 000 セルの波 ----
+        // 波そのものは CSS の @keyframes。Java は位相を一度だけ割り振り、毎ティックはフラッシュ状態のみ切り替える。
+        @SuppressWarnings("unchecked")
+        State<Boolean>[][] cellFlash = new State[GRID_ROWS][GRID_COLS];
+        List<VNode> cellNodes = new ArrayList<>(GRID_ROWS * GRID_COLS);
+        for (int r = 0; r < GRID_ROWS; r++) {
+            for (int c = 0; c < GRID_COLS; c++) {
+                var flashed = State.of(false);
+                cellFlash[r][c] = flashed;
+                cellNodes.add(GridCell(r, c, flashed));
+            }
+        }
+        render(byId(doc, "grid"), cellNodes);
+
+        byId(doc, "stressTitle").setTextContent(GRID_COLS * GRID_ROWS + " elements, animated from Java");
+        var activeFlashed = new ArrayList<State<Boolean>>(12);
+        scheduler.every("grid", () -> {
+            for (var prev : activeFlashed) {
+                prev.set(false);
+            }
+            activeFlashed.clear();
+            for (int i = 0; i < 12; i++) {
+                var next = cellFlash[rnd.nextInt(GRID_ROWS)][rnd.nextInt(GRID_COLS)];
+                next.set(true);
+                activeFlashed.add(next);
+            }
+        }, TickScheduler.BASE_MS);
+
+        // ---- 7. 夕焼けの縞（Java が 12 本を差し込む） ----
+        render(byId(doc, "stripes"),
+                map(12, i -> div(
+                        className("stripe"),
+                        style("animationDelay", "-" + (i * 0.25) + "s")
+                ))
+        );
     }
 
     private static int parseIntOr(String raw, int fallback) {

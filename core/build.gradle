@@ -195,6 +195,14 @@ tasks.register('runCatalog', JavaExec) {
     workingDir = rootProject.projectDir
 }
 
+tasks.register('runNoHtmlSite', JavaExec) {
+    group = 'application'
+    description = 'HTML ファイルも HTML 文字列も使わず React DSL だけで 1 から構築するデモサイトを窓または PNG に出す'
+    classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.demo.NoHtmlSiteApp'
+    workingDir = rootProject.projectDir
+}
+
 // ---- 計測（MEASUREMENT.md）----
 // JMH のマイクロベンチと、本番の経路の段別プロファイル。公開物には入れない。
 //   ./gradlew :core:jmh                                   全部（遅い。数分）

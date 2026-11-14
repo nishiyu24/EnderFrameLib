@@ -97,6 +97,20 @@ public final class FineProfileMain {
             System.out.printf("RESULT scenario=%s doc=%s backend=%s frames=%d drawn=%d mean=%.4f p50=%.4f p95=%.4f p99=%.4f max=%.4f ms alloc=%.1f KB/frame%n",
                     scenario, doc, backendName, frames, rendered, sum / frames, sorted[frames / 2],
                     sorted[(int) (frames * 0.95)], sorted[(int) (frames * 0.99)], sorted[frames - 1], allocTotal / 1024.0 / frames);
+            {
+                // Chrome 側（bench.html の bench()）と同じ統計: 200 フレーム平均を 15 組取った中央値（GC・JIT の外れ値は組の平均に埋もれて除かれる）
+                int n = 200, groups = Math.min(15, frames / n);
+                if (groups >= 3) {
+                    double[] g = new double[groups];
+                    for (int k = 0; k < groups; k++) {
+                        double s = 0;
+                        for (int j = 0; j < n; j++) s += ms[k * n + j];
+                        g[k] = s / n;
+                    }
+                    Arrays.sort(g);
+                    System.out.printf("CHROMESTAT median-of-%d-batch-means(200)=%.4f min=%.4f max=%.4f ms%n", groups, g[groups / 2], g[0], g[groups - 1]);
+                }
+            }
             System.out.println("DOM elements=" + countElements(view[0].root()));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
             if (raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gl.rectTreeReplayedItems() / (double) (frames + warmup), gl.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gl.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
