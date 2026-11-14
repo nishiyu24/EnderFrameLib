@@ -501,6 +501,131 @@ public final class LoadedFace {
     }
 
     // ==========================================
+    // 字形の輪郭（Canvas の回転した文字・縁取り文字）
+    // ==========================================
+
+    private final Map<Integer, com.nishiyu.enderframelib.core.raster.Path2D> outlineCache = new ConcurrentHashMap<>();
+
+    /** 設計単位（1 em = {@link #unitsPerEm()}）。 */
+    public int unitsPerEm() {
+        return unitsPerEm;
+    }
+
+    /**
+     * 字形番号の輪郭。座標は設計単位で y が上向き（ヒンティング・拡縮・{@code FT_Set_Transform} の影響を受けない）。
+     * 2 次（TrueType）・3 次（CFF）の曲線を保ち、無い字形・空白は空のパス。返したパスは読み取り専用として扱う。
+     */
+    public com.nishiyu.enderframelib.core.raster.Path2D glyphOutline(int glyphIndex) {
+        com.nishiyu.enderframelib.core.raster.Path2D cached = outlineCache.get(glyphIndex);
+        if (cached != null) return cached;
+        com.nishiyu.enderframelib.core.raster.Path2D p = loadOutline(glyphIndex);
+        if (outlineCache.size() > 8192) outlineCache.clear();
+        outlineCache.put(glyphIndex, p);
+        return p;
+    }
+
+    private com.nishiyu.enderframelib.core.raster.Path2D loadOutline(int gi) {
+        com.nishiyu.enderframelib.core.raster.Path2D path = new com.nishiyu.enderframelib.core.raster.Path2D();
+        synchronized (lock) {
+            ensureOpen();
+            int flags = FreeType.FT_LOAD_NO_SCALE | FreeType.FT_LOAD_NO_HINTING | FreeType.FT_LOAD_NO_BITMAP
+                    | FreeType.FT_LOAD_IGNORE_TRANSFORM;
+            if (FreeType.FT_Load_Glyph(face, gi, flags) != 0) return path;
+            FT_GlyphSlot slot = face.glyph();
+            if (slot == null) return path;
+            org.lwjgl.util.freetype.FT_Outline o = slot.outline();
+            int nc = o.n_contours(), np = o.n_points();
+            if (nc <= 0 || np <= 0) return path;
+            org.lwjgl.util.freetype.FT_Vector.Buffer pts = o.points();
+            ByteBuffer tags = o.tags();
+            java.nio.ShortBuffer ends = o.contours();
+            double[] x = new double[np], y = new double[np];
+            boolean[] on = new boolean[np], cubic = new boolean[np];
+            for (int i = 0; i < np; i++) {
+                org.lwjgl.util.freetype.FT_Vector v = pts.get(i);
+                x[i] = v.x();
+                y[i] = v.y();
+                int t = tags.get(i);
+                on[i] = (t & 1) != 0;
+                cubic[i] = (t & 1) == 0 && (t & 2) != 0;
+            }
+            int start = 0;
+            for (int c = 0; c < nc; c++) {
+                int end = ends.get(c) & 0xFFFF;
+                if (end >= np) break;
+                addContour(path, x, y, on, cubic, start, end);
+                start = end + 1;
+            }
+        }
+        return path;
+    }
+
+    /** 1 本の輪郭（{@code first..last}）をパスへ。off 曲線点が続くときの中点の補い方は TrueType の規則どおり。 */
+    private static void addContour(com.nishiyu.enderframelib.core.raster.Path2D path, double[] x, double[] y, boolean[] on,
+                                   boolean[] cubic, int first, int last) {
+        int n = last - first + 1;
+        if (n < 1) return;
+        double sx, sy;
+        int from, count;
+        if (on[first]) {
+            sx = x[first];
+            sy = y[first];
+            from = first + 1;
+            count = n - 1;
+        } else if (on[last]) {
+            sx = x[last];
+            sy = y[last];
+            from = first;
+            count = n - 1;
+        } else {
+            sx = (x[first] + x[last]) / 2;
+            sy = (y[first] + y[last]) / 2;
+            from = first;
+            count = n;
+        }
+        path.moveTo(sx, sy);
+        boolean hasConic = false;
+        double qx = 0, qy = 0;
+        int cubicPending = 0;
+        double c1x = 0, c1y = 0, c2x = 0, c2y = 0;
+        for (int k = 0; k < count; k++) {
+            int i = from + k;
+            if (on[i]) {
+                if (cubicPending == 2) {
+                    path.cubicTo(c1x, c1y, c2x, c2y, x[i], y[i]);
+                    cubicPending = 0;
+                } else if (hasConic) {
+                    path.quadTo(qx, qy, x[i], y[i]);
+                    hasConic = false;
+                } else {
+                    path.lineTo(x[i], y[i]);
+                }
+            } else if (cubic[i]) {
+                if (cubicPending == 0) {
+                    c1x = x[i];
+                    c1y = y[i];
+                    cubicPending = 1;
+                } else {
+                    c2x = x[i];
+                    c2y = y[i];
+                    cubicPending = 2;
+                }
+            } else {
+                if (hasConic) {
+                    double mx = (qx + x[i]) / 2, my = (qy + y[i]) / 2;
+                    path.quadTo(qx, qy, mx, my);
+                }
+                qx = x[i];
+                qy = y[i];
+                hasConic = true;
+            }
+        }
+        if (cubicPending == 2) path.cubicTo(c1x, c1y, c2x, c2y, sx, sy);
+        else if (hasConic) path.quadTo(qx, qy, sx, sy);
+        path.closePath();
+    }
+
+    // ==========================================
     // カラー字形（COLR v0 / CPAL）
     // ==========================================
 

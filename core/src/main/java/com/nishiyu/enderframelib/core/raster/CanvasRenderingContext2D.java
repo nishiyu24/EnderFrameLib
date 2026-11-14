@@ -23,8 +23,11 @@ import java.util.Locale;
  * 既に足した部分は動かない）。線を引くときは現在の変換の逆でユーザー空間に戻して太らせるので、
  * 非一様な拡大でも線の太さが仕様どおりに歪む。
  *
- * LIMITATION(R8): テキストは平行移動と一様な拡大だけ反映する（回転・せん断では字形を回さない）。
- * {@code strokeText} は {@code fillText} と同じく塗りで描く。{@code filter} は持たない。
+ * テキストは、変換が正の一様な拡大と平行移動だけなら字形のビットマップ（ヒンティング・サブピクセル位置あり）で、
+ * 回転・せん断・反転・非一様な拡大を含むなら字形の輪郭（{@link com.nishiyu.enderframelib.core.text.font.LoadedFace#glyphOutline}）を
+ * パスとして変換して塗る。{@code strokeText} は輪郭を現在の線の太さ・端・結合で実際に縁取る。
+ *
+ * LIMITATION(R8): {@code filter} は持たない。文字の擬似太字は輪郭の経路では掛けない（擬似斜体は掛ける）。
  */
 public final class CanvasRenderingContext2D {
 
@@ -53,6 +56,8 @@ public final class CanvasRenderingContext2D {
         String font = "10px sans-serif";
         String textAlign = "start";
         String textBaseline = "alphabetic";
+        String direction = "ltr";
+        String smoothingQuality = "low";
         byte[] clip;
 
         @Override
@@ -288,10 +293,36 @@ public final class CanvasRenderingContext2D {
         if (v != null && List.of("start", "end", "left", "right", "center").contains(v)) state.textAlign = v;
     }
 
+    public String textAlign() {
+        return state.textAlign;
+    }
+
     public void textBaseline(String v) {
         if (v != null && List.of("top", "hanging", "middle", "alphabetic", "ideographic", "bottom").contains(v)) {
             state.textBaseline = v;
         }
+    }
+
+    public String textBaseline() {
+        return state.textBaseline;
+    }
+
+    /** {@code ltr} / {@code rtl} / {@code inherit}（キャンバスには継承元が無いので {@code ltr} と同じ）。{@code start} / {@code end} の向きを決める。 */
+    public void direction(String v) {
+        if (v != null && List.of("ltr", "rtl", "inherit").contains(v)) state.direction = v;
+    }
+
+    public String direction() {
+        return state.direction;
+    }
+
+    /** {@code low} / {@code medium} / {@code high}。描画の品質は変えず、設定の往復だけを保つ。 */
+    public void imageSmoothingQuality(String v) {
+        if (v != null && List.of("low", "medium", "high").contains(v)) state.smoothingQuality = v;
+    }
+
+    public String imageSmoothingQuality() {
+        return state.smoothingQuality;
     }
 
     // ------------------------------------------------------------------ 変換
@@ -605,6 +636,20 @@ public final class CanvasRenderingContext2D {
         drawImage(canvas.bitmap(), dx, dy);
     }
 
+    public void drawImage(CanvasRenderingContext2D canvas, double dx, double dy, double dw, double dh) {
+        drawImage(canvas.bitmap(), dx, dy, dw, dh);
+    }
+
+    public void drawImage(CanvasRenderingContext2D canvas, double sx, double sy, double sw, double sh,
+                          double dx, double dy, double dw, double dh) {
+        drawImage(canvas.bitmap(), sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+
+    /** 同じ大きさの透明な {@link ImageData}（中身は写さない）。 */
+    public ImageData createImageData(ImageData like) {
+        return new ImageData(like.width(), like.height());
+    }
+
     public ImageData createImageData(int w, int h) {
         return new ImageData(w, h);
     }
@@ -729,15 +774,74 @@ public final class CanvasRenderingContext2D {
         FontStyle style = new FontStyle(f.sizePx(), f.weight() >= 600, f.italic(), 0, f.weight(), true);
         double width = text == null || text.isEmpty() ? 0 : face.advance(text, style);
         double dx = alignOffset(width);
-        return new TextMetrics(width, -dx, width + dx, face.ascent(style), face.descent(style));
+        double asc = face.ascent(style), desc = face.descent(style);
+        double shift = baselineShift(asc, desc);
+        // 墨の範囲（輪郭があれば輪郭から。無ければ送り幅とフォントの上下で近似する）
+        double inkLeft = dx, inkRight = dx + width, inkTop = asc - shift, inkBottom = desc + shift;
+        if (text != null && !text.isEmpty() && face instanceof OutlineFontFace outline) {
+            Path2D ink = textOutline(outline, text, outline.positions(text, style), 0, 0, f.sizePx(), style);
+            double[] b = ink.bounds(Matrix2D.IDENTITY);
+            if (b != null) {
+                // 輪郭は原点（呼び出しの x, y に揃えた位置 + 揃えの補正）を基準にした canvas 座標（y が下向き）
+                inkLeft = dx + b[0];
+                inkRight = dx + b[2];
+                inkTop = -(b[1] + shift);
+                inkBottom = b[3] + shift;
+            }
+        }
+        double em = f.sizePx();
+        double emAsc = em * asc / Math.max(1e-9, asc + desc);
+        return new TextMetrics(width, -inkLeft, inkRight, asc - shift, desc + shift, inkTop, inkBottom,
+                emAsc - shift, em - emAsc + shift, asc * 0.8 - shift, -shift, -desc - shift);
+    }
+
+    private boolean rtl() {
+        return "rtl".equals(state.direction);
     }
 
     private double alignOffset(double width) {
         return switch (state.textAlign) {
             case "center" -> -width / 2;
-            case "right", "end" -> -width;
+            case "right" -> -width;
+            case "end" -> rtl() ? 0 : -width;
+            case "start" -> rtl() ? -width : 0;
+            default -> 0; // left
+        };
+    }
+
+    /** 呼び出しの y から欧文のベースラインまでの下向きの距離（{@code textBaseline} による）。 */
+    private double baselineShift(double asc, double desc) {
+        return switch (state.textBaseline) {
+            case "top" -> asc;
+            case "hanging" -> asc * 0.8;
+            case "middle" -> (asc - desc) / 2;
+            case "ideographic", "bottom" -> -desc;
             default -> 0;
         };
+    }
+
+    /** 文字列の輪郭を、原点 {@code (ox, oy)}（欧文のベースライン上）に置いたユーザー空間のパスにする。 */
+    private static Path2D textOutline(OutlineFontFace outline, String text, float[] positions, double ox, double oy,
+                                      float px, FontStyle style) {
+        Path2D out = new Path2D();
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            int n = Character.charCount(cp);
+            if (!Character.isWhitespace(cp) && cp >= 0x20) {
+                var gf = outline.glyphFace(cp, style);
+                var lf = gf.face();
+                Path2D g = lf.glyphOutline(lf.glyphId(cp));
+                if (!g.isEmpty()) {
+                    double k = px / (double) lf.unitsPerEm();
+                    Matrix2D m = Matrix2D.translate(ox + positions[i], oy).multiply(Matrix2D.scale(k, -k));
+                    // 擬似斜体: 設計単位の y（上向き）に比例して右へ傾ける
+                    if (gf.syntheticItalic()) m = m.multiply(new Matrix2D(1, 0, 0.2, 1, 0, 0));
+                    out.append(g, m);
+                }
+            }
+            i += n;
+        }
+        return out;
     }
 
     public void fillText(String text, double x, double y) {
@@ -749,10 +853,19 @@ public final class CanvasRenderingContext2D {
     }
 
     public void strokeText(String text, double x, double y) {
-        drawText(text, x, y, Double.NaN, state.strokeStyle);
+        strokeText(text, x, y, Double.NaN);
+    }
+
+    /** 輪郭を現在の線の太さ・端・結合・破線で縁取る。 */
+    public void strokeText(String text, double x, double y, double maxWidth) {
+        drawText(text, x, y, maxWidth, state.strokeStyle, true);
     }
 
     private void drawText(String text, double x, double y, double maxWidth, Paint paint) {
+        drawText(text, x, y, maxWidth, paint, false);
+    }
+
+    private void drawText(String text, double x, double y, double maxWidth, Paint paint, boolean strokeOutline) {
         if (text == null || text.isEmpty() || !finite(x, y) || maxWidth <= 0) return;
         ParsedFont f = currentFont();
         FontFace face = fonts.resolve(f.family());
@@ -770,14 +883,21 @@ public final class CanvasRenderingContext2D {
         double ox = x + alignOffset(width);
         double asc = face.ascent(userStyle);
         double desc = face.descent(userStyle);
-        double baselineShift = switch (state.textBaseline) {
-            case "top" -> asc;
-            case "hanging" -> asc * 0.8;
-            case "middle" -> (asc - desc) / 2;
-            case "ideographic", "bottom" -> -desc;
-            default -> 0;
-        };
+        double baselineShift = baselineShift(asc, desc);
         double oy = y + baselineShift;
+        boolean plainScale = m.b() == 0 && m.c() == 0 && m.a() > 0 && Math.abs(m.a() - m.d()) <= 1e-9 * Math.max(1, m.a());
+        if (strokeOutline || !plainScale) {
+            // 回転・せん断・反転・非一様な拡大、または縁取り: 輪郭をパスとして変換して塗る / 縁取る
+            FontStyle style = new FontStyle(px, f.weight() >= 600, f.italic(), 0, f.weight(), true);
+            Path2D outlinePath = textOutline(outline, text, outline.positions(text, style), ox, oy, px, style);
+            if (outlinePath.isEmpty()) return;
+            if (strokeOutline) {
+                stroke(outlinePath);
+            } else {
+                fillPolys(outlinePath.flatten(m, FLATTEN_TOLERANCE), false, paint);
+            }
+            return;
+        }
         double devX = m.applyX(ox, oy);
         double devY = m.applyY(ox, oy);
         float devPx = (float) (px * scale);
