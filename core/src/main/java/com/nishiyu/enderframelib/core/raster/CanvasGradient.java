@@ -78,6 +78,15 @@ public final class CanvasGradient extends Paint {
         return this;
     }
 
+    /** 範囲の外の塗り方を名前（{@code pad} / {@code repeat} / {@code reflect}）で指定する。知らない名前は {@code pad}。 */
+    public CanvasGradient spread(String name) {
+        return spread(switch (name == null ? "" : name) {
+            case "repeat" -> Spread.REPEAT;
+            case "reflect" -> Spread.REFLECT;
+            default -> Spread.PAD;
+        });
+    }
+
     /** グラデーションの座標系から、塗りの座標系への変換（SVG の {@code gradientTransform} など）。 */
     public CanvasGradient transform(Matrix2D transform) {
         this.transform = transform;

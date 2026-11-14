@@ -2218,6 +2218,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
             OutlineFontFace.GlyphFace gf = face.glyphFace(cp, style);
             float gx = x + positions[i];
+            if (!monochrome) {
+                // COLR v1（グラデーション・変形・合成）は、描いた色付きビットマップを画像と同じ経路で置く
+                LoadedFace.ColorBitmap colorBitmap = gf.face().colorBitmap(cp, pixelSize);
+                if (colorBitmap != null) {
+                    drawColorBitmapGlyph(colorBitmap, gx, baseline, pixelSize, aligned, style, pose, clip, opacity);
+                    i += n;
+                    continue;
+                }
+            }
             LoadedFace.ColorLayers colorLayers = monochrome ? null : gf.face().colorLayers(cp);
             if (colorLayers != null) {
                 drawColorGlyph(gf, colorLayers, gx, baseline, argb, pixelSize, aligned, style, pose, clip, opacity);
@@ -2239,6 +2248,36 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
             i += n;
         }
+    }
+
+    private static final float[] NO_RADII = new float[4];
+
+    /** 色付きのビットマップの字形。画素の格子に載せるときは等倍、回転などの姿勢の下では双一次補間で貼る。 */
+    private void drawColorBitmapGlyph(LoadedFace.ColorBitmap cb, float gx, float baseline, float pixelSize, boolean aligned,
+                                      FontStyle style, Matrix2D pose, Clip clip, float opacity) {
+        Pixmap pm = cb.pixmap();
+        if (aligned) {
+            double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
+            float bx = ShapeGeometry.glyphOriginX(devX) + cb.left(), by = ShapeGeometry.glyphOriginY(devY) - cb.top();
+            drawGlyphPixmap(pm, bx, by, pm.width(), pm.height(), Matrix2D.IDENTITY, 1f, clip, opacity);
+        } else {
+            float s = pixelSize / style.fontSizePx();
+            drawGlyphPixmap(pm, gx + cb.left() / s, baseline - cb.top() / s, pm.width() / s, pm.height() / s, pose,
+                    (float) pose.meanScale(), clip, opacity);
+        }
+    }
+
+    /** 事前乗算の画素を、局所の矩形 {@code (x0, y0, w, h)} に貼る（GPU が受ければ GPU、なければ CPU）。 */
+    private void drawGlyphPixmap(Pixmap pm, float x0, float y0, float w, float h, Matrix2D pose, float scale, Clip clip, float opacity) {
+        if (!(w > 0) || !(h > 0)) return;
+        float sx = pm.width() / w, sy = pm.height() / h;
+        if (GpuAttempt.image(route.current(), pose, pm, x0, y0, w, h, x0, y0, w, h, sx, sy, NO_RADII, NO_RADII, 1, scale, clip, opacity)) return;
+        float m = 1f / Math.max(scale, 0.01f);
+        paint(pose, x0 - m, y0 - m, x0 + w + m, y0 + h + m, clip, opacity, (lx, ly) -> {
+            float u = (lx - x0) * sx, v = (ly - y0) * sy;
+            if (u < -0.5f || v < -0.5f || u > pm.width() + 0.5f || v > pm.height() + 0.5f) return 0;
+            return bilinear(pm, u - 0.5f, v - 0.5f);
+        }, Fast.PURE);
     }
 
     /** カラー字形（COLR）を、レイヤーごとの色で下から重ねて描く。レイヤーの被覆率は通常の字形と同じ経路（GL でも CPU でも）を通る。 */

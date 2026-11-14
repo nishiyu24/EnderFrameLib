@@ -640,6 +640,37 @@ public final class LoadedFace {
     }
 
     private static final ColorLayers NO_COLOR = new ColorLayers(new int[0], new int[0], new boolean[0]);
+
+    /**
+     * COLR v1 のペイントを描いた色付きのビットマップ（事前乗算 ARGB）。{@code left} は原点から左端、{@code top} は原点から
+     * 上端の画素数（{@link GlyphBitmap} と同じ向き）。
+     */
+    public record ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top) {}
+
+    private static final ColorBitmap NO_BITMAP = new ColorBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0);
+    /** (字形番号, 大きさ) → v1 のビットマップ（描けない・v1 でない字形は {@link #NO_BITMAP}）。 */
+    private final Map<Long, ColorBitmap> colorBitmapCache = new ConcurrentHashMap<>();
+
+    /**
+     * {@code codePoint} が COLR v1 のペイントを持つなら、{@code pixelSize}（em の画素数）で描いたビットマップ。
+     * グラデーション・変形・合成を含む。v1 でなければ null（呼び出し側は {@link #colorLayers} の v0、さらに単色へ戻す）。
+     */
+    public ColorBitmap colorBitmap(int codePoint, float pixelSize) {
+        int gid = glyphId(codePoint);
+        if (gid == 0) return null;
+        long key = ((long) gid << 32) | (Float.floatToIntBits(pixelSize) & 0xFFFFFFFFL);
+        ColorBitmap c = colorBitmapCache.get(key);
+        if (c == null) {
+            synchronized (lock) {
+                ensureOpen();
+                c = ColrV1Painter.render(this, face, gid, pixelSize);
+            }
+            if (c == null) c = NO_BITMAP;
+            if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
+            colorBitmapCache.put(key, c);
+        }
+        return c == NO_BITMAP ? null : c;
+    }
     /** 字形番号 → レイヤー（カラー字形でなければ {@link #NO_COLOR}）。 */
     private final Map<Integer, ColorLayers> colorCache = new ConcurrentHashMap<>();
 

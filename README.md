@@ -695,7 +695,10 @@ Layout differences from a real browser are measured, case by case, in
 - **HTML parsing in full.** Formatting elements are reconstructed and misnested
   ones are fixed by the adoption agency algorithm (`<p><b>x<p>y` makes the second
   paragraph bold). SVG and MathML elements are parsed without a namespace (names
-  and attributes stay lower-case, so `viewBox` is read as `viewbox`).
+  and attributes stay lower-case, so `viewBox` is read as `viewbox`). Rules from
+  the page's `<style>` and from an SVG's own `<style>` apply to its presentation
+  properties (`fill`, `stroke`, `opacity`, ...), but not `:hover` or other
+  state, pseudo-elements, `@container` or `var()`.
 - **Nested lists in Markdown.** List parsing is flat; an indented sub-list
   becomes a sibling `<li>`. Write nested lists as HTML.
 - **Tables in full.** `border-collapse: collapse` merges cell and table borders by
@@ -727,8 +730,9 @@ Layout differences from a real browser are measured, case by case, in
   basis instead of behaving as `auto`.
 - **Grid in full.** Track sizing is a simplified version of the spec's: an
   item spanning several content-sized tracks spreads its size evenly over
-  them. Subgrid is supported, but there are no implicit tracks before the
-  explicit grid and no `baseline` alignment.
+  them. Subgrid (`grid-template-columns` / `-rows: subgrid`) is supported, but
+  there are no implicit tracks before the explicit grid and no `baseline`
+  alignment.
 - **Compositing on in-world surfaces.** On screen-space surfaces (GUI screens
   and HUDs), stacking contexts with `opacity < 1`, `filter`, `backdrop-filter`,
   `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, or a rotated
@@ -779,15 +783,21 @@ Layout differences from a real browser are measured, case by case, in
   `direction: rtl` aligning blocks and `text-align: start / end`), but Arabic
   letters are not joined into their contextual forms and a line that mixes
   inline elements of both directions is not reordered across them. There is
-  no `writing-mode` (vertical text), `contenteditable` or IME composition.
+  no `writing-mode` (vertical text) or `contenteditable`; IME composition
+  (preedit and `composition*` events) is handled by the standalone viewer.
+  Colour emoji are drawn in colour when the emoji font stores them as COLR v1
+  paint graphs (gradients, transforms and compositing, as in Segoe UI Emoji on
+  Windows 11) or as COLR v0 layers; bitmap emoji (`sbix`, `CBDT`) are not, and
+  are drawn as plain glyphs. A colour emoji ignores the text `color`.
   See [FIDELITY.md](FIDELITY.md) for what is measured.
 - **Media features that need a display.** `color-gamut` is unknown (and
   therefore false). `prefers-color-scheme` is always `light` and
   `prefers-reduced-motion` is always `no-preference`; `hover` / `pointer` report
   a mouse, and `prefers-contrast` / `forced-colors` report no preference.
 - **Pseudo-elements beyond the supported ones.** `::first-line`,
-  `::first-letter`, `::backdrop`, `::file-selector-button` and friends parse
-  (and count toward specificity) but never match.
+  `::first-letter`, `::file-selector-button` and friends parse
+  (and count toward specificity) but never match. (`::backdrop` matches on a
+  modal `<dialog>`.)
 - **Selectors in full.** Pseudo-classes not listed under *Supported CSS*
   (`:user-valid`, `:autofill`, `:fullscreen` and so on) make the selector
   invalid, as an unknown pseudo-class does in a browser. There are no
