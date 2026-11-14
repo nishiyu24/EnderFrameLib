@@ -1,18 +1,15 @@
 package com.nishiyu.enderframelib.demo;
 
-import com.nishiyu.enderframelib.api.dom.Document;
-import com.nishiyu.enderframelib.api.dom.Element;
-import com.nishiyu.enderframelib.api.dom.Node;
-import com.nishiyu.enderframelib.api.ui.Ref;
+import com.nishiyu.enderframelib.api.ui.State;
 import com.nishiyu.enderframelib.api.ui.VNode;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.common.StandaloneViewer;
-import com.nishiyu.enderframelib.common.UiTimers;
 
 import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
@@ -22,7 +19,7 @@ import static com.nishiyu.enderframelib.api.ui.React.*;
  * Showcase とは別の、測定向けのテストサイト。アニメーション主体の Showcase に対し、こちらは
  * 「長いスクロール・多数のカード（flex-wrap）・文字の多い箱・毎秒の一部書き換え」というレイアウト／文字寄りの負荷。
  *
- * <p>React / Hyperscript に着想を得たモダンな宣言的 UI DSL ({@link com.nishiyu.enderframelib.api.ui.React})
+ * <p>JavaScript / React スタイルの宣言的 UI DSL ({@link com.nishiyu.enderframelib.api.ui.React})
  * で記述されています。</p>
  *
  * <pre>
@@ -67,121 +64,109 @@ public final class CatalogApp {
         StandaloneViewer.launch(a.toArray(new String[0]), CatalogApp::wire);
     }
 
-    /**
-     * カタログカードの宣言的コンポーネント表現と、マウント後の DOM ハンドル。
-     */
-    record CardItem(
-            VNode vnode,
-            Ref<Element> cardRef,
-            Ref<Element> priceRef,
-            Ref<Element> badgeRef,
-            String name
-    ) implements VNode {
-        @Override
-        public Node mount(Document doc) {
-            return vnode.mount(doc);
-        }
-
-        public Element card() { return cardRef.get(); }
-        public Element price() { return priceRef.get(); }
-        public Element badge() { return badgeRef.get(); }
-    }
+    private record CardProps(
+            String name,
+            String kind,
+            String hue,
+            State<Integer> price,
+            State<Integer> stock,
+            State<Boolean> flashed,
+            State<Boolean> visible
+    ) {}
 
     /**
-     * 単一のカタログカードを生成する関数型コンポーネント。
+     * 単一のカタログカードを描画する関数コンポーネント。
      */
-    private static CardItem Card(int i, String kind, String hue, Random rnd) {
-        Ref<Element> cardRef = useRef();
-        Ref<Element> priceRef = useRef();
-        Ref<Element> badgeRef = useRef();
-
-        String name = kind + " #" + (1000 + i);
-        String desc = "Item " + i + ": a sturdy " + kind.toLowerCase()
+    private static VNode Card(int index, CardProps props) {
+        var desc = "Item " + index + ": a sturdy " + props.kind().toLowerCase()
                 + " crafted for long expeditions, with enough text here to wrap across several lines.";
-        int initialPrice = 5 + rnd.nextInt(995);
-        int initialStock = rnd.nextInt(50);
+        var isLow = props.stock().map(s -> s < 8);
 
-        var vnode = div(ref(cardRef), cls("card"),
-                div(cls("thumb"), style("background:" + hue)),
-                div(cls("body"),
-                        div(cls("name"), name),
-                        div(cls("desc"), desc),
-                        div(cls("row"),
-                                span(ref(priceRef), cls("price"), "$" + initialPrice),
-                                span(ref(badgeRef), cls(initialStock < 8 ? "badge low" : "badge"), "stock " + initialStock)
+        return div(
+                className("card", when("flash", props.flashed())),
+                show(props.visible()),
+                div(className("thumb"), style("background", props.hue())),
+                div(className("body"),
+                        div(className("name"), props.name()),
+                        div(className("desc"), desc),
+                        div(className("row"),
+                                span(className("price"), props.price().map(p -> "$" + p)),
+                                span(className("badge", when("low", isLow)), props.stock().map(s -> "stock " + s))
                         )
                 )
         );
-
-        return new CardItem(vnode, cardRef, priceRef, badgeRef, name);
     }
 
     static void wire(StandaloneView view) {
-        Node root = view.root();
-        UiTimers timers = view.timers();
-        Random rnd = new Random(7);
+        var rnd = new Random(7);
         int n = Integer.getInteger("catalog.items", 3000);
         String[] kinds = {"Pickaxe", "Lantern", "Compass", "Bread", "Obsidian", "Shield", "Elytra", "Barrel"};
         String[] hues = {"#fca5a5", "#fcd34d", "#86efac", "#93c5fd", "#c4b5fd", "#f9a8d4"};
 
-        // 1. リアクティブな状態管理 (React useState)
-        var count = useState(n);
-        var clock = useState("--:--:--");
-        var updates = useState(0);
-        var ticker = useState("");
+        view.mountApp(() -> {
+            // 1. リアクティブな状態管理 (useState) & DOM バインド
+            var count = useState(n);
+            var clock = useState("--:--:--");
+            var updates = useState(0);
+            var ticker = useState("");
 
-        // DOM 要素と状態をバインド (状態変化時に自動で DOM テキストを同期)
-        bindText($("#count", root), count);
-        bindText($("#clock", root), clock);
-        bindText($("#updates", root), updates);
-        bindText($("#ticker", root), ticker);
+            bindText($("#count"), count);
+            bindText($("#clock"), clock);
+            bindText($("#updates"), updates);
+            bindText($("#ticker"), ticker);
 
-        // 2. カードの宣言的構築とバッチマウント
-        List<CardItem> cards = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            cards.add(Card(i, kinds[i % kinds.length], hues[i % hues.length], rnd));
-        }
-        mount($("#list", root), cards);
+            // 2. カード状態モデルの生成と React createRoot によるマウント
+            var cards = map(n, i -> {
+                String kind = kinds[i % kinds.length];
+                return new CardProps(
+                        kind + " #" + (1000 + i),
+                        kind,
+                        hues[i % hues.length],
+                        useState(5 + rnd.nextInt(995)),
+                        useState(rnd.nextInt(50)),
+                        useState(false),
+                        useState(true)
+                );
+            });
 
-        // 3. タイマー更新ループ (毎秒クロック更新 + ランダム 10 枚の価格/在庫書き換え + フラッシュ)
-        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-        Element[] flashed = new Element[6];
+            createRoot("#list").render(
+                    map(n, i -> Card(i, cards.get(i)))
+            );
 
-        timers.setInterval(() -> {
-            clock.set(LocalTime.now().format(timeFmt));
+            // 3. JS タイマー更新ループ (毎秒クロック更新 + ランダム 10 枚の価格/在庫更新 + 6 枚フラッシュ)
+            var timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss");
+            var flashed = new int[6];
+            Arrays.fill(flashed, -1);
 
-            for (int i = 0; i < 10; i++) {
-                int k = rnd.nextInt(n);
-                var card = cards.get(k);
-                // 既存の Text 節の文字だけを書き換える（箱の木を作り直さない局所パッチに乗る）
-                card.price().updateTextContent("$" + (5 + rnd.nextInt(995)));
-                int stock = rnd.nextInt(50);
-                card.badge().updateTextContent("stock " + stock);
-                classList(card.badge()).toggle("low", stock < 8);
-                updates.update(u -> u + 1);
-            }
+            setInterval(() -> {
+                clock.set(LocalTime.now().format(timeFmt));
 
-            for (int i = 0; i < flashed.length; i++) {
-                if (flashed[i] != null) classList(flashed[i]).remove("flash");
-                flashed[i] = cards.get(rnd.nextInt(n)).card();
-                classList(flashed[i]).add("flash");
-            }
-        }, 1000);
+                for (int i = 0; i < 10; i++) {
+                    var card = cards.get(rnd.nextInt(n));
+                    card.price().set(5 + rnd.nextInt(995));
+                    card.stock().set(rnd.nextInt(50));
+                    updates.update(u -> u + 1);
+                }
 
-        // 4. 検索窓: 入力のたびに名前で絞り込み (一致しないカードは display:none)
-        Element q = $("#q", root);
-        q.addEventListener("input", e -> {
-            String needle = q.getAttribute("value");
-            String lower = needle != null ? needle.trim().toLowerCase() : "";
+                for (int i = 0; i < flashed.length; i++) {
+                    if (flashed[i] >= 0) cards.get(flashed[i]).flashed().set(false);
+                    flashed[i] = rnd.nextInt(n);
+                    cards.get(flashed[i]).flashed().set(true);
+                }
+            }, 1000);
 
-            int shown = 0;
-            for (CardItem item : cards) {
-                boolean hit = lower.isEmpty() || item.name().toLowerCase().contains(lower);
-                item.card().setAttribute("style", hit ? "" : "display:none");
-                if (hit) shown++;
-            }
-            ticker.set(shown + " / " + n + " match");
-            count.set(shown);
+            // 4. 検索窓: 入力のたびに名前で絞り込み
+            onInputValue($("#q"), input -> {
+                String lower = input.trim().toLowerCase();
+                int shown = 0;
+                for (var card : cards) {
+                    boolean hit = lower.isEmpty() || card.name().toLowerCase().contains(lower);
+                    card.visible().set(hit);
+                    if (hit) shown++;
+                }
+                ticker.set(shown + " / " + n + " match");
+                count.set(shown);
+            });
         });
     }
 }

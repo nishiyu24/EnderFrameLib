@@ -180,6 +180,28 @@ public final class StandaloneView implements AutoCloseable {
         return ui.timers();
     }
 
+    /**
+     * Runs a declarative React/JS-styled UI setup block bound to this view's DOM root and timers.
+     */
+    public void mountApp(Runnable app) {
+        mountApp(timers(), app);
+    }
+
+    /**
+     * Runs a declarative React/JS-styled UI setup block bound to this view's DOM root and {@code timers}.
+     */
+    public void mountApp(UiTimers timers, Runnable app) {
+        com.nishiyu.enderframelib.api.ui.UI.Scheduler scheduler = timers == null ? null : new com.nishiyu.enderframelib.api.ui.UI.Scheduler() {
+            @Override public int setInterval(Runnable task, long intervalMs) { return timers.setInterval(task, intervalMs); }
+            @Override public int setTimeout(Runnable task, long delayMs) { return timers.setTimeout(task, delayMs); }
+            @Override public boolean clearInterval(int id) { return timers.clearInterval(id); }
+            @Override public boolean clearTimeout(int id) { return timers.clearTimeout(id); }
+            @Override public int requestAnimationFrame(Consumer<Double> callback) { return timers.requestAnimationFrame(callback); }
+            @Override public boolean cancelAnimationFrame(int id) { return timers.cancelAnimationFrame(id); }
+        };
+        com.nishiyu.enderframelib.api.ui.UI.withContext(root(), scheduler, app);
+    }
+
     /** クリップボードの実体（窓では GLFW のクリップボードにつなぐ）。既定はこのビューの中だけのメモリ。 */
     public void setClipboard(TextEditing.Clipboard clipboard) {
         this.clipboard = clipboard != null ? clipboard : TextEditing.Clipboard.inMemory();

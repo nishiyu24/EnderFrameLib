@@ -46,6 +46,15 @@ public final class MemFootprintMain {
         }
     }
 
+    /** 生きているオブジェクトだけのヒープダンプ（-Dmem.dump=ファイル）。保持元の内訳を別ツールで調べる用。 */
+    private static void dumpHeap(String file) {
+        try {
+            java.lang.management.ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean.class).dumpHeap(file, true);
+        } catch (Exception e) {
+            System.out.println("DUMP failed " + e);
+        }
+    }
+
     /** クラスの private static なキャッシュ（Map）を空にして、そのぶんの保持量を見る。 */
     private static void clearCache(String cls, String field) {
         try {
@@ -78,6 +87,7 @@ public final class MemFootprintMain {
                 System.out.printf("MEM %-18s after clearing CssSyntax.VALUE_CACHE: heapRetained=%7.1f MB%n", doc, (used() - before) / 1048576.0);
             }
             if (System.getProperty("mem.histo") != null) histogram(doc);
+            if (System.getProperty("mem.dump") != null) dumpHeap(System.getProperty("mem.dump"));
             v.close();
         }
     }
