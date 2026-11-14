@@ -265,33 +265,34 @@ final class GlRectStream implements AutoCloseable {
         return true;
     }
 
-    /** 姿勢 = 平行移動 * 回転 * 拡縮（傾きなし）なら {@link #trs} に (tx, ty, sx, sy, rot) を書いて true。 */
-    private final float[] trs = new float[5];
+    /**
+     * 姿勢 = 平行移動 * 回転 * 拡縮（傾きなし）なら {@link #trs} に (tx, ty, sx, sy) を書いて true。
+     * GPU へは行列をそのまま渡す（{@link PropertyTrees#setTransformMatrix}）ので、回転角（{@code atan2} / {@code cos} /
+     * {@code sin}）は求めない。ここは「傾きが無いか」の判定と、角丸・余白に使う拡大率だけを出す。
+     */
+    private final float[] trs = new float[4];
 
     private boolean decompose(Matrix2D pose) {
         double a = pose.a(), b = pose.b(), c = pose.c(), d = pose.d();
         if (b == 0 && c == 0 && a > 1e-9 && d > 1e-9) {
-            // 回転・傾き無し（拡大と平行移動だけ。ほとんどの図形）。一般の経路の式（hypot・atan2・cos・sin）に代入した結果と同じ値で、
-            // 図形ごとに 2 回（accepts と open）走る三角関数を省く。sx = |a| = a、rot = atan2(0, a) = 0、sy = (a*d - 0)/a
+            // 回転・傾き無し（拡大と平行移動だけ。ほとんどの図形）。sx = |a| = a、sy = (a*d - 0)/a
             trs[0] = (float) pose.e();
             trs[1] = (float) pose.f();
             trs[2] = (float) a;
             trs[3] = (float) ((a * d) / a);
-            trs[4] = 0f;
             return true;
         }
         double sx = Math.hypot(a, b);
         if (!(sx > 1e-9)) return false;
         double sy = (a * d - b * c) / sx;
-        double rot = Math.atan2(b, a);
-        double cs = Math.cos(rot), sn = Math.sin(rot);
+        // 回転 R（cos = a/sx、sin = b/sx）と拡縮 S の積なら c = -sin * sy、d = cos * sy。三角関数を使わずに同じ式で調べる
+        double cs = a / sx, sn = b / sx;
         double tol = 1e-5 * Math.max(sx, Math.abs(sy));
         if (Math.abs(c + sn * sy) > tol || Math.abs(d - cs * sy) > tol || !(Math.abs(sy) > 1e-9)) return false; // 傾き
         trs[0] = (float) pose.e();
         trs[1] = (float) pose.f();
         trs[2] = (float) sx;
         trs[3] = (float) sy;
-        trs[4] = (float) rot;
         return true;
     }
 
@@ -381,8 +382,9 @@ final class GlRectStream implements AutoCloseable {
     private int open(Matrix2D pose, int opcode, float x0, float y0, float x1, float y1, int argb, GpuClip[] clips, float opacity,
                      float margin) {
         int k = slots++;
-        decompose(pose); // accepts が true を返した姿勢なので必ず成功する
-        trees.setTransformTarget(k, trs[0], trs[1], trs[2], trs[3], trs[4]);
+        // accepts が true を返した姿勢（傾き無し）。TRS へ分解し直さず、行列のまま書く
+        trees.setTransformMatrix(k, (float) pose.a(), (float) pose.b(), (float) pose.c(), (float) pose.d(),
+                (float) pose.e(), (float) pose.f());
         int ef = PropertyTrees.NONE;
         if (opacity < 1f) {
             trees.setEffect(k, PropertyTrees.NONE, opacity, 0, 0, 0f);

@@ -136,8 +136,11 @@ class GlVramDeviceTest {
         for (int i = 0; i < SLOTS; i++) {
             int s = t.addTransform(i % 5 == 0 ? PropertyTrees.NONE : parent, r.nextFloat() * 40 - 20, r.nextFloat() * 40 - 20,
                     0.5f + r.nextFloat(), 0.5f + r.nextFloat(), r.nextFloat() - 0.5f);
+            // 一部は分解し直さない行列のままの姿勢（傾きを含む。アニメ無し）。TRS のスロットと同じ鎖に混ざる
+            if (i % 7 == 2 && i >= 9) t.setTransformMatrix(s, 0.6f + r.nextFloat(), r.nextFloat() - 0.5f, r.nextFloat() - 0.5f,
+                    0.6f + r.nextFloat(), r.nextFloat() * 30 - 15, r.nextFloat() * 30 - 15);
             if (i % 3 == 1) { t.setScroll(s, i); t.setScrollOffset(i, r.nextFloat() * 60, r.nextFloat() * 60); }
-            if (i % 2 == 0) t.startTransformAnimation(s, r.nextFloat() * 10, r.nextFloat() * 10, 1f, 1f, 0f,
+            if (i % 2 == 0 && !(i % 7 == 2 && i >= 9)) t.startTransformAnimation(s, r.nextFloat() * 10, r.nextFloat() * 10, 1f, 1f, 0f,
                     100f, 300f, easings[(i / 2) % easings.length]);
             parent = s;
         }

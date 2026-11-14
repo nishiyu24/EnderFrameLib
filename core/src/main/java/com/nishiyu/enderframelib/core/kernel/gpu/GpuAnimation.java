@@ -67,15 +67,21 @@ public final class GpuAnimation {
                 return mat3(c * sx, s * sx, 0.0, -s * sy, c * sy, 0.0, tx, ty, 1.0);
             }
             mat3 efLocal(int slot) {
-                float dur = trF(slot, 3);
-                float e = dur <= 0.0 ? 1.0 : efEase(trI(slot, 4), efProgress(trF(slot, 2), dur));
-                float v[5];
-                for (int i = 0; i < 5; i++) {
-                    float target = trF(slot, 6 + i);
-                    float start = dur <= 0.0 ? target : trF(slot, 11 + i);
-                    v[i] = start + (target - start) * e;
+                mat3 m;
+                if (trI(slot, 5) == 1) {
+                    // 行列のまま書かれた静止した姿勢（分解し直さない。三角関数も補間も無い）
+                    m = mat3(trF(slot, 6), trF(slot, 7), 0.0, trF(slot, 8), trF(slot, 9), 0.0, trF(slot, 10), trF(slot, 11), 1.0);
+                } else {
+                    float dur = trF(slot, 3);
+                    float e = dur <= 0.0 ? 1.0 : efEase(trI(slot, 4), efProgress(trF(slot, 2), dur));
+                    float v[5];
+                    for (int i = 0; i < 5; i++) {
+                        float target = trF(slot, 6 + i);
+                        float start = dur <= 0.0 ? target : trF(slot, 11 + i);
+                        v[i] = start + (target - start) * e;
+                    }
+                    m = efTrs(v[0], v[1], v[2], v[3], v[4]);
                 }
-                mat3 m = efTrs(v[0], v[1], v[2], v[3], v[4]);
                 int sc = trI(slot, 1);
                 if (sc >= 0) {
                     m[2].x -= texelFetch(uScroll, sc * 2).r;

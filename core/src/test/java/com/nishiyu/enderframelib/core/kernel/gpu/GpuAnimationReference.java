@@ -106,8 +106,13 @@ public final class GpuAnimationReference {
         out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 1; out[4] = 0; out[5] = 0;
         int node = slot;
         for (int depth = 0; node >= 0 && depth < MAX_DEPTH; depth++) {
-            evalTrs(tr, node, frameMs, scratch);
-            trsToMatrix(scratch[0], scratch[1], scratch[2], scratch[3], scratch[4], scratch, 5);
+            if (tr.isMatrixTransform(node)) {
+                PersistentVramBuffer b = tr.transforms;
+                for (int i = 0; i < 6; i++) scratch[5 + i] = b.getFloat(node, PropertyTrees.T_TARGET + 4 * i);
+            } else {
+                evalTrs(tr, node, frameMs, scratch);
+                trsToMatrix(scratch[0], scratch[1], scratch[2], scratch[3], scratch[4], scratch, 5);
+            }
             int sc = tr.transforms.getInt(node, PropertyTrees.T_SCROLL);
             if (sc >= 0) { // translate(-scroll) * local: 線形部は変わらず、平行移動に -scroll が足される
                 scratch[9] -= tr.scrollX(sc);

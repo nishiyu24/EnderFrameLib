@@ -113,7 +113,31 @@ public final class PropertyTrees {
 
     public void setScroll(int slot, int scrollId) { transforms.putInt(slot, T_SCROLL, scrollId); }
 
+    /** {@link #T_FLAGS} の値: 目標欄が TRS ではなく 2x3 行列 {@code a b c d e f}（アニメ無し）。 */
+    public static final int XF_MATRIX = 1;
+
+    /**
+     * 静止した姿勢を 2x3 行列 {@code [a c e; b d f]} のまま書く。TRS へ分解し直さない（CPU の {@code atan2} / {@code cos} /
+     * {@code sin} も、シェーダーの {@code cos} / {@code sin} も要らない）。アニメの開始値の欄（{@code T_START}）を目標欄の
+     * 後半が使うので、この状態のスロットにアニメは掛けられない（{@link #startTransformAnimation} は拒否する）。
+     */
+    public void setTransformMatrix(int slot, float a, float b, float c, float d, float e, float f) {
+        transforms.putInt(slot, T_FLAGS, XF_MATRIX);
+        transforms.putFloat(slot, T_TARGET, a);
+        transforms.putFloat(slot, T_TARGET + 4, b);
+        transforms.putFloat(slot, T_TARGET + 8, c);
+        transforms.putFloat(slot, T_TARGET + 12, d);
+        transforms.putFloat(slot, T_TARGET + 16, e);
+        transforms.putFloat(slot, T_TARGET + 20, f);
+    }
+
+    /** 目標欄が行列（{@link #setTransformMatrix}）か。 */
+    public boolean isMatrixTransform(int slot) {
+        return transforms.getInt(slot, T_FLAGS) == XF_MATRIX;
+    }
+
     public void setTransformTarget(int slot, float tx, float ty, float sx, float sy, float rot) {
+        transforms.putInt(slot, T_FLAGS, 0);
         transforms.putFloat(slot, T_TARGET, tx);
         transforms.putFloat(slot, T_TARGET + 4, ty);
         transforms.putFloat(slot, T_TARGET + 8, sx);
@@ -127,6 +151,9 @@ public final class PropertyTrees {
      */
     public void startTransformAnimation(int slot, float sTx, float sTy, float sSx, float sSy, float sRot,
                                         float startMs, float durationMs, int easing) {
+        if (isMatrixTransform(slot)) {
+            throw new IllegalStateException("matrix-mode transform slot cannot be animated: " + slot);
+        }
         transforms.putFloat(slot, T_START, sTx);
         transforms.putFloat(slot, T_START + 4, sTy);
         transforms.putFloat(slot, T_START + 8, sSx);
