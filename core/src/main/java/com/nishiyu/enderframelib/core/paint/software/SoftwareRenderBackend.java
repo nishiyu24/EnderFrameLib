@@ -1766,47 +1766,109 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return input != null && input.text() != null && !input.text().isEmpty();
     }
 
-    private void drawText(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        if (skipPlaceholder(el)) return;
+    /**
+     * 文字項目の「項目だけで決まる」下ごしらえ（書体・スタイル・見た目の順の文字列・送り位置・基線・縁取り・影・下線）。
+     * 毎フレームの再描画で、変わらない項目のスタイル解釈（{@code events} の引き・数値の解析）と BiDi 並べ替えを繰り返さないよう、
+     * 項目の実体（同一性）で覚える。色・姿勢・クリップ・不透明度は毎回渡されるので鍵に含めない。
+     */
+    private static final class TextSetup {
+        OutlineFontFace face;
+        FontStyle style;
+        String visual;
+        float[] positions;
+        float textX, baseline;
+        Stroke stroke;
+        boolean shadow, underline, lineThrough;
+        float width;
+    }
+
+    /** 変わらない文字項目の下ごしらえを使い回す（切り分け用: {@code -Denderframe.paint.notextsetup=true} で無効）。 */
+    static volatile boolean textSetupReuse = !Boolean.getBoolean("enderframe.paint.notextsetup");
+    private static final int TEXT_SETUP_LIMIT = 8192;
+    private final java.util.IdentityHashMap<DisplayItem, TextSetup> textSetups = new java.util.IdentityHashMap<>();
+
+    /** 下ごしらえを作る。描くものが無ければ null。 */
+    private TextSetup buildTextSetup(DisplayItem el, OutlineFontFace face, boolean field) {
         String text = el.text() == null ? "" : el.text().replace((char) 0xA0, ' ');
-        boolean field = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
-        if (!field && text.isEmpty()) return;
-        OutlineFontFace face = faceFor(el);
+        if (!field && text.isEmpty()) return null;
         RenderMeta meta = el.meta();
-        if (face == null) return;
+        TextSetup s = new TextSetup();
+        s.face = face;
         float fontPx = meta != null && meta.fontHeight() > 0f ? meta.fontHeight() : Math.max(1f, el.height());
-        FontStyle style = styleFor(el, fontPx);
-        float ascent = face.ascent(style), descent = face.descent(style);
+        s.style = styleFor(el, fontPx);
+        float ascent = face.ascent(s.style), descent = face.descent(s.style);
         boolean centers = field || el.isPart("_ph") || meta == null || meta.baseline() <= 0f;
-        float baseline = el.y() + (centers ? (el.height() + ascent - descent) / 2f : meta.baseline());
-        float textX = el.x() + (field ? 4f : 0f);
-
-        int alpha = (int) (((anim.color() >>> 24) & 0xFF));
-        Stroke stroke = textStroke(el);
-        if (alpha < 4 && stroke == null) return;
-        int argb = (alpha << 24) | (anim.color() & 0x00FFFFFF);
-
+        s.baseline = el.y() + (centers ? (el.height() + ascent - descent) / 2f : meta.baseline());
+        s.textX = el.x() + (field ? 4f : 0f);
+        s.stroke = textStroke(el);
         String shown = text;
         if (field || el.isPart("_ph")) {
             float available = Math.max(0f, el.width() - 8f);
-            shown = text.substring(0, face.fitChars(text, style, available));
+            shown = text.substring(0, face.fitChars(text, s.style, available));
         }
-        boolean shadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
-        drawRun(shown, face, style, textX, baseline, argb, shadow, res, clip, opacity, alpha >= 4, stroke);
+        s.shadow = el.events() != null && "true".equals(el.events().get("text-shadow"));
+        String deco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
+        boolean decorated = !field && !el.isPart("_ph");
+        s.underline = decorated && deco.contains("underline");
+        s.lineThrough = decorated && deco.contains("line-through");
+        s.width = el.width();
+        if (!shown.isEmpty()) {
+            s.visual = BidiText.toVisual(shown, null);
+            s.positions = face.positions(s.visual, s.style);
+        }
+        return s;
+    }
+
+    private void drawText(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
+        if (skipPlaceholder(el)) return;
+        boolean field = el.type() == ElementType.INPUT || el.type() == ElementType.SELECT;
+        OutlineFontFace face = faceFor(el);
+        if (face == null) return;
+        TextSetup s = null;
+        boolean cacheable = textSetupReuse && !field && !el.isPart("_ph");
+        if (cacheable) {
+            s = textSetups.get(el);
+            if (s != null && s.face != face) s = null; // 書体の登録が変わった（別の面になった）
+        }
+        if (s == null) {
+            s = buildTextSetup(el, face, field);
+            if (s == null) return;
+            if (cacheable) {
+                if (textSetups.size() >= TEXT_SETUP_LIMIT) textSetups.clear();
+                textSetups.put(el, s);
+            }
+        }
+
+        int alpha = (int) (((anim.color() >>> 24) & 0xFF));
+        if (alpha < 4 && s.stroke == null) return;
+        int argb = (alpha << 24) | (anim.color() & 0x00FFFFFF);
+
+        if (s.visual != null) {
+            if (alpha >= 4) {
+                if (s.shadow) {
+                    float off = s.style.fontSizePx() / 9f;
+                    int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
+                    drawGlyphs(s.visual, s.positions, face, s.style, s.textX + off, s.baseline + off, shadowColor, res.pose(), clip, opacity);
+                }
+                drawGlyphs(s.visual, s.positions, face, s.style, s.textX, s.baseline, argb, res.pose(), clip, opacity);
+            }
+            if (s.stroke != null) {
+                drawGlyphStrokes(s.visual, s.positions, face, s.style, s.textX, s.baseline, s.stroke.argb(), s.stroke.width(), res.pose(), clip, opacity);
+            }
+        }
         if (alpha < 4) return; // 塗りが透明（縁取りだけの文字）なら、下線などは付けない
 
-        String deco = el.events() != null ? el.events().getOrDefault("text-decoration", "none") : "none";
-        if (!field && !el.isPart("_ph") && (deco.contains("underline") || deco.contains("line-through"))) {
-            LoadedFace primary = face.primaryFace(style);
-            float size = style.fontSizePx();
-            if (deco.contains("underline")) {
-                float top = baseline + primary.underlineOffset(size);
-                fillRect(res.pose(), textX, top, textX + el.width(), top + primary.underlineThickness(size), argb, clip, opacity);
+        if (s.underline || s.lineThrough) {
+            LoadedFace primary = face.primaryFace(s.style);
+            float size = s.style.fontSizePx();
+            if (s.underline) {
+                float top = s.baseline + primary.underlineOffset(size);
+                fillRect(res.pose(), s.textX, top, s.textX + s.width, top + primary.underlineThickness(size), argb, clip, opacity);
             }
-            if (deco.contains("line-through")) {
+            if (s.lineThrough) {
                 float thick = primary.strikeoutThickness(size);
-                float top = baseline - primary.strikeoutPosition(size) - thick / 2f;
-                fillRect(res.pose(), textX, top, textX + el.width(), top + thick, argb, clip, opacity);
+                float top = s.baseline - primary.strikeoutPosition(size) - thick / 2f;
+                fillRect(res.pose(), s.textX, top, s.textX + s.width, top + thick, argb, clip, opacity);
             }
         }
     }
