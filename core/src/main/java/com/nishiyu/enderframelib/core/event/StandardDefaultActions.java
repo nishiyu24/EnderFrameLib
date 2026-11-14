@@ -31,6 +31,20 @@ public class StandardDefaultActions {
     }
 
     private static void handleClick(HtmlNode target, DefaultActionContext ctx) {
+        // Popover: 外側のクリックで auto の popover を閉じ（light dismiss）、popovertarget の要素は開閉する（HTML §6.12）
+        HtmlNode invoker = popoverInvoker(target);
+        HtmlNode invoked = invoker != null ? getRoot(invoker).getElementById(invoker.attrs.get("popovertarget")) : null;
+        lightDismiss(target, invoked);
+        if (invoker != null && invoked instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement pop
+                && pop.hasAttribute("popover")) {
+            String action = invoker.attrs.getOrDefault("popovertargetaction", "toggle").toLowerCase(Locale.ROOT);
+            switch (action) {
+                case "show" -> pop.showPopover();
+                case "hide" -> pop.hidePopover();
+                default -> pop.togglePopover();
+            }
+            return;
+        }
         // フォーカス移動（クリックされたフォーカス可能要素へフォーカス）
         if (isNaturallyFocusable(target) && ctx != null) {
             ctx.setFocus(target);
@@ -168,6 +182,10 @@ public class StandardDefaultActions {
     private static void handleKeyDown(Event event, HtmlNode target, DefaultActionContext ctx) {
         if (event instanceof UIEvents.Keyboard ke) {
             String key = ke.getKey();
+            if ("Escape".equals(key) || "Esc".equals(key)) {
+                closeTopmostOnEscape(target);
+                return;
+            }
             if ("Enter".equals(key)) {
                 // 入力欄での Enter キーによる暗黙の送信 (Implicit submission)
                 if ("input".equalsIgnoreCase(target.tag)) {
@@ -181,6 +199,62 @@ public class StandardDefaultActions {
                     }
                 }
             }
+        }
+    }
+
+    /** {@code popovertarget} を持つボタン（自身か祖先）。 */
+    private static HtmlNode popoverInvoker(HtmlNode target) {
+        for (HtmlNode cur = target; cur != null; cur = cur.parent) {
+            if (cur.attrs != null && cur.attrs.containsKey("popovertarget")
+                    && ("button".equalsIgnoreCase(cur.tag) || "input".equalsIgnoreCase(cur.tag))) return cur;
+        }
+        return null;
+    }
+
+    /** auto（既定）か hint の popover か。manual は light dismiss と Esc の対象外。 */
+    private static boolean isAutoPopover(HtmlNode n) {
+        if (n.attrs == null || !n.attrs.containsKey("popover")) return false;
+        String v = n.attrs.get("popover");
+        return v == null || v.isEmpty() || "auto".equalsIgnoreCase(v) || "hint".equalsIgnoreCase(v);
+    }
+
+    private static boolean contains(HtmlNode ancestor, HtmlNode node) {
+        for (HtmlNode cur = node; cur != null; cur = cur.parent) if (cur == ancestor) return true;
+        return false;
+    }
+
+    /** 文書順に、閉じられる（表示中の auto popover と、モーダルの dialog）を集める。 */
+    private static void collectDismissable(HtmlNode node, List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> out) {
+        if (node instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement el) {
+            if ((isAutoPopover(el) && el.isPopoverOpen())
+                    || ("dialog".equalsIgnoreCase(el.tag) && el.isModalOpen())) out.add(el);
+        }
+        for (HtmlNode child : node.children) collectDismissable(child, out);
+    }
+
+    /** クリックが表示中の auto popover の外（かつ、その popover を開閉するボタンの外）なら閉じる。 */
+    private static void lightDismiss(HtmlNode clicked, HtmlNode invokedByClick) {
+        List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> open = new ArrayList<>();
+        collectDismissable(getRoot(clicked), open);
+        for (var el : open) {
+            if (!isAutoPopover(el) || "dialog".equalsIgnoreCase(el.tag) && el.isModalOpen()) continue;
+            if (contains(el, clicked) || el == invokedByClick) continue;
+            el.hidePopover();
+        }
+    }
+
+    /** Esc: いちばん手前（文書順で最後）の popover かモーダル dialog を閉じる。dialog は先に cancel を送り、止められたら閉じない。 */
+    private static void closeTopmostOnEscape(HtmlNode target) {
+        List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> open = new ArrayList<>();
+        collectDismissable(getRoot(target), open);
+        if (open.isEmpty()) return;
+        var top = open.get(open.size() - 1);
+        if ("dialog".equalsIgnoreCase(top.tag) && top.isModalOpen()) {
+            CoreEvent cancel = new CoreEvent("cancel", false, true);
+            top.dispatchEvent(cancel);
+            if (!cancel.isDefaultPrevented()) top.close();
+        } else {
+            top.hidePopover();
         }
     }
 

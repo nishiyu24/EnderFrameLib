@@ -530,12 +530,26 @@ public class HtmlElement extends HtmlNode implements Element {
         if (st != null) st.setModal(this, true);
     }
 
-    /** {@code dialog.close()}。 */
+    /** {@code dialog.close()}。閉じたら {@code close} イベントを送る。 */
     public void close() {
         if (!"dialog".equalsIgnoreCase(tag) || !hasAttribute("open")) return;
         InteractionState st = topLayerState();
         removeAttribute("open");
         if (st != null) st.setModal(this, false);
+        dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent("close", false, false));
+    }
+
+    /** {@code showModal()} で開いていて、まだ閉じていないか（{@code :modal}）。 */
+    public boolean isModalOpen() {
+        InteractionState st = topLayerState();
+        return st != null && st.stateOf(this).modal();
+    }
+
+    /** {@code popover} 属性を持ち、表示中か（{@code :popover-open}）。 */
+    public boolean isPopoverOpen() {
+        if (!hasAttribute("popover")) return false;
+        InteractionState st = topLayerState();
+        return st != null && st.stateOf(this).popoverOpen();
     }
 
     /** {@code popover} 属性を持つ要素を表示する（Top Layer に載る）。 */

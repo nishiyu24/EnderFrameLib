@@ -132,4 +132,69 @@ public class TopLayerTest {
         c.el("d").show();
         assertNull(item(render(c), "d_backdrop"));
     }
+
+    private static void click(HtmlElement el) {
+        el.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreUIEvent("click", true, true, 0));
+    }
+
+    private static void key(HtmlElement el, String key) {
+        el.dispatchEvent(new com.nishiyu.enderframelib.core.event.CoreEvent.CoreKeyboardEvent("keydown", true, true,
+                key, key, 0, false, false, false, false, false, false));
+    }
+
+    @Test
+    public void popovertargetButtonTogglesShowsAndHides() {
+        Ctx c = new Ctx("<button id=b popovertarget=p>t</button><button id=bs popovertarget=p popovertargetaction=show>s</button>"
+                + "<button id=bh popovertarget=p popovertargetaction=hide>h</button><div id=p popover>x</div><div id=out>o</div>");
+        HtmlElement p = c.el("p");
+        click(c.el("b"));
+        assertTrue(p.isPopoverOpen());
+        click(c.el("b"));
+        assertFalse(p.isPopoverOpen());
+        click(c.el("bs"));
+        click(c.el("bs"));
+        assertTrue(p.isPopoverOpen());
+        click(c.el("bh"));
+        assertFalse(p.isPopoverOpen());
+    }
+
+    @Test
+    public void autoPopoverClosesOnOutsideClickButNotInsideOrManual() {
+        Ctx c = new Ctx("<div id=p popover><span id=in>x</span></div><div id=m popover=manual>y</div><div id=out>o</div>");
+        c.el("p").showPopover();
+        c.el("m").showPopover();
+        click(c.el("in"));
+        assertTrue(c.el("p").isPopoverOpen(), "click inside keeps it open");
+        click(c.el("out"));
+        assertFalse(c.el("p").isPopoverOpen(), "light dismiss");
+        assertTrue(c.el("m").isPopoverOpen(), "manual is not dismissed");
+    }
+
+    @Test
+    public void escapeClosesTopmostPopoverThenModalDialogWithCancelAndClose() {
+        Ctx c = new Ctx("<dialog id=d>x</dialog><div id=p popover>y</div>");
+        java.util.List<String> events = new java.util.ArrayList<>();
+        HtmlElement d = c.el("d");
+        d.addEventListener("cancel", e -> events.add("cancel"));
+        d.addEventListener("close", e -> events.add("close"));
+        d.showModal();
+        c.el("p").showPopover();
+        key(c.el("d"), "Escape");
+        assertFalse(c.el("p").isPopoverOpen(), "popover (topmost) closes first");
+        assertTrue(d.isModalOpen());
+        key(c.el("d"), "Escape");
+        assertFalse(d.isModalOpen());
+        assertFalse(d.hasAttribute("open"));
+        assertEquals(java.util.List.of("cancel", "close"), events);
+    }
+
+    @Test
+    public void preventedCancelKeepsModalDialogOpen() {
+        Ctx c = new Ctx("<dialog id=d>x</dialog>");
+        HtmlElement d = c.el("d");
+        d.addEventListener("cancel", e -> e.preventDefault());
+        d.showModal();
+        key(d, "Escape");
+        assertTrue(d.isModalOpen());
+    }
 }
