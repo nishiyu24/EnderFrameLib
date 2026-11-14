@@ -39,6 +39,14 @@ public final class EnderEngine {
         return new Builder(Objects.requireNonNull(html, "html"));
     }
 
+    /**
+     * HTML 文字列を使わずに空の文書（{@code <html><head/><body/>}）から面の組み立てを始める。
+     * {@link com.nishiyu.enderframelib.api.ui.UI} 等で 1 から画面を構築する用途向け。
+     */
+    public static Builder empty() {
+        return new Builder("");
+    }
+
     private static EnginePlatform platform() {
         for (EnginePlatform p : ServiceLoader.load(EnginePlatform.class, EnginePlatform.class.getClassLoader())) {
             return p;

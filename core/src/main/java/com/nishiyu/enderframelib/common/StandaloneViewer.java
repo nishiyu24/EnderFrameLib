@@ -39,6 +39,33 @@ public final class StandaloneViewer {
     }
 
     /**
+     * HTML ファイル／URL を使わず、空の文書（{@code about:blank}）から単体ビューアを起動する。
+     * 先頭が {@code width height [resizable]} でなければ既定値（1280×800・リサイズ可）を補う。
+     */
+    public static void launchEmpty(String[] args, java.util.function.Consumer<StandaloneView> setup) throws Exception {
+        java.util.List<String> a = new java.util.ArrayList<>();
+        a.add("about:blank");
+        boolean sized = args.length >= 2 && args[0].matches("[0-9]+") && args[1].matches("[0-9]+");
+        boolean hasResizable = sized
+                ? (args.length >= 3 && ("true".equalsIgnoreCase(args[2]) || "false".equalsIgnoreCase(args[2])))
+                : (args.length >= 1 && ("true".equalsIgnoreCase(args[0]) || "false".equalsIgnoreCase(args[0])));
+        boolean resizable = !hasResizable || Boolean.parseBoolean(sized ? args[2] : args[0]);
+        int pos = 0;
+        if (sized) {
+            a.add(args[0]);
+            a.add(args[1]);
+            pos = 2;
+        } else {
+            a.add("1280");
+            a.add("800");
+        }
+        a.add(String.valueOf(resizable));
+        if (hasResizable) pos++;
+        for (int i = pos; i < args.length; i++) a.add(args[i]);
+        launch(a.toArray(new String[0]), setup);
+    }
+
+    /**
      * {@link #main} と同じ。文書を読み込んだ直後に {@code setup} を 1 度呼ぶので、Java から DOM・タイマー・イベントを仕込める
      * （窓でも {@code --png} でも呼ばれる）。
      */
@@ -127,6 +154,9 @@ public final class StandaloneViewer {
     }
 
     static String load(String source) throws Exception {
+        if ("about:blank".equalsIgnoreCase(source) || source.isEmpty()) {
+            return "";
+        }
         if (source.startsWith("http://") || source.startsWith("https://")) {
             HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
                     .connectTimeout(Duration.ofSeconds(10)).build();

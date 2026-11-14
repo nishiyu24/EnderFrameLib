@@ -26,110 +26,19 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Modern, declarative UI framework for EnderFrameLib inspired by React, Mithril, and JSX.
+ * Lightweight pure-Java DOM builder and reactive binding helpers for EnderFrameLib.
  *
- * <p>Enables authoring dynamic DOM trees with zero boilerplate using functional components,
- * hyperscript element builders, reactive states ({@link #useState}), references ({@link #useRef}),
- * and standard modern web APIs ({@link #classList}, {@link #$}).</p>
+ * <p>Provides concise element builders ({@link #div}, {@link #button}, {@link #sx}, {@link #onClick}),
+ * explicit DOM queries ({@link #$}, {@link #$$}, {@link #byId}), and direct {@link State} bindings
+ * ({@link #bindText}, {@link #bindValue}, {@link #watch}, {@link #each}) without virtual-DOM
+ * diffing or hook lifecycle overhead.</p>
  */
 @ApiStatus.AvailableSince("1.0")
-public class UI {
+public final class UI {
 
-    protected UI() {}
+    private UI() {}
 
-    /**
-     * Scheduler bridge enabling JS-style {@link #setInterval}, {@link #setTimeout},
-     * and {@link #requestAnimationFrame} inside {@link #withContext}.
-     */
-    public interface Scheduler {
-        int setInterval(Runnable task, long intervalMs);
-        int setTimeout(Runnable task, long delayMs);
-        boolean clearInterval(int id);
-        boolean clearTimeout(int id);
-        int requestAnimationFrame(Consumer<Double> callback);
-        boolean cancelAnimationFrame(int id);
-    }
-
-    /**
-     * JavaScript-style console logger ({@code console.log(...)}).
-     */
-    public static final class Console {
-        private Console() {}
-
-        public void log(Object... args) { System.out.println(formatArgs(args)); }
-        public void info(Object... args) { System.out.println(formatArgs(args)); }
-        public void warn(Object... args) { System.err.println("[WARN] " + formatArgs(args)); }
-        public void error(Object... args) { System.err.println("[ERROR] " + formatArgs(args)); }
-
-        private static String formatArgs(Object... args) {
-            if (args == null || args.length == 0) return "";
-            if (args.length == 1) return String.valueOf(args[0]);
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < args.length; i++) {
-                if (i > 0) sb.append(' ');
-                sb.append(args[i]);
-            }
-            return sb.toString();
-        }
-    }
-
-    /** Global JS-style console instance ({@code console.log(...)}). */
-    public static final Console console = new Console();
-
-    private record UiContext(@Nullable Node root, @Nullable Scheduler scheduler) {}
-
-    private static final ThreadLocal<UiContext> CONTEXT = new ThreadLocal<>();
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
-
-    /**
-     * Executes {@code app} with {@code root} and {@code scheduler} bound as the active JS/React context,
-     * enabling context-free {@code $(selector)}, {@code createRoot(selector)}, {@code setInterval}, etc.
-     */
-    public static void withContext(@Nullable Node root, @Nullable Scheduler scheduler, @NotNull Runnable app) {
-        Objects.requireNonNull(app, "app");
-        UiContext previous = CONTEXT.get();
-        CONTEXT.set(new UiContext(root, scheduler));
-        try {
-            app.run();
-        } finally {
-            if (previous != null) {
-                CONTEXT.set(previous);
-            } else {
-                CONTEXT.remove();
-            }
-        }
-    }
-
-    /** Returns the active context's root node, or {@code null} if outside {@link #withContext}. */
-    @Nullable
-    public static Node rootNode() {
-        UiContext ctx = CONTEXT.get();
-        return ctx != null ? ctx.root() : null;
-    }
-
-    /** Returns the active context's {@link Document}, or {@code null} if unavailable. */
-    @Nullable
-    public static Document document() {
-        Node root = rootNode();
-        if (root instanceof Document doc) return doc;
-        return root != null ? root.getOwnerDocument() : null;
-    }
-
-    private static Node requireRoot() {
-        Node root = rootNode();
-        if (root == null) {
-            throw new IllegalStateException("No active UI context; pass root explicitly or run inside withContext/mountApp");
-        }
-        return root;
-    }
-
-    private static Scheduler requireScheduler() {
-        UiContext ctx = CONTEXT.get();
-        if (ctx == null || ctx.scheduler() == null) {
-            throw new IllegalStateException("No active Scheduler in UI context; pass timers or run inside withContext/mountApp");
-        }
-        return ctx.scheduler();
-    }
 
     // ------------------------------------------------------------------------
     // Hyperscript Element Factories
@@ -208,27 +117,12 @@ public class UI {
         return frag;
     }
 
-    /** React-style alias for {@link #fragment(Object...)}. */
-    public static VFragment Fragment(Object... items) {
-        return fragment(items);
-    }
-
-    /** Renders a {@link Component} with the given props. */
-    public static <P> VNode el(Component<P> component, P props) {
-        return component.render(props);
-    }
-
-    /** Renders a zero-prop functional component. */
-    public static VNode el(Supplier<VNode> component) {
-        return component.get();
-    }
-
     public static VText text(Object value) {
         return new VText(value);
     }
 
     /**
-     * JSX-like conditional rendering: {@code when(isOpen, div(...))} (equivalent to {@code {isOpen && <div/>}}).
+     * Conditional helper: returns {@code value} when {@code condition} is true, or {@code null}.
      */
     @Nullable
     public static <T> T when(boolean condition, T value) {
@@ -236,7 +130,7 @@ public class UI {
     }
 
     /**
-     * JSX-like ternary rendering: {@code when(isOk, "OK", "ERR")}.
+     * Ternary helper: returns {@code whenTrue} when {@code condition} is true, or {@code whenFalse}.
      */
     public static <T> T when(boolean condition, T whenTrue, T whenFalse) {
         return condition ? whenTrue : whenFalse;
@@ -261,6 +155,31 @@ public class UI {
             }
             condition.onChange(active -> toggleClassTokens(el.getClassList(), className, Boolean.TRUE.equals(active)));
         };
+    }
+
+    /**
+     * Reactive subtree slot: renders {@code renderer.apply(state.get())} inside a layout-transparent
+     * ({@code display: contents}) container and automatically re-renders when {@code state} changes.
+     */
+    public static <T> VNode watch(State<T> state, Function<? super T, ?> renderer) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(renderer, "renderer");
+        return doc -> {
+            Element slot = doc.createElement("div");
+            slot.getStyle().setProperty("display", "contents");
+            render(slot, renderer.apply(state.get()));
+            state.onChange(next -> render(slot, renderer.apply(next)));
+            return slot;
+        };
+    }
+
+    /**
+     * Reactive list rendering: renders each element of {@code listState} via {@code itemRenderer}
+     * inside a layout-transparent ({@code display: contents}) container, updating when the list state changes.
+     */
+    public static <T> VNode each(State<? extends Collection<T>> listState, Function<? super T, ?> itemRenderer) {
+        Objects.requireNonNull(itemRenderer, "itemRenderer");
+        return watch(listState, items -> map(items, itemRenderer));
     }
 
     // ------------------------------------------------------------------------
@@ -677,7 +596,9 @@ public class UI {
     }
 
     public static void on(@Nullable EventTarget target, String eventType, EventListener listener) {
-        if (target != null && listener != null) target.addEventListener(eventType, listener);
+        if (target != null && listener != null) {
+            target.addEventListener(eventType, listener);
+        }
     }
 
     public static void onClick(@Nullable EventTarget target, EventListener listener) { on(target, "click", listener); }
@@ -693,117 +614,10 @@ public class UI {
     }
 
     // ------------------------------------------------------------------------
-    // React Hooks
+    // Collection Mapping
     // ------------------------------------------------------------------------
 
-    /**
-     * Creates a reactive state initialized with the given value.
-     */
-    public static <T> State<T> useState(T initial) {
-        return new State<>(initial);
-    }
-
-    /**
-     * Creates an empty reference container.
-     */
-    public static <T> Ref<T> useRef() {
-        return new Ref<>();
-    }
-
-    /**
-     * Creates a reference container initialized with the given value.
-     */
-    public static <T> Ref<T> useRef(T initial) {
-        return new Ref<>(initial);
-    }
-
-    /**
-     * Executes the given effect immediately, and re-executes whenever any of the given dependencies change.
-     */
-    public static void useEffect(Runnable effect, State<?>... deps) {
-        if (effect == null) return;
-        effect.run();
-        if (deps != null) {
-            for (State<?> dep : deps) {
-                if (dep != null) {
-                    dep.onChange(v -> effect.run());
-                }
-            }
-        }
-    }
-
-    /**
-     * Executes an effect that returns an optional cleanup {@link Runnable}, invoking the previous
-     * cleanup before each re-execution when dependencies change.
-     */
-    public static void useEffect(Supplier<Runnable> effectWithCleanup, State<?>... deps) {
-        if (effectWithCleanup == null) return;
-        final Runnable[] cleanup = { effectWithCleanup.get() };
-        if (deps != null) {
-            for (State<?> dep : deps) {
-                if (dep != null) {
-                    dep.onChange(v -> {
-                        if (cleanup[0] != null) {
-                            cleanup[0].run();
-                        }
-                        cleanup[0] = effectWithCleanup.get();
-                    });
-                }
-            }
-        }
-    }
-
-    /**
-     * Computes a derived reactive {@link State} from {@code compute} and updates it whenever
-     * any dependency in {@code deps} changes.
-     */
-    public static <T> State<T> useMemo(Supplier<T> compute, State<?>... deps) {
-        Objects.requireNonNull(compute, "compute");
-        State<T> memo = new State<>(compute.get());
-        if (deps != null) {
-            for (State<?> dep : deps) {
-                if (dep != null) {
-                    dep.onChange(v -> memo.set(compute.get()));
-                }
-            }
-        }
-        return memo;
-    }
-
-    /** React parity helper returning {@code callback}. */
-    public static <T> T useCallback(T callback, State<?>... deps) {
-        return callback;
-    }
-
-    // ------------------------------------------------------------------------
-    // JS Timers & Collection Mapping
-    // ------------------------------------------------------------------------
-
-    public static int setInterval(Runnable task, long intervalMs) {
-        return requireScheduler().setInterval(task, intervalMs);
-    }
-
-    public static int setTimeout(Runnable task, long delayMs) {
-        return requireScheduler().setTimeout(task, delayMs);
-    }
-
-    public static boolean clearInterval(int id) {
-        return requireScheduler().clearInterval(id);
-    }
-
-    public static boolean clearTimeout(int id) {
-        return requireScheduler().clearTimeout(id);
-    }
-
-    public static int requestAnimationFrame(Consumer<Double> callback) {
-        return requireScheduler().requestAnimationFrame(callback);
-    }
-
-    public static boolean cancelAnimationFrame(int id) {
-        return requireScheduler().cancelAnimationFrame(id);
-    }
-
-    /** Maps indices {@code 0 .. count - 1} to a list, mirroring JS {@code Array.from({length: count}, (_, i) => ...)}. */
+    /** Maps indices {@code 0 .. count - 1} to a list. */
     public static <R> List<R> map(int count, IntFunction<R> mapper) {
         return map(0, count, mapper);
     }
@@ -818,7 +632,7 @@ public class UI {
         return out;
     }
 
-    /** Maps a collection to a list, mirroring JS {@code array.map(item => ...)}. */
+    /** Maps a collection to a list. */
     public static <T, R> List<R> map(Collection<T> items, Function<? super T, ? extends R> mapper) {
         if (items == null || items.isEmpty()) return List.of();
         List<R> out = new ArrayList<>(items.size());
@@ -828,7 +642,7 @@ public class UI {
         return out;
     }
 
-    /** Maps an array to a list, mirroring JS {@code array.map(item => ...)}. */
+    /** Maps an array to a list. */
     public static <T, R> List<R> map(T[] items, Function<? super T, ? extends R> mapper) {
         if (items == null || items.length == 0) return List.of();
         List<R> out = new ArrayList<>(items.length);
@@ -841,22 +655,6 @@ public class UI {
     // ------------------------------------------------------------------------
     // DOM Query & Helpers
     // ------------------------------------------------------------------------
-
-    /**
-     * Context-aware query selector (uses the root node from {@link #withContext}).
-     */
-    @Nullable
-    public static Element $(String selector) {
-        return $(selector, requireRoot());
-    }
-
-    /**
-     * Context-aware querySelectorAll returning a {@link List} of matching {@link Element}s.
-     */
-    @NotNull
-    public static List<Element> $$(String selector) {
-        return $$(selector, requireRoot());
-    }
 
     /**
      * Returns all elements matching {@code selector} within {@code root}.
@@ -885,40 +683,9 @@ public class UI {
         return out;
     }
 
-    /**
-     * Context-aware getElementById (uses the root node from {@link #withContext}).
-     */
     @NotNull
-    public static Element byId(String id) {
-        return byId(requireRoot(), id);
-    }
-
-    /**
-     * Creates a React 18-style root handle for {@code container}.
-     */
-    @NotNull
-    public static ReactRoot createRoot(@NotNull Node container) {
-        return new ReactRoot(container);
-    }
-
-    /**
-     * Creates a React 18-style root handle for the element matching {@code selector} in the active context.
-     */
-    @NotNull
-    public static ReactRoot createRoot(@NotNull String selector) {
-        return createRoot(selector, requireRoot());
-    }
-
-    /**
-     * Creates a React 18-style root handle for the element matching {@code selector} within {@code root}.
-     */
-    @NotNull
-    public static ReactRoot createRoot(@NotNull String selector, @NotNull Node root) {
-        Element el = $(selector, root);
-        if (el == null) {
-            throw new IllegalStateException("createRoot target not found: " + selector);
-        }
-        return new ReactRoot(el);
+    public static List<Element> $$(Node root, String selector) {
+        return $$(selector, root);
     }
 
     /**
