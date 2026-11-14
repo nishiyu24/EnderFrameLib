@@ -246,7 +246,12 @@ public final class BoxMeasurer {
         ComputedStyle style = box.style;
         String tag = box.node.tag;
 
-        if (hasIntrinsicWidth) {
+        float anchorW = box.isAbsolute ? box.anchorWidthPx() : -1;
+        if (anchorW >= 0) {
+            // width: anchor-size(...)。アンカーの幅に合わせる（アンカーが先に測られている場合）
+            box.w = anchorW + (isBorderBox ? 0 : box.horizontalDecoration());
+            box.sizingMode = SizingMode.DEFINITE;
+        } else if (hasIntrinsicWidth) {
             // 内容を測ってから resolveIntrinsicWidth で確定する
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;

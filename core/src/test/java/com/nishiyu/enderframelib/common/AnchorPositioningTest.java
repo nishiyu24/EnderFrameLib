@@ -71,4 +71,13 @@ public class AnchorPositioningTest {
         assertEquals(10, t.x, 0.5f);
         assertEquals(224, t.y, 0.5f);
     }
+
+    @Test
+    public void anchorSizeMatchesTheAnchorWidth() {
+        LayoutBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);width:anchor-size(width);height:anchor-size(--a height)'><div id=c style='height:5px'></div></div>");
+        LayoutBox t = find(root, "t");
+        assertEquals(80, t.w, 0.5f);
+        assertEquals(30, t.h, 0.5f);
+        assertEquals(80, find(root, "c").w, 0.5f);
+    }
 }

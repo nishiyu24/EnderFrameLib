@@ -373,6 +373,30 @@ public class LayoutBox {
         return fromStart ? coord - cbOrigin : cbOrigin + cbLen - coord;
     }
 
+    /** {@code width} / {@code height} が {@code anchor-size(...)} ならアンカーの寸法（px）、そうでなければ -1。 */
+    float anchorWidthPx() { return anchorSizePx(CssPropertyIndex.WIDTH); }
+
+    private float anchorSizePx(int prop) {
+        String raw = style.get(prop);
+        if (raw == null || !raw.regionMatches(true, 0, "anchor-size(", 0, 12)) return -1;
+        int close = raw.lastIndexOf(')');
+        if (close < 0) return -1;
+        String name = null, dim = null;
+        for (String part : raw.substring(12, close).trim().split("[\s,]+")) {
+            if (part.startsWith("--")) name = part;
+            else if (!part.isEmpty() && dim == null) dim = part.toLowerCase(java.util.Locale.ROOT);
+        }
+        LayoutBox anchor = findAnchor(name);
+        if (anchor == null) return -1;
+        boolean horizontal = prop == CssPropertyIndex.WIDTH;
+        if (dim == null) dim = horizontal ? "width" : "height";
+        return switch (dim) {
+            case "width", "inline" -> anchor.w;
+            case "height", "block" -> anchor.h;
+            default -> -1;
+        };
+    }
+
     /**
      * アンカーの箱。名前があれば {@code anchor-name} が一致する箱、なければ自分の {@code position-anchor}、それも無ければ
      * 自分を {@code popovertarget} で指しているボタン（popover の暗黙のアンカー）。
@@ -2548,6 +2572,10 @@ public class LayoutBox {
             float refY = cb.y();
             float refW = cb.w();
             float refH = cb.h();
+            // width / height が anchor-size() なら、アンカーの寸法に合わせる（箱の測定は anchor を読まないので、ここで差し替える）
+            float aw = anchorSizePx(CssPropertyIndex.WIDTH), ah = anchorSizePx(CssPropertyIndex.HEIGHT);
+            if (aw >= 0) this.w = aw + (style.isBorderBox() ? 0 : horizontalDecoration());
+            if (ah >= 0) this.h = ah + (style.isBorderBox() ? 0 : verticalDecoration());
 
             // 両方あれば left / top が勝つ（過剰制約のときは end 側を無視する。CSS 2.2 §10.3.7）。
             // 両方 auto の軸は静的位置に置く。以前は right / bottom が勝ち、両方 auto なら
