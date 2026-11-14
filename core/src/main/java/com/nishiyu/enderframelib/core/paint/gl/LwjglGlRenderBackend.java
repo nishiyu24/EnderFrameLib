@@ -632,6 +632,11 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return rects != null ? rects.drawCalls() : 0;
     }
 
+    /** GPU レコード（プリミティブ・変換・効果）のうち、値が実際に変わった書き込みの累計（フィールド単位）。 */
+    public long rectTreeChangedWrites() {
+        return rects != null ? rects.changedWrites() : 0;
+    }
+
     /** 新経路に載せた矩形の数の累計。 */
     public long rectTreeShapes() {
         return rects != null ? rects.accepted() : 0;
