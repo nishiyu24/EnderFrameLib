@@ -322,6 +322,8 @@ public final class SelectorParser {
                 out.isOpen = true;
                 out.stateFlags |= ElementState.OPEN;
             }
+            case "modal" -> out.stateFlags |= ElementState.MODAL;
+            case "popover-open" -> out.stateFlags |= ElementState.POPOVER_OPEN;
             case "required" -> out.isRequired = true;
             case "optional" -> out.isOptional = true;
             case "link", "any-link" -> out.isLink = true;

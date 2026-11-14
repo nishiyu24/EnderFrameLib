@@ -23,6 +23,10 @@ public record ElementState(int flags) {
     public static final int DISABLED      = 1 << 6;
     public static final int INDETERMINATE = 1 << 7;
     public static final int OPEN          = 1 << 8;
+    /** {@code dialog.showModal()} で開かれた（Top Layer に載り、{@code :modal} に一致する）。実行時の状態で、属性からは導出しない。 */
+    public static final int MODAL         = 1 << 9;
+    /** {@code showPopover()} で表示中の popover（{@code :popover-open}）。実行時の状態で、属性からは導出しない。 */
+    public static final int POPOVER_OPEN  = 1 << 10;
 
     /** 対話由来の動的な状態ビット群（:hover / :active / :focus*）。 */
     public static final int INTERACTIVE_MASK = HOVER | ACTIVE | FOCUS | FOCUS_VISIBLE | FOCUS_WITHIN;
@@ -77,6 +81,8 @@ public record ElementState(int flags) {
     public boolean disabled() { return (flags & DISABLED) != 0; }
     public boolean indeterminate() { return (flags & INDETERMINATE) != 0; }
     public boolean open() { return (flags & OPEN) != 0; }
+    public boolean modal() { return (flags & MODAL) != 0; }
+    public boolean popoverOpen() { return (flags & POPOVER_OPEN) != 0; }
 
     public boolean isAny() {
         return flags != 0;

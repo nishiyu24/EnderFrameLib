@@ -124,11 +124,13 @@ public class InteractionState implements StateLookup {
     }
 
     /** 現在 {@code :hover} な節（ポインタの下の節とその祖先）。 */
-    private Set<HtmlNode> hoveredChain = new HashSet<>();
+    private ArrayList<HtmlNode> hoveredChain = new ArrayList<>(16);
     /** 現在 {@code :active} な節（押下中の節とその祖先）。 */
-    private Set<HtmlNode> activeChain = new HashSet<>();
+    private ArrayList<HtmlNode> activeChain = new ArrayList<>(16);
     /** 現在 {@code :focus-within} な節（フォーカス中の節とその祖先）。 */
-    private Set<HtmlNode> focusWithinChain = new HashSet<>();
+    private ArrayList<HtmlNode> focusWithinChain = new ArrayList<>(16);
+    /** 鎖更新時の作業用リスト（フレームごとの確保を避ける）。 */
+    private ArrayList<HtmlNode> scratchChain = new ArrayList<>(16);
 
     /** ポインタの下の節（{@link #hoveredChain} の末端）。 */
     private HtmlNode hoveredNode = null;
@@ -407,17 +409,20 @@ public class InteractionState implements StateLookup {
 
     /** ポインタの下の節を更新する。{@code target} とその祖先が {@code :hover}、それ以外は外れる。null で全解除。 */
     public boolean setHoveredNode(HtmlNode target) {
-        Set<HtmlNode> nextChain = ancestorsAndSelf(target);
+        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
         hoveredNode = target;
-        if (hoveredChain.equals(nextChain)) return false;
+        if (sameChain(hoveredChain, nextChain)) return false;
 
         boolean changed = false;
-        for (HtmlNode left : hoveredChain) {
-            if (!nextChain.contains(left)) changed |= setHovered(left, false);
+        for (int i = 0, n = hoveredChain.size(); i < n; i++) {
+            HtmlNode left = hoveredChain.get(i);
+            if (!containsRef(nextChain, left)) changed |= setHovered(left, false);
         }
-        for (HtmlNode entered : nextChain) {
-            if (!hoveredChain.contains(entered)) changed |= setHovered(entered, true);
+        for (int i = 0, n = nextChain.size(); i < n; i++) {
+            HtmlNode entered = nextChain.get(i);
+            if (!containsRef(hoveredChain, entered)) changed |= setHovered(entered, true);
         }
+        scratchChain = hoveredChain;
         hoveredChain = nextChain;
         return changed;
     }
@@ -432,17 +437,20 @@ public class InteractionState implements StateLookup {
 
     /** 押下中の節を更新する。{@code target} とその祖先が {@code :active}、それ以外は外れる。null で全解除。 */
     public boolean setActiveNode(HtmlNode target) {
-        Set<HtmlNode> nextChain = ancestorsAndSelf(target);
+        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
         activeNode = target;
-        if (activeChain.equals(nextChain)) return false;
+        if (sameChain(activeChain, nextChain)) return false;
 
         boolean changed = false;
-        for (HtmlNode released : activeChain) {
-            if (!nextChain.contains(released)) changed |= setActive(released, false);
+        for (int i = 0, n = activeChain.size(); i < n; i++) {
+            HtmlNode released = activeChain.get(i);
+            if (!containsRef(nextChain, released)) changed |= setActive(released, false);
         }
-        for (HtmlNode pressed : nextChain) {
-            if (!activeChain.contains(pressed)) changed |= setActive(pressed, true);
+        for (int i = 0, n = nextChain.size(); i < n; i++) {
+            HtmlNode pressed = nextChain.get(i);
+            if (!containsRef(activeChain, pressed)) changed |= setActive(pressed, true);
         }
+        scratchChain = activeChain;
         activeChain = nextChain;
         return changed;
     }
@@ -482,22 +490,25 @@ public class InteractionState implements StateLookup {
             changed |= setFocused(target, true, focusVisible);
         }
 
-        Set<HtmlNode> nextChain = ancestorsAndSelf(target);
-        for (HtmlNode left : focusWithinChain) {
-            if (nextChain.contains(left)) continue;
+        ArrayList<HtmlNode> nextChain = fillAncestorsAndSelf(target, scratchChain);
+        for (int i = 0, n = focusWithinChain.size(); i < n; i++) {
+            HtmlNode left = focusWithinChain.get(i);
+            if (containsRef(nextChain, left)) continue;
             StateFlags flags = getOrCreate(left);
             if (flags.setBit(ElementState.FOCUS_WITHIN, false)) {
                 invalidateState(left, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
         }
-        for (HtmlNode entered : nextChain) {
+        for (int i = 0, n = nextChain.size(); i < n; i++) {
+            HtmlNode entered = nextChain.get(i);
             StateFlags flags = getOrCreate(entered);
             if (flags.setBit(ElementState.FOCUS_WITHIN, true)) {
                 invalidateState(entered, ElementState.FOCUS_WITHIN);
                 changed = true;
             }
         }
+        scratchChain = focusWithinChain;
         focusWithinChain = nextChain;
         return changed;
     }
@@ -523,6 +534,24 @@ public class InteractionState implements StateLookup {
         StateFlags flags = getOrCreate(node);
         if (!flags.setTri(ElementState.INDETERMINATE, indeterminate)) return false;
         invalidateState(node, ElementState.INDETERMINATE);
+        return true;
+    }
+
+    /** {@code :modal}（{@code dialog.showModal()} 中）。Top Layer の所属を決める。 */
+    public boolean setModal(HtmlNode node, boolean modal) {
+        if (node == null) return false;
+        StateFlags flags = getOrCreate(node);
+        if (!flags.setBit(ElementState.MODAL, modal)) return false;
+        invalidateState(node, ElementState.MODAL);
+        return true;
+    }
+
+    /** {@code :popover-open}（{@code showPopover()} 中）。Top Layer の所属を決める。 */
+    public boolean setPopoverOpen(HtmlNode node, boolean open) {
+        if (node == null) return false;
+        StateFlags flags = getOrCreate(node);
+        if (!flags.setBit(ElementState.POPOVER_OPEN, open)) return false;
+        invalidateState(node, ElementState.POPOVER_OPEN);
         return true;
     }
 
@@ -899,19 +928,36 @@ public class InteractionState implements StateLookup {
         dirtyCount = 0;
         unscopedLog.clear();
         if (animator != null) animator.clear();
-        hoveredChain = new HashSet<>();
-        activeChain = new HashSet<>();
-        focusWithinChain = new HashSet<>();
+        hoveredChain.clear();
+        activeChain.clear();
+        focusWithinChain.clear();
+        scratchChain.clear();
         hoveredNode = null;
         activeNode = null;
         focusedNode = null;
     }
 
-    private static Set<HtmlNode> ancestorsAndSelf(HtmlNode node) {
-        Set<HtmlNode> chain = new HashSet<>();
+    private static ArrayList<HtmlNode> fillAncestorsAndSelf(HtmlNode node, ArrayList<HtmlNode> out) {
+        out.clear();
         for (HtmlNode cur = node; cur != null; cur = cur.parent) {
-            chain.add(cur);
+            out.add(cur);
         }
-        return chain;
+        return out;
+    }
+
+    private static boolean sameChain(ArrayList<HtmlNode> a, ArrayList<HtmlNode> b) {
+        int n = a.size();
+        if (n != b.size()) return false;
+        for (int i = 0; i < n; i++) {
+            if (a.get(i) != b.get(i)) return false;
+        }
+        return true;
+    }
+
+    private static boolean containsRef(ArrayList<HtmlNode> list, HtmlNode target) {
+        for (int i = 0, n = list.size(); i < n; i++) {
+            if (list.get(i) == target) return true;
+        }
+        return false;
     }
 }

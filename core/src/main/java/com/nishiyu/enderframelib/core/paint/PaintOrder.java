@@ -471,16 +471,33 @@ public final class PaintOrder {
         blendDescendants.clear();
         boolean rootMoving = root.style != null && factsOf(root.style).hasMovingProps();
         PaintNode top;
+        topLayerRoot = null;
         if ("root".equals(root.node.tag)) {
             top = new PaintNode(null, true, 0);
+            topLayerRoot = top.layers;
             collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         } else {
             top = new PaintNode(selfTask(root, null, null, rootMoving), true, 0);
+            topLayerRoot = top.layers;
             collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         }
+        topLayerRoot = null;
         List<RenderTask> out = new ArrayList<>();
         emit(top, out);
         return out;
+    }
+
+    /** Top Layer の箱を載せる、文書の根のスタッキングコンテキストの層（{@link #paintTasks} の間だけ）。 */
+    private PaintLayers topLayerRoot;
+
+    /**
+     * Top Layer の箱（{@code dialog:modal} と表示中の {@code popover}。UA シートが {@link #TOP_LAYER_Z} を与える固定配置）。
+     * 祖先のスタッキングコンテキストの外へ出て、文書の根のコンテキストの最前面に描かれる（HTML §4.11 / CSS Positioned Layout 3 §5）。
+     */
+    static final int TOP_LAYER_Z = Integer.MAX_VALUE;
+
+    private boolean isTopLayer(LayoutBox box) {
+        return box.isFixed && box.zIndex == TOP_LAYER_Z && !isZIndexAuto(box);
     }
 
     /**
@@ -557,7 +574,9 @@ public final class PaintOrder {
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
             PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
-            if (z < 0) sc.addNegative(node); else if (z > 0) sc.addPositive(node); else sc.addPositioned(node);
+            // 部分木の記録の途中は外へ出せない（記録は部分木の中だけで完結する）
+            PaintLayers target = recording == null && topLayerRoot != null && isTopLayer(box) ? topLayerRoot : sc;
+            if (z < 0) target.addNegative(node); else if (z > 0) target.addPositive(node); else target.addPositioned(node);
             collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
         } else if (isPositioned(box)) {
             // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
