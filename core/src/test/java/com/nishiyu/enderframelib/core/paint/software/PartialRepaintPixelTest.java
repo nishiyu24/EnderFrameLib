@@ -173,15 +173,96 @@ class PartialRepaintPixelTest {
     }
 
     @Test
-    void animatedFramesFallBackToFullRepaintAndMatch() {
+    void colorTransitionFramesArePaintedPartiallyAndMatch() {
         Run expected = animationRun(false);
         Run actual = animationRun(true);
         for (int i = 0; i < expected.frames().size(); i++) {
             assertArrayEquals(expected.frames().get(i), actual.frames().get(i), "アニメーション フレーム " + i);
         }
-        assertTrue(actual.full() > 0, "補間の途中で全面描画へ戻っていない");
-        assertTrue(actual.partial() > 0, "補間が終わった後に差分描画へ戻っていない");
+        // 色だけの遷移は、遷移中も項目単位の差分描画。全面は初回と遷移の開始（項目の差し替え）だけ
+        assertTrue(actual.partial() >= 38, "遷移中のフレームが全面描画になっている: partial=" + actual.partial() + " full=" + actual.full());
         assertEquals(0, actual.aborts(), "補間の前後で見積もりが外れた");
+    }
+
+    /** {@code #a} へ hover を当て、{@code frames} フレーム進めたあと外す（外す遷移も含む）。 */
+    private static Run hoverRun(String html, boolean damage, int frames) {
+        boolean saved = SoftwareRenderBackend.damageEnabled;
+        SoftwareRenderBackend.damageEnabled = damage;
+        StandaloneView view = new StandaloneView(html, W, H, FontResolver.FALLBACK);
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
+            List<int[]> out = new ArrayList<>();
+            long now = 1000;
+            view.frame(now, cpu, true);
+            view.ui().setHoveredElement(view.root().getNodeById("a").key());
+            for (int i = 0; i < frames; i++) {
+                now += 20;
+                view.frame(now, cpu, true);
+                out.add(cpu.pixmap().pixels().clone());
+            }
+            view.ui().setHoveredElement(view.root().getNodeById("b").key());
+            for (int i = 0; i < frames; i++) {
+                now += 20;
+                view.frame(now, cpu, true);
+                out.add(cpu.pixmap().pixels().clone());
+            }
+            return new Run(out, cpu.partialFrames(), cpu.fullFrames(), cpu.damageAborts(), cpu.skippedItems());
+        } finally {
+            view.close();
+            SoftwareRenderBackend.damageEnabled = saved;
+        }
+    }
+
+    private static void assertSamePixels(Run expected, Run actual, String what) {
+        assertEquals(expected.frames().size(), actual.frames().size());
+        for (int i = 0; i < expected.frames().size(); i++) {
+            assertArrayEquals(expected.frames().get(i), actual.frames().get(i), what + " フレーム " + i);
+        }
+        assertEquals(0, actual.aborts(), what + ": 見積もりが外れて全面でやり直した");
+    }
+
+    @Test
+    void transformTransitionFramesArePaintedPartiallyAndMatch() {
+        // 変形の遷移: 動いた節の子孫が旧範囲と新範囲で塗り直される。子（文字つき）・影・クリップ内の子も混ぜる
+        String html = "<style>body{margin:0;background:#123;font-size:13px}"
+                + "#a{position:absolute;left:30px;top:30px;width:120px;height:80px;background:#345;color:#fff;border-radius:10px;"
+                + "box-shadow:0 3px 8px #0008;transition:transform 300ms linear}"
+                + "#a:hover{transform:translate(40px,20px) rotate(8deg) scale(1.1)}"
+                + "#a span{display:block;margin:10px;width:60px;height:20px;background:#a33}"
+                + "#c{position:absolute;left:200px;top:30px;width:100px;height:100px;overflow:hidden;background:#cde}"
+                + "#c div{width:160px;height:160px;background:#4a4}"
+                + "#b{position:absolute;left:20px;top:150px;width:120px;height:60px;background:#567}"
+                + "</style><div id=\"a\">text<span>child</span></div><div id=\"c\"><div>clipped</div></div><div id=\"b\">b</div>";
+        Run expected = hoverRun(html, false, 25);
+        Run actual = hoverRun(html, true, 25);
+        assertSamePixels(expected, actual, "変形の遷移");
+        assertTrue(actual.partial() >= 40, "変形の遷移中が全面描画になっている: partial=" + actual.partial() + " full=" + actual.full());
+    }
+
+    @Test
+    void opacityTransitionStillFallsBackToFullRepaintAndMatches() {
+        // 不透明度の遷移は層（グループ）を要するので、動いている間は全面描画のまま。絵は同じ
+        String html = "<style>body{margin:0;background:#123;font-size:13px}"
+                + "#a{position:absolute;left:30px;top:30px;width:120px;height:80px;background:#f80;transition:opacity 300ms linear}"
+                + "#a:hover{opacity:.3}"
+                + "#b{position:absolute;left:20px;top:150px;width:120px;height:60px;background:#567}"
+                + "</style><div id=\"a\">a<span>x</span></div><div id=\"b\">b</div>";
+        Run expected = hoverRun(html, false, 25);
+        Run actual = hoverRun(html, true, 25);
+        assertSamePixels(expected, actual, "不透明度の遷移");
+        assertTrue(actual.full() >= 10, "不透明度の遷移中に全面描画へ戻っていない: full=" + actual.full());
+        assertTrue(actual.partial() > 0, "遷移が終わった後に差分描画へ戻っていない");
+    }
+
+    @Test
+    void transitionEndFrameShowsTheFinalColor() {
+        // 遷移の最後のフレームで最終色へ確定する（前のフレームで動いていた項目を塗り直す）
+        String html = animationHtml();
+        Run actual = hoverRun(html, true, 40);
+        Run expected = hoverRun(html, false, 40);
+        assertSamePixels(expected, actual, "遷移の終端");
+        int[] last = actual.frames().get(39); // hover 中の最後のフレーム（遷移は 400ms = 20 フレームで終わっている）
+        int px = last[60 * W + 60];
+        assertEquals(0xFFFF8800, px, "遷移後の #a は :hover の背景色 #f80");
     }
 
     private static String keyframeHtml() {

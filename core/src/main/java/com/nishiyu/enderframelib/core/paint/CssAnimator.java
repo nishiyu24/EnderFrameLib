@@ -315,6 +315,32 @@ public class CssAnimator {
                     && targetRot == 0f && targetSkew == 0f && targetOpacity == 1f;
         }
 
+        /**
+         * 今の時刻に補間されている値の種類。0 = 止まっている、1 = 色などの塗りだけ、2 = 変形（姿勢）が動く、
+         * 3 = 不透明度が動く（描画側が層を要する）。トランジションは許可チャンネルではなく、開始値と目標値が
+         * 実際に違うチャンネルだけを動くとみなす。キーフレームは、使うチャンネルで判定する。
+         */
+        public int motionKindAt(long now) {
+            int kind = 0;
+            if (durationMs > 0 && now < startTime + delayMs + durationMs) {
+                kind = 1;
+                if ((transitionMask & AnimationSpec.CH_TRANSFORM) != 0
+                        && (Float.compare(startTx, targetTx) != 0 || Float.compare(startTy, targetTy) != 0
+                        || Float.compare(startSx, targetSx) != 0 || Float.compare(startSy, targetSy) != 0
+                        || Float.compare(startRot, targetRot) != 0 || Float.compare(startSkew, targetSkew) != 0)) {
+                    kind = 2;
+                }
+                if ((transitionMask & AnimationSpec.CH_OPACITY) != 0 && Float.compare(startOpacity, targetOpacity) != 0) return 3;
+            }
+            if (currentAnimDef != null && isActiveAt(now)) {
+                if (currentAnimDef.frames.isEmpty()) return Math.max(kind, 1);
+                int ch = currentAnimDef.animatedChannels;
+                if ((ch & AnimationSpec.CH_OPACITY) != 0) return 3;
+                kind = Math.max(kind, (ch & AnimationSpec.CH_TRANSFORM) != 0 ? 2 : 1);
+            }
+            return kind;
+        }
+
         public boolean hasTargetChanged(DisplayItem el) {
             return Float.compare(baseTargetOpacity, el.opacity()) != 0
                     || Float.compare(baseTx, el.translateX()) != 0
