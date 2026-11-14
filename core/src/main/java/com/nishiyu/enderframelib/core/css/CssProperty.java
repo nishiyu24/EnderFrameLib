@@ -63,6 +63,8 @@ public final class CssProperty {
     public static final String COLUMN_SPAN = "column-span";
     public static final String COLUMN_WIDTH = "column-width";
     public static final String CONTAINER_NAME = "container-name";
+    public static final String ANCHOR_NAME = "anchor-name";
+    public static final String POSITION_ANCHOR = "position-anchor";
     public static final String CONTAINER_TYPE = "container-type";
     public static final String CONTAIN = "contain";
     public static final String CONTENT_VISIBILITY = "content-visibility";

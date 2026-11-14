@@ -271,6 +271,9 @@ public final class PropertyRegistry {
         // ---- コンテナクエリ（container-type は寸法の算出に効く: size containment がある）
         keyword("container-type", CssKeywords.ContainerType.class, CssKeywords.ContainerType.NORMAL, false, Invalidation.LAYOUT);
         layout("container-name", "none", false, ValueType.LIST, false);
+        // ---- Anchor Positioning（anchor-name はアンカーの名前の一覧、position-anchor は使うアンカーの名前）。再レイアウトを要する
+        layout("anchor-name", "none", false, ValueType.LIST, false);
+        layout("position-anchor", "auto", false, ValueType.STRING, false);
         shorthand("container", Invalidation.LAYOUT, ShorthandExpanders::container, "container-name", "container-type");
 
         // ---- 生成内容・置換要素

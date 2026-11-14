@@ -327,6 +327,86 @@ public class LayoutBox {
         return new ContainingBlock(cbX, cbY, cbW, cbH);
     }
 
+    // ==========================================
+    // Anchor Positioning（CSS Anchor Positioning 1: anchor-name / position-anchor / anchor()）
+    // ==========================================
+
+    /**
+     * 絶対配置の inset（{@code left} / {@code right} / {@code top} / {@code bottom}）を px にする。値が {@code anchor(...)} なら、
+     * アンカーの辺の座標から求める（包含ブロックの原点 {@code cbOrigin}・長さ {@code cbLen} が基準）。アンカーが見つからなければ 0。
+     * 対応: {@code anchor(<side>)} と {@code anchor(--name <side>)}。side は top・bottom・left・right・center・割合。
+     * 限界: 幅を left と right の両方から決める箱の測定（{@link BoxMeasurer}）は anchor() を読まない（片方の inset ＋ 寸法を使う）。
+     */
+    private float insetPx(int prop, float cbOrigin, float cbLen, float rootW, float rootH) {
+        String raw = style.get(prop);
+        if (raw == null || !raw.regionMatches(true, 0, "anchor(", 0, 7)) {
+            return style.length(prop, cbLen, rootW, rootH);
+        }
+        int close = raw.lastIndexOf(')');
+        if (close < 0) return 0;
+        String[] parts = raw.substring(7, close).trim().split("[\\s,]+");
+        String name = null, side = null;
+        for (String part : parts) {
+            if (part.startsWith("--")) name = part;
+            else if (!part.isEmpty() && side == null) side = part.toLowerCase(java.util.Locale.ROOT);
+        }
+        if (side == null) return 0;
+        LayoutBox anchor = findAnchor(name);
+        if (anchor == null) return 0;
+        boolean horizontal = prop == CssPropertyIndex.LEFT || prop == CssPropertyIndex.RIGHT;
+        float from = horizontal ? anchor.x : anchor.y, size = horizontal ? anchor.w : anchor.h;
+        float coord;
+        switch (side) {
+            case "left", "top", "start", "self-start" -> coord = from;
+            case "right", "bottom", "end", "self-end" -> coord = from + size;
+            case "center" -> coord = from + size / 2f;
+            default -> {
+                if (!side.endsWith("%")) return 0;
+                try {
+                    coord = from + size * Float.parseFloat(side.substring(0, side.length() - 1)) / 100f;
+                } catch (NumberFormatException e) {
+                    return 0;
+                }
+            }
+        }
+        boolean fromStart = prop == CssPropertyIndex.LEFT || prop == CssPropertyIndex.TOP;
+        return fromStart ? coord - cbOrigin : cbOrigin + cbLen - coord;
+    }
+
+    /**
+     * アンカーの箱。名前があれば {@code anchor-name} が一致する箱、なければ自分の {@code position-anchor}、それも無ければ
+     * 自分を {@code popovertarget} で指しているボタン（popover の暗黙のアンカー）。
+     */
+    private LayoutBox findAnchor(String name) {
+        LayoutBox root = this;
+        while (root.parent != null) root = root.parent;
+        if (name == null) name = style.get(CssPropertyIndex.POSITION_ANCHOR);
+        if (name != null && !name.isBlank() && !"auto".equalsIgnoreCase(name.trim())) return findAnchorNamed(root, name.trim());
+        String id = node != null && node.attrs != null ? node.attrs.get("id") : null;
+        return id == null ? null : findInvoker(root, id);
+    }
+
+    private LayoutBox findAnchorNamed(LayoutBox box, String name) {
+        if (box != this && box.style != null) {
+            String n = box.style.get(CssPropertyIndex.ANCHOR_NAME);
+            if (n != null && java.util.Arrays.asList(n.trim().split("[\\s,]+")).contains(name)) return box;
+        }
+        for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
+            LayoutBox hit = findAnchorNamed(box.elementChildren.get(i), name);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    private static LayoutBox findInvoker(LayoutBox box, String id) {
+        if (box.node != null && box.node.attrs != null && id.equals(box.node.attrs.get("popovertarget"))) return box;
+        for (int i = 0, n = box.elementChildren.size(); i < n; i++) {
+            LayoutBox hit = findInvoker(box.elementChildren.get(i), id);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
     /** この要素に対話状態（:hover / :active / :focus 等）のセレクタが関与するか。 */
     public boolean hasInteractiveRules = false;
 
@@ -2473,39 +2553,39 @@ public class LayoutBox {
             // 両方 auto の軸は静的位置に置く。以前は right / bottom が勝ち、両方 auto なら
             // 包含ブロックの原点に置いていた
             if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.LEFT)) {
-                float left = style.length(CssPropertyIndex.LEFT, refW, rootW, rootH);
+                float left = insetPx(CssPropertyIndex.LEFT, refX, refW, rootW, rootH);
                 float ml = mL;
                 var lf = style.facts();
                 if ((lf.autoMarginL || lf.autoMarginR) && !BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)
                         && !lf.widthAuto) {
                     // 両端の inset と width が決まっていて margin が auto の軸は、余りを auto の margin に配る（CSS 2.2 §10.3.7）。
                     // 余りが負なら（過剰制約）、開始側の margin は 0
-                    float right = style.length(CssPropertyIndex.RIGHT, refW, rootW, rootH);
+                    float right = insetPx(CssPropertyIndex.RIGHT, refX, refW, rootW, rootH);
                     float free = refW - left - right - this.w - (lf.autoMarginL ? 0 : mL) - (lf.autoMarginR ? 0 : mR);
                     if (lf.autoMarginL && lf.autoMarginR) ml = Math.max(0, free / 2);
                     else if (lf.autoMarginL) ml = Math.max(0, free);
                 }
                 this.x = refX + left + ml;
             } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)) {
-                this.x = refX + refW - this.w - style.length(CssPropertyIndex.RIGHT, refW, rootW, rootH) - mR;
+                this.x = refX + refW - this.w - insetPx(CssPropertyIndex.RIGHT, refX, refW, rootW, rootH) - mR;
             } else {
                 this.x = (Float.isNaN(staticX) ? refX : staticX) + mL;
             }
             if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP)) {
-                float top = style.length(CssPropertyIndex.TOP, refH, rootW, rootH);
+                float top = insetPx(CssPropertyIndex.TOP, refY, refH, rootW, rootH);
                 float mt = mT;
                 var lf = style.facts();
                 if ((lf.autoMarginT || lf.autoMarginB) && !BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)
                         && !lf.heightAuto) {
                     // 縦も同じ（CSS 2.2 §10.6.5）
-                    float bottom = style.length(CssPropertyIndex.BOTTOM, refH, rootW, rootH);
+                    float bottom = insetPx(CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH);
                     float free = refH - top - bottom - this.h - (lf.autoMarginT ? 0 : mT) - (lf.autoMarginB ? 0 : mB);
                     if (lf.autoMarginT && lf.autoMarginB) mt = Math.max(0, free / 2);
                     else if (lf.autoMarginT) mt = Math.max(0, free);
                 }
                 this.y = refY + top + mt;
             } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)) {
-                this.y = refY + refH - this.h - style.length(CssPropertyIndex.BOTTOM, refH, rootW, rootH) - mB;
+                this.y = refY + refH - this.h - insetPx(CssPropertyIndex.BOTTOM, refY, refH, rootW, rootH) - mB;
             } else {
                 this.y = (Float.isNaN(staticY) ? refY : staticY) + mT;
             }
