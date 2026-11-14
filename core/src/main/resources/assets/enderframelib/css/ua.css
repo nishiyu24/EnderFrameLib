@@ -37,7 +37,12 @@ blockquote, figure { margin-left: 40px; margin-right: 40px; }
 address { font-style: italic; }
 listing, plaintext, pre, xmp { font-family: monospace; white-space: pre; }
 dialog:not([open]) { display: none; }
-dialog { position: absolute; left: 0; right: 0; width: fit-content; margin: auto; border: solid; padding: 1em; background-color: white; color: black; }
+dialog { position: absolute; left: 0; right: 0; width: fit-content; height: fit-content; margin: auto; border: solid; padding: 1em; background-color: white; color: black; }
+dialog:modal { position: fixed; top: 0; bottom: 0; overflow: auto; max-width: calc(100% - 6px - 2em); max-height: calc(100% - 6px - 2em); z-index: 2147483647; }
+/* HTML §15.3.3 popover: 表示中でない popover は描かない。表示中は Top Layer（中央寄せの固定配置）。 */
+[popover]:not(:popover-open):not(dialog[open]) { display: none; }
+[popover]:popover-open { z-index: 2147483647; }
+[popover] { position: fixed; left: 0; right: 0; top: 0; bottom: 0; width: fit-content; height: fit-content; margin: auto; border: solid; padding: 0.25em; overflow: auto; background-color: white; color: black; }
 slot { display: contents; }
 
 /* §15.3.4 フレージングコンテンツ（display: inline は標準では初期値。エンジンの推測を上書きするために書く） */

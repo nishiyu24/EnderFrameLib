@@ -506,6 +506,61 @@ public class HtmlElement extends HtmlNode implements Element {
         return query.visibleRect(this, root instanceof HtmlNode node ? node : null);
     }
 
+    // ==========================================
+    // Top Layer（HTML §4.11 dialog / §6.12 popover）
+    // ==========================================
+
+    private InteractionState topLayerState() {
+        HtmlNode root = this;
+        while (root.parent != null) root = root.parent;
+        return root instanceof HtmlDocument doc ? doc.interactionState() : null;
+    }
+
+    /** {@code dialog.show()}: モードレスで開く（{@code open} 属性だけ）。 */
+    public void show() {
+        if (!"dialog".equalsIgnoreCase(tag)) return;
+        if (!hasAttribute("open")) setAttribute("open", "");
+    }
+
+    /** {@code dialog.showModal()}: Top Layer に載せて開く（{@code :modal}）。すでに開いていれば何もしない。 */
+    public void showModal() {
+        if (!"dialog".equalsIgnoreCase(tag) || hasAttribute("open")) return;
+        InteractionState st = topLayerState();
+        setAttribute("open", "");
+        if (st != null) st.setModal(this, true);
+    }
+
+    /** {@code dialog.close()}。 */
+    public void close() {
+        if (!"dialog".equalsIgnoreCase(tag) || !hasAttribute("open")) return;
+        InteractionState st = topLayerState();
+        removeAttribute("open");
+        if (st != null) st.setModal(this, false);
+    }
+
+    /** {@code popover} 属性を持つ要素を表示する（Top Layer に載る）。 */
+    public void showPopover() {
+        if (!hasAttribute("popover")) return;
+        InteractionState st = topLayerState();
+        if (st != null) st.setPopoverOpen(this, true);
+    }
+
+    public void hidePopover() {
+        if (!hasAttribute("popover")) return;
+        InteractionState st = topLayerState();
+        if (st != null) st.setPopoverOpen(this, false);
+    }
+
+    /** @return 呼び出し後に表示中か */
+    public boolean togglePopover() {
+        if (!hasAttribute("popover")) return false;
+        InteractionState st = topLayerState();
+        if (st == null) return false;
+        boolean open = !st.stateOf(this).popoverOpen();
+        st.setPopoverOpen(this, open);
+        return open;
+    }
+
     @Override
     public void focus() {
         if (hasAttribute("disabled")) return;

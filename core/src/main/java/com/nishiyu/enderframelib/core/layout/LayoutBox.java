@@ -2470,14 +2470,37 @@ public class LayoutBox {
             // 両方 auto の軸は静的位置に置く。以前は right / bottom が勝ち、両方 auto なら
             // 包含ブロックの原点に置いていた
             if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.LEFT)) {
-                this.x = refX + style.length(CssPropertyIndex.LEFT, refW, rootW, rootH) + mL;
+                float left = style.length(CssPropertyIndex.LEFT, refW, rootW, rootH);
+                float ml = mL;
+                var lf = style.facts();
+                if ((lf.autoMarginL || lf.autoMarginR) && !BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)
+                        && !lf.widthAuto) {
+                    // 両端の inset と width が決まっていて margin が auto の軸は、余りを auto の margin に配る（CSS 2.2 §10.3.7）。
+                    // 余りが負なら（過剰制約）、開始側の margin は 0
+                    float right = style.length(CssPropertyIndex.RIGHT, refW, rootW, rootH);
+                    float free = refW - left - right - this.w - (lf.autoMarginL ? 0 : mL) - (lf.autoMarginR ? 0 : mR);
+                    if (lf.autoMarginL && lf.autoMarginR) ml = Math.max(0, free / 2);
+                    else if (lf.autoMarginL) ml = Math.max(0, free);
+                }
+                this.x = refX + left + ml;
             } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)) {
                 this.x = refX + refW - this.w - style.length(CssPropertyIndex.RIGHT, refW, rootW, rootH) - mR;
             } else {
                 this.x = (Float.isNaN(staticX) ? refX : staticX) + mL;
             }
             if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP)) {
-                this.y = refY + style.length(CssPropertyIndex.TOP, refH, rootW, rootH) + mT;
+                float top = style.length(CssPropertyIndex.TOP, refH, rootW, rootH);
+                float mt = mT;
+                var lf = style.facts();
+                if ((lf.autoMarginT || lf.autoMarginB) && !BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)
+                        && !lf.heightAuto) {
+                    // 縦も同じ（CSS 2.2 §10.6.5）
+                    float bottom = style.length(CssPropertyIndex.BOTTOM, refH, rootW, rootH);
+                    float free = refH - top - bottom - this.h - (lf.autoMarginT ? 0 : mT) - (lf.autoMarginB ? 0 : mB);
+                    if (lf.autoMarginT && lf.autoMarginB) mt = Math.max(0, free / 2);
+                    else if (lf.autoMarginT) mt = Math.max(0, free);
+                }
+                this.y = refY + top + mt;
             } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)) {
                 this.y = refY + refH - this.h - style.length(CssPropertyIndex.BOTTOM, refH, rootW, rootH) - mB;
             } else {
