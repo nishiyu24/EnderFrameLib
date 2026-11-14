@@ -1188,6 +1188,11 @@ public final class PaintSceneDriver {
     }
 
     /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
+    /** 項目 {@code i} が、いまのフレームで止まっている（補間値が確定済み）か。{@link #resolveAt} をそのフレームで呼んだあとに読む。 */
+    public boolean idleAt(int i) {
+        return prevIdle[i];
+    }
+
     public Resolved resolveAt(int i) {
         Resolved r;
         if (curStamp[i] == frameStamp && (r = curRes[i]) != null) return r;

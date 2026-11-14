@@ -91,6 +91,23 @@ public interface GpuSink {
     default void endGroup() {}
 
     /** 同時に渡せるクリップの数。これを超える項目は CPU が塗る。 */
+    /**
+     * 項目 {@code index} の出力が、直前のフレームと同じ位置・同じ入力で出ているなら、出力を再生して true を返す（呼び出し側はその項目を描かない）。
+     * 呼び出し側は、入力（項目・解決結果・クリップ・不透明度）が前フレームと同じで、項目が止まっているときだけ呼ぶ。
+     * {@code cpuPending} は、CPU が描いた画素が（描画順のために）重ねられないまま残っている可能性があること。
+     */
+    default boolean spanReplay(int index, boolean cpuPending) {
+        return false;
+    }
+
+    /** 項目 {@code index} の出力の記録を始める。記録できない状態（層の中など）なら false（{@link #spanEnd} は呼ばない）。 */
+    default boolean spanBegin(int index) {
+        return false;
+    }
+
+    /** 記録を閉じる。{@code ok} が false（その項目の描画に CPU 描画が混じった等）なら記録は捨てる。 */
+    default void spanEnd(int index, boolean ok) {}
+
     int MAX_CLIPS = 4;
 
     /**
