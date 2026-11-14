@@ -23,6 +23,7 @@ public final class AtlasPacker {
     private int x, y, rowH;
     private boolean lastNew;
     private boolean lastGrew;
+    private int resets;
 
     /** 広げない固定サイズのアトラス。 */
     public AtlasPacker(int size) {
@@ -87,6 +88,7 @@ public final class AtlasPacker {
                 lastGrew = true;
             } else {
                 entries.clear();
+                resets++;
                 x = y = rowH = 0;
                 break;
             }
@@ -97,6 +99,11 @@ public final class AtlasPacker {
         entries.put(g, slot);
         lastNew = true;
         return slot;
+    }
+
+    /** 置いてある字形をすべて捨てた（満杯で作り直した）回数。保持した GPU 記録は、これが変わると字形の位置が無効になる。 */
+    public int resets() {
+        return resets;
     }
 
     /** 直前の {@link #slot} が新しく置いたなら true（その字形をテクスチャへ転送する必要がある）。 */

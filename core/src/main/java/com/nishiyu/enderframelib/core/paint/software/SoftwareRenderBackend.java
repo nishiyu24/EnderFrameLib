@@ -287,6 +287,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         // 全面を塗っていない・別の描画先かもしれないので、差分描画の前提を捨てる
         prevValid = false;
         prevItems = null;
+        cpuOpsOrdered = cpuOps - 1; // フレームの頭は必ず順序づけを確かめる
         drawFrame(items, nowMs, sink);
     }
 
@@ -1151,6 +1152,67 @@ public final class SoftwareRenderBackend implements RenderBackend {
             return;
         }
 
+        // 項目単位の再生（GL）: 止まっている項目が、前フレームと同じ入力（項目・解決結果・クリップ・不透明度）なら、GPU 側の出力を
+        // 計算せずに前進させる。前提は GpuSink.spanReplay。CPU 描画がそのフレームでまだ無いことも条件（描画順の整合のため）
+        GpuSink spanSink = null;
+        if (glReplay && index >= 0 && replayableType(el.type()) && !recordExtents && !partialActive && recordOwner == null
+                && driver.idleAt(index)) {
+            spanSink = route.current();
+            if (spanSink != null) {
+                ensureSpanKeys(index);
+                if (spanEl[index] == el && spanRes[index] == res && spanClip[index] == clip && spanFlat[index] == flat) {
+                    if (spanSink.spanReplay(index, cpuOps != cpuOpsOrdered)) {
+                        cpuOpsOrdered = cpuOps;
+                        return;
+                    }
+                }
+                if (!spanSink.spanBegin(index)) spanSink = null;
+            }
+        } else if (index >= 0 && index < spanEl.length) {
+            spanEl[index] = null;
+        }
+        long cpuBefore = cpuOps;
+        drawItemBody(el, anim, res, clip, opacity);
+        if (spanSink != null) {
+            boolean ok = cpuOps == cpuBefore;
+            spanSink.spanEnd(index, ok);
+            if (ok) {
+                spanEl[index] = el;
+                spanRes[index] = res;
+                spanClip[index] = clip;
+                spanFlat[index] = flat;
+            } else {
+                spanEl[index] = null;
+            }
+        }
+    }
+
+    /** CPU の図形描画を行った回数（項目単位の再生が、項目の描画に CPU 描画が混じったかを知るため）。 */
+    private long cpuOps;
+    /** 再生の直前に、CPU の層を重ねる順序づけを済ませた時点の {@link #cpuOps}（それ以降に CPU 描画があれば、再生の前に順序づけが要る）。 */
+    private long cpuOpsOrdered;
+    /** 項目単位の再生を使うか（切り分け用: {@code -Denderframe.paint.noreplay=true} で無効）。 */
+    static volatile boolean glReplay = !Boolean.getBoolean("enderframe.paint.noreplay");
+    private DisplayItem[] spanEl = new DisplayItem[0];
+    private Resolved[] spanRes = new Resolved[0];
+    private Clip[] spanClip = new Clip[0];
+    private float[] spanFlat = new float[0];
+
+    private void ensureSpanKeys(int index) {
+        if (index < spanEl.length) return;
+        int n = Math.max(index + 1, spanEl.length * 2 + 64);
+        spanEl = java.util.Arrays.copyOf(spanEl, n);
+        spanRes = java.util.Arrays.copyOf(spanRes, n);
+        spanClip = java.util.Arrays.copyOf(spanClip, n);
+        spanFlat = java.util.Arrays.copyOf(spanFlat, n);
+    }
+
+    /** 再生してよい項目の種類（出力が GPU の図形・字形だけで、画像・入力・時間に依らないもの）。 */
+    private static boolean replayableType(ElementType t) {
+        return t == ElementType.RECT || t == ElementType.TEXT || t == ElementType.ROUNDED_BORDER || t == ElementType.BUTTON;
+    }
+
+    private void drawItemBody(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
         float[][] radii = radii(el, anim);
         float[] rx = radii[0], ry = radii[1];
         ElementType type = el.type();
@@ -1406,6 +1468,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         System.arraycopy(fastDx0, 0, op.dx0, 0, nr); System.arraycopy(fastDx1, 0, op.dx1, 0, nr);
         System.arraycopy(fastDy0, 0, op.dy0, 0, nr); System.arraycopy(fastDy1, 0, op.dy1, 0, nr);
         System.arraycopy(fastCol, 0, op.col, 0, nr);
+        cpuOps++;
         queue.submit(op, fast != null);
     }
 
@@ -1578,6 +1641,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
         }
         op.spLo = lo; op.spHi = hi;
+        cpuOps++;
         queue.submit(op, true); // 行は互いに独立（書き込む画素も別）。タイルごとに並列で塗る
     }
 
@@ -2074,6 +2138,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         op.w = raster.targetWidth();
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.g = g; op.bx = bx; op.by = by; op.lut = covLut; op.clip = clip; op.clipped = !clip.parts().isEmpty(); op.opacity = opacity;
+        cpuOps++;
         queue.submit(op, true);
     }
 

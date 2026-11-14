@@ -69,6 +69,151 @@ final class GlRectStream implements AutoCloseable {
     long drawCalls() { return drawCalls; }
     int frameCount() { return count; }
 
+    // ------------------------------------------------------------------ 項目単位の保持（再生）
+    //
+    // 直前のフレームで同じ slot 位置・同じクリップ表の状態から同じ入力で出した項目は、このフレームでも GPU レコード（主・続きの slot、
+    // 描画順の表、クリップ表の登録）が一字一句同じになる。計算して「同じ値」と照合する代わりに、範囲ごと前進させる。
+    // 成り立つ前提（どれかが崩れたら再生しない）: ①直前のフレームに同じ項目が出ている（spFrame）②開始の slot・描画順・クリップ個数が同じ
+    // ③参照するクリップ slot の中身が記録時と同じ（他の項目がその slot を上書きしていない）④字形 atlas が作り直されていない
+    // ⑤記録中に CPU 描画・容量超過・画像が無かった。
+
+    /** 再生を使うか（切り分け用: {@code -Denderframe.gl.noreplay=true} で無効）。 */
+    static volatile boolean replayEnabled = !Boolean.getBoolean("enderframe.gl.noreplay");
+
+    private long frameNo;
+    private int[] spSlot0 = new int[0], spSlot1, spCount0, spCount1, spClip0, spClip1, spAtlas;
+    private long[] spFrame;
+    private int[] spGlyphs;
+    private int[][] spRefs;
+    private float[][] spRefKeys;
+    private boolean spanOn, spanUnclean;
+    private int spanIndex, spanSlot0, spanCount0, spanClip0, spanAtlas;
+    private long spanOverflows;
+    private int[] spanRefs = new int[16];
+    private int spanRefCount;
+    long replayedShapes, replayedItems;
+    /** 直前に再生した項目の、字形の数（バックエンドの統計用）。 */
+    int replayedGlyphs;
+
+    private void ensureSpan(int index) {
+        if (index < spSlot0.length) return;
+        int n = Math.max(index + 1, spSlot0.length * 2 + 64);
+        spSlot0 = java.util.Arrays.copyOf(spSlot0, n);
+        spSlot1 = spSlot1 == null ? new int[n] : java.util.Arrays.copyOf(spSlot1, n);
+        spCount0 = spCount0 == null ? new int[n] : java.util.Arrays.copyOf(spCount0, n);
+        spCount1 = spCount1 == null ? new int[n] : java.util.Arrays.copyOf(spCount1, n);
+        spClip0 = spClip0 == null ? new int[n] : java.util.Arrays.copyOf(spClip0, n);
+        spClip1 = spClip1 == null ? new int[n] : java.util.Arrays.copyOf(spClip1, n);
+        spAtlas = spAtlas == null ? new int[n] : java.util.Arrays.copyOf(spAtlas, n);
+        spFrame = spFrame == null ? new long[n] : java.util.Arrays.copyOf(spFrame, n);
+        spGlyphs = spGlyphs == null ? new int[n] : java.util.Arrays.copyOf(spGlyphs, n);
+        spRefs = spRefs == null ? new int[n][] : java.util.Arrays.copyOf(spRefs, n);
+        spRefKeys = spRefKeys == null ? new float[n][] : java.util.Arrays.copyOf(spRefKeys, n);
+    }
+
+    /** 項目 {@code index} の出力の記録を始める。 */
+    void spanBegin(int index, int atlasResets) {
+        spanOn = true;
+        spanUnclean = false;
+        spanIndex = index;
+        spanSlot0 = slots;
+        spanCount0 = count;
+        spanClip0 = clipCount;
+        spanAtlas = atlasResets;
+        spanOverflows = overflows;
+        spanRefCount = 0;
+        lastClips = null; // 項目の最初の図形から参照を数える
+    }
+
+    private void spanRef(int id) {
+        for (int i = 0; i < spanRefCount; i++) if (spanRefs[i] == id) return;
+        if (spanRefCount == spanRefs.length) spanRefs = java.util.Arrays.copyOf(spanRefs, spanRefCount * 2);
+        spanRefs[spanRefCount++] = id;
+    }
+
+    /** 記録を閉じる。{@code ok} が false（CPU 描画があった等）・画像・容量超過があれば、この項目の記録は捨てる。 */
+    void spanEnd(boolean ok, int atlasResets, int glyphs) {
+        if (!spanOn) return;
+        spanOn = false;
+        int index = spanIndex;
+        ensureSpan(index);
+        if (!ok || spanUnclean || overflows != spanOverflows || atlasResets != spanAtlas || slots - spanSlot0 > 64) {
+            spFrame[index] = -1;
+            return;
+        }
+        spSlot0[index] = spanSlot0; spSlot1[index] = slots;
+        spCount0[index] = spanCount0; spCount1[index] = count;
+        spClip0[index] = spanClip0; spClip1[index] = clipCount;
+        spAtlas[index] = atlasResets;
+        spGlyphs[index] = glyphs;
+        // 参照するクリップの個数が同じなら、前回の配列を書き換えて使う（毎フレーム・毎項目の確保を避ける）
+        int[] refs = spRefs[index];
+        float[] keys = spRefKeys[index];
+        if (refs == null || refs.length != spanRefCount) {
+            refs = new int[spanRefCount];
+            keys = new float[spanRefCount * KEY];
+            spRefs[index] = refs;
+            spRefKeys[index] = keys;
+        }
+        System.arraycopy(spanRefs, 0, refs, 0, spanRefCount);
+        for (int i = 0; i < spanRefCount; i++) System.arraycopy(clipKeys, refs[i] * KEY, keys, i * KEY, KEY);
+        spFrame[index] = frameNo;
+    }
+
+    /** 記録を無効にする（この項目は再生しない）。 */
+    void spanDrop(int index) {
+        spanOn = false;
+        if (index < spFrame.length) spFrame[index] = -1;
+    }
+
+    /** 直前のフレームの出力をそのまま前進させられる状態か（状態は変えない）。 */
+    boolean spanCanReplay(int index, int atlasResets) {
+        if (index >= spSlot0.length || spFrame[index] != frameNo - 1) return false;
+        if (slots != spSlot0[index] || count != spCount0[index] || clipCount != spClip0[index] || atlasResets != spAtlas[index]) return false;
+        int[] refs = spRefs[index];
+        float[] keys = spRefKeys[index];
+        int c0 = spClip0[index], c1 = spClip1[index];
+        for (int i = 0; i < refs.length; i++) {
+            int r = refs[i];
+            if (r >= clipCapacity) return false;
+            int o = r * KEY, ko = i * KEY;
+            for (int j = 0; j < KEY; j++) if (clipKeys[o + j] != keys[ko + j]) return false;
+            if (r >= clipCount && (r < c0 || r >= c1)) return false; // まだ登録されていない slot は、この項目が登録したものだけ
+        }
+        return true;
+    }
+
+    /** {@link #spanCanReplay} が true の項目を前進させる。 */
+    void spanApply(int index) {
+        int c0 = spClip0[index], c1 = spClip1[index];
+        // 新しく登録された slot [c0, c1) をクリップ表へ入れ直す（以降の項目が同じ内容を同じ slot に引き当てるため）
+        for (int slot = c0; slot < c1; slot++) insertClipSlot(slot);
+        clipCount = c1;
+        replayedShapes += spCount1[index] - spCount0[index];
+        accepted += spCount1[index] - spCount0[index];
+        replayedItems++;
+        replayedGlyphs = spGlyphs[index];
+        slots = spSlot1[index];
+        count = spCount1[index];
+        spFrame[index] = frameNo;
+        lastClips = null;
+    }
+
+    /** {@link #clipKeys} の slot の内容を、{@link #clipTable}（鍵 → slot）へ登録する（{@link #clipSlot} の登録部と同じ鍵の組み方）。 */
+    private void insertClipSlot(int slot) {
+        float[] key = clipKeys;
+        int o = slot * KEY;
+        int h = 17;
+        h = h * 31 + Float.floatToIntBits(key[o]); h = h * 31 + Float.floatToIntBits(key[o + 1]); h = h * 31 + Float.floatToIntBits(key[o + 2]);
+        h = h * 31 + Float.floatToIntBits(key[o + 3]); h = h * 31 + Float.floatToIntBits(key[o + 4]); h = h * 31 + Float.floatToIntBits(key[o + 5]);
+        h = h * 31 + Float.floatToIntBits(key[o + 7]) + 7 * Float.floatToIntBits(key[o + 8]) + 13 * Float.floatToIntBits(key[o + 9]) + 29 * Float.floatToIntBits(key[o + 10]);
+        h ^= h >>> 15;
+        int mask = clipTable.length - 1;
+        int i = h & mask;
+        while (clipTable[i] >= 0) i = (i + 1) & mask;
+        clipTable[i] = slot;
+    }
+
     /** フレームの頭。永続マップなら前フレームの GPU 読み出しの終わりを待ち、受け付けの番号を 0 に戻す。 */
     void begin() {
         store.beginFrame();
@@ -77,6 +222,7 @@ final class GlRectStream implements AutoCloseable {
         runStart = 0;
         clipCount = 0;
         lastClips = null;
+        frameNo++;
         java.util.Arrays.fill(clipTable, -1);
     }
 
@@ -207,6 +353,7 @@ final class GlRectStream implements AutoCloseable {
     void pushImage(Matrix2D pose, float bx0, float by0, float bx1, float by1, float px0, float py0, float sx, float sy,
                    float x0, float y0, float x1, float y1, float[] rx, float[] ry, int imgW, int imgH,
                    int taps, float stepX, float stepY, GpuClip[] clips, float opacity) {
+        spanUnclean = true; // 画像のテクスチャは項目の外の状態（結んだテクスチャ）に依る
         open(pose, PropertyTrees.OP_IMAGE, bx0, by0, bx1, by1, 0, clips, opacity, 0f);
         int ext = slots++;
         trees.setExtFloat(ext, 0, x0);
@@ -324,6 +471,7 @@ final class GlRectStream implements AutoCloseable {
             switch (i) { case 0 -> a = id; case 1 -> b = id; case 2 -> c = id; default -> d = id; }
         }
         if (n > 0) { lastClips = clips; lastA = a; lastB = b; lastC = c; lastD = d; }
+        if (spanOn) { if (n > 0) spanRef(a); if (n > 1) spanRef(b); if (n > 2) spanRef(c); if (n > 3) spanRef(d); }
         trees.setPrimitiveClips(k, n, a, b, c, d);
     }
 

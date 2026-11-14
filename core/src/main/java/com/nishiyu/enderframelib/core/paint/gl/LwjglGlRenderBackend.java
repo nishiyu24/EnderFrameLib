@@ -637,6 +637,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return rects != null ? rects.changedWrites() : 0;
     }
 
+    /** 項目単位の再生で前進した項目・図形の数の累計。 */
+    public long rectTreeReplayedItems() {
+        return rects != null ? rects.replayedItems : 0;
+    }
+
+    public long rectTreeReplayedShapes() {
+        return rects != null ? rects.replayedShapes : 0;
+    }
+
     /** 新経路に載せた矩形の数の累計。 */
     public long rectTreeShapes() {
         return rects != null ? rects.accepted() : 0;
@@ -1765,6 +1774,41 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** 従来経路の {@code beginShape} と同じ余白（局所の単位）。 */
     private static float shapeMargin(Matrix2D pose) {
         return 1f / Math.max((float) pose.meanScale(), 0.01f);
+    }
+
+    private long spanGlyph0;
+
+    /** 再生・記録してよい状態か（図形の新経路が使え、層の中ではない）。 */
+    private boolean spanOk() {
+        return rects != null && GlRectStream.replayEnabled && layerStack.isEmpty();
+    }
+
+    @Override
+    public boolean spanReplay(int index, boolean cpuPending) {
+        if (!spanOk() || !rects.spanCanReplay(index, atlas.resets())) return false;
+        // 先に溜まっている CPU の層は、項目の最初の図形を積む前に重ねる（beforeRectTreeShape と同じ順序づけ。1 回で足りる）
+        if (cpuPending) {
+            if (rects.pending() == 0) flushOverlay();
+            else if (cpu.dirtyBounds() != null) flushOverlay();
+        }
+        rects.spanApply(index);
+        gpuGlyphs += rects.replayedGlyphs;
+        return true;
+    }
+
+    @Override
+    public boolean spanBegin(int index) {
+        if (!spanOk()) return false;
+        rects.spanBegin(index, atlas.resets());
+        spanGlyph0 = gpuGlyphs;
+        return true;
+    }
+
+    @Override
+    public void spanEnd(int index, boolean ok) {
+        if (rects == null) return;
+        if (ok && !layerStack.isEmpty()) ok = false;
+        rects.spanEnd(ok, atlas.resets(), (int) (gpuGlyphs - spanGlyph0));
     }
 
     @Override
