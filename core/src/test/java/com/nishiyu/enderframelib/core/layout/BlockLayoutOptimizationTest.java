@@ -120,11 +120,12 @@ public class BlockLayoutOptimizationTest {
     @Test
     void spareFragmentsAreBounded() {
         LayoutBox box = new LayoutBox(new HtmlElement("div"), defaultStyle());
+        int total = LayoutBox.SPARE_FRAGMENT_LIMIT + 100;
         box.startFragmentPass();
-        for (int i = 0; i < 100; i++) box.addFragment(i, 0, 1, 1, "t", 1, 0, null, true, true);
+        for (int i = 0; i < total; i++) box.addFragment(i, 0, 1, 1, "t", 1, 0, null, true, true);
         box.finishFragmentPass();
         LayoutBox.resetPlacements(box, -1);
-        assertTrue(box.spareFragmentCount() <= 16);
+        assertEquals(LayoutBox.SPARE_FRAGMENT_LIMIT, box.spareFragmentCount());
     }
 
     @Test

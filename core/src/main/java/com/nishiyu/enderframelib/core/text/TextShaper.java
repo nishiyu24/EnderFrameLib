@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.text.model.*;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -179,15 +180,259 @@ public final class TextShaper {
      */
     public static List<ShapedLine> shape(String text, FontFace face, TextStyle style, float availableWidth) {
         if (text == null || face == null) return shapeUncached(text, face, style, availableWidth);
-        // 同じ文字列・書体・スタイル・幅の整形は結果も同じ（書体の面は同一性で見分ける。登録が変われば別のインスタンスになる）。
-        // 再レイアウトは変わらない文字も測り直すことが多いので、整形のやり直しを避ける
-        // 照会は、スレッドごとの 1 個の鍵を書き換えて使う（呼び出しごとに鍵を作らない）。入れるときだけ複製する
-        ShapeKey probe = SHAPE_PROBE.get().set(text, face, style, availableWidth);
-        List<ShapedLine> hit = SHAPED.get(probe);
-        if (hit != null) return hit;
-        List<ShapedLine> lines = List.copyOf(shapeUncached(text, face, style, availableWidth));
-        SHAPED.put(new ShapeKey(text, face, style, availableWidth), lines);
-        return lines;
+        return shapeInterval(text, face, style, availableWidth).lines();
+    }
+
+    /**
+     * 幅区間情報ごと整形結果を返す（{@link com.nishiyu.enderframelib.core.layout.LayoutBox} の 2 枠メモ用）。
+     */
+    public static ShapedInterval shapeInterval(String text, FontFace face, TextStyle style, float availableWidth) {
+        int hash = shapeKeyHash(text, face, style);
+        ShapedHolder holder = lookupShapedHolder(text, face, style, hash);
+        if (holder != null) {
+            ShapedInterval hit = holder.matchInterval(availableWidth);
+            if (hit != null) return hit;
+        }
+        ShapedInterval built = buildShapedInterval(text, face, style, availableWidth);
+        if (holder == null) {
+            holder = new ShapedHolder(built);
+            ShapeKey key = new ShapeKey(text, face, style, hash);
+            SHAPED.put(key, holder);
+            putShapeL1(key, holder);
+        } else {
+            holder.add(built);
+        }
+        return built;
+    }
+
+    private static final int L1_BUCKETS = 1 << 12; // 4096 buckets * 2 ways = 8192 slots
+    private static final int L1_BUCKET_MASK = L1_BUCKETS - 1;
+
+    private record ShapeL1Slot(ShapeKey key, ShapedHolder value) {}
+    private static final ShapeL1Slot[] SHAPE_L1 = new ShapeL1Slot[L1_BUCKETS * 2];
+
+    private static int shapeKeyHash(String text, FontFace face, TextStyle style) {
+        return 31 * (31 * text.hashCode() + System.identityHashCode(face)) + style.hashCode();
+    }
+
+    private static ShapedHolder lookupShapedHolder(String text, FontFace face, TextStyle style, int hash) {
+        int base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
+        ShapeL1Slot s0 = SHAPE_L1[base];
+        if (s0 != null && s0.key.matches(text, face, style, hash)) return s0.value;
+        ShapeL1Slot s1 = SHAPE_L1[base + 1];
+        if (s1 != null && s1.key.matches(text, face, style, hash)) return s1.value;
+        ShapedHolder hit = SHAPED.get(SHAPE_PROBE.get().set(text, face, style, hash));
+        if (hit != null) {
+            putShapeL1(new ShapeKey(text, face, style, hash), hit);
+        }
+        return hit;
+    }
+
+    private static void putShapeL1(ShapeKey key, ShapedHolder value) {
+        int base = ((key.hash ^ (key.hash >>> 16)) & L1_BUCKET_MASK) << 1;
+        ShapeL1Slot s0 = SHAPE_L1[base];
+        ShapeL1Slot entry = new ShapeL1Slot(key, value);
+        if (s0 == null || s0.key.matches(key.text, key.face, key.style, key.hash)) {
+            SHAPE_L1[base] = entry;
+        } else {
+            SHAPE_L1[base + 1] = s0;
+            SHAPE_L1[base] = entry;
+        }
+    }
+
+    /** 段落の折り返し（幅区間キャッシュ済み）結果。{@link com.nishiyu.enderframelib.core.layout.BlockLayoutEngine} が使う。 */
+    public record WrappedParagraph(
+            ParagraphSegments prepared,
+            int nonEmpty,
+            int lineCount,
+            int[] intData,
+            float[] floatData,
+            float finalLineX,
+            float finalTrailingSpace,
+            float maxAcceptedSum,
+            float minRejectedSum
+    ) {
+        public boolean matches(float availableWidth) {
+            return maxAcceptedSum <= availableWidth + WRAP_TOLERANCE
+                    && minRejectedSum > availableWidth + WRAP_TOLERANCE;
+        }
+
+        public int segIndex(int k) {
+            return intData[k];
+        }
+
+        public int lineStart(int lineIdx) {
+            return intData[nonEmpty + lineIdx];
+        }
+
+        public float itemX(int k) {
+            return floatData[k << 1];
+        }
+
+        public float advance(int k) {
+            return floatData[(k << 1) + 1];
+        }
+
+        public float lineUsed(int lineIdx) {
+            return floatData[(nonEmpty << 1) + lineIdx];
+        }
+    }
+
+    private static final class WrappedHolder {
+        private static final int MAX_ENTRIES = 4;
+        volatile WrappedParagraph primary;
+        private WrappedParagraph[] entries;
+
+        WrappedHolder(WrappedParagraph first) {
+            this.primary = first;
+            this.entries = new WrappedParagraph[]{first};
+        }
+
+        WrappedParagraph match(float width) {
+            WrappedParagraph p = primary;
+            if (p != null && p.matches(width)) return p;
+            WrappedParagraph[] arr = entries;
+            for (int i = 0; i < arr.length; i++) {
+                WrappedParagraph e = arr[i];
+                if (e != p && e.matches(width)) {
+                    primary = e;
+                    return e;
+                }
+            }
+            return null;
+        }
+
+        synchronized void add(WrappedParagraph entry) {
+            WrappedParagraph[] old = entries;
+            int keep = Math.min(old.length, MAX_ENTRIES - 1);
+            WrappedParagraph[] next = new WrappedParagraph[keep + 1];
+            next[0] = entry;
+            System.arraycopy(old, 0, next, 1, keep);
+            entries = next;
+            primary = entry;
+        }
+    }
+
+    private record WrapL1Slot(SegKey key, WrappedHolder value) {}
+    private static final WrapL1Slot[] WRAP_L1 = new WrapL1Slot[L1_BUCKETS * 2];
+    private static final Generational<SegKey, WrappedHolder> WRAPPED = new Generational<>();
+
+    /**
+     * 幅 {@code availableWidth}（{@code > 0}）での段落折り返し結果と幅区間をキャッシュして返す。
+     */
+    public static WrappedParagraph wrapParagraph(String paragraph, FontFace face, FontStyle font,
+                                                 WordBreak wordBreak, float availableWidth) {
+        int hash = segKeyHash(paragraph, face, font, wordBreak);
+        WrappedHolder holder = lookupWrappedHolder(paragraph, face, font, wordBreak, hash);
+        if (holder != null) {
+            WrappedParagraph hit = holder.match(availableWidth);
+            if (hit != null) return hit;
+        }
+        ParagraphSegments prepared = segmented(paragraph, face, font, wordBreak);
+        WrappedParagraph built = buildWrappedParagraph(prepared, face, font, availableWidth);
+        if (holder == null) {
+            holder = new WrappedHolder(built);
+            SegKey key = new SegKey(paragraph, face, font, wordBreak, hash);
+            WRAPPED.put(key, holder);
+            putWrapL1(key, holder);
+        } else {
+            holder.add(built);
+        }
+        return built;
+    }
+
+    private static WrappedHolder lookupWrappedHolder(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak, int hash) {
+        int base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
+        WrapL1Slot s0 = WRAP_L1[base];
+        if (s0 != null && s0.key.matches(paragraph, face, font, wordBreak, hash)) return s0.value;
+        WrapL1Slot s1 = WRAP_L1[base + 1];
+        if (s1 != null && s1.key.matches(paragraph, face, font, wordBreak, hash)) return s1.value;
+        WrappedHolder hit = WRAPPED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak, hash));
+        if (hit != null) {
+            putWrapL1(new SegKey(paragraph, face, font, wordBreak, hash), hit);
+        }
+        return hit;
+    }
+
+    private static void putWrapL1(SegKey key, WrappedHolder value) {
+        int base = ((key.hash ^ (key.hash >>> 16)) & L1_BUCKET_MASK) << 1;
+        WrapL1Slot s0 = WRAP_L1[base];
+        WrapL1Slot entry = new WrapL1Slot(key, value);
+        if (s0 == null || s0.key.matches(key.paragraph, key.face, key.font, key.wordBreak, key.hash)) {
+            WRAP_L1[base] = entry;
+        } else {
+            WRAP_L1[base + 1] = s0;
+            WRAP_L1[base] = entry;
+        }
+    }
+
+    private static WrappedParagraph buildWrappedParagraph(ParagraphSegments prepared, FontFace face, FontStyle font,
+                                                          float availableWidth) {
+        String[] segments = prepared.segs();
+        int rawCount = segments.length;
+        int nonEmpty = 0;
+        for (int s = 0; s < rawCount; s++) {
+            if (!segments[s].isEmpty()) nonEmpty++;
+        }
+        int[] intScratch = new int[nonEmpty + nonEmpty + 2];
+        int startsOff = nonEmpty;
+        float[] floatScratch = new float[nonEmpty * 2 + Math.max(1, nonEmpty)];
+        int usedOff = nonEmpty * 2;
+
+        int lineCount = 0;
+        intScratch[startsOff] = 0;
+        float lineX = 0;
+        float trailingSpace = 0;
+        String previousOnLine = null;
+        float kerned = 0;
+        boolean hasItem = false;
+        float maxAccepted = Float.NEGATIVE_INFINITY;
+        float minRejected = Float.POSITIVE_INFINITY;
+        int idx = 0;
+
+        for (int s = 0; s < rawCount; s++) {
+            String segment = segments[s];
+            if (segment.isEmpty()) continue;
+            float advance = prepared.fullW(s);
+            float trimmedW = prepared.strippedTrailingW(s);
+            float join = previousOnLine == null ? 0
+                    : s > 0 && previousOnLine == segments[s - 1] ? prepared.joinW(s)
+                    : kerningBetween(face, font, previousOnLine, segment);
+            if (!segment.isBlank()) {
+                float cand = lineX + kerned + join + trimmedW;
+                if (hasItem && cand > availableWidth + WRAP_TOLERANCE) {
+                    minRejected = Math.min(minRejected, cand);
+                    floatScratch[usedOff + lineCount] = lineX - trailingSpace;
+                    lineCount++;
+                    intScratch[startsOff + lineCount] = idx;
+                    lineX = 0;
+                    trailingSpace = 0;
+                    hasItem = false;
+                    kerned = 0;
+                    join = 0;
+                } else if (hasItem) {
+                    maxAccepted = Math.max(maxAccepted, cand);
+                }
+            }
+            kerned += join;
+            previousOnLine = segment;
+            intScratch[idx] = s;
+            int fBase = idx << 1;
+            floatScratch[fBase] = lineX;
+            floatScratch[fBase + 1] = advance;
+            idx++;
+            lineX += advance;
+            trailingSpace = advance - trimmedW;
+            hasItem = true;
+        }
+        floatScratch[usedOff + lineCount] = lineX - trailingSpace;
+        lineCount++;
+        intScratch[startsOff + lineCount] = nonEmpty;
+
+        int[] finalIntData = Arrays.copyOf(intScratch, nonEmpty + lineCount + 1);
+        float[] finalFloatData = Arrays.copyOf(floatScratch, usedOff + lineCount);
+        return new WrappedParagraph(prepared, nonEmpty, lineCount, finalIntData, finalFloatData,
+                lineX, trailingSpace, maxAccepted, minRejected);
     }
 
     /**
@@ -196,38 +441,103 @@ public final class TextShaper {
      * 行の分割はこの数値だけで行う。
      */
 
-    private static final class SegKey {
+    private record BaseKey(String paragraph, WordBreak wordBreak) {}
+    private record SegmentBase(String[] segs, int[] offsets) {}
+    private static final Generational<BaseKey, SegmentBase> BASE_SEGMENTS =
+            new Generational<>(Math.min(512, Integer.getInteger("enderframe.text.cache", 4096)));
+
+    private static final class NatKey {
         private String paragraph;
         private FontFace face;
-        private FontStyle font;
+        private boolean bold;
+        private boolean kerning;
         private WordBreak wordBreak;
+        private int hash;
 
-        SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
-            set(paragraph, face, font, wordBreak);
+        NatKey(String paragraph, FontFace face, boolean bold, boolean kerning, WordBreak wordBreak, int hash) {
+            set(paragraph, face, bold, kerning, wordBreak, hash);
         }
 
-        SegKey set(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        NatKey set(String paragraph, FontFace face, boolean bold, boolean kerning, WordBreak wordBreak, int hash) {
             this.paragraph = paragraph;
             this.face = face;
-            this.font = font;
+            this.bold = bold;
+            this.kerning = kerning;
             this.wordBreak = wordBreak;
+            this.hash = hash;
             return this;
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof SegKey k && k.face == face && k.wordBreak == wordBreak
-                    && k.font.equals(font) && k.paragraph.equals(paragraph);
+            return o instanceof NatKey k && k.hash == hash && k.face == face && k.bold == bold
+                    && k.kerning == kerning && k.wordBreak == wordBreak && k.paragraph.equals(paragraph);
         }
 
         @Override
         public int hashCode() {
-            return 31 * (31 * (31 * paragraph.hashCode() + System.identityHashCode(face)) + font.hashCode()) + wordBreak.ordinal();
+            return hash;
         }
     }
 
-    private static final ThreadLocal<ShapeKey> SHAPE_PROBE = ThreadLocal.withInitial(() -> new ShapeKey(null, null, null, 0f));
-    private static final ThreadLocal<SegKey> SEG_PROBE = ThreadLocal.withInitial(() -> new SegKey(null, null, null, null));
+    private static final int NAT_STRIDE = 7;
+    private static final int NAT_FULL = 0, NAT_TRIMMED = 1, NAT_STRIPPED_TRAILING = 2, NAT_STRIPPED = 3,
+            NAT_JOIN_PAIR = 4, NAT_JOIN_PREV = 5, NAT_JOIN_CURR = 6;
+
+    /** {@code data} に 7 種（full, trimmed, strippedTrailing, stripped, joinPair, joinPrev, joinCurr）を stride 7 で並べる。 */
+    private record NaturalSegments(SegmentBase base, float[] data) {}
+
+    private static final ThreadLocal<NatKey> NAT_PROBE = ThreadLocal.withInitial(() -> new NatKey(null, null, false, false, null, 0));
+    private static final Generational<NatKey, NaturalSegments> BITMAP_NATURAL = new Generational<>();
+
+    private static final class SegKey {
+        private String paragraph;
+        private FontFace face;
+        private FontStyle font;
+        private WordBreak wordBreak;
+        private int hash;
+
+        SegKey(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak, int hash) {
+            set(paragraph, face, font, wordBreak, hash);
+        }
+
+        SegKey set(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak, int hash) {
+            this.paragraph = paragraph;
+            this.face = face;
+            this.font = font;
+            this.wordBreak = wordBreak;
+            this.hash = hash;
+            return this;
+        }
+
+        boolean matches(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak, int hash) {
+            return this.hash == hash && this.face == face && this.wordBreak == wordBreak
+                    && (this.paragraph == paragraph || this.paragraph.equals(paragraph))
+                    && (this.font == font || this.font.equals(font));
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof SegKey k && k.hash == hash && k.face == face && k.wordBreak == wordBreak
+                    && (k.font == font || k.font.equals(font))
+                    && (k.paragraph == paragraph || k.paragraph.equals(paragraph));
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+    }
+
+    private record SegL1Slot(SegKey key, ParagraphSegments value) {}
+    private static final SegL1Slot[] SEG_L1 = new SegL1Slot[L1_BUCKETS * 2];
+
+    private static int segKeyHash(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        return 31 * (31 * (31 * paragraph.hashCode() + System.identityHashCode(face)) + font.hashCode()) + wordBreak.ordinal();
+    }
+
+    private static final ThreadLocal<ShapeKey> SHAPE_PROBE = ThreadLocal.withInitial(() -> new ShapeKey(null, null, null, 0));
+    private static final ThreadLocal<SegKey> SEG_PROBE = ThreadLocal.withInitial(() -> new SegKey(null, null, null, null, 0));
 
     private static final Generational<SegKey, ParagraphSegments> SEGMENTED = new Generational<>();
     private static final AtomicInteger SEGMENTED_BUILDS = new AtomicInteger();
@@ -235,73 +545,243 @@ public final class TextShaper {
     /** 段落の下ごしらえの作成回数（テスト用）。 */
     static int segmentedBuilds() { return SEGMENTED_BUILDS.get(); }
 
-    public static ParagraphSegments segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
-        ParagraphSegments hit = SEGMENTED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak));
+    private static SegmentBase segmentBase(String paragraph, WordBreak wordBreak) {
+        BaseKey bk = new BaseKey(paragraph, wordBreak);
+        SegmentBase hit = BASE_SEGMENTS.get(bk);
         if (hit != null) return hit;
-        SegKey key = new SegKey(paragraph, face, font, wordBreak);
         List<String> list = segments(paragraph, wordBreak);
         int n = list.size();
         String[] segs = list.toArray(new String[0]);
         int[] offsets = new int[n];
-        float[] full = new float[n];
-        float[] trimmed = new float[n];
-        float[] joins = new float[n];
-        float[] strippedTrailing = new float[n];
-        float[] stripped = new float[n];
         int offset = 0;
         for (int i = 0; i < n; i++) {
             offsets[i] = offset;
-            // 行は断片を続けて足すので、行の末尾の文字は直前の断片の末尾と同じ。境目の詰めも幅に依存しない
-            joins[i] = i == 0 ? 0 : kerningBetween(face, font, segs[i - 1], segs[i]);
             offset += segs[i].length();
-            full[i] = segs[i].isEmpty() ? 0 : face.advance(segs[i], font);
-            String t = stripTrailingBlanks(segs[i]);
-            trimmed[i] = t.isEmpty() ? 0 : (t.length() == segs[i].length() ? full[i] : face.advance(t, font));
-            String st = segs[i].stripTrailing();
-            strippedTrailing[i] = st.isEmpty() ? 0 : (st.length() == segs[i].length() ? full[i] : face.advance(st, font));
-            String sp = segs[i].strip();
-            stripped[i] = sp.isEmpty() ? 0 : (sp.length() == segs[i].length() ? full[i] : face.advance(sp, font));
         }
-        ParagraphSegments made = new ParagraphSegments(segs, offsets, full, trimmed, joins, strippedTrailing, stripped);
+        SegmentBase built = new SegmentBase(segs, offsets);
+        BASE_SEGMENTS.put(bk, built);
+        return built;
+    }
+
+    private static float measureSub(String seg, int start, int end, float fullW, BitmapFontFace bf, boolean bold,
+                                    FontFace face, FontStyle font) {
+        if (start >= end) return 0f;
+        if (start == 0 && end == seg.length()) return fullW;
+        String sub = sharedSegment(seg, start, end);
+        return bf != null ? bf.cachedNaturalAdvance(sub, bold) : face.advance(sub, font);
+    }
+
+    private static NaturalSegments bitmapNaturalSegments(String paragraph, BitmapFontFace bf, boolean bold,
+                                                           boolean kerning, WordBreak wordBreak) {
+        int hash = 31 * (31 * (31 * (31 * paragraph.hashCode() + System.identityHashCode(bf)) + (bold ? 1 : 0))
+                + (kerning ? 1 : 0)) + wordBreak.ordinal();
+        NaturalSegments hit = BITMAP_NATURAL.get(NAT_PROBE.get().set(paragraph, bf, bold, kerning, wordBreak, hash));
+        if (hit != null) return hit;
+
+        SegmentBase base = segmentBase(paragraph, wordBreak);
+        String[] segs = base.segs;
+        int n = segs.length;
+        float[] data = new float[n * NAT_STRIDE];
+
+        for (int i = 0; i < n; i++) {
+            int p = i * NAT_STRIDE;
+            String seg = segs[i];
+            if (i > 0 && !segs[i - 1].isEmpty() && !seg.isEmpty()) {
+                String before = segs[i - 1];
+                int cpPrev = Character.codePointBefore(before, before.length());
+                int cpCurr = Character.codePointAt(seg, 0);
+                String last = Character.toString(cpPrev);
+                String first = Character.toString(cpCurr);
+                data[p + NAT_JOIN_PAIR] = bf.cachedNaturalAdvance(last + first, bold);
+                data[p + NAT_JOIN_PREV] = bf.cachedNaturalAdvance(last, bold);
+                data[p + NAT_JOIN_CURR] = bf.cachedNaturalAdvance(first, bold);
+            }
+            if (seg.isEmpty()) continue;
+            float f = bf.cachedNaturalAdvance(seg, bold);
+            data[p + NAT_FULL] = f;
+            int tbEnd = trimTrailingBlanksEnd(seg);
+            float tW = measureSub(seg, 0, tbEnd, f, bf, bold, null, null);
+            data[p + NAT_TRIMMED] = tW;
+            int stEnd = stripTrailingEnd(seg);
+            float stW = stEnd == tbEnd ? tW : measureSub(seg, 0, stEnd, f, bf, bold, null, null);
+            data[p + NAT_STRIPPED_TRAILING] = stW;
+            int spStart = stripLeadingStart(seg, stEnd);
+            data[p + NAT_STRIPPED] = spStart == 0 ? stW : measureSub(seg, spStart, stEnd, f, bf, bold, null, null);
+        }
+
+        NaturalSegments built = new NaturalSegments(base, data);
+        BITMAP_NATURAL.put(new NatKey(paragraph, bf, bold, kerning, wordBreak, hash), built);
+        return built;
+    }
+
+    public static ParagraphSegments segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        int hash = segKeyHash(paragraph, face, font, wordBreak);
+        int l1Base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
+        SegL1Slot s0 = SEG_L1[l1Base];
+        if (s0 != null && s0.key.matches(paragraph, face, font, wordBreak, hash)) return s0.value;
+        SegL1Slot s1 = SEG_L1[l1Base + 1];
+        if (s1 != null && s1.key.matches(paragraph, face, font, wordBreak, hash)) return s1.value;
+
+        ParagraphSegments hit = SEGMENTED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak, hash));
+        if (hit != null) {
+            putSegL1(new SegKey(paragraph, face, font, wordBreak, hash), hit, l1Base);
+            return hit;
+        }
+
+        SegKey key = new SegKey(paragraph, face, font, wordBreak, hash);
+        ParagraphSegments made;
+        if (face instanceof BitmapFontFace bf && font.letterSpacingPx() == 0f) {
+            NaturalSegments nat = bitmapNaturalSegments(paragraph, bf, font.bold(), font.kerning(), wordBreak);
+            SegmentBase base = nat.base;
+            int n = base.segs.length;
+            float[] data = nat.data;
+            float scale = bf.scaleFor(font);
+            float[] widths = new float[n * ParagraphSegments.STRIDE];
+            for (int i = 0, p = 0, w = 0; i < n; i++, p += NAT_STRIDE, w += ParagraphSegments.STRIDE) {
+                widths[w + ParagraphSegments.OFF_FULL] = data[p + NAT_FULL] * scale;
+                widths[w + ParagraphSegments.OFF_TRIMMED] = data[p + NAT_TRIMMED] * scale;
+                widths[w + ParagraphSegments.OFF_STRIPPED_TRAILING] = data[p + NAT_STRIPPED_TRAILING] * scale;
+                widths[w + ParagraphSegments.OFF_STRIPPED] = data[p + NAT_STRIPPED] * scale;
+                if (i > 0 && data[p + NAT_JOIN_PAIR] != 0f) {
+                    widths[w + ParagraphSegments.OFF_JOIN] =
+                            data[p + NAT_JOIN_PAIR] * scale - data[p + NAT_JOIN_PREV] * scale - data[p + NAT_JOIN_CURR] * scale;
+                }
+            }
+            made = new ParagraphSegments(base.segs, base.offsets, widths);
+        } else {
+            SegmentBase base = segmentBase(paragraph, wordBreak);
+            String[] segs = base.segs;
+            int n = segs.length;
+            float[] widths = new float[n * ParagraphSegments.STRIDE];
+            for (int i = 0, w = 0; i < n; i++, w += ParagraphSegments.STRIDE) {
+                widths[w + ParagraphSegments.OFF_JOIN] = i == 0 ? 0 : kerningBetween(face, font, segs[i - 1], segs[i]);
+                String seg = segs[i];
+                if (seg.isEmpty()) continue;
+                float f = face.advance(seg, font);
+                widths[w + ParagraphSegments.OFF_FULL] = f;
+                int tbEnd = trimTrailingBlanksEnd(seg);
+                float tW = measureSub(seg, 0, tbEnd, f, null, false, face, font);
+                widths[w + ParagraphSegments.OFF_TRIMMED] = tW;
+                int stEnd = stripTrailingEnd(seg);
+                float stW = stEnd == tbEnd ? tW : measureSub(seg, 0, stEnd, f, null, false, face, font);
+                widths[w + ParagraphSegments.OFF_STRIPPED_TRAILING] = stW;
+                int spStart = stripLeadingStart(seg, stEnd);
+                widths[w + ParagraphSegments.OFF_STRIPPED] =
+                        spStart == 0 ? stW : measureSub(seg, spStart, stEnd, f, null, false, face, font);
+            }
+            made = new ParagraphSegments(base.segs, base.offsets, widths);
+        }
         SEGMENTED_BUILDS.incrementAndGet();
         SEGMENTED.put(key, made);
+        putSegL1(key, made, l1Base);
         return made;
     }
 
-    /** 整形結果の記憶の鍵。{@code face} は同一性で比べる。 */
+    private static void putSegL1(SegKey key, ParagraphSegments value, int base) {
+        SegL1Slot s0 = SEG_L1[base];
+        SegL1Slot entry = new SegL1Slot(key, value);
+        if (s0 == null || s0.key.matches(key.paragraph, key.face, key.font, key.wordBreak, key.hash)) {
+            SEG_L1[base] = entry;
+        } else {
+            SEG_L1[base + 1] = s0;
+            SEG_L1[base] = entry;
+        }
+    }
+
+    /** 整形結果の記憶の鍵。{@code face} は同一性で比べ、幅は {@link ShapedHolder} 側で区間照合する。 */
     private static final class ShapeKey {
         private String text;
         private FontFace face;
         private TextStyle style;
-        private float width;
+        private int hash;
 
-        ShapeKey(String text, FontFace face, TextStyle style, float width) {
-            set(text, face, style, width);
+        ShapeKey(String text, FontFace face, TextStyle style, int hash) {
+            set(text, face, style, hash);
         }
 
-        ShapeKey set(String text, FontFace face, TextStyle style, float width) {
+        ShapeKey set(String text, FontFace face, TextStyle style, int hash) {
             this.text = text;
             this.face = face;
             this.style = style;
-            this.width = width;
+            this.hash = hash;
             return this;
+        }
+
+        boolean matches(String text, FontFace face, TextStyle style, int hash) {
+            return this.hash == hash && this.face == face
+                    && (this.text == text || this.text.equals(text))
+                    && (this.style == style || this.style.equals(style));
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof ShapeKey k && k.face == face && Float.compare(k.width, width) == 0
-                    && k.text.equals(text) && k.style.equals(style);
+            return o instanceof ShapeKey k && k.hash == hash && k.face == face
+                    && (k.text == text || k.text.equals(text))
+                    && (k.style == style || k.style.equals(style));
         }
 
         @Override
         public int hashCode() {
-            return 31 * (31 * (31 * text.hashCode() + System.identityHashCode(face)) + style.hashCode()) + Float.hashCode(width);
+            return hash;
         }
     }
 
-    private static final Generational<ShapeKey, List<ShapedLine>> SHAPED = new Generational<>();
+    public record ShapedInterval(
+            List<ShapedLine> lines,
+            float maxAcceptedSum,
+            float minRejectedSum,
+            boolean exactOnly,
+            float exactWidth,
+            boolean wrapped,
+            boolean noWrapEllipsisCheck,
+            float maxLineWidth
+    ) {
+        public boolean matches(float w) {
+            if (exactOnly) return Float.compare(exactWidth, w) == 0;
+            if (noWrapEllipsisCheck) return w <= 0 || maxLineWidth <= w;
+            if (w <= 0) return !wrapped;
+            return maxAcceptedSum <= w + WRAP_TOLERANCE && minRejectedSum > w + WRAP_TOLERANCE;
+        }
+    }
+
+    private static final class ShapedHolder {
+        private static final int MAX_ENTRIES = 4;
+        volatile ShapedInterval primary;
+        private ShapedInterval[] entries;
+
+        ShapedHolder(ShapedInterval first) {
+            this.primary = first;
+            this.entries = new ShapedInterval[]{first};
+        }
+
+        ShapedInterval matchInterval(float w) {
+            ShapedInterval p = primary;
+            if (p != null && p.matches(w)) return p;
+            ShapedInterval[] arr = entries;
+            for (int i = 0; i < arr.length; i++) {
+                ShapedInterval e = arr[i];
+                if (e != p && e.matches(w)) {
+                    primary = e;
+                    return e;
+                }
+            }
+            return null;
+        }
+
+        synchronized void add(ShapedInterval entry) {
+            ShapedInterval[] old = entries;
+            int keep = Math.min(old.length, MAX_ENTRIES - 1);
+            ShapedInterval[] next = new ShapedInterval[keep + 1];
+            next[0] = entry;
+            System.arraycopy(old, 0, next, 1, keep);
+            entries = next;
+            primary = entry;
+        }
+    }
+
+    private static final Generational<ShapeKey, ShapedHolder> SHAPED = new Generational<>();
     /** 1 世代の上限（件数）。2 世代で最大 2 倍まで持つ。段落 × 書体の組が上限を超えると、全消去ではなく古い世代だけが落ちる。 */
-    private static final int SHAPED_LIMIT = Integer.getInteger("enderframe.text.cache", 8192);
+    private static final int SHAPED_LIMIT = Integer.getInteger("enderframe.text.cache", 4096);
 
     /**
      * 2 世代の整形結果の記憶。新しい世代が上限に達したら、それを古い世代にして新しい世代を空にする（古い世代は捨てる）。
@@ -309,8 +789,12 @@ public final class TextShaper {
      * 往復のたびに全てを組み直していた。古い世代の命中はそのまま返す（昇格しない: 鍵を作り直さずに済ませる）。
      */
     private static final class Generational<K, V> {
+        private final int limit;
         private volatile java.util.concurrent.ConcurrentHashMap<K, V> young = new java.util.concurrent.ConcurrentHashMap<>();
         private volatile java.util.concurrent.ConcurrentHashMap<K, V> old = new java.util.concurrent.ConcurrentHashMap<>();
+
+        Generational() { this(SHAPED_LIMIT); }
+        Generational(int limit) { this.limit = limit; }
 
         V get(K probe) {
             V v = young.get(probe);
@@ -319,9 +803,9 @@ public final class TextShaper {
 
         void put(K key, V value) {
             java.util.concurrent.ConcurrentHashMap<K, V> y = young;
-            if (y.size() >= SHAPED_LIMIT) {
+            if (y.size() >= limit) {
                 synchronized (this) {
-                    if (young.size() >= SHAPED_LIMIT) {
+                    if (young.size() >= limit) {
                         old = young;
                         young = new java.util.concurrent.ConcurrentHashMap<>();
                     }
@@ -332,7 +816,26 @@ public final class TextShaper {
         }
     }
 
-    private static List<ShapedLine> shapeUncached(String text, FontFace face, TextStyle style, float availableWidth) {
+    private static ShapedInterval buildShapedInterval(String text, FontFace face, TextStyle style, float availableWidth) {
+        Shaping shaping = new Shaping(face, style, availableWidth);
+        String normalized = normalize(text, style.whiteSpace());
+        if (!normalized.isEmpty()) {
+            int paragraphStart = 0;
+            while (true) {
+                int newline = normalized.indexOf('\n', paragraphStart);
+                int paragraphEnd = newline < 0 ? normalized.length() : newline;
+                shaping.shapeParagraph(normalized, paragraphStart, paragraphEnd);
+                if (newline < 0) break;
+                paragraphStart = newline + 1;
+            }
+        }
+        List<ShapedLine> lines = List.copyOf(shaping.lines);
+        boolean noWrapEllipsis = !style.whiteSpace().wraps() && style.ellipsis() && !shaping.exactOnly;
+        return new ShapedInterval(lines, shaping.maxAcceptedSum, shaping.minRejectedSum, shaping.exactOnly,
+                availableWidth, shaping.wrapped, noWrapEllipsis, shaping.maxLineWidth);
+    }
+
+    static List<ShapedLine> shapeUncached(String text, FontFace face, TextStyle style, float availableWidth) {
         Shaping shaping = new Shaping(face, style, availableWidth);
         String normalized = normalize(text, style.whiteSpace());
         if (normalized.isEmpty()) return shaping.lines;
@@ -377,16 +880,23 @@ public final class TextShaper {
         final TextStyle style;
         final float available;
         final boolean bounded;
+        final boolean canSplit;
 
         final StringBuilder line = new StringBuilder();
         float lineWidth = 0;
         int lineStart = 0;
+        float maxAcceptedSum = Float.NEGATIVE_INFINITY;
+        float minRejectedSum = Float.POSITIVE_INFINITY;
+        boolean exactOnly = false;
+        boolean wrapped = false;
+        float maxLineWidth = 0;
 
         Shaping(FontFace face, TextStyle style, float availableWidth) {
             this.face = face;
             this.style = style;
             this.available = availableWidth;
             this.bounded = availableWidth > 0 && style.whiteSpace().wraps();
+            this.canSplit = style.wordBreak() == WordBreak.BREAK_ALL || style.breakLongWords();
         }
 
         void shapeParagraph(String source, int from, int to) {
@@ -397,13 +907,15 @@ public final class TextShaper {
                 String visible = style.ellipsis() && available > 0
                         ? ellipsize(paragraph, face, style.font(), available)
                         : paragraph;
-                emit(visible, from, to, !visible.equals(paragraph));
+                boolean ellipsized = !visible.equals(paragraph);
+                if (ellipsized) exactOnly = true;
+                emit(visible, from, to, ellipsized);
                 return;
             }
 
             ParagraphSegments seg = segmented(paragraph, face, style.font(), style.wordBreak());
             for (int i = 0; i < seg.segs().length; i++) {
-                append(seg.segs()[i], from + seg.offsets()[i], seg.trimmedW()[i], seg.fullW()[i], seg.joinW()[i]);
+                append(seg.segs()[i], from + seg.offsets()[i], seg.trimmedW(i), seg.fullW(i), seg.joinW(i));
             }
             flush(to, true);
         }
@@ -419,20 +931,26 @@ public final class TextShaper {
          */
         void append(String segment, int offset, float trimmedWidth, float fullWidth, float segJoin) {
             float join = line.isEmpty() ? 0 : segJoin;
-            if (bounded && lineWidth + join + trimmedWidth > available + WRAP_TOLERANCE) {
+            float cand = lineWidth + join + trimmedWidth;
+            if (bounded && cand > available + WRAP_TOLERANCE) {
                 boolean breakAll = style.wordBreak() == WordBreak.BREAK_ALL;
                 boolean tooLongAlone = trimmedWidth > available + WRAP_TOLERANCE;
-                boolean canSplit = breakAll || style.breakLongWords();
 
                 if (canSplit && (breakAll || tooLongAlone)) {
+                    exactOnly = true;
                     if (!breakAll && lineWidth > 0) flush(offset, false);
                     splitInside(segment, offset);
                     return;
                 }
                 if (lineWidth > 0) {
+                    wrapped = true;
+                    minRejectedSum = Math.min(minRejectedSum, cand);
                     flush(offset, false);
                     join = 0;
+                    if (canSplit) maxAcceptedSum = Math.max(maxAcceptedSum, trimmedWidth);
                 }
+            } else if (lineWidth > 0 || canSplit) {
+                maxAcceptedSum = Math.max(maxAcceptedSum, cand);
             }
             line.append(segment);
             lineWidth += join + fullWidth;
@@ -440,6 +958,7 @@ public final class TextShaper {
 
         /** 1 行に収まらない語を文字単位で割る。 */
         void splitInside(String segment, int offset) {
+            exactOnly = true;
             String rest = segment;
             int cursor = offset;
             while (!rest.isEmpty()) {
@@ -475,7 +994,9 @@ public final class TextShaper {
             float ascent = face.ascent(style.font());
             float descent = face.descent(style.font());
             float height = Math.max(style.lineHeightPx(), 0);
-            lines.add(new ShapedLine(text, widthOf(text), leadingAbove(height, ascent, descent) + ascent, height, start, end, ellipsized));
+            float w = widthOf(text);
+            if (w > maxLineWidth) maxLineWidth = w;
+            lines.add(new ShapedLine(text, w, leadingAbove(height, ascent, descent) + ascent, height, start, end, ellipsized));
         }
 
         float widthOf(String text) {
@@ -496,8 +1017,33 @@ public final class TextShaper {
     }
 
     private static String stripTrailingBlanks(String text) {
+        int end = trimTrailingBlanksEnd(text);
+        return end == text.length() ? text : text.substring(0, end);
+    }
+
+    private static int trimTrailingBlanksEnd(String text) {
         int end = text.length();
         while (end > 0 && isBlank(text.charAt(end - 1))) end--;
-        return end == text.length() ? text : text.substring(0, end);
+        return end;
+    }
+
+    private static int stripTrailingEnd(String text) {
+        int end = text.length();
+        while (end > 0) {
+            int cp = Character.codePointBefore(text, end);
+            if (!Character.isWhitespace(cp)) break;
+            end -= Character.charCount(cp);
+        }
+        return end;
+    }
+
+    private static int stripLeadingStart(String text, int end) {
+        int start = 0;
+        while (start < end) {
+            int cp = Character.codePointAt(text, start);
+            if (!Character.isWhitespace(cp)) break;
+            start += Character.charCount(cp);
+        }
+        return start;
     }
 }

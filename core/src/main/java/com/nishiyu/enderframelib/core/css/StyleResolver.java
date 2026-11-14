@@ -82,6 +82,21 @@ public class StyleResolver {
                                                    StateLookup stateLookup,
                                                    ComputedStyle parentComputedStyle, Map<String, String> env,
                                                    float rootFontSize, float rootLineHeight, int viewportW, int viewportH) {
+        StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
+        ContainerBox container = node != null && type != null && sheet != null && parentComputedStyle != null
+                && node.nodeType == NodeType.ELEMENT && !node.isPseudoNode && sheet.index().hasPseudoRules(type)
+                ? lookup.nearestSizeContainer(node)
+                : ContainerBox.NONE_SIZE;
+        return resolvePseudoStyle(node, type, sheet, stateLookup, parentComputedStyle, env,
+                rootFontSize, rootLineHeight, viewportW, viewportH, container);
+    }
+
+    /** 祖先から引き継いだ最寄りのサイズコンテナを受け取って疑似要素の算出スタイルを解決する。 */
+    public static ComputedStyle resolvePseudoStyle(HtmlNode node, PseudoType type, StyleSheet sheet,
+                                                   StateLookup stateLookup,
+                                                   ComputedStyle parentComputedStyle, Map<String, String> env,
+                                                   float rootFontSize, float rootLineHeight, int viewportW, int viewportH,
+                                                   ContainerBox container) {
         if (node == null || type == null || sheet == null || parentComputedStyle == null) return null;
         if (node.nodeType != NodeType.ELEMENT || node.isPseudoNode) return null;
         // その疑似要素に掛かる規則が 1 つも無ければ、結果は無い（::before / ::after は生成されない。::marker / ::placeholder は
@@ -90,18 +105,20 @@ public class StyleResolver {
         if (!sheet.index().hasPseudoRules(type)) return null;
         Map<String, String> parent = parentComputedStyle.asMap();
         Map<String, String> raw = resolveDeclarations(node, type, parent, sheet, stateLookup);
-        StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
-        // 疑似要素にとっては、持ち主の要素もコンテナになり得る（cqw などの基準）
-        ContainerBox container = lookup.nearestSizeContainer(node);
+        if (container == null) {
+            StateLookup lookup = stateLookup != null ? stateLookup : SelectorMatcher.STATIC_ATTRIBUTES;
+            // 疑似要素にとっては、持ち主の要素もコンテナになり得る（cqw などの基準）
+            container = lookup.nearestSizeContainer(node);
+        }
 
         if (type != PseudoType.BEFORE && type != PseudoType.AFTER) {
             if (!declaresAnything(raw, parent)) return null;
-            return finalizeComputedStyle(raw, sheet, env, parent, parentComputedStyle.fontSizePx(), rootFontSize,
+            return finalizeComputedStyleOwned(raw, sheet, env, parent, parentComputedStyle.fontSizePx(), rootFontSize,
                     rootLineHeight, viewportW, viewportH, container);
         }
 
         if (!raw.containsKey(CssProperty.CONTENT)) return null; // content は継承しないので、宣言が無ければ none
-        ComputedStyle computed = finalizeComputedStyle(raw, sheet, env, parent,
+        ComputedStyle computed = finalizeComputedStyleOwned(raw, sheet, env, parent,
                 parentComputedStyle.fontSizePx(), rootFontSize, rootLineHeight, viewportW, viewportH, container);
         String content = computed.get(CssPropertyIndex.CONTENT);
         if (content == null) return null;
@@ -199,8 +216,8 @@ public class StyleResolver {
         return false;
     }
 
-    /** {@link ShareCache} に覚える 1 件: カスケードの結果（生の宣言）と、確定した算出スタイル。どちらも不変として扱う。 */
-    public record Shared(Map<String, String> raw, ComputedStyle computed) {}
+    /** {@link ShareCache} に覚える 1 件: 確定した算出スタイルとビューポート依存の有無（生の宣言は保持しない）。 */
+    public record Shared(ComputedStyle computed, boolean viewportDependent) {}
 
     /**
      * 同じ入力からは同じ結果になる「カスケード + 算出」を、兄弟・いとこで使い回すための表（Stylo の style sharing に相当）。
@@ -278,9 +295,10 @@ public class StyleResolver {
             }
             misses++;
             Map<String, String> raw = cascadeMatched(parent, sheet, key.rules, key.n);
-            ComputedStyle computed = finalizeComputedStyle(raw, sheet, env, parent, parentFontSize, rootFontSize,
+            boolean viewportDependent = rawDependsOnViewport(raw);
+            ComputedStyle computed = finalizeComputedStyleOwned(raw, sheet, env, parent, parentFontSize, rootFontSize,
                     rootLineHeight, viewportW, viewportH, container);
-            Shared shared = new Shared(raw, computed);
+            Shared shared = new Shared(computed, viewportDependent);
             map.put(key.copy(), shared);
             return shared;
         }
@@ -384,29 +402,32 @@ public class StyleResolver {
 
         List<StyleRule> candidates = sheet != null && node != null ? sheet.index().candidates(node) : List.of();
 
-        // style 属性を持つ要素は少ないので、インラインの宣言の表は属性があるときだけ作る
-        Map<String, String> inlineNormal = Map.of();
-        Map<String, String> inlineImportant = Map.of();
-        // インラインスタイルは要素自身にだけ掛かる
+        // style 属性を持つ要素は少ないので、インラインの宣言は属性があるときだけ解く（CompiledDeclarations を直接キャッシュする）
+        CompiledDeclarations inlineNormal = null;
+        CompiledDeclarations inlineImportant = null;
+        boolean trackRevert = false;
         if (pseudo == null && node != null && (node.attrs.containsKey("style") || node.inlineOverlay != null)) {
-            inlineNormal = new LinkedHashMap<>();
-            inlineImportant = new LinkedHashMap<>();
-            String styleText = node.attrs.get("style");
-            if (styleText != null) {
-                for (Declaration decl : CssSyntax.parseDeclarationList(styleText)) {
-                    Map<String, String> target = decl.important() ? inlineImportant : inlineNormal;
-                    target.remove(decl.name());
-                    target.put(decl.name(), decl.valueText());
+            InlineStyleEntry cachedInline = resolveInlineStyleEntry(node);
+            if (node.inlineOverlay != null) {
+                Map<String, String> overlaid = cachedInline != null && cachedInline.normalRaw() != null
+                        ? new LinkedHashMap<>(cachedInline.normalRaw()) : new LinkedHashMap<>();
+                node.inlineOverlay.overlayInline(node, overlaid);
+                if (!overlaid.isEmpty()) inlineNormal = CompiledDeclarations.of(overlaid);
+                if (cachedInline != null) {
+                    inlineImportant = cachedInline.important();
+                    trackRevert = cachedInline.impRevert();
                 }
+                trackRevert |= (inlineNormal != null && inlineNormal.mentionsRevert);
+            } else if (cachedInline != null) {
+                inlineNormal = cachedInline.normal();
+                inlineImportant = cachedInline.important();
+                trackRevert = cachedInline.normalRevert() || cachedInline.impRevert();
             }
-            // 属性の文字列を経由しない数値バインディング（BindingPatchTable）の値を重ねる
-            if (node.inlineOverlay != null) node.inlineOverlay.overlayInline(node, inlineNormal);
         }
 
         // revert の巻き戻し先。UA オリジンの宣言だけでカスケードした結果（継承値を含む）と、それにユーザーオリジンを足した結果。
         // revert / revert-layer を書いた宣言も、UA の枠線色を読む部品（input）も無ければ誰も読まないので、コピーを作らない
-        boolean trackOrigins = pseudo == null && node != null && "input".equals(node.tag)
-                || mentionsRevert(inlineNormal) || mentionsRevert(inlineImportant);
+        boolean trackOrigins = pseudo == null && node != null && "input".equals(node.tag) || trackRevert;
         for (int i = 0; !trackOrigins && i < candidates.size(); i++) {
             trackOrigins = candidates.get(i).compiled().mentionsRevert;
         }
@@ -442,12 +463,40 @@ public class StyleResolver {
         return result;
     }
 
-    /** 宣言の値に {@code revert} / {@code revert-layer} があるか（保守的: 先頭が revert なら真）。 */
-    private static boolean mentionsRevert(Map<String, String> declarations) {
-        for (String value : declarations.values()) {
-            if (value != null && value.trim().regionMatches(true, 0, "revert", 0, 6)) return true;
+    private record InlineStyleEntry(int attrVersion, CompiledDeclarations normal, CompiledDeclarations important,
+                                    Map<String, String> normalRaw, boolean normalRevert, boolean impRevert) {}
+
+    private static InlineStyleEntry resolveInlineStyleEntry(HtmlNode node) {
+        int attrVer = node.attrVersion();
+        if (node.inlineStyleCache instanceof InlineStyleEntry cached && cached.attrVersion() == attrVer) {
+            return cached;
         }
-        return false;
+        String styleText = node.attrs.get("style");
+        if (styleText == null) {
+            node.inlineStyleCache = null;
+            return null;
+        }
+        Map<String, String> normal = new LinkedHashMap<>();
+        Map<String, String> important = null;
+        for (Declaration decl : CssSyntax.parseDeclarationList(styleText)) {
+            Map<String, String> target;
+            if (decl.important()) {
+                if (important == null) important = new LinkedHashMap<>();
+                target = important;
+            } else {
+                target = normal;
+            }
+            target.remove(decl.name());
+            target.put(decl.name(), decl.valueText());
+        }
+        CompiledDeclarations compiledNormal = normal.isEmpty() ? null : CompiledDeclarations.of(normal);
+        CompiledDeclarations compiledImp = (important == null || important.isEmpty()) ? null : CompiledDeclarations.of(important);
+        Map<String, String> rawNormal = (node.inlineOverlay != null && !normal.isEmpty()) ? normal : null;
+        InlineStyleEntry entry = new InlineStyleEntry(attrVer, compiledNormal, compiledImp, rawNormal,
+                compiledNormal != null && compiledNormal.mentionsRevert,
+                compiledImp != null && compiledImp.mentionsRevert);
+        node.inlineStyleCache = entry;
+        return entry;
     }
 
     private static final String[] SIDES = {"top", "right", "bottom", "left"};
@@ -552,14 +601,14 @@ public class StyleResolver {
         }
 
         /** style 属性の宣言。作者のスタイルの層に入っていない宣言と同じ位置で重なる。 */
-        void applyInline(Map<String, String> declarations) {
-            if (declarations.isEmpty()) return;
+        void applyInline(CompiledDeclarations declarations) {
+            if (declarations == null) return;
             if (currentOrigin != CascadeOrigin.AUTHOR || currentLayer != StyleSheet.LayerTree.UNLAYERED) {
                 if (uaValues != null) layerBase = StyleTable.copyOf(result);
                 currentOrigin = CascadeOrigin.AUTHOR;
                 currentLayer = StyleSheet.LayerTree.UNLAYERED;
             }
-            applyDeclarations(result, CompiledDeclarations.of(declarations), userValues, layerBase, parent);
+            applyDeclarations(result, declarations, userValues, layerBase, parent);
         }
     }
 
@@ -801,34 +850,36 @@ public class StyleResolver {
      * ペイント専用プロパティしか変わっていなければ false を返し、repaint のみで済ませる。
      */
     /** 直近の判定の記憶（古い・新しいスタイルの組 → 結果）。共有された算出スタイルは同じ組が行ごとに何度も来るので、差分を取り直さない。 */
-    private record LayoutDiff(ComputedStyle oldStyle, ComputedStyle newStyle, boolean affects) {}
+    private static final class LayoutDiffSlot {
+        ComputedStyle oldStyle;
+        ComputedStyle newStyle;
+        boolean affects;
+    }
 
-    private static final LayoutDiff[] LAYOUT_DIFF = new LayoutDiff[256];
+    private static final int LAYOUT_DIFF_SIZE = 256;
+    private static final ThreadLocal<LayoutDiffSlot[]> LAYOUT_DIFF = ThreadLocal.withInitial(() -> {
+        LayoutDiffSlot[] slots = new LayoutDiffSlot[LAYOUT_DIFF_SIZE];
+        for (int i = 0; i < slots.length; i++) slots[i] = new LayoutDiffSlot();
+        return slots;
+    });
 
     public static boolean isLayoutAffectingChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
         if (oldStyle == null || newStyle == null) return true;
         if (oldStyle == newStyle) return false;
-        int slot = (System.identityHashCode(oldStyle) * 31 + System.identityHashCode(newStyle)) & (LAYOUT_DIFF.length - 1);
-        LayoutDiff hit = LAYOUT_DIFF[slot];
-        if (hit != null && hit.oldStyle == oldStyle && hit.newStyle == newStyle) return hit.affects;
+        LayoutDiffSlot[] cache = LAYOUT_DIFF.get();
+        int slot = (System.identityHashCode(oldStyle) * 31 + System.identityHashCode(newStyle)) & (cache.length - 1);
+        LayoutDiffSlot hit = cache[slot];
+        if (hit.oldStyle == oldStyle && hit.newStyle == newStyle) return hit.affects;
         boolean affects = computeLayoutAffectingChange(oldStyle, newStyle);
-        LAYOUT_DIFF[slot] = new LayoutDiff(oldStyle, newStyle, affects);
+        hit.oldStyle = oldStyle;
+        hit.newStyle = newStyle;
+        hit.affects = affects;
         return affects;
     }
 
     private static boolean computeLayoutAffectingChange(ComputedStyle oldStyle, ComputedStyle newStyle) {
         if (oldStyle == null || newStyle == null) return true;
-        if (Float.compare(oldStyle.fontSizePx(), newStyle.fontSizePx()) != 0
-                || Float.compare(oldStyle.rootFontSizePx(), newStyle.rootFontSizePx()) != 0) {
-            return true;
-        }
-        if (ComputedStyle.sameDeclarations(oldStyle, newStyle)) return false;
-        boolean[] affects = {false};
-        // 未登録の名前は paintOnly=false で渡る（安全側にレイアウトへ効くとみなす）
-        ComputedStyle.diff(oldStyle, newStyle, (name, paintOnly, inherited) -> {
-            if (!paintOnly) affects[0] = true;
-        });
-        return affects[0];
+        return oldStyle.hasLayoutAffectingDiffFrom(newStyle);
     }
 
     public static ComputedStyle finalizeComputedStyle(Map<String, String> rawStyle, StyleSheet sheet, Map<String, String> env) {
@@ -887,7 +938,28 @@ public class StyleResolver {
                                                       float parentFontSize, float rootFontSize, float rootLineHeight,
                                                       int viewportW, int viewportH,
                                                       ContainerBox container) {
-        StyleTable style = StyleTable.copyOf(rawStyle);
+        return finalizeComputedStyleInternal(StyleTable.copyOf(rawStyle), rawStyle, sheet, env, parentStyle,
+                parentFontSize, rootFontSize, rootLineHeight, viewportW, viewportH, container);
+    }
+
+    /** 呼び出し側が生の {@link StyleTable} の所有権を手放せる場合に防御的コピーを省く経路。 */
+    public static ComputedStyle finalizeComputedStyleOwned(Map<String, String> rawStyle, StyleSheet sheet,
+                                                           Map<String, String> env, Map<String, String> parentStyle,
+                                                           float parentFontSize, float rootFontSize, float rootLineHeight,
+                                                           int viewportW, int viewportH,
+                                                           ContainerBox container) {
+        StyleTable style = (rawStyle instanceof StyleTable owned && owned.extras == null)
+                ? owned
+                : StyleTable.copyOf(rawStyle);
+        return finalizeComputedStyleInternal(style, rawStyle, sheet, env, parentStyle, parentFontSize, rootFontSize,
+                rootLineHeight, viewportW, viewportH, container);
+    }
+
+    private static ComputedStyle finalizeComputedStyleInternal(StyleTable style, Map<String, String> rawStyle,
+                                                               StyleSheet sheet, Map<String, String> env,
+                                                               Map<String, String> parentStyle, float parentFontSize,
+                                                               float rootFontSize, float rootLineHeight, int viewportW,
+                                                               int viewportH, ContainerBox container) {
         float ownFontSize = estimateFontSize(rawStyle, parentFontSize, rootFontSize, viewportW, viewportH);
         float rootLineHeightPx = Float.isNaN(rootLineHeight)
                 ? rootFontSize * LengthResolver.NORMAL_LINE_HEIGHT_EM : rootLineHeight;

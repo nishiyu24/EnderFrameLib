@@ -119,4 +119,45 @@ class StyleTableHotPathTest {
             }
         }
     }
+
+    @Test
+    void inheritedExtrasAndComputedValuesKeepViewportFlagExact() {
+        StyleTable parentSrc = new StyleTable();
+        parentSrc.put("--plain", "12px");
+        parentSrc.put("--vp", "5vw");
+        parentSrc.put("color", "red");
+        parentSrc.put("width", "10vw");
+        ComputedStyle parentWithVpCustom = new ComputedStyle(parentSrc, 16f, 16f);
+
+        StyleTable childA = new StyleTable();
+        assertTrue(ComputedStyle.copyInheritable(parentWithVpCustom.asMap(), childA));
+        assertTrue(StyleResolver.rawDependsOnViewport(childA), "親の --vp を共有して引き継ぐので true");
+        childA.put("--vp", "8px");
+        assertFalse(StyleResolver.rawDependsOnViewport(childA), "--vp を上書きして消したあとは false");
+        childA.put("margin-left", "2vh");
+        assertTrue(StyleResolver.rawDependsOnViewport(childA));
+        childA.put("margin-left", "4px");
+        assertFalse(StyleResolver.rawDependsOnViewport(childA));
+        childA.put("padding-top", "3vmin");
+        assertTrue(StyleResolver.rawDependsOnViewport(childA));
+        childA.remove("padding-top");
+        assertFalse(StyleResolver.rawDependsOnViewport(childA));
+        childA.put("height", "5vh");
+        childA.clear();
+        assertFalse(StyleResolver.rawDependsOnViewport(childA));
+
+        StyleTable parentNoVp = new StyleTable();
+        parentNoVp.put("--a", "10px");
+        parentNoVp.put("color", "blue");
+        ComputedStyle computedNoVp = new ComputedStyle(parentNoVp, 16f, 16f);
+        StyleTable childB = new StyleTable();
+        assertTrue(ComputedStyle.copyInheritable(computedNoVp.asMap(), childB));
+        assertFalse(StyleResolver.rawDependsOnViewport(childB));
+        StyleTable copied = StyleTable.copyOf(computedNoVp.asMap());
+        assertFalse(StyleResolver.rawDependsOnViewport(copied));
+        copied.put("--b", "10dvh");
+        assertTrue(StyleResolver.rawDependsOnViewport(copied));
+        copied.remove("--b");
+        assertFalse(StyleResolver.rawDependsOnViewport(copied));
+    }
 }

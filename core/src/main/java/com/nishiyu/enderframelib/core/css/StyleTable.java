@@ -25,10 +25,10 @@ final class StyleTable extends AbstractMap<String, String> {
      * 継承のたびに表ごと複製されるが、書き換えは稀なので、複製の時点では写さずに共有し、最初の書き込みで初めて写す。
      */
     private boolean extrasShared;
-    /** {@link #extras} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。{@link #extras} を書き換えるたびに未確定へ戻す。 */
-    private byte extrasViewport = -1;
-    /** {@link #values} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。添字つきの値を書き換えるたびに未確定へ戻す。 */
-    private byte valuesViewport = -1;
+    /** {@link #extras} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。{@link #extras} の書き換えに合わせて更新する。 */
+    byte extrasViewport = 0;
+    /** {@link #values} のどれかの値がビューポート基準か（1 = はい、0 = いいえ、-1 = 未確定）。添字つきの値の書き換えに合わせて更新する。 */
+    byte valuesViewport = 0;
     int size;
     /**
      * 算出（{@code ValueComputer.compute}）が、どれかの値がビューポート・コンテナ基準の単位を使うと決めた結果
@@ -66,9 +66,13 @@ final class StyleTable extends AbstractMap<String, String> {
 
     /** 空の表へ、{@code source}（変更されない表）の {@code --*} を丸ごと共有して取り込む。 */
     void shareExtrasFrom(Map<String, String> source) {
+        shareExtrasFrom(source, (byte) -1);
+    }
+
+    void shareExtrasFrom(Map<String, String> source, byte viewport) {
         extras = source;
         extrasShared = true;
-        extrasViewport = -1;
+        extrasViewport = viewport;
         size += source.size();
     }
 
@@ -119,14 +123,22 @@ final class StyleTable extends AbstractMap<String, String> {
     /** 添字で、値オブジェクトをそのまま書く（文字列を引き直さない）。熱い経路用。null は宣言の削除。 */
     void putValueById(int id, CssValue value) {
         relativeUnits = -1;
-        valuesViewport = -1;
+        CssValue prev = values[id];
         if (value == null) {
-            if (values[id] != null) size--;
-            values[id] = null;
+            if (prev != null) {
+                size--;
+                values[id] = null;
+                if (valuesViewport == 1 && prev.dependsOnViewport()) valuesViewport = -1;
+            }
             return;
         }
-        if (values[id] == null) size++;
+        if (prev == null) size++;
         values[id] = value;
+        if (value.dependsOnViewport()) {
+            valuesViewport = 1;
+        } else if (valuesViewport == 1 && prev != null && prev.dependsOnViewport()) {
+            valuesViewport = -1;
+        }
     }
 
     /** 添字で、まだ宣言が無いときだけ書く（{@code putIfAbsent}）。 */
@@ -178,11 +190,19 @@ final class StyleTable extends AbstractMap<String, String> {
             return old;
         }
         if (value == null) return remove(key);
-        if (extras == null) extras = new LinkedHashMap<>();
-        else ownExtras();
-        extrasViewport = -1;
+        if (extras == null) {
+            extras = new LinkedHashMap<>();
+            extrasViewport = 0;
+        } else {
+            ownExtras();
+        }
         String old = extras.put(key, value);
         if (old == null) size++;
+        if (StyleResolver.valueDependsOnViewport(value)) {
+            extrasViewport = 1;
+        } else if (extrasViewport == 1 && old != null && StyleResolver.valueDependsOnViewport(old)) {
+            extrasViewport = -1;
+        }
         return old;
     }
 
@@ -192,20 +212,23 @@ final class StyleTable extends AbstractMap<String, String> {
         if (!(key instanceof String name)) return null;
         int id = ComputedStyle.CssPropertyId.of(name);
         if (id != ComputedStyle.CssPropertyId.NONE) {
-            String old = textById(id);
-            if (old != null) {
+            CssValue prev = values[id];
+            if (prev != null) {
                 values[id] = null;
-                valuesViewport = -1;
+                if (valuesViewport == 1 && prev.dependsOnViewport()) valuesViewport = -1;
                 size--;
+                return prev.text;
             }
-            return old;
+            return null;
         }
         if (extras == null) return null;
         if (!extras.containsKey(name)) return null;
         ownExtras();
-        extrasViewport = -1;
         String old = extras.remove(name);
-        if (old != null) size--;
+        if (old != null) {
+            size--;
+            if (extrasViewport == 1 && StyleResolver.valueDependsOnViewport(old)) extrasViewport = -1;
+        }
         return old;
     }
 
@@ -216,7 +239,7 @@ final class StyleTable extends AbstractMap<String, String> {
         java.util.Arrays.fill(values, null);
         extras = null;
         extrasShared = false;
-        extrasViewport = -1;
+        extrasViewport = 0;
         size = 0;
     }
 

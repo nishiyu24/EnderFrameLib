@@ -78,12 +78,54 @@ final class PaintSupport {
                             int color, int bgColor, ItemProps events, int radius, float opacity,
                             float tx, float ty, float sx, float sy, float rot, int trans, AnimationSpec animDef,
                             RenderMeta meta, long key) {
+        if (elements instanceof CaptureList cap && cap.capturing) {
+            cap.record(x, y, w, h);
+        }
         int left = Math.round(x);
         int top = Math.round(y);
         int width = Math.round(x + w) - left;
         int height = Math.round(y + h) - top;
         elements.add(new DisplayItem(id, baseNodeId, type, left, top, width, height, text, color, bgColor, events.attrs(), radius, opacity, tx, ty, sx, sy, rot, trans, animDef, fitMode,
                 (meta == null && events.hints() == RenderHints.NONE ? null : (meta != null ? meta : RenderMeta.EMPTY).withHints(events.hints())), key));
+    }
+
+    /**
+     * 記憶を作るときだけ {@link #addElement} が受け取る丸める前の {@code (x, y, w, h)} を隣に記録するリスト。
+     * 通常の描画（記憶ヒットや非記憶ビルド）では記録フラグが false のため配列を作らない。
+     */
+    static final class CaptureList extends java.util.ArrayList<DisplayItem> {
+        private static final float[] EMPTY_COORDS = new float[0];
+        boolean capturing;
+        private float[] coords = new float[32];
+        private int coordCount;
+
+        CaptureList(int initialCapacity) {
+            super(initialCapacity);
+        }
+
+        void beginCapture() {
+            capturing = true;
+            coordCount = 0;
+        }
+
+        float[] finishCapture() {
+            capturing = false;
+            float[] out = coordCount == 0 ? EMPTY_COORDS : java.util.Arrays.copyOf(coords, coordCount);
+            coordCount = 0;
+            return out;
+        }
+
+        void record(float x, float y, float w, float h) {
+            int needed = coordCount + 4;
+            if (needed > coords.length) {
+                coords = java.util.Arrays.copyOf(coords, Math.max(needed, coords.length * 2));
+            }
+            coords[coordCount] = x;
+            coords[coordCount + 1] = y;
+            coords[coordCount + 2] = w;
+            coords[coordCount + 3] = h;
+            coordCount = needed;
+        }
     }
 
     static void addElement(List<DisplayItem> elements, String baseNodeId, String id, ElementType type, ImageFitMode fitMode,

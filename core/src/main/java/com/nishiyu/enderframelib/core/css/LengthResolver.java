@@ -5,6 +5,7 @@ import com.nishiyu.enderframelib.core.css.model.*;
 import com.nishiyu.enderframelib.core.css.CssSyntax.ComponentValue;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Token;
 import com.nishiyu.enderframelib.core.css.CssSyntax.Type;
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.text.model.BitmapFontFace;
 
 import java.util.ArrayList;
@@ -243,8 +244,8 @@ public class LengthResolver {
                 case VH -> rootH * value / 100f;
                 case VMIN -> Math.min(rootW, rootH) * value / 100f;
                 case VMAX -> Math.max(rootW, rootH) * value / 100f;
-                case EM -> elementFontSize * value;
-                case REM -> rootFontSize * value;
+                case EM -> LayoutUnit.snap(elementFontSize * value);
+                case REM -> LayoutUnit.snap(rootFontSize * value);
                 case EXPRESSION -> parseDim(List.of(expression),
                         Metrics.of(maxPixels, rootW, rootH, elementFontSize, rootFontSize));
                 case NONE -> 0;

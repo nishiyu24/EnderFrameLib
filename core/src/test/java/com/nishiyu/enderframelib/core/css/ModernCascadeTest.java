@@ -174,6 +174,53 @@ public class ModernCascadeTest {
         assertEquals("50px", style(root, "i").get(CssProperty.WIDTH));
     }
 
+    @Test
+    public void testBuildAndRestylePassSizeContainerDownWithoutNearestSizeContainerWalk() {
+        String html = """
+                <style>
+                  .outer { container: side / inline-size; width: 200px; }
+                  .inner { container-type: inline-size; width: 100px; }
+                  .item { width: 50cqw; color: #111111; }
+                  .item::before { content: "x"; width: 25cqw; display: inline-block; }
+                  @container side (min-width: 150px) { .item { color: #abcdef; } }
+                </style>
+                <div class="outer" id="o"><div class="inner" id="in"><div class="holder"><div class="item" id="i">x</div></div></div></div>
+                """;
+        var parser = new UiDocumentCompiler();
+        Document doc = parser.parseDocument(html, "", VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        int[] ancestorWalks = {0};
+        var state = new com.nishiyu.enderframelib.core.dom.InteractionState() {
+            @Override
+            public ContainerBox nearestSizeContainer(com.nishiyu.enderframelib.core.dom.node.HtmlNode from) {
+                ancestorWalks[0]++;
+                return super.nearestSizeContainer(from);
+            }
+        };
+        LayoutBox root = RenderPipeline.buildLayoutTree(doc.root, Map.of(), doc.sheet, Map.of(), false, state);
+        assertEquals(0, ancestorWalks[0], "buildLayoutTree は再帰の引数でコンテナを渡し nearestSizeContainer を呼ばない");
+
+        var outerNode = doc.root.getNodeById("o");
+        var innerNode = doc.root.getNodeById("in");
+        var itemNode = doc.root.getNodeById("i");
+        assertNotNull(outerNode);
+        assertNotNull(innerNode);
+        assertNotNull(itemNode);
+        state.setContainerSize(outerNode, 200, 100);
+        state.setContainerSize(innerNode, 100, 100);
+
+        RenderPipeline.restyleLayoutTree(root, doc, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, Map.of(), state);
+        assertEquals(0, ancestorWalks[0], "restyleLayoutTree も祖先走査 nearestSizeContainer を呼ばない");
+        assertEquals("#abcdef", style(root, "i").get(CssProperty.COLOR));
+        assertEquals("50px", style(root, "i").get(CssProperty.WIDTH));
+        LayoutBox itemBox = find(root, "i");
+        assertNotNull(itemBox);
+        LayoutBox beforeBox = itemBox.elementChildren.stream()
+                .filter(b -> b.node.isPseudoNode && b.node.key().endsWith("_before"))
+                .findFirst().orElse(null);
+        assertNotNull(beforeBox);
+        assertEquals("25px", beforeBox.style.get(CssProperty.WIDTH));
+    }
+
     // ---- @property
 
     @Test

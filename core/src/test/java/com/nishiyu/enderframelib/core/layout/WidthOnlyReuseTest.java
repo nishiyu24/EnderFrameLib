@@ -231,6 +231,7 @@ class WidthOnlyReuseTest {
     void fitReuseDoesNotChangeTheIncrementalResultAcrossFittingAndWrappingWidths() {
         UiDocumentCompiler parser = new UiDocumentCompiler();
         int baselineMismatches = 0;
+        StringBuilder firstMismatch = new StringBuilder();
         for (int seed = 0; seed < 300; seed++) {
             Random rnd = new Random(1000 + seed);
             String html = fitDoc(rnd);
@@ -250,10 +251,19 @@ class WidthOnlyReuseTest {
                 } finally {
                     LayoutBox.fitReuseEnabled = savedFit;
                 }
-                if (!fresh.equals(without.get(step))) { baselineMismatches++; break; }
+                if (!fresh.equals(without.get(step))) {
+                    if (firstMismatch.isEmpty()) {
+                        firstMismatch.append("seed ").append(seed).append(" w=").append(FIT_WIDTHS[step])
+                                .append(" step=").append(step).append("\n").append(html)
+                                .append("\n--- fresh\n").append(fresh)
+                                .append("\n--- inc\n").append(without.get(step));
+                    }
+                    baselineMismatches++;
+                    break;
+                }
             }
         }
-        assertEquals(0, baselineMismatches, "差分レイアウトが一から組んだ結果と違う文書がある（fit 再利用の有無によらない）");
+        assertEquals(0, baselineMismatches, "差分レイアウトが一から組んだ結果と違う文書がある（fit 再利用の有無によらない）\n" + firstMismatch);
     }
 
     @Test
@@ -280,8 +290,7 @@ class WidthOnlyReuseTest {
             }
         }
         System.out.println("FITREUSE measurements after a 1px width change: without=" + counts[0] + " with=" + counts[1]);
-        // flex の項目は仮の測定と確定の測定を交互に受けて、1 箱 1 スロットの記録が上書きされ合うため、半減には届かない（既知の限界）
-        assertTrue(counts[1] < counts[0] * 0.9, "収まっている箱は測り直さない: " + counts[1] + " vs " + counts[0]);
+        assertTrue(counts[1] * 2 < counts[0], "収まっている箱とストレッチ前後の flex 項目は測り直さない: " + counts[1] + " vs " + counts[0]);
     }
 
     @Test
@@ -328,6 +337,75 @@ class WidthOnlyReuseTest {
                 prev = inc;
             }
         }
+    }
+
+    /** fill 幅のブロック・段落・列 flex 項目が、段落の折り返し境界を跨ぐ全幅で全再構築と一致する。 */
+    @Test
+    void fillWidthBlocksAndFlexItemsMatchFreshAcrossWrappingBoundary() {
+        String html = """
+                <html><head><style>body{margin:0}
+                .col{display:flex;flex-direction:column;gap:6px;padding:8px}
+                .box{padding:4px 6px;border:1px solid #888}
+                .row{display:flex;gap:6px}
+                </style></head><body>
+                <div class="col">
+                  <div class="box"><p><b>bold</b> and <i>italic words</i> inside paragraph</p></div>
+                  <div class="box">alpha beta gamma delta epsilon</div>
+                  <div class="row"><span>short label</span><span><b>left</b> and <i>right</i></span></div>
+                </div></body></html>""";
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        var document = parser.parseDocument(html, "", 800, H);
+        // 第1ブロックの折り返し境界（およそ 250px 前後）を中心に 1px 刻みと往復で境界を跨ぐ
+        int[] widths = {800, 799, 600, 320, 260, 250, 249, 248, 240, 220, 180, 140, 139, 141, 180, 248, 249, 250, 260, 500, 800};
+        InteractionState state = new InteractionState();
+        LayoutBox prev = null;
+        for (int step = 0; step < widths.length; step++) {
+            int w = widths[step];
+            boolean saved = LayoutBox.fitReuseEnabled;
+            LayoutBox.fitReuseEnabled = true;
+            LayoutBox inc;
+            try {
+                inc = prev == null
+                        ? parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state)
+                        : parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, prev);
+            } finally {
+                LayoutBox.fitReuseEnabled = saved;
+            }
+            LayoutBox fresh = parser.layoutDocument(document, w, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, new InteractionState());
+            assertEquals(roundedDump(dump(fresh)), roundedDump(dump(inc)), "step " + step + " w=" + w);
+            prev = inc;
+        }
+    }
+
+    /** 収まり切る fill 幅ブロックと列 flex 項目は、幅変更で測定を省く。 */
+    @Test
+    void fillWidthBlocksSkipRemeasureWhenContentStillFits() {
+        StringBuilder sb = new StringBuilder("<html><head><style>body{margin:0}.col{display:flex;flex-direction:column;gap:4px}.p{padding:4px;border:1px solid #888}</style></head><body><div class=\"col\">");
+        for (int i = 0; i < 30; i++) {
+            sb.append("<div class=\"p\"><p>item ").append(i).append("</p><div><b>a</b> and <i>b</i></div></div>");
+        }
+        sb.append("</div></body></html>");
+        UiDocumentCompiler parser = new UiDocumentCompiler();
+        var document = parser.parseDocument(sb.toString(), "", 800, H);
+        long[] counts = new long[2];
+        LayoutBox[] last = new LayoutBox[2];
+        for (int k = 0; k < 2; k++) {
+            boolean saved = LayoutBox.fitReuseEnabled;
+            LayoutBox.fitReuseEnabled = k == 1;
+            try {
+                InteractionState state = new InteractionState();
+                LayoutBox root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state);
+                long before = LayoutBox.measurementsComputed();
+                root = parser.layoutDocument(document, 790, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, root);
+                root = parser.layoutDocument(document, 800, H, Map.of(), new ScrollState(), FontResolver.FALLBACK, state, root);
+                counts[k] = LayoutBox.measurementsComputed() - before;
+                last[k] = root;
+            } finally {
+                LayoutBox.fitReuseEnabled = saved;
+            }
+        }
+        assertEquals(roundedDump(dump(last[0])), roundedDump(dump(last[1])));
+        assertTrue(counts[1] * 3 < counts[0], "fill 幅の収まるブロックは測り直さない: with=" + counts[1] + " without=" + counts[0]);
     }
 
     /** 実際の文書（showcase）と、確定幅のカードが並ぶ文書で、幅を往復させたときの測定回数と時間（表示のみ）。 */

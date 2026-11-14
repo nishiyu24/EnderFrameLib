@@ -81,10 +81,9 @@ public final class BoxTreeBuilder {
     /** {@code root} 以下のボックスツリーを要素ツリーから作り直す。{@code counterStyles} は文書の {@code @counter-style}。 */
     public static void build(LayoutBox root, CounterStyles counterStyles) {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
-        builder.collectReusableGenerated(root);
+        if (root.subtreeHasGenerated) builder.collectReusableGenerated(root);
         builder.counters.apply(root);
         builder.buildBox(root);
-        root.linkParents();
     }
 
     // ==========================================
@@ -151,7 +150,11 @@ public final class BoxTreeBuilder {
         parent.children.add(index, added);
         added.parent = parent;
         parent.updateChildFlagsOnAdd(added);
-        added.linkParents();
+        if (added.isAnonymous || added.subtreeHasGenerated) {
+            for (LayoutBox a = parent.parent; a != null && !a.subtreeHasGenerated; a = a.parent) {
+                a.subtreeHasGenerated = true;
+            }
+        }
         LayoutBox.invalidateFloats(parent);
     }
 
@@ -175,12 +178,15 @@ public final class BoxTreeBuilder {
 
     /** 前回の箱の木（{@link LayoutBox#children}）にある匿名ボックスとマーカーを集める。新しく作った木なら何も無い。 */
     private void collectReusableGenerated(LayoutBox box) {
-        for (LayoutBox child : box.children) {
+        if (!box.subtreeHasGenerated) return;
+        List<LayoutBox> kids = box.children;
+        for (int i = 0, n = kids.size(); i < n; i++) {
+            LayoutBox child = kids.get(i);
             if (child.isAnonymous) {
                 String id = child.node.key();
                 if (reusableGenerated.putIfAbsent(id, child) != null) ambiguousGeneratedIds.add(id);
             }
-            collectReusableGenerated(child);
+            if (child.subtreeHasGenerated) collectReusableGenerated(child);
         }
     }
 
@@ -396,13 +402,13 @@ public final class BoxTreeBuilder {
     private LayoutBox createAnonymous(LayoutBox parent, String display) {
         int index = anonymousCounts.merge(parent, 1, Integer::sum);
         String id = parent.node.key() + "_anon" + index;
-        ComputedStyle style = generatedStyle(parent, Map.of(CssProperty.DISPLAY, display));
+        ComputedStyle style = parent.style.derivedAnonymous(display);
         LayoutBox reused = takeReusableGenerated(id);
         // 匿名の表・行・セルは表のエンジンが直接書き込むので作り直す（LayoutBox.reusableBoxes と同じ）
         if (reused != null && !reused.node.isPseudoNode && !display.contains("table")
                 && !reused.touchedByTableEngine()) {
             reused.node.parent = parent.node;
-            reused.children.clear();
+            reused.clearChildren();
             LayoutBox.bumpShapeEpoch();
             reused.updateStyle(style);
             return reused;
@@ -423,13 +429,16 @@ public final class BoxTreeBuilder {
     public static void restyleGeneratedBoxes(LayoutBox owner) {
         for (LayoutBox child : owner.children) {
             if (!child.isAnonymous) continue;
-            Map<String, String> overrides = child.node.isPseudoNode
-                    ? MARKER_OVERRIDES
-                    : Map.of(CssProperty.DISPLAY, child.style.getOrDefault(CssPropertyIndex.DISPLAY, "block"));
-            child.updateStyle(child.node.isPseudoNode ? markerStyleOf(owner) : generatedStyle(owner, overrides));
             if (child.node.isPseudoNode) {
-                for (LayoutBox text : child.children) text.updateStyle(child.style);
+                ComputedStyle next = markerStyleOf(owner);
+                if (child.style != next) child.updateStyle(next);
+                for (LayoutBox text : child.children) {
+                    if (text.style != child.style) text.updateStyle(child.style);
+                }
             } else {
+                String anonDisplay = child.style.getOrDefault(CssPropertyIndex.DISPLAY, "block");
+                ComputedStyle next = owner.style.derivedAnonymous(anonDisplay);
+                if (child.style != next) child.updateStyle(next);
                 restyleGeneratedBoxes(child);
             }
         }
@@ -440,26 +449,7 @@ public final class BoxTreeBuilder {
      * 無ければリスト項目の継承値。どちらも UA の ::marker と同じ上書き（空白を畳まない・text-transform なし）を掛ける。
      */
     private static ComputedStyle markerStyleOf(LayoutBox listItem) {
-        ComputedStyle declared = listItem.markerStyle;
-        if (declared == null) return generatedStyle(listItem, MARKER_OVERRIDES);
-        Map<String, String> props = new LinkedHashMap<>(declared.asMap());
-        props.remove(CssProperty.CONTENT);
-        props.putAll(MARKER_OVERRIDES);
-        return new ComputedStyle(props, declared.fontSizePx(), declared.rootFontSizePx());
-    }
-
-    private static ComputedStyle generatedStyle(LayoutBox owner, Map<String, String> overrides) {
-        Map<String, String> props = inheritedProperties(owner.style);
-        props.putAll(overrides);
-        return new ComputedStyle(props, owner.style.fontSizePx(), owner.style.rootFontSizePx());
-    }
-
-    private static Map<String, String> inheritedProperties(ComputedStyle style) {
-        Map<String, String> props = new LinkedHashMap<>();
-        style.asMap().forEach((key, value) -> {
-            if (key.startsWith("--") || PropertyRegistry.isInherited(key)) props.put(key, value);
-        });
-        return props;
+        return listItem.style.derivedMarker(listItem.markerStyle);
     }
 
     // ==========================================

@@ -165,4 +165,44 @@ class DisplayListSlicePatchOptimizationTest {
             b1.dlEnd = origDlEnd;
         }
     }
+
+    @Test
+    void movingParentPropagatesIntoOffscreenRenderAndChildPatchSubtreeSlices() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<html><head><style>")
+                .append("body{margin:0;padding:0;}")
+                .append(".item{height:20px;}")
+                .append(".moving{transform:translateY(-4950px);}")
+                .append("</style></head><body>");
+        for (int i = 0; i < 450; i++) {
+            sb.append("<div class=\"item\" id=\"s").append(i).append("\">S").append(i).append("</div>");
+        }
+        sb.append("<div id=\"moving-box\" class=\"moving\"><div id=\"moving-inner\"><div id=\"nested-moving\" class=\"item\">Moving</div></div></div>");
+        sb.append("</body></html>");
+
+        StandaloneView view = new StandaloneView(sb.toString(), W, H, FontResolver.FALLBACK);
+        view.ui().flushInvalidation();
+
+        LayoutBox deepStatic = findBox(view.ui().layoutRoot(), "s440");
+        LayoutBox nestedMoving = findBox(view.ui().layoutRoot(), "nested-moving");
+        assertNotNull(deepStatic);
+        assertNotNull(nestedMoving);
+        assertTrue(deepStatic.movingStamped && !deepStatic.selfOrAncestorMoving);
+        assertTrue(nestedMoving.movingStamped && nestedMoving.ancestorMoving && nestedMoving.selfOrAncestorMoving);
+        assertTrue(deepStatic.dlStart < 0, "画面外の静的な箱は窓付き構築で間引かれる");
+        assertTrue(nestedMoving.dlStart >= 0, "親から moving 属性が伝播した深い子孫は画面外座標でも間引かれない");
+
+        HtmlElement nestedParent = (HtmlElement) view.root().getNodeById("moving-inner");
+        HtmlElement added = new HtmlElement("div");
+        added.setAttribute("id", "added-moving");
+        added.setAttribute("class", "item");
+        added.updateTextContent("Added");
+        nestedParent.appendChild(added);
+        view.ui().flushInvalidation();
+
+        LayoutBox addedBox = findBox(view.ui().layoutRoot(), "added-moving");
+        assertNotNull(addedBox);
+        assertTrue(addedBox.movingStamped && addedBox.ancestorMoving && addedBox.selfOrAncestorMoving);
+        assertTrue(addedBox.dlStart >= 0, "動的に追加した moving 配下の子も renderSubtreeSlices で間引かれず描かれる");
+    }
 }
