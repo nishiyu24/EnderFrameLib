@@ -559,7 +559,9 @@ public class HitTestIndex {
 
     /** 旧実装（上位から全件の線形探索）。空間ハッシュの結果と同じになることを確かめる基準として残す。 */
     public UIHitResult hitTestLinear(String sessionId, double pixelX, double pixelY) {
-        for (Entry entry : interactiveEntries) {
+        double[] tmp = null;
+        for (int i = 0, n = interactiveEntries.size(); i < n; i++) {
+            Entry entry = interactiveEntries.get(i);
             DisplayItem el = entry.element;
 
             // クリップ判定 (D-9)
@@ -570,12 +572,14 @@ public class HitTestIndex {
 
             double px = pixelX;
             double py = pixelY;
-            for (DisplayItem chained : entry.transformChain) {
-                DisplayItem ancestor = live(chained);
+            List<DisplayItem> chain = entry.transformChain;
+            for (int j = 0, cn = chain.size(); j < cn; j++) {
+                DisplayItem ancestor = live(chain.get(j));
                 AnimatedValues anim = CssAnimator.getCurrentValues(sessionId, ancestor);
-                double[] p = inverseTransform(px, py, ancestor, anim);
-                px = p[0];
-                py = p[1];
+                if (tmp == null) tmp = new double[2];
+                inverseInto(px, py, ancestor, anim, tmp);
+                px = tmp[0];
+                py = tmp[1];
             }
 
             double localX = px - el.x();
@@ -594,23 +598,40 @@ public class HitTestIndex {
      * 祖先のクリップ（{@code overflow} / 角丸の外）に隠れた箱は除く。ホイールの宛先を決めるのに使う。
      */
     public List<UIHitResult> scrollContainersAt(String sessionId, double pixelX, double pixelY) {
-        List<UIHitResult> out = new ArrayList<>();
-        for (Entry entry : scrollEntries) {
+        int n = scrollEntries.size();
+        if (n == 0) return List.of();
+        UIHitResult first = null;
+        List<UIHitResult> out = null;
+        double[] tmp = null;
+        for (int i = 0; i < n; i++) {
+            Entry entry = scrollEntries.get(i);
             if (entry.clipRect != null && !entry.clipRect.contains(pixelX, pixelY)) continue;
             double px = pixelX, py = pixelY;
-            for (DisplayItem chained : entry.transformChain) {
-                DisplayItem ancestor = live(chained);
-                double[] p = inverseTransform(px, py, ancestor, CssAnimator.getCurrentValues(sessionId, ancestor));
-                px = p[0];
-                py = p[1];
+            List<DisplayItem> chain = entry.transformChain;
+            for (int j = 0, cn = chain.size(); j < cn; j++) {
+                DisplayItem ancestor = live(chain.get(j));
+                if (tmp == null) tmp = new double[2];
+                inverseInto(px, py, ancestor, CssAnimator.getCurrentValues(sessionId, ancestor), tmp);
+                px = tmp[0];
+                py = tmp[1];
             }
             DisplayItem el = entry.element;
             double localX = px - el.x(), localY = py - el.y();
             if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
-                out.add(new UIHitResult(el, localX, localY));
+                UIHitResult hit = new UIHitResult(el, localX, localY);
+                if (first == null) {
+                    first = hit;
+                } else {
+                    if (out == null) {
+                        out = new ArrayList<>(Math.min(4, n - i + 1));
+                        out.add(first);
+                    }
+                    out.add(hit);
+                }
             }
         }
-        return out;
+        if (out != null) return out;
+        return first != null ? List.of(first) : List.of();
     }
 
     public UIHitResult getLocalCoords(String sessionId, DisplayItem el, double pixelX, double pixelY) {

@@ -72,25 +72,41 @@ public record EventForwardDeclaration(String eventType, Payload payload, String 
 
     /** {@code node} 自身に宣言された転送（明示 → 暗黙の順。同じイベント種別は明示が勝つ）。 */
     public static List<EventForwardDeclaration> declaredOn(HtmlNode node) {
-        List<EventForwardDeclaration> declarations = explicitlyDeclaredOn(node);
-        if (isValueControl(node) && node.ownership() == Ownership.SERVER) {
-            for (String valueEvent : new String[]{"input", "change"}) {
-                if (declarations.stream().noneMatch(d -> d.eventType.equals(valueEvent))) {
-                    declarations.add(new EventForwardDeclaration(valueEvent, Payload.VALUE, ""));
-                }
+        String spec = node.attrs != null ? node.attrs.get(ATTRIBUTE) : null;
+        boolean hasExplicit = spec != null && !spec.isBlank();
+        boolean hasImplicit = isValueControl(node) && node.ownership() == Ownership.SERVER;
+        if (!hasExplicit && !hasImplicit) return List.of();
+        List<EventForwardDeclaration> declarations = hasExplicit ? explicitlyDeclaredOn(node) : new ArrayList<>(2);
+        if (hasImplicit) {
+            boolean hasInput = false, hasChange = false;
+            for (int i = 0, n = declarations.size(); i < n; i++) {
+                String t = declarations.get(i).eventType;
+                if ("input".equals(t)) hasInput = true;
+                else if ("change".equals(t)) hasChange = true;
             }
+            if (!hasInput) declarations.add(new EventForwardDeclaration("input", Payload.VALUE, ""));
+            if (!hasChange) declarations.add(new EventForwardDeclaration("change", Payload.VALUE, ""));
         }
         return declarations;
     }
 
     /** {@code node} 自身に宣言された転送のうち、{@code eventType} のもの。 */
     public static List<EventForwardDeclaration> declaredOn(HtmlNode node, String eventType) {
+        String spec = node.attrs != null ? node.attrs.get(ATTRIBUTE) : null;
+        boolean hasExplicit = spec != null && !spec.isBlank();
+        boolean hasImplicit = isValueControl(node) && node.ownership() == Ownership.SERVER;
+        if (!hasExplicit && !hasImplicit) return List.of();
         String type = eventType.toLowerCase(Locale.ROOT);
-        List<EventForwardDeclaration> matching = new ArrayList<>(1);
-        for (EventForwardDeclaration declaration : declaredOn(node)) {
-            if (declaration.eventType.equals(type)) matching.add(declaration);
+        List<EventForwardDeclaration> all = declaredOn(node);
+        List<EventForwardDeclaration> matching = null;
+        for (int i = 0, n = all.size(); i < n; i++) {
+            EventForwardDeclaration declaration = all.get(i);
+            if (declaration.eventType.equals(type)) {
+                if (matching == null) matching = new ArrayList<>(1);
+                matching.add(declaration);
+            }
         }
-        return matching;
+        return matching != null ? matching : List.of();
     }
 
     /**

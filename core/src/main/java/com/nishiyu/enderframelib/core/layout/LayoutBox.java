@@ -338,6 +338,8 @@ public class LayoutBox {
 
     /** 入力欄（input / textarea）の {@code ::placeholder} の算出スタイル。規則が掛からなければ null。描画側が文字色を読む。 */
     public ComputedStyle placeholderStyle = null;
+    /** {@code ::backdrop} の算出スタイル（dialog / popover だけ。規則が無ければ null）。Top Layer の箱の背面に全面で描く。 */
+    public ComputedStyle backdropStyle = null;
 
     /**
      * 疑似要素（{@code ::before} / {@code ::after} / {@code ::marker} / {@code ::placeholder}）のスタイルを解いたときの
@@ -758,7 +760,8 @@ public class LayoutBox {
 
     /** fieldset の描画される legend（{@link #isRenderedLegend}）。無ければ null。 */
     public LayoutBox renderedLegend() {
-        for (LayoutBox c : children) {
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
             if (c.isRenderedLegend) return c.display.isNone() ? null : c;
         }
         return null;
@@ -2746,7 +2749,8 @@ public class LayoutBox {
                 || style.facts().floating) {
             return false;
         }
-        for (LayoutBox child : children) {
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox child = children.get(i);
             if (child.style.facts().displayNone) continue;
             boolean laidOutByLayout = !Float.isNaN(child.lastLayoutX);
             if (laidOutByLayout ? !child.placementPure : !child.subtreeIsSelfContained(true)) return false;
@@ -2972,7 +2976,7 @@ public class LayoutBox {
                 if (ovB > descBottom) descBottom = ovB;
             }
         }
-        if (engineState != null) {
+        if (engineState != null && engineState.contributesScrollExtent()) {
             ScrollExtent extent = new ScrollExtent(extRight, extBottom);
             engineState.contributeScrollExtent(extent, scrollX, scrollY);
             extRight = extent.right();

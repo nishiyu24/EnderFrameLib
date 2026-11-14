@@ -76,50 +76,67 @@ public record RenderHints(
     public static final RenderHints NONE = new RenderHints(null, 0L, null, false, 0f, 0f, 0f, null, null, false, 0, null, null, null, 0f);
 
     public RenderHints withParentId(String v) {
+        if (java.util.Objects.equals(parentId, v) && (v == null || v.isEmpty() || parentKey == DisplayItem.keyOf(v))) return this;
         return new RenderHints(v, 0L, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withParent(String id, long key) {
+        if (java.util.Objects.equals(parentId, id) && (key == 0L ? (id == null || id.isEmpty() ? parentKey == 0L : parentKey == DisplayItem.keyOf(id)) : parentKey == key)) {
+            return this;
+        }
         return new RenderHints(id, key, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withParentKey(long key) {
+        if (parentKey == key) return this;
         return new RenderHints(parentId, key, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withTitle(String v) {
+        if (java.util.Objects.equals(title, v)) return this;
         return new RenderHints(parentId, parentKey, v, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withScroll(float contentWidth, float contentHeight) {
+        if (scrollable && scrollWidth == contentWidth && scrollHeight == contentHeight) return this;
         return new RenderHints(parentId, parentKey, title, true, contentWidth, contentHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withShadowBlur(float v) {
+        if (shadowBlur == v) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, v, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withShaderGradient(ShaderGradient v) {
+        if (java.util.Objects.equals(shaderGradient, v)) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, v, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withPointerEventsNone(boolean v) {
+        if (pointerEventsNone == v) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, v, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 
     public RenderHints withTransition(int delayMs, String easing, String property) {
+        if (transitionDelayMs == delayMs && java.util.Objects.equals(transitionEasing, easing)
+                && java.util.Objects.equals(transitionProperty, property)) {
+            return this;
+        }
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, delayMs, easing, property, layer, skew);
     }
 
     public RenderHints withLayer(LayerSpec v) {
+        if (java.util.Objects.equals(layer, v)) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, v, skew);
     }
 
     public RenderHints withSkew(float v) {
+        if (skew == v) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, shadowShape, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, v);
     }
 
     public RenderHints withShadowShape(ShadowShape v) {
+        if (java.util.Objects.equals(shadowShape, v)) return this;
         return new RenderHints(parentId, parentKey, title, scrollable, scrollWidth, scrollHeight, shadowBlur, v, shaderGradient, pointerEventsNone, transitionDelayMs, transitionEasing, transitionProperty, layer, skew);
     }
 

@@ -64,17 +64,26 @@ public final class EasingFunction {
      */
     public static String extractFromShorthand(String shorthand) {
         if (shorthand == null || shorthand.isBlank()) return DEFAULT_EASING;
-        Matcher m = CUBIC_BEZIER_PATTERN.matcher(shorthand);
-        if (m.find()) {
-            return m.group(0).replaceAll("\\s+", "");
+        if (containsIgnoreCase(shorthand, "cubic-bezier(")) {
+            Matcher m = CUBIC_BEZIER_PATTERN.matcher(shorthand);
+            if (m.find()) {
+                return m.group(0).replaceAll("\\s+", "");
+            }
         }
-        String lower = shorthand.toLowerCase(Locale.ROOT);
-        if (lower.contains("ease-in-out")) return "ease-in-out";
-        if (lower.contains("ease-out")) return "ease-out";
-        if (lower.contains("ease-in")) return "ease-in";
-        if (lower.contains("linear")) return "linear";
-        if (lower.contains("ease")) return "ease";
+        if (containsIgnoreCase(shorthand, "ease-in-out")) return "ease-in-out";
+        if (containsIgnoreCase(shorthand, "ease-out")) return "ease-out";
+        if (containsIgnoreCase(shorthand, "ease-in")) return "ease-in";
+        if (containsIgnoreCase(shorthand, "linear")) return "linear";
+        if (containsIgnoreCase(shorthand, "ease")) return "ease";
         return DEFAULT_EASING;
+    }
+
+    private static boolean containsIgnoreCase(String s, String needle) {
+        int n = needle.length(), lim = s.length() - n;
+        for (int i = 0; i <= lim; i++) {
+            if (s.regionMatches(true, i, needle, 0, n)) return true;
+        }
+        return false;
     }
 
     /**

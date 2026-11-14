@@ -348,6 +348,11 @@ public final class BoxDecorationPainter {
      */
     void drawInsetShadows(List<DisplayItem> elements, LayoutBox box, String id, List<BoxDecorations.Shadow> shadows,
                                   BorderSpec border, ClipRect clip, float fontHVal, float ox, float oy) {
+        boolean hasInset = false;
+        for (int i = 0, sn = shadows.size(); i < sn; i++) {
+            if (shadows.get(i).inset()) { hasInset = true; break; }
+        }
+        if (!hasInset) return;
         BoxDecorations.Rect pad = BoxDecorations.boxArea(box, "padding-box");
         if (pad.w() <= 0 || pad.h() <= 0) return;
         ClipRect padClip = intersectClip(clip, pad, border.innerRadii(), id);

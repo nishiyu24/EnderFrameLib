@@ -173,6 +173,11 @@ public abstract class LayoutEngine {
      */
     public interface LayoutEngineState {
 
+        /** この状態が {@link #contributeScrollExtent} で通常フロー以外の範囲を追加するか。 */
+        default boolean contributesScrollExtent() {
+            return false;
+        }
+
         /**
          * 通常フローの子以外に、このエンジンが配置した要素の範囲を足し込む。
          * 何も追加しないエンジンは実装しなくてよい（既定は何もしない）。

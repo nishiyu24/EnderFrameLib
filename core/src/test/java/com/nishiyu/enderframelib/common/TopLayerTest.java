@@ -94,4 +94,42 @@ public class TopLayerTest {
         assertTrue(is >= 0 && ip >= 0, "items found");
         assertTrue(ip > is, "popover must paint after the z-index:5 sibling (ip=" + ip + ", is=" + is + ")");
     }
+
+    private java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> render(Ctx c) {
+        LayoutBox root = c.layout();
+        return new com.nishiyu.enderframelib.core.paint.DisplayListBuilder(W, H, c.doc.sheet.keyframes, new ScrollState()).render(root);
+    }
+
+    private static com.nishiyu.enderframelib.core.paint.model.DisplayItem item(
+            java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem> items, String id) {
+        return items.stream().filter(i -> i.id().equals(id)).findFirst().orElse(null);
+    }
+
+    /** モーダルの dialog は ::backdrop をビューポート全面に、dialog の直前に描く。閉じたら消える。 */
+    @Test
+    public void modalDialogPaintsBackdropBehindItself() {
+        Ctx c = new Ctx("<style>dialog::backdrop{background:rgba(255,0,0,0.5)}</style><dialog id=d>x</dialog>");
+        c.el("d").showModal();
+        var items = render(c);
+        var bd = item(items, "d_backdrop");
+        assertNotNull(bd, "backdrop item");
+        assertEquals(0, bd.x());
+        assertEquals(0, bd.y());
+        assertEquals(W, bd.width());
+        assertEquals(H, bd.height());
+        assertEquals(0x80FF0000, bd.bgColor() & 0xFFFFFFFF, 0);
+        int ib = items.indexOf(bd), id = -1;
+        for (int i = 0; i < items.size(); i++) if (items.get(i).id().equals("d") || items.get(i).id().startsWith("d_") && !items.get(i).id().equals("d_backdrop")) { id = i; break; }
+        assertTrue(ib < id, "backdrop before dialog");
+        c.el("d").close();
+        assertNull(item(render(c), "d_backdrop"));
+    }
+
+    /** show()（モードレス）は backdrop を持たない。 */
+    @Test
+    public void nonModalDialogHasNoBackdrop() {
+        Ctx c = new Ctx("<dialog id=d>x</dialog>");
+        c.el("d").show();
+        assertNull(item(render(c), "d_backdrop"));
+    }
 }

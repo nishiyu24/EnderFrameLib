@@ -1105,8 +1105,14 @@ public class GridLayoutEngine extends LayoutEngine {
         }
 
         @Override
+        public boolean contributesScrollExtent() {
+            return !items.isEmpty();
+        }
+
+        @Override
         public void contributeScrollExtent(ScrollExtent extent, float scrollX, float scrollY) {
-            for (GridItem item : items) {
+            for (int i = 0, n = items.size(); i < n; i++) {
+                GridItem item = items.get(i);
                 if (item.box.isAbsolute) continue;
                 extent.include(item.box, scrollX, scrollY);
             }

@@ -56,7 +56,7 @@ public class StyleResolver {
      * {@code SELECTION} は選択範囲の、見た目の規則を受け取る。
      */
     public enum PseudoType {
-        BEFORE, AFTER, MARKER, PLACEHOLDER, SELECTION;
+        BEFORE, AFTER, MARKER, PLACEHOLDER, SELECTION, BACKDROP;
 
         /** 持ち主の子として箱を作る疑似要素（{@code content} が箱を生む）。 */
         public static final List<PseudoType> GENERATED = List.of(BEFORE, AFTER);

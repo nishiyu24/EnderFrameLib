@@ -1750,20 +1750,34 @@ public class HtmlNode implements Node {
             return EventDispatcher.dispatchEvent(this, event, null, defaultActions);
         }
 
-        List<Runnable> deferredOutbound = new ArrayList<>();
+        DeferredRunnables deferredOutbound = new DeferredRunnables();
         boolean notPrevented = EventDispatcher.dispatchEvent(
                 this,
                 event,
                 (node, action) -> deferredOutbound.add(() -> sink.run(node, event, action)),
                 (node, declaration) -> deferredOutbound.add(() -> sink.forward(node, event, declaration)),
                 ev -> {
-                    deferredOutbound.forEach(Runnable::run);
+                    deferredOutbound.runAll();
                     if (defaultActions != null) defaultActions.executeDefaultAction(ev);
                 });
         return notPrevented;
     }
 
+    private static final class DeferredRunnables {
+        private List<Runnable> items;
+
+        void add(Runnable action) {
+            if (items == null) items = new ArrayList<>(2);
+            items.add(action);
+        }
+
+        void runAll() {
+            if (items == null) return;
+            for (int i = 0, n = items.size(); i < n; i++) items.get(i).run();
+        }
+    }
+
     public List<EventListenerEntry> getEventListenersSnapshot() {
-        return eventListeners == null ? new ArrayList<>() : new ArrayList<>(eventListeners);
+        return eventListeners == null || eventListeners.isEmpty() ? List.of() : new ArrayList<>(eventListeners);
     }
 }

@@ -404,10 +404,27 @@ public static float[] cornerRadii(ComputedStyle style, float w, float h, float r
      * 隣り合う角の半径の和が辺を越えるときは、全部の半径に同じ倍率を掛けて収める（CSS Backgrounds 3 §5.5）。
      * どちらかが 0 の角は直角（両方 0）。
      */
+    private static final float[] ZERO_RADII_XY = new float[8];
+
+    private static boolean hasNonZeroCornerRadius(ComputedStyle style) {
+        if (style.get(CORNER_IDS[0]) != null || style.get(CORNER_IDS[1]) != null
+                || style.get(CORNER_IDS[2]) != null || style.get(CORNER_IDS[3]) != null) {
+            return true;
+        }
+        String br = style.get(CssPropertyIndex.BORDER_RADIUS);
+        return br != null && !br.isEmpty() && !"0".equals(br) && !"0px".equals(br);
+    }
+
+    /** 読み取り専用の四隅の楕円半径（呼び出し側は配列を書き換えないこと）。 */
+    public static float[] cornerRadiiXYShared(ComputedStyle style, float w, float h, float rootW, float rootH) {
+        if (!hasNonZeroCornerRadius(style)) return ZERO_RADII_XY;
+        return (float[]) style.paintMemo(new CornerKey(w, h, rootW, rootH),
+                k -> computeCornerRadiiXY(style, w, h, rootW, rootH));
+    }
+
     public static float[] cornerRadiiXY(ComputedStyle style, float w, float h, float rootW, float rootH) {
         // スタイルと箱の大きさだけで決まる。呼び出し側が書き換えても壊れないよう、写しを返す
-        return ((float[]) style.paintMemo(new CornerKey(w, h, rootW, rootH),
-                k -> computeCornerRadiiXY(style, w, h, rootW, rootH))).clone();
+        return cornerRadiiXYShared(style, w, h, rootW, rootH).clone();
     }
 
     private record CornerKey(float w, float h, float rootW, float rootH) {}

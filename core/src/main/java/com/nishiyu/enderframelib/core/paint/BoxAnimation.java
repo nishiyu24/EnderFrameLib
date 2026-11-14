@@ -231,13 +231,34 @@ final class BoxAnimation {
      * {@code transition-duration}, {@code transition-delay}, {@code transition-timing-function}）を解決する。
      * CSS 既定のイージングは {@code ease}（{@code cubic-bezier(0.25, 0.1, 0.25, 1.0)}）。
      */
+    private static final int TRANSITION_CACHE_LIMIT = 256;
+    private static final java.util.concurrent.ConcurrentHashMap<String, TransitionSpec> SHORTHAND_TRANSITION_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     static TransitionSpec parseTransitionSpec(Map<String, String> style) {
+        String tr = style.get(CssProperty.TRANSITION);
+        String tp = style.get(CssProperty.TRANSITION_PROPERTY);
+        String tdur = style.get(CssProperty.TRANSITION_DURATION);
+        String td = style.get(CssProperty.TRANSITION_DELAY);
+        String ttf = style.get(CssProperty.TRANSITION_TIMING_FUNCTION);
+        if (tp == null && tdur == null && td == null && ttf == null && tr != null && !tr.isBlank()) {
+            TransitionSpec cached = SHORTHAND_TRANSITION_CACHE.get(tr);
+            if (cached != null) return cached;
+            TransitionSpec spec = parseTransitionSpecUncached(tr, null, null, null, null);
+            if (SHORTHAND_TRANSITION_CACHE.size() < TRANSITION_CACHE_LIMIT) {
+                SHORTHAND_TRANSITION_CACHE.putIfAbsent(tr, spec);
+            }
+            return spec;
+        }
+        return parseTransitionSpecUncached(tr, tp, tdur, td, ttf);
+    }
+
+    private static TransitionSpec parseTransitionSpecUncached(String tr, String tp, String tdur, String td, String ttf) {
         int durationMs = 0;
         int delayMs = 0;
         String easing = EasingFunction.DEFAULT_EASING;
         String property = "all";
 
-        String tr = style.get(CssProperty.TRANSITION);
         if (tr != null && !tr.isBlank()) {
             if ("none".equalsIgnoreCase(tr.trim())) {
                 property = "none";
@@ -275,24 +296,20 @@ final class BoxAnimation {
             }
         }
 
-        String tp = style.get(CssProperty.TRANSITION_PROPERTY);
         if (tp != null && !tp.isBlank()) {
             property = tp.trim().toLowerCase(Locale.ROOT);
         }
 
-        String tdur = style.get(CssProperty.TRANSITION_DURATION);
         if (tdur != null) {
             Integer ms = AnimationParser.firstTimeMs(tdur);
             if (ms != null) durationMs = ms;
         }
 
-        String td = style.get(CssProperty.TRANSITION_DELAY);
         if (td != null) {
             Integer ms = AnimationParser.firstTimeMs(td);
             if (ms != null) delayMs = ms;
         }
 
-        String ttf = style.get(CssProperty.TRANSITION_TIMING_FUNCTION);
         if (ttf != null && !ttf.isBlank()) {
             easing = ttf.trim();
         }

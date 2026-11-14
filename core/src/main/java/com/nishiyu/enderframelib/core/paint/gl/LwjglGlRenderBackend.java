@@ -336,6 +336,8 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public static volatile boolean rectTrees = !"false".equals(System.getProperty("enderframe.gl.recttrees"));
     private Pixmap readback;
     private final Map<String, Integer> uniforms = new HashMap<>();
+    private final Map<String, Integer> texUniforms = new HashMap<>();
+    private final Map<String, Integer> fxUniforms = new HashMap<>();
 
     private static final int ATLAS_SIZE = 1024;
     /** アトラスを広げる上限（R8 で 4096² = 16MB）。実際は GL の最大テクスチャ寸法と比べて小さい方。 */
@@ -787,7 +789,12 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     }
 
     private int loc(int program, String name) {
-        return uniforms.computeIfAbsent(program + ":" + name, k -> GL20.glGetUniformLocation(program, name));
+        Map<String, Integer> map = program == texProgram ? texUniforms : (program == fxProgram ? fxUniforms : uniforms);
+        Integer v = map.get(name);
+        if (v != null) return v;
+        int l = GL20.glGetUniformLocation(program, name);
+        map.put(name, l);
+        return l;
     }
 
     // ------------------------------------------------------------------ フレーム
@@ -845,6 +852,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GL11.glEnable(GL11.GL_BLEND);
+        GL14Blend.premultiplied();
         float ca = ((clearPremul >>> 24) & 0xFF) / 255f, cr = ((clearPremul >> 16) & 0xFF) / 255f;
         float cg = ((clearPremul >> 8) & 0xFF) / 255f, cb = (clearPremul & 0xFF) / 255f;
         GL11.glClearColor(cr, cg, cb, ca);
@@ -2043,27 +2051,32 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
 
     @Override
     public com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayer(GpuScrollLayer l) {
+        int[] bb = l.bounds();
+        return planScrollLayerBounds(l.key(), l.token(), l.pose(), bb[0], bb[1], bb[2], bb[3]);
+    }
+
+    @Override
+    public com.nishiyu.enderframelib.core.paint.RetainPlan planScrollLayerBounds(
+            String key, Object token, Matrix2D pose, int x0, int y0, int x1, int y1) {
         var NONE = com.nishiyu.enderframelib.core.paint.RetainPlan.NONE;
         if (!retainedScroll || retainOverflow || rects == null || closed || !layerStack.isEmpty()) return NONE;
         // 層は画面と同じ大きさの FBO。画面の 1/8 に満たない小さなコンテナ（カードの overflow:hidden など）に作ると、
         // 数が多い文書で作成と破棄を毎フレーム繰り返す（保持できる層は少ない）うえ、得も無い
-        int[] bb = l.bounds();
-        if ((long) (bb[2] - bb[0]) * (bb[3] - bb[1]) * 8L < (long) width * height) return NONE;
-        Retained r = retained.get(l.key());
+        if ((long) (x1 - x0) * (y1 - y0) * 8L < (long) width * height) return NONE;
+        Retained r = retained.get(key);
         if (r == null) {
             // スクロールが実際に起きるまでは保持しない（静止した文書の見た目を変えない）: 節の位置が前フレームから動いたときに記録を始める
-            Matrix2D was = seenScrollPose.get(l.key());
-            Object wasToken = seenScrollToken.get(l.key());
-            seenScrollPose.put(l.key(), l.pose());
-            seenScrollToken.put(l.key(), l.token());
-            boolean moved = was != null && wasToken == l.token() && (was.e() != l.pose().e() || was.f() != l.pose().f());
+            Matrix2D was = seenScrollPose.get(key);
+            Object wasToken = seenScrollToken.get(key);
+            seenScrollPose.put(key, pose);
+            seenScrollToken.put(key, token);
+            boolean moved = was != null && wasToken == token && (was.e() != pose.e() || was.f() != pose.f());
             if (!moved) return NONE;
         }
-        if (r != null && r.token == l.token() && samePose(r.pose, l.pose())) {
-            int dx = (int) Math.round(l.pose().e() - r.pose.e()), dy = (int) Math.round(l.pose().f() - r.pose.f());
-            int[] b = l.bounds();
+        if (r != null && r.token == token && samePose(r.pose, pose)) {
+            int dx = (int) Math.round(pose.e() - r.pose.e()), dy = (int) Math.round(pose.f() - r.pose.f());
             // 重ねる範囲を、保持した層の同じ範囲から取れるか（層は画面と同じ範囲。画面の外へ出る分は層に無い）
-            if (b[0] - dx >= 0 && b[1] - dy >= 0 && b[2] - dx <= width && b[3] - dy <= height) return com.nishiyu.enderframelib.core.paint.RetainPlan.SKIP;
+            if (x0 - dx >= 0 && y0 - dy >= 0 && x1 - dx <= width && y1 - dy <= height) return com.nishiyu.enderframelib.core.paint.RetainPlan.SKIP;
         }
         if (r == null) {
             while (retained.size() >= MAX_RETAINED) { // 最も使っていない層を捨てる
@@ -2081,7 +2094,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (layer == null) return NONE;
             r = new Retained();
             r.layer = layer;
-            retained.put(l.key(), r);
+            retained.put(key, r);
         }
         r.token = null; // 記録が終わるまで使わせない
         return com.nishiyu.enderframelib.core.paint.RetainPlan.RECORD;

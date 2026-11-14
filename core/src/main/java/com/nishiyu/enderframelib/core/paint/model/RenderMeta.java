@@ -48,7 +48,7 @@ public record RenderMeta(
 
     public RenderMeta withHints(RenderHints newHints) {
         if (newHints == null) newHints = RenderHints.NONE;
-        if (newHints.equals(hints)) return this;
+        if (newHints == hints || newHints.equals(hints)) return this;
         return new RenderMeta(clipRect, borderRadii, circleBorder, fontHeight, baseline, lineHeight,
                 originX, originY, itemCount, interactiveState, roundedBorder, newHints);
     }

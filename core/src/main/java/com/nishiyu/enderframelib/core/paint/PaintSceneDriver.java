@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -153,11 +154,11 @@ public final class PaintSceneDriver {
     private static final int BLOCK_SHIFT = 6;
     private static final int BLOCK = 1 << BLOCK_SHIFT;
 
-    private final HashMap<Integer, RangeBounds> rangeBounds = new HashMap<>();
+    private final Int2ObjectOpenHashMap<RangeBounds> rangeBounds = new Int2ObjectOpenHashMap<>();
     /** 項目の状態（{@link CssAnimator.AnimState}）が「姿勢は中立」と確かめ済みの印。項目が差し替わる・索引を作り直すと外れる。 */
     private boolean[] stateVerified = new boolean[0];
     /** このフレームの、走査から外すブロックのある RECORD の節 → その範囲の索引（{@link RangeBounds#keep} が走査するブロック）。 */
-    private final HashMap<Integer, RangeBounds> windows = new HashMap<>();
+    private final Int2ObjectOpenHashMap<RangeBounds> windows = new Int2ObjectOpenHashMap<>();
     /** 診断・テスト用: 走査から外した項目の数（累計）。 */
     private long rangeCulledItems;
 
@@ -196,7 +197,11 @@ public final class PaintSceneDriver {
 
     /** 節 {@code c} の範囲の縦の範囲の索引。条件を満たさなければ null（範囲を飛ばせない）。 */
     private RangeBounds boundsFor(List<DisplayItem> items, int c) {
-        RangeBounds rb = rangeBounds.computeIfAbsent(c, k -> new RangeBounds());
+        RangeBounds rb = rangeBounds.get(c);
+        if (rb == null) {
+            rb = new RangeBounds();
+            rangeBounds.put(c, rb);
+        }
         if (rb.valid) return rb.eligible ? rb : null;
         rb.valid = true;
         rb.eligible = false;
@@ -423,7 +428,7 @@ public final class PaintSceneDriver {
             List<Group>[] chains = chainBuf;
             // グループに属する描く部品の数。錨の位置（項目の添字）で数える（文字列の表を引かない）
             int[] members = membersBuf;
-            Map<String, Integer> extraMembers = new HashMap<>(); // 錨がリストに無いグループだけ
+            Map<String, Integer> extraMembers = null; // 錨がリストに無いグループだけ
             // スクロール層: 保持できる範囲を先に決める（SKIP の範囲は、グループの鎖も姿勢の計算も要らない）
             windows.clear();
             RetainPlan[] plan = planRetained(items, painter);
@@ -455,10 +460,14 @@ public final class PaintSceneDriver {
                     Resolved r = resolveAt(i);
                     if (r.opacity() > 0.005f) {
                         chain = chainFor(items, i, r);
-                        for (Group g : chain) {
+                        for (int k = 0, cn = chain.size(); k < cn; k++) {
+                            Group g = chain.get(k);
                             if (g.maskOf() != null) continue;
                             if (g.anchor() >= 0) members[g.anchor()]++;
-                            else extraMembers.merge(g.id(), 1, Integer::sum);
+                            else {
+                                if (extraMembers == null) extraMembers = new HashMap<>(4);
+                                extraMembers.merge(g.id(), 1, Integer::sum);
+                            }
                         }
                     } else {
                         chain = null;
@@ -509,7 +518,7 @@ public final class PaintSceneDriver {
                             for (Group g : chain) {
                                 // フィルター・マスクのあるグループと、描く部品が 2 つ以上のグループだけ層にする
                                 // （部品が 1 つなら、部品ごとに不透明度を掛けても同じ。GPU の経路も保てる）
-                                if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : extraMembers.getOrDefault(g.id(), 0)) > 1) layered.add(g);
+                                if (g.spec() != null || g.maskOf() != null || (g.anchor() >= 0 ? members[g.anchor()] : (extraMembers != null ? extraMembers.getOrDefault(g.id(), 0) : 0)) > 1) layered.add(g);
                                 else flat *= g.opacity();
                             }
                             painter.syncLayers(layered);
@@ -732,13 +741,32 @@ public final class PaintSceneDriver {
         if (!isImmutable(old) || !isImmutable(items)) return false;
         int n = items.size();
 
-        // 第 1 パス: 差分がある位置の構造が一致しているか全件確認
+        // 第 1 パス: 差分がある位置の構造が一致しているか全件確認（ImmutableItemList 同士は同一ブロックを飛ばす）
         int count = 0;
-        for (int i = 0; i < n; i++) {
-            DisplayItem was = old.get(i), is = items.get(i);
-            if (was == is) continue;
-            if (was.key() != is.key() || !sameStructure(was, is)) return false;
-            count++;
+        if (diffBuf.length < 256) diffBuf = new int[256];
+        if (old instanceof ImmutableItemList oi && items instanceof ImmutableItemList ni) {
+            int chunks = oi.chunkCount();
+            for (int c = 0; c < chunks; c++) {
+                DisplayItem[] ob = oi.chunkAt(c);
+                DisplayItem[] nb = ni.chunkAt(c);
+                if (ob == nb) continue;
+                int base = c << ImmutableItemList.CHUNK_SHIFT;
+                for (int j = 0, len = ob.length; j < len; j++) {
+                    DisplayItem was = ob[j], is = nb[j];
+                    if (was == is) continue;
+                    if (was.key() != is.key() || !sameStructure(was, is)) return false;
+                    if (count < diffBuf.length) diffBuf[count] = base + j;
+                    count++;
+                }
+            }
+        } else {
+            for (int i = 0; i < n; i++) {
+                DisplayItem was = old.get(i), is = items.get(i);
+                if (was == is) continue;
+                if (was.key() != is.key() || !sameStructure(was, is)) return false;
+                if (count < diffBuf.length) diffBuf[count] = i;
+                count++;
+            }
         }
         if (count == 0) {
             indexedItems = items;
@@ -746,12 +774,7 @@ public final class PaintSceneDriver {
         }
 
         // 第 2 パス: 構造が完全に一致していることが保証されたため、変更位置を更新
-        if (count <= n / 4 && count <= 256) {
-            int p = 0;
-            if (diffBuf.length < count) diffBuf = new int[Math.max(count, diffBuf.length * 2)];
-            for (int i = 0; i < n; i++) {
-                if (old.get(i) != items.get(i)) diffBuf[p++] = i;
-            }
+        if (count <= diffBuf.length && count <= n / 4) {
             for (int k = 0; k < count; k++) {
                 int i = diffBuf[k];
                 DisplayItem curItem = items.get(i);
@@ -1074,9 +1097,9 @@ public final class PaintSceneDriver {
         generation++;
     }
 
-    /** 中身が変わらないと言えるリストか（{@code List.of} / {@code List.copyOf} / {@code Stream.toList} の結果）。 */
-    private static boolean isImmutable(List<?> list) {
-        return list.getClass().getName().startsWith("java.util.ImmutableCollections$");
+    /** 中身が変わらないと言えるリストか（{@code List.of} / {@code List.copyOf} / {@code Stream.toList} / {@link ImmutableItemList}）。 */
+    public static boolean isImmutable(List<?> list) {
+        return list instanceof ImmutableItemList || list.getClass().getName().startsWith("java.util.ImmutableCollections$");
     }
 
     private static boolean hasFx(LayerSpec spec) {
@@ -1199,10 +1222,14 @@ public final class PaintSceneDriver {
         DisplayItem el = indexedItems.get(i);
         Resolved parent = null;
         int p = parentIdx[i];
-        if (p >= 0 && p != i && !visiting[p]) {
-            visiting[i] = true; // 親子が輪になっていても止まる
-            parent = resolveAt(p);
-            visiting[i] = false;
+        if (p >= 0 && p != i) {
+            if (curStamp[p] == frameStamp && (parent = curRes[p]) != null) {
+                // 親が同フレームで解決済みなら再帰を省く
+            } else if (!visiting[p]) {
+                visiting[i] = true; // 親子が輪になっていても止まる
+                parent = resolveAt(p);
+                visiting[i] = false;
+            }
         }
         CssAnimator.AnimState st = states[i];
         if (st == null) st = states[i] = CssAnimator.stateFor(sessionId, el, now);
@@ -1232,24 +1259,35 @@ public final class PaintSceneDriver {
         float parentOpacity = parent != null ? parent.opacity() : 1f;
         float parentResidual = parent != null ? parent.residual() : 1f;
         List<Group> parentGroups = parent != null ? parent.groups() : List.of();
-        RenderMeta meta = el.meta();
-        float ox = meta != null ? meta.originX() : 0.5f, oy = meta != null ? meta.originY() : 0.5f;
-        double cx = el.x() + el.width() * ox, cy = el.y() + el.height() * oy;
-        Matrix2D pose = base.multiply(Matrix2D.translate(cx + anim.tx(), cy + anim.ty()));
-        if (anim.rot() != 0f) pose = pose.multiply(Matrix2D.rotate(Math.toRadians(anim.rot())));
-        if (anim.skew() != 0f) pose = pose.multiply(new Matrix2D(1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0)); // skewX（回転の後・拡縮の前）
-        if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
-        pose = pose.multiply(Matrix2D.translate(-cx, -cy));
+        Matrix2D pose;
+        if (anim.rot() == 0f && anim.skew() == 0f && anim.sx() == 1f && anim.sy() == 1f) {
+            float tx = anim.tx(), ty = anim.ty();
+            if (tx == 0f && ty == 0f) {
+                pose = base;
+            } else {
+                pose = new Matrix2D(base.a(), base.b(), base.c(), base.d(),
+                        base.e() + base.a() * tx + base.c() * ty,
+                        base.f() + base.b() * tx + base.d() * ty);
+            }
+        } else {
+            RenderMeta meta = el.meta();
+            float ox = meta != null ? meta.originX() : 0.5f, oy = meta != null ? meta.originY() : 0.5f;
+            double cx = el.x() + el.width() * ox, cy = el.y() + el.height() * oy;
+            pose = base.multiply(Matrix2D.translate(cx + anim.tx(), cy + anim.ty()));
+            if (anim.rot() != 0f) pose = pose.multiply(Matrix2D.rotate(Math.toRadians(anim.rot())));
+            if (anim.skew() != 0f) pose = pose.multiply(new Matrix2D(1, 0, Math.tan(Math.toRadians(anim.skew())), 1, 0, 0)); // skewX（回転の後・拡縮の前）
+            if (anim.sx() != 1f || anim.sy() != 1f) pose = pose.multiply(Matrix2D.scale(anim.sx(), anim.sy()));
+            pose = pose.multiply(Matrix2D.translate(-cx, -cy));
+        }
         boolean fx = el.type() == ElementType.NODE && hasFx(el.hints().layer());
         boolean group = el.type() == ElementType.NODE && (anim.opacity() < 0.999f || fx);
         List<Group> groups = parentGroups;
-        Resolved r = new Resolved(pose, parentOpacity * anim.opacity(), parentResidual * (group ? 1f : anim.opacity()), groups, anim);
         if (group) {
-            groups = new ArrayList<>(parentGroups);
+            groups = new ArrayList<>(parentGroups.size() + 1);
+            groups.addAll(parentGroups);
             groups.add(new Group(el.id(), Math.max(0f, anim.opacity()), index, fx ? el.hints().layer() : null,
                     new double[]{pose.a(), pose.b(), pose.c(), pose.d()}, null, pose));
-            r = new Resolved(pose, r.opacity(), r.residual(), groups, anim);
         }
-        return r;
+        return new Resolved(pose, parentOpacity * anim.opacity(), parentResidual * (group ? 1f : anim.opacity()), groups, anim);
     }
 }

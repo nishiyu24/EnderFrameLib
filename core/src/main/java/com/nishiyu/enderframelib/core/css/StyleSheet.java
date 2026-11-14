@@ -101,17 +101,27 @@ public class StyleSheet {
         return stateOnSubjectOnly;
     }
 
+    private boolean containersDeclared;
+    private int containersDeclaredVersion = -1;
+
     /** {@code container-type} / {@code container-name} / {@code container} を宣言する規則があるか。あれば、レイアウト後にコンテナの寸法を測る。 */
     public boolean declaresContainers() {
-        for (StyleRule rule : rules) {
-            for (String property : rule.properties.keySet()) {
-                if (property.equals(CssProperty.CONTAINER_TYPE) || property.equals(CssProperty.CONTAINER_NAME)
-                        || property.equals("container")) {
-                    return true;
+        int v = rules.version();
+        if (containersDeclaredVersion != v) {
+            boolean found = false;
+            for (int i = 0, n = rules.size(); i < n && !found; i++) {
+                for (String property : rules.get(i).properties.keySet()) {
+                    if (property.equals(CssProperty.CONTAINER_TYPE) || property.equals(CssProperty.CONTAINER_NAME)
+                            || property.equals("container")) {
+                        found = true;
+                        break;
+                    }
                 }
             }
+            containersDeclared = found;
+            containersDeclaredVersion = v;
         }
-        return false;
+        return containersDeclared;
     }
 
     private boolean viewportValues;
@@ -203,12 +213,24 @@ public class StyleSheet {
         return usesInherit;
     }
 
+    private boolean usesCq;
+    private int usesCqVersion = -1;
+
     /** {@code @container} の中の規則があるか。あれば、コンテナの寸法が変わると再スタイルが要る。 */
     public boolean usesContainerQueries() {
-        for (StyleRule rule : rules) {
-            if (!rule.containerQueries.isEmpty()) return true;
+        int v = rules.version();
+        if (usesCqVersion != v) {
+            boolean found = false;
+            for (int i = 0, n = rules.size(); i < n; i++) {
+                if (!rules.get(i).containerQueries.isEmpty()) {
+                    found = true;
+                    break;
+                }
+            }
+            usesCq = found;
+            usesCqVersion = v;
         }
-        return false;
+        return usesCq;
     }
 
     /**

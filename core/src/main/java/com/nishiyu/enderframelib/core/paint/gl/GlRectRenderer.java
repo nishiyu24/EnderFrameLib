@@ -92,6 +92,20 @@ public final class GlRectRenderer implements AutoCloseable {
         boolean blend = GL11.glIsEnabled(GL11.GL_BLEND);
         int srcRgb = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), dstRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
         int srcA = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), dstA = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        drawCore(store, first, count, frameMs, viewW, viewH, flipY);
+        GL14.glBlendFuncSeparate(srcRgb, dstRgb, srcA, dstA);
+        if (!blend) GL11.glDisable(GL11.GL_BLEND);
+    }
+
+    /** 呼び出し側が既に {@code GL_BLEND} 有効・事前乗算 {@code (ONE, ONE_MINUS_SRC_ALPHA)} に揃えているとき用（状態問い合わせを省く）。 */
+    void drawPremulBlend(GlTreeStore store, int first, int count, float frameMs, int viewW, int viewH, boolean flipY) {
+        if (count <= 0) return;
+        drawCore(store, first, count, frameMs, viewW, viewH, flipY);
+    }
+
+    private void drawCore(GlTreeStore store, int first, int count, float frameMs, int viewW, int viewH, boolean flipY) {
         GL20.glUseProgram(program);
         setSamplersOnce(); // 字形アトラス = ユニット 1・画像 = 2（従来のバックエンドが結ぶ）。バッファテクスチャは 16 番以降
         store.primitives.bindFloatView(16);
@@ -110,11 +124,7 @@ public final class GlRectRenderer implements AutoCloseable {
         GL20.glUniform1f(locTime, frameMs);
         GL20.glUniform1i(locBase, first);
         GL20.glUniform1f(locSign, flipY ? -1f : 1f);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP, 0, 4, count);
-        GL14.glBlendFuncSeparate(srcRgb, dstRgb, srcA, dstA);
-        if (!blend) GL11.glDisable(GL11.GL_BLEND);
+        GL31.glDrawArraysInstanced(GL31.GL_TRIANGLE_STRIP, 0, 4, count);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
 

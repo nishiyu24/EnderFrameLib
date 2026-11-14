@@ -94,6 +94,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final CpuRaster raster;
     private final GpuRoute route = new GpuRoute();
     private final float dpr;
+    private final Matrix2D dprFrame;
     private final String sessionId;
     private final PaintResources resources;
     private int clearColor = 0;
@@ -186,6 +187,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         this.driver = new PaintSceneDriver(sessionId);
         if (!(devicePixelRatio > 0f)) throw new IllegalArgumentException("devicePixelRatio must be > 0");
         this.dpr = devicePixelRatio;
+        this.dprFrame = Matrix2D.scale(devicePixelRatio, devicePixelRatio);
         this.raster = new CpuRaster(Math.max(1, Math.round(cssW * devicePixelRatio)), Math.max(1, Math.round(cssH * devicePixelRatio)));
     }
 
@@ -304,7 +306,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     private void beginFrame(List<DisplayItem> items) {
-        this.frame = Matrix2D.scale(dpr, dpr);
+        this.frame = dprFrame;
         this.frameSize = items.size();
         this.retainInfo.clear();
         this.recordOwner = null;
@@ -831,7 +833,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private static boolean stableList(List<DisplayItem> list) {
         if (list instanceof OffsetItemList o) return stableList(o.base());
-        return list.getClass().getName().startsWith("java.util.ImmutableCollections$");
+        return PaintSceneDriver.isImmutable(list);
     }
 
     private static boolean volatileItem(DisplayItem el) {
@@ -930,13 +932,17 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
         @Override
         public void beginRetained(DisplayItem node, int nodeIndex, int from, int to) {
-            if (GpuLayerAttempt.beginScroll(route.current(), retainInfo.get(nodeIndex))) recordOwner = ownerKeyOf(node);
+            if (GpuLayerAttempt.beginScroll(route.current(), retainInfo.get(nodeIndex))) recordOwner = cachedOwnerKeyOf(node, nodeIndex);
         }
 
         @Override
         public double[] cullWindow(DisplayItem node, int nodeIndex) {
             // 記録中も通常描画でも、項目のクリップは描画先 [0, 高さ] に収まる。その外へ CULL_PAD + 項目の高さ以上離れた項目は塗られない（outsideBox と同じ式）
-            return cullOffscreen ? new double[]{0, raster.targetHeight(), CULL_PAD} : null;
+            if (!cullOffscreen) return null;
+            scratchCullWindow[0] = 0;
+            scratchCullWindow[1] = raster.targetHeight();
+            scratchCullWindow[2] = CULL_PAD;
+            return scratchCullWindow;
         }
 
         @Override
@@ -952,28 +958,119 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private final java.util.HashMap<Integer, GpuScrollLayer> retainInfo = new java.util.HashMap<>();
     /** 保持する層へ記録している間の、コンテナ（スクロール節の持ち主）の鍵。クリップの部品のうち、これが持ち主のものは外す。 */
     private String recordOwner;
-    /** 中身が保持に向くかの判定の覚え（基底の表示リストと節が同じなら同じ答え）。 */
+    /** 中身が保持に向くかの判定の覚え（基底の表示リストと節が同じなら同じ答え）。0=未判定, 1=不可, 2=可。 */
     private Object eligibleToken;
-    private int eligibleNode = -1;
-    private boolean eligibleVerdict;
+    private byte[] retainEligible = new byte[0];
+    private String[] retainOwner = new String[0];
+    private final double[] scratchBounds4 = new double[4];
+    private final double[] scratchCullWindow = new double[3];
 
     private static String ownerKeyOf(DisplayItem node) {
         String id = node.id();
         return id.endsWith(PaintSceneDriver.SCROLL_CONTENT_SUFFIX) ? id.substring(0, id.length() - PaintSceneDriver.SCROLL_CONTENT_SUFFIX.length()) : id;
     }
 
+    private String cachedOwnerKeyOf(DisplayItem node, int nodeIndex) {
+        Object token = driver.contentToken();
+        if (eligibleToken != token) {
+            eligibleToken = token;
+            java.util.Arrays.fill(retainEligible, (byte) 0);
+            java.util.Arrays.fill(retainOwner, null);
+        }
+        if (nodeIndex >= retainOwner.length) {
+            int nextLen = Math.max(nodeIndex + 1, retainOwner.length * 2 + 16);
+            retainEligible = java.util.Arrays.copyOf(retainEligible, nextLen);
+            retainOwner = java.util.Arrays.copyOf(retainOwner, nextLen);
+        }
+        String owner = retainOwner[nodeIndex];
+        if (owner == null) {
+            owner = ownerKeyOf(node);
+            retainOwner[nodeIndex] = owner;
+        }
+        return owner;
+    }
+
     private RetainPlan planRetained(DisplayItem node, int nodeIndex, int from, int to) {
         if (route.current() == null || recordOwner != null) return RetainPlan.NONE;
         Object token = driver.contentToken();
-        if (!(eligibleToken == token && eligibleNode == nodeIndex)) {
-            eligibleVerdict = rangeIsRetainable(driver.items(), from, to);
+        if (eligibleToken != token) {
             eligibleToken = token;
-            eligibleNode = nodeIndex;
+            java.util.Arrays.fill(retainEligible, (byte) 0);
+            java.util.Arrays.fill(retainOwner, null);
         }
-        if (!eligibleVerdict) return RetainPlan.NONE;
+        if (nodeIndex >= retainEligible.length) {
+            int nextLen = Math.max(nodeIndex + 1, retainEligible.length * 2 + 16);
+            retainEligible = java.util.Arrays.copyOf(retainEligible, nextLen);
+            retainOwner = java.util.Arrays.copyOf(retainOwner, nextLen);
+        }
+        byte verdict = retainEligible[nodeIndex];
+        if (verdict == 0) {
+            verdict = rangeIsRetainable(driver.items(), from, to) ? (byte) 2 : (byte) 1;
+            retainEligible[nodeIndex] = verdict;
+        }
+        if (verdict != 2) return RetainPlan.NONE;
+
+        String owner = retainOwner[nodeIndex];
+        if (owner == null) {
+            owner = ownerKeyOf(node);
+            retainOwner[nodeIndex] = owner;
+        }
+        List<DisplayItem> items = driver.items();
+        int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
+        int partCount = 0;
+        for (int i = from; i < to && partCount == 0; i++) {
+            RenderMeta meta = items.get(i).meta();
+            ClipRect cr = meta != null ? meta.clipRect() : null;
+            if (cr == null) continue;
+            if (!cr.chain().isEmpty()) {
+                List<ClipChainPart> chain = cr.chain();
+                for (int k = 0, cn = chain.size(); k < cn; k++) {
+                    ClipChainPart p = chain.get(k);
+                    if (owner.equals(p.ownerId()) && p.rectLength() >= 4) {
+                        int ix = driver.indexOf(p.ownerId());
+                        Matrix2D pose = ix >= 0 ? driver.resolveAt(ix).pose() : frame;
+                        double[] b = deviceBounds(pose, p.rectAt(0), p.rectAt(1), p.rectAt(2), p.rectAt(3), scratchBounds4);
+                        x0 = Math.max(x0, (int) Math.floor(b[0]));
+                        y0 = Math.max(y0, (int) Math.floor(b[1]));
+                        x1 = Math.min(x1, (int) Math.ceil(b[2]));
+                        y1 = Math.min(y1, (int) Math.ceil(b[3]));
+                        partCount++;
+                    }
+                }
+            } else if (owner.equals(cr.ownerId())) {
+                int ix = driver.indexOf(cr.ownerId());
+                Matrix2D pose = ix >= 0 ? driver.resolveAt(ix).pose() : frame;
+                double[] b = deviceBounds(pose, cr.minX(), cr.minY(), cr.maxX(), cr.maxY(), scratchBounds4);
+                x0 = Math.max(x0, (int) Math.floor(b[0]));
+                y0 = Math.max(y0, (int) Math.floor(b[1]));
+                x1 = Math.min(x1, (int) Math.ceil(b[2]));
+                y1 = Math.min(y1, (int) Math.ceil(b[3]));
+                partCount++;
+            }
+        }
+        if (partCount == 0 || partCount > com.nishiyu.enderframelib.core.paint.gpu.GpuSink.MAX_CLIPS || x1 <= x0 || y1 <= y0) {
+            return RetainPlan.NONE;
+        }
+        Matrix2D nodePose = driver.resolveAt(nodeIndex).pose();
+        RetainPlan fast = GpuLayerAttempt.planScrollBounds(route.current(), node.id(), token, nodePose, x0, y0, x1, y1);
+        if (fast == RetainPlan.NONE) return RetainPlan.NONE;
+        if (fast == RetainPlan.SKIP) {
+            GpuScrollLayer prev = retainInfo.get(nodeIndex);
+            if (prev != null && prev.token() == token && node.id() != null && node.id().equals(prev.key())) {
+                int[] pb = prev.bounds();
+                if (pb[0] == x0 && pb[1] == y0 && pb[2] == x1 && pb[3] == y1) {
+                    Matrix2D pp = prev.pose();
+                    if (pp.a() != nodePose.a() || pp.b() != nodePose.b() || pp.c() != nodePose.c()
+                            || pp.d() != nodePose.d() || pp.e() != nodePose.e() || pp.f() != nodePose.f()) {
+                        retainInfo.put(nodeIndex, new GpuScrollLayer(prev.key(), token, nodePose, prev.clip(), pb));
+                    }
+                    return RetainPlan.SKIP;
+                }
+            }
+        }
         GpuScrollLayer info = scrollLayerInfo(node, nodeIndex, from, to, token);
         if (info == null) return RetainPlan.NONE;
-        RetainPlan r = GpuLayerAttempt.planScroll(route.current(), info);
+        RetainPlan r = fast != null ? fast : GpuLayerAttempt.planScroll(route.current(), info);
         if (r != RetainPlan.NONE) retainInfo.put(nodeIndex, info);
         return r;
     }
@@ -998,7 +1095,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 層の情報。コンテナの切り取りは、中身の項目の切り取りの鎖のうち、持ち主がコンテナのもの。 */
     private GpuScrollLayer scrollLayerInfo(DisplayItem node, int nodeIndex, int from, int to, Object token) {
-        String owner = ownerKeyOf(node);
+        String owner = cachedOwnerKeyOf(node, nodeIndex);
         List<DisplayItem> items = driver.items();
         List<ClipPart> parts = new ArrayList<>(1);
         for (int i = from; i < to && parts.isEmpty(); i++) {
@@ -1212,9 +1309,11 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return t == ElementType.RECT || t == ElementType.TEXT || t == ElementType.ROUNDED_BORDER || t == ElementType.BUTTON;
     }
 
+    private final float[] scratchRx = new float[4], scratchRy = new float[4];
+
     private void drawItemBody(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
-        float[][] radii = radii(el, anim);
-        float[] rx = radii[0], ry = radii[1];
+        radii(el, anim, scratchRx, scratchRy);
+        float[] rx = scratchRx, ry = scratchRy;
         ElementType type = el.type();
 
         if (type == ElementType.CIRCLE_BORDER) {
@@ -1243,28 +1342,39 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** 角ごとの横・縦の半径（左上・右上・右下・左下の順）。要素の箱に収まるよう切り詰める。 */
-    private static float[][] radii(DisplayItem el, AnimatedValues anim) {
-        float[] rx = new float[4], ry = new float[4];
+    private static void radii(DisplayItem el, AnimatedValues anim, float[] rx, float[] ry) {
         RenderMeta meta = el.meta();
         float w = el.width(), h = el.height();
-        if (meta != null && meta.borderRadii() != null && meta.borderRadii().isElliptical()) {
-            Corners c = meta.borderRadii();
-            float[] h4 = c.toFloatArray(), v4 = c.toFloatArrayV();
-            for (int i = 0; i < 4; i++) {
-                rx[i] = Math.min(h4[i], w / 2f);
-                ry[i] = Math.min(v4[i], h / 2f);
-                if (rx[i] <= 0f || ry[i] <= 0f) rx[i] = ry[i] = 0f;
-            }
-            return new float[][]{rx, ry};
+        Corners c = meta != null ? meta.borderRadii() : null;
+        if (c != null && c.isElliptical()) {
+            float hw = w / 2f, hh = h / 2f;
+            setEllipticalRadius(rx, ry, 0, c.topLeft(), c.topLeftV(), hw, hh);
+            setEllipticalRadius(rx, ry, 1, c.topRight(), c.topRightV(), hw, hh);
+            setEllipticalRadius(rx, ry, 2, c.bottomRight(), c.bottomRightV(), hw, hh);
+            setEllipticalRadius(rx, ry, 3, c.bottomLeft(), c.bottomLeftV(), hw, hh);
+            return;
         }
-        float[] circ = null;
-        if (meta != null && meta.borderRadii() != null) circ = meta.borderRadii().toFloatArray();
-        else if (anim.radiusData != null && anim.radiusData.length >= 4) circ = anim.radiusData;
-        if (circ != null) {
+        if (c != null) {
             float limit = Math.min(w, h) / 2f;
-            for (int i = 0; i < 4; i++) rx[i] = ry[i] = Math.max(0f, Math.min(circ[i], limit));
+            rx[0] = ry[0] = Math.max(0f, Math.min(c.topLeft(), limit));
+            rx[1] = ry[1] = Math.max(0f, Math.min(c.topRight(), limit));
+            rx[2] = ry[2] = Math.max(0f, Math.min(c.bottomRight(), limit));
+            rx[3] = ry[3] = Math.max(0f, Math.min(c.bottomLeft(), limit));
+            return;
         }
-        return new float[][]{rx, ry};
+        if (anim.radiusData != null && anim.radiusData.length >= 4) {
+            float limit = Math.min(w, h) / 2f;
+            for (int i = 0; i < 4; i++) rx[i] = ry[i] = Math.max(0f, Math.min(anim.radiusData[i], limit));
+            return;
+        }
+        rx[0] = rx[1] = rx[2] = rx[3] = 0f;
+        ry[0] = ry[1] = ry[2] = ry[3] = 0f;
+    }
+
+    private static void setEllipticalRadius(float[] rx, float[] ry, int i, float hx, float vy, float hw, float hh) {
+        float x = Math.min(hx, hw), y = Math.min(vy, hh);
+        if (x <= 0f || y <= 0f) { rx[i] = 0f; ry[i] = 0f; }
+        else { rx[i] = x; ry[i] = y; }
     }
 
     // ------------------------------------------------------------------ クリップ
@@ -1341,7 +1451,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private Clip finishClip(List<ClipPart> parts) {
         int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
-        for (ClipPart p : parts) {
+        for (int i = 0, n = parts.size(); i < n; i++) {
+            ClipPart p = parts.get(i);
             x0 = Math.max(x0, p.bx0());
             y0 = Math.max(y0, p.by0());
             x1 = Math.min(x1, p.bx1());
@@ -1373,26 +1484,37 @@ public final class SoftwareRenderBackend implements RenderBackend {
         ownerRes.add(owner);
         Matrix2D inv = pose.invert();
         if (inv == null) return;
-        float[] rx = new float[4], ry = new float[4];
-        for (int i = 0; i < 4; i++) {
-            rx[i] = rect.length > 4 + i ? rect[4 + i] : 0f;
-            ry[i] = rect.length >= 12 ? rect[8 + i] : rx[i];
+        float[] rx, ry;
+        if (rect.length <= 4) {
+            rx = ZERO4;
+            ry = ZERO4;
+        } else {
+            rx = new float[4];
+            ry = new float[4];
+            for (int i = 0; i < 4; i++) {
+                rx[i] = rect.length > 4 + i ? rect[4 + i] : 0f;
+                ry[i] = rect.length >= 12 ? rect[8 + i] : rx[i];
+            }
         }
-        double[] b = deviceBounds(pose, rect[0], rect[1], rect[2], rect[3], new double[4]);
+        double[] b = deviceBounds(pose, rect[0], rect[1], rect[2], rect[3], scratchBounds4);
         float scale = (float) pose.meanScale();
         float reach = 0.5f / Math.max(scale, 0.01f) + 1e-3f;
         float mrx = SoftShapes.maxOf(rx), mry = SoftShapes.maxOf(ry);
         // 端末空間での「被覆率が 1 と分かっている内側」。軸平行の姿勢のときだけ（そうでなければ空）。
-        double[] dev = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY};
+        double dev0 = Double.POSITIVE_INFINITY, dev1 = Double.POSITIVE_INFINITY;
+        double dev2 = Double.NEGATIVE_INFINITY, dev3 = Double.NEGATIVE_INFINITY;
         if (pose.b() == 0.0 && pose.c() == 0.0) {
             double ax = pose.applyX(rect[0] + mrx + reach, 0), bx = pose.applyX(rect[2] - mrx - reach, 0);
             double ay = pose.applyY(0, rect[1] + mry + reach), by = pose.applyY(0, rect[3] - mry - reach);
-            dev = new double[]{Math.min(ax, bx) + 1e-3, Math.min(ay, by) + 1e-3, Math.max(ax, bx) - 1e-3, Math.max(ay, by) - 1e-3};
+            dev0 = Math.min(ax, bx) + 1e-3;
+            dev1 = Math.min(ay, by) + 1e-3;
+            dev2 = Math.max(ax, bx) - 1e-3;
+            dev3 = Math.max(ay, by) - 1e-3;
         }
         parts.add(new ClipPart(inv, scale, rect[0], rect[1], rect[2], rect[3], rx, ry,
                 (int) Math.floor(b[0]), (int) Math.floor(b[1]), (int) Math.ceil(b[2]), (int) Math.ceil(b[3]),
                 rect[0] + mrx + reach, rect[1] + mry + reach, rect[2] - mrx - reach, rect[3] - mry - reach,
-                dev[0], dev[1], dev[2], dev[3]));
+                dev0, dev1, dev2, dev3));
     }
 
     /** 四隅を写した外接矩形 {@code {minX, minY, maxX, maxY}} を {@code out} に書く（割り当てなし）。 */
@@ -1544,19 +1666,25 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** 単色の角丸矩形の CPU 命令を記録する（GPU に渡せなかったときだけ）。 */
     private void recordFillRoundRect(Matrix2D pose, float x0, float y0, float x1, float y1, float[] rx, float[] ry,
                                      int argb, Clip clip, float opacity) {
+        final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);
         int pm = Pixmap.premultiply(argb);
         float scale = (float) pose.meanScale();
         float m = 1f / Math.max(scale, 0.01f);
         // 縁の 0.5 画素ぶんと角の丸みを除いた内側は被覆率がちょうど 1。そこは距離を測らず塗る
         Fast fast = new Fast();
-        fast.roundRect(x0, y0, x1, y1, rx, ry, 0.5f / Math.max(scale, 0.01f) + 1e-3f, pm);
+        fast.roundRect(x0, y0, x1, y1, crx, cry, 0.5f / Math.max(scale, 0.01f) + 1e-3f, pm);
         paint(pose, x0 - m, y0 - m, x1 + m, y1 + m, clip, opacity, (lx, ly) -> {
-            float cov = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
+            float cov = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, crx, cry), scale);
             return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
         }, fast);
     }
 
     private static final float[] ZERO4 = new float[4];
+
+    private static float[] freezeRadii(float[] a) {
+        if (a == ZERO4 || (a[0] == 0f && a[1] == 0f && a[2] == 0f && a[3] == 0f)) return ZERO4;
+        return a.clone();
+    }
 
     private void fillRect(Matrix2D pose, float x0, float y0, float x1, float y1, int argb, Clip clip, float opacity) {
         fillRoundRect(pose, x0, y0, x1, y1, ZERO4, ZERO4, argb, clip, opacity);
@@ -1614,7 +1742,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         op.px = px; op.w = w;
         op.x0 = r[0]; op.y0 = r[1]; op.x1 = r[2]; op.y1 = r[3];
         op.inv = inv; op.clip = clip; op.clipped = clipped; op.opacity = opacity; op.g = g;
-        op.sx0 = x0; op.sy0 = y0; op.sx1 = x1; op.sy1 = y1; op.rx = rx; op.ry = ry; op.scale = scale;
+        op.sx0 = x0; op.sy0 = y0; op.sx1 = x1; op.sy1 = y1; op.rx = freezeRadii(rx); op.ry = freezeRadii(ry); op.scale = scale;
         op.fIx0 = ix0; op.fIx1 = ix1; op.fIy0 = iy0; op.fIy1 = iy1;
         op.axis = fastSolid && pose.b() == 0.0 && pose.c() == 0.0;
         int lo = 0, hi = 0;
@@ -1667,8 +1795,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float[] hrx = GpuAttempt.shapeRx(shape);
             float[] hry = GpuAttempt.shapeRy(shape);
             if (GpuAttempt.insetShadow(route.current(), res.pose(), qx0, qy0, qx1, qy1, rx, ry, sigma, shape, color, clip, opacity)) return;
+            final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);
             paint(res.pose(), qx0 - 1, qy0 - 1, qx1 + 1, qy1 + 1, clip, opacity, (lx, ly) -> {
-                float inRect = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, qx0, qy0, qx1, qy1, rx, ry), scale);
+                float inRect = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, qx0, qy0, qx1, qy1, crx, cry), scale);
                 if (inRect <= 0f) return 0;
                 float sd = SoftShapes.sdRoundRect(lx, ly, shape.x0(), shape.y0(), shape.x1(), shape.y1(), hrx, hry);
                 float a = SoftShapes.blurredEdge(-sd, sigma);
@@ -1746,8 +1875,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 fast.rect(x0 + e, y0 + Math.max(ry[0], wt) + e, ix0 - e, y1 - Math.max(ry[3], wb) - e, colors[3]);
             }
         }
+        final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);
         paint(res.pose(), x0 - m, y0 - m, x1 + m, y1 + m, clip, opacity, (lx, ly) -> {
-            float outer = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry), scale);
+            float outer = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, crx, cry), scale);
             if (outer <= 0f) return 0;
             float inner = innerEmpty ? 0f
                     : SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, ix0, iy0, ix1, iy1, irx, iry), scale);
@@ -1768,7 +1898,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 float along = Math.abs(phase - dash.period() / 2f);
                 float on;
                 if (dash.round()) {
-                    float perp = Math.abs(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, rx, ry) + thickness / 2f);
+                    float perp = Math.abs(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, crx, cry) + thickness / 2f);
                     on = Math.clamp(dash.dash() / 2f - (float) Math.hypot(along, perp) + 0.5f, 0f, 1f);
                 } else {
                     on = Math.clamp(dash.dash() / 2f - along + 0.5f, 0f, 1f);
@@ -2170,9 +2300,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         float px0 = gi.px0(), py0 = gi.py0(), sx = gi.sx(), sy = gi.sy();
         int taps = gi.taps();
         if (GpuAttempt.image(route.current(), res.pose(), pm, x0, y0, w, h, px0, py0, gi.plW(), gi.plH(), sx, sy, rx, ry, taps, scale, clip, opacity)) return;
+        final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);
         paint(res.pose(), gi.bx0(), gi.by0(), gi.bx1(), gi.by1(),
                 clip, opacity, (lx, ly) -> {
-                    float box = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x0 + w, y0 + h, rx, ry), scale);
+                    float box = SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x0 + w, y0 + h, crx, cry), scale);
                     if (box <= 0f) return 0;
                     float u = (lx - px0) * sx, v = (ly - py0) * sy;
                     if (u < -0.5f || v < -0.5f || u > pm.width() + 0.5f || v > pm.height() + 0.5f) return 0;
@@ -2218,30 +2349,49 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawProgress(DisplayItem el, AnimatedValues anim, float[] rx, float[] ry, Resolved res, Clip clip, float opacity) {
         float min = anim.rangeMin, max = anim.rangeMax, val = anim.rangeVal;
-        float[] parsed = parseRange(el.text());
-        if (parsed != null) {
-            val = parsed[0];
-            min = parsed[1];
-            max = parsed[2];
+        if (parseRangeInto(el.text(), scratchRange)) {
+            val = scratchRange[0];
+            min = scratchRange[1];
+            max = scratchRange[2];
         }
         float ratio = max > min ? Math.clamp((val - min) / (max - min), 0f, 1f) : 0f;
         float fillW = el.width() * ratio;
         if (fillW <= 0.5f) return;
         int color = anim.color() != 0 ? anim.color() : 0xFF28A745;
-        float[] frx = {rx[0], ratio > 0.98f ? rx[1] : 0f, ratio > 0.98f ? rx[2] : 0f, rx[3]};
-        float[] fry = {ry[0], ratio > 0.98f ? ry[1] : 0f, ratio > 0.98f ? ry[2] : 0f, ry[3]};
-        fillRoundRect(res.pose(), el.x(), el.y(), el.x() + fillW, el.y() + el.height(), frx, fry, color, clip, opacity);
+        boolean rightRound = ratio > 0.98f;
+        scratchRadA[0] = rx[0]; scratchRadA[1] = rightRound ? rx[1] : 0f; scratchRadA[2] = rightRound ? rx[2] : 0f; scratchRadA[3] = rx[3];
+        scratchRadB[0] = ry[0]; scratchRadB[1] = rightRound ? ry[1] : 0f; scratchRadB[2] = rightRound ? ry[2] : 0f; scratchRadB[3] = ry[3];
+        fillRoundRect(res.pose(), el.x(), el.y(), el.x() + fillW, el.y() + el.height(), scratchRadA, scratchRadB, color, clip, opacity);
     }
 
-    private static float[] parseRange(String text) {
-        if (text == null || !text.contains(":")) return null;
-        String[] sp = text.split(":");
-        if (sp.length < 3) return null;
+    private final float[] scratchRange = new float[3];
+    private final float[] scratchRadA = new float[4], scratchRadB = new float[4];
+
+    private static boolean parseRangeInto(String text, float[] out3) {
+        if (text == null) return false;
+        int c1 = text.indexOf(':');
+        if (c1 < 0) return false;
+        int c2 = text.indexOf(':', c1 + 1);
+        if (c2 < 0) return false;
+        int c3 = text.indexOf(':', c2 + 1);
         try {
-            return new float[]{Float.parseFloat(sp[0]), Float.parseFloat(sp[1]), Float.parseFloat(sp[2])};
+            out3[0] = Float.parseFloat(text.substring(0, c1));
+            out3[1] = Float.parseFloat(text.substring(c1 + 1, c2));
+            out3[2] = Float.parseFloat(c3 < 0 ? text.substring(c2 + 1) : text.substring(c2 + 1, c3));
+            return true;
         } catch (NumberFormatException e) {
-            return null;
+            return false;
         }
+    }
+
+    private static float[] fill4(float[] dst, float v) {
+        dst[0] = dst[1] = dst[2] = dst[3] = v;
+        return dst;
+    }
+
+    private static float[] fillLeft2(float[] dst, float r) {
+        dst[0] = r; dst[1] = 0f; dst[2] = 0f; dst[3] = r;
+        return dst;
     }
 
     private static final float RANGE_TRACK_HEIGHT = 8f, RANGE_THUMB_SIZE = 16f;
@@ -2249,11 +2399,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
     /** Chromium のスライダーと同じ形: 溝は高さ 8px、つまみは直径 16px で中心が両端から 8px の間を動く。 */
     private void drawRange(DisplayItem el, AnimatedValues anim, Resolved res, Clip clip, float opacity) {
         float val = anim.rangeVal, min = anim.rangeMin, max = anim.rangeMax;
-        float[] parsed = parseRange(el.text());
-        if (parsed != null) {
-            val = parsed[0];
-            min = parsed[1];
-            max = parsed[2];
+        if (parseRangeInto(el.text(), scratchRange)) {
+            val = scratchRange[0];
+            min = scratchRange[1];
+            max = scratchRange[2];
         }
         float ratio = max > min ? Math.clamp((val - min) / (max - min), 0f, 1f) : 0f;
         float cy = el.y() + el.height() / 2f;
@@ -2267,18 +2416,23 @@ public final class SoftwareRenderBackend implements RenderBackend {
             RenderMeta meta = el.meta();
             int edge = meta != null && meta.roundedBorder() != null ? meta.roundedBorder().colorTop() : 0;
             int accent = anim.color() | 0xFF000000;
-            fillRoundRect(pose, left, trackTop, right, trackBottom, uniform(trackRad), uniform(trackRad), over(edge, fill), clip, opacity);
-            fillRoundRect(pose, left + 1, trackTop + 1, right - 1, trackBottom - 1, uniform(trackRad - 1), uniform(trackRad - 1), fill, clip, opacity);
+            float[] rad = fill4(scratchRadA, trackRad);
+            fillRoundRect(pose, left, trackTop, right, trackBottom, rad, rad, over(edge, fill), clip, opacity);
+            rad = fill4(scratchRadA, trackRad - 1);
+            fillRoundRect(pose, left + 1, trackTop + 1, right - 1, trackBottom - 1, rad, rad, fill, clip, opacity);
             if (tcx > left) {
                 float r = Math.min(trackRad, (tcx - left) / 2);
-                fillRoundRect(pose, left, trackTop, tcx, trackBottom, new float[]{r, 0, 0, r}, new float[]{r, 0, 0, r}, over(edge, accent), clip, opacity);
+                rad = fillLeft2(scratchRadA, r);
+                fillRoundRect(pose, left, trackTop, tcx, trackBottom, rad, rad, over(edge, accent), clip, opacity);
                 if (tcx > left + 1) {
                     float ri = Math.max(0f, Math.min(trackRad - 1, (tcx - left - 1) / 2));
-                    fillRoundRect(pose, left + 1, trackTop + 1, tcx, trackBottom - 1, new float[]{ri, 0, 0, ri}, new float[]{ri, 0, 0, ri}, accent, clip, opacity);
+                    rad = fillLeft2(scratchRadB, ri);
+                    fillRoundRect(pose, left + 1, trackTop + 1, tcx, trackBottom - 1, rad, rad, accent, clip, opacity);
                 }
             }
         }
-        fillRoundRect(pose, tcx - thumbRad, cy - thumbRad, tcx + thumbRad, cy + thumbRad, uniform(thumbRad), uniform(thumbRad), anim.color(), clip, opacity);
+        float[] tr = fill4(scratchRadA, thumbRad);
+        fillRoundRect(pose, tcx - thumbRad, cy - thumbRad, tcx + thumbRad, cy + thumbRad, tr, tr, anim.color(), clip, opacity);
     }
 
     /** 半透明の {@code top} を不透明な {@code bottom} に重ねた色（sRGB のまま合成）。 */
@@ -2302,11 +2456,13 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (el.type() == ElementType.RADIO) {
             float pad = w * 0.2f;
             float dot = (w - 2 * pad) / 2f;
-            fillRoundRect(pose, x + pad, y + h / 2f - dot, x + w - pad, y + h / 2f + dot, uniform(dot), uniform(dot), color, clip, opacity);
+            float[] rad = fill4(scratchRadA, dot);
+            fillRoundRect(pose, x + pad, y + h / 2f - dot, x + w - pad, y + h / 2f + dot, rad, rad, color, clip, opacity);
         } else if (el.type() == ElementType.CHECKBOX) {
             if (mixed) {
                 float radius = Math.min(2f, h * 0.1f);
-                fillRoundRect(pose, x + w * 0.2f, y + h * 0.4f, x + w * 0.8f, y + h * 0.6f, uniform(radius), uniform(radius), color, clip, opacity);
+                float[] rad = fill4(scratchRadA, radius);
+                fillRoundRect(pose, x + w * 0.2f, y + h * 0.4f, x + w * 0.8f, y + h * 0.6f, rad, rad, color, clip, opacity);
             } else {
                 // Chromium の NativeThemeBase::PaintCheckbox: (0.2w, 0.5h) → 右下へ (0.2w, 0.2h) → (0.8w, 0.2h)、太さ 0.16h
                 float stroke = h * 0.16f;
@@ -2322,15 +2478,22 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     /** 太さ {@code width} の線分（両端は丸）。 */
     private void drawSegment(Matrix2D pose, float x0, float y0, float x1, float y1, float width, int argb, Clip clip, float opacity) {
-        int pm = Pixmap.premultiply(argb);
-        float scale = (float) pose.meanScale();
-        float half = width / 2f, m = half + 1f / Math.max(scale, 0.01f);
-        float dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
-        paint(pose, Math.min(x0, x1) - m, Math.min(y0, y1) - m, Math.max(x0, x1) + m, Math.max(y0, y1) + m, clip, opacity, (lx, ly) -> {
-            float t = len2 <= 0f ? 0f : Math.clamp(((lx - x0) * dx + (ly - y0) * dy) / len2, 0f, 1f);
-            float dist = (float) Math.hypot(lx - (x0 + dx * t), ly - (y0 + dy * t));
-            float cov = SoftShapes.coverage(dist - half, scale);
-            return cov <= 0f ? 0 : SoftShapes.scalePremul(pm, cov);
-        });
+        float half = width / 2f;
+        float[] segRad = fill4(scratchRadA, half);
+        float dx = x1 - x0, dy = y1 - y0;
+        double len = Math.hypot(dx, dy);
+        if (len <= 1e-4) {
+            fillRoundRect(pose, x0 - half, y0 - half, x0 + half, y0 + half, segRad, segRad, argb, clip, opacity);
+            return;
+        }
+        double c = dx / len, s = dy / len;
+        Matrix2D segPose = new Matrix2D(
+                pose.a() * c + pose.c() * s,
+                pose.b() * c + pose.d() * s,
+                pose.c() * c - pose.a() * s,
+                pose.d() * c - pose.b() * s,
+                pose.a() * x0 + pose.c() * y0 + pose.e(),
+                pose.b() * x0 + pose.d() * y0 + pose.f());
+        fillRoundRect(segPose, -half, -half, (float) len + half, half, segRad, segRad, argb, clip, opacity);
     }
 }

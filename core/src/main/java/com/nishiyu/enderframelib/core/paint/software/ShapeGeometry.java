@@ -21,6 +21,8 @@ import com.nishiyu.enderframelib.core.raster.Pixmap;
  * 状態を持たず、{@code GpuSink} も {@code Pixmap} の画素も知らない。
  */
 final class ShapeGeometry {
+    private static final float[] ZERO_F4 = new float[4];
+
     private ShapeGeometry() {}
 
     /**
@@ -37,22 +39,41 @@ final class ShapeGeometry {
         float wt = spec.widthTop(), wr = spec.widthRight(), wb = spec.widthBottom(), wl = spec.widthLeft();
         float ix0 = x0 + wl, iy0 = y0 + wt, ix1 = x1 - wr, iy1 = y1 - wb;
         boolean innerEmpty = ix1 <= ix0 || iy1 <= iy0;
-        float[] irx = new float[4], iry = new float[4];
-        float[] sideH = {wl, wr, wr, wl}, sideV = {wt, wt, wb, wb};
-        for (int i = 0; i < 4; i++) {
-            irx[i] = Math.max(0f, rx[i] - sideH[i]);
-            iry[i] = Math.max(0f, ry[i] - sideV[i]);
-            if (irx[i] <= 0f || iry[i] <= 0f) irx[i] = iry[i] = 0f;
+        float[] irx, iry;
+        if (rx[0] <= 0f && rx[1] <= 0f && rx[2] <= 0f && rx[3] <= 0f
+                && ry[0] <= 0f && ry[1] <= 0f && ry[2] <= 0f && ry[3] <= 0f) {
+            irx = ZERO_F4;
+            iry = ZERO_F4;
+        } else {
+            irx = new float[4];
+            iry = new float[4];
+            irx[0] = Math.max(0f, rx[0] - wl);
+            irx[1] = Math.max(0f, rx[1] - wr);
+            irx[2] = Math.max(0f, rx[2] - wr);
+            irx[3] = Math.max(0f, rx[3] - wl);
+            iry[0] = Math.max(0f, ry[0] - wt);
+            iry[1] = Math.max(0f, ry[1] - wt);
+            iry[2] = Math.max(0f, ry[2] - wb);
+            iry[3] = Math.max(0f, ry[3] - wb);
+            for (int i = 0; i < 4; i++) {
+                if (irx[i] <= 0f || iry[i] <= 0f) irx[i] = iry[i] = 0f;
+            }
         }
-        int[] colors = new int[4];
-        for (int i = 0; i < 4; i++) colors[i] = Pixmap.premultiply(spec.color(i));
+        int[] colors = {
+                Pixmap.premultiply(spec.color(0)),
+                Pixmap.premultiply(spec.color(1)),
+                Pixmap.premultiply(spec.color(2)),
+                Pixmap.premultiply(spec.color(3))
+        };
         float[] widths = {wt, wr, wb, wl};
 
         // 破線・点線は 4 辺が同じ太さのときだけ（GL 版と同じ）
         BorderDashPattern pattern = null;
         float bx = 0, by = 0, cxm = (x0 + x1) / 2f, cym = (y0 + y1) / 2f;
-        float[] pcx = new float[4], pcy = new float[4];
+        float[] pcx = ZERO_F4, pcy = ZERO_F4;
         if (spec.dashKind() != BorderPath.SOLID && wt > 0f && wt == wr && wr == wb && wb == wl) {
+            pcx = new float[4];
+            pcy = new float[4];
             bx = Math.max(0.001f, w / 2f - wt / 2f);
             by = Math.max(0.001f, h / 2f - wt / 2f);
             for (int i = 0; i < 4; i++) {

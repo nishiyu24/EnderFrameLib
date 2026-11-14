@@ -56,6 +56,8 @@ public final class InvalidationSets {
     private final Set<Relation> rootStructure = EnumSet.noneOf(Relation.class);
     /** 入力の値や検証の状態（{@code :valid}・{@code :placeholder-shown} など）が及ぶ範囲。 */
     private final Set<Relation> formState = EnumSet.noneOf(Relation.class);
+    @SuppressWarnings("unchecked")
+    private final Set<Relation>[] stateCache = new Set[64];
 
     private InvalidationSets() {}
 
@@ -92,9 +94,18 @@ public final class InvalidationSets {
 
     /** {@link ElementState} のビットのどれかが変わったときに影響が及ぶ範囲。 */
     public Set<Relation> forState(int stateBits) {
+        if (stateBits >= 0 && stateBits < stateCache.length) {
+            Set<Relation> cached = stateCache[stateBits];
+            if (cached != null) return cached;
+        }
         Set<Relation> result = EnumSet.noneOf(Relation.class);
         for (Map.Entry<Integer, Set<Relation>> e : byState.entrySet()) {
             if ((e.getKey() & stateBits) != 0) result.addAll(e.getValue());
+        }
+        if (stateBits >= 0 && stateBits < stateCache.length) {
+            Set<Relation> immutable = Set.copyOf(result);
+            stateCache[stateBits] = immutable;
+            return immutable;
         }
         return result;
     }

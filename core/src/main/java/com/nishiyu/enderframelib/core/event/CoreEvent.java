@@ -85,6 +85,11 @@ public class CoreEvent implements Event {
         this.composedPath = path != null ? new ArrayList<>(path) : Collections.emptyList();
     }
 
+    /** 呼び出し側がこれ以上書き換えないリストを、複写せずそのまま保持する。 */
+    void setComposedPathOwned(List<EventTarget> path) {
+        this.composedPath = path != null ? path : Collections.emptyList();
+    }
+
     @Override
     public short getEventPhase() {
         return eventPhase;

@@ -68,12 +68,17 @@ public final class SelectorMatcher {
 
     /** 状態の条件を満たせるものとみなした複合セレクタの照合。状態を含む {@code :not()} はどちらにもなり得るので通す。 */
     private static boolean matchesCompoundIgnoringState(SelectorToken token, HtmlNode node) {
-        for (Selector not : token.notSelectors) {
+        // :has() は子孫の状態にも左右されるので、状態を無視した照合では一致し得るものとして通す
+        if (!matchesCompoundWithoutInteractiveState(token, node, STATIC_ATTRIBUTES, false)) return false;
+        for (int i = 0, n = token.notSelectors.size(); i < n; i++) {
+            Selector not = token.notSelectors.get(i);
             if (not.stateMask() == 0 && matches(not, node, STATIC_ATTRIBUTES)) return false;
         }
-        for (List<Selector> group : token.anyOfSelectors) {
+        for (int i = 0, n = token.anyOfSelectors.size(); i < n; i++) {
+            List<Selector> group = token.anyOfSelectors.get(i);
             boolean any = false;
-            for (Selector s : group) {
+            for (int j = 0, gn = group.size(); j < gn; j++) {
+                Selector s = group.get(j);
                 if (s.stateMask() != 0 || matches(s, node, STATIC_ATTRIBUTES)) {
                     any = true;
                     break;
@@ -81,8 +86,7 @@ public final class SelectorMatcher {
             }
             if (!any) return false;
         }
-        // :has() は子孫の状態にも左右されるので、状態を無視した照合では一致し得るものとして通す
-        return matchesCompoundWithoutInteractiveState(token, node, STATIC_ATTRIBUTES, false);
+        return true;
     }
 
     /**
@@ -155,13 +159,14 @@ public final class SelectorMatcher {
 
         if (!matchesCompoundWithoutInteractiveState(token, node, lookup, true)) return false;
 
-        for (Selector not : token.notSelectors) {
-            if (matches(not, node, lookup)) return false;
+        for (int i = 0, n = token.notSelectors.size(); i < n; i++) {
+            if (matches(token.notSelectors.get(i), node, lookup)) return false;
         }
-        for (List<Selector> group : token.anyOfSelectors) {
+        for (int i = 0, n = token.anyOfSelectors.size(); i < n; i++) {
+            List<Selector> group = token.anyOfSelectors.get(i);
             boolean any = false;
-            for (Selector s : group) {
-                if (matches(s, node, lookup)) {
+            for (int j = 0, gn = group.size(); j < gn; j++) {
+                if (matches(group.get(j), node, lookup)) {
                     any = true;
                     break;
                 }
@@ -239,8 +244,8 @@ public final class SelectorMatcher {
         }
         if (!matchesStructuralPosition(token, node, lookup)) return false;
         if (evaluateHas) {
-            for (List<RelativeSelector> group : token.hasSelectors) {
-                if (!matchesHas(group, node, lookup)) return false;
+            for (int i = 0, n = token.hasSelectors.size(); i < n; i++) {
+                if (!matchesHas(token.hasSelectors.get(i), node, lookup)) return false;
             }
         }
         return true;
@@ -492,7 +497,8 @@ public final class SelectorMatcher {
     // ---- 位置（:nth-*）
 
     private static boolean matchesStructuralPosition(SelectorToken token, HtmlNode node, StateLookup lookup) {
-        for (Nth nth : token.nths) {
+        for (int i = 0, n = token.nths.size(); i < n; i++) {
+            Nth nth = token.nths.get(i);
             // :nth-child(An+B of S) は S に合う要素だけが対象
             if (nth.hasFilter() && !matchesAnyOf(nth.of(), node, lookup)) return false;
             int index = siblingIndex(node, nth, lookup);
@@ -502,8 +508,8 @@ public final class SelectorMatcher {
     }
 
     private static boolean matchesAnyOf(List<Selector> selectors, HtmlNode node, StateLookup lookup) {
-        for (Selector s : selectors) {
-            if (matches(s, node, lookup)) return true;
+        for (int i = 0, n = selectors.size(); i < n; i++) {
+            if (matches(selectors.get(i), node, lookup)) return true;
         }
         return false;
     }

@@ -1,13 +1,10 @@
 package com.nishiyu.enderframelib.core.css;
 
-import java.util.regex.Pattern;
-
 /**
  * 値の文字列だけで決まる、レイアウトに依らない CSS キーワード判定（L3）。
  * {@code layout.model.LayoutMetrics} が持っていた純粋関数を、算出スタイル側（css）が逆方向（L3→L4）に参照しないよう移したもの。
  */
 public final class ValueKeywords {
-    private static final Pattern BOLD_FONT_WEIGHT = Pattern.compile("(?i)bold|bolder");
 
     private ValueKeywords() {}
 
@@ -28,7 +25,7 @@ public final class ValueKeywords {
         String w = weight.trim();
         if (w.isEmpty()) return 400;
         if (!Character.isDigit(w.charAt(0))) {
-            if (BOLD_FONT_WEIGHT.matcher(w).matches()) return 700;
+            if (w.equalsIgnoreCase("bold") || w.equalsIgnoreCase("bolder")) return 700;
             return w.equalsIgnoreCase("lighter") ? 100 : 400;
         }
         // 文字ごとの測定のたびに呼ばれるので、数値でない値で例外を投げない

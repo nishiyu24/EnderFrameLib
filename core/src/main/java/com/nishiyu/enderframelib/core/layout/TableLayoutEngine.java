@@ -824,8 +824,13 @@ public class TableLayoutEngine extends LayoutEngine {
         float hSpacing, vSpacing, contentW;
 
         @Override
+        public boolean contributesScrollExtent() {
+            return !rows.isEmpty();
+        }
+
+        @Override
         public void contributeScrollExtent(ScrollExtent extent, float scrollX, float scrollY) {
-            for (LayoutBox row : rows) extent.include(row, scrollX, scrollY);
+            for (int i = 0, n = rows.size(); i < n; i++) extent.include(rows.get(i), scrollX, scrollY);
         }
     }
 }
