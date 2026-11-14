@@ -1202,7 +1202,8 @@ public class HtmlParser {
                 flushText(tokens, textBuffer);
                 i = nameStart;
                 while (i < len && isValidTagNameChar(html.charAt(i))) i++;
-                String tagName = html.substring(nameStart, i).toLowerCase();
+                // 要素ごとに同じ "li" や "id" の String が残らないよう、名前は 1 つに共有する（語彙は文書の大きさに依らず少ない）
+                String tagName = html.substring(nameStart, i).toLowerCase().intern();
 
                 Token t = new Token();
                 t.type = isEndTag ? Token.Type.END_TAG : Token.Type.START_TAG;
@@ -1230,7 +1231,7 @@ public class HtmlParser {
                         i++;
                         continue;
                     }
-                    String attrName = html.substring(attrNameStart, i).toLowerCase();
+                    String attrName = html.substring(attrNameStart, i).toLowerCase().intern();
 
                     while (i < len && Character.isWhitespace(html.charAt(i))) i++;
 

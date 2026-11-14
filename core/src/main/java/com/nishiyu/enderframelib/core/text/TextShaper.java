@@ -899,9 +899,15 @@ public final class TextShaper {
             this.canSplit = style.wordBreak() == WordBreak.BREAK_ALL || style.breakLongWords();
         }
 
+        /** いま整形している段落とその開始位置。行がまるごと段落なら、行の文字列に段落の String を使い回す。 */
+        private String paragraphRef;
+        private int paragraphFrom;
+
         void shapeParagraph(String source, int from, int to) {
             lineStart = from;
             String paragraph = source.substring(from, to);
+            paragraphRef = paragraph;
+            paragraphFrom = from;
 
             if (!style.whiteSpace().wraps()) {
                 String visible = style.ellipsis() && available > 0
@@ -983,7 +989,13 @@ public final class TextShaper {
         /** 現在行を確定する。末尾の空白は幅に数えない（CSS と同じ）。 */
         void flush(int end, boolean force) {
             if (line.isEmpty() && !force) return;
-            String text = stripTrailingBlanks(line.toString());
+            // 1 行に収まった段落は、行の文字列が段落そのもの。StringBuilder から作り直すと、行数ぶんの
+            // 同じ中身の String と byte[] が（数千行のリストで）行ごとに残る。
+            int n = line.length();
+            while (n > 0 && isBlank(line.charAt(n - 1))) n--;
+            String text = paragraphRef != null && lineStart == paragraphFrom && n == paragraphRef.length()
+                    ? paragraphRef
+                    : (n == line.length() ? line.toString() : line.substring(0, n));
             emit(text, lineStart, lineStart + text.length(), false);
             line.setLength(0);
             lineWidth = 0;
@@ -1014,11 +1026,6 @@ public final class TextShaper {
      */
     public static float leadingAbove(float lineHeight, float ascent, float descent) {
         return (float) Math.floor((lineHeight - (ascent + descent)) / 2f);
-    }
-
-    private static String stripTrailingBlanks(String text) {
-        int end = trimTrailingBlanksEnd(text);
-        return end == text.length() ? text : text.substring(0, end);
     }
 
     private static int trimTrailingBlanksEnd(String text) {
