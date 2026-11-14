@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.text.ParagraphSegments;
@@ -53,14 +54,14 @@ public class LayoutBox {
      * パーサが作るツリーでは {@link BoxTreeBuilder} が {@link #elementChildren} から組み立てるので、
      * 匿名ボックスが挟まり、{@code display: contents} の要素は抜けて子が繰り上がる。
      */
-    public final List<LayoutBox> children = new ArrayList<>();
+    public final List<LayoutBox> children = new CompactList<>();
     /**
      * 要素ツリー（DOM と 1:1）の子。スタイルの継承と再スタイルはこちらを辿る。
      *
      * 何が壊れていたか: 以前は DOM と箱が 1:1 で、この 2 つが同じリストだった。そのため
      * 匿名ブロック・匿名表ボックス・{@code display: contents} が作れなかった（軸 6）。
      */
-    public final List<LayoutBox> elementChildren = new ArrayList<>();
+    public final List<LayoutBox> elementChildren = new CompactList<>();
     /** DOM に無い箱（匿名ブロック・匿名表ボックス・{@code ::marker}）。{@link #node} は持ち主に紐づけた合成ノード。 */
     public final boolean isAnonymous;
     /**
@@ -74,6 +75,16 @@ public class LayoutBox {
     public boolean hasAbsoluteChild = false;
     /** 子の親リンクの再確認が必要か（レイアウト時の {@code adopt} ループの短絡用）。 */
     public boolean needsAdoption = true;
+    /** 部分木に匿名ボックス・::marker を含むか（{@link BoxTreeBuilder} の再利用収集の枝刈り用）。 */
+    boolean subtreeHasGenerated = false;
+    /** {@link #elementChildren} に疑似要素（{@code ::before}/{@code ::after}）の子を含むか。 */
+    public boolean hasPseudoElementChild = false;
+    /** 前回の {@link #buildLayoutTree} 等で集めたノード索引表（ルート箱が保持し、次の構築へ渡す）。 */
+    private ReusableTable reusableTable;
+    /** {@code restyleLayoutTree} が子孫のスタイルを更新したが、まだ {@code markLayoutChanges} を終えていない根か。 */
+    public boolean hasUnmarkedChanges = false;
+    /** {@code restyleLayoutTree} が構造変化（{@code BoxTreeBuilder} 再構築必須）を検出した根か。 */
+    public boolean hasStructuralPending = false;
     /**
      * fieldset の描画される legend（HTML §15.3.13 の rendered legend）。通常フローに入らず、
      * fieldset の上の枠線に重ねて置かれる。{@link BoxTreeBuilder} が決める。
@@ -193,6 +204,8 @@ public class LayoutBox {
     boolean measuredClamped;
     /** shrink-to-fit の箱が、min/max-width で切り詰める前に内容から決まった幅（装飾込み）。決まらなければ NaN。 */
     float naturalInlineSize = Float.NaN;
+    /** 親の幅を埋める箱（fill 幅）で、内容が収まり切るために必要な内幅（装飾・マージン抜き）。決まらなければ NaN。 */
+    float naturalFitInnerWidth = Float.NaN;
 
     /**
      * 指定された {@code height} / 最小・最大に関わらない内容の高さ（装飾を含む）。直近の測定で入る。
@@ -206,7 +219,9 @@ public class LayoutBox {
         if (child != null) {
             child.parent = this;
             this.children.add(child);
-            updateChildFlagsOnAdd(child);
+            if (child.isOutsideMarker) this.hasOutsideMarker = true;
+            if (child.isAbsolute) this.hasAbsoluteChild = true;
+            if (child.isAnonymous || child.subtreeHasGenerated) this.subtreeHasGenerated = true;
             bumpShapeEpoch();
             STRUCT_EPOCH.incrementAndGet();
         }
@@ -217,13 +232,14 @@ public class LayoutBox {
         this.children.clear();
         this.hasOutsideMarker = false;
         this.hasAbsoluteChild = false;
+        this.subtreeHasGenerated = false;
         this.needsAdoption = false;
     }
 
     public void updateChildFlagsOnAdd(LayoutBox child) {
         if (child.isOutsideMarker) this.hasOutsideMarker = true;
         if (child.isAbsolute) this.hasAbsoluteChild = true;
-        this.needsAdoption = true;
+        if (child.isAnonymous || child.subtreeHasGenerated) this.subtreeHasGenerated = true;
     }
 
     public void recomputeChildFlags() {
@@ -242,6 +258,7 @@ public class LayoutBox {
     public void addElementChild(LayoutBox child) {
         if (child != null) {
             child.parent = this;
+            if (child.node != null && child.node.isPseudoNode) this.hasPseudoElementChild = true;
             this.elementChildren.add(child);
             bumpShapeEpoch();
         }
@@ -346,6 +363,13 @@ public class LayoutBox {
      */
     public float staticX = Float.NaN, staticY = Float.NaN;
     public int zIndex = 0;
+    /** DisplayListBuilder が同じ検証バッチ内で祖先からの moving 判定を O(1) で使い回すための一時印。 */
+    public int movingMemoEpoch = 0;
+    public boolean movingMemoResult = false;
+    /** RenderPipeline が再帰で親から引き継いで記録する「祖先 / 自身または祖先に moving 指定があるか」。 */
+    public boolean ancestorMoving = false;
+    public boolean selfOrAncestorMoving = false;
+    public boolean movingStamped = false;
     /**
      * 解決済みの 1 行分の高さ（px）。
      * 自分で複数行を並べる要素（textarea）と描画側の行送りがこれを読む。
@@ -360,11 +384,14 @@ public class LayoutBox {
      */
     public List<ShapedLine> shapedLines = null;
 
-    public List<InlineFragment> inlineFragments = new ArrayList<>();
+    public List<InlineFragment> inlineFragments = new CompactList<>();
     private int fragmentCursor = 0;
+    /** {@link #resetPlacementsFast} で遅延消去待ちにされた断片があるか（{@link #startFragmentPass} で解除）。 */
+    public boolean fragmentsStale = false;
 
     /** インライン断片の再配置パスを開始する。既存の断片オブジェクトを捨てずに再利用カーソルをリセットする。 */
     public void startFragmentPass() {
+        fragmentsStale = false;
         fragmentCursor = 0;
     }
 
@@ -404,8 +431,157 @@ public class LayoutBox {
     }
 
     /** 置き直しで捨てた断片オブジェクトの控え（{@link #resetPlacements} が積み、{@link #addFragment} が使う）。 */
-    private static final int SPARE_FRAGMENT_LIMIT = 16;
+    static final int SPARE_FRAGMENT_LIMIT = 128;
     private ArrayList<InlineFragment> spareFragments;
+
+    private static final class TextCache {
+        static final class Slot {
+            String text;
+            FontFace face;
+            TextStyle shapeStyle;
+            TextShaper.ShapedInterval shapedInterval;
+            FontStyle segFont;
+            WordBreak wordBreak;
+            ParagraphSegments segments;
+            TextShaper.WrappedParagraph wrapped;
+            float strippedAdvance = Float.NaN;
+        }
+
+        Slot primary;
+        Slot secondary;
+
+        Slot acquire(String text, FontFace face) {
+            if (primary == null) {
+                primary = new Slot();
+                primary.text = text;
+                primary.face = face;
+                return primary;
+            }
+            if (primary.text == text && primary.face == face) {
+                return primary;
+            }
+            if (secondary != null && secondary.text == text && secondary.face == face) {
+                Slot tmp = primary;
+                primary = secondary;
+                secondary = tmp;
+                return primary;
+            }
+            Slot target = secondary != null ? secondary : new Slot();
+            target.text = text;
+            target.face = face;
+            target.shapeStyle = null;
+            target.shapedInterval = null;
+            target.segFont = null;
+            target.wordBreak = null;
+            target.segments = null;
+            target.wrapped = null;
+            target.strippedAdvance = Float.NaN;
+            secondary = primary;
+            primary = target;
+            return target;
+        }
+
+        Slot acquireForStyle(String text, FontFace face, FontStyle font, WordBreak wordBreak) {
+            if (primary != null && primary.text == text && primary.face == face
+                    && (primary.segFont == null || ((primary.segFont == font || primary.segFont.equals(font))
+                            && (wordBreak == null || primary.wordBreak == null || primary.wordBreak == wordBreak)))) {
+                if (primary.segFont == null) primary.segFont = font;
+                if (primary.wordBreak == null && wordBreak != null) primary.wordBreak = wordBreak;
+                return primary;
+            }
+            if (secondary != null && secondary.text == text && secondary.face == face
+                    && (secondary.segFont == null || ((secondary.segFont == font || secondary.segFont.equals(font))
+                            && (wordBreak == null || secondary.wordBreak == null || secondary.wordBreak == wordBreak)))) {
+                Slot hit = secondary;
+                secondary = primary;
+                primary = hit;
+                if (hit.segFont == null) hit.segFont = font;
+                if (hit.wordBreak == null && wordBreak != null) hit.wordBreak = wordBreak;
+                return hit;
+            }
+            Slot target = secondary != null ? secondary : new Slot();
+            target.text = text;
+            target.face = face;
+            target.shapeStyle = null;
+            target.shapedInterval = null;
+            target.segFont = font;
+            target.wordBreak = wordBreak;
+            target.segments = null;
+            target.wrapped = null;
+            target.strippedAdvance = Float.NaN;
+            secondary = primary;
+            primary = target;
+            return target;
+        }
+    }
+
+    private TextCache textCache;
+
+    private TextCache ensureTextCache() {
+        TextCache c = textCache;
+        if (c == null) textCache = c = new TextCache();
+        return c;
+    }
+
+    /** 幅区間メモ付きでテキストを整形する（16px/15px 等 2 状態の往復をハッシュ無しで命中させる）。 */
+    public TextShaper.ShapedInterval shapeTextInterval(String text, FontFace face, TextStyle style, float limitW) {
+        if (text == null || face == null) {
+            var lines = TextShaper.shape(text, face, style, limitW);
+            float maxW = 0;
+            for (int i = 0, n = lines.size(); i < n; i++) maxW = Math.max(maxW, lines.get(i).width());
+            return new TextShaper.ShapedInterval(lines, 0, 0, true, limitW, false, false, maxW);
+        }
+        TextCache tc = ensureTextCache();
+        TextCache.Slot p = tc.primary;
+        if (p != null && p.text == text && p.face == face && p.shapedInterval != null
+                && (p.shapeStyle == style || p.shapeStyle.equals(style)) && p.shapedInterval.matches(limitW)) {
+            return p.shapedInterval;
+        }
+        TextCache.Slot s = tc.secondary;
+        if (s != null && s.text == text && s.face == face && s.shapedInterval != null
+                && (s.shapeStyle == style || s.shapeStyle.equals(style)) && s.shapedInterval.matches(limitW)) {
+            tc.secondary = p;
+            tc.primary = s;
+            return s.shapedInterval;
+        }
+        TextShaper.ShapedInterval built = TextShaper.shapeInterval(text, face, style, limitW);
+        TextCache.Slot target = tc.acquireForStyle(text, face, style.font(), style.wordBreak());
+        target.shapeStyle = style;
+        target.shapedInterval = built;
+        return built;
+    }
+
+    public ParagraphSegments cachedSegments(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
+        TextCache.Slot slot = ensureTextCache().acquireForStyle(paragraph, face, font, wordBreak);
+        ParagraphSegments seg = slot.segments;
+        if (seg == null) {
+            seg = TextShaper.segmented(paragraph, face, font, wordBreak);
+            slot.segments = seg;
+        }
+        return seg;
+    }
+
+    public float cachedStrippedAdvance(String text, FontFace face, FontStyle font) {
+        TextCache.Slot slot = ensureTextCache().acquireForStyle(text, face, font, null);
+        float w = slot.strippedAdvance;
+        if (Float.isNaN(w)) {
+            w = face.advance(text.strip(), font);
+            slot.strippedAdvance = w;
+        }
+        return w;
+    }
+
+    public TextShaper.WrappedParagraph cachedWrappedParagraph(String paragraph, FontFace face, FontStyle font,
+                                                             WordBreak wordBreak, float lineWidth) {
+        TextCache.Slot slot = ensureTextCache().acquireForStyle(paragraph, face, font, wordBreak);
+        TextShaper.WrappedParagraph wp = slot.wrapped;
+        if (wp == null || !wp.matches(lineWidth)) {
+            wp = TextShaper.wrapParagraph(paragraph, face, font, wordBreak, lineWidth);
+            slot.wrapped = wp;
+            slot.segments = wp.prepared();
+        }
+        return wp;
+    }
 
     /** 見えている断片を捨てる（描画が古い断片を読まないように空にする）。オブジェクトは控えに回して再利用する。 */
     private void discardFragments() {
@@ -531,14 +707,25 @@ public class LayoutBox {
         if (node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT) bumpShapeEpoch();
         int traitsBefore = structTraits(), containerBefore = containerTraits();
         touchPaint();
+        invalidateMinContentCache();
         styleStamp = paintStamp;
+        ComputedStyle prevStyle = this.style;
+        String prevSource = this.displaySource;
         this.style = newStyle;
         this.displaySource = node.text;
         this.display = Display.of(node, newStyle).blockified(newStyle);
 
-        // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
-        String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE)));
-        this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
+        // 文字が空、または原文・white-space・text-transform のどれも変わっていなければ再正規化・変換を省く。
+        if (node.text == null || node.text.isEmpty()) {
+            this.displayText = "";
+        } else if (prevStyle == null
+                || !java.util.Objects.equals(prevSource, node.text)
+                || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.WHITE_SPACE), newStyle.get(CssPropertyIndex.WHITE_SPACE))
+                || !java.util.Objects.equals(prevStyle.get(CssPropertyIndex.TEXT_TRANSFORM), newStyle.get(CssPropertyIndex.TEXT_TRANSFORM))) {
+            // 空白の畳み方は white-space で決まる。無条件に畳んでいたため <pre> が効かなかった。
+            String text = TextShaper.normalize(node.text, WhiteSpace.of(newStyle.get(CssPropertyIndex.WHITE_SPACE)));
+            this.displayText = LayoutMetrics.applyTextTransform(text, newStyle);
+        }
 
         String pos = newStyle.getOrDefault(CssPropertyIndex.POSITION, "static");
         this.isFixed = "fixed".equals(pos);
@@ -664,9 +851,7 @@ public class LayoutBox {
                 return maxWordW;
             }
             // 語の幅は段落の下ごしらえ（キャッシュ）の値。前後の空白を除いた語が空なら 0 で、最大値には響かない
-            float[] wordWidths = TextShaper.segmented(this.displayText, face, font, textStyle.wordBreak()).strippedW();
-            for (float wordW : wordWidths) maxWordW = Math.max(maxWordW, wordW);
-            return maxWordW;
+            return TextShaper.segmented(this.displayText, face, font, textStyle.wordBreak()).maxStrippedW();
         }
 
         if (children.isEmpty()) {
@@ -799,11 +984,16 @@ public class LayoutBox {
         LayoutBox p = parent;
         if (p == null || fixedWidth) return;
         if (need == Float.POSITIVE_INFINITY) {
-            if (!measuredWidthFree) p.childFitBlocked = true;
+            if (!(measuredWidthFree && widthIndependentReuse)) p.childFitBlocked = true;
         } else if (need > p.childFitNeedMax) {
             // 子が切られずに済む使える幅（子の使える幅は親の内容幅）。親の必要幅は、これに親の装飾を足した幅以上
             p.childFitNeedMax = need;
         }
+    }
+
+    /** 親（fill 幅ブロック）が、自分の内容が収まる幅の境目を数えるときに使うこの子の必要幅。 */
+    float blockChildFitWidth() {
+        return (measuredWidthFree && widthIndependentReuse) ? (w + mL + mR) : measuredFitNeed;
     }
 
     /** 直近の測定で、親が渡した制約で測られた子が、切られずに済むために必要とした使える幅の最大。測定の始めに 0 に戻す。 */
@@ -814,7 +1004,10 @@ public class LayoutBox {
 
     private void measureCore(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         restoreTentativeStash();
-        for (LayoutBox child : children) adopt(child);
+        if (needsAdoption) {
+            for (int i = 0, n = children.size(); i < n; i++) adopt(children.get(i));
+            needsAdoption = false;
+        }
         if (ctx.reuseMeasurements() && canReuseMeasurement(space, ctx, restoreOk)) {
             if (restoreOk) restoreNaturalOutputs();
             if (!(subtreeChanged && ctx.firstPass())) return;
@@ -827,6 +1020,10 @@ public class LayoutBox {
             }
             // 子孫の測り直しの結果が外寸に出て、自分の測定が当てはまらなくなったら、下で測り直す
             if (measurementValid) return;
+        }
+        if (ctx.reuseMeasurements() && (reuseDefiniteTentative(space, ctx, restoreOk)
+                || fillFitReuse(space, ctx, restoreOk))) {
+            return;
         }
         MEASUREMENTS_COMPUTED.increment();
         if (layoutChanged) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
@@ -850,14 +1047,31 @@ public class LayoutBox {
     // その産物だけを前回の値に差し替え（部分木は確定測定の状態のまま触らない）、確定の測り直しが来れば元に戻して使い回す。
     // 確定の測り直しが来なかった子は、親が settleTentative で本当に測る（部分木を仮の測定の状態で終えない）。
 
-    /** 仮の測定が親へ渡す産物。 */
-    private record BoxOutputs(float w, float h, float mT, float mR, float mB, float mL,
-                              float pT, float pR, float pB, float pL, float bT, float bR, float bB, float bL,
-                              float legendSpill, float contentBlockExtent, float ownMarginTop, float ownMarginBottom,
-                              SizingMode sizingMode) {
+    /** 仮の測定が親へ渡す産物。再測定時は既存インスタンスを破壊的に更新して使い回す。 */
+    private static final class BoxOutputs {
+        float w, h, mT, mR, mB, mL;
+        float pT, pR, pB, pL, bT, bR, bB, bL;
+        float legendSpill, contentBlockExtent, ownMarginTop, ownMarginBottom;
+        SizingMode sizingMode;
+
         static BoxOutputs capture(LayoutBox b) {
-            return new BoxOutputs(b.w, b.h, b.mT, b.mR, b.mB, b.mL, b.pT, b.pR, b.pB, b.pL, b.bT, b.bR, b.bB, b.bL,
-                    b.legendSpill, b.contentBlockExtent, b.ownMarginTop, b.ownMarginBottom, b.sizingMode);
+            return new BoxOutputs().captureFrom(b);
+        }
+
+        static BoxOutputs captureOrUpdate(BoxOutputs existing, LayoutBox b) {
+            return existing != null ? existing.captureFrom(b) : capture(b);
+        }
+
+        BoxOutputs captureFrom(LayoutBox b) {
+            this.w = b.w; this.h = b.h; this.mT = b.mT; this.mR = b.mR; this.mB = b.mB; this.mL = b.mL;
+            this.pT = b.pT; this.pR = b.pR; this.pB = b.pB; this.pL = b.pL;
+            this.bT = b.bT; this.bR = b.bR; this.bB = b.bB; this.bL = b.bL;
+            this.legendSpill = b.legendSpill;
+            this.contentBlockExtent = b.contentBlockExtent;
+            this.ownMarginTop = b.ownMarginTop;
+            this.ownMarginBottom = b.ownMarginBottom;
+            this.sizingMode = b.sizingMode;
+            return this;
         }
 
         void apply(LayoutBox b) {
@@ -868,29 +1082,51 @@ public class LayoutBox {
         }
     }
 
-    /** 上書き寸法なしで測った結果の産物と、その入力。 */
-    private record Tentative(ConstraintSpace space, Viewport viewport, FontResolver fonts,
+    private enum TentativeKind { TENTATIVE, DEFINITE }
+
+    /** 仮の測定（上書き寸法なし）・確定の測定（上書き寸法あり）の結果の産物と、その入力。 */
+    private record Tentative(TentativeKind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
                              IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree,
-                             float fitNeed) {
+                             boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
+                             float overrideW, float overrideH) {
         /**
-         * 同じ制約か。高さの % の基準が結果に効かない箱（{@link #percentFree}）は、それだけが違っても同じとみなす。
-         * 内容で寸法が決まる箱（{@link #fitNeed}）は、使える幅が前回も今回もそれ以上なら幅の違いも同じとみなす。
+         * 同じ制約か。上書き寸法は必ず一致させる。高さの % の基準が結果に効かない箱（{@link #percentFree}）は
+         * それだけが違っても同じとみなし、確定幅の箱（{@link #widthFree}）や内容で寸法が決まる箱（{@link #fitNeed}）は
+         * 使える幅の違いも許す。
          */
         boolean matches(ConstraintSpace s) {
-            return space.equals(s) || (percentFree && sameIgnoringPercentBlock(space, s)) || fitMatches(s);
+            if (!sameFixedSizes(space, s)) return false;
+            return space.equals(s)
+                    || (percentFree && sameIgnoringPercentBlock(space, s))
+                    || widthMatches(s)
+                    || fitMatches(s);
+        }
+
+        boolean widthMatches(ConstraintSpace s) {
+            return widthIndependentReuse && widthFree && sameBlockPercentAndParent(space, s, percentFree);
         }
 
         boolean fitMatches(ConstraintSpace s) {
-            return fitNeed != Float.POSITIVE_INFINITY && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
-                    && Float.floatToIntBits(s.percentageBlockSize()) == Float.floatToIntBits(space.percentageBlockSize())
-                    && s.parent().equals(space.parent());
+            return fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY
+                    && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
+                    && sameBlockPercentAndParent(space, s, percentFree);
         }
 
-        /** ビューポートが同じか。内容で寸法が決まる箱は、ビューポートの幅（と、読まない箱では高さ以外）の違いを許す。 */
+        /** ビューポートが同じか。外を読まない箱（{@link #outsideFree}）や内容で寸法が決まる箱は、幅の違いを許す。 */
         boolean sameViewport(Viewport v) {
-            return viewport.equals(v) || (fitNeed != Float.POSITIVE_INFINITY && viewport.rootH() == v.rootH()
-                    && viewport.devicePixelRatio() == v.devicePixelRatio());
+            return viewport.equals(v)
+                    || (((fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY) || (viewportWidthFreeReuse && outsideFree))
+                            && viewport.rootH() == v.rootH() && viewport.devicePixelRatio() == v.devicePixelRatio());
         }
+    }
+
+    private static boolean sameFixedSizes(ConstraintSpace a, ConstraintSpace b) {
+        return sameLength(a.fixedInlineSize(), b.fixedInlineSize()) && sameLength(a.fixedBlockSize(), b.fixedBlockSize());
+    }
+
+    private static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree) {
+        return (percentFree || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize()))
+                && a.parent().equals(b.parent());
     }
 
     /** 高さの % の基準以外（使える幅・親の整形コンテキスト）が同じ。 */
@@ -922,17 +1158,25 @@ public class LayoutBox {
     /** 切り分け用: false なら、高さの % の基準が違う制約は常に別の入力として扱う（従来の動き）。 */
     public static volatile boolean blockPercentFreeEnabled = !Boolean.getBoolean("enderframe.layout.noblockpercentkey");
 
-    /** 上書き寸法なしの制約ごとの産物（最大 {@link #MAX_TENTATIVES}。grid は寄与の測定と列幅での測定の 2 種類を持つ）。 */
+    /** 仮の測定・確定の測定の産物。仮は最大 {@link #MAX_TENTATIVES}、確定は最大 {@link #MAX_DEFINITE_TENTATIVES} を別枠で保つ。 */
     private Tentative[] tentatives;
-    private static final int MAX_TENTATIVES = 3;
-    /** 仮の産物に差し替えている間、差し替える前（確定測定の状態）の産物。null なら差し替えていない。 */
+    private static final int MAX_TENTATIVES = 4;
+    private static final int MAX_DEFINITE_TENTATIVES = 2;
+    private static final int MAX_TOTAL_TENTATIVES = MAX_TENTATIVES + MAX_DEFINITE_TENTATIVES;
+    /** 仮の産物に差し替えている間、差し替える前（確定測定の状態）の産物を退避する領域。 */
     private BoxOutputs tentativeStash;
+    private boolean tentativeStashed;
     private ConstraintSpace tentativeSpace;
     private LayoutContext tentativeCtx;
     /** 子に差し替え中の箱がある（親が測り終える前に確定させるための印）。 */
     private boolean hasTentativeChildren;
 
     /** 切り分け用: false なら仮の測定を常に本当に測る。 */
+    /**
+     * 親が寸法を決めた葉の確定測定を別枠で使い回す（{@link TentativeKind#DEFINITE}）。切り分け: {@code -Denderframe.layout.nodefiniteleaf=true}。
+     */
+    public static volatile boolean definiteLeafReuse = !Boolean.getBoolean("enderframe.layout.nodefiniteleaf");
+
     public static volatile boolean tentativeReuse = !Boolean.getBoolean("enderframe.layout.notentative");
     private static final java.util.concurrent.atomic.LongAdder TENTATIVE_SKIPPED =
             new java.util.concurrent.atomic.LongAdder();
@@ -953,7 +1197,7 @@ public class LayoutBox {
         if (!tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
         Tentative t = null;
         for (Tentative candidate : all) {
-            if (candidate != null && candidate.matches(space)) {
+            if (candidate != null && candidate.kind() == TentativeKind.TENTATIVE && candidate.matches(space)) {
                 t = candidate;
                 break;
             }
@@ -969,11 +1213,16 @@ public class LayoutBox {
                 || ctx.intrinsicResolver() != t.intrinsics()) {
             return false;
         }
-        for (LayoutBox child : children) adopt(child);
-        tentativeStash = BoxOutputs.capture(this);
+        if (needsAdoption) {
+            for (int i = 0, n = children.size(); i < n; i++) adopt(children.get(i));
+            needsAdoption = false;
+        }
+        tentativeStash = BoxOutputs.captureOrUpdate(tentativeStash, this);
+        tentativeStashed = true;
         tentativeSpace = space;
         tentativeCtx = ctx;
         t.outputs().apply(this);
+        if (t.fillFit()) this.w = Math.max(0, space.availableInlineSize() - mL - mR);
         invalidateMinContentCache();
         parent.hasTentativeChildren = true;
         TENTATIVE_SKIPPED.increment();
@@ -990,17 +1239,16 @@ public class LayoutBox {
 
     /** 差し替えた産物を確定測定の状態に戻す。 */
     private void restoreTentativeStash() {
-        BoxOutputs stash = tentativeStash;
-        if (stash == null) return;
-        tentativeStash = null;
+        if (!tentativeStashed) return;
+        tentativeStashed = false;
         tentativeCtx = null;
-        stash.apply(this);
+        tentativeStash.apply(this);
         invalidateMinContentCache();
     }
 
     /** 仮の産物のままの箱を、本当に測って確定させる（確定の測り直しが来なかった項目）。 */
     void settleTentative() {
-        if (tentativeStash == null) return;
+        if (!tentativeStashed) return;
         ConstraintSpace s = tentativeSpace;
         LayoutContext c = tentativeCtx;
         restoreTentativeStash();
@@ -1110,6 +1358,8 @@ public class LayoutBox {
     /** 前回の measure の後に、自分か子孫の中身が変わった（{@link #markLayoutChanges} が決める）。 */
     private boolean layoutChanged = true;
     private ConstraintSpace measuredSpace;
+    /** エンジンへ渡す内容の制約と子へ渡す制約の再利用用（値が同じ間は確保し直さない）。 */
+    public ConstraintSpace contentSpaceCache, childSpaceCache;
 
     /** 前回の測定で、親が高さを固定していない（自然な高さで測った）か。 */
     boolean measuredWithoutFixedHeight() {
@@ -1198,8 +1448,16 @@ public class LayoutBox {
 
     /** この使える幅以上なら測定の結果が同じ（無限大は当てはまらない）。測り終えたときに決める。 */
     private float measuredFitNeed = Float.POSITIVE_INFINITY;
+    /** fit 判定時に箱自身の幅も不変か（shrink-to-fit・上書き幅・テキスト）。false なら fill 幅（再測定を省くときは幅だけ更新）。 */
+    private boolean measuredFitFixedW;
+    /** fill 幅で、幅以外の出力と子の幅が {@link #measuredFitNeed} 以上で不変であり、測定を省いて幅だけ更新できるか。 */
+    private boolean measuredFillFitReusable;
 
     private boolean fitReuse(ConstraintSpace space, LayoutContext ctx) {
+        return measuredFitFixedW && matchesFitConstraint(space, ctx);
+    }
+
+    private boolean matchesFitConstraint(ConstraintSpace space, LayoutContext ctx) {
         float need = measuredFitNeed;
         if (!fitReuseEnabled || need == Float.POSITIVE_INFINITY || measuredSpace == null || measuredViewport == null) return false;
         if (!(space.availableInlineSize() >= need) || !(measuredSpace.availableInlineSize() >= need)) return false;
@@ -1211,8 +1469,39 @@ public class LayoutBox {
         return sameContext && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
+    /**
+     * fill 幅のブロック（{@code width: auto}）で、内容が収まり切り子の幅も親の幅に依らないなら、
+     * {@link BoxMeasurer#measure} を省いて自然な出力を戻した上で自分の幅だけを新しい使える幅に更新する。
+     */
+    private boolean fillFitReuse(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
+        if (!restoreOk || !measuredFillFitReusable || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
+            return false;
+        }
+        if (!measurementValid || layoutChanged || subtreeChanged) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))) return false;
+        if (measuredEpoch != MEASUREMENT_EPOCH.get() || floatSpace != null || collapsedBorders != null) return false;
+        if (ctx.fonts() != measuredFonts || ctx.intrinsicResolver() != measuredIntrinsics) return false;
+        if (!matchesFitConstraint(space, ctx)) return false;
+        restoreNaturalOutputs();
+        float newW = Math.max(0, space.availableInlineSize() - mL - mR);
+        if (newW != w) {
+            w = newW;
+            invalidateMinContentCache();
+            touchPaint();
+            placementValid = false;
+        }
+        measuredSpace = space;
+        measuredViewport = ctx.viewport();
+        measuredRun = ctx.layoutRun();
+        measuredW = w;
+        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
+        return true;
+    }
+
     private float computeFitNeed() {
         final float none = Float.POSITIVE_INFINITY;
+        measuredFitFixedW = false;
+        measuredFillFitReusable = false;
         if (!fitReuseEnabled || parent == null || !measuredOutsideFree || measuredHasTable) return none;
         if (floatSpace != null || collapsedBorders != null
                 || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
@@ -1222,36 +1511,82 @@ public class LayoutBox {
         if (!Float.isNaN(overrideWidth)) {
             // 幅は親が決めて渡した値（flex の伸縮・stretch）。中身はその幅で測るので、使える幅は余白・パディングの % と
             // auto の余白にしか効かない。文字は使える幅で整形した行を持つので当てはまらない
-            return !textNode && f.edgesAvailableFree ? 0f : none;
+            if (!textNode && f.edgesAvailableFree) {
+                measuredFitFixedW = true;
+                return 0f;
+            }
+            return none;
         }
         if (!f.fitCandidate) return none;
-        // 使える幅がこの幅以上なら同じ結果。ちょうどの幅は収まる（整形は WRAP_TOLERANCE を許す）。使える幅で切られていた
-        // 箱（measuredClamped）は、切られた幅と同じ w になるので、w では見分けられず別に印を持つ
-        float need = w + mL + mR;
-        if (!textNode) {
-            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅が、使える幅に届くかの境目
-            if (Float.isNaN(naturalInlineSize)) return none;
-            need = Math.max(naturalInlineSize + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
-        }
         if (textNode) {
             // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
             List<ShapedLine> lines = shapedLines;
-            if (lines == null || lines.size() != 1 || style.containsKey(CssPropertyIndex.MAX_WIDTH)) return none;
-            return need;
+            if (lines == null || lines.size() != 1 || hasActiveMaxWidth(style)) return none;
+            measuredFitFixedW = true;
+            return w + mL + mR;
         }
         Display.Inner inner = display.inner();
         if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT && inner != Display.Inner.FLEX) return none;
         // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
         // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。中身は文字・確定幅の箱・同じ条件の箱だけ
-        if (sizingMode != SizingMode.SHRINK_TO_FIT || measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
-                || containsInlineSize() || !measuredFlowFloatFree) return none;
-        if (childFitBlocked) return none;
+        if (measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
+                || containsInlineSize() || !measuredFlowFloatFree || childFitBlocked) {
+            return none;
+        }
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox c = children.get(i);
             if (c.style.facts().displayNone) continue;
             if (c.isOutsideMarker || c.isAbsolute || BlockLayoutEngine.isFloating(c)) return none;
         }
+        if (sizingMode == SizingMode.SHRINK_TO_FIT) {
+            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅が、使える幅に届くかの境目
+            if (Float.isNaN(naturalInlineSize)) return none;
+            measuredFitFixedW = true;
+            return Math.max(naturalInlineSize + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
+        }
+        if (sizingMode != SizingMode.DEFINITE || isFillWidthExcludedTag(node.tag) || Float.isNaN(naturalFitInnerWidth)) {
+            return none;
+        }
+        if (hasActiveMaxWidth(style) || hasNonZeroMinWidth(style) || style.containsKey(CssPropertyIndex.ASPECT_RATIO)) {
+            return none;
+        }
+        float innerNeed = Math.max(naturalFitInnerWidth, childFitNeedMax);
+        float need = innerNeed + horizontalDecoration() + mL + mR + (innerNeed > 0 ? 0.02f : 0f);
+        measuredFillFitReusable = Float.isNaN(overrideHeight) && allChildrenWidthInvariantForFill(inner);
         return need;
+    }
+
+    private boolean allChildrenWidthInvariantForFill(Display.Inner inner) {
+        if (inner == Display.Inner.FLEX) return true; // FlexLayoutEngine が grow=0・wrap なし・auto 余白なしの行方向だけ naturalFitInnerWidth を入れる
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
+            if (c.style.facts().displayNone) continue;
+            if (!(c.node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                    || (c.measuredWidthFree && widthIndependentReuse) || c.sizingMode == SizingMode.SHRINK_TO_FIT)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasActiveMaxWidth(ComputedStyle s) {
+        if (!s.containsKey(CssPropertyIndex.MAX_WIDTH)) return false;
+        String v = s.get(CssPropertyIndex.MAX_WIDTH);
+        return v != null && !"none".equalsIgnoreCase(v.trim());
+    }
+
+    private static boolean hasNonZeroMinWidth(ComputedStyle s) {
+        if (!s.containsKey(CssPropertyIndex.MIN_WIDTH)) return false;
+        String v = s.get(CssPropertyIndex.MIN_WIDTH);
+        if (v == null) return false;
+        String t = v.trim();
+        return !t.equalsIgnoreCase("auto") && !t.equals("0") && !t.equals("0px");
+    }
+
+    private static boolean isFillWidthExcludedTag(String tag) {
+        return tag == null || tag.equals("img") || tag.equals("svg") || tag.equals("canvas")
+                || tag.equals("input") || tag.equals("select") || tag.equals("progress")
+                || ReplacedElements.isHostImageLike(tag) || ReplacedElements.isHostScene(tag);
     }
 
     private void recordWidthIndependence() {
@@ -1291,7 +1626,7 @@ public class LayoutBox {
         BoxOutputs natural = measuredOutputs;
         if (natural == null) return;
         if (w == measuredW && h == measuredH && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML
-                && contentBlockExtent == natural.contentBlockExtent()) {
+                && contentBlockExtent == natural.contentBlockExtent) {
             return;
         }
         natural.apply(this);
@@ -1335,7 +1670,7 @@ public class LayoutBox {
         measuredIntrinsics = ctx.intrinsicResolver();
         measuredEpoch = MEASUREMENT_EPOCH.get();
         measuredRun = ctx.layoutRun();
-        measuredOutputs = BoxOutputs.capture(this);
+        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
         measuredW = w;
         measuredH = h;
         measuredMT = mT;
@@ -1365,24 +1700,20 @@ public class LayoutBox {
         measuredHasTable = hasTable;
         recordWidthIndependence();
         measuredFitNeed = computeFitNeed();
-        if (tentativeReuse && parentUsesTentatives() && Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight)
-                && floatSpace == null && collapsedBorders == null) {
-            Tentative fresh = new Tentative(space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(), measuredEpoch,
-                    BoxOutputs.capture(this), measuredBlockPercentFree, !Float.isNaN(overrideWidth) ? Float.POSITIVE_INFINITY : measuredFitNeed);
-            if (tentatives == null) tentatives = new Tentative[MAX_TENTATIVES];
-            int slot = -1;
-            for (int i = 0; i < tentatives.length; i++) {
-                Tentative old = tentatives[i];
-                if (old == null || old.matches(space)) {
-                    slot = i;
-                    break;
-                }
+        if (tentativeReuse && parentUsesTentatives() && floatSpace == null && collapsedBorders == null) {
+            boolean tentativePhase = Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight);
+            if (tentativePhase || isDefiniteCacheableLeaf()) {
+                TentativeKind kind = tentativePhase ? TentativeKind.TENTATIVE : TentativeKind.DEFINITE;
+                boolean fillFit = tentativePhase && measuredFillFitReusable;
+                float tentFitNeed = tentativePhase
+                        ? ((measuredFitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
+                        : (!Float.isNaN(overrideWidth) && !style.layoutFacts().edgesAvailableFree
+                                ? Float.POSITIVE_INFINITY : measuredFitNeed);
+                Tentative fresh = new Tentative(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
+                        measuredEpoch, BoxOutputs.capture(this), measuredBlockPercentFree, measuredOutsideFree,
+                        measuredWidthFree, tentFitNeed, fillFit, overrideWidth, overrideHeight);
+                recordTentative(fresh, tentativePhase ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES);
             }
-            if (slot < 0) { // 空きも同じ制約も無い: 一番古い（先頭）を捨てて詰める
-                System.arraycopy(tentatives, 1, tentatives, 0, tentatives.length - 1);
-                slot = tentatives.length - 1;
-            }
-            tentatives[slot] = fresh;
         }
         measurementValid = true;
         // 子孫を測り直したので、祖先が前回の measure で残した状態はもう当てはまらない。
@@ -1390,6 +1721,115 @@ public class LayoutBox {
         boolean absorbed = outerSizeStable && (isRelayoutBoundary() || isCutoffEligible());
         if (DESCENT.get()[0] > 0) invalidateParentOnly(!absorbed);
         else invalidateAncestors(!(outerSizeStable && isRelayoutBoundary()));
+    }
+
+    /** 子を持たない要素だけ、BoxOutputs が測定状態のすべてなので確定測定を別枠で使い回せる。 */
+    private boolean isDefiniteCacheableLeaf() {
+        return definiteLeafReuse && children.isEmpty()
+                && node.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                && floatSpace == null && collapsedBorders == null && !measuredHasTable
+                && !isTableBox(this) && renderedLegend() == null;
+    }
+
+    private void recordTentative(Tentative fresh, int maxForKind) {
+        if (tentatives == null) {
+            tentatives = new Tentative[MAX_TENTATIVES];
+            tentatives[0] = fresh;
+            return;
+        }
+        int firstNull = -1, countForKind = 0, oldestOfKind = -1;
+        for (int i = 0; i < tentatives.length; i++) {
+            Tentative old = tentatives[i];
+            if (old == null) {
+                if (firstNull < 0) firstNull = i;
+                continue;
+            }
+            if (old.kind() == fresh.kind()) {
+                if (old.matches(fresh.space())) {
+                    tentatives[i] = fresh;
+                    return;
+                }
+                if (oldestOfKind < 0) oldestOfKind = i;
+                countForKind++;
+            }
+        }
+        if (countForKind < maxForKind) {
+            if (firstNull >= 0) {
+                tentatives[firstNull] = fresh;
+                return;
+            }
+            int nextLen = Math.min(MAX_TOTAL_TENTATIVES, tentatives.length + 2);
+            tentatives = java.util.Arrays.copyOf(tentatives, nextLen);
+            tentatives[tentatives.length - 2] = fresh;
+            return;
+        }
+        // この種類の枠がいっぱい: この種類で一番古いものを落とし、他種類の後ろを詰めて末尾へ置く
+        int lastNonNull = oldestOfKind;
+        for (int i = oldestOfKind + 1; i < tentatives.length && tentatives[i] != null; i++) {
+            tentatives[i - 1] = tentatives[i];
+            lastNonNull = i;
+        }
+        tentatives[lastNonNull] = fresh;
+    }
+
+    /**
+     * 仮の測定が {@link #measuredSpace} を上書きしたあとでも、確定測定の別枠（{@link TentativeKind#DEFINITE}）に
+     * 同じ制約の記録があり部分木を持たない葉なら、再測定を省いて確定結果を戻す。
+     */
+    private boolean reuseDefiniteTentative(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
+        if (!tentativeReuse || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
+            return false;
+        }
+        if (!measurementValid || layoutChanged || subtreeChanged || !isDefiniteCacheableLeaf()) return false;
+        if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
+        int epoch = MEASUREMENT_EPOCH.get();
+        if (measuredEpoch != epoch) return false;
+        Tentative match = null;
+        for (Tentative t : tentatives) {
+            if (t == null || t.kind() != TentativeKind.DEFINITE) continue;
+            if (t.epoch() == epoch && t.fonts() == ctx.fonts() && t.intrinsics() == ctx.intrinsicResolver()
+                    && sameLength(t.overrideW(), overrideWidth) && sameLength(t.overrideH(), overrideHeight)
+                    && t.matches(space) && t.sameViewport(ctx.viewport())) {
+                match = t;
+                break;
+            }
+        }
+        if (match == null) return false;
+        BoxOutputs o = match.outputs();
+        boolean outputsDiffer = w != o.w || h != o.h || mT != o.mT || mR != o.mR || mB != o.mB || mL != o.mL
+                || contentBlockExtent != o.contentBlockExtent;
+        if (!restoreOk && outputsDiffer) return false;
+        if (restoreOk && outputsDiffer) {
+            o.apply(this);
+            invalidateMinContentCache();
+            touchPaint();
+        }
+        measuredBlockPercentFree = match.percentFree();
+        measuredOutsideFree = match.outsideFree();
+        measuredWidthFree = match.widthFree();
+        measuredSpace = space;
+        measuredOverrideW = overrideWidth;
+        measuredOverrideH = overrideHeight;
+        measuredViewport = ctx.viewport();
+        measuredFonts = match.fonts();
+        measuredIntrinsics = match.intrinsics();
+        measuredEpoch = epoch;
+        measuredRun = ctx.layoutRun();
+        // 記録（Tentative.outputs）と同じ実体を持たない: 以降の captureOrUpdate がその場で書き換えて記録を壊す
+        measuredOutputs = BoxOutputs.captureOrUpdate(measuredOutputs, this);
+        measuredW = w;
+        measuredH = h;
+        measuredMT = mT;
+        measuredMR = mR;
+        measuredMB = mB;
+        measuredML = mL;
+        measuredFitNeed = match.fitNeed();
+        measuredFitFixedW = !Float.isNaN(overrideWidth) && measuredFitNeed != Float.POSITIVE_INFINITY;
+        measuredFillFitReusable = false;
+        measuredClamped = false;
+        childFitBlocked = false;
+        childFitNeedMax = 0;
+        return true;
     }
 
     /**
@@ -1474,6 +1914,7 @@ public class LayoutBox {
             box.lastLayoutX = Float.NaN;
         }
         box.discardFragments();
+        box.fragmentsStale = false;
         box.fragmentCursor = 0;
         box.x = 0;
         box.y = 0;
@@ -1484,7 +1925,213 @@ public class LayoutBox {
         box.descendantOverflowRight = 0;
         box.descendantOverflowBottom = 0;
         box.inlineContentBottom = Float.NEGATIVE_INFINITY;
-        for (LayoutBox child : box.children) resetPlacements(child, keepRun);
+        for (int i = 0, n = box.children.size(); i < n; i++) resetPlacements(box.children.get(i), keepRun);
+    }
+
+    /**
+     * {@link #resetPlacements(LayoutBox, long)} の高速版。
+     * 祖先から float / 相対配置の障害を O(1) で伝播し、断片の {@link #discardFragments()} は
+     * 今回の layout が触れなかった箱だけへ遅延する（全箱の出し入れを省く）。
+     */
+    public static void resetPlacementsFast(LayoutBox box, long keepRun, List<LayoutBox> staleFrags) {
+        resetPlacementsFast(box, keepRun, false, false, staleFrags);
+    }
+
+    private static void resetPlacementsFast(LayoutBox box, long keepRun,
+                                            boolean ancestorOffset, boolean inBfcFloat,
+                                            List<LayoutBox> staleFrags) {
+        if (keepRun >= 0 && box.canKeepPlacement(keepRun, ancestorOffset || inBfcFloat)) return;
+        box.touchPaint();
+        if (keepRun < 0) {
+            box.placementPure = false;
+            box.keptPure = false;
+            box.lastLayoutX = Float.NaN;
+        }
+        if (!box.inlineFragments.isEmpty()) {
+            box.fragmentsStale = true;
+            staleFrags.add(box);
+        }
+        box.fragmentCursor = 0;
+        box.x = 0;
+        box.y = 0;
+        box.staticX = Float.NaN;
+        box.staticY = Float.NaN;
+        box.scrollWidth = 0;
+        box.scrollHeight = 0;
+        box.descendantOverflowRight = 0;
+        box.descendantOverflowBottom = 0;
+        box.inlineContentBottom = Float.NEGATIVE_INFINITY;
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        if (n == 0) return;
+        boolean nextOffset = ancestorOffset || box.isRelative || box.isSticky;
+        boolean nextBfcFloat = box.establishesBfc ? box.hasFloatChild : (inBfcFloat || box.hasFloatChild);
+        for (int i = 0; i < n; i++) {
+            resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, staleFrags);
+        }
+    }
+
+    /** {@link #resetPlacementsFast} で遅延印を付けたうち、今回の layout が再構築しなかった断片だけを捨てる。 */
+    public static void finishResetPlacements(List<LayoutBox> staleFrags) {
+        for (int i = 0, n = staleFrags.size(); i < n; i++) {
+            LayoutBox b = staleFrags.get(i);
+            if (b.fragmentsStale) {
+                b.discardFragments();
+                b.fragmentsStale = false;
+            }
+        }
+        staleFrags.clear();
+    }
+
+    /**
+     * 前回の箱の木から、DOM の節ごとの箱を O(1) 配列で引ける索引表。
+     * 構築パス自身が次の構築用に埋めることで、再構築前の全木走査（{@code collectReusableBoxes}）と
+     * {@code IdentityHashMap} 確保を省く。
+     */
+    public static final class ReusableTable {
+        final com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena;
+        private LayoutBox[] byId;
+        private LayoutBox[] spareById;
+        private int maxUsedId = -1;
+        private java.util.IdentityHashMap<HtmlNode, LayoutBox> unindexed;
+
+        private ReusableTable(com.nishiyu.enderframelib.core.kernel.memory.DocumentArena arena,
+                              LayoutBox[] recycled, int cap) {
+            this.arena = arena;
+            if (arena != null) {
+                this.byId = (recycled != null && recycled.length >= cap)
+                        ? recycled : new LayoutBox[Math.max(64, cap)];
+            } else {
+                this.byId = null;
+            }
+        }
+
+        public static ReusableTable createForBuild(HtmlNode rootNode, ReusableTable previous) {
+            var arena = rootNode != null && rootNode.hasNodeId() ? rootNode.arena() : null;
+            int cap = arena != null ? Math.max(64, arena.highWater()) : 0;
+            LayoutBox[] spare = (previous != null && previous.arena == arena) ? previous.spareById : null;
+            if (previous != null && previous.arena == arena) previous.spareById = null;
+            return new ReusableTable(arena, spare, cap);
+        }
+
+        public boolean matchesRoot(HtmlNode rootNode) {
+            var rootArena = rootNode != null && rootNode.hasNodeId() ? rootNode.arena() : null;
+            return arena == rootArena;
+        }
+
+        public void putIfAbsent(HtmlNode node, LayoutBox box) {
+            if (node == null || box == null) return;
+            if (arena != null && node.hasNodeId() && node.arena() == arena) {
+                int id = node.nodeId();
+                if (id >= byId.length) {
+                    byId = java.util.Arrays.copyOf(byId, Math.max(byId.length * 2, id + 1));
+                }
+                if (byId[id] == null) {
+                    byId[id] = box;
+                    if (id > maxUsedId) maxUsedId = id;
+                }
+            } else {
+                if (unindexed == null) unindexed = new java.util.IdentityHashMap<>();
+                unindexed.putIfAbsent(node, box);
+            }
+        }
+
+        public LayoutBox take(HtmlNode node) {
+            if (node == null) return null;
+            if (arena != null && node.hasNodeId() && node.arena() == arena) {
+                int id = node.nodeId();
+                if (id < byId.length) {
+                    LayoutBox b = byId[id];
+                    if (b != null) {
+                        byId[id] = null;
+                        return b.node == node ? b : null;
+                    }
+                }
+                return null;
+            }
+            return unindexed != null ? unindexed.remove(node) : null;
+        }
+
+        public void remove(HtmlNode node) {
+            take(node);
+        }
+
+        public void releaseAfterBuild(ReusableTable previous) {
+            if (previous == null || previous == this || previous.arena != this.arena) return;
+            if (previous.byId != null) {
+                if (previous.maxUsedId >= 0) {
+                    int limit = Math.min(previous.maxUsedId + 1, previous.byId.length);
+                    java.util.Arrays.fill(previous.byId, 0, limit, null);
+                    previous.maxUsedId = -1;
+                }
+                this.spareById = previous.byId;
+                previous.byId = null;
+            }
+            if (previous.unindexed != null) previous.unindexed.clear();
+        }
+    }
+
+    public void setReusableTable(ReusableTable table) {
+        this.reusableTable = table;
+    }
+
+    public static ReusableTable acquireReusableTable(LayoutBox rootBox, HtmlNode docRoot) {
+        if (rootBox == null) return null;
+        ReusableTable existing = rootBox.reusableTable;
+        rootBox.reusableTable = null;
+        if (existing != null && existing.matchesRoot(docRoot)) {
+            return existing;
+        }
+        ReusableTable collected = ReusableTable.createForBuild(docRoot, null);
+        collectReusableBoxes(rootBox, collected);
+        return collected;
+    }
+
+    public void registerReusableSubtree(LayoutBox sub) {
+        ReusableTable t = this.reusableTable;
+        if (t != null && sub != null) collectReusableBoxes(sub, t);
+    }
+
+    public void unregisterReusableSubtree(LayoutBox sub) {
+        ReusableTable t = this.reusableTable;
+        if (t == null || sub == null) return;
+        t.remove(sub.node);
+        List<LayoutBox> kids = sub.elementChildren;
+        for (int i = 0, n = kids.size(); i < n; i++) unregisterReusableSubtree(kids.get(i));
+    }
+
+    public boolean isInTableScope() {
+        for (LayoutBox cur = this; cur != null; cur = cur.parent) {
+            if (isTableBox(cur) || cur.everLaidOutAsTable) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 差分ビルド中に {@code box} を次フレーム用の再利用テーブルへ登録し、表スコープ（子孫を再利用不可にする境界）に入るかを返す。
+     */
+    public static boolean recordReusableForBuild(ReusableTable out, LayoutBox box) {
+        boolean table = isTableBox(box);
+        if (out != null && !box.isAnonymous && !box.node.isPseudoNode
+                && !isInternalTableBox(box)) {
+            out.putIfAbsent(box.node, box);
+        }
+        return table || box.everLaidOutAsTable;
+    }
+
+    private static void collectReusableBoxes(LayoutBox box, ReusableTable out) {
+        if (box.isAnonymous || box.node.isPseudoNode) return;
+        boolean table = isTableBox(box);
+        if (isInternalTableBox(box)) return;
+        out.putIfAbsent(box.node, box);
+        if (table || box.everLaidOutAsTable) return;
+        List<LayoutBox> kids = box.elementChildren;
+        for (int i = 0, n = kids.size(); i < n; i++) collectReusableBoxes(kids.get(i), out);
+    }
+
+    /** 外側の table/inline-table 以外の表内部ボックス（行・セル・キャプション等）か。 */
+    public static boolean isInternalTableBox(LayoutBox box) {
+        return isTableBox(box) && box.display.inner() != Display.Inner.TABLE;
     }
 
     /**
@@ -1507,8 +2154,8 @@ public class LayoutBox {
         for (LayoutBox child : box.elementChildren) collectReusableBoxes(child, out);
     }
 
-    /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱を使い回すかどうかの判断に使う。 */
-    boolean touchedByTableEngine() {
+    /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱や差分レイアウトで使い回すかどうかの判断に使う。 */
+    public boolean touchedByTableEngine() {
         return isTableBox(this) || everLaidOutAsTable || collapsedBorders != null;
     }
 
@@ -1602,6 +2249,7 @@ public class LayoutBox {
         boolean remeasure = selfChanged || listChanged || forcedByParent || childAffects || !box.measurementValid;
         box.layoutChanged = remeasure;
         box.subtreeChanged = remeasure || subtreeChanged;
+        if (box.subtreeChanged) box.invalidateMinContentCache();
         // 再レイアウト境界の中の変化は、境界の寸法を変えないので祖先の測り直しには及ばない
         // （境界自身の署名が変わったときだけ祖先へ伝える）
         return box.isRelayoutBoundary() ? selfChanged : remeasure;
@@ -1636,12 +2284,14 @@ public class LayoutBox {
                 boolean remeasure = selfChanged || leaf.childListChanged() || !leaf.measurementValid;
                 leaf.layoutChanged |= remeasure;
                 leaf.subtreeChanged = true;
+                leaf.invalidateMinContentCache();
                 affects = leaf.isRelayoutBoundary() ? selfChanged : remeasure;
             } else {
                 // 子を持つ箱（再スタイルで寸法の入力が変わった要素）: 自分の署名が変わったなら全ての子孫を測り直す。
                 // この部分木だけは全体版と同じ印付けをする（部分木の外は経路だけ）
                 affects = markLayoutChanges(leaf, false);
                 leaf.subtreeChanged = true;
+                leaf.invalidateMinContentCache();
             }
             path.add(leaf);
             boolean reachedRoot = false;
@@ -1650,6 +2300,7 @@ public class LayoutBox {
             for (LayoutBox a = leaf.parent; a != null; a = a.parent) {
                 if (a.selfSignatureChanged() || a.childListChanged()) return null;
                 a.subtreeChanged = true;
+                a.invalidateMinContentCache();
                 path.add(a);
                 if (lazy) {
                     // 子の結果が外寸に出れば a の測定が無効になり、a は下降（remeasureChanged）の戻りで測り直す。
@@ -1674,10 +2325,47 @@ public class LayoutBox {
         return path;
     }
 
+    /**
+     * {@code relayoutRootOnly} 専用: 根以外のスタイル・構造・属性が変わっていない前提で、
+     * 根と直接の子だけを印付けし、残りのクリーンな部分木走査を省く。
+     */
+    public static boolean markRootRestyleChanges(LayoutBox rootBox) {
+        boolean selfChanged = rootBox.selfSignatureChanged();
+        boolean listChanged = rootBox.childListChanged();
+        boolean blockFlow = rootBox.display != null && !isTableBox(rootBox)
+                && (rootBox.display.inner() == Display.Inner.FLOW || rootBox.display.inner() == Display.Inner.FLOW_ROOT);
+        boolean forceAllChildren = selfChanged
+                || (listChanged && (!blockFlow || rootBox.measuredHadFloatChild || rootBox.hasFloatingChild()));
+        boolean childAffects = false;
+        boolean subtreeChanged = false;
+        List<LayoutBox> kids = rootBox.children;
+        for (int i = 0, n = kids.size(); i < n; i++) {
+            LayoutBox child = kids.get(i);
+            boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
+            if (child.isAnonymous || child.subtreeChanged || child.selfSignatureChanged() || child.childListChanged()) {
+                childAffects |= markLayoutChanges(child, force);
+            } else {
+                boolean cRemeasure = force || !child.measurementValid;
+                child.layoutChanged = cRemeasure;
+                child.subtreeChanged = cRemeasure;
+                if (cRemeasure) child.invalidateMinContentCache();
+                childAffects |= !child.isRelayoutBoundary() && cRemeasure;
+            }
+            subtreeChanged |= child.subtreeChanged;
+        }
+        boolean remeasure = selfChanged || listChanged || childAffects || !rootBox.measurementValid;
+        rootBox.layoutChanged = remeasure;
+        rootBox.subtreeChanged = remeasure || subtreeChanged;
+        if (rootBox.subtreeChanged) rootBox.invalidateMinContentCache();
+        return remeasure;
+    }
+
     /** 配置まで終えたあと、木全体の「変わった」印を外す（測り直した印の残っていない箱だけ。{@link #clearSubtreeMarks} の全体版）。 */
     public static void clearAllSubtreeMarks(LayoutBox root) {
+        if (!root.subtreeChanged) return;
         if (!root.layoutChanged) root.subtreeChanged = false;
-        for (LayoutBox c : root.children) clearAllSubtreeMarks(c);
+        List<LayoutBox> kids = root.children;
+        for (int i = 0, n = kids.size(); i < n; i++) clearAllSubtreeMarks(kids.get(i));
     }
 
     /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す（次の全体版が「変化なし」と付けるのと同じ）。 */
@@ -1730,7 +2418,8 @@ public class LayoutBox {
         // スクロールコンテナは、自分のスクロール量も配置の入力になる（子の位置が -scroll だけずれる）。量が前回と同じなら入力は同じ
         boolean sameScroll = !isScrollContainer() || ctx.scrollState().getScrollX(node) == lastScrollX
                 && ctx.scrollState().getScrollY(node) == lastScrollY;
-        boolean sameInputs = lastLayoutX == parentX && lastLayoutY == parentY && sameScroll
+        boolean sameMargins = lastLayoutML == mL && lastLayoutMR == mR && lastLayoutMT == mT && lastLayoutMB == mB;
+        boolean sameInputs = lastLayoutX == parentX && lastLayoutY == parentY && sameScroll && sameMargins
                 && (keptPure || (lastLayoutOuterW == parentOuterW && lastLayoutOuterH == parentOuterH));
         if (ctx.reuseMeasurements() && sameInputs && canKeepPlacement(ctx.layoutRun())) {
             LAYOUTS_SKIPPED.increment();
@@ -1738,10 +2427,10 @@ public class LayoutBox {
         }
         // 原点だけが違い、部分木の配置が前回と同じ（原点からの相対位置が変わらない）なら、置き直さず部分木ごと平行移動する
         // （行の挿入・削除で後続の行が動くだけのとき、各行の内側を組み直さない）
-        if (!sameInputs && sameScroll && SHIFT_ENABLED && ctx.reuseMeasurements() && canKeepPlacement(ctx.layoutRun())
+        if (!sameInputs && sameScroll && sameMargins && SHIFT_ENABLED && ctx.reuseMeasurements() && canKeepPlacement(ctx.layoutRun())
                 && !Float.isNaN(lastLayoutX) && !Float.isNaN(lastLayoutY)
-                && parentX == lastLayoutX && isShiftableDelta(parentY, lastLayoutY)
-                && lastLayoutOuterW == parentOuterW && isShiftableSubtree(!isIntegral(parentY - lastLayoutY))) {
+                && isShiftableDelta(parentX, lastLayoutX) && isShiftableDelta(parentY, lastLayoutY)
+                && isShiftableSubtree(parentX != lastLayoutX, parentY != lastLayoutY)) {
             shiftSubtree(parentX - lastLayoutX, parentY - lastLayoutY);
             lastLayoutX = parentX;
             lastLayoutY = parentY;
@@ -1752,7 +2441,7 @@ public class LayoutBox {
         // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
         // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
         if (keepPlacements && keptPure && !sameInputs) {
-            for (LayoutBox child : children) resetPlacements(child, -1);
+            for (int i = 0, n = children.size(); i < n; i++) resetPlacements(children.get(i), -1);
         }
 
         if (BlockLayoutEngine.containsFloats(this)) {
@@ -1861,49 +2550,62 @@ public class LayoutBox {
     }
 
     /**
-     * 部分木が、位置を原点からの相対だけで持つ通常フロー（ブロック・flow-root・インライン。flex・grid・段組・表・グリッドの状態を持たない）か。
+     * 部分木が、位置を原点からの相対だけで持つレイアウトエンジン（通常フロー・flex・grid。段組・表を持たない）か。
      * 平行移動で済ませる前に、移動してはならない状態（絶対位置を持つエンジンの状態）が無いことを確かめる。
      */
-    private boolean isShiftableSubtree(boolean needGrid) {
-        if (needGrid && !isGridAligned()) return false;
+    private boolean isShiftableSubtree(boolean needGridX, boolean needGridY) {
+        if ((needGridX || needGridY) && !isGridAligned(needGridX, needGridY)) return false;
         if (columnShifts != null || collapsedBorders != null || hasLegendBox()) return false;
-        if (engineState != null && !(engineState instanceof BlockLayoutEngine.FlowState)) return false;
-        if (display != null && display.inner() != Display.Inner.FLOW && display.inner() != Display.Inner.FLOW_ROOT) return false;
+        if (engineState != null && !(engineState instanceof BlockLayoutEngine.FlowState
+                || engineState instanceof FlexLayoutEngine.FlexState
+                || engineState instanceof GridLayoutEngine.GridState)) return false;
+        if (display != null && display.inner() != Display.Inner.FLOW && display.inner() != Display.Inner.FLOW_ROOT
+                && display.inner() != Display.Inner.FLEX && display.inner() != Display.Inner.GRID) return false;
         for (LayoutBox child : children) {
             if (child.style.facts().displayNone) continue;
-            if (!child.isShiftableSubtree(needGrid)) return false;
+            if (!child.isShiftableSubtree(needGridX, needGridY)) return false;
         }
         return true;
     }
 
-    /** 整数ぶんだけの移動か（丸めの境目に当たらないので、置き直した結果と同じ丸めになる）。縦だけ・幅が同じ場合に限って使う（行の増減で後続が下へ動く形）。 */
+    /** 整数ぶんだけの移動か（丸めの境目に当たらないので、置き直した結果と同じ丸めになる）。 */
     private static boolean isIntegral(float v) {
         return v == Math.rint(v);
     }
 
     /**
-     * 縦の移動量が、置き直しとビット単位で一致する平行移動になるか。整数ぶんなら従来どおり（丸めの境目に当たらない）。
+     * 移動量が、置き直しとビット単位で一致する平行移動になるか。整数ぶんなら従来どおり（丸めの境目に当たらない）。
      * 小数ぶんは、移動量と両方の原点が {@link LayoutUnit} の格子に載っているときに限る
      * （その場合に限り float の加算が厳密。部分木の側は {@link #isGridAligned} で確かめる）。
      */
-    private static boolean isShiftableDelta(float parentY, float lastY) {
-        float d = parentY - lastY;
+    private static boolean isShiftableDelta(float parentCoord, float lastCoord) {
+        float d = parentCoord - lastCoord;
         if (isIntegral(d)) return true;
         float limit = LayoutUnit.EXACT_LIMIT - LayoutUnit.SHIFT_MARGIN;
-        return Math.abs(parentY) < limit && Math.abs(lastY) < limit
-                && LayoutUnit.isOnGrid(parentY) && LayoutUnit.isOnGrid(lastY) && LayoutUnit.isOnGrid(d);
+        return Math.abs(parentCoord) < limit && Math.abs(lastCoord) < limit
+                && LayoutUnit.isOnGrid(parentCoord) && LayoutUnit.isOnGrid(lastCoord) && LayoutUnit.isOnGrid(d);
     }
 
-    /** この箱が平行移動で動かす縦の値（y・静的位置・行の下端・断片の y）がすべて格子に載っているか。 */
-    private boolean isGridAligned() {
+    /** この箱が平行移動で動かす値（必要な軸の座標・静的位置・行の下端・断片・前回の配置）がすべて格子に載っているか。 */
+    private boolean isGridAligned(boolean checkX, boolean checkY) {
         boolean isText = node != null && node.nodeType == NodeType.TEXT;
-        if (!isText && !LayoutUnit.isOnGrid(y)) return false;
-        if (inlineContentBottom > Float.NEGATIVE_INFINITY && !LayoutUnit.isOnGrid(inlineContentBottom)) return false;
-        if (!Float.isNaN(staticY) && !LayoutUnit.isOnGrid(staticY)) return false;
-        for (int i = 0, n = inlineFragments.size(); i < n; i++) {
-            if (!LayoutUnit.isOnGrid(inlineFragments.get(i).y)) return false;
+        if (checkX) {
+            if (!isText && !LayoutUnit.isOnGrid(x)) return false;
+            if (!Float.isNaN(staticX) && !LayoutUnit.isOnGrid(staticX)) return false;
+            for (int i = 0, n = inlineFragments.size(); i < n; i++) {
+                if (!LayoutUnit.isOnGrid(inlineFragments.get(i).x)) return false;
+            }
+            if (!Float.isNaN(lastLayoutX) && !LayoutUnit.isOnGrid(lastLayoutX)) return false;
         }
-        if (!Float.isNaN(lastLayoutY) && !LayoutUnit.isOnGrid(lastLayoutY)) return false;
+        if (checkY) {
+            if (!isText && !LayoutUnit.isOnGrid(y)) return false;
+            if (inlineContentBottom > Float.NEGATIVE_INFINITY && !LayoutUnit.isOnGrid(inlineContentBottom)) return false;
+            if (!Float.isNaN(staticY) && !LayoutUnit.isOnGrid(staticY)) return false;
+            for (int i = 0, n = inlineFragments.size(); i < n; i++) {
+                if (!LayoutUnit.isOnGrid(inlineFragments.get(i).y)) return false;
+            }
+            if (!Float.isNaN(lastLayoutY) && !LayoutUnit.isOnGrid(lastLayoutY)) return false;
+        }
         return true;
     }
 
@@ -1912,30 +2614,39 @@ public class LayoutBox {
     }
 
     /**
-     * layout を通らず、置き直しでも位置が 0,0 のままの箱か（改行、または文字以外の断片を 1 つも持たないインライン要素。
-     * インライン要素の矩形は置いた断片を囲む形で決まるので、断片が無ければ決まらない）。平行移動で動かしてはならない。
+     * layout を通らずに置かれるインライン要素として {@link BlockLayoutEngine} の {@code fitToFragments} が
+     * 再帰・配置できる箱か。途中で非インライン（display:flex 等）を挟むと {@code fitToFragments} が打ち切られ、
+     * その箱も子孫のインライン要素も置き直しで (0, 0) のまま残る。
      */
-    private boolean isUnplacedInline() {
-        if (node == null || node.nodeType == NodeType.TEXT || !Float.isNaN(lastLayoutX)) return false;
-        if ("br".equals(node.tag)) return true;
-        if (display == null || display.outer() != Display.Outer.INLINE || display.inner() != Display.Inner.FLOW) return false;
-        if (isAbsolute || isFixed) return false;
+    private boolean canRecurseFitToFragments() {
+        if (node == null || node.nodeType == NodeType.TEXT || "br".equals(node.tag)) return false;
+        if (isAbsolute || isFixed || style.facts().displayNone || style.facts().floating) return false;
+        if (display == null || !display.isInlineLevel()) return false;
+        return !BlockLayoutEngine.isAtomicInline(this);
+    }
+
+    private boolean hasNonTextFragment() {
         for (int i = 0, n = inlineFragments.size(); i < n; i++) {
-            if (!inlineFragments.get(i).isText()) return false;
+            if (!inlineFragments.get(i).isText()) return true;
         }
-        return true;
+        return false;
     }
 
     /** 部分木の位置（箱・断片・行の下端・前回の配置の記録）を {@code (dx, dy)} だけ動かす。描画の変更印も進める。 */
     private void shiftSubtree(float dx, float dy) {
-        // 文字の塊の箱は自分の位置を持たない（x / y は置き直しでも動かない。置かれるのは断片）
-        // 改行（br）の箱も同じ: 行に流れるだけで layout を通らず、位置は置き直しでも 0,0 のまま（動かすと一から組んだ結果と違う）
-        // 断片を持たない（置かれなかった）インラインの箱も同じ: 位置は断片から決まるので、断片が無ければ 0,0 のまま
-        boolean unplaced = isUnplacedInline();
-        if ((node == null || node.nodeType != NodeType.TEXT) && !unplaced) {
+        shiftSubtree(dx, dy, true);
+    }
+
+    private void shiftSubtree(float dx, float dy, boolean fitReachable) {
+        // layout を通った箱（lastLayoutX が NaN でない）は常に動く。
+        // layout を通らない箱は fitToFragments が到達し、かつ文字以外の断片を 1 つ以上持つインライン要素だけが動く。
+        boolean laidOut = !Float.isNaN(lastLayoutX);
+        boolean canFit = !laidOut && fitReachable && canRecurseFitToFragments();
+        if (laidOut || (canFit && hasNonTextFragment())) {
             this.x += dx;
             this.y += dy;
         }
+        boolean nextFitReachable = laidOut || canFit;
         if (inlineContentBottom > Float.NEGATIVE_INFINITY) inlineContentBottom += dy;
         if (!Float.isNaN(staticX)) staticX += dx;
         if (!Float.isNaN(staticY)) staticY += dy;
@@ -1950,7 +2661,7 @@ public class LayoutBox {
                 child.lastLayoutX += dx;
                 child.lastLayoutY += dy;
             }
-            child.shiftSubtree(dx, dy);
+            child.shiftSubtree(dx, dy, nextFitReachable);
         }
     }
 
@@ -1981,6 +2692,7 @@ public class LayoutBox {
     private boolean keptPure = false;
     private float lastScrollX = Float.NaN, lastScrollY = Float.NaN;
     private float lastLayoutX = Float.NaN, lastLayoutY = Float.NaN, lastLayoutOuterW = Float.NaN, lastLayoutOuterH = Float.NaN;
+    private float lastLayoutML = Float.NaN, lastLayoutMR = Float.NaN, lastLayoutMT = Float.NaN, lastLayoutMB = Float.NaN;
 
     private void recordPlacement(float parentX, float parentY, float parentOuterW, float parentOuterH, boolean hasLegend,
                                  float scrollXAtPlacement, float scrollYAtPlacement) {
@@ -1988,6 +2700,10 @@ public class LayoutBox {
         lastLayoutY = parentY;
         lastLayoutOuterW = parentOuterW;
         lastLayoutOuterH = parentOuterH;
+        lastLayoutML = mL;
+        lastLayoutMR = mR;
+        lastLayoutMT = mT;
+        lastLayoutMB = mB;
         placementPure = !hasLegend && subtreeIsSelfContained(true);
         keptPure = placementPure || !hasLegend && isScrollContainer() && subtreeIsSelfContained(false);
         if (isScrollContainer()) {
@@ -2020,13 +2736,17 @@ public class LayoutBox {
      * （測り直した箱と、その祖先の測定は無効になる）、親がブロックコンテナで、前回の配置が純粋だったときだけ。
      */
     private boolean canKeepPlacement(long run) {
+        return canKeepPlacement(run, floatsAffectPlacement());
+    }
+
+    private boolean canKeepPlacement(long run, boolean floatsOrOffset) {
         return keepPlacements && keptPure && placementValid && measurementValid && measuredRun != run
                 && !layoutChanged && !subtreeChanged
                 && parent != null && parent.display != null
                 && (parent.display.inner() == Display.Inner.FLOW || parent.display.inner() == Display.Inner.FLOW_ROOT
                         || parent.display.inner() == Display.Inner.FLEX)
                 && !display.isInlineLevel()
-                && !floatsAffectPlacement();
+                && !floatsOrOffset;
     }
 
     /** 自分の子に float があるか。{@link #layout} の始めに決め直す。 */

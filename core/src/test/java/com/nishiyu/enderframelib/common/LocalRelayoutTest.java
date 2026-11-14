@@ -120,6 +120,98 @@ public class LocalRelayoutTest {
         }
     }
 
+    private static List<String> fullSigs(StandaloneView v) {
+        v.ui().flushInvalidation();
+        List<String> out = new ArrayList<>();
+        for (DisplayItem i : v.ui().renderCache()) {
+            String fh = i.meta() != null ? (i.meta().fontHeight() + "/" + i.meta().lineHeight()) : "";
+            out.add(sig(i) + "|" + fh);
+        }
+        return out;
+    }
+
+    @Test
+    public void fontSizeChangeUsesInPlaceRelayoutAndMatchesFreshRebuild() {
+        java.util.function.BiFunction<String, String, String> makeHtml = (bodyFs, flexFs) ->
+                "<html><head><style>"
+                        + "body{margin:0;font-size:" + bodyFs + ";}"
+                        + ".card{padding:0.5em;margin-bottom:0.25em;border:1px solid #444;}"
+                        + ".flex{display:flex;width:280px;gap:0.5em;}"
+                        + ".flex>div{flex:1;}"
+                        + ".grid{display:grid;grid-template-columns:1fr 1fr;width:240px;}"
+                        + ".tag::before{content:'TAG';margin-right:0.5em;color:red;}"
+                        + "li::marker{color:blue;}"
+                        + "table{border-collapse:collapse;margin-top:0.5em;}"
+                        + "td{border:1px solid #666;padding:0.25em;}"
+                        + "</style></head><body id='body'>"
+                        + "<div class='card tag'>prefix <div id='inner'>inner block</div> tail</div>"
+                        + "<div id='flex' class='flex' style='font-size:" + flexFs + "'>"
+                        + "  <div>wrapping flex item alpha beta gamma</div>"
+                        + "  <div>second flex column</div>"
+                        + "</div>"
+                        + "<div class='grid'><div>grid one</div><div>grid two three</div></div>"
+                        + "<ul><li id='li1'>list entry</li></ul>"
+                        + "</body></html>";
+
+        StandaloneView view = new StandaloneView(makeHtml.apply("16px", "16px"), 420, 600, FontResolver.FALLBACK);
+        fullSigs(view);
+
+        String[][] steps = {
+                {"body", "22px", "16px"},
+                {"body", "14px", "16px"},
+                {"flex", "14px", "20px"},
+                {"body", "16px", "20px"},
+                {"flex", "16px", "12px"},
+        };
+        for (String[] step : steps) {
+            long structBefore = UiView.RESTYLE_STRUCTURAL.get();
+            long inplaceBefore = UiView.INPLACE_RELAYOUT_HITS.get();
+            if ("body".equals(step[0])) {
+                view.root().getNodeById("body").setAttribute("style", "font-size:" + step[1]);
+            } else {
+                view.root().getNodeById("flex").setAttribute("style", "font-size:" + step[2]);
+            }
+            List<String> actual = fullSigs(view);
+            assertEquals(0L, UiView.RESTYLE_STRUCTURAL.get() - structBefore,
+                    "font-size 変化で structural 再構築が走らない: " + String.join(" ", step));
+            assertEquals(1L, UiView.INPLACE_RELAYOUT_HITS.get() - inplaceBefore,
+                    "font-size 変化は in-place relayout に乗る: " + String.join(" ", step));
+            StandaloneView fresh = new StandaloneView(makeHtml.apply(step[1], step[2]), 420, 600, FontResolver.FALLBACK);
+            assertEquals(fullSigs(fresh), actual, "font-size 更新後の一覧が全再構築と一致する");
+        }
+    }
+
+    @Test
+    public void structureAffectingChangesStillTriggerStructuralRebuild() {
+        String html = "<html><head><style>"
+                + "body{margin:0;font-size:16px;}"
+                + ".pseudo::before{content:'A';}"
+                + ".pseudo.alt::before{content:'BB';}"
+                + "</style></head><body>"
+                + "<div id='d' style='display:block'>one</div>"
+                + "<div id='w' style='white-space:normal'>  spaced  </div>"
+                + "<div id='p' class='pseudo'>text</div>"
+                + "<ul><li id='li' style='list-style-type:disc'>item</li></ul>"
+                + "</body></html>";
+        StandaloneView view = new StandaloneView(html, 400, 400, FontResolver.FALLBACK);
+        fullSigs(view);
+
+        String[][] structuralMutations = {
+                {"d", "style", "display:inline"},
+                {"d", "style", "display:block;float:left"},
+                {"w", "style", "white-space:pre"},
+                {"p", "class", "pseudo alt"},
+                {"li", "style", "list-style-type:none"},
+        };
+        for (String[] mut : structuralMutations) {
+            long structBefore = UiView.RESTYLE_STRUCTURAL.get();
+            view.root().getNodeById(mut[0]).setAttribute(mut[1], mut[2]);
+            fullSigs(view);
+            assertTrue(UiView.RESTYLE_STRUCTURAL.get() > structBefore,
+                    "構造に影響するプロパティ変更では structural が増える: " + String.join(" ", mut));
+        }
+    }
+
     @Test
     public void benchmarkGaugeWidthInLargeDocument() {
         StandaloneView v = new StandaloneView(html(1500), 800, 600, FontResolver.FALLBACK);

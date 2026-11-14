@@ -95,4 +95,112 @@ class ComputedStyleDiffMemoTest {
         for (int i = 0; i + 1 < pool.size(); i++) first.add(viaDiff(pool.get(i), pool.get(i + 1)));
         for (int i = 0; i + 1 < pool.size(); i++) assertEquals(first.get(i), viaDiff(pool.get(i), pool.get(i + 1)), "pair " + i);
     }
+
+    @Test
+    void bandSliceQueriesMatchReferenceWithoutCallingDiff() {
+        Random r = new Random(99);
+        List<ComputedStyle> pool = new ArrayList<>();
+        for (int i = 0; i < 600; i++) {
+            Map<String, String> m = new LinkedHashMap<>();
+            for (String[] c : CHOICES) {
+                int k = r.nextInt(4);
+                if (k > 0) m.put(c[0], c[k]);
+            }
+            if (r.nextBoolean()) m.put("position", r.nextBoolean() ? "relative" : "absolute");
+            if (r.nextInt(3) == 0) m.put("left", (r.nextInt(3) * 10) + "px");
+            if (r.nextInt(3) == 0) m.put("top", (r.nextInt(3) * 10) + "px");
+            if (r.nextInt(4) == 0) m.put("white-space", r.nextBoolean() ? "normal" : "pre");
+            if (r.nextInt(5) == 0) m.put("--custom", "v" + r.nextInt(3));
+            pool.add(new ComputedStyle(m, r.nextBoolean() ? 16f : 14f, 16f));
+        }
+
+        for (int i = 0; i < 2000; i++) {
+            ComputedStyle a = pool.get(r.nextInt(pool.size()));
+            ComputedStyle b = pool.get(r.nextInt(pool.size()));
+
+            // 直接 diff 参照
+            boolean[] refLayout = {Float.compare(a.fontSizePx(), b.fontSizePx()) != 0
+                    || Float.compare(a.rootFontSizePx(), b.rootFontSizePx()) != 0};
+            boolean[] refStruct = {false};
+            int[] refProp = {refLayout[0] ? 2 : 0};
+            int[] refAxes = {0};
+            ComputedStyle.diff(a, b, (name, paintOnly, inherited) -> {
+                if (!paintOnly) refLayout[0] = true;
+                if (inherited) refProp[0] = 2;
+                else if (refProp[0] == 0) refProp[0] = 1;
+                switch (name) {
+                    case CssProperty.DISPLAY, CssProperty.POSITION, CssProperty.FLOAT,
+                         CssProperty.WHITE_SPACE, CssProperty.CONTENT, CssProperty.CONTENT_VISIBILITY,
+                         CssProperty.LIST_STYLE_TYPE, CssProperty.LIST_STYLE_POSITION, CssProperty.LIST_STYLE_IMAGE,
+                         CssProperty.COUNTER_RESET, CssProperty.COUNTER_INCREMENT, CssProperty.COUNTER_SET -> refStruct[0] = true;
+                }
+                if (!paintOnly) {
+                    if (CssProperty.LEFT.equals(name) || CssProperty.RIGHT.equals(name)) {
+                        if (refAxes[0] >= 0) refAxes[0] |= 1;
+                    } else if (CssProperty.TOP.equals(name) || CssProperty.BOTTOM.equals(name)) {
+                        if (refAxes[0] >= 0) refAxes[0] |= 2;
+                    } else {
+                        refAxes[0] = -1;
+                    }
+                }
+            });
+            assertEquals(refLayout[0], a.hasLayoutAffectingDiffFrom(b), "layout diff #" + i);
+            assertEquals(refStruct[0], a.hasStructureAffectingDiff(b), "struct diff #" + i);
+            assertEquals(refProp[0], b.classifyPropagationFrom(a), "propagation #" + i);
+            assertEquals(refAxes[0], a.classifyPositionOnlyDiff(b), "position axes #" + i);
+        }
+
+        // Band 3 (color) のみの変化は >256 組でも diffMemoMisses を増やさず O(1) で判定できる
+        long missCheck = ComputedStyle.diffMemoMisses();
+        for (int i = 0; i < 400; i++) {
+            ComputedStyle a = new ComputedStyle(Map.of("display", "block", "width", (i + 10) + "px", "color", "#111"));
+            ComputedStyle b = new ComputedStyle(Map.of("display", "block", "width", (i + 10) + "px", "color", "#222"));
+            assertFalse(a.hasLayoutAffectingDiffFrom(b));
+            assertEquals(2, b.classifyPropagationFrom(a));
+        }
+        assertEquals(missCheck, ComputedStyle.diffMemoMisses(), "専用判定は diff()/DIFF_MEMO を使わない");
+    }
+
+    @Test
+    void derivedAnonymousAndMarkerMatchInheritedMapCopies() {
+        Map<String, String> ownerDecl = new LinkedHashMap<>();
+        ownerDecl.put("display", "flex");
+        ownerDecl.put("width", "120px");
+        ownerDecl.put("margin-left", "8px");
+        ownerDecl.put("color", "crimson");
+        ownerDecl.put("font-size", "20px");
+        ownerDecl.put("text-transform", "uppercase");
+        ownerDecl.put("--accent", "#09f");
+        ComputedStyle owner = new ComputedStyle(ownerDecl, 20f, 16f);
+
+        ComputedStyle anon = owner.derivedAnonymous("block");
+        assertSame(anon, owner.derivedAnonymous("block"), "同一所有者からはメモを返す");
+        assertEquals("block", anon.get("display"));
+        assertNull(anon.get("width"));
+        assertNull(anon.get("margin-left"));
+        assertEquals("crimson", anon.get("color"));
+        assertEquals("uppercase", anon.get("text-transform"));
+        assertEquals("#09f", anon.get("--accent"));
+        assertEquals(20f, anon.fontSizePx());
+        assertEquals(16f, anon.rootFontSizePx());
+
+        ComputedStyle defaultMarker = owner.derivedMarker(null);
+        assertSame(defaultMarker, owner.derivedMarker(null));
+        assertEquals("inline-block", defaultMarker.get("display"));
+        assertEquals("pre", defaultMarker.get("white-space"));
+        assertEquals("none", defaultMarker.get("text-transform"));
+        assertEquals("crimson", defaultMarker.get("color"));
+        assertNull(defaultMarker.get("width"));
+
+        ComputedStyle declared = new ComputedStyle(
+                Map.of("color", "teal", "content", "'*'", "display", "block", "white-space", "normal"), 18f, 16f);
+        ComputedStyle marker = owner.derivedMarker(declared);
+        assertSame(marker, owner.derivedMarker(declared));
+        assertNull(marker.get("content"));
+        assertEquals("inline-block", marker.get("display"));
+        assertEquals("pre", marker.get("white-space"));
+        assertEquals("none", marker.get("text-transform"));
+        assertEquals("teal", marker.get("color"));
+        assertEquals(18f, marker.fontSizePx());
+    }
 }

@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.core.layout;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
 import com.nishiyu.enderframelib.core.layout.model.*;
 
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
@@ -65,6 +66,7 @@ public final class BoxMeasurer {
         box.legendSpill = 0;
         box.measuredClamped = false;
         box.naturalInlineSize = Float.NaN;
+        box.naturalFitInnerWidth = Float.NaN;
 
         float parentW = tentativeInnerW;
         if (box.isFixed) {
@@ -116,7 +118,8 @@ public final class BoxMeasurer {
 
         LayoutEngine engine = LayoutEngine.getEngine(box.display);
         // 箱自身の幅はここで決める。エンジンは子を測って内容の幅を返すだけ
-        ConstraintSpace contentSpace = new ConstraintSpace(engineInnerW, parentH, fmtCtx);
+        ConstraintSpace contentSpace = ConstraintSpace.reuseOrCreate(box.contentSpaceCache, engineInnerW, parentH, fmtCtx);
+        box.contentSpaceCache = contentSpace;
         float contentW = engine.measureContent(box, contentSpace, ctx);
         LayoutBox legend = box.renderedLegend();
         if (legend != null) {
@@ -204,28 +207,28 @@ public final class BoxMeasurer {
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
         ComputedStyle style = box.style;
 
-        box.mT = style.edgeLength(ComputedStyle.EDGE_MARGIN_T, parentW, rootW, rootH);
-        box.mR = style.edgeLength(ComputedStyle.EDGE_MARGIN_R, parentW, rootW, rootH);
-        box.mB = style.edgeLength(ComputedStyle.EDGE_MARGIN_B, parentW, rootW, rootH);
-        box.mL = style.edgeLength(ComputedStyle.EDGE_MARGIN_L, parentW, rootW, rootH);
+        box.mT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_T, parentW, rootW, rootH));
+        box.mR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_R, parentW, rootW, rootH));
+        box.mB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_B, parentW, rootW, rootH));
+        box.mL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_L, parentW, rootW, rootH));
         box.ownMarginTop = box.mT;
         box.ownMarginBottom = box.mB;
 
-        box.pT = style.edgeLength(ComputedStyle.EDGE_PADDING_T, parentW, rootW, rootH);
-        box.pR = style.edgeLength(ComputedStyle.EDGE_PADDING_R, parentW, rootW, rootH);
-        box.pB = style.edgeLength(ComputedStyle.EDGE_PADDING_B, parentW, rootW, rootH);
-        box.pL = style.edgeLength(ComputedStyle.EDGE_PADDING_L, parentW, rootW, rootH);
+        box.pT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_T, parentW, rootW, rootH));
+        box.pR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_R, parentW, rootW, rootH));
+        box.pB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_B, parentW, rootW, rootH));
+        box.pL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_PADDING_L, parentW, rootW, rootH));
 
 
-        box.bT = style.edgeLength(ComputedStyle.EDGE_BORDER_T, parentH, rootW, rootH);
-        box.bR = style.edgeLength(ComputedStyle.EDGE_BORDER_R, parentW, rootW, rootH);
-        box.bB = style.edgeLength(ComputedStyle.EDGE_BORDER_B, parentH, rootW, rootH);
-        box.bL = style.edgeLength(ComputedStyle.EDGE_BORDER_L, parentW, rootW, rootH);
+        box.bT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_T, parentH, rootW, rootH));
+        box.bR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_R, parentW, rootW, rootH));
+        box.bB = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_B, parentH, rootW, rootH));
+        box.bL = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_BORDER_L, parentW, rootW, rootH));
         if (box.collapsedBorders != null) {
-            box.bT = box.collapsedBorders[0];
-            box.bR = box.collapsedBorders[1];
-            box.bB = box.collapsedBorders[2];
-            box.bL = box.collapsedBorders[3];
+            box.bT = LayoutUnit.snap(box.collapsedBorders[0]);
+            box.bR = LayoutUnit.snap(box.collapsedBorders[1]);
+            box.bB = LayoutUnit.snap(box.collapsedBorders[2]);
+            box.bL = LayoutUnit.snap(box.collapsedBorders[3]);
         }
         // 枠線を重ねる表は padding を持たない（CSS 2.2 §17.6.2）
         if (box.display.inner() == Inner.TABLE
@@ -233,8 +236,8 @@ public final class BoxMeasurer {
             box.pT = box.pR = box.pB = box.pL = 0;
         }
 
-        box.rowGap = style.edgeLength(ComputedStyle.EDGE_ROW_GAP, parentH, rootW, rootH);
-        box.columnGap = style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, parentW, rootW, rootH);
+        box.rowGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_ROW_GAP, parentH, rootW, rootH));
+        box.columnGap = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_COLUMN_GAP, parentW, rootW, rootH));
     }
 
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
@@ -297,12 +300,9 @@ public final class BoxMeasurer {
         }
         if (limitW <= 0) limitW = LayoutMetrics.UNBOUNDED_WIDTH;
 
-        box.shapedLines = TextShaper.shape(box.displayText, ctx.faceFor(style), ctx.textStyleFor(style), limitW);
-
-        float maxLineW = 0;
-        for (ShapedLine line : box.shapedLines) {
-            maxLineW = Math.max(maxLineW, line.width());
-        }
+        var interval = box.shapeTextInterval(box.displayText, ctx.faceFor(style), ctx.textStyleFor(style), limitW);
+        box.shapedLines = interval.lines();
+        float maxLineW = interval.maxLineWidth();
         box.w = maxLineW + box.horizontalDecoration();
         box.sizingMode = SizingMode.DEFINITE;
     }

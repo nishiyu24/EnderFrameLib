@@ -67,9 +67,13 @@ public record LayoutContext(
     /** 整形（折り返し・空白・省略）に必要なスタイルをまとめる。 */
     public TextStyle textStyleFor(ComputedStyle style) {
         FontFace face = faceFor(style);
+        TextStyle cached = style.peekTextStyle(face);
+        if (cached != null) return cached;
         StyleFacts facts = style.layoutFacts();
         FontStyle font = facts.fontStyle;
-        return new TextStyle(font, facts.whiteSpace, facts.wordBreak, facts.overflowWrapBreaks, facts.ellipsis,
+        TextStyle built = new TextStyle(font, facts.whiteSpace, facts.wordBreak, facts.overflowWrapBreaks, facts.ellipsis,
                 LayoutMetrics.lineHeightPx(style, face, font));
+        style.cacheTextStyle(face, built);
+        return built;
     }
 }

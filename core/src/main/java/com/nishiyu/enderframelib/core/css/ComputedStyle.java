@@ -47,6 +47,15 @@ public final class ComputedStyle {
     private final int size;
     /** {@link #usesViewportUnits()} の結果（1 / 0）。-1 は未確定（値を走査して決め、以後は覚える）。値は不変なので競っても同じ。 */
     private volatile byte relativeUnits = -1;
+    /** {@link #values} がビューポート基準の宣言を含むか（1 / 0 / -1 未確定）。 */
+    private volatile byte valuesViewport = -1;
+    /** {@link #extras} がビューポート基準の宣言を含むか（1 / 0 / -1 未確定）。 */
+    private volatile byte extrasViewport = -1;
+    /** {@link #extras} がすべて {@code --*} カスタムプロパティか（1 / 0 / -1 未確定）。 */
+    private volatile byte allExtrasCustom = -1;
+    /** 4 つの連続バンド（非継承レイアウト / 非継承ペイント / 継承レイアウト / 継承ペイント）のハッシュと怠惰共有スライス。 */
+    private final long h0, h1, h2, h3;
+    private volatile StyleSlice g0, g1, g2, g3;
     private final StyleMap properties;
     private final float elementFontSize;
     private final float rootFontSize;
@@ -60,6 +69,22 @@ public final class ComputedStyle {
      * {@link ConcurrentHashMap}（多くの鍵が溜まる、多数の箱が共有するスタイルだけ）。
      */
     private volatile Object paint;
+
+    private record CachedTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
+                                   com.nishiyu.enderframelib.core.text.model.TextStyle style) {}
+    private volatile CachedTextStyle cachedTextStyle;
+
+    /** {@link com.nishiyu.enderframelib.core.layout.LayoutContext#textStyleFor} 用の単一エントリーメモ。 */
+    public com.nishiyu.enderframelib.core.text.model.TextStyle peekTextStyle(
+            com.nishiyu.enderframelib.core.text.model.FontFace face) {
+        CachedTextStyle c = cachedTextStyle;
+        return c != null && c.face == face ? c.style : null;
+    }
+
+    public void cacheTextStyle(com.nishiyu.enderframelib.core.text.model.FontFace face,
+                               com.nishiyu.enderframelib.core.text.model.TextStyle style) {
+        this.cachedTextStyle = new CachedTextStyle(face, style);
+    }
 
     private static final java.lang.invoke.VarHandle PAINT;
 
@@ -169,13 +194,18 @@ public final class ComputedStyle {
             }
             this.size = table.size;
             this.relativeUnits = table.relativeUnits;
+            this.valuesViewport = table.valuesViewport;
+            this.extrasViewport = table.extras == null ? 0 : table.extrasViewport;
         } else if (source instanceof StyleMap other) {
-            // 算出スタイルの複製: 配列をそのままコピーするだけで、マップは作らない
-            this.values = other.owner.values.clone();
+            // 算出スタイルの複製: values 配列は構築後不変なのでコピーせず共有する
+            this.values = other.owner.values;
             this.extras = other.owner.extras;
             this.extrasBase = other.owner.extrasBase;
             this.size = other.owner.size;
             this.relativeUnits = other.owner.relativeUnits;
+            this.valuesViewport = other.owner.valuesViewport;
+            this.extrasViewport = other.owner.extrasViewport;
+            this.allExtrasCustom = other.owner.allExtrasCustom;
         } else {
             CssValue[] v = new CssValue[CssPropertyId.count()];
             Map<String, String> x = null;
@@ -196,28 +226,63 @@ public final class ComputedStyle {
             this.size = n;
         }
         if (source instanceof StyleMap other) {
+            this.h0 = other.owner.h0;
+            this.h1 = other.owner.h1;
+            this.h2 = other.owner.h2;
+            this.h3 = other.owner.h3;
+            this.g0 = other.owner.g0;
+            this.g1 = other.owner.g1;
+            this.g2 = other.owner.g2;
+            this.g3 = other.owner.g3;
             this.declHash = other.owner.declHash;
         } else {
-            this.declHash = computeDeclHash(this.values, this.extras);
+            this.h0 = hashRange(this.values, 0, CssPropertyId.LAYOUT_NON_INH_END);
+            this.h1 = hashRange(this.values, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
+            this.h2 = hashRange(this.values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
+            this.h3 = hashRange(this.values, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
+            this.declHash = combineDeclHash(this.h0, this.h1, this.h2, this.h3, this.extras);
         }
         this.properties = new StyleMap(this);
         this.elementFontSize = elementFontSize;
         this.rootFontSize = rootFontSize;
     }
 
-    private static long computeDeclHash(CssValue[] values, Map<String, String> extras) {
+    private ComputedStyle(CssValue[] values, Map<String, String> extrasBase, Map<String, String> extras, int size,
+                          byte valuesViewport, byte extrasViewport, float elementFontSize, float rootFontSize) {
+        this.values = values;
+        this.extrasBase = extrasBase;
+        this.extras = extras;
+        this.size = size;
+        this.valuesViewport = valuesViewport;
+        this.extrasViewport = extrasViewport;
+        this.h0 = hashRange(values, 0, CssPropertyId.LAYOUT_NON_INH_END);
+        this.h1 = hashRange(values, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
+        this.h2 = hashRange(values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
+        this.h3 = hashRange(values, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
+        this.declHash = combineDeclHash(this.h0, this.h1, this.h2, this.h3, extras);
+        this.properties = new StyleMap(this);
+        this.elementFontSize = elementFontSize;
+        this.rootFontSize = rootFontSize;
+    }
+
+    private static long hashRange(CssValue[] values, int from, int to) {
         long h = 0xcbf29ce484222325L;
-        for (int i = 0; i < values.length; i++) {
+        for (int i = from; i < to; i++) {
             CssValue v = values[i];
             if (v != null) {
                 h ^= i;
                 h *= 0x100000001b3L;
-                h ^= (long) v.text.hashCode();
+                h ^= v.text.hashCode();
                 h *= 0x100000001b3L;
             }
         }
+        return h;
+    }
+
+    private static long combineDeclHash(long h0, long h1, long h2, long h3, Map<String, String> extras) {
+        long h = h0 ^ (h1 * 0x9e3779b97f4a7c15L) ^ (h2 * 0xbf58476d1ce4e5b9L) ^ (h3 * 0x94d049bb133111ebL);
         if (extras != null && !extras.isEmpty()) {
-            h ^= (long) extras.hashCode();
+            h ^= extras.hashCode();
             h *= 0x100000001b3L;
         }
         return h;
@@ -246,23 +311,55 @@ public final class ComputedStyle {
         private static final String[] INITIALS;
         private static final CssValue[] INITIAL_VALUES;
 
+        /**
+         * バンド境界（配列を 4 つの連続区間へ分ける）:
+         * [0, LAYOUT_NON_INH_END): 非継承レイアウト / [LAYOUT_NON_INH_END, NON_INH_END): 非継承ペイント /
+         * [NON_INH_END, INH_LAYOUT_END): 継承レイアウト / [INH_LAYOUT_END, TOTAL_COUNT): 継承ペイント
+         */
+        static final int LAYOUT_NON_INH_END;
+        static final int NON_INH_END;
+        static final int INH_LAYOUT_END;
+        static final int TOTAL_COUNT;
+        /** 構造影響・位置インセット判定用の事前計算表（再スタイル中の文字列 switch 回避）。 */
+        static final boolean[] STRUCTURE_AFFECTING;
+        static final int ID_LEFT, ID_RIGHT, ID_TOP, ID_BOTTOM;
+
         static {
             var all = PropertyRegistry.all();
-            String[] names = new String[all.size()];
-            int cap = Integer.highestOneBit(Math.max(8, all.size() * 4 - 1)) << 1;
+            int n = all.size();
+            String[] rawNames = new String[n];
+            int[] rawBands = new int[n];
+            int[] bandCounts = new int[4];
+            int r = 0;
+            for (PropertyRegistry.Property p : all) {
+                String name = p.name();
+                int b = (PropertyRegistry.isInherited(name) ? 2 : 0) | (PropertyRegistry.isPaintOnly(name) ? 1 : 0);
+                rawNames[r] = name;
+                rawBands[r] = b;
+                bandCounts[b]++;
+                r++;
+            }
+            LAYOUT_NON_INH_END = bandCounts[0];
+            NON_INH_END = LAYOUT_NON_INH_END + bandCounts[1];
+            INH_LAYOUT_END = NON_INH_END + bandCounts[2];
+            TOTAL_COUNT = INH_LAYOUT_END + bandCounts[3];
+            int[] nextId = {0, LAYOUT_NON_INH_END, NON_INH_END, INH_LAYOUT_END};
+
+            String[] names = new String[n];
+            int cap = Integer.highestOneBit(Math.max(8, n * 4 - 1)) << 1;
             String[] keys = new String[cap];
             int[] hashes = new int[cap];
             int[] vals = new int[cap];
-            int i = 0;
-            for (PropertyRegistry.Property p : all) {
-                String name = p.name();
+            for (int q = 0; q < n; q++) {
+                String name = rawNames[q];
+                int id = nextId[rawBands[q]]++;
                 int h = name.hashCode();
                 int at = (h ^ (h >>> 16)) & (cap - 1);
                 while (keys[at] != null) at = (at + 1) & (cap - 1);
                 keys[at] = name;
                 hashes[at] = h;
-                vals[at] = i;
-                names[i++] = name;
+                vals[at] = id;
+                names[id] = name;
             }
             KEYS = keys;
             HASHES = hashes;
@@ -274,14 +371,27 @@ public final class ComputedStyle {
             INHERITS_AS_LONGHAND = new boolean[names.length];
             INITIALS = new String[names.length];
             INITIAL_VALUES = new CssValue[names.length];
+            STRUCTURE_AFFECTING = new boolean[names.length];
             for (int k = 0; k < names.length; k++) {
-                PAINT_ONLY[k] = PropertyRegistry.isPaintOnly(names[k]);
-                INHERITED[k] = PropertyRegistry.isInherited(names[k]);
-                PropertyRegistry.Property p = PropertyRegistry.get(names[k]);
+                String name = names[k];
+                PAINT_ONLY[k] = PropertyRegistry.isPaintOnly(name);
+                INHERITED[k] = PropertyRegistry.isInherited(name);
+                PropertyRegistry.Property p = PropertyRegistry.get(name);
                 INHERITS_AS_LONGHAND[k] = p != null && p.inherited() && !p.isShorthand();
                 INITIALS[k] = p != null ? p.initial() : null;
                 INITIAL_VALUES[k] = CssValue.of(INITIALS[k]);
+                STRUCTURE_AFFECTING[k] = switch (name) {
+                    case CssProperty.DISPLAY, CssProperty.POSITION, CssProperty.FLOAT,
+                         CssProperty.WHITE_SPACE, CssProperty.CONTENT, CssProperty.CONTENT_VISIBILITY,
+                         CssProperty.LIST_STYLE_TYPE, CssProperty.LIST_STYLE_POSITION, CssProperty.LIST_STYLE_IMAGE,
+                         CssProperty.COUNTER_RESET, CssProperty.COUNTER_INCREMENT, CssProperty.COUNTER_SET -> true;
+                    default -> false;
+                };
             }
+            ID_LEFT = of(CssProperty.LEFT);
+            ID_RIGHT = of(CssProperty.RIGHT);
+            ID_TOP = of(CssProperty.TOP);
+            ID_BOTTOM = of(CssProperty.BOTTOM);
         }
 
         static int count() {
@@ -326,7 +436,12 @@ public final class ComputedStyle {
         CssValue[] v = view.owner.values;
         System.arraycopy(v, 0, into.values, 0, v.length);
         into.size = view.owner.size;
-        if (view.owner.extras != null) into.extras = new LinkedHashMap<>(view.owner.extras);
+        into.relativeUnits = view.owner.relativeUnits;
+        into.valuesViewport = view.owner.valuesViewport;
+        if (view.owner.extras != null) {
+            into.extras = new LinkedHashMap<>(view.owner.extras);
+            into.extrasViewport = view.owner.extrasViewport;
+        }
         return true;
     }
 
@@ -360,6 +475,209 @@ public final class ComputedStyle {
     /** 診断・テスト用: 差分メモの不命中回数（全枠の走査をした回数）。 */
     public static long diffMemoMisses() { return DIFF_MEMO_MISSES.sum(); }
 
+    /** Q2b: 4 つのバンドごとに不変配列の参照を共有するためのスライスと限定プール（Blink の ComputedStyleBase 相当）。 */
+    private static final class StyleSlice {
+        final long hash;
+        final CssValue[] values;
+
+        StyleSlice(long hash, CssValue[] values) {
+            this.hash = hash;
+            this.values = values;
+        }
+    }
+
+    private static final int SLICE_POOL_SIZE = 4096;
+    private static final int SLICE_POOL_MASK = SLICE_POOL_SIZE - 1;
+    private static final java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] SLICE_POOLS = createSlicePools();
+
+    @SuppressWarnings("unchecked")
+    private static java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] createSlicePools() {
+        java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice>[] pools =
+                new java.util.concurrent.atomic.AtomicReferenceArray[4];
+        for (int i = 0; i < 4; i++) pools[i] = new java.util.concurrent.atomic.AtomicReferenceArray<>(SLICE_POOL_SIZE);
+        return pools;
+    }
+
+    private static int bandStart(int band) {
+        return switch (band) {
+            case 0 -> 0;
+            case 1 -> CssPropertyId.LAYOUT_NON_INH_END;
+            case 2 -> CssPropertyId.NON_INH_END;
+            default -> CssPropertyId.INH_LAYOUT_END;
+        };
+    }
+
+    private static int bandEnd(int band) {
+        return switch (band) {
+            case 0 -> CssPropertyId.LAYOUT_NON_INH_END;
+            case 1 -> CssPropertyId.NON_INH_END;
+            case 2 -> CssPropertyId.INH_LAYOUT_END;
+            default -> CssPropertyId.TOTAL_COUNT;
+        };
+    }
+
+    private long bandHash(int band) {
+        return switch (band) {
+            case 0 -> h0;
+            case 1 -> h1;
+            case 2 -> h2;
+            default -> h3;
+        };
+    }
+
+    private StyleSlice cachedSlice(int band) {
+        return switch (band) {
+            case 0 -> g0;
+            case 1 -> g1;
+            case 2 -> g2;
+            default -> g3;
+        };
+    }
+
+    private void cacheSlice(int band, StyleSlice slice) {
+        switch (band) {
+            case 0 -> g0 = slice;
+            case 1 -> g1 = slice;
+            case 2 -> g2 = slice;
+            default -> g3 = slice;
+        }
+    }
+
+    private static boolean sameCssValue(CssValue a, CssValue b) {
+        return a == b || (a != null && b != null && a.text.equals(b.text));
+    }
+
+    private StyleSlice ensureBandSlice(int band) {
+        StyleSlice existing = cachedSlice(band);
+        if (existing != null) return existing;
+        int from = bandStart(band);
+        int to = bandEnd(band);
+        long h = bandHash(band);
+        java.util.concurrent.atomic.AtomicReferenceArray<StyleSlice> pool = SLICE_POOLS[band];
+        int slot0 = ((int) (h ^ (h >>> 32))) & SLICE_POOL_MASK;
+        int slot1 = (slot0 + 1) & SLICE_POOL_MASK;
+        StyleSlice c0 = pool.get(slot0);
+        if (c0 != null && c0.hash == h && sliceMatches(c0.values, values, from, to)) {
+            cacheSlice(band, c0);
+            return c0;
+        }
+        StyleSlice c1 = pool.get(slot1);
+        if (c1 != null && c1.hash == h && sliceMatches(c1.values, values, from, to)) {
+            cacheSlice(band, c1);
+            return c1;
+        }
+        CssValue[] slice = new CssValue[to - from];
+        System.arraycopy(values, from, slice, 0, to - from);
+        StyleSlice created = new StyleSlice(h, slice);
+        int target = c0 == null ? slot0 : (c1 == null ? slot1 : ((h & 1) == 0 ? slot0 : slot1));
+        pool.set(target, created);
+        cacheSlice(band, created);
+        return created;
+    }
+
+    private static boolean sliceMatches(CssValue[] slice, CssValue[] full, int from, int to) {
+        for (int i = 0, j = from; j < to; i++, j++) {
+            if (!sameCssValue(slice[i], full[j])) return false;
+        }
+        return true;
+    }
+
+    private static boolean sameBand(ComputedStyle a, ComputedStyle b, int band) {
+        if (a == b) return true;
+        if (a.bandHash(band) != b.bandHash(band)) return false;
+        StyleSlice sa = a.ensureBandSlice(band);
+        StyleSlice sb = b.ensureBandSlice(band);
+        if (sa == sb) return true;
+        CssValue[] x = sa.values, y = sb.values;
+        for (int i = 0; i < x.length; i++) {
+            if (!sameCssValue(x[i], y[i])) return false;
+        }
+        return true;
+    }
+
+    private static boolean sameExtras(ComputedStyle a, ComputedStyle b) {
+        if (a.extras == null && b.extras == null) return true;
+        if (a.extras == b.extras || (a.extrasBase != null && a.extrasBase == b.extrasBase)) return true;
+        if (a.extras == null) return b.extras.isEmpty();
+        if (b.extras == null) return a.extras.isEmpty();
+        return a.extras.equals(b.extras);
+    }
+
+    /** 2 つの算出スタイル間にレイアウトへ影響する差分があるか（グループ参照一致により O(1) 短絡）。 */
+    public boolean hasLayoutAffectingDiffFrom(ComputedStyle other) {
+        if (other == null) return true;
+        if (this == other) return false;
+        if (Float.compare(elementFontSize, other.elementFontSize) != 0
+                || Float.compare(rootFontSize, other.rootFontSize) != 0) {
+            return true;
+        }
+        if (declHash == other.declHash && sameBand(this, other, 0) && sameBand(this, other, 1)
+                && sameBand(this, other, 2) && sameBand(this, other, 3) && sameExtras(this, other)) {
+            return false;
+        }
+        if (!sameBand(this, other, 0) || !sameBand(this, other, 2)) return true;
+        return !sameExtras(this, other);
+    }
+
+    /**
+     * 再スタイルの子孫伝播種別を返す（0 = NONE, 1 = NON_INHERITED, 2 = INHERITED）。
+     * {@link #diff}・ラムダ・配列確保なしで、継承バンド（2/3）・extras のハッシュ／スライス参照を比較する。
+     */
+    public int classifyPropagationFrom(ComputedStyle previous) {
+        if (previous == null) return 2;
+        if (this == previous) return 0;
+        if (Float.compare(previous.elementFontSize, elementFontSize) != 0
+                || Float.compare(previous.rootFontSize, rootFontSize) != 0) {
+            return 2;
+        }
+        if (!sameBand(previous, this, 2) || !sameBand(previous, this, 3) || !sameExtras(previous, this)) {
+            return 2;
+        }
+        if (!sameBand(previous, this, 0) || !sameBand(previous, this, 1)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    /** ボックスツリー構造を変えるプロパティ（{@code display}/{@code white-space} 等）に差分があるか（非確保）。 */
+    public boolean hasStructureAffectingDiff(ComputedStyle other) {
+        if (other == null) return true;
+        if (this == other) return false;
+        boolean[] structure = CssPropertyId.STRUCTURE_AFFECTING;
+        if (!sameBand(this, other, 0) && hasFilteredDiffInRange(values, other.values, 0, CssPropertyId.LAYOUT_NON_INH_END, structure)) {
+            return true;
+        }
+        return !sameBand(this, other, 2)
+                && hasFilteredDiffInRange(values, other.values, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END, structure);
+    }
+
+    private static boolean hasFilteredDiffInRange(CssValue[] x, CssValue[] y, int from, int to, boolean[] filter) {
+        for (int i = from; i < to; i++) {
+            if (filter[i] && !sameCssValue(x[i], y[i])) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 位置オフセット（{@code left}/{@code right}/{@code top}/{@code bottom}）のみが変わったかを分類する。
+     * @return ビット論理和（bit 0 = 横 inset 変更、bit 1 = 縦 inset 変更）、それ以外のレイアウト変更なら {@code -1}
+     */
+    public int classifyPositionOnlyDiff(ComputedStyle other) {
+        if (other == null || !sameBand(this, other, 2) || !sameExtras(this, other)) return -1;
+        if (sameBand(this, other, 0)) return 0;
+        int axes = 0;
+        CssValue[] x = this.values, y = other.values;
+        int left = CssPropertyId.ID_LEFT, right = CssPropertyId.ID_RIGHT,
+                top = CssPropertyId.ID_TOP, bottom = CssPropertyId.ID_BOTTOM;
+        for (int i = 0; i < CssPropertyId.LAYOUT_NON_INH_END; i++) {
+            if (sameCssValue(x[i], y[i])) continue;
+            if (i == left || i == right) axes |= 1;
+            else if (i == top || i == bottom) axes |= 2;
+            else return -1;
+        }
+        return axes;
+    }
+
     /**
      * 宣言（添字つき）の値が違う添字を昇順に返す。同じ (a, b) の組（同一性）は、1 要素の再スタイルで何度も（分類ごとに）、
      * 同形のリストでは要素ごとに繰り返し問われるので、直接写像の小さな表に覚える。
@@ -373,27 +691,46 @@ public final class ComputedStyle {
             return m.ids;
         }
         DIFF_MEMO_MISSES.increment();
-        int[] ids = scanChangedIds(a.values, b.values);
+        int[] ids = scanChangedIds(a, b);
         DIFF_MEMO[slot] = new DiffMemo(a, b, ids);
         return ids;
     }
 
-    private static int[] scanChangedIds(CssValue[] x, CssValue[] y) {
+    private static int[] scanChangedIds(ComputedStyle a, ComputedStyle b) {
+        boolean d0 = !sameBand(a, b, 0);
+        boolean d1 = !sameBand(a, b, 1);
+        boolean d2 = !sameBand(a, b, 2);
+        boolean d3 = !sameBand(a, b, 3);
+        if (!(d0 | d1 | d2 | d3)) return NO_IDS;
+        CssValue[] x = a.values, y = b.values;
         int n = 0;
-        for (int i = 0; i < x.length; i++) {
-            if (x[i] == y[i]) continue; // 同じ文字列は同じ値オブジェクト
-            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
-            n++;
-        }
+        if (d0) n += countDiffRange(x, y, 0, CssPropertyId.LAYOUT_NON_INH_END);
+        if (d1) n += countDiffRange(x, y, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END);
+        if (d2) n += countDiffRange(x, y, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END);
+        if (d3) n += countDiffRange(x, y, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT);
         if (n == 0) return NO_IDS;
         int[] out = new int[n];
         int k = 0;
-        for (int i = 0; i < x.length && k < n; i++) {
-            if (x[i] == y[i]) continue;
-            if (x[i] != null && y[i] != null && x[i].text.equals(y[i].text)) continue;
-            out[k++] = i;
-        }
+        if (d0) k = fillDiffRange(x, y, 0, CssPropertyId.LAYOUT_NON_INH_END, out, k);
+        if (d1) k = fillDiffRange(x, y, CssPropertyId.LAYOUT_NON_INH_END, CssPropertyId.NON_INH_END, out, k);
+        if (d2) k = fillDiffRange(x, y, CssPropertyId.NON_INH_END, CssPropertyId.INH_LAYOUT_END, out, k);
+        if (d3) fillDiffRange(x, y, CssPropertyId.INH_LAYOUT_END, CssPropertyId.TOTAL_COUNT, out, k);
         return out;
+    }
+
+    private static int countDiffRange(CssValue[] x, CssValue[] y, int from, int to) {
+        int n = 0;
+        for (int i = from; i < to; i++) {
+            if (!sameCssValue(x[i], y[i])) n++;
+        }
+        return n;
+    }
+
+    private static int fillDiffRange(CssValue[] x, CssValue[] y, int from, int to, int[] out, int k) {
+        for (int i = from; i < to; i++) {
+            if (!sameCssValue(x[i], y[i])) out[k++] = i;
+        }
+        return k;
     }
 
     /** 2 つの算出スタイルの宣言の差分を 1 つずつ渡す先。 */
@@ -436,16 +773,16 @@ public final class ComputedStyle {
         CssValue[] v = view.owner.values;
         boolean[] inherits = CssPropertyId.INHERITS_AS_LONGHAND;
         StyleTable table = target instanceof StyleTable t ? t : null;
-        for (int i = 0; i < v.length; i++) {
+        for (int i = CssPropertyId.NON_INH_END; i < v.length; i++) {
             if (v[i] == null || !inherits[i]) continue;
             if (table != null) table.putValueById(i, v[i]);
             else target.put(CssPropertyId.NAMES[i], v[i].text);
         }
         Map<String, String> ex = view.owner.extras;
         if (ex != null) {
-            if (table != null && table.extras == null && allCustomProperties(ex)) {
+            if (table != null && table.extras == null && view.owner.areAllExtrasCustom()) {
                 // 継承するのは --* だけ。全部が --* なら、親の表を丸ごと共有する（1 件ずつ入れ直さない。書くときに写す）
-                table.shareExtrasFrom(ex);
+                table.shareExtrasFrom(ex, view.owner.extrasViewportFlag());
             } else {
                 for (Map.Entry<String, String> e : ex.entrySet()) {
                     if (e.getKey().startsWith("--")) target.put(e.getKey(), e.getValue());
@@ -453,6 +790,131 @@ public final class ComputedStyle {
             }
         }
         return true;
+    }
+
+    private static final Object KEY_ANON_BLOCK = new Object();
+    private static final Object KEY_ANON_INLINE = new Object();
+    private static final Object KEY_ANON_INLINE_BLOCK = new Object();
+    private static final Object KEY_MARKER_FROM_OWNER = new Object();
+    private static final Object KEY_MARKER_FROM_DECLARED = new Object();
+
+    private record DerivedAnonKey(String display) {}
+
+    /**
+     * 匿名ブロック・インライン等の生成箱用スタイルを {@code LinkedHashMap} を介さず継承バンドから構築・メモ化する。
+     */
+    public ComputedStyle derivedAnonymous(String display) {
+        Object key = switch (display) {
+            case "block" -> KEY_ANON_BLOCK;
+            case "inline" -> KEY_ANON_INLINE;
+            case "inline-block" -> KEY_ANON_INLINE_BLOCK;
+            default -> new DerivedAnonKey(display);
+        };
+        return paintMemo(key, k -> buildInheritedWithOverrides(display, false));
+    }
+
+    /**
+     * {@code ::marker} 用スタイルを構築・メモ化する（{@code declaredMarker == null} なら所有者の継承値＋UA 上書き、
+     * 非 null なら {@code declaredMarker} から {@code content} を除いて UA 上書きを掛ける）。
+     */
+    public ComputedStyle derivedMarker(ComputedStyle declaredMarker) {
+        if (declaredMarker == null) {
+            return paintMemo(KEY_MARKER_FROM_OWNER, k -> buildInheritedWithOverrides("inline-block", true));
+        }
+        return declaredMarker.paintMemo(KEY_MARKER_FROM_DECLARED, k -> buildDeclaredMarker(declaredMarker));
+    }
+
+    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides) {
+        CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
+        int start = CssPropertyId.NON_INH_END;
+        int len = out.length - start;
+        System.arraycopy(values, start, out, start, len);
+        int cnt = 0;
+        for (int i = start; i < out.length; i++) {
+            if (out[i] != null) cnt++;
+        }
+        cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of(displayValue));
+        if (markerOverrides) {
+            cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
+            cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));
+        }
+        Map<String, String> exBase = null;
+        Map<String, String> exUnmod = null;
+        byte exVp = 0;
+        if (extras != null) {
+            if (areAllExtrasCustom()) {
+                exBase = extrasBase;
+                exUnmod = extras;
+                exVp = extrasViewportFlag();
+                cnt += extras.size();
+            } else {
+                Map<String, String> custom = new LinkedHashMap<>();
+                for (Map.Entry<String, String> e : extras.entrySet()) {
+                    if (e.getKey().startsWith("--")) {
+                        custom.put(e.getKey(), e.getValue());
+                        if (exVp == 0 && e.getValue() != null && StyleResolver.valueDependsOnViewport(e.getValue())) exVp = 1;
+                    }
+                }
+                if (!custom.isEmpty()) {
+                    exBase = custom;
+                    exUnmod = Collections.unmodifiableMap(custom);
+                    cnt += custom.size();
+                }
+            }
+        }
+        ComputedStyle fresh = new ComputedStyle(out, exBase, exUnmod, cnt, (byte) -1, exVp, elementFontSize, rootFontSize);
+        if (!markerOverrides) fresh.g2 = this.g2;
+        fresh.g3 = this.g3;
+        return SHARE_ENABLED ? share(fresh) : fresh;
+    }
+
+    private static ComputedStyle buildDeclaredMarker(ComputedStyle declared) {
+        CssValue[] out = declared.values.clone();
+        int cnt = declared.size;
+        if (out[CssPropertyIndex.CONTENT] != null) {
+            out[CssPropertyIndex.CONTENT] = null;
+            cnt--;
+        }
+        cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of("inline-block"));
+        cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
+        cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));
+        ComputedStyle fresh = new ComputedStyle(out, declared.extrasBase, declared.extras, cnt,
+                (byte) -1, declared.extrasViewport, declared.elementFontSize, declared.rootFontSize);
+        return SHARE_ENABLED ? share(fresh) : fresh;
+    }
+
+    private static int setOverrideSlot(CssValue[] out, int id, CssValue v) {
+        CssValue prev = out[id];
+        out[id] = v;
+        if (prev == null && v != null) return 1;
+        if (prev != null && v == null) return -1;
+        return 0;
+    }
+
+    private byte extrasViewportFlag() {
+        Map<String, String> ex = extras;
+        if (ex == null) return 0;
+        byte e = extrasViewport;
+        if (e < 0) {
+            e = 0;
+            for (String value : ex.values()) {
+                if (value != null && StyleResolver.valueDependsOnViewport(value)) {
+                    e = 1;
+                    break;
+                }
+            }
+            extrasViewport = e;
+        }
+        return e;
+    }
+
+    private boolean areAllExtrasCustom() {
+        byte c = allExtrasCustom;
+        if (c < 0) {
+            c = extras != null && allCustomProperties(extras) ? (byte) 1 : (byte) 0;
+            allExtrasCustom = c;
+        }
+        return c == 1;
     }
 
     private static boolean allCustomProperties(Map<String, String> extras) {

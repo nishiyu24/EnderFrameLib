@@ -11,6 +11,7 @@ import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -551,5 +552,178 @@ class DisplayListSlicePatchTest {
 
         assertTrue(UiView.RESTYLE_REPAINT_FULL.get() > fullRepaintsBefore, "スタッキングコンテキスト要素のスタイル変更では安全に RESTYLE_REPAINT_FULL へフォールバックする");
         assertItemsEqual(expected, patched, "フォールバック後もパッチ結果がフル描画結果と 100% 一致");
+    }
+
+    private static List<DisplayItem> resizeWithExactTranslation(StandaloneView view, int width, int height) {
+        UiView.childPatchEnabled = true;
+        view.resize(width, height);
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (view.ui().rootW() != width || view.ui().rootH() != height) {
+            if (System.nanoTime() > deadline) {
+                fail("resize(" + width + ", " + height + ") が時間内に反映されませんでした");
+            }
+            LockSupport.parkNanos(250_000L);
+            view.ui().flushInvalidation();
+        }
+        return view.ui().renderCache();
+    }
+
+    @Test
+    void fractionalDisplayItemTranslationMatchesFullRenderAcrossUniformAndNonUniformShifts() {
+        String html = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <style>
+                  html { font-size: 14px; }
+                  body { margin: 0; font-size: 14px; }
+                  .stage { width: 100%; display: flex; flex-direction: column; align-items: center; padding: 0.37em 0; }
+                  .card {
+                    width: 241px;
+                    padding: 0.43em 0.71em;
+                    margin: 0.29em 0;
+                    background: #e8eef5;
+                    border: 1px solid #8aa4c8;
+                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+                    line-height: 1.37;
+                  }
+                  .badge { font-size: 80%; padding: 0.15em 0.35em; background: #2c5282; color: #ffffff; }
+                  .grid {
+                    display: grid;
+                    grid-template-columns: 111px 111px;
+                    gap: 5px;
+                    width: 227px;
+                    padding: 4px;
+                    background: #f5f5f5;
+                  }
+                  .cell { background: #dce7d8; padding: 3px 5px; border: 1px solid #9db394; line-height: 1.31; }
+                </style>
+                </head>
+                <body>
+                  <div class="stage">
+                    <div id="c1" class="card">Centered <span class="badge">Q1b</span> multi-item fractional text</div>
+                    <div id="c2" class="card">Second line wraps across boundary widths smoothly</div>
+                    <div class="grid">
+                      Direct grid label
+                      <div class="cell">A1</div>
+                      <div class="cell">B2</div>
+                      <div class="cell">C3</div>
+                    </div>
+                  </div>
+                </body>
+                </html>""";
+
+        int[] widths = {600, 599, 598, 597, 601, 600, 595, 602};
+        StandaloneView viewPatch = new StandaloneView(html, widths[0], 500, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+
+        long translatedStart = DisplayListBuilder.STAT_TRANSLATED.sum();
+        for (int w : widths) {
+            List<DisplayItem> actual = resizeWithExactTranslation(viewPatch, w, 500);
+            StandaloneView fresh = new StandaloneView(html, w, 500, FontResolver.FALLBACK);
+            List<DisplayItem> expected = flush(fresh, false);
+            assertItemsEqual(expected, actual, "小数平行移動後の DisplayItem が幅 " + w + " でフル描画と 100% 一致");
+        }
+        assertTrue(DisplayListBuilder.STAT_TRANSLATED.sum() > translatedStart,
+                "DisplayItem 平行移動のヒットが発生していること");
+    }
+
+    @Test
+    void randomFractionalResizesAndLocalPatchesMatchFullRender() {
+        String html = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <style>
+                  body { margin: 0; font-size: 14px; }
+                  #wrap { width: 100%; display: flex; flex-direction: column; align-items: center; }
+                  .card { width: 281px; padding: 6px 9px; margin: 3px 0; background: #f0f0f0; border: 1px solid #ccc; line-height: 1.37; }
+                  .btn { display: block; padding: 4px 8px; background: #007acc; color: #fff; }
+                  .btn.hot { background: #e04040; }
+                  .item { width: 261px; padding: 5px 7px; margin: 2px 0; background: #e8e8e8; border-bottom: 1px solid #ddd; line-height: 1.33; }
+                </style>
+                </head>
+                <body>
+                  <div id="wrap">
+                    <div id="top" class="card">Header <span id="tag">v0</span></div>
+                    <div id="btn1" class="btn">Action 1</div>
+                    <div id="list">
+                      <div id="i0" class="item">Row Item 0</div>
+                      <div id="i1" class="item">Row Item 1</div>
+                      <div id="i2" class="item">Row Item 2</div>
+                    </div>
+                  </div>
+                </body>
+                </html>""";
+
+        StandaloneView viewPatch = new StandaloneView(html, 600, 600, FontResolver.FALLBACK);
+        flush(viewPatch, true);
+
+        // 再現可能な操作ログを保持し、各ステップで初期状態の fresh ビューに適用し直して完全フル描画と照合する
+        Random rnd = new Random(20261113L);
+        int currentW = 600;
+        boolean hot = false;
+        String currentTag = "v0";
+        List<String> extraIds = new java.util.ArrayList<>();
+        List<String> domChildOps = new java.util.ArrayList<>();
+
+        for (int step = 0; step < 30; step++) {
+            int op = rnd.nextInt(4);
+            switch (op) {
+                case 0 -> { // 奇数幅を含むリサイズ（0.5px 水平シフト + exactTranslation）
+                    currentW = 596 + rnd.nextInt(9);
+                    resizeWithExactTranslation(viewPatch, currentW, 600);
+                }
+                case 1 -> { // スタイルスライスパッチ（appliedNonUniform 状態から直後にパッチ）
+                    hot = !hot;
+                    ((HtmlElement) viewPatch.root().getNodeById("btn1")).setAttribute("class", hot ? "btn hot" : "btn");
+                    flush(viewPatch, true);
+                }
+                case 2 -> { // テキスト局所更新
+                    currentTag = "v" + step;
+                    ((HtmlElement) viewPatch.root().getNodeById("tag")).updateTextContent(currentTag);
+                    flush(viewPatch, true);
+                }
+                default -> { // 子要素の挿入・削除（patchChildSlices を含む）
+                    HtmlNode list = viewPatch.root().getNodeById("list");
+                    if (extraIds.size() < 3 && (extraIds.isEmpty() || rnd.nextBoolean())) {
+                        String id = "extra-" + step;
+                        HtmlElement el = new HtmlElement("div");
+                        el.setAttribute("class", "item");
+                        el.setAttribute("id", id);
+                        el.updateTextContent("Extra " + step);
+                        list.appendChild(el);
+                        extraIds.add(id);
+                        domChildOps.add("+" + id);
+                    } else {
+                        String id = extraIds.remove(extraIds.size() - 1);
+                        list.removeChild(viewPatch.root().getNodeById(id));
+                        domChildOps.add("-" + id);
+                    }
+                    flush(viewPatch, true);
+                }
+            }
+
+            // 同じ DOM 操作順（node key 採番を含む）と幅で新規生成したビューと 100% 一致を検証
+            StandaloneView fresh = new StandaloneView(html, currentW, 600, FontResolver.FALLBACK);
+            ((HtmlElement) fresh.root().getNodeById("btn1")).setAttribute("class", hot ? "btn hot" : "btn");
+            ((HtmlElement) fresh.root().getNodeById("tag")).updateTextContent(currentTag);
+            HtmlNode freshList = fresh.root().getNodeById("list");
+            for (String childOp : domChildOps) {
+                if (childOp.startsWith("+")) {
+                    String id = childOp.substring(1);
+                    HtmlElement el = new HtmlElement("div");
+                    el.setAttribute("class", "item");
+                    el.setAttribute("id", id);
+                    el.updateTextContent("Extra " + id.substring("extra-".length()));
+                    freshList.appendChild(el);
+                } else {
+                    freshList.removeChild(fresh.root().getNodeById(childOp.substring(1)));
+                }
+            }
+            List<DisplayItem> expected = flush(fresh, false);
+            assertItemsEqual(expected, viewPatch.ui().renderCache(),
+                    "小数リサイズ+局所パッチ混在 step=" + step + " op=" + op + " w=" + currentW);
+        }
     }
 }

@@ -1693,6 +1693,7 @@ public class UiView implements AutoCloseable {
                 int at = BoxTreeBuilder.indexOfBox(pb.elementChildren, r);
                 if (at >= 0) pb.elementChildren.remove(at);
                 BoxTreeBuilder.removeBuiltChild(pb, r);
+                if (layoutRoot != null) layoutRoot.unregisterReusableSubtree(r);
                 unindexBoxes(r, index);
                 index.remove(r.node);
             }
@@ -1701,6 +1702,7 @@ public class UiView implements AutoCloseable {
                 for (LayoutBox b : pb.elementChildren) if (b.node == plan.previousNode()) { previous = b; break; }
             }
             List<LayoutBox> boxes = built.get(i);
+            boolean pbInTableScope = pb.isInTableScope();
             for (LayoutBox box : boxes) {
                 int at = previous == null ? 0 : BoxTreeBuilder.indexOfBox(pb.elementChildren, previous) + 1;
                 pb.elementChildren.add(at, box);
@@ -1716,6 +1718,7 @@ public class UiView implements AutoCloseable {
                     index.put(box.node, box);
                     indexBoxes(box, index, false);
                 }
+                if (layoutRoot != null && !pbInTableScope) layoutRoot.registerReusableSubtree(box);
                 previous = box;
             }
             changedParents.add(pb);

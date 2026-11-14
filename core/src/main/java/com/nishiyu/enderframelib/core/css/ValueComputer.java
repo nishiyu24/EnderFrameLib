@@ -168,6 +168,7 @@ final class ValueComputer {
         }
         computeLineWidths(style);
         computeBlockSizeKeywords(style);
+        if (style.valuesViewport == 1) style.valuesViewport = -1;
         if (!relative) {
             if (candidateCount > candidates.length) {
                 // 候補が多いときは最終の値を全部確かめる

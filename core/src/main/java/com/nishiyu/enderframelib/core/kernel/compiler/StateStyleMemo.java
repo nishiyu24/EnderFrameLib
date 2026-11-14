@@ -19,8 +19,8 @@ import java.util.function.IntFunction;
  */
 public final class StateStyleMemo {
 
-    /** 生宣言（キャッシュ用）と、確定した算出スタイル。 */
-    public record Entry(Map<String, String> raw, ComputedStyle computed) {}
+    /** 確定した算出スタイルと、ビューポート寸法への依存の有無（生宣言の表は保持しない）。 */
+    public record Entry(ComputedStyle computed, boolean viewportDependent) {}
 
     private static final int FRAMES = 4;
 

@@ -44,15 +44,15 @@ class ParagraphSegmentsTest {
                 String seg = segments.get(s);
                 assertEquals(seg, p.segs()[s], at);
                 if (seg.isEmpty()) continue;
-                assertEquals(Float.floatToIntBits(face.advance(seg, font)), Float.floatToIntBits(p.fullW()[s]), at + " full " + s);
+                assertEquals(Float.floatToIntBits(face.advance(seg, font)), Float.floatToIntBits(p.fullW(s)), at + " full " + s);
                 assertEquals(Float.floatToIntBits(face.advance(seg.stripTrailing(), font)),
-                        Float.floatToIntBits(p.strippedTrailingW()[s]), at + " stripTrailing " + s);
+                        Float.floatToIntBits(p.strippedTrailingW(s)), at + " stripTrailing " + s);
                 String word = seg.strip();
                 assertEquals(Float.floatToIntBits(word.isEmpty() ? 0f : face.advance(word, font)),
-                        Float.floatToIntBits(p.strippedW()[s]), at + " strip " + s);
+                        Float.floatToIntBits(p.strippedW(s)), at + " strip " + s);
                 if (previous != null) {
                     assertEquals(Float.floatToIntBits(TextShaper.kerningBetween(face, font, previous, seg)),
-                            Float.floatToIntBits(p.joinW()[s]), at + " join " + s);
+                            Float.floatToIntBits(p.joinW(s)), at + " join " + s);
                 }
                 previous = seg;
             }

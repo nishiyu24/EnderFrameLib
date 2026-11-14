@@ -24,19 +24,26 @@ import com.nishiyu.enderframelib.api.event.EventListenerOptions;
 import com.nishiyu.enderframelib.core.event.EventDispatcher;
 import com.nishiyu.enderframelib.core.event.EventDispatcher.EventListenerEntry;
 import com.nishiyu.enderframelib.core.event.StandardDefaultActions;
+import com.nishiyu.enderframelib.core.kernel.CompactList;
 import com.nishiyu.enderframelib.core.kernel.memory.AtomTable;
 import com.nishiyu.enderframelib.core.kernel.memory.DocumentArena;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -71,6 +78,8 @@ public class HtmlNode implements Node {
     public boolean isPseudoNode = false;
     /** 登録があるまで作らない（大半の節はリスナーを持たない）。 */
     private List<EventListenerEntry> eventListeners;
+    /** インライン {@code style} 属性の解析済みキャッシュ（{@link #attrVersion()} に紐づく）。 */
+    public Object inlineStyleCache;
 
     // ---- Off-Heap アリーナ上の同一性（Milestone 1） ----
     /** 接続先アリーナ上の番号。まだ振られていなければ -1。 */
@@ -748,7 +757,7 @@ public class HtmlNode implements Node {
      * 子の並び。直接 {@code add} / {@code remove} する呼び出し（パーサ・バインディング）も、
      * DOM のツリー操作と同じく id 索引へ反映するため、変更の入口をここに集める。
      */
-    private final class ChildList extends ArrayList<HtmlNode> {
+    private final class ChildList extends CompactList<HtmlNode> {
 
         @Override
         public boolean add(HtmlNode node) {
@@ -841,7 +850,9 @@ public class HtmlNode implements Node {
         @Override
         public void replaceAll(UnaryOperator<HtmlNode> operator) {
             List<HtmlNode> before = new ArrayList<>(this);
-            super.replaceAll(operator);
+            for (int i = 0; i < size(); i++) {
+                super.set(i, operator.apply(get(i)));
+            }
             before.forEach(HtmlNode.this::childDetached);
             forEach(HtmlNode.this::childAttached);
         }
@@ -866,19 +877,116 @@ public class HtmlNode implements Node {
         return attrVersion;
     }
 
-    private final class AttributeMap extends LinkedHashMap<String, String> {
+    /**
+     * 要素ごとの属性数を 0〜数個想定で抑える線形ペア配列マップ。
+     * {@link LinkedHashMap} と同じ挿入順を保ちつつ、空のテキスト節では追加配列を確保しない。
+     */
+    private final class AttributeMap extends AbstractMap<String, String> {
+
+        private String[] pairs;
+        private int count;
+
+        private int indexOfKey(Object key) {
+            for (int i = 0; i < count; i++) {
+                if (Objects.equals(pairs[i << 1], key)) return i;
+            }
+            return -1;
+        }
+
+        private String rawGet(Object key) {
+            int idx = indexOfKey(key);
+            return idx >= 0 ? pairs[(idx << 1) + 1] : null;
+        }
+
+        private String rawPut(String key, String value) {
+            int idx = indexOfKey(key);
+            if (idx >= 0) {
+                int vIdx = (idx << 1) + 1;
+                String prev = pairs[vIdx];
+                pairs[vIdx] = value;
+                return prev;
+            }
+            int needed = (count + 1) << 1;
+            if (pairs == null) {
+                pairs = new String[2];
+            } else if (pairs.length < needed) {
+                int nextCap = pairs.length == 2 ? 4 : pairs.length + 4;
+                pairs = Arrays.copyOf(pairs, nextCap);
+            }
+            int base = count << 1;
+            pairs[base] = key;
+            pairs[base + 1] = value;
+            count++;
+            return null;
+        }
+
+        private void removeAt(int idx) {
+            int last = count - 1;
+            int tail = last - idx;
+            if (tail > 0) {
+                System.arraycopy(pairs, (idx + 1) << 1, pairs, idx << 1, tail << 1);
+            }
+            int base = last << 1;
+            pairs[base] = null;
+            pairs[base + 1] = null;
+            count = last;
+        }
+
+        private String rawRemove(Object key) {
+            int idx = indexOfKey(key);
+            if (idx < 0) return null;
+            String prev = pairs[(idx << 1) + 1];
+            removeAt(idx);
+            return prev;
+        }
+
+        private void rawClear() {
+            if (pairs != null) {
+                Arrays.fill(pairs, 0, count << 1, null);
+            }
+            count = 0;
+        }
+
+        @Override
+        public int size() {
+            return count;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return count == 0;
+        }
+
+        @Override
+        public boolean containsKey(Object key) {
+            return indexOfKey(key) >= 0;
+        }
+
+        @Override
+        public String get(Object key) {
+            return rawGet(key);
+        }
+
+        @Override
+        public void forEach(BiConsumer<? super String, ? super String> action) {
+            Objects.requireNonNull(action);
+            for (int i = 0; i < count; i++) {
+                int base = i << 1;
+                action.accept(pairs[base], pairs[base + 1]);
+            }
+        }
 
         private <R> R trackingId(Supplier<R> mutation) {
             attrVersion++;
-            String before = super.get("id");
-            String classBefore = super.get("class");
+            String before = rawGet("id");
+            String classBefore = rawGet("class");
             R result = mutation.get();
-            String after = super.get("id");
+            String after = rawGet("id");
             if (!Objects.equals(before, after)) {
                 derivedKey = null;
                 idAttributeChanged(before, after);
                 identityAttributeChanged();
-            } else if (!Objects.equals(classBefore, super.get("class"))) {
+            } else if (!Objects.equals(classBefore, rawGet("class"))) {
                 identityAttributeChanged();
             }
             return result;
@@ -886,76 +994,237 @@ public class HtmlNode implements Node {
 
         @Override
         public String put(String key, String value) {
-            return trackingId(() -> super.put(key, value));
+            return trackingId(() -> rawPut(key, value));
         }
 
         @Override
         public String putIfAbsent(String key, String value) {
-            return trackingId(() -> super.putIfAbsent(key, value));
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx >= 0) {
+                    String cur = pairs[(idx << 1) + 1];
+                    if (cur != null) return cur;
+                    pairs[(idx << 1) + 1] = value;
+                    return null;
+                }
+                return rawPut(key, value);
+            });
         }
 
         @Override
         public void putAll(Map<? extends String, ? extends String> entries) {
+            if (entries.isEmpty()) return;
             trackingId(() -> {
-                super.putAll(entries);
+                for (Map.Entry<? extends String, ? extends String> e : entries.entrySet()) {
+                    rawPut(e.getKey(), e.getValue());
+                }
                 return null;
             });
         }
 
         @Override
         public String remove(Object key) {
-            return trackingId(() -> super.remove(key));
+            return trackingId(() -> rawRemove(key));
         }
 
         @Override
         public boolean remove(Object key, Object value) {
-            return trackingId(() -> super.remove(key, value));
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], value)) return false;
+                removeAt(idx);
+                return true;
+            });
         }
 
         @Override
         public void clear() {
             trackingId(() -> {
-                super.clear();
+                rawClear();
                 return null;
             });
         }
 
         @Override
         public String replace(String key, String value) {
-            return trackingId(() -> super.replace(key, value));
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx < 0) return null;
+                int vIdx = (idx << 1) + 1;
+                String prev = pairs[vIdx];
+                pairs[vIdx] = value;
+                return prev;
+            });
         }
 
         @Override
         public boolean replace(String key, String oldValue, String newValue) {
-            return trackingId(() -> super.replace(key, oldValue, newValue));
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx < 0 || !Objects.equals(pairs[(idx << 1) + 1], oldValue)) return false;
+                pairs[(idx << 1) + 1] = newValue;
+                return true;
+            });
         }
 
         @Override
         public void replaceAll(BiFunction<? super String, ? super String, ? extends String> function) {
+            Objects.requireNonNull(function);
             trackingId(() -> {
-                super.replaceAll(function);
+                for (int i = 0; i < count; i++) {
+                    int base = i << 1;
+                    pairs[base + 1] = function.apply(pairs[base], pairs[base + 1]);
+                }
                 return null;
             });
         }
 
         @Override
         public String computeIfAbsent(String key, Function<? super String, ? extends String> mapping) {
-            return trackingId(() -> super.computeIfAbsent(key, mapping));
+            Objects.requireNonNull(mapping);
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx >= 0) {
+                    String cur = pairs[(idx << 1) + 1];
+                    if (cur != null) return cur;
+                }
+                String v = mapping.apply(key);
+                if (v != null) rawPut(key, v);
+                return v;
+            });
         }
 
         @Override
         public String computeIfPresent(String key, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            return trackingId(() -> super.computeIfPresent(key, remapping));
+            Objects.requireNonNull(remapping);
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                if (idx < 0) return null;
+                String old = pairs[(idx << 1) + 1];
+                if (old == null) return null;
+                String next = remapping.apply(key, old);
+                if (next != null) {
+                    pairs[(idx << 1) + 1] = next;
+                } else {
+                    removeAt(idx);
+                }
+                return next;
+            });
         }
 
         @Override
         public String compute(String key, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            return trackingId(() -> super.compute(key, remapping));
+            Objects.requireNonNull(remapping);
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                String old = idx >= 0 ? pairs[(idx << 1) + 1] : null;
+                String next = remapping.apply(key, old);
+                if (next != null) {
+                    if (idx >= 0) {
+                        pairs[(idx << 1) + 1] = next;
+                    } else {
+                        rawPut(key, next);
+                    }
+                } else if (idx >= 0) {
+                    removeAt(idx);
+                }
+                return next;
+            });
         }
 
         @Override
         public String merge(String key, String value, BiFunction<? super String, ? super String, ? extends String> remapping) {
-            return trackingId(() -> super.merge(key, value, remapping));
+            Objects.requireNonNull(remapping);
+            Objects.requireNonNull(value);
+            return trackingId(() -> {
+                int idx = indexOfKey(key);
+                String old = idx >= 0 ? pairs[(idx << 1) + 1] : null;
+                String next = old == null ? value : remapping.apply(old, value);
+                if (next == null) {
+                    if (idx >= 0) removeAt(idx);
+                } else if (idx >= 0) {
+                    pairs[(idx << 1) + 1] = next;
+                } else {
+                    rawPut(key, next);
+                }
+                return next;
+            });
+        }
+
+        @Override
+        public Set<Map.Entry<String, String>> entrySet() {
+            return new AbstractSet<>() {
+                @Override
+                public int size() {
+                    return count;
+                }
+
+                @Override
+                public void clear() {
+                    AttributeMap.this.clear();
+                }
+
+                @Override
+                public Iterator<Map.Entry<String, String>> iterator() {
+                    return new Iterator<>() {
+                        private int cursor;
+                        private int last = -1;
+
+                        @Override
+                        public boolean hasNext() {
+                            return cursor < count;
+                        }
+
+                        @Override
+                        public Map.Entry<String, String> next() {
+                            if (cursor >= count) throw new NoSuchElementException();
+                            last = cursor++;
+                            int base = last << 1;
+                            String k = pairs[base];
+                            return new Map.Entry<>() {
+                                @Override
+                                public String getKey() {
+                                    return k;
+                                }
+
+                                @Override
+                                public String getValue() {
+                                    return rawGet(k);
+                                }
+
+                                @Override
+                                public String setValue(String value) {
+                                    return AttributeMap.this.put(k, value);
+                                }
+
+                                @Override
+                                public boolean equals(Object o) {
+                                    if (!(o instanceof Map.Entry<?, ?> other)) return false;
+                                    return Objects.equals(k, other.getKey())
+                                            && Objects.equals(getValue(), other.getValue());
+                                }
+
+                                @Override
+                                public int hashCode() {
+                                    return Objects.hashCode(k) ^ Objects.hashCode(getValue());
+                                }
+                            };
+                        }
+
+                        @Override
+                        public void remove() {
+                            if (last < 0) throw new IllegalStateException();
+                            int idx = last;
+                            trackingId(() -> {
+                                removeAt(idx);
+                                return null;
+                            });
+                            cursor = idx;
+                            last = -1;
+                        }
+                    };
+                }
+            };
         }
     }
 

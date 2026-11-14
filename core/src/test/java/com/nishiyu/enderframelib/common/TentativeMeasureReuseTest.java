@@ -143,4 +143,92 @@ class TentativeMeasureReuseTest {
         }
         assertTrue(LayoutBox.tentativeSkipped() > skippedBefore, "仮の測定を飛ばす経路が実際に使われている");
     }
+
+    @Test
+    void alternatingResizeOnShowcaseMatchesWithoutReuseAndReducesMeasurementsByOver20Percent() throws Exception {
+        String showcase = null;
+        for (String p : new String[]{"../src/main/resources/data/enderframelib/enderframe_ui/showcase.html",
+                "src/main/resources/data/enderframelib/enderframe_ui/showcase.html"}) {
+            java.nio.file.Path path = java.nio.file.Path.of(p);
+            if (java.nio.file.Files.exists(path)) {
+                showcase = java.nio.file.Files.readString(path, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
+                break;
+            }
+        }
+        assertTrue(showcase != null, "showcase.html が読めること");
+
+        StandaloneView off = new StandaloneView(showcase, 800, 600, FontResolver.FALLBACK);
+        StandaloneView on = new StandaloneView(showcase, 800, 600, FontResolver.FALLBACK);
+        sameItems(flush(off, false), flush(on, true), "showcase 初回");
+
+        long offMeasurements = 0;
+        long onMeasurements = 0;
+        for (int i = 0; i < 20; i++) {
+            int w = 800 - (i & 1);
+            LayoutBox.tentativeReuse = false;
+            long m0 = LayoutBox.measurementsComputed();
+            off.ui().recomputeLayout(w, 600);
+            if (i >= 4) offMeasurements += LayoutBox.measurementsComputed() - m0;
+
+            LayoutBox.tentativeReuse = true;
+            long m1 = LayoutBox.measurementsComputed();
+            on.ui().recomputeLayout(w, 600);
+            if (i >= 4) onMeasurements += LayoutBox.measurementsComputed() - m1;
+
+            sameItems(off.ui().renderCache(), on.ui().renderCache(), "showcase resizeexact 手順 " + i + " w=" + w);
+        }
+        assertTrue(onMeasurements * 10 <= offMeasurements * 8,
+                "resizeexact の測り直しが 20% 以上減ること: on=" + onMeasurements + " off=" + offMeasurements);
+    }
+
+    @Test
+    void definiteLeafAndStretchedFlexGridItemsAreIdenticalAcrossResizes() {
+        String doc = """
+                <style>
+                  .outer { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+                  .toolbar { display: flex; gap: 6px; align-items: stretch; }
+                  .toolbar.base { align-items: baseline; }
+                  .fixed { width: 140px; padding: 4px; border: 1px solid #555; }
+                  .grow { flex: 1; }
+                  .pct { width: 120px; height: 28px; padding: 2px; }
+                  .pct > span { display: block; height: 100%; }
+                  .spacer { width: 40px; }
+                  .grid { display: grid; grid-template-columns: 140px 1fr 1fr; gap: 6px; align-items: stretch; }
+                  .card { display: flex; flex-direction: column; gap: 4px; border: 1px solid #444; }
+                  .btn { padding: 4px 8px; }
+                </style>
+                <div class="outer">
+                  <div class="toolbar">
+                    <div class="fixed">fixed box</div>
+                    <input class="grow" value="abc">
+                    <select class="fixed"><option>A</option></select>
+                    <progress class="grow" value="50" max="100"></progress>
+                    <div class="spacer"></div>
+                    <div class="pct"><span>tall</span></div>
+                  </div>
+                  <div class="toolbar base">
+                    <span style="font-size:20px">big</span>
+                    <button class="btn">go</button>
+                    <div class="fixed">tail</div>
+                  </div>
+                  <div class="grid">
+                    <div class="card"><span class="btn">c1</span><button class="btn">buy</button></div>
+                    <input class="grow" value="g2">
+                    <div class="card" style="height:80px"><div class="pct"><span>h</span></div></div>
+                  </div>
+                </div>
+                """;
+        StandaloneView off = new StandaloneView(doc, 800, 600, FontResolver.FALLBACK);
+        StandaloneView on = new StandaloneView(doc, 800, 600, FontResolver.FALLBACK);
+        sameItems(flush(off, false), flush(on, true), "初回");
+        int[] widths = {799, 800, 799, 700, 799, 640, 800, 799, 800};
+        for (int i = 0; i < widths.length; i++) {
+            int w = widths[i];
+            LayoutBox.tentativeReuse = false;
+            off.ui().recomputeLayout(w, 600);
+            LayoutBox.tentativeReuse = true;
+            on.ui().recomputeLayout(w, 600);
+            sameItems(off.ui().renderCache(), on.ui().renderCache(), "step " + i + " w=" + w);
+        }
+    }
 }

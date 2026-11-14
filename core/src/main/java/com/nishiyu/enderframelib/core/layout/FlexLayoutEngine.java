@@ -54,8 +54,12 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         float maxChildW = 0, sumChildW = 0;
         int count = 0;
+        boolean fillFitCandidate = axes.row && !axes.wrap;
         for (LayoutBox child : box.children) {
             if (!child.participatesInFlow()) continue;
+            if (fillFitCandidate && (grow(child) > 0 || !child.style.layoutFacts().edgesAvailableFree)) {
+                fillFitCandidate = false;
+            }
             CssKeywords.Alignment childAlign = alignSelfOf(child, alignItems);
             FormattingContext childCtx = FormattingContext.of(axes.direction, childAlign == CssKeywords.Alignment.STRETCH, box.sizingMode == SizingMode.SHRINK_TO_FIT);
             ConstraintSpace itemSpace = new ConstraintSpace(tentativeInnerW, parentH, childCtx);
@@ -86,6 +90,7 @@ public class FlexLayoutEngine extends LayoutEngine {
         }
         float sum = sumChildW + (count > 1 ? box.columnGap * (count - 1) : 0);
         if (tentativeInnerW > 0 && sum > tentativeInnerW) box.measuredClamped = true; // 使える幅で切られた（縮み・折り返しが使える幅に依る）
+        if (fillFitCandidate && !box.measuredClamped) box.naturalFitInnerWidth = sum;
         // shrink-to-fit は利用できる幅で止まる（アイテムは伸縮長の解決で縮む）
         return tentativeInnerW > 0 ? Math.min(sum, tentativeInnerW) : sum;
     }
@@ -204,6 +209,10 @@ public class FlexLayoutEngine extends LayoutEngine {
 
         CssKeywords.Alignment alignItems = alignItemsOf(box.style);
         for (FlexLine line : state.lines) stretchItems(box, line, axes, alignItems, space, ctx);
+        // 確定の測り直しが来なかった項目の仮の測定をここで終わらせる（stretchItems より前に終えると伸ばす項目まで仮で測り直してしまう。placeLineItems より前なら auto マージンの書き込みも消えない）
+        for (FlexLine line : state.lines) {
+            for (FlexItem item : line.items) item.box.settleTentative();
+        }
 
         // 行の交差軸の位置（align-content）。wrap-reverse は求めた位置を交差軸で裏返す
         float usedCross = crossGap * Math.max(0, lineCount - 1);
@@ -339,8 +348,6 @@ public class FlexLayoutEngine extends LayoutEngine {
         }
 
         for (FlexItem item : items) setMainSize(item.box, axes, item.target, space, ctx);
-        // 確定の測り直しが来なかった項目の、仮の産物のままの状態をここで終わらせる（以降は寸法を書き換える）
-        for (FlexItem item : items) item.box.settleTentative();
     }
 
     private static boolean allFrozen(List<FlexItem> items) {
@@ -452,6 +459,8 @@ public class FlexLayoutEngine extends LayoutEngine {
             LayoutBox b = item.box;
             float outer = axes.row ? b.h + b.mT + b.mB : b.w + b.mL + b.mR;
             if (axes.row && alignSelfOf(b, alignItemsOf(b.parent.style)) == CssKeywords.Alignment.BASELINE && !hasAutoCrossMargin(b, true)) {
+                // baseline 揃えの行の高さは子孫の行を読むので、仮のままなら確定させる（stretch 対象外のため後から伸びない）
+                b.settleTentative();
                 float baseline = b.mT + itemBaseline(b);
                 above = Math.max(above, baseline);
                 below = Math.max(below, outer - baseline);

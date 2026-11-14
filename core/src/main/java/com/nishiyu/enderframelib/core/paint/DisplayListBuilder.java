@@ -202,7 +202,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     culledBoxes.clear();
     currentRoot = box;
     // 前回と同じ件数で足りることが多い。倍々に伸ばしながら全件を写し直すのを避ける
-    List<DisplayItem> elements = new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
+    List<DisplayItem> elements = MEMO_ENABLED
+            ? new PaintSupport.CaptureList(lastElementCount + (lastElementCount >> 4) + 16)
+            : new ArrayList<>(lastElementCount + (lastElementCount >> 4) + 16);
         canvasBackgroundSource = null;
         decor.setDevicePixelRatio(box.devicePixelRatio);
 
@@ -269,7 +271,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 continue;
             }
             ownerCount++;
-            if (cull && !openBoxes.contains(owner) && offscreen(owner)) {
+            if (cull && !openBoxes.contains(owner) && !task.hasMovingAncestor() && !inWindowGeometry(owner)) {
                 BoxMemo kept = boxMemo.get(owner);
                 if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
                 owner.dlStart = -1;
@@ -314,12 +316,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 固定/粘着配置を持たず、窓の判定を動かすスクロールの対象でもなく、位置が箱の枠の内に収まるとき（このとき子孫も全て、
      * 箱ごとの判定で省かれる）。省いた箱は、箱ごとに省いたときと同じ記録（項目の位置の取り消し・記憶の保持・窓の外の記録）を残す。
      */
-    private boolean pruneOffscreenSubtree(LayoutBox c) {
+    private boolean pruneOffscreenSubtree(LayoutBox c, boolean ancestorHasMoving) {
         if (c.isAnonymous || c.node == null || c.display == null || c.style == null || c.display.isNone()
                 || "#text".equals(c.node.tag)) {
             return false;
         }
-        if (inWindowGeometry(c) || hasMovingAncestor(c)) return false;
+        boolean moving = ancestorHasMoving || PaintOrder.hasMovingProps(c.style);
+        if (moving || inWindowGeometry(c)) return false;
         PrunedSubtree known = pruneCache.get(c);
         if (known != null && known.stillValid() && !known.anyShifted()) { // 部分木のどの箱にも描画の印が付いていない（中身も位置も同じ）ので、前の判定がそのまま使える
             if (!pruneSweeping && known.recordedSerial == buildSerial - 1 && known.recordedWindowed == pruneWindowed) {
@@ -341,8 +344,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             pruneOwners.clear();
             return false;
         }
-        PrunedSubtree fresh = new PrunedSubtree(pruneVisited.toArray(new LayoutBox[0]),
-                pruneScrolls.toArray(new com.nishiyu.enderframelib.core.dom.node.HtmlNode[0]), LayoutBox.paintEpoch());
+        PrunedSubtree fresh = new PrunedSubtree(
+                pruneVisited.isEmpty() ? EMPTY_BOX_ARRAY : pruneVisited.toArray(EMPTY_BOX_ARRAY),
+                pruneScrolls.isEmpty() ? EMPTY_NODE_ARRAY : pruneScrolls.toArray(EMPTY_NODE_ARRAY),
+                LayoutBox.paintEpoch());
         if (pruneScrolls.size() <= 8) {
             if (pruneCache.size() > Math.max(8192, lastOwnerCount)) pruneCache.clear(); // 消えた箱の分が溜まり続けないように
             pruneCache.put(c, fresh);
@@ -354,6 +359,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         STAT_PRUNED_SUBTREES.increment();
         return true;
     }
+
+    private static final LayoutBox[] EMPTY_BOX_ARRAY = new LayoutBox[0];
+    private static final com.nishiyu.enderframelib.core.dom.node.HtmlNode[] EMPTY_NODE_ARRAY =
+            new com.nishiyu.enderframelib.core.dom.node.HtmlNode[0];
+    private final List<LayoutBox> pruneGeoScratch = new ArrayList<>();
 
     /** 窓の判定のために、このスクロールコンテナの節の位置がずれているか（ずれが 0 なら窓の判定には響かない）。 */
     private boolean shifted(com.nishiyu.enderframelib.core.dom.node.HtmlNode node) {
@@ -371,20 +381,21 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         long recordedSerial = -1;
         boolean recordedWindowed;
         int ownerCount;
-        LayoutBox[] geometryOwners = new LayoutBox[0];
+        LayoutBox[] geometryOwners = EMPTY_BOX_ARRAY;
 
         /** 部分木の箱ごとの記録を残す（箱ごとに省いたときと同じ）。 */
         void record() {
-            ArrayList<LayoutBox> geo = new ArrayList<>();
+            pruneGeoScratch.clear();
             int n = 0;
             for (LayoutBox b : boxes) {
                 if (!isPruneOwner(b)) continue;
                 n++;
                 recordPruned(b);
-                if (isGeometryOwner(b)) geo.add(b);
+                if (isGeometryOwner(b)) pruneGeoScratch.add(b);
             }
             ownerCount = n;
-            geometryOwners = geo.toArray(new LayoutBox[0]);
+            geometryOwners = pruneGeoScratch.isEmpty() ? EMPTY_BOX_ARRAY : pruneGeoScratch.toArray(EMPTY_BOX_ARRAY);
+            pruneGeoScratch.clear();
         }
 
         PrunedSubtree(LayoutBox[] boxes, com.nishiyu.enderframelib.core.dom.node.HtmlNode[] scrolls, long epoch) {
@@ -526,30 +537,39 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         windowShift = shift != null ? shift : java.util.Map.of();
     }
 
-    private LayoutBox cachedParentForMovingCheck;
-    private boolean cachedParentHasMoving;
+    private int movingEpochSeq;
+    private int activeMovingEpoch;
+    private final ArrayList<LayoutBox> movingPathScratch = new ArrayList<>();
 
     private boolean hasMovingAncestor(LayoutBox box) {
         if (box == null) return false;
-        if (box.style != null && PaintOrder.factsOf(box.style).hasMovingProps()) return true;
-        LayoutBox p = box.parent;
-        if (p == null) return false;
-        if (p == cachedParentForMovingCheck) {
-            return cachedParentHasMoving;
+        if (box.movingStamped) return box.selfOrAncestorMoving;
+        int epoch = activeMovingEpoch;
+        if (epoch == 0) {
+            for (LayoutBox b = box; b != null; b = b.parent) {
+                if (b.style != null && PaintOrder.hasMovingProps(b.style)) return true;
+            }
+            return false;
         }
+        movingPathScratch.clear();
         boolean moving = false;
-        for (LayoutBox b = p; b != null; b = b.parent) {
-            if (b == cachedParentForMovingCheck) {
-                moving = cachedParentHasMoving;
+        for (LayoutBox b = box; b != null; b = b.parent) {
+            if (b.movingMemoEpoch == epoch) {
+                moving = b.movingMemoResult;
                 break;
             }
-            if (b.style != null && PaintOrder.factsOf(b.style).hasMovingProps()) {
+            movingPathScratch.add(b);
+            if (b.style != null && PaintOrder.hasMovingProps(b.style)) {
                 moving = true;
                 break;
             }
         }
-        cachedParentForMovingCheck = p;
-        cachedParentHasMoving = moving;
+        for (int i = movingPathScratch.size() - 1; i >= 0; i--) {
+            LayoutBox b = movingPathScratch.get(i);
+            b.movingMemoEpoch = epoch;
+            b.movingMemoResult = moving;
+        }
+        movingPathScratch.clear();
         return moving;
     }
 
@@ -640,7 +660,12 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
          * 差分パッチは「箱の今の位置 − 記憶の位置」で動きを見るので、これを足さないと、リストの中で既に動いた分を二重に動かす。
          */
         int appliedDx, appliedDy;
+        /** {@link #match} が 2 を返したときの浮動小数の移動量（差分パッチで記憶の基準を進めるのに使う）。 */
+        float appliedExactDx, appliedExactDy;
         boolean appliedFragOnly;
+        boolean appliedNonUniform;
+        /** 各項目に対応する丸める前の {@code (x, y, w, h)}（4 要素ごと。小数移動の平行移動判定用）。 */
+        float[] itemCoords;
         int generation;
         /** 記憶を作ったときのビューポートの大きさと、項目がそれに依る箱か（ビューポート基準の単位・ルートの背景）。 */
         int rootW, rootH;
@@ -826,6 +851,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             }
         }
         return m.parentBox == box.parent && box.pathPaintStamp(buildSerial) <= m.epoch
+                && m.attrVersion == box.node.attrVersion()
                 && m.canvasSource == (box == canvasBackgroundSource) && m.interactive == box.hasInteractiveRules
                 && m.suppressShadow == suppressTextShadow && sameClip(m.clip, clip)
                 && java.util.Objects.equals(m.parentId, parentId);
@@ -833,12 +859,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 平行移動で使い回すときの、箱の動き（{@link #match} が 2 を返したとき有効）。 */
     private float hitDx, hitDy;
+    private int hitIntDx, hitIntDy;
     private boolean hitFragmentsOnly;
+    private boolean hitPerItem;
+    private int[] hitRects = new int[32];
 
     /**
      * 記憶が今の箱に使えるか。0: 使えない / 1: 項目をそのまま使える / 2: 箱がまるごと {@code (hitDx, hitDy)} だけ動いただけ
      * （または、クリップだけが違う）なので、前回の項目を平行移動して使える。
-     * 2 を返すのは {@link #translating}（スクロールなど位置だけが変わる作り直し）で、記憶が平行移動に耐える箱のときだけ。
+     * 2 を返すのは {@link #translating}（スクロールなど位置だけが変わる作り直し）か、{@link #exactTranslation} で
+     * 整数移動、または小数移動でも各項目の丸め後の差が均一かつ寸法が変わらない箱のとき。
      */
     /** 診断: {@link #match} が 0（使えない）を返した理由別の回数（添字は match 内の return 0 の出現順。1 始まり、[0] は未使用）。 */
     public static final java.util.concurrent.atomic.LongAdder[] STAT_MATCH_FAIL = newAdders(24);
@@ -865,9 +895,16 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             fragmentsOnly = dx != 0 || dy != 0;
         }
         boolean moved = dx != 0 || dy != 0;
-        // スクロールの作り直しは丸めて動かす。子の増減では、整数ぶんだけ動いた箱に限って厳密に動かす（丸めが入らない）
+        boolean intMove = isIntegerTranslation(dx) && isIntegerTranslation(dy);
+        boolean exactFracCheck = false;
+        // スクロールの作り直しは丸めて動かす。リサイズ・子の増減では、整数移動に加えて小数移動も丸め後の差が一致する箱なら使い回す
         boolean moveOk = m.translatable && (translating
-                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && isIntegerTranslation(dx) && isIntegerTranslation(dy)));
+                || (exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent && intMove));
+        if (moved && !moveOk && exactTranslation && TRANSLATE_ENABLED && !m.carriesContentExtent
+                && m.translatable && m.itemCoords != null && m.itemCoords.length == m.items.size() * 4) {
+            exactFracCheck = true;
+            moveOk = true;
+        }
         if (moved && !moveOk) return matchFail(4);
         if (m.nums.length != NUMS_LENGTH) return matchFail(5);
         for (int i = 2; i < NUMS_LENGTH; i++) if (Float.compare(m.nums[i], numAt(box, i)) != 0) return matchFail(6);
@@ -903,10 +940,87 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             }
         }
         if (!moved && clipSame) return 1;
+        hitPerItem = false;
+        if (exactFracCheck) {
+            if (!computeItemShifts(m, dx, dy, fragmentsOnly)) return matchFail(4);
+        } else {
+            hitIntDx = Math.round(dx);
+            hitIntDy = Math.round(dy);
+        }
         hitDx = dx;
         hitDy = dy;
         hitFragmentsOnly = fragmentsOnly;
         return 2;
+    }
+
+    private static boolean movesWithFragment(DisplayItem it) {
+        return it.type() == ElementType.TEXT || it.id().contains("_tsh");
+    }
+
+    private static boolean nearHalfBoundary(float v, float base, float delta) {
+        float diffFromHalf = Math.abs(Math.abs(v - (float) Math.rint(v)) - 0.5f);
+        boolean exactGrid = com.nishiyu.enderframelib.core.kernel.LayoutUnit.isOnGrid(base)
+                && com.nishiyu.enderframelib.core.kernel.LayoutUnit.isOnGrid(delta);
+        if (diffFromHalf >= (exactGrid ? 1e-4f : 2e-3f)) return false;
+        return diffFromHalf > 0f || !exactGrid;
+    }
+
+    /**
+     * 小数移動 {@code (dx, dy)} で、全移動対象項目について {@link PaintSupport#addElement} と同じ両端丸めを適用し、
+     * 整数移動量と整数寸法を求める。全項目の移動量と寸法が一致すれば一括平行移動、項目ごとにずれる場合も
+     * .5 境界を跨ぐ恐れがなければ項目ごとの丸め結果として平行移動を許す。
+     */
+    private boolean computeItemShifts(BoxMemo m, float dx, float dy, boolean fragmentsOnly) {
+        List<DisplayItem> items = m.items;
+        float[] coords = m.itemCoords;
+        if (coords == null || coords.length != items.size() * 4) return false;
+        int n = items.size();
+        if (hitRects.length < n * 4) hitRects = new int[n * 4];
+        boolean hasShift = false;
+        int uniformX = 0, uniformY = 0;
+        boolean uniform = true;
+        for (int i = 0; i < n; i++) {
+            DisplayItem it = items.get(i);
+            int base = i * 4;
+            if (fragmentsOnly && !movesWithFragment(it)) {
+                hitRects[base] = it.x();
+                hitRects[base + 1] = it.y();
+                hitRects[base + 2] = it.width();
+                hitRects[base + 3] = it.height();
+                continue;
+            }
+            float fx = coords[base], fy = coords[base + 1], fw = coords[base + 2], fh = coords[base + 3];
+            float nx = fx + dx, ny = fy + dy;
+            if (nearHalfBoundary(nx, fx, dx) || nearHalfBoundary(ny, fy, dy)
+                    || nearHalfBoundary(nx + fw, fx + fw, dx) || nearHalfBoundary(ny + fh, fy + fh, dy)) {
+                return false;
+            }
+            int left = Math.round(nx);
+            int top = Math.round(ny);
+            int nw = Math.round(nx + fw) - left;
+            int nh = Math.round(ny + fh) - top;
+            hitRects[base] = left;
+            hitRects[base + 1] = top;
+            hitRects[base + 2] = nw;
+            hitRects[base + 3] = nh;
+            if (nw != it.width() || nh != it.height()) {
+                uniform = false;
+            } else {
+                int sx = left - it.x();
+                int sy = top - it.y();
+                if (!hasShift) {
+                    uniformX = sx;
+                    uniformY = sy;
+                    hasShift = true;
+                } else if (sx != uniformX || sy != uniformY) {
+                    uniform = false;
+                }
+            }
+        }
+        hitPerItem = !uniform;
+        hitIntDx = uniform && hasShift ? uniformX : 0;
+        hitIntDy = uniform && hasShift ? uniformY : 0;
+        return true;
     }
 
     private static boolean isIntegerTranslation(float d) {
@@ -914,20 +1028,35 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     /**
-     * 前回の項目を {@code (dx, dy)} を四捨五入した分だけ動かし、クリップを今のものに替えた写し。項目の座標は整数なので、
-     * 位置を整数に丸めたあとの相対関係（箱の中の項目どうしの並び）は崩れない。
+     * 前回の項目を平行移動（一括 {@code (ix, iy)}、または {@code itemRects} に基づく項目ごとの丸め）し、
+     * クリップを今のものに替えた写しを {@code out} へ追加する。
+     * {@link ShadowShape} は小数座標を保持しているため {@code (dx, dy)} で進める。
      */
-    private static List<DisplayItem> translated(BoxMemo m, ClipRect newClip, float dx, float dy, boolean textOnly) {
-        int ix = Math.round(dx), iy = Math.round(dy);
-        List<DisplayItem> out = new ArrayList<>(m.items.size());
-        for (DisplayItem it : m.items) {
-            boolean movesWithFragment = it.type() == ElementType.TEXT || it.id().contains("_tsh");
-            int ox = textOnly && !movesWithFragment ? 0 : ix, oy = textOnly && !movesWithFragment ? 0 : iy;
+    private static void appendTranslated(List<DisplayItem> out, BoxMemo m, ClipRect newClip,
+                                           float dx, float dy, int ix, int iy, boolean textOnly, int[] itemRects) {
+        List<DisplayItem> items = m.items;
+        for (int i = 0, n = items.size(); i < n; i++) {
+            DisplayItem it = items.get(i);
+            boolean moves = !textOnly || movesWithFragment(it);
+            int nx, ny, nw, nh;
+            if (itemRects != null) {
+                int base = i * 4;
+                nx = itemRects[base];
+                ny = itemRects[base + 1];
+                nw = itemRects[base + 2];
+                nh = itemRects[base + 3];
+            } else {
+                int ox = moves ? ix : 0, oy = moves ? iy : 0;
+                nx = it.x() + ox;
+                ny = it.y() + oy;
+                nw = it.width();
+                nh = it.height();
+            }
             RenderMeta meta = it.meta();
             if (meta != null) {
                 RenderHints h = meta.hints();
-                if (h != null && h.shadowShape() != null && (ox != 0 || oy != 0)) {
-                    h = h.withShadowShape(h.shadowShape().offset(ox, oy));
+                if (h != null && h.shadowShape() != null && (moves && (dx != 0 || dy != 0))) {
+                    h = h.withShadowShape(h.shadowShape().offset(dx, dy));
                 }
                 if (meta.clipRect() != null || (h != null && h != meta.hints())) {
                     ClipRect c = meta.clipRect() != null ? newClip : null;
@@ -936,11 +1065,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                             meta.roundedBorder(), h != null ? h : meta.hints());
                 }
             }
-            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), it.x() + ox, it.y() + oy, it.width(), it.height(),
+            out.add(new DisplayItem(it.id(), it.baseNodeId(), it.type(), nx, ny, nw, nh,
                     it.text(), it.color(), it.bgColor(), it.events(), it.radius(), it.opacity(), it.translateX(), it.translateY(),
                     it.scaleX(), it.scaleY(), it.rotate(), it.transitionDuration(), it.animDef(), it.fitMode(), meta, it.key()));
         }
-        return out;
     }
 
     /**
@@ -1045,10 +1173,10 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (content != null) order.addMovingNode(elements, content.contentId, box, null); // 箱の項目のあと・子孫の項目の前
     }
 
-    /** 項目が記憶の位置から動いている分（{@link BoxMemo#appliedDx}）を、記憶の基準の位置へ取り込む（差分パッチの前に呼ぶ）。 */
+    /** 項目が記憶の位置から動いている分（{@link BoxMemo#appliedExactDx}）を、記憶の基準の位置へ取り込む（差分パッチの前に呼ぶ）。 */
     private static void syncApplied(BoxMemo m) {
-        int ax = m.appliedDx, ay = m.appliedDy;
-        if (ax == 0 && ay == 0) return;
+        float ax = m.appliedExactDx, ay = m.appliedExactDy;
+        if (ax == 0f && ay == 0f && m.appliedDx == 0 && m.appliedDy == 0) return;
         if (!m.appliedFragOnly && m.nums != null && m.nums.length >= 2) {
             m.nums[0] += ax;
             m.nums[1] += ay;
@@ -1059,8 +1187,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 m.fragNums[i + 1] += ay;
             }
         }
+        if (m.itemCoords != null && m.items != null && m.itemCoords.length == m.items.size() * 4) {
+            for (int i = 0, n = m.items.size(); i < n; i++) {
+                if (m.appliedFragOnly && !movesWithFragment(m.items.get(i))) continue;
+                m.itemCoords[i * 4] += ax;
+                m.itemCoords[i * 4 + 1] += ay;
+            }
+        }
         m.appliedDx = m.appliedDy = 0;
+        m.appliedExactDx = m.appliedExactDy = 0f;
         m.appliedFragOnly = false;
+        m.appliedNonUniform = false;
     }
 
     private void drawBoxSelfMemo(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
@@ -1086,7 +1223,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (kind == 1) {
             STAT_EXACT.increment();
             m.appliedDx = m.appliedDy = 0;
+            m.appliedExactDx = m.appliedExactDy = 0f;
             m.appliedFragOnly = false;
+            m.appliedNonUniform = false;
             m.generation = generation;
             m.epoch = buildEpoch;
             appendItems(elements, m.items);
@@ -1094,10 +1233,13 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         if (kind == 2) { // 箱が動いただけ。記憶は動く前のまま残す（差が積もっても、丸めの誤差は 1 画素以内）
             m.generation = generation;
-            m.appliedDx = Math.round(hitDx);
-            m.appliedDy = Math.round(hitDy);
+            m.appliedDx = hitIntDx;
+            m.appliedDy = hitIntDy;
+            m.appliedExactDx = hitDx;
+            m.appliedExactDy = hitDy;
             m.appliedFragOnly = hitFragmentsOnly;
-            elements.addAll(translated(m, clipRect, hitDx, hitDy, hitFragmentsOnly));
+            m.appliedNonUniform = hitPerItem;
+            appendTranslated(elements, m, clipRect, hitDx, hitDy, hitIntDx, hitIntDy, hitFragmentsOnly, hitPerItem ? hitRects : null);
             translatedHits++;
             STAT_TRANSLATED.increment();
             return;
@@ -1105,8 +1247,21 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         (m == null ? STAT_NEW : STAT_MISS).increment();
         fragIds.set(0); // 部品の ID は箱ごとに数える
         int start = elements.size();
-        drawBoxSelfUncached(elements, box, clipRect, parentId);
-        boxMemo.put(box, remember(box, clipRect, parentId, List.copyOf(elements.subList(start, elements.size()))));
+        PaintSupport.CaptureList cap = elements instanceof PaintSupport.CaptureList c ? c : null;
+        if (cap != null) cap.beginCapture();
+        float[] capturedCoords = null;
+        try {
+            drawBoxSelfUncached(elements, box, clipRect, parentId);
+        } finally {
+            if (cap != null && cap.capturing) capturedCoords = cap.finishCapture();
+        }
+        List<DisplayItem> built = List.copyOf(elements.subList(start, elements.size()));
+        BoxMemo stored = remember(box, clipRect, parentId, built);
+        if (capturedCoords != null && stored.translatable && !stored.carriesContentExtent
+                && capturedCoords.length == built.size() * 4) {
+            stored.itemCoords = capturedCoords;
+        }
+        boxMemo.put(box, stored);
     }
 
     private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
@@ -1420,12 +1575,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
     }
 
-    private void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId,
+    private void renderSubtreeSlices(LayoutBox box, ClipRect clip, String parentId, boolean ancestorHasMoving,
                                     List<DisplayItem> outBlocks, List<LayoutBox> outBlockBoxes,
                                     List<DisplayItem> outInlines, List<LayoutBox> outInlineBoxes) {
         if (box == null || box.w <= 0 || box.h <= 0 || (box.display != null && box.display.isNone())) return;
 
-        if (!box.isAnonymous && windowedBuild && offscreen(box)) {
+        boolean selfOrAncestorMoving = ancestorHasMoving
+                || (box.style != null && PaintOrder.hasMovingProps(box.style));
+        if (!box.isAnonymous && windowedBuild && !selfOrAncestorMoving && !inWindowGeometry(box)) {
             // 窓の外（画面外）の箱は、全体を窓付きで組み直したときと同じく、項目を作らない
             box.dlStart = -1;
             box.dlEnd = -1;
@@ -1450,7 +1607,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         ClipRect childClip = clip;
         if (box.children != null) {
             for (LayoutBox child : box.children) {
-                renderSubtreeSlices(child, childClip, childParent, outBlocks, outBlockBoxes, outInlines, outInlineBoxes);
+                renderSubtreeSlices(child, childClip, childParent, selfOrAncestorMoving,
+                        outBlocks, outBlockBoxes, outInlines, outInlineBoxes);
             }
         }
     }
@@ -1463,15 +1621,21 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     private boolean windowIntact(List<LayoutBox> removed) {
         Set<LayoutBox> gone = Collections.newSetFromMap(new IdentityHashMap<>());
         for (LayoutBox r : removed) markSubtree(r, gone);
-        // 位置だけで決まる側（窓に掛かる箱は描く・掛からない箱は、変形などの動く祖先が無いかぎり省く）を先に見て、祖先の走査を避ける。
-        // 省いた箱の変形などの有無は、省いた時点から変わらない（スタイルの変更は別の経路で、子の増減のパッチには来ない）
-        for (LayoutBox b : renderedBoxes) {
-            if (!gone.contains(b) && !inWindowGeometry(b) && offscreen(b)) return false;
+        int prevEpoch = activeMovingEpoch;
+        activeMovingEpoch = ++movingEpochSeq;
+        try {
+            // 位置だけで決まる側（窓に掛かる箱は描く・掛からない箱は、変形などの動く祖先が無いかぎり省く）を先に見て、祖先の走査を避ける。
+            // 省いた箱の変形などの有無は、省いた時点から変わらない（スタイルの変更は別の経路で、子の増減のパッチには来ない）
+            for (LayoutBox b : renderedBoxes) {
+                if (!gone.contains(b) && !inWindowGeometry(b) && offscreen(b)) return false;
+            }
+            for (LayoutBox b : culledBoxes) {
+                if (!gone.contains(b) && inWindowGeometry(b)) return false;
+            }
+            return true;
+        } finally {
+            activeMovingEpoch = prevEpoch;
         }
-        for (LayoutBox b : culledBoxes) {
-            if (!gone.contains(b) && inWindowGeometry(b)) return false;
-        }
-        return true;
     }
 
     /** 文字の塊・匿名の箱は、窓に掛かるかを持ち主の箱の位置で決める（持ち主と同じ答えになる）ので、窓の出入りの確認では持ち主だけを見る。 */
@@ -1518,65 +1682,70 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
         int listSize = currentDisplayList.size();
         int boxCount = renderedBoxes.size();
-        cachedParentForMovingCheck = null;
+        int prevEpoch = activeMovingEpoch;
+        activeMovingEpoch = ++movingEpochSeq;
         List<LayoutBox> targets = new ArrayList<>(boxes.size());
-        for (LayoutBox b : boxes) {
-            if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) {
-                cant(0, 2);
-                return null;
-            }
-            if (isCulledNoop(b)) continue; // 窓の外の箱: 表示リストに項目が無く、画面外のままなら何も変えずに済む
-            if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) {
-                cant(0, 3);
-                return null;
-            }
-            if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) {
-                cant(0, 4);
-                return null;
-            }
-            if (b.style != null) {
-                var facts = PaintOrder.factsOf(b.style);
-                if (facts.hasAnimation()) {
-                    cant(0, 5);
+        try {
+            for (LayoutBox b : boxes) {
+                if (b == null || b.w <= 0 || b.h <= 0 || b.isAnonymous) {
+                    cant(0, 2);
                     return null;
                 }
-                // スクロール付きの箱でも、つまみ・溝は箱自身のスライスの外（after 層）に出るので、
-                // スクロールの有無・overflow・scrollbar-width が前回と同じなら自身のスライスだけ差し替えればよい
-                if (facts.scrollbars() && !scrollTraitsUnchanged(b)) {
-                    cant(0, 5);
+                if (isCulledNoop(b)) continue; // 窓の外の箱: 表示リストに項目が無く、画面外のままなら何も変えずに済む
+                if (b.dlStart < 0 || b.dlEnd < b.dlStart || b.dlEnd > listSize) {
+                    cant(0, 3);
                     return null;
                 }
-            }
-            if (order.createsStackingContext(b, b.style)) {
-                cant(0, 6);
-                return null;
-            }
-            BoxMemo m = boxMemo.get(b);
-            if (m != null) {
-                if (m.style != null) {
-                    var prevFacts = PaintOrder.factsOf(m.style);
-                    if (prevFacts.hasAnimation()) {
+                if (b.dlOrder < 0 || b.dlOrder >= boxCount || renderedBoxes.get(b.dlOrder) != b) {
+                    cant(0, 4);
+                    return null;
+                }
+                if (b.style != null) {
+                    var facts = PaintOrder.factsOf(b.style);
+                    if (facts.hasAnimation()) {
                         cant(0, 5);
                         return null;
                     }
-                    if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) {
+                    // スクロール付きの箱でも、つまみ・溝は箱自身のスライスの外（after 層）に出るので、
+                    // スクロールの有無・overflow・scrollbar-width が前回と同じなら自身のスライスだけ差し替えればよい
+                    if (facts.scrollbars() && !scrollTraitsUnchanged(b)) {
                         cant(0, 5);
                         return null;
                     }
-                    if (order.createsStackingContext(b, m.style)) {
-                        cant(0, 6);
-                        return null;
+                }
+                if (order.createsStackingContext(b, b.style)) {
+                    cant(0, 6);
+                    return null;
+                }
+                BoxMemo m = boxMemo.get(b);
+                if (m != null) {
+                    if (m.style != null) {
+                        var prevFacts = PaintOrder.factsOf(m.style);
+                        if (prevFacts.hasAnimation()) {
+                            cant(0, 5);
+                            return null;
+                        }
+                        if (prevFacts.scrollbars() != PaintOrder.factsOf(b.style).scrollbars()) {
+                            cant(0, 5);
+                            return null;
+                        }
+                        if (order.createsStackingContext(b, m.style)) {
+                            cant(0, 6);
+                            return null;
+                        }
+                    }
+                    if (m.nums != null && m.nums.length >= 4) {
+                        if (Float.compare(m.nums[0], b.x) != 0 || Float.compare(m.nums[1], b.y) != 0
+                                || Float.compare(m.nums[2], b.w) != 0 || Float.compare(m.nums[3], b.h) != 0) {
+                            cant(0, 8);
+                            return null;
+                        }
                     }
                 }
-                if (m.nums != null && m.nums.length >= 4) {
-                    if (Float.compare(m.nums[0], b.x) != 0 || Float.compare(m.nums[1], b.y) != 0
-                            || Float.compare(m.nums[2], b.w) != 0 || Float.compare(m.nums[3], b.h) != 0) {
-                        cant(0, 8);
-                        return null;
-                    }
-                }
+                targets.add(b);
             }
-            targets.add(b);
+        } finally {
+            activeMovingEpoch = prevEpoch;
         }
         if (targets.size() > 1) {
             targets.sort((a, b) -> {
@@ -1837,8 +2006,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         ClipRect clip = order.contentClipOf(parentBox);
         String parentId = contentParentIdOf(parentBox);
 
+        boolean parentMoving = hasMovingAncestor(parentBox);
         for (LayoutBox a : added) {
-            renderSubtreeSlices(a, clip, parentId, addedBlockItems, addedBlockBoxes, addedInlineItems, addedInlineBoxes);
+            renderSubtreeSlices(a, clip, parentId, parentMoving, addedBlockItems, addedBlockBoxes, addedInlineItems, addedInlineBoxes);
         }
 
         // 3. 挿入位置の決定（ブロック層・インライン層）
@@ -2097,9 +2267,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             LayoutBox b = renderedBoxes.get(k);
             BoxMemo m = boxMemo.get(b);
             if (m != null) {
-                // 表示リストの中の項目は、記憶の位置から appliedDx/appliedDy だけ動いている（箱の位置は記憶の基準を足して見る）
-                final int ax = m.appliedFragOnly ? 0 : m.appliedDx, ay = m.appliedFragOnly ? 0 : m.appliedDy;
-                final int fx = m.appliedDx, fy = m.appliedDy;
+                // 表示リストの中の項目は、記憶の位置から appliedExactDx/appliedExactDy だけ動いている（箱の位置は記憶の基準を足して見る）
+                final float ax = m.appliedFragOnly ? 0f : m.appliedExactDx, ay = m.appliedFragOnly ? 0f : m.appliedExactDy;
+                final float fx = m.appliedExactDx, fy = m.appliedExactDy;
                 float dx = (m.nums != null && m.nums.length >= 2) ? (b.x - (m.nums[0] + ax)) : 0;
                 float dy = (m.nums != null && m.nums.length >= 2) ? (b.y - (m.nums[1] + ay)) : 0;
                 boolean isTextNode = (b.node != null && b.node.nodeType == NodeType.TEXT);
@@ -2318,8 +2488,39 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                         }
                     }
 
+                    if (m.itemCoords != null) {
+                        if (m.items != null && m.itemCoords.length == m.items.size() * 4 && itemCount >= m.items.size()) {
+                            float boxShiftX = (m.nums != null && m.nums.length >= 2) ? (b.x - m.nums[0]) : 0f;
+                            float boxShiftY = (m.nums != null && m.nums.length >= 2) ? (b.y - m.nums[1]) : 0f;
+                            float fragShiftX = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
+                                    ? (b.inlineFragments.get(0).x - m.fragNums[0]) : boxShiftX;
+                            float fragShiftY = (!b.inlineFragments.isEmpty() && m.fragNums != null && m.fragNums.length >= 2)
+                                    ? (b.inlineFragments.get(0).y - m.fragNums[1]) : boxShiftY;
+                            boolean valid = true;
+                            for (int i = 0, nItems = m.items.size(); i < nItems; i++) {
+                                DisplayItem cur = currentDisplayList.get(b.dlStart + i);
+                                boolean isFragItem = !b.inlineFragments.isEmpty() && movesWithFragment(cur);
+                                float nx = m.itemCoords[i * 4] + (isFragItem ? fragShiftX : boxShiftX);
+                                float ny = m.itemCoords[i * 4 + 1] + (isFragItem ? fragShiftY : boxShiftY);
+                                float fw = m.itemCoords[i * 4 + 2], fh = m.itemCoords[i * 4 + 3];
+                                int rx = Math.round(nx), ry = Math.round(ny);
+                                int rw = Math.round(nx + fw) - rx, rh = Math.round(ny + fh) - ry;
+                                if (rx != cur.x() || ry != cur.y() || rw != cur.width() || rh != cur.height()) {
+                                    valid = false;
+                                    break;
+                                }
+                                m.itemCoords[i * 4] = nx;
+                                m.itemCoords[i * 4 + 1] = ny;
+                            }
+                            if (!valid) m.itemCoords = null;
+                        } else {
+                            m.itemCoords = null;
+                        }
+                    }
                     m.appliedDx = m.appliedDy = 0; // 記憶を今のリストの状態に揃える（下で項目も取り直す）
+                    m.appliedExactDx = m.appliedExactDy = 0f;
                     m.appliedFragOnly = false;
+                    m.appliedNonUniform = false;
                     if (m.nums != null && m.nums.length >= 2) {
                         m.nums[0] = b.x;
                         m.nums[1] = b.y;
@@ -2409,6 +2610,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                             memoEnd--;
                         }
                         syncApplied(am); // 項目を今のリストから取り直すので、基準の位置も動いた分だけ進める
+                        if (hChanged) am.itemCoords = null;
                         am.items = List.copyOf(currentDisplayList.subList(anc.dlStart, memoEnd));
                     }
                     anc.touchPaint();

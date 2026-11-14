@@ -580,7 +580,7 @@ public final class CssSyntax {
      * 短い値の字句解析の結果。算出スタイルの値（{@code 12px}・{@code rgba(...)}・{@code transform}）は、描画のたびに
      * 箱ごと同じ文字列が来るので、文字列で覚えて解析をやり直さない。返す木は読み取り専用（変更しようとすると例外）。
      */
-    private static final int VALUE_CACHE_LIMIT = 8192;
+    private static final int VALUE_CACHE_LIMIT = 1024;
     private static final int VALUE_CACHE_MAX_LENGTH = 512;
     private static final java.util.concurrent.ConcurrentHashMap<String, List<ComponentValue>> VALUE_CACHE =
             new java.util.concurrent.ConcurrentHashMap<>();

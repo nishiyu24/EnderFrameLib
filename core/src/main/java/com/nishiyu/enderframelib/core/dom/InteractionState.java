@@ -46,6 +46,8 @@ public class InteractionState implements StateLookup {
     private static final int MAX_TABS = 8;
     /** {@link #clear} のたびに進む。古い版の状態は節に残っていても無かったことにする。 */
     private int epoch;
+    /** 直近の {@code restyleBoxRecursive} が根の子孫へ降りたか（ルート専用再レイアウトの印付け省略判定用）。 */
+    public boolean restyleDescended;
 
     private Tab tabFor(DocumentArena arena) {
         Tab t = lastTab;
@@ -293,6 +295,8 @@ public class InteractionState implements StateLookup {
         }
         /** style 属性が {@code inherit} を含む。親の非継承プロパティの変化が子へ届く。 */
         public boolean inheritsExplicitly;
+        /** {@link #inheritsExplicitly} を評価したときの {@code node.attrVersion()}。未評価は -1。 */
+        public int inheritsAttrVersion = -1;
         /** 問い合わせコンテナとして測った内容ボックスの寸法（px）。測っていなければ NaN。 */
         public float containerWidth = Float.NaN;
         public float containerHeight = Float.NaN;
@@ -604,10 +608,33 @@ public class InteractionState implements StateLookup {
                     | ElementState.INDETERMINATE | ElementState.OPEN));
         }
         if (lower.equals("style")) {
-            flags.inheritsExplicitly = newValue != null
-                    && newValue.toLowerCase(java.util.Locale.ROOT).contains("inherit");
+            flags.inheritsExplicitly = containsInheritIgnoreCase(newValue);
+            flags.inheritsAttrVersion = node.attrVersion();
         }
         invalidate(node, relations);
+    }
+
+    /** ASCII 大文字小文字を無視して {@code "inherit"} を含むかを割り当て無しで判定する。 */
+    public static boolean containsInheritIgnoreCase(String value) {
+        if (value == null || value.length() < 7) return false;
+        int limit = value.length() - 7;
+        for (int i = 0; i <= limit; i++) {
+            char c = value.charAt(i);
+            if ((c == 'i' || c == 'I')
+                    && asciiLower(value.charAt(i + 1)) == 'n'
+                    && asciiLower(value.charAt(i + 2)) == 'h'
+                    && asciiLower(value.charAt(i + 3)) == 'e'
+                    && asciiLower(value.charAt(i + 4)) == 'r'
+                    && asciiLower(value.charAt(i + 5)) == 'i'
+                    && asciiLower(value.charAt(i + 6)) == 't') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static char asciiLower(char c) {
+        return (c >= 'A' && c <= 'Z') ? (char) (c + 32) : c;
     }
 
     /**

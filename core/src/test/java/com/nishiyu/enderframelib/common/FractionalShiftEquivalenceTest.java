@@ -162,4 +162,92 @@ class FractionalShiftEquivalenceTest {
             assertSameGeometry(open(ids).ui().layoutRoot(), v.ui().layoutRoot(), "step " + step);
         }
     }
+
+    @Test
+    void emMarginsAndHorizontalFlexGridShiftsMatchFullLayout() {
+        String html = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <style>
+                  html { font-size: 13px; }
+                  body { margin: 0.37em 0.63rem; font-size: 13px; }
+                  #wrap { width: 100%; display: flex; flex-direction: column; align-items: center; }
+                  #banner { width: 200px; line-height: 1.37; padding: 0.31em 0.47em; margin: 0.23em 0; }
+                  #flexBox {
+                    display: flex; flex-direction: row; gap: 0.43em;
+                    padding: 0.37em 0.61rem; margin: 0.29em 0.53rem;
+                    width: 320px;
+                  }
+                  #gridBox {
+                    display: grid; grid-template-columns: 140px 140px; gap: 0.39em;
+                    padding: 0.41em 0.57em; margin: 0.27em 0.49rem;
+                    width: 320px;
+                  }
+                  .tile { width: 120px; padding: 0.27em 0.51em; margin: 0.19em 0.33rem; line-height: 1.37; }
+                </style>
+                </head>
+                <body>
+                  <div id="wrap">
+                    <div id="banner">Banner line</div>
+                    <div id="flexBox">
+                      Direct text
+                      <div class="tile">F1 <span>s1</span></div>
+                      <div class="tile">F2 <span>s2</span></div>
+                    </div>
+                    <div id="gridBox">
+                      Grid text
+                      <div class="tile">G1</div>
+                      <div class="tile">G2</div>
+                      <div class="tile">G3</div>
+                    </div>
+                  </div>
+                </body>
+                </html>""";
+
+        int[] widths = {640, 639, 637, 634, 641, 640};
+        StandaloneView v = new StandaloneView(html, widths[0], 480, FontResolver.FALLBACK);
+        v.ui().flushInvalidation();
+
+        // em / rem padding・margin が LayoutUnit 格子に乗っていることを検証
+        List<LayoutBox> stack = new ArrayList<>(List.of(v.ui().layoutRoot()));
+        int checked = 0;
+        while (!stack.isEmpty()) {
+            LayoutBox b = stack.remove(stack.size() - 1);
+            assertTrue(LayoutUnit.isOnGrid(b.pT), "pT=" + b.pT);
+            assertTrue(LayoutUnit.isOnGrid(b.pL), "pL=" + b.pL);
+            assertTrue(LayoutUnit.isOnGrid(b.mT), "mT=" + b.mT);
+            assertTrue(LayoutUnit.isOnGrid(b.mL), "mL=" + b.mL);
+            assertTrue(LayoutUnit.isOnGrid(b.rowGap), "rowGap=" + b.rowGap);
+            assertTrue(LayoutUnit.isOnGrid(b.columnGap), "columnGap=" + b.columnGap);
+            checked++;
+            stack.addAll(b.children);
+        }
+        assertTrue(checked >= 6);
+
+        // 水平・垂直両方での FLEX / GRID 部分木平行移動（直下 #text 節を含む）と全体再計算とのビット一致を検証
+        long shiftedBefore = LayoutBox.layoutsShifted();
+        HtmlNode banner = v.root().getNodeById("banner");
+        for (int i = 1; i < widths.length; i++) {
+            if (i == 2) {
+                banner.setTextContent("Banner updated wrapping line two");
+            } else if (i == 4) {
+                banner.setTextContent("Short");
+            }
+            v.ui().recomputeLayout(widths[i], 480);
+
+            StandaloneView fresh = new StandaloneView(html, widths[i], 480, FontResolver.FALLBACK);
+            fresh.ui().flushInvalidation();
+            if (i >= 4) {
+                fresh.root().getNodeById("banner").setTextContent("Short");
+                fresh.ui().flushInvalidation();
+            } else if (i >= 2) {
+                fresh.root().getNodeById("banner").setTextContent("Banner updated wrapping line two");
+                fresh.ui().flushInvalidation();
+            }
+            assertSameGeometry(fresh.ui().layoutRoot(), v.ui().layoutRoot(), "width=" + widths[i]);
+        }
+        assertTrue(LayoutBox.layoutsShifted() > shiftedBefore,
+                "FLEX / GRID コンテナを含む部分木平行移動が行われたこと");
+    }
 }

@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.kernel.style;
 
+import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
+
 /**
  * CSS の宣言値を 64-bit の {@code long} 1 個で表す（文字列を持ち回らない）。
  *
@@ -51,8 +53,8 @@ public final class PackedCssValue {
         float f = floatPayload(v);
         return switch (unit(v)) {
             case U_PERCENT -> f * percentBase / 100f;
-            case U_EM -> f * fontSize;
-            case U_REM -> f * rootFontSize;
+            case U_EM -> LayoutUnit.snap(f * fontSize);
+            case U_REM -> LayoutUnit.snap(f * rootFontSize);
             case U_VW -> f * vw / 100f;
             case U_VH -> f * vh / 100f;
             case U_VMIN -> Math.min(vw, vh) * f / 100f;

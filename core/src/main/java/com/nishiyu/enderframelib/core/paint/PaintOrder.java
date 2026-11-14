@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 描画の順序（CSS 2.1 付録 E のスタッキングコンテキスト）を決め、箱ごとの描画を呼ぶ。スクロールバーと、
  * 箱が中身に掛けるクリップもここで持つ。
  */
-final class PaintOrder {
+public final class PaintOrder {
     /** 箱 1 つ自身（背景・枠・部品）を描画項目にする。 */
     @FunctionalInterface
     interface BoxPainter {
@@ -98,11 +98,16 @@ final class PaintOrder {
     private final java.util.IdentityHashMap<LayoutBox, ScrollContent> scrollContentOf = new java.util.IdentityHashMap<>();
     private final List<ScrollContent> scrollContents = new ArrayList<>();
 
+    @FunctionalInterface
+    interface SubtreePruner {
+        boolean prune(LayoutBox box, boolean ancestorHasMoving);
+    }
+
     /**
      * 子の部分木ごと省ける（画面外で、中の箱も全て省かれる）か判定して、省いたら true を返す（描画側が持ち主の記録を済ませる）。
      * 省いた子は分類しない（箱ごとにタスクを作って後で捨てるより安い）。null なら省かない。
      */
-    Predicate<LayoutBox> subtreePruner;
+    SubtreePruner subtreePruner;
 
     // ==========================================
     // 部分木の保持（チャンク）
@@ -240,7 +245,7 @@ final class PaintOrder {
         if (b.display.isNone()) return true;
         StyleFacts f = factsOf(b.style);
         if (f.displayNone()) return true;
-        if (f.scrollbars() || f.hasAnimation() || !"visible".equals(f.overflowX()) || !"visible".equals(f.overflowY())) return false;
+        if (f.scrollbars() || f.hasMovingProps() || !"visible".equals(f.overflowX()) || !"visible".equals(f.overflowY())) return false;
         if (createsStackingContext(b) || isPositioned(b) || BlockLayoutEngine.isFloating(b) || isAtomicInline(b)) return false;
         return !b.node.attrs.containsKey("data-pan-zoom");
     }
@@ -249,7 +254,8 @@ final class PaintOrder {
      * 部分木を保持した項目で出す（できれば true）。保持が使えなければ、保持できる部分木なら記録しながら通常の分類をして true、
      * 保持できない部分木は false（呼び出し側が通常の分類をする）。
      */
-    private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
+    private boolean tryChunk(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
+                             boolean ancestorMoving) {
         Chunk c = chunks.get(box);
         if (c != null && c.complete() && replayAllowed) {
             scanCount = 0;
@@ -260,13 +266,13 @@ final class PaintOrder {
                     && c.clip == clip && java.util.Objects.equals(c.parentId, parentId)
                     && scanCount == c.boxCount && scanInteractive == c.interactiveCount
                     && Math.max(scanMaxStamp, box.pathPaintStamp(renderSerial)) <= c.epoch) {
-                if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId);
+                if (DisplayListBuilder.verifyStamps) verifyChunk(c, box, clip, parentId, ancestorMoving);
                 c.generation = renderGeneration;
                 for (BoxSlice slice : c.blockSlices) {
-                    local.blocks.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items)), false, 0, null));
+                    local.blocks.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
                 }
                 for (BoxSlice slice : c.inlineSlices) {
-                    local.inlines.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items)), false, 0, null));
+                    local.inlines.add(new PaintNode(new RenderTask(slice.box, elements -> DisplayListBuilder.appendItems(elements, slice.items), ancestorMoving), false, 0, null));
                 }
                 STAT_CHUNK_REPLAYED.increment();
                 return true;
@@ -281,7 +287,7 @@ final class PaintOrder {
         chunks.put(box, fresh);
         recording = fresh;
         try {
-            classifyPlain(box, clip, parentId, sc, local);
+            classifyPlain(box, clip, parentId, sc, local, ancestorMoving);
         } finally {
             recording = null;
         }
@@ -290,13 +296,13 @@ final class PaintOrder {
     }
 
     /** 検証: 保持した項目が、通常の分類で作り直した項目と（層ごとに）同じであること。 */
-    private void verifyChunk(Chunk c, LayoutBox box, ClipRect clip, String parentId) {
+    private void verifyChunk(Chunk c, LayoutBox box, ClipRect clip, String parentId, boolean ancestorMoving) {
         boolean was = chunksOn;
         chunksOn = false;
         PaintLayers tl = new PaintLayers();
         List<DisplayItem> blocks = new ArrayList<>(), inlines = new ArrayList<>();
         try {
-            classifyPlain(box, clip, parentId, tl, tl);
+            classifyPlain(box, clip, parentId, tl, tl, ancestorMoving);
         } finally {
             chunksOn = was;
         }
@@ -463,13 +469,14 @@ final class PaintOrder {
         scrollContents.clear();
         contentClips.clear();
         blendDescendants.clear();
+        boolean rootMoving = root.style != null && factsOf(root.style).hasMovingProps();
         PaintNode top;
         if ("root".equals(root.node.tag)) {
             top = new PaintNode(null, true, 0);
-            collectChildren(root, null, null, top.layers, top.layers);
+            collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         } else {
-            top = new PaintNode(selfTask(root, null, null), true, 0);
-            collectChildren(root, null, null, top.layers, top.layers);
+            top = new PaintNode(selfTask(root, null, null, rootMoving), true, 0);
+            collectChildren(root, null, null, top.layers, top.layers, rootMoving);
         }
         List<RenderTask> out = new ArrayList<>();
         emit(top, out);
@@ -482,7 +489,8 @@ final class PaintOrder {
      * @param sc    いちばん近い本物のスタッキングコンテキストの層（負・0・正の z-index と位置指定要素が入る）
      * @param local 今いる層（float・位置指定要素・不可分なインラインは自分の中身だけを持つ疑似コンテキストを作る）
      */
-    void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
+    void collectChildren(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
+                         boolean ancestorOrSelfMoving) {
         String tag = box.node.tag;
         if ("select".equalsIgnoreCase(tag) || "textarea".equalsIgnoreCase(tag) || "input".equalsIgnoreCase(tag)) return;
 
@@ -500,10 +508,10 @@ final class PaintOrder {
             scrollContents.add(content);
             childParent = content.contentId;
         }
-        Predicate<LayoutBox> prune = subtreePruner;
+        SubtreePruner prune = subtreePruner;
         for (LayoutBox child : box.children) {
-            if (prune != null && prune.test(child)) continue;
-            classify(child, clipForChild(child, childClip), childParent, sc, local);
+            if (prune != null && prune.prune(child, ancestorOrSelfMoving)) continue;
+            classify(child, clipForChild(child, childClip), childParent, sc, local, ancestorOrSelfMoving);
         }
 
         boolean scrollbars = factsOf(box.style).scrollbars();
@@ -532,39 +540,42 @@ final class PaintOrder {
      * 不可分なインラインと flex / grid アイテム（層 7）は「コンテキストを作ったかのように」中身ごと描くが、
      * 中の位置指定要素と本物のコンテキストは親のコンテキストに属する。
      */
-    void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
+    void classify(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
+                  boolean ancestorMoving) {
         if (box.display.isNone() || factsOf(box.style).displayNone()) return;
         if ("option".equalsIgnoreCase(box.node.tag)) return;
+        boolean selfOrAncestorMoving = ancestorMoving || (box.style != null && factsOf(box.style).hasMovingProps());
         // 記録の途中（部分木の中）では、中の箱を別に保持しない
-        if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local)) return;
-        classifyPlain(box, clip, parentId, sc, local);
+        if (chunksOn && recording == null && tryChunk(box, clip, parentId, sc, local, selfOrAncestorMoving)) return;
+        classifyPlain(box, clip, parentId, sc, local, selfOrAncestorMoving);
     }
 
     /** {@link #classify} の本体（部分木の保持を試したあとの、通常の分類）。 */
-    private void classifyPlain(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local) {
-        RenderTask self = selfTask(box, clip, parentId);
+    private void classifyPlain(LayoutBox box, ClipRect clip, String parentId, PaintLayers sc, PaintLayers local,
+                               boolean selfOrAncestorMoving) {
+        RenderTask self = selfTask(box, clip, parentId, selfOrAncestorMoving);
         if (createsStackingContext(box)) {
             int z = isZIndexAuto(box) ? 0 : box.zIndex;
             PaintNode node = PaintNode.context(self, z, self != null ? layerSpecFor(box) : null, box);
             (z < 0 ? sc.negative : z > 0 ? sc.positive : sc.positioned).add(node);
-            collectChildren(box, clip, parentId, node.layers, node.layers);
+            collectChildren(box, clip, parentId, node.layers, node.layers, selfOrAncestorMoving);
         } else if (isPositioned(box)) {
             // 先に入れてから中身を集める（中の位置指定要素は木の順で後ろに並ぶ）
             PaintNode node = new PaintNode(self, false, 0);
             sc.positioned.add(node);
-            collectChildren(box, clip, parentId, sc, node.layers);
+            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (BlockLayoutEngine.isFloating(box)) {
             PaintNode node = new PaintNode(self, false, 0);
             local.floats.add(node);
-            collectChildren(box, clip, parentId, sc, node.layers);
+            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else if (isAtomicInline(box)) {
             PaintNode node = new PaintNode(self, false, 0);
             local.inlines.add(node);
-            collectChildren(box, clip, parentId, sc, node.layers);
+            collectChildren(box, clip, parentId, sc, node.layers, selfOrAncestorMoving);
         } else {
             PaintNode leaf = new PaintNode(self, false, 0, null);
             (box.display.isInlineLevel() ? local.inlines : local.blocks).add(leaf);
-            collectChildren(box, clip, parentId, sc, local);
+            collectChildren(box, clip, parentId, sc, local, selfOrAncestorMoving);
         }
     }
 
@@ -594,10 +605,10 @@ final class PaintOrder {
         if (node.layerSpec != null) out.add(RenderTask.LAYER_END);
     }
 
-    RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId) {
+    RenderTask selfTask(LayoutBox box, ClipRect clip, String parentId, boolean hasMovingAncestor) {
         if (box.w <= 0 || box.h <= 0 || box.isAnonymous) return null;
         Chunk rec = recording;
-        if (rec == null) return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId));
+        if (rec == null) return new RenderTask(box, elements -> painter.draw(elements, box, clip, parentId), hasMovingAncestor);
         // 部分木を記録している間は、描いた項目を（入る層ごとに）保持へ写す。保持できる部分木の箱は全て通常のブロック／インラインの葉
         boolean inline = box.display.isInlineLevel();
         rec.created++;
@@ -614,7 +625,7 @@ final class PaintOrder {
             (inline ? rec.inlineSlices : rec.blockSlices).add(new BoxSlice(box, sliceItems));
             if (memoKeeper != null) memoKeeper.owned(box, rec);
             rec.executed++;
-        });
+        }, hasMovingAncestor);
     }
 
     static boolean isPositioned(LayoutBox box) {
@@ -637,6 +648,23 @@ final class PaintOrder {
     /** 診断: {@link StyleFacts} を新しく算出した回数（キャッシュに当たらなかった回数）。 */
     static final java.util.concurrent.atomic.LongAdder STAT_FACTS_COMPUTED = new java.util.concurrent.atomic.LongAdder();
 
+    public static boolean hasMovingProps(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        if (style == null) return false;
+        if (style.derivedFacts() instanceof StyleFacts cached) return cached.hasMovingProps();
+        return style.get(CssPropertyIndex.ANIMATION) != null
+                || style.get(CssPropertyIndex.ANIMATION_NAME) != null
+                || hasTransformOrFilterProps(style);
+    }
+
+    private static boolean hasTransformOrFilterProps(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
+        return !isNone(style.get(CssPropertyIndex.TRANSFORM))
+                || !isNone(style.get(CssPropertyIndex.TRANSLATE))
+                || !isNone(style.get(CssPropertyIndex.ROTATE))
+                || !isNone(style.get(CssPropertyIndex.SCALE))
+                || !isNone(style.get(CssPropertyIndex.FILTER))
+                || !isNone(style.get(CssPropertyIndex.PERSPECTIVE));
+    }
+
     static StyleFacts factsOf(com.nishiyu.enderframelib.core.css.ComputedStyle style) {
         if (style.derivedFacts() instanceof StyleFacts cached) return cached;
         STAT_FACTS_COMPUTED.increment();
@@ -649,13 +677,7 @@ final class PaintOrder {
                 || !"normal".equals(style.keyword(CssPropertyIndex.MIX_BLEND_MODE, "normal"));
         String[] overflow = overflowPair(style);
         boolean hasAnimation = style.get(CssPropertyIndex.ANIMATION) != null || style.get(CssPropertyIndex.ANIMATION_NAME) != null;
-        boolean hasMovingProps = hasAnimation
-                || !isNone(style.get(CssPropertyIndex.TRANSFORM))
-                || !isNone(style.get(CssPropertyIndex.TRANSLATE))
-                || !isNone(style.get(CssPropertyIndex.ROTATE))
-                || !isNone(style.get(CssPropertyIndex.SCALE))
-                || !isNone(style.get(CssPropertyIndex.FILTER))
-                || !isNone(style.get(CssPropertyIndex.PERSPECTIVE));
+        boolean hasMovingProps = hasAnimation || hasTransformOrFilterProps(style);
         StyleFacts facts = new StyleFacts("none".equals(style.getOrDefault(CssPropertyIndex.DISPLAY, "block")), zAuto,
                 style.number(CssPropertyIndex.OPACITY, 1f), stacking, mask, overflow[0], overflow[1],
                 isScrollbarOverflow(overflow[0]) || isScrollbarOverflow(overflow[1]),
@@ -768,7 +790,7 @@ final class PaintOrder {
     }
 
     static boolean isNone(String value) {
-        return value == null || value.isBlank() || "none".equalsIgnoreCase(value.trim());
+        return value == null || "none".equals(value) || value.isBlank() || "none".equalsIgnoreCase(value.trim());
     }
 
     /** スタッキングコンテキスト（または疑似コンテキスト）の中の層。番号は付録 E の手順。 */
@@ -966,16 +988,21 @@ final class PaintOrder {
      * {@code box} は箱自身を描くタスクだけが持つ（スクロールバーは null）。{@code layerStart} はレイヤーの開始の印
      * （次に出る錨から {@link #LAYER_END} までがレイヤーの中身）、{@code layerEnd} は終了の印。印は項目を出さない。
      */
-    record RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, LayerSpec layerStart, boolean layerEnd, LayoutBox layerBox) {
-        static final RenderTask LAYER_END = new RenderTask(null, elements -> {}, null, true, null);
+    record RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, LayerSpec layerStart, boolean layerEnd,
+                      LayoutBox layerBox, boolean hasMovingAncestor) {
+        static final RenderTask LAYER_END = new RenderTask(null, elements -> {}, null, true, null, false);
 
         RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction) {
-            this(box, drawAction, null, false, null);
+            this(box, drawAction, null, false, null, false);
+        }
+
+        RenderTask(LayoutBox box, Consumer<List<DisplayItem>> drawAction, boolean hasMovingAncestor) {
+            this(box, drawAction, null, false, null, hasMovingAncestor);
         }
 
         /** {@code layerBox} は、レイヤーの終わりにマスクの項目を足すときの持ち主の箱。 */
         static RenderTask layerStart(LayerSpec spec, LayoutBox layerBox) {
-            return new RenderTask(null, elements -> {}, spec, false, layerBox);
+            return new RenderTask(null, elements -> {}, spec, false, layerBox, false);
         }
     }
 }
