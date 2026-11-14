@@ -645,6 +645,12 @@ public class LayoutBox {
 
     /** エンジン固有の状態（グリッドの行列など）。 */
     public LayoutEngineState engineState;
+
+    /**
+     * サブグリッド（{@code grid-template-*: subgrid}）の軸を持つ。トラックの寸法を親グリッドから受け取るため、
+     * 制約が同じでも結果が変わる。測定・仮の測定の再利用を止める。{@link GridLayoutEngine} が測定のたびに立て直す。
+     */
+    boolean subgridDependent;
     public SizingMode sizingMode = SizingMode.SHRINK_TO_FIT;
 
     public float scrollWidth = 0;
@@ -1246,7 +1252,7 @@ public class LayoutBox {
     boolean measureTentatively(ConstraintSpace space, LayoutContext ctx) {
         restoreTentativeStash();
         Tentative[] all = tentatives;
-        if (!tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
+        if (subgridDependent || !tentativeReuse || all == null || !ctx.reuseMeasurements() || parent == null) return false;
         Tentative t = null;
         for (Tentative candidate : all) {
             if (candidate != null && candidate.kind() == TentativeKind.TENTATIVE && candidate.matches(space)) {
@@ -1527,7 +1533,7 @@ public class LayoutBox {
      * {@link BoxMeasurer#measure} を省いて自然な出力を戻した上で自分の幅だけを新しい使える幅に更新する。
      */
     private boolean fillFitReuse(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (!restoreOk || !measuredFillFitReusable || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
+        if (subgridDependent || !restoreOk || !measuredFillFitReusable || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
             return false;
         }
         if (!measurementValid || layoutChanged || subtreeChanged) return false;
@@ -1658,7 +1664,8 @@ public class LayoutBox {
     }
 
     private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        return measurementValid
+        return !subgridDependent
+                && measurementValid
                 && !layoutChanged
                 && (ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
@@ -1832,7 +1839,7 @@ public class LayoutBox {
      * 同じ制約の記録があり部分木を持たない葉なら、再測定を省いて確定結果を戻す。
      */
     private boolean reuseDefiniteTentative(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
-        if (!tentativeReuse || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
+        if (subgridDependent || !tentativeReuse || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
             return false;
         }
         if (!measurementValid || layoutChanged || subtreeChanged || !isDefiniteCacheableLeaf()) return false;

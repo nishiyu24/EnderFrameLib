@@ -727,8 +727,8 @@ Layout differences from a real browser are measured, case by case, in
   basis instead of behaving as `auto`.
 - **Grid in full.** Track sizing is a simplified version of the spec's: an
   item spanning several content-sized tracks spreads its size evenly over
-  them. No subgrid, no implicit tracks before the explicit grid, and no
-  `baseline` alignment.
+  them. Subgrid is supported, but there are no implicit tracks before the
+  explicit grid and no `baseline` alignment.
 - **Compositing on in-world surfaces.** On screen-space surfaces (GUI screens
   and HUDs), stacking contexts with `opacity < 1`, `filter`, `backdrop-filter`,
   `mix-blend-mode`, `isolation`, `clip-path`, `mask-image`, or a rotated

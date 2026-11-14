@@ -47,8 +47,13 @@ import com.nishiyu.enderframelib.core.css.model.BorderStyle;
  * <p>{@code repeat(auto-fit, ...)} は、アイテムが 1 つも入らなかった繰り返しのトラックを潰す
  * （トラックと、その隣の gap を 1 本ぶん取り除いたのと同じ寸法になる）。
  *
+ * <p>サブグリッド（{@code grid-template-columns / -rows: subgrid}）: 親グリッドの項目がグリッドコンテナで軸に {@code subgrid} を
+ * 指定すると、その軸のトラックと線の名前を親と共有する。子の寄与は親のトラックへ回り（端の子にはサブグリッドの
+ * 余白・枠線・padding を足す）、親が寸法を決めた後に子は親の寸法（gap の差は隣のトラックが半分ずつ）で配置される。
+ * 親がグリッドでなければ none と同じ。測定が親の寸法に依るので {@link LayoutBox#subgridDependent} で再利用を止める。
+ *
  * LIMITATION(制約): トラックの寸法は CSS Grid §11 の簡略版で、複数のトラックにまたがるアイテムの
- * 寸法は、またがる内容依存のトラックに等分する。サブグリッド・明示的なグリッドより前の暗黙のトラック
+ * 寸法は、またがる内容依存のトラックに等分する。サブグリッドの軸の {@code grid-template-areas}・明示的なグリッドより前の暗黙のトラック
  * （負の方向への拡張）・{@code baseline} 揃えは無い（{@code grid-template} / {@code grid} ショートハンドは
  * 読む側ではなく展開側 {@code ShorthandExpanders} が担う）。README の "Not supported" に対応。
  */
@@ -80,30 +85,82 @@ public class GridLayoutEngine extends LayoutEngine {
                 innerHForPercent, 0, box.style, rootW, rootH).tracks;
         areas.addLineNames(gs.columns, gs.rows);
 
+        // サブグリッド: 親グリッドの線・トラックを共有する軸。トラックの数は親でまたがる数に等しい
+        GridState pgs = null;
+        GridItem pItem = null;
+        if (box.parent != null && box.parent.engineState instanceof GridState p
+                && (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS))
+                || isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS)))) {
+            for (GridItem it : p.items) {
+                if (it.box == box) {
+                    pItem = it;
+                    pgs = p;
+                    break;
+                }
+            }
+        }
+        gs.parentState = pgs;
+        gs.parentItem = pItem;
+        // グリッドの項目でない（または親がグリッドでない）サブグリッドは none と同じ
+        if (pItem == null || !pItem.colSub) {
+            if (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS))) gs.columns = new TrackList();
+        }
+        if (pItem == null || !pItem.rowSub) {
+            if (isSubgridValue(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS))) gs.rows = new TrackList();
+        }
+        gs.colSub = pItem != null && pItem.colSub;
+        gs.rowSub = pItem != null && pItem.rowSub;
+        box.subgridDependent = gs.colSub || gs.rowSub;
+        if (gs.colSub) {
+            gs.columns = subgridTracks(box.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS), pgs.columns, pItem.colStart, pItem.colSpan);
+            if (isNormalGap(box.style.get(CssPropertyIndex.COLUMN_GAP))) box.columnGap = box.parent.columnGap;
+        }
+        if (gs.rowSub) {
+            gs.rows = subgridTracks(box.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS), pgs.rows, pItem.rowStart, pItem.rowSpan);
+            if (isNormalGap(box.style.get(CssPropertyIndex.ROW_GAP))) box.rowGap = box.parent.rowGap;
+        }
+
         placeItems(box, gs, areas);
         collapseEmptyAutoFitTracks(gs, true);
         collapseEmptyAutoFitTracks(gs, false);
 
         // 列の寸法。内容依存のトラックがあれば、アイテムの最小・最大の寸法を先に測る
         List<TrackDef> colDefs = gs.trackDefs(true);
+        boolean colsFromParent = gs.colSub && pgs.colsFinal && pItem.colStart + pItem.colSpan <= pgs.colSizes.length;
+        // サブグリッドの子の寄与は親のトラックへ回すので、サブグリッドの列を持つ項目は先に（仮の幅で）測って寄与を得る
         for (GridItem item : gs.items) {
-            if (spansIntrinsic(colDefs, item.colStart, item.colSpan)) {
+            if (item.colSub) {
+                item.box.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT), ctx);
+            } else if (!colsFromParent && spansIntrinsic(colDefs, item.colStart, item.colSpan)) {
                 // 寄与の測定は寸法を読むだけで、直後の measureInArea が必ず測り直す。中身が同じなら前回の産物で済ませる
                 ConstraintSpace contribution = new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, CONTRIBUTION_CONTEXT);
                 if (!item.box.measureTentatively(contribution, ctx)) item.box.measure(contribution, ctx);
                 item.maxContribution = item.box.w + item.box.mL + item.box.mR;
                 item.minContribution = minContentContribution(item.box, ctx);
+                // 行の測定が同じ欄を上書きするので、サブグリッドの親が読む列の寄与は別に残す
+                item.colMin = item.minContribution;
+                item.colMax = item.maxContribution;
             }
         }
-        gs.colSizes = sizeTracks(colDefs, gs.items, true, definiteWidth ? innerW : Float.NaN, box.columnGap,
-                contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
+        gs.colEffective = effectiveItems(gs, true);
+        if (colsFromParent) {
+            gs.colSizes = subgridSizes(pgs.colSizes, pItem.colStart, gs.colCount, box.parent.columnGap, box.columnGap);
+            gs.colEdgeStart = box.mL + box.bL + box.pL;
+            gs.colEdgeEnd = box.mR + box.bR + box.pR;
+            gs.colsFinal = true;
+        } else {
+            gs.colSizes = sizeTracks(colDefs, gs.colEffective, true, definiteWidth ? innerW : Float.NaN, box.columnGap,
+                    contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
+            gs.colsFinal = !gs.colSub;
+        }
 
         for (GridItem item : gs.items) {
             // グリッドの高さが指定で決まっていればそれを、決まっていなければ auto として（NaN）% の高さを測る
             float base = isPercentage(item.box.style.get(CssPropertyIndex.HEIGHT)) ? innerHForPercent : parentH;
             measureInArea(box, gs, item, base, ctx);
         }
-        return sum(gs.colSizes) + box.columnGap * Math.max(0, gs.colSizes.length - 1);
+        return Math.max(0, sum(gs.colSizes) + box.columnGap * Math.max(0, gs.colSizes.length - 1)
+                - gs.colEdgeStart - gs.colEdgeEnd);
     }
 
     /** 行の寸法を解き、内容の高さを返す。 */
@@ -112,7 +169,8 @@ public class GridLayoutEngine extends LayoutEngine {
         if (!(box.engineState instanceof GridState gs)) return 0;
         float innerH = definiteHeight(box, space.percentageBlockSize(), ctx);
         sizeRows(box, gs, innerH, ctx);
-        return sum(gs.rowSizes) + box.rowGap * Math.max(0, gs.rowSizes.length - 1);
+        return Math.max(0, sum(gs.rowSizes) + box.rowGap * Math.max(0, gs.rowSizes.length - 1)
+                - gs.rowEdgeStart - gs.rowEdgeEnd);
     }
 
     @Override
@@ -152,11 +210,135 @@ public class GridLayoutEngine extends LayoutEngine {
 
     private void sizeRows(LayoutBox box, GridState gs, float innerH, LayoutContext ctx) {
         for (GridItem item : gs.items) {
+            if (item.rowSub) continue;
             item.maxContribution = item.box.h + item.box.mT + item.box.mB;
             item.minContribution = rowMinContribution(item.box, ctx) + item.box.mT + item.box.mB;
         }
-        gs.rowSizes = sizeTracks(gs.trackDefs(false), gs.items, false, innerH, box.rowGap,
+        gs.rowEffective = effectiveItems(gs, false);
+        GridState pgs = gs.parentState;
+        GridItem pItem = gs.parentItem;
+        if (gs.rowSub && pgs.rowsFinal && pItem.rowStart + pItem.rowSpan <= pgs.rowSizes.length) {
+            gs.rowSizes = subgridSizes(pgs.rowSizes, pItem.rowStart, gs.rowCount, box.parent.rowGap, box.rowGap);
+            gs.rowEdgeStart = box.mT + box.bT + box.pT;
+            gs.rowEdgeEnd = box.mB + box.bB + box.pB;
+            gs.rowsOwnFinal = true;
+            return;
+        }
+        gs.rowsOwnFinal = false;
+        gs.rowSizes = sizeTracks(gs.trackDefs(false), gs.rowEffective, false, innerH, box.rowGap,
                 contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
+    }
+
+    // ==========================================
+    // サブグリッド（CSS Grid 2 §9）
+    // ==========================================
+
+    /** {@code subgrid} か（{@code subgrid [名前]...} を含む）。 */
+    static boolean isSubgridValue(String value) {
+        if (value == null) return false;
+        String v = value.trim();
+        if (v.length() < 7 || !v.regionMatches(true, 0, "subgrid", 0, 7)) return false;
+        return v.length() == 7 || Character.isWhitespace(v.charAt(7));
+    }
+
+    private static boolean isNormalGap(String value) {
+        return value == null || value.isBlank() || "normal".equalsIgnoreCase(value.trim());
+    }
+
+    /** サブグリッドの軸のトラック。親の {@code span} 本を auto のプレースホルダで表し、線の名前は親から引き継ぎ自身の名前を足す。 */
+    private static TrackList subgridTracks(String value, TrackList parent, int start, int span) {
+        TrackList list = new TrackList();
+        for (int i = 0; i < span; i++) list.addTrack(TrackDef.AUTO);
+        while (list.lineNames.size() <= span) list.lineNames.add(new ArrayList<>());
+        for (int k = 0; k <= span; k++) {
+            if (start + k < parent.lineNames.size()) list.lineNames.get(k).addAll(parent.lineNames.get(start + k));
+        }
+        int line = 0;
+        for (String token : splitTrackList(value.trim().substring(7))) {
+            if (token.startsWith("[") && token.endsWith("]") && line <= span) {
+                for (String n : token.substring(1, token.length() - 1).trim().split("\\s+")) {
+                    if (!n.isEmpty()) list.lineNames.get(line).add(n);
+                }
+                line++;
+            }
+        }
+        return list;
+    }
+
+    /**
+     * 親のトラックの寸法をサブグリッドの寸法へ写す。gap が親と違うぶんは、隣り合うトラックが半分ずつ受け持つ
+     * （合計は親のまたがる幅に一致する）。
+     */
+    private static float[] subgridSizes(float[] parent, int start, int count, float parentGap, float ownGap) {
+        float[] out = new float[count];
+        float half = (parentGap - ownGap) / 2;
+        for (int i = 0; i < count; i++) {
+            int sides = (i > 0 ? 1 : 0) + (i < count - 1 ? 1 : 0);
+            out[i] = Math.max(0, (start + i < parent.length ? parent[start + i] : 0) + half * sides);
+        }
+        return out;
+    }
+
+    /** サブグリッドの線の位置（内容ボックスの左上が原点。端の余白ぶん外へはみ出す）。 */
+    private static float[] subgridOffsets(float[] sizes, float gap, float edgeStart) {
+        int n = sizes.length;
+        float[] offsets = new float[n + 1];
+        float pos = -edgeStart;
+        for (int i = 0; i < n; i++) {
+            offsets[i] = pos;
+            pos += sizes[i] + (i < n - 1 ? gap : 0);
+        }
+        offsets[n] = pos;
+        return offsets;
+    }
+
+    /**
+     * トラックの寸法を決めるアイテム。サブグリッドの軸を持つ項目は自身の寄与を持たず、その子を親のトラックの番号に
+     * 読み替えて（端の子にはサブグリッドの余白・枠線・padding を足して）入れる。無ければ {@code gs.items} をそのまま返す。
+     */
+    private static List<GridItem> effectiveItems(GridState gs, boolean columns) {
+        boolean any = false;
+        for (GridItem item : gs.items) {
+            if (columns ? item.colSub : item.rowSub) {
+                any = true;
+                break;
+            }
+        }
+        if (!any) return gs.items;
+        List<GridItem> out = new ArrayList<>(gs.items.size() + 8);
+        for (GridItem item : gs.items) {
+            if (!(columns ? item.colSub : item.rowSub)) {
+                out.add(item);
+                continue;
+            }
+            if (!(item.box.engineState instanceof GridState sgs)) continue;
+            LayoutBox s = item.box;
+            float edgeStart = columns ? s.mL + s.bL + s.pL : s.mT + s.bT + s.pT;
+            float edgeEnd = columns ? s.mR + s.bR + s.pR : s.mB + s.bB + s.pB;
+            int count = columns ? sgs.colCount : sgs.rowCount;
+            for (GridItem sub : columns ? sgs.colEffective : sgs.rowEffective) {
+                int subStart = columns ? sub.colStart : sub.rowStart;
+                int subSpan = columns ? sub.colSpan : sub.rowSpan;
+                GridItem proxy = new GridItem(sub.box);
+                int start = (columns ? item.colStart : item.rowStart) + subStart;
+                if (columns) {
+                    proxy.colStart = start;
+                    proxy.colSpan = subSpan;
+                } else {
+                    proxy.rowStart = start;
+                    proxy.rowSpan = subSpan;
+                }
+                float add = (subStart == 0 ? edgeStart : 0) + (subStart + subSpan >= count ? edgeEnd : 0);
+                proxy.minContribution = (columns ? sub.colMin : sub.minContribution) + add;
+                proxy.maxContribution = (columns ? sub.colMax : sub.maxContribution) + add;
+                if (columns) {
+                    proxy.colMin = proxy.minContribution;
+                    proxy.colMax = proxy.maxContribution;
+                }
+                out.add(proxy);
+            }
+        }
+        return out;
     }
 
     /**
@@ -193,8 +375,8 @@ public class GridLayoutEngine extends LayoutEngine {
         for (LayoutBox c : box.children) if (c.participatesInFlow()) children.add(c);
         children.sort(Comparator.comparingInt(c -> (int) c.style.number(CssPropertyIndex.ORDER, 0f)));
 
-        int explicitCols = Math.max(gs.columns.tracks.size(), areas.columns);
-        int explicitRows = Math.max(gs.rows.tracks.size(), areas.rows.size());
+        int explicitCols = gs.colSub ? gs.columns.tracks.size() : Math.max(gs.columns.tracks.size(), areas.columns);
+        int explicitRows = gs.rowSub ? gs.rows.tracks.size() : Math.max(gs.rows.tracks.size(), areas.rows.size());
         for (LayoutBox child : children) {
             GridItem item = new GridItem(child);
             Placement p = Placement.of(child.style);
@@ -204,6 +386,9 @@ public class GridLayoutEngine extends LayoutEngine {
             item.colSpan = col[1];
             item.rowStart = row[0];
             item.rowSpan = row[1];
+            boolean grid = child.display != null && child.display.inner() == LayoutBox.Display.Inner.GRID;
+            item.colSub = grid && isSubgridValue(child.style.get(CssPropertyIndex.GRID_TEMPLATE_COLUMNS));
+            item.rowSub = grid && isSubgridValue(child.style.get(CssPropertyIndex.GRID_TEMPLATE_ROWS));
             gs.items.add(item);
         }
 
@@ -264,6 +449,17 @@ public class GridLayoutEngine extends LayoutEngine {
             cursorPos += span;
         }
 
+        // サブグリッドの軸には暗黙のトラックが無い。はみ出した項目は最後のトラックへ寄せる
+        for (GridItem item : gs.items) {
+            if (gs.colSub && explicitCols > 0) {
+                item.colSpan = Math.min(item.colSpan, explicitCols);
+                item.colStart = Math.min(item.colStart, explicitCols - item.colSpan);
+            }
+            if (gs.rowSub && explicitRows > 0) {
+                item.rowSpan = Math.min(item.rowSpan, explicitRows);
+                item.rowStart = Math.min(item.rowStart, explicitRows - item.rowSpan);
+            }
+        }
         int cols = explicitCols, rows = explicitRows;
         for (GridItem item : gs.items) {
             cols = Math.max(cols, item.colStart + item.colSpan);
@@ -552,6 +748,11 @@ public class GridLayoutEngine extends LayoutEngine {
     /** アイテムを列の幅で測る。stretch なら領域の幅いっぱい、それ以外は内容の幅に縮む。 */
     private void measureInArea(LayoutBox box, GridState gs, GridItem item, float parentH, LayoutContext ctx) {
         float areaW = span(gs.colSizes, item.colStart, item.colSpan, box.columnGap);
+        if (gs.colSub && gs.colsFinal) {
+            if (item.colStart == 0) areaW -= gs.colEdgeStart;
+            if (item.colStart + item.colSpan >= gs.colSizes.length) areaW -= gs.colEdgeEnd;
+            areaW = Math.max(0, areaW);
+        }
         CssKeywords.Alignment justify = selfAlignment(item.box, CssPropertyIndex.JUSTIFY_SELF, box.style, CssPropertyIndex.JUSTIFY_ITEMS);
         boolean stretch = justify == CssKeywords.Alignment.STRETCH && !hasAutoMargin(item.box, true);
         FormattingContext childCtx = FormattingContext.of(FormattingContext.Display.GRID,
@@ -560,7 +761,7 @@ public class GridLayoutEngine extends LayoutEngine {
         // 行が決まった後に alignItems が領域の高さで測り直す
         // 行を決めたあとの alignItems が、stretch・% の高さの測り直しをするか、settleTentative で本当に測る
         ConstraintSpace inArea = new ConstraintSpace(areaW, parentH, childCtx);
-        if (!item.box.measureTentatively(inArea, ctx)) item.box.measure(inArea, ctx);
+        if (item.colSub || item.rowSub || !item.box.measureTentatively(inArea, ctx)) item.box.measure(inArea, ctx);
         item.percentBase = parentH;
     }
 
@@ -568,12 +769,16 @@ public class GridLayoutEngine extends LayoutEngine {
     private void alignItems(LayoutBox box, GridState gs, float parentH, LayoutContext ctx) {
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
         float innerH = Math.max(0, box.h - box.verticalDecoration());
-        float[] colOffsets = trackOffsets(gs.colSizes, box.columnGap, innerW,
-                contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
-        float[] rowOffsets = trackOffsets(gs.rowSizes, box.rowGap, innerH,
-                contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
+        boolean colEdges = gs.colSub && gs.colsFinal;
+        boolean rowEdges = gs.rowSub && gs.rowsOwnFinal;
+        float[] colOffsets = colEdges ? subgridOffsets(gs.colSizes, box.columnGap, gs.colEdgeStart)
+                : trackOffsets(gs.colSizes, box.columnGap, innerW, contentDistribution(box.style, CssPropertyIndex.JUSTIFY_CONTENT));
+        float[] rowOffsets = rowEdges ? subgridOffsets(gs.rowSizes, box.rowGap, gs.rowEdgeStart)
+                : trackOffsets(gs.rowSizes, box.rowGap, innerH, contentDistribution(box.style, CssPropertyIndex.ALIGN_CONTENT));
         gs.colOffsets = colOffsets;
         gs.rowOffsets = rowOffsets;
+        // 行が確定した。サブグリッドの行を持つ子は、これ以降の測定で親の行の寸法を使う
+        gs.rowsFinal = !gs.rowSub || gs.rowsOwnFinal;
 
         for (GridItem item : gs.items) {
             LayoutBox b = item.box;
@@ -581,9 +786,30 @@ public class GridLayoutEngine extends LayoutEngine {
             float areaY = rowOffsets[item.rowStart];
             float areaW = colOffsets[item.colStart + item.colSpan] - areaX - gapAfter(gs.colSizes, item.colStart + item.colSpan, box.columnGap, colOffsets);
             float areaH = rowOffsets[item.rowStart + item.rowSpan] - areaY - gapAfter(gs.rowSizes, item.rowStart + item.rowSpan, box.rowGap, rowOffsets);
+            // サブグリッドの端の項目は、サブグリッドの余白・枠線・padding ぶん内側へ寄る
+            if (colEdges) {
+                if (item.colStart == 0) {
+                    areaX += gs.colEdgeStart;
+                    areaW -= gs.colEdgeStart;
+                }
+                if (item.colStart + item.colSpan >= gs.colSizes.length) areaW -= gs.colEdgeEnd;
+            }
+            if (rowEdges) {
+                if (item.rowStart == 0) {
+                    areaY += gs.rowEdgeStart;
+                    areaH -= gs.rowEdgeStart;
+                }
+                if (item.rowStart + item.rowSpan >= gs.rowSizes.length) areaH -= gs.rowEdgeEnd;
+            }
 
             CssKeywords.Alignment alignSelf = selfAlignment(b, CssPropertyIndex.ALIGN_SELF, box.style, CssPropertyIndex.ALIGN_ITEMS);
-            if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.style, CssPropertyIndex.HEIGHT)) {
+            if (item.rowSub) {
+                // サブグリッドの行は、確定した親の行の寸法で測り直す（行方向は領域いっぱいに伸びる）
+                float target = Math.max(0, areaH - b.mT - b.mB);
+                b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, true, false))
+                        .withFixed(b.w, target), ctx);
+                item.percentBase = areaH;
+            } else if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.style, CssPropertyIndex.HEIGHT)) {
                 float target = areaH - b.mT - b.mB;
                 // 行が内容より低いとき（min-height: 0 やスクロールコンテナ）は縮めて領域に合わせる
                 if (Math.abs(b.h - target) > 0.01f) {
@@ -1068,8 +1294,12 @@ public class GridLayoutEngine extends LayoutEngine {
 
     public static class GridItem {
         public int colStart, colSpan, rowStart, rowSpan;
+        /** この項目はグリッドコンテナで、列 / 行をサブグリッドとして親と共有する。 */
+        boolean colSub, rowSub;
         public final LayoutBox box;
         float minContribution, maxContribution;
+        /** 列の寄与の控え（サブグリッドの親が読む。行の測定で minContribution / maxContribution が上書きされるため）。 */
+        float colMin, colMax;
         /** 最後に測ったときの % の高さの基準（測り直しを省くため。NaN は auto として測った）。 */
         float percentBase = Float.NaN;
         /** 位置（マージンボックスの左上、内容ボックス相対）。 */
@@ -1089,6 +1319,18 @@ public class GridLayoutEngine extends LayoutEngine {
         float[] colOffsets = new float[1], rowOffsets = new float[1];
         public final List<GridItem> items = new ArrayList<>();
         public int colCount = 1, rowCount = 0;
+        /** 親グリッドの状態と、親から見たこの箱（サブグリッドでなければ null）。 */
+        GridState parentState;
+        GridItem parentItem;
+        boolean colSub, rowSub;
+        /** 列 / 行の寸法が確定した（子のサブグリッドが親の寸法を読んでよい）。 */
+        boolean colsFinal, rowsFinal;
+        /** この箱が親の行の寸法を使って確定した。 */
+        boolean rowsOwnFinal;
+        /** サブグリッドの端の項目へ足す、自身の余白・枠線・padding。 */
+        float colEdgeStart, colEdgeEnd, rowEdgeStart, rowEdgeEnd;
+        /** トラックの寸法を決めるアイテム（サブグリッドの子を親のトラックへ読み替えたものを含む）。 */
+        List<GridItem> colEffective = List.of(), rowEffective = List.of();
 
         /** 明示的なトラックの後に、暗黙のトラックを {@code grid-auto-*} の繰り返しで足した並び。 */
         List<TrackDef> trackDefs(boolean cols) {
