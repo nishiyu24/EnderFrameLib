@@ -76,6 +76,7 @@ final class GlRectStream implements AutoCloseable {
         count = 0;
         runStart = 0;
         clipCount = 0;
+        lastClips = null;
         java.util.Arrays.fill(clipTable, -1);
     }
 
@@ -122,6 +123,16 @@ final class GlRectStream implements AutoCloseable {
 
     private boolean decompose(Matrix2D pose) {
         double a = pose.a(), b = pose.b(), c = pose.c(), d = pose.d();
+        if (b == 0 && c == 0 && a > 1e-9 && d > 1e-9) {
+            // 回転・傾き無し（拡大と平行移動だけ。ほとんどの図形）。一般の経路の式（hypot・atan2・cos・sin）に代入した結果と同じ値で、
+            // 図形ごとに 2 回（accepts と open）走る三角関数を省く。sx = |a| = a、rot = atan2(0, a) = 0、sy = (a*d - 0)/a
+            trs[0] = (float) pose.e();
+            trs[1] = (float) pose.f();
+            trs[2] = (float) a;
+            trs[3] = (float) ((a * d) / a);
+            trs[4] = 0f;
+            return true;
+        }
         double sx = Math.hypot(a, b);
         if (!(sx > 1e-9)) return false;
         double sy = (a * d - b * c) / sx;
@@ -229,7 +240,9 @@ final class GlRectStream implements AutoCloseable {
             trees.setEffect(k, PropertyTrees.NONE, opacity, 0, 0, 0f);
             ef = k;
         }
-        trees.setPrimitive(k, opcode, k, PropertyTrees.NONE, ef, x0, y0, x1 - x0, y1 - y0, argb, 0);
+        // クリップ欄は writeClips が個数で書く。ここで NONE を書いてから個数に書き戻すと、毎図形・毎フレーム値が往復して
+        // 「変更」になり（永続バッファが常に汚れる）、同じ内容のフレームでも全図形ぶんの書き込みと範囲の更新が走っていた
+        trees.setPrimitive(k, opcode, k, clips == null ? 0 : clips.length, ef, x0, y0, x1 - x0, y1 - y0, argb, 0);
         trees.setPrimitiveMargin(k, margin);
         writeClips(k, clips);
         trees.order.putInt(count++, 0, k); // 描画順の表には主スロットだけを載せる
@@ -295,13 +308,22 @@ final class GlRectStream implements AutoCloseable {
     }
 
     /** プリミティブ {@code k} にクリップを結ぶ（同じ内容のクリップはそのフレームで 1 スロットを共有する）。 */
+    /** 直前に引いたクリップ配列（同一の配列なら slot も同じ）。フレームの頭で捨てる（slot の表を作り直すため）。 */
+    private GpuClip[] lastClips;
+    private int lastA, lastB, lastC, lastD;
+
     private void writeClips(int k, GpuClip[] clips) {
         int n = clips == null ? 0 : clips.length;
+        if (n > 0 && clips == lastClips) { // 同じ項目の文字・図形は同じ配列を共有する: 表の引き直し（ハッシュ・比較）を省く
+            trees.setPrimitiveClips(k, n, lastA, lastB, lastC, lastD);
+            return;
+        }
         int a = 0, b = 0, c = 0, d = 0;
         for (int i = 0; i < n; i++) {
             int id = clipSlot(clips[i]);
             switch (i) { case 0 -> a = id; case 1 -> b = id; case 2 -> c = id; default -> d = id; }
         }
+        if (n > 0) { lastClips = clips; lastA = a; lastB = b; lastC = c; lastD = d; }
         trees.setPrimitiveClips(k, n, a, b, c, d);
     }
 
@@ -361,6 +383,11 @@ final class GlRectStream implements AutoCloseable {
     }
 
     /** 診断: 直近に GPU へ送ったバイト数の累計（永続マップなら 0）。 */
+    /** 値が変わった GPU レコードの書き込みの累計（プリミティブ・変換・効果）。 */
+    long changedWrites() {
+        return trees.primitives.changedWrites() + trees.transforms.changedWrites() + trees.effects.changedWrites();
+    }
+
     long uploadedBytes() {
         return trees.primitives.uploadedBytes() + trees.transforms.uploadedBytes() + trees.effects.uploadedBytes();
     }

@@ -65,6 +65,8 @@ public final class PersistentVramBuffer {
     private final int[] segLo, segHi;
     private long uploadedBytes;
     private long ringCopiedBytes;
+    /** 値が実際に変わった書き込みの累計（同じ値の書き込みは数えない）。退行検出・計測用。 */
+    private long changedWrites;
 
     public PersistentVramBuffer(int stride, int capacity, Device device) {
         if (stride <= 0 || (stride & 3) != 0) throw new IllegalArgumentException("stride: " + stride);
@@ -105,6 +107,8 @@ public final class PersistentVramBuffer {
     public long uploadedBytes() { return uploadedBytes; }
     /** リング面へ写した累計バイト数（GPU への転送ではなくマップしたメモリへの書き込み。リングでなければ 0）。 */
     public long ringCopiedBytes() { return ringCopiedBytes; }
+    /** 値が変わった書き込みの累計回数（スロットごとの touch の数ではなくフィールド単位）。 */
+    public long changedWrites() { return changedWrites; }
     /** 永続マップの面の数。 */
     public int segments() { return ring == null ? 1 : ring.length; }
 
@@ -127,6 +131,7 @@ public final class PersistentVramBuffer {
         if ((int) INTS.get(data, at) == v) return;
         INTS.set(data, at, v);
         if (gpu != null && ring == null) INTS.set(gpu, at, v);
+        changedWrites++;
         touch(slot);
     }
 
@@ -135,6 +140,7 @@ public final class PersistentVramBuffer {
         if (Float.floatToRawIntBits((float) FLOATS.get(data, at)) == Float.floatToRawIntBits(v)) return;
         FLOATS.set(data, at, v);
         if (gpu != null && ring == null) FLOATS.set(gpu, at, v);
+        changedWrites++;
         touch(slot);
     }
 
@@ -145,6 +151,7 @@ public final class PersistentVramBuffer {
         if ((short) SHORTS.get(data, at) == bits) return;
         SHORTS.set(data, at, bits);
         if (gpu != null && ring == null) SHORTS.set(gpu, at, bits);
+        changedWrites++;
         touch(slot);
     }
 
@@ -153,6 +160,7 @@ public final class PersistentVramBuffer {
         if ((short) SHORTS.get(data, at) == (short) v) return;
         SHORTS.set(data, at, (short) v);
         if (gpu != null && ring == null) SHORTS.set(gpu, at, (short) v);
+        changedWrites++;
         touch(slot);
     }
 
