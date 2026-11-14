@@ -1157,6 +1157,36 @@ public final class PaintSceneDriver {
         return false;
     }
 
+    /** 項目の動きの種類（{@link #fillActivity}・{@link #activityAt}）。 */
+    public static final byte ACT_IDLE = 0, ACT_PAINT_ONLY = 1, ACT_GEOMETRY = 2, ACT_OPACITY = 3;
+
+    private static byte activityOf(CssAnimator.AnimState st, long nowMs) {
+        if (st == null || !st.isActiveAt(nowMs)) return ACT_IDLE;
+        return (byte) st.motionKindAt(nowMs);
+    }
+
+    /**
+     * 直近に {@link #resolveAt} で解決した項目の状態から、時刻 {@code nowMs} の各項目の動きを {@code out[0..n)} に入れ、
+     * 最大値を返す（{@link #anyCachedActiveAt} の項目別版）。{@link #ACT_PAINT_ONLY} は色などの塗りだけが補間される項目で、
+     * 姿勢と不透明度は動かない（{@link #ACT_GEOMETRY} は変形が動く、{@link #ACT_OPACITY} は不透明度が動く）。差し替わった項目の状態は索引の更新で消えているので、その項目は {@link #activityAt} で確かめる。
+     */
+    public byte fillActivity(byte[] out, int n, long nowMs) {
+        byte max = ACT_IDLE;
+        int lim = Math.min(n, states.length);
+        for (int i = 0; i < lim; i++) {
+            byte a = activityOf(states[i], nowMs);
+            out[i] = a;
+            if (a > max) max = a;
+        }
+        for (int i = lim; i < n; i++) out[i] = ACT_IDLE;
+        return max;
+    }
+
+    /** 項目 {@code el} の、時刻 {@code nowMs} の動き。状態が無ければ（目標との突き合わせも含めて）作って確かめる。 */
+    public byte activityAt(DisplayItem el, long nowMs) {
+        return activityOf(CssAnimator.stateFor(sessionId, el, nowMs), nowMs);
+    }
+
     /** 項目 {@code i} の姿勢。同じフレームの間は 1 回だけ計算し、動いていない項目は前フレームの結果をそのまま使う。 */
     public Resolved resolveAt(int i) {
         Resolved r;

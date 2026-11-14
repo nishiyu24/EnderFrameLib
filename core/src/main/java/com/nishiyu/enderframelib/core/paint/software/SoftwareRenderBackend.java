@@ -120,6 +120,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean prevValid;
     /** 前のフレームの描画がアニメーションの途中だった（次のフレームは全面を描き直す）。 */
     private boolean prevHadActive;
+    /** 前のフレームで、不透明度が動く項目があった（あれば次は全面。色・変形の遷移は項目単位で塗り直す）。 */
+    private boolean prevHadGeometryActive;
+    /** 項目ごとの動き（{@link PaintSceneDriver#ACT_IDLE} など）。今のフレームと前のフレーム。 */
+    private byte[] activity = new byte[0], prevActivity = new byte[0];
     private int prevClearColor;
     private boolean prevCullOffscreen = true;
     /** 直近に描いたスクロール節の姿勢平行移動成分 (key -> [tx, ty])。 */
@@ -141,6 +145,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private boolean damageAbort;
     /** このフレームの描画がアニメーションの途中か（次のフレームの判定に使う）。 */
     private boolean frameHadActive;
+    private boolean frameHadGeometryActive;
     /** 実際に塗った範囲を記録するか（{@link #renderOnto} では要らない）。 */
     private boolean recordExtents;
     /** いま描いている項目の添字（{@link #paintRange} が範囲を記録する）。 */
@@ -338,10 +343,18 @@ public final class SoftwareRenderBackend implements RenderBackend {
      */
     private boolean planDamage(List<DisplayItem> items, long nowMs) {
         int n = items.size();
-        frameHadActive = driver.anyCachedActiveAt(nowMs);
-        int why = prevHadActive ? 1 : !damageEnabled ? 2 : (!prevValid || prevItems == null) ? 3
+        if (activity.length != n) activity = new byte[n];
+        byte maxAct = driver.fillActivity(activity, n, nowMs);
+        frameHadActive = maxAct != PaintSceneDriver.ACT_IDLE;
+        frameHadGeometryActive = maxAct == PaintSceneDriver.ACT_OPACITY;
+        // 色・変形だけが動く項目（hover のトランジションなど）は、項目数が同じなら項目単位で塗り直す
+        // （変形は動いた節の子孫の塗り直しに乗る）。不透明度が動く項目（層を要する）や、項目の増減を伴う動きは全面へ戻す
+        boolean perItemActivity = prevItems != null && prevItems.size() == n && prevActivity.length == n;
+        int why = prevHadGeometryActive || (prevHadActive && !perItemActivity) ? 1 : !damageEnabled ? 2
+                : (!prevValid || prevItems == null) ? 3
                 : (prevClearColor != clearColor || prevCullOffscreen != cullOffscreen) ? 4
-                : (!stableList(items) || !stableList(prevItems)) ? 5 : frameHadActive ? 6 : 0;
+                : (!stableList(items) || !stableList(prevItems)) ? 5
+                : (frameHadActive && (frameHadGeometryActive || !perItemActivity)) ? 6 : 0;
         if (why != 0) {
             fullWhy[why]++;
             resetCurExtents(n);
@@ -417,11 +430,19 @@ public final class SoftwareRenderBackend implements RenderBackend {
                     resetCurExtents(n);
                     return false;
                 }
-                if (old != cur && mayAnimate(cur) && PaintSceneDriver.itemActiveAt(sessionId, cur, nowMs)) {
-                    fullWhy[6]++;
-                    frameHadActive = true;
-                    resetCurExtents(n);
-                    return false;
+                if (old != cur && mayAnimate(cur)) {
+                    // 差し替わった項目は状態が消えているので、目標との突き合わせから確かめる
+                    byte act = driver.activityAt(cur, nowMs);
+                    if (act != PaintSceneDriver.ACT_IDLE) {
+                        frameHadActive = true;
+                        activity[i] = (byte) Math.max(activity[i], act);
+                        if (act == PaintSceneDriver.ACT_OPACITY) {
+                            frameHadGeometryActive = true;
+                            fullWhy[6]++;
+                            resetCurExtents(n);
+                            return false;
+                        }
+                    }
                 }
             }
             damage.reset(raster.width(), raster.height());
@@ -440,7 +461,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 itemChanged = (oldI < 0) || (prevItems.get(oldI) != cur);
             } else {
                 DisplayItem old = prevItems.get(i);
-                itemChanged = old != cur || volatileItem(cur);
+                // 塗りだけが動く遷移の途中の項目と、前のフレームで動いていた項目（遷移が終わって最終色へ変わる）は塗り直す
+                itemChanged = old != cur || volatileItem(cur) || activity[i] != 0 || prevActivity[i] != 0;
             }
             boolean nodeChanged = itemChanged && cur.type() == ElementType.NODE;
             movedBuf[i] = parentMoved || nodeChanged;
@@ -661,7 +683,8 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 DisplayItem cur = items.get(i);
                 if (cur.type() == ElementType.NODE) continue;
                 int oldIdx = (oldIndexOf != null) ? oldIndexOf[i] : i;
-                boolean changed = oldIdx < 0 || prevItems.get(oldIdx) != cur || movedBuf[i];
+                boolean changed = oldIdx < 0 || prevItems.get(oldIdx) != cur || movedBuf[i]
+                        || (oldIndexOf == null && (activity[i] != 0 || prevActivity[i] != 0));
                 Resolved r = driver.resolveAt(i);
                 int[] cb = planClip(i, cur, r, changed);
                 estimateBounds(cur, r.pose(), cb, estimateScratch);
@@ -693,6 +716,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         prevItems = items;
         prevValid = true;
         prevHadActive = frameHadActive;
+        prevHadGeometryActive = frameHadGeometryActive;
+        byte[] ta = prevActivity;
+        prevActivity = activity;
+        activity = ta;
         prevClearColor = clearColor;
         prevCullOffscreen = cullOffscreen;
         int[] t = prevExtent;
