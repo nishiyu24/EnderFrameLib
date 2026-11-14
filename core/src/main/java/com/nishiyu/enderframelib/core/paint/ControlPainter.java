@@ -100,7 +100,7 @@ final class ControlPainter {
         // SVG は固有サイズ（viewBox）の縦横比で、描く大きさのビットマップにしてから置く。届くまでは何も描かない
         if ("img".equals(box.node.tag) && SvgImage.looksLikeSvg(src)) {
             SvgImage svg = PaintServices.svg(src);
-            src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio());
+            src = svg == null ? "" : RasterPainting.svgSrc(svg.root(), svg.width(), svg.height(), fitMode, innerW, innerH, color, decor.devicePixelRatio(), svg.sheet());
         }
         ItemProps imageEvents = mediaEvents;
         String position = box.style.get(CssPropertyIndex.OBJECT_POSITION);

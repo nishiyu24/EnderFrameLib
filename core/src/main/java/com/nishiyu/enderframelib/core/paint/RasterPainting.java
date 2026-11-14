@@ -28,6 +28,15 @@ public final class RasterPainting {
      */
     public static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color,
                          float devicePixelRatio) {
+        // インライン svg には文書のスタイルシートを当てる
+        com.nishiyu.enderframelib.core.css.StyleSheet sheet =
+                svg.getOwnerDocument() instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd ? hd.authorSheet : null;
+        return svgSrc(svg, intrW, intrH, fit, boxW, boxH, color, devicePixelRatio, sheet);
+    }
+
+    /** @param sheet 要素に当てるスタイルシート（画像の SVG は自身の {@code <style>}、インラインは文書のもの。無ければ null） */
+    public static String svgSrc(HtmlNode svg, double intrW, double intrH, ImageFitMode fit, float boxW, float boxH, int color,
+                         float devicePixelRatio, com.nishiyu.enderframelib.core.css.StyleSheet sheet) {
         if (!(boxW > 0) || !(boxH > 0)) return "";
         float[] obj = ObjectFit.objectSize(fit, (float) intrW, (float) intrH, boxW, boxH);
         float dpr = Math.max(1f, Math.min(4f, devicePixelRatio));
@@ -36,9 +45,9 @@ public final class RasterPainting {
         double k = Math.min(1.0, MAX_SIDE / Math.max(1.0, Math.max(sw, sh)));
         int pw = (int) Math.max(1, Math.round(sw * k));
         int ph = (int) Math.max(1, Math.round(sh * k));
-        String key = "svg:" + Long.toHexString(SvgRenderer.signature(svg)) + ":" + pw + "x" + ph + ":" + Integer.toHexString(color);
+        String key = "svg:" + Long.toHexString(SvgRenderer.signature(svg, sheet)) + ":" + pw + "x" + ph + ":" + Integer.toHexString(color);
         RasterImageEntry entry = RasterImageStore.getOrCreate(key,
-                () -> SvgRenderer.render(svg, pw, ph, color, PaintServices.fontResolver()));
+                () -> SvgRenderer.render(svg, pw, ph, color, PaintServices.fontResolver(), sheet));
         if (entry == null) return "";
         return RasterImageStore.src(key) + "@" + Math.max(1, Math.round(obj[0])) + "x" + Math.max(1, Math.round(obj[1]));
     }

@@ -76,6 +76,12 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.defaultOwnership = Objects.requireNonNull(ownership, "ownership must not be null");
     }
 
+    /**
+     * 作者スタイルシート（描画側がインライン {@code svg} の要素へ規則を当てるために読む）。文書を読み込む側が設定し、
+     * シートを作り直したときに更新する。
+     */
+    public volatile com.nishiyu.enderframelib.core.css.StyleSheet authorSheet;
+
     public HtmlDocument() {
         super(NodeType.ROOT, "root");
         this.ownerDocument = this;

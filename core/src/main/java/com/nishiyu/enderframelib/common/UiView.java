@@ -1996,6 +1996,7 @@ public class UiView implements AutoCloseable {
         } else {
             if (!Objects.equals(doc.authorCss, authorCss) || doc.sheet == null) {
                 doc.sheet = parser.buildStyleSheet(authorCss, width, height);
+                doc.syncSheet();
                 applyResolution(doc.sheet);
                 doc.authorCss = authorCss;
             } else if (oldRootW != width || oldRootH != height) {
@@ -2134,6 +2135,7 @@ public class UiView implements AutoCloseable {
             // @media はシートを読み直さず、新しいビューポートで条件だけ評価し直す
             if (doc.sheet == null) {
                 doc.sheet = parser.buildStyleSheet(doc.authorCss, newRootW, newRootH);
+                doc.syncSheet();
                 applyResolution(doc.sheet);
                 interactionState.markAllDirty();
             } else if (oldRootW != newRootW || oldRootH != newRootH) {

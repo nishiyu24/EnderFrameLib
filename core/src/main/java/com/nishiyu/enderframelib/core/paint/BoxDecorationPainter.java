@@ -532,7 +532,7 @@ public final class BoxDecorationPainter {
                     String tileSrc = url;
                     if (SvgImage.looksLikeSvg(url)) {
                         // SVG はタイルの大きさで描く（拡大しても滲まない）。届くまでは描かない
-                        tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box), devicePixelRatio);
+                        tileSrc = svgLayer == null ? "" : RasterPainting.svgSrc(svgLayer.root(), t.w(), t.h(), ImageFitMode.FILL, t.w(), t.h(), currentColor(box), devicePixelRatio, svgLayer.sheet());
                     }
                     long bglPartKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, DisplayItem.PART_BGL_BASE + ((i & 0x07) << 4) + (part & 0x0F)) : 0L;
                     addElement(elements, id, id + idInfix + i + "_" + (part++), ElementType.IMAGE, ImageFitMode.FILL, t.x(), t.y(), t.w(), t.h(), tileSrc,

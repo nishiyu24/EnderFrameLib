@@ -50,7 +50,27 @@ public final class SvgImage {
         } else if (Double.isNaN(h)) {
             h = Double.isNaN(ratio) ? 150 : w / ratio;
         }
-        return new SvgImage(svg, w, h);
+        SvgImage image = new SvgImage(svg, w, h);
+        StringBuilder css = new StringBuilder();
+        collectStyles(svg, css, 0);
+        if (css.length() > 0) image.sheet = com.nishiyu.enderframelib.core.css.CssParser.parse(css.toString(), 800);
+        return image;
+    }
+
+    private static void collectStyles(HtmlNode n, StringBuilder css, int depth) {
+        if (depth > 64) return;
+        for (HtmlNode c : n.children) {
+            if (c.nodeType != com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT) continue;
+            if ("style".equals(c.tag)) css.append(c.getTextContent()).append('\n');
+            else collectStyles(c, css, depth + 1);
+        }
+    }
+
+    /** SVG 自身の {@code <style>} の規則。無ければ null。 */
+    private com.nishiyu.enderframelib.core.css.StyleSheet sheet;
+
+    public com.nishiyu.enderframelib.core.css.StyleSheet sheet() {
+        return sheet;
     }
 
     /** {@code data:image/svg+xml[;base64],...} の中身。SVG でない・読めないなら null。 */
@@ -143,6 +163,6 @@ public final class SvgImage {
 
     /** {@code pxW × pxH}（一辺は {@link #MAX_RASTER} まで）に描く。 */
     public Pixmap rasterize(int pxW, int pxH, int currentColor, FontResolver fonts) {
-        return SvgRenderer.render(root, Math.min(MAX_RASTER, pxW), Math.min(MAX_RASTER, pxH), currentColor, fonts);
+        return SvgRenderer.render(root, Math.min(MAX_RASTER, pxW), Math.min(MAX_RASTER, pxH), currentColor, fonts, sheet);
     }
 }

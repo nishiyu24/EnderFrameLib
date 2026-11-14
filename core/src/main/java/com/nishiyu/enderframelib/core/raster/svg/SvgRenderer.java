@@ -1,6 +1,8 @@
 package com.nishiyu.enderframelib.core.raster.svg;
 
 import com.nishiyu.enderframelib.core.css.ColorParser;
+import com.nishiyu.enderframelib.core.css.SelectorMatcher;
+import com.nishiyu.enderframelib.core.css.StyleSheet;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
 import com.nishiyu.enderframelib.core.raster.CanvasGradient;
@@ -33,7 +35,11 @@ import java.util.Set;
  * {@code gradientTransform} / {@code spreadMethod} / {@code href} の継承）、{@code clipPath}、{@code currentColor}、
  * 提示属性と {@code style} 属性（宣言の優先は style が上）。
  *
- * LIMITATION(R8): ページの {@code <style>} / スタイルシートの規則は適用しない（要素の {@code style} 属性と提示属性だけ）。
+ * スタイルシートの規則（ページの {@code <style>}・{@code svg} 内の {@code <style>}）は、セレクタが一致した要素の提示属性として
+ * 適用する。優先は提示属性 < スタイルシート（カスケード順）< {@code style} 属性。状態（{@code :hover} など）・疑似要素・
+ * {@code @container}・{@code var()} の規則は対象外。
+ *
+ * LIMITATION(R8):
  * {@code mask}・{@code filter}・{@code marker}・{@code pattern}・{@code image}・{@code tspan} の個別配置・{@code textPath}・
  * {@code symbol} の {@code viewBox} は持たない。テキストは {@link CanvasRenderingContext2D#fillText} と同じ制約（回転しない）。
  */
@@ -57,6 +63,8 @@ public final class SvgRenderer {
 
     private CanvasRenderingContext2D ctx;
     private FontResolver fonts;
+    /** 要素に掛かる規則（カスケード順）。無ければ空。 */
+    private List<StyleSheet.StyleRule> rules = List.of();
     private final Map<String, HtmlNode> ids = new HashMap<>();
     private int nodeBudget = MAX_NODES;
     private double vpW;
@@ -73,12 +81,18 @@ public final class SvgRenderer {
      * @param currentColor {@code currentColor} と {@code color} の初期値（非乗算 ARGB）
      */
     public static Pixmap render(HtmlNode svg, int pxW, int pxH, int currentColor, FontResolver fonts) {
+        return render(svg, pxW, pxH, currentColor, fonts, null);
+    }
+
+    /** @param sheet 要素に当てるスタイルシート（null なら提示属性と {@code style} 属性だけ） */
+    public static Pixmap render(HtmlNode svg, int pxW, int pxH, int currentColor, FontResolver fonts, StyleSheet sheet) {
         int w = Math.max(1, Math.min(Pixmap.MAX_DIMENSION, pxW));
         int h = Math.max(1, Math.min(Pixmap.MAX_DIMENSION, pxH));
         CanvasRenderingContext2D ctx = new CanvasRenderingContext2D(w, h);
         if (fonts != null) ctx.fonts(fonts);
         SvgRenderer r = new SvgRenderer(ctx);
         r.fonts = fonts;
+        r.rules = usableRules(sheet);
         r.collectIds(svg, 0);
         Style root = new Style();
         root.set("color", ColorParser.format(currentColor));
@@ -111,12 +125,17 @@ public final class SvgRenderer {
      * （ラスタライズの結果をキャッシュするキー）。
      */
     public static long signature(HtmlNode svg) {
+        return signature(svg, null);
+    }
+
+    /** スタイルシートの規則が各要素へ与える宣言も署名に入れる（祖先の class など木の外の変化でも署名が変わる）。 */
+    public static long signature(HtmlNode svg, StyleSheet sheet) {
         long[] h = {0xcbf29ce484222325L};
-        sign(svg, h, 0);
+        sign(svg, h, 0, usableRules(sheet));
         return h[0];
     }
 
-    private static void sign(HtmlNode n, long[] h, int depth) {
+    private static void sign(HtmlNode n, long[] h, int depth, List<StyleSheet.StyleRule> rules) {
         if (depth > MAX_DEPTH * 4) return;
         if (n.nodeType == NodeType.TEXT) {
             mix(h, n.text == null ? "" : n.text);
@@ -128,9 +147,50 @@ public final class SvgRenderer {
             mix(h, e.getKey());
             mix(h, e.getValue());
         }
+        if (!rules.isEmpty()) {
+            for (Map.Entry<String, String> e : cascadedDeclarations(n, rules).entrySet()) {
+                mix(h, e.getKey());
+                mix(h, e.getValue());
+            }
+        }
         h[0] = h[0] * 0x100000001b3L + 0x3b;
-        for (HtmlNode c : n.children) sign(c, h, depth + 1);
+        for (HtmlNode c : n.children) sign(c, h, depth + 1, rules);
         h[0] = h[0] * 0x100000001b3L + 0x3d;
+    }
+
+    /** 静的に当てられる規則だけ（状態・疑似要素・コンテナクエリの規則と、メディアが外れた規則を除く）。 */
+    private static List<StyleSheet.StyleRule> usableRules(StyleSheet sheet) {
+        if (sheet == null || sheet.rules.isEmpty()) return List.of();
+        List<StyleSheet.StyleRule> out = new ArrayList<>();
+        for (StyleSheet.StyleRule r : sheet.rules) {
+            if (!r.mediaActive || r.pseudoElement != null || r.isBefore || r.isAfter || r.stateMask != 0
+                    || r.isHover || r.isActive || r.isFocus || !r.containerQueries.isEmpty()) continue;
+            if (r.parsedSelector() == null) continue;
+            boolean relevant = false;
+            for (String k : r.properties.keySet()) {
+                if (PRESENTATION.contains(k)) {
+                    relevant = true;
+                    break;
+                }
+            }
+            if (relevant) out.add(r);
+        }
+        return out;
+    }
+
+    /** 要素に当たる規則の提示属性の宣言（カスケード順に上書き。{@code !important} は取り除く）。 */
+    private static Map<String, String> cascadedDeclarations(HtmlNode el, List<StyleSheet.StyleRule> rules) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (StyleSheet.StyleRule r : rules) {
+            if (!SelectorMatcher.matches(r.parsedSelector(), el)) continue;
+            for (Map.Entry<String, String> d : r.properties.entrySet()) {
+                String k = d.getKey().toLowerCase(Locale.ROOT);
+                if (!PRESENTATION.contains(k)) continue;
+                String v = d.getValue().replace("!important", "").trim();
+                if (!v.isEmpty() && !v.contains("var(")) out.put(k, v);
+            }
+        }
+        return out;
     }
 
     private static void mix(long[] h, String s) {
@@ -585,6 +645,7 @@ public final class SvgRenderer {
             String v = el.attrs.get(k);
             if (v != null) s.own.put(k, v.trim());
         }
+        if (!rules.isEmpty()) s.own.putAll(cascadedDeclarations(el, rules));
         String style = el.attrs.get("style");
         if (style != null) {
             for (String decl : style.split(";")) {

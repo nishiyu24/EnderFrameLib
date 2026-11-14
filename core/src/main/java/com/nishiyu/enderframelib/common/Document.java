@@ -15,6 +15,12 @@ public class Document implements WebDocument {
         this.root = root;
         this.sheet = sheet;
         this.authorCss = authorCss;
+        syncSheet();
+    }
+
+    /** {@link #sheet} を文書の木（インライン svg の描画が読む）へ反映する。シートを差し替えたら呼ぶ。 */
+    public void syncSheet() {
+        if (root instanceof com.nishiyu.enderframelib.core.dom.node.HtmlDocument hd) hd.authorSheet = sheet;
     }
 
     @Override
