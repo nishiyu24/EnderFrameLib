@@ -485,7 +485,96 @@ public final class LoadedFace {
     private GlyphBitmap render(int codePoint, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel, int mode) {
         synchronized (lock) {
             ensureOpen();
-            int gi = FreeType.FT_Get_Char_Index(face, codePoint);
+            return renderIndex(FreeType.FT_Get_Char_Index(face, codePoint), pixelSize, syntheticBold, syntheticItalic, subpixel, mode);
+        }
+    }
+
+    /**
+     * 字形番号で 1 字をラスタライズする（カラー字形のレイヤーなど、文字に結び付かない字形用）。
+     * 擬似太字・擬似斜体は無し。
+     */
+    public GlyphBitmap rasterizeGlyphIndex(int glyphIndex, float pixelSize, int subpixel) {
+        synchronized (lock) {
+            ensureOpen();
+            return renderIndex(glyphIndex, pixelSize, false, false, subpixel, FreeType.FT_RENDER_MODE_NORMAL);
+        }
+    }
+
+    // ==========================================
+    // カラー字形（COLR v0 / CPAL）
+    // ==========================================
+
+    /**
+     * カラー字形のレイヤー。下のレイヤーから順に重ねる。{@code foreground[i]} が true のレイヤーは
+     * パレットの色ではなく文字の色（{@code color}）で塗る（COLR の 0xFFFF）。
+     */
+    public record ColorLayers(int[] glyphs, int[] argb, boolean[] foreground) {
+        public int count() {
+            return glyphs.length;
+        }
+    }
+
+    private static final ColorLayers NO_COLOR = new ColorLayers(new int[0], new int[0], new boolean[0]);
+    /** 字形番号 → レイヤー（カラー字形でなければ {@link #NO_COLOR}）。 */
+    private final Map<Integer, ColorLayers> colorCache = new ConcurrentHashMap<>();
+
+    /** {@code codePoint} がカラー字形（COLR v0 のレイヤーを持つ）ならそのレイヤー、そうでなければ null。 */
+    public ColorLayers colorLayers(int codePoint) {
+        int gid = glyphId(codePoint);
+        if (gid == 0) return null;
+        ColorLayers c = colorCache.get(gid);
+        if (c == null) {
+            c = loadColorLayers(gid);
+            colorCache.put(gid, c);
+        }
+        return c == NO_COLOR ? null : c;
+    }
+
+    private ColorLayers loadColorLayers(int gid) {
+        synchronized (lock) {
+            ensureOpen();
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                org.lwjgl.util.freetype.FT_Palette_Data data = org.lwjgl.util.freetype.FT_Palette_Data.malloc(stack);
+                if (FreeType.FT_Palette_Data_Get(face, data) != 0 || data.num_palettes() == 0) return NO_COLOR;
+                PointerBuffer paletteOut = stack.mallocPointer(1);
+                if (FreeType.FT_Palette_Select(face, (short) 0, paletteOut) != 0 || paletteOut.get(0) == 0) return NO_COLOR;
+                int entries = data.num_palette_entries() & 0xFFFF;
+                org.lwjgl.util.freetype.FT_Color.Buffer palette = org.lwjgl.util.freetype.FT_Color.create(paletteOut.get(0), entries);
+
+                java.nio.IntBuffer glyph = stack.mallocInt(1);
+                java.nio.IntBuffer colorIndex = stack.mallocInt(1);
+                org.lwjgl.util.freetype.FT_LayerIterator it = org.lwjgl.util.freetype.FT_LayerIterator.calloc(stack);
+                java.util.ArrayList<int[]> layers = new java.util.ArrayList<>();
+                while (FreeType.FT_Get_Color_Glyph_Layer(face, gid, glyph, colorIndex, it)) {
+                    int ci = colorIndex.get(0) & 0xFFFF;
+                    int argb = 0;
+                    boolean fg = ci == 0xFFFF;
+                    if (!fg) {
+                        if (ci >= entries) continue;
+                        org.lwjgl.util.freetype.FT_Color c = palette.get(ci);
+                        argb = ((c.alpha() & 0xFF) << 24) | ((c.red() & 0xFF) << 16) | ((c.green() & 0xFF) << 8) | (c.blue() & 0xFF);
+                    }
+                    layers.add(new int[]{glyph.get(0), argb, fg ? 1 : 0});
+                    if (layers.size() > 512) break;
+                }
+                if (layers.isEmpty()) return NO_COLOR;
+                int n = layers.size();
+                int[] glyphs = new int[n], colors = new int[n];
+                boolean[] fgs = new boolean[n];
+                for (int i = 0; i < n; i++) {
+                    int[] l = layers.get(i);
+                    glyphs[i] = l[0];
+                    colors[i] = l[1];
+                    fgs[i] = l[2] != 0;
+                }
+                return new ColorLayers(glyphs, colors, fgs);
+            }
+        }
+    }
+
+    /** {@link #lock} の中で呼ぶ。 */
+    private GlyphBitmap renderIndex(int gi, float pixelSize, boolean syntheticBold, boolean syntheticItalic, int subpixel, int mode) {
+        {
             long charSize = Math.max(64, Math.round(pixelSize * 64));
             if (charSize != currentCharSize) {
                 if (FreeType.FT_Set_Char_Size(face, 0, charSize, 72, 72) != 0) return GlyphBitmap.EMPTY;

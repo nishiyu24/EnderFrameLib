@@ -2042,7 +2042,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 if (s.shadow) {
                     float off = s.style.fontSizePx() / 9f;
                     int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
-                    drawGlyphs(s.visual, s.positions, face, s.style, s.textX + off, s.baseline + off, shadowColor, res.pose(), clip, opacity);
+                    drawGlyphs(s.visual, s.positions, face, s.style, s.textX + off, s.baseline + off, shadowColor, res.pose(), clip, opacity, true);
                 }
                 drawGlyphs(s.visual, s.positions, face, s.style, s.textX, s.baseline, argb, res.pose(), clip, opacity);
             }
@@ -2114,7 +2114,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (shadow) {
             float off = style.fontSizePx() / 9f;
             int shadowColor = (argb & 0xFF000000) | ((argb & 0xFCFCFC) >> 2);
-            drawGlyphs(text, positions, face, style, x + off, baseline + off, shadowColor, res.pose(), clip, opacity);
+            drawGlyphs(text, positions, face, style, x + off, baseline + off, shadowColor, res.pose(), clip, opacity, true);
         }
         drawGlyphs(text, positions, face, style, x, baseline, argb, res.pose(), clip, opacity);
         if (stroke != null) {
@@ -2197,6 +2197,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
 
     private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
                             int argb, Matrix2D pose, Clip clip, float opacity) {
+        drawGlyphs(text, positions, face, style, x, baseline, argb, pose, clip, opacity, false);
+    }
+
+    /** {@code monochrome}: カラー字形でも 1 色（{@code argb}）で塗る（影）。 */
+    private void drawGlyphs(String text, float[] positions, OutlineFontFace face, FontStyle style, float x, float baseline,
+                            int argb, Matrix2D pose, Clip clip, float opacity, boolean monochrome) {
         // 回転・せん断・縦横で違う拡縮が無ければ、字をデバイス画素の格子に揃えて置く（サブピクセル位置は 1/4 画素）
         boolean aligned = ShapeGeometry.glyphAxisAligned(pose);
         float pixelSize = GlyphCache.quantize((float) (style.fontSizePx() * pose.meanScale()));
@@ -2212,6 +2218,12 @@ public final class SoftwareRenderBackend implements RenderBackend {
             }
             OutlineFontFace.GlyphFace gf = face.glyphFace(cp, style);
             float gx = x + positions[i];
+            LoadedFace.ColorLayers colorLayers = monochrome ? null : gf.face().colorLayers(cp);
+            if (colorLayers != null) {
+                drawColorGlyph(gf, colorLayers, gx, baseline, argb, pixelSize, aligned, style, pose, clip, opacity);
+                i += n;
+                continue;
+            }
             if (aligned) {
                 double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
                 float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
@@ -2226,6 +2238,28 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 }
             }
             i += n;
+        }
+    }
+
+    /** カラー字形（COLR）を、レイヤーごとの色で下から重ねて描く。レイヤーの被覆率は通常の字形と同じ経路（GL でも CPU でも）を通る。 */
+    private void drawColorGlyph(OutlineFontFace.GlyphFace gf, LoadedFace.ColorLayers layers, float gx, float baseline, int textArgb,
+                                float pixelSize, boolean aligned, FontStyle style, Matrix2D pose, Clip clip, float opacity) {
+        double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
+        int sub = aligned ? ShapeGeometry.glyphSubpixel(devX) : 0;
+        float originX = ShapeGeometry.glyphOriginX(devX), originY = ShapeGeometry.glyphOriginY(devY);
+        for (int k = 0; k < layers.count(); k++) {
+            int layerArgb = layers.foreground()[k] ? textArgb : layers.argb()[k];
+            if ((layerArgb >>> 24) == 0) continue;
+            GlyphBitmap bmp = glyphCache.layerGlyph(gf, layers.glyphs()[k], pixelSize, sub, GlyphCache.isLight(layerArgb));
+            if (bmp.isEmpty()) continue;
+            int pm = Pixmap.premultiply(layerArgb);
+            if (aligned) {
+                if (!GpuAttempt.glyph(route.current(), bmp, originX, originY, layerArgb, clip, opacity)) {
+                    blitAligned(bmp, originX, originY, pm, clip, opacity);
+                }
+            } else if (!GpuAttempt.glyphTransformed(route.current(), bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, layerArgb, clip, opacity)) {
+                blitTransformed(bmp, gx, baseline, pixelSize / style.fontSizePx(), pose, pm, clip, opacity);
+            }
         }
     }
 

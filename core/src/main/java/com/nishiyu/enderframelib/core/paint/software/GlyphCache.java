@@ -34,6 +34,19 @@ final class GlyphCache {
         return g;
     }
 
+    /** カラー字形のレイヤー 1 枚（字形番号で引く）。鍵の文字は負の値（-1 - 字形番号）で通常の字形と区別する。 */
+    GlyphBitmap layerGlyph(OutlineFontFace.GlyphFace gf, int glyphId, float pixelSize, int sub, boolean light) {
+        Key key = probe.set(gf.face(), -1 - glyphId, pixelSize, false, false, sub, light);
+        GlyphBitmap g = glyphs.get(key);
+        if (g == null) {
+            g = gf.face().rasterizeGlyphIndex(glyphId, pixelSize, sub);
+            if (!g.isEmpty()) g = g.withTextContrast(light);
+            if (glyphs.size() >= LIMIT) glyphs.clear();
+            glyphs.put(key.copy(), g);
+        }
+        return g;
+    }
+
     /** 縁取り用の SDF の字形。 */
     GlyphBitmap sdfGlyph(OutlineFontFace.GlyphFace gf, int cp, float pixelSize, int sub) {
         Key key = probe.set(gf.face(), cp, pixelSize, gf.syntheticBold(), gf.syntheticItalic(), sub, false);
