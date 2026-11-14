@@ -131,6 +131,56 @@ class PatchHitRateRatchetTest {
         assertTrue(perOp < CHILD_ALLOC_CEILING_PER_OP, "child 1 操作の確保量 " + perOp + " B が上限以内");
     }
 
+    /**
+     * 子の追加で、既存の行は再配置されず平行移動（{@code shifted}）か入力同一の省略（{@code skipped}）で済む。
+     * 全行を置き直す退行（shifted+skipped が行数に届かない）をカウンタで止める。
+     */
+    @Test
+    void childAppendShiftsOrSkipsExistingRowsInsteadOfReplacingThem() {
+        StandaloneView v = open();
+        HtmlNode list = v.root().getNodeById("list");
+        for (int i = 0; i < 4; i++) { list.appendChild(newRow("w" + i)); v.ui().flushInvalidation(); }
+        long shifted0 = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
+        long skipped0 = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped();
+        int ops = 20;
+        for (int i = 0; i < ops; i++) { list.appendChild(newRow("s" + i)); v.ui().flushInvalidation(); }
+        double shifted = (com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() - shifted0) / (double) ops;
+        double skipped = (com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() - skipped0) / (double) ops;
+        System.out.println("[ratchet] layout: shifted/op=" + shifted + " skipped/op=" + skipped);
+        assertTrue(shifted + skipped >= ROWS * 0.9, "既存の行は平行移動か省略で済む: shifted=" + shifted + " skipped=" + skipped);
+    }
+
+    /** 先頭への挿入では、後ろの全行が平行移動（置き直しではなく）で済む。 */
+    @Test
+    void prependShiftsFollowingRowsInsteadOfReplacingThem() {
+        StandaloneView v = open();
+        HtmlNode list = v.root().getNodeById("list");
+        for (int i = 0; i < 4; i++) { list.insertBefore(newRow("w" + i), list.children.get(0)); v.ui().flushInvalidation(); }
+        long shifted0 = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
+        long skipped0 = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped();
+        int ops = 20;
+        for (int i = 0; i < ops; i++) { list.insertBefore(newRow("p" + i), list.children.get(0)); v.ui().flushInvalidation(); }
+        double shifted = (com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() - shifted0) / (double) ops;
+        double skipped = (com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsSkipped() - skipped0) / (double) ops;
+        System.out.println("[ratchet] prepend: shifted/op=" + shifted + " skipped/op=" + skipped);
+        assertTrue(shifted + skipped >= ROWS * 0.9, "既存の行は平行移動か省略で済む: shifted=" + shifted + " skipped=" + skipped);
+    }
+
+    /** hover 往復では配置のやり直しが起きない（スタイルだけの変更）。 */
+    @Test
+    void hoverRoundTripDoesNotRelayoutRows() {
+        StandaloneView v = open();
+        for (int i = 0; i < 6; i++) { v.ui().setHoveredElement("r" + (i + 100)); v.ui().flushInvalidation(); }
+        long shifted0 = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted();
+        for (int i = 0; i < CYCLES; i++) {
+            v.ui().setHoveredElement("r" + (200 + i)); v.ui().flushInvalidation();
+            v.ui().setHoveredElement(null); v.ui().flushInvalidation();
+        }
+        long shifted = com.nishiyu.enderframelib.core.layout.LayoutBox.layoutsShifted() - shifted0;
+        System.out.println("[ratchet] hover layout shifted total=" + shifted);
+        assertTrue(shifted <= CYCLES * 2L, "hover は行を平行移動させない（スタイルだけの変更）: shifted=" + shifted);
+    }
+
     private static HtmlElement newRow(String id) {
         HtmlElement el = new HtmlElement("div");
         el.setAttribute("class", "row");
