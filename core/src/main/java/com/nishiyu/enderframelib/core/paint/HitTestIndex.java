@@ -299,17 +299,29 @@ public class HitTestIndex {
      * （上から順に最初に当たったもの）ので結果は同じ。割り当ては呼び出しごとに少数の小さな配列だけ。
      */
     public UIHitResult hitTest(String sessionId, double pixelX, double pixelY) {
+        return hitTest(sessionId, pixelX, pixelY, null);
+    }
+
+    /** {@code accept} が null でないとき、条件を満たさない項目を飛ばして最前面の対話要素を探す（例: {@code inert} 除外）。 */
+    public UIHitResult hitTest(String sessionId, double pixelX, double pixelY,
+                               java.util.function.Predicate<DisplayItem> accept) {
         double[] local = new double[2];
-        int i = find(sessionId, pixelX, pixelY, local);
+        int i = find(sessionId, pixelX, pixelY, local, accept);
         return i < 0 ? null : new UIHitResult(entryArr[i].element, local[0], local[1]);
     }
 
     /** 点が対話要素の上にあるか（ゲーム側が、クリックを UI に渡すか自分で処理するかを決めるのに使う）。 */
     public boolean isPointerOverUi(String sessionId, double pixelX, double pixelY) {
-        return find(sessionId, pixelX, pixelY, new double[2]) >= 0;
+        return isPointerOverUi(sessionId, pixelX, pixelY, null);
     }
 
-    private int find(String sessionId, double px, double py, double[] localOut) {
+    public boolean isPointerOverUi(String sessionId, double pixelX, double pixelY,
+                                   java.util.function.Predicate<DisplayItem> accept) {
+        return find(sessionId, pixelX, pixelY, new double[2], accept) >= 0;
+    }
+
+    private int find(String sessionId, double px, double py, double[] localOut,
+                     java.util.function.Predicate<DisplayItem> accept) {
         int[] items = cellItems;
         int a = 0, aEnd = 0;
         int cell = cellOf(px, py);
@@ -326,7 +338,8 @@ public class HitTestIndex {
             int idx;
             if (b >= al.length || (a < aEnd && items[a] < al[b])) idx = items[a++];
             else idx = al[b++];
-            if (hits(entryArr[idx], sessionId, px, py, scratch, p, localOut, prefix)) return idx;
+            if (hits(entryArr[idx], sessionId, px, py, scratch, p, localOut, prefix)
+                    && (accept == null || accept.test(entryArr[idx].element))) return idx;
         }
         return -1;
     }
@@ -559,6 +572,11 @@ public class HitTestIndex {
 
     /** 旧実装（上位から全件の線形探索）。空間ハッシュの結果と同じになることを確かめる基準として残す。 */
     public UIHitResult hitTestLinear(String sessionId, double pixelX, double pixelY) {
+        return hitTestLinear(sessionId, pixelX, pixelY, null);
+    }
+
+    public UIHitResult hitTestLinear(String sessionId, double pixelX, double pixelY,
+                                     java.util.function.Predicate<DisplayItem> accept) {
         double[] tmp = null;
         for (int i = 0, n = interactiveEntries.size(); i < n; i++) {
             Entry entry = interactiveEntries.get(i);
@@ -587,6 +605,7 @@ public class HitTestIndex {
 
             if (localX >= 0 && localX <= el.width() && localY >= 0 && localY <= el.height()) {
                 if (entry.alphaThreshold >= 0 && !alphaHit(entry, localX, localY)) continue;
+                if (accept != null && !accept.test(el)) continue;
                 return new UIHitResult(el, localX, localY);
             }
         }

@@ -498,9 +498,25 @@ public class UiView implements AutoCloseable {
         if (idx != null) idx.alphaMaskProvider(provider);
     }
 
+    private final java.util.function.Predicate<DisplayItem> nonInertHitFilter = el -> !isItemInert(el);
+
+    private boolean hasInertOrModal() {
+        return interactionState.hasActiveModal()
+                || (rootNode() instanceof HtmlDocument doc && doc.hasInertAttributes());
+    }
+
+    private boolean isItemInert(DisplayItem el) {
+        if (el == null) return false;
+        String baseId = el.baseId();
+        if (baseId == null || baseId.isEmpty()) return false;
+        HtmlNode node = resolveInteractiveNode(baseId);
+        return node != null && interactionState.isInert(node);
+    }
+
     /** 点が対話要素の上にあるか（ゲーム側が、クリックを UI に渡すか自分で処理するかを決めるのに使う）。 */
     public boolean isPointerOverUi(double pixelX, double pixelY) {
-        return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY);
+        if (!hasInertOrModal()) return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY);
+        return hitTestIndex().isPointerOverUi(sessionId, pixelX, pixelY, nonInertHitFilter);
     }
 
     public HitTestIndex hitTestIndex() {
@@ -991,14 +1007,18 @@ public class UiView implements AutoCloseable {
     }
 
     public void setActivePressedId(String id) {
-        if (interactionState.setActiveNode(resolveInteractiveNode(id))) {
+        HtmlNode node = resolveInteractiveNode(id);
+        if (node != null && interactionState.isInert(node)) node = null;
+        if (interactionState.setActiveNode(node)) {
             requestRestyle();
         }
     }
 
     /** ホバー中（:hover）の要素の基底ノード ID を更新し、変化があれば再スタイルを要求する。 */
     public void setHoveredElement(String baseId) {
-        if (interactionState.setHoveredNode(resolveInteractiveNode(baseId))) {
+        HtmlNode node = resolveInteractiveNode(baseId);
+        if (node != null && interactionState.isInert(node)) node = null;
+        if (interactionState.setHoveredNode(node)) {
             requestRestyle();
         }
     }
@@ -1006,6 +1026,7 @@ public class UiView implements AutoCloseable {
     /** フォーカス中（:focus / :focus-visible / :focus-within）の要素を更新し、変化があれば再スタイルを要求する。 */
     public void setFocusedElement(String baseId, boolean focusVisible) {
         HtmlNode targetNode = resolveInteractiveNode(baseId);
+        if (targetNode != null && interactionState.isInert(targetNode)) return;
         boolean changed;
         if (rootNode() instanceof HtmlDocument doc) {
             // 文書の activeElement は同じ InteractionState から読むので、焦点イベントを伴う更新は文書に任せる
@@ -2208,7 +2229,7 @@ public class UiView implements AutoCloseable {
             // 読み手 (LayoutBox / DisplayListBuilder) はベースノード ID を使うため、
             // スクロール可能な部分要素が _bg だったコンテナはホイールが無反応だった。
             HtmlNode scrollNode = findNode(el.baseId());
-            if (scrollNode == null) continue;
+            if (scrollNode == null || interactionState.isInert(scrollNode)) continue;
             float curX = state.getScrollX(scrollNode);
             float curY = state.getScrollY(scrollNode);
 
@@ -2319,7 +2340,8 @@ public class UiView implements AutoCloseable {
     }
 
     public UIHitResult hitTest(double pixelX, double pixelY) {
-        return hitTestIndex().hitTest(sessionId, pixelX, pixelY);
+        if (!hasInertOrModal()) return hitTestIndex().hitTest(sessionId, pixelX, pixelY);
+        return hitTestIndex().hitTest(sessionId, pixelX, pixelY, nonInertHitFilter);
     }
 
     public UIHitResult localCoords(String elementId, double pixelX, double pixelY) {

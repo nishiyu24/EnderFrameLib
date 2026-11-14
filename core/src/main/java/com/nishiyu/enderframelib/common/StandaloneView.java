@@ -526,7 +526,7 @@ public final class StandaloneView implements AutoCloseable {
         UIHitResult top = ui.hitTest(mouseX, mouseY);
         if (top != null) {
             HtmlNode node = ui.findInteractiveNode(top.element().baseId());
-            if (node != null) {
+            if (node != null && !ui.interactionState().isInert(node)) {
                 var wheel = CoreEvent.wheel(top.localX(), top.localY(), notchesX, notchesY, false, false, false, false);
                 node.dispatchEvent(wheel);
                 if (wheel.isDefaultPrevented()) return true;
@@ -536,7 +536,7 @@ public final class StandaloneView implements AutoCloseable {
         for (int i = 0, hn = hits.size(); i < hn; i++) {
             DisplayItem el = hits.get(i).element();
             HtmlNode node = ui.findNode(el.baseId());
-            if (node == null) continue;
+            if (node == null || ui.interactionState().isInert(node)) continue;
             float limitX = Math.max(0, el.hints().scrollWidth() - el.width());
             float limitY = Math.max(0, el.hints().scrollHeight() - el.height());
             if (limitX <= 0 && limitY <= 0) continue;

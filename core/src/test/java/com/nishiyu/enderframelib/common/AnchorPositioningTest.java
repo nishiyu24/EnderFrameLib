@@ -74,10 +74,41 @@ public class AnchorPositioningTest {
 
     @Test
     public void anchorSizeMatchesTheAnchorWidth() {
-        LayoutBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);width:anchor-size(width);height:anchor-size(--a height)'><div id=c style='height:5px'></div></div>");
+        LayoutBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;top:anchor(bottom);left:anchor(left);width:anchor-size(width);height:anchor-size(--a height)'><div id=c style='height:100%'></div></div>");
         LayoutBox t = find(root, "t");
         assertEquals(80, t.w, 0.5f);
         assertEquals(30, t.h, 0.5f);
         assertEquals(80, find(root, "c").w, 0.5f);
+        assertEquals(30, find(root, "c").h, 0.5f);
+    }
+
+    @Test
+    public void positionAreaPlacesBesideTheAnchor() {
+        LayoutBox root = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom center'></div>");
+        LayoutBox t = find(root, "t");
+        assertEquals(120, t.x, 0.5f);
+        assertEquals(80, t.y, 0.5f);
+        LayoutBox r2 = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:left'></div>");
+        LayoutBox t2 = find(r2, "t");
+        assertEquals(60, t2.x, 0.5f);
+        assertEquals(55, t2.y, 0.5f);
+    }
+
+    @Test
+    public void positionAreaSpanAndExplicitInsetPrecedence() {
+        LayoutBox span = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:bottom span-right'></div>");
+        LayoutBox ts = find(span, "t");
+        assertEquals(100, ts.x, 0.5f);
+        assertEquals(80, ts.y, 0.5f);
+
+        LayoutBox spanLeft = layout("<div id=a></div><div id=t style='position-anchor:--a;position-area:top span-left'></div>");
+        LayoutBox tl = find(spanLeft, "t");
+        assertEquals(140, tl.x, 0.5f);
+        assertEquals(30, tl.y, 0.5f);
+
+        LayoutBox explicit = layout("<div id=a></div><div id=t style='position-anchor:--a;left:10px;position-area:bottom right'></div>");
+        LayoutBox te = find(explicit, "t");
+        assertEquals(10, te.x, 0.5f);
+        assertEquals(80, te.y, 0.5f);
     }
 }

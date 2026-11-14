@@ -396,8 +396,12 @@ public final class BoxMeasurer {
                 && !(Float.isNaN(parentH) && facts.heightPercent);
         boolean overridden = !Float.isNaN(box.overrideHeight);
 
+        float anchorH = box.isAbsolute ? box.anchorHeightPx() : -1;
         if (overridden) {
             box.h = box.overrideHeight;
+            hasHeight = true;
+        } else if (anchorH >= 0) {
+            box.h = anchorH + (isBorderBox ? 0 : box.verticalDecoration());
             hasHeight = true;
         } else if (hasHeight) {
             box.h = toBorderBox(style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH),

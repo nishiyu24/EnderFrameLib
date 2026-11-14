@@ -373,8 +373,84 @@ public class LayoutBox {
         return fromStart ? coord - cbOrigin : cbOrigin + cbLen - coord;
     }
 
+    /**
+     * {@code position-area}（3×3 グリッドの 1〜2 語）。アンカーのどちら側・どの揃えに置くか。
+     * 該当する軸の両方の inset が {@code auto} のときだけ働く。限界: はみ出しを避ける {@code position-try} は未対応。
+     */
+    private void applyPositionArea() {
+        String area = style.get(CssPropertyIndex.POSITION_AREA);
+        if (area == null || area.isBlank() || "none".equalsIgnoreCase(area.trim())) return;
+        LayoutBox a = findAnchor(null);
+        if (a == null) return;
+        String[] parts = area.trim().toLowerCase(java.util.Locale.ROOT).split("\\s+");
+        if (parts.length == 0 || parts.length > 2) return;
+        String xTok = null, yTok = null;
+        if (parts.length == 1) {
+            String t = parts[0];
+            if (isAreaX(t)) { xTok = t; yTok = "span-all"; }
+            else if (isAreaY(t)) { yTok = t; xTok = "span-all"; }
+            else if (isAreaNeutral(t)) { yTok = t; xTok = t; }
+            else return;
+        } else {
+            String t0 = parts[0], t1 = parts[1];
+            if ((isAreaX(t0) && (isAreaY(t1) || isAreaNeutral(t1)))) { xTok = t0; yTok = t1; }
+            else if ((isAreaY(t0) && (isAreaX(t1) || isAreaNeutral(t1)))) { yTok = t0; xTok = t1; }
+            else if ((isAreaNeutral(t0) && isAreaX(t1))) { yTok = t0; xTok = t1; }
+            else if ((isAreaNeutral(t0) && isAreaY(t1))) { xTok = t0; yTok = t1; }
+            else if (isAreaNeutral(t0) && isAreaNeutral(t1)) { yTok = t0; xTok = t1; }
+            else return;
+        }
+        if (BoxMeasurer.isAutoInset(style, CssPropertyIndex.LEFT) && BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)) {
+            this.x = switch (xTok) {
+                case "left", "x-start", "x-self-start", "start", "self-start" -> a.x - this.w - mR;
+                case "right", "x-end", "x-self-end", "end", "self-end" -> a.x + a.w + mL;
+                case "span-left", "span-x-start", "span-start", "span-self-start" -> a.x + a.w - this.w - mR;
+                case "span-right", "span-x-end", "span-end", "span-self-end" -> a.x + mL;
+                case "center", "span-all" -> a.x + (a.w - this.w) / 2f;
+                default -> this.x;
+            };
+        }
+        if (BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP) && BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)) {
+            this.y = switch (yTok) {
+                case "top", "y-start", "y-self-start", "start", "self-start" -> a.y - this.h - mB;
+                case "bottom", "y-end", "y-self-end", "end", "self-end" -> a.y + a.h + mT;
+                case "span-top", "span-y-start", "span-start", "span-self-start" -> a.y + a.h - this.h - mB;
+                case "span-bottom", "span-y-end", "span-end", "span-self-end" -> a.y + mT;
+                case "center", "span-all" -> a.y + (a.h - this.h) / 2f;
+                default -> this.y;
+            };
+        }
+    }
+
+    private static boolean isAreaX(String t) {
+        return switch (t) {
+            case "left", "right", "span-left", "span-right",
+                 "x-start", "x-end", "x-self-start", "x-self-end",
+                 "span-x-start", "span-x-end" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isAreaY(String t) {
+        return switch (t) {
+            case "top", "bottom", "span-top", "span-bottom",
+                 "y-start", "y-end", "y-self-start", "y-self-end",
+                 "span-y-start", "span-y-end" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isAreaNeutral(String t) {
+        return switch (t) {
+            case "center", "span-all", "start", "end", "self-start", "self-end",
+                 "span-start", "span-end", "span-self-start", "span-self-end" -> true;
+            default -> false;
+        };
+    }
+
     /** {@code width} / {@code height} が {@code anchor-size(...)} ならアンカーの寸法（px）、そうでなければ -1。 */
     float anchorWidthPx() { return anchorSizePx(CssPropertyIndex.WIDTH); }
+    float anchorHeightPx() { return anchorSizePx(CssPropertyIndex.HEIGHT); }
 
     private float anchorSizePx(int prop) {
         String raw = style.get(prop);
@@ -382,7 +458,7 @@ public class LayoutBox {
         int close = raw.lastIndexOf(')');
         if (close < 0) return -1;
         String name = null, dim = null;
-        for (String part : raw.substring(12, close).trim().split("[\s,]+")) {
+        for (String part : raw.substring(12, close).trim().split("[\\s,]+")) {
             if (part.startsWith("--")) name = part;
             else if (!part.isEmpty() && dim == null) dim = part.toLowerCase(java.util.Locale.ROOT);
         }
@@ -2617,6 +2693,7 @@ public class LayoutBox {
             } else {
                 this.y = (Float.isNaN(staticY) ? refY : staticY) + mT;
             }
+            applyPositionArea();
         } else {
             float refX = this.isFixed ? 0 : parentX;
             float refY = this.isFixed ? 0 : parentY;

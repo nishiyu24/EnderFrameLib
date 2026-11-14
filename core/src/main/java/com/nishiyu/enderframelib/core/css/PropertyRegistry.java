@@ -274,6 +274,7 @@ public final class PropertyRegistry {
         // ---- Anchor Positioning（anchor-name はアンカーの名前の一覧、position-anchor は使うアンカーの名前）。再レイアウトを要する
         layout("anchor-name", "none", false, ValueType.LIST, false);
         layout("position-anchor", "auto", false, ValueType.STRING, false);
+        layout("position-area", "none", false, ValueType.STRING, false);
         shorthand("container", Invalidation.LAYOUT, ShorthandExpanders::container, "container-name", "container-type");
 
         // ---- 生成内容・置換要素

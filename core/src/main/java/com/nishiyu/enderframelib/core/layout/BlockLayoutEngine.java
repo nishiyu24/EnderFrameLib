@@ -244,6 +244,11 @@ public class BlockLayoutEngine extends LayoutEngine {
         if (box.parent == null) return Math.max(0, parentH - box.verticalDecoration());
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        float anchorH = box.isAbsolute ? box.anchorHeightPx() : -1;
+        if (anchorH >= 0) {
+            boolean isBorderBox = box.style.isBorderBox();
+            return Math.max(0, isBorderBox ? anchorH - box.verticalDecoration() : anchorH);
+        }
         if (hasSpecifiedHeight(box.style)) {
             float resolvedH = box.style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
             boolean isBorderBox = box.style.isBorderBox();

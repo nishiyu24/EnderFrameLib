@@ -1046,7 +1046,10 @@ public class HtmlParser {
         void mergeAttributes(HtmlNode node, Map<String, String> attrs) {
             if (node == null) return;
             for (var entry : attrs.entrySet()) {
-                if (!node.attrs.containsKey(entry.getKey())) node.attrs.put(entry.getKey(), entry.getValue());
+                if (!node.attrs.containsKey(entry.getKey())) {
+                    node.attrs.put(entry.getKey(), entry.getValue());
+                    if ("inert".equals(entry.getKey()) && root instanceof HtmlDocument doc) doc.noteInertAttribute(1);
+                }
             }
         }
 

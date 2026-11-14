@@ -2,6 +2,8 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
+import com.nishiyu.enderframelib.core.dom.InteractionState;
+import com.nishiyu.enderframelib.core.dom.node.HtmlDocument;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -23,16 +25,29 @@ public final class UiFocus {
     /** フォーカス移動の候補。{@code item} は位置の取れた表示項目（画面外で項目が無ければ null）。 */
     public record Candidate(HtmlNode node, DisplayItem item, int tabIndex, int order) {}
 
+    /** 節が不活性（{@code inert} 属性の配下、またはモーダル {@code <dialog>} の外側）か。 */
+    public static boolean isInert(HtmlNode node) {
+        if (node == null) return false;
+        HtmlNode root = node;
+        while (root.parent != null) root = root.parent;
+        if (root instanceof HtmlDocument doc) return doc.interactionState().isInert(node);
+        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
+            if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
+        }
+        return false;
+    }
+
     /** クリックでフォーカスできるか（{@code tabindex} が負でもクリックならできる）。 */
     public static boolean isMouseFocusable(HtmlNode node) {
-        if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")) return false;
+        if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("disabled")
+                || isInert(node)) return false;
         return explicitTabIndex(node) != null || isNaturallyFocusable(node);
     }
 
     /** クリックされた節から祖先を辿り、最初にフォーカスできる要素。無ければ null（フォーカスを外す）。 */
     public static HtmlNode nearestFocusable(HtmlNode start) {
         for (HtmlNode n = start; n != null; n = n.parent) {
-            if (n.attrs.containsKey("hidden") || n.attrs.containsKey("disabled")) return null;
+            if (n.attrs.containsKey("hidden") || n.attrs.containsKey("disabled") || isInert(n)) return null;
             if (isMouseFocusable(n)) return n;
         }
         return null;
@@ -78,12 +93,13 @@ public final class UiFocus {
 
     private static void collect(UiView ui, LayoutBox layout, HtmlNode node, Map<String, DisplayItem> items,
                                 List<Candidate> out, int[] order) {
-        if (node == null || node.attrs.containsKey("hidden")) return;
+        if (node == null || node.attrs.containsKey("hidden") || node.attrs.containsKey("inert")) return;
         LayoutBox box = findBox(layout, node);
         // display:none の部分木は箱があっても描かれない。ここから先へは降りない
         if (box != null && box.style != null && "none".equals(box.style.getOrDefault(CssPropertyIndex.DISPLAY, "block"))) return;
         Integer tab = explicitTabIndex(node);
-        boolean focusable = !node.attrs.containsKey("disabled") && (tab != null || isNaturallyFocusable(node));
+        boolean focusable = !node.attrs.containsKey("disabled") && !ui.interactionState().isInert(node)
+                && (tab != null || isNaturallyFocusable(node));
         if (box != null && focusable && (tab == null || tab >= 0) && !node.key().isEmpty()) {
             out.add(new Candidate(node, items.get(node.key()), tab != null ? tab : 0, order[0]++));
         }

@@ -136,6 +136,10 @@ public class UiInput {
 
         HtmlNode previous = session.interactionState().hoveredNode();
         HtmlNode next = hit != null ? session.findInteractiveNode(currentHitId) : null;
+        if (next != null && session.interactionState().isInert(next)) {
+            next = null;
+            currentHitId = "";
+        }
         boolean enteredNewTarget = previous != next;
         if (enteredNewTarget) {
             dispatchHoverTransition(previous, next, localX, localY);
@@ -170,11 +174,21 @@ public class UiInput {
         DisplayItem clickedEl = hit.element();
 
         if (clickedEl.isPart(UiView.SB_V_TRACK) || clickedEl.isPart(UiView.SB_H_TRACK)) {
+            HtmlNode sbOwner = session.findNode(clickedEl.baseId());
+            if (sbOwner != null && session.interactionState().isInert(sbOwner)) {
+                session.setActivePressedId("");
+                return null;
+            }
             session.handleScrollbarClick(clickedEl, pixelX, pixelY);
             PressResult result = new PressResult(clickedEl, hit, null, hostButton, true);
             if (host != null) host.pressed(result);
             return result;
         } else if (clickedEl.isPart(UiView.SB_V_THUMB) || clickedEl.isPart(UiView.SB_H_THUMB)) {
+            HtmlNode sbOwner = session.findNode(clickedEl.baseId());
+            if (sbOwner != null && session.interactionState().isInert(sbOwner)) {
+                session.setActivePressedId("");
+                return null;
+            }
             state.draggingId = clickedEl.baseId();
             state.draggingScrollbarPart = clickedEl.partSuffix();
             state.lastSentX = hit.localX();
@@ -185,11 +199,15 @@ public class UiInput {
         }
 
         String baseId = baseIdOf(clickedEl);
+        HtmlNode pressed = session.findInteractiveNode(baseId);
+        if (pressed != null && session.interactionState().isInert(pressed)) {
+            session.setActivePressedId("");
+            return null;
+        }
         session.setActivePressedId(baseId);
         state.pressedElement = clickedEl;
         playElementSound(clickedEl);
 
-        HtmlNode pressed = session.findInteractiveNode(baseId);
         if (pressed != null) {
             dispatchPress(pressed, hit.localX(), hit.localY(), hostButton);
         }
@@ -251,6 +269,7 @@ public class UiInput {
         HtmlNode released = hit != null
                 ? session.findInteractiveNode(baseIdOf(hit.element()))
                 : null;
+        if (released != null && session.interactionState().isInert(released)) released = null;
         int button = domButton(hostButton);
         if (released != null) {
             released.dispatchEvent(CoreEvent.pointer("pointerup", hit.localX(), hit.localY(), button, 0, false, false, false, false, null));
@@ -317,7 +336,7 @@ public class UiInput {
         if (hit != null) {
             String baseId = baseIdOf(hit.element());
             HtmlNode domNode = session.findInteractiveNode(baseId);
-            if (domNode != null) {
+            if (domNode != null && !session.interactionState().isInert(domNode)) {
                 var wheelEv = CoreEvent.wheel(hit.localX(), hit.localY(), deltaX, deltaY, ctrl, shift, alt, false);
                 domNode.dispatchEvent(wheelEv);
                 if (wheelEv.isDefaultPrevented()) {

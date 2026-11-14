@@ -235,4 +235,21 @@ class HitTestIndexTest {
         pm.markChanged();
         assertTrue(AlphaMask.of(pm, 128).opaque(8, 5), "画素が変わったら作り直す");
     }
+
+    @Test
+    void filteredHitTestMatchesLinearAndSkipsExcludedItems() {
+        String html = page("<div id=under onclick='u()' style='position:absolute;left:0;top:0;width:40px;height:40px;background:#00f'></div>"
+                + "<div id=over onclick='o()' style='position:absolute;left:0;top:0;width:40px;height:40px;background:#f00'></div>");
+        StandaloneView v = new StandaloneView(html, 60, 60, FontResolver.FALLBACK);
+        v.ui().flushInvalidation();
+        HitTestIndex idx = v.ui().hitTestIndex();
+        String sid = v.ui().sessionId();
+        java.util.function.Predicate<com.nishiyu.enderframelib.core.paint.model.DisplayItem> skipOver =
+                el -> !"over".equals(el.baseId());
+        assertEquals("over", baseId(idx.hitTest(sid, 20, 20)));
+        assertEquals("under", baseId(idx.hitTest(sid, 20, 20, skipOver)));
+        assertEquals("under", baseId(idx.hitTestLinear(sid, 20, 20, skipOver)));
+        assertTrue(idx.isPointerOverUi(sid, 20, 20, skipOver));
+        assertFalse(idx.isPointerOverUi(sid, 20, 20, el -> false));
+    }
 }

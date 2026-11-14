@@ -223,9 +223,9 @@ public class StandardDefaultActions {
         return false;
     }
 
-    /** 文書順に、閉じられる（表示中の auto popover と、モーダルの dialog）を集める。 */
+    /** 文書順に、閉じられる（不活性でない、表示中の auto popover とモーダルの dialog）を集める。 */
     private static void collectDismissable(HtmlNode node, List<com.nishiyu.enderframelib.core.dom.node.HtmlElement> out) {
-        if (node instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement el) {
+        if (node instanceof com.nishiyu.enderframelib.core.dom.node.HtmlElement el && !el.isInert()) {
             if ((isAutoPopover(el) && el.isPopoverOpen())
                     || ("dialog".equalsIgnoreCase(el.tag) && el.isModalOpen())) out.add(el);
         }

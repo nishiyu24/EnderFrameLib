@@ -510,10 +510,15 @@ public class HtmlElement extends HtmlNode implements Element {
     // Top Layer（HTML §4.11 dialog / §6.12 popover）
     // ==========================================
 
-    private InteractionState topLayerState() {
+    private HtmlDocument topLayerDocument() {
         HtmlNode root = this;
         while (root.parent != null) root = root.parent;
-        return root instanceof HtmlDocument doc ? doc.interactionState() : null;
+        return root instanceof HtmlDocument doc ? doc : null;
+    }
+
+    private InteractionState topLayerState() {
+        HtmlDocument doc = topLayerDocument();
+        return doc != null ? doc.interactionState() : null;
     }
 
     /** {@code dialog.show()}: モードレスで開く（{@code open} 属性だけ）。 */
@@ -525,9 +530,39 @@ public class HtmlElement extends HtmlNode implements Element {
     /** {@code dialog.showModal()}: Top Layer に載せて開く（{@code :modal}）。すでに開いていれば何もしない。 */
     public void showModal() {
         if (!"dialog".equalsIgnoreCase(tag) || hasAttribute("open")) return;
-        InteractionState st = topLayerState();
+        HtmlDocument doc = topLayerDocument();
+        InteractionState st = doc != null ? doc.interactionState() : null;
         setAttribute("open", "");
         if (st != null) st.setModal(this, true);
+        if (doc != null) {
+            doc.clearInertFocusAndPointer();
+            HtmlElement af = findAutofocus(this, st);
+            if (af != null) af.focus();
+        }
+    }
+
+    private static HtmlElement findAutofocus(HtmlNode node, InteractionState st) {
+        for (HtmlNode child : node.children) {
+            if (child instanceof HtmlElement el) {
+                if (el.hasAttribute("autofocus") && !el.hasAttribute("disabled") && !el.hasAttribute("hidden")
+                        && (st == null || !st.isInert(el))) {
+                    return el;
+                }
+                HtmlElement nested = findAutofocus(el, st);
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    /** この要素が不活性（{@code inert} 属性の配下、またはモーダル {@code <dialog>} の外側）か。 */
+    public boolean isInert() {
+        InteractionState st = topLayerState();
+        if (st != null) return st.isInert(this);
+        for (HtmlNode cur = this; cur != null; cur = cur.parent) {
+            if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
+        }
+        return false;
     }
 
     /** {@code dialog.close()}。閉じたら {@code close} イベントを送る。 */
@@ -577,7 +612,7 @@ public class HtmlElement extends HtmlNode implements Element {
 
     @Override
     public void focus() {
-        if (hasAttribute("disabled")) return;
+        if (hasAttribute("disabled") || isInert()) return;
         com.nishiyu.enderframelib.api.dom.Document ownerDoc = getOwnerDocument();
         if (ownerDoc instanceof HtmlDocument doc) {
             doc.setFocusedElement(this, false);

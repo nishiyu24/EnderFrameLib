@@ -42,6 +42,8 @@ public class HtmlDocument extends HtmlNode implements Document {
     private InteractionState interactionState = new InteractionState();
     private InlineActionSink inlineActionSink = null;
     private Ownership defaultOwnership = Ownership.CLIENT;
+    /** 文書内に {@code inert} 属性を持つ要素がいくつあるか（0 なら不活性判定の高速経路を通れる）。 */
+    private int inertAttrCount = 0;
 
     /**
      * 文書の外へ出ていく入口。イベントの伝播が終わり、{@code preventDefault} されていなければ、
@@ -292,8 +294,33 @@ public class HtmlDocument extends HtmlNode implements Document {
         this.domChangeListener = listener;
     }
 
+    public boolean hasInertAttributes() {
+        return inertAttrCount > 0;
+    }
+
+    public void noteInertAttribute(int delta) {
+        inertAttrCount = Math.max(0, inertAttrCount + delta);
+    }
+
+    /** 不活性になった要素のフォーカス・ホバー・押下状態を解除する。 */
+    public void clearInertFocusAndPointer() {
+        HtmlNode focused = interactionState.focusedNode();
+        if (focused != null && interactionState.isInert(focused)) {
+            setFocusedElement(null, false);
+        }
+        interactionState.clearInertPointerStates();
+    }
+
     /** 属性が変わった。規則が読む範囲だけを汚して、持ち主に知らせる。 */
     void attributeChanged(HtmlNode node, String name, @Nullable String oldValue, @Nullable String newValue) {
+        if ("inert".equals(name)) {
+            if (oldValue == null && newValue != null) {
+                inertAttrCount++;
+                clearInertFocusAndPointer();
+            } else if (oldValue != null && newValue == null) {
+                inertAttrCount = Math.max(0, inertAttrCount - 1);
+            }
+        }
         interactionState.invalidateAttribute(node, name, oldValue, newValue);
         DomChangeListener listener = domChangeListener;
         if (listener != null) listener.onDomChanged(node, name);
@@ -331,6 +358,13 @@ public class HtmlDocument extends HtmlNode implements Document {
      */
     public boolean setFocusedElement(@Nullable Element element, boolean focusVisible) {
         HtmlNode target = element instanceof HtmlNode node ? node : null;
+        if (target != null && interactionState.isInert(target)) {
+            HtmlNode old = interactionState.focusedNode();
+            if (old != null && interactionState.isInert(old)) {
+                return setFocusedElement(null, false);
+            }
+            return false;
+        }
         HtmlNode oldActive = interactionState.focusedNode();
         if (oldActive == target) {
             return target != null && interactionState.setFocusedNode(target, focusVisible);
@@ -359,6 +393,7 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     /** {@code subtree} の根と子孫を索引に載せる。 */
     void indexSubtree(HtmlNode subtree) {
+        if (subtree.attrs != null && subtree.attrs.containsKey("inert")) inertAttrCount++;
         index(subtree.getId(), subtree);
         for (HtmlNode child : subtree.children) {
             indexSubtree(child);
@@ -367,6 +402,9 @@ public class HtmlDocument extends HtmlNode implements Document {
 
     /** {@code subtree} の根と子孫を索引から外す。 */
     void unindexSubtree(HtmlNode subtree) {
+        if (subtree.attrs != null && subtree.attrs.containsKey("inert")) {
+            inertAttrCount = Math.max(0, inertAttrCount - 1);
+        }
         unindex(subtree.getId(), subtree);
         for (HtmlNode child : subtree.children) {
             unindexSubtree(child);

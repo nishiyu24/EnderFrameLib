@@ -537,22 +537,99 @@ public class InteractionState implements StateLookup {
         return true;
     }
 
-    /** {@code :modal}（{@code dialog.showModal()} 中）。Top Layer の所属を決める。 */
+    /** {@code :modal}（{@code dialog.showModal()} 中）。Top Layer の所属と表示順を決める。 */
+    private final ArrayList<HtmlNode> topLayerOrder = new ArrayList<>(4);
+
     public boolean setModal(HtmlNode node, boolean modal) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
         if (!flags.setBit(ElementState.MODAL, modal)) return false;
+        removeIdentity(topLayerOrder, node);
+        if (modal) topLayerOrder.add(node);
         invalidateState(node, ElementState.MODAL);
         return true;
     }
 
-    /** {@code :popover-open}（{@code showPopover()} 中）。Top Layer の所属を決める。 */
+    /** {@code :popover-open}（{@code showPopover()} 中）。Top Layer の所属と表示順を決める。 */
     public boolean setPopoverOpen(HtmlNode node, boolean open) {
         if (node == null) return false;
         StateFlags flags = getOrCreate(node);
         if (!flags.setBit(ElementState.POPOVER_OPEN, open)) return false;
+        removeIdentity(topLayerOrder, node);
+        if (open) topLayerOrder.add(node);
         invalidateState(node, ElementState.POPOVER_OPEN);
         return true;
+    }
+
+    /** 最前面で開いているモーダル {@code <dialog>}。無ければ null。 */
+    public HtmlNode activeModalDialog() {
+        for (int i = topLayerOrder.size() - 1; i >= 0; i--) {
+            HtmlNode n = topLayerOrder.get(i);
+            if (stateOf(n).modal() && rootOf(n) instanceof HtmlDocument) return n;
+        }
+        return null;
+    }
+
+    /** モーダル {@code <dialog>} が 1 つ以上開いているか。 */
+    public boolean hasActiveModal() {
+        return activeModalDialog() != null;
+    }
+
+    /**
+     * 節が不活性（{@code inert} 属性の配下、または最前面モーダル {@code <dialog>} の外側）か。
+     * モーダルより後に Top Layer へ積まれた popover 配下は不活性にしない。
+     */
+    public boolean isInert(HtmlNode node) {
+        if (node == null) return false;
+        HtmlNode topModal = activeModalDialog();
+        HtmlNode cur = node;
+        HtmlNode root = null;
+        while (cur != null) {
+            if (cur.attrs != null && cur.attrs.containsKey("inert")) return true;
+            if (cur == topModal) return false;
+            root = cur;
+            cur = cur.parent;
+        }
+        if (topModal == null) return false;
+        if (root != rootOf(topModal)) return false;
+        int modalIdx = indexOfIdentity(topLayerOrder, topModal);
+        for (int i = modalIdx + 1, n = topLayerOrder.size(); i < n; i++) {
+            HtmlNode upper = topLayerOrder.get(i);
+            if (stateOf(upper).popoverOpen() && isDescendantOrSelf(node, upper)) return false;
+        }
+        return true;
+    }
+
+    /** 不活性になった節からホバー／押下状態を外す（フォーカス解除は焦点イベントを伴うため呼び出し側で行う）。 */
+    public void clearInertPointerStates() {
+        if (hoveredNode != null && isInert(hoveredNode)) setHoveredNode(null);
+        if (activeNode != null && isInert(activeNode)) setActiveNode(null);
+    }
+
+    private static HtmlNode rootOf(HtmlNode n) {
+        HtmlNode cur = n;
+        while (cur != null && cur.parent != null) cur = cur.parent;
+        return cur;
+    }
+
+    private static boolean isDescendantOrSelf(HtmlNode node, HtmlNode ancestor) {
+        for (HtmlNode cur = node; cur != null; cur = cur.parent) {
+            if (cur == ancestor) return true;
+        }
+        return false;
+    }
+
+    private static void removeIdentity(ArrayList<HtmlNode> list, HtmlNode target) {
+        for (int i = list.size() - 1; i >= 0; i--) {
+            if (list.get(i) == target) list.remove(i);
+        }
+    }
+
+    private static int indexOfIdentity(ArrayList<HtmlNode> list, HtmlNode target) {
+        for (int i = 0, n = list.size(); i < n; i++) {
+            if (list.get(i) == target) return i;
+        }
+        return -1;
     }
 
     public boolean setOpen(HtmlNode node, Boolean open) {
@@ -975,6 +1052,7 @@ public class InteractionState implements StateLookup {
         hoveredNode = null;
         activeNode = null;
         focusedNode = null;
+        topLayerOrder.clear();
     }
 
     private static ArrayList<HtmlNode> fillAncestorsAndSelf(HtmlNode node, ArrayList<HtmlNode> out) {
