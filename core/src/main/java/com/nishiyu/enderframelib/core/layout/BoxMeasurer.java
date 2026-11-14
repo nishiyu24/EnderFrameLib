@@ -344,7 +344,7 @@ public final class BoxMeasurer {
      * 内容ボックスを 0 で止めずに border box を指定値のままにしていた（内容が負の大きさになる）。
      * CSS では内容ボックスが 0 で止まり、border box は padding + border まで広がる。
      */
-    private static float toBorderBox(float specified, float decoration, boolean isBorderBox) {
+    static float toBorderBox(float specified, float decoration, boolean isBorderBox) {
         return isBorderBox ? Math.max(specified, decoration) : specified + decoration;
     }
 

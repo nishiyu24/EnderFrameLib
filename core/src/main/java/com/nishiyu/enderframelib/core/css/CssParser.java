@@ -409,6 +409,7 @@ public final class CssParser {
                 case "keyframes", "-webkit-keyframes" -> collectKeyframes(rule, ctx.sheet());
                 case "property" -> registerProperty(rule, ctx.sheet());
                 case "counter-style" -> collectCounterStyle(rule, ctx.sheet());
+                case "position-try" -> collectPositionTry(rule, ctx.sheet());
                 case "font-face" -> {
                     // フォント登録は CssParser.fontFaceCallback が CSS 全体を受け取って処理する
                 }
@@ -544,6 +545,70 @@ public final class CssParser {
                     CustomPropertyRegistration.fromDescriptors(nameToken.value(), descriptors);
             // 無効な @property は無視する（先に登録されたものは残る）。同じ名前は後のものが勝つ
             if (registration != null) sheet.registeredProperties.put(registration.name(), registration);
+        }
+
+        // ---- @position-try
+
+        /**
+         * {@code @position-try <dashed-ident> { ... }} を読む（CSS Anchor Positioning 1 §6.1）。
+         * {@code !important} と対象外のプロパティ（inset / margin / sizing / self-alignment / position-anchor / position-area 以外）は捨てる。
+         */
+        private static void collectPositionTry(CssSyntax.Rule rule, StyleSheet sheet) {
+            if (!rule.hasBlock()) return;
+            List<ComponentValue> prelude = CssSyntax.trim(rule.prelude());
+            if (prelude.size() != 1) return;
+            Token nameToken = CssSyntax.tokenOf(prelude.getFirst());
+            if (nameToken == null || nameToken.type() != Type.IDENT || !nameToken.value().startsWith("--")) return;
+            String name = nameToken.value();
+
+            Map<String, String> declarations = new LinkedHashMap<>();
+            for (Item item : CssSyntax.parseBlockContents(rule.block())) {
+                Declaration d = item.declaration();
+                if (d == null || d.important()) continue;
+                putPositionTryDecl(d.name().toLowerCase(Locale.ROOT), d.valueText().trim(), declarations);
+            }
+            sheet.positionTryRules.put(name, new PositionTryRule(name, declarations));
+        }
+
+        private static void putPositionTryDecl(String prop, String val, Map<String, String> out) {
+            switch (prop) {
+                case "inset" -> out.putAll(ShorthandExpanders.inset(val));
+                case "margin" -> out.putAll(ShorthandExpanders.box("margin", val));
+                case "inset-block" -> putTwoSided(val, "top", "bottom", out);
+                case "inset-inline" -> putTwoSided(val, "left", "right", out);
+                case "margin-block" -> putTwoSided(val, "margin-top", "margin-bottom", out);
+                case "margin-inline" -> putTwoSided(val, "margin-left", "margin-right", out);
+                case "inset-block-start" -> out.put("top", val);
+                case "inset-block-end" -> out.put("bottom", val);
+                case "inset-inline-start" -> out.put("left", val);
+                case "inset-inline-end" -> out.put("right", val);
+                case "margin-block-start" -> out.put("margin-top", val);
+                case "margin-block-end" -> out.put("margin-bottom", val);
+                case "margin-inline-start" -> out.put("margin-left", val);
+                case "margin-inline-end" -> out.put("margin-right", val);
+                case "inline-size" -> out.put("width", val);
+                case "block-size" -> out.put("height", val);
+                case "min-inline-size" -> out.put("min-width", val);
+                case "max-inline-size" -> out.put("max-width", val);
+                case "min-block-size" -> out.put("min-height", val);
+                case "max-block-size" -> out.put("max-height", val);
+                case "place-self" -> putTwoSided(val, "align-self", "justify-self", out);
+                case "top", "right", "bottom", "left",
+                     "margin-top", "margin-right", "margin-bottom", "margin-left",
+                     "width", "height", "min-width", "max-width", "min-height", "max-height",
+                     "align-self", "justify-self",
+                     "position-anchor", "position-area" -> out.put(prop, val);
+                default -> {
+                    // CSS Anchor Positioning §6.1: それ以外のプロパティは無視する
+                }
+            }
+        }
+
+        private static void putTwoSided(String val, String firstProp, String secondProp, Map<String, String> out) {
+            List<String> parts = ShorthandExpanders.splitTopLevelTokens(val);
+            if (parts.isEmpty() || parts.size() > 2) return;
+            out.put(firstProp, parts.get(0));
+            out.put(secondProp, parts.size() == 2 ? parts.get(1) : parts.get(0));
         }
 
         // ---- スタイル規則

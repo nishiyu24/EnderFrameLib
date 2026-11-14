@@ -66,6 +66,9 @@ public final class CssProperty {
     public static final String ANCHOR_NAME = "anchor-name";
     public static final String POSITION_ANCHOR = "position-anchor";
     public static final String POSITION_AREA = "position-area";
+    public static final String POSITION_TRY = "position-try";
+    public static final String POSITION_TRY_FALLBACKS = "position-try-fallbacks";
+    public static final String POSITION_TRY_ORDER = "position-try-order";
     public static final String CONTAINER_TYPE = "container-type";
     public static final String CONTAIN = "contain";
     public static final String CONTENT_VISIBILITY = "content-visibility";

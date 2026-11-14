@@ -36,6 +36,8 @@ public class StyleSheet {
     public final Map<String, String> variables = new HashMap<>();
     /** {@code @property} で登録したカスタムプロパティ（名前は {@code --x}）。シートごとに持つ（文書の登録簿）。 */
     public final Map<String, CustomPropertyRegistration> registeredProperties = new LinkedHashMap<>();
+    /** 名前 → {@code @position-try} 規則。同じ名前は後のものが勝つ。 */
+    public final Map<String, PositionTryRule> positionTryRules = new LinkedHashMap<>();
     public final LayerTree layers = new LayerTree();
 
     private RuleIndex index;
@@ -245,6 +247,7 @@ public class StyleSheet {
         c.counterStyles.putAll(counterStyles);
         c.variables.putAll(variables);
         c.registeredProperties.putAll(registeredProperties);
+        c.positionTryRules.putAll(positionTryRules);
         c.layers.copyFrom(layers);
         c.mediaEnvironment = mediaEnvironment;
         return c;
@@ -260,6 +263,7 @@ public class StyleSheet {
         counterStyles.putAll(other.counterStyles);
         variables.putAll(other.variables);
         registeredProperties.putAll(other.registeredProperties);
+        positionTryRules.putAll(other.positionTryRules);
         layers.merge(other.layers);
     }
 

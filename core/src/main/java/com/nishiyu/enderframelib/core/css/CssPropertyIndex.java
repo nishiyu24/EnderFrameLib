@@ -14,6 +14,9 @@ public final class CssPropertyIndex {
     public static final int ANCHOR_NAME = ComputedStyle.idOf(CssProperty.ANCHOR_NAME);
     public static final int POSITION_ANCHOR = ComputedStyle.idOf(CssProperty.POSITION_ANCHOR);
     public static final int POSITION_AREA = ComputedStyle.idOf(CssProperty.POSITION_AREA);
+    public static final int POSITION_TRY = ComputedStyle.idOf(CssProperty.POSITION_TRY);
+    public static final int POSITION_TRY_FALLBACKS = ComputedStyle.idOf(CssProperty.POSITION_TRY_FALLBACKS);
+    public static final int POSITION_TRY_ORDER = ComputedStyle.idOf(CssProperty.POSITION_TRY_ORDER);
     public static final int ALIGN_SELF = ComputedStyle.idOf(CssProperty.ALIGN_SELF);
     public static final int ANIMATION = ComputedStyle.idOf(CssProperty.ANIMATION);
     public static final int ANIMATION_DELAY = ComputedStyle.idOf(CssProperty.ANIMATION_DELAY);

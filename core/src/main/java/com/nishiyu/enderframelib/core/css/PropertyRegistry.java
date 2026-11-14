@@ -78,7 +78,7 @@ public final class PropertyRegistry {
             "margin", "padding",
             "grid-row-gap", "grid-column-gap", "gap", "grid-gap", "grid", "grid-template",
             "flex", "flex-flow", "overflow", "inset",
-            "place-content", "place-items", "place-self", "container",
+            "place-content", "place-items", "place-self", "container", "position-try",
             "font", "list-style", "outline", "columns", "column-rule",
             "-webkit-background-clip", // background ショートハンドの background-clip: border-box より先に（先に入ったものが勝つ）
             "background",
@@ -275,6 +275,10 @@ public final class PropertyRegistry {
         layout("anchor-name", "none", false, ValueType.LIST, false);
         layout("position-anchor", "auto", false, ValueType.STRING, false);
         layout("position-area", "none", false, ValueType.STRING, false);
+        layout("position-try-fallbacks", "none", false, ValueType.LIST, false);
+        layout("position-try-order", "normal", false, ValueType.KEYWORD, false);
+        shorthand("position-try", Invalidation.LAYOUT, ShorthandExpanders::positionTry,
+                "position-try-order", "position-try-fallbacks");
         shorthand("container", Invalidation.LAYOUT, ShorthandExpanders::container, "container-name", "container-type");
 
         // ---- 生成内容・置換要素

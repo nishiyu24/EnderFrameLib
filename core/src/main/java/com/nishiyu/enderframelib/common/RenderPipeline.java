@@ -170,6 +170,7 @@ public class RenderPipeline {
             }
             nextReusable.releaseAfterBuild(prevReusable);
             rootBox.setReusableTable(nextReusable);
+            rootBox.positionTryRules = doc.sheet.positionTryRules;
             long tB = System.nanoTime();
             long aB = track ? threadAllocatedBytes() : 0;
             long profBox = StageProfiler.begin(PipelineStage.BOX_TREE);
@@ -292,6 +293,7 @@ public class RenderPipeline {
             LayoutBox.markLayoutChanges(rootBox);
             rootBox.hasUnmarkedChanges = false;
         }
+        rootBox.positionTryRules = doc.sheet.positionTryRules;
         runLayoutPasses(rootBox, rootW, rootH, doc.sheet.mediaEnvironment().resolution(), scrollState, fonts, true, true, false);
         RESIZE_SKIPS.incrementAndGet();
         stats().boxes = stats().restyled = stats().reused = 0;
@@ -307,6 +309,7 @@ public class RenderPipeline {
                                           Map<String, String> env, ScrollState scrollState, FontResolver fonts) {
         LayoutBox rootBox = buildLayoutTree(root, Map.of("display", "inline-block"), sheet, env, false);
         BoxTreeBuilder.build(rootBox, CounterStyles.of(sheet.counterStyles));
+        rootBox.positionTryRules = sheet.positionTryRules;
         runLayoutPasses(rootBox, rootW, rootH, sheet.mediaEnvironment().resolution(), scrollState, fonts, false, true, false);
         return rootBox;
     }

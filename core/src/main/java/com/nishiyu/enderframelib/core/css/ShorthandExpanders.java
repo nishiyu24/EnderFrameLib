@@ -740,4 +740,30 @@ final class ShorthandExpanders {
         out.put("container-type", slash < 0 ? "normal" : CssSyntax.serialize(type));
         return out;
     }
+
+    private static final Set<String> POSITION_TRY_ORDERS = Set.of(
+            "normal", "most-width", "most-height", "most-block-size", "most-inline-size");
+
+    /** {@code position-try: <'position-try-order'>? <'position-try-fallbacks'>}。 */
+    static Map<String, String> positionTry(String value) {
+        if (value == null || value.isBlank()) return Map.of();
+        List<ComponentValue> values = CssSyntax.trim(CssSyntax.parseComponentValues(value));
+        if (values.isEmpty()) return Map.of();
+        String order = "normal";
+        int start = 0;
+        Token first = CssSyntax.tokenOf(values.getFirst());
+        if (first != null && first.type() == Type.IDENT) {
+            String lower = first.value().toLowerCase(java.util.Locale.ROOT);
+            if (POSITION_TRY_ORDERS.contains(lower)) {
+                order = lower;
+                start = 1;
+            }
+        }
+        List<ComponentValue> rest = CssSyntax.trim(values.subList(start, values.size()));
+        if (rest.isEmpty()) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("position-try-order", order);
+        out.put("position-try-fallbacks", CssSyntax.serialize(rest));
+        return out;
+    }
 }
