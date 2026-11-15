@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.scene3d.Raycaster3D;
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
 
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
@@ -111,6 +113,8 @@ public class UiView implements AutoCloseable {
     private volatile boolean paintOffsetsDirty = false;
     private Document document;
     private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
+    /** ワールドごとのレイキャスト（BVH を持つので使い回す）。 */
+    private final Map<Long, Raycaster3D> scene3dRaycasters = new ConcurrentHashMap<>();
     private LayoutBox layoutRoot;
     private boolean serverManaged = false;
     private boolean headlessState = false;
@@ -1984,6 +1988,38 @@ public class UiView implements AutoCloseable {
         return scene3dWorlds.computeIfAbsent(nodeId, Scene3DWorld::new);
     }
 
+    /**
+     * UI の画素 {@code (pixelX, pixelY)} にある {@code <scene-3d>} を通して、3D の最も近いメッシュを選ぶ（2D のヒットテストと同じ座標・同じ
+     * 前後関係: 上に重なった 2D の要素があればそちらが先に当たり、3D は選ばれない）。
+     * @return 当たりが無い（3D 以外・外れ）なら null。結果の {@link Scene3DPick#hit} はこの呼び出しごとの新しいオブジェクト
+     */
+    public Scene3DPick pickScene3d(double pixelX, double pixelY) {
+        UIHitResult r = hitTest(pixelX, pixelY);
+        if (r == null || r.element() == null || r.element().events() == null) return null;
+        java.util.Map<String, String> ev = r.element().events();
+        if (!Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
+        String id = ev.get(Scene3DTags.WORLD_ATTR);
+        if (id == null) return null;
+        long worldId;
+        try {
+            worldId = Long.parseLong(id);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        Scene3DWorld world = scene3dWorlds.get(worldId);
+        if (world == null || r.element().width() <= 0 || r.element().height() <= 0) return null;
+        Raycaster3D.Hit hit = new Raycaster3D.Hit();
+        Raycaster3D rc = scene3dRaycasters.computeIfAbsent(worldId, k -> new Raycaster3D());
+        synchronized (rc) {
+            if (!rc.pickScreen(world, (float) r.localX(), (float) r.localY(), r.element().width(), r.element().height(), hit)) return null;
+        }
+        return new Scene3DPick(worldId, r.element().id(), hit);
+    }
+
+    /** {@link #pickScene3d} の結果: どの {@code <scene-3d>}（世界の nodeId・表示項目の id）の、どのメッシュに当たったか。 */
+    public record Scene3DPick(long worldId, String itemId, Raycaster3D.Hit hit) {
+    }
+
     /** 要素 ID から {@code <scene-3d>} に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
     public Scene3DWorld scene3dWorldById(String elementId) {
         HtmlNode node = findNode(elementId);
@@ -2478,6 +2514,7 @@ public class UiView implements AutoCloseable {
         virtualListBindings.clear();
         timers.clear();
         scene3dWorlds.clear();
+        scene3dRaycasters.clear();
         onClose();
     }
 

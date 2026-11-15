@@ -173,6 +173,11 @@ public final class StandaloneView implements AutoCloseable {
         return ui.getOrCreateScene3dWorld(nodeId);
     }
 
+    /** UI の画素にある {@code <scene-3d>} 越しに、3D の最も近いメッシュを選ぶ（なければ null）。 */
+    public UiView.Scene3DPick pickScene3d(double pixelX, double pixelY) {
+        return ui.pickScene3d(pixelX, pixelY);
+    }
+
     /** 要素 ID に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
     public Scene3DWorld scene3dWorldById(String elementId) {
         return ui.scene3dWorldById(elementId);
