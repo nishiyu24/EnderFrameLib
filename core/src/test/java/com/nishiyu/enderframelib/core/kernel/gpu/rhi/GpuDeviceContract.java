@@ -213,4 +213,32 @@ public abstract class GpuDeviceContract {
             closeDevice(d);
         }
     }
+
+    @Test
+    void unknownShadersAreRejected() {
+        GpuDevice d = open();
+        try {
+            assertThrows(IllegalArgumentException.class, () -> d.createPipeline(new GpuDevice.PipelineDesc("no-such-shader", true, false)));
+        } finally {
+            closeDevice(d);
+        }
+    }
+
+    @Test
+    void bindingNeedsTheDeclaredUniformsAndTextures() {
+        GpuDevice d = open();
+        try {
+            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+            GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+            GpuFrame f = d.beginFrame();
+            GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
+            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(new GpuBuffer[0], new GpuTexture[]{t}, ByteBuffer.allocateDirect(8))), "定数が足りない");
+            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(new GpuBuffer[0], new GpuTexture[0], ByteBuffer.allocateDirect(32))), "テクスチャが足りない");
+            assertThrows(IllegalStateException.class, () -> pass.drawInstanced(4, 1, 0), "結ぶ前は描けない");
+            pass.end();
+            f.end();
+        } finally {
+            closeDevice(d);
+        }
+    }
 }

@@ -17,13 +17,13 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
         RecordingGpuDevice d = new RecordingGpuDevice();
         GpuBuffer records = d.createBuffer(new GpuDevice.BufferDesc(64L * 4096, GpuDevice.BufferUsage.RECORD));
         GpuTexture target = d.createTexture(GpuDevice.TextureDesc.rgba8(800, 600, true));
-        GpuPipeline rects = d.createPipeline(new GpuDevice.PipelineDesc("rects", true, false));
+        GpuPipeline rects = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
         d.clearLog();
         GpuFrame f = d.beginFrame();
         ByteBuffer w = records.map();
         for (int i = 0; i < rows; i++) w.putInt(i * 64, i); // 図形 1 つ = レコード 1 件の書き込み（RHI を呼ばない）
         GpuPass p = f.beginPass(target, GpuDevice.LoadOp.CLEAR, 0xFFFFFFFF, null);
-        p.bind(rects, new GpuPass.Bindings(new GpuBuffer[]{records}, new GpuTexture[0], null));
+        p.bind(rects, new GpuPass.Bindings(new GpuBuffer[]{records}, new GpuTexture[]{target}, ByteBuffer.allocateDirect(32)));
         p.drawInstanced(6, rows, 0);
         p.end();
         f.end();

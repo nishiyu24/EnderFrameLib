@@ -7,6 +7,13 @@ import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuFrame;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPass;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuPipeline;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.Glsl;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL31;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.lwjgl.BufferUtils;
@@ -96,7 +103,16 @@ public final class GlDevice implements GpuDevice {
 
     @Override
     public GpuPipeline createPipeline(PipelineDesc desc) {
-        throw new UnsupportedOperationException("パイプラインはシェーダーの単一ソース化（G2）の後（G1 段 2）");
+        if (desc.depthTest()) throw new UnsupportedOperationException("深度テストは後の段（G1 段 3: 3D の RHI 化）");
+        return new Pipeline(desc, ShaderPrograms.byId(desc.shaderId()));
+    }
+
+    /** 描画に使う VAO（コア・プロファイルは VAO 無しで描けない）。頂点は {@code gl_VertexID} から作るので属性は無い。 */
+    private int vao;
+
+    private int vao() {
+        if (vao == 0) vao = GL30.glGenVertexArrays();
+        return vao;
     }
 
     @Override
@@ -127,6 +143,51 @@ public final class GlDevice implements GpuDevice {
     }
 
     // ------------------------------------------------------------------
+
+    private static final class Pipeline implements GpuPipeline {
+        final PipelineDesc desc;
+        final ShaderProgram shader;
+        final int program;
+        final int[] uniformLocs, samplerLocs;
+
+        Pipeline(PipelineDesc desc, ShaderProgram shader) {
+            this.desc = desc;
+            this.shader = shader;
+            int vs = compile(GL20.GL_VERTEX_SHADER, Glsl.gl150(shader.vertexBody()), shader.id());
+            int fs = compile(GL20.GL_FRAGMENT_SHADER, Glsl.gl150(shader.fragmentBody()), shader.id());
+            int p = GL20.glCreateProgram();
+            GL20.glAttachShader(p, vs);
+            GL20.glAttachShader(p, fs);
+            GL20.glLinkProgram(p);
+            GL20.glDeleteShader(vs);
+            GL20.glDeleteShader(fs);
+            if (GL20.glGetProgrami(p, GL20.GL_LINK_STATUS) == 0) {
+                String log = GL20.glGetProgramInfoLog(p);
+                GL20.glDeleteProgram(p);
+                throw new IllegalStateException("シェーダーのリンクに失敗（" + shader.id() + "）: " + log);
+            }
+            this.program = p;
+            this.uniformLocs = new int[shader.uniforms().size()];
+            for (int i = 0; i < uniformLocs.length; i++) uniformLocs[i] = GL20.glGetUniformLocation(p, shader.uniforms().get(i).name());
+            this.samplerLocs = new int[shader.samplers().size()];
+            for (int i = 0; i < samplerLocs.length; i++) samplerLocs[i] = GL20.glGetUniformLocation(p, shader.samplers().get(i));
+        }
+
+        private static int compile(int type, String src, String id) {
+            int sh = GL20.glCreateShader(type);
+            GL20.glShaderSource(sh, src);
+            GL20.glCompileShader(sh);
+            if (GL20.glGetShaderi(sh, GL20.GL_COMPILE_STATUS) == 0) {
+                String log = GL20.glGetShaderInfoLog(sh);
+                GL20.glDeleteShader(sh);
+                throw new IllegalStateException("シェーダーのコンパイルに失敗（" + id + "）: " + log);
+            }
+            return sh;
+        }
+
+        @Override public PipelineDesc desc() { return desc; }
+        @Override public void close() { GL20.glDeleteProgram(program); }
+    }
 
     private static final class Buffer implements GpuBuffer {
         final BufferDesc desc;
@@ -245,6 +306,15 @@ public final class GlDevice implements GpuDevice {
         private final int prevPackRow = GL11.glGetInteger(GL11.GL_PACK_ROW_LENGTH);
         private final float[] prevClear = new float[4];
         private final boolean[] prevMask = new boolean[4];
+        private final int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        private final int prevVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        private final boolean prevBlend = GL11.glIsEnabled(GL11.GL_BLEND);
+        private final int[] prevBlendFunc = {GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), GL11.glGetInteger(GL14.GL_BLEND_DST_RGB),
+                GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA)};
+        private final int prevActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        /** 描画で結んだテクスチャユニットの、結ぶ前の 2D テクスチャ（{@code end()} で戻す）。 */
+        private final int[] prevUnitTex = new int[16];
+        private int unitsTouched;
         private boolean passOpen;
         private boolean ended;
 
@@ -287,15 +357,67 @@ public final class GlDevice implements GpuDevice {
             passOpen = true;
             return new GpuPass() {
                 private boolean done;
+                private boolean bound;
+                private Pipeline current;
 
                 @Override
                 public void bind(GpuPipeline pipeline, Bindings bindings) {
-                    throw new UnsupportedOperationException("パイプラインは G1 段 2 以降");
+                    if (done) throw new IllegalStateException("終えたパス");
+                    Pipeline pl = (Pipeline) pipeline;
+                    ShaderProgram sh = pl.shader;
+                    if (bindings.textures().length < sh.samplers().size()) throw new IllegalArgumentException("テクスチャが足りない: " + sh.id());
+                    int need = sh.uniformBytes();
+                    if (need > 0 && (bindings.uniforms() == null || bindings.uniforms().remaining() < need)) {
+                        throw new IllegalArgumentException("定数が足りない: " + sh.id() + " は " + need + " バイト");
+                    }
+                    GL20.glUseProgram(pl.program);
+                    // ブレンドは記述子で決める（現在の GL 状態に依らない）
+                    if (pl.desc.premultipliedBlend()) {
+                        GL11.glEnable(GL11.GL_BLEND);
+                        GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                    } else {
+                        GL11.glDisable(GL11.GL_BLEND);
+                    }
+                    for (int i = 0; i < sh.samplers().size(); i++) {
+                        Texture tex = (Texture) bindings.textures()[i];
+                        GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
+                        if (i >= unitsTouched && i < prevUnitTex.length) {
+                            // 初めて触るユニットは、結ぶ前の状態を覚える
+                            prevUnitTex[i] = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+                            unitsTouched = i + 1;
+                        }
+                        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex.id);
+                        GL20.glUniform1i(pl.samplerLocs[i], i);
+                    }
+                    GL13.glActiveTexture(prevActiveTexture);
+                    if (need > 0) {
+                        ByteBuffer u = bindings.uniforms().duplicate().order(ByteOrder.nativeOrder());
+                        int o = u.position();
+                        for (int i = 0; i < sh.uniforms().size(); i++) {
+                            int loc = pl.uniformLocs[i];
+                            switch (sh.uniforms().get(i).type()) {
+                                case FLOAT -> { float a = u.getFloat(o); if (loc >= 0) GL20.glUniform1f(loc, a); o += 4; }
+                                case INT -> { int a = u.getInt(o); if (loc >= 0) GL20.glUniform1i(loc, a); o += 4; }
+                                case VEC2 -> { float a = u.getFloat(o), b = u.getFloat(o + 4); if (loc >= 0) GL20.glUniform2f(loc, a, b); o += 8; }
+                                case VEC4 -> {
+                                    float a = u.getFloat(o), b = u.getFloat(o + 4), c = u.getFloat(o + 8), d = u.getFloat(o + 12);
+                                    if (loc >= 0) GL20.glUniform4f(loc, a, b, c, d);
+                                    o += 16;
+                                }
+                            }
+                        }
+                    }
+                    current = pl;
+                    bound = true;
                 }
 
                 @Override
                 public void drawInstanced(int vertexCount, int instanceCount, int baseInstance) {
-                    throw new UnsupportedOperationException("描画は G1 段 2 以降");
+                    if (done) throw new IllegalStateException("終えたパス");
+                    if (!bound) throw new IllegalStateException("パイプラインを結んでいない");
+                    if (baseInstance != 0) throw new UnsupportedOperationException("baseInstance は GL 3.2 に無い（シェーダーの定数で渡す）");
+                    GL30.glBindVertexArray(vao());
+                    GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP, 0, vertexCount, instanceCount);
                 }
 
                 @Override
@@ -374,6 +496,16 @@ public final class GlDevice implements GpuDevice {
             GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, prevPackAlign);
             GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, prevUnpackRow);
             GL11.glPixelStorei(GL11.GL_PACK_ROW_LENGTH, prevPackRow);
+            for (int i = 0; i < unitsTouched; i++) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevUnitTex[i]);
+            }
+            GL13.glActiveTexture(prevActiveTexture);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTex); // 作業中に結んだ「現在のユニット」の分を戻す
+            GL20.glUseProgram(prevProgram);
+            GL30.glBindVertexArray(prevVao);
+            if (prevBlend) GL11.glEnable(GL11.GL_BLEND); else GL11.glDisable(GL11.GL_BLEND);
+            GL14.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3]);
             GL11.glClearColor(prevClear[0], prevClear[1], prevClear[2], prevClear[3]);
             GL11.glColorMask(prevMask[0], prevMask[1], prevMask[2], prevMask[3]);
             GL11.glFlush();

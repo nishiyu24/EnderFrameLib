@@ -89,9 +89,9 @@ class GlDeviceContractTest extends GpuDeviceContract {
     }
 
     @Test
-    void pipelinesAndDepthTargetsAreNotYetSupported() {
+    void depthIsNotYetSupported() {
         GlDevice d = (GlDevice) open();
-        assertThrows(UnsupportedOperationException.class, () -> d.createPipeline(new GpuDevice.PipelineDesc("x", true, false)));
+        assertThrows(UnsupportedOperationException.class, () -> d.createPipeline(new GpuDevice.PipelineDesc("tex", true, true)));
         assertThrows(UnsupportedOperationException.class, () -> d.createTexture(new GpuDevice.TextureDesc(4, 4, GpuDevice.TextureFormat.DEPTH24, true, 1)));
     }
 }

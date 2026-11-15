@@ -94,6 +94,7 @@ public final class RecordingGpuDevice implements GpuDevice {
 
     @Override
     public GpuPipeline createPipeline(PipelineDesc desc) {
+        com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms.byId(desc.shaderId()); // 未知の名前は IllegalArgumentException
         log.add(new Command.CreatePipeline(desc.shaderId()));
         return new Pipeline(desc);
     }
@@ -274,6 +275,11 @@ public final class RecordingGpuDevice implements GpuDevice {
             @Override
             public void bind(GpuPipeline pipeline, Bindings bindings) {
                 if (done) throw new IllegalStateException("終えたパス");
+                var program = com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms.byId(pipeline.desc().shaderId());
+                if (bindings.textures().length < program.samplers().size()) throw new IllegalArgumentException("テクスチャが足りない: " + program.id());
+                if (program.uniformBytes() > 0 && (bindings.uniforms() == null || bindings.uniforms().remaining() < program.uniformBytes())) {
+                    throw new IllegalArgumentException("定数が足りない: " + program.id() + " は " + program.uniformBytes() + " バイト");
+                }
                 bound = true;
                 log.add(new Command.Bind(pipeline.desc().shaderId(), bindings.records().length, bindings.textures().length));
             }
