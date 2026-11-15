@@ -829,24 +829,54 @@ public final class ComputedStyle {
      * 90°（{@code ccw} なら -90°）回して物理の縦書きにする。継承プロパティは所有者から受け継ぐ。
      */
     public ComputedStyle derivedVerticalWrapper(boolean ccw) {
-        return paintMemo(ccw ? KEY_VERTICAL_CCW : KEY_VERTICAL_CW, k -> buildInheritedWithOverrides("block", false, ccw ? 2 : 1));
+        return paintMemo(ccw ? KEY_VERTICAL_CCW : KEY_VERTICAL_CW, k -> buildInheritedWithOverrides("block", false, ccw ? 2 : 1, false));
     }
 
     /** {@code vertical-lr} 用: 転置（行が左から右へ積まれる）。 */
     public ComputedStyle derivedVerticalTransposed() {
-        return paintMemo(KEY_VERTICAL_T, k -> buildInheritedWithOverrides("block", false, 3));
+        return paintMemo(KEY_VERTICAL_T, k -> buildInheritedWithOverrides("block", false, 3, false));
+    }
+
+    /**
+     * 直交フロー（縦書きの根・縦書き内の {@code horizontal-tb}）の生成箱スタイル。
+     * {@code transformKind} は 1=90°, 2=-90°, 3=転置。{@code displayValue} が {@code flex} / {@code grid} / {@code table}
+     * ならコンテナ用の非継承プロパティも写し、{@code copyBoxSizes} が true（水平へ戻す根）なら寸法プロパティも写す。
+     */
+    public ComputedStyle derivedOrthogonalWrapper(int transformKind, String displayValue, boolean copyBoxSizes) {
+        if (!copyBoxSizes && "block".equals(displayValue)) {
+            if (transformKind == 1) return derivedVerticalWrapper(false);
+            if (transformKind == 2) return derivedVerticalWrapper(true);
+            if (transformKind == 3) return derivedVerticalTransposed();
+        }
+        int dk = switch (displayValue) {
+            case "inline-block" -> 1;
+            case "flex" -> 2;
+            case "grid" -> 3;
+            case "table" -> 4;
+            default -> 0;
+        };
+        Object key = ORTHO_KEYS[transformKind][dk][copyBoxSizes ? 1 : 0];
+        return paintMemo(key, k -> buildInheritedWithOverrides(displayValue, false, transformKind, copyBoxSizes));
     }
 
     private static final Object KEY_VERTICAL_T = new Object();
-
     private static final Object KEY_VERTICAL_CW = new Object();
     private static final Object KEY_VERTICAL_CCW = new Object();
-
-    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides) {
-        return buildInheritedWithOverrides(displayValue, markerOverrides, 0);
+    private static final Object[][][] ORTHO_KEYS = new Object[4][5][2];
+    static {
+        for (int t = 0; t < 4; t++) {
+            for (int d = 0; d < 5; d++) {
+                ORTHO_KEYS[t][d][0] = new Object();
+                ORTHO_KEYS[t][d][1] = new Object();
+            }
+        }
     }
 
-    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides, int vertical) {
+    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides) {
+        return buildInheritedWithOverrides(displayValue, markerOverrides, 0, false);
+    }
+
+    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides, int vertical, boolean copyBoxSizes) {
         CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
         int start = CssPropertyId.NON_INH_END;
         int len = out.length - start;
@@ -859,6 +889,16 @@ public final class ComputedStyle {
         if (vertical != 0) {
             cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM, CssValue.of(vertical == 3 ? "matrix(0,1,1,0,0,0)" : vertical == 2 ? "rotate(-90deg)" : "rotate(90deg)"));
             cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM_ORIGIN, CssValue.of("0px 0px"));
+            if ("flex".equals(displayValue)) {
+                cnt += copySlots(out, OrthogonalPropGroups.FLEX);
+            } else if ("grid".equals(displayValue)) {
+                cnt += copySlots(out, OrthogonalPropGroups.GRID);
+            } else if ("table".equals(displayValue)) {
+                cnt += copySlots(out, OrthogonalPropGroups.TABLE);
+            }
+            if (copyBoxSizes) {
+                cnt += copySlots(out, OrthogonalPropGroups.BOX_SIZES);
+            }
         }
         if (markerOverrides) {
             cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
@@ -915,6 +955,42 @@ public final class ComputedStyle {
         if (prev == null && v != null) return 1;
         if (prev != null && v == null) return -1;
         return 0;
+    }
+
+    private int copySlots(CssValue[] out, int[] ids) {
+        int delta = 0;
+        for (int id : ids) {
+            CssValue v = values[id];
+            if (v != null) delta += setOverrideSlot(out, id, v);
+        }
+        return delta;
+    }
+
+    /**
+     * 直交ラッパー生成時のみ読み込む添字表（{@code ComputedStyle} と {@code CssPropertyIndex} の静的初期化循環を防ぐ）。
+     */
+    private static final class OrthogonalPropGroups {
+        static final int[] FLEX = {
+                CssPropertyIndex.FLEX_DIRECTION, CssPropertyIndex.FLEX_WRAP,
+                CssPropertyIndex.JUSTIFY_CONTENT, CssPropertyIndex.ALIGN_ITEMS, CssPropertyIndex.ALIGN_CONTENT,
+                CssPropertyIndex.ROW_GAP, CssPropertyIndex.COLUMN_GAP
+        };
+        static final int[] GRID = {
+                CssPropertyIndex.GRID_TEMPLATE_COLUMNS, CssPropertyIndex.GRID_TEMPLATE_ROWS, CssPropertyIndex.GRID_TEMPLATE_AREAS,
+                CssPropertyIndex.GRID_AUTO_FLOW, CssPropertyIndex.GRID_AUTO_COLUMNS, CssPropertyIndex.GRID_AUTO_ROWS,
+                CssPropertyIndex.JUSTIFY_ITEMS, CssPropertyIndex.JUSTIFY_CONTENT,
+                CssPropertyIndex.ALIGN_ITEMS, CssPropertyIndex.ALIGN_CONTENT,
+                CssPropertyIndex.ROW_GAP, CssPropertyIndex.COLUMN_GAP
+        };
+        static final int[] TABLE = {
+                CssPropertyIndex.BORDER_COLLAPSE, CssPropertyIndex.BORDER_SPACING,
+                CssPropertyIndex.TABLE_LAYOUT, CssPropertyIndex.CAPTION_SIDE, CssPropertyIndex.EMPTY_CELLS
+        };
+        static final int[] BOX_SIZES = {
+                CssPropertyIndex.WIDTH, CssPropertyIndex.MIN_WIDTH, CssPropertyIndex.MAX_WIDTH,
+                CssPropertyIndex.HEIGHT, CssPropertyIndex.MIN_HEIGHT, CssPropertyIndex.MAX_HEIGHT,
+                CssPropertyIndex.BOX_SIZING, CssPropertyIndex.ASPECT_RATIO
+        };
     }
 
     private byte extrasViewportFlag() {

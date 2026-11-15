@@ -41,6 +41,7 @@ public abstract class LayoutEngine {
         static final LayoutEngine GRID = new GridLayoutEngine();
         static final LayoutEngine TABLE = new TableLayoutEngine();
         static final LayoutEngine VERTICAL = new VerticalWritingEngine();
+        static final LayoutEngine HORIZONTAL_RETURN = new HorizontalReturnEngine();
     }
 
     /**
@@ -50,9 +51,11 @@ public abstract class LayoutEngine {
      * 落としていた。{@code inline-flex} も外側の振る舞い（インライン）と内側の整形（flex）を
      * 区別できず、{@code table} / {@code table-*} はブロックとして縦に積まれていた。
      */
-    /** 箱のエンジン。縦書きの根は {@link VerticalWritingEngine}、それ以外は {@code display} で決まる。 */
+    /** 箱のエンジン。縦書きの根は {@link VerticalWritingEngine}、直交戻しの根は {@link HorizontalReturnEngine}、それ以外は {@code display} で決まる。 */
     public static LayoutEngine getEngine(LayoutBox box) {
-        return box.isVerticalRoot ? Engines.VERTICAL : getEngine(box.display);
+        if (box.isVerticalRoot) return Engines.VERTICAL;
+        if (box.isHorizontalReturnRoot) return Engines.HORIZONTAL_RETURN;
+        return getEngine(box.display);
     }
 
     public static LayoutEngine getEngine(Display display) {

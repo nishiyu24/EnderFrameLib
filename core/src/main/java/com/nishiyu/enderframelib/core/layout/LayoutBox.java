@@ -73,7 +73,13 @@ public class LayoutBox {
      */
     public boolean isVerticalRoot;
 
-    /** 縦書きの根の内容を包む、回転を持つ生成箱（DOM に無い）。 */
+    /** 縦書きの中に置かれた {@code writing-mode: horizontal-tb} の根（縦中横・直交ネスト）。内容は {@link #isVerticalWrapper} に包まれ、{@link HorizontalReturnEngine} が逆回転で水平へ戻して置く。 */
+    public boolean isHorizontalReturnRoot;
+
+    /** {@link #isHorizontalReturnRoot} を包んでいた親の書字方向（{@link com.nishiyu.enderframelib.core.css.WritingModes} の定数）。 */
+    public byte orthogonalParentFlow;
+
+    /** 縦書き／直交戻しの根の内容を包む、回転を持つ生成箱（DOM に無い）。 */
     public boolean isVerticalWrapper;
     /**
      * {@code list-style-position: outside} の {@code ::marker}。通常フローに入らず、
@@ -3183,13 +3189,15 @@ public class LayoutBox {
                 }
                 if (child.isVerticalWrapper) {
                     // 回転して置かれる箱: 回転前の箱（右へ・下へ張り出して置く）ではなく、回転後の物理の範囲で数える。
-                    // 論理の長さ方向（回転前の横）が物理の縦、論理の積み方向（回転前の縦）が物理の横
-                    boolean ccw = com.nishiyu.enderframelib.core.css.WritingModes.isCounterClockwise(
-                            com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style));
+                    int flow = isHorizontalReturnRoot
+                            ? (orthogonalParentFlow & 0xFF)
+                            : com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style);
+                    boolean tr = com.nishiyu.enderframelib.core.css.WritingModes.isTransposed(flow);
+                    boolean parentCcw = com.nishiyu.enderframelib.core.css.WritingModes.isCounterClockwise(flow);
+                    // 直交戻し（horizontal-tb）は親の回転を打ち消す逆回転を持つ
+                    boolean ccw = isHorizontalReturnRoot ? (!tr && !parentCcw) : parentCcw;
                     float along = Math.max(child.w, child.descendantOverflowRight);
                     float across = Math.max(child.h, child.descendantOverflowBottom);
-                    boolean tr = com.nishiyu.enderframelib.core.css.WritingModes.isTransposed(
-                            com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style));
                     float r = (ccw || tr ? child.x + across : child.x) + scrollX;
                     float b = (ccw ? child.y : child.y + along) + scrollY;
                     if (r > extRight) extRight = r;

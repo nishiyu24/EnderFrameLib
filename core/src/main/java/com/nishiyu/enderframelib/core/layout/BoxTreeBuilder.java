@@ -84,7 +84,7 @@ public final class BoxTreeBuilder {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
         if (root.subtreeHasGenerated) builder.collectReusableGenerated(root);
         builder.counters.apply(root);
-        builder.buildBox(root, false);
+        builder.buildBox(root, WritingModes.HORIZONTAL);
     }
 
     // ==========================================
@@ -106,7 +106,8 @@ public final class BoxTreeBuilder {
         if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.listItem()) return false;
         if (d.inner() != Inner.FLOW && d.inner() != Inner.FLOW_ROOT) return false;
         if (parent.isAnonymous || parent.node == null || parent.node.isPseudoNode || LayoutBox.isTableBox(parent)) return false;
-        if (parent.isVerticalRoot || WritingModes.isVertical(parent.style)) return false;
+        if (parent.isVerticalRoot || parent.isHorizontalReturnRoot || parent.isVerticalWrapper
+                || WritingModes.isVertical(parent.style)) return false;
         if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()
                 || parent.contentAutoSkipped || parent.childrenDeferred || parent.isVirtualizedFlow()) return false;
         String tag = parent.node.tag == null ? "" : parent.node.tag.toLowerCase(Locale.ROOT);
@@ -148,7 +149,7 @@ public final class BoxTreeBuilder {
     public static void insertBuiltChild(LayoutBox parent, LayoutBox after, LayoutBox added, CounterStyles counterStyles) {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
         builder.counters.apply(added);
-        builder.buildBox(added, WritingModes.isVertical(parent.style));
+        builder.buildBox(added, WritingModes.flowOf(parent.style));
         int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
         parent.children.add(index, added);
         added.parent = parent;
@@ -199,49 +200,81 @@ public final class BoxTreeBuilder {
         return reusableGenerated.remove(id);
     }
 
-    private void buildBox(LayoutBox box, boolean parentVertical) {
+    private void buildBox(LayoutBox box, int activeFlow) {
+        boolean verticalRoot = activeFlow == WritingModes.HORIZONTAL
+                && WritingModes.isVertical(box.style)
+                && isOrthogonalRootCandidate(box);
+        boolean horizontalReturnRoot = activeFlow != WritingModes.HORIZONTAL
+                && WritingModes.flowOf(box.style) == WritingModes.HORIZONTAL
+                && isOrthogonalRootCandidate(box);
+        int childFlow = verticalRoot ? WritingModes.flowOf(box.style)
+                : horizontalReturnRoot ? WritingModes.HORIZONTAL
+                : activeFlow;
+
         List<LayoutBox> items = new ArrayList<>();
         LayoutBox marker = box.display.listItem() ? createMarker(box, counters) : null;
         if (marker != null) items.add(marker);
-        collectItems(box, items);
+        collectItems(box, items, childFlow);
         LayoutBox legend = takeRenderedLegend(box, items);
         box.clearChildren();
         LayoutBox.bumpShapeEpoch();
         if (legend != null) box.addChild(legend);
         List<LayoutBox> kids = fixup(box, items);
         box.isVerticalRoot = false;
-        if (!parentVertical && isVerticalRootCandidate(box)) kids = wrapVerticalContent(box, kids);
+        box.isHorizontalReturnRoot = false;
+        box.orthogonalParentFlow = 0;
+        if (verticalRoot) {
+            kids = wrapOrthogonalContent(box, kids, WritingModes.flowOf(box.style), true);
+        } else if (horizontalReturnRoot) {
+            kids = wrapOrthogonalContent(box, kids, activeFlow, false);
+        }
         for (LayoutBox child : kids) box.addChild(child);
     }
 
-    /** 縦書きの根になれる箱か（{@code writing-mode} が縦で、ブロックコンテナ。flex / grid / 表 / 置換要素は対象外）。 */
-    private static boolean isVerticalRootCandidate(LayoutBox box) {
+    /** 直交フロー（縦書きの根・縦書き内の {@code horizontal-tb}）になれる箱か（ブロックコンテナ・flex・grid・表。置換要素は対象外）。 */
+    private static boolean isOrthogonalRootCandidate(LayoutBox box) {
         if (box.isAnonymous || box.node == null || box.node.nodeType == NodeType.TEXT || box.node.isPseudoNode) return false;
-        Inner inner = box.display.inner();
-        if (box.display.isNone() || box.display.isContents() || (inner != Inner.FLOW && inner != Inner.FLOW_ROOT)) return false;
+        if (box.display.isNone() || box.display.isContents()) return false;
         if (ReplacedElements.isHost(box.node.tag)) return false;
-        return WritingModes.isVertical(box.style);
+        Inner inner = box.display.inner();
+        return box.display.isBlockContainer() || inner == Inner.FLEX || inner == Inner.GRID || inner == Inner.TABLE;
+    }
+
+    private static ComputedStyle wrapperStyle(LayoutBox root, int flow, boolean toVertical) {
+        int transformKind = toVertical
+                ? (WritingModes.isTransposed(flow) ? 3 : WritingModes.isCounterClockwise(flow) ? 2 : 1)
+                : (WritingModes.isTransposed(flow) ? 3 : WritingModes.isCounterClockwise(flow) ? 1 : 2);
+        String disp = switch (root.display.inner()) {
+            case FLEX -> "flex";
+            case GRID -> "grid";
+            case TABLE -> "table";
+            default -> (!toVertical && root.display.isInlineLevel()) ? "inline-block" : "block";
+        };
+        return root.style.derivedOrthogonalWrapper(transformKind, disp, !toVertical);
     }
 
     /**
-     * 縦書きの根の通常フローの子を、回転を持つ 1 つの生成箱へ包む。位置指定・非表示・外側マーカーは根の直下に残す
+     * 直交フローの根の通常フローの子を、回転を持つ 1 つの生成箱へ包む。位置指定・非表示・外側マーカーは根の直下に残す
      * （包含ブロックを回転の内側へ入れない）。
      */
-    private List<LayoutBox> wrapVerticalContent(LayoutBox root, List<LayoutBox> kids) {
-        int flow = WritingModes.flowOf(root.style);
+    private List<LayoutBox> wrapOrthogonalContent(LayoutBox root, List<LayoutBox> kids, int flow, boolean toVertical) {
         HtmlNode node = new HtmlNode("div");
         node.isPseudoNode = true;
         node.parent = root.node;
-        node.setId(root.node.key() + "_vw");
-        LayoutBox wrapper = new LayoutBox(node, WritingModes.isTransposed(flow) ? root.style.derivedVerticalTransposed()
-                : root.style.derivedVerticalWrapper(WritingModes.isCounterClockwise(flow)));
+        node.setId(root.node.key() + (toVertical ? "_vw" : "_hw"));
+        LayoutBox wrapper = new LayoutBox(node, wrapperStyle(root, flow, toVertical));
         wrapper.isVerticalWrapper = true;
         List<LayoutBox> outside = new ArrayList<>();
         for (LayoutBox k : kids) {
             if (k.isAbsolute || k.isOutsideMarker || k.isRenderedLegend || k.display.isNone()) outside.add(k);
             else wrapper.addChild(k);
         }
-        root.isVerticalRoot = true;
+        if (toVertical) {
+            root.isVerticalRoot = true;
+        } else {
+            root.isHorizontalReturnRoot = true;
+            root.orthogonalParentFlow = (byte) flow;
+        }
         List<LayoutBox> result = new ArrayList<>(outside.size() + 1);
         result.add(wrapper);
         result.addAll(outside);
@@ -283,15 +316,15 @@ public final class BoxTreeBuilder {
      * 箱の子になる箱を文書順に集める。{@code display: contents} の子はその子を代わりに入れる。
      * カウンタの適用もこの順で行う（CSS のカウンタは要素ツリーの文書順で数える）。
      */
-    private void collectItems(LayoutBox element, List<LayoutBox> out) {
+    private void collectItems(LayoutBox element, List<LayoutBox> out, int childFlow) {
         int mark = counters.mark();
         for (LayoutBox child : element.elementChildren) {
             counters.apply(child);
             if (child.node.isPseudoNode) evaluateGeneratedContent(child, counters);
             if (child.display.isContents()) {
-                collectItems(child, out);
+                collectItems(child, out, childFlow);
             } else {
-                buildBox(child, WritingModes.isVertical(element.style));
+                buildBox(child, childFlow);
                 out.add(child);
             }
         }
@@ -468,6 +501,14 @@ public final class BoxTreeBuilder {
      */
     public static void restyleGeneratedBoxes(LayoutBox owner) {
         for (LayoutBox child : owner.children) {
+            if (child.isVerticalWrapper) {
+                ComputedStyle next = owner.isVerticalRoot
+                        ? wrapperStyle(owner, WritingModes.flowOf(owner.style), true)
+                        : wrapperStyle(owner, owner.orthogonalParentFlow & 0xFF, false);
+                if (child.style != next) child.updateStyle(next);
+                restyleGeneratedBoxes(child);
+                continue;
+            }
             if (!child.isAnonymous) continue;
             if (child.node.isPseudoNode) {
                 ComputedStyle next = markerStyleOf(owner);

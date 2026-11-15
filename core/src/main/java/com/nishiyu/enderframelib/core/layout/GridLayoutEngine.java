@@ -200,6 +200,7 @@ public class GridLayoutEngine extends LayoutEngine {
 
     /** 高さが指定されていれば内容ボックスの高さ、無ければ NaN（行の % と fr は不定として扱う）。 */
     private static float definiteHeight(LayoutBox box, float parentH, LayoutContext ctx) {
+        if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         String h = box.style.get(CssPropertyIndex.HEIGHT);
         if (h == null || "auto".equalsIgnoreCase(h.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
         if (h.contains("%") && parentH <= 0) return Float.NaN;

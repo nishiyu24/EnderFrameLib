@@ -164,9 +164,13 @@ public class VerticalWritingTest {
     }
 
     @Test
-    public void flexAndGridAreNotVerticalRoots() {
-        Ctx c = new Ctx("<div id=f style='display:flex;writing-mode:vertical-rl;height:100px'>x</div>");
-        assertFalse(find(c.layout(), "f").isVerticalRoot, "flex コンテナは対象外（LIMITATION）");
+    public void flexAndGridAndTableCanBeVerticalRoots() {
+        Ctx cf = new Ctx("<div id=f style='display:flex;writing-mode:vertical-rl;height:100px'><div>x</div></div>");
+        assertTrue(find(cf.layout(), "f").isVerticalRoot, "flex コンテナも縦書きの根になる");
+        Ctx cg = new Ctx("<div id=g style='display:grid;writing-mode:vertical-rl;height:100px'><div>x</div></div>");
+        assertTrue(find(cg.layout(), "g").isVerticalRoot, "grid コンテナも縦書きの根になる");
+        Ctx ct = new Ctx("<table id=t style='writing-mode:vertical-rl;height:100px'><tr><td>x</td></tr></table>");
+        assertTrue(find(ct.layout(), "t").isVerticalRoot, "table コンテナも縦書きの根になる");
     }
 
     @Test
@@ -492,5 +496,118 @@ public class VerticalWritingTest {
         } finally {
             view.close();
         }
+    }
+
+    // ------------------------------------------------------------------ flex / grid / table の縦書き根
+
+    @Test
+    public void verticalFlexRowRunsTopToBottomAndColumnRunsRightToLeft() {
+        // flex-direction: row（主軸＝論理インライン＝物理の上→下）で赤が上、青が下
+        String rowHtml = "<div style='position:absolute;left:100px;top:100px;display:flex;writing-mode:vertical-rl;height:120px;gap:10px'>"
+                + "<div style='width:30px;height:20px;background:#f00'></div>"
+                + "<div style='width:30px;height:20px;background:#00f'></div></div>";
+        int[] rowPx = paint(rowHtml);
+        assertEquals(0xFF0000, rowPx[115 * W + 110] & 0xFFFFFF, "row の 1 つ目は上");
+        assertEquals(0x0000FF, rowPx[155 * W + 110] & 0xFFFFFF, "row の 2 つ目は gap 10px 挟んで下");
+
+        // flex-direction: column（主軸＝論理ブロック＝vertical-rl なので右→左）で赤が右、青が左
+        String colHtml = "<div style='position:absolute;left:100px;top:100px;display:flex;flex-direction:column;writing-mode:vertical-rl;height:60px'>"
+                + "<div style='width:40px;height:25px;background:#f00'></div>"
+                + "<div style='width:40px;height:25px;background:#00f'></div></div>";
+        int[] colPx = paint(colHtml);
+        assertEquals(0xFF0000, colPx[120 * W + 135] & 0xFFFFFF, "column の 1 つ目は右");
+        assertEquals(0x0000FF, colPx[120 * W + 110] & 0xFFFFFF, "column の 2 つ目は左");
+    }
+
+    @Test
+    public void verticalGridPlacesTracksAlongVerticalAndHorizontalAxes() {
+        // 2列×2行のグリッド（vertical-rl）: 列は縦（上から下へ 40px, 40px）、行は横（右から左へ 1fr, 1fr）
+        String html = "<div style='position:absolute;left:100px;top:100px;display:grid;writing-mode:vertical-rl;"
+                + "width:60px;height:80px;grid-template-columns:40px 40px;grid-template-rows:1fr 1fr'>"
+                + "<div style='background:#f00'></div><div style='background:#0f0'></div>"
+                + "<div style='background:#00f'></div><div style='background:#ff0'></div></div>";
+        int[] px = paint(html);
+        assertEquals(0xFF0000, px[120 * W + 145] & 0xFFFFFF, "(col0, row0) は右上＝赤");
+        assertEquals(0x00FF00, px[160 * W + 145] & 0xFFFFFF, "(col1, row0) は右下＝緑");
+        assertEquals(0x0000FF, px[120 * W + 115] & 0xFFFFFF, "(col0, row1) は左上＝青");
+        assertEquals(0xFFFF00, px[160 * W + 115] & 0xFFFFFF, "(col1, row1) は左下＝黄");
+    }
+
+    @Test
+    public void verticalTableStacksRowsAcrossColumns() {
+        String html = "<table style='position:absolute;left:100px;top:100px;writing-mode:vertical-rl;border-collapse:collapse;height:80px'>"
+                + "<tr><td style='width:30px;height:30px;padding:0;background:#f00'></td>"
+                + "<td style='width:30px;height:30px;padding:0;background:#0f0'></td></tr>"
+                + "<tr><td style='width:30px;height:30px;padding:0;background:#00f'></td>"
+                + "<td style='width:30px;height:30px;padding:0;background:#ff0'></td></tr></table>";
+        int[] px = paint(html);
+        assertEquals(0xFF0000, px[115 * W + 145] & 0xFFFFFF, "1 行目 1 列目＝右上赤");
+        assertEquals(0x00FF00, px[145 * W + 145] & 0xFFFFFF, "1 行目 2 列目＝右下緑");
+        assertEquals(0x0000FF, px[115 * W + 115] & 0xFFFFFF, "2 行目 1 列目＝左上青");
+        assertEquals(0xFFFF00, px[145 * W + 115] & 0xFFFFFF, "2 行目 2 列目＝左下黄");
+    }
+
+    // ------------------------------------------------------------------ 縦書き内の horizontal-tb（縦中横・直交戻し）
+
+    @Test
+    public void horizontalTbInsideVerticalReturnsToUprightHorizontal() {
+        String html = "<div id=v style='position:absolute;left:100px;top:100px;writing-mode:vertical-rl;height:200px'>"
+                + "<div id=h style='writing-mode:horizontal-tb;width:180px;font:bold 20px/24px monospace'>WWWWWW</div></div>";
+        Ctx c = new Ctx(html);
+        LayoutBox root = c.layout();
+        LayoutBox h = find(root, "h");
+        assertNotNull(h);
+        assertTrue(h.isHorizontalReturnRoot, "縦書き内の horizontal-tb は直交戻しの根になる");
+
+        int[] px = paint(html);
+        int[] ink = inkBounds(px);
+        assertNotNull(ink);
+        int w = ink[2] - ink[0], ht = ink[3] - ink[1];
+        assertTrue(w > ht * 3, "縦書きの中に戻した horizontal-tb は横長に描かれる: " + w + "x" + ht);
+    }
+
+    @Test
+    public void tateChuYokoInlineBlockSitsHorizontallyInsideVerticalColumn() {
+        // 縦中横: 縦に並ぶ文字列の中に inline-block の horizontal-tb("II") を挟む。
+        // vertical-rl / vertical-lr / sideways-lr のいずれでも、水平の箱の中は正立横並び
+        for (String mode : new String[]{"vertical-rl", "vertical-lr", "sideways-lr"}) {
+            String html = "<div style='position:absolute;left:100px;top:100px;writing-mode:" + mode
+                    + ";height:240px;font:bold 20px/24px monospace'>"
+                    + "WWWW<span id=t style='display:inline-block;writing-mode:horizontal-tb'>II</span>WWWW</div>";
+            Ctx c = new Ctx(html);
+            LayoutBox root = c.layout();
+            LayoutBox t = find(root, "t");
+            assertTrue(t.isHorizontalReturnRoot, mode + " の中の縦中横");
+
+            int[] px = paint("<div style='position:absolute;left:100px;top:100px;writing-mode:" + mode
+                    + ";width:40px;height:200px;font:bold 24px/24px monospace'>"
+                    + "<span style='display:inline-block;writing-mode:horizontal-tb'>I</span></div>");
+            int[] ink = inkBounds(px);
+            assertNotNull(ink, mode + " の縦中横が描画される");
+            int iw = ink[2] - ink[0], ih = ink[3] - ink[1];
+            assertTrue(ih >= iw, mode + " の縦中横の I は縦棒（正立）: " + iw + "x" + ih);
+        }
+    }
+
+    @Test
+    public void verticalThenHorizontalThenVerticalNestsCleanly() {
+        String html = "<div id=v1 style='writing-mode:vertical-rl;height:200px'>"
+                + "<div id=h1 style='writing-mode:horizontal-tb;width:150px'>"
+                + "<div id=v2 style='writing-mode:vertical-rl;height:100px'>abc</div></div></div>";
+        Ctx c = new Ctx(html);
+        LayoutBox root = c.layout();
+        assertTrue(find(root, "v1").isVerticalRoot);
+        assertTrue(find(root, "h1").isHorizontalReturnRoot);
+        assertTrue(find(root, "v2").isVerticalRoot);
+    }
+
+    @Test
+    public void horizontalReturnBoxScrollExtentUsesRotatedBounds() {
+        // 横幅 100px の horizontal-tb を縦書き内の overflow:auto 箱に入れたとき、scrollWidth/scrollHeight が逆回転前の座標で膨らまない
+        Ctx c = new Ctx("<div id=v style='writing-mode:vertical-rl;height:200px;width:150px;overflow:auto'>"
+                + "<div id=h style='writing-mode:horizontal-tb;width:100px;height:40px;overflow:auto'>abc</div></div>");
+        LayoutBox h = find(c.layout(), "h");
+        assertTrue(h.scrollWidth <= h.w + 0.5f, "scrollWidth=" + h.scrollWidth + " <= h.w=" + h.w);
+        assertTrue(h.scrollHeight <= h.h + 0.5f, "scrollHeight=" + h.scrollHeight + " <= h.h=" + h.h);
     }
 }

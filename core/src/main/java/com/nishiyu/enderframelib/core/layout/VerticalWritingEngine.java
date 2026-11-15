@@ -39,6 +39,9 @@ final class VerticalWritingEngine extends LayoutEngine {
 
     /** 根の内容ボックスの物理の高さ＝論理のインライン寸法。 */
     private static float inlineSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        if (!Float.isNaN(box.overrideHeight)) {
+            return Math.max(0, box.overrideHeight - box.verticalDecoration());
+        }
         ComputedStyle style = box.style;
         StyleFacts facts = style.layoutFacts();
         float rootW = ctx.viewport().rootW();
@@ -70,12 +73,21 @@ final class VerticalWritingEngine extends LayoutEngine {
         float inline = inlineSize(box, space, ctx);
         box.engineState = new State(inline);
         if (wrapper == null) return 0;
-        wrapper.measure(ConstraintSpace.block(inline, Float.NaN), ctx);
+        float definiteBlock = box.sizingMode == LayoutBox.SizingMode.DEFINITE
+                ? Math.max(0, box.w - box.horizontalDecoration())
+                : Float.NaN;
+        ConstraintSpace wrapperSpace = ConstraintSpace.block(inline, definiteBlock);
+        if (!Float.isNaN(definiteBlock)) wrapperSpace = wrapperSpace.withFixed(Float.NaN, definiteBlock);
+        wrapper.measure(wrapperSpace, ctx);
         return wrapper.h;
     }
 
     @Override
     public float contentBlockSize(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        if (box.display.inner() == LayoutBox.Display.Inner.TABLE) {
+            LayoutBox wrapper = wrapperOf(box);
+            return wrapper != null ? wrapper.w : 0;
+        }
         return box.engineState instanceof State s ? s.inline() : 0;
     }
 

@@ -98,7 +98,9 @@ public final class BoxMeasurer {
         resolveWidth(box, ctx, parentW, rootW, rootH, hasWidth, intrinsicWidth != StyleFacts.IW_NONE,
                 isPercentWidthAndShrinking, isBorderBox, fmtCtx);
 
-        applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        if (!box.isHorizontalReturnRoot) {
+            applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        }
         // 親のエンジンが決めた幅（flex の伸縮・stretch）は min / max で切り詰め済み
         boolean overridden = !Float.isNaN(box.overrideWidth);
         if (overridden) {
@@ -107,7 +109,7 @@ public final class BoxMeasurer {
         }
 
         float engineInnerW;
-        if (intrinsicWidth == StyleFacts.IW_MAX_CONTENT) {
+        if (!box.isHorizontalReturnRoot && intrinsicWidth == StyleFacts.IW_MAX_CONTENT) {
             // 折り返さずに並べたときの幅が max-content
             engineInnerW = LayoutMetrics.UNBOUNDED_WIDTH;
         } else if (box.sizingMode == SizingMode.SHRINK_TO_FIT) {
@@ -136,11 +138,13 @@ public final class BoxMeasurer {
             box.naturalInlineSize = box.w;
         }
 
-        if (intrinsicWidth != StyleFacts.IW_NONE && !overridden) {
+        if (!box.isHorizontalReturnRoot && intrinsicWidth != StyleFacts.IW_NONE && !overridden) {
             resolveIntrinsicWidth(box, ctx, facts, parentW, rootW, rootH, isBorderBox);
         }
 
-        if (!overridden) applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        if (!box.isHorizontalReturnRoot && !overridden) {
+            applyMinMaxWidths(box, ctx, parentW, rootW, rootH, isPercentWidthAndShrinking, isBorderBox);
+        }
 
         // auto マージンで中央に寄せるのはブロックフローだけ。flex / grid は自分の揃えで auto マージンを解く
         if (!box.isAbsolute && fmtCtx.isBlock()) {
@@ -252,6 +256,13 @@ public final class BoxMeasurer {
                                      boolean isBorderBox, FormattingContext fmtCtx) {
         ComputedStyle style = box.style;
         String tag = box.node.tag;
+
+        if (box.isHorizontalReturnRoot) {
+            // 直交戻しの根は width/height を内側の水平ラッパーが解釈する
+            box.w = 0;
+            box.sizingMode = SizingMode.SHRINK_TO_FIT;
+            return;
+        }
 
         float anchorW = box.isAbsolute ? box.anchorWidthPx() : -1;
         if (anchorW >= 0) {
@@ -401,7 +412,7 @@ public final class BoxMeasurer {
 
         StyleFacts facts = style.layoutFacts();
         // 基準の高さが不定（NaN）なら % の高さは auto（CSS 2.2 §10.5）。グリッドの行の大きさを決める段階がこれを使う
-        boolean hasHeight = facts.hasHeightDeclaration && !facts.heightAuto
+        boolean hasHeight = !box.isHorizontalReturnRoot && facts.hasHeightDeclaration && !facts.heightAuto
                 && !(Float.isNaN(parentH) && facts.heightPercent);
         boolean overridden = !Float.isNaN(box.overrideHeight);
 
@@ -409,6 +420,8 @@ public final class BoxMeasurer {
         if (overridden) {
             box.h = box.overrideHeight;
             hasHeight = true;
+        } else if (box.isHorizontalReturnRoot) {
+            // 内側の水平ラッパーの幅が H.h になる
         } else if (anchorH >= 0) {
             box.h = anchorH + (isBorderBox ? 0 : box.verticalDecoration());
             hasHeight = true;
@@ -439,7 +452,7 @@ public final class BoxMeasurer {
         box.contentBlockExtent = contentH + box.verticalDecoration();
         if (!hasHeight) box.h = Math.max(box.h, contentH + box.verticalDecoration());
         if (!box.contentAutoSkipped) engine.finishLayout(box, space, ctx);
-        if (overridden) return;
+        if (overridden || box.isHorizontalReturnRoot) return;
 
         if (style.containsKey(CssPropertyIndex.MAX_HEIGHT)) {
             String maxHStr = style.get(CssPropertyIndex.MAX_HEIGHT).trim();
