@@ -304,6 +304,22 @@ public class StyleResolver {
         }
     }
 
+    private static final ThreadLocal<ShareCache> WORKER_STYLE_SHARE = ThreadLocal.withInitial(ShareCache::new);
+
+    /** 並列再スタイルのワーカー用スタイル共有表を空にする。 */
+    public static void resetWorkerShareCache() {
+        WORKER_STYLE_SHARE.get().clear();
+    }
+
+    /** 並列再スタイルのワーカースレッド専用の {@link ShareCache} で解決を試みる。 */
+    public static Shared resolveWithWorkerShare(HtmlNode node, Map<String, String> parent, StyleSheet sheet,
+                                                StateLookup lookup, Map<String, String> env,
+                                                float parentFontSize, float rootFontSize, float rootLineHeight,
+                                                int viewportW, int viewportH, ContainerBox container) {
+        return WORKER_STYLE_SHARE.get().resolve(node, parent, sheet, lookup, env, parentFontSize, rootFontSize,
+                rootLineHeight, viewportW, viewportH, container);
+    }
+
     /** 掛かった規則の列（カスケード順）で解く。{@code style} 属性と {@code revert} が無いときの {@link #resolveDeclarations} と同じ結果。 */
     private static Map<String, String> cascadeMatched(Map<String, String> parent, StyleSheet sheet,
                                                       StyleRule[] matched, int count) {

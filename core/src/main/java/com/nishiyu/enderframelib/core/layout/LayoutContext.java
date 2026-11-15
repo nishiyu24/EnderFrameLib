@@ -38,6 +38,16 @@ public record LayoutContext(
 ) {
 
     /**
+     * 並列ワーカー向けに {@link AutoVisibilitySession} を外した {@link LayoutContext} を返す。
+     * {@code content-visibility: auto} を持たない独立部分木でのみ使う。
+     */
+    public LayoutContext withoutAutoVisibility() {
+        return autoVisibility == null ? this
+                : new LayoutContext(viewport, intrinsicResolver, scrollState, fonts,
+                        reuseMeasurements, layoutRun, firstPass, null);
+    }
+
+    /**
      * {@code content-visibility: auto} の可視判定と遅延サブツリー具現化を 1 回のレイアウト中で共有する状態。
      */
     public static final class AutoVisibilitySession {

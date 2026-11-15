@@ -69,9 +69,41 @@ public class BlockLayoutEngine extends LayoutEngine {
             sharedChildSpace = ConstraintSpace.reuseOrCreate(box.childSpaceCache, tentativeInnerW, childParentH, childCtx);
             box.childSpaceCache = sharedChildSpace;
         }
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        boolean[] premeasured = null;
+        if (columns == null && sharedChildSpace != null && n >= LayoutTaskPool.PARALLEL_THRESHOLD
+                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int work = 0;
+            for (int i = 0; i < n; i++) {
+                LayoutBox c = kids.get(i);
+                if (!c.isAbsolute && !c.isRenderedLegend && !c.isOutsideMarker
+                        && !isDisplayNone(c.style) && !MulticolLayout.isSpanner(c)
+                        && c.needsParallelMeasureWork()) {
+                    if (++work >= LayoutTaskPool.PARALLEL_THRESHOLD) break;
+                }
+            }
+            if (work >= LayoutTaskPool.PARALLEL_THRESHOLD) {
+                premeasured = new boolean[n];
+                int[] eligible = new int[n];
+                int ec = 0;
+                for (int i = 0; i < n; i++) {
+                    LayoutBox c = kids.get(i);
+                    if (!c.isAbsolute && !c.isRenderedLegend && !c.isOutsideMarker
+                            && !isDisplayNone(c.style) && !MulticolLayout.isSpanner(c)) {
+                        premeasured[i] = true;
+                        eligible[ec++] = i;
+                    }
+                }
+                final ConstraintSpace workerSpace = sharedChildSpace;
+                int grain = Math.max(8, ec / (LayoutTaskPool.workerCount() * 2));
+                LayoutTaskPool.forRange(ec, grain, null, idx -> kids.get(eligible[idx]).measureParallel(workerSpace, ctx));
+            }
+        }
+        boolean sharedFixedWidth = sharedChildSpace != null && !Float.isNaN(sharedChildSpace.fixedInlineSize());
 
-        for (int i = 0, n = box.children.size(); i < n; i++) {
-            LayoutBox child = box.children.get(i);
+        for (int i = 0; i < n; i++) {
+            LayoutBox child = kids.get(i);
             if (child.isAbsolute || child.isRenderedLegend || isDisplayNone(child.style)) continue;
             if (child.isOutsideMarker) {
                 // 外側のマーカーは通常フローの外にあり、リスト項目の幅に寄与しない
@@ -81,7 +113,11 @@ public class BlockLayoutEngine extends LayoutEngine {
             ConstraintSpace childSpace = sharedChildSpace != null && !MulticolLayout.isSpanner(child)
                     ? sharedChildSpace
                     : new ConstraintSpace(columns != null && !MulticolLayout.isSpanner(child) ? columns.width() : tentativeInnerW, childParentH, childCtx);
-            child.measure(childSpace, ctx);
+            if (premeasured != null && premeasured[i]) {
+                child.applyFitToParent(sharedFixedWidth);
+            } else {
+                child.measure(childSpace, ctx);
+            }
             // float は行の内容と同じく横に並ぶので、shrink-to-fit の幅には横に足して数える
             if (isInlineBox(child) || isFloating(child)) {
                 float[] wScratch = INLINE_WIDTH_SCRATCH.get();
@@ -381,16 +417,56 @@ public class BlockLayoutEngine extends LayoutEngine {
         box.firstLineBgRect = null;
         LayoutBox flOwner = firstLineOwner(box);
         boolean recordedFirstLine = false;
+        int itemLen = state.items.size();
+        boolean[] parallelPlaced = null;
+        if (!hasShifts && box.floatSpace == null && !containsFloats(box)
+                && itemLen >= LayoutTaskPool.PARALLEL_THRESHOLD
+                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int work = 0;
+            for (int itemIdx = 0; itemIdx < itemLen; itemIdx++) {
+                if (state.items.get(itemIdx) instanceof Placement p) {
+                    LayoutBox pb = p.box();
+                    if (!pb.isAbsolute && !isFloating(pb)
+                            && !pb.subtreeHasContentAuto && !pb.style.facts().contentVisibilityAuto
+                            && pb.needsParallelLayoutWork(innerX + p.x(), innerY + p.y(), ctx)) {
+                        if (++work >= LayoutTaskPool.PARALLEL_THRESHOLD) break;
+                    }
+                }
+            }
+            if (work >= LayoutTaskPool.PARALLEL_THRESHOLD) {
+                parallelPlaced = new boolean[itemLen];
+                int[] eligible = new int[itemLen];
+                int ec = 0;
+                for (int itemIdx = 0; itemIdx < itemLen; itemIdx++) {
+                    if (state.items.get(itemIdx) instanceof Placement p) {
+                        LayoutBox pb = p.box();
+                        if (!pb.isAbsolute && !isFloating(pb)
+                                && !pb.subtreeHasContentAuto && !pb.style.facts().contentVisibilityAuto) {
+                            parallelPlaced[itemIdx] = true;
+                            eligible[ec++] = itemIdx;
+                        }
+                    }
+                }
+                final LayoutContext workerCtx = ctx.withoutAutoVisibility();
+                int grain = Math.max(8, ec / (LayoutTaskPool.workerCount() * 2));
+                LayoutTaskPool.forRange(ec, grain, null, idx -> {
+                    Placement p = (Placement) state.items.get(eligible[idx]);
+                    p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, workerCtx);
+                });
+            }
+        }
 
-        for (int itemIdx = 0, itemLen = state.items.size(); itemIdx < itemLen; itemIdx++) {
+        for (int itemIdx = 0; itemIdx < itemLen; itemIdx++) {
             Object item = state.items.get(itemIdx);
             switch (item) {
                 case Placement p -> {
-                    if (hasShifts) {
-                        float[] sh = shiftOf(shifts, p);
-                        p.box().layout(innerX + sh[0] + p.x(), innerY + sh[1] + p.y(), innerW, p.box().h, ctx);
-                    } else {
-                        p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, ctx);
+                    if (parallelPlaced == null || !parallelPlaced[itemIdx]) {
+                        if (hasShifts) {
+                            float[] sh = shiftOf(shifts, p);
+                            p.box().layout(innerX + sh[0] + p.x(), innerY + sh[1] + p.y(), innerW, p.box().h, ctx);
+                        } else {
+                            p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, ctx);
+                        }
                     }
                     if (!p.box().isAbsolute && !isFloating(p.box())) recordedFirstLine = true;
                 }

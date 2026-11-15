@@ -85,8 +85,16 @@ public class InteractionState implements StateLookup {
         }
     }
 
+    /** 節の状態がすでに現在の番号・世代で登録済みか（ウォームパスの無ロック判定）。 */
+    private static boolean isRegistered(HtmlNode node, StateFlags flags) {
+        if (node.isVirtualNode() && !node.hasNodeId()) return flags.loose;
+        DocumentArena a = node.arena();
+        int id = node.nodeId();
+        return flags.slotArena == a && flags.slotId == id && flags.slotGen == a.generation(id);
+    }
+
     /** 節の状態がアリーナの現在の番号の列挙用の表に載っているようにする。 */
-    private void register(HtmlNode node, StateFlags flags) {
+    private synchronized void register(HtmlNode node, StateFlags flags) {
         if (node.isVirtualNode() && !node.hasNodeId()) {
             // 疑似要素・匿名ボックスなどの仮想の節は文書のアリーナに数えない。列挙は弱参照の一覧で行う
             if (!flags.loose) {
@@ -189,7 +197,7 @@ public class InteractionState implements StateLookup {
          * （{@link InteractionState#viewportDependenceEpoch}）を進めて「依存する要素は無い」の記憶を捨てさせる。
          */
         public void noteViewportDependence(boolean root, boolean dependent) {
-            if (!root && (!viewportDependenceKnown || viewportDependent != dependent) && owner != null) owner.viewportDependenceEpoch++;
+            if (!root && (!viewportDependenceKnown || viewportDependent != dependent) && owner != null) owner.viewportDependenceEpoch.incrementAndGet();
             viewportDependenceKnown = true;
             viewportDependent = dependent;
         }
@@ -288,7 +296,7 @@ public class InteractionState implements StateLookup {
         public void markStyleDirty() {
             if ((dirty & DIRTY_STYLE) == 0) {
                 dirty |= DIRTY_STYLE;
-                if (owner != null) owner.dirtyCount++;
+                if (owner != null) owner.dirtyCount.incrementAndGet();
             }
         }
 
@@ -296,7 +304,7 @@ public class InteractionState implements StateLookup {
         public void clearStyleDirtyFlag() {
             if ((dirty & DIRTY_STYLE) != 0) {
                 dirty &= ~DIRTY_STYLE;
-                if (owner != null && owner.dirtyCount > 0) owner.dirtyCount--;
+                if (owner != null) owner.dirtyCount.updateAndGet(v -> v > 0 ? v - 1 : 0);
             }
         }
         /** style 属性が {@code inherit} を含む。親の非継承プロパティの変化が子へ届く。 */
@@ -313,7 +321,8 @@ public class InteractionState implements StateLookup {
     }
 
     /** ルート以外の要素のビューポート依存が変わるたびに進む世代。{@code RenderPipeline} の「依存する要素は無い」の記憶の鍵。 */
-    public int viewportDependenceEpoch;
+    public final java.util.concurrent.atomic.AtomicInteger viewportDependenceEpoch =
+            new java.util.concurrent.atomic.AtomicInteger();
     /** 「ルート以外にビューポートへ依存する要素は無い」と確かめた木・世代・シートの版（無ければ null / -1）。 */
     public Object viewportFreeRoot;
     public int viewportFreeEpoch = -1;
@@ -338,18 +347,26 @@ public class InteractionState implements StateLookup {
         StateFlags found = node.interactionOwner == this ? (StateFlags) node.interactionFlags : null;
         if (found != null && found.epoch != epoch) found = null; // clear() の前の状態
         if (found != null) {
-            register(node, found);
+            if (!isRegistered(node, found)) register(node, found);
             return found;
         }
-        StateFlags created = new StateFlags(); // 作りたては汚れている
-        created.owner = this;
-        created.epoch = epoch;
-        dirtyCount++;
-        unscopedLog.add(node); // 作りたては unscoped
-        node.interactionOwner = this;
-        node.interactionFlags = created;
-        register(node, created);
-        return created;
+        synchronized (this) {
+            found = node.interactionOwner == this ? (StateFlags) node.interactionFlags : null;
+            if (found != null && found.epoch != epoch) found = null;
+            if (found != null) {
+                register(node, found);
+                return found;
+            }
+            StateFlags created = new StateFlags(); // 作りたては汚れている
+            created.owner = this;
+            created.epoch = epoch;
+            dirtyCount.incrementAndGet();
+            unscopedLog.add(node); // 作りたては unscoped
+            node.interactionOwner = this;
+            node.interactionFlags = created;
+            register(node, created);
+            return created;
+        }
     }
 
     /**
@@ -357,7 +374,8 @@ public class InteractionState implements StateLookup {
      * 0 なら汚れた節は確実に無い。節が回収されると汚れたまま表から消えて実際より大きくなり得るので、
      * 正の値は「あるかもしれない」で、{@link #hasDirtyNodes} が確かめて数え直す。
      */
-    private int dirtyCount;
+    private final java.util.concurrent.atomic.AtomicInteger dirtyCount =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     /**
      * {@link StateFlags#unscoped} が立った節の記録（{@link #propagateDirtyToAncestors} が全走査せずに済むように）。
@@ -375,7 +393,7 @@ public class InteractionState implements StateLookup {
         if (node == null || node.interactionOwner != this) return null;
         StateFlags found = (StateFlags) node.interactionFlags;
         if (found == null || found.epoch != epoch) return null;
-        register(node, found);
+        if (!isRegistered(node, found)) register(node, found);
         return found;
     }
 
@@ -959,13 +977,14 @@ public class InteractionState implements StateLookup {
 
     /** 再スタイルが必要な印を持つ節が、すべて {@code allowed}（同一性で比べる）に含まれるか。印が無ければ true。 */
     public boolean styleDirtyOnlyIn(java.util.Collection<HtmlNode> allowed) {
-        if (dirtyCount <= 0) return true;
+        int dirtyUpper = dirtyCount.get();
+        if (dirtyUpper <= 0) return true;
         if (allowed instanceof java.util.List<HtmlNode> list && list.size() <= 8) {
             int n = list.size();
             if (n == 1) {
                 HtmlNode only = list.get(0);
                 StateFlags f = get(only);
-                if (f != null && f.isStyleDirty() && 1 >= dirtyCount) return true;
+                if (f != null && f.isStyleDirty() && 1 >= dirtyUpper) return true;
                 boolean[] outside = {false};
                 forEachFlags((node, flags) -> {
                     if (flags.isStyleDirty() && node != only) outside[0] = true;
@@ -986,7 +1005,7 @@ public class InteractionState implements StateLookup {
                 StateFlags f = get(candidate);
                 if (f != null && f.isStyleDirty()) inside++;
             }
-            if (inside >= dirtyCount) return true;
+            if (inside >= dirtyUpper) return true;
             boolean[] outside = {false};
             forEachFlags((node, flags) -> {
                 if (flags.isStyleDirty() && !containsIdentity(list, node)) outside[0] = true;
@@ -1001,7 +1020,7 @@ public class InteractionState implements StateLookup {
             StateFlags f = get(n);
             if (f != null && f.isStyleDirty()) inside++;
         }
-        if (inside >= dirtyCount) return true;
+        if (inside >= dirtyUpper) return true;
         // 届かないときは、回収された節の分の過大か、外に本当に汚れた節があるか。確かめる
         boolean[] outside = {false};
         forEachFlags((node, flags) -> {
@@ -1030,13 +1049,13 @@ public class InteractionState implements StateLookup {
     }
 
     public boolean hasDirtyNodes() {
-        if (dirtyCount <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
+        if (dirtyCount.get() <= 0) return false; // 止まっている画面は、毎フレームここで O(1) で終わる
         boolean[] any = {false};
         forEachFlags((node, flags) -> {
             if (flags.isStyleDirty()) any[0] = true;
         });
         if (any[0]) return true;
-        dirtyCount = 0; // 汚れたまま回収された節の分。帳簿を合わせ直す
+        dirtyCount.set(0); // 汚れたまま回収された節の分。帳簿を合わせ直す
         return false;
     }
 
@@ -1046,7 +1065,7 @@ public class InteractionState implements StateLookup {
         for (Tab tab : tabs) tab.arena.dropSlots(this);
         tabs.clear();
         lastTab = null;
-        dirtyCount = 0;
+        dirtyCount.set(0);
         unscopedLog.clear();
         if (animator != null) animator.clear();
         hoveredChain.clear();

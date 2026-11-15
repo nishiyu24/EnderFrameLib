@@ -85,6 +85,7 @@ public final class StyleAnimator {
     }
 
     private final Map<HtmlNode, Entry> entries = new WeakHashMap<>();
+    private volatile boolean hasEntries;
 
     /**
      * 要素のスタイルを再計算した結果を見て、トランジションとアニメーションを始める・取り替える・止める。
@@ -95,25 +96,31 @@ public final class StyleAnimator {
      */
     public void observe(HtmlNode node, ComputedStyle before, ComputedStyle target, Map<String, String> parentStyle,
                         Map<String, Keyframes> keyframes, long now) {
-        Entry entry = entries.get(node);
         boolean hasTransitionSpec = hasValue(target.get(CssPropertyIndex.TRANSITION)) || hasValue(target.get(CssPropertyIndex.TRANSITION_DURATION));
         boolean hasAnimationSpec = hasValue(target.get(CssPropertyIndex.ANIMATION)) || hasValue(target.get(CssPropertyIndex.ANIMATION_NAME));
-        if (entry == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
+        if (!hasEntries && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
-        ComputedStyle changeFrom = entry != null && entry.target != null ? entry.target : before;
-        if (entry == null) entry = new Entry();
+        synchronized (this) {
+            Entry entry = entries.get(node);
+            if (entry == null && !hasAnimationSpec && !(hasTransitionSpec && before != null)) return;
 
-        if (changeFrom != null && changeFrom != target) {
-            startTransitions(entry, changeFrom, target, parentStyle, now);
-        }
-        updateAnimation(entry, target, keyframes, now);
-        entry.target = target;
-        entry.settledReported = false;
+            ComputedStyle changeFrom = entry != null && entry.target != null ? entry.target : before;
+            if (entry == null) entry = new Entry();
 
-        if (entry.transitions.isEmpty() && entry.animation == null) {
-            entries.remove(node);
-        } else {
-            entries.put(node, entry);
+            if (changeFrom != null && changeFrom != target) {
+                startTransitions(entry, changeFrom, target, parentStyle, now);
+            }
+            updateAnimation(entry, target, keyframes, now);
+            entry.target = target;
+            entry.settledReported = false;
+
+            if (entry.transitions.isEmpty() && entry.animation == null) {
+                entries.remove(node);
+                hasEntries = !entries.isEmpty();
+            } else {
+                entries.put(node, entry);
+                hasEntries = true;
+            }
         }
     }
 
@@ -190,24 +197,27 @@ public final class StyleAnimator {
      * アニメーションの値の上にトランジションの値が重なる（CSS Cascade 4 §6.1 の起源の順）。
      */
     public Map<String, String> sample(HtmlNode node, long now) {
-        Entry entry = entries.get(node);
-        if (entry == null) return Map.of();
-        Map<String, String> out = new LinkedHashMap<>();
-        Playing playing = entry.animation;
-        if (playing != null) {
-            float pct = playing.timing.progressPct(now - playing.startMs);
-            if (!Float.isNaN(pct)) {
-                for (Map.Entry<String, List<Stop>> stops : playing.stops.entrySet()) {
-                    String value = valueAtPct(stops.getKey(), stops.getValue(), pct, playing.timing.easing(), entry.target);
-                    if (value != null) out.put(stops.getKey(), value);
+        if (!hasEntries) return Map.of();
+        synchronized (this) {
+            Entry entry = entries.get(node);
+            if (entry == null) return Map.of();
+            Map<String, String> out = new LinkedHashMap<>();
+            Playing playing = entry.animation;
+            if (playing != null) {
+                float pct = playing.timing.progressPct(now - playing.startMs);
+                if (!Float.isNaN(pct)) {
+                    for (Map.Entry<String, List<Stop>> stops : playing.stops.entrySet()) {
+                        String value = valueAtPct(stops.getKey(), stops.getValue(), pct, playing.timing.easing(), entry.target);
+                        if (value != null) out.put(stops.getKey(), value);
+                    }
                 }
             }
+            for (Map.Entry<String, Transition> t : entry.transitions.entrySet()) {
+                if (t.getValue().finishedAt(now)) continue;
+                out.put(t.getKey(), t.getValue().valueAt(t.getKey(), now));
+            }
+            return out;
         }
-        for (Map.Entry<String, Transition> t : entry.transitions.entrySet()) {
-            if (t.getValue().finishedAt(now)) continue;
-            out.put(t.getKey(), t.getValue().valueAt(t.getKey(), now));
-        }
-        return out;
     }
 
     private static String valueAtPct(String property, List<Stop> stops, float pct, String easing, ComputedStyle target) {
@@ -237,7 +247,7 @@ public final class StyleAnimator {
     /**
      * 時刻を進める。値が変わった（動いている）要素と、動き終えて最終値に戻す要素を返す。呼び出し側はそれらを再スタイルに回す。
      */
-    public List<HtmlNode> advance(long now) {
+    public synchronized List<HtmlNode> advance(long now) {
         // 何も動いていない（静止フレーム）なら、一覧も反復子も作らずに返す
         if (entries.isEmpty()) return List.of();
         List<HtmlNode> changed = null;
@@ -273,7 +283,8 @@ public final class StyleAnimator {
     }
 
     /** 時刻とともに値が変わるものが残っているか（次のフレームを要求し続けるか）。 */
-    public boolean isRunning(long now) {
+    public synchronized boolean isRunning(long now) {
+        if (!hasEntries) return false;
         for (Entry entry : entries.values()) {
             if (!entry.transitions.isEmpty()) return true;
             Playing playing = entry.animation;
@@ -282,8 +293,9 @@ public final class StyleAnimator {
         return false;
     }
 
-    public void clear() {
+    public synchronized void clear() {
         entries.clear();
+        hasEntries = false;
     }
 
     // ------------------------------------------------------------------

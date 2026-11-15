@@ -31,7 +31,10 @@ import com.nishiyu.enderframelib.core.layout.model.FormattingContext;
 import com.nishiyu.enderframelib.core.layout.model.IntrinsicSizeResolver;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
 import com.nishiyu.enderframelib.core.layout.LayoutContext;
+import com.nishiyu.enderframelib.core.layout.LayoutTaskPool;
 import com.nishiyu.enderframelib.core.layout.VirtualFlowState;
+import com.nishiyu.enderframelib.core.EngineContext;
+import java.util.function.Consumer;
 import com.nishiyu.enderframelib.core.layout.model.ScrollState;
 import com.nishiyu.enderframelib.core.layout.model.Viewport;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
@@ -229,14 +232,15 @@ public class RenderPipeline {
     /** ルート以外の要素の算出値（と疑似要素・{@code ::marker} などの値）がビューポートに依らないか。世代が同じ間は結果を使い回す。 */
     private static boolean viewportFreeBelowRoot(LayoutBox root, StyleSheet sheet, InteractionState state) {
         int version = sheet.rules.version();
-        if (state.viewportFreeRoot == root && state.viewportFreeEpoch == state.viewportDependenceEpoch
+        int depEpoch = state.viewportDependenceEpoch.get();
+        if (state.viewportFreeRoot == root && state.viewportFreeEpoch == depEpoch
                 && state.viewportFreeSheet == sheet && state.viewportFreeVersion == version) {
             return state.viewportFreeResult;
         }
         boolean free = !sheet.declaresViewportDependentValues() || !hasGeneratedBoxes(root);
         for (int i = 0, n = root.elementChildren.size(); free && i < n; i++) free = viewportFree(root.elementChildren.get(i), state);
         state.viewportFreeRoot = root;
-        state.viewportFreeEpoch = state.viewportDependenceEpoch;
+        state.viewportFreeEpoch = depEpoch;
         state.viewportFreeSheet = sheet;
         state.viewportFreeVersion = version;
         state.viewportFreeResult = free;
@@ -282,9 +286,10 @@ public class RenderPipeline {
         int result;
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
+            if (doc.sheet != null) doc.sheet.warmCaches();
             result = restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE, ComputedStyle.DEFAULT_FONT_SIZE,
                     StyleScope.initial(rootW, rootH), state, StyleResolver.hasSiblingStateRules(doc.sheet),
-                    containerFor(rootBox.node, state), false, layoutChangedList, styleChangedList);
+                    containerFor(rootBox.node, state), false, layoutChangedList, styleChangedList, false);
         } finally {
             StageProfiler.end(PipelineStage.RESTYLE_LOCAL, prof);
             state.pruneRestyle = false;
@@ -438,7 +443,7 @@ public class RenderPipeline {
     public static void relayoutInPlace(LayoutBox rootBox, int rootW, int rootH, float devicePixelRatio,
                                        ScrollState scrollState, FontResolver fonts,
                                        java.util.Collection<LayoutBox> changed, java.util.Set<LayoutBox> shallow) {
-        List<LayoutBox> path = ctx().localRelayout && changed != null && !changed.isEmpty()
+        List<LayoutBox> path = ctx().localRelayout && changed != null && !changed.isEmpty() && changed.size() <= 64
                 ? LayoutBox.markLayoutChangesAlong(rootBox, changed, shallow) : null;
         stats().lastRelayoutWasLocal = path != null;
         if (path == null) LayoutBox.markLayoutChanges(rootBox);
@@ -873,7 +878,8 @@ public class RenderPipeline {
                                                    StyleSheet sheet, Map<String, String> env, float parentFontSize,
                                                    StyleScope scope, InteractionState interactionState,
                                                    ContainerBox container, int force,
-                                                   InteractionState.StateFlags flags) {
+                                                   InteractionState.StateFlags flags,
+                                                   boolean workerShare) {
         boolean tableOk = flags != null && container == ContainerBox.NONE_SIZE
                 // FORCE_SELF は「親の算出スタイルが変わった」だけ（兄弟・祖先の変化は FORCE_SUBTREE）。親の値は表の鍵に入っている
                 && (force == FORCE_NONE || force == FORCE_SELF) && sheet != null
@@ -881,7 +887,7 @@ public class RenderPipeline {
         if (!tableOk) {
             if (flags != null && flags.stateMemo != null) flags.stateMemo.invalidate();
             return computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope, interactionState,
-                    container, interactionState);
+                    container, interactionState, workerShare);
         }
         if (flags.stateMemo == null) flags.stateMemo = new StateStyleMemo();
         StateStyleMemo.Entry cached = flags.stateMemo.peek(node, sheet, inheritedStyle, env, parentFontSize,
@@ -893,18 +899,23 @@ public class RenderPipeline {
                 interactionState.stateBitsOf(node), true,
                 bits -> computeEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize, scope,
                         interactionState, container,
-                        (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n)));
+                        (StateLookup) n -> n == node ? ElementState.of(bits) : interactionState.stateOf(n), workerShare));
     }
 
     private static StateStyleMemo.Entry computeEntry(HtmlNode node, StyleSet styleSet,
                                                      Map<String, String> inheritedStyle, StyleSheet sheet,
                                                      Map<String, String> env, float parentFontSize, StyleScope scope,
                                                      InteractionState interactionState, ContainerBox container,
-                                                     StateLookup lookup) {
+                                                     StateLookup lookup,
+                                                     boolean workerShare) {
         ContainerBox targetContainer = container != null ? container : containerFor(node, interactionState);
-        StyleResolver.Shared shared = interactionState.styleShare.resolve(node, inheritedStyle, sheet, lookup, env,
-                parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(), scope.viewportH(),
-                targetContainer);
+        StyleResolver.Shared shared = workerShare
+                ? StyleResolver.resolveWithWorkerShare(node, inheritedStyle, sheet, lookup, env,
+                        parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(),
+                        scope.viewportH(), targetContainer)
+                : interactionState.styleShare.resolve(node, inheritedStyle, sheet, lookup, env,
+                        parentFontSize, scope.rootFontSize(), scope.rootLineHeight(), scope.viewportW(),
+                        scope.viewportH(), targetContainer);
         if (shared != null) return new StateStyleMemo.Entry(shared.computed(), shared.viewportDependent());
         if (styleSet == null) styleSet = StyleResolver.resolveStyleSet(node, inheritedStyle, sheet);
         Map<String, String> raw = styleSet.resolve(lookup);
@@ -1043,11 +1054,12 @@ public class RenderPipeline {
         styleChangedList.clear();
         long prof = StageProfiler.begin(PipelineStage.RESTYLE_LOCAL);
         try {
+            if (doc.sheet != null) doc.sheet.warmCaches();
             ContainerBox rootContainer = containerFor(rootBox.node, interactionState);
             int resMask = restyleBoxRecursive(rootBox, rootStyleRaw, doc.sheet, env, FORCE_NONE,
                     ComputedStyle.DEFAULT_FONT_SIZE, StyleScope.initial(rootW, rootH),
                     interactionState, StyleResolver.hasSiblingStateRules(doc.sheet), rootContainer, false,
-                    layoutChangedList, styleChangedList);
+                    layoutChangedList, styleChangedList, false);
             if ((resMask & RESTYLE_LAYOUT_REQUIRED) != 0) rootBox.hasUnmarkedChanges = true;
             if ((resMask & RESTYLE_STRUCTURAL) != 0) rootBox.hasStructuralPending = true;
             return toRestyleResult(resMask);
@@ -1062,11 +1074,12 @@ public class RenderPipeline {
                                                      float parentFontSize, StyleScope scope,
                                                      InteractionState interactionState, boolean siblingInvalidation,
                                                      ContainerBox parentSizeContainer, boolean ancestorHasMoving,
-                                                     List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList) {
+                                                     List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList,
+                                                     boolean workerShare) {
         long probe = com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.enter(box, com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE);
         try {
             return restyleBoxRecursive0(box, inheritedStyle, sheet, env, force, parentFontSize, scope, interactionState,
-                    siblingInvalidation, parentSizeContainer, ancestorHasMoving, layoutChangedList, styleChangedList);
+                    siblingInvalidation, parentSizeContainer, ancestorHasMoving, layoutChangedList, styleChangedList, workerShare);
         } finally {
             com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.exit(com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE, probe);
         }
@@ -1078,7 +1091,8 @@ public class RenderPipeline {
                                                      float parentFontSize, StyleScope scope,
                                                      InteractionState interactionState, boolean siblingInvalidation,
                                                      ContainerBox parentSizeContainer, boolean ancestorHasMoving,
-                                                     List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList) {
+                                                     List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList,
+                                                     boolean workerShare) {
         HtmlNode node = box.node;
         InteractionState.StateFlags flags = interactionState.getOrCreate(node);
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);
@@ -1102,7 +1116,7 @@ public class RenderPipeline {
             ContainerBox container = parentSizeContainer;
             // StyleSet は表を引けなかったとき（computeEntry）だけ作る
             StateStyleMemo.Entry entry = styleEntry(node, null, inheritedStyle, sheet, env, parentFontSize, scope,
-                    interactionState, container, force, flags);
+                    interactionState, container, force, flags, workerShare);
             boolean viewportDependent = entry.viewportDependent();
             computed = entry.computed();
             Map<String, String> animation = animationValues(node, prevStyle, computed, inheritedStyle, sheet, interactionState);
@@ -1210,13 +1224,92 @@ public class RenderPipeline {
                 PseudoType type = GENERATED_PSEUDOS[pi];
                 acc |= restylePseudoElement(box, type, computed, sheet, env, childScope,
                         interactionState, siblingInvalidation, selfContainer, selfOrAncestorMoving,
-                        layoutChangedList, styleChangedList);
+                        layoutChangedList, styleChangedList, workerShare);
             }
         }
 
-        boolean siblingForceDirty = false;
         List<LayoutBox> kids = box.elementChildren;
-        for (int ci = 0; ci < kids.size(); ci++) {
+        int kn = kids.size();
+        if (!siblingInvalidation && kn >= LayoutTaskPool.PARALLEL_THRESHOLD
+                && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int[] workIdx = new int[kn];
+            int[] workForce = new int[kn];
+            int workCount = 0;
+            for (int ci = 0; ci < kn; ci++) {
+                LayoutBox child = kids.get(ci);
+                if (child.node.isPseudoNode) continue;
+                int forceChild = childForce;
+                if (forceChild == FORCE_NONE && childForceIfInherits) {
+                    InteractionState.StateFlags childFlags = interactionState.get(child.node);
+                    if (childFlags != null && childFlags.inheritsExplicitly) forceChild = FORCE_SELF;
+                }
+                if (forceChild == FORCE_NONE && interactionState.pruneRestyle
+                        && canSkipRestyle(interactionState.get(child.node), nextParentFontSize, childScope)
+                        && child.movingStamped && child.ancestorMoving == selfOrAncestorMoving) {
+                    continue;
+                }
+                workIdx[workCount] = ci;
+                workForce[workCount] = forceChild;
+                workCount++;
+            }
+            if (workCount >= LayoutTaskPool.PARALLEL_THRESHOLD) {
+                interactionState.restyleDescended = true;
+                int chunks = Math.min(LayoutTaskPool.workerCount(), (workCount + 15) / 16);
+                int[] chunkAcc = new int[chunks];
+                @SuppressWarnings("unchecked")
+                List<LayoutBox>[] chunkLayout = new List[chunks];
+                @SuppressWarnings("unchecked")
+                List<LayoutBox>[] chunkStyle = new List[chunks];
+                final EngineContext activeCtx = EngineContext.current();
+                final Consumer<Runnable> scopeRunner = activeCtx == EngineContext.global()
+                        ? null
+                        : r -> {
+                            if (EngineContext.current() == activeCtx) r.run();
+                            else EngineContext.runWith(activeCtx, r);
+                        };
+                final Map<String, String> parentAsMap = computed.asMap();
+                LayoutTaskPool.forChunks(workCount, chunks, scopeRunner, span -> {
+                    int c = LayoutTaskPool.spanChunk(span);
+                    int start = LayoutTaskPool.spanStart(span);
+                    int end = LayoutTaskPool.spanEnd(span);
+                    StyleResolver.resetWorkerShareCache();
+                    List<LayoutBox> localLayout = new ArrayList<>();
+                    List<LayoutBox> localStyle = new ArrayList<>();
+                    int localAcc = 0;
+                    try {
+                        for (int wi = start; wi < end; wi++) {
+                            LayoutBox child = kids.get(workIdx[wi]);
+                            localAcc |= restyleBoxRecursive(child, parentAsMap, sheet, env,
+                                    workForce[wi], nextParentFontSize, childScope, interactionState,
+                                    false, selfContainer, selfOrAncestorMoving,
+                                    localLayout, localStyle, true);
+                        }
+                    } finally {
+                        StyleResolver.resetWorkerShareCache();
+                    }
+                    chunkAcc[c] = localAcc;
+                    if (!localLayout.isEmpty()) chunkLayout[c] = localLayout;
+                    if (!localStyle.isEmpty()) chunkStyle[c] = localStyle;
+                });
+                for (int c = 0; c < chunks; c++) {
+                    acc |= chunkAcc[c];
+                    if (chunkLayout[c] != null) layoutChangedList.addAll(chunkLayout[c]);
+                    if (chunkStyle[c] != null) styleChangedList.addAll(chunkStyle[c]);
+                }
+                return acc;
+            }
+            for (int wi = 0; wi < workCount; wi++) {
+                LayoutBox child = kids.get(workIdx[wi]);
+                interactionState.restyleDescended = true;
+                acc |= restyleBoxRecursive(child, computed.asMap(), sheet, env,
+                        workForce[wi], nextParentFontSize, childScope, interactionState,
+                        false, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList, workerShare);
+            }
+            return acc;
+        }
+
+        boolean siblingForceDirty = false;
+        for (int ci = 0; ci < kn; ci++) {
             LayoutBox child = kids.get(ci);
             if (child.node.isPseudoNode) continue;
             boolean stateChanged = siblingInvalidation && isStateDirty(interactionState, child.node);
@@ -1233,7 +1326,7 @@ public class RenderPipeline {
             interactionState.restyleDescended = true;
             acc |= restyleBoxRecursive(child, computed.asMap(), sheet, env,
                     forceChild, nextParentFontSize, childScope, interactionState,
-                    siblingInvalidation, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList);
+                    siblingInvalidation, selfContainer, selfOrAncestorMoving, layoutChangedList, styleChangedList, workerShare);
             siblingForceDirty |= stateChanged;
         }
 
@@ -1262,7 +1355,8 @@ public class RenderPipeline {
                                             Map<String, String> env, StyleScope scope,
                                             InteractionState interactionState, boolean siblingInvalidation,
                                             ContainerBox ownerSizeContainer, boolean ownerSelfOrAncestorMoving,
-                                            List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList) {
+                                            List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList,
+                                            boolean workerShare) {
         LayoutBox existing = null;
         if (owner.hasPseudoElementChild) {
             String ownerKey = owner.node.key();
@@ -1321,7 +1415,7 @@ public class RenderPipeline {
             LayoutBox text = existing.elementChildren.get(ti);
             acc |= restyleBoxRecursive(text, next.asMap(), sheet, env, FORCE_SUBTREE, next.fontSizePx(),
                     scope, interactionState, siblingInvalidation, ownerSizeContainer, pseudoMoving,
-                    layoutChangedList, styleChangedList);
+                    layoutChangedList, styleChangedList, workerShare);
         }
         return acc;
     }
@@ -1395,7 +1489,7 @@ public class RenderPipeline {
             long k2;
             if (interactionState != null) {
                 StateStyleMemo.Entry entry = styleEntry(node, styleSet, inheritedStyle, sheet, env, parentFontSize,
-                        scope, interactionState, container, force, flags);
+                        scope, interactionState, container, force, flags, false);
                 viewportDependent = entry.viewportDependent();
                 computed = entry.computed();
                 k1 = k2 = tk ? threadAllocatedBytes() : 0;

@@ -209,7 +209,8 @@ public final class TextShaper {
     private static final int L1_BUCKET_MASK = L1_BUCKETS - 1;
 
     private record ShapeL1Slot(ShapeKey key, ShapedHolder value) {}
-    private static final ShapeL1Slot[] SHAPE_L1 = new ShapeL1Slot[L1_BUCKETS * 2];
+    private static final ThreadLocal<ShapeL1Slot[]> SHAPE_L1 =
+            ThreadLocal.withInitial(() -> new ShapeL1Slot[L1_BUCKETS * 2]);
 
     private static int shapeKeyHash(String text, FontFace face, TextStyle style) {
         return 31 * (31 * text.hashCode() + System.identityHashCode(face)) + style.hashCode();
@@ -217,9 +218,10 @@ public final class TextShaper {
 
     private static ShapedHolder lookupShapedHolder(String text, FontFace face, TextStyle style, int hash) {
         int base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
-        ShapeL1Slot s0 = SHAPE_L1[base];
+        ShapeL1Slot[] l1 = SHAPE_L1.get();
+        ShapeL1Slot s0 = l1[base];
         if (s0 != null && s0.key.matches(text, face, style, hash)) return s0.value;
-        ShapeL1Slot s1 = SHAPE_L1[base + 1];
+        ShapeL1Slot s1 = l1[base + 1];
         if (s1 != null && s1.key.matches(text, face, style, hash)) return s1.value;
         ShapedHolder hit = SHAPED.get(SHAPE_PROBE.get().set(text, face, style, hash));
         if (hit != null) {
@@ -230,13 +232,14 @@ public final class TextShaper {
 
     private static void putShapeL1(ShapeKey key, ShapedHolder value) {
         int base = ((key.hash ^ (key.hash >>> 16)) & L1_BUCKET_MASK) << 1;
-        ShapeL1Slot s0 = SHAPE_L1[base];
+        ShapeL1Slot[] l1 = SHAPE_L1.get();
+        ShapeL1Slot s0 = l1[base];
         ShapeL1Slot entry = new ShapeL1Slot(key, value);
         if (s0 == null || s0.key.matches(key.text, key.face, key.style, key.hash)) {
-            SHAPE_L1[base] = entry;
+            l1[base] = entry;
         } else {
-            SHAPE_L1[base + 1] = s0;
-            SHAPE_L1[base] = entry;
+            l1[base + 1] = s0;
+            l1[base] = entry;
         }
     }
 
@@ -314,7 +317,8 @@ public final class TextShaper {
     }
 
     private record WrapL1Slot(SegKey key, WrappedHolder value) {}
-    private static final WrapL1Slot[] WRAP_L1 = new WrapL1Slot[L1_BUCKETS * 2];
+    private static final ThreadLocal<WrapL1Slot[]> WRAP_L1 =
+            ThreadLocal.withInitial(() -> new WrapL1Slot[L1_BUCKETS * 2]);
     private static final Generational<SegKey, WrappedHolder> WRAPPED = new Generational<>();
 
     /**
@@ -343,9 +347,10 @@ public final class TextShaper {
 
     private static WrappedHolder lookupWrappedHolder(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak, int hash) {
         int base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
-        WrapL1Slot s0 = WRAP_L1[base];
+        WrapL1Slot[] l1 = WRAP_L1.get();
+        WrapL1Slot s0 = l1[base];
         if (s0 != null && s0.key.matches(paragraph, face, font, wordBreak, hash)) return s0.value;
-        WrapL1Slot s1 = WRAP_L1[base + 1];
+        WrapL1Slot s1 = l1[base + 1];
         if (s1 != null && s1.key.matches(paragraph, face, font, wordBreak, hash)) return s1.value;
         WrappedHolder hit = WRAPPED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak, hash));
         if (hit != null) {
@@ -356,13 +361,14 @@ public final class TextShaper {
 
     private static void putWrapL1(SegKey key, WrappedHolder value) {
         int base = ((key.hash ^ (key.hash >>> 16)) & L1_BUCKET_MASK) << 1;
-        WrapL1Slot s0 = WRAP_L1[base];
+        WrapL1Slot[] l1 = WRAP_L1.get();
+        WrapL1Slot s0 = l1[base];
         WrapL1Slot entry = new WrapL1Slot(key, value);
         if (s0 == null || s0.key.matches(key.paragraph, key.face, key.font, key.wordBreak, key.hash)) {
-            WRAP_L1[base] = entry;
+            l1[base] = entry;
         } else {
-            WRAP_L1[base + 1] = s0;
-            WRAP_L1[base] = entry;
+            l1[base + 1] = s0;
+            l1[base] = entry;
         }
     }
 
@@ -530,7 +536,8 @@ public final class TextShaper {
     }
 
     private record SegL1Slot(SegKey key, ParagraphSegments value) {}
-    private static final SegL1Slot[] SEG_L1 = new SegL1Slot[L1_BUCKETS * 2];
+    private static final ThreadLocal<SegL1Slot[]> SEG_L1 =
+            ThreadLocal.withInitial(() -> new SegL1Slot[L1_BUCKETS * 2]);
 
     private static int segKeyHash(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
         return 31 * (31 * (31 * paragraph.hashCode() + System.identityHashCode(face)) + font.hashCode()) + wordBreak.ordinal();
@@ -617,14 +624,15 @@ public final class TextShaper {
     public static ParagraphSegments segmented(String paragraph, FontFace face, FontStyle font, WordBreak wordBreak) {
         int hash = segKeyHash(paragraph, face, font, wordBreak);
         int l1Base = ((hash ^ (hash >>> 16)) & L1_BUCKET_MASK) << 1;
-        SegL1Slot s0 = SEG_L1[l1Base];
+        SegL1Slot[] l1 = SEG_L1.get();
+        SegL1Slot s0 = l1[l1Base];
         if (s0 != null && s0.key.matches(paragraph, face, font, wordBreak, hash)) return s0.value;
-        SegL1Slot s1 = SEG_L1[l1Base + 1];
+        SegL1Slot s1 = l1[l1Base + 1];
         if (s1 != null && s1.key.matches(paragraph, face, font, wordBreak, hash)) return s1.value;
 
         ParagraphSegments hit = SEGMENTED.get(SEG_PROBE.get().set(paragraph, face, font, wordBreak, hash));
         if (hit != null) {
-            putSegL1(new SegKey(paragraph, face, font, wordBreak, hash), hit, l1Base);
+            putSegL1(l1, new SegKey(paragraph, face, font, wordBreak, hash), hit, l1Base);
             return hit;
         }
 
@@ -673,18 +681,18 @@ public final class TextShaper {
         }
         SEGMENTED_BUILDS.incrementAndGet();
         SEGMENTED.put(key, made);
-        putSegL1(key, made, l1Base);
+        putSegL1(l1, key, made, l1Base);
         return made;
     }
 
-    private static void putSegL1(SegKey key, ParagraphSegments value, int base) {
-        SegL1Slot s0 = SEG_L1[base];
+    private static void putSegL1(SegL1Slot[] l1, SegKey key, ParagraphSegments value, int base) {
+        SegL1Slot s0 = l1[base];
         SegL1Slot entry = new SegL1Slot(key, value);
         if (s0 == null || s0.key.matches(key.paragraph, key.face, key.font, key.wordBreak, key.hash)) {
-            SEG_L1[base] = entry;
+            l1[base] = entry;
         } else {
-            SEG_L1[base + 1] = s0;
-            SEG_L1[base] = entry;
+            l1[base + 1] = s0;
+            l1[base] = entry;
         }
     }
 

@@ -456,8 +456,9 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         if (b.contentAutoSkipped) return true;
         if (b.isVirtualizedFlow()) return false;
         if (b.children != null) {
-            for (LayoutBox c : b.children) {
-                if (!cullableSubtree(c, top)) return false;
+            List<LayoutBox> kids = b.children;
+            for (int i = 0, cn = kids.size(); i < cn; i++) {
+                if (!cullableSubtree(kids.get(i), top)) return false;
             }
         }
         return true;

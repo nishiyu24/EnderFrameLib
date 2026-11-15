@@ -1078,6 +1078,34 @@ public class LayoutBox {
         noteFitToParent(measuredFitNeed, fixedWidth);
     }
 
+    /** 並列ワーカー向けの測定入口。親への {@code noteFitToParent} は結合後に親スレッドが順に行う。 */
+    void measureParallel(ConstraintSpace space, LayoutContext ctx) {
+        overrideWidth = space.fixedInlineSize();
+        overrideHeight = space.fixedBlockSize();
+        long probe = LayoutParallelProbe.enter(this, LayoutParallelProbe.MEASURE);
+        try {
+            measureCore(space, ctx, true);
+        } finally {
+            LayoutParallelProbe.exit(LayoutParallelProbe.MEASURE, probe);
+            overrideWidth = Float.NaN;
+            overrideHeight = Float.NaN;
+        }
+    }
+
+    void applyFitToParent(boolean fixedWidth) {
+        noteFitToParent(measuredFitNeed, fixedWidth);
+    }
+
+    boolean needsParallelMeasureWork() {
+        return subtreeChanged || layoutChanged || !measurementValid;
+    }
+
+    boolean needsParallelLayoutWork(float parentX, float parentY, LayoutContext ctx) {
+        return !ctx.reuseMeasurements() || subtreeChanged || layoutChanged
+                || lastLayoutX != parentX || lastLayoutY != parentY
+                || !canKeepPlacement(ctx.layoutRun());
+    }
+
     /**
      * 親の測定の最中に、親が渡した制約（上書き寸法なし）で測られた子が、使える幅に依らない（{@link #measuredFitNeed} が有限か、
      * 幅が確定している）かを親に伝える。親の fit 判定は、子の最終状態（flex が後から上書き幅で測り直した記録）ではなく、
@@ -2084,7 +2112,24 @@ public class LayoutBox {
             vf.resetPlacedChildren(keepRun, false, false, null);
             return;
         }
-        for (int i = 0, n = box.children.size(); i < n; i++) resetPlacements(box.children.get(i), keepRun);
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), keepRun));
+            return;
+        }
+        for (int i = 0; i < n; i++) resetPlacements(kids.get(i), keepRun);
+    }
+
+    private static void resetChildrenPlacements(List<LayoutBox> kids) {
+        int n = kids.size();
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            LayoutTaskPool.forRange(n, grain, null, i -> resetPlacements(kids.get(i), -1));
+            return;
+        }
+        for (int i = 0; i < n; i++) resetPlacements(kids.get(i), -1);
     }
 
     /** {@link #resetPlacementsFast} 等から仮想フローの範囲だけを O(K) でリセットする補助。 */
@@ -2134,6 +2179,25 @@ public class LayoutBox {
         boolean nextBfcFloat = box.establishesBfc ? box.hasFloatChild : (inBfcFloat || box.hasFloatChild);
         if (box.engineState instanceof VirtualFlowState vf && vf.canResetSparse()) {
             vf.resetPlacedChildren(keepRun, nextOffset, nextBfcFloat, staleFrags);
+            return;
+        }
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int chunks = Math.min(LayoutTaskPool.workerCount(), (n + 15) / 16);
+            @SuppressWarnings("unchecked")
+            List<LayoutBox>[] perChunk = new List[chunks];
+            LayoutTaskPool.forChunks(n, chunks, null, span -> {
+                int c = LayoutTaskPool.spanChunk(span);
+                int start = LayoutTaskPool.spanStart(span);
+                int end = LayoutTaskPool.spanEnd(span);
+                List<LayoutBox> local = new java.util.ArrayList<>();
+                for (int i = start; i < end; i++) {
+                    resetPlacementsFast(kids.get(i), keepRun, nextOffset, nextBfcFloat, local);
+                }
+                if (!local.isEmpty()) perChunk[c] = local;
+            });
+            for (int c = 0; c < chunks; c++) {
+                if (perChunk[c] != null) staleFrags.addAll(perChunk[c]);
+            }
             return;
         }
         for (int i = 0; i < n; i++) {
@@ -2416,6 +2480,12 @@ public class LayoutBox {
      * 他の子の measure は、制約（幅・パーセントの基準・親の整形コンテキスト）が同じなら前回と同じ。
      */
     private static boolean markLayoutChanges(LayoutBox box, boolean forcedByParent) {
+        if (forcedByParent && box.children.isEmpty() && !box.isRelayoutBoundary()) {
+            box.layoutChanged = true;
+            box.subtreeChanged = true;
+            box.invalidateMinContentCache();
+            return true;
+        }
         boolean selfChanged = box.selfSignatureChanged();
         boolean listChanged = box.childListChanged();
         // 子の並びの変化を兄弟に伝えなくてよいのは、子をブロックフローで並べる親だけ。flex / grid / 表は
@@ -2426,10 +2496,37 @@ public class LayoutBox {
                 || (listChanged && (!blockFlow || box.measuredHadFloatChild || box.hasFloatingChild()));
         boolean childAffects = false;
         boolean subtreeChanged = false;
-        for (LayoutBox child : box.children) {
-            boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
-            childAffects |= markLayoutChanges(child, force);
-            subtreeChanged |= child.subtreeChanged;
+        List<LayoutBox> kids = box.children;
+        int n = kids.size();
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int chunks = Math.min(LayoutTaskPool.workerCount(), (n + 15) / 16);
+            boolean[] flags = new boolean[chunks * 2];
+            LayoutTaskPool.forChunks(n, chunks, null, span -> {
+                int c = LayoutTaskPool.spanChunk(span);
+                int start = LayoutTaskPool.spanStart(span);
+                int end = LayoutTaskPool.spanEnd(span);
+                boolean ca = false;
+                boolean sc = false;
+                for (int i = start; i < end; i++) {
+                    LayoutBox child = kids.get(i);
+                    boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
+                    ca |= markLayoutChanges(child, force);
+                    sc |= child.subtreeChanged;
+                }
+                flags[c * 2] = ca;
+                flags[c * 2 + 1] = sc;
+            });
+            for (int c = 0; c < chunks; c++) {
+                childAffects |= flags[c * 2];
+                subtreeChanged |= flags[c * 2 + 1];
+            }
+        } else {
+            for (int i = 0; i < n; i++) {
+                LayoutBox child = kids.get(i);
+                boolean force = forceAllChildren || (listChanged && child.firstFlowStatusChanged());
+                childAffects |= markLayoutChanges(child, force);
+                subtreeChanged |= child.subtreeChanged;
+            }
         }
         boolean remeasure = selfChanged || listChanged || forcedByParent || childAffects || !box.measurementValid;
         box.layoutChanged = remeasure;
@@ -2565,7 +2662,13 @@ public class LayoutBox {
             return;
         }
         List<LayoutBox> kids = root.children;
-        for (int i = 0, n = kids.size(); i < n; i++) clearAllSubtreeMarks(kids.get(i));
+        int n = kids.size();
+        if (n >= LayoutTaskPool.PARALLEL_THRESHOLD && LayoutTaskPool.parallelEnabled && !LayoutTaskPool.inWorker()) {
+            int grain = Math.max(8, n / (LayoutTaskPool.workerCount() * 2));
+            LayoutTaskPool.forRange(n, grain, null, i -> clearAllSubtreeMarks(kids.get(i)));
+            return;
+        }
+        for (int i = 0; i < n; i++) clearAllSubtreeMarks(kids.get(i));
     }
 
     /** {@link #markLayoutChangesAlong} が付けた印を、測り終えた箱から外す（次の全体版が「変化なし」と付けるのと同じ）。 */
@@ -2653,7 +2756,7 @@ public class LayoutBox {
         // （自分の staticX / staticY は親が layout の前に置くので消さない）。入力が同じで、子孫の変化のために
         // 置き直すだけなら、子はそれぞれの入力を見て飛ばすか置き直すかを決める
         if (keepPlacements && keptPure && !sameInputs) {
-            for (int i = 0, n = children.size(); i < n; i++) resetPlacements(children.get(i), -1);
+            resetChildrenPlacements(children);
         }
 
         if (BlockLayoutEngine.containsFloats(this)) {

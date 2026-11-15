@@ -39,8 +39,9 @@ public abstract class BitmapFontFace implements FontFace {
     private final float naturalAscent;
     private final float naturalDescent;
     private final float lineGapRatio;
-    private volatile float[] asciiCharCache;
-    private volatile AdvanceEntry[] advanceCache;
+    private final float[] asciiCharCache;
+    private final ThreadLocal<AdvanceEntry[]> advanceCache =
+            ThreadLocal.withInitial(() -> new AdvanceEntry[ADVANCE_CACHE_BUCKETS * 2]);
 
     protected BitmapFontFace() {
         this(MC_UNITS_PER_EM, MC_ASCENT, MC_DESCENT, MC_LINE_GAP_RATIO);
@@ -51,6 +52,9 @@ public abstract class BitmapFontFace implements FontFace {
         this.naturalAscent = naturalAscent;
         this.naturalDescent = naturalDescent;
         this.lineGapRatio = lineGapRatio;
+        float[] ascii = new float[256];
+        Arrays.fill(ascii, Float.NaN);
+        this.asciiCharCache = ascii;
     }
 
     /**
@@ -71,11 +75,6 @@ public abstract class BitmapFontFace implements FontFace {
             char c = text.charAt(0);
             if (c < 128) {
                 float[] ascii = asciiCharCache;
-                if (ascii == null) {
-                    ascii = new float[256];
-                    Arrays.fill(ascii, Float.NaN);
-                    asciiCharCache = ascii;
-                }
                 int slot = bold ? (128 + c) : c;
                 float cached = ascii[slot];
                 if (!Float.isNaN(cached)) return cached;
@@ -87,11 +86,7 @@ public abstract class BitmapFontFace implements FontFace {
         if (len > ADVANCE_MAX_CACHE_LEN) {
             return naturalAdvance(text, bold);
         }
-        AdvanceEntry[] table = advanceCache;
-        if (table == null) {
-            table = new AdvanceEntry[ADVANCE_CACHE_BUCKETS * 2];
-            advanceCache = table;
-        }
+        AdvanceEntry[] table = advanceCache.get();
         int h = text.hashCode();
         int base = ((h ^ (h >>> 16) ^ (bold ? 0x5bd1e995 : 0)) & ADVANCE_CACHE_MASK) << 1;
         AdvanceEntry e0 = table[base];

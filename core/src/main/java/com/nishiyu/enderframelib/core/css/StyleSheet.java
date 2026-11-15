@@ -235,6 +235,24 @@ public class StyleSheet {
         return usesCq;
     }
 
+    private int warmedVersion = -1;
+
+    /** 並列再スタイル前にシート内の遅延索引を現在の版へ確定させる（すでに温まっていれば即座に返る）。 */
+    public void warmCaches() {
+        int v = rules.version();
+        if (warmedVersion == v) return;
+        index();
+        interactiveRules();
+        stateOnSubjectOnly();
+        declaresContainers();
+        declaresViewportDependentValues();
+        usesHasSelectors();
+        usesInheritKeyword();
+        usesContainerQueries();
+        for (int i = 0, n = rules.size(); i < n; i++) rules.get(i).compiled();
+        warmedVersion = v;
+    }
+
     /**
      * 独立した写し。規則は {@link StyleRule#copy()}、{@code @keyframes} / {@code @counter-style} / {@code @property} の値は不変なので
      * 共有し、表・層の木・メディア環境は写しに持つ。写しを書き換えても元（と他の写し）は変わらない。
