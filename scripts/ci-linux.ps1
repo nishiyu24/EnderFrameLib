@@ -1,0 +1,34 @@
+# Run the CI steps (.github/workflows/build.yml) on Linux via WSL, from Windows.
+# See scripts/ci-linux.sh for what is reproduced and why.
+#
+#   powershell -File scripts/ci-linux.ps1            # default WSL distro (Ubuntu)
+#   powershell -File scripts/ci-linux.ps1 -Distro Ubuntu
+#
+# NOTE: keep this file ASCII-only (Windows PowerShell 5.1 reads BOM-less UTF-8 as ANSI).
+param([string]$Distro = "Ubuntu")
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$wslRoot = (& wsl -d $Distro -- wslpath -a ($root -replace '\\', '/')).Trim()
+if (-not $wslRoot) { Write-Error "wsl / distro '$Distro' not available"; exit 2 }
+
+# Snapshot of what CI would check out: tracked + non-ignored files as git blobs (LF), built with a temporary index.
+# (WSL git cannot read a git worktree, and the Windows working tree has CRLF which breaks ./gradlew on Linux.)
+$tar = Join-Path $env:TEMP "efl-ci-src.tar"
+$idx = Join-Path $env:TEMP "efl-ci-index"
+Remove-Item $idx -ErrorAction SilentlyContinue
+$env:GIT_INDEX_FILE = $idx
+try {
+    git -C $root add -A | Out-Null
+    $tree = (git -C $root write-tree).Trim()
+    git -C $root archive --format=tar -o $tar $tree
+} finally {
+    Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue
+    Remove-Item $idx -ErrorAction SilentlyContinue
+}
+$wslTar = (& wsl -d $Distro -- wslpath -a ($tar.Replace('\', '/'))).Trim()
+
+# CRLF would break the bash script when the repo is checked out with autocrlf
+& wsl -d $Distro -- bash -c "sed -i 's/\r$//' '$wslRoot/scripts/ci-linux.sh' '$wslRoot/scripts/ci-summarize-tests.py' 2>/dev/null"
+& wsl -d $Distro -- env "EFL_CI_ARCHIVE=$wslTar" bash "$wslRoot/scripts/ci-linux.sh"
+exit $LASTEXITCODE

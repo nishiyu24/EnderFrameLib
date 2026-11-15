@@ -35,6 +35,12 @@ jobs:
       - name: Build and test
         run: ./gradlew build test --stacktrace
 
+      # 失敗したテストを注釈（::error）とジョブのサマリーへ出す。ログの取得に権限が要らない形で原因が読めるようにする
+      # （Actions のログは認証が要る。注釈は check-runs API から誰でも読める）。ローカルでの再現は scripts/ci-linux.ps1
+      - name: Summarize test failures
+        if: always()
+        run: python3 scripts/ci-summarize-tests.py
+
       # サーバー側のセッション寿命（ログアウト・サーバー停止で static マップが空に戻るか）は
       # Minecraft を起動しないと確認できないため、ここで専用サーバーを 1 回走らせる。
       # このテストは実際にサーバー停止時のクラッシュを 1 件検出している。
@@ -49,5 +55,7 @@ jobs:
           path: |
             build/reports/tests/test
             build/test-results/test
+            core/build/reports/tests/test
+            core/build/test-results/test
           if-no-files-found: ignore
           retention-days: 14

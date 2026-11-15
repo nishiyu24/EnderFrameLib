@@ -58,8 +58,18 @@ class GpuModulesTest {
         }
     }
 
+    /** GL が実際に使えるか（GL が使えない環境 = ヘッドレスの CI などでは AUTO は Vulkan へ進む）。 */
+    private static boolean glUsable() {
+        try (WebViewSurface s = EnderEngine.html(PAGE).size(16, 16).target(EnderEngine.Target.GPU).gpu(GpuApi.GL).build()) {
+            return true;
+        } catch (IllegalStateException | LinkageError e) {
+            return false;
+        }
+    }
+
     @Test
     void autoPicksGlAndTheOffscreenAliasMeansGl() {
+        Assumptions.assumeTrue(glUsable(), "GL が使えない環境（AUTO は次の実装へ進む）");
         for (EnderEngine.Builder b : List.of(
                 EnderEngine.html(PAGE).size(64, 48).target(EnderEngine.Target.GPU),
                 EnderEngine.html(PAGE).size(64, 48).target(EnderEngine.Target.GPU_OFFSCREEN).gpu(GpuApi.VULKAN))) {
@@ -68,6 +78,16 @@ class GpuModulesTest {
                 assertEquals(TextureKind.OPENGL_TEXTURE, s.texture().orElseThrow().kind(),
                         "AUTO は GL を先に試す。GPU_OFFSCREEN は gpu() を無視して GL");
             }
+        }
+    }
+
+    @Test
+    void autoFallsThroughToAnotherApiWhenGlIsUnavailable() {
+        Assumptions.assumeFalse(glUsable(), "GL が使える環境では上のテストが見る");
+        WebViewSurface s = buildOrSkip(EnderEngine.html(PAGE).size(64, 48).target(EnderEngine.Target.GPU));
+        try (s) {
+            s.frame(0, true);
+            assertEquals(TextureKind.VULKAN_IMAGE, s.texture().orElseThrow().kind(), "GL が無ければ AUTO は Vulkan");
         }
     }
 

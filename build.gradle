@@ -142,13 +142,72 @@ publishing {
     }
 }
 
-// core の出力を Mod の JAR に取り込む（jarJar は project 依存を扱えないため）
-tasks.named('jar', Jar) {
-    from project(':core').sourceSets.main.output
-    from project(':core-gl').sourceSets.main.output
-    from project(':core-vulkan').sourceSets.main.output
-    from project(':core-glfw').sourceSets.main.output
+// core 系モジュールの出力を Mod の JAR に取り込む（jarJar は project 依存を扱えないため）。
+// 複数のモジュールが同名の META-INF/services/<SPI> を持つ（例: GpuBackendProvider を :core-gl と :core-vulkan が登録）ので、
+// そのまま重ねると jar タスクが「重複したエントリ」で落ちる。行を結合した 1 つのファイルを作って取り込む
+def serviceModules = [':core', ':core-gl', ':core-vulkan', ':core-glfw']
+def mergedServicesDir = layout.buildDirectory.dir('generated/mergedServices')
+def mergeServices = tasks.register('mergeServiceFiles') {
+    def sources = serviceModules.collect { project(it).file('src/main/resources/META-INF/services') }
+    inputs.files(sources.collect { fileTree(it) })
+    outputs.dir(mergedServicesDir)
+    doLast {
+        Map<String, Set<String>> merged = new TreeMap<>()
+        sources.each { dir ->
+            if (!dir.isDirectory()) return
+            dir.listFiles().sort { it.name }.each { f ->
+                f.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }.each {
+                    merged.computeIfAbsent(f.name) { new LinkedHashSet<String>() }.add(it)
+                }
+            }
+        }
+        def out = new File(mergedServicesDir.get().asFile, 'META-INF/services')
+        out.deleteDir()
+        out.mkdirs()
+        String nl = new String([10] as char[])
+        merged.each { name, lines -> new File(out, name).setText(lines.toList().join(nl) + nl, 'UTF-8') }
+    }
 }
+tasks.named('jar', Jar) {
+    dependsOn mergeServices
+    serviceModules.each { path ->
+        from(project(path).sourceSets.main.output) { exclude 'META-INF/services/**' }
+    }
+    from(mergedServicesDir)
+}
+
+// Mod の JAR に、全モジュールのサービス登録（ServiceLoader 用）が揃っていること。結合に失敗すると、GPU 実装や窓が見つからなくなる
+tasks.register('verifyModJarServices') {
+    group = 'verification'
+    description = 'Mod の JAR の META-INF/services に、:core 系モジュールの全 SPI 登録が含まれることを検査する'
+    dependsOn tasks.named('jar')
+    def jarFile = tasks.named('jar', Jar).flatMap { it.archiveFile }
+    doLast {
+        def expected = new TreeMap<String, Set<String>>()
+        serviceModules.each { path ->
+            def dir = project(path).file('src/main/resources/META-INF/services')
+            if (dir.isDirectory()) dir.listFiles().each { f ->
+                f.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }.each {
+                    expected.computeIfAbsent(f.name) { new TreeSet<String>() }.add(it)
+                }
+            }
+        }
+        def zip = new java.util.zip.ZipFile(jarFile.get().asFile)
+        try {
+            def names = zip.entries().toList().collect { it.name }
+            expected.each { name, lines ->
+                def path = 'META-INF/services/' + name
+                if (names.count(path) != 1) throw new GradleException("JAR の ${path} が ${names.count(path)} 個（1 個であるべき）")
+                def actual = zip.getInputStream(zip.getEntry(path)).getText('UTF-8').readLines().collect { it.trim() }.findAll { it }
+                def missing = lines.findAll { !(it in actual) }
+                if (!missing.isEmpty()) throw new GradleException("JAR の ${path} に ${missing} が無い")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+tasks.named('check') { dependsOn 'verifyModJarServices' }
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'

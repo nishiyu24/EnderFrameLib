@@ -196,10 +196,12 @@ class SurfaceResourcesTest {
         int[] sys = render(EnderEngine.html(textPage(realName)).size(300, 50).clearColor(0xFFFFFFFF));
         int[] off = render(EnderEngine.html(textPage(realName)).size(300, 50).clearColor(0xFFFFFFFF).systemFonts(false));
         int[] offA = render(EnderEngine.html(textPage(realName)).size(300, 50).clearColor(0xFFFFFFFF).systemFonts(false));
-        assertFalse(Arrays.equals(sys, off), "OS の書体を使わなければ内蔵の標準フォントになる");
+        // OS の書体が内蔵の標準フォントと同じ見た目になる環境（Linux の DejaVu など）もあるので、違いの有無は断定しない。
+        // 肝は「systemFonts(false) は環境に依らず同じ描画」と「持ち込んだ書体は OS の書体なしでも効く」
         assertArrayEquals(off, offA, "環境に依らず同じ描画");
         int[] offBrought = render(EnderEngine.html(textPage("Only Mine")).size(300, 50).clearColor(0xFFFFFFFF)
                 .systemFonts(false).font("Only Mine", face.path()));
-        assertFalse(Arrays.equals(off, offBrought), "OS の書体なしでも持ち込んだ書体は使われる");
+        // 持ち込んだ書体が内蔵の標準フォントと同じ見た目の環境もあるので「違う」とは断定せず、OS の書体を介した描画（同じ書体ファイル）と一致することを見る
+        assertArrayEquals(sys, offBrought, "OS の書体なしでも、持ち込んだ書体ファイルが OS 名で引いた描画と同じに使われる");
     }
 }

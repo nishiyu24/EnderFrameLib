@@ -145,6 +145,22 @@ network/  →  core/, api/（ペイロードの登録で server のハンドラ�
 
 ---
 
+## push 前の確認（CI を赤くしない）
+
+CI（`.github/workflows/build.yml`）は Linux（ubuntu-latest）で `./gradlew build test` を回す。開発は Windows が中心なので、
+**Windows で `test` が緑でも CI だけ赤くなる**ことがある。過去の原因と、それを防ぐ仕組み:
+
+| 過去の原因 | 防ぐもの |
+| :-- | :-- |
+| ルート JAR が複数モジュールの同名 `META-INF/services/*` を重ねて `jar` が落ちた（`test` だけ回して `build` を回していなかった） | ルート `build.gradle` がサービスファイルを結合する。`verifyModJarServices`（`check` に含まれる）が JAR の登録を検査する。pre-push が `build -x test` を回す |
+| 書体の幅・種類に依るテスト（OS の書体が内蔵書体と同じ見た目になる、文字の位置が環境で違うなど） | テストは書体・OS に依存した値を断定しない（座標は文字を避ける、環境ごとに違う差を比較しない）。`scripts/ci-linux.ps1` で Linux の結果を先に見る |
+| OS ごとに通る・通らないが違う合格一覧（WPT の reftest） | 一覧は作った OS（Windows）でだけ判定する。他の OS では差分を出力するだけ（`-Dwpt.reftest.strict=true` で強制） |
+| GPU が無い環境（CI）でだけ起きる差 | `scripts/ci-linux.sh` は `DISPLAY` を外して実行する（GL・Vulkan のテストは中断になる。CI と同じ） |
+
+- **Linux で CI と同じ手順を回す**: `powershell -File scripts/ci-linux.ps1`（WSL の Ubuntu。JDK 21 は自動取得）。数分かかる。大きな変更・モジュールや依存の追加・テストの追加の前後に回す。
+- **push 前フック**: `powershell -File scripts/install-hooks.ps1`（clone ごとに 1 回）。以降 `git push` で `./gradlew build -x test` が走る。`EFL_PREPUSH_LINUX=1 git push` で Linux の全件も回す。急ぐときは `git push --no-verify`。
+- **CI が赤くなったら**: ジョブの「Summarize test failures」のサマリーと注釈に、失敗したテスト名とメッセージが出る（ログを開かなくても読める。注釈は API の `check-runs/<id>/annotations` でも取れる）。
+
 ## テスト
 
 ```

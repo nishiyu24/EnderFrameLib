@@ -1,0 +1,5 @@
+# シェルスクリプト・フックは常に LF（CRLF のままだと WSL / Linux / CI で `bad interpreter` になる）
+*.sh text eol=lf
+.githooks/* text eol=lf
+*.py text eol=lf
+gradlew text eol=lf

@@ -1,0 +1,42 @@
+#!/bin/sh
+# push する前の確認。CI（GitHub Actions）が赤くなる典型原因を、手元で先に見つける。
+#
+#   既定:                  ./gradlew build -x test   （全モジュールのコンパイル・JAR・SPIR-V・各種検査。テストは除く。数十秒）
+#   EFL_PREPUSH_LINUX=1:   さらに scripts/ci-linux.ps1（WSL の Linux で CI と同じ build test を実行。数分）
+#   スキップ:              git push --no-verify
+#
+# 有効にする（clone ごとに 1 回）:  git config core.hooksPath .githooks   （scripts/install-hooks.ps1 でも可）
+#
+# 過去の失敗: ルート JAR が複数モジュールの同名サービスファイルで重複 → `jar` が落ちる。Windows で `test` だけ回していると
+# 見逃す（`build` を回していなかった）。書体・GPU・OS 別の合格一覧に依るテストは Linux でしか失敗しないので、
+# 大きな変更の前は EFL_PREPUSH_LINUX=1 を付けるか、scripts/ci-linux.ps1 を直接回す。
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) GRADLE="./gradlew.bat" ;;
+  *) GRADLE="./gradlew" ;;
+esac
+
+echo "[pre-push] $GRADLE build -x test"
+log="$(mktemp)"
+# javadoc の警告が大量に出るので、成功時は出力を捨て、失敗したときだけ見せる
+if ! $GRADLE build -x test --console=plain -q > "$log" 2>&1; then
+  cat "$log"
+  rm -f "$log"
+  echo "[pre-push] build に失敗しました。直してから push してください（無視: git push --no-verify）" >&2
+  exit 1
+fi
+rm -f "$log"
+
+if [ "${EFL_PREPUSH_LINUX:-0}" = "1" ]; then
+  echo "[pre-push] Linux（WSL）で CI と同じ手順を実行"
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ci-linux.ps1 || {
+      echo "[pre-push] Linux 上で失敗しました（無視: git push --no-verify）" >&2
+      exit 1
+    }
+  else
+    sh scripts/ci-linux.sh || exit 1
+  fi
+fi
+exit 0
