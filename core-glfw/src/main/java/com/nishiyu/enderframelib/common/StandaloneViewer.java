@@ -111,7 +111,7 @@ public final class StandaloneViewer {
             StandaloneView view = new StandaloneView(html, w, h);
             setup.accept(view);
             try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(w, h, 1f)) {
-                cpu.images(ImageProvider.web());
+                cpu.images(ImageProvider.web()).scene3dWorlds(view::scene3dWorld); // <scene-3d> を描く（GPU 無しはソフトウェアのラスタライザ）
                 long t0 = System.currentTimeMillis();
                 view.frame(t0, cpu, true);
                 // http の @font-face は取れてから描き直す（最大 5 秒待つ）
@@ -171,8 +171,8 @@ public final class StandaloneViewer {
     private static void run(String html, int w, int h, boolean resizable, FontSources fonts, java.util.function.Consumer<StandaloneView> setup) {
         ImageProvider.Web images = ImageProvider.web();
         try (LwjglGlRenderBackend gl = new LwjglGlRenderBackend(w, h, 1f, true, "EnderFrameLib", resizable)) {
-            gl.images(images).clearColor(0xFFFFFFFF);
             StandaloneView view = new StandaloneView(html, w, h).images(images);
+            gl.images(images).clearColor(0xFFFFFFFF).scene3dWorlds(view::scene3dWorld);
             setup.accept(view);
             long window = gl.windowHandle();
             String session = gl.sessionId();

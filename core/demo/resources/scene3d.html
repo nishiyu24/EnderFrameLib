@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>3D demo</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: sans-serif; background: #0b1020; color: #e5e7eb; }
+  header { height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 24px; background: #111936; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header .note { font-size: 12px; color: #94a3b8; }
+  main { padding: 20px 24px; display: flex; gap: 20px; }
+  .panel { background: #111936; border-radius: 14px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .panel h2 { font-size: 13px; margin: 0 0 10px; color: #94a3b8; font-weight: normal; }
+  #grid { width: 640px; height: 420px; border-radius: 10px; display: block; }
+  #model { width: 360px; height: 260px; border-radius: 10px; display: block; }
+  .side { display: flex; flex-direction: column; gap: 20px; }
+  button { font-size: 13px; padding: 6px 14px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; }
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>3D シーン（&lt;scene-3d&gt;）</h1>
+  <span class="note">GGX PBR・glTF・ソフトウェア / GL / Vulkan で同じ絵</span>
+</header>
+<main>
+  <div class="panel">
+    <h2>左から右へ粗さ 0.15 → 0.95、上から下へ 金属度 1 → 0</h2>
+    <scene-3d id="grid"></scene-3d>
+  </div>
+  <div class="side">
+    <div class="panel">
+      <h2>glTF（コードで組み立てた .gltf の埋め込み）</h2>
+      <scene-3d id="model"></scene-3d>
+      <div class="row"><button id="spin">回転 ON/OFF</button><span id="state">回転中</span></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
