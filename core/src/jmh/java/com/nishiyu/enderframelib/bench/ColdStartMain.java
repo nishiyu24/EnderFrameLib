@@ -61,6 +61,9 @@ public class ColdStartMain {
         }
         System.out.printf("COLD doc=%s html=%.1f open=%.1f first=%.1f f2=%.1f f3=%.1f f10=%.1f total(open+first)=%.1f ms%n",
                 doc, (t1 - t0) / 1e6, (t2 - t1) / 1e6, f[0], f[1], f[2], f[9], (t2 - t1) / 1e6 + f[0]);
+        // B1①: プロセス起動（OS がプロセスを作った時刻）→ 初回フレーム完了。Chrome の「プロセス起動 → 初回描画」（cold.js）と同じ範囲
+        long started = ProcessHandle.current().info().startInstant().map(java.time.Instant::toEpochMilli).orElse(-1L);
+        if (started > 0) System.out.printf("COLDPROC doc=%s processToFirstFrame=%d ms (JVM 起動 + クラスロード + 開く + 初回フレーム)%n", doc, System.currentTimeMillis() - started);
         if (sampler != null) {
             sampler.interrupt();
             System.out.println("SAMPLES " + total[0]);

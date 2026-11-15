@@ -1,0 +1,222 @@
+package com.nishiyu.enderframelib.wpt;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import com.nishiyu.enderframelib.common.SoftwareRendering;
+import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
+import com.nishiyu.enderframelib.core.raster.Pixmap;
+import com.nishiyu.enderframelib.core.text.model.FontResolver;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+
+/**
+ * WPT の参照画像比較（reftest）の部分集合（flexbox・grid・text の 260 組。選び方は {@code select_reftests.py}）を
+ * ソフトウェア描画に通し、合格した組をラチェットで固定する（ENGINE_REARCHITECTURE_PLAN B1⑤・§1.4 条件 d）。
+ *
+ * <ul>
+ *   <li>合格の一覧 {@code reftest-passing.txt} に載っている組が落ちたら回帰（失敗）。</li>
+ *   <li>載っていない組が通ったら、一覧を締める（失敗。{@code -Dwpt.reftest.update=true} で一覧を作り直す）。</li>
+ *   <li>「空白どうしで一致」は合格にしない（何も描けていないのを見逃さない）。</li>
+ * </ul>
+ * 描画は固定フォント（{@link FontResolver#FALLBACK}）・800×600・等倍・透明な地。許容差は {@code <meta name=fuzzy>} に従う（無ければ完全一致）。
+ */
+class WptReftestRatchetTest {
+    private static final Path DIR = Path.of("src/test/resources/wpt/reftests");
+    private static final Path MANIFEST = DIR.resolve("manifest.tsv");
+    private static final Path PASSING = DIR.resolve("reftest-passing.txt");
+    /** レイアウトが終わらない（エンジンの不具合）組。走らせない。直したら一覧から外す。 */
+    private static final Path HANGS = DIR.resolve("reftest-hangs.txt");
+    private static final int W = 800, H = 600;
+    private static final long T0 = 10_000L;
+    private static final Pattern FUZZY = Pattern.compile("<meta[^>]+name=[\"']?fuzzy[\"']?[^>]*content=[\"']([^\"']*)[\"']", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MAXDIFF = Pattern.compile("maxDifference=(\\d+)(?:-(\\d+))?");
+    private static final Pattern TOTALPX = Pattern.compile("totalPixels=(\\d+)(?:-(\\d+))?");
+
+    /** 結果: 合格 / 不一致 / 空白 / 例外 / 時間切れ（レイアウトが終わらない）。 */
+    enum Verdict { PASS, MISMATCH, BLANK, ERROR, HANG }
+
+    private static String read(String rel) throws IOException {
+        return Files.readString(DIR.resolve(rel), StandardCharsets.UTF_8);
+    }
+
+    private static Pixmap render(String html) {
+        SoftwareRenderBackend b = new SoftwareRenderBackend(W, H, 1f);
+        b.render(SoftwareRendering.displayList(html, W, H, FontResolver.FALLBACK), T0);
+        return b.pixmap();
+    }
+
+    /** {@code <meta name=fuzzy content="maxDifference=0-2;totalPixels=0-20">} の上限（無ければ {0, 0}）。 */
+    static int[] fuzzy(String html) {
+        Matcher m = FUZZY.matcher(html);
+        if (!m.find()) return new int[]{0, 0};
+        String c = m.group(1);
+        Matcher a = MAXDIFF.matcher(c), b = TOTALPX.matcher(c);
+        int maxDiff = a.find() ? Integer.parseInt(a.group(2) != null ? a.group(2) : a.group(1)) : 0;
+        int total = b.find() ? Integer.parseInt(b.group(2) != null ? b.group(2) : b.group(1)) : 0;
+        return new int[]{maxDiff, total};
+    }
+
+    static Verdict compare(Pixmap test, Pixmap ref, int maxDiff, int totalPixels) {
+        boolean anyInk = false;
+        int differing = 0;
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                int a = test.get(x, y), r = ref.get(x, y);
+                if (a != 0) anyInk = true;
+                if (a == r) continue;
+                int d = 0;
+                for (int sh = 0; sh < 32; sh += 8) d = Math.max(d, Math.abs(((a >>> sh) & 0xFF) - ((r >>> sh) & 0xFF)));
+                if (d > maxDiff) return Verdict.MISMATCH;
+                differing++;
+                if (differing > totalPixels) return Verdict.MISMATCH;
+            }
+        }
+        return anyInk ? Verdict.PASS : Verdict.BLANK;
+    }
+
+    /** 1 組の上限（これを超えたら HANG）。Java は走っているスレッドを止められないので、HANG の組は通常の実行では走らせない。 */
+    private static final long TIMEOUT_MS = 20_000;
+
+    static Verdict runWithTimeout(String test, String ref) {
+        java.util.concurrent.FutureTask<Verdict> task = new java.util.concurrent.FutureTask<>(() -> run(test, ref));
+        Thread t = new Thread(task, "reftest-" + test);
+        t.setDaemon(true);
+        t.start();
+        try {
+            return task.get(TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            return Verdict.HANG;
+        } catch (Exception e) {
+            return Verdict.ERROR;
+        }
+    }
+
+    static Verdict run(String test, String ref) {
+        try {
+            String t = read(test);
+            int[] f = fuzzy(t);
+            return compare(render(t), render(read(ref)), f[0], f[1]);
+        } catch (Throwable e) {
+            return Verdict.ERROR;
+        }
+    }
+
+    private static Map<String, String> manifest() throws IOException {
+        Map<String, String> m = new LinkedHashMap<>();
+        for (String line : Files.readAllLines(MANIFEST, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) continue;
+            String[] p = line.split("\t");
+            assertEquals(2, p.length, "manifest の行が不正: " + line);
+            m.put(p[0], p[1]);
+        }
+        return m;
+    }
+
+    private static TreeSet<String> readList(Path file) throws IOException {
+        TreeSet<String> out = new TreeSet<>();
+        if (!Files.exists(file)) return out;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) if (!line.isBlank() && !line.startsWith("#")) out.add(line.trim());
+        return out;
+    }
+
+    private static String spec(String id) {
+        return id.split("/")[1];
+    }
+
+    @Test
+    void passingSetIsLockedAndNeverRegresses() throws IOException {
+        Map<String, String> pairs = manifest();
+        assertTrue(pairs.size() >= 250, "コーパスが小さすぎる: " + pairs.size());
+        TreeSet<String> passing = new TreeSet<>();
+        Map<Verdict, Integer> tally = new TreeMap<>();
+        Map<String, int[]> bySpec = new TreeMap<>(); // {合格, 全体}
+        boolean update = Boolean.getBoolean("wpt.reftest.update");
+        TreeSet<String> knownHangs = readList(HANGS);
+        TreeSet<String> hangs = new TreeSet<>();
+        for (var e : pairs.entrySet()) {
+            Verdict v = !update && knownHangs.contains(e.getKey()) ? Verdict.HANG : update ? runWithTimeout(e.getKey(), e.getValue()) : run(e.getKey(), e.getValue());
+            if (v == Verdict.HANG) hangs.add(e.getKey());
+            tally.merge(v, 1, Integer::sum);
+            int[] c = bySpec.computeIfAbsent(spec(e.getKey()), k -> new int[2]);
+            c[1]++;
+            if (v == Verdict.PASS) {
+                passing.add(e.getKey());
+                c[0]++;
+            }
+        }
+        System.out.println("WPT-REFTEST " + passing.size() + "/" + pairs.size() + " " + tally + " bySpec(pass/total)="
+                + bySpec.entrySet().stream().map(x -> x.getKey() + " " + x.getValue()[0] + "/" + x.getValue()[1]).toList());
+
+        if (Boolean.getBoolean("wpt.reftest.update")) {
+            List<String> out = new ArrayList<>();
+            out.add("# 合格している reftest（WptReftestRatchetTest が固定。落ちたら回帰、増えたら -Dwpt.reftest.update=true で締める）");
+            out.addAll(passing);
+            Files.write(PASSING, out, StandardCharsets.UTF_8);
+            List<String> h = new ArrayList<>();
+            h.add("# レイアウトが終わらない reftest（エンジンの不具合。走らせない。直したら外す）");
+            h.addAll(hangs);
+            Files.write(HANGS, h, StandardCharsets.UTF_8);
+            System.out.println("WPT-REFTEST 一覧を更新: " + passing.size());
+            return;
+        }
+        TreeSet<String> locked = readList(PASSING);
+
+        TreeSet<String> regressed = new TreeSet<>(locked);
+        regressed.removeAll(passing);
+        TreeSet<String> gained = new TreeSet<>(passing);
+        gained.removeAll(locked);
+        assertEquals(new TreeSet<String>(), regressed, "合格していた reftest が落ちた（回帰）");
+        assertEquals(new TreeSet<String>(), gained, "新しく通った reftest が一覧に無い（-Dwpt.reftest.update=true で一覧を締める）");
+        assertTrue(locked.size() >= 1, "一覧が空");
+    }
+
+    // ---- 判定ロジックの単体 ----
+
+    private static Pixmap solid(int argb) {
+        Pixmap p = new Pixmap(W, H);
+        for (int y = 0; y < 10; y++) for (int x = 0; x < 10; x++) p.set(x, y, argb);
+        return p;
+    }
+
+    @Test
+    void identicalInkPasses() {
+        assertEquals(Verdict.PASS, compare(solid(0xFF00FF00), solid(0xFF00FF00), 0, 0));
+    }
+
+    @Test
+    void differenceFailsUnlessFuzzyAllowsIt() {
+        assertEquals(Verdict.MISMATCH, compare(solid(0xFF00FF00), solid(0xFF00FE00), 0, 0));
+        assertEquals(Verdict.PASS, compare(solid(0xFF00FF00), solid(0xFF00FE00), 1, 100));
+        assertEquals(Verdict.MISMATCH, compare(solid(0xFF00FF00), solid(0xFF00FE00), 1, 99), "差のある画素数が上限を超える");
+    }
+
+    @Test
+    void blankAgainstBlankIsNotAPass() {
+        assertEquals(Verdict.BLANK, compare(new Pixmap(W, H), new Pixmap(W, H), 0, 0));
+    }
+
+    @Test
+    void fuzzyMetaIsParsed() {
+        assertArrayEquals(new int[]{2, 20}, fuzzy("<meta name=fuzzy content=\"maxDifference=0-2;totalPixels=0-20\">"));
+        assertArrayEquals(new int[]{0, 0}, fuzzy("<html></html>"));
+    }
+
+    @Test
+    void theEngineDistinguishesDifferentRenderings() {
+        String a = "<html><body style='margin:0'><div style='width:50px;height:50px;background:green'></div></body></html>";
+        String b = "<html><body style='margin:0'><div style='width:60px;height:50px;background:green'></div></body></html>";
+        assertEquals(Verdict.PASS, compare(render(a), render(a), 0, 0));
+        assertEquals(Verdict.MISMATCH, compare(render(a), render(b), 0, 0));
+    }
+}
