@@ -1103,6 +1103,35 @@ public class LayoutBox {
     /** 直近の測定で、使える幅に依る子（折り返す・切られる・幅を埋める）があった。測定の始めに下ろし、子の測定が立てる。 */
     private boolean childFitBlocked;
 
+    /** 1 回のレイアウトで、箱 1 つあたりに許す測り直しの数。float を含む入れ子の flex は測定キャッシュに当たらず 2^深さに膨らむ（W9）ので、その上限。 */
+    private static final int FUEL_PER_BOX = 200;
+    /** 小さな文書で使い切らないための下駄。 */
+    private static final int FUEL_BASE = 50_000;
+    private static final java.util.concurrent.atomic.LongAdder FUEL_REUSED = new java.util.concurrent.atomic.LongAdder();
+    /** スレッドごとの {実行番号, 測った回数, 初めて測った箱の数}。 */
+    private static final ThreadLocal<long[]> FUEL = ThreadLocal.withInitial(() -> new long[]{-1, 0, 0});
+
+    /** 燃料切れのために前回の測定を使った回数の累計（診断・テスト用）。 */
+    public static long measureFuelReused() {
+        return FUEL_REUSED.sum();
+    }
+
+    /** この測定を 1 回分として数え、箱の数に比べて測りすぎで、かつこの箱に前回の測定があるなら true（測ったことのない箱は必ず測る）。 */
+    private boolean measureFuelExhausted(LayoutContext ctx) {
+        long[] f = FUEL.get();
+        if (f[0] != ctx.layoutRun()) {
+            f[0] = ctx.layoutRun();
+            f[1] = 0;
+            f[2] = 0;
+        }
+        f[1]++;
+        if (measuredSpace == null) {
+            f[2]++;
+            return false;
+        }
+        return f[1] > FUEL_BASE + (long) FUEL_PER_BOX * f[2];
+    }
+
     private void measureCore(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         restoreTentativeStash();
         if (needsAdoption) {
@@ -1124,6 +1153,12 @@ public class LayoutBox {
         }
         if (ctx.reuseMeasurements() && (reuseDefiniteTentative(space, ctx, restoreOk)
                 || fillFitReuse(space, ctx, restoreOk))) {
+            return;
+        }
+        if (measureFuelExhausted(ctx)) {
+            // 測定の燃料切れ（W9）: これ以上の測り直しはせず、前回の測定を使う（測ったことのない箱は 1 回だけ測るので、全体は箱の数で終わる）
+            FUEL_REUSED.increment();
+            if (restoreOk) restoreNaturalOutputs();
             return;
         }
         MEASUREMENTS_COMPUTED.increment();
