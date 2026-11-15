@@ -100,6 +100,8 @@ public final class StandaloneView implements AutoCloseable {
     /** ホイールで動かしている最中のスクロール先（節 → {x, y}）。毎フレーム少しずつ近づける。 */
     private final Map<HtmlNode, float[]> scrollTargets = new HashMap<>();
     private double mouseX = -1, mouseY = -1;
+    /** {@code F12} の要素インスペクタ（ポインタの下の要素の箱モデルと算出スタイルを重ねる）。 */
+    private boolean inspector;
     private boolean mouseDown;
     /** 押している左以外のボタン（GLFW の番号）。無ければ -1。 */
     private int otherButton = -1;
@@ -324,6 +326,7 @@ public final class StandaloneView implements AutoCloseable {
         ui.adoptSessionId(sessionId);
         mouseX = x;
         mouseY = y;
+        if (inspector) redraw = true;
         if (popup.isOpen()) {
             popup.hover(x, y);
             redraw = true;
@@ -603,6 +606,10 @@ public final class StandaloneView implements AutoCloseable {
                 (mods & Keys.MOD_ALT) != 0, (mods & Keys.MOD_SUPER) != 0);
         if (ev == null || ev.isDefaultPrevented()) return;
 
+        if (key == Keys.F12) {
+            setInspectorEnabled(!inspector);
+            return;
+        }
         if (popup.isOpen() && selectKey(key)) return;
         if (key == Keys.TAB) {
             moveFocus(shift ? -1 : 1);
@@ -792,14 +799,33 @@ public final class StandaloneView implements AutoCloseable {
     // キャレット・選択・ポップアップの重ね描き
     // ------------------------------------------------------------------
 
+    /** 要素インスペクタ（{@code F12}）を開閉する。開いている間はポインタの下の要素を検査して重ねる。 */
+    public void setInspectorEnabled(boolean on) {
+        if (inspector == on) return;
+        inspector = on;
+        redraw = true;
+    }
+
+    public boolean inspectorEnabled() {
+        return inspector;
+    }
+
+    /** インスペクタが今見ている要素（開いていない・ポインタの下に要素が無いなら null）。 */
+    public ElementInspector.Info inspected() {
+        if (!inspector || mouseX < 0 || mouseY < 0) return null;
+        return ElementInspector.inspect(ui, ElementInspector.pick(ui, mouseX, mouseY));
+    }
+
     private List<DisplayItem> withOverlays(List<DisplayItem> base) {
         List<DisplayItem> text = textOverlay();
         List<DisplayItem> pop = popup.overlay();
-        if (text.isEmpty() && pop.isEmpty()) return base;
-        List<DisplayItem> all = new ArrayList<>(base.size() + text.size() + pop.size());
+        List<DisplayItem> insp = inspector ? ElementInspector.overlay(inspected(), width, height) : List.of();
+        if (text.isEmpty() && pop.isEmpty() && insp.isEmpty()) return base;
+        List<DisplayItem> all = new ArrayList<>(base.size() + text.size() + pop.size() + insp.size());
         all.addAll(base);
         all.addAll(text);
         all.addAll(pop);
+        all.addAll(insp);
         return all;
     }
 
