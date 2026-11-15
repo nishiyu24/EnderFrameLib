@@ -11,5 +11,9 @@ package com.nishiyu.enderframelib.core.kernel.gpu.rhi;
  * @param msaa            マルチサンプルの描画先が使える
  */
 public record GpuCaps(boolean persistentMap, boolean storageBuffer, boolean compute, boolean timestampQuery,
-                      int maxTextureSize, boolean msaa) {
+                      int maxTextureSize, boolean msaa, int maxSamples) {
+    public GpuCaps(boolean persistentMap, boolean storageBuffer, boolean compute, boolean timestampQuery,
+                   int maxTextureSize, boolean msaa) {
+        this(persistentMap, storageBuffer, compute, timestampQuery, maxTextureSize, msaa, msaa ? 4 : 1);
+    }
 }

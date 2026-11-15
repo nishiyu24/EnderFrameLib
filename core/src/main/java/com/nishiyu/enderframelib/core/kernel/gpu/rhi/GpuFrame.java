@@ -10,6 +10,12 @@ public interface GpuFrame {
     /** {@code scissor} は {@code {x, y, 幅, 高さ}}（無ければ null = 全面）。{@code clearArgb} は事前乗算の ARGB。 */
     GpuPass beginPass(GpuTexture target, GpuDevice.LoadOp load, int clearArgb, int[] scissor);
 
+    /** 深度ターゲット付きのパス。{@code depthTarget} が null なら色のみ。 */
+    default GpuPass beginPass(GpuTexture colorTarget, GpuTexture depthTarget, GpuDevice.LoadOp load,
+                              int clearArgb, float clearDepth, int[] scissor) {
+        return beginPass(colorTarget, load, clearArgb, scissor);
+    }
+
     /** {@code pixels} は先頭の行（上）から詰めて並べる（行間の余白なし）。位置は {@code buffer.position()} から。 */
     void upload(GpuTexture dst, int x, int y, int w, int h, ByteBuffer pixels);
 

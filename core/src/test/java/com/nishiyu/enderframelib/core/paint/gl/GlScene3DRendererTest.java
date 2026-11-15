@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
+import com.nishiyu.enderframelib.core.paint.gpu.Scene3DRenderer;
 import com.nishiyu.enderframelib.core.scene3d.MaterialDesc;
 import com.nishiyu.enderframelib.core.scene3d.MeshHandle;
 import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
@@ -76,15 +78,19 @@ class GlScene3DRendererTest {
             }
         }
 
-        try (GlScene3DRenderer persistentRenderer = new GlScene3DRenderer(true);
-             GlScene3DRenderer subDataRenderer = new GlScene3DRenderer(false)) {
-            int tex1 = persistentRenderer.render(world, 256, 256);
-            assertTrue(tex1 > 0);
+        try (GlDevice persistentDev = new GlDevice(true, 3);
+             GlDevice subDataDev = new GlDevice(false, 1);
+             Scene3DRenderer persistentRenderer = new Scene3DRenderer(persistentDev);
+             Scene3DRenderer subDataRenderer = new Scene3DRenderer(subDataDev)) {
+            GpuTexture tex1 = persistentRenderer.render(world, 256, 256);
+            assertNotNull(tex1);
+            assertTrue(persistentDev.nativeHandle(tex1) > 0);
             assertEquals(1, persistentRenderer.lastDrawCalls());
             assertEquals(1024, persistentRenderer.lastInstanceCount());
 
-            int tex2 = subDataRenderer.render(world, 256, 256);
-            assertTrue(tex2 > 0);
+            GpuTexture tex2 = subDataRenderer.render(world, 256, 256);
+            assertNotNull(tex2);
+            assertTrue(subDataDev.nativeHandle(tex2) > 0);
             assertEquals(1, subDataRenderer.lastDrawCalls());
             assertEquals(1024, subDataRenderer.lastInstanceCount());
 
@@ -132,8 +138,9 @@ class GlScene3DRendererTest {
         world.arena().setMesh(frontCenter, box.meshId());
         world.arena().setMaterial(frontCenter, greenBottom.materialId());
 
-        try (GlScene3DRenderer renderer = new GlScene3DRenderer()) {
-            int tex = renderer.render(world, 128, 128);
+        try (GlDevice dev = new GlDevice();
+             Scene3DRenderer renderer = new Scene3DRenderer(dev)) {
+            GpuTexture tex = renderer.render(world, 128, 128);
             assertEquals(1, renderer.fboReallocations());
 
             // 同じサイズで複数フレーム描画しても FBO は再生成されない

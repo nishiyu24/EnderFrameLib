@@ -15,12 +15,18 @@ public final class ImageTextureCache<K> {
     /** 1 件分。{@code version} はテクスチャへ転送済みの画素の版。 */
     public static final class Entry {
         public final int texture;
+        public final Object handle;
         public int version;
         private long lastUse;
 
-        Entry(int texture, int version) {
+        Entry(int texture, Object handle, int version) {
             this.texture = texture;
+            this.handle = handle;
             this.version = version;
+        }
+
+        Entry(int texture, int version) {
+            this(texture, null, version);
         }
     }
 
@@ -49,7 +55,14 @@ public final class ImageTextureCache<K> {
     }
 
     public Entry put(K key, int texture, int version) {
-        Entry e = new Entry(texture, version);
+        Entry e = new Entry(texture, null, version);
+        e.lastUse = ++clock;
+        map.put(key, e);
+        return e;
+    }
+
+    public Entry putHandle(K key, Object handle, int version) {
+        Entry e = new Entry(0, handle, version);
         e.lastUse = ++clock;
         map.put(key, e);
         return e;
@@ -67,6 +80,14 @@ public final class ImageTextureCache<K> {
         }
         if (oldestKey != null) map.remove(oldestKey);
         return oldest;
+    }
+
+    /** すべて取り除き、持っていたハンドル一覧を返す（破棄用）。 */
+    public List<Object> clearHandles() {
+        List<Object> out = new ArrayList<>(map.size());
+        for (Entry e : map.values()) if (e.handle != null) out.add(e.handle);
+        map.clear();
+        return out;
     }
 
     /** すべて取り除き、持っていたテクスチャ ID を返す（破棄用）。 */

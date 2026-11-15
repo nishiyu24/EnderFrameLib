@@ -51,6 +51,7 @@ public final class PersistentVramBuffer {
     private final int stride;
     private final int capacity;
     private final Device device;
+    private final com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer backing;
     /** CPU 側の影。変更の検出と読み出しはここで行う（永続マップの GPU メモリはライトコンバインで、読むと桁違いに遅い）。 */
     private final ByteBuffer data;
     /** 永続マップした GPU メモリ。書き込み専用（読んではならない）。マップしていなければ null。 */
@@ -68,12 +69,33 @@ public final class PersistentVramBuffer {
     /** 値が実際に変わった書き込みの累計（同じ値の書き込みは数えない）。退行検出・計測用。 */
     private long changedWrites;
 
+    /** RHI {@link com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer} を背後に使う版。リング同期はデバイス側（{@code markDirty}）が担う。 */
+    public PersistentVramBuffer(int stride, int capacity, com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer backing) {
+        if (stride <= 0 || (stride & 3) != 0) throw new IllegalArgumentException("stride: " + stride);
+        if (capacity <= 0 || (long) stride * capacity > Integer.MAX_VALUE - 64) throw new IllegalArgumentException("capacity: " + capacity);
+        long bytes = (long) stride * capacity;
+        if (backing.size() < bytes) throw new IllegalArgumentException("backing too small: " + backing.size() + " < " + bytes);
+        this.stride = stride;
+        this.capacity = capacity;
+        this.device = null;
+        this.backing = backing;
+        this.data = backing.map().duplicate().order(ByteOrder.nativeOrder());
+        this.gpu = null;
+        this.ring = null;
+        this.persistent = false;
+        this.segLo = new int[]{Integer.MAX_VALUE};
+        this.segHi = new int[]{-1};
+        this.freeStack = new int[capacity];
+        backing.markDirty(0, 0);
+    }
+
     public PersistentVramBuffer(int stride, int capacity, Device device) {
         if (stride <= 0 || (stride & 3) != 0) throw new IllegalArgumentException("stride: " + stride);
         if (capacity <= 0 || (long) stride * capacity > Integer.MAX_VALUE - 64) throw new IllegalArgumentException("capacity: " + capacity);
         this.stride = stride;
         this.capacity = capacity;
         this.device = device;
+        this.backing = null;
         long bytes = (long) stride * capacity;
         ByteBuffer mapped = device == null ? null : device.mapPersistent(bytes);
         ByteBuffer raw = ByteBuffer.allocateDirect((int) bytes + 64);
@@ -178,6 +200,16 @@ public final class PersistentVramBuffer {
      * @return 今回転送したバイト数
      */
     public int flush() {
+        if (backing != null) {
+            if (segHi[0] < 0) return 0;
+            int off = segLo[0] * stride;
+            int len = (segHi[0] - segLo[0] + 1) * stride;
+            backing.markDirty(off, len);
+            ringCopiedBytes += len;
+            segLo[0] = Integer.MAX_VALUE;
+            segHi[0] = -1;
+            return 0;
+        }
         if (ring != null) return flushRing();
         if (segHi[0] < 0) return 0;
         int sent = 0;

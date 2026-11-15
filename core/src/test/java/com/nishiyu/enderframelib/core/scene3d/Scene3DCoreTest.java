@@ -146,7 +146,7 @@ class Scene3DCoreTest {
         assertTrue(b1.doubleSided());
 
         // CPU シャドウ側 PersistentVramBuffer に 128B/インスタンスでパックして中身を検証
-        PersistentVramBuffer vram = new PersistentVramBuffer(InstancedBatcher.INSTANCE_STRIDE_BYTES, 1300, null);
+        PersistentVramBuffer vram = new PersistentVramBuffer(InstancedBatcher.INSTANCE_STRIDE_BYTES, 1300, (PersistentVramBuffer.Device) null);
         int written = world.packInstances(vram);
         assertEquals(1201, written);
 

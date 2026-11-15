@@ -11,6 +11,12 @@ public interface GpuBuffer extends AutoCloseable {
     /** 書き込み先。呼び出しの間ではなく、閉じるまで同じバッファを返す。 */
     ByteBuffer map();
 
+    /**
+     * {@link #map()} へ書いた {@code [offset, offset + length)} を変更済みとして印を付ける
+     * （永続リング・段階転送で、実際に変わった範囲だけを GPU へ反映する。既定は何もしない）。
+     */
+    default void markDirty(long offset, long length) {}
+
     @Override
     void close();
 }

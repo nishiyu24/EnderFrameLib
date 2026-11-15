@@ -89,9 +89,31 @@ class GlDeviceContractTest extends GpuDeviceContract {
     }
 
     @Test
-    void depthIsNotYetSupported() {
+    void depthBufferMsaaAndAdvancedShadersAreSupported() {
         GlDevice d = (GlDevice) open();
-        assertThrows(UnsupportedOperationException.class, () -> d.createPipeline(new GpuDevice.PipelineDesc("tex", true, true)));
-        assertThrows(UnsupportedOperationException.class, () -> d.createTexture(new GpuDevice.TextureDesc(4, 4, GpuDevice.TextureFormat.DEPTH24, true, 1)));
+        GpuDevice.PipelineDesc pDesc = new GpuDevice.PipelineDesc(
+                "scene3d", false, true, true, GpuDevice.CullMode.BACK, GpuDevice.VertexLayout.SCENE3D);
+        var pScene = d.createPipeline(pDesc);
+        var pFx = d.createPipeline(new GpuDevice.PipelineDesc("fx", true, false));
+        GpuTexture color = d.createTexture(GpuDevice.TextureDesc.rgba8Linear(16, 16, true));
+        GpuTexture depth = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.DEPTH24, true, 1));
+        GpuFrame f = d.beginFrame();
+        f.beginPass(color, depth, GpuDevice.LoadOp.CLEAR, 0xFF102030, 1.0f, null).end();
+        f.end();
+        if (d.caps().msaa()) {
+            int s = Math.min(4, d.caps().maxSamples());
+            GpuTexture msaaColor = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.RGBA8, true, s));
+            GpuTexture msaaDepth = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.DEPTH24, true, s));
+            GpuFrame f2 = d.beginFrame();
+            f2.beginPass(msaaColor, msaaDepth, GpuDevice.LoadOp.CLEAR, 0xFF000000, 1.0f, null).end();
+            f2.copy(msaaColor, color, new int[]{0, 0, 16, 16});
+            f2.end();
+            msaaDepth.close();
+            msaaColor.close();
+        }
+        depth.close();
+        color.close();
+        pFx.close();
+        pScene.close();
     }
 }

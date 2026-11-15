@@ -37,7 +37,37 @@ public final class ShaderPrograms {
                     new RecordView("uEfF", 5, ViewFormat.FLOAT32, 24), new RecordView("uEfI", 5, ViewFormat.INT32, 25),
                     new RecordView("uClF", 6, ViewFormat.FLOAT32, 26), new RecordView("uClH", 6, ViewFormat.HALF16, 27)));
 
-    private static final List<ShaderProgram> ALL = List.of(TEX, RECTS);
+    /** 層の合成（色行列・ぼかし・影・マスク・mix-blend-mode・backdrop-filter・clip-path）。 */
+    public static final ShaderProgram FX = new ShaderProgram("fx", ShaderSources.TEX_VERT, ShaderSources.FX_FRAG,
+            List.of(new Uniform("uDev", UniformType.VEC4), new Uniform("uView", UniformType.VEC2),
+                    new Uniform("uMode", UniformType.INT), new Uniform("uOpacity", UniformType.FLOAT),
+                    new Uniform("uHasMatrix", UniformType.INT), new Uniform("uRow0", UniformType.VEC4),
+                    new Uniform("uRow1", UniformType.VEC4), new Uniform("uRow2", UniformType.VEC4),
+                    new Uniform("uDir", UniformType.VEC2), new Uniform("uSigma", UniformType.FLOAT),
+                    new Uniform("uTaps", UniformType.INT), new Uniform("uStep", UniformType.FLOAT),
+                    new Uniform("uTexel", UniformType.VEC2), new Uniform("uUvScale", UniformType.VEC2),
+                    new Uniform("uUvMax", UniformType.VEC2), new Uniform("uK", UniformType.INT),
+                    new Uniform("uShadowOffset", UniformType.VEC2), new Uniform("uShadowColor", UniformType.VEC4),
+                    new Uniform("uMaskMode", UniformType.INT), new Uniform("uBlend", UniformType.INT),
+                    new Uniform("uInvM", UniformType.VEC4), new Uniform("uInvT", UniformType.VEC2),
+                    new Uniform("uShapeScale", UniformType.FLOAT), new Uniform("uClipKind", UniformType.INT),
+                    new Uniform("uEvenOdd", UniformType.INT), new Uniform("uClipN", UniformType.INT),
+                    new Uniform("uHasB", UniformType.INT),
+                    new Uniform("uBD", UniformType.VEC4_ARRAY, 3),
+                    new Uniform("uClipD", UniformType.VEC4_ARRAY, 96)),
+            List.of("uSrc", "uAux", "uBackdrop"));
+
+    /** 3D インスタンス描画（{@code Scene3DRenderer} 用）。 */
+    public static final ShaderProgram SCENE3D = new ShaderProgram("scene3d",
+            ShaderSources.SCENE3D_VERTEX, ShaderSources.SCENE3D_FRAGMENT,
+            List.of(new Uniform("uViewProj", UniformType.MAT4), new Uniform("uBaseInstance", UniformType.INT),
+                    new Uniform("uCameraPos", UniformType.VEC3), new Uniform("uLightDir", UniformType.VEC3),
+                    new Uniform("uLightColor", UniformType.VEC3), new Uniform("uAmbientColor", UniformType.VEC3)),
+            List.of(), 0,
+            List.of(new RecordView("uInstanceTboF", 0, ViewFormat.RGBA_FLOAT32, 8),
+                    new RecordView("uInstanceTboI", 0, ViewFormat.RGBA_INT32, 9)));
+
+    private static final List<ShaderProgram> ALL = List.of(TEX, RECTS, FX, SCENE3D);
 
     /** 名前で引く。無ければ {@link IllegalArgumentException}。 */
     public static ShaderProgram byId(String id) {

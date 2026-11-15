@@ -6,6 +6,7 @@ import com.nishiyu.enderframelib.common.SoftwareRendering;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Assumptions;
+import com.nishiyu.enderframelib.core.paint.gpu.RectStream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -207,7 +208,7 @@ class RectTreesBackendTest {
                 + " (all-legacy draws " + off[0] + ", shapes " + off[3] + ", glyphs/images n/a), rejects[pose,grid,corner,cap]=" + java.util.Arrays.toString(REJ) + " clip=" + REJ[4] + ", maxDiff=" + maxDiff(a, b));
         try {
         for (int bit = 0; bit < 12; bit++) {
-            GlRectStream.opMask = 1 << bit;
+            RectStream.opMask = 1 << bit;
             int[] only = render(html, 900, 700, 1f, true, null);
             int w = 0, n = 0;
             for (int i = 0; i < only.length; i++) {
@@ -221,7 +222,7 @@ class RectTreesBackendTest {
             assertTrue(w <= 4 && n <= 200, "図形の種類 " + bit + " だけを GPU にした差: worst " + w + ", pixels>2 " + n);
         }
         } finally {
-            GlRectStream.opMask = 0xFFF; // 途中で失敗しても、他のテストへ残さない
+            RectStream.opMask = 0xFFF; // 途中で失敗しても、他のテストへ残さない
         }
         int worst = 0, wi = -1, bad = 0;
         for (int i = 0; i < a.length; i++) {

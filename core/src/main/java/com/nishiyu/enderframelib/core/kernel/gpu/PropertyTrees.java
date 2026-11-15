@@ -74,6 +74,24 @@ public final class PropertyTrees {
     public final PersistentVramBuffer order;
     private int curveCount;
 
+    /**
+     * RHI の {@link com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer} を使って 7 本の配列を作る。
+     * 引数には必要なバイト長が渡る（transforms, clips, effects, primitives, scrolls, curveTable, order の順）。
+     */
+    public PropertyTrees(int transformCap, int clipCap, int effectCap, int primitiveCap,
+                         java.util.function.LongFunction<com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer> buffers) {
+        this.transforms = new PersistentVramBuffer(TRANSFORM_STRIDE, transformCap, buffers.apply((long) TRANSFORM_STRIDE * transformCap));
+        this.clips = new PersistentVramBuffer(CLIP_STRIDE, clipCap, buffers.apply((long) CLIP_STRIDE * clipCap));
+        this.effects = new PersistentVramBuffer(EFFECT_STRIDE, effectCap, buffers.apply((long) EFFECT_STRIDE * effectCap));
+        this.primitives = new PersistentVramBuffer(PRIMITIVE_STRIDE, primitiveCap, buffers.apply((long) PRIMITIVE_STRIDE * primitiveCap));
+        this.scrolls = new PersistentVramBuffer(8, MAX_SCROLLS, buffers.apply(8L * MAX_SCROLLS));
+        this.curveTable = new PersistentVramBuffer(16, MAX_CURVES, buffers.apply(16L * MAX_CURVES));
+        this.order = new PersistentVramBuffer(4, primitiveCap, buffers.apply(4L * primitiveCap));
+        for (int i = 0; i < primitiveCap; i++) order.allocate();
+        for (int i = 0; i < MAX_SCROLLS; i++) scrolls.allocate();
+        for (int i = 0; i < MAX_CURVES; i++) curveTable.allocate();
+    }
+
     /** 全バッファが同じ {@code device} を共有する（GL を使わない用途・テスト向け）。 */
     public PropertyTrees(int transformCap, int clipCap, int effectCap, int primitiveCap, PersistentVramBuffer.Device device) {
         this(transformCap, clipCap, effectCap, primitiveCap, () -> device);

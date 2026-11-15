@@ -232,8 +232,8 @@ public abstract class GpuDeviceContract {
             GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
             GpuFrame f = d.beginFrame();
             GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
-            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(new GpuBuffer[0], new GpuTexture[]{t}, ByteBuffer.allocateDirect(8))), "定数が足りない");
-            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(new GpuBuffer[0], new GpuTexture[0], ByteBuffer.allocateDirect(32))), "テクスチャが足りない");
+            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{t}, ByteBuffer.allocateDirect(8))), "定数が足りない");
+            assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[0], ByteBuffer.allocateDirect(32))), "テクスチャが足りない");
             assertThrows(IllegalStateException.class, () -> pass.drawInstanced(4, 1, 0), "結ぶ前は描けない");
             pass.end();
             f.end();

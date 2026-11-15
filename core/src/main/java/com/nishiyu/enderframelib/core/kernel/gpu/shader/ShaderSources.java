@@ -271,9 +271,12 @@ public final class ShaderSources {
                 if (px >= cx) return sB + (b.x - rx[2] - px);
                 return sL + (b.y - ry[3] - py);
             }
+            float atlasFetch(ivec2 p) {
+                return texelFetch(uAtlas, ivec2(p.x, textureSize(uAtlas, 0).y - 1 - p.y), 0).r;
+            }
             float glyphCov(ivec2 c, vec4 gl) {
                 if (c.x < 0 || c.y < 0 || c.x >= int(gl.z) || c.y >= int(gl.w)) return 0.0;
-                return texelFetch(uAtlas, ivec2(gl.xy) + c, 0).r;
+                return atlasFetch(ivec2(gl.xy) + c);
             }
             void main() {
                 int base = vSlot * 32;
@@ -290,13 +293,13 @@ public final class ShaderSources {
                     vec4 gl = vec4(float(w0 & 65535), float((w0 >> 16) & 65535), float(w1 & 65535), float((w1 >> 16) & 65535));
                     ivec2 gp = ivec2(floor(vLocal - rect.xy));
                     if (gp.x < 0 || gp.y < 0 || gp.x >= int(gl.z) || gp.y >= int(gl.w)) discard;
-                    a = texelFetch(uAtlas, ivec2(gl.xy) + gp, 0).r;
+                    a = atlasFetch(ivec2(gl.xy) + gp);
                 } else if (op == 10) {
                     // 文字の縁取り: SDF の字形（128 = 輪郭）から、輪郭を中心にした帯を描く
                     vec4 gl = extF4(0);
                     ivec2 gp = ivec2(floor(vLocal - rect.xy));
                     if (gp.x < 0 || gp.y < 0 || gp.x >= int(gl.z) || gp.y >= int(gl.w)) discard;
-                    float sv = texelFetch(uAtlas, ivec2(gl.xy) + gp, 0).r * 255.0;
+                    float sv = atlasFetch(ivec2(gl.xy) + gp) * 255.0;
                     float sd = (sv - 128.0) * (8.0 / 128.0);
                     a = clamp(extF(4) - abs(sd) + 0.5, 0.0, 1.0);
                 } else if (op == 9) {

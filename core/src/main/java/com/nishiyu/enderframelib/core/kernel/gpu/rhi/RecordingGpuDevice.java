@@ -21,7 +21,9 @@ public final class RecordingGpuDevice implements GpuDevice {
         record BeginFrame(int frame) implements Command { }
         record BeginPass(int targetWidth, int targetHeight, LoadOp load, int clearArgb, int[] scissor) implements Command { }
         record Bind(String shaderId, int recordBuffers, int textures) implements Command { }
+        record BindMesh() implements Command { }
         record Draw(int vertexCount, int instanceCount, int baseInstance) implements Command { }
+        record DrawIndexed(int indexCount, long indexOffsetBytes, int instanceCount, int baseVertex, int baseInstance) implements Command { }
         record EndPass() implements Command { }
         record Upload(int x, int y, int w, int h) implements Command { }
         record Copy(int[] region) implements Command { }
@@ -36,7 +38,7 @@ public final class RecordingGpuDevice implements GpuDevice {
     private boolean closed;
 
     public RecordingGpuDevice() {
-        this(new GpuCaps(true, false, false, false, 16384, false));
+        this(new GpuCaps(true, false, false, false, 16384, true, 4));
     }
 
     public RecordingGpuDevice(GpuCaps caps) {
@@ -84,12 +86,12 @@ public final class RecordingGpuDevice implements GpuDevice {
             throw new IllegalArgumentException("texture too large: " + desc);
         }
         log.add(new Command.CreateTexture(desc.width(), desc.height(), desc.format(), desc.renderTarget()));
-        return new Texture(desc.width(), desc.height(), desc.format(), 0);
+        return new Texture(desc.width(), desc.height(), desc.format(), 0, desc.samples(), desc.renderTarget());
     }
 
     @Override
     public GpuTexture wrapExternal(long nativeHandle, int width, int height) {
-        return new Texture(width, height, TextureFormat.RGBA8, nativeHandle);
+        return new Texture(width, height, TextureFormat.RGBA8, nativeHandle, 1, false);
     }
 
     @Override
@@ -129,7 +131,9 @@ public final class RecordingGpuDevice implements GpuDevice {
 
         Buffer(BufferDesc desc) {
             this.desc = desc;
-            this.data = ByteBuffer.allocateDirect((int) desc.size()).order(java.nio.ByteOrder.nativeOrder());
+            ByteBuffer raw = ByteBuffer.allocateDirect((int) desc.size() + 64);
+            int off = (64 - raw.alignmentOffset(0, 64)) & 63;
+            this.data = raw.slice(off, (int) desc.size()).order(java.nio.ByteOrder.nativeOrder());
         }
 
         @Override public long size() { return desc.size(); }
@@ -139,18 +143,22 @@ public final class RecordingGpuDevice implements GpuDevice {
     }
 
     private static final class Texture implements GpuTexture {
-        final int w, h;
+        final int w, h, samples;
+        final boolean renderTarget;
         final TextureFormat format;
         final long handle;
-        /** RGBA8 / R8 の画素（左上原点・行は詰める）。それ以外の形式は null（内容の命令は使えない）。 */
+        /** RGBA8 / R8（非 MSAA）の画素（左上原点・行は詰める）。それ以外の形式・MSAA は null（内容の命令は使えない）。 */
         final byte[] pixels;
 
-        Texture(int w, int h, TextureFormat format, long handle) {
+        Texture(int w, int h, TextureFormat format, long handle, int samples, boolean renderTarget) {
             this.w = w;
             this.h = h;
+            this.samples = samples;
+            this.renderTarget = renderTarget;
             this.format = format;
             this.handle = handle;
-            this.pixels = (format == TextureFormat.RGBA8 || format == TextureFormat.R8) ? new byte[w * h * format.bytesPerPixel] : null;
+            this.pixels = ((format == TextureFormat.RGBA8 || format == TextureFormat.R8) && samples == 1)
+                    ? new byte[w * h * format.bytesPerPixel] : null;
         }
 
         byte[] contents() {
@@ -190,8 +198,20 @@ public final class RecordingGpuDevice implements GpuDevice {
 
         @Override
         public GpuPass beginPass(GpuTexture target, LoadOp load, int clearArgb, int[] scissor) {
+            return beginPass(target, null, load, clearArgb, 1.0f, scissor);
+        }
+
+        @Override
+        public GpuPass beginPass(GpuTexture colorTarget, GpuTexture depthTarget, LoadOp load,
+                                 int clearArgb, float clearDepth, int[] scissor) {
             live();
-            Texture t = (Texture) target;
+            Texture t = (Texture) colorTarget;
+            if (depthTarget != null) {
+                Texture dt = (Texture) depthTarget;
+                if (dt.format != TextureFormat.DEPTH24 || dt.w != t.w || dt.h != t.h || dt.samples != t.samples) {
+                    throw new IllegalArgumentException("深度ターゲットが一致しない");
+                }
+            }
             int[] sc = scissor == null ? new int[]{0, 0, t.w, t.h} : scissor.clone();
             checkRegion(t, sc[0], sc[1], sc[2], sc[3]);
             log.add(new Command.BeginPass(t.w, t.h, load, clearArgb, sc));
@@ -235,13 +255,18 @@ public final class RecordingGpuDevice implements GpuDevice {
         public void copy(GpuTexture src, GpuTexture dst, int[] region) {
             live();
             Texture s = (Texture) src, d = (Texture) dst;
+            if (s.format != TextureFormat.RGBA8 && s.format != TextureFormat.R8) {
+                throw new UnsupportedOperationException("内容を読み書きできない形式: " + s.format);
+            }
             if (s.format != d.format) throw new IllegalArgumentException("形式が違う: " + s.format + " / " + d.format);
             checkRegion(s, region[0], region[1], region[2], region[3]);
             checkRegion(d, region[0], region[1], region[2], region[3]);
-            int bpp = s.format.bytesPerPixel, row = region[2] * bpp;
-            byte[] sp = s.contents(), dp = d.contents();
-            for (int yy = region[1]; yy < region[1] + region[3]; yy++) {
-                System.arraycopy(sp, (yy * s.w + region[0]) * bpp, dp, (yy * d.w + region[0]) * bpp, row);
+            if (s.pixels != null && d.pixels != null) {
+                int bpp = s.format.bytesPerPixel, row = region[2] * bpp;
+                byte[] sp = s.pixels, dp = d.pixels;
+                for (int yy = region[1]; yy < region[1] + region[3]; yy++) {
+                    System.arraycopy(sp, (yy * s.w + region[0]) * bpp, dp, (yy * d.w + region[0]) * bpp, row);
+                }
             }
             log.add(new Command.Copy(region.clone()));
         }
@@ -273,7 +298,7 @@ public final class RecordingGpuDevice implements GpuDevice {
             private boolean done;
 
             @Override
-            public void bind(GpuPipeline pipeline, Bindings bindings) {
+            public void bind(GpuPipeline pipeline, GpuBindings bindings) {
                 if (done) throw new IllegalStateException("終えたパス");
                 var program = com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms.byId(pipeline.desc().shaderId());
                 if (bindings.textures().length < program.samplers().size()) throw new IllegalArgumentException("テクスチャが足りない: " + program.id());
@@ -286,10 +311,26 @@ public final class RecordingGpuDevice implements GpuDevice {
             }
 
             @Override
+            public void bindMesh(GpuBuffer vertices, GpuBuffer indices) {
+                if (done) throw new IllegalStateException("終えたパス");
+                if (vertices.usage() != BufferUsage.VERTEX || indices.usage() != BufferUsage.INDEX) {
+                    throw new IllegalArgumentException("頂点・インデックスバッファの種別が違う");
+                }
+                log.add(new Command.BindMesh());
+            }
+
+            @Override
             public void drawInstanced(int vertexCount, int instanceCount, int baseInstance) {
                 if (done) throw new IllegalStateException("終えたパス");
                 if (!bound) throw new IllegalStateException("パイプラインを結んでいない");
                 log.add(new Command.Draw(vertexCount, instanceCount, baseInstance));
+            }
+
+            @Override
+            public void drawIndexedInstanced(int indexCount, long indexOffsetBytes, int instanceCount, int baseVertex, int baseInstance) {
+                if (done) throw new IllegalStateException("終えたパス");
+                if (!bound) throw new IllegalStateException("パイプラインを結んでいない");
+                log.add(new Command.DrawIndexed(indexCount, indexOffsetBytes, instanceCount, baseVertex, baseInstance));
             }
 
             @Override

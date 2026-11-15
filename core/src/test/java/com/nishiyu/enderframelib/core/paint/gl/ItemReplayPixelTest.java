@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.paint.gl;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.nishiyu.enderframelib.common.StandaloneView;
+import com.nishiyu.enderframelib.core.paint.gpu.RectStream;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +45,7 @@ class ItemReplayPixelTest {
 
     @AfterEach
     void restore() {
-        GlRectStream.replayEnabled = true;
+        RectStream.replayEnabled = true;
     }
 
     private static void requireGl() {
@@ -57,7 +58,7 @@ class ItemReplayPixelTest {
 
     /** 操作列を流し、毎フレームの画素を集める。{@code replay} が false なら再生を止める。 */
     private static List<int[]> run(boolean replay, long[] stats) {
-        GlRectStream.replayEnabled = replay;
+        RectStream.replayEnabled = replay;
         List<int[]> out = new ArrayList<>();
         try (LwjglGlRenderBackend g = new LwjglGlRenderBackend(W, H);
              StandaloneView v = new StandaloneView(DOC, W, H, FontResolver.FALLBACK)) {

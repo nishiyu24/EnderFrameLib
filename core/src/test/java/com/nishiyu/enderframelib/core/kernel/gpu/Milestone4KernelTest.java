@@ -82,7 +82,7 @@ class Milestone4KernelTest {
 
     @Test
     void slotsAreReusedAndBoundsAreChecked() {
-        PersistentVramBuffer b = new PersistentVramBuffer(32, 3, null);
+        PersistentVramBuffer b = new PersistentVramBuffer(32, 3, (PersistentVramBuffer.Device) null);
         int a = b.allocate(), c = b.allocate(), d = b.allocate();
         assertEquals(-1, b.allocate(), "容量いっぱい");
         b.putInt(c, 0, 5);

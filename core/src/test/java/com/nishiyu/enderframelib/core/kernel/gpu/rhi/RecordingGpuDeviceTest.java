@@ -23,7 +23,7 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
         ByteBuffer w = records.map();
         for (int i = 0; i < rows; i++) w.putInt(i * 64, i); // 図形 1 つ = レコード 1 件の書き込み（RHI を呼ばない）
         GpuPass p = f.beginPass(target, GpuDevice.LoadOp.CLEAR, 0xFFFFFFFF, null);
-        p.bind(rects, new GpuPass.Bindings(new GpuBuffer[]{records}, new GpuTexture[]{target}, ByteBuffer.allocateDirect(32)));
+        p.bind(rects, new GpuBindings(new GpuBuffer[]{records}, new GpuTexture[]{target}, ByteBuffer.allocateDirect(32)));
         p.drawInstanced(6, rows, 0);
         p.end();
         f.end();
@@ -86,9 +86,9 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
         ByteBuffer u = ByteBuffer.allocateDirect(20);
         GpuFrame f = d.beginFrame();
         GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
-        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(java.util.Arrays.copyOf(seven, 6), new GpuTexture[]{t, t}, u)), "6 本では足りない");
-        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(seven, new GpuTexture[]{t}, u)), "アトラスと画像の 2 枚");
-        pass.bind(p, new GpuPass.Bindings(seven, new GpuTexture[]{t, t}, u));
+        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(java.util.Arrays.copyOf(seven, 6), new GpuTexture[]{t, t}, u)), "6 本では足りない");
+        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(seven, new GpuTexture[]{t}, u)), "アトラスと画像の 2 枚");
+        pass.bind(p, new GpuBindings(seven, new GpuTexture[]{t, t}, u));
         pass.drawInstanced(4, 1000, 0);
         pass.end();
         f.end();

@@ -21,16 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class PortabilityRatchetTest {
 
-    /** 現状の依存。GLFW の窓・GL バックエンド・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
+    /** 現状の依存。GLFW の窓・GL の RHI/コンテキスト実装・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
     private static final Set<String> ALLOWED = Set.of(
             "common/StandaloneViewer.java",
-            "core/paint/gl/GlRectStream.java", // バックエンドが受けた矩形を GlTreeStore へ流す窓口（L3）
-            "core/paint/gl/GlRectRenderer.java", // GlTreeStore のプリミティブを描く GL 実装（L3）
-            "core/paint/gl/GlVramDevice.java", // kernel/gpu の PersistentVramBuffer.Device の GL 実装（L3）。kernel 側は GL 非依存のまま
-            "core/paint/gl/GlFenceRing.java", // GlVramDevice 群が共有するフェンス（GL 同期オブジェクト）。L3 の GL 実装の一部
-            "core/paint/gl/GlDevice.java", // GpuDevice（RHI）の GL 実装（L3）。G1 で LwjglGlRenderBackend の GL 呼び出しを順に引き取る
-            "core/paint/gl/GlScene3DRenderer.java", // Scene3DWorld の GL 3.2 Core + TBO インスタンスレンダラ（L5）
-            "core/paint/gl/LwjglGlRenderBackend.java",
+            "core/paint/gl/GlContext.java", // GLFW 窓・共有コンテキスト・swap・タイマークエリ（G1）
+            "core/paint/gl/GlDevice.java", // GpuDevice（RHI）の GL 実装（G1）
             "core/raster/awt/AwtImageDecoder.java");
 
     private static final Pattern FORBIDDEN = Pattern.compile("org[.]lwjgl[.](opengl|glfw)|java[.]awt");

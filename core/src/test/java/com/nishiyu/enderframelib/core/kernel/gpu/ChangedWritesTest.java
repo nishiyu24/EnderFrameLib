@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 class ChangedWritesTest {
     @Test
     void onlyRealChangesAreCounted() {
-        PersistentVramBuffer b = new PersistentVramBuffer(64, 8, null);
+        PersistentVramBuffer b = new PersistentVramBuffer(64, 8, (PersistentVramBuffer.Device) null);
         int s = b.allocate();
         assertEquals(0, b.changedWrites());
         b.putInt(s, 0, 5);
@@ -31,7 +31,7 @@ class ChangedWritesTest {
     @Test
     void writingBackAndForthInOneFrameCountsEveryChange() {
         // 以前のクリップ欄の書き方（NONE → 個数）は、毎フレーム 2 回の「変更」になっていた
-        PersistentVramBuffer b = new PersistentVramBuffer(64, 8, null);
+        PersistentVramBuffer b = new PersistentVramBuffer(64, 8, (PersistentVramBuffer.Device) null);
         int s = b.allocate();
         b.putInt(s, 8, 2);
         long base = b.changedWrites();
