@@ -75,4 +75,23 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
         assertEquals(0x1234, b.map().getInt(8));
         assertEquals(256, b.size());
     }
+
+    @Test
+    void theRectProgramNeedsSevenRecordBuffersAndTwoTextures() {
+        RecordingGpuDevice d = new RecordingGpuDevice();
+        GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("rects", true, false));
+        GpuBuffer[] seven = new GpuBuffer[7];
+        for (int i = 0; i < 7; i++) seven[i] = d.createBuffer(new GpuDevice.BufferDesc(256, GpuDevice.BufferUsage.RECORD));
+        ByteBuffer u = ByteBuffer.allocateDirect(20);
+        GpuFrame f = d.beginFrame();
+        GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
+        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(java.util.Arrays.copyOf(seven, 6), new GpuTexture[]{t, t}, u)), "6 本では足りない");
+        assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuPass.Bindings(seven, new GpuTexture[]{t}, u)), "アトラスと画像の 2 枚");
+        pass.bind(p, new GpuPass.Bindings(seven, new GpuTexture[]{t, t}, u));
+        pass.drawInstanced(4, 1000, 0);
+        pass.end();
+        f.end();
+        assertEquals(1, d.count(RecordingGpuDevice.Command.Draw.class));
+    }
 }

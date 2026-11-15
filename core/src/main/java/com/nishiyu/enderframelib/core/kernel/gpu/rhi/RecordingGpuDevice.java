@@ -277,6 +277,7 @@ public final class RecordingGpuDevice implements GpuDevice {
                 if (done) throw new IllegalStateException("終えたパス");
                 var program = com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms.byId(pipeline.desc().shaderId());
                 if (bindings.textures().length < program.samplers().size()) throw new IllegalArgumentException("テクスチャが足りない: " + program.id());
+                if (bindings.records().length < program.recordBuffers()) throw new IllegalArgumentException("記録列のバッファが足りない: " + program.id());
                 if (program.uniformBytes() > 0 && (bindings.uniforms() == null || bindings.uniforms().remaining() < program.uniformBytes())) {
                     throw new IllegalArgumentException("定数が足りない: " + program.id() + " は " + program.uniformBytes() + " バイト");
                 }

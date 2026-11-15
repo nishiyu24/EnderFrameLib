@@ -30,7 +30,7 @@ import org.lwjgl.opengl.GLCapabilities;
  * <p>呼び出しは GL コンテキストが現在のスレッドで行う。マップしたメモリは書き込み専用（読んではならない。
  * 中身の確認は {@link #readBack} か、シェーダー経由）。</p>
  */
-public final class GlVramDevice implements PersistentVramBuffer.Device, AutoCloseable {
+public final class GlVramDevice implements PersistentVramBuffer.Device, com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer {
     private static final int MAP_FLAGS = GL30.GL_MAP_WRITE_BIT | GL44.GL_MAP_PERSISTENT_BIT | GL44.GL_MAP_COHERENT_BIT;
     private static final int STORAGE_FLAGS = GL30.GL_MAP_WRITE_BIT | GL44.GL_MAP_PERSISTENT_BIT | GL44.GL_MAP_COHERENT_BIT;
 
@@ -79,6 +79,18 @@ public final class GlVramDevice implements PersistentVramBuffer.Device, AutoClos
     public static boolean supportsPersistentMapping() {
         GLCapabilities c = GL.getCapabilities();
         return c.OpenGL44 || c.GL_ARB_buffer_storage;
+    }
+
+    // ---- RHI（GpuBuffer）としての顔。書き込みは PersistentVramBuffer が影から行うので、map() は使わない ----
+
+    @Override public long size() { return bytes; }
+
+    @Override public com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice.BufferUsage usage() {
+        return com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice.BufferUsage.RECORD;
+    }
+
+    @Override public ByteBuffer map() {
+        throw new UnsupportedOperationException("レコード列は PersistentVramBuffer 越しに書く");
     }
 
     public boolean isPersistent() { return persistent; }
