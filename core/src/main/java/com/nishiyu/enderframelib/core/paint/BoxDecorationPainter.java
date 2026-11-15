@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint;
 
 import com.nishiyu.enderframelib.core.css.model.AnimationSpec;
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.ColorParser;
 import com.nishiyu.enderframelib.core.css.CssProperty;
@@ -107,10 +108,11 @@ public final class BoxDecorationPainter {
         int[] colors = new int[4];
         String[] styles = new String[4];
         boolean hasBorder = false;
+        ComputedStyle ax = box.axisStyle();
         for (int i = 0; i < 4; i++) {
-            String colorProp = box.style.get(BORDER_COLOR_IDS[i]);
+            String colorProp = ax.get(BORDER_COLOR_IDS[i]);
             colors[i] = colorProp == null ? textColor : ColorParser.parseColor(colorProp);
-            styles[i] = box.style.keyword(BORDER_STYLE_IDS[i], "solid");
+            styles[i] = ax.keyword(BORDER_STYLE_IDS[i], "solid");
             if (widths[i] > 0) hasBorder = true;
         }
         float bwTop = widths[0], bwRight = widths[1], bwBottom = widths[2], bwLeft = widths[3];
@@ -287,6 +289,23 @@ public final class BoxDecorationPainter {
             drawLines(elements, id, "_cr" + i + "_", r[0], r[1], r[2], r[3], new float[]{0, 0, 0, r[2]}, styles, colors, 0,
                     events, meta, transDur);
         }
+    }
+
+    /** {@code ::first-line} の背景色（透明以外なら 1 行目の領域に矩形を敷く）。 */
+    void drawFirstLineBackground(List<DisplayItem> elements, LayoutBox box, String id, int fallbackColor,
+                                 ItemProps events, RenderMeta meta, int transDur) {
+        float[] rect = box.firstLineBgRect;
+        if (rect == null || rect[2] <= 0 || rect[3] <= 0) return;
+        com.nishiyu.enderframelib.core.css.ComputedStyle fl = box.firstLineStyle != null ? box.firstLineStyle
+                : (box.isVerticalWrapper && box.parent != null ? box.parent.firstLineStyle : null);
+        if (fl == null) return;
+        String bgSpec = fl.getOrDefault(CssPropertyIndex.BACKGROUND_COLOR, "transparent");
+        int bg = "currentcolor".equalsIgnoreCase(bgSpec.trim()) ? fallbackColor : ColorParser.parseColor(bgSpec);
+        if ((bg >>> 24) == 0) return;
+        int part = fragIds.getAndIncrement();
+        long key = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), FRAG_PART_BASE + part) : 0L;
+        addElement(elements, id, id + "_flbg_" + part, ElementType.RECT, rect[0], rect[1], rect[2], rect[3],
+                "", 0, bg, events, 0, 1f, 0, 0, 1f, 1f, 0, transDur, AnimationSpec.NONE, meta, key);
     }
 
     /**

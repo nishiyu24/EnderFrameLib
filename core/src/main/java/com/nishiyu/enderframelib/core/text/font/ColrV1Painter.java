@@ -29,8 +29,6 @@ import java.util.List;
  *
  * 座標はすべて設計単位（ヒンティング・拡縮なし。グラデーションの点・半径・変換の移動量は 16.16 固定小数点で返るので 65536 で割る。FreeType のルート変換は文字サイズ未設定だと 0 行列なので使わない）。字形の y は上向きなので、全体を {@code translate · scale(k, -k)} で
  * 画面の座標へ写す。{@link LoadedFace} の面ロックの中から呼ぶ。
- *
- * LIMITATION: 文字色（{@code 0xFFFF} のパレット番号）は黒で描く（ビットマップは文字色に依らずキャッシュするため）。
  */
 final class ColrV1Painter {
 
@@ -40,17 +38,22 @@ final class ColrV1Painter {
     private static final double FIXED = 65536.0;
     private static final double F2DOT14 = 16384.0;
 
+    record Result(ColorBitmap bitmap, boolean usedForeground) {}
+
     private final FT_Face face;
     private final LoadedFace owner;
     private final FT_Color.Buffer palette;
     private final int paletteEntries;
+    private final int foregroundArgb;
     private final int width, height;
+    private boolean usedForeground;
 
-    private ColrV1Painter(FT_Face face, LoadedFace owner, FT_Color.Buffer palette, int entries, int width, int height) {
+    private ColrV1Painter(FT_Face face, LoadedFace owner, FT_Color.Buffer palette, int entries, int foregroundArgb, int width, int height) {
         this.face = face;
         this.owner = owner;
         this.palette = palette;
         this.paletteEntries = entries;
+        this.foregroundArgb = foregroundArgb;
         this.width = width;
         this.height = height;
     }
@@ -59,7 +62,7 @@ final class ColrV1Painter {
      * {@code glyphIndex} の COLR v1 ペイントを {@code pixelSize}（em の画素数）で描く。v1 のペイントを持たない・描けないなら null。
      * 返すビットマップは墨の外接矩形だけ（{@code left} は原点から左端、{@code top} は原点から上端の画素数）。
      */
-    static LoadedFace.ColorBitmap render(LoadedFace owner, FT_Face face, int glyphIndex, float pixelSize) {
+    static Result render(LoadedFace owner, FT_Face face, int glyphIndex, float pixelSize, int foregroundArgb) {
         if (!(pixelSize > 0f) || pixelSize > MAX_PIXEL_SIZE) return null;
         FT_OpaquePaint root = FT_OpaquePaint.calloc();
         try {
@@ -78,9 +81,9 @@ final class ColrV1Painter {
                 double k = pixelSize / (double) owner.unitsPerEm();
                 CanvasRenderingContext2D cv = new CanvasRenderingContext2D(size, size);
                 cv.setTransform(Matrix2D.translate(ox, oy).multiply(Matrix2D.scale(k, -k)));
-                ColrV1Painter p = new ColrV1Painter(face, owner, pal, entries, size, size);
+                ColrV1Painter p = new ColrV1Painter(face, owner, pal, entries, foregroundArgb, size, size);
                 p.paint(root, cv, 0);
-                return trim(cv.bitmap(), ox, oy);
+                return new Result(trim(cv.bitmap(), ox, oy), p.usedForeground);
             }
         } finally {
             root.free();
@@ -88,7 +91,7 @@ final class ColrV1Painter {
     }
 
     /** 墨（不透明度のある画素）の外接矩形だけを取り出す。何も描かれていなければ null。 */
-    private static LoadedFace.ColorBitmap trim(Pixmap full, double ox, double oy) {
+    private static ColorBitmap trim(Pixmap full, double ox, double oy) {
         int x0 = Integer.MAX_VALUE, y0 = Integer.MAX_VALUE, x1 = -1, y1 = -1;
         for (int y = 0; y < full.height(); y++) {
             for (int x = 0; x < full.width(); x++) {
@@ -105,7 +108,7 @@ final class ColrV1Painter {
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) out.set(x - x0, y - y0, full.get(x, y));
         }
-        return new LoadedFace.ColorBitmap(out, (int) Math.round(x0 - ox), (int) Math.round(oy - y0));
+        return new ColorBitmap(out, (int) Math.round(x0 - ox), (int) Math.round(oy - y0));
     }
 
     // ------------------------------------------------------------------ ペイントの解釈
@@ -273,13 +276,19 @@ final class ColrV1Painter {
         cv.fillRect(-100_000, -100_000, 200_000, 200_000);
     }
 
-    /** パレットの色（非乗算でない ARGB）。{@code alpha} は F2Dot14。文字色（0xFFFF）は黒。 */
+    /** パレットの色（非乗算 ARGB）。{@code alpha} は F2Dot14。文字色（{@code 0xFFFF}）は {@code foregroundArgb}。 */
     private int color(short paletteIndex, short alpha) {
         int idx = paletteIndex & 0xFFFF;
-        int argb = 0xFF000000;
-        if (idx != 0xFFFF && idx < paletteEntries) {
-            FT_Color c = palette.get(idx);
-            argb = ((c.alpha() & 0xFF) << 24) | ((c.red() & 0xFF) << 16) | ((c.green() & 0xFF) << 8) | (c.blue() & 0xFF);
+        int argb;
+        if (idx == 0xFFFF) {
+            usedForeground = true;
+            argb = foregroundArgb;
+        } else {
+            argb = 0xFF000000;
+            if (idx < paletteEntries) {
+                FT_Color c = palette.get(idx);
+                argb = ((c.alpha() & 0xFF) << 24) | ((c.red() & 0xFF) << 16) | ((c.green() & 0xFF) << 8) | (c.blue() & 0xFF);
+            }
         }
         double a = Math.clamp((alpha & 0xFFFF) / F2DOT14, 0.0, 1.0);
         int outAlpha = (int) Math.round(((argb >>> 24) & 0xFF) * a);

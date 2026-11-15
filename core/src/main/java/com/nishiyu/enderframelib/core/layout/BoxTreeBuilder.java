@@ -207,6 +207,8 @@ public final class BoxTreeBuilder {
         boolean horizontalReturnRoot = activeFlow != WritingModes.HORIZONTAL
                 && WritingModes.flowOf(box.style) == WritingModes.HORIZONTAL
                 && isOrthogonalRootCandidate(box);
+        box.verticalAxisFlow = (!box.isVerticalWrapper && activeFlow != WritingModes.HORIZONTAL)
+                ? (byte) activeFlow : 0;
         int childFlow = verticalRoot ? WritingModes.flowOf(box.style)
                 : horizontalReturnRoot ? WritingModes.HORIZONTAL
                 : activeFlow;
@@ -220,6 +222,10 @@ public final class BoxTreeBuilder {
         LayoutBox.bumpShapeEpoch();
         if (legend != null) box.addChild(legend);
         List<LayoutBox> kids = fixup(box, items);
+        if (childFlow != WritingModes.HORIZONTAL) {
+            byte bf = (byte) childFlow;
+            for (LayoutBox k : kids) markGeneratedAxisFlow(k, bf);
+        }
         box.isVerticalRoot = false;
         box.isHorizontalReturnRoot = false;
         box.orthogonalParentFlow = 0;
@@ -229,6 +235,18 @@ public final class BoxTreeBuilder {
             kids = wrapOrthogonalContent(box, kids, activeFlow, false);
         }
         for (LayoutBox child : kids) box.addChild(child);
+    }
+
+    private static void markGeneratedAxisFlow(LayoutBox box, byte flow) {
+        if (!box.isAnonymous && (box.node == null || !box.node.isPseudoNode)) return;
+        box.verticalAxisFlow = flow;
+        for (int i = 0, n = box.children.size(); i < n; i++) markGeneratedAxisFlow(box.children.get(i), flow);
+    }
+
+    private static void clearAxisFlowOutsideWrapper(LayoutBox box) {
+        box.verticalAxisFlow = 0;
+        if (box.isVerticalRoot || box.isHorizontalReturnRoot || box.isVerticalWrapper) return;
+        for (int i = 0, n = box.children.size(); i < n; i++) clearAxisFlowOutsideWrapper(box.children.get(i));
     }
 
     /** 直交フロー（縦書きの根・縦書き内の {@code horizontal-tb}）になれる箱か（ブロックコンテナ・flex・grid・表。置換要素は対象外）。 */
@@ -266,8 +284,12 @@ public final class BoxTreeBuilder {
         wrapper.isVerticalWrapper = true;
         List<LayoutBox> outside = new ArrayList<>();
         for (LayoutBox k : kids) {
-            if (k.isAbsolute || k.isOutsideMarker || k.isRenderedLegend || k.display.isNone()) outside.add(k);
-            else wrapper.addChild(k);
+            if (k.isAbsolute || k.isOutsideMarker || k.isRenderedLegend || k.display.isNone()) {
+                if (toVertical) clearAxisFlowOutsideWrapper(k);
+                outside.add(k);
+            } else {
+                wrapper.addChild(k);
+            }
         }
         if (toVertical) {
             root.isVerticalRoot = true;
@@ -510,10 +532,16 @@ public final class BoxTreeBuilder {
                 continue;
             }
             if (!child.isAnonymous) continue;
+            byte genFlow = owner.isVerticalWrapper && owner.parent != null && owner.parent.isVerticalRoot
+                    ? (byte) WritingModes.flowOf(owner.parent.style)
+                    : owner.verticalAxisFlow;
+            if (child.isOutsideMarker) genFlow = 0;
+            child.verticalAxisFlow = genFlow;
             if (child.node.isPseudoNode) {
                 ComputedStyle next = markerStyleOf(owner);
                 if (child.style != next) child.updateStyle(next);
                 for (LayoutBox text : child.children) {
+                    text.verticalAxisFlow = genFlow;
                     if (text.style != child.style) text.updateStyle(child.style);
                 }
             } else {

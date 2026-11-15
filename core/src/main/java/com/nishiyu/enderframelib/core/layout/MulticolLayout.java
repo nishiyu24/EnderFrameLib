@@ -196,11 +196,12 @@ final class MulticolLayout {
 
     /** {@code height} が長さで決まっていれば内容ボックスの高さ。そうでなければ NaN。 */
     private static float definiteContentHeight(LayoutBox box, ConstraintSpace space, float rootW, float rootH) {
-        String h = box.style.get(CssPropertyIndex.HEIGHT);
+        ComputedStyle ax = box.axisStyle();
+        String h = ax.get(CssPropertyIndex.HEIGHT);
         if (isAuto(h) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
         if (h.contains("%") && space.percentageBlockSize() <= 0) return Float.NaN;
-        float v = box.style.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
-        return Math.max(0, box.style.isBorderBox() ? v - box.verticalDecoration() : v);
+        float v = ax.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
+        return Math.max(0, ax.isBorderBox() ? v - box.verticalDecoration() : v);
     }
 
     /** 1 つの段組を列に割り当て、各単位の移動量を持ち主の箱へ登録する。 */
@@ -302,7 +303,7 @@ final class MulticolLayout {
         if (b.h <= 0 || b.isAbsolute || b.display.isNone() || BlockLayoutEngine.isFloating(b)) return false;
         if (b.display.inner() != Inner.FLOW) return false;
         if (b.bT != 0 || b.bB != 0 || b.pT != 0 || b.pB != 0) return false;
-        ComputedStyle s = b.style;
+        ComputedStyle s = b.axisStyle();
         if (s.overflowX().clips() || s.overflowY().clips()) return false;
         if (visible(s.get(CssPropertyIndex.BACKGROUND_COLOR)) || visible(s.get(CssPropertyIndex.BACKGROUND_IMAGE)) || visible(s.get(CssPropertyIndex.BOX_SHADOW))
                 || visible(s.get(CssPropertyIndex.TRANSFORM)) || visible(s.get(CssPropertyIndex.FILTER))) return false;

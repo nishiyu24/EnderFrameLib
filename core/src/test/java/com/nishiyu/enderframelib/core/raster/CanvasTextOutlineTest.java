@@ -3,10 +3,18 @@ package com.nishiyu.enderframelib.core.raster;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
+import com.nishiyu.enderframelib.core.text.font.WebFonts;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontStyle;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -240,5 +248,208 @@ public class CanvasTextOutlineTest {
         assertTrue(b[1] > -0.1 * upem && b[1] < 0.1 * upem, "下端は基線付近");
         assertTrue(lf.glyphOutline(lf.glyphId(' ')).isEmpty(), "空白は空のパス");
         assertSame(h, lf.glyphOutline(lf.glyphId('H')), "キャッシュされる");
+    }
+
+    @Test
+    public void fillTextRendersSystemColorEmojiInColorEvenWithBlackFill() {
+        SystemFonts system = SystemFonts.system();
+        String emojiFamily = null;
+        for (String name : new String[]{"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji"}) {
+            if (!system.hasFamily(name)) continue;
+            for (SystemFonts.Face f : system.family(name)) {
+                LoadedFace lf = LoadedFace.open(f);
+                if (lf != null && (lf.colorBitmap(0x1F600, 48f) != null || lf.colorLayers(0x1F600) != null)) {
+                    emojiFamily = name;
+                    break;
+                }
+            }
+            if (emojiFamily != null) break;
+        }
+        Assumptions.assumeTrue(emojiFamily != null, "カラー絵文字書体が無い環境");
+
+        CanvasRenderingContext2D flat = new CanvasRenderingContext2D(120, 100);
+        flat.fonts(system);
+        flat.font("64px '" + emojiFamily + "'");
+        flat.fillStyle("#000000");
+        flat.fillText("\uD83D\uDE00", 10, 75);
+        assertTrue(chromaticPixels(flat) > 100, "黒 fillStyle でもカラー絵文字が彩色される");
+
+        CanvasRenderingContext2D rotated = new CanvasRenderingContext2D(120, 100);
+        rotated.fonts(system);
+        rotated.font("56px '" + emojiFamily + "'");
+        rotated.fillStyle("#000000");
+        rotated.translate(60, 50);
+        rotated.rotate(0.4);
+        rotated.fillText("\uD83D\uDE00", -25, 20);
+        assertTrue(chromaticPixels(rotated) > 80, "回転してもカラー絵文字が彩色される");
+    }
+
+    @Test
+    public void fillTextRendersColrV0PaletteAndForegroundLayers() throws IOException {
+        byte[] sfnt = buildColrV0TestFont(0x1F600);
+        assertTrue(WebFonts.register("test-canvas-colrv0", sfnt, 400, false));
+        try {
+            CanvasRenderingContext2D c = new CanvasRenderingContext2D(120, 100);
+            c.fonts(SystemFonts.system());
+            c.font("60px test-canvas-colrv0");
+            c.fillStyle("#e02020");
+            c.fillText("\uD83D\uDE00", 10, 75);
+
+            int greenHits = 0, redHits = 0;
+            for (int y = 0; y < c.height(); y++) {
+                for (int x = 0; x < c.width(); x++) {
+                    int p = c.bitmap().getStraight(x, y);
+                    if ((p >>> 24) < 128) continue;
+                    int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+                    if (g > 150 && r < 80 && b < 80) greenHits++;
+                    if (r > 180 && g < 60 && b < 60) redHits++;
+                }
+            }
+            assertTrue(greenHits > 50, "COLR v0 の固定パレット色（緑）が描かれる: " + greenHits);
+            assertTrue(redHits > 50, "COLR v0 の 0xFFFF が fillStyle（赤）で描かれる: " + redHits);
+        } finally {
+            WebFonts.clear();
+        }
+    }
+
+    private static int chromaticPixels(CanvasRenderingContext2D c) {
+        int n = 0;
+        for (int y = 0; y < c.height(); y++) {
+            for (int x = 0; x < c.width(); x++) {
+                int p = c.bitmap().getStraight(x, y);
+                if ((p >>> 24) < 64) continue;
+                int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+                if (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 50) n++;
+            }
+        }
+        return n;
+    }
+
+    /** gid=1（左半分, パレット0=緑）+ gid=2（右半分, パレット0xFFFF=fillStyle）の COLR v0 フォント。 */
+    private static byte[] buildColrV0TestFont(int cp) throws IOException {
+        Map<String, byte[]> t = new TreeMap<>();
+        ByteArrayOutputStream head = new ByteArrayOutputStream();
+        DataOutputStream hd = new DataOutputStream(head);
+        hd.writeInt(0x00010000); hd.writeInt(0x00010000); hd.writeInt(0);
+        hd.writeInt(0x5F0F3CF5); hd.writeShort(0); hd.writeShort(1000);
+        hd.writeLong(0); hd.writeLong(0);
+        hd.writeShort(0); hd.writeShort(0); hd.writeShort(1000); hd.writeShort(1000);
+        hd.writeShort(0); hd.writeShort(8); hd.writeShort(2); hd.writeShort(0); hd.writeShort(0);
+        t.put("head", head.toByteArray());
+
+        ByteArrayOutputStream hhea = new ByteArrayOutputStream();
+        DataOutputStream hh = new DataOutputStream(hhea);
+        hh.writeInt(0x00010000); hh.writeShort(800); hh.writeShort(-200); hh.writeShort(0);
+        hh.writeShort(1024); hh.writeShort(0); hh.writeShort(0); hh.writeShort(1024);
+        hh.writeShort(1); hh.writeShort(0); hh.writeShort(0);
+        for (int i = 0; i < 4; i++) hh.writeShort(0);
+        hh.writeShort(0); hh.writeShort(3);
+        t.put("hhea", hhea.toByteArray());
+
+        ByteArrayOutputStream maxp = new ByteArrayOutputStream();
+        DataOutputStream mp = new DataOutputStream(maxp);
+        mp.writeInt(0x00010000); mp.writeShort(3);
+        mp.writeShort(4); mp.writeShort(1);
+        for (int i = 2; i < 13; i++) mp.writeShort(0);
+        t.put("maxp", maxp.toByteArray());
+
+        ByteArrayOutputStream os2 = new ByteArrayOutputStream();
+        DataOutputStream o2 = new DataOutputStream(os2);
+        o2.writeShort(4); o2.writeShort(512); o2.writeShort(400); o2.writeShort(5);
+        for (int i = 0; i < 12; i++) o2.writeShort(0);
+        o2.write(new byte[10]);
+        for (int i = 0; i < 4; i++) o2.writeInt(0);
+        o2.writeBytes("NONE");
+        o2.writeShort(0x0040); o2.writeShort(0xFFFF); o2.writeShort(0xFFFF);
+        o2.writeShort(800); o2.writeShort(-200); o2.writeShort(0);
+        o2.writeShort(800); o2.writeShort(200);
+        o2.writeInt(1); o2.writeInt(0);
+        o2.writeShort(500); o2.writeShort(700); o2.writeShort(0); o2.writeShort(0); o2.writeShort(0);
+        t.put("OS/2", os2.toByteArray());
+
+        t.put("hmtx", new byte[]{2, 0, 0, 0, 3, (byte) 0xE8, 0, 50, 3, (byte) 0xE8, 1, (byte) 0xF4});
+
+        ByteArrayOutputStream cmap = new ByteArrayOutputStream();
+        DataOutputStream cm = new DataOutputStream(cmap);
+        cm.writeShort(0); cm.writeShort(1);
+        cm.writeShort(3); cm.writeShort(10); cm.writeInt(12);
+        cm.writeShort(12); cm.writeShort(0); cm.writeInt(28); cm.writeInt(0); cm.writeInt(1);
+        cm.writeInt(cp); cm.writeInt(cp); cm.writeInt(1);
+        t.put("cmap", cmap.toByteArray());
+
+        ByteArrayOutputStream glyf = new ByteArrayOutputStream();
+        DataOutputStream gl = new DataOutputStream(glyf);
+        writeRectGlyph(gl, 50, 0, 450, 700);  // gid 1: 左半分
+        writeRectGlyph(gl, 500, 0, 900, 700); // gid 2: 右半分
+        t.put("glyf", glyf.toByteArray());
+        // numGlyphs = 3 -> loca has 4 entries (uint16 word offsets: 0, 0, 17, 34)
+        t.put("loca", new byte[]{0, 0, 0, 0, 0, 17, 0, 34});
+
+        ByteArrayOutputStream post = new ByteArrayOutputStream();
+        DataOutputStream ps = new DataOutputStream(post);
+        ps.writeInt(0x00030000); ps.writeInt(0); ps.writeShort(0); ps.writeShort(0);
+        for (int i = 0; i < 5; i++) ps.writeInt(0);
+        t.put("post", post.toByteArray());
+
+        byte[] nm = "test-canvas-colrv0".getBytes(StandardCharsets.UTF_16BE);
+        ByteArrayOutputStream name = new ByteArrayOutputStream();
+        DataOutputStream na = new DataOutputStream(name);
+        na.writeShort(0); na.writeShort(1); na.writeShort(18);
+        na.writeShort(3); na.writeShort(1); na.writeShort(0x0409); na.writeShort(1); na.writeShort(nm.length); na.writeShort(0);
+        na.write(nm);
+        t.put("name", name.toByteArray());
+
+        // CPAL v0: 1 palette, 1 entry (BGRA = 0x20, 0xD0, 0x20, 0xFF -> 緑)
+        ByteArrayOutputStream cpal = new ByteArrayOutputStream();
+        DataOutputStream cpOut = new DataOutputStream(cpal);
+        cpOut.writeShort(0); cpOut.writeShort(1); cpOut.writeShort(1); cpOut.writeShort(1);
+        cpOut.writeInt(14); cpOut.writeShort(0);
+        cpOut.writeByte(0x20); cpOut.writeByte(0xD0); cpOut.writeByte(0x20); cpOut.writeByte(0xFF);
+        t.put("CPAL", cpal.toByteArray());
+
+        // COLR v0: gid 1 -> layer 0 (gid 1, pal 0) + layer 1 (gid 2, pal 0xFFFF)
+        ByteArrayOutputStream colr = new ByteArrayOutputStream();
+        DataOutputStream co = new DataOutputStream(colr);
+        co.writeShort(0); co.writeShort(1); co.writeInt(14); co.writeInt(20); co.writeShort(2);
+        co.writeShort(1); co.writeShort(0); co.writeShort(2);
+        co.writeShort(1); co.writeShort(0);
+        co.writeShort(2); co.writeShort(0xFFFF);
+        t.put("COLR", colr.toByteArray());
+
+        int n = t.size(), dirEnd = 12 + n * 16;
+        int[] offsets = new int[n], lengths = new int[n];
+        byte[][] datas = new byte[n][];
+        String[] tags = t.keySet().toArray(new String[0]);
+        int pos = dirEnd;
+        for (int i = 0; i < n; i++) {
+            byte[] d = t.get(tags[i]);
+            lengths[i] = d.length;
+            datas[i] = java.util.Arrays.copyOf(d, (d.length + 3) & ~3);
+            offsets[i] = pos;
+            pos += datas[i].length;
+        }
+        ByteArrayOutputStream sfnt = new ByteArrayOutputStream(pos);
+        DataOutputStream out = new DataOutputStream(sfnt);
+        out.writeInt(0x00010000); out.writeShort(n);
+        int sr = Integer.highestOneBit(n) * 16;
+        out.writeShort(sr); out.writeShort(Integer.numberOfTrailingZeros(sr / 16)); out.writeShort(n * 16 - sr);
+        for (int i = 0; i < n; i++) {
+            int sum = 0;
+            byte[] d = datas[i];
+            for (int j = 0; j < d.length; j += 4) {
+                sum += ((d[j] & 0xFF) << 24) | ((d[j + 1] & 0xFF) << 16) | ((d[j + 2] & 0xFF) << 8) | (d[j + 3] & 0xFF);
+            }
+            out.writeBytes(tags[i]); out.writeInt(sum); out.writeInt(offsets[i]); out.writeInt(lengths[i]);
+        }
+        for (byte[] d : datas) out.write(d);
+        return sfnt.toByteArray();
+    }
+
+    private static void writeRectGlyph(DataOutputStream gl, int x0, int y0, int x1, int y1) throws IOException {
+        gl.writeShort(1); gl.writeShort(x0); gl.writeShort(y0); gl.writeShort(x1); gl.writeShort(y1);
+        gl.writeShort(3); gl.writeShort(0);
+        gl.write(new byte[]{1, 1, 1, 1});
+        gl.writeShort(x0); gl.writeShort(0); gl.writeShort(x1 - x0); gl.writeShort(0);
+        gl.writeShort(y0); gl.writeShort(y1 - y0); gl.writeShort(0); gl.writeShort(y0 - y1);
     }
 }

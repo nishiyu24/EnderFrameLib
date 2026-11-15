@@ -144,7 +144,8 @@ public final class SelectorParser {
     /** 構文上の擬似要素の種別。{@code type} が null のもの（{@code OTHER}）は描かない。 */
     private enum PseudoElement {
         NONE(null), BEFORE(PseudoType.BEFORE), AFTER(PseudoType.AFTER), MARKER(PseudoType.MARKER),
-        PLACEHOLDER(PseudoType.PLACEHOLDER), SELECTION(PseudoType.SELECTION), BACKDROP(PseudoType.BACKDROP), OTHER(null);
+        PLACEHOLDER(PseudoType.PLACEHOLDER), SELECTION(PseudoType.SELECTION), BACKDROP(PseudoType.BACKDROP),
+        FIRST_LINE(PseudoType.FIRST_LINE), OTHER(null);
 
         final PseudoType type;
 
@@ -284,6 +285,9 @@ public final class SelectorParser {
                 }
                 case "backdrop" -> {
                     return PseudoElement.BACKDROP;
+                }
+                case "first-line" -> {
+                    return PseudoElement.FIRST_LINE;
                 }
                 default -> {
                     // 描かない擬似要素。詳細度は数えるが、要素そのものには一致させない
@@ -437,7 +441,7 @@ public final class SelectorParser {
 
     private static boolean isKnownUnrenderedPseudoElement(String name) {
         return switch (name) {
-            case "first-line", "first-letter", "backdrop", "file-selector-button", "cue", "spelling-error",
+            case "first-letter", "backdrop", "file-selector-button", "cue", "spelling-error",
                  "grammar-error", "target-text", "highlight" -> true;
             // ブラウザもベンダ接頭辞の擬似要素は知らなくても無効にしない
             default -> name.startsWith("-webkit-") || name.startsWith("-moz-");

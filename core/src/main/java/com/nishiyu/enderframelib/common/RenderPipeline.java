@@ -1139,6 +1139,7 @@ public class RenderPipeline {
             ComputedStyle prevMarkerStyle = box.markerStyle;
             ComputedStyle prevPlaceholderStyle = box.placeholderStyle;
             ComputedStyle prevBackdropStyle = box.backdropStyle;
+            ComputedStyle prevFirstLineStyle = box.firstLineStyle;
             resolveHighlightPseudos(box, computed, sheet, env, scope.enter(node, computed), interactionState, selfContainer);
             if (box.display.listItem() && prevMarkerStyle != box.markerStyle) {
                 styleChanged = true;
@@ -1153,6 +1154,16 @@ public class RenderPipeline {
                 styleChanged = true;
                 layoutRequired = true;
                 layoutChangedList.add(box);
+            }
+            if (prevFirstLineStyle != box.firstLineStyle) {
+                styleChanged = true;
+                if (StyleResolver.isLayoutAffectingChange(prevFirstLineStyle, box.firstLineStyle)) {
+                    layoutRequired = true;
+                    layoutChangedList.add(box);
+                } else {
+                    styleChangedList.add(box);
+                    addFirstLineTextBoxes(box, styleChangedList);
+                }
             }
             if (prevBackdropStyle != box.backdropStyle) styleChanged = true;
             if (styleChanged || prevMarkerStyle != box.markerStyle) {
@@ -1567,6 +1578,23 @@ public class RenderPipeline {
         box.backdropStyle = topLayerCapable
                 ? resolvePseudoStyle(node, PseudoType.BACKDROP, computed, sheet, env, childScope, interactionState, selfContainer)
                 : null;
+        box.firstLineStyle = isFirstLineContainer(box)
+                ? resolvePseudoStyle(node, PseudoType.FIRST_LINE, computed, sheet, env, childScope, interactionState, selfContainer)
+                : null;
+    }
+
+    private static boolean isFirstLineContainer(LayoutBox box) {
+        return box.isFirstLineContainer();
+    }
+
+    private static void addFirstLineTextBoxes(LayoutBox parent, List<LayoutBox> out) {
+        for (int i = 0, n = parent.children.size(); i < n; i++) {
+            LayoutBox c = parent.children.get(i);
+            if (!c.inlineFragments.isEmpty() && !c.isAnonymous) out.add(c);
+            if (c.isAnonymous || c.isInlineFlow()) {
+                addFirstLineTextBoxes(c, out);
+            }
+        }
     }
 
     private static ComputedStyle resolvePseudoStyle(HtmlNode owner, PseudoType type, ComputedStyle ownerStyle,

@@ -245,19 +245,20 @@ public class BlockLayoutEngine extends LayoutEngine {
         if (box.parent == null) return Math.max(0, parentH - box.verticalDecoration());
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
+        ComputedStyle ax = box.axisStyle();
         float anchorH = box.isAbsolute ? box.anchorHeightPx() : -1;
         if (anchorH >= 0) {
-            boolean isBorderBox = box.style.isBorderBox();
+            boolean isBorderBox = ax.isBorderBox();
             return Math.max(0, isBorderBox ? anchorH - box.verticalDecoration() : anchorH);
         }
-        if (hasSpecifiedHeight(box.style)) {
-            float resolvedH = box.style.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
-            boolean isBorderBox = box.style.isBorderBox();
+        if (hasSpecifiedHeight(ax)) {
+            float resolvedH = ax.length(CssPropertyIndex.HEIGHT, parentH, rootW, rootH);
+            boolean isBorderBox = ax.isBorderBox();
             return Math.max(0, isBorderBox ? resolvedH - box.verticalDecoration() : resolvedH);
         }
-        if (box.isAbsolute && BoxMeasurer.hasBothInsets(box.style, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
-            float insets = box.style.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
-                    + box.style.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
+        if (box.isAbsolute && BoxMeasurer.hasBothInsets(ax, CssPropertyIndex.TOP, CssPropertyIndex.BOTTOM)) {
+            float insets = ax.length(CssPropertyIndex.TOP, parentH, rootW, rootH)
+                    + ax.length(CssPropertyIndex.BOTTOM, parentH, rootW, rootH);
             return Math.max(0, parentH - insets - box.mT - box.mB - box.verticalDecoration());
         }
         return Float.NaN;
@@ -320,7 +321,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         for (LayoutBox child : box.children) {
             if (child.isAbsolute || child.isOutsideMarker || child.isRenderedLegend || child.display.isNone()
                     || isInlineBox(child) || isFloating(child) || child.node.nodeType == NodeType.TEXT) continue;
-            if (!"auto".equals(child.style.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim())) continue;
+            if (!"auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.WIDTH, "auto").trim())) continue;
             if (Math.abs(child.w + child.mL + child.mR - innerW) <= 0.01f) continue;
             child.measure(new ConstraintSpace(innerW, base, FormattingContext.BLOCK), ctx);
         }
@@ -377,6 +378,9 @@ public class BlockLayoutEngine extends LayoutEngine {
                 .physical(isRtl(box.style));
         float textBottom = Float.NEGATIVE_INFINITY;
         boolean hasShifts = shifts != null && !shifts.isEmpty();
+        box.firstLineBgRect = null;
+        LayoutBox flOwner = firstLineOwner(box);
+        boolean recordedFirstLine = false;
 
         for (int itemIdx = 0, itemLen = state.items.size(); itemIdx < itemLen; itemIdx++) {
             Object item = state.items.get(itemIdx);
@@ -388,6 +392,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                     } else {
                         p.box().layout(innerX + p.x(), innerY + p.y(), innerW, p.box().h, ctx);
                     }
+                    if (!p.box().isAbsolute && !isFloating(p.box())) recordedFirstLine = true;
                 }
                 case StaticPosition sp -> {
                     sp.box().staticX = innerX + sp.x();
@@ -411,6 +416,36 @@ public class BlockLayoutEngine extends LayoutEngine {
                             InlineLine line = lines.get(i);
                             textBottom = Math.max(textBottom,
                                     placeLine(line, innerX + line.left(), innerY + line.top(), line.width(), textAlign, ctx));
+                        }
+                    }
+                    if (!recordedFirstLine && !lines.isEmpty()) {
+                        recordedFirstLine = true;
+                        if (flOwner != null && flOwner.firstLineStyle != null) {
+                            InlineLine line0 = lines.get(0);
+                            float[] sh0 = hasShifts ? shiftOf(shifts, line0) : NO_SHIFT;
+                            float alignShift = switch (textAlign) {
+                                case CENTER -> Math.max(0, (line0.width() - line0.used()) / 2);
+                                case RIGHT -> Math.max(0, line0.width() - line0.used());
+                                default -> 0f;
+                            };
+                            if (line0.used() > 0 && line0.height() > 0) {
+                                box.firstLineBgRect = new float[]{
+                                        innerX + sh0[0] + line0.left() + alignShift,
+                                        innerY + sh0[1] + line0.top(),
+                                        line0.used(), line0.height()
+                                };
+                            }
+                            for (int ii = 0, in = line0.items().size(); ii < in; ii++) {
+                                LineItem flItem = line0.items().get(ii);
+                                if (flItem.firstLineStyle() == null || flItem.box() == null) continue;
+                                List<InlineFragment> frags = flItem.box().inlineFragments;
+                                for (int fi = frags.size() - 1; fi >= 0; fi--) {
+                                    InlineFragment frag = frags.get(fi);
+                                    if (frag.firstLineStyle != null && frag.firstLineOwner == null) {
+                                        frag.firstLineOwner = flOwner;
+                                    }
+                                }
+                            }
                         }
                     }
                     for (int i = 0, n = runBoxes.size(); i < n; i++) {
@@ -472,8 +507,9 @@ public class BlockLayoutEngine extends LayoutEngine {
 
     /** 末子の下マージンが親を貫通するか。高さ・min-height の指定・下パディング・下ボーダー・BFC が断つ。 */
     private static boolean collapsesThroughBottom(LayoutBox box) {
-        return !box.establishesBfc && box.pB == 0 && box.bB == 0 && !hasSpecifiedHeight(box.style)
-                && box.style.length(CssPropertyIndex.MIN_HEIGHT, 0, 0, 0) <= 0;
+        ComputedStyle ax = box.axisStyle();
+        return !box.establishesBfc && box.pB == 0 && box.bB == 0 && !hasSpecifiedHeight(ax)
+                && ax.length(CssPropertyIndex.MIN_HEIGHT, 0, 0, 0) <= 0;
     }
 
     /**
@@ -751,7 +787,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             float x = 0;
             if (child.establishesBfc && !floats.isEmpty()) {
                 // BFC の border box は float と重ならない。横の残り幅に入らなければ float の下へ下げる
-                boolean autoWidth = "auto".equals(child.style.getOrDefault(CssPropertyIndex.WIDTH, "auto").trim());
+                boolean autoWidth = "auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.WIDTH, "auto").trim());
                 for (int guard = 0; guard < 256; guard++) {
                     float left = floats.leftEdge(oy + y, child.h, ox) - ox;
                     float right = floats.rightEdge(oy + y, child.h, ox + innerW) - ox;
@@ -784,7 +820,7 @@ public class BlockLayoutEngine extends LayoutEngine {
          */
         private float startOffsetForDirection(LayoutBox child) {
             if (!rtl || child.isAbsolute) return 0;
-            if ("auto".equals(child.style.getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) return 0;
+            if ("auto".equals(child.axisStyle().getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) return 0;
             return Math.max(0, innerW - (child.w + child.mL + child.mR));
         }
 
@@ -843,7 +879,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // 組むための写しと LineRun が持つ写しは同じ中身で、どちらも読むだけ（build は引数を書き換えない）
             List<LayoutBox> boxes = run.size() == 1 ? List.of(run.get(0)) : List.copyOf(run);
             List<InlineLine> result;
-            scratch.line.init(this, y, indent);
+            scratch.line.init(this, y, indent, !hasContent);
             try {
                 result = scratch.line.build(boxes);
             } finally {
@@ -866,6 +902,17 @@ public class BlockLayoutEngine extends LayoutEngine {
             return c == box;
         }
         return false;
+    }
+
+    private static LayoutBox firstLineOwner(LayoutBox box) {
+        if (box.firstLineStyle != null) return box;
+        if (box.isVerticalWrapper && box.parent != null && box.parent.firstLineStyle != null) {
+            return box.parent;
+        }
+        if (box.isAnonymous && box.parent != null && isFirstFlowChild(box)) {
+            return firstLineOwner(box.parent);
+        }
+        return null;
     }
 
     /**
@@ -1071,7 +1118,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             else pendingNeg = Math.min(pendingNeg, c.mB);
             hasContent = true;
 
-            if (rtl && !"auto".equals(c.style.getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) {
+            if (rtl && !"auto".equals(c.axisStyle().getOrDefault(CssPropertyIndex.MARGIN_RIGHT, "").trim())) {
                 vf.xPos[i] = Math.max(0, innerW - (c.w + c.mL + c.mR));
             } else {
                 vf.xPos[i] = 0;
@@ -1181,7 +1228,7 @@ public class BlockLayoutEngine extends LayoutEngine {
         }
 
         vf.height = vf.fenwick.totalHeight() + vf.trailingMargin;
-        if (heightChanged && !hasSpecifiedHeight(box.style)) {
+        if (heightChanged && !hasSpecifiedHeight(box.axisStyle())) {
             float newBoxH = vf.height + box.verticalDecoration();
             if (Math.abs(newBoxH - box.h) > 0.01f) {
                 box.h = newBoxH;
@@ -1304,7 +1351,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                       List<LayoutBox> parents, VAlign align, float raise) {}
 
     record LineItem(LayoutBox box, float x, float w, float h, String text, float baseline, float descent,
-                    List<LayoutBox> parents, VAlign align, float raise) {}
+                    List<LayoutBox> parents, VAlign align, float raise, ComputedStyle firstLineStyle) {}
 
     /**
      * 行分割の結果 1 行。座標は内容ボックス相対、{@code baseline} は行の上端から。
@@ -1368,7 +1415,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 for (int k = start; k < end; k++) {
                     list.add(new LineItem(st.box(), sliceWp.itemX(k), sliceWp.advance(k), st.runH(),
                             segments[sliceWp.segIndex(k)], st.runBaseline(), st.descent(),
-                            st.parents(), st.align(), st.raise()));
+                            st.parents(), st.align(), st.raise(), null));
                 }
                 items = list;
             }
@@ -1423,6 +1470,8 @@ public class BlockLayoutEngine extends LayoutEngine {
         final BlockScratch scratch;
         FlowBuilder flow;
         LayoutContext ctx;
+        LayoutBox flOwner;
+        ComputedStyle flStyle;
         InlineLine firstLine;
         List<InlineLine> lines;
         float strutHeight, strutBaseline;
@@ -1443,9 +1492,11 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.scratch = scratch;
         }
 
-        LineBuilder init(FlowBuilder flow, float startY, float indent) {
+        LineBuilder init(FlowBuilder flow, float startY, float indent, boolean allowFirstLine) {
             this.flow = flow;
             this.ctx = flow.ctx;
+            this.flOwner = allowFirstLine ? firstLineOwner(flow.box) : null;
+            this.flStyle = this.flOwner != null ? this.flOwner.firstLineStyle : null;
             this.lineTop = startY;
             this.indent = indent;
             this.firstLine = null;
@@ -1460,15 +1511,18 @@ public class BlockLayoutEngine extends LayoutEngine {
             this.trailingSpace = 0;
             this.lineStarted = false;
             // 行ボックスの strut: 内容の無い行でも、ブロックの書体と line-height の高さを持つ（CSS 2.2 §10.8.1）
-            TextStyle strut = ctx.textStyleFor(flow.box.style);
+            ComputedStyle strutCss = this.flStyle != null ? this.flStyle : flow.box.style;
+            TextStyle strut = ctx.textStyleFor(strutCss);
             this.strutHeight = strut.lineHeightPx();
-            this.strutBaseline = baselineWithin(strut, ctx.faceFor(flow.box.style));
+            this.strutBaseline = baselineWithin(strut, ctx.faceFor(strutCss));
             return this;
         }
 
         void clearRefs() {
             this.flow = null;
             this.ctx = null;
+            this.flOwner = null;
+            this.flStyle = null;
             this.firstLine = null;
             this.lines = null;
             this.spans = null;
@@ -1480,11 +1534,24 @@ public class BlockLayoutEngine extends LayoutEngine {
             }
         }
 
+        private boolean onFirstLine() {
+            return flStyle != null && firstLine == null && lines == null;
+        }
+
+        private ComputedStyle effectiveFirstLine(LayoutBox runBox) {
+            return onFirstLine() ? runBox.style.derivedFirstLineChild(flOwner.style, flStyle) : null;
+        }
+
         private void appendLine(InlineLine line) {
             if (lines != null) {
                 lines.add(line);
             } else if (firstLine == null) {
                 firstLine = line;
+                if (flStyle != null) {
+                    TextStyle normStrut = ctx.textStyleFor(flow.box.style);
+                    this.strutHeight = normStrut.lineHeightPx();
+                    this.strutBaseline = baselineWithin(normStrut, ctx.faceFor(flow.box.style));
+                }
             } else {
                 lines = new ArrayList<>(4);
                 lines.add(firstLine);
@@ -1716,9 +1783,10 @@ public class BlockLayoutEngine extends LayoutEngine {
             Alignment alignment = inlineParents.isEmpty()
                     ? ALIGNMENT_BASELINE_ZERO
                     : alignmentOf(null, inlineParents, runH, baseline);
+            ComputedStyle effFl = effectiveFirstLine(runBox);
 
             boolean preserveNewlines = textStyle.whiteSpace().preservesNewlines();
-            if (flow.floats.isEmpty() && (deferredFloats == null || deferredFloats.isEmpty())
+            if (effFl == null && flow.floats.isEmpty() && (deferredFloats == null || deferredFloats.isEmpty())
                     && (open == null || open.isEmpty()) && currentEmpty() && !lineStarted && lineX == 0 && indent == 0
                     && closing == 0 && textStyle.whiteSpace().wraps() && constrained()
                     && (!preserveNewlines || runText.indexOf('\n') < 0)) {
@@ -1759,7 +1827,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 List<LineItem> cur = ensureCurrent(Math.max(end - start, 1));
                 for (int k = start; k < end; k++) {
                     cur.add(new LineItem(runBox, wp.itemX(k), wp.advance(k), runH,
-                            segments[wp.segIndex(k)], baseline, descent, inlineParents, align, raise));
+                            segments[wp.segIndex(k)], baseline, descent, inlineParents, align, raise, null));
                 }
                 lineX = wp.finalLineX();
                 trailingSpace = wp.finalTrailingSpace();
@@ -1771,7 +1839,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             // white-space が改行を残す（pre / pre-wrap / pre-line）なら原文の改行で行を割る。
             // 以前は改行が区切りとして扱われず、<pre> の中身が 1 行に潰れていた。
             if (!preserveNewlines || runText.indexOf('\n') < 0) {
-                addParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent, runText, closing, true);
+                addParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent, runText, closing, true, effFl);
                 return;
             }
             String[] paragraphs = runText.split("\n", -1);
@@ -1780,15 +1848,82 @@ public class BlockLayoutEngine extends LayoutEngine {
                     markContent();
                     newLine(runH, baseline, false);
                     ensureLine();
+                    effFl = null;
                 }
                 addParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent, paragraphs[p],
-                        p == paragraphs.length - 1 ? closing : 0, false);
+                        p == paragraphs.length - 1 ? closing : 0, false, effFl);
             }
         }
 
         private void addParagraph(LayoutBox runBox, List<LayoutBox> inlineParents, FontFace face, FontStyle font, TextStyle textStyle,
                                   Alignment alignment, float runH, float baseline, float descent,
-                                  String paragraph, float closing, boolean cacheOnBox) {
+                                  String paragraph, float closing, boolean cacheOnBox, ComputedStyle effFl) {
+            if (effFl != null && onFirstLine()) {
+                addFirstLineParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent,
+                        paragraph, closing, effFl);
+                return;
+            }
+            addRemainingParagraph(runBox, inlineParents, face, font, textStyle, alignment, runH, baseline, descent,
+                    paragraph, closing, cacheOnBox, null, 0, null);
+        }
+
+        private void addFirstLineParagraph(LayoutBox runBox, List<LayoutBox> inlineParents, FontFace normFace, FontStyle normFont,
+                                           TextStyle normTextStyle, Alignment normAlign, float normRunH, float normBaseline, float normDescent,
+                                           String paragraph, float closing, ComputedStyle effFl) {
+            TextStyle flTextStyle = ctx.textStyleFor(effFl);
+            FontFace flFace = ctx.faceFor(effFl);
+            FontStyle flFont = flTextStyle.font();
+            float flRunH = flTextStyle.lineHeightPx();
+            float flBaseline = baselineWithin(flTextStyle, flFace);
+            float flDescent = flFace.descent(flFont);
+            Alignment flAlign = inlineParents.isEmpty() ? ALIGNMENT_BASELINE_ZERO : alignmentOf(null, inlineParents, flRunH, flBaseline);
+            String flParagraph = LayoutMetrics.applyTextTransform(paragraph, effFl);
+            ParagraphSegments flPrepared = TextShaper.segmented(flParagraph, flFace, flFont, flTextStyle.wordBreak());
+            String[] segments = flPrepared.segs();
+            int lastSegment = segments.length - 1;
+            while (lastSegment >= 0 && segments[lastSegment].isEmpty()) lastSegment--;
+
+            String previousOnLine = null;
+            float kerned = 0;
+            int consumedChars = 0;
+            for (int s = 0; s < segments.length; s++) {
+                String segment = segments[s];
+                if (segment.isEmpty()) continue;
+                float advance = flPrepared.fullW(s);
+                float trimmedW = flPrepared.strippedTrailingW(s);
+                float edges = s == lastSegment ? closing : 0;
+                float join = previousOnLine == null ? 0
+                        : s > 0 && previousOnLine == segments[s - 1] ? flPrepared.joinW(s)
+                        : TextShaper.kerningBetween(flFace, flFont, previousOnLine, segment);
+                if (flTextStyle.whiteSpace().wraps() && !segment.isBlank()) {
+                    if (needsWrap(lineX + kerned + join + trimmedW + edges)) {
+                        newLine(flRunH, flBaseline, true);
+                        ensureLine();
+                        String rest = consumedChars < paragraph.length()
+                                ? paragraph.substring(consumedChars) : "";
+                        if (!rest.isEmpty()) {
+                            addRemainingParagraph(runBox, inlineParents, normFace, normFont, normTextStyle, normAlign,
+                                    normRunH, normBaseline, normDescent, rest, closing, false, null, 0, null);
+                        }
+                        return;
+                    }
+                    dropBelowFloats(lineX + kerned + join + trimmedW + edges);
+                }
+                kerned += join;
+                previousOnLine = segment;
+                ensureCurrent().add(new LineItem(runBox, lineX, advance, flRunH, segment, flBaseline, flDescent,
+                        inlineParents, flAlign.align, flAlign.raise, effFl));
+                lineX += advance;
+                trailingSpace = advance - trimmedW;
+                consumedChars += segment.length();
+                markContent();
+            }
+        }
+
+        private void addRemainingParagraph(LayoutBox runBox, List<LayoutBox> inlineParents, FontFace face, FontStyle font, TextStyle textStyle,
+                                           Alignment alignment, float runH, float baseline, float descent,
+                                           String paragraph, float closing, boolean cacheOnBox,
+                                           String previousOnLine, float kerned, ComputedStyle itemFlStyle) {
             // 断片・幅・境目の詰めは文字列・書体・折り返しの規則だけで決まるので、同じ段落なら測り直さない（幅にも依らない）
             ParagraphSegments prepared = cacheOnBox
                     ? runBox.cachedSegments(paragraph, face, font, textStyle.wordBreak())
@@ -1796,10 +1931,6 @@ public class BlockLayoutEngine extends LayoutEngine {
             String[] segments = prepared.segs();
             // 入るかどうかは語の幅の和に境目の詰め（TextShaper.kerningBetween）を足した幅、つまり続けて測った幅で
             // 見る（TextShaper と同じ。max-content もこの測り方）。kerned はこの run が今の行で詰めた量の合計。
-            // 何が壊れていたか: 和だけで見ていたため、語の境目に詰め（- と v など）があると max-content ちょうどの
-            // flex アイテムで "two-viewers" が "two-" の後で折り返していた（実機で確認）。
-            String previousOnLine = null;
-            float kerned = 0;
             int lastSegment = segments.length - 1;
             while (lastSegment >= 0 && segments[lastSegment].isEmpty()) lastSegment--;
             for (int s = 0; s < segments.length; s++) {
@@ -1828,7 +1959,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 previousOnLine = segment;
                 // 断片の座標も float のまま持つ。丸めるのは描画側の 1 箇所だけ
                 ensureCurrent().add(new LineItem(runBox, lineX, advance, runH, segment, baseline, descent, inlineParents,
-                        alignment.align, alignment.raise));
+                        alignment.align, alignment.raise, itemFlStyle));
                 lineX += advance;
                 trailingSpace = advance - trimmedW;
                 markContent();
@@ -1858,7 +1989,7 @@ public class BlockLayoutEngine extends LayoutEngine {
                 ensureLine();
             }
             dropBelowFloats(lineX + boxOuterW + closing);
-            ensureCurrent().add(new LineItem(b, lineX + b.mL, b.w, b.h, null, baseline, 0, run.inlineParents, alignment.align, alignment.raise));
+            ensureCurrent().add(new LineItem(b, lineX + b.mL, b.w, b.h, null, baseline, 0, run.inlineParents, alignment.align, alignment.raise, null));
             lineX += boxOuterW;
             trailingSpace = 0;
             markContent();
@@ -2062,7 +2193,7 @@ public class BlockLayoutEngine extends LayoutEngine {
             };
 
             InlineFragment f = src.box().addFragment(src.x() + offsetX, top + src.box().mT, src.w(), src.h(), src.text(),
-                    src.baseline(), src.descent(), src.parents(), true, true);
+                    src.baseline(), src.descent(), src.parents(), true, true, src.firstLineStyle());
             if (!f.isText()) {
                 f.box.layout(f.x - f.box.mL, f.y - f.box.mT, f.w, f.h, ctx);
             } else if (isNotBlankFast(src.text())) {

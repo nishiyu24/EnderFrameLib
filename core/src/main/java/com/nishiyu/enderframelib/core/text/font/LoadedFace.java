@@ -695,64 +695,63 @@ public final class LoadedFace {
     // カラー字形（COLR v0 / CPAL）
     // ==========================================
 
-    /**
-     * カラー字形のレイヤー。下のレイヤーから順に重ねる。{@code foreground[i]} が true のレイヤーは
-     * パレットの色ではなく文字の色（{@code color}）で塗る（COLR の 0xFFFF）。
-     */
-    public record ColorLayers(int[] glyphs, int[] argb, boolean[] foreground) {
-        public int count() {
-            return glyphs.length;
-        }
-    }
-
     private static final ColorLayers NO_COLOR = new ColorLayers(new int[0], new int[0], new boolean[0]);
 
-    /**
-     * COLR v1 またはカラービットマップ（{@code CBDT}/{@code sbix}）の絵文字を描いたビットマップ（事前乗算 ARGB）。
-     * {@code left} は原点から左端、{@code top} は原点から上端の論理画素数（{@link GlyphBitmap} と同じ向き）、
-     * {@code width}/{@code height} は描画先の大きさ。
-     */
-    public record ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, float left, float top, float width, float height) {
-        public ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top) {
-            this(pixmap, left, top, pixmap.width(), pixmap.height());
-        }
-    }
-
     private record StrikeBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top, float strikeEm) {}
+    private record ForegroundKey(int glyphId, int sizeBits, int foregroundArgb) {}
 
     private static final ColorBitmap NO_BITMAP = new ColorBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0);
     private static final StrikeBitmap NO_STRIKE = new StrikeBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0, 1f);
-    /** (字形番号, 大きさ) → v1 / ビットマップ絵文字（描けない・持たない字形は {@link #NO_BITMAP}）。 */
+    /** (字形番号, 大きさ) → 前景色を使わない v1 / ビットマップ絵文字（描けない・持たない字形は {@link #NO_BITMAP}）。 */
     private final Map<Long, ColorBitmap> colorBitmapCache = new ConcurrentHashMap<>();
+    /** (字形番号, 大きさ, 前景色 ARGB) → COLR v1 で {@code 0xFFFF} を参照したビットマップ絵文字。 */
+    private final Map<ForegroundKey, ColorBitmap> foregroundBitmapCache = new ConcurrentHashMap<>();
     /** (字形番号, ストライク番号) → 元のカラービットマップ（同じストライクを異なる大きさで共有）。 */
     private final Map<Long, StrikeBitmap> strikeBitmapCache = new ConcurrentHashMap<>();
+
+    /** {@code colorBitmap(codePoint, pixelSize, 0xFF000000)} と同じ（前景色指定なし）。 */
+    public ColorBitmap colorBitmap(int codePoint, float pixelSize) {
+        return colorBitmap(codePoint, pixelSize, 0xFF000000);
+    }
 
     /**
      * {@code codePoint} が COLR v1 のペイント、またはカラービットマップ（{@code CBDT}/{@code sbix}）を持つなら、
      * {@code pixelSize}（em の画素数）で描いたビットマップ。COLR v0 のレイヤーがあるときは v1 だけを返し、
      * 無ければビットマップストライクを試す（v0・単色より優先順: COLR v1 → COLR v0 → ビットマップ → 単色）。
+     * {@code foregroundArgb}（非乗算 ARGB）は COLR v1 がパレット番号 {@code 0xFFFF} を参照したときに使う。
      */
-    public ColorBitmap colorBitmap(int codePoint, float pixelSize) {
+    public ColorBitmap colorBitmap(int codePoint, float pixelSize, int foregroundArgb) {
         int gid = glyphId(codePoint);
         if (gid == 0) return null;
-        long key = ((long) gid << 32) | (Float.floatToIntBits(pixelSize) & 0xFFFFFFFFL);
+        int sizeBits = Float.floatToIntBits(pixelSize);
+        long key = ((long) gid << 32) | (sizeBits & 0xFFFFFFFFL);
         ColorBitmap c = colorBitmapCache.get(key);
-        if (c == null) {
-            ColorBitmap rendered;
+        if (c != null) return c == NO_BITMAP ? null : c;
+        ForegroundKey fgKey = new ForegroundKey(gid, sizeBits, foregroundArgb);
+        ColorBitmap fc = foregroundBitmapCache.get(fgKey);
+        if (fc != null) return fc == NO_BITMAP ? null : fc;
+
+        ColrV1Painter.Result v1;
+        synchronized (lock) {
+            ensureOpen();
+            v1 = ColrV1Painter.render(this, face, gid, pixelSize, foregroundArgb);
+        }
+        if (v1 != null && v1.usedForeground()) {
+            ColorBitmap val = v1.bitmap() != null ? v1.bitmap() : NO_BITMAP;
+            if (foregroundBitmapCache.size() > 1024) foregroundBitmapCache.clear();
+            foregroundBitmapCache.put(fgKey, val);
+            return v1.bitmap();
+        }
+        ColorBitmap rendered = v1 != null ? v1.bitmap() : null;
+        if (rendered == null && colorLayers(codePoint) == null) {
             synchronized (lock) {
                 ensureOpen();
-                rendered = ColrV1Painter.render(this, face, gid, pixelSize);
+                rendered = renderBitmapStrike(gid, pixelSize);
             }
-            if (rendered == null && colorLayers(codePoint) == null) {
-                synchronized (lock) {
-                    ensureOpen();
-                    rendered = renderBitmapStrike(gid, pixelSize);
-                }
-            }
-            c = rendered != null ? rendered : NO_BITMAP;
-            if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
-            colorBitmapCache.put(key, c);
         }
+        c = rendered != null ? rendered : NO_BITMAP;
+        if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
+        colorBitmapCache.put(key, c);
         return c == NO_BITMAP ? null : c;
     }
 

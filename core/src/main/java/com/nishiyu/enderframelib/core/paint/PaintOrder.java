@@ -807,7 +807,7 @@ public final class PaintOrder {
                 box.style.color(CssPropertyIndex.COLOR, 0xFF000000)));
         ClipShape backdropShape = null;
         if (!backdrop.isEmpty()) {
-            float[] r = LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
             float[] d = new float[12];
             d[0] = box.x;
             d[1] = box.y;
@@ -931,7 +931,7 @@ public final class PaintOrder {
         if (isRootElement) return parentClip;
 
         boolean panZoom = "true".equalsIgnoreCase(box.node.attrs.get("data-pan-zoom"));
-        StyleFacts facts = factsOf(box.style);
+        StyleFacts facts = factsOf(box.axisStyle());
         boolean clipX = panZoom || !"visible".equals(facts.overflowX());
         boolean clipY = panZoom || !"visible".equals(facts.overflowY());
         if (!clipX && !clipY) return parentClip;
@@ -944,7 +944,7 @@ public final class PaintOrder {
         // 内側の角は外側の半径から隣り合う辺の太さを引いたもの（角丸は両軸を切るときだけ）
         float[] own = {minX, minY, maxX, maxY, 0, 0, 0, 0};
         if (clipX && clipY) {
-            float[] r = LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH);
+            float[] r = LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH);
             boolean elliptical = false;
             for (int i = 0; i < 4; i++) elliptical |= Math.round(r[i]) != Math.round(r[4 + i]);
             if (!elliptical) {
@@ -972,7 +972,7 @@ public final class PaintOrder {
      * visible は auto、clip は hidden として扱う（CSS Overflow 3 §3.1）。
      */
     static String[] overflowPair(LayoutBox box) {
-        StyleFacts f = factsOf(box.style);
+        StyleFacts f = factsOf(box.axisStyle());
         return new String[]{f.overflowX(), f.overflowY()};
     }
 

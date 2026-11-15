@@ -2,6 +2,7 @@ package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
+import com.nishiyu.enderframelib.core.text.font.ColorLayers;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import org.junit.jupiter.api.Assumptions;
@@ -39,7 +40,7 @@ public class ColorEmojiTest {
     @Test
     public void colorGlyphHasSeveralLayersWithDistinctColors() {
         LoadedFace face = LoadedFace.open(colorFace());
-        LoadedFace.ColorLayers layers = face.colorLayers(0x1F600);
+        ColorLayers layers = face.colorLayers(0x1F600);
         assertNotNull(layers);
         assertTrue(layers.count() >= 2, "顔の絵文字は複数のレイヤー: " + layers.count());
         Set<Integer> colors = new HashSet<>();

@@ -49,7 +49,7 @@ public final class BoxMeasurer {
         float tentativeInnerW = space.availableInlineSize();
         float parentH = space.percentageBlockSize();
         FormattingContext fmtCtx = space.parent();
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
         box.invalidateMinContentCache();
 
         if (isDisplayNone(style)) {
@@ -195,7 +195,7 @@ public final class BoxMeasurer {
         // measure を通らずに中身を組み直す（float を避けた行・伸ばした高さ）。前回の measure の結果はもう当てはまらない
         box.invalidateMeasurement();
         LayoutEngine engine = LayoutEngine.getEngine(box);
-        resolveHeights(box, space, ctx, isBorderBox(box.style), engine);
+        resolveHeights(box, space, ctx, isBorderBox(box.axisStyle()), engine);
     }
 
     // 箱ごとに何度も引くプロパティは、名前ではなく添字で引く（文字列のハッシュと表引きを省く）
@@ -216,7 +216,7 @@ public final class BoxMeasurer {
     private static final int ID_BORDER_COLLAPSE = CssPropertyIndex.BORDER_COLLAPSE;
 
     private static void resolveBoxEdges(LayoutBox box, float parentW, float parentH, float rootW, float rootH) {
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
 
         box.mT = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_T, parentW, rootW, rootH));
         box.mR = LayoutUnit.snap(style.edgeLength(ComputedStyle.EDGE_MARGIN_R, parentW, rootW, rootH));
@@ -254,7 +254,7 @@ public final class BoxMeasurer {
     private static void resolveWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
                                      boolean hasWidth, boolean hasIntrinsicWidth, boolean isPercentWidthAndShrinking,
                                      boolean isBorderBox, FormattingContext fmtCtx) {
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
         String tag = box.node.tag;
 
         if (box.isHorizontalReturnRoot) {
@@ -316,7 +316,7 @@ public final class BoxMeasurer {
 
     /** テキストノードは整形した結果の最長行が幅になる。 */
     private static void measureTextWidth(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH) {
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
 
         float limitW = parentW;
         if (style.containsKey(CssPropertyIndex.MAX_WIDTH)) {
@@ -370,7 +370,7 @@ public final class BoxMeasurer {
 
     private static void applyMinMaxWidths(LayoutBox box, LayoutContext ctx, float parentW, float rootW, float rootH,
                                           boolean isPercentWidthAndShrinking, boolean isBorderBox) {
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
         if (box.sizingMode != SizingMode.DEFINITE) return;
 
         String maxWStr = style.get(CssPropertyIndex.MAX_WIDTH);
@@ -406,7 +406,7 @@ public final class BoxMeasurer {
     private static void resolveHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean isBorderBox,
                                        LayoutEngine engine) {
         float parentH = space.percentageBlockSize();
-        ComputedStyle style = box.style;
+        ComputedStyle style = box.axisStyle();
         float rootW = ctx.viewport().rootW();
         float rootH = ctx.viewport().rootH();
 
@@ -482,7 +482,7 @@ public final class BoxMeasurer {
 
     private static void applyAspectRatio(LayoutBox box) {
         float innerW = Math.max(0, box.w - box.horizontalDecoration());
-        String ratioStr = box.style.get(CssPropertyIndex.ASPECT_RATIO);
+        String ratioStr = box.axisStyle().get(CssPropertyIndex.ASPECT_RATIO);
         try {
             if (ratioStr.contains("/")) {
                 String[] parts = ratioStr.split("/");
@@ -527,7 +527,7 @@ public final class BoxMeasurer {
         if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);
             if (intrinsic != null && intrinsic[0] > 0 && intrinsic[1] > 0) {
-                boolean heightIsAuto = !box.style.containsKey(CssPropertyIndex.HEIGHT) || heightAuto;
+                boolean heightIsAuto = !box.axisStyle().containsKey(CssPropertyIndex.HEIGHT) || heightAuto;
                 if (box.w > 0 && heightIsAuto) {
                     float innerW = Math.max(0, box.w - box.horizontalDecoration());
                     box.h = (innerW * ((float) intrinsic[1] / intrinsic[0])) + box.verticalDecoration();
@@ -662,9 +662,10 @@ public final class BoxMeasurer {
         }
         // 段組のコンテナは独立した整形コンテキストを作る（CSS Multicol 1 §2）
         if (MulticolLayout.isMulticol(box)) return true;
-        // fieldset と、その描画される legend は独立した整形コンテキストを作る（HTML §15.3.13）
-        if (box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
-        StyleFacts facts = box.style.layoutFacts();
+        // 直交フロー（縦書き根・縦中横・ラッパー）および fieldset 等は独立した整形コンテキストを作る（CSS Writing Modes §7.1 / HTML §15.3.13）
+        if (box.isVerticalWrapper || box.isVerticalRoot || box.isHorizontalReturnRoot
+                || box.isAbsolute || box.isRenderedLegend || "fieldset".equals(box.node.tag)) return true;
+        StyleFacts facts = box.axisStyle().layoutFacts();
         if (facts.floating) return true;
         // flex / grid アイテムは自分の中に独立した整形コンテキストを作る
         if (fmtCtx.isFlexRow() || fmtCtx.isFlexColumn() || fmtCtx.isGrid()) return true;

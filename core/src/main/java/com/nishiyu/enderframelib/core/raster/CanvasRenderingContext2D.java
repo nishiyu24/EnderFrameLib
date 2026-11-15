@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.raster;
 
+import com.nishiyu.enderframelib.core.text.font.ColorBitmap;
+import com.nishiyu.enderframelib.core.text.font.ColorLayers;
+import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.OutlineFontFace;
 import com.nishiyu.enderframelib.core.text.model.FontFace;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
@@ -886,15 +889,16 @@ public final class CanvasRenderingContext2D {
         double baselineShift = baselineShift(asc, desc);
         double oy = y + baselineShift;
         boolean plainScale = m.b() == 0 && m.c() == 0 && m.a() > 0 && Math.abs(m.a() - m.d()) <= 1e-9 * Math.max(1, m.a());
+        int fgArgb = paint instanceof Paint.Solid s ? s.argb() : 0xFF000000;
         if (strokeOutline || !plainScale) {
             // 回転・せん断・反転・非一様な拡大、または縁取り: 輪郭をパスとして変換して塗る / 縁取る
             FontStyle style = new FontStyle(px, f.weight() >= 600, f.italic(), 0, f.weight(), true);
-            Path2D outlinePath = textOutline(outline, text, outline.positions(text, style), ox, oy, px, style);
-            if (outlinePath.isEmpty()) return;
+            float[] positions = outline.positions(text, style);
             if (strokeOutline) {
-                stroke(outlinePath);
+                Path2D outlinePath = textOutline(outline, text, positions, ox, oy, px, style);
+                if (!outlinePath.isEmpty()) stroke(outlinePath);
             } else {
-                fillPolys(outlinePath.flatten(m, FLATTEN_TOLERANCE), false, paint);
+                drawTransformedText(outline, text, positions, ox, oy, px, scale, style, paint, m, fgArgb);
             }
             return;
         }
@@ -908,6 +912,30 @@ public final class CanvasRenderingContext2D {
             int n = Character.charCount(cp);
             if (!Character.isWhitespace(cp) && cp >= 0x20) {
                 var gf = outline.glyphFace(cp, devStyle);
+                ColorBitmap cb = gf.face().colorBitmap(cp, devPx, fgArgb);
+                if (cb != null) {
+                    drawColorBitmap(cb, Math.round(devX + positions[i]) + cb.left(), Math.round(devY) - cb.top(),
+                            cb.width(), cb.height(), Matrix2D.IDENTITY);
+                    i += n;
+                    continue;
+                }
+                ColorLayers cl = gf.face().colorLayers(cp);
+                if (cl != null) {
+                    int baseX = (int) Math.round(devX + positions[i]);
+                    int baseY = (int) Math.round(devY);
+                    for (int k = 0; k < cl.count(); k++) {
+                        var lbmp = gf.face().rasterizeGlyphIndex(cl.glyphs()[k], devPx, 0);
+                        if (lbmp != null && !lbmp.isEmpty()) {
+                            Rasterizer.Coverage cov = clipToBitmap(new Rasterizer.Coverage(
+                                    baseX + lbmp.left(), baseY - lbmp.top(), lbmp.width(), lbmp.height(), lbmp.coverage()));
+                            if (cov != null) {
+                                drawCoverage(cov, cl.foreground()[k] ? paint : Paint.solid(cl.argb()[k]), Matrix2D.IDENTITY);
+                            }
+                        }
+                    }
+                    i += n;
+                    continue;
+                }
                 var bmp = gf.face().rasterize(cp, devPx, gf.syntheticBold(), gf.syntheticItalic());
                 if (bmp != null && !bmp.isEmpty()) {
                     int gx = (int) Math.round(devX + positions[i]) + bmp.left();
@@ -918,6 +946,62 @@ public final class CanvasRenderingContext2D {
             }
             i += n;
         }
+    }
+
+    private void drawTransformedText(OutlineFontFace outline, String text, float[] positions, double ox, double oy,
+                                     float px, double scale, FontStyle style, Paint paint, Matrix2D m, int fgArgb) {
+        Path2D mono = new Path2D();
+        float devPx = (float) (px * scale);
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            int n = Character.charCount(cp);
+            if (!Character.isWhitespace(cp) && cp >= 0x20) {
+                var gf = outline.glyphFace(cp, style);
+                LoadedFace lf = gf.face();
+                ColorBitmap cb = lf.colorBitmap(cp, devPx, fgArgb);
+                if (cb != null) {
+                    drawColorBitmap(cb, ox + positions[i] + cb.left() / scale, oy - cb.top() / scale,
+                            cb.width() / scale, cb.height() / scale, m);
+                    i += n;
+                    continue;
+                }
+                ColorLayers cl = lf.colorLayers(cp);
+                if (cl != null) {
+                    double k = px / (double) lf.unitsPerEm();
+                    Matrix2D gm = Matrix2D.translate(ox + positions[i], oy).multiply(Matrix2D.scale(k, -k));
+                    if (gf.syntheticItalic()) gm = gm.multiply(new Matrix2D(1, 0, 0.2, 1, 0, 0));
+                    for (int li = 0; li < cl.count(); li++) {
+                        Path2D g = lf.glyphOutline(cl.glyphs()[li]);
+                        if (!g.isEmpty()) {
+                            fillPolys(g.flatten(m.multiply(gm), FLATTEN_TOLERANCE), false,
+                                    cl.foreground()[li] ? paint : Paint.solid(cl.argb()[li]));
+                        }
+                    }
+                    i += n;
+                    continue;
+                }
+                Path2D g = lf.glyphOutline(lf.glyphId(cp));
+                if (!g.isEmpty()) {
+                    double k = px / (double) lf.unitsPerEm();
+                    Matrix2D gm = Matrix2D.translate(ox + positions[i], oy).multiply(Matrix2D.scale(k, -k));
+                    if (gf.syntheticItalic()) gm = gm.multiply(new Matrix2D(1, 0, 0.2, 1, 0, 0));
+                    mono.append(g, gm);
+                }
+            }
+            i += n;
+        }
+        if (!mono.isEmpty()) fillPolys(mono.flatten(m, FLATTEN_TOLERANCE), false, paint);
+    }
+
+    private void drawColorBitmap(ColorBitmap cb, double gx, double gy, double w, double h, Matrix2D toDevice) {
+        if (!(w > 0) || !(h > 0)) return;
+        Pixmap img = cb.pixmap();
+        CanvasPattern pattern = new CanvasPattern(img, 0, 0, img.width(), img.height(), "no-repeat")
+                .smoothing(state.smoothing);
+        pattern.setTransform(Matrix2D.translate(gx, gy).multiply(Matrix2D.scale(w / img.width(), h / img.height())));
+        Rasterizer.Coverage cov = Rasterizer.fill(new Path2D().rect(gx, gy, w, h).flatten(toDevice, FLATTEN_TOLERANCE),
+                false, bitmap.width(), bitmap.height());
+        if (cov != null) drawCoverage(cov, pattern, toDevice);
     }
 
     private Rasterizer.Coverage clipToBitmap(Rasterizer.Coverage c) {

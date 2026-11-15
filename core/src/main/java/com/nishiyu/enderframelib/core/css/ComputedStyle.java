@@ -993,6 +993,231 @@ public final class ComputedStyle {
         };
     }
 
+    /**
+     * 縦書きラッパー（{@code _vw}）内の要素で物理プロパティをローカル座標軸へ写像するときのみ読み込む添字表
+     * （{@code ComputedStyle} と {@code CssPropertyIndex} の静的初期化循環を防ぐ）。
+     */
+    private static final class VerticalAxisPropGroups {
+        static final int[][] EDGE_PERM = {
+                null,
+                {1, 2, 3, 0}, // VERTICAL_RL (+90°): local T,R,B,L <- physical R,B,L,T
+                {3, 2, 1, 0}, // VERTICAL_LR (transpose): local T,R,B,L <- physical L,B,R,T
+                {1, 2, 3, 0}, // SIDEWAYS_RL (+90°)
+                {3, 0, 1, 2}  // SIDEWAYS_LR (-90°): local T,R,B,L <- physical L,T,R,B
+        };
+        static final int[][] CORNER_PERM = {
+                null,
+                {1, 2, 3, 0}, // VERTICAL_RL: local TL,TR,BR,BL <- physical TR,BR,BL,TL
+                {0, 3, 2, 1}, // VERTICAL_LR: local TL,TR,BR,BL <- physical TL,BL,BR,TR
+                {1, 2, 3, 0}, // SIDEWAYS_RL
+                {3, 0, 1, 2}  // SIDEWAYS_LR: local TL,TR,BR,BL <- physical BL,TL,TR,BR
+        };
+        static final int[][] SIZE_SWAPS = {
+                {CssPropertyIndex.WIDTH, CssPropertyIndex.HEIGHT},
+                {CssPropertyIndex.MIN_WIDTH, CssPropertyIndex.MIN_HEIGHT},
+                {CssPropertyIndex.MAX_WIDTH, CssPropertyIndex.MAX_HEIGHT},
+                {CssPropertyIndex.CONTAIN_INTRINSIC_WIDTH, CssPropertyIndex.CONTAIN_INTRINSIC_HEIGHT}
+        };
+        static final int[][] EDGES = {
+                {CssPropertyIndex.MARGIN_TOP, CssPropertyIndex.MARGIN_RIGHT, CssPropertyIndex.MARGIN_BOTTOM, CssPropertyIndex.MARGIN_LEFT},
+                {CssPropertyIndex.PADDING_TOP, CssPropertyIndex.PADDING_RIGHT, CssPropertyIndex.PADDING_BOTTOM, CssPropertyIndex.PADDING_LEFT},
+                {CssPropertyIndex.BORDER_TOP_WIDTH, CssPropertyIndex.BORDER_RIGHT_WIDTH, CssPropertyIndex.BORDER_BOTTOM_WIDTH, CssPropertyIndex.BORDER_LEFT_WIDTH},
+                {CssPropertyIndex.BORDER_TOP_COLOR, CssPropertyIndex.BORDER_RIGHT_COLOR, CssPropertyIndex.BORDER_BOTTOM_COLOR, CssPropertyIndex.BORDER_LEFT_COLOR},
+                {CssPropertyIndex.BORDER_TOP_STYLE, CssPropertyIndex.BORDER_RIGHT_STYLE, CssPropertyIndex.BORDER_BOTTOM_STYLE, CssPropertyIndex.BORDER_LEFT_STYLE},
+                {CssPropertyIndex.TOP, CssPropertyIndex.RIGHT, CssPropertyIndex.BOTTOM, CssPropertyIndex.LEFT}
+        };
+        static final int[] CORNERS = {
+                CssPropertyIndex.BORDER_TOP_LEFT_RADIUS, CssPropertyIndex.BORDER_TOP_RIGHT_RADIUS,
+                CssPropertyIndex.BORDER_BOTTOM_RIGHT_RADIUS, CssPropertyIndex.BORDER_BOTTOM_LEFT_RADIUS
+        };
+    }
+
+    private static final Object[] VERTICAL_AXIS_KEYS = {null, new Object(), new Object(), null, new Object()};
+
+    /**
+     * 縦書きラッパー（{@code _vw}）内の要素について、物理プロパティ（{@code width}/{@code height}・{@code margin}/{@code padding}/
+     * {@code border} 4 辺・角丸・{@code overflow-x/y}・{@code top/right/bottom/left}）をローカル軸へ写像した算出スタイルを返す。
+     */
+    public ComputedStyle derivedVerticalAxisStyle(int flow) {
+        int norm = flow == WritingModes.SIDEWAYS_RL ? WritingModes.VERTICAL_RL : flow;
+        if (norm < 1 || norm >= VERTICAL_AXIS_KEYS.length || VERTICAL_AXIS_KEYS[norm] == null) return this;
+        return paintMemo(VERTICAL_AXIS_KEYS[norm], k -> buildVerticalAxisStyle(norm));
+    }
+
+    private ComputedStyle buildVerticalAxisStyle(int norm) {
+        boolean any = values[CssPropertyIndex.OVERFLOW_X] != null || values[CssPropertyIndex.OVERFLOW_Y] != null
+                || values[CssPropertyIndex.OVERFLOW] != null || values[CssPropertyIndex.BORDER_RADIUS] != null
+                || values[CssPropertyIndex.ASPECT_RATIO] != null;
+        if (!any) {
+            for (int[] p : VerticalAxisPropGroups.SIZE_SWAPS) {
+                if (values[p[0]] != null || values[p[1]] != null) { any = true; break; }
+            }
+        }
+        if (!any) {
+            for (int[] g : VerticalAxisPropGroups.EDGES) {
+                for (int id : g) if (values[id] != null) { any = true; break; }
+                if (any) break;
+            }
+        }
+        if (!any) {
+            for (int id : VerticalAxisPropGroups.CORNERS) {
+                if (values[id] != null) { any = true; break; }
+            }
+        }
+        if (!any) return this;
+
+        CssValue[] out = values.clone();
+        int cnt = size;
+        for (int[] p : VerticalAxisPropGroups.SIZE_SWAPS) {
+            CssValue a = out[p[0]];
+            out[p[0]] = out[p[1]];
+            out[p[1]] = a;
+        }
+        int[] ep = VerticalAxisPropGroups.EDGE_PERM[norm];
+        for (int[] g : VerticalAxisPropGroups.EDGES) {
+            CssValue t = values[g[ep[0]]], r = values[g[ep[1]]], b = values[g[ep[2]]], l = values[g[ep[3]]];
+            out[g[0]] = t;
+            out[g[1]] = r;
+            out[g[2]] = b;
+            out[g[3]] = l;
+        }
+        if (values[CssPropertyIndex.OVERFLOW_X] != null || values[CssPropertyIndex.OVERFLOW_Y] != null
+                || values[CssPropertyIndex.OVERFLOW] != null) {
+            CssValue ox = values[CssPropertyIndex.OVERFLOW_X] != null ? values[CssPropertyIndex.OVERFLOW_X] : CssValue.of(overflowX().cssName());
+            CssValue oy = values[CssPropertyIndex.OVERFLOW_Y] != null ? values[CssPropertyIndex.OVERFLOW_Y] : CssValue.of(overflowY().cssName());
+            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW_X, oy);
+            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW_Y, ox);
+            cnt += setOverrideSlot(out, CssPropertyIndex.OVERFLOW, null);
+        }
+        boolean hasCornerLonghand = false;
+        for (int id : VerticalAxisPropGroups.CORNERS) {
+            if (values[id] != null) { hasCornerLonghand = true; break; }
+        }
+        if (hasCornerLonghand) {
+            int[] cp = VerticalAxisPropGroups.CORNER_PERM[norm];
+            int[] corners = VerticalAxisPropGroups.CORNERS;
+            for (int i = 0; i < 4; i++) {
+                cnt += setOverrideSlot(out, corners[i], swapRadiusPair(values[corners[cp[i]]]));
+            }
+            cnt += setOverrideSlot(out, CssPropertyIndex.BORDER_RADIUS, null);
+        } else if (values[CssPropertyIndex.BORDER_RADIUS] != null) {
+            String sh = values[CssPropertyIndex.BORDER_RADIUS].text;
+            Map<String, String> exp = LengthResolver.expandedRadius(sh);
+            String[] names = {"border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"};
+            int[] cp = VerticalAxisPropGroups.CORNER_PERM[norm];
+            for (int i = 0; i < 4; i++) {
+                String val = exp.getOrDefault(names[cp[i]], "0");
+                cnt += setOverrideSlot(out, VerticalAxisPropGroups.CORNERS[i], swapRadiusPair(CssValue.of(val)));
+            }
+            cnt += setOverrideSlot(out, CssPropertyIndex.BORDER_RADIUS, null);
+        }
+        if (values[CssPropertyIndex.ASPECT_RATIO] != null) {
+            cnt += setOverrideSlot(out, CssPropertyIndex.ASPECT_RATIO, invertAspectRatio(values[CssPropertyIndex.ASPECT_RATIO]));
+        }
+        ComputedStyle fresh = new ComputedStyle(out, extrasBase, extras, cnt, (byte) -1, extrasViewport, elementFontSize, rootFontSize);
+        fresh.g2 = this.g2;
+        fresh.g3 = this.g3;
+        return fresh;
+    }
+
+    private static final class FirstLinePropGroups {
+        static final int[] INHERITABLE_IDS = {
+                CssPropertyIndex.COLOR,
+                CssPropertyIndex.FONT_FAMILY, CssPropertyIndex.FONT_SIZE,
+                CssPropertyIndex.FONT_STYLE, CssPropertyIndex.FONT_WEIGHT, CssPropertyIndex.FONT_KERNING,
+                CssPropertyIndex.LETTER_SPACING, CssPropertyIndex.LINE_HEIGHT,
+                CssPropertyIndex.TEXT_TRANSFORM, CssPropertyIndex.TEXT_DECORATION, CssPropertyIndex.TEXT_SHADOW,
+                CssPropertyIndex.VERTICAL_ALIGN,
+                CssPropertyIndex.WEBKIT_TEXT_STROKE_WIDTH, CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR
+        };
+    }
+
+    private static final class FirstLineChildKey {
+        final ComputedStyle owner;
+        final ComputedStyle firstLine;
+        final int hash;
+
+        FirstLineChildKey(ComputedStyle owner, ComputedStyle firstLine) {
+            this.owner = owner;
+            this.firstLine = firstLine;
+            this.hash = System.identityHashCode(owner) * 31 + System.identityHashCode(firstLine);
+        }
+
+        @Override public int hashCode() { return hash; }
+
+        @Override public boolean equals(Object o) {
+            return o instanceof FirstLineChildKey k && k.owner == owner && k.firstLine == firstLine;
+        }
+    }
+
+    /**
+     * {@code ::first-line} の効果を受けた 1 行目のテキスト／インライン子孫のスタイル。
+     * 所有者（ブロックコンテナ）から見てこの要素が明示的に上書きしていない継承プロパティに限り、
+     * {@code firstLineStyle} の値を受け継ぐ。
+     */
+    public ComputedStyle derivedFirstLineChild(ComputedStyle ownerStyle, ComputedStyle firstLineStyle) {
+        if (firstLineStyle == null || ownerStyle == null) return this;
+        if (this == ownerStyle) return firstLineStyle;
+        return paintMemo(new FirstLineChildKey(ownerStyle, firstLineStyle), k -> buildFirstLineChild(ownerStyle, firstLineStyle));
+    }
+
+    private ComputedStyle buildFirstLineChild(ComputedStyle ownerStyle, ComputedStyle firstLineStyle) {
+        CssValue[] out = null;
+        int cnt = size;
+        boolean fontChanged = false;
+        for (int id : FirstLinePropGroups.INHERITABLE_IDS) {
+            CssValue flVal = firstLineStyle.values[id];
+            CssValue ownVal = values[id];
+            CssValue parVal = ownerStyle.values[id];
+            if (!java.util.Objects.equals(flVal, ownVal) && java.util.Objects.equals(ownVal, parVal)) {
+                if (out == null) out = values.clone();
+                cnt += setOverrideSlot(out, id, flVal);
+                if (id == CssPropertyIndex.FONT_SIZE) fontChanged = true;
+            }
+        }
+        if (out == null) return this;
+        float childFont = fontChanged ? firstLineStyle.elementFontSize : elementFontSize;
+        ComputedStyle fresh = new ComputedStyle(out, extrasBase, extras, cnt, (byte) -1, extrasViewport, childFont, rootFontSize);
+        fresh.g2 = this.g2;
+        fresh.g3 = this.g3;
+        return fresh;
+    }
+
+    private static CssValue swapRadiusPair(CssValue v) {
+        if (v == null) return null;
+        String s = v.text.trim();
+        int sp = findTopLevelSpace(s);
+        if (sp < 0) return v;
+        String a = s.substring(0, sp).trim();
+        String b = s.substring(sp + 1).trim();
+        if (a.isEmpty() || b.isEmpty() || findTopLevelSpace(b) >= 0) return v;
+        return CssValue.of(b + " " + a);
+    }
+
+    private static int findTopLevelSpace(String s) {
+        int depth = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')' && depth > 0) depth--;
+            else if (depth == 0 && Character.isWhitespace(c)) return i;
+        }
+        return -1;
+    }
+
+    private static CssValue invertAspectRatio(CssValue v) {
+        String s = v.text.trim();
+        int slash = s.indexOf('/');
+        if (slash > 0) {
+            return CssValue.of(s.substring(slash + 1).trim() + " / " + s.substring(0, slash).trim());
+        }
+        try {
+            double num = Double.parseDouble(s);
+            if (num > 0) return CssValue.of("1 / " + s);
+        } catch (NumberFormatException ignored) {}
+        return v;
+    }
+
     private byte extrasViewportFlag() {
         Map<String, String> ex = extras;
         if (ex == null) return 0;

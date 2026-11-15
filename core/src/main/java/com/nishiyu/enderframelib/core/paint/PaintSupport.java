@@ -165,17 +165,22 @@ final class PaintSupport {
      * （太さ・斜体・カーニング・字間）。
      */
     static void putFontEvents(LayoutBox box, ItemProps events) {
+        putFontEvents(box.style, events);
+    }
+
+    /** 算出スタイルを直接渡す版（{@code ::first-line} の断片用）。 */
+    static void putFontEvents(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps events) {
         // 既定値（400 / normal / auto）は載せない。描画側は無ければ既定値として読む
-        String weight = box.style.get(CssPropertyIndex.FONT_WEIGHT);
+        String weight = style.get(CssPropertyIndex.FONT_WEIGHT);
         if (weight != null && !weight.equals("normal") && !weight.equals("400")) events.put("font-weight", weight);
-        String fontStyle = box.style.get(CssPropertyIndex.FONT_STYLE);
+        String fontStyle = style.get(CssPropertyIndex.FONT_STYLE);
         if (fontStyle != null && !fontStyle.equals("normal")) events.put("font-style", fontStyle);
-        String kerning = box.style.get(CssPropertyIndex.FONT_KERNING);
+        String kerning = style.get(CssPropertyIndex.FONT_KERNING);
         if (kerning != null && !kerning.equals("auto")) events.put("font-kerning", kerning);
         // 長さの解決は要素ごとには重いので、指定があるときだけ（初期値は normal = 0）
-        String spacing = box.style.get(CssPropertyIndex.LETTER_SPACING);
+        String spacing = style.get(CssPropertyIndex.LETTER_SPACING);
         if (spacing != null && !spacing.equals("normal") && !spacing.equals("0")) {
-            float letterSpacing = box.style.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0);
+            float letterSpacing = style.length(CssPropertyIndex.LETTER_SPACING, 0, 0, 0);
             if (letterSpacing != 0) events.put("letter-spacing", String.valueOf(letterSpacing));
         }
     }

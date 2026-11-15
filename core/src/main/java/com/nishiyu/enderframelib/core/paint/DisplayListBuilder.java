@@ -584,7 +584,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     /** 箱の {@code mask-image} のレイヤーを項目にして足す（背景画像と同じ手順。クリップは箱の外へは出さない）。 */
     private void drawMaskItems(List<DisplayItem> elements, LayoutBox box) {
-        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH));
+        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH));
         int[] rawRadii = radii == Corners.ZERO ? Corners.ZERO_RAW : new int[]{
                 Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
                 Math.min(radii.bottomRight(), radii.bottomRightV()), Math.min(radii.bottomLeft(), radii.bottomLeftV())};
@@ -676,6 +676,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         boolean viewportSensitive;
         List<DisplayItem> items;
         com.nishiyu.enderframelib.core.css.ComputedStyle style;
+        com.nishiyu.enderframelib.core.css.ComputedStyle firstLineStyle;
         com.nishiyu.enderframelib.core.css.ComputedStyle[] ancestors;
         float[] nums;
         float scrollW, scrollH;
@@ -884,7 +885,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
 
     private int match(BoxMemo m, LayoutBox box, ClipRect clip, String parentId) {
         if (m.viewportSensitive && (m.rootW != rootW || m.rootH != rootH)) return matchFail(1);
-        if (!sameStyle(m.style, box.style) || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
+        if (!sameStyle(m.style, box.style) || !sameStyle(m.firstLineStyle, box.firstLineStyle)
+                || m.canvasSource != (box == canvasBackgroundSource) || m.interactive != box.hasInteractiveRules
                 || m.suppressShadow != suppressTextShadow) return matchFail(2);
         if (m.carriesContentExtent && (Float.compare(m.scrollW, box.scrollWidth) != 0 || Float.compare(m.scrollH, box.scrollHeight) != 0)) return matchFail(3);
         float dx = box.x - m.nums[0], dy = box.y - m.nums[1];
@@ -942,6 +944,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             for (int k = 0; k < pn; k++) {
                 if (m.fragRefs[r++] != parents.get(k) || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], parents.get(k).style)) return matchFail(19);
             }
+            com.nishiyu.enderframelib.core.css.ComputedStyle ownerFl = f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null;
+            if (m.fragRefs[r++] != f.firstLineOwner || !sameStyle((com.nishiyu.enderframelib.core.css.ComputedStyle) m.fragRefs[r++], ownerFl)) return matchFail(17);
         }
         if (!moved && clipSame) return 1;
         hitPerItem = false;
@@ -1121,6 +1125,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         m.parentBox = box.parent;
         m.items = items;
         m.style = box.style;
+        m.firstLineStyle = box.firstLineStyle;
         m.ancestors = ancestorStyles(box);
         m.nums = numsOf(box);
         m.scrollW = box.scrollWidth;
@@ -1154,6 +1159,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 refs.add(f.parents.get(k));
                 refs.add(f.parents.get(k).style);
             }
+            refs.add(f.firstLineOwner);
+            refs.add(f.firstLineOwner != null ? f.firstLineOwner.firstLineStyle : null);
         }
         m.fragRefs = refs.toArray();
         m.canvasSource = box == canvasBackgroundSource;
@@ -1269,7 +1276,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
     }
 
     private void drawBoxSelfUncached(List<DisplayItem> elements, LayoutBox box, ClipRect clipRect, String parentId) {
-        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.style, box.w, box.h, rootW, rootH));
+        Corners radii = Corners.ofFloatXY(LengthResolver.cornerRadiiXYShared(box.axisStyle(), box.w, box.h, rootW, rootH));
         // 円しか持たない所（インラインの断片・円判定）には、横と縦の小さい方の円で近似した半径を渡す
         int[] rawRadii = radii == Corners.ZERO ? Corners.ZERO_RAW : new int[]{
                 Math.min(radii.topLeft(), radii.topLeftV()), Math.min(radii.topRight(), radii.topRightV()),
@@ -1397,6 +1404,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 }
             }
         }
+        decor.drawFirstLineBackground(elements, box, id, color, partsEvents, innerMeta, transDur);
         decor.drawColumnRules(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
         decor.drawOutline(elements, box, id, color, passiveBorderEvents, baseMeta, transDur);
     }
@@ -1406,13 +1414,14 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * ぼかしのある影は、錨（NODE）に {@code blur} のレイヤーを載せ、その中に影の文字を置く（ぼかしの σ は半径の半分）。
      * 影はクリックを受けず、色のアニメーション・トランジションも受けない。
      */
-    private void addTextRun(List<DisplayItem> elements, LayoutBox box, String id, float x, float y, float w, float h, String text, int color, int bgColor,
+    private void addTextRun(List<DisplayItem> elements, LayoutBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+                            String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows) {
-        if (box.style != null && WritingModes.usesUpright(box.style) && hasUprightChar(box.style, text)) {
-            addVerticalTextRuns(elements, box, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows);
+        if (effStyle != null && WritingModes.usesUpright(effStyle) && hasUprightChar(effStyle, text)) {
+            addVerticalTextRuns(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows);
             return;
         }
-        emitTextRun(elements, box, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows, 0f);
+        emitTextRun(elements, box, effStyle, id, x, y, w, h, text, color, bgColor, events, meta, transDur, colorAnim, shadows, 0f);
     }
 
     private static boolean hasUprightChar(ComputedStyle style, String text) {
@@ -1430,10 +1439,11 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
      * 縦書きの根は内容ごと 90° 回って描かれるので、正立させる字は自分の中心まわりに -90° 回して回転を打ち消す。
      * 各塊の幅は書体の送り幅で測り、行の幅 {@code w} に合うよう等倍して配る。
      */
-    private void addVerticalTextRuns(List<DisplayItem> elements, LayoutBox box, String id, float x, float y, float w, float h, String text,
+    private void addVerticalTextRuns(List<DisplayItem> elements, LayoutBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+                                     String id, float x, float y, float w, float h, String text,
                                      int color, int bgColor, ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim,
                                      List<BoxDecorations.Shadow> shadows) {
-        WritingModes.Orientation o = WritingModes.orientationOf(box.style);
+        WritingModes.Orientation o = WritingModes.orientationOf(effStyle);
         List<String> runs = new ArrayList<>();
         List<Boolean> upright = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
@@ -1455,8 +1465,8 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
             upright.add(curUpright);
         }
         com.nishiyu.enderframelib.core.text.model.FontFace face =
-                PaintServices.fontResolver().resolve(box.style.get(CssPropertyIndex.FONT_FAMILY));
-        com.nishiyu.enderframelib.core.text.model.FontStyle font = box.style.layoutFacts().fontStyle;
+                PaintServices.fontResolver().resolve(effStyle.get(CssPropertyIndex.FONT_FAMILY));
+        com.nishiyu.enderframelib.core.text.model.FontStyle font = effStyle.layoutFacts().fontStyle;
         float[] adv = new float[runs.size()];
         float total = 0;
         for (int i = 0; i < adv.length; i++) {
@@ -1467,16 +1477,17 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         float cx = x;
         for (int i = 0; i < adv.length; i++) {
             float rw = adv[i] * scale;
-            emitTextRun(elements, box, id, cx, y, rw, h, runs.get(i), color, bgColor, events, meta, transDur, colorAnim, shadows,
-                    upright.get(i) ? (WritingModes.isTransposed(WritingModes.flowOf(box.style)) ? 90f : -90f) : 0f);
+            emitTextRun(elements, box, effStyle, id, cx, y, rw, h, runs.get(i), color, bgColor, events, meta, transDur, colorAnim, shadows,
+                    upright.get(i) ? (WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? 90f : -90f) : 0f);
             cx += rw;
         }
     }
 
-    private void emitTextRun(List<DisplayItem> elements, LayoutBox box, String id, float x, float y, float w, float h, String text, int color, int bgColor,
-                            ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
+    private void emitTextRun(List<DisplayItem> elements, LayoutBox box, com.nishiyu.enderframelib.core.css.ComputedStyle effStyle,
+                             String id, float x, float y, float w, float h, String text, int color, int bgColor,
+                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
         // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
-        float flipY = box.style != null && WritingModes.isTransposed(WritingModes.flowOf(box.style)) ? -1f : 1f;
+        float flipY = effStyle != null && WritingModes.isTransposed(WritingModes.flowOf(effStyle)) ? -1f : 1f;
         int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow sh = shadows.get(i);
@@ -1534,39 +1545,63 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         }
     }
 
+    private ItemProps textPropsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, ItemProps partsEvents, int resolvedColor) {
+        ItemProps props = partsEvents.copy();
+        if (style.containsKey(CssPropertyIndex.FONT_WEIGHT)) props.put("font-weight", style.get(CssPropertyIndex.FONT_WEIGHT));
+        if (style.containsKey(CssPropertyIndex.FONT_FAMILY)) props.put("font-family", style.get(CssPropertyIndex.FONT_FAMILY));
+        if (style.containsKey(CssPropertyIndex.TEXT_DECORATION)) props.put("text-decoration", style.get(CssPropertyIndex.TEXT_DECORATION));
+        putFontEvents(style, props);
+        float strokeWidth = textStrokeWidth(style);
+        if (strokeWidth > 0f) {
+            String colorValue = style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR);
+            int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
+                    ? resolvedColor : ColorParser.parseColor(colorValue);
+            props.put("text-stroke", strokeWidth + " " + Integer.toHexString(strokeColor));
+        }
+        return props;
+    }
+
+    private List<BoxDecorations.Shadow> textShadowsForStyle(com.nishiyu.enderframelib.core.css.ComputedStyle style, int resolvedColor, ItemProps props) {
+        String shadowValue = style.get(CssPropertyIndex.TEXT_SHADOW);
+        if (shadowValue == null || shadowValue.isBlank() || "none".equalsIgnoreCase(shadowValue.trim())) return List.of();
+        List<BoxDecorations.Shadow> list = suppressTextShadow ? List.of()
+                : BoxDecorations.parseBoxShadows(shadowValue, resolvedColor, rootW, rootH, style.fontSizePx(), style.rootFontSizePx())
+                        .stream().filter(sh -> !sh.inset()).toList();
+        if (list.isEmpty() && !suppressTextShadow) props.put("text-shadow", "true");
+        return list;
+    }
+
     private void drawTextNodeElement(List<DisplayItem> elements, LayoutBox box, String id, int color, int bgColor,
                                      ClipRect normalizedClip, float fontHVal, float ox, float oy, ItemProps partsEvents,
                                      int transDur, AnimationSpec colorAnim) {
-        ItemProps baseTextEvents = partsEvents.copy();
-        if (box.style.containsKey(CssPropertyIndex.FONT_WEIGHT)) baseTextEvents.put("font-weight", box.style.get(CssPropertyIndex.FONT_WEIGHT));
-        if (box.style.containsKey(CssPropertyIndex.FONT_FAMILY)) baseTextEvents.put("font-family", box.style.get(CssPropertyIndex.FONT_FAMILY));
-        if (box.style.containsKey(CssPropertyIndex.TEXT_DECORATION)) baseTextEvents.put("text-decoration", box.style.get(CssPropertyIndex.TEXT_DECORATION));
-        // text-shadow: 「x y [ぼかし] [色]」の並びは本物の影（ずらした色付きの文字。ぼかしがあれば合成レイヤーで）。
-        // 解いて読めない値（旧来の text-shadow:true など）は、従来の「右下に暗い文字を重ねる」影のまま
-        List<BoxDecorations.Shadow> textShadows = List.of();
-        String shadowValue = box.style.get(CssPropertyIndex.TEXT_SHADOW);
-        if (shadowValue != null && !shadowValue.isBlank() && !"none".equalsIgnoreCase(shadowValue.trim())) {
-            if (!suppressTextShadow) textShadows = BoxDecorations.parseBoxShadows(shadowValue, color, rootW, rootH, box.style.fontSizePx(), box.style.rootFontSizePx())
-                    .stream().filter(sh -> !sh.inset()).toList();
-            if (textShadows.isEmpty() && !suppressTextShadow) baseTextEvents.put("text-shadow", "true");
-        }
-        putFontEvents(box, baseTextEvents);
-        float strokeWidth = textStrokeWidth(box.style);
-        if (strokeWidth > 0f) {
-            String colorValue = box.style.get(CssPropertyIndex.WEBKIT_TEXT_STROKE_COLOR);
-            int strokeColor = colorValue == null || colorValue.isBlank() || "currentcolor".equalsIgnoreCase(colorValue.trim())
-                    ? color : ColorParser.parseColor(colorValue);
-            baseTextEvents.put("text-stroke", strokeWidth + " " + Integer.toHexString(strokeColor));
-        }
+        ItemProps baseTextEvents = null;
+        List<BoxDecorations.Shadow> baseTextShadows = null;
 
         if (!box.inlineFragments.isEmpty()) {
             for (LayoutBox.InlineFragment frag : box.inlineFragments) {
                 if (frag.text == null || frag.text.isBlank()) continue;
-                RenderMeta fragMeta = new RenderMeta(
-                        normalizedClip, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
-                addTextRun(elements, box, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, textShadows);
+                com.nishiyu.enderframelib.core.css.ComputedStyle fl = frag.effectiveFirstLineStyle(box);
+                if (fl != null) {
+                    int flColor = fl.color(CssPropertyIndex.COLOR, color);
+                    float flFontH = Math.max(1.0f, fl.fontSizePx());
+                    ItemProps flEvents = textPropsForStyle(fl, partsEvents, flColor);
+                    List<BoxDecorations.Shadow> flShadows = textShadowsForStyle(fl, flColor, flEvents);
+                    RenderMeta fragMeta = new RenderMeta(
+                            normalizedClip, null, null, flFontH, frag.baseline, frag.h, ox, oy, 1, false);
+                    addTextRun(elements, box, fl, id, frag.x, frag.y, frag.w, frag.h, frag.text, flColor, bgColor, flEvents, fragMeta, transDur, AnimationSpec.NONE, flShadows);
+                } else {
+                    if (baseTextEvents == null) {
+                        baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
+                        baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
+                    }
+                    RenderMeta fragMeta = new RenderMeta(
+                            normalizedClip, null, null, fontHVal, frag.baseline, frag.h, ox, oy, 1, false);
+                    addTextRun(elements, box, box.style, id, frag.x, frag.y, frag.w, frag.h, frag.text, color, bgColor, baseTextEvents, fragMeta, transDur, colorAnim, baseTextShadows);
+                }
             }
         } else if (box.shapedLines != null && !box.shapedLines.isEmpty()) {
+            baseTextEvents = textPropsForStyle(box.style, partsEvents, color);
+            baseTextShadows = textShadowsForStyle(box.style, color, baseTextEvents);
             // 行の文字列・幅・ベースラインは整形器（TextShaper）が確定済み。
             // ここがするのは text-align の offset と丸めだけで、描画側は測り直さない。
             TextAlign align = box.style.keywordOf(CssPropertyIndex.TEXT_ALIGN, TextAlign.class);
@@ -1582,7 +1617,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                     RenderMeta lineMeta = new RenderMeta(
                             normalizedClip, null, null, fontHVal, line.baseline(), line.height(), ox, oy, 1, false);
                     // text-transform は displayText を作る時点で適用済み（測定と描画で同じ文字列）
-                    addTextRun(elements, box, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, textShadows);
+                    addTextRun(elements, box, box.style, id, lineX, lineY, lineW, line.height(), line.text(), color, bgColor, baseTextEvents, lineMeta, transDur, colorAnim, baseTextShadows);
                 }
                 lineY += line.height();
             }

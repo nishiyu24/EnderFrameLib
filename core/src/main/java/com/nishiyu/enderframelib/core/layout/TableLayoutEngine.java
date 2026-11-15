@@ -153,8 +153,9 @@ public class TableLayoutEngine extends LayoutEngine {
 
         for (int r = 0; r < rows; r++) {
             LayoutBox row = state.rows.get(r);
-            if (!state.collapsedRows[r] && row.style.containsKey(CssPropertyIndex.HEIGHT)) {
-                heights[r] = row.style.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
+            ComputedStyle rowStyle = row.axisStyle();
+            if (!state.collapsedRows[r] && rowStyle.containsKey(CssPropertyIndex.HEIGHT)) {
+                heights[r] = rowStyle.length(CssPropertyIndex.HEIGHT, space.percentageBlockSize(), rootW, rootH);
             }
         }
         for (CellSlot slot : state.cells) {
@@ -412,16 +413,17 @@ public class TableLayoutEngine extends LayoutEngine {
 
     /** 隣り合う 2 本の枠線の幅。どちらかが {@code hidden} なら 0、そうでなければ太い方（CSS 2.2 §17.6.2.1）。 */
     private static float joint(LayoutBox a, int sideA, float widthA, LayoutBox b, int sideB, float widthB) {
-        if (a.style.keywordOf(sideA, BorderStyle.class) == BorderStyle.HIDDEN
-                || b.style.keywordOf(sideB, BorderStyle.class) == BorderStyle.HIDDEN) return 0;
+        if (a.axisStyle().keywordOf(sideA, BorderStyle.class) == BorderStyle.HIDDEN
+                || b.axisStyle().keywordOf(sideB, BorderStyle.class) == BorderStyle.HIDDEN) return 0;
         return Math.max(widthA, widthB);
     }
 
     /** 枠線の幅。{@code border-style} が none / hidden なら 0。 */
     private static float border(LayoutBox box, int widthProp, int styleProp, float rootW, float rootH) {
-        BorderStyle style = box.style.keywordOf(styleProp, BorderStyle.class);
+        ComputedStyle bs = box.axisStyle();
+        BorderStyle style = bs.keywordOf(styleProp, BorderStyle.class);
         if (style == BorderStyle.NONE || style == BorderStyle.HIDDEN) return 0;
-        return box.style.length(widthProp, 0, rootW, rootH);
+        return bs.length(widthProp, 0, rootW, rootH);
     }
 
     // ==========================================
@@ -433,7 +435,7 @@ public class TableLayoutEngine extends LayoutEngine {
                                             float parentH, LayoutContext ctx, float rootW, float rootH) {
         for (int c = 0; c < state.columnElements.size(); c++) {
             LayoutBox col = state.columnElements.get(c);
-            Float w = fixedWidth(col.style, rootW, rootH);
+            Float w = fixedWidth(col.axisStyle(), rootW, rootH);
             if (w != null) {
                 min[c] = Math.max(min[c], w);
                 max[c] = Math.max(max[c], w);
@@ -443,7 +445,7 @@ public class TableLayoutEngine extends LayoutEngine {
         for (CellSlot slot : state.cells) {
             LayoutBox cell = slot.cell;
             cell.measure(new ConstraintSpace(LayoutMetrics.UNBOUNDED_WIDTH, parentH, SHRINK_CELL), ctx);
-            boolean hasWidth = fixedWidth(cell.style, rootW, rootH) != null;
+            boolean hasWidth = fixedWidth(cell.axisStyle(), rootW, rootH) != null;
             float cellMax = cell.w;
             boolean hasContent = cell.node.nodeType == NodeType.TEXT || cell.hasFlowChildren();
             float cellMin = hasContent ? cell.getMinContentWidth(ctx) : cell.horizontalDecoration();
@@ -485,7 +487,7 @@ public class TableLayoutEngine extends LayoutEngine {
         java.util.Arrays.fill(percent, -1f);
         boolean any = false;
         for (int c = 0; c < state.columnElements.size() && c < n; c++) {
-            float p = percentWidth(state.columnElements.get(c).style);
+            float p = percentWidth(state.columnElements.get(c).axisStyle());
             if (p >= 0) {
                 percent[c] = p;
                 any = true;
@@ -493,7 +495,7 @@ public class TableLayoutEngine extends LayoutEngine {
         }
         for (CellSlot slot : state.cells) {
             if (slot.colSpan != 1) continue;
-            float p = percentWidth(slot.cell.style);
+            float p = percentWidth(slot.cell.axisStyle());
             if (p >= 0) {
                 percent[slot.col] = Math.max(percent[slot.col], p);
                 any = true;
@@ -629,7 +631,7 @@ public class TableLayoutEngine extends LayoutEngine {
         float[] widths = new float[n];
         boolean[] known = new boolean[n];
         for (int c = 0; c < state.columnElements.size() && c < n; c++) {
-            ComputedStyle colStyle = state.columnElements.get(c).style;
+            ComputedStyle colStyle = state.columnElements.get(c).axisStyle();
             Float w = fixedWidth(colStyle, rootW, rootH);
             float p = percentWidth(colStyle);
             if (w != null) {
@@ -642,7 +644,8 @@ public class TableLayoutEngine extends LayoutEngine {
         }
         for (CellSlot slot : state.cells) {
             if (slot.row != 0) continue;
-            float p = percentWidth(slot.cell.style);
+            ComputedStyle cellStyle = slot.cell.axisStyle();
+            float p = percentWidth(cellStyle);
             if (p >= 0 && slot.colSpan == 1) {
                 if (!known[slot.col]) {
                     widths[slot.col] = target * p / 100f;
@@ -650,7 +653,7 @@ public class TableLayoutEngine extends LayoutEngine {
                 }
                 continue;
             }
-            Float w = fixedWidth(slot.cell.style, rootW, rootH);
+            Float w = fixedWidth(cellStyle, rootW, rootH);
             if (w == null) continue;
             // 指定は内容ボックスの幅なので、パディングと枠線を足す（border-box ならそのまま）
             slot.cell.measure(new ConstraintSpace(target, parentH, FIXED_CELL), ctx);

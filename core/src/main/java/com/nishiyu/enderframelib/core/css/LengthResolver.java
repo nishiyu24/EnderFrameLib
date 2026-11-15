@@ -358,7 +358,7 @@ private static final int RADIUS_CACHE_LIMIT = 2048;
 private static final java.util.concurrent.ConcurrentHashMap<String, Map<String, String>> RADIUS_EXPANDED = new java.util.concurrent.ConcurrentHashMap<>();
 private static final java.util.concurrent.ConcurrentHashMap<String, List<String>> RADIUS_TOKENS = new java.util.concurrent.ConcurrentHashMap<>();
 
-private static Map<String, String> expandedRadius(String shorthand) {
+static Map<String, String> expandedRadius(String shorthand) {
     Map<String, String> hit = RADIUS_EXPANDED.get(shorthand);
     if (hit != null) return hit;
     Map<String, String> value = Map.copyOf(ShorthandExpanders.borderRadius(shorthand));

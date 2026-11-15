@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.text.font.ColorBitmap;
+import com.nishiyu.enderframelib.core.text.font.ColorLayers;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
 
 import com.nishiyu.enderframelib.core.paint.AnimatedValues;
@@ -2220,14 +2222,14 @@ public final class SoftwareRenderBackend implements RenderBackend {
             float gx = x + positions[i];
             if (!monochrome) {
                 // COLR v1（グラデーション・変形・合成）は、描いた色付きビットマップを画像と同じ経路で置く
-                LoadedFace.ColorBitmap colorBitmap = gf.face().colorBitmap(cp, pixelSize);
+                ColorBitmap colorBitmap = gf.face().colorBitmap(cp, pixelSize, argb);
                 if (colorBitmap != null) {
                     drawColorBitmapGlyph(colorBitmap, gx, baseline, pixelSize, aligned, style, pose, clip, opacity);
                     i += n;
                     continue;
                 }
             }
-            LoadedFace.ColorLayers colorLayers = monochrome ? null : gf.face().colorLayers(cp);
+            ColorLayers colorLayers = monochrome ? null : gf.face().colorLayers(cp);
             if (colorLayers != null) {
                 drawColorGlyph(gf, colorLayers, gx, baseline, argb, pixelSize, aligned, style, pose, clip, opacity);
                 i += n;
@@ -2253,7 +2255,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     private static final float[] NO_RADII = new float[4];
 
     /** 色付きのビットマップの字形。画素の格子に載せるときは等倍、回転などの姿勢の下では双一次補間で貼る。 */
-    private void drawColorBitmapGlyph(LoadedFace.ColorBitmap cb, float gx, float baseline, float pixelSize, boolean aligned,
+    private void drawColorBitmapGlyph(ColorBitmap cb, float gx, float baseline, float pixelSize, boolean aligned,
                                       FontStyle style, Matrix2D pose, Clip clip, float opacity) {
         Pixmap pm = cb.pixmap();
         if (aligned) {
@@ -2281,7 +2283,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
     }
 
     /** カラー字形（COLR）を、レイヤーごとの色で下から重ねて描く。レイヤーの被覆率は通常の字形と同じ経路（GL でも CPU でも）を通る。 */
-    private void drawColorGlyph(OutlineFontFace.GlyphFace gf, LoadedFace.ColorLayers layers, float gx, float baseline, int textArgb,
+    private void drawColorGlyph(OutlineFontFace.GlyphFace gf, ColorLayers layers, float gx, float baseline, int textArgb,
                                 float pixelSize, boolean aligned, FontStyle style, Matrix2D pose, Clip clip, float opacity) {
         double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
         int sub = aligned ? ShapeGeometry.glyphSubpixel(devX) : 0;

@@ -156,7 +156,7 @@ public class GridLayoutEngine extends LayoutEngine {
 
         for (GridItem item : gs.items) {
             // グリッドの高さが指定で決まっていればそれを、決まっていなければ auto として（NaN）% の高さを測る
-            float base = isPercentage(item.box.style.get(CssPropertyIndex.HEIGHT)) ? innerHForPercent : parentH;
+            float base = isPercentage(item.box.axisStyle().get(CssPropertyIndex.HEIGHT)) ? innerHForPercent : parentH;
             measureInArea(box, gs, item, base, ctx);
         }
         return Math.max(0, sum(gs.colSizes) + box.columnGap * Math.max(0, gs.colSizes.length - 1)
@@ -180,7 +180,7 @@ public class GridLayoutEngine extends LayoutEngine {
             // グリッドの高さが確定したので、% の高さの子をその高さを基準に測り直してから行を決める
             // （Chrome と同じ。高さが不定のときは measureContent で auto として測った寄与のまま）
             for (GridItem item : gs.items) {
-                if (isPercentage(item.box.style.get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - innerH) < 0.01f)) {
+                if (isPercentage(item.box.axisStyle().get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - innerH) < 0.01f)) {
                     measureInArea(box, gs, item, innerH, ctx);
                 }
             }
@@ -201,11 +201,12 @@ public class GridLayoutEngine extends LayoutEngine {
     /** 高さが指定されていれば内容ボックスの高さ、無ければ NaN（行の % と fr は不定として扱う）。 */
     private static float definiteHeight(LayoutBox box, float parentH, LayoutContext ctx) {
         if (!Float.isNaN(box.overrideHeight)) return Math.max(0, box.overrideHeight - box.verticalDecoration());
-        String h = box.style.get(CssPropertyIndex.HEIGHT);
+        ComputedStyle style = box.axisStyle();
+        String h = style.get(CssPropertyIndex.HEIGHT);
         if (h == null || "auto".equalsIgnoreCase(h.trim()) || LayoutMetrics.isIntrinsicSizeKeyword(h)) return Float.NaN;
         if (h.contains("%") && parentH <= 0) return Float.NaN;
-        float v = box.style.length(CssPropertyIndex.HEIGHT, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
-        boolean isBorderBox = box.style.isBorderBox();
+        float v = style.length(CssPropertyIndex.HEIGHT, parentH, ctx.viewport().rootW(), ctx.viewport().rootH());
+        boolean isBorderBox = style.isBorderBox();
         return Math.max(0, isBorderBox ? v - box.verticalDecoration() : v);
     }
 
@@ -352,11 +353,12 @@ public class GridLayoutEngine extends LayoutEngine {
      */
     private static float rowMinContribution(LayoutBox b, LayoutContext ctx) {
         float decoration = b.verticalDecoration();
-        String min = b.style.get(CssPropertyIndex.MIN_HEIGHT);
+        ComputedStyle bs = b.axisStyle();
+        String min = bs.get(CssPropertyIndex.MIN_HEIGHT);
         if (min != null && !"auto".equalsIgnoreCase(min.trim()) && !min.contains("%")
                 && !LayoutMetrics.isIntrinsicSizeKeyword(min)) {
-            float v = b.style.length(CssPropertyIndex.MIN_HEIGHT, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-            float specified = b.style.isBorderBox() ? Math.max(v, decoration) : v + decoration;
+            float v = bs.length(CssPropertyIndex.MIN_HEIGHT, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            float specified = bs.isBorderBox() ? Math.max(v, decoration) : v + decoration;
             return Math.min(b.h, specified);
         }
         if (b.isScrollContainer()) return Math.min(b.h, decoration);
@@ -729,7 +731,7 @@ public class GridLayoutEngine extends LayoutEngine {
 
     private static float minContentContribution(LayoutBox b, LayoutContext ctx) {
         float margins = b.mL + b.mR;
-        String width = b.style.get(CssPropertyIndex.WIDTH);
+        String width = b.axisStyle().get(CssPropertyIndex.WIDTH);
         if (width != null && !"auto".equalsIgnoreCase(width.trim()) && !width.contains("%")
                 && !LayoutMetrics.isIntrinsicSizeKeyword(width)) {
             return b.w + margins;
@@ -810,7 +812,7 @@ public class GridLayoutEngine extends LayoutEngine {
                 b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, true, false))
                         .withFixed(b.w, target), ctx);
                 item.percentBase = areaH;
-            } else if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.style, CssPropertyIndex.HEIGHT)) {
+            } else if (alignSelf == CssKeywords.Alignment.STRETCH && !hasAutoMargin(b, false) && !hasSize(b.axisStyle(), CssPropertyIndex.HEIGHT)) {
                 float target = areaH - b.mT - b.mB;
                 // 行が内容より低いとき（min-height: 0 やスクロールコンテナ）は縮めて領域に合わせる
                 if (Math.abs(b.h - target) > 0.01f) {
@@ -819,7 +821,7 @@ public class GridLayoutEngine extends LayoutEngine {
                     b.measure(new ConstraintSpace(areaW, parentH, FormattingContext.of(FormattingContext.Display.GRID, alignSelf == CssKeywords.Alignment.STRETCH, false))
                             .withFixed(b.w, Math.max(0, target)), ctx);
                 }
-            } else if (isPercentage(b.style.get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
+            } else if (isPercentage(b.axisStyle().get(CssPropertyIndex.HEIGHT)) && !(Math.abs(item.percentBase - areaH) < 0.01f)) {
                 // % の高さはグリッドの領域の高さが基準（CSS Grid §6.1 / CSS Sizing 3 §5.2）。
                 // 以前はグリッドコンテナの基準で解いていたので、height: 100% の子が領域を越えて伸びていた。
                 // 同じ基準で測り済み（行が 1 つで領域 = グリッドの高さ）なら測り直さない
@@ -838,7 +840,8 @@ public class GridLayoutEngine extends LayoutEngine {
     private static float alignWithin(LayoutBox b, boolean inline, float area, CssKeywords.Alignment alignment) {
         int startProp = inline ? CssPropertyIndex.MARGIN_LEFT : CssPropertyIndex.MARGIN_TOP;
         int endProp = inline ? CssPropertyIndex.MARGIN_RIGHT : CssPropertyIndex.MARGIN_BOTTOM;
-        boolean autoStart = isAuto(b.style, startProp), autoEnd = isAuto(b.style, endProp);
+        ComputedStyle bs = b.axisStyle();
+        boolean autoStart = isAuto(bs, startProp), autoEnd = isAuto(bs, endProp);
         float size = inline ? b.w : b.h;
         float margins = (autoStart ? 0 : (inline ? b.mL : b.mT)) + (autoEnd ? 0 : (inline ? b.mR : b.mB));
         float free = area - size - margins;
@@ -906,7 +909,7 @@ public class GridLayoutEngine extends LayoutEngine {
         CssKeywords.Alignment v = b.style.keywordOf(selfProp, CssKeywords.Alignment.class);
         if (v == CssKeywords.Alignment.AUTO) v = container.keywordOf(itemsProp, CssKeywords.Alignment.class);
         if (v == CssKeywords.Alignment.NORMAL || v == CssKeywords.Alignment.LEGACY || v == CssKeywords.Alignment.AUTO) {
-            boolean sized = hasSize(b.style, selfProp == CssPropertyIndex.JUSTIFY_SELF ? CssPropertyIndex.WIDTH : CssPropertyIndex.HEIGHT);
+            boolean sized = hasSize(b.axisStyle(), selfProp == CssPropertyIndex.JUSTIFY_SELF ? CssPropertyIndex.WIDTH : CssPropertyIndex.HEIGHT);
             return isReplaced(b) || sized ? CssKeywords.Alignment.START : CssKeywords.Alignment.STRETCH;
         }
         // first baseline / last baseline は baseline（safe / unsafe は読み取りで落とし済み）
@@ -914,9 +917,10 @@ public class GridLayoutEngine extends LayoutEngine {
     }
 
     private static boolean hasAutoMargin(LayoutBox b, boolean inline) {
+        ComputedStyle bs = b.axisStyle();
         return inline
-                ? isAuto(b.style, CssPropertyIndex.MARGIN_LEFT) || isAuto(b.style, CssPropertyIndex.MARGIN_RIGHT)
-                : isAuto(b.style, CssPropertyIndex.MARGIN_TOP) || isAuto(b.style, CssPropertyIndex.MARGIN_BOTTOM);
+                ? isAuto(bs, CssPropertyIndex.MARGIN_LEFT) || isAuto(bs, CssPropertyIndex.MARGIN_RIGHT)
+                : isAuto(bs, CssPropertyIndex.MARGIN_TOP) || isAuto(bs, CssPropertyIndex.MARGIN_BOTTOM);
     }
 
     private static boolean isAuto(ComputedStyle style, int prop) {

@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
+import com.nishiyu.enderframelib.core.text.font.ColorBitmap;
 import com.nishiyu.enderframelib.core.text.font.LoadedFace;
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.font.WebFonts;
@@ -49,14 +50,14 @@ public class BitmapEmojiTest {
             assertTrue(face.advanceEm(SMILE) > 0f, "送り幅が正: " + face.advanceEm(SMILE));
             assertTrue(face.ascent(32f) > 0f);
 
-            LoadedFace.ColorBitmap b32 = face.colorBitmap(SMILE, 32f);
+            ColorBitmap b32 = face.colorBitmap(SMILE, 32f);
             assertNotNull(b32, "CBDT のカラービットマップを返せる");
             assertEquals(32, b32.pixmap().width());
             assertEquals(32, b32.pixmap().height());
             assertEquals(0xFF20C040, b32.pixmap().get(16, 16), "ARGB 画素値が一致");
             assertEquals(32f, b32.width(), 0.01f);
 
-            LoadedFace.ColorBitmap b64 = face.colorBitmap(SMILE, 64f);
+            ColorBitmap b64 = face.colorBitmap(SMILE, 64f);
             assertNotNull(b64);
             assertSame(b32.pixmap(), b64.pixmap(), "同じストライクの Pixmap を共有する");
             assertEquals(64f, b64.width(), 0.01f, "要求サイズに合わせて拡縮する");
@@ -97,18 +98,18 @@ public class BitmapEmojiTest {
                 null, 0, Set.of("test-multi-cbdt"), "TestMultiCBDT", 400, false, 5, new SystemFonts.MemoryFont(sfnt)));
         assertNotNull(face);
         try {
-            LoadedFace.ColorBitmap small = face.colorBitmap(SMILE, 16f);
+            ColorBitmap small = face.colorBitmap(SMILE, 16f);
             assertNotNull(small);
             assertEquals(16, small.pixmap().width());
             assertEquals(0xFF10D030, small.pixmap().get(8, 8));
 
-            LoadedFace.ColorBitmap mid = face.colorBitmap(SMILE, 24f);
+            ColorBitmap mid = face.colorBitmap(SMILE, 24f);
             assertNotNull(mid);
             assertEquals(64, mid.pixmap().width(), "16 < 24 <= 64 なので 64px ストライクを選ぶ");
             assertEquals(0xFF2050F0, mid.pixmap().get(32, 32));
             assertEquals(24f, mid.width(), 0.01f);
 
-            LoadedFace.ColorBitmap large = face.colorBitmap(SMILE, 96f);
+            ColorBitmap large = face.colorBitmap(SMILE, 96f);
             assertNotNull(large);
             assertSame(mid.pixmap(), large.pixmap(), "最大ストライク 64px を選んで拡大");
             assertEquals(96f, large.width(), 0.01f);

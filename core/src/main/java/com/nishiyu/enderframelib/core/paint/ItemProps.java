@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.paint;
 
+import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.layout.LayoutBox;
@@ -165,8 +166,9 @@ final class ItemProps {
             }
         }
 
-        Overflow overflowX = box.style.overflowX();
-        Overflow overflowY = box.style.overflowY();
+        ComputedStyle ax = box.axisStyle();
+        Overflow overflowX = ax.overflowX();
+        Overflow overflowY = ax.overflowY();
         boolean isScrollable = overflowX == Overflow.SCROLL || overflowX == Overflow.AUTO
                 || overflowY == Overflow.SCROLL || overflowY == Overflow.AUTO
                 || "root".equals(box.node.tag) || "html".equals(box.node.tag) || "body".equals(box.node.tag);

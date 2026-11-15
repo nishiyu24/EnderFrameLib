@@ -81,6 +81,18 @@ public class LayoutBox {
 
     /** 縦書き／直交戻しの根の内容を包む、回転を持つ生成箱（DOM に無い）。 */
     public boolean isVerticalWrapper;
+
+    /**
+     * 縦書きラッパー（{@code _vw}）の内側でレイアウト・描画される箱の書字方向（0 なら通常の水平座標、非 0 なら
+     * {@link #axisStyle()} が物理プロパティをローカル軸へ写像したスタイルを返す）。
+     */
+    public byte verticalAxisFlow;
+
+    /** 物理寸法・余白・枠線・角丸・overflow をローカル座標軸で読むスタイル（横書き・ラッパー自身では {@link #style}）。 */
+    public ComputedStyle axisStyle() {
+        int flow = verticalAxisFlow & 0xFF;
+        return flow == 0 || style == null ? style : style.derivedVerticalAxisStyle(flow);
+    }
     /**
      * {@code list-style-position: outside} の {@code ::marker}。通常フローに入らず、
      * リスト項目の最初の行の左に置かれる。
@@ -397,6 +409,10 @@ public class LayoutBox {
     public ComputedStyle placeholderStyle = null;
     /** {@code ::backdrop} の算出スタイル（dialog / popover だけ。規則が無ければ null）。Top Layer の箱の背面に全面で描く。 */
     public ComputedStyle backdropStyle = null;
+    /** {@code ::first-line} の算出スタイル（ブロックコンテナだけ。規則が無ければ null）。 */
+    public ComputedStyle firstLineStyle = null;
+    /** 1 行目に {@code ::first-line} 背景があるときの描画矩形 {@code [x, y, w, h]}。無ければ null。 */
+    public float[] firstLineBgRect = null;
 
     /**
      * 疑似要素（{@code ::before} / {@code ::after} / {@code ::marker} / {@code ::placeholder}）のスタイルを解いたときの
@@ -465,15 +481,22 @@ public class LayoutBox {
     public InlineFragment addFragment(float x, float y, float w, float h, String text,
                                       float baseline, float descent, List<LayoutBox> parents,
                                       boolean startEdge, boolean endEdge) {
+        return addFragment(x, y, w, h, text, baseline, descent, parents, startEdge, endEdge, null);
+    }
+
+    /** {@code ::first-line} の実効スタイル付きで InlineFragment を追加・再利用する。 */
+    public InlineFragment addFragment(float x, float y, float w, float h, String text,
+                                      float baseline, float descent, List<LayoutBox> parents,
+                                      boolean startEdge, boolean endEdge, ComputedStyle firstLineStyle) {
         if (fragmentCursor < inlineFragments.size()) {
             InlineFragment f = inlineFragments.get(fragmentCursor++);
-            f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge);
+            f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge, firstLineStyle);
             return f;
         }
         int spare = spareFragments == null ? 0 : spareFragments.size();
         if (spare > 0) {
             InlineFragment f = spareFragments.remove(spare - 1);
-            f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge);
+            f.set(this, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge, firstLineStyle);
             inlineFragments.add(f);
             fragmentCursor++;
             return f;
@@ -484,6 +507,8 @@ public class LayoutBox {
         f.parents = parents;
         f.startEdge = startEdge;
         f.endEdge = endEdge;
+        f.firstLineStyle = firstLineStyle;
+        f.firstLineOwner = null;
         inlineFragments.add(f);
         fragmentCursor++;
         return f;
@@ -822,7 +847,8 @@ public class LayoutBox {
      */
     float intrinsicInlineMargins(LayoutContext ctx) {
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        return style.edgeLength(ComputedStyle.EDGE_MARGIN_L, 0, rootW, rootH) + style.edgeLength(ComputedStyle.EDGE_MARGIN_R, 0, rootW, rootH);
+        ComputedStyle s = axisStyle();
+        return s.edgeLength(ComputedStyle.EDGE_MARGIN_L, 0, rootW, rootH) + s.edgeLength(ComputedStyle.EDGE_MARGIN_R, 0, rootW, rootH);
     }
     public float verticalDecoration() { return pT + pB + bT + bB + legendSpill; }
 
@@ -882,11 +908,12 @@ public class LayoutBox {
         float rootH = ctx.viewport().rootH();
 
         // min-content / auto などのキーワードは長さとして解けないので、内容から計算する経路に落とす
-        String minWidthDecl = style.get(CssPropertyIndex.MIN_WIDTH);
+        ComputedStyle ax = axisStyle();
+        String minWidthDecl = ax.get(CssPropertyIndex.MIN_WIDTH);
         if (minWidthDecl != null && !LayoutMetrics.isIntrinsicSizeKeyword(minWidthDecl)) {
             // 枠線ボックスは padding と border より細くならない（min-width: 0 でも装飾の分は残る）
-            float min = style.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
-            return style.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
+            float min = ax.length(CssPropertyIndex.MIN_WIDTH, LayoutMetrics.UNBOUNDED_WIDTH, rootW, rootH);
+            return ax.isBorderBox() ? Math.max(min, horizontalDecoration()) : min + horizontalDecoration();
         }
 
         String tag = node.tag;
@@ -964,16 +991,17 @@ public class LayoutBox {
      * そうでなければ min-content。百分率は親の幅に依存して循環するので auto と同じに扱う。
      */
     private float minContentContribution(LayoutContext ctx) {
-        String width = style.get(CssPropertyIndex.WIDTH);
+        ComputedStyle ax = axisStyle();
+        String width = ax.get(CssPropertyIndex.WIDTH);
         if (width == null || width.contains("%") || LayoutMetrics.isIntrinsicSizeKeyword(width)) {
             return getMinContentWidth(ctx);
         }
-        float v = style.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-        float borderBox = style.isBorderBox() ? Math.max(v, horizontalDecoration()) : v + horizontalDecoration();
-        String minWidth = style.get(CssPropertyIndex.MIN_WIDTH);
+        float v = ax.length(CssPropertyIndex.WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+        float borderBox = ax.isBorderBox() ? Math.max(v, horizontalDecoration()) : v + horizontalDecoration();
+        String minWidth = ax.get(CssPropertyIndex.MIN_WIDTH);
         if (minWidth != null && !minWidth.contains("%") && !LayoutMetrics.isIntrinsicSizeKeyword(minWidth)) {
-            float min = style.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
-            borderBox = Math.max(borderBox, style.isBorderBox() ? min : min + horizontalDecoration());
+            float min = ax.length(CssPropertyIndex.MIN_WIDTH, 0, ctx.viewport().rootW(), ctx.viewport().rootH());
+            borderBox = Math.max(borderBox, ax.isBorderBox() ? min : min + horizontalDecoration());
         }
         return borderBox;
     }
@@ -1215,7 +1243,7 @@ public class LayoutBox {
     private boolean measuredBlockPercentFree;
 
     private boolean computeBlockPercentFree() {
-        StyleFacts f = style.layoutFacts();
+        StyleFacts f = axisStyle().layoutFacts();
         // 横方向の割合・内在サイズのキーワードは、親の現在の幅（子の割合 padding の基準・最小内容幅のキャッシュ）を通して
         // 測定時の状態に隠れて依存する。高さの基準を無視して測り直しを省くと、その状態の更新まで省いてしまうので、含まない
         if (!blockPercentFreeEnabled || !f.blockPercentFree || f.percentGeometry
@@ -1579,7 +1607,8 @@ public class LayoutBox {
         if (!fitReuseEnabled || parent == null || !measuredOutsideFree || measuredHasTable) return none;
         if (floatSpace != null || collapsedBorders != null
                 || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
-        StyleFacts f = style.layoutFacts();
+        ComputedStyle ax = axisStyle();
+        StyleFacts f = ax.layoutFacts();
         if (f.floating) return none;
         boolean textNode = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT;
         if (!Float.isNaN(overrideWidth)) {
@@ -1595,7 +1624,7 @@ public class LayoutBox {
         if (textNode) {
             // 折り返さずに 1 行に収まった文字は、使える幅がその行の幅以上なら同じ 1 行になる
             List<ShapedLine> lines = shapedLines;
-            if (lines == null || lines.size() != 1 || hasActiveMaxWidth(style)) return none;
+            if (lines == null || lines.size() != 1 || hasActiveMaxWidth(ax)) return none;
             measuredFitFixedW = true;
             return w + mL + mR;
         }
@@ -1621,7 +1650,7 @@ public class LayoutBox {
         if (sizingMode != SizingMode.DEFINITE || isFillWidthExcludedTag(node.tag) || Float.isNaN(naturalFitInnerWidth)) {
             return none;
         }
-        if (hasActiveMaxWidth(style) || hasNonZeroMinWidth(style) || style.containsKey(CssPropertyIndex.ASPECT_RATIO)) {
+        if (hasActiveMaxWidth(ax) || hasNonZeroMinWidth(ax) || ax.containsKey(CssPropertyIndex.ASPECT_RATIO)) {
             return none;
         }
         float innerNeed = Math.max(naturalFitInnerWidth, childFitNeedMax);
@@ -1664,7 +1693,7 @@ public class LayoutBox {
     }
 
     private void recordWidthIndependence() {
-        StyleFacts f = style.layoutFacts();
+        StyleFacts f = axisStyle().layoutFacts();
         // 画像の候補選び（srcset / sizes）はビューポートの幅を読む
         boolean outside = !isAbsolute && !f.usesViewportUnits && !(node != null && ("img".equals(node.tag) || "picture".equals(node.tag)));
         for (int i = 0, n = children.size(); outside && i < n; i++) {
@@ -1784,7 +1813,7 @@ public class LayoutBox {
                 boolean fillFit = tentativePhase && measuredFillFitReusable;
                 float tentFitNeed = tentativePhase
                         ? ((measuredFitFixedW || fillFit) ? measuredFitNeed : Float.POSITIVE_INFINITY)
-                        : (!Float.isNaN(overrideWidth) && !style.layoutFacts().edgesAvailableFree
+                        : (!Float.isNaN(overrideWidth) && !axisStyle().layoutFacts().edgesAvailableFree
                                 ? Float.POSITIVE_INFINITY : measuredFitNeed);
                 Tentative fresh = new Tentative(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
                         measuredEpoch, BoxOutputs.capture(this), measuredBlockPercentFree, measuredOutsideFree,
@@ -2261,6 +2290,21 @@ public class LayoutBox {
     /** 前回か今、表のエンジンの書き込みを受けた（受けうる）箱か。匿名の箱や差分レイアウトで使い回すかどうかの判断に使う。 */
     public boolean touchedByTableEngine() {
         return isTableBox(this) || everLaidOutAsTable || collapsedBorders != null;
+    }
+
+    /** {@code ::first-line} の所有者（インライン以外のブロックコンテナ等）になれる箱か。 */
+    public boolean isFirstLineContainer() {
+        Display d = display;
+        if (d == null || d.isNone()) return false;
+        if (d.outer() == Display.Outer.INLINE && d.inner() == Display.Inner.FLOW) return false;
+        Display.Inner in = d.inner();
+        return in == Display.Inner.FLOW || in == Display.Inner.FLOW_ROOT
+                || in == Display.Inner.TABLE_CELL || in == Display.Inner.TABLE_CAPTION;
+    }
+
+    /** 非匿名の通常フローインライン要素（{@code display: inline}）か。 */
+    public boolean isInlineFlow() {
+        return display != null && display.outer() == Display.Outer.INLINE && display.inner() == Display.Inner.FLOW;
     }
 
     /**
@@ -2964,8 +3008,9 @@ public class LayoutBox {
     /** auto を 0 とした左右のマージン（px）。 */
     float ownInlineMargins(LayoutContext ctx) {
         float rootW = ctx.viewport().rootW(), rootH = ctx.viewport().rootH();
-        float l = "auto".equals(style.get(CssPropertyIndex.MARGIN_LEFT)) ? 0 : style.length(CssPropertyIndex.MARGIN_LEFT, 0, rootW, rootH);
-        float r = "auto".equals(style.get(CssPropertyIndex.MARGIN_RIGHT)) ? 0 : style.length(CssPropertyIndex.MARGIN_RIGHT, 0, rootW, rootH);
+        ComputedStyle ax = axisStyle();
+        float l = "auto".equals(ax.get(CssPropertyIndex.MARGIN_LEFT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_LEFT, 0, rootW, rootH);
+        float r = "auto".equals(ax.get(CssPropertyIndex.MARGIN_RIGHT)) ? 0 : ax.length(CssPropertyIndex.MARGIN_RIGHT, 0, rootW, rootH);
         return l + r;
     }
 
@@ -2994,19 +3039,20 @@ public class LayoutBox {
         float cbLeft = parent.x + parent.bL + parent.pL;
         float cbRight = parent.x + parent.w - parent.bR - parent.pR;
 
+        ComputedStyle ax = axisStyle();
         float dx = 0, dy = 0;
-        if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.TOP)) {
-            float limit = portY + style.length(CssPropertyIndex.TOP, portH, rootW, rootH);
+        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.TOP)) {
+            float limit = portY + ax.length(CssPropertyIndex.TOP, portH, rootW, rootH);
             if (y < limit) dy = Math.max(0, Math.min(limit - y, cbBottom - (y + h + mB)));
-        } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.BOTTOM)) {
-            float limit = portY + portH - style.length(CssPropertyIndex.BOTTOM, portH, rootW, rootH);
+        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.BOTTOM)) {
+            float limit = portY + portH - ax.length(CssPropertyIndex.BOTTOM, portH, rootW, rootH);
             if (y + h > limit) dy = -Math.max(0, Math.min(y + h - limit, y - mT - cbTop));
         }
-        if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.LEFT)) {
-            float limit = portX + style.length(CssPropertyIndex.LEFT, portW, rootW, rootH);
+        if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.LEFT)) {
+            float limit = portX + ax.length(CssPropertyIndex.LEFT, portW, rootW, rootH);
             if (x < limit) dx = Math.max(0, Math.min(limit - x, cbRight - (x + w + mR)));
-        } else if (!BoxMeasurer.isAutoInset(style, CssPropertyIndex.RIGHT)) {
-            float limit = portX + portW - style.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
+        } else if (!BoxMeasurer.isAutoInset(ax, CssPropertyIndex.RIGHT)) {
+            float limit = portX + portW - ax.length(CssPropertyIndex.RIGHT, portW, rootW, rootH);
             if (x + w > limit) dx = -Math.max(0, Math.min(x + w - limit, x - mL - cbLeft));
         }
         if (dx != 0 || dy != 0) applyRelativeOffset(dx, dy);
@@ -3100,11 +3146,12 @@ public class LayoutBox {
     private void applyRelativePositioning(float parentOuterW, float parentOuterH, float rootW, float rootH) {
         if (!this.isRelative) return;
 
+        ComputedStyle ax = axisStyle();
         float offX = 0, offY = 0;
-        if (style.containsKey(CssPropertyIndex.LEFT)) offX += style.length(CssPropertyIndex.LEFT, parentOuterW, rootW, rootH);
-        else if (style.containsKey(CssPropertyIndex.RIGHT)) offX -= style.length(CssPropertyIndex.RIGHT, parentOuterW, rootW, rootH);
-        if (style.containsKey(CssPropertyIndex.TOP)) offY += style.length(CssPropertyIndex.TOP, parentOuterH, rootW, rootH);
-        else if (style.containsKey(CssPropertyIndex.BOTTOM)) offY -= style.length(CssPropertyIndex.BOTTOM, parentOuterH, rootW, rootH);
+        if (ax.containsKey(CssPropertyIndex.LEFT)) offX += ax.length(CssPropertyIndex.LEFT, parentOuterW, rootW, rootH);
+        else if (ax.containsKey(CssPropertyIndex.RIGHT)) offX -= ax.length(CssPropertyIndex.RIGHT, parentOuterW, rootW, rootH);
+        if (ax.containsKey(CssPropertyIndex.TOP)) offY += ax.length(CssPropertyIndex.TOP, parentOuterH, rootW, rootH);
+        else if (ax.containsKey(CssPropertyIndex.BOTTOM)) offY -= ax.length(CssPropertyIndex.BOTTOM, parentOuterH, rootW, rootH);
 
         if (offX != 0 || offY != 0) applyRelativeOffset(offX, offY);
     }
@@ -3263,16 +3310,18 @@ public class LayoutBox {
     }
 
     private boolean hasDefiniteHeight() {
-        String height = style.get(CssPropertyIndex.HEIGHT);
+        ComputedStyle ax = axisStyle();
+        String height = ax.get(CssPropertyIndex.HEIGHT);
         if (height != null && !height.isBlank() && !"auto".equalsIgnoreCase(height.trim())) return true;
-        String minHeight = style.get(CssPropertyIndex.MIN_HEIGHT);
+        String minHeight = ax.get(CssPropertyIndex.MIN_HEIGHT);
         return minHeight != null && !minHeight.isBlank() && !"0".equals(minHeight.trim()) && !"0px".equals(minHeight.trim())
                 && !"auto".equalsIgnoreCase(minHeight.trim());
     }
 
     /** はみ出しを切る・スクロールさせる（{@code overflow} が {@code visible} 以外）か。切られた中身は親のはみ出しにならない。 */
     private boolean clipsOverflow() {
-        return style.overflowX().clips() || style.overflowY().clips();
+        ComputedStyle ax = axisStyle();
+        return ax.overflowX().clips() || ax.overflowY().clips();
     }
 
     /** インライン整形で 1 行に置かれた断片（テキスト 1 語、インラインブロック 1 つ、またはインラインボックスの 1 行分）。 */
@@ -3294,6 +3343,23 @@ public class LayoutBox {
          * 行をまたぐ箱は最初の断片だけが開始端を、最後の断片だけが終了端を持つ（{@code box-decoration-break: slice}）。
          */
         public boolean startEdge = true, endEdge = true;
+        /** 1 行目の断片に適用された {@code ::first-line} の実効算出スタイル（2 行目以降は null）。 */
+        public ComputedStyle firstLineStyle;
+        public LayoutBox firstLineOwner;
+
+        /** {@code ::first-line} 適用時の実効スタイル（ペイントのみの変化を再レイアウトなしで反映する）。 */
+        public ComputedStyle effectiveFirstLineStyle(LayoutBox target) {
+            if (firstLineOwner == null) return firstLineStyle;
+            ComputedStyle ownerFl = firstLineOwner.firstLineStyle;
+            if (ownerFl == null) return null;
+            if (target != null && (target.parent == firstLineOwner
+                    || (target.parent != null && target.parent.isAnonymous && target.parent.parent == firstLineOwner))) {
+                return ownerFl;
+            }
+            return target != null && target.style != null
+                    ? target.style.derivedFirstLineChild(firstLineOwner.style, ownerFl)
+                    : firstLineStyle;
+        }
 
         public InlineFragment(LayoutBox box, float x, float y, float w, float h, String text) {
             this.box = box;
@@ -3307,6 +3373,12 @@ public class LayoutBox {
         public void set(LayoutBox box, float x, float y, float w, float h, String text,
                         float baseline, float descent, List<LayoutBox> parents,
                         boolean startEdge, boolean endEdge) {
+            set(box, x, y, w, h, text, baseline, descent, parents, startEdge, endEdge, null);
+        }
+
+        public void set(LayoutBox box, float x, float y, float w, float h, String text,
+                        float baseline, float descent, List<LayoutBox> parents,
+                        boolean startEdge, boolean endEdge, ComputedStyle firstLineStyle) {
             this.box = box;
             this.x = x;
             this.y = y;
@@ -3318,6 +3390,8 @@ public class LayoutBox {
             this.parents = parents;
             this.startEdge = startEdge;
             this.endEdge = endEdge;
+            this.firstLineStyle = firstLineStyle;
+            this.firstLineOwner = null;
         }
 
         public boolean isText() { return text != null; }

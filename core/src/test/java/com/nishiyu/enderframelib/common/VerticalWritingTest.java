@@ -483,9 +483,9 @@ public class VerticalWritingTest {
 
     @Test
     public void verticalLrBlocksStackLeftToRight() {
-        // 段落の背景は転置のまま物理の向きに合う: 1 つ目の段落が左、2 つ目がその右
+        // 段落の背景は転置のまま物理の向きに合う: 1 つ目の段落が左、2 つ目がその右（子孫の width は物理幅 30px）
         String html = "<div id=v style='position:absolute;left:100px;top:100px;writing-mode:vertical-lr;height:100px'>"
-                + "<p id=a style='background:#f00;height:30px'>x</p><p id=b style='background:#00f;height:30px'>y</p></div>";
+                + "<p id=a style='background:#f00;width:30px'>x</p><p id=b style='background:#00f;width:30px'>y</p></div>";
         StandaloneView view = new StandaloneView(CSS + html, W, H, FontResolver.FALLBACK);
         try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
             view.frame(1000, cpu, true);
@@ -502,18 +502,18 @@ public class VerticalWritingTest {
 
     @Test
     public void verticalFlexRowRunsTopToBottomAndColumnRunsRightToLeft() {
-        // flex-direction: row（主軸＝論理インライン＝物理の上→下）で赤が上、青が下
+        // flex-direction: row（主軸＝論理インライン＝物理の上→下）で赤が上、青が下（子の width/height は物理）
         String rowHtml = "<div style='position:absolute;left:100px;top:100px;display:flex;writing-mode:vertical-rl;height:120px;gap:10px'>"
-                + "<div style='width:30px;height:20px;background:#f00'></div>"
-                + "<div style='width:30px;height:20px;background:#00f'></div></div>";
+                + "<div style='width:20px;height:30px;background:#f00'></div>"
+                + "<div style='width:20px;height:30px;background:#00f'></div></div>";
         int[] rowPx = paint(rowHtml);
         assertEquals(0xFF0000, rowPx[115 * W + 110] & 0xFFFFFF, "row の 1 つ目は上");
         assertEquals(0x0000FF, rowPx[155 * W + 110] & 0xFFFFFF, "row の 2 つ目は gap 10px 挟んで下");
 
         // flex-direction: column（主軸＝論理ブロック＝vertical-rl なので右→左）で赤が右、青が左
         String colHtml = "<div style='position:absolute;left:100px;top:100px;display:flex;flex-direction:column;writing-mode:vertical-rl;height:60px'>"
-                + "<div style='width:40px;height:25px;background:#f00'></div>"
-                + "<div style='width:40px;height:25px;background:#00f'></div></div>";
+                + "<div style='width:25px;height:40px;background:#f00'></div>"
+                + "<div style='width:25px;height:40px;background:#00f'></div></div>";
         int[] colPx = paint(colHtml);
         assertEquals(0xFF0000, colPx[120 * W + 135] & 0xFFFFFF, "column の 1 つ目は右");
         assertEquals(0x0000FF, colPx[120 * W + 110] & 0xFFFFFF, "column の 2 つ目は左");
@@ -609,5 +609,108 @@ public class VerticalWritingTest {
         LayoutBox h = find(c.layout(), "h");
         assertTrue(h.scrollWidth <= h.w + 0.5f, "scrollWidth=" + h.scrollWidth + " <= h.w=" + h.w);
         assertTrue(h.scrollHeight <= h.h + 0.5f, "scrollHeight=" + h.scrollHeight + " <= h.h=" + h.h);
+    }
+
+    // ------------------------------------------------------------------ 縦書き子孫の物理プロパティ
+
+    private static int[] colorBounds(int[] px, int targetRgb) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = -1, maxY = -1;
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                int rgb = px[y * W + x] & 0xFFFFFF;
+                boolean match = targetRgb < 0 ? rgb != 0xFFFFFF : rgb == targetRgb;
+                if (match) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return maxX < 0 ? null : new int[]{minX, minY, maxX, maxY};
+    }
+
+    @Test
+    public void descendantPhysicalWidthHeightAreNotSwappedByVerticalWritingMode() {
+        for (String mode : new String[]{"vertical-rl", "vertical-lr"}) {
+            String html = "<div style='position:absolute;left:80px;top:80px;writing-mode:" + mode + ";width:160px;height:160px'>"
+                    + "<div id=child style='width:70px;height:40px;background:#e11'></div></div>";
+            int[] bounds = colorBounds(paint(html), -1);
+            assertNotNull(bounds);
+            assertEquals(70, bounds[2] - bounds[0] + 1, 1, mode + " 描画横幅");
+            assertEquals(40, bounds[3] - bounds[1] + 1, 1, mode + " 描画縦幅");
+        }
+    }
+
+    @Test
+    public void descendantPhysicalMarginAndPaddingApplyToPhysicalSides() {
+        // vertical-rl / vertical-lr 内の子: margin-top:12px で上端が下がり、padding-top:6px で中身が物理下に寄る
+        // block-start（vertical-rl は右、vertical-lr は左）側の余白・padding も物理辺に一致する
+        for (String mode : new String[]{"vertical-rl", "vertical-lr"}) {
+            boolean rl = "vertical-rl".equals(mode);
+            String html = "<div style='position:absolute;left:50px;top:50px;writing-mode:" + mode + ";width:120px;height:120px'>"
+                    + "<div id=box style='box-sizing:border-box;width:60px;height:60px;margin-top:12px;margin-left:8px;margin-right:8px;"
+                    + "padding-left:14px;padding-right:10px;padding-top:6px;background:#0a0'>"
+                    + "<div id=inner style='width:20px;height:20px;background:#00f'></div>"
+                    + "</div></div>";
+            int[] px = paint(html);
+            int[] boxB = colorBounds(px, -1);
+            int[] innerB = colorBounds(px, 0x0000FF);
+            assertNotNull(boxB);
+            assertNotNull(innerB);
+            assertEquals(62, boxB[1], 1, mode + " margin-top:12px は物理上余白 (50+12)");
+            if (rl) {
+                assertEquals(50 + 120 - 1 - 8, boxB[2], 1, mode + " margin-right:8px は物理右余白");
+                assertEquals(10, boxB[2] - innerB[2], 1, mode + " padding-right:10px で中身が物理左に 10px 寄る");
+            } else {
+                assertEquals(58, boxB[0], 1, mode + " margin-left:8px は物理左余白 (50+8)");
+                assertEquals(14, innerB[0] - boxB[0], 1, mode + " padding-left:14px で中身が物理右に 14px 寄る");
+            }
+            assertEquals(6, innerB[1] - boxB[1], 1, mode + " padding-top:6px で中身が物理下に 6px 寄る");
+        }
+    }
+
+    @Test
+    public void descendantPhysicalBordersAndCornerRadiusMatchPhysicalEdgesAndCorners() {
+        for (String mode : new String[]{"vertical-rl", "vertical-lr", "sideways-lr"}) {
+            String html = "<div style='position:absolute;left:60px;top:60px;writing-mode:" + mode + ";width:120px;height:120px'>"
+                    + "<div id=card style='width:80px;height:80px;box-sizing:border-box;"
+                    + "border-top:8px solid #f00;border-left:8px solid #00f;"
+                    + "border-bottom-right-radius:20px;background:#0a0'></div></div>";
+            int[] px = paint(html);
+            int[] b = colorBounds(px, -1);
+            assertNotNull(b);
+            assertEquals(80, b[2] - b[0] + 1, 1, mode + " width");
+            assertEquals(80, b[3] - b[1] + 1, 1, mode + " height");
+            int x0 = b[0], y0 = b[1];
+            assertEquals(0xFF0000, px[(y0 + 3) * W + (x0 + 40)] & 0xFFFFFF, mode + " border-top は物理上辺");
+            assertEquals(0x0000FF, px[(y0 + 40) * W + (x0 + 3)] & 0xFFFFFF, mode + " border-left は物理左辺");
+            assertEquals(0xFFFFFF, px[(y0 + 78) * W + (x0 + 78)] & 0xFFFFFF, mode + " border-bottom-right-radius は物理右下隅を丸める");
+            assertEquals(0x00AA00, px[(y0 + 70) * W + (x0 + 20)] & 0xFFFFFF, mode + " 左下寄りの内部は緑のまま");
+        }
+    }
+
+    @Test
+    public void descendantPhysicalOverflowClipsCorrespondingPhysicalAxis() {
+        // CSS Overflow 3 §3.1 により単軸だけを切るには clip を使う:
+        // overflow-x:clip / overflow-y:visible -> 物理横方向 (40px) のみ切られ、物理縦方向 (90px) は見える
+        String htmlX = "<div style='position:absolute;left:50px;top:50px;writing-mode:vertical-rl;width:160px;height:160px'>"
+                + "<div id=c style='width:40px;height:40px;overflow-x:clip;overflow-y:visible'>"
+                + "<div style='width:100px;height:90px;background:#e11'></div>"
+                + "</div></div>";
+        int[] bX = colorBounds(paint(htmlX), -1);
+        assertNotNull(bX);
+        assertEquals(40, bX[2] - bX[0] + 1, 1, "overflow-x:clip は物理横はみ出しを 40px で切る");
+        assertEquals(90, bX[3] - bX[1] + 1, 1, "overflow-y:visible は物理縦はみ出し 90px を残す");
+
+        // 逆: overflow-x:visible / overflow-y:clip
+        String htmlY = "<div style='position:absolute;left:50px;top:50px;writing-mode:vertical-rl;width:160px;height:160px'>"
+                + "<div id=c style='width:40px;height:40px;overflow-x:visible;overflow-y:clip'>"
+                + "<div style='width:100px;height:90px;background:#11e'></div>"
+                + "</div></div>";
+        int[] bY = colorBounds(paint(htmlY), -1);
+        assertNotNull(bY);
+        assertEquals(100, bY[2] - bY[0] + 1, 1, "overflow-x:visible は物理横はみ出し 100px を残す");
+        assertEquals(40, bY[3] - bY[1] + 1, 1, "overflow-y:clip は物理縦はみ出しを 40px で切る");
     }
 }
