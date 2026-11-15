@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# GitHub Actions (.github/workflows/build.yml) と同じ手順を Linux 上でローカルに再現する。
+# GitHub Actions の Linux 環境をローカルに再現する。build.yml（検査）と full-tests.yml（全テスト）の両方を合わせた手順
+# （build test + runGameTestServer）なので、CI より厳しい。全テストの確認はここが担う。
 #
 # なぜ要るか: 開発は Windows で行うが、CI は ubuntu-latest。書体・GPU(OpenGL/Vulkan の有無)・パス・ファイルの実行ビットが
 # 違うため、Windows で全件緑でも CI だけ赤くなる（ルート JAR のサービスファイル重複、書体幅に依るテスト、OS 別の合格一覧など）。

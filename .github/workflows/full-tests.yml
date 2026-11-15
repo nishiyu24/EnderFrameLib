@@ -1,0 +1,52 @@
+name: full-tests
+
+# 全テスト（約 3000 件・数分）。毎回の push では回さない（build ワークフローは検査だけ）。
+# 手動（Actions → full-tests → Run workflow）と、毎日 1 回（UTC 18:00 = 日本時間 3:00）。
+# GPU が無い環境なので GL / Vulkan のテストは中断（skip）になる。書体などの環境差で落ちたテストは、失敗サマリーに出る。
+# 開発機での全件確認は scripts/ci-linux.ps1（WSL の Linux で同じ手順）と pre-push フックが担う。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build and test
+        run: ./gradlew build test --stacktrace --continue
+
+      # 失敗したテストを注釈（::error）とジョブのサマリーへ出す。ログの取得に権限が要らない形で原因が読める
+      - name: Summarize test failures
+        if: always()
+        run: python3 scripts/ci-summarize-tests.py
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+            core/build/reports/tests/test
+            core/build/test-results/test
+          if-no-files-found: ignore
+          retention-days: 14

@@ -147,8 +147,13 @@ network/  →  core/, api/（ペイロードの登録で server のハンドラ�
 
 ## push 前の確認（CI を赤くしない）
 
-CI（`.github/workflows/build.yml`）は Linux（ubuntu-latest）で `./gradlew build test` を回す。開発は Windows が中心なので、
-**Windows で `test` が緑でも CI だけ赤くなる**ことがある。過去の原因と、それを防ぐ仕組み:
+CI は 2 本ある（どちらも Linux の ubuntu-latest。GPU なし）:
+
+- `build`（毎回の push / PR）: **テストを除く**全て。`./gradlew build -x test`（全モジュールのコンパイル・ルート JAR・ビルド時 SPIR-V 検証・`:core` の依存グラフ検査・`:core` 単独のスモーク）と `runGameTestServer`。環境差で赤くならない検査だけにしてある。
+- `full-tests`（手動 + 毎日 1 回）: 全テスト。書体・GPU が開発機と違うので環境差で落ちうる。毎回は回さず、失敗は注釈とサマリーに出す。
+
+全テストの責任は開発機が持つ（下の `ci-linux.ps1` と pre-push フック）。開発は Windows が中心なので、
+**Windows で `test` が緑でも Linux だけ赤くなる**ことがある。過去の原因と、それを防ぐ仕組み:
 
 | 過去の原因 | 防ぐもの |
 | :-- | :-- |
