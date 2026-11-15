@@ -44,6 +44,12 @@ public final class Scene3DApp {
         int[] pyramid = buildModel(model);
 
         AtomicBoolean spinning = new AtomicBoolean(true);
+        onClick(doc.getElementById("bloom"), e -> {
+            boolean on = !model.bloomEnabled();
+            model.bloom(on);
+            grid.bloom(on);
+            doc.getElementById("bloomState").setTextContent(on ? "Bloom ON" : "Bloom OFF");
+        });
         onClick(doc.getElementById("spin"), e -> {
             boolean on = !spinning.get();
             spinning.set(on);
@@ -74,6 +80,7 @@ public final class Scene3DApp {
         w.light().setDirection(-0.4f, -0.6f, -1f);
         w.light().setColor(1f, 0.97f, 0.92f, 1.1f);
         w.light().setAmbient(0.34f, 0.36f, 0.44f);
+        w.bloom(true, 1.0f, 0.7f, 12f); // 鏡面のハイライト（HDR で 1 を超える）が滲む
         MeshHandle sphere = w.geometry().createSphere(0.42f, 32, 48);
         int rows = 4, cols = 5;
         int[] base = {0xFFE8B04A, 0xFFB8C4D0, 0xFFD2503C, 0xFF4B8FE0};
@@ -100,7 +107,9 @@ public final class Scene3DApp {
         w.light().setAmbient(0.18f, 0.2f, 0.26f);
         GltfBinaryLoader.Result r = GltfBinaryLoader.load(pyramidGltf(), w);
         MeshHandle ball = w.geometry().createSphere(0.16f, 16, 24);
-        MaterialDesc gold = w.materials().register(0xFFFFD166, 1f, 0.25f, 0, 0f, null, false, false);
+        // 小さな球は発光するランプ（強さ 3 = HDR で 1 を超えるので、Bloom で光って見える）
+        MaterialDesc gold = w.materials().register(0xFF302010, 0f, 0.5f, 0xFFC060, 3f, null, false, false);
+        w.bloom(true, 0.9f, 0.9f, 14f);
         for (int i = 0; i < 6; i++) {
             double ang = i * Math.PI / 3;
             int n = w.arena().allocateNode();

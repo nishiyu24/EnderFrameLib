@@ -922,8 +922,9 @@ public final class VkDevice implements GpuDevice {
             }
         }
 
+        /** コピー・MSAA の解決は形式を問わない画素の移動なので、内容を読み書きできない RGBA16F（Bloom の HDR）も通す。 */
         void copyableOk() {
-            if (format != TextureFormat.RGBA8 && format != TextureFormat.R8) {
+            if (format != TextureFormat.RGBA8 && format != TextureFormat.R8 && format != TextureFormat.RGBA16F) {
                 throw new UnsupportedOperationException("内容を読み書きできない形式: " + format);
             }
         }

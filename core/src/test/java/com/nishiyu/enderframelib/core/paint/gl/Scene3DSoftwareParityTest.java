@@ -104,4 +104,55 @@ class Scene3DSoftwareParityTest {
         for (int sh = 0; sh <= 24; sh += 8) d = Math.max(d, Math.abs(((a >>> sh) & 0xFF) - ((b >>> sh) & 0xFF)));
         return d;
     }
+
+    /** Bloom 有効のシーン: 発光する球と、鏡面のハイライトが 1 を超える金属球。 */
+    private static Scene3DWorld bloomScene() {
+        Scene3DWorld w = scene();
+        MeshHandle lamp = w.geometry().createSphere(0.35f, 24, 32);
+        MaterialDesc glow = w.materials().register(0xFF202020, 0f, 0.6f, 0xFFB040, 3f, null, false, false);
+        int n = w.arena().allocateNode();
+        w.arena().setPosition(n, -1.2f, 0.8f, 0.8f);
+        w.arena().setMesh(n, lamp.meshId());
+        w.arena().setMaterial(n, glow.materialId());
+        w.bloom(true, 0.8f, 1.0f, 10f);
+        return w;
+    }
+
+    @Test
+    void bloomAgreesAcrossSoftwareGlAndVulkan() {
+        int size = 160;
+        Pixmap sw = SoftwareScene3DRasterizer.render(bloomScene(), size, size);
+        Pixmap plain = SoftwareScene3DRasterizer.render(scene(), size, size);
+        // ブルームは効いている: 発光球の周りの背景が、ブルーム無しより明るい
+        long gain = 0;
+        for (int i = 0; i < size * size; i++) {
+            gain += Math.max(0, ((sw.pixels()[i] >> 16) & 0xFF) - ((plain.pixels()[i] >> 16) & 0xFF));
+        }
+        assertTrue(gain > 2000, "ブルームが効いていない: " + gain);
+
+        int farGl = -1, farVk = -1;
+        try (LwjglGlRenderBackend b = new LwjglGlRenderBackend(size, size, 1f)) {
+            Pixmap gl = b.renderScene3DPixmap(bloomScene(), size, size);
+            farGl = far(gl, sw, size);
+        } catch (Throwable t) {
+            System.out.println("[bloom parity] GL unavailable: " + t);
+        }
+        try (com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend b =
+                     new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(size, size, 1f)) {
+            Pixmap vk = b.renderScene3DPixmap(bloomScene(), size, size);
+            farVk = far(vk, sw, size);
+        } catch (Throwable t) {
+            System.out.println("[bloom parity] Vulkan unavailable: " + t);
+        }
+        System.out.printf("[bloom parity] pixels differing by >4: gl=%d vulkan=%d of %d (bloom gain=%d)%n", farGl, farVk, size * size, gain);
+        Assumptions.assumeTrue(farGl >= 0 || farVk >= 0, "GPU unavailable");
+        if (farGl >= 0) assertTrue(farGl < size * size * 0.01, "GL とソフトウェア: " + farGl);
+        if (farVk >= 0) assertTrue(farVk < size * size * 0.01, "Vulkan とソフトウェア: " + farVk);
+    }
+
+    private static int far(Pixmap a, Pixmap b, int size) {
+        int far = 0;
+        for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) if (maxDiff(a.get(x, y), b.get(x, y)) > 4) far++;
+        return far;
+    }
 }

@@ -18,6 +18,8 @@ public final class Scene3DWorld {
     private int clearColorArgb = 0x00000000;
     private int msaaSamples = 0;
     private long settings;
+    private boolean bloom;
+    private float bloomThreshold = 1f, bloomIntensity = 0.8f, bloomSigma = 12f;
 
     public Scene3DWorld() {
         this(0L);
@@ -47,6 +49,29 @@ public final class Scene3DWorld {
     public long changeCount() {
         return arena.changeCount() + camera.changeCount() + light.changeCount() + geometry.version() + materials.count() + settings;
     }
+
+    /**
+     * HDR Bloom。有効にすると HDR（浮動小数点）で描き、{@code threshold}（輝度の最大成分）を超えた分を {@code sigmaPx}（画素）の
+     * 広がりでぼかして {@code intensity} 倍で足し、ACES で 8 bit にする。無効（既定）ならこれまでどおり 8 bit で直接描く。
+     * 発光（{@link MaterialDesc#emissiveStrength()}）や鏡面のハイライトが 1 を超えて光る。
+     */
+    public Scene3DWorld bloom(boolean enabled, float threshold, float intensity, float sigmaPx) {
+        this.bloom = enabled;
+        this.bloomThreshold = Math.max(0f, threshold);
+        this.bloomIntensity = Math.max(0f, intensity);
+        this.bloomSigma = Math.max(0.5f, sigmaPx);
+        settings++;
+        return this;
+    }
+
+    public Scene3DWorld bloom(boolean enabled) {
+        return bloom(enabled, bloomThreshold, bloomIntensity, bloomSigma);
+    }
+
+    public boolean bloomEnabled() { return bloom; }
+    public float bloomThreshold() { return bloomThreshold; }
+    public float bloomIntensity() { return bloomIntensity; }
+    public float bloomSigma() { return bloomSigma; }
 
     public int msaaSamples() { return msaaSamples; }
     public Scene3DWorld msaaSamples(int samples) {

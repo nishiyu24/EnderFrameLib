@@ -4,6 +4,7 @@ import com.nishiyu.enderframelib.core.kernel.memory.OffHeapFloatColumn;
 import com.nishiyu.enderframelib.core.kernel.memory.OffHeapIntColumn;
 import com.nishiyu.enderframelib.core.raster.Pixmap;
 import com.nishiyu.enderframelib.core.scene3d.BlendMode3D;
+import com.nishiyu.enderframelib.core.scene3d.Bloom3D;
 import com.nishiyu.enderframelib.core.scene3d.CameraSpec;
 import com.nishiyu.enderframelib.core.scene3d.GeometryPool;
 import com.nishiyu.enderframelib.core.scene3d.LightDesc;
@@ -45,7 +46,22 @@ public final class SoftwareScene3DRasterizer {
         world.updateAndPrepare(width, height);
         Scene scene = new Scene(world, width, height);
         scene.collect();
-        scene.raster(px);
+        if (world.bloomEnabled()) {
+            // HDR（制限なしの float）へ描き、Bloom を足して ACES で 8 bit にする（GPU 版と同じ式: Bloom3D）
+            float[] hdr = new float[width * height * 4];
+            int clear = Pixmap.premultiply(world.clearColorArgb());
+            for (int i = 0; i < width * height; i++) {
+                hdr[i * 4] = ((clear >> 16) & 0xFF) / 255f;
+                hdr[i * 4 + 1] = ((clear >> 8) & 0xFF) / 255f;
+                hdr[i * 4 + 2] = (clear & 0xFF) / 255f;
+                hdr[i * 4 + 3] = (clear >>> 24) / 255f;
+            }
+            scene.raster(px, hdr);
+            Bloom3D.Level bloom = Bloom3D.bloom(hdr, width, height, world.bloomThreshold(), world.bloomSigma());
+            Bloom3D.composite(hdr, width, height, bloom, world.bloomIntensity(), px);
+        } else {
+            scene.raster(px, null);
+        }
         out.markChanged();
         return out;
     }
@@ -243,7 +259,9 @@ public final class SoftwareScene3DRasterizer {
             dst.count = i + 1;
         }
 
-        void raster(int[] px) {
+        private final ThreadLocal<float[]> color = ThreadLocal.withInitial(() -> new float[4]);
+
+        void raster(int[] px, float[] hdr) {
             int tx = (w + TILE - 1) / TILE, ty = (h + TILE - 1) / TILE;
             int tiles = tx * ty;
             IntArrayList[] opaqueBins = bin(opaque, tx, ty), blendBins = bin(blend, tx, ty);
@@ -257,8 +275,8 @@ public final class SoftwareScene3DRasterizer {
                 int x1 = Math.min(w, x0 + TILE), y1 = Math.min(h, y0 + TILE);
                 float[] depth = new float[TILE * TILE];
                 Arrays.fill(depth, 1f);
-                drawBin(opaque, opaqueBins[t], px, depth, x0, y0, x1, y1, shader, false);
-                drawBin(blend, blendBins[t], px, depth, x0, y0, x1, y1, shader, true);
+                drawBin(opaque, opaqueBins[t], px, hdr, depth, x0, y0, x1, y1, shader, false);
+                drawBin(blend, blendBins[t], px, hdr, depth, x0, y0, x1, y1, shader, true);
             });
         }
 
@@ -279,7 +297,7 @@ public final class SoftwareScene3DRasterizer {
             return bins;
         }
 
-        private void drawBin(Tris tris, IntArrayList bin, int[] px, float[] depth, int x0, int y0, int x1, int y1,
+        private void drawBin(Tris tris, IntArrayList bin, int[] px, float[] hdr, float[] depth, int x0, int y0, int x1, int y1,
                              Shader shader, boolean blending) {
             for (int bi = 0, bn = bin.size(); bi < bn; bi++) {
                 int i = bin.getInt(bi);
@@ -317,8 +335,27 @@ public final class SoftwareScene3DRasterizer {
                         double ps = pw0 + pw1 + pw2;
                         if (!(ps > 0)) continue;
                         float f0 = (float) (pw0 / ps), f1 = (float) (pw1 / ps), f2 = (float) (pw2 / ps);
-                        int argb = shader.shade(tris, i, mat, f0, f1, f2, mask);
-                        if (argb == Integer.MIN_VALUE) continue; // マスクで捨てた
+                        float[] c = color.get();
+                        if (!shader.shade(tris, i, mat, f0, f1, f2, mask, c)) continue; // マスクで捨てた
+                        if (hdr != null) {
+                            int hi = (pxl + py * w) * 4;
+                            float al = c[3];
+                            if (!blending) {
+                                depth[di] = z;
+                                hdr[hi] = c[0] * al;
+                                hdr[hi + 1] = c[1] * al;
+                                hdr[hi + 2] = c[2] * al;
+                                hdr[hi + 3] = al;
+                            } else { // 事前乗算の over（HDR は上限なし）
+                                float ia = 1f - al;
+                                hdr[hi] = c[0] * al + hdr[hi] * ia;
+                                hdr[hi + 1] = c[1] * al + hdr[hi + 1] * ia;
+                                hdr[hi + 2] = c[2] * al + hdr[hi + 2] * ia;
+                                hdr[hi + 3] = al + hdr[hi + 3] * ia;
+                            }
+                            continue;
+                        }
+                        int argb = Shader.pack(c);
                         if (!blending) {
                             depth[di] = z;
                             px[pxl + py * w] = argb;
@@ -373,12 +410,13 @@ public final class SoftwareScene3DRasterizer {
             this.eye = eye;
         }
 
-        int shade(Tris t, int i, MaterialDesc m, float f0, float f1, float f2, boolean mask) {
+        /** 色（事前乗算の前の rgb・α。HDR は上限なし）を {@code out} へ。マスクで捨てるなら false。 */
+        boolean shade(Tris t, int i, MaterialDesc m, float f0, float f1, float f2, boolean mask, float[] out) {
             int base = m.baseColorArgb();
             float alpha = ((base >>> 24) & 0xFF) / 255f;
-            if (mask && alpha < 0.5f) return Integer.MIN_VALUE;
+            if (mask && alpha < 0.5f) return false;
             float cr = ((base >> 16) & 0xFF) / 255f, cg = ((base >> 8) & 0xFF) / 255f, cb = (base & 0xFF) / 255f;
-            float es = m.emissiveStrength() * 4f; // GL 版は 8bit に量子化した値 × 4。ここでは同じ範囲へ
+            float es = m.emissiveStrength(); // GL 版は強さ/4 を 8 bit にして ×4 で戻す = 強さそのもの
             float er = ((m.emissiveRgb() >> 16) & 0xFF) / 255f * es, eg = ((m.emissiveRgb() >> 8) & 0xFF) / 255f * es,
                     eb = (m.emissiveRgb() & 0xFF) / 255f * es;
             float rr, rg, rb;
@@ -422,7 +460,7 @@ public final class SoftwareScene3DRasterizer {
                 float spec = d * vis * (float) Math.PI;
                 float[] c3 = {cr, cg, cb};
                 float[] light = {lr, lg, lb}, amb = {ar, ag, ab};
-                float[] out = new float[3];
+                float[] lit = new float[3];
                 float envK = Math.max(1f - roughness, 0f);
                 for (int k = 0; k < 3; k++) {
                     float fz = 0.04f + (c3[k] - 0.04f) * metallic;
@@ -431,14 +469,24 @@ public final class SoftwareScene3DRasterizer {
                     float direct = (kd * c3[k] + spec * f) * light[k] * ndl;
                     float fEnv = fz + (Math.max(envK, fz) - fz) * fe;
                     float ambient = amb[k] * (c3[k] * (1f - metallic) + fEnv * (1f - roughness * 0.5f));
-                    out[k] = direct + ambient;
+                    lit[k] = direct + ambient;
                 }
-                rr = out[0] + er;
-                rg = out[1] + eg;
-                rb = out[2] + eb;
+                rr = lit[0] + er;
+                rg = lit[1] + eg;
+                rb = lit[2] + eb;
             }
+            out[0] = rr;
+            out[1] = rg;
+            out[2] = rb;
+            out[3] = alpha;
+            return true;
+        }
+
+        /** 8 bit の事前乗算 ARGB へ（GL 版の {@code clamp} と丸めに合わせる）。 */
+        static int pack(float[] c) {
+            float alpha = c[3];
             int a = Math.round(alpha * 255f);
-            return (a << 24) | (q(rr * alpha) << 16) | (q(rg * alpha) << 8) | q(rb * alpha);
+            return (a << 24) | (q(c[0] * alpha) << 16) | (q(c[1] * alpha) << 8) | q(c[2] * alpha);
         }
 
         private static int q(float v) {

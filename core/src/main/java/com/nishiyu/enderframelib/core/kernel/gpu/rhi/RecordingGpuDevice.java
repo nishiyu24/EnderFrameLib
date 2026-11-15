@@ -255,7 +255,7 @@ public final class RecordingGpuDevice implements GpuDevice {
         public void copy(GpuTexture src, GpuTexture dst, int[] region) {
             live();
             Texture s = (Texture) src, d = (Texture) dst;
-            if (s.format != TextureFormat.RGBA8 && s.format != TextureFormat.R8) {
+            if (s.format != TextureFormat.RGBA8 && s.format != TextureFormat.R8 && s.format != TextureFormat.RGBA16F) {
                 throw new UnsupportedOperationException("内容を読み書きできない形式: " + s.format);
             }
             if (s.format != d.format) throw new IllegalArgumentException("形式が違う: " + s.format + " / " + d.format);

@@ -67,7 +67,21 @@ public final class ShaderPrograms {
             List.of(new RecordView("uInstanceTboF", 0, ViewFormat.RGBA_FLOAT32, 8),
                     new RecordView("uInstanceTboI", 0, ViewFormat.RGBA_INT32, 9)));
 
-    private static final List<ShaderProgram> ALL = List.of(TEX, RECTS, FX, SCENE3D);
+    /** {@link #SCENE3D} の HDR 版（8 bit への丸めをしない）。Bloom 有効のワールドを RGBA16F へ描く。 */
+    public static final ShaderProgram SCENE3D_HDR = new ShaderProgram("scene3d_hdr",
+            SCENE3D.vertexBody(), ShaderSources.scene3dFragmentHdr(),
+            SCENE3D.uniforms(), SCENE3D.samplers(), SCENE3D.firstTextureUnit(), SCENE3D.records());
+
+    /** 3D の Bloom（取り出し付き縮小・縮小・拡大して足し戻し・ACES 合成）。{@code ShaderSources.BLOOM_FRAGMENT} を参照。 */
+    public static final ShaderProgram BLOOM = new ShaderProgram("bloom", ShaderSources.bloomVertex(), ShaderSources.BLOOM_FRAGMENT,
+            List.of(new Uniform("uDev", UniformType.VEC4), new Uniform("uView", UniformType.VEC2),
+                    new Uniform("uOffset", UniformType.FLOAT), new Uniform("uThreshold", UniformType.FLOAT),
+                    new Uniform("uKnee", UniformType.FLOAT), new Uniform("uIntensity", UniformType.FLOAT),
+                    new Uniform("uMode", UniformType.INT)),
+            // サンプラーは binding / ユニット 1 から（0 は定数ブロック。Vulkan では重なると配置が不正になる）
+            List.of("uSrc", "uAux"), 1, List.of());
+
+    private static final List<ShaderProgram> ALL = List.of(TEX, RECTS, FX, SCENE3D, SCENE3D_HDR, BLOOM);
 
     /** 全シェーダープログラム（コンパイル・検証・一覧用）。 */
     public static List<ShaderProgram> all() {

@@ -28,7 +28,7 @@ class ShaderSourcesTest {
             assertTrue(vk.startsWith("#version 450\n"), f.getName());
             assertEquals(1, vk.split("#version", -1).length - 1, f.getName() + ": VK 版の行は前置きの 1 つだけ");
         }
-        assertEquals(8, n, "ANIMATION・矩形 2・テクスチャ 2・合成・3D 2");
+        assertEquals(9, n, "ANIMATION・矩形 2・テクスチャ 2・合成・3D 2・Bloom 1");
     }
 
     @Test
@@ -40,7 +40,7 @@ class ShaderSourcesTest {
 
     @Test
     void everyEntryPointIsDeclaredOnce() throws Exception {
-        for (String name : new String[]{"RECT_VERTEX", "RECT_FRAGMENT", "TEX_VERT", "TEX_FRAG", "FX_FRAG", "SCENE3D_VERTEX", "SCENE3D_FRAGMENT"}) {
+        for (String name : new String[]{"RECT_VERTEX", "RECT_FRAGMENT", "TEX_VERT", "TEX_FRAG", "FX_FRAG", "SCENE3D_VERTEX", "SCENE3D_FRAGMENT", "BLOOM_FRAGMENT"}) {
             String src = (String) ShaderSources.class.getField(name).get(null);
             assertEquals(1, src.split("void\\s+main\\s*\\(\\s*\\)", -1).length - 1, name);
         }

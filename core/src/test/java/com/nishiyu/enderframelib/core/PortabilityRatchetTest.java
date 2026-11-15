@@ -71,7 +71,7 @@ class PortabilityRatchetTest {
      * 版の行（{@code #version}）は {@code Glsl}（API ごとの前置き）だけが持つ。
      */
     private static final Map<String, Integer> GLSL_SOURCES = Map.of(
-            "core/kernel/gpu/shader/ShaderSources.java", 7);
+            "core/kernel/gpu/shader/ShaderSources.java", 8);
 
     /** 版の行（GLSL の {@code #version N}）を書いてよいファイル（行頭または文字列の先頭。Javadoc の言及は数えない）。 */
     private static final Set<String> GLSL_VERSION_FILES = Set.of("core/kernel/gpu/shader/Glsl.java");

@@ -883,4 +883,85 @@ public final class ShaderSources {
             }
             """;
 
+
+    /** HDR 用の 3D フラグメントシェーダー: 8 bit への丸め（{@code clamp}）をしない。明るさの制限は Bloom の合成（ACES）が担う。 */
+    static String scene3dFragmentHdr() {
+        String hdr = SCENE3D_FRAGMENT.replace("rgb = clamp(rgb, 0.0, 1.0);", "");
+        if (hdr.equals(SCENE3D_FRAGMENT)) throw new IllegalStateException("SCENE3D_FRAGMENT の clamp が見つからない");
+        return hdr;
+    }
+
+    /** Bloom のパスの定数（頂点・断片で同一）。 */
+    private static String bloomParams() {
+        return """
+            EF_UBO(0, PassParams) {
+                vec4 uDev;
+                vec2 uView;
+                float uOffset;
+                float uThreshold;
+                float uKnee;
+                float uIntensity;
+                int uMode;
+            };
+            """;
+    }
+
+    /** Bloom の全画面パス用の頂点シェーダー（{@link #TEX_VERT} と同じく {@code uDev} の矩形を 4 頂点の帯で塗る）。 */
+    static String bloomVertex() {
+        return "#define EF_HAS_PASS_PARAMS" + (char) 10 + bloomParams() + TEX_VERT;
+    }
+
+    /**
+     * Bloom のパス。{@code uMode}: 0 = しきい値の取り出し付きで 1/2 へ縮小、1 = 1/2 へ縮小、2 = 2 倍へ拡大して {@code uAux}（同じ大きさの段）を足す、
+     * 3 = 合成（{@code uSrc} の HDR + {@code uAux} のブルーム × 強さ → ACES）。タップは {@code DualKawase} の参照実装と同じ
+     * （{@code Bloom3D} が同じ式の CPU 実装）。座標は描画先の画素の中心から求め、ソース側のテクスチャの行の向きと自然に揃う。
+     */
+    public static final String BLOOM_FRAGMENT = bloomParams() + """
+            EF_TEX2D(1, uSrc);
+            EF_TEX2D(2, uAux);
+            EF_LOC(0) out vec4 fragColor;
+
+            vec4 tapSrc(vec2 p) {
+                return texture(uSrc, p / vec2(textureSize(uSrc, 0)));
+            }
+
+            vec4 prefilter(vec4 c) {
+                float br = max(c.r, max(c.g, c.b));
+                float rq = clamp(br - uThreshold + uKnee, 0.0, 2.0 * uKnee);
+                rq = rq * rq / (4.0 * uKnee + 1e-5);
+                float w = max(max(rq, br - uThreshold) / max(br, 1e-5), 0.0);
+                return c * w;
+            }
+
+            vec3 aces(vec3 x) {
+                x = max(x, vec3(0.0));
+                return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+            }
+
+            void main() {
+                vec2 p = gl_FragCoord.xy;
+                float o = uOffset;
+                if (uMode <= 1) {
+                    vec2 c = p * 2.0;
+                    vec4 t0 = tapSrc(c), t1 = tapSrc(c + vec2(-o, -o)), t2 = tapSrc(c + vec2(o, -o)),
+                         t3 = tapSrc(c + vec2(-o, o)), t4 = tapSrc(c + vec2(o, o));
+                    if (uMode == 0) {
+                        t0 = prefilter(t0); t1 = prefilter(t1); t2 = prefilter(t2); t3 = prefilter(t3); t4 = prefilter(t4);
+                    }
+                    fragColor = (t0 * 4.0 + t1 + t2 + t3 + t4) / 8.0;
+                } else if (uMode == 2) {
+                    vec2 c = p * 0.5;
+                    float q = o * 0.5;
+                    vec4 s = (tapSrc(c + vec2(-o, 0.0)) + tapSrc(c + vec2(o, 0.0)) + tapSrc(c + vec2(0.0, -o)) + tapSrc(c + vec2(0.0, o))) * 2.0
+                           + tapSrc(c + vec2(-q, -q)) + tapSrc(c + vec2(q, -q)) + tapSrc(c + vec2(-q, q)) + tapSrc(c + vec2(q, q));
+                    fragColor = s / 12.0 + texelFetch(uAux, ivec2(int(floor(p.x)), int(floor(p.y))), 0);
+                } else {
+                    vec4 scene = texelFetch(uSrc, ivec2(int(floor(p.x)), int(floor(p.y))), 0);
+                    vec4 b = texture(uAux, p / uView);
+                    float a = clamp(scene.a + b.a * uIntensity, 0.0, 1.0);
+                    vec3 rgb = min(aces(scene.rgb + b.rgb * uIntensity), vec3(a));
+                    fragColor = vec4(rgb, a);
+                }
+            }
+            """;
 }

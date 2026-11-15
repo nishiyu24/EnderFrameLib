@@ -20,6 +20,7 @@ import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuTexture;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
 import com.nishiyu.enderframelib.core.scene3d.BlendMode3D;
+import com.nishiyu.enderframelib.core.scene3d.Bloom3D;
 import com.nishiyu.enderframelib.core.scene3d.CameraSpec;
 import com.nishiyu.enderframelib.core.scene3d.DrawBatch3D;
 import com.nishiyu.enderframelib.core.scene3d.GeometryPool;
@@ -47,6 +48,12 @@ public final class Scene3DRenderer implements AutoCloseable {
     private final GpuDevice device;
     /** 4 通り: [blend ? 2 : 0 | doubleSided ? 1 : 0]。 */
     private final GpuPipeline[] pipelines = new GpuPipeline[4];
+    /** HDR（RGBA16F）へ描く版（Bloom 有効のワールド）。並びは {@link #pipelines} と同じ。 */
+    private final GpuPipeline[] pipelinesHdr = new GpuPipeline[4];
+    private final GpuPipeline bloomPipeline;
+    private final ByteBuffer bloomUniforms = ByteBuffer.allocateDirect(ShaderPrograms.BLOOM.uniformBytes())
+            .order(ByteOrder.nativeOrder());
+    private static final GpuBuffer[] NO_RECORDS = new GpuBuffer[0];
     private final ByteBuffer uniforms = ByteBuffer.allocateDirect(ShaderPrograms.SCENE3D.uniformBytes())
             .order(ByteOrder.nativeOrder());
 
@@ -67,6 +74,11 @@ public final class Scene3DRenderer implements AutoCloseable {
 
     private static final class WorldTarget implements AutoCloseable {
         GpuTexture resolveTex;
+        /** Bloom 有効のときの HDR の結果（MSAA なら解決先）。無効なら null。 */
+        GpuTexture hdrTex;
+        /** Bloom: 縮小の連鎖（添字 1..levels。0 は未使用）と、拡大して足し戻した連鎖（1..levels-1）。 */
+        GpuTexture[] bloomDown, bloomUp;
+        int bloomLevels;
         GpuTexture drawColor;
         GpuTexture drawDepth;
         int width;
@@ -80,9 +92,20 @@ public final class Scene3DRenderer implements AutoCloseable {
 
         void closeTargets() {
             if (drawDepth != null) { drawDepth.close(); drawDepth = null; }
-            if (drawColor != null && drawColor != resolveTex) { drawColor.close(); }
+            if (drawColor != null && drawColor != resolveTex && drawColor != hdrTex) { drawColor.close(); }
             drawColor = null;
+            if (hdrTex != null) { hdrTex.close(); hdrTex = null; }
+            closeBloomLevels();
             if (resolveTex != null) { resolveTex.close(); resolveTex = null; }
+        }
+
+        void closeBloomLevels() {
+            for (GpuTexture[] arr : new GpuTexture[][]{bloomDown, bloomUp}) {
+                if (arr != null) for (GpuTexture t : arr) if (t != null) t.close();
+            }
+            bloomDown = null;
+            bloomUp = null;
+            bloomLevels = 0;
         }
 
         @Override
@@ -104,6 +127,13 @@ public final class Scene3DRenderer implements AutoCloseable {
                         "scene3d", premul, true, depthWrite, cull, VertexLayout.SCENE3D));
             }
         }
+        for (int blend = 0; blend <= 1; blend++) {
+            for (int dbl = 0; dbl <= 1; dbl++) {
+                pipelinesHdr[(blend << 1) | dbl] = device.createPipeline(new PipelineDesc(
+                        "scene3d_hdr", blend == 1, true, blend == 0, dbl == 1 ? CullMode.NONE : CullMode.BACK, VertexLayout.SCENE3D));
+            }
+        }
+        bloomPipeline = device.createPipeline(new PipelineDesc("bloom", false, false));
         allocateInstanceBuffer(INITIAL_INSTANCE_CAPACITY);
     }
 
@@ -152,7 +182,9 @@ public final class Scene3DRenderer implements AutoCloseable {
         GpuBuffer[] bindingsBuffers = {instanceGpuBuffer, instanceGpuBuffer};
 
         WorldTarget target = targets.computeIfAbsent(world.worldId(), k -> new WorldTarget());
-        ensureTargets(target, w, h, world.msaaSamples());
+        boolean bloom = world.bloomEnabled();
+        Bloom3D.Plan bloomPlan = bloom ? Bloom3D.plan(world.bloomSigma(), w, h) : null;
+        ensureTargets(target, w, h, world.msaaSamples(), bloomPlan);
         ensureGeometryUploaded(target, world.geometry());
 
         int bg = world.clearColorArgb();
@@ -206,7 +238,7 @@ public final class Scene3DRenderer implements AutoCloseable {
                 uniforms.flip();
 
                 int key = (batch.blendMode() == BlendMode3D.TRANSPARENT ? 2 : 0) | (batch.doubleSided() ? 1 : 0);
-                pass.bind(pipelines[key], new GpuBindings(bindingsBuffers, EMPTY_TEX, uniforms));
+                pass.bind((bloom ? pipelinesHdr : pipelines)[key], new GpuBindings(bindingsBuffers, EMPTY_TEX, uniforms));
                 if (!meshBound) {
                     pass.bindMesh(target.vbo, target.ibo);
                     meshBound = true;
@@ -220,13 +252,53 @@ public final class Scene3DRenderer implements AutoCloseable {
         }
         pass.end();
 
-        if (target.drawColor != target.resolveTex) {
-            frame.copy(target.drawColor, target.resolveTex, new int[]{0, 0, w, h});
+        GpuTexture hdrDst = bloom ? target.hdrTex : target.resolveTex;
+        if (target.drawColor != hdrDst) {
+            frame.copy(target.drawColor, hdrDst, new int[]{0, 0, w, h});
         }
+        if (bloom) runBloom(frame, target, world, w, h, bloomPlan);
 
         lastDrawCalls = drawCalls;
         lastInstanceCount = instancesDrawn;
         return target.resolveTex;
+    }
+
+    /**
+     * HDR の {@code hdrTex} から Bloom を作り、ACES で {@code resolveTex}（RGBA8）へ合成する。
+     * 取り出し付き縮小 → 縮小 → 拡大して足し戻し（{@link Bloom3D} と同じ式）→ 合成。
+     */
+    private void runBloom(GpuFrame frame, WorldTarget t, Scene3DWorld world, int w, int h, Bloom3D.Plan plan) {
+        int p = plan.levels();
+        float threshold = world.bloomThreshold();
+        float knee = Math.max(1e-4f, threshold * Bloom3D.KNEE_RATIO);
+        GpuTexture src = t.hdrTex;
+        for (int i = 1; i <= p; i++) {
+            GpuTexture dst = t.bloomDown[i];
+            bloomPass(frame, dst, i == 1 ? 0 : 1, src, src, plan.offset(), threshold, knee, 0f);
+            src = dst;
+        }
+        GpuTexture cur = t.bloomDown[p];
+        for (int i = p - 1; i >= 1; i--) {
+            GpuTexture dst = t.bloomUp[i];
+            bloomPass(frame, dst, 2, cur, t.bloomDown[i], plan.offset(), threshold, knee, 0f);
+            cur = dst;
+        }
+        bloomPass(frame, t.resolveTex, 3, t.hdrTex, cur, plan.offset(), threshold, knee, world.bloomIntensity());
+    }
+
+    private void bloomPass(GpuFrame frame, GpuTexture target, int mode, GpuTexture src, GpuTexture aux,
+                           float offset, float threshold, float knee, float intensity) {
+        int tw = target.width(), th = target.height();
+        bloomUniforms.clear();
+        bloomUniforms.putFloat(0f).putFloat(0f).putFloat(tw).putFloat(th);
+        bloomUniforms.putFloat(tw).putFloat(th);
+        bloomUniforms.putFloat(offset).putFloat(threshold).putFloat(knee).putFloat(intensity);
+        bloomUniforms.putInt(mode);
+        bloomUniforms.flip();
+        GpuPass pass = frame.beginPass(target, LoadOp.CLEAR, 0, null);
+        pass.bind(bloomPipeline, new GpuBindings(NO_RECORDS, new GpuTexture[]{src, aux}, bloomUniforms));
+        pass.drawInstanced(4, 1, 0);
+        pass.end();
     }
 
     /** レンダリング済みカラーテクスチャからトップダウン順 ARGB ピクセルを読み出す（テスト・CPU フォールバック用）。 */
@@ -262,10 +334,11 @@ public final class Scene3DRenderer implements AutoCloseable {
     public int lastDrawCalls() { return lastDrawCalls; }
     public int lastInstanceCount() { return lastInstanceCount; }
 
-    private void ensureTargets(WorldTarget t, int width, int height, int requestedSamples) {
+    private void ensureTargets(WorldTarget t, int width, int height, int requestedSamples, Bloom3D.Plan bloomPlan) {
         int maxS = device.caps().maxSamples();
         int samples = requestedSamples <= 1 ? 1 : Math.min(requestedSamples, Math.max(1, maxS));
-        if (t.resolveTex != null && t.width == width && t.height == height && t.samples == samples) {
+        int levels = bloomPlan == null ? 0 : bloomPlan.levels();
+        if (t.resolveTex != null && t.width == width && t.height == height && t.samples == samples && t.bloomLevels == levels) {
             return;
         }
         t.closeTargets();
@@ -274,11 +347,25 @@ public final class Scene3DRenderer implements AutoCloseable {
         t.samples = samples;
 
         t.resolveTex = device.createTexture(TextureDesc.rgba8Linear(width, height, true));
+        TextureFormat drawFormat = levels > 0 ? TextureFormat.RGBA16F : TextureFormat.RGBA8;
+        if (levels > 0) { // Bloom: HDR で描き、縮小・拡大の連鎖を作る
+            t.hdrTex = device.createTexture(new TextureDesc(width, height, TextureFormat.RGBA16F, true, 1, FilterMode.LINEAR));
+            t.bloomLevels = levels;
+            t.bloomDown = new GpuTexture[levels + 1];
+            t.bloomUp = new GpuTexture[levels];
+            int lw = width, lh = height;
+            for (int i = 1; i <= levels; i++) {
+                lw = Bloom3D.half(lw);
+                lh = Bloom3D.half(lh);
+                t.bloomDown[i] = device.createTexture(new TextureDesc(lw, lh, TextureFormat.RGBA16F, true, 1, FilterMode.LINEAR));
+                if (i < levels) t.bloomUp[i] = device.createTexture(new TextureDesc(lw, lh, TextureFormat.RGBA16F, true, 1, FilterMode.LINEAR));
+            }
+        }
         if (samples > 1) {
             t.drawColor = device.createTexture(new TextureDesc(
-                    width, height, TextureFormat.RGBA8, true, samples, FilterMode.NEAREST));
+                    width, height, drawFormat, true, samples, FilterMode.NEAREST));
         } else {
-            t.drawColor = t.resolveTex;
+            t.drawColor = levels > 0 ? t.hdrTex : t.resolveTex;
         }
         t.drawDepth = device.createTexture(new TextureDesc(
                 width, height, TextureFormat.DEPTH24, true, samples, FilterMode.NEAREST));
