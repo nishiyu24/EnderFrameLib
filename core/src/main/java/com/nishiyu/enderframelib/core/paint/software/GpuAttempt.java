@@ -1,6 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
 import com.nishiyu.enderframelib.core.paint.gpu.GpuClip;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage;
 import com.nishiyu.enderframelib.core.paint.gpu.GpuSink;
 import com.nishiyu.enderframelib.core.paint.BorderDashPattern;
 import com.nishiyu.enderframelib.core.paint.ImagePlacement;
@@ -46,7 +47,7 @@ final class GpuAttempt {
                                  int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.FILL, gc != null && sink.fillRoundRect(pose, x0, y0, x1, y1, rx, ry, argb, gc, opacity));
     }
 
     /** 影の穴の形の角の横半径（左上・右上・右下・左下）。 */
@@ -68,8 +69,8 @@ final class GpuAttempt {
                                float sigma, ShadowShape shape, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.insetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma,
-                shapeRect(shape), shapeRx(shape), shapeRy(shape), argb, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.INSET_SHADOW, gc != null && sink.insetShadow(pose, qx0, qy0, qx1, qy1, rx, ry, sigma,
+                shapeRect(shape), shapeRx(shape), shapeRy(shape), argb, gc, opacity));
     }
 
     /** 外側のぼかし影を GPU が受け取ったら true。{@code shape} は抜く穴（無ければ null）。 */
@@ -78,10 +79,10 @@ final class GpuAttempt {
                                ShadowShape shape, int argb, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        return sink.outerShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma,
+        if (gc == null) return GpuCoverage.note(GpuCoverage.Kind.OUTER_SHADOW, false);
+        return GpuCoverage.note(GpuCoverage.Kind.OUTER_SHADOW, sink.outerShadow(pose, qx0, qy0, qx1, qy1, sx0, sy0, sx1, sy1, srx, sry, sigma,
                 shape != null ? shapeRect(shape) : null, shape != null ? shapeRx(shape) : null,
-                shape != null ? shapeRy(shape) : null, argb, gc, opacity);
+                shape != null ? shapeRy(shape) : null, argb, gc, opacity));
     }
 
     private static int[] straightColors(RoundedBorderSpec spec) {
@@ -94,8 +95,8 @@ final class GpuAttempt {
                                RoundedBorderSpec spec, float[] widths, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
-                straightColors(spec), widths, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.BORDER, gc != null && sink.strokeRoundBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+                straightColors(spec), widths, gc, opacity));
     }
 
     /** 破線・点線の角丸枠を GPU が受け取ったら true（4 辺が同じ太さ {@code thickness} のときだけ呼ぶ）。 */
@@ -106,9 +107,9 @@ final class GpuAttempt {
                                 BorderDashPattern dash, float thickness, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.strokeDashedBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
+        return GpuCoverage.note(GpuCoverage.Kind.DASHED_BORDER, gc != null && sink.strokeDashedBorder(pose, x0, y0, x1, y1, rx, ry, ix0, iy0, ix1, iy1, irx, iry, innerEmpty,
                 straightColors(spec), widths, bx, by, cxm, cym, pcx, pcy, dash.period(), dash.dash(), dash.round(), thickness,
-                gc, opacity);
+                gc, opacity));
     }
 
     /** 円の枠を GPU が受け取ったら true。{@code straightColors} は非乗算の上・右・下・左。 */
@@ -116,7 +117,7 @@ final class GpuAttempt {
                                 float bx0, float by0, float bx1, float by1, int[] straightColors, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.strokeCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, straightColors, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.CIRCLE_BORDER, gc != null && sink.strokeCircleBorder(pose, cx, cy, outerR, innerR, bx0, by0, bx1, by1, straightColors, gc, opacity));
     }
 
     /**
@@ -127,8 +128,8 @@ final class GpuAttempt {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
         GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        return sink.drawGlyph(g, Math.round(originX + g.left()), Math.round(originY - g.top()), argb, gc, opacity);
+        if (gc == null) return GpuCoverage.note(GpuCoverage.Kind.GLYPH, false);
+        return GpuCoverage.note(GpuCoverage.Kind.GLYPH, sink.drawGlyph(g, Math.round(originX + g.left()), Math.round(originY - g.top()), argb, gc, opacity));
     }
 
     /** 字形の縁取り（符号付き距離の字形 {@code sdf}）。戻り値の意味は {@link #glyph}。 */
@@ -137,8 +138,8 @@ final class GpuAttempt {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
         GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
-        return sink.drawGlyphStroke(sdf, Math.round(originX + sdf.left()), Math.round(originY - sdf.top()), half, argb, gc, opacity);
+        if (gc == null) return GpuCoverage.note(GpuCoverage.Kind.GLYPH_STROKE, false);
+        return GpuCoverage.note(GpuCoverage.Kind.GLYPH_STROKE, sink.drawGlyphStroke(sdf, Math.round(originX + sdf.left()), Math.round(originY - sdf.top()), half, argb, gc, opacity));
     }
 
     /** 回転・せん断の姿勢の字形。描く範囲は字形の局所の外接矩形を 1 単位広げたもの。戻り値の意味は {@link #glyph}。 */
@@ -147,9 +148,9 @@ final class GpuAttempt {
         if (sink == null) return false;
         if (opacity <= 0f) return true;
         GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
+        if (gc == null) return GpuCoverage.note(GpuCoverage.Kind.GLYPH_TRANSFORMED, false);
         float[] lb = ShapeGeometry.glyphLocalBounds(g, ox, oy, s);
-        return sink.drawGlyphTransformed(pose, g, ox, oy, s, lb[0], lb[1], lb[2], lb[3], argb, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.GLYPH_TRANSFORMED, sink.drawGlyphTransformed(pose, g, ox, oy, s, lb[0], lb[1], lb[2], lb[3], argb, gc, opacity));
     }
 
     /**
@@ -162,11 +163,11 @@ final class GpuAttempt {
                          int taps, float scale, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        if (gc == null) return false;
+        if (gc == null) return GpuCoverage.note(GpuCoverage.Kind.IMAGE, false);
         float m = 1f / Math.max(scale, 0.01f);
-        return sink.drawImage(pose, pm, Math.max(x0 - m, px0), Math.max(y0 - m, py0),
+        return GpuCoverage.note(GpuCoverage.Kind.IMAGE, sink.drawImage(pose, pm, Math.max(x0 - m, px0), Math.max(y0 - m, py0),
                 Math.min(x0 + w + m, px0 + plW), Math.min(y0 + h + m, py0 + plH), px0, py0, sx, sy,
-                x0, y0, x0 + w, y0 + h, rx, ry, taps, sx / scale, sy / scale, gc, opacity);
+                x0, y0, x0 + w, y0 + h, rx, ry, taps, sx / scale, sy / scale, gc, opacity));
     }
 
     /**
@@ -197,9 +198,9 @@ final class GpuAttempt {
         }
         float m = 1f / Math.max(scale, 0.01f);
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.drawTexture(pose, t.handle(), t.width(), t.height(),
+        return GpuCoverage.note(GpuCoverage.Kind.EXTERNAL_TEXTURE, gc != null && sink.drawTexture(pose, t.handle(), t.width(), t.height(),
                 Math.max(x0 - m, px0), Math.max(y0 - m, py0), Math.min(x0 + w + m, px0 + pl.w()), Math.min(y0 + h + m, py0 + pl.h()),
-                effPx0, effPy0, kx, sy, x0, y0, x0 + w, y0 + h, rx, ry, gc, opacity);
+                effPx0, effPy0, kx, sy, x0, y0, x0 + w, y0 + h, rx, ry, gc, opacity));
     }
 
     /** 角丸矩形のシェーダーグラデーションを GPU が受け取ったら true。 */
@@ -207,6 +208,22 @@ final class GpuAttempt {
                             ShaderGradient g, Clip clip, float opacity) {
         if (sink == null) return false;
         GpuClip[] gc = gpuClips(clip);
-        return gc != null && sink.fillGradient(pose, x0, y0, x1, y1, rx, ry, g, gc, opacity);
+        return GpuCoverage.note(GpuCoverage.Kind.GRADIENT, gc != null && sink.fillGradient(pose, x0, y0, x1, y1, rx, ry, g, gc, opacity));
+    }
+
+    /** {@code <scene-3d>} を GPU 側 FBO ＋ゼロコピーテクスチャ合成で描けたら true。 */
+    static boolean scene3D(GpuSink sink, Matrix2D pose,
+                           com.nishiyu.enderframelib.core.scene3d.Scene3DWorld world,
+                           int fboW, int fboH, float x0, float y0, float x1, float y1,
+                           float[] rx, float[] ry, Clip clip, float opacity) {
+        if (sink == null) return false;
+        GpuClip[] gc = gpuClips(clip);
+        return gc != null && sink.drawScene3D(pose, world, fboW, fboH, x0, y0, x1, y1, rx, ry, gc, opacity);
+    }
+
+    /** フォールバック合成用に 3D シーンの描画結果を事前乗算 ARGB ピクセルへ読み戻す。 */
+    static Pixmap renderScene3DPixmap(GpuSink sink, com.nishiyu.enderframelib.core.scene3d.Scene3DWorld world,
+                                      int fboW, int fboH) {
+        return sink == null ? null : sink.renderScene3DPixmap(world, fboW, fboH);
     }
 }

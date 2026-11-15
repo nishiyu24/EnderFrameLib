@@ -72,8 +72,17 @@ public final class FineProfileMain {
             long allocTotal = 0;
             int rendered = 0;
 
+            var glBackend = raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend g0 ? g0 : null;
+            long replayed0 = 0, flushes0 = 0, draws0 = 0;
             for (int i = -warmup; i < frames; i++) {
                 if (i == 0) {
+                    if (glBackend != null) { // G0: 計測区間（ウォームアップ後）の GPU 被覆率
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.reset();
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(true);
+                        replayed0 = glBackend.rectTreeReplayedShapes();
+                        flushes0 = glBackend.cpuOverlayFlushCount();
+                        draws0 = glBackend.drawCallCount();
+                    }
                     StageProfiler.reset();
                     StageProfiler.trackAllocations(false);
                     StageProfiler.enable(true);
@@ -89,6 +98,18 @@ public final class FineProfileMain {
                 }
             }
             StageProfiler.enable(false);
+            if (glBackend != null) {
+                com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(false);
+                long replayed = glBackend.rectTreeReplayedShapes() - replayed0;
+                // GPU 被覆率 = (受理 + 再生で再利用した図形) ÷ 全図形。CPU 層へ落ちた図形は種別ヒストグラムで多い順に出す
+                System.out.printf("GPUCOVERAGE %.4f accepted=%d replayed=%d declined=%d declinedByKind: %s%n",
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.coverage(replayed),
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalAccepted(), replayed,
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalDeclined(),
+                        com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.declinedHistogram());
+                System.out.printf("GLFRAME per-frame drawCalls=%.2f cpuOverlayFlushes=%.2f%n",
+                        (glBackend.drawCallCount() - draws0) / (double) frames, (glBackend.cpuOverlayFlushCount() - flushes0) / (double) frames);
+            }
 
             double[] sorted = ms.clone();
             Arrays.sort(sorted);

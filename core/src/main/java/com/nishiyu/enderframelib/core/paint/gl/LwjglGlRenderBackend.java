@@ -956,9 +956,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return snapshotTarget(new int[]{0, 0, width, height});
     }
 
+    /** CPU 層を GPU へ転送した（重ねた）回数の累計。0 なら CPU 層へ落ちた図形が無い（G0 の診断）。 */
+    public long cpuOverlayFlushCount() {
+        return overlayFlushes;
+    }
+
+    private long overlayFlushes;
+
     /** 読み戻し先。フレーム間・呼び出し間で使い回す（範囲外は前回の残りで不定）。 */
     private Pixmap snapshotPm;
     private int[] snapshotRaw = new int[0];
+        overlayFlushes++;
 
     @Override
     public Pixmap snapshotTarget(int[] region) {

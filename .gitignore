@@ -33,3 +33,6 @@ hs_err_pid*.log
 /core/**/*.md
 !/core/**/README.md
 
+
+# G0: GPU 出力の基準画像（フォント依存なのでマシンごとに生成）
+/core/baseline/
