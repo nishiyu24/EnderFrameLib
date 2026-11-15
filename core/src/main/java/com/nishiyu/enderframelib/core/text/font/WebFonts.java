@@ -62,9 +62,9 @@ public final class WebFonts {
         if (family == null || family.isBlank() || file == null) return false;
         FT_Face probe = LoadedFace.openFace(file.toAbsolutePath(), 0);
         if (probe == null) return false;
-        boolean scalable = (probe.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0;
+        boolean usable = LoadedFace.isUsableFace(probe);
         LoadedFace.closeFace(probe);
-        if (!scalable) return false;
+        if (!usable) return false;
         String name = family.trim().toLowerCase(Locale.ROOT);
         SystemFonts.Face face = new SystemFonts.Face(file.toAbsolutePath(), 0, Set.of(name), family.trim() + " (web)",
                 Math.clamp(weight, 1, 1000), italic, 5);
@@ -80,14 +80,14 @@ public final class WebFonts {
         return data != null && data.length > 0 && probe(data);
     }
 
-    /** ファイルが拡大縮小できる書体として開けるか（登録はしない）。 */
+    /** ファイルが拡大縮小またはカラービットマップの書体として開けるか（登録はしない）。 */
     public static boolean isUsableFile(Path file) {
         if (file == null) return false;
         FT_Face probe = LoadedFace.openFace(file.toAbsolutePath(), 0);
         if (probe == null) return false;
-        boolean scalable = (probe.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0;
+        boolean usable = LoadedFace.isUsableFace(probe);
         LoadedFace.closeFace(probe);
-        return scalable;
+        return usable;
     }
 
     /** データが書体として開けるか。 */
@@ -99,9 +99,9 @@ public final class WebFonts {
                 PointerBuffer out = stack.mallocPointer(1);
                 if (FreeType.FT_New_Memory_Face(LoadedFace.library(), buf, 0, out) != 0) return false;
                 FT_Face face = FT_Face.create(out.get(0));
-                boolean scalable = (face.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) != 0;
+                boolean usable = LoadedFace.isUsableFace(face);
                 FreeType.FT_Done_Face(face);
-                return scalable;
+                return usable;
             } finally {
                 MemoryUtil.memFree(buf);
             }

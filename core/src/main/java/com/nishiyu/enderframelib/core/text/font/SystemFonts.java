@@ -331,7 +331,7 @@ public final class SystemFonts implements FontResolver {
     }
 
     private static void readFace(Path path, int index, FT_Face face, List<Face> out) {
-        if ((face.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) == 0) return;
+        if (!LoadedFace.isUsableFace(face)) return;
         Set<String> names = familyNames(face);
         if (names.isEmpty()) return;
 

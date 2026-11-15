@@ -2259,10 +2259,10 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (aligned) {
             double devX = pose.applyX(gx, baseline), devY = pose.applyY(gx, baseline);
             float bx = ShapeGeometry.glyphOriginX(devX) + cb.left(), by = ShapeGeometry.glyphOriginY(devY) - cb.top();
-            drawGlyphPixmap(pm, bx, by, pm.width(), pm.height(), Matrix2D.IDENTITY, 1f, clip, opacity);
+            drawGlyphPixmap(pm, bx, by, cb.width(), cb.height(), Matrix2D.IDENTITY, 1f, clip, opacity);
         } else {
             float s = pixelSize / style.fontSizePx();
-            drawGlyphPixmap(pm, gx + cb.left() / s, baseline - cb.top() / s, pm.width() / s, pm.height() / s, pose,
+            drawGlyphPixmap(pm, gx + cb.left() / s, baseline - cb.top() / s, cb.width() / s, cb.height() / s, pose,
                     (float) pose.meanScale(), clip, opacity);
         }
     }

@@ -86,7 +86,8 @@ public final class LoadedFace {
         this.ownLibrary = opened.library();
         FT_Face face = opened.face();
         synchronized (lock) {
-            this.unitsPerEm = Math.max(1, Short.toUnsignedInt(face.units_per_EM()));
+            int rawUpem = Short.toUnsignedInt(face.units_per_EM());
+            this.unitsPerEm = Math.max(1, rawUpem);
             TT_OS2 os2 = TT_OS2.createSafe(FreeType.FT_Get_Sfnt_Table(face, FreeType.FT_SFNT_OS2));
             TT_HoriHeader hhea = TT_HoriHeader.createSafe(FreeType.FT_Get_Sfnt_Table(face, FreeType.FT_SFNT_HHEA));
             float upem = unitsPerEm;
@@ -107,12 +108,34 @@ public final class LoadedFace {
                 desc = hheaDesc;
                 gap = hheaGap;
             }
-            this.ascentEm = asc / upem;
-            this.descentEm = desc / upem;
-            this.lineGapEm = gap / upem;
+            if ((rawUpem == 0 || (asc == 0 && desc == 0)) && face.num_fixed_sizes() > 0) {
+                float strikeAsc = 0.8f, strikeDesc = 0.2f;
+                if (FreeType.FT_Select_Size(face, 0) == 0) {
+                    currentCharSize = -1;
+                    float em = strikeEm(face.available_sizes().get(0));
+                    if (em > 0) {
+                        var sm = face.size().metrics();
+                        float a = (sm.ascender() / 64f) / em;
+                        float d = (-sm.descender() / 64f) / em;
+                        if (a > 0 || d > 0) {
+                            strikeAsc = a;
+                            strikeDesc = d;
+                        }
+                    }
+                }
+                this.ascentEm = strikeAsc;
+                this.descentEm = strikeDesc;
+                this.lineGapEm = 0f;
+            } else {
+                this.ascentEm = asc / upem;
+                this.descentEm = desc / upem;
+                this.lineGapEm = gap / upem;
+            }
             float xh = os2 != null && os2.version() >= 2 ? os2.sxHeight() : 0;
             this.xHeightEm = xh > 0 ? xh / upem : ascentEm * 0.5f;
-            this.notdefAdvanceEm = rawAdvance(0) / upem;
+            long notdefRaw = rawUpem > 0 ? rawAdvance(0) : 0;
+            this.notdefAdvanceEm = notdefRaw > 0 ? notdefRaw / upem
+                    : (face.num_fixed_sizes() > 0 ? strikeAdvanceEm(0) : 0f);
             // 下線は post 表、打ち消し線は OS/2 表の位置と太さ（Chrome と同じ出所）
             int ulThick = face.underline_thickness();
             this.underlinePositionEm = -face.underline_position() / upem;
@@ -157,6 +180,13 @@ public final class LoadedFace {
         synchronized (LOCK) {
             FreeType.FT_Done_Face(face);
         }
+    }
+
+    /** アウトライン（拡大縮小可）またはカラービットマップ（{@code CBDT} / {@code sbix}）を持つ書体か。 */
+    static boolean isUsableFace(FT_Face face) {
+        long flags = face.face_flags();
+        return (flags & FreeType.FT_FACE_FLAG_SCALABLE) != 0
+                || ((flags & FreeType.FT_FACE_FLAG_COLOR) != 0 && face.num_fixed_sizes() > 0);
     }
 
     /** 開いたハンドルと、メモリから開いたときの実体（ハンドルより先に解放してはいけない）と、その面専用の FT_Library。 */
@@ -433,8 +463,44 @@ public final class LoadedFace {
             ensureOpen();
             int gi = FreeType.FT_Get_Char_Index(face, codePoint);
             if (gi == 0) return notdefAdvanceEm;
-            return rawAdvance(gi) / (float) unitsPerEm;
+            long raw = Short.toUnsignedInt(face.units_per_EM()) > 0 ? rawAdvance(gi) : 0;
+            if (raw > 0) return raw / (float) unitsPerEm;
+            if ((face.face_flags() & FreeType.FT_FACE_FLAG_SCALABLE) == 0 && face.num_fixed_sizes() > 0) {
+                return strikeAdvanceEm(gi);
+            }
+            return raw / (float) unitsPerEm;
         }
+    }
+
+    /** ビットマップのみの書体向け: 固定サイズのストライクから送り幅（em）を取る。{@link #lock} の中で呼ぶ。 */
+    private float strikeAdvanceEm(int gi) {
+        int count = face.num_fixed_sizes();
+        var sizes = face.available_sizes();
+        if (sizes == null || count <= 0) return 0f;
+        int idx = 0;
+        float em = strikeEm(sizes.get(0));
+        for (int i = 1; i < count; i++) {
+            float e = strikeEm(sizes.get(i));
+            if (e > em) {
+                em = e;
+                idx = i;
+            }
+        }
+        if (em <= 0f || FreeType.FT_Select_Size(face, idx) != 0) return 0f;
+        currentCharSize = -1;
+        if (FreeType.FT_Load_Glyph(face, gi, FreeType.FT_LOAD_COLOR) == 0 && face.glyph() != null) {
+            float advPx = face.glyph().advance().x() / 64f;
+            if (advPx > 0f) return advPx / em;
+        }
+        int w = sizes.get(idx).width();
+        return w > 0 ? w / em : 1f;
+    }
+
+    private static float strikeEm(org.lwjgl.util.freetype.FT_Bitmap_Size s) {
+        long yp = s.y_ppem();
+        if (yp > 0) return yp / 64f;
+        int h = s.height();
+        return h > 0 ? (float) h : s.width();
     }
 
     private int glyphIndex(int codePoint) {
@@ -642,18 +708,29 @@ public final class LoadedFace {
     private static final ColorLayers NO_COLOR = new ColorLayers(new int[0], new int[0], new boolean[0]);
 
     /**
-     * COLR v1 のペイントを描いた色付きのビットマップ（事前乗算 ARGB）。{@code left} は原点から左端、{@code top} は原点から
-     * 上端の画素数（{@link GlyphBitmap} と同じ向き）。
+     * COLR v1 またはカラービットマップ（{@code CBDT}/{@code sbix}）の絵文字を描いたビットマップ（事前乗算 ARGB）。
+     * {@code left} は原点から左端、{@code top} は原点から上端の論理画素数（{@link GlyphBitmap} と同じ向き）、
+     * {@code width}/{@code height} は描画先の大きさ。
      */
-    public record ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top) {}
+    public record ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, float left, float top, float width, float height) {
+        public ColorBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top) {
+            this(pixmap, left, top, pixmap.width(), pixmap.height());
+        }
+    }
+
+    private record StrikeBitmap(com.nishiyu.enderframelib.core.raster.Pixmap pixmap, int left, int top, float strikeEm) {}
 
     private static final ColorBitmap NO_BITMAP = new ColorBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0);
-    /** (字形番号, 大きさ) → v1 のビットマップ（描けない・v1 でない字形は {@link #NO_BITMAP}）。 */
+    private static final StrikeBitmap NO_STRIKE = new StrikeBitmap(new com.nishiyu.enderframelib.core.raster.Pixmap(1, 1), 0, 0, 1f);
+    /** (字形番号, 大きさ) → v1 / ビットマップ絵文字（描けない・持たない字形は {@link #NO_BITMAP}）。 */
     private final Map<Long, ColorBitmap> colorBitmapCache = new ConcurrentHashMap<>();
+    /** (字形番号, ストライク番号) → 元のカラービットマップ（同じストライクを異なる大きさで共有）。 */
+    private final Map<Long, StrikeBitmap> strikeBitmapCache = new ConcurrentHashMap<>();
 
     /**
-     * {@code codePoint} が COLR v1 のペイントを持つなら、{@code pixelSize}（em の画素数）で描いたビットマップ。
-     * グラデーション・変形・合成を含む。v1 でなければ null（呼び出し側は {@link #colorLayers} の v0、さらに単色へ戻す）。
+     * {@code codePoint} が COLR v1 のペイント、またはカラービットマップ（{@code CBDT}/{@code sbix}）を持つなら、
+     * {@code pixelSize}（em の画素数）で描いたビットマップ。COLR v0 のレイヤーがあるときは v1 だけを返し、
+     * 無ければビットマップストライクを試す（v0・単色より優先順: COLR v1 → COLR v0 → ビットマップ → 単色）。
      */
     public ColorBitmap colorBitmap(int codePoint, float pixelSize) {
         int gid = glyphId(codePoint);
@@ -661,15 +738,101 @@ public final class LoadedFace {
         long key = ((long) gid << 32) | (Float.floatToIntBits(pixelSize) & 0xFFFFFFFFL);
         ColorBitmap c = colorBitmapCache.get(key);
         if (c == null) {
+            ColorBitmap rendered;
             synchronized (lock) {
                 ensureOpen();
-                c = ColrV1Painter.render(this, face, gid, pixelSize);
+                rendered = ColrV1Painter.render(this, face, gid, pixelSize);
             }
-            if (c == null) c = NO_BITMAP;
+            if (rendered == null && colorLayers(codePoint) == null) {
+                synchronized (lock) {
+                    ensureOpen();
+                    rendered = renderBitmapStrike(gid, pixelSize);
+                }
+            }
+            c = rendered != null ? rendered : NO_BITMAP;
             if (colorBitmapCache.size() > 4096) colorBitmapCache.clear();
             colorBitmapCache.put(key, c);
         }
         return c == NO_BITMAP ? null : c;
+    }
+
+    /** {@code CBDT}/{@code CBLC}・{@code sbix} のカラービットマップストライクを最適な大きさで読み込み、{@code pixelSize} へ縮尺する。 */
+    private ColorBitmap renderBitmapStrike(int gid, float pixelSize) {
+        if (!(pixelSize > 0f) || pixelSize > 4096f) return null;
+        if ((face.face_flags() & FreeType.FT_FACE_FLAG_COLOR) == 0) return null;
+        int count = face.num_fixed_sizes();
+        var sizes = face.available_sizes();
+        if (sizes == null || count <= 0) return null;
+
+        int bestIdx = -1;
+        float bestEm = 0f;
+        for (int i = 0; i < count; i++) {
+            float em = strikeEm(sizes.get(i));
+            if (em <= 0f) continue;
+            if (bestIdx < 0) {
+                bestIdx = i;
+                bestEm = em;
+            } else if (em >= pixelSize) {
+                if (bestEm < pixelSize || em < bestEm) {
+                    bestIdx = i;
+                    bestEm = em;
+                }
+            } else if (bestEm < pixelSize && em > bestEm) {
+                bestIdx = i;
+                bestEm = em;
+            }
+        }
+        if (bestIdx < 0) return null;
+
+        long strikeKey = ((long) gid << 32) | (bestIdx & 0xFFFFFFFFL);
+        StrikeBitmap sb = strikeBitmapCache.get(strikeKey);
+        if (sb == null) {
+            sb = loadStrikeBitmap(gid, bestIdx, bestEm);
+            if (strikeBitmapCache.size() > 4096) strikeBitmapCache.clear();
+            strikeBitmapCache.put(strikeKey, sb);
+        }
+        if (sb == NO_STRIKE) return null;
+        float scale = pixelSize / sb.strikeEm();
+        return new ColorBitmap(sb.pixmap(), sb.left() * scale, sb.top() * scale,
+                sb.pixmap().width() * scale, sb.pixmap().height() * scale);
+    }
+
+    private StrikeBitmap loadStrikeBitmap(int gid, int strikeIdx, float strikeEm) {
+        if (FreeType.FT_Select_Size(face, strikeIdx) != 0) return NO_STRIKE;
+        currentCharSize = -1;
+        if (currentOblique || currentSubpixel != 0) {
+            FreeType.FT_Set_Transform(face, null, null);
+            currentOblique = false;
+            currentSubpixel = 0;
+        }
+        if (FreeType.FT_Load_Glyph(face, gid, FreeType.FT_LOAD_COLOR) != 0) return NO_STRIKE;
+        FT_GlyphSlot slot = face.glyph();
+        if (slot == null) return NO_STRIKE;
+        if (slot.format() != FreeType.FT_GLYPH_FORMAT_BITMAP
+                && FreeType.FT_Render_Glyph(slot, FreeType.FT_RENDER_MODE_NORMAL) != 0) {
+            return NO_STRIKE;
+        }
+        FT_Bitmap bitmap = slot.bitmap();
+        if (bitmap.pixel_mode() != FreeType.FT_PIXEL_MODE_BGRA) return NO_STRIKE;
+        int w = bitmap.width();
+        int h = bitmap.rows();
+        if (w <= 0 || h <= 0) return NO_STRIKE;
+        int pitch = bitmap.pitch();
+        int absPitch = Math.abs(pitch);
+        ByteBuffer buf = bitmap.buffer(absPitch * h);
+        com.nishiyu.enderframelib.core.raster.Pixmap pm = new com.nishiyu.enderframelib.core.raster.Pixmap(w, h);
+        for (int y = 0; y < h; y++) {
+            int rowBase = (pitch >= 0 ? y : (h - 1 - y)) * absPitch;
+            for (int x = 0; x < w; x++) {
+                int off = rowBase + x * 4;
+                int b = buf.get(off) & 0xFF;
+                int g = buf.get(off + 1) & 0xFF;
+                int r = buf.get(off + 2) & 0xFF;
+                int a = buf.get(off + 3) & 0xFF;
+                pm.set(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        return new StrikeBitmap(pm, slot.bitmap_left(), slot.bitmap_top(), strikeEm);
     }
     /** 字形番号 → レイヤー（カラー字形でなければ {@link #NO_COLOR}）。 */
     private final Map<Integer, ColorLayers> colorCache = new ConcurrentHashMap<>();
