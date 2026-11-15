@@ -14,10 +14,8 @@ public interface EnginePlatform {
     record Spec(String html, int width, int height, float devicePixelRatio, int clearColor,
                 EnderEngine.Target target, @Nullable PixelSink sink,
                 java.util.List<SurfaceFont> fonts, boolean systemFonts,
-                @Nullable ImageSource images, boolean webImages) {}
+                @Nullable ImageSource images, boolean webImages,
+                GpuApi gpuApi, long hostWindow) {}
 
     WebViewSurface create(Spec spec);
-
-    /** GLFW の窓に表示する（閉じるまで戻らない）。 */
-    void openWindow(String html, int width, int height);
 }

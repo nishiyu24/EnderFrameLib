@@ -5,6 +5,9 @@ import java.util.function.LongFunction;
 
 import com.nishiyu.enderframelib.api.EnderEngine;
 import com.nishiyu.enderframelib.api.EnginePlatform;
+import com.nishiyu.enderframelib.api.GpuApi;
+import com.nishiyu.enderframelib.api.TextureHandle;
+import com.nishiyu.enderframelib.api.TextureKind;
 import com.nishiyu.enderframelib.api.MouseButton;
 import com.nishiyu.enderframelib.api.PixelSink;
 import com.nishiyu.enderframelib.api.SurfaceClipboard;
@@ -22,12 +25,15 @@ import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.font.WebFonts;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 import java.util.ArrayList;
-import com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuApiKind;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuBackendProvider;
+import com.nishiyu.enderframelib.core.paint.gpu.GpuBackends;
 import com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
@@ -49,10 +55,6 @@ public final class EngineSurface implements WebViewSurface {
             return EngineSurface.create(spec);
         }
 
-        @Override
-        public void openWindow(String html, int width, int height) {
-            StandaloneViewer.show(html, width, height, v -> {});
-        }
     }
 
     private interface BackendFactory {
@@ -61,6 +63,8 @@ public final class EngineSurface implements WebViewSurface {
 
     private final StandaloneView view;
     private final BackendFactory factory;
+    /** GPU 描画のときだけ。最初に作れた実装（リサイズで作り直すときも同じものを使う）。 */
+    private final GpuBackendProvider[] gpuProvider;
     private final PixelSink sink;
     private final float dpr;
     private final ImageProvider images;
@@ -73,9 +77,10 @@ public final class EngineSurface implements WebViewSurface {
     private int h;
     private boolean closed;
 
-    private EngineSurface(StandaloneView view, BackendFactory factory, PixelSink sink, RenderBackend backend, int w, int h, float dpr,
-                          ImageProvider images) {
+    private EngineSurface(StandaloneView view, BackendFactory factory, GpuBackendProvider[] gpuProvider, PixelSink sink, RenderBackend backend,
+                          int w, int h, float dpr, ImageProvider images) {
         this.images = images;
+        this.gpuProvider = gpuProvider;
         this.view = view;
         this.factory = factory;
         this.sink = sink;
@@ -137,20 +142,48 @@ public final class EngineSurface implements WebViewSurface {
             StandaloneView v = viewHolder[0];
             return v == null ? null : v.scene3dWorld(id);
         };
+        GpuBackendProvider[] gpuProvider = new GpuBackendProvider[1];
         BackendFactory f = switch (s.target()) {
             case SOFTWARE -> (cw, ch, r) -> new SoftwareRenderBackend(cw, ch, r).clearColor(clear).fonts(fonts).images(images).scene3dWorlds(scene3dProvider);
-            case GPU_OFFSCREEN -> (cw, ch, r) -> new LwjglGlRenderBackend(cw, ch, r).fonts(fonts).images(images).scene3dWorlds(scene3dProvider);
+            case GPU, GPU_OFFSCREEN -> {
+                GpuApiKind api = s.target() == EnderEngine.Target.GPU_OFFSCREEN ? GpuApiKind.GL : kind(s.gpuApi());
+                yield (cw, ch, r) -> {
+                    var req = new GpuBackendProvider.Request(cw, ch, r, fonts, images, scene3dProvider, s.hostWindow());
+                    if (gpuProvider[0] != null) return gpuProvider[0].create(req); // 最初に決めた実装を使い続ける
+                    GpuBackends.Created c = GpuBackends.create(api, req);
+                    gpuProvider[0] = c.provider();
+                    return c.backend();
+                };
+            }
         };
         RenderBackend backend = f.create(s.width(), s.height(), s.devicePixelRatio());
         try {
             StandaloneView view = new StandaloneView(s.html(), s.width(), s.height(), fonts).images(images);
             viewHolder[0] = view;
-            return new EngineSurface(view, f, s.sink(), backend, s.width(), s.height(), s.devicePixelRatio(), images);
+            return new EngineSurface(view, f, gpuProvider, s.sink(), backend, s.width(), s.height(), s.devicePixelRatio(), images);
         } catch (RuntimeException e) {
             backend.close();
             closeImages(images);
             throw e;
         }
+    }
+
+    /** 公開 API の選択を、実装の種類へ（AUTO は絞り込まない = null）。 */
+    private static GpuApiKind kind(GpuApi api) {
+        return switch (api) {
+            case AUTO -> null;
+            case GL -> GpuApiKind.GL;
+            case VULKAN -> GpuApiKind.VULKAN;
+        };
+    }
+
+    @Override
+    public Optional<TextureHandle> texture() {
+        GpuBackendProvider p = gpuProvider[0];
+        if (p == null || closed) return Optional.empty();
+        TextureKind kind = p.api() == GpuApiKind.GL ? TextureKind.OPENGL_TEXTURE : TextureKind.VULKAN_IMAGE;
+        return Optional.of(new TextureHandle(kind, p.colorTexture(backend),
+                Math.max(1, Math.round(w * dpr)), Math.max(1, Math.round(h * dpr))));
     }
 
     private static void closeImages(ImageProvider p) {

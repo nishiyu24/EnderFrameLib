@@ -1,0 +1,31 @@
+// GLFW の窓と単体ビューア（StandaloneViewer）。窓の描画は OpenGL なので :core-gl を使う。
+plugins {
+    id 'java-library'
+}
+
+group = mod_group_id
+version = mod_version
+
+base {
+    archivesName = mod_id + '-core-glfw'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenCentral()
+}
+
+def lwjglVersion = '3.3.3'
+
+dependencies {
+    api project(':core')
+    api project(':core-gl')
+    api "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

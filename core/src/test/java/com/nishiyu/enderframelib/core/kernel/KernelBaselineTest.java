@@ -30,7 +30,7 @@ class KernelBaselineTest {
 
     @Test
     void buildFilesDoNotForceFlagsOrNativeExtras() throws IOException {
-        for (String file : List.of("build.gradle", "core/build.gradle")) {
+        for (String file : List.of("build.gradle", "core/build.gradle", "core-gl/build.gradle", "core-vulkan/build.gradle", "core-glfw/build.gradle")) {
             String text = Files.readString(Path.of(file));
             for (String forbidden : List.of("--enable-preview", "--add-modules", "--enable-native-access", "jdk.incubator", "harfbuzz")) {
                 assertFalse(text.contains(forbidden), file + " に " + forbidden);

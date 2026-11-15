@@ -16,6 +16,14 @@ import org.jetbrains.annotations.Nullable;
 @ApiStatus.AvailableSince("1.0")
 public interface WebViewSurface extends AutoCloseable {
 
+    /**
+     * 直近のフレームの結果を GPU のテクスチャのまま返す（コピーなし）。GPU 描画（{@link EnderEngine.Target#GPU}）の面だけ。
+     * ソフトウェア描画の面は空。
+     */
+    default java.util.Optional<TextureHandle> texture() {
+        return java.util.Optional.empty();
+    }
+
     /** 面の幅（CSS px）。 */
     int width();
 

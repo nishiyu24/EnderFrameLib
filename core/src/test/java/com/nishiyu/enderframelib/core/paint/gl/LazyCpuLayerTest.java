@@ -90,7 +90,7 @@ class LazyCpuLayerTest {
         // 構造の番人: GPU 版が CPU 描画器へ問い合わせてよいのは、描画（renderOnto）・重ね（dirtyBounds/pixmap/clearDirty）・
         // （フォント／画像は PaintResources を共有）だけ。セッション名とアニメーションの問い合わせは自前
         String src = java.nio.file.Files.readString(java.nio.file.Path.of(
-                "core/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java"));
+                "core-gl/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java"));
         for (String banned : new String[]{"cpu.sessionId(", "cpu.hasActiveAnimation(", "cpu.fonts(", "cpu.images("}) {
             assertFalse(src.contains(banned), banned + " が戻っている");
         }

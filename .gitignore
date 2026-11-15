@@ -36,3 +36,8 @@ hs_err_pid*.log
 
 # G0: GPU 出力の基準画像（フォント依存なのでマシンごとに生成）
 /core/baseline/
+
+# G4 の分離モジュールのビルド成果物
+/core-gl/build/
+/core-vulkan/build/
+/core-glfw/build/

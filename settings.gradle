@@ -12,3 +12,9 @@ rootProject.name = 'EnderFrameLib'
 
 // Minecraft に依存しない描画コア。ルートの NeoForge Mod がこれを取り込む
 include 'core'
+
+// GPU 実装と窓は :core から分けた別モジュール（:core は OpenGL・GLFW・Vulkan へのコンパイル依存を持たない）。
+// :core-gl = OpenGL 3.2 バックエンド、:core-vulkan = Vulkan 1.1 バックエンド、:core-glfw = GLFW の窓と StandaloneViewer
+include 'core-gl'
+include 'core-vulkan'
+include 'core-glfw'

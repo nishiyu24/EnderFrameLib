@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 class Milestone4GateTest {
 
     private static final Path MAIN = Path.of("core/src/main/java/com/nishiyu/enderframelib");
+    /** OpenGL 実装は G4 で別モジュール（:core-gl）へ移った。 */
+    private static final Path GL_MAIN = Path.of("core-gl/src/main/java/com/nishiyu/enderframelib");
 
     @Test
     void kernelGpuPackageIsGlFreeAndPureJava() throws IOException {
@@ -65,10 +67,10 @@ class Milestone4GateTest {
     @Test
     void glBackendDoesNotKnowTheCpuRasterType() throws IOException {
         // Phase A: GL 描画器は CPU ラスタの具体型を知らず、窓口 CpuLayerFallback 越しにだけ保険の層を使う
-        String gl = Files.readString(MAIN.resolve("core/paint/gl/LwjglGlRenderBackend.java"));
+        String gl = Files.readString(GL_MAIN.resolve("core/paint/gl/LwjglGlRenderBackend.java"));
         assertFalse(gl.contains("SoftwareRenderBackend"), "LwjglGlRenderBackend が SoftwareRenderBackend を参照している");
         assertTrue(gl.contains("CpuLayerFallback"));
-        try (var files = Files.list(MAIN.resolve("core/paint/gl"))) {
+        try (var files = Files.list(GL_MAIN.resolve("core/paint/gl"))) {
             for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
                 if (p.getFileName().toString().equals("CpuLayerFallback.java")) continue;
                 assertFalse(Files.readString(p).contains("SoftwareRenderBackend"),

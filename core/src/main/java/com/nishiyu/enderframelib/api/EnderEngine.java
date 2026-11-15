@@ -15,7 +15,7 @@ import org.jetbrains.annotations.ApiStatus;
  * }
  * // カスタムホスト（描くたびに画素を受け取る）
  * EnderEngine.html(page).size(320, 200).sink((px, w, h) -> upload(px, w, h)).build();
- * // 窓（GLFW + OpenGL。閉じるまで戻らない）
+ * // 窓（GLFW + OpenGL。core-glfw が要る。閉じるまで戻らない）
  * EnderEngine.html(page).size(1024, 768).openWindow();
  * }</pre>
  *
@@ -30,7 +30,12 @@ public final class EnderEngine {
     public enum Target {
         /** CPU のソフトウェア描画（ヘッドレス。GL 不要。既定）。 */
         SOFTWARE,
-        /** GPU のオフスクリーン描画（OpenGL のコンテキストを内部で作る）。 */
+        /**
+         * GPU 描画。使う API は {@link Builder#gpu(GpuApi)}（既定 {@link GpuApi#AUTO}）。実装モジュール
+         * （{@code core-gl} / {@code core-vulkan}）がクラスパスに無ければ {@link Builder#build} が例外にする。
+         */
+        GPU,
+        /** {@link #GPU} と {@link GpuApi#GL} の別名（従来の名前。{@link Builder#gpu} は無視される）。 */
         GPU_OFFSCREEN
     }
 
@@ -54,6 +59,13 @@ public final class EnderEngine {
         throw new IllegalStateException("エンジン本体（EnginePlatform の実装）がクラスパスにありません");
     }
 
+    private static WindowHost windowHost() {
+        for (WindowHost h : ServiceLoader.load(WindowHost.class, WindowHost.class.getClassLoader())) {
+            return h;
+        }
+        throw new IllegalStateException("窓の実装（WindowHost）がクラスパスにありません。core-glfw を足してください");
+    }
+
     public static final class Builder {
         private final String html;
         private int width = 800;
@@ -66,6 +78,8 @@ public final class EnderEngine {
         private boolean systemFonts = true;
         private ImageSource images;
         private boolean webImages;
+        private GpuApi gpuApi = GpuApi.AUTO;
+        private long hostWindow;
 
         private Builder(String html) {
             this.html = html;
@@ -95,6 +109,22 @@ public final class EnderEngine {
         /** 描画先を選ぶ。 */
         public Builder target(Target target) {
             this.target = Objects.requireNonNull(target, "target");
+            return this;
+        }
+
+        /** {@link Target#GPU} で使うグラフィックス API。既定 {@link GpuApi#AUTO}。 */
+        public Builder gpu(GpuApi api) {
+            this.gpuApi = Objects.requireNonNull(api, "api");
+            return this;
+        }
+
+        /**
+         * ホストが持つ OpenGL ウィンドウ（GLFW の {@code long}）のコンテキストと共有して描く。結果は {@link WebViewSurface#texture()}
+         * でコピーなしに受け取れる。{@link Target#GPU} と {@link GpuApi#GL}（または AUTO で GL が選ばれる環境）でだけ使える。
+         */
+        public Builder hostDevice(long glfwWindow) {
+            if (glfwWindow == 0) throw new IllegalArgumentException("window handle must be non-zero");
+            this.hostWindow = glfwWindow;
             return this;
         }
 
@@ -141,12 +171,12 @@ public final class EnderEngine {
         /** 面を作ってマウントする。 */
         public WebViewSurface build() {
             return platform().create(new EnginePlatform.Spec(html, width, height, dpr, clearColor, target, sink,
-                    java.util.List.copyOf(fonts), systemFonts, images, webImages));
+                    java.util.List.copyOf(fonts), systemFonts, images, webImages, gpuApi, hostWindow));
         }
 
         /** GLFW の窓に表示する。窓を閉じるまで戻らない（入力・描画ループは内蔵）。 */
         public void openWindow() {
-            platform().openWindow(html, width, height);
+            windowHost().show(html, width, height);
         }
     }
 }

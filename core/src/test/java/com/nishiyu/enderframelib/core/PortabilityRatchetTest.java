@@ -21,18 +21,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class PortabilityRatchetTest {
 
-    /** 現状の依存。GLFW の窓・GL/Vulkan の RHI/コンテキスト実装・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
+    /**
+     * 現状の依存。OpenGL・GLFW・Vulkan は G4 で {@code :core-gl}・{@code :core-vulkan}・{@code :core-glfw} へ出したので、
+     * {@code :core} に残るのは AWT の画像復号（L3 の {@code AwtImageDecoder}）だけ（G6 で純 Java の復号器へ）。
+     */
     private static final Set<String> ALLOWED = Set.of(
-            "common/StandaloneViewer.java",
-            "core/paint/gl/GlContext.java", // GLFW 窓・共有コンテキスト・swap・タイマークエリ（G1）
-            "core/paint/gl/GlDevice.java", // GpuDevice（RHI）の GL 実装（G1）
-            "core/paint/vulkan/VkContext.java", // Vulkan 1.1 インスタンス/物理・論理デバイス（G3）
-            "core/paint/vulkan/VkDevice.java", // GpuDevice（RHI）の Vulkan 実装（G3）
-            "core/paint/vulkan/VkPipelines.java", // Vulkan パイプライン・ディスクリプタ（G3）
-            "core/paint/vulkan/VkSwapchain.java", // Vulkan スワップチェーン（G3）
             "core/raster/awt/AwtImageDecoder.java");
 
     private static final Pattern FORBIDDEN = Pattern.compile("org[.]lwjgl[.](opengl|vulkan|glfw)|java[.]awt");
+
+    /** G4: {@code :core} の main（OpenGL・GLFW・Vulkan の import 0）。AWT は {@link #platformDependenciesOnlyShrink} が見る。 */
+    @Test
+    void coreHasNoGraphicsApiImports() throws IOException {
+        Path root = Path.of("core/src/main/java");
+        Pattern api = Pattern.compile("org[.]lwjgl[.](opengl|vulkan|glfw)");
+        Set<String> found = new TreeSet<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) files.filter(f -> f.toString().endsWith(".java"))::iterator) {
+                if (api.matcher(Files.readString(p)).find()) found.add(root.relativize(p).toString().replace(java.io.File.separatorChar, '/'));
+            }
+        }
+        assertEquals(Set.of(), found, ":core は OpenGL・GLFW・Vulkan を import しない（GPU 実装は :core-gl / :core-vulkan、窓は :core-glfw）");
+    }
 
     @Test
     void platformDependenciesOnlyShrink() throws IOException {
@@ -67,12 +77,13 @@ class PortabilityRatchetTest {
     private static final Set<String> GLSL_VERSION_FILES = Set.of("core/kernel/gpu/shader/Glsl.java");
 
     /**
-     * {@code core.paint.gl} の外から、その型を import しているファイル（リポジトリ全体の main）。G1 の中立 {@code GpuRenderBackend} と
-     * G4 の {@code ServiceLoader} が入るまで増やさない。
+     * {@code core.paint.gl} の外から、その型を import しているファイル（リポジトリ全体の main。{@code :core-gl} 自身
+     * は除く）。{@code :core} は G4 の {@code ServiceLoader}（{@code GpuBackendProvider}）で見つけるので 1 つも持たない。残るのは、
+     * GL を直接使う窓 {@code StandaloneViewer}（{@code :core-glfw}。{@code :core-gl} に依存する）と、ホスト（Minecraft）の
+     * {@code CoreGpuSurface}（G5 で一本化するまで）。
      */
     private static final Set<String> GL_PACKAGE_IMPORTERS = Set.of(
-            "core/src/main/java/com/nishiyu/enderframelib/common/EngineSurface.java",
-            "core/src/main/java/com/nishiyu/enderframelib/common/StandaloneViewer.java",
+            "core-glfw/src/main/java/com/nishiyu/enderframelib/common/StandaloneViewer.java",
             "src/main/java/com/nishiyu/enderframelib/client/renderer/CoreGpuSurface.java");
 
     private static final Pattern MAIN_FUNCTION = Pattern.compile("void\\s+main\\s*\\(\\s*\\)");
@@ -108,7 +119,7 @@ class PortabilityRatchetTest {
     @Test
     void glPackageIsImportedFromOutsideOnlyByTheKnownEntryPoints() throws IOException {
         Set<String> found = new TreeSet<>();
-        for (String base : new String[]{"core/src/main/java", "src/main/java"}) {
+        for (String base : new String[]{"core/src/main/java", "core-vulkan/src/main/java", "core-glfw/src/main/java", "src/main/java"}) {
             Path root = Path.of(base);
             if (!Files.isDirectory(root)) continue;
             try (Stream<Path> files = Files.walk(root)) {

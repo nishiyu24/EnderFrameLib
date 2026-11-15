@@ -19,6 +19,9 @@ sourceSets.main.resources {
 }
 
 evaluationDependsOn(':core')
+evaluationDependsOn(':core-gl')
+evaluationDependsOn(':core-vulkan')
+evaluationDependsOn(':core-glfw')
 
 repositories {
     // JNA はここから解決する。ModDevGradle が NeoForge / Parchment 用の
@@ -72,6 +75,9 @@ neoForge {
         "${mod_id}" {
             sourceSet(sourceSets.main)
             sourceSet(project(':core').sourceSets.main)
+            sourceSet(project(':core-gl').sourceSets.main)
+            sourceSet(project(':core-vulkan').sourceSets.main)
+            sourceSet(project(':core-glfw').sourceSets.main)
         }
     }
 }
@@ -85,6 +91,10 @@ configurations {
 dependencies {
     // Minecraft に依存しない描画コア（単体でも動く）。Mod の JAR にはクラスと資源を同梱する
     api project(':core')
+    // GPU 実装（CoreGpuSurface が OpenGL を使う）と窓。Minecraft 本体が LWJGL を持つので、Mod の JAR にはクラスだけを取り込む
+    api project(':core-gl')
+    api project(':core-vulkan')
+    api project(':core-glfw')
 
     // core 側へ移したテストの補助クラス（GoldenFiles 等）
     testImplementation rootProject.project(':core').sourceSets.test.output
@@ -135,6 +145,9 @@ publishing {
 // core の出力を Mod の JAR に取り込む（jarJar は project 依存を扱えないため）
 tasks.named('jar', Jar) {
     from project(':core').sourceSets.main.output
+    from project(':core-gl').sourceSets.main.output
+    from project(':core-vulkan').sourceSets.main.output
+    from project(':core-glfw').sourceSets.main.output
 }
 
 tasks.withType(JavaCompile).configureEach {

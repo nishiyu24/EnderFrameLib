@@ -91,7 +91,7 @@ class CpuFallbackOfRareShapesTest {
                 "com.nishiyu.enderframelib.core.paint.gpu.BatchDevice"}) {
             assertThrows(ClassNotFoundException.class, () -> Class.forName(name), name + " は撤去した");
         }
-        Path src = Path.of("src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java");
+        Path src = Path.of("core-gl/src/main/java/com/nishiyu/enderframelib/core/paint/gl/LwjglGlRenderBackend.java");
         if (!Files.exists(src)) src = Path.of("core").resolve(src);
         String t = Files.readString(src);
         for (String bad : new String[]{"GpuBatchPacker", "BatchDevice", "SHAPE_FRAG", "SHAPE_VERT", "shapeProgram", "dataTex", "extTex",

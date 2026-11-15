@@ -48,16 +48,19 @@ dependencies {
     api 'com.google.code.gson:gson:2.10.1' // Minecraft 1.21.1 が持つ版と同じ（EnderConfigManager）
     api 'net.java.dev.jna:jna:5.14.0' // Minecraft 1.21.1 が持つ版と同じ（動画デコーダの JNA）
     api "org.lwjgl:lwjgl:${lwjglVersion}"
-    api "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
-    api "org.lwjgl:lwjgl-opengl:${lwjglVersion}"
-    api "org.lwjgl:lwjgl-vulkan:${lwjglVersion}"
     api "org.lwjgl:lwjgl-freetype:${lwjglVersion}"
+    // OpenGL・GLFW・Vulkan は持たない（G4）。GPU 実装は :core-gl / :core-vulkan、窓は :core-glfw が提供する
 
     // ネイティブはテストと、単体で動かすときの実行時に必要（Minecraft 上では本体が持つ）
     testRuntimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
+
+    // テストは GPU 実装を含めて検証する（:core の公開依存には含まれない）
+    testImplementation project(':core-gl')
+    testImplementation project(':core-vulkan')
+    testImplementation project(':core-glfw')
     if (lwjglNatives.startsWith('natives-macos')) {
         testRuntimeOnly "org.lwjgl:lwjgl-vulkan::${lwjglNatives}"
     }
@@ -151,6 +154,7 @@ configurations {
         canBeConsumed = false
         canBeResolved = true
         extendsFrom implementation
+        attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME)) }
     }
 }
 dependencies {
@@ -158,6 +162,10 @@ dependencies {
     viewerRuntime "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
     viewerRuntime "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
     viewerRuntime "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
+    // 窓・GPU 実装は別モジュール（G4）。単体ビューア・デモ・計測では全部を載せる
+    viewerRuntime project(':core-gl')
+    viewerRuntime project(':core-vulkan')
+    viewerRuntime project(':core-glfw')
     viewerRuntime 'org.slf4j:slf4j-simple:2.0.9'
 }
 
@@ -176,7 +184,7 @@ tasks.register('runViewer', JavaExec) {
 sourceSets {
     demo {
         java.srcDir 'demo/java'
-        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath + configurations.viewerRuntime
         runtimeClasspath += sourceSets.main.output + configurations.viewerRuntime
     }
 }
@@ -215,7 +223,7 @@ tasks.register('runNoHtmlSite', JavaExec) {
 sourceSets {
     jmh {
         java.srcDir 'src/jmh/java'
-        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath + configurations.viewerRuntime
         runtimeClasspath += sourceSets.main.output + configurations.runtimeClasspath + configurations.viewerRuntime
     }
 }
@@ -282,3 +290,56 @@ sourceSets {
         output.dir(spirvOutDir, builtBy: 'compileShadersSpirv')
     }
 }
+
+// G4: :core の依存グラフに OpenGL・GLFW・Vulkan が無いことをビルドで検査する（利用者へ伝わる api / 実行時の両方）。
+// GPU が要る利用者は :core-gl / :core-vulkan / :core-glfw を足す。足さなければ SOFTWARE だけが動く。
+def forbiddenGraphicsArtifacts = ['lwjgl-opengl', 'lwjgl-glfw', 'lwjgl-vulkan']
+tasks.register('verifyCoreDependencyGraph') {
+    group = 'verification'
+    description = ':core の compile / runtime 依存に lwjgl-opengl・lwjgl-glfw・lwjgl-vulkan が含まれないことを検査する'
+    def compileNames = configurations.compileClasspath.incoming.artifactView { lenient = true }.artifacts.resolvedArtifacts
+    def runtimeNames = configurations.runtimeClasspath.incoming.artifactView { lenient = true }.artifacts.resolvedArtifacts
+    doLast {
+        def bad = []
+        [compileNames: compileNames, runtimeNames: runtimeNames].each { label, artifacts ->
+            artifacts.get().each { a ->
+                def name = a.file.name
+                if (forbiddenGraphicsArtifacts.any { name.startsWith(it) }) bad << "${label}: ${name}"
+            }
+        }
+        if (!bad.isEmpty()) throw new GradleException(":core の依存グラフに GPU/窓のライブラリが混ざっている（G4 違反）: ${bad}")
+    }
+}
+tasks.named('check') { dependsOn 'verifyCoreDependencyGraph' }
+tasks.named('test') { dependsOn 'verifyCoreDependencyGraph' }
+
+// G4: :core だけのクラスパス（GPU 実装・窓・OpenGL・GLFW・Vulkan のどれも無い）で SOFTWARE が動き、GPU 指定は
+// 足すべきモジュールを名指しして失敗することを、実際に別 JVM で確かめる。
+configurations {
+    coreOnlyRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+        extendsFrom implementation
+        attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME)) }
+    }
+}
+dependencies {
+    coreOnlyRuntime "org.lwjgl:lwjgl::${lwjglNatives}"
+    coreOnlyRuntime "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
+    coreOnlyRuntime 'org.slf4j:slf4j-simple:2.0.9'
+}
+sourceSets {
+    coreOnlySmoke {
+        java.srcDir 'src/coreOnlySmoke/java'
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += sourceSets.main.output + configurations.coreOnlyRuntime
+    }
+}
+tasks.register('runCoreOnlySmoke', JavaExec) {
+    group = 'verification'
+    description = ':core だけのクラスパスで SOFTWARE が動き、GPU / 窓の指定が足すモジュール名つきで失敗することを確かめる'
+    classpath = sourceSets.coreOnlySmoke.output + sourceSets.coreOnlySmoke.runtimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.smoke.CoreOnlySmoke'
+    workingDir = rootProject.projectDir
+}
+tasks.named('check') { dependsOn 'runCoreOnlySmoke' }
