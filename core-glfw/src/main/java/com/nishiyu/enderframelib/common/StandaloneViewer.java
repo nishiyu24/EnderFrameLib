@@ -200,6 +200,19 @@ public final class StandaloneViewer {
                 }
             });
 
+            // Windows は窓の移動・リサイズ中、メッセージループを OS が握り glfwPollEvents から戻らない。メイン側の描画ループが
+            // 止まって見える（アニメーションが固まる）ので、移動・再描画要求のコールバックの中でも 1 フレーム進めて描く。
+            // 動かしている間はマウスの動きのたびに呼ばれる（止めたままにすると、OS が戻すまで止まる）
+            long[] lastDragFrame = {0};
+            Runnable drawNow = () -> {
+                long now = System.currentTimeMillis();
+                if (now - lastDragFrame[0] < 8) return;
+                lastDragFrame[0] = now;
+                if (view.frame(now, gl, true)) gl.present();
+            };
+            GLFW.glfwSetWindowPosCallback(window, (win, x, y) -> drawNow.run());
+            GLFW.glfwSetWindowRefreshCallback(window, win -> drawNow.run());
+
             GLFW.glfwSetCursorPosCallback(window, (win, x, y) -> {
                 int[] ww = new int[1], wh = new int[1];
                 GLFW.glfwGetWindowSize(win, ww, wh);

@@ -65,6 +65,11 @@ public final class Scene3DWorld {
     }
 
     public int packInstances(PersistentVramBuffer instanceBuffer) {
-        return batcher.writeInstances(arena, materials, uploadPlan, instanceBuffer);
+        return packInstances(instanceBuffer, 0);
+    }
+
+    /** {@code firstSlot} 番目のスロットから詰める（1 フレームに複数のワールドを描くときの、範囲の分割）。 */
+    public int packInstances(PersistentVramBuffer instanceBuffer, int firstSlot) {
+        return batcher.writeInstances(arena, materials, uploadPlan, instanceBuffer, firstSlot);
     }
 }

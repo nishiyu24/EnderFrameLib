@@ -49,13 +49,20 @@ public final class Scene3DApp {
             spinning.set(on);
             doc.getElementById("state").setTextContent(on ? "回転中" : "停止中");
         });
-        long start = System.nanoTime();
+        // 角度は「経過時間の積算」で進める。絶対時刻から計算すると、停止して再開したときや窓の移動で止まっていたときに、
+        // 止まっていた時間ぶん角度が飛ぶ。1 回の進みは 50 ms までに抑える（描画が止まっていた間は進めない）
+        float[] angle = {0f, 0f}; // 角錐の回転・格子のカメラの揺れ
+        long[] last = {System.nanoTime()};
         view.timers().setInterval(() -> {
+            long now = System.nanoTime();
+            float dt = Math.min((now - last[0]) / 1e9f, 0.05f);
+            last[0] = now;
             if (!spinning.get()) return;
-            float t = (System.nanoTime() - start) / 1e9f;
-            for (int n : pyramid) model.arena().setRotationEulerRadians(n, 0.25f, t * 0.9f, 0f);
+            angle[0] += dt * 0.9f;
+            angle[1] += dt * 0.5f;
+            for (int n : pyramid) model.arena().setRotationEulerRadians(n, 0.25f, angle[0], 0f);
             // 格子はカメラを少し揺らして、鏡面の動きで素材の違いが見えるようにする
-            grid.camera().lookAt((float) Math.sin(t * 0.5) * 2.2f, 1.2f, 9f, 0, 0, 0, 0, 1, 0);
+            grid.camera().lookAt((float) Math.sin(angle[1]) * 2.2f, 1.2f, 9f, 0, 0, 0, 0, 1, 0);
         }, 16);
     }
 

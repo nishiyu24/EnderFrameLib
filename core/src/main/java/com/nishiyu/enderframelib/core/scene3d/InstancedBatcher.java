@@ -103,16 +103,26 @@ public final class InstancedBatcher {
 
     public int writeInstances(Scene3DArena arena, MaterialPool materials,
                               Scene3DUploadPlan plan, PersistentVramBuffer instanceBuffer) {
-        int count = Math.min(plan.instanceCount(), instanceBuffer.capacity());
-        while (instanceBuffer.highWater() < count) {
+        return writeInstances(arena, materials, plan, instanceBuffer, 0);
+    }
+
+    /**
+     * {@code firstSlot} 番目のスロットから詰める。1 フレームに複数のワールドを描くとき、先のワールドの範囲を上書きしないよう
+     * 後のワールドは後ろへ置く（描画コマンドは書き込みのあとで実行されるため）。
+     */
+    public int writeInstances(Scene3DArena arena, MaterialPool materials,
+                              Scene3DUploadPlan plan, PersistentVramBuffer instanceBuffer, int firstSlot) {
+        int count = Math.min(plan.instanceCount(), Math.max(0, instanceBuffer.capacity() - firstSlot));
+        while (instanceBuffer.highWater() < firstSlot + count) {
             if (instanceBuffer.allocate() < 0) break;
         }
         OffHeapFloatColumn world = arena.worldMat();
         OffHeapIntColumn render = arena.renderRef();
         int[] nodes = plan.sortedNodesArray();
 
-        for (int slot = 0; slot < count; slot++) {
-            int id = nodes[slot];
+        for (int i = 0; i < count; i++) {
+            int slot = firstSlot + i;
+            int id = nodes[i];
             int wb = id * Scene3DArena.MAT_STRIDE;
             int rb = id * Scene3DArena.RENDER_STRIDE;
 

@@ -49,9 +49,13 @@ public final class Scene3DRenderer implements AutoCloseable {
     private final GpuPipeline[] pipelines = new GpuPipeline[4];
     private final ByteBuffer uniforms = ByteBuffer.allocateDirect(ShaderPrograms.SCENE3D.uniformBytes())
             .order(ByteOrder.nativeOrder());
-    private final GpuBuffer[] recordBindings = new GpuBuffer[2];
 
     private GpuBuffer instanceGpuBuffer;
+    /** このフレームで、これまでのワールドが使ったスロット数（後のワールドは、この続きに書く）。 */
+    private GpuFrame cursorFrame;
+    private int cursor;
+    /** 容量を広げたときに手放した旧バッファ。同じフレームの先のワールドの描画がまだ参照するので、次のフレームまで閉じない。 */
+    private final java.util.List<GpuBuffer> retired = new java.util.ArrayList<>();
     private PersistentVramBuffer instanceBuffer;
 
     private final Map<Long, WorldTarget> targets = new HashMap<>();
@@ -105,13 +109,11 @@ public final class Scene3DRenderer implements AutoCloseable {
 
     private void allocateInstanceBuffer(int capacity) {
         if (instanceGpuBuffer != null) {
-            instanceGpuBuffer.close();
+            retired.add(instanceGpuBuffer);
         }
         long bytes = (long) capacity * InstancedBatcher.INSTANCE_STRIDE_BYTES;
         instanceGpuBuffer = device.createBuffer(new BufferDesc(bytes, BufferUsage.RECORD));
         instanceBuffer = new PersistentVramBuffer(InstancedBatcher.INSTANCE_STRIDE_BYTES, capacity, instanceGpuBuffer);
-        recordBindings[0] = instanceGpuBuffer;
-        recordBindings[1] = instanceGpuBuffer;
     }
 
     private void ensureInstanceCapacity(int needed) {
@@ -137,8 +139,17 @@ public final class Scene3DRenderer implements AutoCloseable {
         int w = Math.max(1, width);
         int h = Math.max(1, height);
 
+        if (frame != cursorFrame) { // 新しいフレーム: 範囲を頭から使い直し、前のフレームで手放したバッファを閉じる
+            cursorFrame = frame;
+            cursor = 0;
+            for (GpuBuffer old : retired) old.close();
+            retired.clear();
+        }
         Scene3DUploadPlan plan = world.updateAndPrepare(w, h);
-        ensureInstanceCapacity(Math.max(1, plan.instanceCount()));
+        int base = cursor;
+        ensureInstanceCapacity(Math.max(1, base + plan.instanceCount()));
+        // このワールドの描画が参照するバッファ（容量を広げると以降は別のバッファになるので、描画ごとに持つ）
+        GpuBuffer[] bindingsBuffers = {instanceGpuBuffer, instanceGpuBuffer};
 
         WorldTarget target = targets.computeIfAbsent(world.worldId(), k -> new WorldTarget());
         ensureTargets(target, w, h, world.msaaSamples());
@@ -156,7 +167,7 @@ public final class Scene3DRenderer implements AutoCloseable {
 
         boolean hasDraw = plan.instanceCount() > 0 && target.vbo != null && target.ibo != null;
         if (hasDraw) {
-            world.packInstances(instanceBuffer);
+            cursor = base + world.packInstances(instanceBuffer, base);
             instanceBuffer.flush();
         }
 
@@ -191,11 +202,11 @@ public final class Scene3DRenderer implements AutoCloseable {
                 uniforms.putFloat(light.dirX()).putFloat(light.dirY()).putFloat(light.dirZ()).putFloat(0f);
                 uniforms.putFloat(lr).putFloat(lg).putFloat(lb).putFloat(0f);
                 uniforms.putFloat(light.ambientR()).putFloat(light.ambientG()).putFloat(light.ambientB()).putFloat(0f);
-                uniforms.putInt(batch.baseInstance());
+                uniforms.putInt(base + batch.baseInstance());
                 uniforms.flip();
 
                 int key = (batch.blendMode() == BlendMode3D.TRANSPARENT ? 2 : 0) | (batch.doubleSided() ? 1 : 0);
-                pass.bind(pipelines[key], new GpuBindings(recordBindings, EMPTY_TEX, uniforms));
+                pass.bind(pipelines[key], new GpuBindings(bindingsBuffers, EMPTY_TEX, uniforms));
                 if (!meshBound) {
                     pass.bindMesh(target.vbo, target.ibo);
                     meshBound = true;
@@ -321,6 +332,8 @@ public final class Scene3DRenderer implements AutoCloseable {
             instanceGpuBuffer.close();
             instanceGpuBuffer = null;
         }
+        for (GpuBuffer old : retired) old.close();
+        retired.clear();
         for (int i = 0; i < pipelines.length; i++) {
             if (pipelines[i] != null) {
                 pipelines[i].close();
