@@ -46,6 +46,7 @@ public final class GlVramDevice implements PersistentVramBuffer.Device, AutoClos
     private final GlFenceRing fenceRing;
     private final boolean ownsFences;
     private int[] floatViews = new int[0], intViews = new int[0], halfViews = new int[0];
+    private int[] rgbaFloatViews = new int[0], rgbaIntViews = new int[0];
     private long bytes;
     private boolean persistent;
 
@@ -95,6 +96,8 @@ public final class GlVramDevice implements PersistentVramBuffer.Device, AutoClos
         floatViews = new int[n];
         intViews = new int[n];
         halfViews = new int[n];
+        rgbaFloatViews = new int[n];
+        rgbaIntViews = new int[n];
     }
 
     @Override
@@ -187,6 +190,20 @@ public final class GlVramDevice implements PersistentVramBuffer.Device, AutoClos
         return halfViews[cur()];
     }
 
+    /** 4 成分 32-bit 浮動小数ビュー（{@code RGBA32F}）。3D インスタンスバッファ等の 16B テクセル単位アクセス用。 */
+    public int bindRgbaFloatView(int unit) {
+        if (rgbaFloatViews[cur()] == 0) rgbaFloatViews[cur()] = newView(GL30.GL_RGBA32F);
+        bind(unit, rgbaFloatViews[cur()]);
+        return rgbaFloatViews[cur()];
+    }
+
+    /** 4 成分 32-bit 整数ビュー（{@code RGBA32I}）。3D インスタンスバッファの整数・パック属性参照用。 */
+    public int bindRgbaIntView(int unit) {
+        if (rgbaIntViews[cur()] == 0) rgbaIntViews[cur()] = newView(GL30.GL_RGBA32I);
+        bind(unit, rgbaIntViews[cur()]);
+        return rgbaIntViews[cur()];
+    }
+
     private int newView(int internalFormat) {
         int previousTex = GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
         int tex = GL11.glGenTextures();
@@ -221,6 +238,8 @@ public final class GlVramDevice implements PersistentVramBuffer.Device, AutoClos
             if (floatViews[i] != 0) { GL11.glDeleteTextures(floatViews[i]); floatViews[i] = 0; }
             if (intViews[i] != 0) { GL11.glDeleteTextures(intViews[i]); intViews[i] = 0; }
             if (halfViews[i] != 0) { GL11.glDeleteTextures(halfViews[i]); halfViews[i] = 0; }
+            if (rgbaFloatViews[i] != 0) { GL11.glDeleteTextures(rgbaFloatViews[i]); rgbaFloatViews[i] = 0; }
+            if (rgbaIntViews[i] != 0) { GL11.glDeleteTextures(rgbaIntViews[i]); rgbaIntViews[i] = 0; }
             if (buffers[i] != 0) {
                 if (persistent) {
                     int previous = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);

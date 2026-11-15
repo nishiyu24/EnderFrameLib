@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+
 import com.nishiyu.enderframelib.api.event.UIEvents;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.dom.InteractionState;
@@ -159,6 +161,21 @@ public final class StandaloneView implements AutoCloseable {
     /** 下の {@link UiView}（DOM・タイマー・状態を直接触りたいとき）。 */
     public UiView ui() {
         return ui;
+    }
+
+    /** DOM nodeId に対応する 3D ワールドを返す（未作成なら null）。 */
+    public Scene3DWorld scene3dWorld(long nodeId) {
+        return ui.scene3dWorld(nodeId);
+    }
+
+    /** DOM nodeId に対応する 3D ワールドを取得または作成する。 */
+    public Scene3DWorld getOrCreateScene3dWorld(long nodeId) {
+        return ui.getOrCreateScene3dWorld(nodeId);
+    }
+
+    /** 要素 ID に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
+    public Scene3DWorld scene3dWorldById(String elementId) {
+        return ui.scene3dWorldById(elementId);
     }
 
     /** 文書の DOM。 */

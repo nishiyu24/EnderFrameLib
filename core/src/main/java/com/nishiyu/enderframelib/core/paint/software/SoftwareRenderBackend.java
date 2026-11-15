@@ -1,5 +1,9 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import java.util.function.LongFunction;
+
 import com.nishiyu.enderframelib.core.text.font.ColorBitmap;
 import com.nishiyu.enderframelib.core.text.font.ColorLayers;
 import com.nishiyu.enderframelib.core.text.font.GlyphBitmap;
@@ -206,6 +210,15 @@ public final class SoftwareRenderBackend implements RenderBackend {
     public SoftwareRenderBackend images(ImageProvider provider) {
         resources.images(provider);
         return this;
+    }
+
+    public SoftwareRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) {
+        resources.scene3dWorlds(provider);
+        return this;
+    }
+
+    public Scene3DWorld scene3dWorld(long worldId) {
+        return resources.scene3dWorld(worldId);
     }
 
     /** フレームの最初に塗る色（非乗算の ARGB。既定は透明）。 */
@@ -1329,7 +1342,7 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (type != ElementType.RANGE) drawBackground(el, anim, rx, ry, res, clip, opacity);
 
         switch (type) {
-            case SCENE -> { }
+            case SCENE -> drawScene3d(el, rx, ry, res, clip, opacity);
             case TEXTAREA -> drawTextarea(el, anim, res, clip, opacity);
             case RANGE -> drawRange(el, anim, res, clip, opacity);
             case PROGRESS -> drawProgress(el, anim, rx, ry, res, clip, opacity);
@@ -1341,6 +1354,60 @@ public final class SoftwareRenderBackend implements RenderBackend {
                 }
             }
         }
+    }
+
+    private void drawScene3d(DisplayItem el, float[] rx, float[] ry, Resolved res, Clip clip, float opacity) {
+        var events = el.events();
+        if (events == null) {
+            return;
+        }
+        String kind = events.get(Scene3DTags.KIND_ATTR);
+        if (!Scene3DTags.KIND_3D.equals(kind)) {
+            return;
+        }
+        String worldAttr = events.get(Scene3DTags.WORLD_ATTR);
+        if (worldAttr == null || worldAttr.isEmpty()) {
+            return;
+        }
+        long worldId;
+        try {
+            worldId = Long.parseLong(worldAttr);
+        } catch (NumberFormatException ignored) {
+            return;
+        }
+        Scene3DWorld world = resources.scene3dWorld(worldId);
+        if (world == null) {
+            return;
+        }
+        float w = el.width(), h = el.height();
+        if (!(w > 0f) || !(h > 0f)) {
+            return;
+        }
+        float x0 = el.x(), y0 = el.y(), x1 = x0 + w, y1 = y0 + h;
+        double pixelScale = Math.max(1.0, Math.max(dpr, res.pose().meanScale()));
+        int fboW = Math.max(1, (int) Math.ceil(w * pixelScale));
+        int fboH = Math.max(1, (int) Math.ceil(h * pixelScale));
+
+        if (GpuAttempt.scene3D(route.current(), res.pose(), world, fboW, fboH, x0, y0, x1, y1, rx, ry, clip, opacity)) {
+            return;
+        }
+        Pixmap pm = GpuAttempt.renderScene3DPixmap(route.current(), world, fboW, fboH);
+        if (pm == null) {
+            return;
+        }
+        float scale = (float) res.pose().meanScale();
+        float m = 1f / Math.max(scale, 0.01f);
+        final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);
+        float sx = pm.width() / w, sy = pm.height() / h;
+        paint(res.pose(), x0 - m, y0 - m, x1 + m, y1 + m, clip, opacity, (lx, ly) -> {
+            float cov = (crx == ZERO4 && cry == ZERO4) ? 1f
+                    : SoftShapes.coverage(SoftShapes.sdRoundRect(lx, ly, x0, y0, x1, y1, crx, cry), scale);
+            if (cov <= 0f) return 0;
+            float u = (lx - x0) * sx, v = (ly - y0) * sy;
+            if (u < -0.5f || v < -0.5f || u > pm.width() + 0.5f || v > pm.height() + 0.5f) return 0;
+            int sample = bilinear(pm, u - 0.5f, v - 0.5f);
+            return cov >= 1f ? sample : SoftShapes.scalePremul(sample, cov);
+        }, Fast.PURE);
     }
 
     /** 角ごとの横・縦の半径（左上・右上・右下・左下の順）。要素の箱に収まるよう切り詰める。 */

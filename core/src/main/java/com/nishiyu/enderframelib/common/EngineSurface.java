@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import java.util.function.LongFunction;
+
 import com.nishiyu.enderframelib.api.EnderEngine;
 import com.nishiyu.enderframelib.api.EnginePlatform;
 import com.nishiyu.enderframelib.api.MouseButton;
@@ -129,13 +132,19 @@ public final class EngineSurface implements WebViewSurface {
         int clear = s.clearColor();
         FontResolver fonts = fontsFor(s);
         ImageProvider images = imagesFor(s);
+        StandaloneView[] viewHolder = new StandaloneView[1];
+        LongFunction<Scene3DWorld> scene3dProvider = id -> {
+            StandaloneView v = viewHolder[0];
+            return v == null ? null : v.scene3dWorld(id);
+        };
         BackendFactory f = switch (s.target()) {
-            case SOFTWARE -> (cw, ch, r) -> new SoftwareRenderBackend(cw, ch, r).clearColor(clear).fonts(fonts).images(images);
-            case GPU_OFFSCREEN -> (cw, ch, r) -> new LwjglGlRenderBackend(cw, ch, r).fonts(fonts).images(images);
+            case SOFTWARE -> (cw, ch, r) -> new SoftwareRenderBackend(cw, ch, r).clearColor(clear).fonts(fonts).images(images).scene3dWorlds(scene3dProvider);
+            case GPU_OFFSCREEN -> (cw, ch, r) -> new LwjglGlRenderBackend(cw, ch, r).fonts(fonts).images(images).scene3dWorlds(scene3dProvider);
         };
         RenderBackend backend = f.create(s.width(), s.height(), s.devicePixelRatio());
         try {
             StandaloneView view = new StandaloneView(s.html(), s.width(), s.height(), fonts).images(images);
+            viewHolder[0] = view;
             return new EngineSurface(view, f, s.sink(), backend, s.width(), s.height(), s.devicePixelRatio(), images);
         } catch (RuntimeException e) {
             backend.close();
@@ -151,6 +160,22 @@ public final class EngineSurface implements WebViewSurface {
 
     @Override public int width() { return w; }
     @Override public int height() { return h; }
+
+    public Scene3DWorld scene3dWorld(long nodeId) {
+        return view.scene3dWorld(nodeId);
+    }
+
+    public Scene3DWorld getOrCreateScene3dWorld(String elementId) {
+        return view.scene3dWorldById(elementId);
+    }
+
+    public RenderBackend backend() {
+        return backend;
+    }
+
+    public StandaloneView view() {
+        return view;
+    }
 
     @Override
     public void resize(int width, int height) {

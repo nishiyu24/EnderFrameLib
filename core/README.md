@@ -192,5 +192,4 @@ EnderFrameLib `:core` is purpose-built as an **in-process embedded UI engine** (
 ## 📖 Further Reading
 
 - [DISTRIBUTION_ROADMAP.md](DISTRIBUTION_ROADMAP.md): Detailed distribution roadmap and readiness tracker.
-- [ENGINE_REARCHITECTURE_PLAN.md](ENGINE_REARCHITECTURE_PLAN.md): Master architectural specification, JFR profiling data, and benchmarks.
-- [ENGINE_3D_ARCHITECTURE_PLAN.md](ENGINE_3D_ARCHITECTURE_PLAN.md): 3D scene graph integration specification.
+- [ENGINE_REARCHITECTURE_PLAN.md](ENGINE_REARCHITECTURE_PLAN.md): Master architectural specification, JFR profiling data, benchmarks, and the 3D scene graph integration design (§3.1).

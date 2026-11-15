@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.paint.gl;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import java.util.function.LongFunction;
+
 import com.nishiyu.enderframelib.core.paint.BlendMode;
 import com.nishiyu.enderframelib.core.paint.ClipShape;
 import com.nishiyu.enderframelib.core.paint.FilterOp;
@@ -325,6 +328,7 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     /** 文字・画像の供給元。保険の {@link #cpu} と共有し、差し替えはここに 1 回書く（CPU 描画器へ転送しない）。 */
     private final PaintResources resources = new PaintResources();
     private CpuLayerFallback cpu;
+    private GlScene3DRenderer scene3dRenderer;
     /** 図形を Property Tree ＋ 1 回のインスタンス描画で描く GPU 経路（{@link #rectTrees} が false、または作れなければ null。そのときは全て CPU が描く）。 */
     private GlRectStream rects;
     /**
@@ -611,6 +615,15 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
     public LwjglGlRenderBackend images(ImageProvider provider) {
         resources.images(provider);
         return this;
+    }
+
+    public LwjglGlRenderBackend scene3dWorlds(LongFunction<Scene3DWorld> provider) {
+        resources.scene3dWorlds(provider);
+        return this;
+    }
+
+    public GlScene3DRenderer scene3dRenderer() {
+        return scene3dRenderer;
     }
 
     /** フレームの最初に塗る色（非乗算の ARGB。既定は透明）。 */
@@ -943,9 +956,17 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return overlayTex != 0;
     }
 
+    /** CPU 層を GPU へ転送した（重ねた）回数の累計。0 なら CPU 層へ落ちた図形が無い（G0 の診断）。 */
+    public long cpuOverlayFlushCount() {
+        return overlayFlushes;
+    }
+
+    private long overlayFlushes;
+
     private void flushOverlay() {
         int[] b = cpu.dirtyBounds();
         if (b == null) return;
+        overlayFlushes++;
         drainRects(); // 溜めた矩形は、あとから来る CPU の層より先に描く（描画順）
         drawPixels(cpu.pixels(), b, false);
         cpu.clearDirty();
@@ -956,17 +977,9 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return snapshotTarget(new int[]{0, 0, width, height});
     }
 
-    /** CPU 層を GPU へ転送した（重ねた）回数の累計。0 なら CPU 層へ落ちた図形が無い（G0 の診断）。 */
-    public long cpuOverlayFlushCount() {
-        return overlayFlushes;
-    }
-
-    private long overlayFlushes;
-
     /** 読み戻し先。フレーム間・呼び出し間で使い回す（範囲外は前回の残りで不定）。 */
     private Pixmap snapshotPm;
     private int[] snapshotRaw = new int[0];
-        overlayFlushes++;
 
     @Override
     public Pixmap snapshotTarget(int[] region) {
@@ -2178,6 +2191,34 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
         return true;
     }
 
+    @Override
+    public boolean drawScene3D(Matrix2D pose, Scene3DWorld world, int fboW, int fboH,
+                               float x0, float y0, float x1, float y1,
+                               float[] rx, float[] ry, GpuClip[] clips, float opacity) {
+        if (world == null || fboW <= 0 || fboH <= 0 || !(x1 > x0) || !(y1 > y0)) return false;
+        if (scene3dRenderer == null) {
+            scene3dRenderer = new GlScene3DRenderer();
+        }
+        int tex = scene3dRenderer.render(world, fboW, fboH);
+        float w = x1 - x0, h = y1 - y0;
+        float sx = (float) fboW / w;
+        float sy = -(float) fboH / h;
+        return drawTexture(pose, tex, fboW, fboH, x0, y0, x1, y1, x0, y1, sx, sy, x0, y0, x1, y1, rx, ry, clips, opacity);
+    }
+
+    @Override
+    public Pixmap renderScene3DPixmap(Scene3DWorld world, int fboW, int fboH) {
+        if (world == null || fboW <= 0 || fboH <= 0) return null;
+        if (scene3dRenderer == null) {
+            scene3dRenderer = new GlScene3DRenderer();
+        }
+        int tex = scene3dRenderer.render(world, fboW, fboH);
+        int[] argb = scene3dRenderer.readTexturePixelsArgb(tex, fboW, fboH);
+        Pixmap pm = new Pixmap(fboW, fboH);
+        System.arraycopy(argb, 0, pm.pixels(), 0, Math.min(argb.length, pm.pixels().length));
+        return pm;
+    }
+
     /** 画像・外部テクスチャを新経路で描けるか（積みはしない）。 */
     private boolean acceptsRectImage(Matrix2D pose, float bx0, float by0, float bx1, float by1, float[] rx, float[] ry,
                                      GpuClip[] clips, float opacity, int maskBit) {
@@ -2317,6 +2358,10 @@ public final class LwjglGlRenderBackend implements RenderBackend, GpuSink {
             if (rects != null) {
                 rects.close();
                 rects = null;
+            }
+            if (scene3dRenderer != null) {
+                scene3dRenderer.close();
+                scene3dRenderer = null;
             }
             if (texProgram != 0) GL20.glDeleteProgram(texProgram);
             if (fxProgram != 0) GL20.glDeleteProgram(fxProgram);

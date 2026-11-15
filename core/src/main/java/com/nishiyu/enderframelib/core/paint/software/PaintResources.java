@@ -1,5 +1,8 @@
 package com.nishiyu.enderframelib.core.paint.software;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import java.util.function.LongFunction;
+
 import com.nishiyu.enderframelib.core.text.font.SystemFonts;
 import com.nishiyu.enderframelib.core.text.model.FontResolver;
 
@@ -13,6 +16,7 @@ import com.nishiyu.enderframelib.core.text.model.FontResolver;
 public final class PaintResources {
     private volatile FontResolver fonts = SystemFonts.system();
     private volatile ImageProvider images = ImageProvider.standard();
+    private volatile LongFunction<Scene3DWorld> scene3dWorlds = id -> null;
 
     public FontResolver fonts() {
         return fonts;
@@ -31,6 +35,20 @@ public final class PaintResources {
     /** null なら既定の供給元へ戻す。 */
     public PaintResources images(ImageProvider provider) {
         this.images = provider == null ? ImageProvider.standard() : provider;
+        return this;
+    }
+
+    public LongFunction<Scene3DWorld> scene3dWorlds() {
+        return scene3dWorlds;
+    }
+
+    public Scene3DWorld scene3dWorld(long worldId) {
+        LongFunction<Scene3DWorld> fn = this.scene3dWorlds;
+        return fn == null ? null : fn.apply(worldId);
+    }
+
+    public PaintResources scene3dWorlds(LongFunction<Scene3DWorld> provider) {
+        this.scene3dWorlds = provider == null ? id -> null : provider;
         return this;
     }
 }

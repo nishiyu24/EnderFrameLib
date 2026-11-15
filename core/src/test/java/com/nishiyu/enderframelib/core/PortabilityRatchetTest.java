@@ -28,6 +28,7 @@ class PortabilityRatchetTest {
             "core/paint/gl/GlRectRenderer.java", // GlTreeStore のプリミティブを描く GL 実装（L3）
             "core/paint/gl/GlVramDevice.java", // kernel/gpu の PersistentVramBuffer.Device の GL 実装（L3）。kernel 側は GL 非依存のまま
             "core/paint/gl/GlFenceRing.java", // GlVramDevice 群が共有するフェンス（GL 同期オブジェクト）。L3 の GL 実装の一部
+            "core/paint/gl/GlScene3DRenderer.java", // Scene3DWorld の GL 3.2 Core + TBO インスタンスレンダラ（L5）
             "core/paint/gl/LwjglGlRenderBackend.java",
             "core/raster/awt/AwtImageDecoder.java");
 
@@ -51,7 +52,6 @@ class PortabilityRatchetTest {
         assertEquals(Set.of(), added, "新たに GL / GLFW / AWT へ依存したファイル（L0/L1 に持ち込まない。§6.1）");
         assertEquals(Set.of(), removed, "依存がなくなったファイルを ALLOWED から外すこと（ラチェットを締める）");
     }
-}
 
     // ------------------------------------------------------------------ G0: GLSL とパッケージ境界のラチェット（ENGINE_REARCHITECTURE_PLAN §3）
 
@@ -63,7 +63,8 @@ class PortabilityRatchetTest {
             "core/kernel/gpu/GpuAnimation.java", 1,
             "core/kernel/gpu/GpuRectShader.java", 2,
             "core/paint/AlphaMask.java", 1,
-            "core/paint/gl/LwjglGlRenderBackend.java", 3);
+            "core/paint/gl/LwjglGlRenderBackend.java", 3,
+            "core/paint/gl/Scene3DShaders.java", 2);
 
     /**
      * {@code core.paint.gl} の外から、その型を import しているファイル（リポジトリ全体の main）。G1 の中立 {@code GpuRenderBackend} と
@@ -108,3 +109,4 @@ class PortabilityRatchetTest {
         assertEquals(new TreeSet<>(GL_PACKAGE_IMPORTERS), found,
                 "core.paint.gl を外から参照するファイルが一覧と違う（増やさない。外したら一覧から外す）");
     }
+}

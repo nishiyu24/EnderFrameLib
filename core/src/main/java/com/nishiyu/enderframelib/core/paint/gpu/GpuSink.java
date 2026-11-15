@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+
 import com.nishiyu.enderframelib.core.paint.ClipShape;
 import com.nishiyu.enderframelib.core.paint.FilterOp;
 import com.nishiyu.enderframelib.core.paint.model.ShaderGradient;
@@ -221,6 +223,22 @@ public interface GpuSink {
                                 float px0, float py0, float sx, float sy,
                                 float x0, float y0, float x1, float y1, float[] rx, float[] ry, GpuClip[] clips, float opacity) {
         return false;
+    }
+
+    /**
+     * 3D シーンをオフスクリーン FBO へ描画し、可能ならゼロコピーのテクスチャ合成まで完了する。
+     */
+    default boolean drawScene3D(Matrix2D pose, Scene3DWorld world, int fboW, int fboH,
+                                float x0, float y0, float x1, float y1,
+                                float[] rx, float[] ry, GpuClip[] clips, float opacity) {
+        return false;
+    }
+
+    /**
+     * 3D シーンを CPU 合成フォールバック用に事前乗算 ARGB {@link Pixmap} へ読み戻す。
+     */
+    default Pixmap renderScene3DPixmap(Scene3DWorld world, int fboW, int fboH) {
+        return null;
     }
 
     /**

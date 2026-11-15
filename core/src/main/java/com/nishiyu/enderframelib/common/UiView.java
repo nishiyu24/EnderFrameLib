@@ -1,5 +1,7 @@
 package com.nishiyu.enderframelib.common;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+
 import com.nishiyu.enderframelib.core.paint.CssAnimator;
 import com.nishiyu.enderframelib.common.EnderFrameBuiltInConfig;
 import com.nishiyu.enderframelib.common.UiDocumentCompiler;
@@ -108,6 +110,7 @@ public class UiView implements AutoCloseable {
     private final Map<String, float[]> paintOffsets = new ConcurrentHashMap<>();
     private volatile boolean paintOffsetsDirty = false;
     private Document document;
+    private final Map<Long, Scene3DWorld> scene3dWorlds = new ConcurrentHashMap<>();
     private LayoutBox layoutRoot;
     private boolean serverManaged = false;
     private boolean headlessState = false;
@@ -1971,6 +1974,22 @@ public class UiView implements AutoCloseable {
         this.headlessState = headlessState;
     }
 
+    /** 指定した DOM nodeId に紐づく 3D ワールドを返す（未作成なら null）。 */
+    public Scene3DWorld scene3dWorld(long nodeId) {
+        return scene3dWorlds.get(nodeId);
+    }
+
+    /** 指定した DOM nodeId に紐づく 3D ワールドを取得または新規作成する。 */
+    public Scene3DWorld getOrCreateScene3dWorld(long nodeId) {
+        return scene3dWorlds.computeIfAbsent(nodeId, Scene3DWorld::new);
+    }
+
+    /** 要素 ID から {@code <scene-3d>} に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
+    public Scene3DWorld scene3dWorldById(String elementId) {
+        HtmlNode node = findNode(elementId);
+        return node == null ? null : getOrCreateScene3dWorld(node.nodeId());
+    }
+
     protected void installDocument(HtmlNode rootNode, String authorCss, int width, int height, boolean fromServer) {
         boolean existingServerDoc = fromServer && document != null;
 
@@ -2458,6 +2477,7 @@ public class UiView implements AutoCloseable {
         dataBindings.clear();
         virtualListBindings.clear();
         timers.clear();
+        scene3dWorlds.clear();
         onClose();
     }
 
