@@ -1391,10 +1391,9 @@ public final class SoftwareRenderBackend implements RenderBackend {
         if (GpuAttempt.scene3D(route.current(), res.pose(), world, fboW, fboH, x0, y0, x1, y1, rx, ry, clip, opacity)) {
             return;
         }
-        Pixmap pm = GpuAttempt.renderScene3DPixmap(route.current(), world, fboW, fboH);
-        if (pm == null) {
-            return;
-        }
+        Pixmap gpuPm = GpuAttempt.renderScene3DPixmap(route.current(), world, fboW, fboH);
+        // GPU の無い経路（SOFTWARE ターゲット・ヘッドレス CI）は、同じシーンモデルをソフトウェアで描く（X3-2）
+        final Pixmap pm = gpuPm != null ? gpuPm : SoftwareScene3DRasterizer.render(world, fboW, fboH);
         float scale = (float) res.pose().meanScale();
         float m = 1f / Math.max(scale, 0.01f);
         final float[] crx = freezeRadii(rx), cry = freezeRadii(ry);

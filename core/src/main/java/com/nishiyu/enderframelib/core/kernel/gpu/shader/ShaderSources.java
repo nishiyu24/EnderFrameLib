@@ -846,21 +846,36 @@ public final class ShaderSources {
                 if (unlit) {
                     rgb = vBaseColor.rgb + vEmissive;
                 } else {
+                    // Cook-Torrance（GGX 法線分布・Smith 相関の可視性・Schlick のフレネル）。
+                    // 明るさは「白い拡散面に光量 1 を当てると基本色になる」基準（BRDF に π を掛けて戻す）。
+                    // ソフトウェア版（SoftwareScene3DRasterizer.Shader）と同じ式。変えるときは両方を直す。
                     vec3 N = normalize(vWorldNorm);
                     if (!gl_FrontFacing) N = -N;
                     vec3 L = normalize(-uLightDir.xyz);
-                    float ndl = max(dot(N, L), 0.0);
                     vec3 V = normalize(uCameraPos.xyz - vWorldPos);
                     vec3 H = normalize(L + V);
+                    float ndl = max(dot(N, L), 0.0);
+                    float ndv = max(dot(N, V), 1e-4);
+                    float ndh = max(dot(N, H), 0.0);
+                    float vdh = max(dot(V, H), 0.0);
 
                     float metallic = vPbrFlags.x;
                     float roughness = clamp(vPbrFlags.y, 0.05, 1.0);
-                    float shininess = mix(128.0, 4.0, roughness);
-                    float specFactor = pow(max(dot(N, H), 0.0), shininess) * mix(0.08, 0.65, 1.0 - roughness);
+                    float a2 = roughness * roughness * roughness * roughness;
+                    float dd = ndh * ndh * (a2 - 1.0) + 1.0;
+                    float D = a2 / (3.14159265 * dd * dd);
+                    float vis = 0.5 / (ndl * sqrt(ndv * ndv * (1.0 - a2) + a2) + ndv * sqrt(ndl * ndl * (1.0 - a2) + a2));
+                    vec3 f0 = mix(vec3(0.04), vBaseColor.rgb, metallic);
+                    float fw = pow(1.0 - vdh, 5.0);
+                    vec3 F = f0 + (1.0 - f0) * fw;
 
-                    vec3 diffuse = vBaseColor.rgb * (uAmbientColor.xyz + uLightColor.xyz * ndl) * (1.0 - metallic * 0.45);
-                    vec3 specColor = mix(vec3(1.0), vBaseColor.rgb, metallic);
-                    vec3 spec = specColor * uLightColor.xyz * specFactor * ndl;
+                    vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
+                    vec3 direct = (kd * vBaseColor.rgb + D * vis * F * 3.14159265) * uLightColor.xyz * ndl;
+                    // 環境光: 拡散は基本色、鏡面は視線に応じたフレネルで簡易に（IBL は無い）
+                    vec3 fEnv = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - ndv, 5.0);
+                    vec3 ambient = uAmbientColor.xyz * (vBaseColor.rgb * (1.0 - metallic) + fEnv * (1.0 - roughness * 0.5));
+                    vec3 diffuse = ambient;
+                    vec3 spec = direct;
                     rgb = diffuse + spec + vEmissive;
                 }
                 rgb = clamp(rgb, 0.0, 1.0);

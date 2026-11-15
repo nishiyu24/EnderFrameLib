@@ -140,23 +140,21 @@ public final class InstancedBatcher {
             instanceBuffer.putFloat(slot, 60, m15);
 
             // Texel 4..6.x: 法線行列 3x3 = (A^-1)^T (36B)
-            float c00 = m5 * m10 - m9 * m6;
-            float c10 = m9 * m2 - m1 * m10;
-            float c20 = m1 * m6 - m5 * m2;
-            float det = m0 * c00 + m4 * c10 + m8 * c20;
+            // 法線行列 = A⁻¹ の転置。列優先で渡すので、各列には A⁻¹ の「行」（= 隣り合う 2 列の外積 / det）を入れる
+            float det = m0 * (m5 * m10 - m9 * m6) + m4 * (m9 * m2 - m1 * m10) + m8 * (m1 * m6 - m5 * m2);
 
             float nm0, nm1, nm2, nm3, nm4, nm5, nm6, nm7, nm8;
             if (Math.abs(det) > 1e-12f) {
                 float invDet = 1.0f / det;
-                nm0 = c00 * invDet;
-                nm1 = c10 * invDet;
-                nm2 = c20 * invDet;
-                nm3 = (m6 * m8 - m4 * m10) * invDet;
-                nm4 = (m0 * m10 - m8 * m2) * invDet;
-                nm5 = (m8 * m1 - m0 * m6) * invDet;
-                nm6 = (m4 * m9 - m8 * m5) * invDet;
-                nm7 = (m1 * m8 - m0 * m9) * invDet;
-                nm8 = (m0 * m5 - m4 * m1) * invDet;
+                nm0 = (m5 * m10 - m6 * m9) * invDet;
+                nm1 = (m6 * m8 - m4 * m10) * invDet;
+                nm2 = (m4 * m9 - m5 * m8) * invDet;
+                nm3 = (m9 * m2 - m10 * m1) * invDet;
+                nm4 = (m10 * m0 - m8 * m2) * invDet;
+                nm5 = (m8 * m1 - m9 * m0) * invDet;
+                nm6 = (m1 * m6 - m2 * m5) * invDet;
+                nm7 = (m2 * m4 - m0 * m6) * invDet;
+                nm8 = (m0 * m5 - m1 * m4) * invDet;
             } else {
                 nm0 = 1.0f; nm1 = 0.0f; nm2 = 0.0f;
                 nm3 = 0.0f; nm4 = 1.0f; nm5 = 0.0f;

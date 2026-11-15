@@ -183,12 +183,13 @@ public final class GeometryPool {
             for (int j = 0; j < s; j++) {
                 int k1 = i * (s + 1) + j;
                 int k2 = k1 + s + 1;
+                // 外側から見て反時計回り（前面）。k1→k1+1 は経度方向（θ 増）、k1→k2 は緯度方向（φ 増）
                 idx[ii++] = k1;
-                idx[ii++] = k2;
-                idx[ii++] = k1 + 1;
                 idx[ii++] = k1 + 1;
                 idx[ii++] = k2;
+                idx[ii++] = k1 + 1;
                 idx[ii++] = k2 + 1;
+                idx[ii++] = k2;
             }
         }
         return registerMesh(v, idx);
