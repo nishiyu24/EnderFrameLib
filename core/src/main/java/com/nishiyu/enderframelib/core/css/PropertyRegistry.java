@@ -331,6 +331,7 @@ public final class PropertyRegistry {
         layout("translate", "none", false, ValueType.OTHER, false);
         layout("scale", "none", false, ValueType.OTHER, false);
         layout("writing-mode", "horizontal-tb", true, ValueType.KEYWORD, false);
+        layout("text-orientation", "mixed", true, ValueType.KEYWORD, false);
         layout("break-inside", "auto", false, ValueType.KEYWORD, false);
         layout("perspective", "none", false, ValueType.OTHER, false);
         paint("filter", "none", false, ValueType.LIST, true);

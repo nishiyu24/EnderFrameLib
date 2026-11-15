@@ -116,7 +116,7 @@ public final class BoxMeasurer {
             engineInnerW = Math.max(0, box.w - box.horizontalDecoration());
         }
 
-        LayoutEngine engine = LayoutEngine.getEngine(box.display);
+        LayoutEngine engine = LayoutEngine.getEngine(box);
         // 箱自身の幅はここで決める。エンジンは子を測って内容の幅を返すだけ
         ConstraintSpace contentSpace = ConstraintSpace.reuseOrCreate(box.contentSpaceCache, engineInnerW, parentH, fmtCtx);
         box.contentSpaceCache = contentSpace;
@@ -190,7 +190,7 @@ public final class BoxMeasurer {
     public static void resolveFlexibleHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
         // measure を通らずに中身を組み直す（float を避けた行・伸ばした高さ）。前回の measure の結果はもう当てはまらない
         box.invalidateMeasurement();
-        LayoutEngine engine = LayoutEngine.getEngine(box.display);
+        LayoutEngine engine = LayoutEngine.getEngine(box);
         resolveHeights(box, space, ctx, isBorderBox(box.style), engine);
     }
 
@@ -288,7 +288,9 @@ public final class BoxMeasurer {
             box.w = Math.max(box.horizontalDecoration(), parentW - insets - box.mL - box.mR);
             box.sizingMode = SizingMode.DEFINITE;
         } else if (box.isAbsolute || box.isRenderedLegend || fmtCtx.isFlexRow() || fmtCtx.isShrink() || BlockLayoutEngine.isFloating(box)
-                || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE) {
+                || box.display.isInlineLevel() || box.display.inner() == Inner.TABLE
+                || box.isVerticalRoot) {
+            // 縦書きの根の幅（物理）は論理のブロック寸法＝行を積んだ高さで決まる（直交フロー）
             // インラインレベルの箱・float・表・fieldset の legend は shrink-to-fit（表の幅は列幅の合計）
             box.w = 0;
             box.sizingMode = SizingMode.SHRINK_TO_FIT;

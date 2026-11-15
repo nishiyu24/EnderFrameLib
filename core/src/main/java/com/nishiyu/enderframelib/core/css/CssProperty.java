@@ -184,6 +184,7 @@ public final class CssProperty {
     public static final String TRANSLATE = "translate";
     public static final String SCALE = "scale";
     public static final String WRITING_MODE = "writing-mode";
+    public static final String TEXT_ORIENTATION = "text-orientation";
     public static final String BREAK_INSIDE = "break-inside";
     public static final String BACKGROUND_IMAGE = "background-image";
     public static final String BACKGROUND_POSITION = "background-position";

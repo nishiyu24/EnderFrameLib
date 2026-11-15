@@ -66,6 +66,15 @@ public class LayoutBox {
     public final List<LayoutBox> elementChildren = new CompactList<>();
     /** DOM に無い箱（匿名ブロック・匿名表ボックス・{@code ::marker}）。{@link #node} は持ち主に紐づけた合成ノード。 */
     public final boolean isAnonymous;
+
+    /**
+     * 縦書きの根（{@code writing-mode: vertical-*} を持ち、親は横書き）。内容は {@link #isVerticalWrapper} の箱 1 つに包まれ、
+     * {@link VerticalWritingEngine} が論理（横書き）の軸で組んだ内容を回して置く。{@code BoxTreeBuilder} が組み立てのたびに立てる。
+     */
+    public boolean isVerticalRoot;
+
+    /** 縦書きの根の内容を包む、回転を持つ生成箱（DOM に無い）。 */
+    public boolean isVerticalWrapper;
     /**
      * {@code list-style-position: outside} の {@code ::marker}。通常フローに入らず、
      * リスト項目の最初の行の左に置かれる。
@@ -2656,7 +2665,7 @@ public class LayoutBox {
                 }
             }
 
-            LayoutEngine engine = LayoutEngine.getEngine(display);
+            LayoutEngine engine = LayoutEngine.getEngine(this);
             engine.arrangeChildren(this, innerX, innerY, ctx);
 
             if (hasAbsoluteChild) {
@@ -3170,6 +3179,21 @@ public class LayoutBox {
                         if (right > descRight) descRight = right;
                         if (bottom > descBottom) descBottom = bottom;
                     }
+                    continue;
+                }
+                if (child.isVerticalWrapper) {
+                    // 回転して置かれる箱: 回転前の箱（右へ・下へ張り出して置く）ではなく、回転後の物理の範囲で数える。
+                    // 論理の長さ方向（回転前の横）が物理の縦、論理の積み方向（回転前の縦）が物理の横
+                    boolean ccw = com.nishiyu.enderframelib.core.css.WritingModes.isCounterClockwise(
+                            com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style));
+                    float along = Math.max(child.w, child.descendantOverflowRight);
+                    float across = Math.max(child.h, child.descendantOverflowBottom);
+                    float r = (ccw ? child.x + across : child.x) + scrollX;
+                    float b = (ccw ? child.y : child.y + along) + scrollY;
+                    if (r > extRight) extRight = r;
+                    if (b > extBottom) extBottom = b;
+                    if (r > descRight) descRight = r;
+                    if (b > descBottom) descBottom = b;
                     continue;
                 }
                 if (child == lastInFlow) {

@@ -495,7 +495,7 @@ public class BlockLayoutEngine extends LayoutEngine {
     public static boolean isFloating(LayoutBox box) {
         if (box.isAbsolute || box.parent == null || box.node.nodeType == NodeType.TEXT) return false;
         if (box.style.keywordOf(ID_FLOAT, CssKeywords.FloatSide.class) == CssKeywords.FloatSide.NONE) return false;
-        return LayoutEngine.getEngine(box.parent.display) instanceof BlockLayoutEngine;
+        return LayoutEngine.getEngine(box.parent) instanceof BlockLayoutEngine;
     }
 
     /**

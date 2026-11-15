@@ -382,7 +382,7 @@ public final class ComputedStyle {
                 INITIAL_VALUES[k] = CssValue.of(INITIALS[k]);
                 STRUCTURE_AFFECTING[k] = switch (name) {
                     case CssProperty.DISPLAY, CssProperty.POSITION, CssProperty.FLOAT,
-                         CssProperty.WHITE_SPACE, CssProperty.CONTENT, CssProperty.CONTENT_VISIBILITY,
+                         CssProperty.WHITE_SPACE, CssProperty.CONTENT, CssProperty.CONTENT_VISIBILITY, CssProperty.WRITING_MODE,
                          CssProperty.LIST_STYLE_TYPE, CssProperty.LIST_STYLE_POSITION, CssProperty.LIST_STYLE_IMAGE,
                          CssProperty.COUNTER_RESET, CssProperty.COUNTER_INCREMENT, CssProperty.COUNTER_SET -> true;
                     default -> false;
@@ -824,7 +824,22 @@ public final class ComputedStyle {
         return declaredMarker.paintMemo(KEY_MARKER_FROM_DECLARED, k -> buildDeclaredMarker(declaredMarker));
     }
 
+    /**
+     * 縦書きの根の内容を包む箱（{@code BoxTreeBuilder}）のスタイル。論理（横書き）の軸で組んだ内容を、原点（左上）まわりに
+     * 90°（{@code ccw} なら -90°）回して物理の縦書きにする。継承プロパティは所有者から受け継ぐ。
+     */
+    public ComputedStyle derivedVerticalWrapper(boolean ccw) {
+        return paintMemo(ccw ? KEY_VERTICAL_CCW : KEY_VERTICAL_CW, k -> buildInheritedWithOverrides("block", false, ccw ? 2 : 1));
+    }
+
+    private static final Object KEY_VERTICAL_CW = new Object();
+    private static final Object KEY_VERTICAL_CCW = new Object();
+
     private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides) {
+        return buildInheritedWithOverrides(displayValue, markerOverrides, 0);
+    }
+
+    private ComputedStyle buildInheritedWithOverrides(String displayValue, boolean markerOverrides, int vertical) {
         CssValue[] out = new CssValue[CssPropertyId.TOTAL_COUNT];
         int start = CssPropertyId.NON_INH_END;
         int len = out.length - start;
@@ -834,6 +849,10 @@ public final class ComputedStyle {
             if (out[i] != null) cnt++;
         }
         cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of(displayValue));
+        if (vertical != 0) {
+            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM, CssValue.of(vertical == 2 ? "rotate(-90deg)" : "rotate(90deg)"));
+            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM_ORIGIN, CssValue.of("0px 0px"));
+        }
         if (markerOverrides) {
             cnt += setOverrideSlot(out, CssPropertyIndex.WHITE_SPACE, CssValue.of("pre"));
             cnt += setOverrideSlot(out, CssPropertyIndex.TEXT_TRANSFORM, CssValue.of("none"));

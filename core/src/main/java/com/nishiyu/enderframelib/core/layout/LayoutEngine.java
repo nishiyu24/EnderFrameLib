@@ -40,6 +40,7 @@ public abstract class LayoutEngine {
         static final LayoutEngine FLEX = new FlexLayoutEngine();
         static final LayoutEngine GRID = new GridLayoutEngine();
         static final LayoutEngine TABLE = new TableLayoutEngine();
+        static final LayoutEngine VERTICAL = new VerticalWritingEngine();
     }
 
     /**
@@ -49,6 +50,11 @@ public abstract class LayoutEngine {
      * 落としていた。{@code inline-flex} も外側の振る舞い（インライン）と内側の整形（flex）を
      * 区別できず、{@code table} / {@code table-*} はブロックとして縦に積まれていた。
      */
+    /** 箱のエンジン。縦書きの根は {@link VerticalWritingEngine}、それ以外は {@code display} で決まる。 */
+    public static LayoutEngine getEngine(LayoutBox box) {
+        return box.isVerticalRoot ? Engines.VERTICAL : getEngine(box.display);
+    }
+
     public static LayoutEngine getEngine(Display display) {
         if (display == null) return Engines.BLOCK;
         return switch (display.inner()) {

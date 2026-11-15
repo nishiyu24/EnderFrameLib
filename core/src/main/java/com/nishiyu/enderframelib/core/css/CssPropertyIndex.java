@@ -180,6 +180,7 @@ public final class CssPropertyIndex {
     public static final int TRANSLATE = ComputedStyle.idOf(CssProperty.TRANSLATE);
     public static final int SCALE = ComputedStyle.idOf(CssProperty.SCALE);
     public static final int WRITING_MODE = ComputedStyle.idOf(CssProperty.WRITING_MODE);
+    public static final int TEXT_ORIENTATION = ComputedStyle.idOf(CssProperty.TEXT_ORIENTATION);
     public static final int BREAK_INSIDE = ComputedStyle.idOf(CssProperty.BREAK_INSIDE);
     public static final int BACKGROUND_IMAGE = ComputedStyle.idOf(CssProperty.BACKGROUND_IMAGE);
     public static final int BACKGROUND_POSITION = ComputedStyle.idOf(CssProperty.BACKGROUND_POSITION);

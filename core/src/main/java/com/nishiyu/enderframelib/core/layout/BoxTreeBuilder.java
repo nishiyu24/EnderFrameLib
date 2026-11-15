@@ -7,6 +7,7 @@ import com.nishiyu.enderframelib.core.css.ComputedStyle;
 import com.nishiyu.enderframelib.core.css.CssKeywords;
 import com.nishiyu.enderframelib.core.css.CssProperty;
 import com.nishiyu.enderframelib.core.css.PropertyRegistry;
+import com.nishiyu.enderframelib.core.css.WritingModes;
 import com.nishiyu.enderframelib.core.dom.node.HtmlElement;
 import com.nishiyu.enderframelib.core.dom.node.HtmlNode;
 import com.nishiyu.enderframelib.core.dom.node.NodeType;
@@ -83,7 +84,7 @@ public final class BoxTreeBuilder {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
         if (root.subtreeHasGenerated) builder.collectReusableGenerated(root);
         builder.counters.apply(root);
-        builder.buildBox(root);
+        builder.buildBox(root, false);
     }
 
     // ==========================================
@@ -105,6 +106,7 @@ public final class BoxTreeBuilder {
         if (d == null || d.isNone() || d.isContents() || d.isInlineLevel() || d.listItem()) return false;
         if (d.inner() != Inner.FLOW && d.inner() != Inner.FLOW_ROOT) return false;
         if (parent.isAnonymous || parent.node == null || parent.node.isPseudoNode || LayoutBox.isTableBox(parent)) return false;
+        if (parent.isVerticalRoot || WritingModes.isVertical(parent.style)) return false;
         if (MulticolLayout.isMulticol(parent) || parent.style.skipsContents()
                 || parent.contentAutoSkipped || parent.childrenDeferred || parent.isVirtualizedFlow()) return false;
         String tag = parent.node.tag == null ? "" : parent.node.tag.toLowerCase(Locale.ROOT);
@@ -146,7 +148,7 @@ public final class BoxTreeBuilder {
     public static void insertBuiltChild(LayoutBox parent, LayoutBox after, LayoutBox added, CounterStyles counterStyles) {
         BoxTreeBuilder builder = new BoxTreeBuilder(counterStyles);
         builder.counters.apply(added);
-        builder.buildBox(added);
+        builder.buildBox(added, WritingModes.isVertical(parent.style));
         int index = after == null ? 0 : indexOfBox(parent.children, after) + 1;
         parent.children.add(index, added);
         added.parent = parent;
@@ -197,7 +199,7 @@ public final class BoxTreeBuilder {
         return reusableGenerated.remove(id);
     }
 
-    private void buildBox(LayoutBox box) {
+    private void buildBox(LayoutBox box, boolean parentVertical) {
         List<LayoutBox> items = new ArrayList<>();
         LayoutBox marker = box.display.listItem() ? createMarker(box, counters) : null;
         if (marker != null) items.add(marker);
@@ -206,7 +208,43 @@ public final class BoxTreeBuilder {
         box.clearChildren();
         LayoutBox.bumpShapeEpoch();
         if (legend != null) box.addChild(legend);
-        for (LayoutBox child : fixup(box, items)) box.addChild(child);
+        List<LayoutBox> kids = fixup(box, items);
+        box.isVerticalRoot = false;
+        if (!parentVertical && isVerticalRootCandidate(box)) kids = wrapVerticalContent(box, kids);
+        for (LayoutBox child : kids) box.addChild(child);
+    }
+
+    /** 縦書きの根になれる箱か（{@code writing-mode} が縦で、ブロックコンテナ。flex / grid / 表 / 置換要素は対象外）。 */
+    private static boolean isVerticalRootCandidate(LayoutBox box) {
+        if (box.isAnonymous || box.node == null || box.node.nodeType == NodeType.TEXT || box.node.isPseudoNode) return false;
+        Inner inner = box.display.inner();
+        if (box.display.isNone() || box.display.isContents() || (inner != Inner.FLOW && inner != Inner.FLOW_ROOT)) return false;
+        if (ReplacedElements.isHost(box.node.tag)) return false;
+        return WritingModes.isVertical(box.style);
+    }
+
+    /**
+     * 縦書きの根の通常フローの子を、回転を持つ 1 つの生成箱へ包む。位置指定・非表示・外側マーカーは根の直下に残す
+     * （包含ブロックを回転の内側へ入れない）。
+     */
+    private List<LayoutBox> wrapVerticalContent(LayoutBox root, List<LayoutBox> kids) {
+        int flow = WritingModes.flowOf(root.style);
+        HtmlNode node = new HtmlNode("div");
+        node.isPseudoNode = true;
+        node.parent = root.node;
+        node.setId(root.node.key() + "_vw");
+        LayoutBox wrapper = new LayoutBox(node, root.style.derivedVerticalWrapper(WritingModes.isCounterClockwise(flow)));
+        wrapper.isVerticalWrapper = true;
+        List<LayoutBox> outside = new ArrayList<>();
+        for (LayoutBox k : kids) {
+            if (k.isAbsolute || k.isOutsideMarker || k.isRenderedLegend || k.display.isNone()) outside.add(k);
+            else wrapper.addChild(k);
+        }
+        root.isVerticalRoot = true;
+        List<LayoutBox> result = new ArrayList<>(outside.size() + 1);
+        result.add(wrapper);
+        result.addAll(outside);
+        return result;
     }
 
     /**
@@ -252,7 +290,7 @@ public final class BoxTreeBuilder {
             if (child.display.isContents()) {
                 collectItems(child, out);
             } else {
-                buildBox(child);
+                buildBox(child, WritingModes.isVertical(element.style));
                 out.add(child);
             }
         }
