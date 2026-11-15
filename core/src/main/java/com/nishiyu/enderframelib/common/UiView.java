@@ -2021,6 +2021,13 @@ public class UiView implements AutoCloseable {
     }
 
     /** 要素 ID から {@code <scene-3d>} に対応する 3D ワールドを取得または作成する（要素が無ければ null）。 */
+    /** 表示中の全 3D ワールドの変更回数の合計（{@link Scene3DWorld#changeCount()}）。増えていれば 3D の見た目が変わった。 */
+    public long scene3dChangeSignature() {
+        long sum = 0;
+        for (Scene3DWorld w : scene3dWorlds.values()) sum += w.changeCount();
+        return sum;
+    }
+
     public Scene3DWorld scene3dWorldById(String elementId) {
         HtmlNode node = findNode(elementId);
         return node == null ? null : getOrCreateScene3dWorld(node.nodeId());

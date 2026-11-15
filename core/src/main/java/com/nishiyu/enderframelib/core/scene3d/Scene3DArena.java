@@ -64,6 +64,8 @@ public final class Scene3DArena {
     private int[] dfsStack;
     private int topoCount;
     private boolean topoDirty = true;
+    /** 見た目に効く変更のたびに増える（静止シーンの再描画を飛ばす判定用。{@link Scene3DWorld#changeCount()}）。 */
+    private long changes;
     private boolean anyTransformDirty = true;
 
     public Scene3DArena() {
@@ -96,7 +98,11 @@ public final class Scene3DArena {
         return allocateNode(NULL_NODE);
     }
 
+    /** 変更の通し回数。単調に増える。 */
+    public long changeCount() { return changes; }
+
     public int allocateNode(int parent) {
+        changes++;
         if (parent != NULL_NODE) {
             checkAlive(parent);
         }
@@ -171,6 +177,7 @@ public final class Scene3DArena {
         int idx = id * RENDER_STRIDE + RENDER_FLAGS;
         int flags = renderRef.get(idx);
         renderRef.set(idx, visible ? (flags | FLAG_VISIBLE) : (flags & ~FLAG_VISIBLE));
+        changes++;
     }
 
     public void setParent(int child, int newParent) {
@@ -235,6 +242,7 @@ public final class Scene3DArena {
      * ノードとその子孫サブツリーを解放し、フリーリストへ戻す。
      */
     public void freeNode(int id) {
+        changes++;
         checkAlive(id);
         int parent = topology.get(id * TOPO_STRIDE + TOPO_PARENT);
         if (parent != NULL_NODE) {
@@ -329,6 +337,7 @@ public final class Scene3DArena {
     public void setMaterial(int id, int materialId) {
         checkAlive(id);
         renderRef.set(id * RENDER_STRIDE + RENDER_MATERIAL_ID, materialId);
+        changes++;
     }
 
     public void setEntityTag(int id, int entityTag) {
@@ -360,9 +369,11 @@ public final class Scene3DArena {
         int idx = id * RENDER_STRIDE + RENDER_FLAGS;
         renderRef.set(idx, renderRef.get(idx) | FLAG_DIRTY);
         anyTransformDirty = true;
+        changes++;
     }
 
     public void markAllDirty() {
+        changes++;
         for (int i = 0; i < highWater; i++) {
             int idx = i * RENDER_STRIDE + RENDER_FLAGS;
             int f = renderRef.get(idx);

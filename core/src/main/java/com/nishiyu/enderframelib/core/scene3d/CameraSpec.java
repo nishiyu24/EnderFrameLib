@@ -19,12 +19,17 @@ public final class CameraSpec {
     private final float[] viewProj = new float[16];
     private final float[] frustumPlanes = new float[24];
     private boolean dirty = true;
+    private long changes;
+
+    /** 変更の通し回数（単調に増える）。 */
+    public long changeCount() { return changes; }
 
     public void lookAt(float ex, float ey, float ez, float tx, float ty, float tz, float ux, float uy, float uz) {
         this.eyeX = ex; this.eyeY = ey; this.eyeZ = ez;
         this.targetX = tx; this.targetY = ty; this.targetZ = tz;
         this.upX = ux; this.upY = uy; this.upZ = uz;
         this.dirty = true;
+        changes++;
     }
 
     public void setPerspective(float fovYRadians, float aspect, float nearZ, float farZ) {
@@ -33,6 +38,7 @@ public final class CameraSpec {
         this.nearZ = Math.max(1e-4f, nearZ);
         this.farZ = Math.max(this.nearZ + 0.01f, farZ);
         this.dirty = true;
+        changes++;
     }
 
     public void setAspect(float aspect) {
@@ -40,6 +46,7 @@ public final class CameraSpec {
         if (Math.abs(clamped - this.aspect) > 1e-6f) {
             this.aspect = clamped;
             this.dirty = true;
+            changes++;
         }
     }
 

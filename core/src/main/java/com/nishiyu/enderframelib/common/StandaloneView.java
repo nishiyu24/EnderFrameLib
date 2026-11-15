@@ -239,11 +239,14 @@ public final class StandaloneView implements AutoCloseable {
         return f != null ? f.key() : "";
     }
 
+    /** 直近のフレームで見た 3D ワールドの変更回数の合計（変わっていれば描き直す）。 */
+    private long sceneSignature;
+
     /** 見た目が変わりうる状態か（入力の反映待ち・アニメーション・タイマー）。false なら描き直さなくてよい。 */
     public boolean needsFrame() {
         return redraw || animating || settlePending || lastNow < compositorUntil || !scrollTargets.isEmpty()
                 || ui.invalidationLevel() != UiView.InvalidationLevel.NONE || interaction.hasDirtyNodes()
-                || !ui.timers().isEmpty();
+                || !ui.timers().isEmpty() || ui.scene3dChangeSignature() != sceneSignature;
     }
 
     /**
@@ -308,6 +311,11 @@ public final class StandaloneView implements AutoCloseable {
                 compositorBase = compBase;
                 compositorUntil = compositorUntil(compBase, nowMs);
             }
+        }
+        long sceneSig = ui.scene3dChangeSignature();
+        if (sceneSig != sceneSignature) { // 3D のノード・カメラ・ライトなどが変わった（DOM は変わらないので、ここで拾う）
+            sceneSignature = sceneSig;
+            redraw = true;
         }
         boolean wasAnimating = animating;
         animating = running;

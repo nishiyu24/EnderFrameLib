@@ -17,6 +17,7 @@ public final class Scene3DWorld {
     private final Scene3DUploadPlan uploadPlan = new Scene3DUploadPlan();
     private int clearColorArgb = 0x00000000;
     private int msaaSamples = 0;
+    private long settings;
 
     public Scene3DWorld() {
         this(0L);
@@ -37,11 +38,20 @@ public final class Scene3DWorld {
     public Scene3DUploadPlan uploadPlan() { return uploadPlan; }
 
     public int clearColorArgb() { return clearColorArgb; }
-    public Scene3DWorld clearColorArgb(int argb) { this.clearColorArgb = argb; return this; }
+    public Scene3DWorld clearColorArgb(int argb) { this.clearColorArgb = argb; settings++; return this; }
+
+    /**
+     * 見た目に効く変更の通し回数（ノード・カメラ・ライト・形・材質・背景色・MSAA の変更で増える。単調）。値が前回と同じなら、
+     * 前回描いた絵から変わっていないので描き直さなくてよい（静止した 3D ビューポートの再描画を飛ばす）。
+     */
+    public long changeCount() {
+        return arena.changeCount() + camera.changeCount() + light.changeCount() + geometry.version() + materials.count() + settings;
+    }
 
     public int msaaSamples() { return msaaSamples; }
     public Scene3DWorld msaaSamples(int samples) {
         this.msaaSamples = Math.max(0, samples);
+        settings++;
         return this;
     }
 

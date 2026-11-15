@@ -15,11 +15,17 @@ public final class LightDesc {
     private float ambientG = 0.30f;
     private float ambientB = 0.35f;
 
+    private long changes;
+
+    /** 変更の通し回数（単調に増える）。 */
+    public long changeCount() { return changes; }
+
     public LightDesc() {
         normalizeDirection();
     }
 
     public void setDirection(float x, float y, float z) {
+        changes++;
         this.dirX = x;
         this.dirY = y;
         this.dirZ = z;
@@ -40,6 +46,7 @@ public final class LightDesc {
     }
 
     public void setColor(float r, float g, float b, float intensity) {
+        changes++;
         this.lightR = r;
         this.lightG = g;
         this.lightB = b;
@@ -47,6 +54,7 @@ public final class LightDesc {
     }
 
     public void setAmbient(float r, float g, float b) {
+        changes++;
         this.ambientR = r;
         this.ambientG = g;
         this.ambientB = b;
