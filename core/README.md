@@ -189,6 +189,19 @@ EnderFrameLib `:core` is purpose-built as an **in-process embedded UI engine** (
 
 ---
 
+## ⏱️ Faster Cold Start (optional, JDK 24+)
+
+The engine itself targets Java 21, but on JDK 24+ you can ship an AOT cache (JEP 483) to cut process-to-first-frame time by roughly 2x — no code change:
+
+```
+java -XX:AOTCacheOutput=app.aot -cp <your classpath as jars> YourMain     # training run (once, per build)
+java -XX:AOTCache=app.aot        -cp <same jars>             YourMain     # normal runs
+```
+
+Measured on Windows / JDK 27 (`ColdStartMain`, median of 7 fresh JVMs, 800x600): showcase `482 → 220 ms`, 2,000-row list `575 → 249 ms`. The cache must be built from the same jars (directories are rejected) and the same JDK.
+
+---
+
 ## 📖 Further Reading
 
 - [DISTRIBUTION_ROADMAP.md](DISTRIBUTION_ROADMAP.md): Detailed distribution roadmap and readiness tracker.

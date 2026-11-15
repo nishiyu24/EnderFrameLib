@@ -9,13 +9,14 @@ package com.nishiyu.enderframelib.core.layout;
 public final class LayoutParallelProbe {
     private LayoutParallelProbe() {}
 
-    public static final int MEASURE = 0, PLACE = 1;
+    public static final int MEASURE = 0, PLACE = 1, RESTYLE = 2;
+    private static final int KINDS = 3;
     /** 兄弟がこの数以上いる親の子だけを「配れる単位」とみなす。 */
     static final int MIN_SIBLINGS = 8;
     private static volatile boolean enabled = Boolean.getBoolean("enderframe.layout.probe");
     /** スレッドごとの {深さ, 独立な部分木の中か(0/1), 独立の開始時刻, 全体の開始時刻}（種類ごと）。 */
-    private static final ThreadLocal<long[][]> STATE = ThreadLocal.withInitial(() -> new long[2][4]);
-    private static final long[] TOTAL_NS = new long[2], INDEPENDENT_NS = new long[2], INDEPENDENT_BOXES = new long[2];
+    private static final ThreadLocal<long[][]> STATE = ThreadLocal.withInitial(() -> new long[KINDS][4]);
+    private static final long[] TOTAL_NS = new long[KINDS], INDEPENDENT_NS = new long[KINDS], INDEPENDENT_BOXES = new long[KINDS];
 
     public static void enable(boolean on) {
         enabled = on;
@@ -26,7 +27,7 @@ public final class LayoutParallelProbe {
     }
 
     public static synchronized void reset() {
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < KINDS; k++) {
             TOTAL_NS[k] = 0;
             INDEPENDENT_NS[k] = 0;
             INDEPENDENT_BOXES[k] = 0;
@@ -59,7 +60,7 @@ public final class LayoutParallelProbe {
     }
 
     /** 入るとき。戻り値を {@link #exit} へ渡す（0 は無効のとき）。 */
-    static long enter(LayoutBox box, int kind) {
+    public static long enter(LayoutBox box, int kind) {
         if (!enabled) return 0;
         long[] s = STATE.get()[kind];
         long now = System.nanoTime();
@@ -76,7 +77,7 @@ public final class LayoutParallelProbe {
         return token;
     }
 
-    static void exit(int kind, long token) {
+    public static void exit(int kind, long token) {
         if (token == 0) return;
         long[] s = STATE.get()[kind];
         long now = System.nanoTime();

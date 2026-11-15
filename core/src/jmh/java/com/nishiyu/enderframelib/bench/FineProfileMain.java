@@ -105,6 +105,10 @@ public final class FineProfileMain {
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(0) / 1e6 / frames,
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentShare(1), com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentBoxes(1) / (double) frames,
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(1) / 1e6 / frames);
+                System.out.printf("PARALLELPROBE restyle share=%.3f (boxes/frame=%.1f, total=%.2f ms/frame)%n",
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentShare(2),
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentBoxes(2) / (double) frames,
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(2) / 1e6 / frames);
             }
             if (glBackend != null) {
                 com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(false);

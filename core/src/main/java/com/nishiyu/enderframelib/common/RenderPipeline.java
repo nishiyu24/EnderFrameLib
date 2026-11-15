@@ -1063,6 +1063,22 @@ public class RenderPipeline {
                                                      InteractionState interactionState, boolean siblingInvalidation,
                                                      ContainerBox parentSizeContainer, boolean ancestorHasMoving,
                                                      List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList) {
+        long probe = com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.enter(box, com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE);
+        try {
+            return restyleBoxRecursive0(box, inheritedStyle, sheet, env, force, parentFontSize, scope, interactionState,
+                    siblingInvalidation, parentSizeContainer, ancestorHasMoving, layoutChangedList, styleChangedList);
+        } finally {
+            com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.exit(com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.RESTYLE, probe);
+        }
+    }
+
+    private static int restyleBoxRecursive0(LayoutBox box, Map<String, String> inheritedStyle,
+                                                     StyleSheet sheet,
+                                                     Map<String, String> env, int force,
+                                                     float parentFontSize, StyleScope scope,
+                                                     InteractionState interactionState, boolean siblingInvalidation,
+                                                     ContainerBox parentSizeContainer, boolean ancestorHasMoving,
+                                                     List<LayoutBox> layoutChangedList, List<LayoutBox> styleChangedList) {
         HtmlNode node = box.node;
         InteractionState.StateFlags flags = interactionState.getOrCreate(node);
         StyleCache cache = force != FORCE_NONE ? StyleCache.INVALID : styleCacheState(flags, parentFontSize, scope);

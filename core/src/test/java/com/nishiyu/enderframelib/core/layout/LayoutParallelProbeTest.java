@@ -30,6 +30,26 @@ class LayoutParallelProbeTest {
         }
     }
 
+    /** restyle も行ごとに独立（B2: 再スタイルの走査も配れるかの計測）。親の継承値の変更で全行を算出し直す経路で数える。 */
+    @Test
+    void restyleOfManyRowsIsCountedAsIndependentUnits() {
+        boolean was = LayoutParallelProbe.enabled();
+        try {
+            var v = new com.nishiyu.enderframelib.common.StandaloneView(rows(40), 400, 300, FontResolver.FALLBACK);
+            v.ui().renderCache();
+            LayoutParallelProbe.enable(true);
+            LayoutParallelProbe.reset();
+            ((com.nishiyu.enderframelib.core.dom.node.HtmlElement) v.root().getNodeById("list")).setAttribute("style", "font-size:17px"); // 継承されるので、全行を算出し直す
+            v.ui().flushInvalidation();
+            v.ui().renderCache();
+            assertTrue(LayoutParallelProbe.independentBoxes(LayoutParallelProbe.RESTYLE) >= 40, "行ごとに 1 単位");
+            double share = LayoutParallelProbe.independentShare(LayoutParallelProbe.RESTYLE);
+            assertTrue(share > 0.3 && share <= 1.0, "再スタイルの時間の大半は行の中: " + share);
+        } finally {
+            LayoutParallelProbe.enable(was);
+        }
+    }
+
     @Test
     void fewSiblingsHaveNothingToDistribute() {
         boolean was = LayoutParallelProbe.enabled();
