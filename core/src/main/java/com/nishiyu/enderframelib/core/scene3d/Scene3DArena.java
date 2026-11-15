@@ -373,6 +373,13 @@ public final class Scene3DArena {
         anyTransformDirty = true;
     }
 
+    /** 変換系（ワールド行列・AABB）が更新された回数。レイキャストの BVH が作り直しの要否を決める。 */
+    public long transformEpoch() { return transformEpoch; }
+
+    void bumpTransformEpoch() { transformEpoch++; }
+
+    private long transformEpoch;
+
     boolean consumeTransformDirty() {
         boolean d = anyTransformDirty || topoDirty;
         anyTransformDirty = false;

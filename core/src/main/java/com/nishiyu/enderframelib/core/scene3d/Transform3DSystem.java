@@ -28,6 +28,7 @@ public final class Transform3DSystem {
         if (!needsAnyUpdate) {
             return;
         }
+        arena.bumpTransformEpoch();
 
         for (int k = 0; k < count; k++) {
             int id = order[k];
