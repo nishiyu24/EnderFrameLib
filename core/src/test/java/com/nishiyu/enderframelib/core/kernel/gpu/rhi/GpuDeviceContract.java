@@ -35,7 +35,7 @@ public abstract class GpuDeviceContract {
 
     static void clear(GpuDevice d, GpuTexture t, int argb, int[] scissor) {
         GpuFrame f = d.beginFrame();
-        f.beginPass(t, GpuDevice.LoadOp.CLEAR, argb, scissor).end();
+        f.beginPass(t, LoadOp.CLEAR, argb, scissor).end();
         f.end();
     }
 
@@ -43,7 +43,7 @@ public abstract class GpuDeviceContract {
     void clearFillsTheWholeTarget() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 6, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(8, 6, true));
             clear(d, t, 0xFF336699, null);
             byte[] all = readAll(d, t, new int[]{0, 0, 8, 6});
             for (int y = 0; y < 6; y++) for (int x = 0; x < 8; x++) assertEquals(0x336699FF, px(all, 8, x, y), x + "," + y);
@@ -56,7 +56,7 @@ public abstract class GpuDeviceContract {
     void scissoredClearTouchesOnlyTheRegionWithATopLeftOrigin() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 6, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(8, 6, true));
             clear(d, t, 0x00000000, null);
             clear(d, t, 0xFFFF0000, new int[]{2, 1, 3, 2}); // x 2..4, y 1..2（上から数える）
             byte[] all = readAll(d, t, new int[]{0, 0, 8, 6});
@@ -75,10 +75,10 @@ public abstract class GpuDeviceContract {
     void loadKeepsThePreviousContents() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
             clear(d, t, 0xFF00FF00, null);
             GpuFrame f = d.beginFrame();
-            f.beginPass(t, GpuDevice.LoadOp.LOAD, 0xFFFF0000, null).end();
+            f.beginPass(t, LoadOp.LOAD, 0xFFFF0000, null).end();
             f.end();
             assertEquals(0x00FF00FF, px(readAll(d, t, new int[]{0, 0, 4, 4}), 4, 3, 3));
         } finally {
@@ -90,7 +90,7 @@ public abstract class GpuDeviceContract {
     void uploadThenReadbackRoundTripsWithTheFirstRowOnTop() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 6, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(8, 6, true));
             clear(d, t, 0x00000000, null);
             ByteBuffer src = ByteBuffer.allocateDirect(4 * 3 * 4);
             for (int y = 0; y < 3; y++) for (int x = 0; x < 4; x++) src.put((byte) (x * 10 + 1)).put((byte) (y * 10 + 2)).put((byte) 7).put((byte) 255);
@@ -116,8 +116,8 @@ public abstract class GpuDeviceContract {
     void copyMovesARegionToTheSamePosition() {
         GpuDevice d = open();
         try {
-            GpuTexture a = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 6, true));
-            GpuTexture b = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 6, true));
+            GpuTexture a = d.createTexture(TextureDesc.rgba8(8, 6, true));
+            GpuTexture b = d.createTexture(TextureDesc.rgba8(8, 6, true));
             clear(d, a, 0xFF000000, null);
             clear(d, a, 0xFF0000FF, new int[]{1, 4, 3, 2}); // 下寄りの青
             clear(d, b, 0x00000000, null);
@@ -139,7 +139,7 @@ public abstract class GpuDeviceContract {
     void singleChannelTexturesRoundTrip() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(new GpuDevice.TextureDesc(4, 2, GpuDevice.TextureFormat.R8, true, 1));
+            GpuTexture t = d.createTexture(new TextureDesc(4, 2, TextureFormat.R8, true, 1));
             ByteBuffer src = ByteBuffer.allocateDirect(8);
             for (int i = 0; i < 8; i++) src.put((byte) (i * 30));
             src.flip();
@@ -158,14 +158,14 @@ public abstract class GpuDeviceContract {
     void framesAndPassesCannotOverlap() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
             GpuFrame f = d.beginFrame();
             assertThrows(IllegalStateException.class, d::beginFrame, "フレームは 1 つずつ");
-            GpuPass p = f.beginPass(t, GpuDevice.LoadOp.CLEAR, 0, null);
+            GpuPass p = f.beginPass(t, LoadOp.CLEAR, 0, null);
             assertThrows(IllegalStateException.class, () -> f.upload(t, 0, 0, 1, 1, ByteBuffer.allocateDirect(4)), "パスの途中で別の命令は入れられない");
             p.end();
             f.end();
-            assertThrows(IllegalStateException.class, () -> f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null), "提出後は使えない");
+            assertThrows(IllegalStateException.class, () -> f.beginPass(t, LoadOp.LOAD, 0, null), "提出後は使えない");
             d.beginFrame().end(); // 次のフレームは開ける
         } finally {
             closeDevice(d);
@@ -176,7 +176,7 @@ public abstract class GpuDeviceContract {
     void regionsOutsideTheTextureAreRejected() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
             GpuFrame f = d.beginFrame();
             assertThrows(IllegalArgumentException.class, () -> f.readback(t, new int[]{2, 2, 4, 4}, ByteBuffer.allocateDirect(64)));
             assertThrows(IllegalArgumentException.class, () -> f.upload(t, 0, 0, 4, 4, ByteBuffer.allocateDirect(8)), "画素が足りない");
@@ -190,7 +190,7 @@ public abstract class GpuDeviceContract {
     void externalTexturesKeepTheirNativeHandle() {
         GpuDevice d = open();
         try {
-            GpuTexture own = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+            GpuTexture own = d.createTexture(TextureDesc.rgba8(4, 4, true));
             long h = d.nativeHandle(own);
             GpuTexture wrapped = d.wrapExternal(h, 4, 4);
             assertEquals(h, d.nativeHandle(wrapped));
@@ -208,7 +208,7 @@ public abstract class GpuDeviceContract {
         GpuDevice d = open();
         try {
             assertTrue(d.caps().maxTextureSize() >= 1024);
-            assertThrows(IllegalArgumentException.class, () -> d.createTexture(GpuDevice.TextureDesc.rgba8(d.caps().maxTextureSize() + 1, 1, false)));
+            assertThrows(IllegalArgumentException.class, () -> d.createTexture(TextureDesc.rgba8(d.caps().maxTextureSize() + 1, 1, false)));
         } finally {
             closeDevice(d);
         }
@@ -218,7 +218,7 @@ public abstract class GpuDeviceContract {
     void unknownShadersAreRejected() {
         GpuDevice d = open();
         try {
-            assertThrows(IllegalArgumentException.class, () -> d.createPipeline(new GpuDevice.PipelineDesc("no-such-shader", true, false)));
+            assertThrows(IllegalArgumentException.class, () -> d.createPipeline(new PipelineDesc("no-such-shader", true, false)));
         } finally {
             closeDevice(d);
         }
@@ -228,10 +228,10 @@ public abstract class GpuDeviceContract {
     void bindingNeedsTheDeclaredUniformsAndTextures() {
         GpuDevice d = open();
         try {
-            GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
-            GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+            GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
+            GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
             GpuFrame f = d.beginFrame();
-            GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
+            GpuPass pass = f.beginPass(t, LoadOp.LOAD, 0, null);
             assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{t}, ByteBuffer.allocateDirect(8))), "定数が足りない");
             assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[0], ByteBuffer.allocateDirect(32))), "テクスチャが足りない");
             assertThrows(IllegalStateException.class, () -> pass.drawInstanced(4, 1, 0), "結ぶ前は描けない");

@@ -1,4 +1,12 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferUsage;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.CullMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureFormat;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.VertexLayout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,7 +62,7 @@ class GlDeviceContractTest extends GpuDeviceContract {
     @Test
     void bufferWritesReachTheGpuAtTheEndOfTheFrame() {
         GlDevice d = (GlDevice) open();
-        GpuBuffer b = d.createBuffer(new GpuDevice.BufferDesc(64, GpuDevice.BufferUsage.RECORD));
+        GpuBuffer b = d.createBuffer(new BufferDesc(64, BufferUsage.RECORD));
         b.map().putInt(0, 0xCAFEBABE).putInt(60, 7);
         d.beginFrame().end();
         ByteBuffer back = org.lwjgl.BufferUtils.createByteBuffer(64).order(java.nio.ByteOrder.nativeOrder());
@@ -67,14 +75,14 @@ class GlDeviceContractTest extends GpuDeviceContract {
     @Test
     void glStateIsRestoredAtTheEndOfTheFrame() {
         GlDevice d = (GlDevice) open();
-        GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
+        GpuTexture t = d.createTexture(TextureDesc.rgba8(8, 8, true));
         int fbo = GL30.glGenFramebuffers();
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL11.glViewport(1, 2, 3, 4);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GL11.glClearColor(0.1f, 0.2f, 0.3f, 0.4f);
         GpuFrame f = d.beginFrame();
-        f.beginPass(t, GpuDevice.LoadOp.CLEAR, 0xFFFFFFFF, new int[]{1, 1, 2, 2}).end();
+        f.beginPass(t, LoadOp.CLEAR, 0xFFFFFFFF, new int[]{1, 1, 2, 2}).end();
         f.end();
         assertEquals(fbo, GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING));
         int[] vp = new int[4];
@@ -91,21 +99,21 @@ class GlDeviceContractTest extends GpuDeviceContract {
     @Test
     void depthBufferMsaaAndAdvancedShadersAreSupported() {
         GlDevice d = (GlDevice) open();
-        GpuDevice.PipelineDesc pDesc = new GpuDevice.PipelineDesc(
-                "scene3d", false, true, true, GpuDevice.CullMode.BACK, GpuDevice.VertexLayout.SCENE3D);
+        PipelineDesc pDesc = new PipelineDesc(
+                "scene3d", false, true, true, CullMode.BACK, VertexLayout.SCENE3D);
         var pScene = d.createPipeline(pDesc);
-        var pFx = d.createPipeline(new GpuDevice.PipelineDesc("fx", true, false));
-        GpuTexture color = d.createTexture(GpuDevice.TextureDesc.rgba8Linear(16, 16, true));
-        GpuTexture depth = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.DEPTH24, true, 1));
+        var pFx = d.createPipeline(new PipelineDesc("fx", true, false));
+        GpuTexture color = d.createTexture(TextureDesc.rgba8Linear(16, 16, true));
+        GpuTexture depth = d.createTexture(new TextureDesc(16, 16, TextureFormat.DEPTH24, true, 1));
         GpuFrame f = d.beginFrame();
-        f.beginPass(color, depth, GpuDevice.LoadOp.CLEAR, 0xFF102030, 1.0f, null).end();
+        f.beginPass(color, depth, LoadOp.CLEAR, 0xFF102030, 1.0f, null).end();
         f.end();
         if (d.caps().msaa()) {
             int s = Math.min(4, d.caps().maxSamples());
-            GpuTexture msaaColor = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.RGBA8, true, s));
-            GpuTexture msaaDepth = d.createTexture(new GpuDevice.TextureDesc(16, 16, GpuDevice.TextureFormat.DEPTH24, true, s));
+            GpuTexture msaaColor = d.createTexture(new TextureDesc(16, 16, TextureFormat.RGBA8, true, s));
+            GpuTexture msaaDepth = d.createTexture(new TextureDesc(16, 16, TextureFormat.DEPTH24, true, s));
             GpuFrame f2 = d.beginFrame();
-            f2.beginPass(msaaColor, msaaDepth, GpuDevice.LoadOp.CLEAR, 0xFF000000, 1.0f, null).end();
+            f2.beginPass(msaaColor, msaaDepth, LoadOp.CLEAR, 0xFF000000, 1.0f, null).end();
             f2.copy(msaaColor, color, new int[]{0, 0, 16, 16});
             f2.end();
             msaaDepth.close();

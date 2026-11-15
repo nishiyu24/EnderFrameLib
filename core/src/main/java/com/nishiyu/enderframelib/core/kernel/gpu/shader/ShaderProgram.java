@@ -16,16 +16,6 @@ public record ShaderProgram(String id, String vertexBody, String fragmentBody, L
         this(id, vertexBody, fragmentBody, uniforms, samplers, 0, List.of());
     }
 
-    /** レコード列のバッファを、シェーダーの{@code samplerBuffer} が引く形（同じバッファの別の読み方を別のサンプラーに）。 */
-    public enum ViewFormat { FLOAT32, INT32, HALF16, RGBA_FLOAT32, RGBA_INT32 }
-
-    /**
-     * 記録列の読み口。{@code sampler} は GLSL の変数名、{@code bufferIndex} は {@code GpuBindings#records} の何番目のバッファか、
-     * {@code unit} はそのサンプラーのテクスチャユニット（GL）。
-     */
-    public record RecordView(String sampler, int bufferIndex, ViewFormat format, int unit) {
-    }
-
     /** 記録列のバッファの数（{@code GpuBindings#records} に要る本数）。 */
     public int recordBuffers() {
         int n = 0;

@@ -6,7 +6,7 @@ import java.nio.ByteBuffer;
 public interface GpuBuffer extends AutoCloseable {
     long size();
 
-    GpuDevice.BufferUsage usage();
+    BufferUsage usage();
 
     /** 書き込み先。呼び出しの間ではなく、閉じるまで同じバッファを返す。 */
     ByteBuffer map();

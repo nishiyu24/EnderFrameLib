@@ -1,9 +1,7 @@
 package com.nishiyu.enderframelib.core.kernel.gpu.shader;
 
-import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram.RecordView;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram.Uniform;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram.UniformType;
-import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram.ViewFormat;
 import java.util.List;
 
 /** 名前（{@code PipelineDesc#shaderId}）で引けるシェーダープログラムの一覧。段ごとに増やす。 */

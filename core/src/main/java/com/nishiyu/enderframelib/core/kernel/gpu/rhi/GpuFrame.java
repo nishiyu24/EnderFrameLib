@@ -8,10 +8,10 @@ import java.nio.ByteBuffer;
  */
 public interface GpuFrame {
     /** {@code scissor} は {@code {x, y, 幅, 高さ}}（無ければ null = 全面）。{@code clearArgb} は事前乗算の ARGB。 */
-    GpuPass beginPass(GpuTexture target, GpuDevice.LoadOp load, int clearArgb, int[] scissor);
+    GpuPass beginPass(GpuTexture target, LoadOp load, int clearArgb, int[] scissor);
 
     /** 深度ターゲット付きのパス。{@code depthTarget} が null なら色のみ。 */
-    default GpuPass beginPass(GpuTexture colorTarget, GpuTexture depthTarget, GpuDevice.LoadOp load,
+    default GpuPass beginPass(GpuTexture colorTarget, GpuTexture depthTarget, LoadOp load,
                               int clearArgb, float clearDepth, int[] scissor) {
         return beginPass(colorTarget, load, clearArgb, scissor);
     }

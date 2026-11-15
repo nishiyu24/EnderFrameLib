@@ -1,4 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,8 +67,8 @@ class GlRectRendererTest {
             this.dev = new GlDevice(persistent, 3);
             this.st = new GpuTreeStore(dev, 256, 16, 256, 256);
             this.rr = new RectRenderer(dev);
-            this.target = dev.createTexture(GpuDevice.TextureDesc.rgba8(W, H, true));
-            this.dummy = dev.createTexture(GpuDevice.TextureDesc.rgba8(1, 1, false));
+            this.target = dev.createTexture(TextureDesc.rgba8(W, H, true));
+            this.dummy = dev.createTexture(TextureDesc.rgba8(1, 1, false));
         }
 
         @Override
@@ -82,7 +84,7 @@ class GlRectRendererTest {
     private static int[] drawGpu(GpuEnv e, int count, float frameMs) {
         e.st.flush();
         GpuFrame f = e.dev.beginFrame();
-        GpuPass p = f.beginPass(e.target, GpuDevice.LoadOp.CLEAR, 0, null);
+        GpuPass p = f.beginPass(e.target, LoadOp.CLEAR, 0, null);
         e.rr.draw(p, e.st, e.dummy, e.dummy, 0, count, frameMs, W, H, true);
         p.end();
         ByteBuffer rgba = ByteBuffer.allocateDirect(W * H * 4);

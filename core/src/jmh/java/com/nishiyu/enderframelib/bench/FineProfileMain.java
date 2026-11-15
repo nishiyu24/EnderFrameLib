@@ -20,11 +20,12 @@ import java.util.List;
  *
  * <pre>
  * ./gradlew :core:profile -Pprofile.main=com.nishiyu.enderframelib.bench.FineProfileMain \
- *     -Pprofile.args="&lt;scenario&gt; &lt;doc&gt; &lt;frames&gt; &lt;null|cpu&gt;" [-Pprofile.jfr=out.jfr]
+ *     -Pprofile.args="&lt;scenario&gt; &lt;doc&gt; &lt;frames&gt; &lt;null|cpu|gl|vk&gt;" [-Pprofile.jfr=out.jfr]
  * </pre>
  * シナリオ: idle / hover / scroll / text / style（1 要素の style 属性）/ inherited（body の継承プロパティ）/
  * child（子の挿入と削除）/ relayout（全体の再レイアウト要求）/ resize / open（文書を開く: 解析 + 初回フレーム）。
- * バックエンド: {@code null} は描画しない（パイプラインだけ）、{@code cpu} は CPU ラスタまで含める。
+ * バックエンド: {@code null} は描画しない（パイプラインだけ）、{@code cpu} は CPU ラスタまで含める、
+ * {@code gl} / {@code vk} はそれぞれの GPU バックエンド。
  */
 public final class FineProfileMain {
     private FineProfileMain() { }
@@ -57,6 +58,7 @@ public final class FineProfileMain {
         try (RenderBackend raw = switch (backendName) {
             case "cpu" -> new SoftwareRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H, 1f);
             case "gl" -> new com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
+            case "vk" -> new com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend(Workloads.VIEWPORT_W, Workloads.VIEWPORT_H);
             default -> new NullBackend();
         }) {
             // 描画バックエンド呼び出し（CPU 側の描画・GL 送出・索引走査を含む）を PAINT 段として計るため包む。種別判定は raw で行う
@@ -72,16 +74,20 @@ public final class FineProfileMain {
             long allocTotal = 0;
             int rendered = 0;
 
-            var glBackend = raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend g0 ? g0 : null;
+            com.nishiyu.enderframelib.core.paint.gpu.GpuRenderBackend gpuBackend = switch (raw) {
+                case com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend g0 -> g0.gpuBackend();
+                case com.nishiyu.enderframelib.core.paint.vulkan.VkRenderBackend v0 -> v0.gpuBackend();
+                default -> null;
+            };
             long replayed0 = 0, flushes0 = 0, draws0 = 0;
             for (int i = -warmup; i < frames; i++) {
                 if (i == 0) {
-                    if (glBackend != null) { // G0: 計測区間（ウォームアップ後）の GPU 被覆率
+                    if (gpuBackend != null) { // G0/G3: 計測区間（ウォームアップ後）の GPU 被覆率
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.reset();
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(true);
-                        replayed0 = glBackend.rectTreeReplayedShapes();
-                        flushes0 = glBackend.cpuOverlayFlushCount();
-                        draws0 = glBackend.drawCallCount();
+                        replayed0 = gpuBackend.rectTreeReplayedShapes();
+                        flushes0 = gpuBackend.cpuOverlayFlushCount();
+                        draws0 = gpuBackend.drawCallCount();
                     }
                     StageProfiler.reset();
                     com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.reset();
@@ -110,17 +116,18 @@ public final class FineProfileMain {
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentBoxes(2) / (double) frames,
                         com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(2) / 1e6 / frames);
             }
-            if (glBackend != null) {
+            if (gpuBackend != null) {
                 com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(false);
-                long replayed = glBackend.rectTreeReplayedShapes() - replayed0;
+                long replayed = gpuBackend.rectTreeReplayedShapes() - replayed0;
                 // GPU 被覆率 = (受理 + 再生で再利用した図形) ÷ 全図形。CPU 層へ落ちた図形は種別ヒストグラムで多い順に出す
                 System.out.printf("GPUCOVERAGE %.4f accepted=%d replayed=%d declined=%d declinedByKind: %s%n",
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.coverage(replayed),
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalAccepted(), replayed,
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.totalDeclined(),
                         com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.declinedHistogram());
-                System.out.printf("GLFRAME per-frame drawCalls=%.2f cpuOverlayFlushes=%.2f%n",
-                        (glBackend.drawCallCount() - draws0) / (double) frames, (glBackend.cpuOverlayFlushCount() - flushes0) / (double) frames);
+                System.out.printf("GPUFRAME backend=%s per-frame drawCalls=%.2f cpuOverlayFlushes=%.2f%n",
+                        backendName, (gpuBackend.drawCallCount() - draws0) / (double) frames,
+                        (gpuBackend.cpuOverlayFlushCount() - flushes0) / (double) frames);
             }
 
             double[] sorted = ms.clone();
@@ -146,7 +153,7 @@ public final class FineProfileMain {
             }
             System.out.println("DOM elements=" + countElements(view[0].root()));
             System.out.println("ITEMS " + view[0].ui().renderCache().size() + " textPatch hit/fallback=" + UiView.TEXT_PATCH_HITS.get() + "/" + UiView.TEXT_PATCH_FALLBACKS.get() + " childPatch hit/fallback=" + UiView.CHILD_PATCH_HITS.get() + "/" + UiView.CHILD_PATCH_FALLBACKS.get());
-            if (raw instanceof com.nishiyu.enderframelib.core.paint.gl.LwjglGlRenderBackend gl) System.out.println("GL shapes=" + gl.rectTreeShapes() + " glyphs=" + gl.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gl.rectTreeRejects()) + " drawCalls=" + gl.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gl.rectTreeReplayedItems() / (double) (frames + warmup), gl.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gl.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
+            if (gpuBackend != null) System.out.println(backendName.toUpperCase() + " shapes=" + gpuBackend.rectTreeShapes() + " glyphs=" + gpuBackend.gpuGlyphCount() + " rejects(pose,grid,corner,capacity/opacity,clip)=" + java.util.Arrays.toString(gpuBackend.rectTreeRejects()) + " drawCalls=" + gpuBackend.rectTreeDrawCalls() + " replayed items/shapes per frame=" + String.format("%.1f/%.1f", gpuBackend.rectTreeReplayedItems() / (double) (frames + warmup), gpuBackend.rectTreeReplayedShapes() / (double) (frames + warmup)) + " changedWrites/frame=" + String.format("%.1f", gpuBackend.rectTreeChangedWrites() / (double) (frames + warmup)) + " per-frame frames=" + (frames + warmup));
             {
                 long n = frames + warmup;
                 // 配置の近道の効き具合（プロセス累計 / フレーム）: shifted = 部分木の平行移動、skipped = 入力が同じで飛ばした

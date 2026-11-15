@@ -50,6 +50,7 @@ dependencies {
     api "org.lwjgl:lwjgl:${lwjglVersion}"
     api "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
     api "org.lwjgl:lwjgl-opengl:${lwjglVersion}"
+    api "org.lwjgl:lwjgl-vulkan:${lwjglVersion}"
     api "org.lwjgl:lwjgl-freetype:${lwjglVersion}"
 
     // ネイティブはテストと、単体で動かすときの実行時に必要（Minecraft 上では本体が持つ）
@@ -57,6 +58,9 @@ dependencies {
     testRuntimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
     testRuntimeOnly "org.lwjgl:lwjgl-freetype::${lwjglNatives}"
+    if (lwjglNatives.startsWith('natives-macos')) {
+        testRuntimeOnly "org.lwjgl:lwjgl-vulkan::${lwjglNatives}"
+    }
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'

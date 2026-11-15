@@ -1,4 +1,13 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferUsage;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.CullMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.FilterMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureFormat;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.VertexLayout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -78,7 +87,7 @@ class GlDeviceDrawTest {
 
     /** 8x8 のソース: 左上 (1,1) は赤、右下 (6,6) は青、他は緑。 */
     private static GpuTexture source(GpuDevice d) {
-        GpuTexture src = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
+        GpuTexture src = d.createTexture(TextureDesc.rgba8(8, 8, true));
         ByteBuffer px = ByteBuffer.allocateDirect(8 * 8 * 4);
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
@@ -96,10 +105,10 @@ class GlDeviceDrawTest {
     @Test
     void drawsTheSelectedRegionOfTheSourceAtTheSamePosition() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0x00000000, null);
+        GpuPass pass = f.beginPass(dst, LoadOp.CLEAR, 0x00000000, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(1, 1, 7, 7, 8, 8, 1f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -116,10 +125,10 @@ class GlDeviceDrawTest {
     @Test
     void opacityScalesThePremultipliedColor() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0x00000000, null);
+        GpuPass pass = f.beginPass(dst, LoadOp.CLEAR, 0x00000000, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 0.5f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -133,11 +142,11 @@ class GlDeviceDrawTest {
     @Test
     void premultipliedBlendComposesOverWhatIsThere() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline over = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
-        GpuPipeline replace = d.createPipeline(new GpuDevice.PipelineDesc("tex", false, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline over = d.createPipeline(new PipelineDesc("tex", true, false));
+        GpuPipeline replace = d.createPipeline(new PipelineDesc("tex", false, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0xFF0000FF, null); // 不透明な青
+        GpuPass pass = f.beginPass(dst, LoadOp.CLEAR, 0xFF0000FF, null); // 不透明な青
         pass.bind(over, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 0.5f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -149,7 +158,7 @@ class GlDeviceDrawTest {
         assertEquals(255, c & 0xFF, "A");
         // 合成なし（置き換え）
         f = d.beginFrame();
-        pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0xFF0000FF, null);
+        pass = f.beginPass(dst, LoadOp.CLEAR, 0xFF0000FF, null);
         pass.bind(replace, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 1f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -160,10 +169,10 @@ class GlDeviceDrawTest {
     @Test
     void flipReadsTheSourceUpsideDown() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0x00000000, null);
+        GpuPass pass = f.beginPass(dst, LoadOp.CLEAR, 0x00000000, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 1f, 1)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -176,8 +185,8 @@ class GlDeviceDrawTest {
     @Test
     void drawingRestoresTheHostGlState() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         int hostProgram = GL20.glCreateProgram();
         int hv = GL20.glCreateShader(GL20.GL_VERTEX_SHADER), hf = GL20.glCreateShader(GL20.GL_FRAGMENT_SHADER);
         GL20.glShaderSource(hv, "#version 150\nvoid main() { gl_Position = vec4(0.0); }\n");
@@ -200,7 +209,7 @@ class GlDeviceDrawTest {
         GL11.glDisable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.CLEAR, 0, null);
+        GpuPass pass = f.beginPass(dst, LoadOp.CLEAR, 0, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 1f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -221,10 +230,10 @@ class GlDeviceDrawTest {
     @Test
     void baseInstanceIsRefusedOnGl32() {
         GlDevice d = open();
-        GpuTexture src = source(d), dst = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture src = source(d), dst = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(dst, GpuDevice.LoadOp.LOAD, 0, null);
+        GpuPass pass = f.beginPass(dst, LoadOp.LOAD, 0, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 1f, 0)));
         assertThrows(UnsupportedOperationException.class, () -> pass.drawInstanced(4, 1, 5));
         pass.end();
@@ -237,12 +246,12 @@ class GlDeviceDrawTest {
         int samples = Math.min(4, d.caps().maxSamples());
         Assumptions.assumeTrue(samples >= 2, "MSAA 非対応");
         GpuTexture src = source(d);
-        GpuTexture msaa = d.createTexture(new GpuDevice.TextureDesc(
-                8, 8, GpuDevice.TextureFormat.RGBA8, true, samples, GpuDevice.FilterMode.NEAREST));
-        GpuTexture resolved = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuTexture msaa = d.createTexture(new TextureDesc(
+                8, 8, TextureFormat.RGBA8, true, samples, FilterMode.NEAREST));
+        GpuTexture resolved = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("tex", true, false));
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(msaa, GpuDevice.LoadOp.CLEAR, 0x00000000, null);
+        GpuPass pass = f.beginPass(msaa, LoadOp.CLEAR, 0x00000000, null);
         pass.bind(p, new GpuBindings(new GpuBuffer[0], new GpuTexture[]{src}, uniforms(0, 0, 8, 8, 8, 8, 1f, 0)));
         pass.drawInstanced(4, 1, 0);
         pass.end();
@@ -287,14 +296,14 @@ class GlDeviceDrawTest {
     @Test
     void depth24OcclusionKeepsCloserMeshFragment() {
         GlDevice d = open();
-        GpuTexture color = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuTexture depth = d.createTexture(new GpuDevice.TextureDesc(
-                8, 8, GpuDevice.TextureFormat.DEPTH24, true, 1, GpuDevice.FilterMode.NEAREST));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc(
-                "scene3d", false, true, true, GpuDevice.CullMode.NONE, GpuDevice.VertexLayout.SCENE3D));
+        GpuTexture color = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuTexture depth = d.createTexture(new TextureDesc(
+                8, 8, TextureFormat.DEPTH24, true, 1, FilterMode.NEAREST));
+        GpuPipeline p = d.createPipeline(new PipelineDesc(
+                "scene3d", false, true, true, CullMode.NONE, VertexLayout.SCENE3D));
 
         int vbBytes = 4 * 48;
-        GpuBuffer vb = d.createBuffer(new GpuDevice.BufferDesc(vbBytes, GpuDevice.BufferUsage.VERTEX));
+        GpuBuffer vb = d.createBuffer(new BufferDesc(vbBytes, BufferUsage.VERTEX));
         ByteBuffer vbData = vb.map().duplicate().order(ByteOrder.nativeOrder());
         float[][] corners = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
         for (float[] c : corners) {
@@ -306,20 +315,20 @@ class GlDeviceDrawTest {
         vb.markDirty(0, vbBytes);
 
         int ibBytes = 6 * 4;
-        GpuBuffer ib = d.createBuffer(new GpuDevice.BufferDesc(ibBytes, GpuDevice.BufferUsage.INDEX));
+        GpuBuffer ib = d.createBuffer(new BufferDesc(ibBytes, BufferUsage.INDEX));
         ByteBuffer ibData = ib.map().duplicate().order(ByteOrder.nativeOrder());
         for (int idx : new int[]{0, 1, 2, 0, 2, 3}) ibData.putInt(idx);
         ib.markDirty(0, ibBytes);
 
         int instBytes = 2 * 128;
-        GpuBuffer inst = d.createBuffer(new GpuDevice.BufferDesc(instBytes, GpuDevice.BufferUsage.RECORD));
+        GpuBuffer inst = d.createBuffer(new BufferDesc(instBytes, BufferUsage.RECORD));
         ByteBuffer instData = inst.map().duplicate().order(ByteOrder.nativeOrder());
         putUnlitInstance(instData, -0.5f, 0xFF00FF00); // 手前: 緑
         putUnlitInstance(instData, +0.5f, 0xFFFF0000); // 奥: 赤
         inst.markDirty(0, instBytes);
 
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(color, depth, GpuDevice.LoadOp.CLEAR, 0x00000000, 1.0f, null);
+        GpuPass pass = f.beginPass(color, depth, LoadOp.CLEAR, 0x00000000, 1.0f, null);
         GpuBuffer[] recs = {inst, inst};
         GpuTexture[] noTex = {};
         pass.bind(p, new GpuBindings(recs, noTex, scene3dUniforms(0)));

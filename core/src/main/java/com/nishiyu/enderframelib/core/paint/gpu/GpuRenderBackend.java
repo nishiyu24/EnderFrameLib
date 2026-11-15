@@ -1,4 +1,7 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice;
@@ -197,20 +200,20 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     }
 
     private void initResources() {
-        this.mainTarget = device.createTexture(GpuDevice.TextureDesc.rgba8(width, height, true));
+        this.mainTarget = device.createTexture(TextureDesc.rgba8(width, height, true));
         int maxTex = Math.min(ATLAS_MAX_SIZE, device.caps().maxTextureSize());
         atlas.setMaxSize(maxTex);
-        this.atlasTex = device.createTexture(GpuDevice.TextureDesc.r8(ATLAS_SIZE, ATLAS_SIZE));
-        this.dummyTex = device.createTexture(GpuDevice.TextureDesc.rgba8(1, 1, false));
+        this.atlasTex = device.createTexture(TextureDesc.r8(ATLAS_SIZE, ATLAS_SIZE));
+        this.dummyTex = device.createTexture(TextureDesc.rgba8(1, 1, false));
         GpuFrame initFrame = device.beginFrame();
         ByteBuffer zero = ByteBuffer.allocateDirect(4);
         initFrame.upload(dummyTex, 0, 0, 1, 1, zero);
         initFrame.end();
 
-        this.texBlendPipeline = device.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
-        this.texCopyPipeline = device.createPipeline(new GpuDevice.PipelineDesc("tex", false, false));
-        this.fxBlendPipeline = device.createPipeline(new GpuDevice.PipelineDesc("fx", true, false));
-        this.fxCopyPipeline = device.createPipeline(new GpuDevice.PipelineDesc("fx", false, false));
+        this.texBlendPipeline = device.createPipeline(new PipelineDesc("tex", true, false));
+        this.texCopyPipeline = device.createPipeline(new PipelineDesc("tex", false, false));
+        this.fxBlendPipeline = device.createPipeline(new PipelineDesc("fx", true, false));
+        this.fxCopyPipeline = device.createPipeline(new PipelineDesc("fx", false, false));
 
         if (rectTrees) {
             try {
@@ -308,10 +311,10 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             allLayers.clear();
             layerPool.clear();
             if (mainTarget != null) mainTarget.close();
-            mainTarget = device.createTexture(GpuDevice.TextureDesc.rgba8(width, height, true));
+            mainTarget = device.createTexture(TextureDesc.rgba8(width, height, true));
             if (overlayTex != null) {
                 overlayTex.close();
-                overlayTex = device.createTexture(GpuDevice.TextureDesc.rgba8(width, height, false));
+                overlayTex = device.createTexture(TextureDesc.rgba8(width, height, false));
             }
         } finally {
             host.exit();
@@ -372,7 +375,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         boolean ended = false;
         try {
             // 根のターゲットはクリアしておく（何も描かれないフレームでも確定させる）
-            activePass = activeFrame.beginPass(mainTarget, GpuDevice.LoadOp.CLEAR, clearPremul, null);
+            activePass = activeFrame.beginPass(mainTarget, LoadOp.CLEAR, clearPremul, null);
             activeMainCleared = true;
 
             cpu.renderOnto(items, nowMs, this);
@@ -418,12 +421,12 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (activePass != null) return activePass;
         GpuTexture target = currentTarget();
         if (layerStack.isEmpty()) {
-            GpuDevice.LoadOp op = activeMainCleared ? GpuDevice.LoadOp.LOAD : GpuDevice.LoadOp.CLEAR;
+            LoadOp op = activeMainCleared ? LoadOp.LOAD : LoadOp.CLEAR;
             activeMainCleared = true;
             activePass = activeFrame.beginPass(target, op, clearPremul, null);
         } else {
             Entry top = layerStack.get(layerStack.size() - 1);
-            GpuDevice.LoadOp op = top.cleared ? GpuDevice.LoadOp.LOAD : GpuDevice.LoadOp.CLEAR;
+            LoadOp op = top.cleared ? LoadOp.LOAD : LoadOp.CLEAR;
             top.cleared = true;
             activePass = activeFrame.beginPass(target, op, 0, null);
         }
@@ -508,7 +511,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         int bw = b[2] - b[0], bh = b[3] - b[1];
         endPass();
         if (overlayTex == null) {
-            overlayTex = device.createTexture(GpuDevice.TextureDesc.rgba8(width, height, false));
+            overlayTex = device.createTexture(TextureDesc.rgba8(width, height, false));
         }
         ByteBuffer buf = ensureScratchRgba(bw * bh * 4);
         IntBuffer ib = buf.asIntBuffer();
@@ -540,7 +543,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (e.cleared) return;
         e.cleared = true;
         endPass();
-        GpuPass p = activeFrame.beginPass(e.layer, GpuDevice.LoadOp.CLEAR, 0, null);
+        GpuPass p = activeFrame.beginPass(e.layer, LoadOp.CLEAR, 0, null);
         p.end();
     }
 
@@ -576,15 +579,15 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     }
 
     private GpuTexture createLayer(boolean pooled) {
-        GpuTexture l = device.createTexture(GpuDevice.TextureDesc.rgba8Linear(width, height, true));
+        GpuTexture l = device.createTexture(TextureDesc.rgba8Linear(width, height, true));
         if (pooled) allLayers.add(l);
         if (activeFrame != null) {
             endPass();
-            GpuPass p = activeFrame.beginPass(l, GpuDevice.LoadOp.CLEAR, 0, null);
+            GpuPass p = activeFrame.beginPass(l, LoadOp.CLEAR, 0, null);
             p.end();
         } else {
             GpuFrame f = device.beginFrame();
-            GpuPass p = f.beginPass(l, GpuDevice.LoadOp.CLEAR, 0, null);
+            GpuPass p = f.beginPass(l, LoadOp.CLEAR, 0, null);
             p.end();
             f.end();
         }
@@ -861,7 +864,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
                 float oy = (float) (m[1] * st.dx + m[3] * st.dy);
                 resetFx(3);
                 fxShadowOffX = ox / width;
-                fxShadowOffY = -oy / height;
+                fxShadowOffY = device.caps().bottomUpFramebuffer() ? -oy / height : oy / height;
                 fxShadowR = ((st.color >>> 16) & 0xFF) / 255f;
                 fxShadowG = ((st.color >>> 8) & 0xFF) / 255f;
                 fxShadowB = (st.color & 0xFF) / 255f;
@@ -944,7 +947,10 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             taps[axis] = (int) Math.min(40, Math.ceil(3f * sg[axis] / step[axis]));
             reach[axis] = (int) Math.ceil(taps[axis] * step[axis]) + 2;
         }
-        int[] g = {region[0], height - region[3], region[2], height - region[1]};
+        boolean flipY = device.caps().bottomUpFramebuffer();
+        int[] g = flipY
+                ? new int[]{region[0], height - region[3], region[2], height - region[1]}
+                : new int[]{region[0], region[1], region[2], region[3]};
         int[] content = {g[0] / k, g[1] / k, (g[2] + k - 1) / k, (g[3] + k - 1) / k};
         int ex = expand ? reach[0] : 1, ey = expand ? reach[1] : 1;
         int[] r2 = clampTo(new int[]{content[0] - ex, content[1] - ey, content[2] + ex, content[3] + ey}, sw, sh);
@@ -961,21 +967,23 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         }
         temps.add(a); temps.add(b); temps.add(c); temps.add(out);
 
-        // 全画面ビューポートのまま左下の (0..sw, 0..sh) 領域へ描く
+        // API 固有のテクスチャ原点側の [0..sw, 0..sh] 領域へ縮小して描く
+        float dsY0 = flipY ? height - sh : 0;
+        float dsY1 = flipY ? height : sh;
         resetFx(7);
-        fxDevX0 = 0; fxDevY0 = height - sh; fxDevX1 = sw; fxDevY1 = height;
+        fxDevX0 = 0; fxDevY0 = dsY0; fxDevX1 = sw; fxDevY1 = dsY1;
         fxViewW = width; fxViewH = height;
         fxK = k;
         fxUvScaleX = (float) sw / width; fxUvScaleY = (float) sh / height;
         fxUvMaxX = (sw - 0.5f) / width; fxUvMaxY = (sh - 0.5f) / height;
-        drawFx(a, false, in, null, null, glRectToPassScissor(dsr));
+        drawFx(a, false, in, null, null, flipY ? glRectToPassScissor(dsr) : toPassScissor(dsr));
 
         GpuTexture cur = a;
         for (int axis = 0; axis < 2; axis++) {
             if (sg[axis] < 0.05f) continue;
             GpuTexture dst = axis == 0 ? b : c;
             resetFx(2);
-            fxDevX0 = 0; fxDevY0 = height - sh; fxDevX1 = sw; fxDevY1 = height;
+            fxDevX0 = 0; fxDevY0 = dsY0; fxDevX1 = sw; fxDevY1 = dsY1;
             fxViewW = width; fxViewH = height;
             fxUvScaleX = 1f; fxUvScaleY = 1f;
             fxUvMaxX = (sw - 0.5f) / width; fxUvMaxY = (sh - 0.5f) / height;
@@ -984,7 +992,8 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             fxSigma = sg[axis];
             fxTaps = taps[axis];
             fxStep = step[axis];
-            drawFx(dst, false, cur, null, null, glRectToPassScissor(axis == 0 && sg[1] >= 0.05f ? r1 : r2));
+            int[] stepRect = axis == 0 && sg[1] >= 0.05f ? r1 : r2;
+            drawFx(dst, false, cur, null, null, flipY ? glRectToPassScissor(stepRect) : toPassScissor(stepRect));
             cur = dst;
         }
 
@@ -994,9 +1003,12 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         resetFx(8);
         fxUvScaleX = (float) sw / width; fxUvScaleY = (float) sh / height;
         fxUvMaxX = (sw - 0.5f) / width; fxUvMaxY = (sh - 0.5f) / height;
-        drawFx(out, false, cur, null, null, glRectToPassScissor(up));
+        drawFx(out, false, cur, null, null, flipY ? glRectToPassScissor(up) : toPassScissor(up));
         if (expand) {
-            region[0] = up[0]; region[1] = height - up[3]; region[2] = up[2]; region[3] = height - up[1];
+            region[0] = up[0];
+            region[1] = flipY ? height - up[3] : up[1];
+            region[2] = up[2];
+            region[3] = flipY ? height - up[1] : up[3];
         }
         return out;
     }
@@ -1072,7 +1084,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         fxSamplers[1] = aux != null ? aux : dummyTex;
         fxSamplers[2] = backdrop != null ? backdrop : dummyTex;
 
-        GpuPass pass = activeFrame.beginPass(dst, GpuDevice.LoadOp.LOAD, 0, scissor);
+        GpuPass pass = activeFrame.beginPass(dst, LoadOp.LOAD, 0, scissor);
         pass.bind(blend ? fxBlendPipeline : fxCopyPipeline,
                 new GpuBindings(EMPTY_RECORDS_HOLDER.empty, fxSamplers, fxUniforms));
         pass.drawInstanced(4, 1, 0);
@@ -1284,7 +1296,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
     private void growAtlasTexture() {
         endPass();
         if (atlasTex != null) atlasTex.close();
-        atlasTex = device.createTexture(GpuDevice.TextureDesc.r8(atlas.size(), atlas.size()));
+        atlasTex = device.createTexture(TextureDesc.r8(atlas.size(), atlas.size()));
         atlas.forEach(this::uploadGlyph);
     }
 
@@ -1308,9 +1320,9 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         if (!acceptsRectImage(pose, bx0, by0, bx1, by1, rx, ry, clips, opacity, 64)) return false;
         flushOverlay();
         GpuTexture tex = imageTexture(image);
-        // RHI 経由で upload した画像は y=0 が上端（FBO と同じ向き）なので v を上下反転して引く
-        float adjPy0 = py0 + image.height() / sy;
-        float adjSy = -sy;
+        boolean flip = device.caps().bottomUpFramebuffer();
+        float adjPy0 = flip ? py0 + image.height() / sy : py0;
+        float adjSy = flip ? -sy : sy;
         pushRectImage(pose, tex, image.width(), image.height(), bx0, by0, bx1, by1, px0, adjPy0, sx, adjSy,
                 x0, y0, x1, y1, rx, ry, taps, stepX, stepY, clips, opacity);
         return true;
@@ -1350,9 +1362,11 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
         }
         GpuTexture tex = scene3dRenderer.render(activeFrame, world, fboW, fboH);
         float w = x1 - x0, h = y1 - y0;
+        boolean flip = device.caps().bottomUpFramebuffer();
         float sx = (float) fboW / w;
-        float sy = -(float) fboH / h;
-        pushRectImage(pose, tex, fboW, fboH, x0, y0, x1, y1, x0, y1, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity);
+        float py0 = flip ? y1 : y0;
+        float sy = flip ? -(float) fboH / h : (float) fboH / h;
+        pushRectImage(pose, tex, fboW, fboH, x0, y0, x1, y1, x0, py0, sx, sy, x0, y0, x1, y1, rx, ry, 1, 0f, 0f, clips, opacity);
         return true;
     }
 
@@ -1418,7 +1432,7 @@ public final class GpuRenderBackend implements RenderBackend, GpuSink {
             oldTex.close();
         }
         endPass();
-        GpuTexture tex = device.createTexture(GpuDevice.TextureDesc.rgba8Linear(image.width(), image.height(), false));
+        GpuTexture tex = device.createTexture(TextureDesc.rgba8Linear(image.width(), image.height(), false));
         uploadArgbFull(tex, image);
         imageTex.putHandle(image, tex, image.version());
         return tex;

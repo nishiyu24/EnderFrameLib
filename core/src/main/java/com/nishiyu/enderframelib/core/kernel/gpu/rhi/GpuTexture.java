@@ -6,7 +6,7 @@ public interface GpuTexture extends AutoCloseable {
 
     int height();
 
-    GpuDevice.TextureFormat format();
+    TextureFormat format();
 
     @Override
     void close();

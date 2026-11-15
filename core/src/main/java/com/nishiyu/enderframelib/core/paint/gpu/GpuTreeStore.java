@@ -1,4 +1,6 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferUsage;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.PropertyTrees;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer;
@@ -21,7 +23,7 @@ public final class GpuTreeStore implements AutoCloseable {
     public GpuTreeStore(GpuDevice device, int transformCap, int clipCap, int effectCap, int primitiveCap) {
         this.persistent = device.caps().persistentMap();
         this.trees = new PropertyTrees(transformCap, clipCap, effectCap, primitiveCap, bytes -> {
-            GpuBuffer buf = device.createBuffer(new GpuDevice.BufferDesc(bytes, GpuDevice.BufferUsage.RECORD));
+            GpuBuffer buf = device.createBuffer(new BufferDesc(bytes, BufferUsage.RECORD));
             all.add(buf);
             return buf;
         });

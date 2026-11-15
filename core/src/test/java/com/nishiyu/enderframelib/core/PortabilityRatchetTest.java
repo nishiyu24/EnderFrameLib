@@ -21,14 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class PortabilityRatchetTest {
 
-    /** 現状の依存。GLFW の窓・GL の RHI/コンテキスト実装・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
+    /** 現状の依存。GLFW の窓・GL/Vulkan の RHI/コンテキスト実装・AWT の画像復号（L3 の {@code AwtImageDecoder}）。 */
     private static final Set<String> ALLOWED = Set.of(
             "common/StandaloneViewer.java",
             "core/paint/gl/GlContext.java", // GLFW 窓・共有コンテキスト・swap・タイマークエリ（G1）
             "core/paint/gl/GlDevice.java", // GpuDevice（RHI）の GL 実装（G1）
+            "core/paint/vulkan/VkContext.java", // Vulkan 1.1 インスタンス/物理・論理デバイス（G3）
+            "core/paint/vulkan/VkDevice.java", // GpuDevice（RHI）の Vulkan 実装（G3）
+            "core/paint/vulkan/VkPipelines.java", // Vulkan パイプライン・ディスクリプタ（G3）
+            "core/paint/vulkan/VkSwapchain.java", // Vulkan スワップチェーン（G3）
             "core/raster/awt/AwtImageDecoder.java");
 
-    private static final Pattern FORBIDDEN = Pattern.compile("org[.]lwjgl[.](opengl|glfw)|java[.]awt");
+    private static final Pattern FORBIDDEN = Pattern.compile("org[.]lwjgl[.](opengl|vulkan|glfw)|java[.]awt");
 
     @Test
     void platformDependenciesOnlyShrink() throws IOException {

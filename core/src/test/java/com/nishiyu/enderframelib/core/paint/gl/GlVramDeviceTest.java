@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.ViewFormat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -315,10 +316,10 @@ class GlVramDeviceTest {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL11.glViewport(0, 0, SLOTS * 2, 1);
         GL20.glUseProgram(program);
-        dev.bindBufferViewForTest(store.transforms, 0, ShaderProgram.ViewFormat.FLOAT32);
-        dev.bindBufferViewForTest(store.transforms, 1, ShaderProgram.ViewFormat.INT32);
-        dev.bindBufferViewForTest(store.scrolls, 2, ShaderProgram.ViewFormat.FLOAT32);
-        dev.bindBufferViewForTest(store.curves, 3, ShaderProgram.ViewFormat.FLOAT32);
+        dev.bindBufferViewForTest(store.transforms, 0, ViewFormat.FLOAT32);
+        dev.bindBufferViewForTest(store.transforms, 1, ViewFormat.INT32);
+        dev.bindBufferViewForTest(store.scrolls, 2, ViewFormat.FLOAT32);
+        dev.bindBufferViewForTest(store.curves, 3, ViewFormat.FLOAT32);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTrF"), 0);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTrI"), 1);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uScroll"), 2);

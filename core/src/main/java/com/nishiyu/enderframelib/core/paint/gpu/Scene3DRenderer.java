@@ -1,4 +1,13 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferUsage;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.CullMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.FilterMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureFormat;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.VertexLayout;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.PersistentVramBuffer;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
@@ -86,9 +95,9 @@ public final class Scene3DRenderer implements AutoCloseable {
             for (int dbl = 0; dbl <= 1; dbl++) {
                 boolean premul = blend == 1;
                 boolean depthWrite = !premul;
-                GpuDevice.CullMode cull = dbl == 1 ? GpuDevice.CullMode.NONE : GpuDevice.CullMode.BACK;
-                pipelines[(blend << 1) | dbl] = device.createPipeline(new GpuDevice.PipelineDesc(
-                        "scene3d", premul, true, depthWrite, cull, GpuDevice.VertexLayout.SCENE3D));
+                CullMode cull = dbl == 1 ? CullMode.NONE : CullMode.BACK;
+                pipelines[(blend << 1) | dbl] = device.createPipeline(new PipelineDesc(
+                        "scene3d", premul, true, depthWrite, cull, VertexLayout.SCENE3D));
             }
         }
         allocateInstanceBuffer(INITIAL_INSTANCE_CAPACITY);
@@ -99,7 +108,7 @@ public final class Scene3DRenderer implements AutoCloseable {
             instanceGpuBuffer.close();
         }
         long bytes = (long) capacity * InstancedBatcher.INSTANCE_STRIDE_BYTES;
-        instanceGpuBuffer = device.createBuffer(new GpuDevice.BufferDesc(bytes, GpuDevice.BufferUsage.RECORD));
+        instanceGpuBuffer = device.createBuffer(new BufferDesc(bytes, BufferUsage.RECORD));
         instanceBuffer = new PersistentVramBuffer(InstancedBatcher.INSTANCE_STRIDE_BYTES, capacity, instanceGpuBuffer);
         recordBindings[0] = instanceGpuBuffer;
         recordBindings[1] = instanceGpuBuffer;
@@ -152,7 +161,7 @@ public final class Scene3DRenderer implements AutoCloseable {
         }
 
         GpuPass pass = frame.beginPass(target.drawColor, target.drawDepth,
-                GpuDevice.LoadOp.CLEAR, premulClear, 1.0f, null);
+                LoadOp.CLEAR, premulClear, 1.0f, null);
         if (hasDraw) {
             GeometryPool geom = world.geometry();
             CameraSpec cam = world.camera();
@@ -168,7 +177,16 @@ public final class Scene3DRenderer implements AutoCloseable {
                 if (mesh == null || batch.instanceCount() <= 0) continue;
 
                 uniforms.clear();
-                for (int i = 0; i < 16; i++) uniforms.putFloat(vp[i]);
+                boolean flipY = !device.caps().bottomUpFramebuffer();
+                boolean z01 = device.caps().zeroToOneDepth();
+                for (int col = 0; col < 4; col++) {
+                    int c4 = col * 4;
+                    float cx = vp[c4];
+                    float cy = flipY ? -vp[c4 + 1] : vp[c4 + 1];
+                    float cz = z01 ? (0.5f * vp[c4 + 2] + 0.5f * vp[c4 + 3]) : vp[c4 + 2];
+                    float cw = vp[c4 + 3];
+                    uniforms.putFloat(cx).putFloat(cy).putFloat(cz).putFloat(cw);
+                }
                 uniforms.putFloat(cam.eyeX()).putFloat(cam.eyeY()).putFloat(cam.eyeZ()).putFloat(0f);
                 uniforms.putFloat(light.dirX()).putFloat(light.dirY()).putFloat(light.dirZ()).putFloat(0f);
                 uniforms.putFloat(lr).putFloat(lg).putFloat(lb).putFloat(0f);
@@ -244,15 +262,15 @@ public final class Scene3DRenderer implements AutoCloseable {
         t.height = height;
         t.samples = samples;
 
-        t.resolveTex = device.createTexture(GpuDevice.TextureDesc.rgba8Linear(width, height, true));
+        t.resolveTex = device.createTexture(TextureDesc.rgba8Linear(width, height, true));
         if (samples > 1) {
-            t.drawColor = device.createTexture(new GpuDevice.TextureDesc(
-                    width, height, GpuDevice.TextureFormat.RGBA8, true, samples, GpuDevice.FilterMode.NEAREST));
+            t.drawColor = device.createTexture(new TextureDesc(
+                    width, height, TextureFormat.RGBA8, true, samples, FilterMode.NEAREST));
         } else {
             t.drawColor = t.resolveTex;
         }
-        t.drawDepth = device.createTexture(new GpuDevice.TextureDesc(
-                width, height, GpuDevice.TextureFormat.DEPTH24, true, samples, GpuDevice.FilterMode.NEAREST));
+        t.drawDepth = device.createTexture(new TextureDesc(
+                width, height, TextureFormat.DEPTH24, true, samples, FilterMode.NEAREST));
         fboReallocations++;
     }
 
@@ -268,11 +286,11 @@ public final class Scene3DRenderer implements AutoCloseable {
 
         if (t.vbo == null || t.vbo.size() < vbBytes) {
             if (t.vbo != null) t.vbo.close();
-            t.vbo = device.createBuffer(new GpuDevice.BufferDesc(vbBytes, GpuDevice.BufferUsage.VERTEX));
+            t.vbo = device.createBuffer(new BufferDesc(vbBytes, BufferUsage.VERTEX));
         }
         if (t.ibo == null || t.ibo.size() < ibBytes) {
             if (t.ibo != null) t.ibo.close();
-            t.ibo = device.createBuffer(new GpuDevice.BufferDesc(ibBytes, GpuDevice.BufferUsage.INDEX));
+            t.ibo = device.createBuffer(new BufferDesc(ibBytes, BufferUsage.INDEX));
         }
 
         ByteBuffer vbDst = t.vbo.map();

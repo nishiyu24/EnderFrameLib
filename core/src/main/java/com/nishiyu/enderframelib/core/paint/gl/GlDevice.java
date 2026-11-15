@@ -1,4 +1,16 @@
 package com.nishiyu.enderframelib.core.paint.gl;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.BufferUsage;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.CullMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.FilterMode;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.LoadOp;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureDesc;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.TextureFormat;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.VertexAttr;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.VertexLayout;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.RecordView;
+import com.nishiyu.enderframelib.core.kernel.gpu.shader.ViewFormat;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBuffer;
@@ -81,7 +93,7 @@ public final class GlDevice implements GpuDevice {
         boolean msaa = c.OpenGL30 || c.GL_EXT_framebuffer_multisample;
         int maxSamples = msaa ? Math.max(1, GL11.glGetInteger(GL30.GL_MAX_SAMPLES)) : 1;
         this.caps = new GpuCaps(persistent, c.OpenGL43, c.OpenGL43, c.OpenGL33 || c.GL_ARB_timer_query,
-                GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE), msaa && maxSamples > 1, maxSamples);
+                GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE), msaa && maxSamples > 1, maxSamples, true, false);
     }
 
     /** 現在のコンテキストが永続マップを使えるか。 */
@@ -222,7 +234,7 @@ public final class GlDevice implements GpuDevice {
 
     int segmentCount(GpuBuffer buffer) { return ((Buffer) buffer).buffers.length; }
     void flushBuffersForTest() { int seg = fences.current(); for (Buffer b : buffers) if (!b.closed) b.flushSegment(seg); }
-    void bindBufferViewForTest(GpuBuffer buffer, int unit, ShaderProgram.ViewFormat fmt) { ((Buffer) buffer).bindView(unit, fmt, fences.current()); }
+    void bindBufferViewForTest(GpuBuffer buffer, int unit, ViewFormat fmt) { ((Buffer) buffer).bindView(unit, fmt, fences.current()); }
 
     @Override
     public void close() {
@@ -343,7 +355,7 @@ public final class GlDevice implements GpuDevice {
                     buf.flushSegment(seg);
                 }
             }
-            for (ShaderProgram.RecordView v : sh.records()) {
+            for (RecordView v : sh.records()) {
                 Buffer buf = (Buffer) bindings.records()[v.bufferIndex()];
                 if (frame != null) frame.saveUnitBuf(v.unit());
                 buf.bindView(v.unit(), v.format(), seg);
@@ -626,7 +638,7 @@ public final class GlDevice implements GpuDevice {
             }
         }
 
-        void bindView(int unit, ShaderProgram.ViewFormat format, int cur) {
+        void bindView(int unit, ViewFormat format, int cur) {
             int seg = persistent ? cur : 0;
             int tex = switch (format) {
                 case FLOAT32 -> floatViews[seg] != 0 ? floatViews[seg] : (floatViews[seg] = newView(GL30.GL_R32F, seg));

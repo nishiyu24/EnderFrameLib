@@ -1,4 +1,5 @@
 package com.nishiyu.enderframelib.core.paint.gpu;
+import com.nishiyu.enderframelib.core.kernel.gpu.rhi.PipelineDesc;
 
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuBindings;
 import com.nishiyu.enderframelib.core.kernel.gpu.rhi.GpuDevice;
@@ -20,7 +21,7 @@ public final class RectRenderer implements AutoCloseable {
             .order(ByteOrder.nativeOrder());
 
     public RectRenderer(GpuDevice device) {
-        this.pipeline = device.createPipeline(new GpuDevice.PipelineDesc("rects", true, false));
+        this.pipeline = device.createPipeline(new PipelineDesc("rects", true, false));
     }
 
     /** テスト・診断用。 */

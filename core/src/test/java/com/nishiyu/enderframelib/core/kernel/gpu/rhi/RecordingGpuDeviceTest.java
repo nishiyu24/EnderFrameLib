@@ -15,14 +15,14 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
     /** 描画側が 1 フレームに RHI を呼ぶ形（レコードは直接バッファへ書き、パスは層ごと）。図形の数を変えても呼び出し数は同じ。 */
     private static int callsForOneFrame(int rows) {
         RecordingGpuDevice d = new RecordingGpuDevice();
-        GpuBuffer records = d.createBuffer(new GpuDevice.BufferDesc(64L * 4096, GpuDevice.BufferUsage.RECORD));
-        GpuTexture target = d.createTexture(GpuDevice.TextureDesc.rgba8(800, 600, true));
-        GpuPipeline rects = d.createPipeline(new GpuDevice.PipelineDesc("tex", true, false));
+        GpuBuffer records = d.createBuffer(new BufferDesc(64L * 4096, BufferUsage.RECORD));
+        GpuTexture target = d.createTexture(TextureDesc.rgba8(800, 600, true));
+        GpuPipeline rects = d.createPipeline(new PipelineDesc("tex", true, false));
         d.clearLog();
         GpuFrame f = d.beginFrame();
         ByteBuffer w = records.map();
         for (int i = 0; i < rows; i++) w.putInt(i * 64, i); // 図形 1 つ = レコード 1 件の書き込み（RHI を呼ばない）
-        GpuPass p = f.beginPass(target, GpuDevice.LoadOp.CLEAR, 0xFFFFFFFF, null);
+        GpuPass p = f.beginPass(target, LoadOp.CLEAR, 0xFFFFFFFF, null);
         p.bind(rects, new GpuBindings(new GpuBuffer[]{records}, new GpuTexture[]{target}, ByteBuffer.allocateDirect(32)));
         p.drawInstanced(6, rows, 0);
         p.end();
@@ -39,9 +39,9 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
     @Test
     void commandsAreRecordedInOrder() {
         RecordingGpuDevice d = new RecordingGpuDevice();
-        GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+        GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
         GpuFrame f = d.beginFrame();
-        f.beginPass(t, GpuDevice.LoadOp.CLEAR, 0xFF000000, new int[]{1, 1, 2, 2}).end();
+        f.beginPass(t, LoadOp.CLEAR, 0xFF000000, new int[]{1, 1, 2, 2}).end();
         f.readback(t, new int[]{0, 0, 1, 1}, ByteBuffer.allocateDirect(4));
         f.end();
         var c = d.commands();
@@ -58,9 +58,9 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
     @Test
     void drawingRequiresABoundPipeline() {
         RecordingGpuDevice d = new RecordingGpuDevice();
-        GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(4, 4, true));
+        GpuTexture t = d.createTexture(TextureDesc.rgba8(4, 4, true));
         GpuFrame f = d.beginFrame();
-        GpuPass p = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
+        GpuPass p = f.beginPass(t, LoadOp.LOAD, 0, null);
         assertThrows(IllegalStateException.class, () -> p.drawInstanced(3, 1, 0));
         p.end();
         assertThrows(IllegalStateException.class, p::end, "パスは 2 度終えられない");
@@ -70,7 +70,7 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
     @Test
     void bufferWritesAreVisibleThroughMap() {
         RecordingGpuDevice d = new RecordingGpuDevice();
-        GpuBuffer b = d.createBuffer(new GpuDevice.BufferDesc(256, GpuDevice.BufferUsage.RECORD));
+        GpuBuffer b = d.createBuffer(new BufferDesc(256, BufferUsage.RECORD));
         b.map().putInt(8, 0x1234);
         assertEquals(0x1234, b.map().getInt(8));
         assertEquals(256, b.size());
@@ -79,13 +79,13 @@ class RecordingGpuDeviceTest extends GpuDeviceContract {
     @Test
     void theRectProgramNeedsSevenRecordBuffersAndTwoTextures() {
         RecordingGpuDevice d = new RecordingGpuDevice();
-        GpuTexture t = d.createTexture(GpuDevice.TextureDesc.rgba8(8, 8, true));
-        GpuPipeline p = d.createPipeline(new GpuDevice.PipelineDesc("rects", true, false));
+        GpuTexture t = d.createTexture(TextureDesc.rgba8(8, 8, true));
+        GpuPipeline p = d.createPipeline(new PipelineDesc("rects", true, false));
         GpuBuffer[] seven = new GpuBuffer[7];
-        for (int i = 0; i < 7; i++) seven[i] = d.createBuffer(new GpuDevice.BufferDesc(256, GpuDevice.BufferUsage.RECORD));
+        for (int i = 0; i < 7; i++) seven[i] = d.createBuffer(new BufferDesc(256, BufferUsage.RECORD));
         ByteBuffer u = ByteBuffer.allocateDirect(20);
         GpuFrame f = d.beginFrame();
-        GpuPass pass = f.beginPass(t, GpuDevice.LoadOp.LOAD, 0, null);
+        GpuPass pass = f.beginPass(t, LoadOp.LOAD, 0, null);
         assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(java.util.Arrays.copyOf(seven, 6), new GpuTexture[]{t, t}, u)), "6 本では足りない");
         assertThrows(IllegalArgumentException.class, () -> pass.bind(p, new GpuBindings(seven, new GpuTexture[]{t}, u)), "アトラスと画像の 2 枚");
         pass.bind(p, new GpuBindings(seven, new GpuTexture[]{t, t}, u));

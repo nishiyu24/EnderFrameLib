@@ -744,7 +744,6 @@ public final class ShaderSources {
             EF_LOC(0) in vec3 aPos;
             EF_LOC(1) in vec3 aNorm;
             EF_LOC(2) in vec2 aUv;
-            EF_LOC(3) in vec4 aTangent;
 
             EF_TBO_F(8, uInstanceTboF);
             EF_TBO_I(9, uInstanceTboI);
