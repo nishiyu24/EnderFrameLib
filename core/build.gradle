@@ -239,3 +239,42 @@ tasks.register('profile', JavaExec) {
 
 // デモ・計測用のソースが腐らないよう、check でコンパイルだけは通す（実行はしない）
 tasks.named('check') { dependsOn 'compileDemoJava', 'compileJmhJava' }
+
+// ビルド時 SPIR-V コンパイル（lwjgl-shaderc は :core のコンパイル・実行時依存には混ぜない）
+def spirvOutDir = layout.buildDirectory.dir('generated/resources/spirv')
+
+sourceSets {
+    shaderCompiler {
+        java.srcDir 'src/shaderCompiler/java'
+        compileClasspath += files(tasks.named('compileJava').map { it.destinationDirectory }) + configurations.compileClasspath
+        runtimeClasspath += files(tasks.named('compileJava').map { it.destinationDirectory }) + configurations.compileClasspath
+    }
+}
+dependencies {
+    shaderCompilerImplementation "org.lwjgl:lwjgl:${lwjglVersion}"
+    shaderCompilerImplementation "org.lwjgl:lwjgl-shaderc:${lwjglVersion}"
+    shaderCompilerRuntimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+    shaderCompilerRuntimeOnly "org.lwjgl:lwjgl-shaderc::${lwjglNatives}"
+}
+tasks.named('compileShaderCompilerJava') {
+    dependsOn tasks.named('compileJava')
+}
+tasks.register('compileShadersSpirv', JavaExec) {
+    group = 'build'
+    description = 'Glsl.vk450 シェーダーをビルド時に SPIR-V へコンパイル・検証する（shaderc は実行時依存に含めない）'
+    dependsOn tasks.named('compileJava'), tasks.named('compileShaderCompilerJava')
+    inputs.files(fileTree('src/main/java/com/nishiyu/enderframelib/core/kernel/gpu/shader'))
+    inputs.files(sourceSets.shaderCompiler.java)
+    outputs.dir(spirvOutDir)
+    classpath = sourceSets.shaderCompiler.output +
+            files(tasks.named('compileJava').map { it.destinationDirectory }) +
+            configurations.compileClasspath +
+            configurations.shaderCompilerRuntimeClasspath
+    mainClass = 'com.nishiyu.enderframelib.core.kernel.gpu.shader.compiler.SpirvCompilerMain'
+    args = [spirvOutDir.get().asFile.absolutePath]
+}
+sourceSets {
+    main {
+        output.dir(spirvOutDir, builtBy: 'compileShadersSpirv')
+    }
+}

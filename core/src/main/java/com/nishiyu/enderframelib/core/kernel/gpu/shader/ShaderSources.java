@@ -10,15 +10,20 @@ public final class ShaderSources {
 
     /** アニメーション・スクロール評価の断片（{@code GpuAnimation.GLSL}）。先頭に版を付けず、利用側のシェーダーの前へ連結する。 */
     public static final String ANIMATION = """
-            uniform samplerBuffer uTrF;
-            uniform isamplerBuffer uTrI;
-            uniform samplerBuffer uScroll;
-            uniform samplerBuffer uCurves;
-            uniform samplerBuffer uEfF;
-            uniform isamplerBuffer uEfI;
-            uniform float uFrameTimeMs;
-            float trF(int slot, int i) { return texelFetch(uTrF, slot * 16 + i).r; }
-            int trI(int slot, int i) { return texelFetch(uTrI, slot * 16 + i).r; }
+            EF_UBO(0, PassParams) {
+                vec2 uView;
+                float uFrameTimeMs;
+                int uOrderBase;
+                float uYSign;
+            };
+            EF_TBO_F(20, uTrF);
+            EF_TBO_I(21, uTrI);
+            EF_TBO_F(22, uScroll);
+            EF_TBO_F(23, uCurves);
+            EF_TBO_F(24, uEfF);
+            EF_TBO_I(25, uEfI);
+            float trF(int slot, int i) { return EF_REC_F(uTrF, slot * 16 + i); }
+            int trI(int slot, int i) { return EF_REC_I(uTrI, slot * 16 + i); }
             float efProgress(float startMs, float durationMs) {
                 return durationMs <= 0.0 ? 1.0 : clamp((uFrameTimeMs - startMs) / durationMs, 0.0, 1.0);
             }
@@ -49,7 +54,7 @@ public final class ShaderSources {
                 vec4 p;
                 if (kind == 5) {
                     int c = (easing >> 8) * 4;
-                    p = vec4(texelFetch(uCurves, c).r, texelFetch(uCurves, c + 1).r, texelFetch(uCurves, c + 2).r, texelFetch(uCurves, c + 3).r);
+                    p = vec4(EF_REC_F(uCurves, c), EF_REC_F(uCurves, c + 1), EF_REC_F(uCurves, c + 2), EF_REC_F(uCurves, c + 3));
                 } else if (kind == 1) p = vec4(0.25, 0.1, 0.25, 1.0);
                 else if (kind == 2) p = vec4(0.42, 0.0, 1.0, 1.0);
                 else if (kind == 3) p = vec4(0.0, 0.0, 0.58, 1.0);
@@ -78,8 +83,8 @@ public final class ShaderSources {
                 }
                 int sc = trI(slot, 1);
                 if (sc >= 0) {
-                    m[2].x -= texelFetch(uScroll, sc * 2).r;
-                    m[2].y -= texelFetch(uScroll, sc * 2 + 1).r;
+                    m[2].x -= EF_REC_F(uScroll, sc * 2);
+                    m[2].y -= EF_REC_F(uScroll, sc * 2 + 1);
                 }
                 return m;
             }
@@ -94,17 +99,17 @@ public final class ShaderSources {
             float efOpacity(int e) {
                 float result = 1.0;
                 for (int depth = 0; depth < 64 && e >= 0; depth++) {
-                    float target = texelFetch(uEfF, e * 8).r;
-                    int timing = texelFetch(uEfI, e * 8 + 5).r;
+                    float target = EF_REC_F(uEfF, e * 8);
+                    int timing = EF_REC_I(uEfI, e * 8 + 5);
                     float o = target;
                     if (timing >= 0) {
                         float dur = trF(timing, 3);
                         float k = dur <= 0.0 ? 1.0 : efEase(trI(timing, 4), efProgress(trF(timing, 2), dur));
-                        float st = texelFetch(uEfF, e * 8 + 1).r;
+                        float st = EF_REC_F(uEfF, e * 8 + 1);
                         o = st + (target - st) * k;
                     }
                     result *= o;
-                    e = texelFetch(uEfI, e * 8 + 4).r;
+                    e = EF_REC_I(uEfI, e * 8 + 4);
                 }
                 return result;
             }
@@ -112,61 +117,62 @@ public final class ShaderSources {
 
     /** 矩形（SDF 図形）の頂点シェーダーの本体。{@link #ANIMATION} の後ろに連結する。 */
     public static final String RECT_VERTEX = """
-            uniform samplerBuffer uPrF;
-            uniform isamplerBuffer uPrI;
-            uniform isamplerBuffer uOrder;
-            uniform vec2 uView;
-            uniform int uOrderBase;
-            uniform float uYSign;
-            flat out int vSlot;
-            flat out float vScale;
-            flat out float vOpacity;
-            out vec2 vLocal;
+            EF_TBO_F(16, uPrF);
+            EF_TBO_I(17, uPrI);
+            EF_TBO_I(19, uOrder);
+            EF_LOC(0) flat out int vSlot;
+            EF_LOC(1) flat out float vScale;
+            EF_LOC(2) flat out float vOpacity;
+            EF_LOC(3) out vec2 vLocal;
             void main() {
-                int slot = texelFetch(uOrder, uOrderBase + gl_InstanceID).r;
+                int slot = EF_REC_I(uOrder, uOrderBase + EF_INSTANCE_ID);
                 int base = slot * 32;
-                int opcode = texelFetch(uPrI, base).r;
-                vec4 rect = vec4(texelFetch(uPrF, base + 4).r, texelFetch(uPrF, base + 5).r,
-                                 texelFetch(uPrF, base + 6).r, texelFetch(uPrF, base + 7).r);
-                int tr = texelFetch(uPrI, base + 1).r;
-                int ef = texelFetch(uPrI, base + 3).r;
+                int opcode = EF_REC_I(uPrI, base);
+                vec4 rect = vec4(EF_REC_F(uPrF, base + 4), EF_REC_F(uPrF, base + 5),
+                                 EF_REC_F(uPrF, base + 6), EF_REC_F(uPrF, base + 7));
+                int tr = EF_REC_I(uPrI, base + 1);
+                int ef = EF_REC_I(uPrI, base + 3);
                 vSlot = slot;
                 vOpacity = ef >= 0 ? efOpacity(ef) : 1.0;
-                vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+                vec2 corner = vec2(float(EF_VERTEX_ID & 1), float(EF_VERTEX_ID >> 1));
                 // 描く範囲は形の矩形に余白を足す（斜めの縁の滑らかな画素が矩形の外へはみ出す分。従来のシェーダーと同じ）
-                float margin = texelFetch(uPrF, base + 27).r;
+                float margin = EF_REC_F(uPrF, base + 27);
                 vLocal = (rect.xy - margin) + corner * (rect.zw + 2.0 * margin);
                 mat3 m = tr >= 0 ? efWorld(tr) : mat3(1.0);
                 vec2 p = (m * vec3(vLocal, 1.0)).xy;
                 vScale = sqrt(abs(m[0].x * m[1].y - m[0].y * m[1].x)); // 局所の 1 単位が何画素か（縁の幅を画素で保つ）
                 vec2 ndc = p / uView * 2.0 - 1.0;
-                gl_Position = opcode == 0 ? vec4(2.0, 2.0, 2.0, 1.0) : vec4(ndc.x, ndc.y * uYSign, 0.0, 1.0);
+                gl_Position = opcode == 0 ? vec4(2.0, 2.0, 2.0, 1.0) : vec4(ndc.x, EF_CLIP_Y(ndc.y * uYSign), 0.0, 1.0);
             }
             """;
 
     /** 矩形（SDF 図形）のフラグメントシェーダー。 */
     public static final String RECT_FRAGMENT = """
-            uniform samplerBuffer uPrF;
-            uniform isamplerBuffer uPrI;
-            uniform samplerBuffer uPrH;
-            uniform samplerBuffer uClF;
-            uniform samplerBuffer uClH;
-            uniform sampler2D uAtlas;
-            uniform sampler2D uImgTex;
-            uniform vec2 uView;
-            uniform float uYSign;
-            flat in int vSlot;
-            flat in float vScale;
-            flat in float vOpacity;
-            in vec2 vLocal;
-            out vec4 o;
+            EF_UBO(0, PassParams) {
+                vec2 uView;
+                float uFrameTimeMs;
+                int uOrderBase;
+                float uYSign;
+            };
+            EF_TBO_F(16, uPrF);
+            EF_TBO_I(17, uPrI);
+            EF_TBO_F(18, uPrH);
+            EF_TBO_F(26, uClF);
+            EF_TBO_F(27, uClH);
+            EF_TEX2D(1, uAtlas);
+            EF_TEX2D(2, uImgTex);
+            EF_LOC(0) flat in int vSlot;
+            EF_LOC(1) flat in float vScale;
+            EF_LOC(2) flat in float vOpacity;
+            EF_LOC(3) in vec2 vLocal;
+            EF_LOC(0) out vec4 o;
 
             vec4 half4(int i) {
                 int b = vSlot * 64 + i;
-                return vec4(texelFetch(uPrH, b).r, texelFetch(uPrH, b + 1).r, texelFetch(uPrH, b + 2).r, texelFetch(uPrH, b + 3).r);
+                return vec4(EF_REC_F(uPrH, b), EF_REC_F(uPrH, b + 1), EF_REC_F(uPrH, b + 2), EF_REC_F(uPrH, b + 3));
             }
             vec4 color(int k) {
-                int c = texelFetch(uPrI, vSlot * 32 + 22 + k).r;
+                int c = EF_REC_I(uPrI, vSlot * 32 + 22 + k);
                 return vec4(float((c >> 16) & 255), float((c >> 8) & 255), float(c & 255), float((c >> 24) & 255)) / 255.0;
             }
             // 従来のバックエンドのシェーダーと同じ角丸矩形の符号付き距離（楕円の角を含む）
@@ -209,24 +215,24 @@ public final class ShaderSources {
                 return 0.5 * erfcf(sd / (sigma * 1.41421356));
             }
             // 続きスロット（直後のスロット）のデータ
-            float extF(int i) { return texelFetch(uPrF, (vSlot + 1) * 32 + i).r; }
+            float extF(int i) { return EF_REC_F(uPrF, (vSlot + 1) * 32 + i); }
             vec4 extF4(int i) { return vec4(extF(i), extF(i + 1), extF(i + 2), extF(i + 3)); }
             // クリップ: 従来のシェーダーと同じく、デバイス画素を持ち主の空間へ逆写像して角丸矩形の被覆率を掛ける
             float clipCoverage() {
-                int n = texelFetch(uPrI, vSlot * 32 + 2).r;
+                int n = EF_REC_I(uPrI, vSlot * 32 + 2);
                 if (n <= 0) return 1.0;
-                vec2 dev = vec2(gl_FragCoord.x, uYSign < 0.0 ? uView.y - gl_FragCoord.y : gl_FragCoord.y);
+                vec2 dev = vec2(gl_FragCoord.x, uYSign < 0.0 ? EF_FRAG_Y(uView.y) : gl_FragCoord.y);
                 float cov = 1.0;
                 for (int i = 0; i < 4 && i < n; i++) {
-                    int w = texelFetch(uPrI, vSlot * 32 + 30 + (i >> 1)).r;
+                    int w = EF_REC_I(uPrI, vSlot * 32 + 30 + (i >> 1));
                     int id = (i & 1) == 0 ? (w & 65535) : ((w >> 16) & 65535); // 16 ビット ×4（リトルエンディアン）
                     int cb = id * 16;
-                    vec4 A = vec4(texelFetch(uClF, cb).r, texelFetch(uClF, cb + 1).r, texelFetch(uClF, cb + 2).r, texelFetch(uClF, cb + 3).r);
-                    vec3 T = vec3(texelFetch(uClF, cb + 4).r, texelFetch(uClF, cb + 5).r, texelFetch(uClF, cb + 6).r);
-                    vec4 R = vec4(texelFetch(uClF, cb + 8).r, texelFetch(uClF, cb + 9).r, texelFetch(uClF, cb + 10).r, texelFetch(uClF, cb + 11).r);
+                    vec4 A = vec4(EF_REC_F(uClF, cb), EF_REC_F(uClF, cb + 1), EF_REC_F(uClF, cb + 2), EF_REC_F(uClF, cb + 3));
+                    vec3 T = vec3(EF_REC_F(uClF, cb + 4), EF_REC_F(uClF, cb + 5), EF_REC_F(uClF, cb + 6));
+                    vec4 R = vec4(EF_REC_F(uClF, cb + 8), EF_REC_F(uClF, cb + 9), EF_REC_F(uClF, cb + 10), EF_REC_F(uClF, cb + 11));
                     int hb = id * 32 + 24;
-                    vec4 rx = vec4(texelFetch(uClH, hb).r, texelFetch(uClH, hb + 1).r, texelFetch(uClH, hb + 2).r, texelFetch(uClH, hb + 3).r);
-                    vec4 ry = vec4(texelFetch(uClH, hb + 4).r, texelFetch(uClH, hb + 5).r, texelFetch(uClH, hb + 6).r, texelFetch(uClH, hb + 7).r);
+                    vec4 rx = vec4(EF_REC_F(uClH, hb), EF_REC_F(uClH, hb + 1), EF_REC_F(uClH, hb + 2), EF_REC_F(uClH, hb + 3));
+                    vec4 ry = vec4(EF_REC_F(uClH, hb + 4), EF_REC_F(uClH, hb + 5), EF_REC_F(uClH, hb + 6), EF_REC_F(uClH, hb + 7));
                     vec2 lp = vec2(A.x * dev.x + A.z * dev.y + T.x, A.y * dev.x + A.w * dev.y + T.y);
                     cov *= cover(sdRR(lp, R, rx, ry), T.z);
                     if (cov <= 0.0) return 0.0;
@@ -272,7 +278,7 @@ public final class ShaderSources {
                 return sL + (b.y - ry[3] - py);
             }
             float atlasFetch(ivec2 p) {
-                return texelFetch(uAtlas, ivec2(p.x, textureSize(uAtlas, 0).y - 1 - p.y), 0).r;
+                return texelFetch(uAtlas, ivec2(p.x, EF_ATLAS_Y(uAtlas, p.y)), 0).r;
             }
             float glyphCov(ivec2 c, vec4 gl) {
                 if (c.x < 0 || c.y < 0 || c.x >= int(gl.z) || c.y >= int(gl.w)) return 0.0;
@@ -280,16 +286,16 @@ public final class ShaderSources {
             }
             void main() {
                 int base = vSlot * 32;
-                int op = texelFetch(uPrI, base).r;
-                vec4 xywh = vec4(texelFetch(uPrF, base + 4).r, texelFetch(uPrF, base + 5).r,
-                                 texelFetch(uPrF, base + 6).r, texelFetch(uPrF, base + 7).r);
+                int op = EF_REC_I(uPrI, base);
+                vec4 xywh = vec4(EF_REC_F(uPrF, base + 4), EF_REC_F(uPrF, base + 5),
+                                 EF_REC_F(uPrF, base + 6), EF_REC_F(uPrF, base + 7));
                 vec4 rect = vec4(xywh.xy, xywh.xy + xywh.zw);
                 vec4 rx = half4(16), ry = half4(20);
                 vec4 col = color(0);
                 float a;
                 if (op == 6) {
                     // 字形（デバイス画素の格子に揃えた文字）: アトラスの被覆率をそのまま引く
-                    int w0 = texelFetch(uPrI, base + 28).r, w1 = texelFetch(uPrI, base + 29).r;
+                    int w0 = EF_REC_I(uPrI, base + 28), w1 = EF_REC_I(uPrI, base + 29);
                     vec4 gl = vec4(float(w0 & 65535), float((w0 >> 16) & 65535), float(w1 & 65535), float((w1 >> 16) & 65535));
                     ivec2 gp = ivec2(floor(vLocal - rect.xy));
                     if (gp.x < 0 || gp.y < 0 || gp.x >= int(gl.z) || gp.y >= int(gl.w)) discard;
@@ -349,7 +355,7 @@ public final class ShaderSources {
                     // 外側の影: 影の形を σ でぼかし、穴（箱そのもの）があれば抜く
                     a = blurredEdge(sdRR(vLocal, extF4(0), extF4(10), extF4(14)), extF(8));
                     if (a <= 0.0) discard;
-                    if ((texelFetch(uPrI, (vSlot + 1) * 32 + 9).r & 1) != 0) a *= 1.0 - cover(sdRR(vLocal, extF4(4), extF4(18), extF4(22)), vScale);
+                    if ((EF_REC_I(uPrI, (vSlot + 1) * 32 + 9) & 1) != 0) a *= 1.0 - cover(sdRR(vLocal, extF4(4), extF4(18), extF4(22)), vScale);
                 } else if (op == 4) {
                     // 内側の影: 箱の中で、穴の外側をぼかして塗る
                     a = cover(sdRR(vLocal, rect, rx, ry), vScale);
@@ -387,9 +393,9 @@ public final class ShaderSources {
                     col = vec4(mix(gc0.rgb * gc0.a, gc1.rgb * gc1.a, t) / ga, ga);
                 }
                 if (op == 2) {
-                    vec4 inner = vec4(texelFetch(uPrF, base + 12).r, texelFetch(uPrF, base + 13).r,
-                                      texelFetch(uPrF, base + 14).r, texelFetch(uPrF, base + 15).r);
-                    int strokeFlags = texelFetch(uPrI, base + 26).r;
+                    vec4 inner = vec4(EF_REC_F(uPrF, base + 12), EF_REC_F(uPrF, base + 13),
+                                      EF_REC_F(uPrF, base + 14), EF_REC_F(uPrF, base + 15));
+                    int strokeFlags = EF_REC_I(uPrI, base + 26);
                     bool innerEmpty = (strokeFlags & 1) != 0;
                     vec4 widths = half4(40);
                     float innerCov = innerEmpty ? 0.0 : cover(sdRR(vLocal, inner, half4(32), half4(36)), vScale);
@@ -434,22 +440,69 @@ public final class ShaderSources {
 
     /** CPU 層・外部テクスチャを写す頂点シェーダー。 */
     public static final String TEX_VERT = """
-            uniform vec4 uDev;
-            uniform vec2 uView;
+            #ifndef EF_HAS_PASS_PARAMS
+            EF_UBO(0, PassParams) {
+                vec4 uDev;
+                vec2 uView;
+                float uOpacity;
+                int uFlip;
+            };
+            #endif
             void main() {
-                vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+                vec2 c = vec2(float(EF_VERTEX_ID & 1), float(EF_VERTEX_ID >> 1));
                 vec2 d = mix(uDev.xy, uDev.zw, c);
-                gl_Position = vec4(d.x / uView.x * 2.0 - 1.0, 1.0 - d.y / uView.y * 2.0, 0.0, 1.0);
+                gl_Position = vec4(d.x / uView.x * 2.0 - 1.0, EF_CLIP_Y(1.0 - d.y / uView.y * 2.0), 0.0, 1.0);
             }
             """;
 
+    /** {@code FX} パス用の頂点シェーダー（{@link #FX_FRAG} と同一の {@code PassParams} ブロックを先頭に持つ）。 */
+    static String fxVertex() {
+        return """
+                #define EF_HAS_PASS_PARAMS
+                EF_UBO(0, PassParams) {
+                    vec4 uDev;
+                    vec2 uView;
+                    vec2 uDir;
+                    vec4 uRow0;
+                    vec4 uRow1;
+                    vec4 uRow2;
+                    vec4 uShadowColor;
+                    vec4 uInvM;
+                    vec4 uBD[3];
+                    vec4 uClipD[96];
+                    vec2 uTexel;
+                    vec2 uUvScale;
+                    vec2 uUvMax;
+                    vec2 uShadowOffset;
+                    vec2 uInvT;
+                    int uMode;
+                    float uOpacity;
+                    int uHasMatrix;
+                    float uSigma;
+                    int uTaps;
+                    float uStep;
+                    int uK;
+                    int uMaskMode;
+                    int uBlend;
+                    float uShapeScale;
+                    int uClipKind;
+                    int uEvenOdd;
+                    int uClipN;
+                    int uHasB;
+                };
+                """ + TEX_VERT;
+    }
+
     /** 事前乗算の画素を 1 対 1 で写すフラグメントシェーダー（拡縮・補間なし）。 */
     public static final String TEX_FRAG = """
-            uniform sampler2D uTex;
-            uniform vec2 uView;
-            uniform float uOpacity;
-            uniform int uFlip;
-            out vec4 fragColor;
+            EF_UBO(0, PassParams) {
+                vec4 uDev;
+                vec2 uView;
+                float uOpacity;
+                int uFlip;
+            };
+            EF_TEX2D(1, uTex);
+            EF_LOC(0) out vec4 fragColor;
             void main() {
                 int py = uFlip != 0 ? int(uView.y) - 1 - int(floor(gl_FragCoord.y)) : int(floor(gl_FragCoord.y));
                 fragColor = texelFetch(uTex, ivec2(int(floor(gl_FragCoord.x)), py), 0) * uOpacity;
@@ -458,38 +511,41 @@ public final class ShaderSources {
 
     /** 層の合成（色の行列・ぼかし・影・マスク・不透明度）のフラグメントシェーダー。 */
     public static final String FX_FRAG = """
-            uniform sampler2D uSrc;
-            uniform sampler2D uAux;
-            uniform vec2 uView;
-            uniform int uMode;
-            uniform float uOpacity;
-            uniform int uHasMatrix;
-            uniform vec4 uRow0;
-            uniform vec4 uRow1;
-            uniform vec4 uRow2;
-            uniform vec2 uDir;
-            uniform float uSigma;
-            uniform int uTaps;
-            uniform float uStep;
-            uniform vec2 uTexel;   // 層のテクスチャの 1 画素（正規化座標）
-            uniform vec2 uUvScale; // 描画先の正規化座標 → テクスチャの正規化座標（縮小した絵は左下の一部だけを使う）
-            uniform vec2 uUvMax;   // 読んでよい範囲の端（端の画素の中心）
-            uniform int uK;        // 縮小の倍率
-            uniform vec2 uShadowOffset;
-            uniform vec4 uShadowColor;
-            uniform int uMaskMode;
-            uniform sampler2D uBackdrop;
-            uniform int uBlend;
-            uniform vec4 uInvM;        // 箱の座標へ戻す変換 {a, b, c, d}
-            uniform vec2 uInvT;        // {e, f}
-            uniform float uShapeScale; // 箱の 1 単位が何画素か
-            uniform int uClipKind;     // 0 なし, 1 inset, 2 circle, 3 ellipse, 4 polygon
-            uniform int uEvenOdd;
-            uniform int uClipN;
-            uniform vec4 uClipD[96];
-            uniform int uHasB;         // backdrop-filter の形（inset の 12 値）があるか
-            uniform vec4 uBD[3];
-            out vec4 fragColor;
+            EF_UBO(0, PassParams) {
+                vec4 uDev;
+                vec2 uView;
+                vec2 uDir;
+                vec4 uRow0;
+                vec4 uRow1;
+                vec4 uRow2;
+                vec4 uShadowColor;
+                vec4 uInvM;
+                vec4 uBD[3];
+                vec4 uClipD[96];
+                vec2 uTexel;
+                vec2 uUvScale;
+                vec2 uUvMax;
+                vec2 uShadowOffset;
+                vec2 uInvT;
+                int uMode;
+                float uOpacity;
+                int uHasMatrix;
+                float uSigma;
+                int uTaps;
+                float uStep;
+                int uK;
+                int uMaskMode;
+                int uBlend;
+                float uShapeScale;
+                int uClipKind;
+                int uEvenOdd;
+                int uClipN;
+                int uHasB;
+            };
+            EF_TEX2D(1, uSrc);
+            EF_TEX2D(2, uAux);
+            EF_TEX2D(3, uBackdrop);
+            EF_LOC(0) out vec4 fragColor;
 
             float sdEllipse(vec2 p, vec2 r) {
                 r = max(r, vec2(0.001));
@@ -542,7 +598,7 @@ public final class ShaderSources {
                 return inside ? -mn : mn;
             }
             vec2 boxPos() {
-                vec2 dev = vec2(gl_FragCoord.x, uView.y - gl_FragCoord.y);
+                vec2 dev = vec2(gl_FragCoord.x, EF_FRAG_Y(uView.y));
                 return vec2(uInvM.x * dev.x + uInvM.z * dev.y + uInvT.x, uInvM.y * dev.x + uInvM.w * dev.y + uInvT.y);
             }
             float clipCoverage() {
@@ -685,42 +741,48 @@ public final class ShaderSources {
 
     /** 3D（モード A）のインスタンス頂点シェーダー。 */
     public static final String SCENE3D_VERTEX = """
-            in vec3 aPos;
-            in vec3 aNorm;
-            in vec2 aUv;
-            in vec4 aTangent;
+            EF_LOC(0) in vec3 aPos;
+            EF_LOC(1) in vec3 aNorm;
+            EF_LOC(2) in vec2 aUv;
+            EF_LOC(3) in vec4 aTangent;
 
-            uniform samplerBuffer uInstanceTboF;
-            uniform isamplerBuffer uInstanceTboI;
-            uniform mat4 uViewProj;
-            uniform int uBaseInstance;
+            EF_TBO_F(8, uInstanceTboF);
+            EF_TBO_I(9, uInstanceTboI);
+            EF_UBO(0, PassParams) {
+                mat4 uViewProj;
+                vec4 uCameraPos;
+                vec4 uLightDir;
+                vec4 uLightColor;
+                vec4 uAmbientColor;
+                int uBaseInstance;
+            };
 
-            out vec3 vWorldPos;
-            out vec3 vWorldNorm;
-            out vec2 vUv;
-            out vec4 vBaseColor;
-            out vec4 vPbrFlags;
-            out vec3 vEmissive;
+            EF_LOC(0) out vec3 vWorldPos;
+            EF_LOC(1) out vec3 vWorldNorm;
+            EF_LOC(2) out vec2 vUv;
+            EF_LOC(3) out vec4 vBaseColor;
+            EF_LOC(4) out vec4 vPbrFlags;
+            EF_LOC(5) out vec3 vEmissive;
 
             void main() {
-                int baseTexel = (gl_InstanceID + uBaseInstance) * 8;
-                vec4 c0 = texelFetch(uInstanceTboF, baseTexel + 0);
-                vec4 c1 = texelFetch(uInstanceTboF, baseTexel + 1);
-                vec4 c2 = texelFetch(uInstanceTboF, baseTexel + 2);
-                vec4 c3 = texelFetch(uInstanceTboF, baseTexel + 3);
+                int baseTexel = (EF_INSTANCE_ID + uBaseInstance) * 8;
+                vec4 c0 = EF_REC_V4(uInstanceTboF, baseTexel + 0);
+                vec4 c1 = EF_REC_V4(uInstanceTboF, baseTexel + 1);
+                vec4 c2 = EF_REC_V4(uInstanceTboF, baseTexel + 2);
+                vec4 c3 = EF_REC_V4(uInstanceTboF, baseTexel + 3);
                 mat4 model = mat4(c0, c1, c2, c3);
 
-                vec4 t4 = texelFetch(uInstanceTboF, baseTexel + 4);
-                vec4 t5 = texelFetch(uInstanceTboF, baseTexel + 5);
-                vec4 t6f = texelFetch(uInstanceTboF, baseTexel + 6);
+                vec4 t4 = EF_REC_V4(uInstanceTboF, baseTexel + 4);
+                vec4 t5 = EF_REC_V4(uInstanceTboF, baseTexel + 5);
+                vec4 t6f = EF_REC_V4(uInstanceTboF, baseTexel + 6);
                 mat3 normalMat = mat3(
                     t4.x, t4.y, t4.z,
                     t4.w, t5.x, t5.y,
                     t5.z, t5.w, t6f.x
                 );
 
-                ivec4 t6i = texelFetch(uInstanceTboI, baseTexel + 6);
-                ivec4 t7i = texelFetch(uInstanceTboI, baseTexel + 7);
+                ivec4 t6i = EF_REC_I4(uInstanceTboI, baseTexel + 6);
+                ivec4 t7i = EF_REC_I4(uInstanceTboI, baseTexel + 7);
 
                 vec4 worldPos = model * vec4(aPos, 1.0);
                 vWorldPos = worldPos.xyz;
@@ -754,19 +816,23 @@ public final class ShaderSources {
 
     /** 3D（モード A）のフラグメントシェーダー。 */
     public static final String SCENE3D_FRAGMENT = """
-            in vec3 vWorldPos;
-            in vec3 vWorldNorm;
-            in vec2 vUv;
-            in vec4 vBaseColor;
-            in vec4 vPbrFlags;
-            in vec3 vEmissive;
+            EF_LOC(0) in vec3 vWorldPos;
+            EF_LOC(1) in vec3 vWorldNorm;
+            EF_LOC(2) in vec2 vUv;
+            EF_LOC(3) in vec4 vBaseColor;
+            EF_LOC(4) in vec4 vPbrFlags;
+            EF_LOC(5) in vec3 vEmissive;
 
-            uniform vec3 uCameraPos;
-            uniform vec3 uLightDir;
-            uniform vec3 uLightColor;
-            uniform vec3 uAmbientColor;
+            EF_UBO(0, PassParams) {
+                mat4 uViewProj;
+                vec4 uCameraPos;
+                vec4 uLightDir;
+                vec4 uLightColor;
+                vec4 uAmbientColor;
+                int uBaseInstance;
+            };
 
-            out vec4 fragColor;
+            EF_LOC(0) out vec4 fragColor;
 
             void main() {
                 float alpha = vBaseColor.a;
@@ -783,9 +849,9 @@ public final class ShaderSources {
                 } else {
                     vec3 N = normalize(vWorldNorm);
                     if (!gl_FrontFacing) N = -N;
-                    vec3 L = normalize(-uLightDir);
+                    vec3 L = normalize(-uLightDir.xyz);
                     float ndl = max(dot(N, L), 0.0);
-                    vec3 V = normalize(uCameraPos - vWorldPos);
+                    vec3 V = normalize(uCameraPos.xyz - vWorldPos);
                     vec3 H = normalize(L + V);
 
                     float metallic = vPbrFlags.x;
@@ -793,9 +859,9 @@ public final class ShaderSources {
                     float shininess = mix(128.0, 4.0, roughness);
                     float specFactor = pow(max(dot(N, H), 0.0), shininess) * mix(0.08, 0.65, 1.0 - roughness);
 
-                    vec3 diffuse = vBaseColor.rgb * (uAmbientColor + uLightColor * ndl) * (1.0 - metallic * 0.45);
+                    vec3 diffuse = vBaseColor.rgb * (uAmbientColor.xyz + uLightColor.xyz * ndl) * (1.0 - metallic * 0.45);
                     vec3 specColor = mix(vec3(1.0), vBaseColor.rgb, metallic);
-                    vec3 spec = specColor * uLightColor * specFactor * ndl;
+                    vec3 spec = specColor * uLightColor.xyz * specFactor * ndl;
                     rgb = diffuse + spec + vEmissive;
                 }
                 rgb = clamp(rgb, 0.0, 1.0);

@@ -13,7 +13,6 @@ import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderProgram;
 import com.nishiyu.enderframelib.core.kernel.gpu.shader.ShaderPrograms;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.ARBBufferStorage;
 import org.lwjgl.opengl.GL;
@@ -55,7 +54,7 @@ public final class GlDevice implements GpuDevice {
     private final FenceRing fences = new FenceRing();
     private final java.util.List<Buffer> buffers = new java.util.ArrayList<>();
     private final ByteBuffer scratchMask = BufferUtils.createByteBuffer(4);
-    private final FloatBuffer uniformFloats = BufferUtils.createFloatBuffer(384); // 最大 vec4[96]
+    private ByteBuffer uboScratch = BufferUtils.createByteBuffer(2048);
     private ByteBuffer scratchFlipBuf;
     private byte[] scratchFlipRow;
 
@@ -359,55 +358,25 @@ public final class GlDevice implements GpuDevice {
             GL13.glActiveTexture(frame != null ? frame.prevActiveTexture : GL13.GL_TEXTURE0);
 
             if (need > 0) {
-                uploadUniforms(pl, sh, bindings.uniforms());
+                uploadUbo(pl, bindings.uniforms(), need);
             }
             boundPipeline = pl;
             bound = true;
         }
 
-        private void uploadUniforms(Pipeline pl, ShaderProgram sh, ByteBuffer src) {
-            ByteBuffer u = src.duplicate().order(ByteOrder.nativeOrder());
-            int o = u.position();
-            var uniforms = sh.uniforms();
-            for (int i = 0; i < uniforms.size(); i++) {
-                ShaderProgram.Uniform un = uniforms.get(i);
-                int loc = pl.uniformLocs[i];
-                switch (un.type()) {
-                    case FLOAT -> { float a = u.getFloat(o); if (loc >= 0) GL20.glUniform1f(loc, a); o += 4; }
-                    case INT -> { int a = u.getInt(o); if (loc >= 0) GL20.glUniform1i(loc, a); o += 4; }
-                    case VEC2 -> { float a = u.getFloat(o), b = u.getFloat(o + 4); if (loc >= 0) GL20.glUniform2f(loc, a, b); o += 8; }
-                    case VEC3 -> {
-                        float a = u.getFloat(o), b = u.getFloat(o + 4), c = u.getFloat(o + 8);
-                        if (loc >= 0) GL20.glUniform3f(loc, a, b, c);
-                        o += 12;
-                    }
-                    case VEC4 -> {
-                        float a = u.getFloat(o), b = u.getFloat(o + 4), c = u.getFloat(o + 8), d = u.getFloat(o + 12);
-                        if (loc >= 0) GL20.glUniform4f(loc, a, b, c, d);
-                        o += 16;
-                    }
-                    case MAT4 -> {
-                        if (loc >= 0) {
-                            uniformFloats.clear();
-                            for (int k = 0; k < 16; k++) uniformFloats.put(u.getFloat(o + k * 4));
-                            uniformFloats.flip();
-                            GL20.glUniformMatrix4fv(loc, false, uniformFloats);
-                        }
-                        o += 64;
-                    }
-                    case VEC4_ARRAY -> {
-                        int count = un.count();
-                        if (loc >= 0) {
-                            int floats = count * 4;
-                            uniformFloats.clear();
-                            for (int k = 0; k < floats; k++) uniformFloats.put(u.getFloat(o + k * 4));
-                            uniformFloats.flip();
-                            GL20.glUniform4fv(loc, uniformFloats);
-                        }
-                        o += count * 16;
-                    }
-                }
-            }
+        private void uploadUbo(Pipeline pl, ByteBuffer src, int activeBytes) {
+            if (pl.ubo == 0 || pl.uboBlockBytes <= 0) return;
+            int cap = pl.uboBlockBytes;
+            if (uboScratch.capacity() < cap) uboScratch = BufferUtils.createByteBuffer(cap);
+            uboScratch.clear().limit(cap);
+            ByteBuffer dup = src.duplicate();
+            dup.limit(dup.position() + activeBytes);
+            uboScratch.put(dup);
+            while (uboScratch.hasRemaining()) uboScratch.put((byte) 0);
+            uboScratch.flip();
+            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, pl.ubo);
+            GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, uboScratch, GL15.GL_STREAM_DRAW);
+            GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, pl.ubo);
         }
 
         @Override
@@ -478,7 +447,9 @@ public final class GlDevice implements GpuDevice {
         final PipelineDesc desc;
         final ShaderProgram shader;
         final int program;
-        final int[] uniformLocs, samplerLocs, recordLocs;
+        final int ubo;
+        final int uboBlockBytes;
+        final int[] samplerLocs, recordLocs;
         boolean samplersSet;
         int samplerSets;
 
@@ -502,8 +473,16 @@ public final class GlDevice implements GpuDevice {
                 throw new IllegalStateException("シェーダーのリンクに失敗（" + shader.id() + "）: " + log);
             }
             this.program = p;
-            this.uniformLocs = new int[shader.uniforms().size()];
-            for (int i = 0; i < uniformLocs.length; i++) uniformLocs[i] = GL20.glGetUniformLocation(p, shader.uniforms().get(i).name());
+            int blockBytes = shader.uniformBlockBytes();
+            if (blockBytes > 0) {
+                int blockIdx = GL31.glGetUniformBlockIndex(p, "PassParams");
+                if (blockIdx != GL31.GL_INVALID_INDEX) GL31.glUniformBlockBinding(p, blockIdx, 0);
+                this.ubo = GL15.glGenBuffers();
+                this.uboBlockBytes = blockBytes;
+            } else {
+                this.ubo = 0;
+                this.uboBlockBytes = 0;
+            }
             this.samplerLocs = new int[shader.samplers().size()];
             for (int i = 0; i < samplerLocs.length; i++) samplerLocs[i] = GL20.glGetUniformLocation(p, shader.samplers().get(i));
             this.recordLocs = new int[shader.records().size()];
@@ -523,7 +502,10 @@ public final class GlDevice implements GpuDevice {
         }
 
         @Override public PipelineDesc desc() { return desc; }
-        @Override public void close() { GL20.glDeleteProgram(program); }
+        @Override public void close() {
+            if (ubo != 0) GL15.glDeleteBuffers(ubo);
+            GL20.glDeleteProgram(program);
+        }
     }
 
     // ------------------------------------------------------------------ バッファ（永続 3 面リング統合）
@@ -829,6 +811,8 @@ public final class GlDevice implements GpuDevice {
         private final int prevVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         private final int prevArrayBuf = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         private final int prevElementBuf = GL11.glGetInteger(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+        private final int prevUniformBuf = GL11.glGetInteger(GL31.GL_UNIFORM_BUFFER_BINDING);
+        private final int prevUniformBuf0 = GL30.glGetIntegeri(GL31.GL_UNIFORM_BUFFER_BINDING, 0);
         private final boolean prevBlend = GL11.glIsEnabled(GL11.GL_BLEND);
         private final int[] prevBlendFunc = {GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), GL11.glGetInteger(GL14.GL_BLEND_DST_RGB),
                 GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA), GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA)};
@@ -1007,6 +991,8 @@ public final class GlDevice implements GpuDevice {
             GL30.glBindVertexArray(prevVao);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, prevArrayBuf);
             GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, prevElementBuf);
+            GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, 0, prevUniformBuf0);
+            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, prevUniformBuf);
             if (prevBlend) GL11.glEnable(GL11.GL_BLEND); else GL11.glDisable(GL11.GL_BLEND);
             GL14.glBlendFuncSeparate(prevBlendFunc[0], prevBlendFunc[1], prevBlendFunc[2], prevBlendFunc[3]);
             if (prevDepthTest) GL11.glEnable(GL11.GL_DEPTH_TEST); else GL11.glDisable(GL11.GL_DEPTH_TEST);

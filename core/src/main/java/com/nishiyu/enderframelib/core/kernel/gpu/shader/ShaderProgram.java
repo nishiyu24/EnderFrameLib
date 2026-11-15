@@ -34,12 +34,14 @@ public record ShaderProgram(String id, String vertexBody, String fragmentBody, L
     }
 
     public enum UniformType {
-        FLOAT(4), VEC2(8), VEC3(12), VEC4(16), INT(4), MAT4(64), VEC4_ARRAY(16);
+        FLOAT(4, 4), VEC2(8, 8), VEC3(12, 16), VEC4(16, 16), INT(4, 4), MAT4(64, 16), VEC4_ARRAY(16, 16);
 
         public final int bytes;
+        public final int std140Align;
 
-        UniformType(int bytes) {
+        UniformType(int bytes, int std140Align) {
             this.bytes = bytes;
+            this.std140Align = std140Align;
         }
     }
 
@@ -57,10 +59,34 @@ public record ShaderProgram(String id, String vertexBody, String fragmentBody, L
         }
     }
 
-    /** 定数の並びの合計バイト数。 */
+    /** 各定数の std140 ブロック内の先頭バイト位置。 */
+    public int[] std140Offsets() {
+        int[] offsets = new int[uniforms.size()];
+        int pos = 0;
+        for (int i = 0; i < uniforms.size(); i++) {
+            Uniform u = uniforms.get(i);
+            int align = u.type().std140Align;
+            pos = (pos + align - 1) & ~(align - 1);
+            offsets[i] = pos;
+            pos += u.bytes();
+        }
+        return offsets;
+    }
+
+    /** 最後の有効定数の末尾までのバイト数（呼出側バッファの最小必要サイズ）。 */
     public int uniformBytes() {
-        int n = 0;
-        for (Uniform u : uniforms) n += u.bytes();
-        return n;
+        int pos = 0;
+        for (Uniform u : uniforms) {
+            int align = u.type().std140Align;
+            pos = (pos + align - 1) & ~(align - 1);
+            pos += u.bytes();
+        }
+        return pos;
+    }
+
+    /** GLSL {@code std140} の uniform ブロック全体サイズ（16 バイト境界へ切り上げ）。 */
+    public int uniformBlockBytes() {
+        int raw = uniformBytes();
+        return raw == 0 ? 0 : ((raw + 15) & ~15);
     }
 }

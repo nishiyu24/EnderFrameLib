@@ -275,11 +275,11 @@ class GlDeviceDrawTest {
         u.putFloat(0).putFloat(1).putFloat(0).putFloat(0);
         u.putFloat(0).putFloat(0).putFloat(1).putFloat(0);
         u.putFloat(0).putFloat(0).putFloat(0).putFloat(1);
+        u.putFloat(0).putFloat(0).putFloat(-5).putFloat(0);
+        u.putFloat(0).putFloat(0).putFloat(1).putFloat(0);
+        u.putFloat(0).putFloat(0).putFloat(0).putFloat(0);
+        u.putFloat(1).putFloat(1).putFloat(1).putFloat(0);
         u.putInt(baseInstance);
-        u.putFloat(0).putFloat(0).putFloat(-5);
-        u.putFloat(0).putFloat(0).putFloat(1);
-        u.putFloat(0).putFloat(0).putFloat(0);
-        u.putFloat(1).putFloat(1).putFloat(1);
         u.flip();
         return u;
     }

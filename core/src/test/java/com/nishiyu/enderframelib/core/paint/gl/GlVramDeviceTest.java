@@ -31,6 +31,7 @@ import org.lwjgl.opengl.GL30;
  */
 class GlVramDeviceTest {
     private static LwjglGlRenderBackend host;
+    private static int ubo;
     private static String unavailable;
     private static int vao, program, fbo, tex;
     private static final int SLOTS = 16;
@@ -43,20 +44,19 @@ class GlVramDeviceTest {
             GL.createCapabilities();
             vao = GL30.glGenVertexArrays();
             GL30.glBindVertexArray(vao);
-            program = link("""
-                    #version 150
+            program = link(com.nishiyu.enderframelib.core.kernel.gpu.shader.Glsl.gl150("""
                     void main() {
-                        vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+                        vec2 p = vec2(float((EF_VERTEX_ID << 1) & 2), float(EF_VERTEX_ID & 2));
                         gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
                     }
-                    """, "#version 150\n" + GpuAnimation.GLSL + """
+                    """), com.nishiyu.enderframelib.core.kernel.gpu.shader.Glsl.gl150(GpuAnimation.GLSL + """
                     out vec4 o;
                     void main() {
                         int x = int(gl_FragCoord.x);
                         mat3 w = efWorld(x >> 1);
                         o = ((x & 1) == 0) ? vec4(w[0].x, w[0].y, w[1].x, w[1].y) : vec4(w[2].x, w[2].y, 0.0, 0.0);
                     }
-                    """);
+                    """));
             tex = GL11.glGenTextures();
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, SLOTS * 2, 1, 0, GL11.GL_RGBA, GL11.GL_FLOAT, (FloatBuffer) null);
@@ -66,6 +66,8 @@ class GlVramDeviceTest {
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, tex, 0);
             assertEquals(GL30.GL_FRAMEBUFFER_COMPLETE, GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER));
+            ubo = org.lwjgl.opengl.GL15.glGenBuffers();
+            org.lwjgl.opengl.GL31.glUniformBlockBinding(program, org.lwjgl.opengl.GL31.glGetUniformBlockIndex(program, "PassParams"), 0);
         } catch (Throwable t) {
             unavailable = t.toString();
             if (host != null) { host.close(); host = null; }
@@ -321,7 +323,11 @@ class GlVramDeviceTest {
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uTrI"), 1);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uScroll"), 2);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "uCurves"), 3);
-        GL20.glUniform1f(GL20.glGetUniformLocation(program, "uFrameTimeMs"), frameMs);
+        java.nio.ByteBuffer ub = BufferUtils.createByteBuffer(32);
+        ub.putFloat(8, frameMs);
+        org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER, ubo);
+        org.lwjgl.opengl.GL15.glBufferData(org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER, ub, org.lwjgl.opengl.GL15.GL_STREAM_DRAW);
+        GL30.glBindBufferBase(org.lwjgl.opengl.GL31.GL_UNIFORM_BUFFER, 0, ubo);
         GL11.glDisable(GL11.GL_BLEND);
         GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
         gf.end();

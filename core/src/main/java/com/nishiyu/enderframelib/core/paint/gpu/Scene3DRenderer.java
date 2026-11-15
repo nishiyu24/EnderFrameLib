@@ -169,11 +169,11 @@ public final class Scene3DRenderer implements AutoCloseable {
 
                 uniforms.clear();
                 for (int i = 0; i < 16; i++) uniforms.putFloat(vp[i]);
+                uniforms.putFloat(cam.eyeX()).putFloat(cam.eyeY()).putFloat(cam.eyeZ()).putFloat(0f);
+                uniforms.putFloat(light.dirX()).putFloat(light.dirY()).putFloat(light.dirZ()).putFloat(0f);
+                uniforms.putFloat(lr).putFloat(lg).putFloat(lb).putFloat(0f);
+                uniforms.putFloat(light.ambientR()).putFloat(light.ambientG()).putFloat(light.ambientB()).putFloat(0f);
                 uniforms.putInt(batch.baseInstance());
-                uniforms.putFloat(cam.eyeX()).putFloat(cam.eyeY()).putFloat(cam.eyeZ());
-                uniforms.putFloat(light.dirX()).putFloat(light.dirY()).putFloat(light.dirZ());
-                uniforms.putFloat(lr).putFloat(lg).putFloat(lb);
-                uniforms.putFloat(light.ambientR()).putFloat(light.ambientG()).putFloat(light.ambientB());
                 uniforms.flip();
 
                 int key = (batch.blendMode() == BlendMode3D.TRANSPARENT ? 2 : 0) | (batch.doubleSided() ? 1 : 0);
