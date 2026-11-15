@@ -57,15 +57,15 @@ class PortabilityRatchetTest {
     // ------------------------------------------------------------------ G0: GLSL とパッケージ境界のラチェット（ENGINE_REARCHITECTURE_PLAN §3）
 
     /**
-     * GLSL ソース（{@code #version}）を持つファイルと、その本数。G2（シェーダーの単一ソース化）で {@code core.kernel.gpu.shader} へ
-     * 集めるまで増やさない。X3-1 の {@code Scene3DShaders}（2 本）を加えた時点の数で固定。
+     * GLSL のシェーダー本体（{@code void main()}）を持つファイルと、その本数。G2（シェーダーの単一ソース化）で
+     * {@code core.kernel.gpu.shader.ShaderSources} へ集め終えた。ここ以外へ GLSL を書き足してはならない。
+     * 版の行（{@code #version}）は {@code Glsl}（API ごとの前置き）だけが持つ。
      */
     private static final Map<String, Integer> GLSL_SOURCES = Map.of(
-            "core/kernel/gpu/GpuAnimation.java", 1,
-            "core/kernel/gpu/GpuRectShader.java", 2,
-            "core/paint/AlphaMask.java", 1,
-            "core/paint/gl/LwjglGlRenderBackend.java", 3,
-            "core/paint/gl/Scene3DShaders.java", 2);
+            "core/kernel/gpu/shader/ShaderSources.java", 7);
+
+    /** 版の行（GLSL の {@code #version N}）を書いてよいファイル（行頭または文字列の先頭。Javadoc の言及は数えない）。 */
+    private static final Set<String> GLSL_VERSION_FILES = Set.of("core/kernel/gpu/shader/Glsl.java");
 
     /**
      * {@code core.paint.gl} の外から、その型を import しているファイル（リポジトリ全体の main）。G1 の中立 {@code GpuRenderBackend} と
@@ -76,7 +76,8 @@ class PortabilityRatchetTest {
             "core/src/main/java/com/nishiyu/enderframelib/common/StandaloneViewer.java",
             "src/main/java/com/nishiyu/enderframelib/client/renderer/CoreGpuSurface.java");
 
-    private static final Pattern VERSION_DIRECTIVE = Pattern.compile("#version");
+    private static final Pattern MAIN_FUNCTION = Pattern.compile("void\\s+main\\s*\\(\\s*\\)");
+    private static final Pattern VERSION_LINE = Pattern.compile("(?m)(^[ \\t]*|\")#version[ \\t]+\\d+");
     private static final Pattern GL_PACKAGE_REF = Pattern.compile("com[.]nishiyu[.]enderframelib[.]core[.]paint[.]gl[.]");
 
     @Test
@@ -85,12 +86,24 @@ class PortabilityRatchetTest {
         Map<String, Integer> found = new java.util.TreeMap<>();
         try (Stream<Path> files = Files.walk(root)) {
             for (Path p : (Iterable<Path>) files.filter(f -> f.toString().endsWith(".java"))::iterator) {
-                int n = (int) VERSION_DIRECTIVE.matcher(Files.readString(p)).results().count();
+                int n = (int) MAIN_FUNCTION.matcher(Files.readString(p)).results().count();
                 if (n > 0) found.put(root.relativize(p).toString().replace(java.io.File.separatorChar, '/'), n);
             }
         }
         assertEquals(new java.util.TreeMap<>(GLSL_SOURCES), found,
-                "GLSL を持つファイル・本数が一覧と違う（増やさない。減らした・移したら一覧を更新する。G2 の目標は core.kernel.gpu.shader だけ）");
+                "GLSL を持つファイル・本数が一覧と違う（シェーダーは core.kernel.gpu.shader.ShaderSources だけに書く）");
+    }
+
+    @Test
+    void glslVersionLinesLiveOnlyInThePreamble() throws IOException {
+        Path root = Path.of("core/src/main/java/com/nishiyu/enderframelib");
+        Set<String> found = new TreeSet<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path p : (Iterable<Path>) files.filter(f -> f.toString().endsWith(".java"))::iterator) {
+                if (VERSION_LINE.matcher(Files.readString(p)).find()) found.add(root.relativize(p).toString().replace(java.io.File.separatorChar, '/'));
+            }
+        }
+        assertEquals(new TreeSet<>(GLSL_VERSION_FILES), found, "GLSL の版の行は Glsl（前置き）だけが持つ");
     }
 
     @Test
