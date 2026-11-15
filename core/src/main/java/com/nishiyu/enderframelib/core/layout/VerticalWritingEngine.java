@@ -88,11 +88,12 @@ final class VerticalWritingEngine extends LayoutEngine {
     public void arrangeChildren(LayoutBox box, float innerX, float innerY, LayoutContext ctx) {
         LayoutBox wrapper = wrapperOf(box);
         if (wrapper == null) return;
-        boolean ccw = WritingModes.isCounterClockwise(WritingModes.flowOf(box.style));
+        int flow = WritingModes.flowOf(box.style);
+        boolean ccw = WritingModes.isCounterClockwise(flow);
         // 行は右端から積む。根の幅（指定）が内容より広ければ、右端に寄せる
         float innerW = Math.max(wrapper.h, box.w - box.horizontalDecoration());
-        float dx = ccw ? 0 : innerW;
-        float dy = ccw ? wrapper.w : 0;
+        float dx = ccw || WritingModes.isTransposed(flow) ? 0 : innerW;
+        float dy = ccw ? wrapper.w : 0; // 転置は張り出さない
         wrapper.layout(innerX + dx, innerY + dy, wrapper.w, wrapper.h, ctx);
     }
 }

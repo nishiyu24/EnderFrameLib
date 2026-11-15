@@ -3188,7 +3188,9 @@ public class LayoutBox {
                             com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style));
                     float along = Math.max(child.w, child.descendantOverflowRight);
                     float across = Math.max(child.h, child.descendantOverflowBottom);
-                    float r = (ccw ? child.x + across : child.x) + scrollX;
+                    boolean tr = com.nishiyu.enderframelib.core.css.WritingModes.isTransposed(
+                            com.nishiyu.enderframelib.core.css.WritingModes.flowOf(style));
+                    float r = (ccw || tr ? child.x + across : child.x) + scrollX;
                     float b = (ccw ? child.y : child.y + along) + scrollY;
                     if (r > extRight) extRight = r;
                     if (b > extBottom) extBottom = b;

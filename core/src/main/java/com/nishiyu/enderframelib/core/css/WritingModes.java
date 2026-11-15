@@ -6,8 +6,8 @@ package com.nishiyu.enderframelib.core.css;
  * <p>縦書きは「論理（横書き）の軸で組んだ内容を回して置く」方式で実現する（{@code BoxTreeBuilder} が縦書きの根の内容を包む箱を作り、
  * {@code VerticalWritingEngine} が置く）。{@code vertical-rl} と {@code sideways-rl} は 90° 回転（行は右から左へ積む）、
  * {@code sideways-lr} は -90° 回転（行は左から右へ・文字は下から上）。
- * LIMITATION: {@code vertical-lr}（行が左から右・文字は上から下）は回転だけでは表せない（鏡映になる）ので
- * {@code vertical-rl} と同じ並びで描く。
+ * {@code vertical-lr}（行が左から右・文字は上から下）は転置（{@code matrix(0,1,1,0,0,0)}）で置く。箱・枠線・背景は転置のままで
+ * 物理の向きに合い、文字だけが鏡映になるので、文字項目に上下反転（と正立の字は -90°）を足して打ち消す。
  */
 public final class WritingModes {
     private WritingModes() {}
@@ -38,6 +38,11 @@ public final class WritingModes {
 
     public static boolean isVertical(ComputedStyle style) {
         return flowOf(style) != HORIZONTAL;
+    }
+
+    /** 内容を転置（回転＋鏡映）して置くか。{@code vertical-lr}: 行が左から右へ積まれ、文字は上から下へ読む。 */
+    public static boolean isTransposed(int flow) {
+        return flow == VERTICAL_LR;
     }
 
     /** 内容を回す向きが反時計回り（-90°）か。 */

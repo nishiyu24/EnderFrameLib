@@ -1468,13 +1468,15 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
         for (int i = 0; i < adv.length; i++) {
             float rw = adv[i] * scale;
             emitTextRun(elements, box, id, cx, y, rw, h, runs.get(i), color, bgColor, events, meta, transDur, colorAnim, shadows,
-                    upright.get(i) ? -90f : 0f);
+                    upright.get(i) ? (WritingModes.isTransposed(WritingModes.flowOf(box.style)) ? 90f : -90f) : 0f);
             cx += rw;
         }
     }
 
     private void emitTextRun(List<DisplayItem> elements, LayoutBox box, String id, float x, float y, float w, float h, String text, int color, int bgColor,
                             ItemProps events, RenderMeta meta, int transDur, AnimationSpec colorAnim, List<BoxDecorations.Shadow> shadows, float rot) {
+        // vertical-lr は転置で置くので、文字は上下反転で鏡映を打ち消す
+        float flipY = box.style != null && WritingModes.isTransposed(WritingModes.flowOf(box.style)) ? -1f : 1f;
         int nodeHandle = box.node != null ? box.node.nodeId() : 0;
         for (int i = shadows.size() - 1; i >= 0; i--) {
             BoxDecorations.Shadow sh = shadows.get(i);
@@ -1496,19 +1498,19 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen)
                 int shadowPart = fragIds.getAndIncrement();
                 long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
                 addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, rot, 0, AnimationSpec.NONE, meta, shadowKey);
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, shadowKey);
                 LayerSpec spec = new LayerSpec(elements.size() - at, 1f, List.of(FilterOp.blur(sh.blur() / 2f)), BlendMode.NORMAL, false);
                 elements.set(at, withLayer(elements.get(at), spec));
             } else {
                 int shadowPart = fragIds.getAndIncrement();
                 long shadowKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, shadowPart) : 0L;
                 addElement(elements, id, id + "_txt_" + shadowPart, ElementType.TEXT, x + sh.offsetX(), y + sh.offsetY(), w, h, text,
-                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, 1f, rot, 0, AnimationSpec.NONE, meta, shadowKey);
+                        sh.color(), 0, shadowEvents, 0, 1f, 0, 0, 1f, flipY, rot, 0, AnimationSpec.NONE, meta, shadowKey);
             }
         }
         int mainPart = fragIds.getAndIncrement();
         long mainKey = nodeHandle > 0 ? DisplayItem.keyOf(nodeHandle, mainPart) : 0L;
-        addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, 1f, rot, transDur, colorAnim, meta, mainKey);
+        addElement(elements, id, id + "_txt_" + mainPart, ElementType.TEXT, x, y, w, h, text, color, bgColor, events, 0, 1f, 0, 0, 1f, flipY, rot, transDur, colorAnim, meta, mainKey);
     }
 
     /** {@code -webkit-text-stroke-width} の CSS px（{@code thin / medium / thick} は 1 / 3 / 5）。無い・0 以下は 0。 */

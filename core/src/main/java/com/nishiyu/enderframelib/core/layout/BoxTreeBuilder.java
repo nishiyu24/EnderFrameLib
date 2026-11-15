@@ -233,7 +233,8 @@ public final class BoxTreeBuilder {
         node.isPseudoNode = true;
         node.parent = root.node;
         node.setId(root.node.key() + "_vw");
-        LayoutBox wrapper = new LayoutBox(node, root.style.derivedVerticalWrapper(WritingModes.isCounterClockwise(flow)));
+        LayoutBox wrapper = new LayoutBox(node, WritingModes.isTransposed(flow) ? root.style.derivedVerticalTransposed()
+                : root.style.derivedVerticalWrapper(WritingModes.isCounterClockwise(flow)));
         wrapper.isVerticalWrapper = true;
         List<LayoutBox> outside = new ArrayList<>();
         for (LayoutBox k : kids) {

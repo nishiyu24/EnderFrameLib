@@ -443,4 +443,54 @@ public class VerticalWritingTest {
         LayoutBox v = find(c.layout(), "v");
         assertTrue(v.scrollWidth <= v.w + 0.5f, "横の内容幅 " + v.scrollWidth + " が箱の幅 " + v.w + " を超えない");
     }
+
+    // ------------------------------------------------------------------ vertical-lr（転置）
+
+    private static String lrBox(String mode, String extra, String text) {
+        return "<div style='position:absolute;left:100px;top:100px;width:24px;height:200px;writing-mode:" + mode
+                + ";font:bold 20px/24px monospace;" + extra + "'>" + text + "</div>";
+    }
+
+    @Test
+    public void verticalLrSingleLineLooksLikeVerticalRl() {
+        // 1 行だけなら、行の幅ぴったりの箱では vertical-lr と vertical-rl は同じ画素（文字の向き・読む向きが同じ）
+        assertArrayEquals(paint(lrBox("vertical-rl", "", "L7F")), paint(lrBox("vertical-lr", "", "L7F")));
+    }
+
+    @Test
+    public void verticalLrUprightLooksLikeVerticalRl() {
+        assertArrayEquals(paint(lrBox("vertical-rl", "text-orientation:upright", "L7F")),
+                paint(lrBox("vertical-lr", "text-orientation:upright", "L7F")));
+    }
+
+    @Test
+    public void verticalLrStacksLinesLeftToRight() {
+        String html = "<div id=v style='position:absolute;left:100px;top:100px;width:60px;height:60px;writing-mode:vertical-lr;font:bold 20px/20px monospace'>WWW WWW</div>";
+        int[] px = paint(html);
+        int[] left = inkBounds(px, 100, 100, 120, 400);
+        int[] mid = inkBounds(px, 120, 100, 140, 400);
+        assertNotNull(left, "1 行目は左の列");
+        assertNotNull(mid, "2 行目は 1 行目の右");
+        Ctx c = new Ctx(html);
+        LayoutBox v = find(c.layout(), "v");
+        assertEquals(v.x, v.children.get(0).x, 0.01f, "転置は左上に置く（張り出さない）");
+        assertEquals(60, v.w, 0.01f);
+    }
+
+    @Test
+    public void verticalLrBlocksStackLeftToRight() {
+        // 段落の背景は転置のまま物理の向きに合う: 1 つ目の段落が左、2 つ目がその右
+        String html = "<div id=v style='position:absolute;left:100px;top:100px;writing-mode:vertical-lr;height:100px'>"
+                + "<p id=a style='background:#f00;height:30px'>x</p><p id=b style='background:#00f;height:30px'>y</p></div>";
+        StandaloneView view = new StandaloneView(CSS + html, W, H, FontResolver.FALLBACK);
+        try (SoftwareRenderBackend cpu = new SoftwareRenderBackend(W, H, 1f)) {
+            view.frame(1000, cpu, true);
+            int[] px = cpu.pixmap().pixels();
+            int a = px[(100 + 50) * W + 105], b = px[(100 + 50) * W + 135];
+            assertEquals(0xFF0000, a & 0xFFFFFF, "左の段落は赤");
+            assertEquals(0x0000FF, b & 0xFFFFFF, "右の段落は青");
+        } finally {
+            view.close();
+        }
+    }
 }

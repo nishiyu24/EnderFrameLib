@@ -832,6 +832,13 @@ public final class ComputedStyle {
         return paintMemo(ccw ? KEY_VERTICAL_CCW : KEY_VERTICAL_CW, k -> buildInheritedWithOverrides("block", false, ccw ? 2 : 1));
     }
 
+    /** {@code vertical-lr} 用: 転置（行が左から右へ積まれる）。 */
+    public ComputedStyle derivedVerticalTransposed() {
+        return paintMemo(KEY_VERTICAL_T, k -> buildInheritedWithOverrides("block", false, 3));
+    }
+
+    private static final Object KEY_VERTICAL_T = new Object();
+
     private static final Object KEY_VERTICAL_CW = new Object();
     private static final Object KEY_VERTICAL_CCW = new Object();
 
@@ -850,7 +857,7 @@ public final class ComputedStyle {
         }
         cnt += setOverrideSlot(out, CssPropertyIndex.DISPLAY, CssValue.of(displayValue));
         if (vertical != 0) {
-            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM, CssValue.of(vertical == 2 ? "rotate(-90deg)" : "rotate(90deg)"));
+            cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM, CssValue.of(vertical == 3 ? "matrix(0,1,1,0,0,0)" : vertical == 2 ? "rotate(-90deg)" : "rotate(90deg)"));
             cnt += setOverrideSlot(out, CssPropertyIndex.TRANSFORM_ORIGIN, CssValue.of("0px 0px"));
         }
         if (markerOverrides) {
