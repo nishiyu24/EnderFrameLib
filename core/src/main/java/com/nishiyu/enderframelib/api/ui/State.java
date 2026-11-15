@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -44,6 +45,31 @@ public final class State<T> {
             }
         }
         return derived;
+    }
+
+    /** Derived state from two sources, recomputed whenever either changes. */
+    public static <A, B, R> State<R> combine(State<A> a, State<B> b, BiFunction<? super A, ? super B, ? extends R> fn) {
+        Objects.requireNonNull(a, "a");
+        Objects.requireNonNull(b, "b");
+        Objects.requireNonNull(fn, "fn");
+        State<R> out = new State<>(fn.apply(a.get(), b.get()));
+        a.onChange(v -> out.set(fn.apply(v, b.get())));
+        b.onChange(v -> out.set(fn.apply(a.get(), v)));
+        return out;
+    }
+
+    /**
+     * A two-way view of part of this state: reads project {@code getter}, and setting the view writes
+     * {@code setter.apply(current, next)} back into this state (immutable-update style).
+     * Changes in either direction propagate; equal values stop the echo.
+     */
+    public <V> State<V> lens(Function<? super T, ? extends V> getter, BiFunction<? super T, ? super V, ? extends T> setter) {
+        Objects.requireNonNull(getter, "getter");
+        Objects.requireNonNull(setter, "setter");
+        State<V> view = new State<>(getter.apply(this.value));
+        onChange(v -> view.set(getter.apply(v)));
+        view.onChange(v -> set(setter.apply(this.value, v)));
+        return view;
     }
 
     @Nullable
