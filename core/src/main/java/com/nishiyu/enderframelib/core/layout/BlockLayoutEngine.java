@@ -824,13 +824,14 @@ public class BlockLayoutEngine extends LayoutEngine {
                     && (!floats.isEmpty() || containsFloats(child))) {
                 // BFC を作らない子は同じ float 領域の中で組み直す（float を避け、自分の float を置く）。
                 // 高さ 0 で自分を貫通する箱の中の float も親の領域に入る
+                boolean hadIncomingFloats = !floats.isEmpty();
                 if (floats == EMPTY_FLOAT_SPACE) floats = new FloatSpace();
                 float y = clearedY(child, intoParentTop ? cursor : cursor + pendingWith(child.mT));
                 child.floatSpace = floats;
                 child.floatSpaceX = ox + child.mL + child.bL + child.pL;
                 child.floatSpaceY = oy + y + child.bT + child.pT;
                 child.h = 0;
-                BoxMeasurer.resolveFlexibleHeights(child, new ConstraintSpace(innerW, childPercentBase, childCtx), ctx);
+                BoxMeasurer.resolveFlexibleHeights(child, new ConstraintSpace(innerW, childPercentBase, childCtx), ctx, hadIncomingFloats);
             }
             if (collapsesThrough(child)) {
                 // 上端の位置は「下にボーダーがあったら置かれた位置」（CSS 2.2 §8.3.1）

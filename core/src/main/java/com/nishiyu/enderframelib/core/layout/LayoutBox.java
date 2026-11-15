@@ -890,6 +890,9 @@ public class LayoutBox {
      * 部分木全体を再帰していたため、ビューポートごとに結果をメモ化する。
      */
     public float getMinContentWidth(LayoutContext ctx) {
+        if (tentativeStashed && measuredMinContentVar) {
+            settleTentative();
+        }
         long key = ((long) ctx.viewport().rootW() << 32) | (ctx.viewport().rootH() & 0xFFFFFFFFL);
         key = key * 31 + Float.floatToIntBits(ctx.viewport().devicePixelRatio());
         if (cachedMinContentKey == key && cachedMinContentWidth >= 0) return cachedMinContentWidth;
@@ -1192,7 +1195,7 @@ public class LayoutBox {
             return;
         }
         MEASUREMENTS_COMPUTED.increment();
-        if (layoutChanged) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
+        if (layoutChanged || hasUnmeasuredSubtreeChange(ctx)) tentatives = null; // 中身が変わった。前の仮の測定の産物は当てはまらない
         touchPaint();
         childFitBlocked = false;
         childFitNeedMax = 0;
@@ -1253,29 +1256,29 @@ public class LayoutBox {
     /** 仮の測定（上書き寸法なし）・確定の測定（上書き寸法あり）の結果の産物と、その入力。 */
     private record Tentative(TentativeKind kind, ConstraintSpace space, Viewport viewport, FontResolver fonts,
                              IntrinsicSizeResolver intrinsics, int epoch, BoxOutputs outputs, boolean percentFree,
-                             boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
+                             boolean shrinkFree, boolean outsideFree, boolean widthFree, float fitNeed, boolean fillFit,
                              float overrideW, float overrideH) {
         /**
-         * 同じ制約か。上書き寸法は必ず一致させる。高さの % の基準が結果に効かない箱（{@link #percentFree}）は
-         * それだけが違っても同じとみなし、確定幅の箱（{@link #widthFree}）や内容で寸法が決まる箱（{@link #fitNeed}）は
-         * 使える幅の違いも許す。
+         * 同じ制約か。上書き寸法は必ず一致させる。高さの % の基準が結果に効かない箱（{@link #percentFree}）や
+         * 親の shrink 指示に依らない箱（{@link #shrinkFree}）はそれらだけが違っても同じとみなし、確定幅の箱（{@link #widthFree}）や
+         * 内容で寸法が決まる箱（{@link #fitNeed}）は使える幅の違いも許す。
          */
         boolean matches(ConstraintSpace s) {
             if (!sameFixedSizes(space, s)) return false;
             return space.equals(s)
-                    || (percentFree && sameIgnoringPercentBlock(space, s))
+                    || sameIgnoringPercentAndShrink(space, s, percentFree, shrinkFree)
                     || widthMatches(s)
                     || fitMatches(s);
         }
 
         boolean widthMatches(ConstraintSpace s) {
-            return widthIndependentReuse && widthFree && sameBlockPercentAndParent(space, s, percentFree);
+            return widthIndependentReuse && widthFree && sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
         }
 
         boolean fitMatches(ConstraintSpace s) {
             return fitReuseEnabled && fitNeed != Float.POSITIVE_INFINITY
                     && s.availableInlineSize() >= fitNeed && space.availableInlineSize() >= fitNeed
-                    && sameBlockPercentAndParent(space, s, percentFree);
+                    && sameBlockPercentAndParent(space, s, percentFree, shrinkFree);
         }
 
         /** ビューポートが同じか。外を読まない箱（{@link #outsideFree}）や内容で寸法が決まる箱は、幅の違いを許す。 */
@@ -1290,15 +1293,20 @@ public class LayoutBox {
         return sameLength(a.fixedInlineSize(), b.fixedInlineSize()) && sameLength(a.fixedBlockSize(), b.fixedBlockSize());
     }
 
-    private static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree) {
-        return (percentFree || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize()))
-                && a.parent().equals(b.parent());
+    private static boolean sameParentContext(FormattingContext a, FormattingContext b, boolean shrinkFree) {
+        return a.equals(b) || (shrinkFree && a.parentDisplay() == b.parentDisplay() && a.stretch() == b.stretch());
     }
 
-    /** 高さの % の基準以外（使える幅・親の整形コンテキスト）が同じ。 */
-    private static boolean sameIgnoringPercentBlock(ConstraintSpace a, ConstraintSpace b) {
+    private static boolean sameBlockPercentAndParent(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
+        return (percentFree || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize()))
+                && sameParentContext(a.parent(), b.parent(), shrinkFree);
+    }
+
+    /** 効かない高さの % の基準や親の shrink 指示を除いて、制約が同じ。 */
+    private static boolean sameIgnoringPercentAndShrink(ConstraintSpace a, ConstraintSpace b, boolean percentFree, boolean shrinkFree) {
+        if (!percentFree && !shrinkFree) return false;
         return Float.floatToIntBits(a.availableInlineSize()) == Float.floatToIntBits(b.availableInlineSize())
-                && a.parent().equals(b.parent());
+                && sameBlockPercentAndParent(a, b, percentFree, shrinkFree);
     }
 
     /**
@@ -1370,7 +1378,7 @@ public class LayoutBox {
         }
         if (t == null) return false;
         if (!Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) return false;
-        if (!measurementValid || layoutChanged || subtreeChanged || measuredHasTable) return false;
+        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || measuredHasTable) return false;
         if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
         if (t.epoch() != MEASUREMENT_EPOCH.get() || measuredEpoch != t.epoch()
                 || floatSpace != null || collapsedBorders != null
@@ -1401,6 +1409,11 @@ public class LayoutBox {
         if (parent == null || parent.display == null) return false;
         Display.Inner inner = parent.display.inner();
         return inner == Display.Inner.FLEX || inner == Display.Inner.GRID;
+    }
+
+    /** 仮の産物に差し替え中（確定測定のやり直し待ち）か。 */
+    boolean isTentativeStashed() {
+        return tentativeStashed;
     }
 
     /** 差し替えた産物を確定測定の状態に戻す。 */
@@ -1596,11 +1609,22 @@ public class LayoutBox {
                 && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
+    /** この箱の測定が、親の整形コンテキストの shrink 指示（{@link FormattingContext#isShrink()}）に依らないか。 */
+    private boolean measuredShrinkIndependent;
+    private static boolean isFallbackReplacedForMinContent(LayoutBox c) {
+        String t = c.node.tag;
+        return ReplacedElements.isReplacedTag(t) || BoxMeasurer.isReplacedImage(t)
+                || "video".equals(t) || "iframe".equals(t);
+    }
+
+    /** 子の % パディング等で、仮測定で子を飛ばすと {@link #getMinContentWidth} の結果が変わり得るか。 */
+    private boolean measuredMinContentVar;
+
     private boolean widthOnlyChange(ConstraintSpace space, LayoutContext ctx) {
         if (!widthIndependentReuse || !measuredWidthFree || measuredSpace == null || measuredViewport == null) return false;
         Viewport vp = ctx.viewport(), old = measuredViewport;
         return (measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
-                && space.parent().equals(measuredSpace.parent())
+                && sameParentContext(space.parent(), measuredSpace.parent(), measuredShrinkIndependent)
                 && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
@@ -1632,7 +1656,7 @@ public class LayoutBox {
         // 文字は整形した行の幅・高さだけが結果で、親の整形コンテキスト（shrink かどうか）や % の基準には依らない
         boolean sameContext = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
                 || ((measuredBlockPercentFree || Float.floatToIntBits(space.percentageBlockSize()) == Float.floatToIntBits(measuredSpace.percentageBlockSize()))
-                        && space.parent().equals(measuredSpace.parent()));
+                        && sameParentContext(space.parent(), measuredSpace.parent(), measuredShrinkIndependent));
         return sameContext && vp.rootH() == old.rootH() && vp.devicePixelRatio() == old.devicePixelRatio();
     }
 
@@ -1644,7 +1668,7 @@ public class LayoutBox {
         if (subgridDependent || !restoreOk || !measuredFillFitReusable || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)) {
             return false;
         }
-        if (!measurementValid || layoutChanged || subtreeChanged) return false;
+        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx)) return false;
         if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || (samePassReuse && !measuredHasTable))) return false;
         if (measuredEpoch != MEASUREMENT_EPOCH.get() || floatSpace != null || collapsedBorders != null) return false;
         if (ctx.fonts() != measuredFonts || ctx.intrinsicResolver() != measuredIntrinsics) return false;
@@ -1674,12 +1698,11 @@ public class LayoutBox {
                 || isAbsolute || isFixed || isRenderedLegend || isOutsideMarker || display == null || display.isNone()) return none;
         ComputedStyle ax = axisStyle();
         StyleFacts f = ax.layoutFacts();
-        if (f.floating) return none;
         boolean textNode = node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT;
         if (!Float.isNaN(overrideWidth)) {
             // 幅は親が決めて渡した値（flex の伸縮・stretch）。中身はその幅で測るので、使える幅は余白・パディングの % と
-            // auto の余白にしか効かない。文字は使える幅で整形した行を持つので当てはまらない
-            if (!textNode && f.edgesAvailableFree) {
+            // auto の余白にしか効かない。BFC を作れば中の float も外に出ない。文字は使える幅で整形した行を持つので当てはまらない
+            if (!textNode && !f.floating && f.edgesAvailableFree && (measuredFlowFloatFree || establishesBfc)) {
                 measuredFitFixedW = true;
                 return 0f;
             }
@@ -1696,21 +1719,28 @@ public class LayoutBox {
         Display.Inner inner = display.inner();
         if (inner != Display.Inner.FLOW && inner != Display.Inner.FLOW_ROOT && inner != Display.Inner.FLEX) return none;
         // 内容の幅が使える幅で切られていない（切られていれば w + 余白が使える幅ちょうどになる）ことは、
-        // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。中身は文字・確定幅の箱・同じ条件の箱だけ
+        // 呼び出し側の「前回の使える幅 >= need」の判定で確かめる。shrink-to-fit では自分の BFC・ブロック流れの中に
+        // 閉じた float も親の幅に依らない（floatSpace == null）。fill 幅は幅変化で float 位置が変わるため従来通り除外する
         if (measuredClamped || renderedLegend() != null || MulticolLayout.isMulticol(this)
-                || effectiveContainsInlineSize() || !measuredFlowFloatFree || childFitBlocked) {
+                || effectiveContainsInlineSize() || childFitBlocked) {
             return none;
         }
         for (int i = 0, n = children.size(); i < n; i++) {
             LayoutBox c = children.get(i);
             if (c.style.facts().displayNone) continue;
-            if (c.isOutsideMarker || c.isAbsolute || BlockLayoutEngine.isFloating(c)) return none;
+            if (c.isOutsideMarker || c.isAbsolute) return none;
         }
         if (sizingMode == SizingMode.SHRINK_TO_FIT) {
-            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅が、使える幅に届くかの境目
+            // min/max-width で切り詰めた w ではなく、切り詰め前の内容の幅と実際の外幅の大きい方が、使える幅に届くかの境目
             if (Float.isNaN(naturalInlineSize)) return none;
             measuredFitFixedW = true;
-            return Math.max(naturalInlineSize + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
+            return Math.max(Math.max(w, naturalInlineSize) + mL + mR, childFitNeedMax + horizontalDecoration() + mL + mR);
+        }
+        if (f.floating || !measuredFlowFloatFree) return none;
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
+            if (c.style.facts().displayNone) continue;
+            if (BlockLayoutEngine.isFloating(c)) return none;
         }
         if (sizingMode != SizingMode.DEFINITE || isFillWidthExcludedTag(node.tag) || Float.isNaN(naturalFitInnerWidth)) {
             return none;
@@ -1772,6 +1802,65 @@ public class LayoutBox {
         measuredWidthFree = free;
     }
 
+    private boolean computeShrinkIndependent(FormattingContext parentFmt) {
+        if (node == null || display == null) return false;
+        StyleFacts f = axisStyle().layoutFacts();
+        if (!Float.isNaN(overrideWidth)) return true;
+        if (f.widthPercent) return false;
+        if (!f.widthAuto || f.hasIntrinsicWidth()) return true;
+        if (isAbsolute || isRenderedLegend || isHorizontalReturnRoot || isVerticalRoot
+                || BlockLayoutEngine.isFloating(this) || display.isInlineLevel() || display.inner() == Display.Inner.TABLE) {
+            return true;
+        }
+        if (parentFmt.isFlexRow()) return true;
+        String tag = node.tag;
+        return node.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.TEXT
+                || BoxMeasurer.isReplacedImage(tag) || ReplacedElements.isHostScene(tag)
+                || "input".equals(tag) || "select".equals(tag) || "progress".equals(tag);
+    }
+
+    private boolean sameConstraintForReuse(ConstraintSpace a, ConstraintSpace b) {
+        if (b == null) return false;
+        if (a.equals(b)) return true;
+        if (!sameFixedSizes(a, b)) return false;
+        if (Float.floatToIntBits(a.availableInlineSize()) != Float.floatToIntBits(b.availableInlineSize())) return false;
+        if (!sameParentContext(a.parent(), b.parent(), measuredShrinkIndependent)) return false;
+        return measuredBlockPercentFree
+                || Float.floatToIntBits(a.percentageBlockSize()) == Float.floatToIntBits(b.percentageBlockSize());
+    }
+
+    private boolean hasUnmeasuredSubtreeChange(LayoutContext ctx) {
+        return subtreeChanged && measuredRun != ctx.layoutRun();
+    }
+
+    boolean canPreserveMeasurementForEmptyFloatFlow(ConstraintSpace space, LayoutContext ctx) {
+        if (subgridDependent || !measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx)
+                || measuredSpace == null || measuredHasTable || contentAutoSkipped
+                || measuredEpoch != MEASUREMENT_EPOCH.get()
+                || !Float.isNaN(overrideWidth) || !Float.isNaN(overrideHeight)
+                || !Float.isNaN(measuredOverrideW) || !Float.isNaN(measuredOverrideH)) {
+            return false;
+        }
+        float avail = space.availableInlineSize();
+        float prevAvail = measuredSpace.availableInlineSize();
+        boolean sameWidth = Float.floatToIntBits(avail) == Float.floatToIntBits(prevAvail)
+                || (measuredFitFixedW && measuredFitNeed != Float.POSITIVE_INFINITY
+                        && avail >= measuredFitNeed && prevAvail >= measuredFitNeed);
+        return sameWidth
+                && (measuredBlockPercentFree
+                        || Float.floatToIntBits(measuredSpace.percentageBlockSize()) == Float.floatToIntBits(space.percentageBlockSize()))
+                && sameViewportForMeasure(ctx.viewport())
+                && ctx.fonts() == measuredFonts
+                && ctx.intrinsicResolver() == measuredIntrinsics;
+    }
+
+    boolean outputsMatchRecordedMeasurement() {
+        BoxOutputs o = measuredOutputs;
+        return measurementValid && w == measuredW && h == measuredH
+                && mT == measuredMT && mR == measuredMR && mB == measuredMB && mL == measuredML
+                && (o == null || contentBlockExtent == o.contentBlockExtent);
+    }
+
     private boolean canReuseMeasurement(ConstraintSpace space, LayoutContext ctx, boolean restoreOk) {
         return !subgridDependent
                 && measurementValid
@@ -1780,8 +1869,8 @@ public class LayoutBox {
                 && measuredEpoch == MEASUREMENT_EPOCH.get()
                 && floatSpace == null
                 && collapsedBorders == null
-                && (((space.equals(measuredSpace) || (measuredBlockPercentFree && sameIgnoringPercentBlock(space, measuredSpace)))
-                        && sameViewportForMeasure(ctx.viewport())) || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
+                && ((sameConstraintForReuse(space, measuredSpace) && sameViewportForMeasure(ctx.viewport()))
+                        || widthOnlyChange(space, ctx) || fitReuse(space, ctx))
                 && sameLength(overrideWidth, measuredOverrideW)
                 && sameLength(overrideHeight, measuredOverrideH)
                 && contentAutoSkipped == measuredContentAutoSkipped
@@ -1867,9 +1956,20 @@ public class LayoutBox {
         measuredFlowFloatFree = floatFree;
         layoutChanged = false;
         boolean hasTable = everLaidOutAsTable || isTableBox(this) || collapsedBorders != null;
-        for (int i = 0; !hasTable && i < children.size(); i++) hasTable = children.get(i).measuredHasTable;
+        boolean minContentVar = false;
+        for (int i = 0, n = children.size(); i < n; i++) {
+            LayoutBox c = children.get(i);
+            if (!hasTable && c.measuredHasTable) hasTable = true;
+            if (!minContentVar && (c.participatesInFlow() || c.isRenderedLegend)) {
+                minContentVar = c.measuredMinContentVar
+                        || c.axisStyle().layoutFacts().percentGeometry
+                        || (c.children.isEmpty() && isFallbackReplacedForMinContent(c));
+            }
+        }
         measuredHasTable = hasTable;
+        measuredMinContentVar = minContentVar;
         recordWidthIndependence();
+        measuredShrinkIndependent = computeShrinkIndependent(space.parent());
         measuredFitNeed = computeFitNeed();
         if (tentativeReuse && parentUsesTentatives() && floatSpace == null && collapsedBorders == null) {
             boolean tentativePhase = Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight);
@@ -1881,8 +1981,8 @@ public class LayoutBox {
                         : (!Float.isNaN(overrideWidth) && !axisStyle().layoutFacts().edgesAvailableFree
                                 ? Float.POSITIVE_INFINITY : measuredFitNeed);
                 Tentative fresh = new Tentative(kind, space, ctx.viewport(), ctx.fonts(), ctx.intrinsicResolver(),
-                        measuredEpoch, BoxOutputs.capture(this), measuredBlockPercentFree, measuredOutsideFree,
-                        measuredWidthFree, tentFitNeed, fillFit, overrideWidth, overrideHeight);
+                        measuredEpoch, BoxOutputs.capture(this), measuredBlockPercentFree, measuredShrinkIndependent,
+                        measuredOutsideFree, measuredWidthFree, tentFitNeed, fillFit, overrideWidth, overrideHeight);
                 recordTentative(fresh, tentativePhase ? MAX_TENTATIVES : MAX_DEFINITE_TENTATIVES);
             }
         }
@@ -1951,7 +2051,7 @@ public class LayoutBox {
         if (subgridDependent || !tentativeReuse || tentatives == null || (Float.isNaN(overrideWidth) && Float.isNaN(overrideHeight))) {
             return false;
         }
-        if (!measurementValid || layoutChanged || subtreeChanged || !isDefiniteCacheableLeaf()) return false;
+        if (!measurementValid || layoutChanged || hasUnmeasuredSubtreeChange(ctx) || !isDefiniteCacheableLeaf()) return false;
         if (!(ctx.firstPass() || measuredRun != ctx.layoutRun() || samePassReuse)) return false;
         int epoch = MEASUREMENT_EPOCH.get();
         if (measuredEpoch != epoch) return false;

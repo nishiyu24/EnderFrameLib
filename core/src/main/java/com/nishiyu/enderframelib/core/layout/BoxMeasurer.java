@@ -193,9 +193,24 @@ public final class BoxMeasurer {
      * エンジンから呼ばれる。
      */
     public static void resolveFlexibleHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx) {
+        resolveFlexibleHeights(box, space, ctx, true);
+    }
+
+    /**
+     * 高さだけを再解決する。親フローに先立つ float が無く（{@code hadIncomingFloats == false}）、子自身の
+     * 測定が同じ幅・% 基準で既に有効かつ組み直し前後で外寸が変わらない場合は、祖先と子の {@code measurementValid} を保つ。
+     */
+    static void resolveFlexibleHeights(LayoutBox box, ConstraintSpace space, LayoutContext ctx, boolean hadIncomingFloats) {
+        LayoutEngine engine = LayoutEngine.getEngine(box);
+        if (!hadIncomingFloats && box.canPreserveMeasurementForEmptyFloatFlow(space, ctx)) {
+            resolveHeights(box, space, ctx, isBorderBox(box.axisStyle()), engine);
+            if (!box.outputsMatchRecordedMeasurement()) {
+                box.invalidateMeasurement();
+            }
+            return;
+        }
         // measure を通らずに中身を組み直す（float を避けた行・伸ばした高さ）。前回の measure の結果はもう当てはまらない
         box.invalidateMeasurement();
-        LayoutEngine engine = LayoutEngine.getEngine(box);
         resolveHeights(box, space, ctx, isBorderBox(box.axisStyle()), engine);
     }
 
@@ -573,7 +588,7 @@ public final class BoxMeasurer {
         return LayoutMetrics.lineHeightPx(box.style, ctx.faceFor(box.style), ctx.fontStyleFor(box.style));
     }
 
-    private static boolean isReplacedImage(String tag) {
+    static boolean isReplacedImage(String tag) {
         return tag.equals("img") || ReplacedElements.isHostImageLike(tag) || tag.equals("canvas") || tag.equals("svg");
     }
 
