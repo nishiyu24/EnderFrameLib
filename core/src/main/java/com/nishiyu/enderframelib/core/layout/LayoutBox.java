@@ -1067,9 +1067,11 @@ public class LayoutBox {
         overrideWidth = space.fixedInlineSize();
         overrideHeight = space.fixedBlockSize();
         boolean fixedWidth = !Float.isNaN(overrideWidth);
+        long probe = LayoutParallelProbe.enter(this, LayoutParallelProbe.MEASURE);
         try {
             measureCore(space, ctx, restoreOk);
         } finally {
+            LayoutParallelProbe.exit(LayoutParallelProbe.MEASURE, probe);
             overrideWidth = Float.NaN;
             overrideHeight = Float.NaN;
         }
@@ -2604,6 +2606,15 @@ public class LayoutBox {
 
     /** 決まった寸法をもとに自分と子の位置を確定する。 */
     public void layout(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
+        long probe = LayoutParallelProbe.enter(this, LayoutParallelProbe.PLACE);
+        try {
+            layoutImpl(parentX, parentY, parentOuterW, parentOuterH, ctx);
+        } finally {
+            LayoutParallelProbe.exit(LayoutParallelProbe.PLACE, probe);
+        }
+    }
+
+    private void layoutImpl(float parentX, float parentY, float parentOuterW, float parentOuterH, LayoutContext ctx) {
         if (style.facts().displayNone) return;
         settleTentative();
         if (hasTentativeChildren) settleTentativeChildren();

@@ -84,6 +84,7 @@ public final class FineProfileMain {
                         draws0 = glBackend.drawCallCount();
                     }
                     StageProfiler.reset();
+                    com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.reset();
                     StageProfiler.trackAllocations(false);
                     StageProfiler.enable(true);
                 }
@@ -98,6 +99,13 @@ public final class FineProfileMain {
                 }
             }
             StageProfiler.enable(false);
+            if (com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.enabled()) {
+                System.out.printf("PARALLELPROBE independent share of measure=%.3f (boxes/frame=%.1f, total=%.2f ms/frame) place=%.3f (boxes/frame=%.1f, total=%.2f ms/frame)%n",
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentShare(0), com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentBoxes(0) / (double) frames,
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(0) / 1e6 / frames,
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentShare(1), com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.independentBoxes(1) / (double) frames,
+                        com.nishiyu.enderframelib.core.layout.LayoutParallelProbe.totalNs(1) / 1e6 / frames);
+            }
             if (glBackend != null) {
                 com.nishiyu.enderframelib.core.paint.gpu.GpuCoverage.enable(false);
                 long replayed = glBackend.rectTreeReplayedShapes() - replayed0;
