@@ -130,7 +130,9 @@ fieldset { display: block; margin-left: 2px; margin-right: 2px; border: groove 2
 legend { padding-left: 2px; padding-right: 2px; }
 
 /* §15.3.13 埋め込みコンテンツ（置換要素は不可分なインラインとして組む） */
-img, video, canvas, svg, mc-fluid, mc-entity, mc-scene { display: inline-block; }
+img, video, canvas, svg, mc-fluid, mc-entity, mc-scene, scene-3d { display: inline-block; }
+/* 3D シーンの記述要素は 2D の箱を作らない（scene-3d の内側でシーンとして読まれる） */
+camera-3d, light-3d, mesh-3d, group-3d, ui-panel-3d { display: none; }
 iframe { border: 2px inset; }
 video { object-fit: contain; }
 /* §4.8.9 audio: controls が無ければ描画されない。音を鳴らすだけの要素。0x0 の箱は描画列から外れて

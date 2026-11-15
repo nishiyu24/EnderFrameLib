@@ -17,6 +17,7 @@ import com.nishiyu.enderframelib.core.paint.model.ElementType;
 import com.nishiyu.enderframelib.core.paint.model.ImageFitMode;
 import com.nishiyu.enderframelib.core.paint.model.DisplayItem;
 
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import java.util.List;
 import java.util.Locale;
 import com.nishiyu.enderframelib.core.paint.*;
@@ -52,6 +53,11 @@ final class ControlPainter {
         else if (box.node.attrs.containsKey("data-slice-y")) sceneEvents.put("data-slice-y", box.node.attrs.get("data-slice-y"));
         if (box.node.attrs.containsKey("auto-rotate")) sceneEvents.put("data-auto-rotate", box.node.attrs.get("auto-rotate"));
 
+        if (Scene3DTags.isScene(box.node.tag)) {
+            // ビルトイン 3D ビューポート: バックエンドが Scene3DWorld を引くための識別（nodeId）と種類
+            sceneEvents.put(Scene3DTags.KIND_ATTR, Scene3DTags.KIND_3D);
+            sceneEvents.put(Scene3DTags.WORLD_ATTR, Long.toString(box.node.nodeId()));
+        }
         long sceneKey = box.node != null ? DisplayItem.keyOf(box.node.nodeId(), DisplayItem.PART_SCENE) : 0L;
         addElement(elements, id, id + "_scene", ElementType.SCENE, innerX, innerY, innerW, innerH, id, color, bgColor, sceneEvents, fallbackRadius, 1f, 0, 0, 1f, 1f, 0, transDur, colorBgAnim, innerMeta, sceneKey);
     }

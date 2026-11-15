@@ -37,6 +37,7 @@ class LayerDependencyRatchetTest {
             {"core.raster", "2"},
             {"core.net", "2"},
             {"core.media", "2"},
+            {"core.scene3d", "2"},
             {"core.dom", "3"},
             {"core.css", "3"},
             {"core.event", "3"},
@@ -188,6 +189,8 @@ class LayerDependencyRatchetTest {
         assertEquals(3, layerOf("core.css.model").getAsInt());
         assertEquals(4, layerOf("core.layout.model").getAsInt());
         assertEquals(5, layerOf("core.paint.gl").getAsInt());
+        assertEquals(2, layerOf("core.scene3d").getAsInt(), "3D シーンは L2 相当（計画書 §3.1）");
+        assertEquals(2, layerOf("core.scene3d.anything").getAsInt());
         assertEquals(6, layerOf("core").getAsInt());
         assertTrue(layerOf("common").isEmpty());
         assertTrue(List.of("core.kernel", "core.text", "core.dom", "core.layout", "core.paint").stream()

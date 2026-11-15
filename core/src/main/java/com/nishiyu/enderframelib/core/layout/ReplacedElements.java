@@ -3,6 +3,7 @@ package com.nishiyu.enderframelib.core.layout;
 import com.nishiyu.enderframelib.core.dom.ReplacedKind;
 import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
 import com.nishiyu.enderframelib.core.dom.HostElementProvider;
+import com.nishiyu.enderframelib.core.scene3d.Scene3DTags;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -16,6 +17,14 @@ import java.util.ServiceLoader;
  * 読み取りは不変スナップショットの参照 1 回（ロック・確保なし）。
  */
 public final class ReplacedElements {
+    /** ビルトインの 3D ビューポート {@code <scene-3d>}: 固有サイズ 300×150 の SCENE（幅は親へ広がらない）。 */
+    private static final CustomElementPainter SCENE_3D = new CustomElementPainter() {
+        @Override public ReplacedKind kind() { return ReplacedKind.SCENE; }
+        @Override public boolean sceneFillsWidth() { return false; }
+        @Override public int sceneMinWidth() { return Scene3DTags.DEFAULT_WIDTH; }
+        @Override public int sceneHeight() { return Scene3DTags.DEFAULT_HEIGHT; }
+    };
+
     private static volatile Map<String, CustomElementPainter> host = defaults();
 
     private ReplacedElements() {}
@@ -23,9 +32,13 @@ public final class ReplacedElements {
     /** 性質だけを持つ最小の差し込み（参照先の書き換え・寸法は既定）。 */
     private record Plain(ReplacedKind kind) implements CustomElementPainter {}
 
-    /** {@link HostElementProvider}（ServiceLoader）が宣言した置換要素。何も無ければ空（エンジンは具体名を持たない）。 */
+    /**
+     * ビルトイン（{@code <scene-3d>}）＋ {@link HostElementProvider}（ServiceLoader）が宣言した置換要素。
+     * ホスト固有の具体名（{@code mc-*}）はエンジンが持たない。
+     */
     private static Map<String, CustomElementPainter> defaults() {
         Map<String, CustomElementPainter> m = new HashMap<>();
+        m.put(Scene3DTags.SCENE, SCENE_3D);
         for (HostElementProvider p : ServiceLoader.load(HostElementProvider.class, HostElementProvider.class.getClassLoader())) {
             for (Map.Entry<String, CustomElementPainter> e : p.replacedElements().entrySet()) {
                 CustomElementPainter cp = e.getValue();

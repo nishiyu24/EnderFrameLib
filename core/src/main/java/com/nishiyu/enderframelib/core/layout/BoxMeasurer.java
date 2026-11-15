@@ -1,5 +1,6 @@
 package com.nishiyu.enderframelib.core.layout;
 
+import com.nishiyu.enderframelib.core.dom.CustomElementPainter;
 import com.nishiyu.enderframelib.core.css.CssPropertyIndex;
 import com.nishiyu.enderframelib.core.css.StyleFacts;
 import com.nishiyu.enderframelib.core.kernel.LayoutUnit;
@@ -280,7 +281,10 @@ public final class BoxMeasurer {
         } else if (box.node.nodeType == NodeType.TEXT) {
             measureTextWidth(box, ctx, parentW, rootW, rootH);
         } else if (ReplacedElements.isHostScene(tag)) {
-            box.w = Math.max(ReplacedElements.painterOf(tag).sceneMinWidth(), parentW - box.mL - box.mR);
+            CustomElementPainter scene = ReplacedElements.painterOf(tag);
+            box.w = scene.sceneFillsWidth()
+                    ? Math.max(scene.sceneMinWidth(), parentW - box.mL - box.mR)
+                    : scene.sceneMinWidth() + box.horizontalDecoration();
             box.sizingMode = SizingMode.DEFINITE;
         } else if (isReplacedImage(tag)) {
             int[] intrinsic = intrinsicSize(box, ctx);

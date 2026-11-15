@@ -27,6 +27,14 @@ public interface CustomElementPainter {
         return 64;
     }
 
+    /**
+     * {@link ReplacedKind#SCENE} が幅 auto のとき、親の幅いっぱいに広がるか（既定）。偽なら {@link #sceneMinWidth()} を
+     * 固有の幅として使う（{@code canvas} と同じ。ビルトインの {@code <scene-3d>}）。
+     */
+    default boolean sceneFillsWidth() {
+        return true;
+    }
+
     /** {@link ReplacedKind#SCENE} の既定の高さ（CSS px、内容高さの分は含まない）。 */
     default int sceneHeight() {
         return 120;
