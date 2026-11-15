@@ -14,8 +14,8 @@ class Milestone4GateTest {
 
     @Test
     void kernelGpuPackageIsGlFreeAndPureJava() throws IOException {
-        try (var files = Files.list(MAIN.resolve("core/kernel/gpu"))) {
-            for (Path p : files.toList()) {
+        try (var files = Files.walk(MAIN.resolve("core/kernel/gpu"))) { // 下位パッケージ（rhi）も対象
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
                 String s = Files.readString(p);
                 assertFalse(s.contains("org.lwjgl"), p + ": GL/LWJGL に依存してはならない（Device 越しにだけ触る）");
                 assertFalse(s.contains("import net.minecraft"), p.toString());
@@ -35,8 +35,8 @@ class Milestone4GateTest {
 
     @Test
     void hotPathsHaveNoStringFormatOrRegex() throws IOException {
-        try (var files = Files.list(MAIN.resolve("core/kernel/gpu"))) {
-            for (Path p : files.toList()) {
+        try (var files = Files.walk(MAIN.resolve("core/kernel/gpu"))) { // 下位パッケージ（rhi）も対象
+            for (Path p : files.filter(f -> f.toString().endsWith(".java")).toList()) {
                 String s = Files.readString(p);
                 assertFalse(s.contains("String.format"), p.toString());
                 assertFalse(s.contains("java.util.regex"), p.toString());

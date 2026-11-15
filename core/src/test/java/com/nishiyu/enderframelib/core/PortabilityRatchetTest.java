@@ -28,6 +28,7 @@ class PortabilityRatchetTest {
             "core/paint/gl/GlRectRenderer.java", // GlTreeStore のプリミティブを描く GL 実装（L3）
             "core/paint/gl/GlVramDevice.java", // kernel/gpu の PersistentVramBuffer.Device の GL 実装（L3）。kernel 側は GL 非依存のまま
             "core/paint/gl/GlFenceRing.java", // GlVramDevice 群が共有するフェンス（GL 同期オブジェクト）。L3 の GL 実装の一部
+            "core/paint/gl/GlDevice.java", // GpuDevice（RHI）の GL 実装（L3）。G1 で LwjglGlRenderBackend の GL 呼び出しを順に引き取る
             "core/paint/gl/GlScene3DRenderer.java", // Scene3DWorld の GL 3.2 Core + TBO インスタンスレンダラ（L5）
             "core/paint/gl/LwjglGlRenderBackend.java",
             "core/raster/awt/AwtImageDecoder.java");
