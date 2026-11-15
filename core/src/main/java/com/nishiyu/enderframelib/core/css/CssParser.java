@@ -200,32 +200,46 @@ public final class CssParser {
          * @param media      外側の {@code @media} の条件（外側から順）
          * @param containers 外側の {@code @container} の条件（外側から順）
          * @param parents    入れ子の親の規則のセレクタ（{@code &} の指す先）。最上位は null
+         * @param scopeRoot  外側の {@code @scope (<根>)} の根のセレクタ（{@code :scope} の指す先）。無ければ null
+         * @param scopeLimit {@code @scope (...) to (<下限>)} の下限（根の直下の規則の主語から外す対象）。無ければ null
          */
         private record Scope(List<String> layer, List<String> media, List<ContainerQuery> containers,
-                             List<Selector> parents) {
+                             List<Selector> parents, String scopeRoot, List<Selector> rootSelectors,
+                             List<Selector> scopeLimit) {
 
             static Scope root() {
-                return new Scope(List.of(), List.of(), List.of(), null);
+                return new Scope(List.of(), List.of(), List.of(), null, null, null, null);
             }
 
             Scope inLayer(List<String> path) {
-                return new Scope(path, media, containers, parents);
+                return new Scope(path, media, containers, parents, scopeRoot, rootSelectors, scopeLimit);
             }
 
             Scope withMedia(String condition) {
                 List<String> next = new ArrayList<>(media);
                 next.add(condition);
-                return new Scope(layer, List.copyOf(next), containers, parents);
+                return new Scope(layer, List.copyOf(next), containers, parents, scopeRoot, rootSelectors, scopeLimit);
             }
 
             Scope withContainer(ContainerQuery query) {
                 List<ContainerQuery> next = new ArrayList<>(containers);
                 next.add(query);
-                return new Scope(layer, media, List.copyOf(next), parents);
+                return new Scope(layer, media, List.copyOf(next), parents, scopeRoot, rootSelectors, scopeLimit);
             }
 
+            /** 入れ子の規則の中。{@code &} は親の規則になるので、根からの下限はこの規則の親がすでに持っている。 */
             Scope nestedIn(List<Selector> selectors) {
-                return new Scope(layer, media, containers, selectors);
+                return new Scope(layer, media, containers, selectors, scopeRoot, rootSelectors,
+                        selectors == rootSelectors ? scopeLimit : null);
+            }
+
+            /** {@code @scope} の直下（{@code &} が根そのもの）か。 */
+            boolean atScopeRoot() {
+                return rootSelectors != null && parents == rootSelectors;
+            }
+
+            Scope inScope(String root, List<Selector> rootSelectors, List<Selector> limit) {
+                return new Scope(layer, media, containers, rootSelectors, root, rootSelectors, limit);
             }
         }
 
@@ -406,6 +420,7 @@ public final class CssParser {
                         parseConditionalBody(rule.block(), ctx, scope.withContainer(query), depth + 1);
                     }
                 }
+                case "scope" -> handleScope(rule, ctx, scope, depth);
                 case "keyframes", "-webkit-keyframes" -> collectKeyframes(rule, ctx.sheet());
                 case "property" -> registerProperty(rule, ctx.sheet());
                 case "counter-style" -> collectCounterStyle(rule, ctx.sheet());
@@ -414,10 +429,87 @@ public final class CssParser {
                     // フォント登録は CssParser.fontFaceCallback が CSS 全体を受け取って処理する
                 }
                 default -> {
-                    // 未対応のアットルール（@page / @scope など）は無視する
+                    // 未対応のアットルール（@page など）は無視する
                 }
             }
         }
+
+        // ---- @scope
+
+        /**
+         * {@code @scope (<根>) [to (<下限>)] { ... }}。中のセレクタは根の子孫だけに当たり（詳細度は 0）、
+         * 下限の要素とその子孫は主語から外れる。{@code :scope} は根を指し、規則の外に書いた宣言は根に当たる。
+         * LIMITATION: 根を省く形（{@code <style>} の親が根）・近さ（scoping proximity）によるカスケード順・
+         * {@code :scope} の詳細度（常に 0 として扱う）は未対応。
+         */
+        private static void handleScope(CssSyntax.Rule rule, Context ctx, Scope scope, int depth) {
+            if (!rule.hasBlock()) return;
+            String prelude = rule.preludeText().trim();
+            if (!prelude.startsWith("(")) return;
+            int close = matchingParen(prelude, 0);
+            if (close < 0) return;
+            String rootText = prelude.substring(1, close).trim();
+            String rest = prelude.substring(close + 1).trim();
+            String limitText = null;
+            if (!rest.isEmpty()) {
+                if (!rest.regionMatches(true, 0, "to", 0, 2)) return;
+                String tail = rest.substring(2).trim();
+                if (!tail.startsWith("(")) return;
+                int end = matchingParen(tail, 0);
+                if (end != tail.length() - 1) return;
+                limitText = tail.substring(1, end).trim();
+            }
+            if (rootText.isEmpty()) return;
+            Selector rootSelector = SelectorParser.parse(":where(" + rootText + ")", ctx.origin(), false);
+            if (!rootSelector.isValid()) return;
+            // 根の指す要素が 1 つでも書けないセレクタなら規則ごと捨てる（寛容な :where() は無効な枝を黙って捨てるので確かめる）
+            for (String item : CssRuleParser.splitList(rootText)) {
+                if (!SelectorParser.parse(item, ctx.origin(), false).isValid()) return;
+            }
+            List<Selector> limit = null;
+            if (limitText != null) {
+                if (limitText.isEmpty()) return;
+                limit = new ArrayList<>();
+                for (String item : CssRuleParser.splitList(limitText)) {
+                    // 根から見て下限の要素（その子孫も）。根と下限の間にある要素は、根のスコープに入らない
+                    for (String shape : new String[]{item, item + " *"}) {
+                        Selector s = SelectorParser.parse(":where(" + rootText + ") " + shape, ctx.origin(), false);
+                        if (!s.isValid()) return;
+                        limit.add(s);
+                    }
+                }
+            }
+            parseConditionalBody(rule.block(), ctx, scope.inScope(rootText, List.of(rootSelector), limit), depth + 1);
+        }
+
+        private static List<String> splitList(String text) {
+            return CssTokenizer.splitSelectorList(text);
+        }
+
+        /** {@code text[open]} の丸括弧に対応する閉じ括弧の位置。文字列の中は数えない。無ければ -1。 */
+        private static int matchingParen(String text, int open) {
+            int depth = 0;
+            char quote = 0;
+            for (int i = open; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (quote != 0) {
+                    if (c == '\\') i++;
+                    else if (c == quote) quote = 0;
+                    continue;
+                }
+                if (c == '"' || c == '\'') quote = c;
+                else if (c == '(') depth++;
+                else if (c == ')' && --depth == 0) return i;
+            }
+            return -1;
+        }
+
+        /** {@code :scope}（{@code @scope} の中）を根のセレクタ（詳細度 0）へ置き換える。 */
+        private static String replaceScopeKeyword(String selector, String rootText) {
+            return SCOPE_KEYWORD.matcher(selector).replaceAll(java.util.regex.Matcher.quoteReplacement(":where(" + rootText + ")"));
+        }
+
+        private static final java.util.regex.Pattern SCOPE_KEYWORD = java.util.regex.Pattern.compile(":scope(?![\\w-])");
 
         private static void handleLayerBlock(CssSyntax.Rule rule, Context ctx, Scope scope, int depth) {
             if (!rule.hasBlock()) return;
@@ -624,9 +716,17 @@ public final class CssParser {
             // 何が壊れていたか: 以前は未知の擬似クラスを読み飛ばしたので、規則が全要素に掛かっていた
             List<Selector> selectors = new ArrayList<>();
             for (String text : selectorTexts) {
+                boolean scoped = false;
+                if (scope.scopeRoot() != null && SCOPE_KEYWORD.matcher(text).find()) {
+                    // @scope の直下では :scope は & と同じ（根そのもの）。さらに入れ子の中では根のセレクタを直接書く
+                    text = scope.atScopeRoot() ? SCOPE_KEYWORD.matcher(text).replaceAll("&")
+                            : replaceScopeKeyword(text, scope.scopeRoot());
+                    scoped = !scope.atScopeRoot();
+                }
                 Selector parsed = scope.parents() == null
                         ? SelectorParser.parse(text, ctx.origin(), false)
-                        : SelectorParser.parseNested(text, ctx.origin(), false, scope.parents());
+                        : scoped ? SelectorParser.parse(text, ctx.origin(), false, scope.parents())
+                        : SelectorParser.parseNested(text, ctx.origin(), false, scope.parents(), scope.scopeLimit());
                 if (!parsed.isValid()) return;
                 selectors.add(parsed);
             }

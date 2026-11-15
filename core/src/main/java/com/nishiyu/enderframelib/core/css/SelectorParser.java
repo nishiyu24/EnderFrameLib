@@ -54,9 +54,18 @@ public final class SelectorParser {
      * @param parents 親の規則のセレクタ（{@code &} の指す先）
      */
     public static Selector parseNested(String raw, CascadeOrigin origin, boolean important, List<Selector> parents) {
+        return parseNested(raw, origin, important, parents, null);
+    }
+
+    /**
+     * {@link #parseNested(String, CascadeOrigin, boolean, List)} に、{@code @scope (...) to (...)} の下限を足したもの。
+     * {@code limit} のどれかに当たる位置（下限の要素そのものと、その子孫）は、主語になれない（詳細度には足さない）。
+     */
+    public static Selector parseNested(String raw, CascadeOrigin origin, boolean important, List<Selector> parents,
+                                       List<Selector> limit) {
         String text = raw == null ? "" : CssSyntax.trimCssWhitespace(raw);
         if (!containsNestingSelector(text)) text = "& " + text;
-        return parse(text, origin, important, parents);
+        return parse(text, origin, important, parents, limit);
     }
 
     private static boolean containsNestingSelector(String text) {
@@ -68,6 +77,11 @@ public final class SelectorParser {
 
     /** @param parents {@code &} の指す先。null なら最上位（{@code &} は {@code :scope}） */
     public static Selector parse(String raw, CascadeOrigin origin, boolean important, List<Selector> parents) {
+        return parse(raw, origin, important, parents, null);
+    }
+
+    private static Selector parse(String raw, CascadeOrigin origin, boolean important, List<Selector> parents,
+                                  List<Selector> limit) {
         String text = raw == null ? "" : CssSyntax.trimCssWhitespace(raw);
 
         List<SelectorToken> compounds = new ArrayList<>();
@@ -96,6 +110,7 @@ public final class SelectorParser {
             compounds.add(new SelectorToken());
         }
         if (structureInvalid) compounds.getFirst().invalid = true;
+        if (limit != null && !limit.isEmpty()) compounds.getLast().notSelectors.addAll(limit);
 
         boolean isHover = false;
         boolean isActive = false;
