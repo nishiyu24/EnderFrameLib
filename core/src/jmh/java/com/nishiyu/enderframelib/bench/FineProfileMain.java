@@ -372,6 +372,11 @@ public final class FineProfileMain {
                 if (row.children.get(0) instanceof HtmlText tx) t.textTarget = tx;
             } else {
                 HtmlNode button = firstOf(v.root(), "button");
+                if (button == null) { // ボタンの無い文書（実文書の被覆率の測定用）: body の最初の子の要素で代える
+                    HtmlNode bd = firstOf(v.root(), "body");
+                    for (HtmlNode c : bd.children) if (c.nodeType == com.nishiyu.enderframelib.core.dom.node.NodeType.ELEMENT) { button = c; break; }
+                    if (button == null) button = bd;
+                }
                 t.styleTarget = button;
                 t.parent = button.parent;
                 t.anchor = button;

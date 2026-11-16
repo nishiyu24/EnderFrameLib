@@ -32,6 +32,7 @@ public final class Workloads {
                 case GUIDEBOOK -> MarkdownParser.toHtml(read("guidebook.md"));
                 case LARGE_LIST -> largeList(500);
                 default -> {
+                    if (name.endsWith(".html")) yield read(name); // 同梱の実文書（voidwave.html など）をそのまま使う
                     if (name.startsWith(VARIED_LIST + "-")) yield variedList(Integer.parseInt(name.substring(VARIED_LIST.length() + 1)));
                     if (isList(name)) yield largeList(name.equals(LARGE_LIST) ? 500 : Integer.parseInt(name.substring(LARGE_LIST.length() + 1)));
                     throw new IllegalArgumentException("未知の文書: " + name);

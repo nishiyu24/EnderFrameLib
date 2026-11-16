@@ -1660,7 +1660,45 @@ public final class SoftwareRenderBackend implements RenderBackend {
         return ce.clip;
     }
 
+    /**
+     * 同じ空間（同じ逆行列・同じ倍率）で、別の部品の領域をすっかり含む直角のクリップは、重ねても何も変わらないので除く。
+     * 入れ子の箱が同じ範囲で切るとき（親が直角・子が丸角など）に、GPU が受け取れる部品数（{@link com.nishiyu.enderframelib.core.paint.gpu.GpuSink#MAX_CLIPS}）を超えて、
+     * 図形が CPU 層へ落ちるのを防ぐ。CPU の被覆率も部品の積なので、同じ縁を二重に掛けていた分（c²）が c になる以外は変わらない。
+     */
+    static List<ClipPart> dropRedundantSquareParts(List<ClipPart> parts) {
+        int n = parts.size();
+        if (n < 2) return parts;
+        boolean[] drop = null;
+        for (int i = 0; i < n; i++) {
+            ClipPart a = parts.get(i);
+            if (!isSquare(a)) continue;
+            for (int j = 0; j < n; j++) {
+                if (j == i || (drop != null && drop[j])) continue;
+                ClipPart b = parts.get(j);
+                if (!a.inv().equals(b.inv()) || Float.compare(a.scale(), b.scale()) != 0) continue;
+                boolean contained = b.x0() >= a.x0() && b.y0() >= a.y0() && b.x1() <= a.x1() && b.y1() <= a.y1();
+                if (!contained) continue;
+                boolean same = b.x0() == a.x0() && b.y0() == a.y0() && b.x1() == a.x1() && b.y1() == a.y1();
+                // 同じ矩形どうしの直角は、前にあるほうを残す（両方を落とさない）
+                if (same && isSquare(b) && j > i) continue;
+                if (drop == null) drop = new boolean[n];
+                drop[i] = true;
+                break;
+            }
+        }
+        if (drop == null) return parts;
+        List<ClipPart> kept = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) if (!drop[i]) kept.add(parts.get(i));
+        return kept;
+    }
+
+    private static boolean isSquare(ClipPart p) {
+        for (int k = 0; k < 4; k++) if (p.rx()[k] != 0f || p.ry()[k] != 0f) return false;
+        return true;
+    }
+
     private Clip finishClip(List<ClipPart> parts) {
+        parts = dropRedundantSquareParts(parts);
         int x0 = 0, y0 = 0, x1 = raster.targetWidth(), y1 = raster.targetHeight();
         double ix0 = Double.NEGATIVE_INFINITY, iy0 = Double.NEGATIVE_INFINITY, ix1 = Double.POSITIVE_INFINITY, iy1 = Double.POSITIVE_INFINITY;
         for (int i = 0, n = parts.size(); i < n; i++) {
