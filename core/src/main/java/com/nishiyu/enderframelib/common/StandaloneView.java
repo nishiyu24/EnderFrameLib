@@ -163,6 +163,11 @@ public final class StandaloneView implements AutoCloseable {
         drawn = false;
     }
 
+    /** 直近のマウス位置（文書の左上が原点の CSS px。イベントの {@code clientX} は要素基準なので、面の座標が要るときはこちら）。 */
+    public double pointerX() { return mouseX; }
+
+    public double pointerY() { return mouseY; }
+
     /** 下の {@link UiView}（DOM・タイマー・状態を直接触りたいとき）。 */
     public UiView ui() {
         return ui;
@@ -400,9 +405,11 @@ public final class StandaloneView implements AutoCloseable {
     private Scene3DWorld orbitWorldAt(UIHitResult hit) {
         if (hit == null || hit.element() == null || hit.element().events() == null) return null;
         var ev = hit.element().events();
-        if (!"true".equals(ev.get(Scene3DTags.ORBIT_ATTR)) || !Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
+        if (!Scene3DTags.KIND_3D.equals(ev.get(Scene3DTags.KIND_ATTR))) return null;
         try {
-            return ui.scene3dWorld(Long.parseLong(ev.get(Scene3DTags.WORLD_ATTR)));
+            Scene3DWorld w = ui.scene3dWorld(Long.parseLong(ev.get(Scene3DTags.WORLD_ATTR)));
+            // data-orbit 属性、または Java から世界に指定した orbitControls
+            return w != null && ("true".equals(ev.get(Scene3DTags.ORBIT_ATTR)) || w.orbitControls()) ? w : null;
         } catch (NumberFormatException e) {
             return null;
         }

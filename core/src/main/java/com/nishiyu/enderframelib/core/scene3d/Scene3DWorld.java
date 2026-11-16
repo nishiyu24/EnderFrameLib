@@ -47,7 +47,7 @@ public final class Scene3DWorld {
      * 前回描いた絵から変わっていないので描き直さなくてよい（静止した 3D ビューポートの再描画を飛ばす）。
      */
     public long changeCount() {
-        return arena.changeCount() + camera.changeCount() + light.changeCount() + geometry.version() + materials.count() + settings;
+        return arena.changeCount() + camera.changeCount() + light.changeCount() + geometry.version() + materials.count() + materials.edits() + settings;
     }
 
     /**
@@ -72,6 +72,16 @@ public final class Scene3DWorld {
     public float bloomThreshold() { return bloomThreshold; }
     public float bloomIntensity() { return bloomIntensity; }
     public float bloomSigma() { return bloomSigma; }
+
+    private boolean orbitControls;
+
+    /** ドラッグでカメラを回し、ホイールでズームするか（{@code <scene-3d data-orbit>} と同じ。見た目は変えないので変更通し回数は進めない）。 */
+    public boolean orbitControls() { return orbitControls; }
+
+    public Scene3DWorld orbitControls(boolean enabled) {
+        this.orbitControls = enabled;
+        return this;
+    }
 
     public int msaaSamples() { return msaaSamples; }
     public Scene3DWorld msaaSamples(int samples) {

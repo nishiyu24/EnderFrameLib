@@ -26,13 +26,15 @@
 </header>
 <main>
   <div class="panel">
-    <h2>左から右へ粗さ 0.15 → 0.95、上から下へ 金属度 1 → 0</h2>
+    <h2>左から右へ粗さ 0.15 → 0.95、上から下へ 金属度 1 → 0（ドラッグ・ホイール・クリック可）</h2>
     <scene-3d id="grid"></scene-3d>
+    <div class="row"><span>選択中:</span><span id="gridPicked">なし</span></div>
   </div>
   <div class="side">
     <div class="panel">
-      <h2>glTF（コードで組み立てた .gltf の埋め込み）</h2>
+      <h2>glTF の角錐（ドラッグで回転・クリックで選択）</h2>
       <scene-3d id="model"></scene-3d>
+      <div class="row"><span>選択中:</span><span id="picked">なし</span></div>
       <div class="row"><button id="spin">回転 ON/OFF</button><span id="state">回転中</span></div>
       <div class="row"><button id="bloom">Bloom 切替</button><span id="bloomState">Bloom ON</span></div>
     </div>

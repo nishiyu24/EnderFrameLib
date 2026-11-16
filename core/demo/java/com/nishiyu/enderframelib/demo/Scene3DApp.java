@@ -5,22 +5,24 @@ import static com.nishiyu.enderframelib.api.ui.UI.onClick;
 import com.nishiyu.enderframelib.api.dom.Document;
 import com.nishiyu.enderframelib.common.StandaloneView;
 import com.nishiyu.enderframelib.common.StandaloneViewer;
-import com.nishiyu.enderframelib.core.scene3d.GltfBinaryLoader;
-import com.nishiyu.enderframelib.core.scene3d.MaterialDesc;
-import com.nishiyu.enderframelib.core.scene3d.MeshHandle;
-import com.nishiyu.enderframelib.core.scene3d.Scene3DWorld;
+import com.nishiyu.enderframelib.common.three.Geometry;
+import com.nishiyu.enderframelib.common.three.Material;
+import com.nishiyu.enderframelib.common.three.Mesh;
+import com.nishiyu.enderframelib.common.three.Object3D;
+import com.nishiyu.enderframelib.common.three.Scene3D;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 3D のデモ。{@code <scene-3d>} 2 枚: ①粗さ × 金属度の GGX PBR の球の格子 ②コードで組み立てた glTF（.gltf の埋め込み）の
- * 回転する角錐と、小さな球・床。窓では GL、{@code --png} ではソフトウェアの 3D ラスタライザで描かれる（同じシーンモデル）。
+ * インタラクティブな 3D のデモ（{@link Scene3D} の使い方の見本）。{@code <scene-3d>} 2 枚:
+ * ①粗さ × 金属度の GGX PBR の球の格子 ②コードで組み立てた glTF（.gltf の埋め込み）の回転する角錐と、小さな球・床。
+ * どちらもドラッグで回転・ホイールでズーム、物体にマウスを乗せると光り、クリックで選択できる。
+ * 窓では GL、{@code --png} ではソフトウェアの 3D ラスタライザで描かれる（同じシーンモデル）。
  *
  * <pre>
- * ./gradlew :core:runScene3d                                          窓で表示（回転する）
+ * ./gradlew :core:runScene3d                                          窓で表示
  * ./gradlew :core:runScene3d --args="--png scene3d.png --after 1500"  窓なし（ソフトウェア描画）で PNG
  * </pre>
  */
@@ -31,19 +33,19 @@ public final class Scene3DApp {
         String[] a = new String[args.length + 3];
         a[0] = "core/demo/resources/scene3d.html";
         a[1] = "1100";
-        a[2] = "560";
+        a[2] = "600";
         System.arraycopy(args, 0, a, 3, args.length);
         StandaloneViewer.launch(a, Scene3DApp::wire);
     }
 
     static void wire(StandaloneView view) {
         Document doc = view.document();
-        Scene3DWorld grid = view.scene3dWorldById("grid");
-        Scene3DWorld model = view.scene3dWorldById("model");
-        buildGrid(grid);
-        int[] pyramid = buildModel(model);
+        Scene3D grid = Scene3D.of(view, "grid");
+        Scene3D model = Scene3D.of(view, "model");
+        buildGrid(grid, doc);
+        Object3D pyramid = buildModel(model, doc);
 
-        AtomicBoolean spinning = new AtomicBoolean(true);
+        boolean[] spinning = {true};
         onClick(doc.getElementById("bloom"), e -> {
             boolean on = !model.bloomEnabled();
             model.bloom(on);
@@ -51,79 +53,76 @@ public final class Scene3DApp {
             doc.getElementById("bloomState").setTextContent(on ? "Bloom ON" : "Bloom OFF");
         });
         onClick(doc.getElementById("spin"), e -> {
-            boolean on = !spinning.get();
-            spinning.set(on);
-            doc.getElementById("state").setTextContent(on ? "回転中" : "停止中");
+            spinning[0] = !spinning[0];
+            doc.getElementById("state").setTextContent(spinning[0] ? "回転中" : "停止中");
         });
-        // 角度は「経過時間の積算」で進める。絶対時刻から計算すると、停止して再開したときや窓の移動で止まっていたときに、
-        // 止まっていた時間ぶん角度が飛ぶ。1 回の進みは 50 ms までに抑える（描画が止まっていた間は進めない）
-        float[] angle = {0f, 0f}; // 角錐の回転・格子のカメラの揺れ
-        long[] last = {System.nanoTime()};
-        view.timers().setInterval(() -> {
-            long now = System.nanoTime();
-            float dt = Math.min((now - last[0]) / 1e9f, 0.05f);
-            last[0] = now;
-            if (!spinning.get()) return;
-            angle[0] += dt * 0.9f;
-            angle[1] += dt * 0.5f;
-            for (int n : pyramid) model.arena().setRotationEulerRadians(n, 0.25f, angle[0], 0f);
-            // 格子はカメラを少し揺らして、鏡面の動きで素材の違いが見えるようにする
-            grid.camera().lookAt((float) Math.sin(angle[1]) * 2.2f, 1.2f, 9f, 0, 0, 0, 0, 1, 0);
-        }, 16);
+        // 角度は「経過時間の積算」で進める（絶対時刻から計算すると、停止して再開したときに止まっていた時間ぶん角度が飛ぶ）
+        double[] angle = {0};
+        model.animate((dt, t) -> {
+            if (!spinning[0]) return;
+            angle[0] += dt * 0.9;
+            pyramid.rotation.set(0.25, angle[0], 0);
+        });
     }
 
-    /** 4 × 5 の球。行 = 金属度（1 → 0）、列 = 粗さ（0.15 → 0.95）。 */
-    private static void buildGrid(Scene3DWorld w) {
-        w.clearColorArgb(0xFF141b34);
-        w.camera().lookAt(0, 1.2f, 9f, 0, 0, 0, 0, 1, 0);
-        w.camera().setPerspective((float) Math.toRadians(32), 640f / 420f, 0.1f, 50f);
-        w.light().setDirection(-0.4f, -0.6f, -1f);
-        w.light().setColor(1f, 0.97f, 0.92f, 1.1f);
-        w.light().setAmbient(0.34f, 0.36f, 0.44f);
-        w.bloom(true, 1.0f, 0.7f, 12f); // 鏡面のハイライト（HDR で 1 を超える）が滲む
-        MeshHandle sphere = w.geometry().createSphere(0.42f, 32, 48);
+    /** 4 × 5 の球。行 = 金属度（1 → 0）、列 = 粗さ（0.15 → 0.95）。乗せると光り、クリックで選ぶ。 */
+    private static void buildGrid(Scene3D scene, Document doc) {
+        scene.background(0x141B34).orbitControls(true).bloom(true, 1.0, 0.7, 12);
+        scene.camera().position(0, 1.2, 9).lookAt(0, 0, 0).fov(32);
+        scene.directionalLight(0xFFF7EB, 1.1, -0.4, -0.6, -1);
+        scene.ambientLight(0x57 << 16 | 0x5C << 8 | 0x70, 1);
+
+        Geometry sphere = Geometry.sphere(0.42, 32, 48);
         int rows = 4, cols = 5;
-        int[] base = {0xFFE8B04A, 0xFFB8C4D0, 0xFFD2503C, 0xFF4B8FE0};
+        int[] base = {0xE8B04A, 0xB8C4D0, 0xD2503C, 0x4B8FE0};
+        Mesh[] selected = {null};
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
-                float metallic = 1f - r / (float) (rows - 1);
-                float rough = 0.15f + 0.8f * c / (cols - 1);
-                MaterialDesc m = w.materials().register(base[r], metallic, rough, 0, 0f, null, false, false);
-                int n = w.arena().allocateNode();
-                w.arena().setPosition(n, (c - (cols - 1) / 2f) * 1.25f, ((rows - 1) / 2f - r) * 1.2f, 0);
-                w.arena().setMesh(n, sphere.meshId());
-                w.arena().setMaterial(n, m.materialId());
+                double metal = 1.0 - r / (double) (rows - 1);
+                double rough = 0.15 + 0.8 * c / (cols - 1);
+                Mesh ball = new Mesh(sphere, new Material(base[r]).metalness(metal).roughness(rough));
+                ball.name = String.format("金属度 %.2f・粗さ %.2f", metal, rough);
+                ball.position.set((c - (cols - 1) / 2.0) * 1.25, ((rows - 1) / 2.0 - r) * 1.2, 0);
+                ball.onPointerEnter(h -> ball.scale.set(1.12));
+                ball.onPointerLeave(h -> ball.scale.set(1));
+                ball.onClick(h -> {
+                    if (selected[0] != null) selected[0].material().emissive(0, 0);
+                    selected[0] = ball;
+                    ball.material().emissive(0x60A0FF, 0.6);
+                    doc.getElementById("gridPicked").setTextContent(ball.name);
+                });
+                scene.add(ball);
             }
         }
     }
 
-    /** 埋め込み .gltf（角錐）を読み、まわりに小さな球と床を置く。回す対象の節を返す。 */
-    private static int[] buildModel(Scene3DWorld w) {
-        w.clearColorArgb(0xFF141b34);
-        w.camera().lookAt(0, 1.4f, 5.2f, 0, 0.5f, 0, 0, 1, 0);
-        w.camera().setPerspective((float) Math.toRadians(38), 360f / 260f, 0.1f, 50f);
-        w.light().setDirection(-0.5f, -0.8f, -0.6f);
-        w.light().setColor(1f, 0.98f, 0.95f, 1.2f);
-        w.light().setAmbient(0.18f, 0.2f, 0.26f);
-        GltfBinaryLoader.Result r = GltfBinaryLoader.load(pyramidGltf(), w);
-        MeshHandle ball = w.geometry().createSphere(0.16f, 16, 24);
+    /** 埋め込み .gltf（角錐）を読み、まわりに小さな球と床を置く。回す対象を返す。 */
+    private static Object3D buildModel(Scene3D scene, Document doc) {
+        scene.background(0x141B34).orbitControls(true).bloom(true, 0.9, 0.9, 14);
+        scene.camera().position(0, 1.4, 5.2).lookAt(0, 0.5, 0).fov(38);
+        scene.directionalLight(0xFFFAF2, 1.2, -0.5, -0.8, -0.6);
+        scene.ambientLight(0x2E3342, 1);
+
+        Object3D pyramid = scene.loadGltf(pyramidGltf());
+        pyramid.name = "角錐";
+        pyramid.onClick(h -> doc.getElementById("picked").setTextContent(pyramid.name));
+
         // 小さな球は発光するランプ（強さ 3 = HDR で 1 を超えるので、Bloom で光って見える）
-        MaterialDesc gold = w.materials().register(0xFF302010, 0f, 0.5f, 0xFFC060, 3f, null, false, false);
-        w.bloom(true, 0.9f, 0.9f, 14f);
+        Geometry ball = Geometry.sphere(0.16, 16, 24);
+        Material lampOff = new Material(0x302010).roughness(0.5).emissive(0xFFC060, 3);
         for (int i = 0; i < 6; i++) {
             double ang = i * Math.PI / 3;
-            int n = w.arena().allocateNode();
-            w.arena().setPosition(n, (float) Math.cos(ang) * 1.7f, -0.55f, (float) Math.sin(ang) * 1.7f);
-            w.arena().setMesh(n, ball.meshId());
-            w.arena().setMaterial(n, gold.materialId());
+            Mesh lamp = new Mesh(ball, lampOff);
+            lamp.name = "ランプ " + (i + 1);
+            lamp.position.set(Math.cos(ang) * 1.7, -0.55, Math.sin(ang) * 1.7);
+            lamp.onClick(h -> doc.getElementById("picked").setTextContent(lamp.name));
+            scene.add(lamp);
         }
-        MeshHandle floor = w.geometry().createPlane(6f, 6f);
-        MaterialDesc ground = w.materials().register(0xFF2A3355, 0f, 0.8f, 0, 0f, null, false, false);
-        int f = w.arena().allocateNode();
-        w.arena().setPosition(f, 0, -0.7f, 0);
-        w.arena().setMesh(f, floor.meshId());
-        w.arena().setMaterial(f, ground.materialId());
-        return r.rootNodes();
+        Mesh floor = new Mesh(Geometry.plane(6, 6), new Material(0x2A3355).roughness(0.8));
+        floor.name = "床";
+        floor.position.set(0, -0.7, 0);
+        scene.add(floor);
+        return pyramid;
     }
 
     /** 4 面の角錐（面ごとに頂点を持つ・底面なし）を data: URI で埋め込んだ .gltf。面ごとに材質を変える。 */

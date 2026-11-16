@@ -8,6 +8,7 @@ import java.util.List;
  */
 public final class MaterialPool {
     private final List<MaterialDesc> materials = new ArrayList<>();
+    private long edits;
 
     public MaterialPool() {
         materials.add(MaterialDesc.ofColor(0, 0xFFFFFFFF));
@@ -54,6 +55,20 @@ public final class MaterialPool {
         }
         return materials.get(materialId);
     }
+
+    /**
+     * 登録済みの材質を同じ番号のまま差し替える（その番号を使う全ノードの見た目が変わる）。{@code desc.materialId()} は
+     * {@code materialId} と同じでなければならない。
+     */
+    public synchronized void replace(int materialId, MaterialDesc desc) {
+        if (materialId < 0 || materialId >= materials.size()) throw new IllegalArgumentException("no such material: " + materialId);
+        if (desc.materialId() != materialId) throw new IllegalArgumentException("materialId mismatch");
+        materials.set(materialId, desc);
+        edits++;
+    }
+
+    /** {@link #replace} の回数（見た目の変更検出用。登録の増加は {@link #count()} が表す）。 */
+    public long edits() { return edits; }
 
     public int count() {
         return materials.size();
