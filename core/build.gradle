@@ -194,7 +194,7 @@ tasks.register('runShowcase', JavaExec) {
     classpath = sourceSets.demo.output + sourceSets.demo.runtimeClasspath
     mainClass = 'com.nishiyu.enderframelib.demo.ShowcaseApp'
     if (System.getProperty('showcase.jfr') != null) jvmArgs "-XX:StartFlightRecording=filename=${System.getProperty('showcase.jfr')},settings=profile"
-    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
+    ['showcase.nogrid', 'showcase.inject', 'showcase.notimers', 'showcase.off', 'showcase.verbose', 'enderframe.paint.nomemo', 'showcase.gridms', 'enderframe.paint.noparentrelative'].each { k -> if (System.getProperty(k) != null) systemProperty k, System.getProperty(k) }
     workingDir = rootProject.projectDir
 }
 

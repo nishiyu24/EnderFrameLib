@@ -330,6 +330,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
                 BoxMemo kept = boxMemo.get(owner);
                 if (kept != null) kept.generation = generation; // 省いた箱の記憶は、画面に戻ってくるまで残す
                 owner.dlStart = -1;
+                owner.paintCulled = true;
                 owner.dlEnd = -1;
                 owner.dlOrder = -1;
                 if (windowed && isGeometryOwner(owner)) culledBoxes.add(owner);
@@ -339,6 +340,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             order.executeTask(task, elements);
             int end = elements.size();
             owner.dlStart = start;
+            owner.paintCulled = false;
             owner.dlEnd = end;
             owner.dlOrder = renderedBoxes.size();
             renderedBoxes.add(owner);
@@ -531,6 +533,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             if (kept != null) kept.generation = generation;
         }
         b.dlStart = -1;
+        b.paintCulled = true;
         b.dlEnd = -1;
         b.dlOrder = -1;
         if (pruneWindowed && isGeometryOwner(b)) culledBoxes.add(b);
@@ -2584,6 +2587,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
         if (!box.isAnonymous && windowedBuild && !selfOrAncestorMoving && !inWindowGeometry(box)) {
             // 窓の外（画面外）の箱は、全体を窓付きで組み直したときと同じく、項目を作らない
             box.dlStart = -1;
+            box.paintCulled = true;
             box.dlEnd = -1;
             box.dlOrder = -1;
             if (isGeometryOwner(box)) culledBoxes.add(box);
@@ -2597,6 +2601,7 @@ private List<DisplayItem> renderUnprofiled(LayoutBox box, boolean cullOffscreen,
             drawBoxSelfUncached(targetItems, box, clip, parentId);
             int end = targetItems.size();
             box.dlStart = start;
+            box.paintCulled = false;
             box.dlEnd = end;
             targetBoxes.add(box);
             boxMemo.put(box, remember(box, clip, parentId, List.copyOf(targetItems.subList(start, end))));

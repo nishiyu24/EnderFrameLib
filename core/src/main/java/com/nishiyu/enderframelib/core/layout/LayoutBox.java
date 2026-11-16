@@ -725,6 +725,8 @@ public class LayoutBox {
      * 直近の描画でこの箱自身が生成した DisplayItem の表示リスト上でのスライス範囲 [dlStart, dlEnd)。
      * 項目を持たない、または未描画の箱は dlStart = dlEnd = -1。
      */
+    /** 窓・画面外で項目を省いた（この作り直しで NODE を出していない）箱か。子が動いていて残ると、親相対の原点に使えない。 */
+    public boolean paintCulled;
     public int dlStart = -1;
     public int dlEnd = -1;
     /** この箱が直近の描画で記録された順序（DisplayListBuilder.renderedBoxes 上でのインデックス）。未記録は -1。 */

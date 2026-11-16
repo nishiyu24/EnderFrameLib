@@ -119,6 +119,36 @@ class ParentRelativeParityTest {
         assertExactPixmapEquals("pseudo flex items", renderSw(flex, 400, 200, false, 0, -1, -1), renderSw(flex, 400, 200, true, 0, -1, -1));
     }
 
+    /**
+     * 大きい文書（窓付きの表示リスト）で、窓の外の箱が省かれたまま、動いている子（アニメーション中の絶対配置）だけが残る。
+     * 子の座標を省かれた親からの相対にすると、親を引けず根の座標で描かれて、画面の左上へ崩れる（ShowcaseApp で再現した不具合）。
+     */
+    @Test
+    void culledAncestorOfAnimatedChildKeepsParity() throws IOException {
+        String html = java.nio.file.Files.readString(java.nio.file.Path.of("core/demo/resources/showcase.html"));
+        int frames = 4;
+        Pixmap[][] px = new Pixmap[2][frames];
+        for (int mode = 0; mode < 2; mode++) {
+            EngineContext.current().parentRelativeDisplayItems = mode == 1;
+            try (StandaloneView v = new StandaloneView(html, 1280, 800, FontResolver.FALLBACK);
+                 SoftwareRenderBackend sw = new SoftwareRenderBackend(1280, 800, 1f)) {
+                var grid = v.document().getElementById("grid");
+                for (int g = 0; g < 1000; g++) { // 箱が窓付きにする数を超える
+                    var cell = v.document().createElement("div");
+                    cell.setClassName("px");
+                    grid.appendChild(cell);
+                }
+                var clock = v.document().getElementById("clock");
+                for (int i = 0; i < frames; i++) {
+                    if (i >= 1) clock.setTextContent("12:00:" + (10 + i));
+                    v.frame(i * 100L, sw, true);
+                    px[mode][i] = sw.pixmap().copy();
+                }
+            }
+        }
+        for (int i = 0; i < frames; i++) assertPixmapDiffWithin("frame " + i, px[0][i], px[1][i], 1, 200);
+    }
+
     @Test
     void richFeaturesMatchBitForBit() {
         String html = """

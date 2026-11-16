@@ -48,18 +48,21 @@ class ViewportCullingTest {
 
         List<DisplayItem> culled = builder.render(root, true);
         List<DisplayItem> full = new DisplayListBuilder(w, h, doc.sheet.keyframes, scroll).render(root, false);
+        // 省いた親の下に残った動く子は、親を引けず絶対座標で持つ（符号化が違う）ので、絶対座標へ直して比べる
+        List<DisplayItem> culledAbs = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(culled);
+        List<DisplayItem> fullAbs = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(full);
 
         assertTrue(culled.size() < full.size() * 0.8, "画面外を省く: " + culled.size() + " / " + full.size());
         Map<String, DisplayItem> fullById = new HashMap<>();
-        for (DisplayItem it : full) fullById.put(it.id(), it);
-        for (DisplayItem it : culled) {
+        for (DisplayItem it : fullAbs) fullById.put(it.id(), it);
+        for (DisplayItem it : culledAbs) {
             DisplayItem ref = fullById.get(it.id());
             assertNotNull(ref, "全件にある ID: " + it.id());
             assertEquals(norm(ref), norm(it), "同じ中身: " + it.id());
         }
         // 画面に掛かる項目は 1 つも落とさない
-        for (DisplayItem it : full) {
-            DisplayItem abs = DisplayItem.resolveAbsolute(fullById, it);
+        for (DisplayItem abs : fullAbs) {
+            DisplayItem it = abs;
             boolean visible = abs.type() != com.nishiyu.enderframelib.core.paint.model.ElementType.NODE && abs.x() + abs.width() > 0 && abs.x() < w && abs.y() + abs.height() > 0 && abs.y() < h;
             if (visible) assertTrue(culled.stream().anyMatch(x -> x.id().equals(it.id())), "画面内の項目が落ちた: " + it);
         }

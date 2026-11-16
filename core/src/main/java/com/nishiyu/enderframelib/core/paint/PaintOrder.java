@@ -324,7 +324,8 @@ public final class PaintOrder {
         for (LayoutBox a = box.parent; a != null; a = a.parent) {
             if (a.node != null && "root".equals(a.node.tag)) return null;
             if (a.isAnonymous) continue;
-            return boxHasOwnNode(a) ? a : null;
+            // 窓で項目を省いた祖先（paintCulled）の NODE は表示リストに無い。子はその親を引けず根の座標で描かれるので、原点は 0（絶対）
+            return boxHasOwnNode(a) && !a.paintCulled ? a : null;
         }
         return null;
     }

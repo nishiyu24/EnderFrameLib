@@ -55,6 +55,10 @@ public final class ShowcaseApp {
             for (var it : v.items()) if (it.text() != null && (it.text().contains("node-1025") || it.text().equals("1") || it.text().equals("name"))) System.out.println(it.baseId() + " " + it.type() + " x=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).x() + " y=" + com.nishiyu.enderframelib.core.paint.model.DisplayItem.resolveAbsolute(v.items(), it).y() + " w=" + it.width() + " '" + it.text() + "'");
             return;
         }
+        if (args.length > 0 && args[0].equals("--parity")) { // 親相対あり/なしで、wire した状態の連続フレームを比べる（ソフトウェア描画）
+            parity(html);
+            return;
+        }
         if (args.length > 0 && args[0].equals("--bench")) {
             bench(html);
             return;
@@ -87,6 +91,47 @@ public final class ShowcaseApp {
         if (!sized) a.addAll(List.of("1280", "800"));
         a.addAll(List.of(args));
         StandaloneViewer.launch(a.toArray(new String[0]), ShowcaseApp::wire);
+    }
+
+    /** 親相対あり/なしの画素比較。違った最初のフレームと範囲を出す。 */
+    private static void parity(Path html) throws Exception {
+        String page = java.nio.file.Files.readString(html);
+        int frames = Integer.getInteger("parity.frames", 80);
+        int[][][] px = new int[2][frames][];
+        java.util.List<com.nishiyu.enderframelib.core.paint.model.DisplayItem>[][] its = new java.util.List[2][frames];
+        for (int mode = 0; mode < 2; mode++) {
+            com.nishiyu.enderframelib.core.EngineContext.current().parentRelativeDisplayItems = mode == 1;
+            StandaloneView view = new StandaloneView(page, 1280, 800);
+            wire(view);
+            try (var sw = new com.nishiyu.enderframelib.core.paint.software.SoftwareRenderBackend(1280, 800, 1f)) {
+                for (int i = 0; i < frames; i++) {
+                    view.frame(i * 100L, sw, true);
+                    px[mode][i] = sw.pixmap().pixels().clone();
+                    its[mode][i] = com.nishiyu.enderframelib.core.paint.AbsoluteItems.of(new ArrayList<>(view.items()));
+                    Thread.sleep(40);
+                }
+            }
+        }
+        for (int f = 0; f < frames; f++) {
+            int diff = 0, x0 = 9999, y0 = 9999, x1 = -1, y1 = -1;
+            for (int i = 0; i < px[0][f].length; i++) {
+                if (px[0][f][i] != px[1][f][i]) { diff++; int x = i % 1280, y = i / 1280; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+            }
+            if (diff > 100) {
+                var A = its[0][f]; var B = its[1][f];
+                System.out.println("ITEMS off=" + A.size() + " on=" + B.size());
+                int shown = 0;
+                for (int k = 0; k < Math.min(A.size(), B.size()) && shown < 8; k++) {
+                    var a = A.get(k); var b = B.get(k);
+                    if (!a.id().equals(b.id()) || a.x() != b.x() || a.y() != b.y() || a.width() != b.width() || a.height() != b.height() || !java.util.Objects.equals(a.text(), b.text())) {
+                        System.out.println("  #" + k + " off " + a.id() + " " + a.type() + " " + a.x() + "," + a.y() + " " + a.width() + "x" + a.height() + " | on " + b.id() + " " + b.type() + " " + b.x() + "," + b.y() + " " + b.width() + "x" + b.height());
+                        shown++;
+                    }
+                }
+            }
+            if (diff > 100) { System.out.println("PARITY first bad frame " + f + " diff=" + diff + " bbox=" + x0 + "," + y0 + " - " + x1 + "," + y1); return; }
+        }
+        System.out.println("PARITY ok");
     }
 
     /** 窓なし（見えない GL 窓）で 120 フレーム回し、1 フレームの所要時間を出す。 */
